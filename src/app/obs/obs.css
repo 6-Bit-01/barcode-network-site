@@ -1,0 +1,345 @@
+/* OBS Browser Source — fully transparent background */
+/* When this CSS loads (only /obs route), hide all site chrome */
+html, body {
+  background: transparent !important;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Hide site header, footer, data-stream particles, and bottom ticker */
+header,
+footer,
+main > .animate-interference {
+  display: none !important;
+}
+
+/* The root layout wraps everything in a main.min-h-screen — strip that */
+main {
+  min-height: auto !important;
+  animation: none !important;
+}
+
+/* Hide the fixed bottom system ticker bar */
+body > div:last-of-type {
+  display: none !important;
+}
+
+/* Remove scanlines and watermark on OBS page */
+.scanlines::before,
+.scanlines::after,
+.logo-watermark::before {
+  display: none !important;
+}
+
+.obs-root {
+  position: relative;
+  z-index: 9999;
+}
+
+/* ---- Full-page container ---- */
+.obs-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+}
+
+/* ---- BG.mp4 — fullscreen background, always behind ---- */
+.obs-bg-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  z-index: 0;
+}
+
+/* ---- WaitingForSubmission.mp4 — covers BG when idle ---- */
+.obs-waiting-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  z-index: 1;
+  animation: obs-fade-in 0.6s ease-out;
+}
+
+/* ---- Queue HUD — floats bottom-left over video ---- */
+.obs-hud {
+  position: absolute;
+  bottom: 24px;
+  left: 24px;
+  z-index: 2;
+  max-width: 420px;
+  animation: obs-slide-in 0.4s ease-out;
+}
+
+/* ---- Now Playing Card ---- */
+.obs-now-playing {
+  background: rgba(0, 0, 0, 0.85);
+  border: 1px solid rgba(0, 255, 136, 0.4);
+  border-left: 3px solid #00ff88;
+  padding: 16px 20px;
+  margin-bottom: 8px;
+  animation: obs-slide-in 0.4s ease-out;
+}
+
+.obs-now-playing .obs-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  color: #00ff88;
+  font-weight: 700;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.obs-now-playing .obs-label .obs-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #00ff88;
+  animation: obs-pulse 1.5s ease-in-out infinite;
+}
+
+.obs-now-playing .obs-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  line-height: 1.3;
+}
+
+.obs-now-playing .obs-artist {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 2px;
+}
+
+/* ---- Queue List ---- */
+.obs-queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.obs-queue-entry {
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  animation: obs-fade-in 0.3s ease-out;
+}
+
+.obs-queue-entry .obs-position {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.25);
+  font-family: monospace;
+  min-width: 24px;
+  text-align: right;
+}
+
+.obs-queue-entry .obs-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.obs-queue-entry .obs-info .obs-entry-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.obs-queue-entry .obs-info .obs-entry-artist {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* ---- Tier Badges ---- */
+.obs-tier {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  padding: 2px 6px;
+  border: 1px solid;
+  font-weight: 700;
+  font-family: monospace;
+  white-space: nowrap;
+}
+
+.obs-tier-free {
+  color: rgba(255, 255, 255, 0.35);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.obs-tier-featured {
+  color: #00ff88;
+  border-color: rgba(0, 255, 136, 0.4);
+}
+
+.obs-tier-fastlane {
+  color: #ffaa00;
+  border-color: rgba(255, 170, 0, 0.4);
+}
+
+.obs-tier-frontrow {
+  color: #ff4444;
+  border-color: rgba(255, 68, 68, 0.4);
+}
+
+/* ---- Empty State (kept for fallback) ---- */
+.obs-empty {
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 20px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+}
+
+/* ---- Stream Status ---- */
+.obs-status {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  padding: 8px 16px;
+  text-align: right;
+  color: rgba(255, 255, 255, 0.2);
+  font-family: monospace;
+}
+
+/* ---- Animations ---- */
+@keyframes obs-slide-in {
+  from { transform: translateX(-20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes obs-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes obs-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ========================================
+   LIVE REDIRECT — A-SHOW TAKEOVER SCREEN
+   ======================================== */
+.obs-live-redirect {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  text-align: center;
+  animation: obs-fade-in 0.5s ease-out;
+}
+
+.obs-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.35em;
+  color: #ff3333;
+  margin-bottom: 24px;
+  font-family: monospace;
+}
+
+.obs-live-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ff3333;
+  box-shadow: 0 0 12px #ff3333, 0 0 24px rgba(255, 51, 51, 0.4);
+  animation: obs-pulse 1s ease-in-out infinite;
+}
+
+.obs-live-title {
+  font-size: 64px;
+  font-weight: 900;
+  color: #ffffff;
+  margin: 0 0 12px 0;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 0 0 30px rgba(255, 255, 255, 0.15);
+  animation: obs-live-glitch 4s infinite;
+}
+
+.obs-live-subtitle {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.45);
+  margin: 0 0 32px 0;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  font-family: monospace;
+}
+
+.obs-live-url {
+  font-size: 20px;
+  font-weight: 700;
+  color: #00ff88;
+  font-family: monospace;
+  letter-spacing: 0.05em;
+  padding: 12px 32px;
+  border: 2px solid rgba(0, 255, 136, 0.4);
+  background: rgba(0, 255, 136, 0.05);
+  margin-bottom: 32px;
+}
+
+.obs-live-bar {
+  width: 240px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+
+.obs-live-scan {
+  display: block;
+  width: 60px;
+  height: 100%;
+  background: #ff3333;
+  animation: obs-live-scan 2s linear infinite;
+}
+
+.obs-live-footer {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.15);
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  font-family: monospace;
+  margin: 0;
+}
+
+@keyframes obs-live-scan {
+  0% { transform: translateX(-60px); }
+  100% { transform: translateX(240px); }
+}
+
+@keyframes obs-live-glitch {
+  0%, 92%, 100% { transform: none; opacity: 1; }
+  93% { transform: translateX(-3px) skewX(-1deg); opacity: 0.85; }
+  95% { transform: translateX(3px) skewX(1deg); opacity: 0.9; }
+  97% { transform: none; opacity: 1; }
+}

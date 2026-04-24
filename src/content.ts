@@ -50,12 +50,6 @@ export const homePage = {
       status: "ACTIVE",
     },
     {
-      title: "AI Stream",
-      description: "24/7 AI broadcast. Pay-to-play queue. The gateway.",
-      href: "/queue",
-      status: "ACTIVE",
-    },
-    {
       title: "Database",
       description: "Dossier system. Entities, partners, sponsors, anomalies.",
       href: "/database",
@@ -86,7 +80,7 @@ export const homePage = {
   },
   quickLinks: [
     { label: "Discord", href: "EXTERNAL:discord" },
-    { label: "AI Stream", href: "/queue" },
+    { label: "Releases", href: "/releases" },
     { label: "Database", href: "/database" },
     { label: "Submit Music", href: "/radio" },
   ],

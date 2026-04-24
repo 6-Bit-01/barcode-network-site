@@ -6,7 +6,7 @@
  */
 import sharp from "sharp";
 import { readdir, stat } from "fs/promises";
-import { join, extname } from "path";
+import { join } from "path";
 
 const PUBLIC = "public";
 

@@ -26,6 +26,7 @@ export function useQueue() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchQueue();
     const interval = setInterval(fetchQueue, POLL_INTERVAL);
     return () => clearInterval(interval);

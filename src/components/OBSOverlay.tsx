@@ -99,6 +99,7 @@ export function OBSOverlay() {
   /* Check broadcast schedule every 15s */
   const checkLive = useCallback(() => setIsLive(isWithinBroadcastWindow()), []);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     checkLive();
     const interval = setInterval(checkLive, 15_000);
     return () => clearInterval(interval);

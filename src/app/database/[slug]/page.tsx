@@ -326,8 +326,8 @@ export default async function EntityPage({
             <div className="space-y-1 text-sm text-foreground/60">
               <p>&gt; SELECT * FROM network_dossiers WHERE id = &apos;{entry.id}&apos;</p>
               <p>&gt; RECORD FOUND: {entry.name}</p>
-              <p>&gt; STATUS: {entry.status} // CLEARANCE: {entry.clearance}</p>
-              <p>&gt; CATEGORY: {entry.category} // ORIGIN: {entry.origin}</p>
+              <p>&gt; STATUS: {entry.status} {"//"} CLEARANCE: {entry.clearance}</p>
+              <p>&gt; CATEGORY: {entry.category} {"//"} ORIGIN: {entry.origin}</p>
               <p className="text-accent mt-3">
                 &gt; DOSSIER LOADED<span className="cursor-blink">_</span>
               </p>

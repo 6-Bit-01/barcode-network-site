@@ -63,6 +63,7 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchStatus();
     const interval = setInterval(fetchStatus, 15_000); // Poll every 15s
     return () => clearInterval(interval);

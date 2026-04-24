@@ -102,7 +102,7 @@ export default function ReleasesPage() {
           </div>
 
           <p className="text-xs text-muted/50 mt-8 uppercase tracking-wider font-mono">
-            // {releases.length} TRANSMISSIONS INDEXED
+            {"//"} {releases.length} TRANSMISSIONS INDEXED
           </p>
         </div>
       </section>

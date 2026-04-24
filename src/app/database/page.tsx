@@ -15,14 +15,14 @@ export const metadata: Metadata = {
 };
 
 const databaseEntries = databasePage.dossiers.map((dossier, index) => ({
-  id: `DB-${String(index + 1).padStart(3, "0")}`,
+  id: dossier.id ?? `DB-${String(index + 1).padStart(3, "0")}`,
   name: dossier.title,
   image: dossier.image,
   category: dossier.category as "Entity" | "Personnel" | "Sponsor" | "Interface" | "Production",
   status: (dossier.status === "LIVE" ? "ACTIVE" : dossier.status) as "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN",
-  clearance: "PUBLIC" as const,
-  role: dossier.notes || dossier.summary,
-  origin: "KNOWN" as const,
+  clearance: (dossier.clearance ?? "PUBLIC") as "PUBLIC" | "INTERNAL" | "RESTRICTED",
+  role: dossier.role ?? (dossier.notes || dossier.summary),
+  origin: (dossier.origin ?? "KNOWN") as "KNOWN" | "UNKNOWN" | "UNVERIFIED" | "WITHHELD",
   summary: dossier.summary,
   tags: dossier.tags,
   notes: dossier.notes,
@@ -59,7 +59,10 @@ export default function DatabasePage() {
               label="Categories"
               value={[...new Set(databaseEntries.map((e) => e.category))].length.toString()}
             />
-            <StatItem label="Restricted" value="0" />
+            <StatItem
+              label="Restricted"
+              value={databaseEntries.filter((e) => e.clearance === "RESTRICTED").length.toString()}
+            />
           </div>
         </div>
       </section>

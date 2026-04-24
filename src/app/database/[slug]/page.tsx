@@ -13,11 +13,11 @@ function slugify(name: string) {
 function toLegacyEntry(dossier: (typeof databasePage.dossiers)[number], index: number) {
   return {
     ...dossier,
-    id: `DB-${String(index + 1).padStart(3, "0")}`,
+    id: dossier.id ?? `DB-${String(index + 1).padStart(3, "0")}`,
     name: dossier.title,
-    clearance: "PUBLIC" as const,
-    role: dossier.notes || dossier.summary,
-    origin: "KNOWN" as const,
+    clearance: (dossier.clearance ?? "PUBLIC") as "PUBLIC" | "INTERNAL" | "RESTRICTED",
+    role: dossier.role ?? (dossier.notes || dossier.summary),
+    origin: (dossier.origin ?? "KNOWN") as "KNOWN" | "UNKNOWN" | "UNVERIFIED" | "WITHHELD",
   };
 }
 

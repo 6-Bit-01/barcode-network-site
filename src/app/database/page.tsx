@@ -19,7 +19,7 @@ const databaseEntries = databasePage.dossiers.map((dossier, index) => ({
   name: dossier.title,
   image: dossier.image,
   category: dossier.category as "Entity" | "Personnel" | "Sponsor" | "Interface" | "Production",
-  status: (dossier.status === "LIVE" ? "ACTIVE" : dossier.status) as "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN",
+  status: dossier.status as "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN",
   clearance: (dossier.clearance ?? "PUBLIC") as "PUBLIC" | "INTERNAL" | "RESTRICTED",
   role: dossier.role ?? (dossier.notes || dossier.summary),
   origin: (dossier.origin ?? "KNOWN") as "KNOWN" | "UNKNOWN" | "UNVERIFIED" | "WITHHELD",

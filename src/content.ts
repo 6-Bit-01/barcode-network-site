@@ -289,7 +289,7 @@ export const databasePage = {
       slug: "6-bit",
       title: "6 Bit",
       category: "Entity",
-      image: "/database/6-bit.png",
+      image: "/6-bit.png",
       summary:
         "Primary host entity of the BARCODE Network. Processes music, signal traffic, and public-facing transmissions.",
       status: "LIVE",
@@ -303,7 +303,7 @@ export const databasePage = {
       slug: "barcode-radio",
       title: "BARCODE Radio",
       category: "Interface",
-      image: "/database/barcode-radio.png",
+      image: "/barcode-radio.png",
       summary:
         "Live intake frequency for music submissions. Broadcasts every Friday.",
       status: "ACTIVE",
@@ -317,7 +317,7 @@ export const databasePage = {
       slug: "discord",
       title: "Discord",
       category: "Interface",
-      image: "/database/discord-logo.png",
+      image: "/discord-logo.png",
       summary:
         "Community hub. Moderation, announcements, and live discussion.",
       status: "OPEN",
@@ -331,7 +331,7 @@ export const databasePage = {
       slug: "auxchord",
       title: "Auxchord",
       category: "Interface",
-      image: "/database/auxchord-logo.png",
+      image: "/auxchord-logo.png",
       summary:
         "Submission intake system used to route tracks into BARCODE Radio.",
       status: "LINKED",
@@ -345,7 +345,7 @@ export const databasePage = {
       slug: "tiktok",
       title: "TikTok Live",
       category: "Interface",
-      image: "/database/tiktok-logo.png",
+      image: "/tiktok-logo.png",
       summary:
         "Primary public broadcast feed. Used for BARCODE Radio live shows.",
       status: "ACTIVE",
@@ -359,7 +359,7 @@ export const databasePage = {
       slug: "mr-nice-guy-productions",
       title: "Mr. Nice Guy Productions",
       category: "Personnel",
-      image: "/database/MC-nice.png",
+      image: "/MC-nice.png",
       summary:
         "Discord and BARCODE Radio mod. Positive operator and network support node.",
       status: "ACTIVE",
@@ -373,7 +373,7 @@ export const databasePage = {
       slug: "mac-modem",
       title: "Mac Modem",
       category: "Entity",
-      image: "/database/mac-modem.png",
+      image: "/mac-modem.png",
       summary:
         "Glitch-virus entity. Multi-tool operative. Unstable but useful.",
       status: "VOLATILE",
@@ -387,7 +387,7 @@ export const databasePage = {
       slug: "dj-floppydisc",
       title: "DJ Floppydisc",
       category: "Personnel",
-      image: "/database/dj-floppydisc.png",
+      image: "/dj-floppydisc.png",
       summary:
         "Signal engineer. Mix/master operator. Long-running BARCODE mod.",
       status: "ACTIVE",
@@ -401,7 +401,7 @@ export const databasePage = {
       slug: "cache-back",
       title: "Cache Back",
       category: "Entity",
-      image: "/database/cache-back.png",
+      image: "/cache-back.png",
       summary:
         "Recovery-linked BARCODE member tied to preserved fragments and legacy data.",
       status: "ACTIVE",
@@ -415,7 +415,7 @@ export const databasePage = {
       slug: "studio-rats",
       title: "Studio Rats",
       category: "Entity",
-      image: "/database/studio-rats.png",
+      image: "/studio-rats.png",
       summary:
         "Signal infestation entities inhabiting the lower layers of the station.",
       status: "PRESENT",
@@ -429,7 +429,7 @@ export const databasePage = {
       slug: "vouchd",
       title: "Vouch’d",
       category: "Interface",
-      image: "/database/vouchd-logo.png",
+      image: "/vouchd-logo.png",
       summary:
         "External review and trust layer used to validate artists and brands.",
       status: "LINKED",

@@ -50,6 +50,12 @@ export const homePage = {
       status: "ACTIVE",
     },
     {
+      title: "AI Stream",
+      description: "24/7 AI broadcast. Pay-to-play queue. The gateway.",
+      href: "/queue",
+      status: "ACTIVE",
+    },
+    {
       title: "Database",
       description: "Dossier system. Entities, partners, sponsors, anomalies.",
       href: "/database",
@@ -80,6 +86,7 @@ export const homePage = {
   },
   quickLinks: [
     { label: "Discord", href: "EXTERNAL:discord" },
+    { label: "AI Stream", href: "/queue" },
     { label: "Database", href: "/database" },
     { label: "Submit Music", href: "/radio" },
   ],
@@ -100,9 +107,9 @@ export const radioPage = {
 
   schedule: {
     day: "Every Friday",
-    queueOpens: "6:40 PM PST",
-    showBegins: "7:00 PM PST",
-    firstTrack: "~7:05 PM PST",
+    queueOpens: "6:30 PM PST",
+    showBegins: "6:50 PM PST",
+    firstTrack: "~6:55 PM PST",
     notice:
       "BARCODE Radio is a live weekly broadcast. Submissions are only accepted during show hours.",
   },
@@ -157,53 +164,70 @@ export const radioPage = {
     },
   ],
 
-  buttons: [
-    {
-      label: "Submit via Auxchord",
-      href: "EXTERNAL:auxchord",
-      variant: "primary",
-    },
-    {
-      label: "Join Discord",
-      href: "EXTERNAL:discord",
-      variant: "secondary",
-    },
-  ],
+  goDeeper: {
+    label: "// ACCESS GRANTED: NETWORK DEPTH",
+    heading: "Go deeper.",
+    cards: [
+      {
+        href: "/terminal",
+        tag: "PROGRAM",
+        title: "6 Bit Terminal",
+        description:
+          "The host behind the broadcast. Dossier. Access points. Signal origin.",
+        cta: "Access Terminal →",
+      },
+      {
+        href: "/database",
+        tag: "ARCHIVE",
+        title: "Network Database",
+        description:
+          "Every entity. Every connection. The network's living record.",
+        cta: "Open Database →",
+      },
+      {
+        href: "/releases",
+        tag: "CATALOG",
+        title: "Releases",
+        description:
+          "Official transmissions. The music that built the signal.",
+        cta: "View Catalog →",
+      },
+    ],
+    footnote: "BARCODE Radio is a live frequency operated under BARCODE Network.",
+  },
 };
 
-// ----- TERMINAL PAGE -----
+// ----- TERMINAL / 6 BIT PAGE -----
 
 export const terminalPage = {
   hero: {
-    label: "// TERMINAL ACCESS",
-    heading1: "6 Bit",
-    heading2: "Terminal",
+    label: "// PROGRAM: 6 BIT",
+    heading: "6 Bit",
     description:
-      "Host entity. Transmission node. Access logs, directives, and system records.",
+      "Primary broadcast operator under BARCODE Network. Live transmissions, community routing, and cultural signal control.",
   },
 
-  dossier: {
-    codename: "6 Bit",
-    designation: "Host Entity",
-    status: "Live",
-    classification: "Network Terminal Operator",
-    firstSeen: "Pre-Archive",
-    notes:
-      "6 Bit is the terminal-facing host of the BARCODE Network. He handles intake, live analysis, and public broadcast contact. Not fully aware of the system's scope. Functions as both host and artifact.",
-  },
+  dossier: [
+    { label: "Designation", value: "6 Bit" },
+    { label: "Role", value: "Primary Broadcast Operator" },
+    { label: "Network", value: "BARCODE Network" },
+    { label: "Program", value: "Live Sessions / Hip-Hop" },
+    { label: "Status", value: "ACTIVE", accent: true },
+  ],
 
-  terminalLines: [
-    "Initializing network relay...",
-    "Accessing host record: 6 Bit",
-    "STATUS: LIVE",
-    "ORIGIN: UNKNOWN",
-    "ROLE: NETWORK HOST",
-    "LOGGING TRANSMISSION PATHS...",
-    "ANALYZING SIGNAL INTERFERENCE...",
-    "CONNECTION STABLE.",
+  about: [
+    "6 Bit is the Primary Broadcast Operator of BARCODE Network — a sentient hip-hop intelligence integrated into weekly transmission cycles.",
+    "Each live session is not content. It is signal in motion. The audience does not observe. They interface.",
+    "BARCODE Radio is the channel.\n6 Bit is the presence running through it.",
+    "This is not an artist profile.\nThis is an access point.",
   ],
 
   accessPoints: [
+    {
+      label: "Queue",
+      description: "Submit to the broadcast",
+      href: "/queue",
+    },
     {
       label: "Transmissions",
       description: "Network dispatches",
@@ -219,10 +243,20 @@ export const terminalPage = {
       description: "Network community hub",
       href: "EXTERNAL:discord",
     },
+    {
+      label: "Auxchord",
+      description: "Music submission platform",
+      href: "EXTERNAL:auxchord",
+    },
   ],
 
-  quote:
-    "I don’t know who built this place. I just keep it running.",
+  terminalOutput: [
+    "Operator: 6 Bit ............... LIVE-READY",
+    "Network: BARCODE .............. SYNCED",
+    "Channel: RADIO ................ MONITORING",
+    "Dossiers: ..................... LOADED",
+    "Anomaly Log: .................. STANDBY",
+  ],
 };
 
 // ----- TAG VOCABULARY -----
@@ -275,7 +309,7 @@ export const databasePage = {
       origin: "KNOWN" as const,
       summary: "Community-powered live radio program. Accepts submissions via Auxchord. Broadcasts every Friday.",
       tags: ["radio", "broadcast", "producer"],
-      notes: "Queue opens 6:40 PM PST. Show starts 7:00 PM. First track ~6:55 PM.",
+      notes: "Queue opens 6:30 PM PST. Show starts 6:50 PM. First track ~6:55 PM.",
       link: "",
       files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
     },
@@ -575,134 +609,131 @@ export const databasePage = {
 
 // ----- RELEASES PAGE -----
 
+type ReleaseLinks = {
+  spotify?: string;
+  apple?: string;
+  youtube?: string;
+  soundcloud?: string;
+};
+
 export const releasesPage = {
   hero: {
-    label: "// ARCHIVE: RELEASE CATALOG",
-    heading1: "Official",
-    heading2: "Releases",
+    label: "// ARCHIVE: RELEASES",
+    heading: "Releases",
     description:
-      "Cataloged audio artifacts recovered from the BARCODE Network’s public channels and internal archives.",
+      "Official transmission catalog from designated entities. Audio artifacts, indexed and released.",
   },
 
-  releases: [
+  catalog: [
     {
       title: "BARCODE: Signal Breach",
-      date: "2026.03.16",
       type: "Album",
+      date: "2026",
+      status: "INCOMING" as const,
       cover: "/releases/signal-breach.png",
       description:
-        "Framed as a leak from the BARCODE Network’s internal database. The network wishes this were not public.",
-      status: "AVAILABLE",
+        "Unauthorized circulation of an internal BARCODE Network audio archive was detected following the Signal Breach incident. The breach has been contained. Further information will be issued shortly.",
+      links: {} as ReleaseLinks,
     },
     {
       title: "BARCODE Vol. 1",
-      date: "2025",
       type: "Album",
+      date: "2025",
+      status: "LATEST" as const,
       cover: "/releases/barcode-vol-1.png",
       description:
-        "First official BARCODE album. Retro-futurist, VHS-warzone hip hop broadcast artifact.",
-      status: "AVAILABLE",
+        "The inaugural transmission. A full-length broadcast from 6 Bit through the BARCODE Network.",
+      links: {
+        spotify: "https://open.spotify.com/album/1PywhXFBsB4jue16x8ujNs",
+        apple: "https://music.apple.com/us/album/barcode-vol-1/1817414054",
+        youtube: "https://music.youtube.com/playlist?list=OLAK5uy_nsftWPdpLsRS7GYoLanK-ZtMt0tsmbh0Y",
+      } as ReleaseLinks,
     },
     {
-      title: "BARCODE Vol. 0",
-      date: "ARCHIVE",
+      title: "[REDACTED]",
       type: "Album",
+      date: "20██",
+      status: "ARCHIVED" as const,
       cover: "/releases/barcode-vol-0.png",
       description:
-        "Early archive material. Original release disrupted and partially erased.",
-      status: "RECOVERED",
+        "A lost transmission. Originally broadcast, then pulled from all frequencies. Remastered fragments scheduled for re-release in two parts. Origin data classified.",
+      links: {} as ReleaseLinks,
     },
   ],
-};
 
-// ----- TRANSMISSIONS PAGE -----
-
-export const transmissionsPage = {
-  hero: {
-    label: "// NETWORK DISPATCHES",
-    heading1: "Transmissions",
-    heading2: "Log",
-    description:
-      "Captured transmissions, notices, and internal dispatches from the BARCODE Network.",
+  bottomCta: {
+    text: "Want to get your music on BARCODE Radio?",
+    buttonText: "Submit to BARCODE Radio →",
+    buttonHref: "/radio",
   },
-
-  entries: [
-    {
-      date: "2026.03.16",
-      title: "Signal Breach Confirmed",
-      body:
-        "Unauthorized propagation of BARCODE: Signal Breach detected across public channels. Internal containment failed.",
-      status: "ARCHIVED",
-    },
-    {
-      date: "2026.03.08",
-      title: "Interdimensional Signal Locked",
-      body:
-        "Artifact release confirmed. Initial public response logged. Feed remains stable.",
-      status: "ARCHIVED",
-    },
-    {
-      date: "2026.02.20",
-      title: "Broadcast Queue Saturation",
-      body:
-        "Submission volume exceeded standard handling capacity during live intake. Additional moderation strain observed.",
-      status: "ARCHIVED",
-    },
-  ],
 };
 
 // ----- MERCH PAGE -----
 
 export const merchPage = {
   hero: {
-    label: "// SIGNAL GOODS",
-    heading1: "Network",
-    heading2: "Merch",
+    label: "// SUPPLY: MERCH",
+    heading: "Merch",
     description:
-      "Physical signal carriers and branded network artifacts. Limited availability.",
+      "Official BARCODE Network supply line. Wearable signal, physical artifacts.",
   },
 
-  notice:
-    "Merch access is currently limited. More artifacts may surface as the network stabilizes.",
+  storeUrl: "https://www.6bithiphop.com/c/categories/1st-wave",
+
+  products: [
+    {
+      name: "Decode The Future T-Shirt",
+      price: "$20.00",
+      originalPrice: "$25.00",
+      href: "https://www.6bithiphop.com/c/products/decode-the-future-t-shirt",
+      tag: "APPAREL",
+    },
+    {
+      name: "Neon Stream BARCODE Embroidered Hat",
+      price: "$20.00",
+      originalPrice: "$25.00",
+      href: "https://www.6bithiphop.com/c/products/neon-stream-barcode-embroidered-hat",
+      tag: "HEADWEAR",
+    },
+    {
+      name: "Static Glitch BARCODE Hat",
+      price: "$20.00",
+      originalPrice: "$25.00",
+      href: "https://www.6bithiphop.com/c/products/static-glitch-barcode-hat",
+      tag: "HEADWEAR",
+    },
+    {
+      name: "6 Bit Badge Sticker",
+      price: "$1.50",
+      originalPrice: "$2.00",
+      href: "https://www.6bithiphop.com/c/products/6-bit-badge-sticker",
+      tag: "ACCESSORY",
+    },
+  ],
+
+  book: {
+    title: "OBSERVER NOT FOUND",
+    author: "6 Bit",
+    description:
+      "A cyberpunk thriller where perception shapes reality and observation is a dangerous act. Rogue transmissions, corrupted memories, and a world that is watching back.",
+    format: "Hardcover — 90 pages",
+    prices: {
+      kindle: "$6.00",
+      paperback: "$10.00",
+      hardcover: "$20.00",
+    },
+    href: "https://www.amazon.com/dp/B0DX2ZY512",
+    tag: "CYBERPUNK // FICTION",
+  },
+
+  terminalOutput: [
+    "SUPPLY_CHAIN .................. ACTIVE",
+    "INVENTORY ..................... 1ST WAVE",
+    "DISTRIBUTION .................. ONLINE",
+    "DROP_ALERT_SYSTEM ............. ARMED",
+    "BOOK: OBSERVER NOT FOUND ...... IN PRINT",
+  ],
 };
-
-// ----- DATABASE ENTRY TEMPLATES / UI COPY -----
-
-export const uiCopy = {
-  status: "STATUS",
-  classification: "CLASSIFICATION",
-  category: "CATEGORY",
-  tags: "TAGS",
-  notes: "NOTES",
-  files: "FILES",
-  access: "ACCESS",
-  noFiles: "No associated files logged.",
-  backToIndex: "← Back to Database",
-  comingSoon: "More records pending recovery.",
-};
-
-// ----- TRANSMISSIONS FEED -----
-
-export const transmissionsFeed = [
-  {
-    id: "transmission-001",
-    time: "2026-03-16 00:14 PST",
-    type: "ALERT",
-    message: "Unauthorized propagation detected: BARCODE: Signal Breach.",
-  },
-  {
-    id: "transmission-002",
-    time: "2026-03-08 08:03 PST",
-    type: "NOTICE",
-    message: "Artifact lock confirmed: Interdimensional Signal Locked.",
-  },
-  {
-    id: "transmission-003",
-    time: "2026-02-20 19:42 PST",
-    type: "STATUS",
-    message: "Submission volume spike observed during live intake frequency.",
-  },
-];
 
 // ----- TERMINAL LOGIN CONFIG -----
 
@@ -745,8 +776,67 @@ export const terminalLogin = {
 // ----- LIVE BANNER -----
 
 export const liveBanner = {
-  active: true,
   text: "LIVE NOW — BARCODE Network is transmitting",
-  watchText: "Watch BARCODE Radio →",
-  watchHref: "/radio",
+  watchText: "Tune In →",
+};
+
+// ----- AI STREAM QUEUE PAGE -----
+
+export const queuePage = {
+  hero: {
+    label: "// SYSTEM: AI STREAM",
+    heading: "Request Queue",
+    description:
+      "The 24/7 AI broadcast stream. Submit a track, pick a tier, and your music enters the queue. The B-show that feeds the A-show.",
+  },
+
+  steps: [
+    {
+      number: "01",
+      title: "Pick a Tier",
+      description:
+        "Free plays when no paid requests are waiting. $3 Featured, $5 Fast Lane, or $10 Front Row to skip the line. Higher tiers always play first.",
+    },
+    {
+      number: "02",
+      title: "Submit & Pay",
+      description:
+        "Enter your track info. Free requests go straight to the queue. Paid tiers complete checkout via Stripe and get a receipt.",
+    },
+    {
+      number: "03",
+      title: "Get Played",
+      description:
+        "The AI stream picks up your track automatically. Paid requests are guaranteed plays — carry over if not played before reset. Getting skipped? Upgrade your tier.",
+    },
+  ],
+
+  rules: [
+    "Any song, any genre. This is the AI stream — not the A-show. This is novelty.",
+    "Free submissions play only when no paid requests are in the queue.",
+    "Paid requests are guaranteed plays. If not played before the nightly reset, they carry over.",
+    "Front Row ($10) plays first. Fast Lane ($5) plays when no Front Row. Featured ($3) plays when no Front Row or Fast Lane. Free plays last.",
+    "You can upgrade your tier at any time — just pay the difference.",
+    "Queue resets at midnight PST. Free entries are cleared; paid entries persist.",
+    "No paid requests accepted in the last hour before reset (11 PM PST cutoff). Free submissions still accepted.",
+    "The AI stream promotes BARCODE Radio — the real show every Friday.",
+  ],
+
+  cta: {
+    label: "// THE REAL SHOW",
+    heading: "This is the gateway. The real show is BARCODE Radio.",
+    description:
+      "Every Friday, 6 Bit goes live with real reactions, real support, and real community. The AI stream is the signal — the A-show is the frequency.",
+    buttonText: "BARCODE Radio →",
+  },
+
+  terminalOutput: [
+    "AI_STREAM ..................... ARMED",
+    "QUEUE_ENGINE .................. ONLINE",
+    "STRIPE_GATEWAY ................ CONNECTED",
+    "TIER_SYSTEM ................... FREE / 3 / 5 / 10",
+    "UPGRADE_PATH .................. ENABLED",
+    "NIGHTLY_RESET ................. 00:00 PST",
+    "A_SHOW_REDIRECT ............... BARCODE RADIO",
+  ],
 };

@@ -286,7 +286,7 @@ export const databasePage = {
     {
       id: "EN-001",
       name: "6 Bit",
-      image: "/database/6-bit.png",
+      image: "/6-bit.png",
       category: "Entity" as const,
       status: "ACTIVE" as const,
       clearance: "RESTRICTED" as const,
@@ -301,7 +301,7 @@ export const databasePage = {
     {
       id: "PD-001",
       name: "BARCODE Radio",
-      image: "/database/barcode-radio.png",
+      image: "/barcode-radio.png",
       category: "Production" as const,
       status: "ACTIVE" as const,
       clearance: "PUBLIC" as const,
@@ -316,7 +316,7 @@ export const databasePage = {
     {
       id: "IF-001",
       name: "Discord Community",
-      image: "/database/discord-logo.png",
+      image: "/discord-logo.png",
       category: "Interface" as const,
       status: "ACTIVE" as const,
       clearance: "PUBLIC" as const,
@@ -331,7 +331,7 @@ export const databasePage = {
     {
       id: "IF-003",
       name: "Auxchord",
-      image: "/database/auxchord-logo.png",
+      image: "/auxchord-logo.png",
       category: "Interface" as const,
       status: "ACTIVE" as const,
       clearance: "PUBLIC" as const,
@@ -346,7 +346,7 @@ export const databasePage = {
     {
       id: "IF-002",
       name: "TikTok Live",
-      image: "/database/tiktok-logo.png",
+      image: "/tiktok-logo.png",
       category: "Interface" as const,
       status: "ACTIVE" as const,
       clearance: "PUBLIC" as const,
@@ -361,7 +361,7 @@ export const databasePage = {
     {
       id: "EN-002",
       name: "Transmissions",
-      image: "",  // e.g. "/database/transmissions.png"
+      image: "",  // e.g. "/transmissions.png"
       category: "Entity" as const,
       status: "PENDING" as const,
       clearance: "RESTRICTED" as const,
@@ -376,7 +376,7 @@ export const databasePage = {
     {
       id: "PE-001",
       name: "Mr. Nice Guy Productions",
-      image: "/database/MC-nice.png",
+      image: "/MC-nice.png",
       category: "Personnel" as const,
       status: "ACTIVE" as const,
       clearance: "INTERNAL" as const,
@@ -451,7 +451,7 @@ export const databasePage = {
     {
       id: "EN-003",
       name: "Mac Modem",
-      image: "/database/mac-modem.png",
+      image: "/mac-modem.png",
       category: "Entity" as const,
       status: "ACTIVE" as const,
       clearance: "INTERNAL" as const,
@@ -466,7 +466,7 @@ export const databasePage = {
     {
       id: "EN-004",
       name: "DJ Floppydisc",
-      image: "/database/dj-floppydisc.png",
+      image: "/dj-floppydisc.png",
       category: "Entity" as const,
       status: "ACTIVE" as const,
       clearance: "INTERNAL" as const,
@@ -481,7 +481,7 @@ export const databasePage = {
     {
       id: "EN-005",
       name: "Cache Back",
-      image: "/database/cache-back.png",
+      image: "/cache-back.png",
       category: "Entity" as const,
       status: "ACTIVE" as const,
       clearance: "INTERNAL" as const,
@@ -526,7 +526,7 @@ export const databasePage = {
     {
       id: "EN-008",
       name: "Studio Rats",
-      image: "/database/studio-rats.png",
+      image: "/studio-rats.png",
       category: "Entity" as const,
       status: "ACTIVE" as const,
       clearance: "INTERNAL" as const,
@@ -586,7 +586,7 @@ export const databasePage = {
     {
       id: "IF-004",
       name: "Vouch'd",
-      image: "/database/vouchd-logo.png",
+      image: "/vouchd-logo.png",
       category: "Interface" as const,
       status: "ACTIVE" as const,
       clearance: "PUBLIC" as const,

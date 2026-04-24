@@ -269,6 +269,13 @@ export const databasePage = {
   categories: databaseCategories,
 
   dossiers: databaseDossiers,
+
+  terminalQuery: [
+    "SCAN DATABASE INDEX",
+    "SORT BY CATEGORY PRIORITY",
+    "FILTER STATUS != ARCHIVED",
+    "RETURN ACTIVE RECORDS",
+  ],
 };
 
 // ----- RELEASES PAGE -----

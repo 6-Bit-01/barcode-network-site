@@ -5,26 +5,23 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import type { DatabaseDossier } from "@/data/database-dossiers";
 
-function slugify(name: string) {
-  return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-}
-
-function toLegacyEntry(dossier: (typeof databasePage.dossiers)[number], index: number) {
+function toLegacyEntry(dossier: DatabaseDossier) {
   return {
     ...dossier,
-    id: dossier.id ?? `DB-${String(index + 1).padStart(3, "0")}`,
+    id: dossier.id,
     name: dossier.title,
-    clearance: (dossier.clearance ?? "PUBLIC") as "PUBLIC" | "INTERNAL" | "RESTRICTED",
-    role: dossier.role ?? (dossier.notes || dossier.summary),
-    origin: (dossier.origin ?? "KNOWN") as "KNOWN" | "UNKNOWN" | "UNVERIFIED" | "WITHHELD",
+    clearance: dossier.clearance,
+    role: dossier.role,
+    origin: dossier.origin,
   };
 }
 
 // Generate static paths for all entries
 export function generateStaticParams() {
   return databasePage.dossiers.map((entry) => ({
-    slug: entry.slug || slugify(entry.title),
+    slug: entry.slug,
   }));
 }
 
@@ -35,7 +32,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const entry = databasePage.dossiers.find((e) => (e.slug || slugify(e.title)) === slug);
+  const entry = databasePage.dossiers.find((e) => e.slug === slug);
   if (!entry) return { title: "Not Found — BARCODE Network" };
 
   return {
@@ -75,8 +72,8 @@ export default async function EntityPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const entryIndex = databasePage.dossiers.findIndex((e) => (e.slug || slugify(e.title)) === slug);
-  const entry = entryIndex >= 0 ? toLegacyEntry(databasePage.dossiers[entryIndex], entryIndex) : undefined;
+  const rawEntry = databasePage.dossiers.find((e) => e.slug === slug);
+  const entry = rawEntry ? toLegacyEntry(rawEntry) : undefined;
 
   if (!entry) notFound();
 

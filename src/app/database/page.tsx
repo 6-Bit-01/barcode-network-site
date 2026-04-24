@@ -2,6 +2,7 @@ import { databasePage } from "@/content";
 import { PageHero } from "@/components/LiveEffects";
 import { DatabaseTable } from "@/components/DatabaseTable";
 import type { Metadata } from "next";
+import type { DatabaseDossier } from "@/data/database-dossiers";
 
 export const metadata: Metadata = {
   title: "Database — BARCODE Network",
@@ -14,15 +15,15 @@ export const metadata: Metadata = {
   },
 };
 
-const databaseEntries = databasePage.dossiers.map((dossier, index) => ({
-  id: dossier.id ?? `DB-${String(index + 1).padStart(3, "0")}`,
+const databaseEntries = databasePage.dossiers.map((dossier: DatabaseDossier) => ({
+  id: dossier.id,
   name: dossier.title,
   image: dossier.image,
-  category: dossier.category as "Entity" | "Personnel" | "Sponsor" | "Interface" | "Production",
-  status: dossier.status as "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN",
-  clearance: (dossier.clearance ?? "PUBLIC") as "PUBLIC" | "INTERNAL" | "RESTRICTED",
-  role: dossier.role ?? (dossier.notes || dossier.summary),
-  origin: (dossier.origin ?? "KNOWN") as "KNOWN" | "UNKNOWN" | "UNVERIFIED" | "WITHHELD",
+  category: dossier.category,
+  status: dossier.status,
+  clearance: dossier.clearance,
+  role: dossier.role,
+  origin: dossier.origin,
   summary: dossier.summary,
   tags: dossier.tags,
   notes: dossier.notes,
@@ -82,9 +83,9 @@ export default function DatabasePage() {
               &gt; BARCODE_NETWORK // DATABASE QUERY
             </p>
             <div className="space-y-1 text-sm text-foreground/60">
-              {(databasePage as { terminalQuery?: string[] }).terminalQuery?.map((line, i) => (
+              {databasePage.terminalQuery.map((line, i) => (
                 <p key={i}>&gt; {line}</p>
-              )) ?? null}
+              ))}
               <p className="text-accent mt-3">
                 &gt; {databaseEntries.filter((e) => e.status === "ACTIVE").length} RECORDS FOUND
                 <span className="cursor-blink">_</span>

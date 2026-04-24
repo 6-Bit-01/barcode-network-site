@@ -10,10 +10,21 @@ function slugify(name: string) {
   return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
 }
 
+function toLegacyEntry(dossier: (typeof databasePage.dossiers)[number], index: number) {
+  return {
+    ...dossier,
+    id: `DB-${String(index + 1).padStart(3, "0")}`,
+    name: dossier.title,
+    clearance: "PUBLIC" as const,
+    role: dossier.notes || dossier.summary,
+    origin: "KNOWN" as const,
+  };
+}
+
 // Generate static paths for all entries
 export function generateStaticParams() {
-  return databasePage.entries.map((entry) => ({
-    slug: slugify(entry.name),
+  return databasePage.dossiers.map((entry) => ({
+    slug: entry.slug || slugify(entry.title),
   }));
 }
 
@@ -24,14 +35,14 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const entry = databasePage.entries.find((e) => slugify(e.name) === slug);
+  const entry = databasePage.dossiers.find((e) => (e.slug || slugify(e.title)) === slug);
   if (!entry) return { title: "Not Found — BARCODE Network" };
 
   return {
-    title: `${entry.name} — BARCODE Network Database`,
+    title: `${entry.title} — BARCODE Network Database`,
     description: entry.summary,
     openGraph: {
-      title: `${entry.name} — BARCODE Network Database`,
+      title: `${entry.title} — BARCODE Network Database`,
       description: entry.summary,
     },
   };
@@ -64,7 +75,8 @@ export default async function EntityPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const entry = databasePage.entries.find((e) => slugify(e.name) === slug);
+  const entryIndex = databasePage.dossiers.findIndex((e) => (e.slug || slugify(e.title)) === slug);
+  const entry = entryIndex >= 0 ? toLegacyEntry(databasePage.dossiers[entryIndex], entryIndex) : undefined;
 
   if (!entry) notFound();
 

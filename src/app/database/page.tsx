@@ -14,7 +14,19 @@ export const metadata: Metadata = {
   },
 };
 
-const databaseEntries = databasePage.entries;
+const databaseEntries = databasePage.dossiers.map((dossier, index) => ({
+  id: `DB-${String(index + 1).padStart(3, "0")}`,
+  name: dossier.title,
+  image: dossier.image,
+  category: dossier.category as "Entity" | "Personnel" | "Sponsor" | "Interface" | "Production",
+  status: (dossier.status === "LIVE" ? "ACTIVE" : dossier.status) as "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN",
+  clearance: "PUBLIC" as const,
+  role: dossier.notes || dossier.summary,
+  origin: "KNOWN" as const,
+  summary: dossier.summary,
+  tags: dossier.tags,
+  notes: dossier.notes,
+}));
 
 export default function DatabasePage() {
   return (
@@ -24,7 +36,7 @@ export default function DatabasePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16 sm:py-24">
           <PageHero
             label={databasePage.hero.label}
-            heading={databasePage.hero.heading}
+            heading={`${databasePage.hero.heading1} ${databasePage.hero.heading2}`}
             description={databasePage.hero.description}
           />
         </div>
@@ -47,10 +59,7 @@ export default function DatabasePage() {
               label="Categories"
               value={[...new Set(databaseEntries.map((e) => e.category))].length.toString()}
             />
-            <StatItem
-              label="Restricted"
-              value={databaseEntries.filter((e) => e.clearance === "RESTRICTED").length.toString()}
-            />
+            <StatItem label="Restricted" value="0" />
           </div>
         </div>
       </section>
@@ -70,9 +79,9 @@ export default function DatabasePage() {
               &gt; BARCODE_NETWORK // DATABASE QUERY
             </p>
             <div className="space-y-1 text-sm text-foreground/60">
-              {databasePage.terminalQuery.map((line, i) => (
+              {(databasePage as { terminalQuery?: string[] }).terminalQuery?.map((line, i) => (
                 <p key={i}>&gt; {line}</p>
-              ))}
+              )) ?? null}
               <p className="text-accent mt-3">
                 &gt; {databaseEntries.filter((e) => e.status === "ACTIVE").length} RECORDS FOUND
                 <span className="cursor-blink">_</span>

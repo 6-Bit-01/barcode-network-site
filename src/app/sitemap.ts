@@ -22,8 +22,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
   ];
 
   // Dynamic database pages
-  const databasePages: MetadataRoute.Sitemap = databasePage.entries.map((entry) => ({
-    url: `${base}/database/${slugify(entry.name)}`,
+  const databasePages: MetadataRoute.Sitemap = databasePage.dossiers.map((entry) => ({
+    url: `${base}/database/${entry.slug || slugify(entry.title)}`,
     lastModified: now,
     changeFrequency: "monthly" as const,
     priority: 0.6,

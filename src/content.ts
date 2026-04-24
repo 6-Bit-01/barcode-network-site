@@ -169,6 +169,35 @@ export const radioPage = {
       variant: "secondary",
     },
   ],
+
+  goDeeper: {
+    label: "// GO DEEPER",
+    heading: "Enter the Network",
+    cards: [
+      {
+        tag: "DATABASE",
+        title: "Explore Dossiers",
+        description: "Inspect entities, interfaces, and anomalies tied to BARCODE.",
+        cta: "Open Database →",
+        href: "/database",
+      },
+      {
+        tag: "TERMINAL",
+        title: "Access 6 Bit",
+        description: "Read directives and transmission logs from the host terminal.",
+        cta: "Open Terminal →",
+        href: "/terminal",
+      },
+      {
+        tag: "TRANSMISSIONS",
+        title: "Read Dispatches",
+        description: "Follow recovered signal posts and network incident reports.",
+        cta: "View Transmissions →",
+        href: "/transmissions",
+      },
+    ],
+    footnote: "All routes are monitored. Signal integrity not guaranteed.",
+  },
 };
 
 // ----- TERMINAL PAGE -----

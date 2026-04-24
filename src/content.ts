@@ -224,11 +224,6 @@ export const terminalPage = {
 
   accessPoints: [
     {
-      label: "Queue",
-      description: "Submit to the broadcast",
-      href: "/queue",
-    },
-    {
       label: "Transmissions",
       description: "Network dispatches",
       href: "/transmissions",

@@ -50,12 +50,6 @@ export const homePage = {
       status: "ACTIVE",
     },
     {
-      title: "AI Stream",
-      description: "24/7 AI broadcast. Pay-to-play queue. The gateway.",
-      href: "/queue",
-      status: "ACTIVE",
-    },
-    {
       title: "Database",
       description: "Dossier system. Entities, partners, sponsors, anomalies.",
       href: "/database",
@@ -86,7 +80,6 @@ export const homePage = {
   },
   quickLinks: [
     { label: "Discord", href: "EXTERNAL:discord" },
-    { label: "AI Stream", href: "/queue" },
     { label: "Database", href: "/database" },
     { label: "Submit Music", href: "/radio" },
   ],
@@ -107,9 +100,9 @@ export const radioPage = {
 
   schedule: {
     day: "Every Friday",
-    queueOpens: "6:30 PM PST",
-    showBegins: "6:50 PM PST",
-    firstTrack: "~6:55 PM PST",
+    queueOpens: "6:40 PM PST",
+    showBegins: "7:00 PM PST",
+    firstTrack: "~7:05 PM PST",
     notice:
       "BARCODE Radio is a live weekly broadcast. Submissions are only accepted during show hours.",
   },
@@ -309,7 +302,7 @@ export const databasePage = {
       origin: "KNOWN" as const,
       summary: "Community-powered live radio program. Accepts submissions via Auxchord. Broadcasts every Friday.",
       tags: ["radio", "broadcast", "producer"],
-      notes: "Queue opens 6:30 PM PST. Show starts 6:50 PM. First track ~6:55 PM.",
+      notes: "Queue opens 6:40 PM PST. Show starts 7:00 PM. First track ~6:55 PM.",
       link: "",
       files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
     },
@@ -778,65 +771,4 @@ export const terminalLogin = {
 export const liveBanner = {
   text: "LIVE NOW — BARCODE Network is transmitting",
   watchText: "Tune In →",
-};
-
-// ----- AI STREAM QUEUE PAGE -----
-
-export const queuePage = {
-  hero: {
-    label: "// SYSTEM: AI STREAM",
-    heading: "Request Queue",
-    description:
-      "The 24/7 AI broadcast stream. Submit a track, pick a tier, and your music enters the queue. The B-show that feeds the A-show.",
-  },
-
-  steps: [
-    {
-      number: "01",
-      title: "Pick a Tier",
-      description:
-        "Free plays when no paid requests are waiting. $3 Featured, $5 Fast Lane, or $10 Front Row to skip the line. Higher tiers always play first.",
-    },
-    {
-      number: "02",
-      title: "Submit & Pay",
-      description:
-        "Enter your track info. Free requests go straight to the queue. Paid tiers complete checkout via Stripe and get a receipt.",
-    },
-    {
-      number: "03",
-      title: "Get Played",
-      description:
-        "The AI stream picks up your track automatically. Paid requests are guaranteed plays — carry over if not played before reset. Getting skipped? Upgrade your tier.",
-    },
-  ],
-
-  rules: [
-    "Any song, any genre. This is the AI stream — not the A-show. This is novelty.",
-    "Free submissions play only when no paid requests are in the queue.",
-    "Paid requests are guaranteed plays. If not played before the nightly reset, they carry over.",
-    "Front Row ($10) plays first. Fast Lane ($5) plays when no Front Row. Featured ($3) plays when no Front Row or Fast Lane. Free plays last.",
-    "You can upgrade your tier at any time — just pay the difference.",
-    "Queue resets at midnight PST. Free entries are cleared; paid entries persist.",
-    "No paid requests accepted in the last hour before reset (11 PM PST cutoff). Free submissions still accepted.",
-    "The AI stream promotes BARCODE Radio — the real show every Friday.",
-  ],
-
-  cta: {
-    label: "// THE REAL SHOW",
-    heading: "This is the gateway. The real show is BARCODE Radio.",
-    description:
-      "Every Friday, 6 Bit goes live with real reactions, real support, and real community. The AI stream is the signal — the A-show is the frequency.",
-    buttonText: "BARCODE Radio →",
-  },
-
-  terminalOutput: [
-    "AI_STREAM ..................... ARMED",
-    "QUEUE_ENGINE .................. ONLINE",
-    "STRIPE_GATEWAY ................ CONNECTED",
-    "TIER_SYSTEM ................... FREE / 3 / 5 / 10",
-    "UPGRADE_PATH .................. ENABLED",
-    "NIGHTLY_RESET ................. 00:00 PST",
-    "A_SHOW_REDIRECT ............... BARCODE RADIO",
-  ],
 };

@@ -318,7 +318,7 @@ export default async function EntityPage({
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
           <div className="bg-surface border border-border p-6 font-mono">
             <p className="text-xs text-muted mb-4">
-              &gt; BARCODE_NETWORK // DOSSIER QUERY
+              &gt; BARCODE NETWORK // DOSSIER QUERY
             </p>
             <div className="space-y-1 text-sm text-foreground/60">
               <p>&gt; SELECT * FROM network_dossiers WHERE id = &apos;{entry.id}&apos;</p>

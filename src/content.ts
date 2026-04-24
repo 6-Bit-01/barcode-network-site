@@ -544,6 +544,44 @@ export const transmissionsFeed = [
   },
 ];
 
+// ----- TERMINAL LOGIN CONFIG -----
+
+export const terminalLogin = {
+  username: "6BIT",
+  bootSequence: [
+    "BARCODE_NET v3.2.1 — SECURE TERMINAL",
+    "Establishing encrypted connection...",
+    "Routing through network nodes... OK",
+    "Verifying credentials...",
+  ],
+  codeFlash: [
+    "0x4F 0x70 0x65 0x72 0x61 0x74 0x6F 0x72",
+    "DECRYPT: ██████████ PASS",
+    "LOAD MODULE: broadcast.core",
+    "LOAD MODULE: signal.router",
+    "LOAD MODULE: freq.scanner",
+    "INIT DOSSIER_ENGINE .......... OK",
+    "INIT DATABASE_LINK ........... OK",
+    "INIT RADIO_FREQ .............. OK",
+    "SYNC NETWORK_STATUS .......... CONNECTED",
+    "AUTH TOKEN: BN-6B1T-0x00FF88",
+    "SESSION: ENCRYPTED // LEVEL_3",
+    "mapping /terminal ............ READY",
+    "mapping /database ............ READY",
+    "mapping /radio ............... READY",
+    "mapping /releases ............ READY",
+    "mapping /merch ............... READY",
+    "ALL SYSTEMS OPERATIONAL",
+  ],
+  accessGranted: "ACCESS GRANTED — WELCOME BACK, OPERATOR",
+  navItems: [
+    { label: "DATABASE", href: "/database", description: "Entity and program index" },
+    { label: "RADIO", href: "/radio", description: "Live broadcast frequency" },
+    { label: "RELEASES", href: "/releases", description: "Transmission archive" },
+    { label: "MERCH", href: "/merch", description: "Supply line" },
+  ],
+};
+
 // ----- LIVE BANNER -----
 
 export const liveBanner = {

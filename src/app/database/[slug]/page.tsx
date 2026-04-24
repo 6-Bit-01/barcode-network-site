@@ -318,13 +318,15 @@ export default async function EntityPage({
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
           <div className="bg-surface border border-border p-6 font-mono">
             <p className="text-xs text-muted mb-4">
-              &gt; BARCODE NETWORK // DOSSIER QUERY
+              &gt; BARCODE NETWORK // DOSSIER STATUS
             </p>
             <div className="space-y-1 text-sm text-foreground/60">
-              <p>&gt; SELECT * FROM network_dossiers WHERE id = &apos;{entry.id}&apos;</p>
-              <p>&gt; RECORD FOUND: {entry.name}</p>
-              <p>&gt; STATUS: {entry.status} {"//"} CLEARANCE: {entry.clearance}</p>
-              <p>&gt; CATEGORY: {entry.category} {"//"} ORIGIN: {entry.origin}</p>
+              <p>&gt; DOSSIER ID: {entry.id}</p>
+              <p>&gt; SUBJECT: {entry.name}</p>
+              <p>&gt; STATUS: {entry.status}</p>
+              <p>&gt; CLEARANCE: {entry.clearance}</p>
+              <p>&gt; CATEGORY: {entry.category}</p>
+              <p>&gt; ORIGIN: {entry.origin}</p>
               <p className="text-accent mt-3">
                 &gt; DOSSIER LOADED<span className="cursor-blink">_</span>
               </p>

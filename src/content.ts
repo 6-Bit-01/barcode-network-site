@@ -367,8 +367,65 @@ export const merchPage = {
       "Physical signal carriers and branded network artifacts. Limited availability.",
   },
 
-  notice:
-    "Merch access is currently limited. More artifacts may surface as the network stabilizes.",
+  storeUrl: "https://www.6bithiphop.com",
+
+  products: [
+    {
+      tag: "APPAREL",
+      name: "Decode The Future T-Shirt",
+      price: "$20.00",
+      originalPrice: "$25.00",
+      href: "https://www.6bithiphop.com",
+    },
+    {
+      tag: "HEADWEAR",
+      name: "Neon Stream BARCODE Embroidered Hat",
+      price: "$20.00",
+      originalPrice: "$25.00",
+      href: "https://www.6bithiphop.com",
+    },
+    {
+      tag: "HEADWEAR",
+      name: "Static Glitch BARCODE Hat",
+      price: "$20.00",
+      originalPrice: "$25.00",
+      href: "https://www.6bithiphop.com",
+    },
+    {
+      tag: "ACCESSORY",
+      name: "6 Bit Badge Sticker",
+      price: "$1.50",
+      originalPrice: "$2.00",
+      href: "https://www.6bithiphop.com",
+    },
+  ],
+
+  book: {
+    tag: "CYBERPUNK // FICTION",
+    title: "OBSERVER NOT FOUND",
+    author: "6 Bit",
+    format: "Hardcover — 90 pages",
+    description:
+      "A cyberpunk thriller where perception shapes reality and observation is a dangerous act. Rogue transmissions, corrupted memories, and a world that is watching back.",
+    prices: {
+      kindle: "$6.00",
+      paperback: "$10.00",
+      hardcover: "$20.00",
+    },
+    href: "https://www.amazon.com",
+  },
+
+  notice: "Future drops announced through official channels.",
+  discordCta: "Join Discord for drop alerts →",
+  systemLog: [
+    "BARCODE_NETWORK // SUPPLY_SYSTEM",
+    "SUPPLY_CHAIN .................. ACTIVE",
+    "INVENTORY ..................... 1ST WAVE",
+    "DISTRIBUTION .................. ONLINE",
+    "DROP_ALERT_SYSTEM ............. ARMED",
+    "BOOK: OBSERVER NOT FOUND ...... IN PRINT",
+    "SUPPLY CHAIN ACTIVE _",
+  ],
 };
 
 // ----- DATABASE ENTRY TEMPLATES / UI COPY -----

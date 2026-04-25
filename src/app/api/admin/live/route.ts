@@ -43,7 +43,7 @@ function isWithinBroadcastWindow(): boolean {
 
   if (weekday !== "Fri") return false;
   const t = hour * 60 + minute;
-  return t >= 18 * 60 + 30 && t < 23 * 60 + 30;
+  return t >= 18 * 60 + 40 && t < 23 * 60 + 30;
 }
 
 // ---- GET: Read status (public) ----

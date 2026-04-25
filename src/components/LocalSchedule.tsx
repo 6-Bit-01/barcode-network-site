@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useLiveStatus } from "./LiveStatusProvider";
 
 /**
- * Converts a PST time string (e.g. "6:30 PM") to the visitor's
+ * Converts a PST time string (e.g. "6:40 PM") to the visitor's
  * local timezone. Falls back to showing the original PST time
  * if conversion fails or before hydration.
  */
@@ -191,11 +191,11 @@ export function LocalSchedule({
       </div>
       <p className="text-sm text-foreground/90 font-mono leading-relaxed">
         <span className="text-accent">{day}</span>{" "}
-        — Queue opens{" "}
+        — submissions open{" "}
         <span className="text-foreground">{displayQueue}</span>,{" "}
-        show begins{" "}
+        show starts{" "}
         <span className="text-foreground">{displayShow}</span>,{" "}
-        first track{" "}
+        music starts{" "}
         <span className="text-foreground">{displayFirst}</span>
       </p>
       {isConverted && (

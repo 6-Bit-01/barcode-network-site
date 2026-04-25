@@ -58,6 +58,23 @@ const originColors: Record<string, string> = {
   WITHHELD: "text-muted",
 };
 
+type DatabaseEntry = (typeof databasePage.entries)[number];
+
+function buildTerminalLead(entry: DatabaseEntry) {
+  const commands = [
+    "TRACE DOSSIER ROUTE",
+    "PULL ENTITY RECORD",
+    "DECODE NETWORK SIGNATURE",
+    "OPEN ARCHIVE NODE",
+  ];
+
+  const commandIndex = entry.id
+    .split("")
+    .reduce((sum, char) => sum + char.charCodeAt(0), 0) % commands.length;
+
+  return `> ${commands[commandIndex]} // TARGET: ${entry.id} // ${entry.category.toUpperCase()}`;
+}
+
 export default async function EntityPage({
   params,
 }: {
@@ -67,6 +84,7 @@ export default async function EntityPage({
   const entry = databasePage.entries.find((e) => slugify(e.name) === slug);
 
   if (!entry) notFound();
+  const terminalLead = buildTerminalLead(entry);
 
   return (
     <div className="pt-14">
@@ -312,7 +330,7 @@ export default async function EntityPage({
               &gt; BARCODE_NETWORK // DOSSIER QUERY
             </p>
             <div className="space-y-1 text-sm text-foreground/60">
-              <p>&gt; SELECT * FROM network_dossiers WHERE id = &apos;{entry.id}&apos;</p>
+              <p>{terminalLead}</p>
               <p>&gt; RECORD FOUND: {entry.name}</p>
               <p>&gt; STATUS: {entry.status} // CLEARANCE: {entry.clearance}</p>
               <p>&gt; CATEGORY: {entry.category} // ORIGIN: {entry.origin}</p>

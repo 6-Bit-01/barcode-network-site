@@ -27,7 +27,7 @@ function isWithinBroadcastWindow(): boolean {
 
   if (weekday !== "Fri") return false;
   const t = hour * 60 + minute;
-  return t >= 18 * 60 + 30 && t < 23 * 60 + 30; // 6:30 PM – 11:30 PM PST
+  return t >= 18 * 60 + 40 && t < 23 * 60 + 30; // 6:40 PM – 11:30 PM PST
 }
 
 const TIER_CLASS: Record<QueueTier, string> = {

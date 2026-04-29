@@ -2,6 +2,7 @@ import Link from "next/link";
 import { radioPage, externalLinks } from "@/content";
 import { RadioHero, SectionDot } from "@/components/LiveEffects";
 import { LocalSchedule } from "@/components/LocalSchedule";
+import { SmartTikTokLink } from "@/components/SmartTikTokLink";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -67,6 +68,13 @@ export default function RadioPage() {
               <span className="text-lg">{radioPage.hero.discordButton.emoji}</span>
               {radioPage.hero.discordButton.text}
             </a>
+          </div>
+          <div className="mt-4 max-w-lg">
+            <SmartTikTokLink
+              className="inline-flex w-full items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
+              offlineLabel="TikTok Signal"
+              liveLabel="TikTok Live // Tune In"
+            />
           </div>
         </div>
       </section>

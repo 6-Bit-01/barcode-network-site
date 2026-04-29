@@ -14,7 +14,19 @@ export const metadata: Metadata = {
   },
 };
 
-const databaseEntries = databasePage.entries;
+const databaseEntries = databasePage.dossiers.map((entry) => ({
+  id: entry.slug.toUpperCase(),
+  name: entry.title,
+  image: entry.image,
+  category: entry.category,
+  status: entry.status,
+  clearance: "PUBLIC",
+  role: entry.category,
+  origin: "UNVERIFIED",
+  summary: entry.summary,
+  tags: entry.tags,
+  notes: entry.notes,
+}));
 
 export default function DatabasePage() {
   return (
@@ -24,7 +36,7 @@ export default function DatabasePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16 sm:py-24">
           <PageHero
             label={databasePage.hero.label}
-            heading={databasePage.hero.heading}
+            heading={`${databasePage.hero.heading1} ${databasePage.hero.heading2}`}
             description={databasePage.hero.description}
           />
         </div>
@@ -70,9 +82,9 @@ export default function DatabasePage() {
               &gt; BARCODE_NETWORK // DATABASE QUERY
             </p>
             <div className="space-y-1 text-sm text-foreground/60">
-              {databasePage.terminalQuery.map((line, i) => (
-                <p key={i}>&gt; {line}</p>
-              ))}
+	              {(databasePage as { terminalQuery?: string[] }).terminalQuery?.map((line, i) => (
+	                <p key={i}>&gt; {line}</p>
+	              )) || null}
               <p className="text-accent mt-3">
                 &gt; {databaseEntries.filter((e) => e.status === "ACTIVE").length} RECORDS FOUND
                 <span className="cursor-blink">_</span>

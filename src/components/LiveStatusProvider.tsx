@@ -15,7 +15,7 @@ interface LiveStatusContextType {
 const LiveStatusContext = createContext<LiveStatusContextType>({
   isLive: false,
   toggleLive: () => {},
-  streamUrl: "https://www.tiktok.com/@six.bit/live",
+  streamUrl: "https://www.tiktok.com/@six.bit",
   setStreamUrl: () => {},
   isScheduled: false,
   isAdmin: false,
@@ -29,7 +29,7 @@ export function useLiveStatus() {
 export function LiveStatusProvider({ children }: { children: ReactNode }) {
   const [isLive, setIsLive] = useState(false);
   const [isScheduled, setIsScheduled] = useState(false);
-  const [streamUrl, setStreamUrlState] = useState("https://www.tiktok.com/@six.bit/live");
+  const [streamUrl, setStreamUrlState] = useState("https://www.tiktok.com/@six.bit");
   const [manualOverride, setManualOverride] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 

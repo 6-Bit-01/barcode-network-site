@@ -47,42 +47,6 @@ export const transmissions: Transmission[] = [
       "If you're reading this, you've already tuned in.",
     ],
   },
-  {
-    slug: "queue-system-explained",
-    title: "The Queue: A Breakdown of the Transmission Protocol",
-    date: "2025-07-08",
-    author: "BARCODE HQ",
-    tags: ["queue", "technical", "guide"],
-    excerpt:
-      "How submissions enter the BARCODE broadcast queue, how tiers work, and what happens when your transmission reaches the front of the line.",
-    body: [
-      "The BARCODE queue isn't a playlist. It's a priority-weighted transmission buffer. Submissions enter at the back and advance forward, but not all at the same speed.",
-      "<strong>Free tier</strong> — anyone can submit. Zero cost, zero friction. Your entry joins the back of the queue and advances naturally. Rate limited to 3 submissions per hour to prevent flooding.",
-      '<strong>Featured ($3)</strong> — a small signal boost. Your submission skips ahead of free entries and gets a green highlight in the queue display. Think of it as "I believe in this enough to buy it a coffee."',
-      "<strong>Fast Lane ($5)</strong> — meaningful queue advancement. Jumps ahead of both Free and Featured entries. The yellow tier. For when you want your transmission heard sooner rather than later.",
-      "<strong>Front Row ($10)</strong> — maximum priority. Your entry goes to the front of the queue, behind only other Front Row submissions. The red tier. First in line, first on air.",
-      "All payments are processed through Stripe. No accounts required — just submit, pay, and your transmission enters the buffer. The queue processes entries in tier-weighted order during live broadcasts.",
-      "Every submission that airs gets logged. Play counts, timestamps, tier — all tracked. The system remembers every signal that passed through.",
-    ],
-  },
-  {
-    slug: "building-in-public",
-    title: "Building in Public: The BARCODE Dev Log",
-    date: "2025-07-05",
-    author: "BARCODE HQ",
-    tags: ["dev-log", "technical", "open-source"],
-    excerpt:
-      "A look behind the broadcast — the tech stack, the decisions, and why we're building BARCODE the way we are.",
-    body: [
-      "BARCODE runs on Next.js, Tailwind CSS, Upstash Redis, and Stripe. It deploys to Vercel. The OBS overlay connects via iframe. The Discord bot polls the API. It's a frankenstein of modern web tools stitched together with intent.",
-      "Why Next.js? Because server-side rendering matters for SEO, and static generation matters for speed. Every database dossier is pre-rendered at build time. The queue page is dynamic. The admin panel is server-authenticated.",
-      "Why Upstash Redis? Because the queue needs to be fast, persistent, and accessible from both the website and external services (Discord bot, OBS overlay, future stream engine). Redis is the nervous system.",
-      "Why Stripe? Because musicians deserve to get paid, and payment infrastructure should be invisible. No accounts, no sign-ups. Scan → pay → you're in the queue. That's it.",
-      "The CRT aesthetic isn't decoration — it's philosophy. Old technology had character. Scan lines, phosphor glow, signal degradation — these aren't bugs, they're texture. BARCODE looks the way it sounds: analog warmth through digital pipes.",
-      "Everything is being built incrementally. Phase 1 was the core site. Phase 2 added the Discord bot. Phase 3 (you're reading it) is the blog. Phase 4 will be the AI stream automation engine. Each phase adds a new dimension to the broadcast.",
-      "We're documenting the process because building in public creates accountability. And because someone, somewhere, is trying to build something similar and could use a reference signal.",
-    ],
-  },
 ];
 
 // ── Utility Functions ───────────────────────────────────────

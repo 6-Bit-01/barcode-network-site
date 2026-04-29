@@ -374,6 +374,77 @@ export const databasePage = {
       link: "",
       files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
     },
+
+    {
+      slug: "transmissions",
+      title: "Transmissions",
+      category: "Entity",
+      image: "",
+      summary:
+        "Network blog and long-form content system. Signal archives and deep transmissions.",
+      status: "PENDING",
+      tags: ["systems", "automation", "producer"],
+      notes:
+        "Status: initializing. Content pipeline under construction. Origin data incomplete.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      slug: "mind-fanatic",
+      title: "Mind Fanatic",
+      category: "Personnel",
+      image: "",
+      summary:
+        "Moderator within both the Discord environment and BARCODE Radio operations. Known for structured thinking and narrative breakdowns.",
+      status: "ACTIVE",
+      tags: ["mod", "writer", "systems", "broadcast"],
+      notes:
+        "Active moderation role across Discord and BARCODE Radio. Provides written analysis and interpretive commentary.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      slug: "hellcatnz",
+      title: "HellcatNZ",
+      category: "Personnel",
+      image: "",
+      summary:
+        "Technical moderator contributing advanced Discord system development, automation, and experimental integrations.",
+      status: "ACTIVE",
+      tags: ["mod", "systems", "tech", "automation", "ai"],
+      notes:
+        "Develops and maintains advanced Discord bot integrations. Hosts daily AI music competitions.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      slug: "the-void",
+      title: "The Void",
+      category: "Production",
+      image: "",
+      summary:
+        "[CLASSIFIED] — A late-night signal detected on an unregistered frequency with intermittent interference.",
+      status: "PENDING",
+      tags: ["broadcast", "producer", "systems"],
+      notes:
+        "File sealed. Pre-production status confirmed. Additional data restricted.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      slug: "mike",
+      title: "Mike",
+      category: "Personnel",
+      image: "",
+      summary:
+        "Systems architect and infrastructure operator responsible for site development and deployment pipelines.",
+      status: "ACTIVE",
+      tags: ["systems", "tech", "engineer", "architecture"],
+      notes:
+        "Maintains barcode-network.com and handles deployment/infrastructure operations.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
     {
       slug: "mac-modem",
       title: "Mac Modem",
@@ -413,6 +484,77 @@ export const databasePage = {
       tags: ["entity", "archive", "data"],
       notes:
         "Associated with leftover cultural data and recovery aesthetics.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+
+    {
+      slug: "sheila",
+      title: "Sheila",
+      category: "Entity",
+      image: "",
+      summary:
+        "Executive manager layer responsible for operational control, boundaries, and outcomes across volatile cycles.",
+      status: "ACTIVE",
+      tags: ["executive", "manager", "handler"],
+      notes:
+        "Identified as BARCODE Executive and manager of 6 Bit. Full operational scope remains unknown.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      slug: "cliff",
+      title: "Cliff",
+      category: "Entity",
+      image: "",
+      summary:
+        "Stagehand Entity managing unseen logistical layers, setup/reset operations, and off-record fixes.",
+      status: "ACTIVE",
+      tags: ["stagehand", "tech", "broadcast"],
+      notes:
+        "Frequently seen carrying equipment he clearly doesn't understand, but it ends up plugged in correctly.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      slug: "9-bit",
+      title: "9 Bit",
+      category: "Entity",
+      image: "",
+      summary:
+        "Appears only in fragmented records with suppressed routes and restricted access flags.",
+      status: "UNKNOWN",
+      tags: ["ai", "systems", "virus"],
+      notes:
+        "Entry visibility limited by Network-level restriction. Retrieval attempts trigger redaction protocol.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      slug: "galaknoise",
+      title: "GALAKNOISE",
+      category: "Entity",
+      image: "",
+      summary:
+        "AI Entity transmitting BARCODE-compatible beats from an unregistered derelict satellite.",
+      status: "ACTIVE",
+      tags: ["ai", "producer", "automation"],
+      notes:
+        "Transmission source mapped to unregistered orbital hardware; signal quality remains stable.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      slug: "oreaganomics",
+      title: "Oreaganomics",
+      category: "Sponsor",
+      image: "",
+      summary:
+        "Recurring sponsor with a volatile BARCODE relationship that led to policy reforms.",
+      status: "ACTIVE",
+      tags: ["sponsor", "broadcast", "artist"],
+      notes:
+        "Ban → appeal → reinstatement cycle triggered the 'Oreaganomics Clause' submission policy.",
       link: "",
       files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
     },

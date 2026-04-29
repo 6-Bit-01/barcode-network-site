@@ -15,7 +15,7 @@ const navItems = [
   { href: "/database", label: "Database" },
   { href: "/releases", label: "Releases" },
   { href: "/transmissions", label: "Transmissions" },
-  { href: "/merch", label: "Merch" }
+  { href: "/merch", label: "Merch" },
 ];
 
 export function Header() {

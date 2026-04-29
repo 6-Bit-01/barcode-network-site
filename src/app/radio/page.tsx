@@ -51,24 +51,24 @@ export default function RadioPage() {
           {/* Primary CTAs — above the fold */}
           <div className="max-w-lg">
             <div className="flex flex-col sm:flex-row gap-4">
-            <a
-              href={externalLinks.auxchord}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold bg-accent text-background hover:bg-accent-dim transition-all text-center"
-            >
-              <span className="text-lg">{radioPage.hero.submitButton.emoji}</span>
-              {radioPage.hero.submitButton.text}
-            </a>
-            <a
-              href={externalLinks.discord}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
-            >
-              <span className="text-lg">{radioPage.hero.discordButton.emoji}</span>
-              {radioPage.hero.discordButton.text}
-            </a>
+              <a
+                href={externalLinks.auxchord}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold bg-accent text-background hover:bg-accent-dim transition-all text-center"
+              >
+                <span className="text-lg">{radioPage.hero.submitButton.emoji}</span>
+                {radioPage.hero.submitButton.text}
+              </a>
+              <a
+                href={externalLinks.discord}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
+              >
+                <span className="text-lg">{radioPage.hero.discordButton.emoji}</span>
+                {radioPage.hero.discordButton.text}
+              </a>
             </div>
             <a
               href={externalLinks.tiktok}

@@ -6,7 +6,7 @@ const defaultMessages = [
   "SYS.UPTIME: 847:23:09",
   "SIGNAL.SCAN: monitoring 47 frequencies",
   "NET.STATUS: all nodes operational",
-  "QUEUE.CHECK: transmission log synchronized",
+  "QUEUE.CHECK: 3 transmissions pending",
   "SECURITY.SCAN: perimeter clear",
   "DATA.SYNC: network database up to date",
   "BROADCAST.READY: awaiting signal",

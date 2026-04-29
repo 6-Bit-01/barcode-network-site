@@ -24,6 +24,14 @@ function resolveHref(href: string): string {
 }
 
 export default function TerminalPage() {
+  const dossierRows = [
+    { label: "Codename", value: terminalPage.dossier.codename, accent: true },
+    { label: "Designation", value: terminalPage.dossier.designation },
+    { label: "Status", value: terminalPage.dossier.status, accent: true },
+    { label: "Classification", value: terminalPage.dossier.classification },
+    { label: "First Seen", value: terminalPage.dossier.firstSeen },
+  ];
+
   return (
     <div className="pt-14">
       {/* Login Terminal */}
@@ -47,7 +55,7 @@ export default function TerminalPage() {
               </div>
 
               <div className="space-y-4">
-                {terminalPage.dossier.map((row) => (
+                {dossierRows.map((row) => (
                   <InfoRow
                     key={row.label}
                     label={row.label}
@@ -68,9 +76,8 @@ export default function TerminalPage() {
               </div>
 
               <div className="text-base text-foreground/70 leading-relaxed space-y-4">
-                {terminalPage.about.map((paragraph, i) => (
-                  <p key={i}>{paragraph}</p>
-                ))}
+                <p>{terminalPage.dossier.notes}</p>
+                <p className="text-accent/80 italic">{terminalPage.quote}</p>
               </div>
             </div>
           </div>
@@ -108,7 +115,7 @@ export default function TerminalPage() {
               &gt; BARCODE_NETWORK // TERMINAL ACCESS
             </p>
             <div className="space-y-1 text-sm text-foreground/60">
-              {terminalPage.terminalOutput.map((line, i) => (
+              {terminalPage.terminalLines.map((line, i) => (
                 <p key={i}>&gt; {line}</p>
               ))}
               <p className="text-accent mt-4">

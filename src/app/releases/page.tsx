@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   },
 };
 
-const releases = releasesPage.catalog;
+const releases = releasesPage.releases;
 
 export default function ReleasesPage() {
   return (
@@ -25,7 +25,7 @@ export default function ReleasesPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16 sm:py-24">
           <PageHero
             label={releasesPage.hero.label}
-            heading={releasesPage.hero.heading}
+            heading={`${releasesPage.hero.heading1} ${releasesPage.hero.heading2}`}
             description={releasesPage.hero.description}
           />
         </div>
@@ -92,53 +92,8 @@ export default function ReleasesPage() {
                     {release.description}
                   </p>
 
-                  {/* Stream Links */}
-                  <div className="flex flex-wrap gap-2">
-                    {release.links.spotify && (
-                      <a
-                        href={release.links.spotify}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs uppercase tracking-wider px-3 py-1.5 border border-border text-muted hover:border-accent hover:text-accent transition-all"
-                      >
-                        Spotify
-                      </a>
-                    )}
-                    {release.links.apple && (
-                      <a
-                        href={release.links.apple}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs uppercase tracking-wider px-3 py-1.5 border border-border text-muted hover:border-accent hover:text-accent transition-all"
-                      >
-                        Apple Music
-                      </a>
-                    )}
-                    {release.links.youtube && (
-                      <a
-                        href={release.links.youtube}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs uppercase tracking-wider px-3 py-1.5 border border-border text-muted hover:border-accent hover:text-accent transition-all"
-                      >
-                        YouTube Music
-                      </a>
-                    )}
-                    {release.links.soundcloud && (
-                      <a
-                        href={release.links.soundcloud}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs uppercase tracking-wider px-3 py-1.5 border border-border text-muted hover:border-accent hover:text-accent transition-all"
-                      >
-                        SoundCloud
-                      </a>
-                    )}
-                    {Object.keys(release.links).length === 0 && (
-                      <span className="text-xs uppercase tracking-wider px-3 py-1.5 border border-red-400/20 text-red-400/60">
-                        SIGNAL LOST — FREQUENCIES UNAVAILABLE
-                      </span>
-                    )}
+                  <div className="text-xs uppercase tracking-wider px-3 py-1.5 border border-border text-muted inline-block">
+                    ARCHIVE ENTRY
                   </div>
                 </div>
                 </div>
@@ -147,22 +102,18 @@ export default function ReleasesPage() {
           </div>
 
           <p className="text-xs text-muted/50 mt-8 uppercase tracking-wider font-mono">
-            // {releases.length} TRANSMISSIONS INDEXED
+            {"//"} {releases.length} TRANSMISSIONS INDEXED
           </p>
         </div>
       </section>
 
-      {/* CTA */}
       <section>
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16 text-center">
-          <p className="text-base text-muted mb-6">
-            {releasesPage.bottomCta.text}
-          </p>
           <Link
-            href={releasesPage.bottomCta.buttonHref}
+            href="/transmissions"
             className="inline-flex items-center px-6 py-3 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all"
           >
-            {releasesPage.bottomCta.buttonText}
+            View Transmissions →
           </Link>
         </div>
       </section>

@@ -12,7 +12,6 @@ const navItems = [
   { href: "/", label: "HQ" },
   { href: "/terminal", label: "Terminal" },
   { href: "/radio", label: "Radio" },
-  { href: "/queue", label: "Queue" },
   { href: "/database", label: "Database" },
   { href: "/releases", label: "Releases" },
   { href: "/transmissions", label: "Transmissions" },

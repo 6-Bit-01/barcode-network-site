@@ -226,7 +226,7 @@ export function BroadcastVideo({
       {transcript && (
         <div className="mt-4 border border-border/50 bg-surface/50 p-4">
           <p className="text-xs text-muted/40 uppercase tracking-[0.3em] mb-2 font-mono">
-            // Transcript
+            {"// Transcript"}
           </p>
           <p className="text-sm text-foreground/50 leading-relaxed font-mono italic">
             &quot;{transcript}&quot;

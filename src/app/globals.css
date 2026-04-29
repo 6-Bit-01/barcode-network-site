@@ -1,251 +1,315 @@
-@import tailwindcss;
+@import "tailwindcss";
 
 @theme inline {
-  --color-background #0a0a0a;
-  --color-foreground #e0e0e0;
-  --color-accent #00ff88;
-  --color-accent-dim #00cc6a;
-  --color-danger #ff3333;
-  --color-danger-glow #ff0000;
-  --color-surface #111111;
-  --color-surface-light #1a1a1a;
-  --color-border #222222;
-  --color-border-light #333333;
-  --color-muted #666666;
-  --font-sans var(--font-geist-sans);
-  --font-mono var(--font-geist-mono);
+  --color-background: #0a0a0a;
+  --color-foreground: #e0e0e0;
+  --color-accent: #00ff88;
+  --color-accent-dim: #00cc6a;
+  --color-danger: #ff3333;
+  --color-danger-glow: #ff0000;
+  --color-surface: #111111;
+  --color-surface-light: #1a1a1a;
+  --color-border: #222222;
+  --color-border-light: #333333;
+  --color-muted: #666666;
+  --font-sans: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
- {
-  box-sizing border-box;
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 html {
-   Fluid base 15px at 375px → 18px at 1440px 
-  font-size clamp(15px, 14px + 0.25vw, 18px);
+  font-size: clamp(15px, 14px + 0.25vw, 18px);
 }
 
 body {
-  background var(--color-background);
-  color var(--color-foreground);
-  font-family var(--font-mono), monospace;
-  min-height 100vh;
-  font-size 1rem;
-  line-height 1.6;
-  overflow-x hidden;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-mono), monospace;
+  min-height: 100vh;
+  font-size: 1rem;
+  line-height: 1.6;
+  overflow-x: hidden;
 }
 
- Scanline overlay effect 
-.scanlinesafter {
-  content ;
-  position fixed;
-  top 0;
-  left 0;
-  width 100%;
-  height 100%;
-  pointer-events none;
-  background repeating-linear-gradient(
+.scanlines::after {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background: repeating-linear-gradient(
     0deg,
     rgba(0, 0, 0, 0.03) 0px,
     rgba(0, 0, 0, 0.03) 1px,
     transparent 1px,
     transparent 2px
   );
-  z-index 9999;
+  z-index: 9999;
 }
 
- Live pulse animation 
 @keyframes live-pulse {
-  0%, 100% {
-    box-shadow 0 0 4px var(--color-danger-glow), 0 0 8px var(--color-danger-glow);
-    opacity 1;
+  0%,
+  100% {
+    box-shadow: 0 0 4px var(--color-danger-glow), 0 0 8px var(--color-danger-glow);
+    opacity: 1;
   }
+
   50% {
-    box-shadow 0 0 12px var(--color-danger-glow), 0 0 24px var(--color-danger-glow);
-    opacity 0.7;
+    box-shadow: 0 0 12px var(--color-danger-glow), 0 0 24px var(--color-danger-glow);
+    opacity: 0.7;
   }
 }
 
 .live-indicator {
-  animation live-pulse 1.5s ease-in-out infinite;
+  animation: live-pulse 1.5s ease-in-out infinite;
 }
 
- Glitch effect for headings 
 @keyframes glitch {
-  0%, 100% { transform translate(0); }
-  20% { transform translate(-2px, 2px); }
-  40% { transform translate(-2px, -2px); }
-  60% { transform translate(2px, 2px); }
-  80% { transform translate(2px, -2px); }
+  0%,
+  100% {
+    transform: translate(0);
+  }
+
+  20% {
+    transform: translate(-2px, 2px);
+  }
+
+  40% {
+    transform: translate(-2px, -2px);
+  }
+
+  60% {
+    transform: translate(2px, 2px);
+  }
+
+  80% {
+    transform: translate(2px, -2px);
+  }
 }
 
-.glitch-hoverhover {
-  animation glitch 0.3s ease-in-out;
+.glitch-hover:hover {
+  animation: glitch 0.3s ease-in-out;
 }
 
- Terminal cursor blink 
 @keyframes cursor-blink {
-  0%, 100% { opacity 1; }
-  50% { opacity 0; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
 }
 
 .cursor-blink {
-  animation cursor-blink 1s step-end infinite;
+  animation: cursor-blink 1s step-end infinite;
 }
 
- Glow text 
 .text-glow {
-  text-shadow 0 0 10px var(--color-accent), 0 0 20px var(--color-accent);
+  text-shadow: 0 0 10px var(--color-accent), 0 0 20px var(--color-accent);
 }
 
 .text-glow-red {
-  text-shadow 0 0 10px var(--color-danger-glow), 0 0 20px var(--color-danger-glow);
+  text-shadow: 0 0 10px var(--color-danger-glow), 0 0 20px var(--color-danger-glow);
 }
 
- Noise background 
 .noise-bg {
-  position relative;
+  position: relative;
 }
 
-.noise-bgbefore {
-  content ;
-  position absolute;
-  inset 0;
-  opacity 0.03;
-  background-image url(dataimagesvg+xml,%3Csvg viewBox='0 0 256 256' xmlns='httpwww.w3.org2000svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'%3E%3Cfilter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'%3E%3Csvg%3E);
-  pointer-events none;
-  z-index 0;
+.noise-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
 }
 
- Logo watermark background 
 .logo-watermark {
-  position relative;
+  position: relative;
 }
 
-.logo-watermarkbefore {
-  content ;
-  position fixed;
-  bottom 3.5rem;
-  right 2rem;
-  width 120px;
-  height 120px;
-  background-image url(logosemblem.png);
-  background-size contain;
-  background-repeat no-repeat;
-  background-position center;
-  opacity 0.03;
-  pointer-events none;
-  z-index 0;
+.logo-watermark::before {
+  content: "";
+  position: fixed;
+  bottom: 3.5rem;
+  right: 2rem;
+  width: 120px;
+  height: 120px;
+  background-image: url("/logos/emblem.png");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: 0.03;
+  pointer-events: none;
+  z-index: 0;
 }
 
- Scrollbar styling 
--webkit-scrollbar {
-  width 6px;
+::-webkit-scrollbar {
+  width: 6px;
 }
 
--webkit-scrollbar-track {
-  background var(--color-background);
+::-webkit-scrollbar-track {
+  background: var(--color-background);
 }
 
--webkit-scrollbar-thumb {
-  background var(--color-border-light);
-  border-radius 3px;
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-light);
+  border-radius: 3px;
 }
 
--webkit-scrollbar-thumbhover {
-  background var(--color-muted);
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
 }
 
- === LIVING SYSTEM EFFECTS === 
-
- Data particle fall animation 
 @keyframes data-fall {
   0% {
-    transform translateY(0);
-    opacity inherit;
+    transform: translateY(0);
+    opacity: inherit;
   }
+
   100% {
-    transform translateY(110vh);
-    opacity 0;
+    transform: translateY(110vh);
+    opacity: 0;
   }
 }
 
 .animate-data-fall {
-  animation data-fall linear forwards;
+  animation: data-fall linear forwards;
 }
 
- Random flicker — applied to status indicators 
 @keyframes flicker {
-  0%, 95%, 100% { opacity 1; }
-  96% { opacity 0.4; }
-  97% { opacity 1; }
-  98% { opacity 0.2; }
-  99% { opacity 0.9; }
+  0%,
+  95%,
+  100% {
+    opacity: 1;
+  }
+
+  96% {
+    opacity: 0.4;
+  }
+
+  97% {
+    opacity: 1;
+  }
+
+  98% {
+    opacity: 0.2;
+  }
+
+  99% {
+    opacity: 0.9;
+  }
 }
 
 .animate-flicker {
-  animation flicker 8s step-end infinite;
-  animation-delay var(--flicker-delay, 0s);
+  animation: flicker 8s step-end infinite;
+  animation-delay: var(--flicker-delay, 0s);
 }
 
- Subtle screen interference — full page micro-glitch 
 @keyframes interference {
-  0%, 97%, 100% { transform none; opacity 1; }
-  97.5% { transform translateX(-1px) skewX(-0.5deg); opacity 0.97; }
-  98% { transform translateX(1px); opacity 1; }
-  98.5% { transform none; opacity 0.98; }
+  0%,
+  97%,
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+
+  97.5% {
+    transform: translateX(-1px) skewX(-0.5deg);
+    opacity: 0.97;
+  }
+
+  98% {
+    transform: translateX(1px);
+    opacity: 1;
+  }
+
+  98.5% {
+    transform: none;
+    opacity: 0.98;
+  }
 }
 
 .animate-interference {
-  animation interference 15s ease-in-out infinite;
+  animation: interference 15s ease-in-out infinite;
 }
 
- Ambient glow pulse on accent elements 
 @keyframes glow-breathe {
-  0%, 100% {
-    text-shadow 0 0 8px var(--color-accent), 0 0 16px rgba(0, 255, 136, 0.1);
+  0%,
+  100% {
+    text-shadow: 0 0 8px var(--color-accent), 0 0 16px rgba(0, 255, 136, 0.1);
   }
+
   50% {
-    text-shadow 0 0 12px var(--color-accent), 0 0 30px rgba(0, 255, 136, 0.2);
+    text-shadow: 0 0 12px var(--color-accent), 0 0 30px rgba(0, 255, 136, 0.2);
   }
 }
 
 .animate-glow-breathe {
-  animation glow-breathe 4s ease-in-out infinite;
+  animation: glow-breathe 4s ease-in-out infinite;
 }
 
- Border glow pulse for cardspanels 
 @keyframes border-pulse {
-  0%, 100% { border-color var(--color-border); }
-  50% { border-color rgba(0, 255, 136, 0.15); }
+  0%,
+  100% {
+    border-color: var(--color-border);
+  }
+
+  50% {
+    border-color: rgba(0, 255, 136, 0.15);
+  }
 }
 
 .animate-border-pulse {
-  animation border-pulse 6s ease-in-out infinite;
+  animation: border-pulse 6s ease-in-out infinite;
 }
 
- Status dot blink — irregular pattern 
 @keyframes status-blink {
-  0%, 90%, 100% { opacity 1; }
-  91% { opacity 0.3; }
-  93% { opacity 1; }
-  94% { opacity 0.5; }
-  96% { opacity 1; }
+  0%,
+  90%,
+  100% {
+    opacity: 1;
+  }
+
+  91% {
+    opacity: 0.3;
+  }
+
+  93% {
+    opacity: 1;
+  }
+
+  94% {
+    opacity: 0.5;
+  }
+
+  96% {
+    opacity: 1;
+  }
 }
 
 .animate-status-blink {
-  animation status-blink 5s step-end infinite;
+  animation: status-blink 5s step-end infinite;
 }
 
- ── Terminal Login Styles ── 
-
 .terminal-login-frame {
-  position relative;
-  box-shadow 0 0 40px rgba(0, 255, 136, 0.05), inset 0 0 60px rgba(0, 0, 0, 0.4);
+  position: relative;
+  box-shadow: 0 0 40px rgba(0, 255, 136, 0.05), inset 0 0 60px rgba(0, 0, 0, 0.4);
 }
 
 .terminal-scanlines {
-  background repeating-linear-gradient(
+  background: repeating-linear-gradient(
     0deg,
     transparent,
     transparent 2px,
@@ -254,123 +318,126 @@ body {
   );
 }
 
-.terminal-scrollbar-webkit-scrollbar {
-  width 4px;
+.terminal-scrollbar::-webkit-scrollbar {
+  width: 4px;
 }
 
-.terminal-scrollbar-webkit-scrollbar-track {
-  background transparent;
+.terminal-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-.terminal-scrollbar-webkit-scrollbar-thumb {
-  background rgba(0, 255, 136, 0.2);
-  border-radius 2px;
+.terminal-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 255, 136, 0.2);
+  border-radius: 2px;
 }
 
 .terminal-cursor {
-  color var(--color-accent);
+  color: var(--color-accent);
 }
 
- Code flash latest line highlight 
 .code-flash-latest {
-  text-shadow 0 0 8px rgba(0, 255, 136, 0.4);
+  text-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
 }
 
- Nav reveal animation 
 .terminal-nav-reveal {
-  animation nav-slide-in 0.6s ease-out;
+  animation: nav-slide-in 0.6s ease-out;
 }
 
 @keyframes nav-slide-in {
   from {
-    opacity 0;
-    transform translateY(12px);
+    opacity: 0;
+    transform: translateY(12px);
   }
+
   to {
-    opacity 1;
-    transform translateY(0);
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
- ── MGS Codec  CRT Image Frame ── 
-
- Outer frame — green glow border like a codec screen 
 .crt-frame {
-  position relative;
-  box-shadow
-    0 0 8px rgba(0, 255, 136, 0.08),
-    inset 0 0 20px rgba(0, 0, 0, 0.6);
+  position: relative;
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.08), inset 0 0 20px rgba(0, 0, 0, 0.6);
 }
 
- Scanlines — horizontal bars across the image 
-.crt-scanlinesafter {
-  content ;
-  position absolute;
-  inset 0;
-  pointer-events none;
-  z-index 2;
-  background repeating-linear-gradient(
+.crt-scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background: repeating-linear-gradient(
     0deg,
     transparent 0px,
     transparent 2px,
     rgba(0, 0, 0, 0.15) 2px,
     rgba(0, 0, 0, 0.15) 4px
   );
-  mix-blend-mode multiply;
+  mix-blend-mode: multiply;
 }
 
- Vignette — dark corners like a CRT monitor 
-.crt-vignettebefore {
-  content ;
-  position absolute;
-  inset 0;
-  pointer-events none;
-  z-index 3;
-  background radial-gradient(
-    ellipse at center,
-    transparent 50%,
-    rgba(0, 0, 0, 0.4) 100%
-  );
+.crt-vignette::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.4) 100%);
 }
 
- Subtle green channel tint 
 .crt-tint {
-  filter saturate(0.85) brightness(0.95);
+  filter: saturate(0.85) brightness(0.95);
 }
 
-.crt-tintafter {
-  content ;
-  position absolute;
-  inset 0;
-  pointer-events none;
-  z-index 1;
-  background rgba(0, 255, 136, 0.03);
-  mix-blend-mode overlay;
+.crt-tint::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background: rgba(0, 255, 136, 0.03);
+  mix-blend-mode: overlay;
 }
 
- Flicker animation for CRT images 
 @keyframes crt-flicker {
-  0%, 100% { opacity 1; }
-  92% { opacity 1; }
-  93% { opacity 0.8; }
-  94% { opacity 1; }
-  96% { opacity 0.9; }
-  97% { opacity 1; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  92% {
+    opacity: 1;
+  }
+
+  93% {
+    opacity: 0.8;
+  }
+
+  94% {
+    opacity: 1;
+  }
+
+  96% {
+    opacity: 0.9;
+  }
+
+  97% {
+    opacity: 1;
+  }
 }
 
 .crt-flicker {
-  animation crt-flicker 6s step-end infinite;
-  animation-delay var(--crt-delay, 0s);
+  animation: crt-flicker 6s step-end infinite;
+  animation-delay: var(--crt-delay, 0s);
 }
 
- Mini CRT for thumbnails — lighter effect 
-.crt-miniafter {
-  content ;
-  position absolute;
-  inset 0;
-  pointer-events none;
-  z-index 2;
-  background repeating-linear-gradient(
+.crt-mini::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background: repeating-linear-gradient(
     0deg,
     transparent 0px,
     transparent 1px,

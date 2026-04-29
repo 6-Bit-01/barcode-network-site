@@ -34,16 +34,6 @@ function pstToLocal(pstTime: string): { local: string; zone: string } | null {
     );
 
     // Convert: build the date as if in LA timezone, then read in local
-    const laFormatter = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Los_Angeles",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-
     // Get the UTC offset of LA right now
     const laOffset = getTimezoneOffset("America/Los_Angeles", now);
     const localOffset = now.getTimezoneOffset();
@@ -122,6 +112,7 @@ export function LocalSchedule({
   useEffect(() => {
     if (isPacificTime()) {
       // Already in Pacific — just show PST times
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLocalTimes({
         queue: queueOpens,
         show: showBegins,

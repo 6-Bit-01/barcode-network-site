@@ -2,6 +2,7 @@ import { databasePage } from "@/content";
 import { PageHero } from "@/components/LiveEffects";
 import { DatabaseTable } from "@/components/DatabaseTable";
 import type { Metadata } from "next";
+import type { DatabaseDossier } from "@/data/database-dossiers";
 
 export const metadata: Metadata = {
   title: "Database — BARCODE Network",
@@ -14,7 +15,19 @@ export const metadata: Metadata = {
   },
 };
 
-const databaseEntries = databasePage.entries;
+const databaseEntries = databasePage.dossiers.map((dossier: DatabaseDossier) => ({
+  id: dossier.id,
+  name: dossier.title,
+  image: dossier.image,
+  category: dossier.category,
+  status: dossier.status,
+  clearance: dossier.clearance,
+  role: dossier.role,
+  origin: dossier.origin,
+  summary: dossier.summary,
+  tags: dossier.tags,
+  notes: dossier.notes,
+}));
 
 export default function DatabasePage() {
   return (
@@ -24,7 +37,7 @@ export default function DatabasePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16 sm:py-24">
           <PageHero
             label={databasePage.hero.label}
-            heading={databasePage.hero.heading}
+            heading={`${databasePage.hero.heading1} ${databasePage.hero.heading2}`}
             description={databasePage.hero.description}
           />
         </div>

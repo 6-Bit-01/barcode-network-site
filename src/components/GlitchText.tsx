@@ -27,6 +27,7 @@ export function GlitchText({
   }[intensity];
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDisplay(text);
 
     intervalRef.current = setInterval(() => {

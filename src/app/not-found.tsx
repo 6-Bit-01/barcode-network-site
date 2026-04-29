@@ -6,7 +6,7 @@ export default function NotFound() {
       <div className="text-center space-y-6 max-w-md px-4">
         <div className="font-mono">
           <p className="text-xs uppercase tracking-[0.5em] text-danger mb-4">
-            // ERROR 404
+            {"// ERROR 404"}
           </p>
           <h1 className="text-6xl font-bold text-foreground mb-2">
             <span className="text-danger text-glow-red">SIGNAL</span> LOST

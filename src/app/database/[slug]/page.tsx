@@ -5,15 +5,23 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import type { DatabaseDossier } from "@/data/database-dossiers";
 
-function slugify(name: string) {
-  return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+function toLegacyEntry(dossier: DatabaseDossier) {
+  return {
+    ...dossier,
+    id: dossier.id,
+    name: dossier.title,
+    clearance: dossier.clearance,
+    role: dossier.role,
+    origin: dossier.origin,
+  };
 }
 
 // Generate static paths for all entries
 export function generateStaticParams() {
-  return databasePage.entries.map((entry) => ({
-    slug: slugify(entry.name),
+  return databasePage.dossiers.map((entry) => ({
+    slug: entry.slug,
   }));
 }
 
@@ -24,14 +32,14 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const entry = databasePage.entries.find((e) => slugify(e.name) === slug);
+  const entry = databasePage.dossiers.find((e) => e.slug === slug);
   if (!entry) return { title: "Not Found — BARCODE Network" };
 
   return {
-    title: `${entry.name} — BARCODE Network Database`,
+    title: `${entry.title} — BARCODE Network Database`,
     description: entry.summary,
     openGraph: {
-      title: `${entry.name} — BARCODE Network Database`,
+      title: `${entry.title} — BARCODE Network Database`,
       description: entry.summary,
     },
   };
@@ -64,7 +72,8 @@ export default async function EntityPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const entry = databasePage.entries.find((e) => slugify(e.name) === slug);
+  const rawEntry = databasePage.dossiers.find((e) => e.slug === slug);
+  const entry = rawEntry ? toLegacyEntry(rawEntry) : undefined;
 
   if (!entry) notFound();
 
@@ -309,13 +318,15 @@ export default async function EntityPage({
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
           <div className="bg-surface border border-border p-6 font-mono">
             <p className="text-xs text-muted mb-4">
-              &gt; BARCODE_NETWORK // DOSSIER QUERY
+              &gt; BARCODE NETWORK // DOSSIER STATUS
             </p>
             <div className="space-y-1 text-sm text-foreground/60">
-              <p>&gt; SELECT * FROM network_dossiers WHERE id = &apos;{entry.id}&apos;</p>
-              <p>&gt; RECORD FOUND: {entry.name}</p>
-              <p>&gt; STATUS: {entry.status} // CLEARANCE: {entry.clearance}</p>
-              <p>&gt; CATEGORY: {entry.category} // ORIGIN: {entry.origin}</p>
+              <p>&gt; DOSSIER ID: {entry.id}</p>
+              <p>&gt; SUBJECT: {entry.name}</p>
+              <p>&gt; STATUS: {entry.status}</p>
+              <p>&gt; CLEARANCE: {entry.clearance}</p>
+              <p>&gt; CATEGORY: {entry.category}</p>
+              <p>&gt; ORIGIN: {entry.origin}</p>
               <p className="text-accent mt-3">
                 &gt; DOSSIER LOADED<span className="cursor-blink">_</span>
               </p>

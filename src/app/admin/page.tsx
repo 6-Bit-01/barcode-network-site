@@ -43,6 +43,7 @@ export default function AdminPage() {
 
   // Sync urlInput when streamUrl changes from server
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUrlInput(streamUrl);
   }, [streamUrl]);
 
@@ -74,7 +75,7 @@ export default function AdminPage() {
     return (
       <div className="pt-14 min-h-screen flex items-center justify-center">
         <p className="text-xs uppercase tracking-[0.5em] text-muted animate-pulse">
-          // AUTHENTICATING...
+          {"// AUTHENTICATING..."}
         </p>
       </div>
     );
@@ -85,7 +86,7 @@ export default function AdminPage() {
       <div className="pt-14 min-h-screen flex items-center justify-center">
         <div className="border border-border bg-surface p-8 max-w-sm w-full">
           <p className="text-xs uppercase tracking-[0.5em] text-muted mb-6">
-            // ADMIN ACCESS REQUIRED
+            {"// ADMIN ACCESS REQUIRED"}
           </p>
           <div className="space-y-4">
             <input
@@ -120,7 +121,7 @@ export default function AdminPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted mb-4">
-                // SYSTEM: ADMIN PANEL
+                {"// SYSTEM: ADMIN PANEL"}
               </p>
               <h1 className="text-4xl font-bold tracking-tight text-foreground mb-2">
                 <span className="text-accent text-glow">Admin</span> Panel
@@ -277,11 +278,11 @@ function AdminContent({
               </button>
 
               <div className="text-xs text-muted/50 space-y-1">
-                <p>// Schedule: Every Friday 6:30 PM – 11:30 PM PST (auto)</p>
-                <p>// Scheduled: {isScheduled ? "YES — within broadcast window" : "NO — outside broadcast window"}</p>
-                <p>// Override: {manualOverride ? "ACTIVE (admin override)" : "NONE (auto-schedule)"}</p>
-                <p>// Toggle cycles: Auto → On → Off → Auto</p>
-                <p>// Changes persist to Redis — visible to all visitors</p>
+                <p>{"//"} Schedule: Every Friday 6:30 PM – 11:30 PM PST (auto)</p>
+                <p>{"//"} Scheduled: {isScheduled ? "YES — within broadcast window" : "NO — outside broadcast window"}</p>
+                <p>{"//"} Override: {manualOverride ? "ACTIVE (admin override)" : "NONE (auto-schedule)"}</p>
+                <p>{"//"} Toggle cycles: Auto → On → Off → Auto</p>
+                <p>{"//"} Changes persist to Redis — visible to all visitors</p>
               </div>
             </div>
           </div>

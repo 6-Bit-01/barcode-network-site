@@ -16,18 +16,16 @@ export const metadata: Metadata = {
 export default function MerchPage() {
   return (
     <div className="pt-14">
-      {/* Hero */}
       <section className="border-b border-border noise-bg">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16 sm:py-24">
           <PageHero
             label={merchPage.hero.label}
-            heading={merchPage.hero.heading}
+            heading={`${merchPage.hero.heading1} ${merchPage.hero.heading2}`}
             description={merchPage.hero.description}
           />
         </div>
       </section>
 
-      {/* Products — 1st Wave */}
       <section className="border-b border-border">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
           <div className="flex items-center justify-between mb-8">
@@ -79,7 +77,6 @@ export default function MerchPage() {
         </div>
       </section>
 
-      {/* Book — OBSERVER NOT FOUND */}
       <section className="border-b border-border noise-bg">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
           <div className="flex items-center gap-3 mb-8">
@@ -118,44 +115,34 @@ export default function MerchPage() {
                 Hardcover <span className="text-accent font-bold">{merchPage.book.prices.hardcover}</span>
               </span>
             </div>
-            <span className="block text-xs text-muted/40 uppercase tracking-wider group-hover:text-accent/60 transition-colors">
+            <span className="text-xs uppercase tracking-widest text-accent group-hover:text-accent-dim transition-colors">
               Available on Amazon →
             </span>
           </a>
         </div>
       </section>
 
-      {/* Discord CTA */}
       <section className="border-b border-border">
-        <div className="mx-auto max-w-3xl px-4 sm:px-6 py-12 text-center">
-          <p className="text-sm text-muted mb-4">
-            Future drops announced through official channels.
-          </p>
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16 text-center">
+          <p className="text-sm text-muted mb-4">{merchPage.notice}</p>
           <a
             href={externalLinks.discord}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block border border-accent text-accent hover:bg-accent hover:text-background px-6 py-3 text-sm uppercase tracking-widest transition-all"
+            className="inline-flex items-center px-6 py-3 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all"
           >
-            Join Discord for drop alerts →
+            {merchPage.discordCta}
           </a>
         </div>
       </section>
 
-      {/* Terminal Output */}
       <section>
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
-          <div className="bg-surface border border-border p-6 font-mono">
-            <p className="text-xs text-muted mb-4">
-              &gt; BARCODE_NETWORK // SUPPLY_SYSTEM
-            </p>
+          <div className="bg-surface border border-border p-6 font-mono max-w-3xl mx-auto">
             <div className="space-y-1 text-sm text-foreground/60">
-              {merchPage.terminalOutput.map((line, i) => (
+              {merchPage.systemLog.map((line, i) => (
                 <p key={i}>&gt; {line}</p>
               ))}
-              <p className="text-accent mt-4">
-                &gt; SUPPLY CHAIN ACTIVE<span className="cursor-blink">_</span>
-              </p>
             </div>
           </div>
         </div>

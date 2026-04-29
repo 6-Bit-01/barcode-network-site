@@ -32,14 +32,14 @@ function normalizeClearance(clearance: string | undefined): "PUBLIC" | "INTERNAL
 }
 
 const databaseEntries = databasePage.dossiers.map((entry) => ({
-  id: entry.slug.toUpperCase(),
+  id: (entry as { designation?: string }).designation || entry.slug.toUpperCase(),
   name: entry.title,
   image: entry.image,
   category: normalizeCategory(entry.category),
   status: normalizeStatus(entry.status),
   clearance: normalizeClearance((entry as { clearance?: string }).clearance),
-  role: entry.category || "N/A",
-  origin: "UNVERIFIED" as const,
+  role: (entry as { role?: string }).role || entry.category || "N/A",
+  origin: ((entry as { origin?: "KNOWN" | "UNKNOWN" | "UNVERIFIED" | "WITHHELD" }).origin || "UNVERIFIED") as const,
   summary: entry.summary,
   tags: entry.tags,
   notes: entry.notes,

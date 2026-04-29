@@ -20,7 +20,6 @@ export const externalLinks = {
   discord: "https://discord.gg/4tHazmD528",
   auxchord: "https://aux.fan/@barcode_radio",
   tiktok: "https://www.tiktok.com/@six.bit",
-  tiktokLive: "https://www.tiktok.com/@six.bit",
 };
 
 // ----- HOMEPAGE -----
@@ -82,6 +81,7 @@ export const homePage = {
     { label: "Discord", href: "EXTERNAL:discord" },
     { label: "Database", href: "/database" },
     { label: "Submit Music", href: "/radio" },
+    { label: "TikTok Signal", href: "EXTERNAL:tiktok" },
   ],
 };
 
@@ -314,15 +314,15 @@ export const databasePage = {
     },
     {
       slug: "tiktok",
-      title: "TikTok Live",
+      title: "TikTok Signal",
       category: "Interface",
       image: "/database/tiktok-logo.png",
       summary:
-        "Primary public broadcast feed. Used for BARCODE Radio live shows.",
+        "Primary public signal hub. Tune in here when BARCODE Radio goes live.",
       status: "ACTIVE",
       tags: ["live", "broadcast", "social"],
       notes:
-        "TikTok-first format. 6 Bit hosts the show live. Community engagement is core to the experience.",
+        "Primary TikTok signal hub for 6 Bit and BARCODE updates. Tune in from here when live starts.",
       link: "EXTERNAL:tiktok",
       files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
     },
@@ -587,6 +587,6 @@ export const terminalLogin = {
 export const liveBanner = {
   active: true,
   text: "LIVE NOW — BARCODE Network is transmitting",
-  watchText: "Watch BARCODE Radio →",
+  watchText: "Lock into the TikTok signal →",
   watchHref: "/radio",
 };

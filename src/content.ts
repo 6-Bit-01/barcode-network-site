@@ -663,44 +663,63 @@ export const databasePage = {
 
 // ----- RELEASES PAGE -----
 
+type ReleaseLinks = {
+  spotify?: string;
+  apple?: string;
+  youtube?: string;
+  soundcloud?: string;
+};
+
 export const releasesPage = {
   hero: {
-    label: "// ARCHIVE: RELEASE CATALOG",
-    heading1: "Official",
-    heading2: "Releases",
+    label: "// ARCHIVE: RELEASES",
+    heading: "Releases",
     description:
-      "Cataloged audio artifacts recovered from the BARCODE Network’s public channels and internal archives.",
+      "Official transmission catalog from designated entities. Audio artifacts, indexed and released.",
   },
 
-  releases: [
+  catalog: [
     {
       title: "BARCODE: Signal Breach",
-      date: "2026.03.16",
       type: "Album",
+      date: "2026",
+      status: "INCOMING" as const,
       cover: "/releases/signal-breach.png",
       description:
-        "Framed as a leak from the BARCODE Network’s internal database. The network wishes this were not public.",
-      status: "AVAILABLE",
+        "Unauthorized circulation of an internal BARCODE Network audio archive was detected following the Signal Breach incident. The breach has been contained. Further information will be issued shortly.",
+      links: {} as ReleaseLinks,
     },
     {
       title: "BARCODE Vol. 1",
-      date: "2025",
       type: "Album",
+      date: "2025",
+      status: "LATEST" as const,
       cover: "/releases/barcode-vol-1.png",
       description:
-        "First official BARCODE album. Retro-futurist, VHS-warzone hip hop broadcast artifact.",
-      status: "AVAILABLE",
+        "The inaugural transmission. A full-length broadcast from 6 Bit through the BARCODE Network.",
+      links: {
+        spotify: "https://open.spotify.com/album/1PywhXFBsB4jue16x8ujNs",
+        apple: "https://music.apple.com/us/album/barcode-vol-1/1817414054",
+        youtube: "https://music.youtube.com/playlist?list=OLAK5uy_nsftWPdpLsRS7GYoLanK-ZtMt0tsmbh0Y",
+      } as ReleaseLinks,
     },
     {
-      title: "BARCODE Vol. 0",
-      date: "ARCHIVE",
+      title: "[REDACTED]",
       type: "Album",
+      date: "20██",
+      status: "ARCHIVED" as const,
       cover: "/releases/barcode-vol-0.png",
       description:
-        "Early archive material. Original release disrupted and partially erased.",
-      status: "RECOVERED",
+        "A lost transmission. Originally broadcast, then pulled from all frequencies. Remastered fragments scheduled for re-release in two parts. Origin data classified.",
+      links: {} as ReleaseLinks,
     },
   ],
+
+  bottomCta: {
+    text: "Want to get your music on BARCODE Radio?",
+    buttonText: "Submit to BARCODE Radio →",
+    buttonHref: "/radio",
+  },
 };
 
 // ----- TRANSMISSIONS PAGE -----
@@ -729,15 +748,67 @@ export const transmissionsPage = {
 
 export const merchPage = {
   hero: {
-    label: "// SIGNAL GOODS",
-    heading1: "Network",
-    heading2: "Merch",
+    label: "// SUPPLY: MERCH",
+    heading: "Merch",
     description:
-      "Physical signal carriers and branded network artifacts. Limited availability.",
+      "Official BARCODE Network supply line. Wearable signal, physical artifacts.",
   },
 
-  notice:
-    "Merch access is currently limited. More artifacts may surface as the network stabilizes.",
+  storeUrl: "https://www.6bithiphop.com/c/categories/1st-wave",
+
+  products: [
+    {
+      name: "Decode The Future T-Shirt",
+      price: "$20.00",
+      originalPrice: "$25.00",
+      href: "https://www.6bithiphop.com/c/products/decode-the-future-t-shirt",
+      tag: "APPAREL",
+    },
+    {
+      name: "Neon Stream BARCODE Embroidered Hat",
+      price: "$20.00",
+      originalPrice: "$25.00",
+      href: "https://www.6bithiphop.com/c/products/neon-stream-barcode-embroidered-hat",
+      tag: "HEADWEAR",
+    },
+    {
+      name: "Static Glitch BARCODE Hat",
+      price: "$20.00",
+      originalPrice: "$25.00",
+      href: "https://www.6bithiphop.com/c/products/static-glitch-barcode-hat",
+      tag: "HEADWEAR",
+    },
+    {
+      name: "6 Bit Badge Sticker",
+      price: "$1.50",
+      originalPrice: "$2.00",
+      href: "https://www.6bithiphop.com/c/products/6-bit-badge-sticker",
+      tag: "ACCESSORY",
+    },
+  ],
+
+  book: {
+    title: "OBSERVER NOT FOUND",
+    author: "6 Bit",
+    description:
+      "A cyberpunk thriller where perception shapes reality and observation is a dangerous act. Rogue transmissions, corrupted memories, and a world that is watching back.",
+    format: "Hardcover — 90 pages",
+    prices: {
+      kindle: "$6.00",
+      paperback: "$10.00",
+      hardcover: "$20.00",
+    },
+    href: "https://www.amazon.com/dp/B0DX2ZY512",
+    tag: "CYBERPUNK // FICTION",
+  },
+
+  terminalOutput: [
+    "SUPPLY_CHAIN .................. ACTIVE",
+    "INVENTORY ..................... 1ST WAVE",
+    "DISTRIBUTION .................. ONLINE",
+    "DROP_ALERT_SYSTEM ............. ARMED",
+    "BOOK: OBSERVER NOT FOUND ...... IN PRINT",
+  ],
 };
 
 // ----- DATABASE ENTRY TEMPLATES / UI COPY -----

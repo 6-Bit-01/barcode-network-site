@@ -115,19 +115,25 @@ export default function RadioPage() {
       </section>
 
       {/* Go Deeper — lore hooks to pull them into the network */}
+      {(radioPage as { goDeeper?: {
+        label: string;
+        heading: string;
+        cards: { href: string; tag: string; title: string; description: string; cta: string }[];
+        footnote: string;
+      } }).goDeeper && (
       <section className="noise-bg">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
           <div className="text-center mb-10">
             <p className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted mb-3">
-              {radioPage.goDeeper.label}
+              {(radioPage as { goDeeper: { label: string } }).goDeeper.label}
             </p>
             <h2 className="text-2xl sm:text-3xl font-bold text-foreground/80">
-              {radioPage.goDeeper.heading}
+              {(radioPage as { goDeeper: { heading: string } }).goDeeper.heading}
             </h2>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {radioPage.goDeeper.cards.map((card) => (
+            {(radioPage as { goDeeper: { cards: { href: string; tag: string; title: string; description: string; cta: string }[] } }).goDeeper.cards.map((card) => (
               <Link
                 key={card.href}
                 href={card.href}
@@ -150,10 +156,11 @@ export default function RadioPage() {
           </div>
 
           <p className="text-center text-xs text-muted/30 mt-10 uppercase tracking-widest">
-            {radioPage.goDeeper.footnote}
+            {(radioPage as { goDeeper: { footnote: string } }).goDeeper.footnote}
           </p>
         </div>
       </section>
+      )}
     </div>
   );
 }

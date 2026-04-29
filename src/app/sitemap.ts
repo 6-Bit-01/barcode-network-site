@@ -2,9 +2,13 @@ import type { MetadataRoute } from "next";
 import { databasePage } from "@/content";
 import { getAllTransmissions } from "@/lib/transmissions";
 
-function slugify(name: string) {
-  return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+function toSlug(entry: { id: string; name: string }): string {
+  return `${entry.id}-${entry.name}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
 }
+
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const base = "https://barcode-network.com";
@@ -14,7 +18,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const staticPages: MetadataRoute.Sitemap = [
     { url: base, lastModified: now, changeFrequency: "weekly", priority: 1.0 },
     { url: `${base}/radio`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
-    { url: `${base}/queue`, lastModified: now, changeFrequency: "daily", priority: 0.8 },
     { url: `${base}/database`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
     { url: `${base}/releases`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${base}/merch`, lastModified: now, changeFrequency: "monthly", priority: 0.6 },
@@ -24,7 +27,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   // Dynamic database pages
   const databasePages: MetadataRoute.Sitemap = databasePage.entries.map((entry) => ({
-    url: `${base}/database/${slugify(entry.name)}`,
+    url: `${base}/database/${toSlug(entry)}`,
     lastModified: now,
     changeFrequency: "monthly" as const,
     priority: 0.6,

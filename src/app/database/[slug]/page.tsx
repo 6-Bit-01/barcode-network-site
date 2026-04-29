@@ -6,14 +6,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 
-function slugify(name: string) {
-  return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+
+function toSlug(entry: { id: string; name: string }): string {
+  return `${entry.id}-${entry.name}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
 }
 
 // Generate static paths for all entries
 export function generateStaticParams() {
   return databasePage.entries.map((entry) => ({
-    slug: slugify(entry.name),
+    slug: toSlug(entry),
   }));
 }
 
@@ -24,7 +28,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const entry = databasePage.entries.find((e) => slugify(e.name) === slug);
+  const entry = databasePage.entries.find((e) => toSlug(e) === slug);
   if (!entry) return { title: "Not Found — BARCODE Network" };
 
   return {
@@ -64,7 +68,7 @@ export default async function EntityPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const entry = databasePage.entries.find((e) => slugify(e.name) === slug);
+  const entry = databasePage.entries.find((e) => toSlug(e) === slug);
 
   if (!entry) notFound();
 
@@ -88,7 +92,7 @@ export default async function EntityPage({
           {/* Header info */}
           <div className="mb-10">
             <PageHero
-              label={`// DOSSIER: ${entry.id}`}
+              label={`// DOSSIER: ${entry.id.toUpperCase()}`}
               heading={entry.name}
               description=""
             />
@@ -97,14 +101,14 @@ export default async function EntityPage({
               <span className={`text-xs uppercase tracking-widest px-2 py-1 border border-current/20 ${statusColors[entry.status] || "text-muted"}`}>
                 {entry.status}
               </span>
-              <span className={`text-xs uppercase tracking-widest px-2 py-1 border border-current/20 ${clearanceColors[entry.clearance] || "text-muted"}`}>
-                {entry.clearance}
+              <span className={`text-xs uppercase tracking-widest px-2 py-1 border border-current/20 ${clearanceColors[(entry as { clearance?: string }).clearance || ""] || "text-muted"}`}>
+                {(entry as { clearance?: string }).clearance || "PUBLIC"}
               </span>
               <span className="text-xs uppercase tracking-widest px-2 py-1 border border-border text-muted">
                 {entry.category}
               </span>
             </div>
-            <p className="text-sm text-muted/60 mt-4">{entry.role}</p>
+            <p className="text-sm text-muted/60 mt-4">{(entry as { role?: string }).role || "N/A"}</p>
           </div>
 
           {/* Portrait / Placeholder */}
@@ -112,7 +116,13 @@ export default async function EntityPage({
             <div className="border border-accent/20 bg-surface p-2 crt-frame">
               <div className="relative aspect-[4/5] overflow-hidden crt-scanlines crt-vignette crt-flicker">
                 <Image
-                  src={getEntryImage(entry)}
+                  src={getEntryImage({
+                    id: entry.id,
+                    image: entry.image,
+                    clearance: (entry as { clearance?: string }).clearance || "PUBLIC",
+                    category: entry.category,
+                    status: entry.status,
+                  })}
                   alt={entry.name}
                   fill
                   className="object-cover crt-tint"
@@ -120,9 +130,9 @@ export default async function EntityPage({
                 />
               </div>
               <div className="mt-2 flex items-center justify-between px-1">
-                <span className="text-xs font-mono text-muted/50">{entry.id}</span>
-                <span className={`text-xs font-mono ${clearanceColors[entry.clearance] || "text-muted/50"}`}>
-                  {entry.clearance}
+                <span className="text-xs font-mono text-muted/50">{entry.id.toUpperCase()}</span>
+                <span className={`text-xs font-mono ${clearanceColors[(entry as { clearance?: string }).clearance || ""] || "text-muted/50"}`}>
+                  {(entry as { clearance?: string }).clearance || "PUBLIC"}
                 </span>
               </div>
             </div>
@@ -145,13 +155,13 @@ export default async function EntityPage({
               </div>
 
               <div className="space-y-4">
-                <InfoRow label="Designation" value={entry.id} />
+                <InfoRow label="Designation" value={entry.id.toUpperCase()} />
                 <InfoRow label="Name" value={entry.name} accent />
                 <InfoRow label="Category" value={entry.category} />
                 <InfoRow label="Status" value={entry.status} colorClass={statusColors[entry.status]} />
-                <InfoRow label="Clearance" value={entry.clearance} colorClass={clearanceColors[entry.clearance]} />
-                <InfoRow label="Role" value={entry.role} />
-                <InfoRow label="Origin" value={entry.origin} colorClass={originColors[entry.origin]} />
+                <InfoRow label="Clearance" value={(entry as { clearance?: string }).clearance || "PUBLIC"} colorClass={clearanceColors[(entry as { clearance?: string }).clearance || ""]} />
+                <InfoRow label="Role" value={(entry as { role?: string }).role || "N/A"} />
+                <InfoRow label="Origin" value={(entry as { origin?: string }).origin || "UNVERIFIED"} colorClass={originColors[(entry as { origin?: string }).origin || ""]} />
                 <div className="flex items-center justify-between border-b border-border/50 pb-2">
                   <span className="text-xs uppercase tracking-[0.3em] text-muted">
                     Tags
@@ -312,10 +322,10 @@ export default async function EntityPage({
               &gt; BARCODE_NETWORK // DOSSIER QUERY
             </p>
             <div className="space-y-1 text-sm text-foreground/60">
-              <p>&gt; SELECT * FROM network_dossiers WHERE id = &apos;{entry.id}&apos;</p>
+              <p>&gt; SELECT * FROM network_dossiers WHERE id = &apos;{entry.id.toUpperCase()}&apos;</p>
               <p>&gt; RECORD FOUND: {entry.name}</p>
-              <p>&gt; STATUS: {entry.status} // CLEARANCE: {entry.clearance}</p>
-              <p>&gt; CATEGORY: {entry.category} // ORIGIN: {entry.origin}</p>
+              <p>&gt; STATUS: {entry.status} {"//"} CLEARANCE: {(entry as { clearance?: string }).clearance || "PUBLIC"}</p>
+              <p>&gt; CATEGORY: {entry.category} {"//"} ORIGIN: {(entry as { origin?: string }).origin || "UNVERIFIED"}</p>
               <p className="text-accent mt-3">
                 &gt; DOSSIER LOADED<span className="cursor-blink">_</span>
               </p>

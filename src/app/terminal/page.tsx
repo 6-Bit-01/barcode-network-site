@@ -48,12 +48,7 @@ export default function TerminalPage() {
 
               <div className="space-y-4">
                 {terminalPage.dossier.map((row) => (
-                  <InfoRow
-                    key={row.label}
-                    label={row.label}
-                    value={row.value}
-                    accent={row.accent}
-                  />
+                  <InfoRow key={row.label} label={row.label} value={row.value} accent={row.accent} />
                 ))}
               </div>
             </div>
@@ -68,8 +63,8 @@ export default function TerminalPage() {
               </div>
 
               <div className="text-base text-foreground/70 leading-relaxed space-y-4">
-                {terminalPage.about.map((paragraph, i) => (
-                  <p key={i}>{paragraph}</p>
+                {terminalPage.about.map((line, i) => (
+                  <p key={i}>{line}</p>
                 ))}
               </div>
             </div>

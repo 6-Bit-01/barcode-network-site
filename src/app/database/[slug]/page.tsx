@@ -6,10 +6,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 
+
+function toSlug(entry: { id: string; name: string }): string {
+  return `${entry.id}-${entry.name}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
 // Generate static paths for all entries
 export function generateStaticParams() {
-  return databasePage.dossiers.map((entry) => ({
-    slug: entry.slug,
+  return databasePage.entries.map((entry) => ({
+    slug: toSlug(entry),
   }));
 }
 
@@ -20,14 +28,14 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const entry = databasePage.dossiers.find((e) => e.slug === slug);
+  const entry = databasePage.entries.find((e) => toSlug(e) === slug);
   if (!entry) return { title: "Not Found — BARCODE Network" };
 
   return {
-    title: `${entry.title} — BARCODE Network Database`,
+    title: `${entry.name} — BARCODE Network Database`,
     description: entry.summary,
     openGraph: {
-      title: `${entry.title} — BARCODE Network Database`,
+      title: `${entry.name} — BARCODE Network Database`,
       description: entry.summary,
     },
   };
@@ -60,7 +68,7 @@ export default async function EntityPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const entry = databasePage.dossiers.find((e) => e.slug === slug);
+  const entry = databasePage.entries.find((e) => toSlug(e) === slug);
 
   if (!entry) notFound();
 
@@ -84,8 +92,8 @@ export default async function EntityPage({
           {/* Header info */}
           <div className="mb-10">
             <PageHero
-              label={`// DOSSIER: ${entry.slug.toUpperCase()}`}
-              heading={entry.title}
+              label={`// DOSSIER: ${entry.id.toUpperCase()}`}
+              heading={entry.name}
               description=""
             />
             {/* Quick meta badges */}
@@ -109,20 +117,20 @@ export default async function EntityPage({
               <div className="relative aspect-[4/5] overflow-hidden crt-scanlines crt-vignette crt-flicker">
                 <Image
                   src={getEntryImage({
-                    id: entry.slug,
+                    id: entry.id,
                     image: entry.image,
                     clearance: (entry as { clearance?: string }).clearance || "PUBLIC",
                     category: entry.category,
                     status: entry.status,
                   })}
-                  alt={entry.title}
+                  alt={entry.name}
                   fill
                   className="object-cover crt-tint"
                   unoptimized
                 />
               </div>
               <div className="mt-2 flex items-center justify-between px-1">
-                <span className="text-xs font-mono text-muted/50">{entry.slug.toUpperCase()}</span>
+                <span className="text-xs font-mono text-muted/50">{entry.id.toUpperCase()}</span>
                 <span className={`text-xs font-mono ${clearanceColors[(entry as { clearance?: string }).clearance || ""] || "text-muted/50"}`}>
                   {(entry as { clearance?: string }).clearance || "PUBLIC"}
                 </span>
@@ -147,8 +155,8 @@ export default async function EntityPage({
               </div>
 
               <div className="space-y-4">
-                <InfoRow label="Designation" value={entry.slug.toUpperCase()} />
-                <InfoRow label="Name" value={entry.title} accent />
+                <InfoRow label="Designation" value={entry.id.toUpperCase()} />
+                <InfoRow label="Name" value={entry.name} accent />
                 <InfoRow label="Category" value={entry.category} />
                 <InfoRow label="Status" value={entry.status} colorClass={statusColors[entry.status]} />
                 <InfoRow label="Clearance" value={(entry as { clearance?: string }).clearance || "PUBLIC"} colorClass={clearanceColors[(entry as { clearance?: string }).clearance || ""]} />
@@ -314,8 +322,8 @@ export default async function EntityPage({
               &gt; BARCODE_NETWORK // DOSSIER QUERY
             </p>
             <div className="space-y-1 text-sm text-foreground/60">
-              <p>&gt; SELECT * FROM network_dossiers WHERE id = &apos;{entry.slug.toUpperCase()}&apos;</p>
-              <p>&gt; RECORD FOUND: {entry.title}</p>
+              <p>&gt; SELECT * FROM network_dossiers WHERE id = &apos;{entry.id.toUpperCase()}&apos;</p>
+              <p>&gt; RECORD FOUND: {entry.name}</p>
               <p>&gt; STATUS: {entry.status} {"//"} CLEARANCE: {(entry as { clearance?: string }).clearance || "PUBLIC"}</p>
               <p>&gt; CATEGORY: {entry.category} {"//"} ORIGIN: {(entry as { origin?: string }).origin || "UNVERIFIED"}</p>
               <p className="text-accent mt-3">

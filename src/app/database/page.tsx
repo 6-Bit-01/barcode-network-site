@@ -14,7 +14,10 @@ export const metadata: Metadata = {
   },
 };
 
-const databaseEntries = databasePage.entries;
+const databaseEntries = databasePage.entries.map((entry) => ({
+  ...entry,
+  origin: entry.origin ?? "UNVERIFIED",
+}));
 
 export default function DatabasePage() {
   return (

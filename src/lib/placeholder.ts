@@ -1,6 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
-
 /**
  * Placeholder image system for database entries without custom portraits.
  *
@@ -20,13 +17,6 @@ const GENERAL_PLACEHOLDERS = [
 const RESTRICTED_PLACEHOLDER = "/database/placeholder-restricted.png";
 const UNKNOWN_PLACEHOLDER = "/database/placeholder-unknown.png";
 const PRODUCTION_PLACEHOLDER = "/database/placeholder-production.png";
-
-
-function isExistingPublicAsset(assetPath: string): boolean {
-  if (!assetPath.startsWith("/")) return false;
-  const diskPath = path.join(process.cwd(), "public", assetPath.replace(/^\//, ""));
-  return fs.existsSync(diskPath);
-}
 
 /** Simple deterministic hash from a string → number */
 function hashCode(str: string): number {
@@ -49,8 +39,8 @@ export function getEntryImage(entry: {
   category?: string;
   status?: string;
 }): string {
-  // Use custom image only if the asset actually exists
-  if (entry.image && isExistingPublicAsset(entry.image)) return entry.image;
+  // Use custom image if available
+  if (entry.image) return entry.image;
 
   // RESTRICTED clearance entries get the restricted placeholder
   if (entry.clearance === "RESTRICTED") return RESTRICTED_PLACEHOLDER;

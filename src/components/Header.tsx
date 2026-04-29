@@ -6,8 +6,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useLiveStatus } from "./LiveStatusProvider";
 import { GlitchText } from "./GlitchText";
-import { siteConfig, externalLinks } from "@/content";
-import { SmartTikTokLink } from "./SmartTikTokLink";
+import { siteConfig } from "@/content";
 
 const navItems = [
   { href: "/", label: "HQ" },
@@ -16,8 +15,7 @@ const navItems = [
   { href: "/database", label: "Database" },
   { href: "/releases", label: "Releases" },
   { href: "/transmissions", label: "Transmissions" },
-  { href: "/merch", label: "Merch" },
-  { href: externalLinks.tiktok, label: "TikTok", external: true },
+  { href: "/merch", label: "Merch" }
 ];
 
 export function Header() {
@@ -53,16 +51,6 @@ export function Header() {
           {/* Navigation */}
           <nav className="hidden md:flex items-center gap-1">
             {navItems.map((item) => {
-              if (item.external) {
-                return (
-                  <SmartTikTokLink
-                    key={item.href}
-                    className="px-3 py-1.5 text-sm uppercase tracking-widest transition-colors text-muted hover:text-foreground"
-                    offlineLabel={item.label}
-                    liveLabel="TikTok Live"
-                  />
-                );
-              }
               const isActive = pathname === item.href;
               return (
                 <Link
@@ -131,16 +119,6 @@ function MobileMenu({ pathname }: { pathname: string }) {
         <div className="absolute top-14 left-0 right-0 bg-background border-b border-border p-4">
           <nav className="flex flex-col gap-2">
             {navItems.map((item) => {
-              if (item.external) {
-                return (
-                  <SmartTikTokLink
-                    key={item.href}
-                    className="px-3 py-2 text-sm uppercase tracking-widest transition-colors text-muted hover:text-foreground"
-                    offlineLabel={item.label}
-                    liveLabel="TikTok Live // Tune In"
-                  />
-                );
-              }
               const isActive = pathname === item.href;
               return (
                 <Link

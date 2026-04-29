@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import type { QueueState, QueueEntry, QueueTier } from "@/lib/queue-types";
 import { normalizeTier } from "@/lib/queue-types";
 
-const LIVE_URL = "https://www.tiktok.com/@six.bit/live";
+const LIVE_URL = "https://www.tiktok.com/@six.bit";
 
 /* Google Drive /preview embed URLs */
 const DRIVE_BG = "https://drive.google.com/file/d/1HahJcc_ChAjEwerezfHjerQq2wOKuaAo/preview";
@@ -27,7 +27,7 @@ function isWithinBroadcastWindow(): boolean {
 
   if (weekday !== "Fri") return false;
   const t = hour * 60 + minute;
-  return t >= 18 * 60 + 30 && t < 23 * 60 + 30; // 6:30 PM – 11:30 PM PST
+  return t >= 18 * 60 + 40 && t < 23 * 60; // 6:40 PM – 11:00 PM PST
 }
 
 const TIER_CLASS: Record<QueueTier, string> = {

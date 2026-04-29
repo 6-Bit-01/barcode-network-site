@@ -508,20 +508,6 @@ export const transmissionsPage = {
         "Unauthorized propagation of BARCODE: Signal Breach detected across public channels. Internal containment failed.",
       status: "ARCHIVED",
     },
-    {
-      date: "2026.03.08",
-      title: "Interdimensional Signal Locked",
-      body:
-        "Artifact release confirmed. Initial public response logged. Feed remains stable.",
-      status: "ARCHIVED",
-    },
-    {
-      date: "2026.02.20",
-      title: "Broadcast Queue Saturation",
-      body:
-        "Submission volume exceeded standard handling capacity during live intake. Additional moderation strain observed.",
-      status: "ARCHIVED",
-    },
   ],
 };
 
@@ -563,18 +549,6 @@ export const transmissionsFeed = [
     time: "2026-03-16 00:14 PST",
     type: "ALERT",
     message: "Unauthorized propagation detected: BARCODE: Signal Breach.",
-  },
-  {
-    id: "transmission-002",
-    time: "2026-03-08 08:03 PST",
-    type: "NOTICE",
-    message: "Artifact lock confirmed: Interdimensional Signal Locked.",
-  },
-  {
-    id: "transmission-003",
-    time: "2026-02-20 19:42 PST",
-    type: "STATUS",
-    message: "Submission volume spike observed during live intake frequency.",
   },
 ];
 

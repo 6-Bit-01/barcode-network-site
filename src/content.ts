@@ -171,6 +171,40 @@ export const radioPage = {
   ],
 };
 
+// ----- ARCHIVE: QUEUE PAGE -----
+// Kept for legacy archived route content that still compiles in some deployments.
+export const queuePage = {
+  hero: {
+    label: "// ARCHIVE PROGRAM: AI STREAM QUEUE",
+    heading: "AI Stream Queue",
+    description:
+      "Request a play in the B-show buffer. Free or priority tiers route into the active queue.",
+  },
+  steps: [
+    { number: "01", title: "Submit", description: "Send artist, title, and link into the queue intake form." },
+    { number: "02", title: "Route", description: "Your request is ranked by tier and queued for playback order." },
+    { number: "03", title: "Broadcast", description: "Tracks play through the stream pipeline and get logged." },
+  ],
+  rules: [
+    "Use music you own or are authorized to submit.",
+    "Include a valid playable link.",
+    "Queue priority follows selected tier and timestamp.",
+    "Requests may be removed if links are broken or non-compliant.",
+  ],
+  cta: {
+    label: "// A-SHOW HANDOFF",
+    heading: "Want the full live radio experience?",
+    description: "Jump to BARCODE Radio for the main transmission window.",
+    buttonText: "Enter BARCODE Radio →",
+  },
+  terminalOutput: [
+    "> QUEUE.PIPELINE ............... ACTIVE",
+    "> TIER.ROUTER .................. STABLE",
+    "> REQUEST.LOGGER ............... WRITING",
+    "> HANDOFF TARGET ............... /radio",
+  ],
+};
+
 // ----- TERMINAL PAGE -----
 
 export const terminalPage = {

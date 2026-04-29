@@ -16,6 +16,7 @@ export const metadata: Metadata = {
 
 const VALID_CATEGORIES = new Set(["Entity", "Personnel", "Sponsor", "Interface", "Production"] as const);
 const VALID_STATUSES = new Set(["ACTIVE", "INACTIVE", "ARCHIVED", "PENDING", "UNKNOWN"] as const);
+const VALID_CLEARANCE = new Set(["PUBLIC", "INTERNAL", "RESTRICTED"] as const);
 
 function normalizeCategory(category: string): "Entity" | "Personnel" | "Sponsor" | "Interface" | "Production" {
   return VALID_CATEGORIES.has(category as never) ? (category as "Entity" | "Personnel" | "Sponsor" | "Interface" | "Production") : "Interface";
@@ -25,13 +26,18 @@ function normalizeStatus(status: string): "ACTIVE" | "INACTIVE" | "ARCHIVED" | "
   return VALID_STATUSES.has(status as never) ? (status as "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN") : "UNKNOWN";
 }
 
+function normalizeClearance(clearance: string | undefined): "PUBLIC" | "INTERNAL" | "RESTRICTED" {
+  if (!clearance) return "PUBLIC";
+  return VALID_CLEARANCE.has(clearance as never) ? (clearance as "PUBLIC" | "INTERNAL" | "RESTRICTED") : "PUBLIC";
+}
+
 const databaseEntries = databasePage.dossiers.map((entry) => ({
   id: entry.slug.toUpperCase(),
   name: entry.title,
   image: entry.image,
   category: normalizeCategory(entry.category),
   status: normalizeStatus(entry.status),
-  clearance: "PUBLIC" as const,
+  clearance: normalizeClearance((entry as { clearance?: string }).clearance),
   role: entry.category || "N/A",
   origin: "UNVERIFIED" as const,
   summary: entry.summary,

@@ -267,7 +267,7 @@ export const databasePage = {
     heading1: "Network",
     heading2: "Database",
     description:
-      "A categorized archive of entities, interfaces, sponsors, and signal anomalies connected to the BARCODE Network.",
+      "Internal dossier system. Personnel, entities, productions, interfaces — and anomalies connected to BARCODE Network.",
   },
 
   categories: [
@@ -292,6 +292,7 @@ export const databasePage = {
   dossiers: [
     {
       slug: "6-bit",
+      designation: "EN-001",
       title: "6 Bit",
       category: "Entity",
       image: "/6-bit.png",
@@ -309,8 +310,9 @@ export const databasePage = {
     },
     {
       slug: "barcode-radio",
+      designation: "PD-001",
       title: "BARCODE Radio",
-      category: "Interface",
+      category: "Production",
       image: "/barcode-radio.png",
       summary:
         "Live intake frequency for music submissions. Broadcasts every Friday.",
@@ -323,7 +325,8 @@ export const databasePage = {
     },
     {
       slug: "discord",
-      title: "Discord",
+      designation: "IF-001",
+      title: "Discord Community",
       category: "Interface",
       image: "/discord-logo.png",
       summary:
@@ -340,6 +343,7 @@ export const databasePage = {
     },
     {
       slug: "auxchord",
+      designation: "IF-003",
       title: "Auxchord",
       category: "Interface",
       image: "/auxchord-logo.png",
@@ -357,7 +361,8 @@ export const databasePage = {
     },
     {
       slug: "tiktok",
-      title: "TikTok Signal",
+      designation: "IF-002",
+      title: "TikTok Live",
       category: "Interface",
       image: "/tiktok-logo.png",
       summary:
@@ -444,6 +449,7 @@ export const databasePage = {
     },
     {
       slug: "the-void",
+      designation: "PD-002",
       title: "The Void",
       category: "Production",
       image: "",
@@ -479,6 +485,7 @@ export const databasePage = {
     },
     {
       slug: "mac-modem",
+      designation: "EN-003",
       title: "Mac Modem",
       category: "Entity",
       image: "/mac-modem.png",
@@ -496,8 +503,9 @@ export const databasePage = {
     },
     {
       slug: "dj-floppydisc",
+      designation: "EN-004",
       title: "DJ Floppydisc",
-      category: "Personnel",
+      category: "Entity",
       image: "/dj-floppydisc.png",
       summary:
         "Signal engineer. Mix/master operator. Long-running BARCODE mod.",
@@ -510,6 +518,7 @@ export const databasePage = {
     },
     {
       slug: "cache-back",
+      designation: "EN-005",
       title: "Cache Back",
       category: "Entity",
       image: "/cache-back.png",
@@ -525,6 +534,7 @@ export const databasePage = {
 
     {
       slug: "sheila",
+      designation: "EN-006",
       title: "Sheila",
       category: "Entity",
       image: "",
@@ -542,6 +552,7 @@ export const databasePage = {
     },
     {
       slug: "cliff",
+      designation: "EN-007",
       title: "Cliff",
       category: "Entity",
       image: "",
@@ -559,6 +570,7 @@ export const databasePage = {
     },
     {
       slug: "9-bit",
+      designation: "EN-009",
       title: "9 Bit",
       category: "Entity",
       image: "",
@@ -576,6 +588,7 @@ export const databasePage = {
     },
     {
       slug: "galaknoise",
+      designation: "EN-010",
       title: "GALAKNOISE",
       category: "Entity",
       image: "",
@@ -593,6 +606,7 @@ export const databasePage = {
     },
     {
       slug: "oreaganomics",
+      designation: "SP-001",
       title: "Oreaganomics",
       category: "Sponsor",
       image: "",
@@ -610,6 +624,7 @@ export const databasePage = {
     },
     {
       slug: "studio-rats",
+      designation: "EN-008",
       title: "Studio Rats",
       category: "Entity",
       image: "/studio-rats.png",
@@ -627,7 +642,8 @@ export const databasePage = {
     },
     {
       slug: "vouchd",
-      title: "Vouch’d",
+      designation: "IF-004",
+      title: "Vouch'd",
       category: "Interface",
       image: "/vouchd-logo.png",
       summary:

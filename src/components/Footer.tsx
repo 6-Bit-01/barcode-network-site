@@ -53,11 +53,6 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/queue" className="text-sm text-foreground/70 hover:text-accent transition-colors">
-                  AI Stream
-                </Link>
-              </li>
-              <li>
                 <Link href="/database" className="text-sm text-foreground/70 hover:text-accent transition-colors">
                   Database
                 </Link>

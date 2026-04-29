@@ -108,7 +108,13 @@ export default async function EntityPage({
             <div className="border border-accent/20 bg-surface p-2 crt-frame">
               <div className="relative aspect-[4/5] overflow-hidden crt-scanlines crt-vignette crt-flicker">
                 <Image
-                  src={getEntryImage(entry)}
+                  src={getEntryImage({
+                    id: entry.slug,
+                    image: entry.image,
+                    clearance: (entry as { clearance?: string }).clearance || "PUBLIC",
+                    category: entry.category,
+                    status: entry.status,
+                  })}
                   alt={entry.title}
                   fill
                   className="object-cover crt-tint"

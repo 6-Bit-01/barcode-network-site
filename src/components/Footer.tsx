@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { siteConfig, externalLinks } from "@/content";
+import { SmartTikTokLink } from "./SmartTikTokLink";
 
 export function Footer() {
   const currentYear = new Date().getFullYear();
@@ -53,11 +54,6 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/queue" className="text-sm text-foreground/70 hover:text-accent transition-colors">
-                  AI Stream
-                </Link>
-              </li>
-              <li>
                 <Link href="/database" className="text-sm text-foreground/70 hover:text-accent transition-colors">
                   Database
                 </Link>
@@ -85,6 +81,9 @@ export function Footer() {
                 <a href={externalLinks.auxchord} target="_blank" rel="noopener noreferrer" className="text-sm text-foreground/70 hover:text-accent transition-colors">
                   Auxchord
                 </a>
+              </li>
+              <li>
+                <SmartTikTokLink className="text-sm text-foreground/70 hover:text-accent transition-colors" offlineLabel="TikTok Signal" liveLabel="TikTok Live // Tune In" />
               </li>
               <li>
                 <Link href="/merch" className="text-sm text-foreground/70 hover:text-accent transition-colors">

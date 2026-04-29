@@ -3,6 +3,7 @@ import Image from "next/image";
 import { LiveBanner } from "@/components/LiveBanner";
 import { HeroHeading, StatusBadge, SectionDot } from "@/components/LiveEffects";
 import { homePage, siteConfig, externalLinks } from "@/content";
+import { SmartTikTokLink } from "@/components/SmartTikTokLink";
 
 function resolveHref(href: string): string {
   if (href.startsWith("EXTERNAL:")) {
@@ -122,6 +123,17 @@ export default function Home() {
                   {link.label}
                 </span>
               );
+
+              if (link.href === "EXTERNAL:tiktok") {
+                return (
+                  <SmartTikTokLink
+                    key={link.label}
+                    className={className}
+                    offlineLabel="TikTok Signal"
+                    liveLabel="TikTok Live // Tune In"
+                  />
+                );
+              }
 
               return isExternal ? (
                 <a

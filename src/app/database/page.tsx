@@ -14,7 +14,36 @@ export const metadata: Metadata = {
   },
 };
 
-const databaseEntries = databasePage.entries;
+const VALID_CATEGORIES = new Set(["Entity", "Personnel", "Sponsor", "Interface", "Production"] as const);
+const VALID_STATUSES = new Set(["ACTIVE", "INACTIVE", "ARCHIVED", "PENDING", "UNKNOWN"] as const);
+const VALID_CLEARANCE = new Set(["PUBLIC", "INTERNAL", "RESTRICTED"] as const);
+
+function normalizeCategory(category: string): "Entity" | "Personnel" | "Sponsor" | "Interface" | "Production" {
+  return VALID_CATEGORIES.has(category as never) ? (category as "Entity" | "Personnel" | "Sponsor" | "Interface" | "Production") : "Interface";
+}
+
+function normalizeStatus(status: string): "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN" {
+  return VALID_STATUSES.has(status as never) ? (status as "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN") : "UNKNOWN";
+}
+
+function normalizeClearance(clearance: string | undefined): "PUBLIC" | "INTERNAL" | "RESTRICTED" {
+  if (!clearance) return "PUBLIC";
+  return VALID_CLEARANCE.has(clearance as never) ? (clearance as "PUBLIC" | "INTERNAL" | "RESTRICTED") : "PUBLIC";
+}
+
+const databaseEntries = databasePage.dossiers.map((entry) => ({
+  id: entry.slug.toUpperCase(),
+  name: entry.title,
+  image: entry.image,
+  category: normalizeCategory(entry.category),
+  status: normalizeStatus(entry.status),
+  clearance: normalizeClearance((entry as { clearance?: string }).clearance),
+  role: entry.category || "N/A",
+  origin: "UNVERIFIED" as const,
+  summary: entry.summary,
+  tags: entry.tags,
+  notes: entry.notes,
+}));
 
 export default function DatabasePage() {
   return (
@@ -24,7 +53,7 @@ export default function DatabasePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16 sm:py-24">
           <PageHero
             label={databasePage.hero.label}
-            heading={databasePage.hero.heading}
+            heading={`${databasePage.hero.heading1} ${databasePage.hero.heading2}`}
             description={databasePage.hero.description}
           />
         </div>
@@ -70,9 +99,9 @@ export default function DatabasePage() {
               &gt; BARCODE_NETWORK // DATABASE QUERY
             </p>
             <div className="space-y-1 text-sm text-foreground/60">
-              {databasePage.terminalQuery.map((line, i) => (
-                <p key={i}>&gt; {line}</p>
-              ))}
+	              {(databasePage as { terminalQuery?: string[] }).terminalQuery?.map((line, i) => (
+	                <p key={i}>&gt; {line}</p>
+	              )) || null}
               <p className="text-accent mt-3">
                 &gt; {databaseEntries.filter((e) => e.status === "ACTIVE").length} RECORDS FOUND
                 <span className="cursor-blink">_</span>

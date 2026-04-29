@@ -14,15 +14,26 @@ export const metadata: Metadata = {
   },
 };
 
+const VALID_CATEGORIES = new Set(["Entity", "Personnel", "Sponsor", "Interface", "Production"] as const);
+const VALID_STATUSES = new Set(["ACTIVE", "INACTIVE", "ARCHIVED", "PENDING", "UNKNOWN"] as const);
+
+function normalizeCategory(category: string): "Entity" | "Personnel" | "Sponsor" | "Interface" | "Production" {
+  return VALID_CATEGORIES.has(category as never) ? (category as "Entity" | "Personnel" | "Sponsor" | "Interface" | "Production") : "Interface";
+}
+
+function normalizeStatus(status: string): "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN" {
+  return VALID_STATUSES.has(status as never) ? (status as "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN") : "UNKNOWN";
+}
+
 const databaseEntries = databasePage.dossiers.map((entry) => ({
   id: entry.slug.toUpperCase(),
   name: entry.title,
   image: entry.image,
-  category: entry.category,
-  status: entry.status,
-  clearance: "PUBLIC",
-  role: entry.category,
-  origin: "UNVERIFIED",
+  category: normalizeCategory(entry.category),
+  status: normalizeStatus(entry.status),
+  clearance: "PUBLIC" as const,
+  role: entry.category || "N/A",
+  origin: "UNVERIFIED" as const,
   summary: entry.summary,
   tags: entry.tags,
   notes: entry.notes,

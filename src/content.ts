@@ -20,7 +20,6 @@ export const externalLinks = {
   discord: "https://discord.gg/4tHazmD528",
   auxchord: "https://aux.fan/@barcode_radio",
   tiktok: "https://www.tiktok.com/@six.bit",
-  tiktokLive: "https://www.tiktok.com/@six.bit",
 };
 
 // ----- HOMEPAGE -----
@@ -82,6 +81,7 @@ export const homePage = {
     { label: "Discord", href: "EXTERNAL:discord" },
     { label: "Database", href: "/database" },
     { label: "Submit Music", href: "/radio" },
+    { label: "TikTok Signal", href: "EXTERNAL:tiktok" },
   ],
 };
 
@@ -168,6 +168,40 @@ export const radioPage = {
       href: "EXTERNAL:discord",
       variant: "secondary",
     },
+  ],
+};
+
+// ----- ARCHIVE: QUEUE PAGE -----
+// Kept for legacy archived route content that still compiles in some deployments.
+export const queuePage = {
+  hero: {
+    label: "// ARCHIVE PROGRAM: AI STREAM QUEUE",
+    heading: "AI Stream Queue",
+    description:
+      "Request a play in the B-show buffer. Free or priority tiers route into the active queue.",
+  },
+  steps: [
+    { number: "01", title: "Submit", description: "Send artist, title, and link into the queue intake form." },
+    { number: "02", title: "Route", description: "Your request is ranked by tier and queued for playback order." },
+    { number: "03", title: "Broadcast", description: "Tracks play through the stream pipeline and get logged." },
+  ],
+  rules: [
+    "Use music you own or are authorized to submit.",
+    "Include a valid playable link.",
+    "Queue priority follows selected tier and timestamp.",
+    "Requests may be removed if links are broken or non-compliant.",
+  ],
+  cta: {
+    label: "// A-SHOW HANDOFF",
+    heading: "Want the full live radio experience?",
+    description: "Jump to BARCODE Radio for the main transmission window.",
+    buttonText: "Enter BARCODE Radio →",
+  },
+  terminalOutput: [
+    "> QUEUE.PIPELINE ............... ACTIVE",
+    "> TIER.ROUTER .................. STABLE",
+    "> REQUEST.LOGGER ............... WRITING",
+    "> HANDOFF TARGET ............... /radio",
   ],
 };
 
@@ -314,15 +348,15 @@ export const databasePage = {
     },
     {
       slug: "tiktok",
-      title: "TikTok Live",
+      title: "TikTok Signal",
       category: "Interface",
       image: "/database/tiktok-logo.png",
       summary:
-        "Primary public broadcast feed. Used for BARCODE Radio live shows.",
+        "Primary public signal hub. Tune in here when BARCODE Radio goes live.",
       status: "ACTIVE",
       tags: ["live", "broadcast", "social"],
       notes:
-        "TikTok-first format. 6 Bit hosts the show live. Community engagement is core to the experience.",
+        "Primary TikTok signal hub for 6 Bit and BARCODE updates. Tune in from here when live starts.",
       link: "EXTERNAL:tiktok",
       files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
     },
@@ -587,6 +621,6 @@ export const terminalLogin = {
 export const liveBanner = {
   active: true,
   text: "LIVE NOW — BARCODE Network is transmitting",
-  watchText: "Watch BARCODE Radio →",
+  watchText: "Lock into the TikTok signal →",
   watchHref: "/radio",
 };

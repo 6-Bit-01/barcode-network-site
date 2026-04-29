@@ -263,9 +263,9 @@ export const terminalPage = {
 
 export const databasePage = {
   hero: {
-    label: "// DOSSIER INDEX",
-    heading1: "Network",
-    heading2: "Database",
+    label: "// SYSTEM: DATABASE",
+    heading1: "Database",
+    heading2: "",
     description:
       "A categorized archive of entities, interfaces, sponsors, and signal anomalies connected to the BARCODE Network.",
   },
@@ -707,7 +707,7 @@ export const transmissionsPage = {
 export const merchPage = {
   hero: {
     label: "// SIGNAL GOODS",
-    heading1: "Network",
+    heading1: "Database",
     heading2: "Merch",
     description:
       "Physical signal carriers and branded network artifacts. Limited availability.",

@@ -47,11 +47,9 @@ export default function TerminalPage() {
               </div>
 
               <div className="space-y-4">
-                <InfoRow label="Codename" value={terminalPage.dossier.codename} accent />
-                <InfoRow label="Designation" value={terminalPage.dossier.designation} />
-                <InfoRow label="Status" value={terminalPage.dossier.status} />
-                <InfoRow label="Classification" value={terminalPage.dossier.classification} />
-                <InfoRow label="First Seen" value={terminalPage.dossier.firstSeen} />
+                {terminalPage.dossier.map((row) => (
+                  <InfoRow key={row.label} label={row.label} value={row.value} accent={row.accent} />
+                ))}
               </div>
             </div>
 
@@ -65,8 +63,9 @@ export default function TerminalPage() {
               </div>
 
               <div className="text-base text-foreground/70 leading-relaxed space-y-4">
-                <p>{terminalPage.dossier.notes}</p>
-                <p>{terminalPage.quote}</p>
+                {terminalPage.about.map((line, i) => (
+                  <p key={i}>{line}</p>
+                ))}
               </div>
             </div>
           </div>
@@ -104,7 +103,7 @@ export default function TerminalPage() {
               &gt; BARCODE_NETWORK // TERMINAL ACCESS
             </p>
             <div className="space-y-1 text-sm text-foreground/60">
-              {terminalPage.terminalLines.map((line, i) => (
+              {terminalPage.terminalOutput.map((line, i) => (
                 <p key={i}>&gt; {line}</p>
               ))}
               <p className="text-accent mt-4">

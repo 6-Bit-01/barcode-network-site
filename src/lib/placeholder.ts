@@ -10,13 +10,13 @@
  */
 
 const GENERAL_PLACEHOLDERS = [
-  "/placeholder-1.png",
-  "/placeholder-2.png",
+  "/database/placeholder-1.png",
+  "/database/placeholder-2.png",
 ];
 
-const RESTRICTED_PLACEHOLDER = "/placeholder-restricted.png";
-const UNKNOWN_PLACEHOLDER = "/placeholder-unknown.png";
-const PRODUCTION_PLACEHOLDER = "/placeholder-production.png";
+const RESTRICTED_PLACEHOLDER = "/database/placeholder-restricted.png";
+const UNKNOWN_PLACEHOLDER = "/database/placeholder-unknown.png";
+const PRODUCTION_PLACEHOLDER = "/database/placeholder-production.png";
 
 /** Simple deterministic hash from a string → number */
 function hashCode(str: string): number {

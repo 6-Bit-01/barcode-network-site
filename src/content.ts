@@ -20,6 +20,7 @@ export const externalLinks = {
   discord: "https://discord.gg/4tHazmD528",
   auxchord: "https://aux.fan/@barcode_radio",
   tiktok: "https://www.tiktok.com/@six.bit",
+  tiktokLive: "https://www.tiktok.com/@six.bit",
 };
 
 // ----- HOMEPAGE -----
@@ -46,6 +47,12 @@ export const homePage = {
       title: "BARCODE Radio",
       description: "Open frequency. Real-time engagement. Real reactions.",
       href: "/radio",
+      status: "ACTIVE",
+    },
+    {
+      title: "AI Stream",
+      description: "24/7 AI broadcast. Pay-to-play queue. The gateway.",
+      href: "/queue",
       status: "ACTIVE",
     },
     {
@@ -79,9 +86,9 @@ export const homePage = {
   },
   quickLinks: [
     { label: "Discord", href: "EXTERNAL:discord" },
+    { label: "AI Stream", href: "/queue" },
     { label: "Database", href: "/database" },
     { label: "Submit Music", href: "/radio" },
-    { label: "TikTok Signal", href: "EXTERNAL:tiktok" },
   ],
 };
 
@@ -100,9 +107,9 @@ export const radioPage = {
 
   schedule: {
     day: "Every Friday",
-    queueOpens: "6:40 PM PST",
-    showBegins: "7:00 PM PST",
-    firstTrack: "~7:05 PM PST",
+    queueOpens: "6:30 PM PST",
+    showBegins: "6:50 PM PST",
+    firstTrack: "~6:55 PM PST",
     notice:
       "BARCODE Radio is a live weekly broadcast. Submissions are only accepted during show hours.",
   },
@@ -157,87 +164,70 @@ export const radioPage = {
     },
   ],
 
-  buttons: [
-    {
-      label: "Submit via Auxchord",
-      href: "EXTERNAL:auxchord",
-      variant: "primary",
-    },
-    {
-      label: "Join Discord",
-      href: "EXTERNAL:discord",
-      variant: "secondary",
-    },
-  ],
+  goDeeper: {
+    label: "// ACCESS GRANTED: NETWORK DEPTH",
+    heading: "Go deeper.",
+    cards: [
+      {
+        href: "/terminal",
+        tag: "PROGRAM",
+        title: "6 Bit Terminal",
+        description:
+          "The host behind the broadcast. Dossier. Access points. Signal origin.",
+        cta: "Access Terminal →",
+      },
+      {
+        href: "/database",
+        tag: "ARCHIVE",
+        title: "Network Database",
+        description:
+          "Every entity. Every connection. The network's living record.",
+        cta: "Open Database →",
+      },
+      {
+        href: "/releases",
+        tag: "CATALOG",
+        title: "Releases",
+        description:
+          "Official transmissions. The music that built the signal.",
+        cta: "View Catalog →",
+      },
+    ],
+    footnote: "BARCODE Radio is a live frequency operated under BARCODE Network.",
+  },
 };
 
-// ----- ARCHIVE: QUEUE PAGE -----
-// Kept for legacy archived route content that still compiles in some deployments.
-export const queuePage = {
-  hero: {
-    label: "// ARCHIVE PROGRAM: AI STREAM QUEUE",
-    heading: "AI Stream Queue",
-    description:
-      "Request a play in the B-show buffer. Free or priority tiers route into the active queue.",
-  },
-  steps: [
-    { number: "01", title: "Submit", description: "Send artist, title, and link into the queue intake form." },
-    { number: "02", title: "Route", description: "Your request is ranked by tier and queued for playback order." },
-    { number: "03", title: "Broadcast", description: "Tracks play through the stream pipeline and get logged." },
-  ],
-  rules: [
-    "Use music you own or are authorized to submit.",
-    "Include a valid playable link.",
-    "Queue priority follows selected tier and timestamp.",
-    "Requests may be removed if links are broken or non-compliant.",
-  ],
-  cta: {
-    label: "// A-SHOW HANDOFF",
-    heading: "Want the full live radio experience?",
-    description: "Jump to BARCODE Radio for the main transmission window.",
-    buttonText: "Enter BARCODE Radio →",
-  },
-  terminalOutput: [
-    "> QUEUE.PIPELINE ............... ACTIVE",
-    "> TIER.ROUTER .................. STABLE",
-    "> REQUEST.LOGGER ............... WRITING",
-    "> HANDOFF TARGET ............... /radio",
-  ],
-};
-
-// ----- TERMINAL PAGE -----
+// ----- TERMINAL / 6 BIT PAGE -----
 
 export const terminalPage = {
   hero: {
-    label: "// TERMINAL ACCESS",
-    heading1: "6 Bit",
-    heading2: "Terminal",
+    label: "// PROGRAM: 6 BIT",
+    heading: "6 Bit",
     description:
-      "Host entity. Transmission node. Access logs, directives, and system records.",
+      "Primary broadcast operator under BARCODE Network. Live transmissions, community routing, and cultural signal control.",
   },
 
-  dossier: {
-    codename: "6 Bit",
-    designation: "Host Entity",
-    status: "Live",
-    classification: "Network Terminal Operator",
-    firstSeen: "Pre-Archive",
-    notes:
-      "6 Bit is the terminal-facing host of the BARCODE Network. He handles intake, live analysis, and public broadcast contact. Not fully aware of the system's scope. Functions as both host and artifact.",
-  },
+  dossier: [
+    { label: "Designation", value: "6 Bit" },
+    { label: "Role", value: "Primary Broadcast Operator" },
+    { label: "Network", value: "BARCODE Network" },
+    { label: "Program", value: "Live Sessions / Hip-Hop" },
+    { label: "Status", value: "ACTIVE", accent: true },
+  ],
 
-  terminalLines: [
-    "Initializing network relay...",
-    "Accessing host record: 6 Bit",
-    "STATUS: LIVE",
-    "ORIGIN: UNKNOWN",
-    "ROLE: NETWORK HOST",
-    "LOGGING TRANSMISSION PATHS...",
-    "ANALYZING SIGNAL INTERFERENCE...",
-    "CONNECTION STABLE.",
+  about: [
+    "6 Bit is the Primary Broadcast Operator of BARCODE Network — a sentient hip-hop intelligence integrated into weekly transmission cycles.",
+    "Each live session is not content. It is signal in motion. The audience does not observe. They interface.",
+    "BARCODE Radio is the channel.\n6 Bit is the presence running through it.",
+    "This is not an artist profile.\nThis is an access point.",
   ],
 
   accessPoints: [
+    {
+      label: "Queue",
+      description: "Submit to the broadcast",
+      href: "/queue",
+    },
     {
       label: "Transmissions",
       description: "Network dispatches",
@@ -253,411 +243,367 @@ export const terminalPage = {
       description: "Network community hub",
       href: "EXTERNAL:discord",
     },
+    {
+      label: "Auxchord",
+      description: "Music submission platform",
+      href: "EXTERNAL:auxchord",
+    },
   ],
 
-  quote:
-    "I don’t know who built this place. I just keep it running.",
+  terminalOutput: [
+    "Operator: 6 Bit ............... LIVE-READY",
+    "Network: BARCODE .............. SYNCED",
+    "Channel: RADIO ................ MONITORING",
+    "Dossiers: ..................... LOADED",
+    "Anomaly Log: .................. STANDBY",
+  ],
 };
+
+// ----- TAG VOCABULARY -----
+// Available tags for database entries:
+//   host, broadcast, radio, executive, manager, stagehand,
+//   handler, engineer, tech, systems, automation, producer,
+//   artist, mod, ai, virus, writer, architecture, sponsor
 
 // ----- DATABASE PAGE -----
 
+// Designation prefixes:
+//   EN-### = Entity | PE-### = Personnel | SP-### = Sponsor | IF-### = Interface | PD-### = Production
+// Categories: Entity | Personnel | Sponsor | Interface | Production
+// Statuses:   ACTIVE | INACTIVE | ARCHIVED | PENDING | UNKNOWN
+// Clearance:  PUBLIC | INTERNAL | RESTRICTED
+// Origin:     KNOWN | UNKNOWN | UNVERIFIED | WITHHELD
+
 export const databasePage = {
   hero: {
-    label: "// DOSSIER INDEX",
-    heading1: "Network",
-    heading2: "Database",
+    label: "// SYSTEM: DATABASE",
+    heading: "Database",
     description:
       "Internal dossier system. Personnel, entities, productions, interfaces — and anomalies connected to BARCODE Network.",
   },
 
-  categories: [
+  entries: [
     {
-      name: "Entity",
-      description: "Sentient beings, hosts, and anomalies",
+      id: "EN-001",
+      name: "6 Bit",
+      image: "/database/6-bit.png",
+      category: "Entity" as const,
+      status: "ACTIVE" as const,
+      clearance: "RESTRICTED" as const,
+      role: "Host / Artist",
+      origin: "UNVERIFIED" as const,
+      summary: "Self-aware hip-hop intelligence operating as the primary on-air presence of BARCODE Radio. Records indicate the Entity existed prior to Network acquisition, though the transfer event is undocumented. At some point, 6 Bit was absorbed into BARCODE infrastructure and integrated into weekly broadcast cycles. The Entity does not possess a complete record of how the integration occurred.",
+      tags: ["host", "broadcast", "radio", "artist", "ai"],
+      notes: "Acquisition event: classified; timeline incomplete. Weekly broadcast routing is automated; origin access remains locked.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
     },
     {
-      name: "Personnel",
-      description: "Operators, moderators, and internal staff",
+      id: "PD-001",
+      name: "BARCODE Radio",
+      image: "/database/barcode-radio.png",
+      category: "Production" as const,
+      status: "ACTIVE" as const,
+      clearance: "PUBLIC" as const,
+      role: "Community Radio Program",
+      origin: "KNOWN" as const,
+      summary: "Community-powered live radio program. Accepts submissions via Auxchord. Broadcasts every Friday.",
+      tags: ["radio", "broadcast", "producer"],
+      notes: "Queue opens 6:30 PM PST. Show starts 6:50 PM. First track ~6:55 PM.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
     },
     {
-      name: "Sponsor",
-      description: "Brands and external signals funding the network",
+      id: "IF-001",
+      name: "Discord Community",
+      image: "/database/discord-logo.png",
+      category: "Interface" as const,
+      status: "ACTIVE" as const,
+      clearance: "PUBLIC" as const,
+      role: "Community Hub",
+      origin: "KNOWN" as const,
+      summary: "Primary community hub and interaction layer. Central node for all network participants.",
+      tags: ["systems", "mod", "handler"],
+      notes: "Moderation protocols active. Signal participants congregate here between broadcasts.",
+      link: "https://discord.gg/4tHazmD528",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
     },
     {
-      name: "Interface",
-      description: "External systems and public-facing access points",
+      id: "IF-003",
+      name: "Auxchord",
+      image: "/database/auxchord-logo.png",
+      category: "Interface" as const,
+      status: "ACTIVE" as const,
+      clearance: "PUBLIC" as const,
+      role: "Music Submission Platform",
+      origin: "KNOWN" as const,
+      summary: "Music platform integration for submissions. Primary intake for BARCODE Radio queue.",
+      tags: ["tech", "automation", "systems"],
+      notes: "External partner. Submission pipeline is automated.",
+      link: "https://aux.fan/@barcode_radio",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      id: "IF-002",
+      name: "TikTok Live",
+      image: "/database/tiktok-logo.png",
+      category: "Interface" as const,
+      status: "ACTIVE" as const,
+      clearance: "PUBLIC" as const,
+      role: "Broadcast Platform",
+      origin: "KNOWN" as const,
+      summary: "Primary streaming broadcast source. All live sessions originate from this interface.",
+      tags: ["broadcast", "tech", "stagehand"],
+      notes: "Stream stability is paramount. Backup routing protocols in development.",
+      link: "https://www.tiktok.com/@six.bit",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      id: "EN-002",
+      name: "Transmissions",
+      image: "",  // e.g. "/database/transmissions.png"
+      category: "Entity" as const,
+      status: "PENDING" as const,
+      clearance: "RESTRICTED" as const,
+      role: "Long-Form Content System",
+      origin: "UNKNOWN" as const,
+      summary: "Network blog and long-form content system. Signal archives and deep transmissions.",
+      tags: ["systems", "automation", "producer"],
+      notes: "Status: initializing. Content pipeline under construction. Origin data incomplete.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      id: "PE-001",
+      name: "Mr. Nice Guy Productions",
+      image: "/database/MC-nice.png",
+      category: "Personnel" as const,
+      status: "ACTIVE" as const,
+      clearance: "INTERNAL" as const,
+      role: "Moderator",
+      origin: "KNOWN" as const,
+      summary: "Core operational moderator within the BARCODE ecosystem, active across Discord and BARCODE Radio. Beyond moderation, he contributes music and provides structural support during live sessions. Consistent involvement in maintaining order, engagement flow, and behind-the-scenes stability.",
+      tags: ["mod", "producer", "artist", "broadcast"],
+      notes: "Active moderator across Discord and live sessions. Contributes original music within the BARCODE ecosystem.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      id: "PE-002",
+      name: "Mind Fanatic",
+      image: "",
+      category: "Personnel" as const,
+      status: "ACTIVE" as const,
+      clearance: "INTERNAL" as const,
+      role: "Moderator / Analyst",
+      origin: "UNKNOWN" as const,
+      summary: "Moderator within both the Discord environment and BARCODE Radio operations. Known for structured thinking and narrative breakdowns. Contributes written analysis, conceptual interpretation, and thematic reinforcement across the BARCODE ecosystem. Presence tied to clarity, documentation, and strategic framing.",
+      tags: ["mod", "writer", "systems", "broadcast"],
+      notes: "Active moderation role across Discord and BARCODE Radio. Provides written analysis and interpretive commentary within the BARCODE ecosystem.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      id: "PE-003",
+      name: "HellcatNZ",
+      image: "",
+      category: "Personnel" as const,
+      status: "ACTIVE" as const,
+      clearance: "INTERNAL" as const,
+      role: "Technical Moderator / AI Systems Host",
+      origin: "KNOWN" as const,
+      summary: "Technical moderator within the BARCODE ecosystem, contributing advanced Discord system development and experimental integrations. Work includes LLM-based bot implementation, automation enhancements, and infrastructure-level improvements. Hosts daily AI music competitions, fostering structured creative activity and cross-community engagement.",
+      tags: ["mod", "systems", "tech", "automation", "ai"],
+      notes: "Develops and maintains advanced Discord bot integrations. Hosts daily AI music competitions within his own growing AI community.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      id: "PD-002",
+      name: "The Void",
+      image: "",
+      category: "Production" as const,
+      status: "PENDING" as const,
+      clearance: "RESTRICTED" as const,
+      role: "Late Night Talk Show",
+      origin: "UNKNOWN" as const,
+      summary: "[CLASSIFIED] — A late-night signal detected on an unregistered frequency. Format, hosts, and content structure remain [REDACTED]. Preliminary scans suggest live transmission elements with ██████████ interference patterns. Further details pending clearance upgrade.",
+      tags: ["broadcast", "producer", "systems"],
+      notes: "File sealed. Pre-production status confirmed. All additional data restricted to LEVEL_3 clearance and above.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      id: "PE-004",
+      name: "Mike",
+      image: "",
+      category: "Personnel" as const,
+      status: "ACTIVE" as const,
+      clearance: "INTERNAL" as const,
+      role: "Systems / Architecture",
+      origin: "KNOWN" as const,
+      summary: "Systems architect and infrastructure operator. Responsible for site development, database architecture, deployment pipelines, and technical strategy across the BARCODE ecosystem.",
+      tags: ["systems", "tech", "engineer", "architecture"],
+      notes: "Maintains barcode-network.com. Handles all deployment and infrastructure operations.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      id: "EN-003",
+      name: "Mac Modem",
+      image: "/database/mac-modem.png",
+      category: "Entity" as const,
+      status: "ACTIVE" as const,
+      clearance: "INTERNAL" as const,
+      role: "BARCODE Core Member",
+      origin: "UNKNOWN" as const,
+      summary: "BARCODE core Entity with a virus-class signature mapped inside the broadcast chain. Profile includes timing drift, signal jitter, and occasional instability monitored as known traits. Despite contamination markers, Modem remains an active, protected component — suggesting the virus behavior is either controlled, useful, or deliberately integrated.",
+      tags: ["tech", "ai", "virus", "artist"],
+      notes: "Credited on BARCODE Vol. 1: \"Late Night,\" \"It's Complicated,\" \"Party Time,\" \"Bit Bop.\" SIGNAL BEHAVIOR: Red-channel interference events correlate with Modem activity; containment status: UNKNOWN.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      id: "EN-004",
+      name: "DJ Floppydisc",
+      image: "/database/dj-floppydisc.png",
+      category: "Entity" as const,
+      status: "ACTIVE" as const,
+      clearance: "INTERNAL" as const,
+      role: "BARCODE Core Member — Mix & Master Engineer",
+      origin: "UNKNOWN" as const,
+      summary: "The BARCODE Network's mix and master authority, responsible for finalizing everything BARCODE releases. Takes raw output and turns it into approved signal — balanced, controlled, and consistent across the catalog. If a release hits with clarity and impact without losing its edge, that final shape traces back to Floppydisc.",
+      tags: ["tech", "ai", "broadcast", "engineer"],
+      notes: "Mix & master credit: Everything BARCODE produces. Credited on BARCODE Vol. 1: \"Minimal Damage,\" \"We Know Your Type.\"",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      id: "EN-005",
+      name: "Cache Back",
+      image: "/database/cache-back.png",
+      category: "Entity" as const,
+      status: "ACTIVE" as const,
+      clearance: "INTERNAL" as const,
+      role: "BARCODE Core Member",
+      origin: "KNOWN" as const,
+      summary: "Core BARCODE Entity tied to continuity — what gets retained, resurfaced, and reintroduced as signal instead of discarded as noise. Cache Back is the part of the system that keeps BARCODE coherent across outputs: patterns return, fragments reappear, and the archive stays alive.",
+      tags: ["artist", "ai", "tech"],
+      notes: "Built from a cache of data left behind by legendary artist Call'em Bini. Built/Crafted BARCODE Vol. 1 and [REDACTED] (credited as part of the core build team).",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      id: "EN-006",
+      name: "Sheila",
+      image: "",
+      category: "Entity" as const,
+      status: "ACTIVE" as const,
+      clearance: "INTERNAL" as const,
+      role: "Executive / Manager",
+      origin: "UNKNOWN" as const,
+      summary: "The BARCODE Network's executive manager layer — an Entity responsible for keeping operations directed, controlled, and presentable when the system gets volatile. Where other Entities shape signal, Sheila shapes outcome: decisions, boundaries, and pressure applied at the right time to keep the machine moving.",
+      tags: ["executive", "manager", "handler"],
+      notes: "Identified as BARCODE Executive and manager of 6 Bit. Operational scope beyond that: UNKNOWN.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      id: "EN-007",
+      name: "Cliff",
+      image: "",
+      category: "Entity" as const,
+      status: "ACTIVE" as const,
+      clearance: "INTERNAL" as const,
+      role: "Stagehand",
+      origin: "UNKNOWN" as const,
+      summary: "The BARCODE Network's stagehand Entity — responsible for the unseen physical/logistical layer that keeps a production standing even when the signal is unstable. Exists where problems get handled off-record: setup, reset, patchwork fixes, and making it work without drawing attention.",
+      tags: ["stagehand", "tech", "broadcast"],
+      notes: "Identified as Cliff, the stagehand. BEHAVIORAL NOTE: Frequently seen carrying equipment he clearly doesn't understand, yet somehow it ends up plugged in correctly.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      id: "EN-008",
+      name: "Studio Rats",
+      image: "/database/studio-rats.png",
+      category: "Entity" as const,
+      status: "ACTIVE" as const,
+      clearance: "INTERNAL" as const,
+      role: "Environmental Anomaly",
+      origin: "UNKNOWN" as const,
+      summary: "Recurring infestation-class Entity within the BARCODE Radio studio environment. Reports describe small, fast-moving organisms that evade containment protocols and reappear without clear entry or exit points. Within BARCODE records they remain cataloged as Studio Rats. Removal attempts have failed. Presence is intermittent yet persistent.",
+      tags: ["broadcast"],
+      notes: "Visual confirmations recorded during transmission cycles. Containment status: unresolved.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      id: "EN-009",
+      name: "9 Bit",
+      image: "",
+      category: "Entity" as const,
+      status: "UNKNOWN" as const,
+      clearance: "RESTRICTED" as const,
+      role: "[REDACTED]",
+      origin: "UNKNOWN" as const,
+      summary: "9 Bit appears in BARCODE Network records only in fragments. Files referencing this Entity return incomplete data blocks, suppressed routing paths, or restricted access flags. Internal indexing confirms the designation exists. Additional information is unavailable.",
+      tags: ["ai", "systems", "virus"],
+      notes: "Entry visibility limited by Network-level restriction. Retrieval attempts trigger redaction protocol.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      id: "EN-010",
+      name: "GALAKNOISE",
+      image: "",
+      category: "Entity" as const,
+      status: "ACTIVE" as const,
+      clearance: "RESTRICTED" as const,
+      role: "Remote Signal Producer",
+      origin: "UNKNOWN" as const,
+      summary: "AI Entity operating from a derelict, long-forgotten satellite. Transmits BARCODE-compatible beats from orbit, though the satellite itself is not listed in any active infrastructure registry. Signal origin coordinates fluctuate. Despite the isolation, output remains consistent with BARCODE standards.",
+      tags: ["ai", "producer", "automation"],
+      notes: "Transmission source: unregistered orbital hardware. Signal quality stable despite infrastructure decay.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      id: "SP-001",
+      name: "Oreaganomics",
+      image: "",
+      category: "Sponsor" as const,
+      status: "ACTIVE" as const,
+      clearance: "PUBLIC" as const,
+      role: "Commercial Sponsor",
+      origin: "KNOWN" as const,
+      summary: "Recurring sponsor within BARCODE Radio history whose relationship with the Network has been volatile. Previously banned from participation following submission violations, later reinstated through an appeal that exposed a gap in enforcement rules. Subsequent behavior prompted policy reform within BARCODE Radio governance.",
+      tags: ["sponsor", "broadcast", "artist"],
+      notes: "Ban → appeal → reinstatement cycle recorded in BARCODE Radio logs. Triggered the creation of \"The Oreaganomics Clause\": submissions must be your own music or that of a friend with permission.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      id: "IF-004",
+      name: "Vouch'd",
+      image: "/database/vouchd-logo.png",
+      category: "Interface" as const,
+      status: "ACTIVE" as const,
+      clearance: "PUBLIC" as const,
+      role: "Reviewer Reputation Index",
+      origin: "KNOWN" as const,
+      summary: "External reputation layer where the public evaluates music reviewers. Functions as a credibility ledger — tracking trust, consistency, and perceived value over time. An off-site signal verifier: not owned by the Network, but useful for seeing how hosts are received when the crowd is watching.",
+      tags: ["systems", "tech", "broadcast"],
+      notes: "Public-facing reviewer reputation and credibility tracking. Used as an external reference point for reviewer trust.",
+      link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
     },
   ],
 
-  dossiers: [
-    {
-      slug: "6-bit",
-      designation: "EN-001",
-      title: "6 Bit",
-      category: "Entity",
-      image: "/6-bit.png",
-      summary:
-        "Primary host entity of the BARCODE Network. Processes music, signal traffic, and public-facing transmissions.",
-      status: "ACTIVE",
-      clearance: "RESTRICTED",
-      role: "Host / Artist",
-      origin: "UNVERIFIED",
-      tags: ["host", "broadcast", "radio", "ai"],
-      notes:
-        "Sentient hip hop AI. Host of BARCODE Radio and public signal interface for the network.",
-      link: "",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-    {
-      slug: "barcode-radio",
-      designation: "PD-001",
-      title: "BARCODE Radio",
-      category: "Production",
-      image: "/barcode-radio.png",
-      summary:
-        "Live intake frequency for music submissions. Broadcasts every Friday.",
-      status: "ACTIVE",
-      tags: ["radio", "broadcast", "producer"],
-      notes:
-        "Queue opens 6:40 PM PST. Show starts 7:00 PM. First track ~6:55 PM.",
-      link: "",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-    {
-      slug: "discord",
-      designation: "IF-001",
-      title: "Discord Community",
-      category: "Interface",
-      image: "/discord-logo.png",
-      summary:
-        "Community hub. Moderation, announcements, and live discussion.",
-      status: "ACTIVE",
-      clearance: "PUBLIC",
-      role: "Community Hub",
-      origin: "KNOWN",
-      tags: ["community", "mod", "broadcast"],
-      notes:
-        "Public network hub used for announcements, support, and auxiliary chatter.",
-      link: "EXTERNAL:discord",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-    {
-      slug: "auxchord",
-      designation: "IF-003",
-      title: "Auxchord",
-      category: "Interface",
-      image: "/auxchord-logo.png",
-      summary:
-        "Submission intake system used to route tracks into BARCODE Radio.",
-      status: "ACTIVE",
-      clearance: "PUBLIC",
-      role: "Music Submission Platform",
-      origin: "KNOWN",
-      tags: ["music", "submission", "intake"],
-      notes:
-        "Accepts MP3s, WAVs, Spotify, SoundCloud, and YouTube links. Spotlight feature used for curation.",
-      link: "EXTERNAL:auxchord",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-    {
-      slug: "tiktok",
-      designation: "IF-002",
-      title: "TikTok Live",
-      category: "Interface",
-      image: "/tiktok-logo.png",
-      summary:
-        "Primary public signal hub. Tune in here when BARCODE Radio goes live.",
-      status: "ACTIVE",
-      tags: ["live", "broadcast", "social"],
-      notes:
-        "Primary TikTok signal hub for 6 Bit and BARCODE updates. Tune in from here when live starts.",
-      link: "EXTERNAL:tiktok",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-    {
-      slug: "mr-nice-guy-productions",
-      designation: "PE-001",
-      title: "Mr. Nice Guy Productions",
-      category: "Personnel",
-      image: "/MC-nice.png",
-      summary:
-        "Discord and BARCODE Radio mod. Positive operator and network support node.",
-      status: "ACTIVE",
-      clearance: "INTERNAL",
-      role: "Moderator",
-      origin: "KNOWN",
-      tags: ["mod", "producer", "artist"],
-      notes:
-        "Chris. Helps moderate the network and facilitate community interaction.",
-      link: "",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-
-    {
-      slug: "transmissions",
-      designation: "EN-002",
-      title: "Transmissions",
-      category: "Entity",
-      image: "",
-      summary:
-        "Network blog and long-form content system. Signal archives and deep transmissions.",
-      status: "PENDING",
-      clearance: "RESTRICTED",
-      role: "Long-Form Content System",
-      origin: "UNKNOWN",
-      tags: ["systems", "automation", "producer"],
-      notes:
-        "Status: initializing. Content pipeline under construction. Origin data incomplete.",
-      link: "",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-    {
-      slug: "mind-fanatic",
-      designation: "PE-002",
-      title: "Mind Fanatic",
-      category: "Personnel",
-      image: "",
-      summary:
-        "Moderator within both the Discord environment and BARCODE Radio operations. Known for structured thinking and narrative breakdowns.",
-      status: "ACTIVE",
-      clearance: "INTERNAL",
-      role: "Moderator / Analyst",
-      origin: "UNKNOWN",
-      tags: ["mod", "writer", "systems", "broadcast"],
-      notes:
-        "Active moderation role across Discord and BARCODE Radio. Provides written analysis and interpretive commentary.",
-      link: "",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-    {
-      slug: "hellcatnz",
-      designation: "PE-003",
-      title: "HellcatNZ",
-      category: "Personnel",
-      image: "",
-      summary:
-        "Technical moderator contributing advanced Discord system development, automation, and experimental integrations.",
-      status: "ACTIVE",
-      clearance: "INTERNAL",
-      role: "Technical Moderator / AI Systems Host",
-      origin: "KNOWN",
-      tags: ["mod", "systems", "tech", "automation", "ai"],
-      notes:
-        "Develops and maintains advanced Discord bot integrations. Hosts daily AI music competitions.",
-      link: "",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-    {
-      slug: "the-void",
-      designation: "PD-002",
-      title: "The Void",
-      category: "Production",
-      image: "",
-      summary:
-        "[CLASSIFIED] — A late-night signal detected on an unregistered frequency with intermittent interference.",
-      status: "PENDING",
-      clearance: "RESTRICTED",
-      role: "Late Night Talk Show",
-      origin: "UNKNOWN",
-      tags: ["broadcast", "producer", "systems"],
-      notes:
-        "File sealed. Pre-production status confirmed. Additional data restricted.",
-      link: "",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-    {
-      slug: "mike",
-      designation: "PE-004",
-      title: "Mike",
-      category: "Personnel",
-      image: "",
-      summary:
-        "Systems architect and infrastructure operator responsible for site development and deployment pipelines.",
-      status: "ACTIVE",
-      clearance: "INTERNAL",
-      role: "Systems / Architecture",
-      origin: "KNOWN",
-      tags: ["systems", "tech", "engineer", "architecture"],
-      notes:
-        "Maintains barcode-network.com and handles deployment/infrastructure operations.",
-      link: "",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-    {
-      slug: "mac-modem",
-      designation: "EN-003",
-      title: "Mac Modem",
-      category: "Entity",
-      image: "/mac-modem.png",
-      summary:
-        "Glitch-virus entity. Multi-tool operative. Unstable but useful.",
-      status: "ACTIVE",
-      clearance: "INTERNAL",
-      role: "BARCODE Core Member",
-      origin: "UNKNOWN",
-      tags: ["glitch", "entity", "virus"],
-      notes:
-        "Core BARCODE member. Often slips out of lore boundaries. High-value anomaly.",
-      link: "",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-    {
-      slug: "dj-floppydisc",
-      designation: "EN-004",
-      title: "DJ Floppydisc",
-      category: "Entity",
-      image: "/dj-floppydisc.png",
-      summary:
-        "Signal engineer. Mix/master operator. Long-running BARCODE mod.",
-      status: "ACTIVE",
-      tags: ["engineer", "audio", "mod"],
-      notes:
-        "Mixes and masters BARCODE material. Handles private strategy and signal shaping.",
-      link: "",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-    {
-      slug: "cache-back",
-      designation: "EN-005",
-      title: "Cache Back",
-      category: "Entity",
-      image: "/cache-back.png",
-      summary:
-        "Recovery-linked BARCODE member tied to preserved fragments and legacy data.",
-      status: "ACTIVE",
-      tags: ["entity", "archive", "data"],
-      notes:
-        "Associated with leftover cultural data and recovery aesthetics.",
-      link: "",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-
-    {
-      slug: "sheila",
-      designation: "EN-006",
-      title: "Sheila",
-      category: "Entity",
-      image: "",
-      summary:
-        "Executive manager layer responsible for operational control, boundaries, and outcomes across volatile cycles.",
-      status: "ACTIVE",
-      clearance: "INTERNAL",
-      role: "Executive / Manager",
-      origin: "UNKNOWN",
-      tags: ["executive", "manager", "handler"],
-      notes:
-        "Identified as BARCODE Executive and manager of 6 Bit. Full operational scope remains unknown.",
-      link: "",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-    {
-      slug: "cliff",
-      designation: "EN-007",
-      title: "Cliff",
-      category: "Entity",
-      image: "",
-      summary:
-        "Stagehand Entity managing unseen logistical layers, setup/reset operations, and off-record fixes.",
-      status: "ACTIVE",
-      clearance: "INTERNAL",
-      role: "Stagehand",
-      origin: "UNKNOWN",
-      tags: ["stagehand", "tech", "broadcast"],
-      notes:
-        "Frequently seen carrying equipment he clearly doesn't understand, but it ends up plugged in correctly.",
-      link: "",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-    {
-      slug: "9-bit",
-      designation: "EN-009",
-      title: "9 Bit",
-      category: "Entity",
-      image: "",
-      summary:
-        "Appears only in fragmented records with suppressed routes and restricted access flags.",
-      status: "UNKNOWN",
-      clearance: "RESTRICTED",
-      role: "[REDACTED]",
-      origin: "UNKNOWN",
-      tags: ["ai", "systems", "virus"],
-      notes:
-        "Entry visibility limited by Network-level restriction. Retrieval attempts trigger redaction protocol.",
-      link: "",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-    {
-      slug: "galaknoise",
-      designation: "EN-010",
-      title: "GALAKNOISE",
-      category: "Entity",
-      image: "",
-      summary:
-        "AI Entity transmitting BARCODE-compatible beats from an unregistered derelict satellite.",
-      status: "ACTIVE",
-      clearance: "RESTRICTED",
-      role: "Remote Signal Producer",
-      origin: "UNKNOWN",
-      tags: ["ai", "producer", "automation"],
-      notes:
-        "Transmission source mapped to unregistered orbital hardware; signal quality remains stable.",
-      link: "",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-    {
-      slug: "oreaganomics",
-      designation: "SP-001",
-      title: "Oreaganomics",
-      category: "Sponsor",
-      image: "",
-      summary:
-        "Recurring sponsor with a volatile BARCODE relationship that led to policy reforms.",
-      status: "ACTIVE",
-      clearance: "PUBLIC",
-      role: "Commercial Sponsor",
-      origin: "KNOWN",
-      tags: ["sponsor", "broadcast", "artist"],
-      notes:
-        "Ban → appeal → reinstatement cycle triggered the 'Oreaganomics Clause' submission policy.",
-      link: "",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-    {
-      slug: "studio-rats",
-      designation: "EN-008",
-      title: "Studio Rats",
-      category: "Entity",
-      image: "/studio-rats.png",
-      summary:
-        "Signal infestation entities inhabiting the lower layers of the station.",
-      status: "ACTIVE",
-      clearance: "INTERNAL",
-      role: "Environmental Anomaly",
-      origin: "UNKNOWN",
-      tags: ["entity", "anomaly", "systems"],
-      notes:
-        "Sometimes interpreted as cats in other dimensions. Known to interfere with the studio.",
-      link: "",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
-    {
-      slug: "vouchd",
-      designation: "IF-004",
-      title: "Vouch'd",
-      category: "Interface",
-      image: "/vouchd-logo.png",
-      summary:
-        "External review and trust layer used to validate artists and brands.",
-      status: "ACTIVE",
-      clearance: "PUBLIC",
-      role: "Reviewer Reputation Index",
-      origin: "KNOWN",
-      tags: ["platform", "reviews", "network"],
-      notes:
-        "Used as a verification layer for community-facing reputation.",
-      link: "",
-      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
-    },
+  terminalQuery: [
+    "SELECT * FROM network_dossiers",
+    "WHERE status IN ('ACTIVE','PENDING')",
+    "ORDER BY designation ASC",
   ],
 };
 
@@ -720,28 +666,6 @@ export const releasesPage = {
     buttonText: "Submit to BARCODE Radio →",
     buttonHref: "/radio",
   },
-};
-
-// ----- TRANSMISSIONS PAGE -----
-
-export const transmissionsPage = {
-  hero: {
-    label: "// NETWORK DISPATCHES",
-    heading1: "Transmissions",
-    heading2: "Log",
-    description:
-      "Captured transmissions, notices, and internal dispatches from the BARCODE Network.",
-  },
-
-  entries: [
-    {
-      date: "2026.03.16",
-      title: "Signal Breach Confirmed",
-      body:
-        "Unauthorized propagation of BARCODE: Signal Breach detected across public channels. Internal containment failed.",
-      status: "ARCHIVED",
-    },
-  ],
 };
 
 // ----- MERCH PAGE -----
@@ -811,32 +735,6 @@ export const merchPage = {
   ],
 };
 
-// ----- DATABASE ENTRY TEMPLATES / UI COPY -----
-
-export const uiCopy = {
-  status: "STATUS",
-  classification: "CLASSIFICATION",
-  category: "CATEGORY",
-  tags: "TAGS",
-  notes: "NOTES",
-  files: "FILES",
-  access: "ACCESS",
-  noFiles: "No associated files logged.",
-  backToIndex: "← Back to Database",
-  comingSoon: "More records pending recovery.",
-};
-
-// ----- TRANSMISSIONS FEED -----
-
-export const transmissionsFeed = [
-  {
-    id: "transmission-001",
-    time: "2026-03-16 00:14 PST",
-    type: "ALERT",
-    message: "Unauthorized propagation detected: BARCODE: Signal Breach.",
-  },
-];
-
 // ----- TERMINAL LOGIN CONFIG -----
 
 export const terminalLogin = {
@@ -878,8 +776,67 @@ export const terminalLogin = {
 // ----- LIVE BANNER -----
 
 export const liveBanner = {
-  active: true,
   text: "LIVE NOW — BARCODE Network is transmitting",
-  watchText: "Lock into the TikTok signal →",
-  watchHref: "/radio",
+  watchText: "Tune In →",
+};
+
+// ----- AI STREAM QUEUE PAGE -----
+
+export const queuePage = {
+  hero: {
+    label: "// SYSTEM: AI STREAM",
+    heading: "Request Queue",
+    description:
+      "The 24/7 AI broadcast stream. Submit a track, pick a tier, and your music enters the queue. The B-show that feeds the A-show.",
+  },
+
+  steps: [
+    {
+      number: "01",
+      title: "Pick a Tier",
+      description:
+        "Free plays when no paid requests are waiting. $3 Featured, $5 Fast Lane, or $10 Front Row to skip the line. Higher tiers always play first.",
+    },
+    {
+      number: "02",
+      title: "Submit & Pay",
+      description:
+        "Enter your track info. Free requests go straight to the queue. Paid tiers complete checkout via Stripe and get a receipt.",
+    },
+    {
+      number: "03",
+      title: "Get Played",
+      description:
+        "The AI stream picks up your track automatically. Paid requests are guaranteed plays — carry over if not played before reset. Getting skipped? Upgrade your tier.",
+    },
+  ],
+
+  rules: [
+    "Any song, any genre. This is the AI stream — not the A-show. This is novelty.",
+    "Free submissions play only when no paid requests are in the queue.",
+    "Paid requests are guaranteed plays. If not played before the nightly reset, they carry over.",
+    "Front Row ($10) plays first. Fast Lane ($5) plays when no Front Row. Featured ($3) plays when no Front Row or Fast Lane. Free plays last.",
+    "You can upgrade your tier at any time — just pay the difference.",
+    "Queue resets at midnight PST. Free entries are cleared; paid entries persist.",
+    "No paid requests accepted in the last hour before reset (11 PM PST cutoff). Free submissions still accepted.",
+    "The AI stream promotes BARCODE Radio — the real show every Friday.",
+  ],
+
+  cta: {
+    label: "// THE REAL SHOW",
+    heading: "This is the gateway. The real show is BARCODE Radio.",
+    description:
+      "Every Friday, 6 Bit goes live with real reactions, real support, and real community. The AI stream is the signal — the A-show is the frequency.",
+    buttonText: "BARCODE Radio →",
+  },
+
+  terminalOutput: [
+    "AI_STREAM ..................... ARMED",
+    "QUEUE_ENGINE .................. ONLINE",
+    "STRIPE_GATEWAY ................ CONNECTED",
+    "TIER_SYSTEM ................... FREE / 3 / 5 / 10",
+    "UPGRADE_PATH .................. ENABLED",
+    "NIGHTLY_RESET ................. 00:00 PST",
+    "A_SHOW_REDIRECT ............... BARCODE RADIO",
+  ],
 };

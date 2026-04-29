@@ -2,7 +2,6 @@ import Link from "next/link";
 import { radioPage, externalLinks } from "@/content";
 import { RadioHero, SectionDot } from "@/components/LiveEffects";
 import { LocalSchedule } from "@/components/LocalSchedule";
-import Image from "next/image";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -18,15 +17,6 @@ export const metadata: Metadata = {
 };
 
 export default function RadioPage() {
-  const goDeeper = (radioPage as unknown as {
-    goDeeper?: {
-      label: string;
-      heading: string;
-      cards: { href: string; tag: string; title: string; description: string; cta: string }[];
-      footnote: string;
-    };
-  }).goDeeper;
-
   return (
     <div className="pt-14">
       {/* Hero — Submit buttons FIRST, zero friction */}
@@ -49,35 +39,24 @@ export default function RadioPage() {
           />
 
           {/* Primary CTAs — above the fold */}
-          <div className="max-w-lg">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <a
-                href={externalLinks.auxchord}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold bg-accent text-background hover:bg-accent-dim transition-all text-center"
-              >
-                <span className="text-lg">{radioPage.hero.submitButton.emoji}</span>
-                {radioPage.hero.submitButton.text}
-              </a>
-              <a
-                href={externalLinks.discord}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
-              >
-                <span className="text-lg">{radioPage.hero.discordButton.emoji}</span>
-                {radioPage.hero.discordButton.text}
-              </a>
-            </div>
+          <div className="flex flex-col sm:flex-row gap-4 max-w-lg">
             <a
-              href={externalLinks.tiktok}
+              href={externalLinks.auxchord}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-4 inline-flex w-full items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
+              className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold bg-accent text-background hover:bg-accent-dim transition-all text-center"
             >
-              <Image src="/tiktok-logo.png" alt="TikTok" width={20} height={20} className="rounded-sm" unoptimized />
-              TikTok Signal
+              <span className="text-lg">{radioPage.hero.submitButton.emoji}</span>
+              {radioPage.hero.submitButton.text}
+            </a>
+            <a
+              href={externalLinks.discord}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
+            >
+              <span className="text-lg">{radioPage.hero.discordButton.emoji}</span>
+              {radioPage.hero.discordButton.text}
             </a>
           </div>
         </div>
@@ -136,20 +115,19 @@ export default function RadioPage() {
       </section>
 
       {/* Go Deeper — lore hooks to pull them into the network */}
-      {goDeeper && (
       <section className="noise-bg">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
           <div className="text-center mb-10">
             <p className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted mb-3">
-              {goDeeper.label}
+              {radioPage.goDeeper.label}
             </p>
             <h2 className="text-2xl sm:text-3xl font-bold text-foreground/80">
-              {goDeeper.heading}
+              {radioPage.goDeeper.heading}
             </h2>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {goDeeper.cards.map((card) => (
+            {radioPage.goDeeper.cards.map((card) => (
               <Link
                 key={card.href}
                 href={card.href}
@@ -172,11 +150,10 @@ export default function RadioPage() {
           </div>
 
           <p className="text-center text-xs text-muted/30 mt-10 uppercase tracking-widest">
-            {goDeeper.footnote}
+            {radioPage.goDeeper.footnote}
           </p>
         </div>
       </section>
-      )}
     </div>
   );
 }

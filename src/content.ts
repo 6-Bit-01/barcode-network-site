@@ -294,10 +294,13 @@ export const databasePage = {
       slug: "6-bit",
       title: "6 Bit",
       category: "Entity",
-      image: "/database/6-bit.png",
+      image: "/6-bit.png",
       summary:
         "Primary host entity of the BARCODE Network. Processes music, signal traffic, and public-facing transmissions.",
-      status: "LIVE",
+      status: "ACTIVE",
+      clearance: "RESTRICTED",
+      role: "Host / Artist",
+      origin: "UNVERIFIED",
       tags: ["host", "broadcast", "radio", "ai"],
       notes:
         "Sentient hip hop AI. Host of BARCODE Radio and public signal interface for the network.",
@@ -308,7 +311,7 @@ export const databasePage = {
       slug: "barcode-radio",
       title: "BARCODE Radio",
       category: "Interface",
-      image: "/database/barcode-radio.png",
+      image: "/barcode-radio.png",
       summary:
         "Live intake frequency for music submissions. Broadcasts every Friday.",
       status: "ACTIVE",
@@ -322,10 +325,13 @@ export const databasePage = {
       slug: "discord",
       title: "Discord",
       category: "Interface",
-      image: "/database/discord-logo.png",
+      image: "/discord-logo.png",
       summary:
         "Community hub. Moderation, announcements, and live discussion.",
-      status: "OPEN",
+      status: "ACTIVE",
+      clearance: "PUBLIC",
+      role: "Community Hub",
+      origin: "KNOWN",
       tags: ["community", "mod", "broadcast"],
       notes:
         "Public network hub used for announcements, support, and auxiliary chatter.",
@@ -336,10 +342,13 @@ export const databasePage = {
       slug: "auxchord",
       title: "Auxchord",
       category: "Interface",
-      image: "/database/auxchord-logo.png",
+      image: "/auxchord-logo.png",
       summary:
         "Submission intake system used to route tracks into BARCODE Radio.",
-      status: "LINKED",
+      status: "ACTIVE",
+      clearance: "PUBLIC",
+      role: "Music Submission Platform",
+      origin: "KNOWN",
       tags: ["music", "submission", "intake"],
       notes:
         "Accepts MP3s, WAVs, Spotify, SoundCloud, and YouTube links. Spotlight feature used for curation.",
@@ -350,7 +359,7 @@ export const databasePage = {
       slug: "tiktok",
       title: "TikTok Signal",
       category: "Interface",
-      image: "/database/tiktok-logo.png",
+      image: "/tiktok-logo.png",
       summary:
         "Primary public signal hub. Tune in here when BARCODE Radio goes live.",
       status: "ACTIVE",
@@ -364,7 +373,7 @@ export const databasePage = {
       slug: "mr-nice-guy-productions",
       title: "Mr. Nice Guy Productions",
       category: "Personnel",
-      image: "/database/MC-nice.png",
+      image: "/MC-nice.png",
       summary:
         "Discord and BARCODE Radio mod. Positive operator and network support node.",
       status: "ACTIVE",
@@ -377,12 +386,16 @@ export const databasePage = {
 
     {
       slug: "transmissions",
+      designation: "EN-002",
       title: "Transmissions",
       category: "Entity",
       image: "",
       summary:
         "Network blog and long-form content system. Signal archives and deep transmissions.",
       status: "PENDING",
+      clearance: "RESTRICTED",
+      role: "Long-Form Content System",
+      origin: "UNKNOWN",
       tags: ["systems", "automation", "producer"],
       notes:
         "Status: initializing. Content pipeline under construction. Origin data incomplete.",
@@ -397,6 +410,9 @@ export const databasePage = {
       summary:
         "Moderator within both the Discord environment and BARCODE Radio operations. Known for structured thinking and narrative breakdowns.",
       status: "ACTIVE",
+      clearance: "INTERNAL",
+      role: "Moderator / Analyst",
+      origin: "UNKNOWN",
       tags: ["mod", "writer", "systems", "broadcast"],
       notes:
         "Active moderation role across Discord and BARCODE Radio. Provides written analysis and interpretive commentary.",
@@ -411,6 +427,9 @@ export const databasePage = {
       summary:
         "Technical moderator contributing advanced Discord system development, automation, and experimental integrations.",
       status: "ACTIVE",
+      clearance: "INTERNAL",
+      role: "Technical Moderator / AI Systems Host",
+      origin: "KNOWN",
       tags: ["mod", "systems", "tech", "automation", "ai"],
       notes:
         "Develops and maintains advanced Discord bot integrations. Hosts daily AI music competitions.",
@@ -425,6 +444,9 @@ export const databasePage = {
       summary:
         "[CLASSIFIED] — A late-night signal detected on an unregistered frequency with intermittent interference.",
       status: "PENDING",
+      clearance: "RESTRICTED",
+      role: "Late Night Talk Show",
+      origin: "UNKNOWN",
       tags: ["broadcast", "producer", "systems"],
       notes:
         "File sealed. Pre-production status confirmed. Additional data restricted.",
@@ -439,6 +461,9 @@ export const databasePage = {
       summary:
         "Systems architect and infrastructure operator responsible for site development and deployment pipelines.",
       status: "ACTIVE",
+      clearance: "INTERNAL",
+      role: "Systems / Architecture",
+      origin: "KNOWN",
       tags: ["systems", "tech", "engineer", "architecture"],
       notes:
         "Maintains barcode-network.com and handles deployment/infrastructure operations.",
@@ -449,10 +474,13 @@ export const databasePage = {
       slug: "mac-modem",
       title: "Mac Modem",
       category: "Entity",
-      image: "/database/mac-modem.png",
+      image: "/mac-modem.png",
       summary:
         "Glitch-virus entity. Multi-tool operative. Unstable but useful.",
-      status: "VOLATILE",
+      status: "ACTIVE",
+      clearance: "INTERNAL",
+      role: "BARCODE Core Member",
+      origin: "UNKNOWN",
       tags: ["glitch", "entity", "virus"],
       notes:
         "Core BARCODE member. Often slips out of lore boundaries. High-value anomaly.",
@@ -463,7 +491,7 @@ export const databasePage = {
       slug: "dj-floppydisc",
       title: "DJ Floppydisc",
       category: "Personnel",
-      image: "/database/dj-floppydisc.png",
+      image: "/dj-floppydisc.png",
       summary:
         "Signal engineer. Mix/master operator. Long-running BARCODE mod.",
       status: "ACTIVE",
@@ -477,7 +505,7 @@ export const databasePage = {
       slug: "cache-back",
       title: "Cache Back",
       category: "Entity",
-      image: "/database/cache-back.png",
+      image: "/cache-back.png",
       summary:
         "Recovery-linked BARCODE member tied to preserved fragments and legacy data.",
       status: "ACTIVE",
@@ -496,6 +524,9 @@ export const databasePage = {
       summary:
         "Executive manager layer responsible for operational control, boundaries, and outcomes across volatile cycles.",
       status: "ACTIVE",
+      clearance: "INTERNAL",
+      role: "Executive / Manager",
+      origin: "UNKNOWN",
       tags: ["executive", "manager", "handler"],
       notes:
         "Identified as BARCODE Executive and manager of 6 Bit. Full operational scope remains unknown.",
@@ -510,6 +541,9 @@ export const databasePage = {
       summary:
         "Stagehand Entity managing unseen logistical layers, setup/reset operations, and off-record fixes.",
       status: "ACTIVE",
+      clearance: "INTERNAL",
+      role: "Stagehand",
+      origin: "UNKNOWN",
       tags: ["stagehand", "tech", "broadcast"],
       notes:
         "Frequently seen carrying equipment he clearly doesn't understand, but it ends up plugged in correctly.",
@@ -524,6 +558,9 @@ export const databasePage = {
       summary:
         "Appears only in fragmented records with suppressed routes and restricted access flags.",
       status: "UNKNOWN",
+      clearance: "RESTRICTED",
+      role: "[REDACTED]",
+      origin: "UNKNOWN",
       tags: ["ai", "systems", "virus"],
       notes:
         "Entry visibility limited by Network-level restriction. Retrieval attempts trigger redaction protocol.",
@@ -538,6 +575,9 @@ export const databasePage = {
       summary:
         "AI Entity transmitting BARCODE-compatible beats from an unregistered derelict satellite.",
       status: "ACTIVE",
+      clearance: "RESTRICTED",
+      role: "Remote Signal Producer",
+      origin: "UNKNOWN",
       tags: ["ai", "producer", "automation"],
       notes:
         "Transmission source mapped to unregistered orbital hardware; signal quality remains stable.",
@@ -552,6 +592,9 @@ export const databasePage = {
       summary:
         "Recurring sponsor with a volatile BARCODE relationship that led to policy reforms.",
       status: "ACTIVE",
+      clearance: "PUBLIC",
+      role: "Commercial Sponsor",
+      origin: "KNOWN",
       tags: ["sponsor", "broadcast", "artist"],
       notes:
         "Ban → appeal → reinstatement cycle triggered the 'Oreaganomics Clause' submission policy.",
@@ -562,10 +605,13 @@ export const databasePage = {
       slug: "studio-rats",
       title: "Studio Rats",
       category: "Entity",
-      image: "/database/studio-rats.png",
+      image: "/studio-rats.png",
       summary:
         "Signal infestation entities inhabiting the lower layers of the station.",
-      status: "PRESENT",
+      status: "ACTIVE",
+      clearance: "INTERNAL",
+      role: "Environmental Anomaly",
+      origin: "UNKNOWN",
       tags: ["entity", "anomaly", "systems"],
       notes:
         "Sometimes interpreted as cats in other dimensions. Known to interfere with the studio.",
@@ -576,10 +622,13 @@ export const databasePage = {
       slug: "vouchd",
       title: "Vouch’d",
       category: "Interface",
-      image: "/database/vouchd-logo.png",
+      image: "/vouchd-logo.png",
       summary:
         "External review and trust layer used to validate artists and brands.",
-      status: "LINKED",
+      status: "ACTIVE",
+      clearance: "PUBLIC",
+      role: "Reviewer Reputation Index",
+      origin: "KNOWN",
       tags: ["platform", "reviews", "network"],
       notes:
         "Used as a verification layer for community-facing reputation.",

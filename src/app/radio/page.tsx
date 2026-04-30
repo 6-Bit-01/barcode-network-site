@@ -64,7 +64,7 @@ export default function RadioPage() {
               href={externalLinks.tiktok}
               target="_blank"
               rel="noopener noreferrer"
-              className="w-[calc(50%-0.5rem)] min-w-[220px] inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
+              className="w-full inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
             >
               <span className="text-lg">{radioPage.hero.tiktokButton.emoji}</span>
               {radioPage.hero.tiktokButton.text}

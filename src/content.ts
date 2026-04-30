@@ -620,17 +620,21 @@ export const releasesPage = {
       title: "BARCODE: Signal Breach",
       type: "Album",
       date: "2026",
-      status: "INCOMING" as const,
+      status: "LATEST" as const,
       cover: "/releases/signal-breach.png",
       description:
         "Unauthorized circulation of an internal BARCODE Network audio archive was detected following the Signal Breach incident. The breach has been contained. Further information will be issued shortly.",
-      links: {} as ReleaseLinks,
+      links: {
+        spotify: "https://open.spotify.com/album/1lglaBgYDfRIANiSfrhUGS?si=Ekdj3qrbRaKnrPiCnYbrlg",
+        apple: "https://music.apple.com/us/album/barcode-signal-breach/1883133732",
+        youtube: "https://music.apple.com/us/album/barcode-signal-breach/1883133732",
+      } as ReleaseLinks,
     },
     {
       title: "BARCODE Vol. 1",
       type: "Album",
       date: "2025",
-      status: "LATEST" as const,
+      status: "ARCHIVED" as const,
       cover: "/releases/barcode-vol-1.png",
       description:
         "The inaugural transmission. A full-length broadcast from 6 Bit through the BARCODE Network.",

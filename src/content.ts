@@ -638,7 +638,7 @@ export const releasesPage = {
       links: {
         spotify: "https://open.spotify.com/album/1lglaBgYDfRIANiSfrhUGS?si=Ekdj3qrbRaKnrPiCnYbrlg",
         apple: "https://music.apple.com/us/album/barcode-signal-breach/1883133732",
-        youtube: "https://music.apple.com/us/album/barcode-signal-breach/1883133732",
+        youtube: "https://music.youtube.com/playlist?list=OLAK5uy_lU6uSwmlRmWpKbd4-Ik99wzT-LFZWzwtw&si=BzfzAb6Ug8-s75pS",
       },
     },
     {
@@ -665,7 +665,7 @@ export const releasesPage = {
         "A lost transmission. Originally broadcast, then pulled from all frequencies. Remastered fragments scheduled for re-release in two parts. Origin data classified.",
       links: {},
     },
-  ] satisfies ReleaseItem[],
+  ] as ReleaseItem[],
 
   bottomCta: {
     text: "Want to get your music on BARCODE Radio?",

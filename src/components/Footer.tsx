@@ -82,6 +82,11 @@ export function Footer() {
                 </a>
               </li>
               <li>
+                <a href={externalLinks.tiktok} target="_blank" rel="noopener noreferrer" className="text-sm text-foreground/70 hover:text-accent transition-colors">
+                  TikTok
+                </a>
+              </li>
+              <li>
                 <Link href="/merch" className="text-sm text-foreground/70 hover:text-accent transition-colors">
                   Merch
                 </Link>

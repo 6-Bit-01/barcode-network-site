@@ -80,6 +80,7 @@ export const homePage = {
   },
   quickLinks: [
     { label: "Discord", href: "EXTERNAL:discord" },
+    { label: "TikTok", href: "EXTERNAL:tiktok" },
     { label: "Releases", href: "/releases" },
     { label: "Database", href: "/database" },
     { label: "Submit Music", href: "/radio" },
@@ -97,6 +98,7 @@ export const radioPage = {
       "A live intake frequency. Submit a track. It enters the broadcast and becomes part of the network.",
     submitButton: { text: "Submit Music", emoji: "🎵" },
     discordButton: { text: "Join Discord", emoji: "💬" },
+    tiktokButton: { text: "Watch TikTok", emoji: "📺" },
   },
 
   schedule: {

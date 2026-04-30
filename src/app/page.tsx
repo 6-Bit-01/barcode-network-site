@@ -112,7 +112,7 @@ export default function Home() {
       {/* Quick Links / Status Grid */}
       <section>
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             {homePage.quickLinks.map((link) => {
               const resolved = resolveHref(link.href);
               const isExternal = link.href.startsWith("EXTERNAL:");

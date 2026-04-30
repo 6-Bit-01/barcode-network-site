@@ -607,6 +607,17 @@ type ReleaseLinks = {
   soundcloud?: string;
 };
 
+type ReleaseStatus = "LATEST" | "INCOMING" | "ARCHIVED";
+type ReleaseItem = {
+  title: string;
+  type: string;
+  date: string;
+  status: ReleaseStatus;
+  cover: string;
+  description: string;
+  links: ReleaseLinks;
+};
+
 export const releasesPage = {
   hero: {
     label: "// ARCHIVE: RELEASES",
@@ -620,7 +631,7 @@ export const releasesPage = {
       title: "BARCODE: Signal Breach",
       type: "Album",
       date: "2026",
-      status: "LATEST" as const,
+      status: "LATEST",
       cover: "/releases/signal-breach.png",
       description:
         "Unauthorized circulation of an internal BARCODE Network audio archive was detected following the Signal Breach incident. The breach has been contained. Further information will be issued shortly.",
@@ -628,13 +639,13 @@ export const releasesPage = {
         spotify: "https://open.spotify.com/album/1lglaBgYDfRIANiSfrhUGS?si=Ekdj3qrbRaKnrPiCnYbrlg",
         apple: "https://music.apple.com/us/album/barcode-signal-breach/1883133732",
         youtube: "https://music.apple.com/us/album/barcode-signal-breach/1883133732",
-      } as ReleaseLinks,
+      },
     },
     {
       title: "BARCODE Vol. 1",
       type: "Album",
       date: "2025",
-      status: "ARCHIVED" as const,
+      status: "ARCHIVED",
       cover: "/releases/barcode-vol-1.png",
       description:
         "The inaugural transmission. A full-length broadcast from 6 Bit through the BARCODE Network.",
@@ -642,19 +653,19 @@ export const releasesPage = {
         spotify: "https://open.spotify.com/album/1PywhXFBsB4jue16x8ujNs",
         apple: "https://music.apple.com/us/album/barcode-vol-1/1817414054",
         youtube: "https://music.youtube.com/playlist?list=OLAK5uy_nsftWPdpLsRS7GYoLanK-ZtMt0tsmbh0Y",
-      } as ReleaseLinks,
+      },
     },
     {
       title: "[REDACTED]",
       type: "Album",
       date: "20██",
-      status: "ARCHIVED" as const,
+      status: "ARCHIVED",
       cover: "/releases/barcode-vol-0.png",
       description:
         "A lost transmission. Originally broadcast, then pulled from all frequencies. Remastered fragments scheduled for re-release in two parts. Origin data classified.",
-      links: {} as ReleaseLinks,
+      links: {},
     },
-  ],
+  ] satisfies ReleaseItem[],
 
   bottomCta: {
     text: "Want to get your music on BARCODE Radio?",

@@ -607,7 +607,7 @@ type ReleaseLinks = {
   soundcloud?: string;
 };
 
-type ReleaseStatus = "LATEST" | "INCOMING" | "ARCHIVED";
+type ReleaseStatus = "LATEST" | "ACTIVE" | "INCOMING" | "ARCHIVED";
 type ReleaseItem = {
   title: string;
   type: string;
@@ -645,7 +645,7 @@ export const releasesPage = {
       title: "BARCODE Vol. 1",
       type: "Album",
       date: "2025",
-      status: "ARCHIVED",
+      status: "ACTIVE",
       cover: "/releases/barcode-vol-1.png",
       description:
         "The inaugural transmission. A full-length broadcast from 6 Bit through the BARCODE Network.",

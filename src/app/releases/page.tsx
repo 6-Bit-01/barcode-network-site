@@ -70,7 +70,7 @@ export default function ReleasesPage() {
                         </h3>
                         <span
                           className={`text-xs uppercase tracking-widest px-2 py-0.5 border ${
-                            release.status === "LATEST"
+                            release.status === "LATEST" || release.status === "ACTIVE"
                               ? "border-accent/30 text-accent"
                               : release.status === "INCOMING"
                               ? "border-red-500/30 text-red-400 animate-pulse"

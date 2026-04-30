@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import { verifyAdminToken, COOKIE_NAME } from "@/lib/auth";
+import { isWithinBroadcastWindow } from "@/lib/broadcastSchedule";
 
 export const dynamic = "force-dynamic";
 
@@ -23,27 +24,6 @@ function getRedis(): Redis | null {
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) return null;
   return new Redis({ url, token });
-}
-
-// ---- Broadcast schedule (server-side) ----
-
-function isWithinBroadcastWindow(): boolean {
-  const now = new Date();
-  const pstParts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    weekday: "short",
-    hour: "numeric",
-    minute: "numeric",
-    hour12: false,
-  }).formatToParts(now);
-
-  const weekday = pstParts.find((p) => p.type === "weekday")?.value;
-  const hour = parseInt(pstParts.find((p) => p.type === "hour")?.value || "0", 10);
-  const minute = parseInt(pstParts.find((p) => p.type === "minute")?.value || "0", 10);
-
-  if (weekday !== "Fri") return false;
-  const t = hour * 60 + minute;
-  return t >= 18 * 60 + 40 && t < 23 * 60 + 30;
 }
 
 // ---- GET: Read status (public) ----

@@ -277,7 +277,7 @@ function AdminContent({
               </button>
 
               <div className="text-xs text-muted/50 space-y-1">
-                <p>// Schedule: Every Friday 6:40 PM – 11:30 PM PST (auto)</p>
+                <p>// Schedule: Every Friday 6:40 PM – 11:00 PM PST (auto)</p>
                 <p>// Scheduled: {isScheduled ? "YES — within broadcast window" : "NO — outside broadcast window"}</p>
                 <p>// Override: {manualOverride ? "ACTIVE (admin override)" : "NONE (auto-schedule)"}</p>
                 <p>// Toggle cycles: Auto → On → Off → Auto</p>

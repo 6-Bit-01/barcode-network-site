@@ -590,9 +590,9 @@ export const databasePage = {
   ],
 
   terminalQuery: [
-    "SELECT * FROM network_dossiers",
-    "WHERE status IN ('ACTIVE','PENDING')",
-    "ORDER BY designation ASC",
+    "INITIALIZING DOSSIER INDEX",
+    "FILTER: STATUS = ACTIVE, PENDING",
+    "SORT: DESIGNATION ASCENDING",
   ],
 };
 

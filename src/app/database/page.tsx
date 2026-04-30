@@ -16,6 +16,17 @@ export const metadata: Metadata = {
 
 const databaseEntries = databasePage.entries;
 
+const activeCount = databaseEntries.filter((e) => e.status === "ACTIVE").length;
+const pendingCount = databaseEntries.filter((e) => e.status === "PENDING").length;
+const restrictedCount = databaseEntries.filter((e) => e.clearance === "RESTRICTED").length;
+const categoryCount = new Set(databaseEntries.map((e) => e.category)).size;
+const databaseTerminalQuery = [
+  `INDEXED ${databaseEntries.length} TOTAL DOSSIERS`,
+  `STATUS FILTER: ${activeCount} ACTIVE / ${pendingCount} PENDING`,
+  `CLEARANCE WATCH: ${restrictedCount} RESTRICTED RECORDS`,
+  `CATEGORY GROUPS ONLINE: ${categoryCount}`,
+];
+
 export default function DatabasePage() {
   return (
     <div className="pt-14">
@@ -70,7 +81,7 @@ export default function DatabasePage() {
               &gt; BARCODE_NETWORK // DATABASE QUERY
             </p>
             <div className="space-y-1 text-sm text-foreground/60">
-              {databasePage.terminalQuery.map((line, i) => (
+              {databaseTerminalQuery.map((line, i) => (
                 <p key={i}>&gt; {line}</p>
               ))}
               <p className="text-accent mt-3">

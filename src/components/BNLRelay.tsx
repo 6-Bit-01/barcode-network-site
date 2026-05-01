@@ -6,9 +6,27 @@ function bnlTone(online: boolean) {
   return online ? "text-foreground" : "text-foreground/70";
 }
 
+function formatLastSeenSentence(value: string | null): string {
+  if (!value) return "UNKNOWN";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "UNKNOWN";
+  const time = new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(parsed);
+  const date = new Intl.DateTimeFormat(undefined, {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(parsed);
+  return `LAST SEEN AT ${time} ON ${date}`;
+}
+
 export function BNLNetworkRelayTicker() {
   const { data } = useBNLStatus();
   const online = data.status === "ONLINE";
+  const lastSeenSentence = formatLastSeenSentence(data.lastSeen);
 
   return (
     <>
@@ -20,11 +38,11 @@ export function BNLNetworkRelayTicker() {
             <div className="bnl-relay-scroll-track">
               <span>
                 STATUS <span className={bnlTone(online)}>{data.status}</span> :: MODE {data.mode} :: MESSAGE {data.message}
-                {data.lastSeen ? ` :: LAST SEEN ${data.lastSeen}` : ""} ::
+                {data.lastSeen ? ` :: ${lastSeenSentence}` : ""} ::
               </span>
               <span aria-hidden>
                 STATUS <span className={bnlTone(online)}>{data.status}</span> :: MODE {data.mode} :: MESSAGE {data.message}
-                {data.lastSeen ? ` :: LAST SEEN ${data.lastSeen}` : ""} ::
+                {data.lastSeen ? ` :: ${lastSeenSentence}` : ""} ::
               </span>
             </div>
           </div>
@@ -37,6 +55,7 @@ export function BNLNetworkRelayTicker() {
 export function BNLRelayModule({ title }: { title: string }) {
   const { data, loading } = useBNLStatus();
   const online = data.status === "ONLINE";
+  const lastSeenSentence = formatLastSeenSentence(data.lastSeen);
 
   return (
     <div className="border border-border bg-surface p-6">
@@ -49,7 +68,7 @@ export function BNLRelayModule({ title }: { title: string }) {
         <p>&gt; MESSAGE: {data.message}</p>
         <p>&gt; CURRENT_DIRECTIVE: {data.currentDirective ?? "Monitoring Discord-side relay traffic."}</p>
         <p>&gt; SOURCE: {data.source ?? "unknown"}</p>
-        <p>&gt; LAST_SEEN: {data.lastSeen ?? "NULL"}</p>
+        <p>&gt; {lastSeenSentence}</p>
         {loading ? <p className="text-muted">&gt; FETCHING RELAY...</p> : null}
       </div>
     </div>

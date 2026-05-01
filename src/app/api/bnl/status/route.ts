@@ -33,7 +33,8 @@ interface BNLHistoryEntry {
 
 const KEY = "bnl:status";
 const HISTORY_KEY = "bnl:history";
-const DEFAULT_DIRECTIVE = "Reading Discord memory files for relay updates.";
+const MAX_MESSAGE_LENGTH = 600;
+const DEFAULT_DIRECTIVE = "Monitoring Discord-side relay traffic.";
 const DEFAULT_STATUS: BNLStatus = {
   status: "OFFLINE",
   mode: "STANDBY",
@@ -74,8 +75,8 @@ function sanitizeStoredStatus(value: unknown): BNLStatus {
     ? (record.mode as BNLModeValue)
     : DEFAULT_STATUS.mode;
   const message =
-    typeof record.message === "string" && record.message.trim().length > 0
-      ? record.message.trim().slice(0, 240)
+      typeof record.message === "string" && record.message.trim().length > 0
+      ? record.message.trim().slice(0, MAX_MESSAGE_LENGTH)
       : DEFAULT_STATUS.message;
   const currentDirective =
     typeof record.currentDirective === "string" && record.currentDirective.trim().length > 0
@@ -104,7 +105,7 @@ function sanitizeHistory(value: unknown): BNLHistoryEntry[] {
       ? (rec.source as BNLSourceValue)
       : "unknown";
     const timestamp = typeof rec.timestamp === "string" && rec.timestamp ? rec.timestamp : null;
-    const message = typeof rec.message === "string" ? rec.message.trim().slice(0, 240) : "";
+    const message = typeof rec.message === "string" ? rec.message.trim().slice(0, MAX_MESSAGE_LENGTH) : "";
     const currentDirective =
       typeof rec.currentDirective === "string" && rec.currentDirective.trim().length > 0
         ? rec.currentDirective.trim().slice(0, 160)
@@ -175,7 +176,7 @@ export async function POST(req: Request) {
     }
 
     const trimmedMessage = message.trim();
-    if (!trimmedMessage || trimmedMessage.length > 240) {
+    if (!trimmedMessage || trimmedMessage.length > MAX_MESSAGE_LENGTH) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 

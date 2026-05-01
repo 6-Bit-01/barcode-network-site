@@ -50,12 +50,15 @@ async function isAuthenticated(req: Request): Promise<boolean> {
 function sanitizeHistory(value: unknown): typeof memoryHistory {
   if (!Array.isArray(value)) return [];
   return value
-    .map((item) => {
+    .map((item): (typeof memoryHistory)[number] | null => {
       if (!item || typeof item !== "object") return null;
       const rec = item as Record<string, unknown>;
       if (!ALLOWED_STATUS.has(rec.status as BNLStatusValue) || !ALLOWED_MODES.has(rec.mode as BNLModeValue)) return null;
       if (typeof rec.timestamp !== "string" || typeof rec.message !== "string") return null;
-      const source = rec.source as BNLSourceValue;
+      const source: BNLSourceValue =
+        rec.source === "bot" || rec.source === "admin" || rec.source === "showtest" || rec.source === "heartbeat"
+          ? rec.source
+          : "unknown";
       return {
         timestamp: rec.timestamp,
         status: rec.status as BNLStatusValue,
@@ -65,7 +68,7 @@ function sanitizeHistory(value: unknown): typeof memoryHistory {
             ? rec.currentDirective.trim().slice(0, 160)
             : undefined,
         message: rec.message.trim().slice(0, 240),
-        source: source === "bot" || source === "admin" || source === "showtest" || source === "heartbeat" ? source : "unknown",
+        source,
       };
     })
     .filter((item): item is (typeof memoryHistory)[number] => Boolean(item))

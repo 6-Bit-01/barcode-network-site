@@ -15,6 +15,7 @@ interface BNLAdminState {
   source?: BNLSourceValue;
   lastSeen: string | null;
   persisted?: boolean;
+  adminNote?: string;
   forcePullRequestedAt?: string | null;
 }
 
@@ -25,6 +26,7 @@ interface BNLHistoryEntry {
   currentDirective?: string;
   message: string;
   source: BNLSourceValue;
+  adminNote?: string;
   persisted?: boolean;
 }
 
@@ -115,11 +117,14 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
     setBnlApiReachable(publicRes.ok);
     if (publicRes.ok) {
       const publicData = await publicRes.json();
-      setBnl(publicData);
+      setBnl((prev) => ({ ...prev, ...publicData }));
       setRelayForm((x) => ({ ...x, status: publicData.status, mode: publicData.mode, message: publicData.message }));
     }
     if (adminRes.ok) {
       const adminData = await adminRes.json();
+      if (adminData.status && typeof adminData.status === "object") {
+        setBnl((prev) => ({ ...prev, ...(adminData.status as Partial<BNLAdminState>) }));
+      }
       setHistory(adminData.history || []);
       setFlags(adminData.flags || flags);
       setForcePullRequestedAt(typeof adminData.forcePullRequestedAt === "string" ? adminData.forcePullRequestedAt : null);
@@ -195,10 +200,9 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
       <p className="text-xs text-accent uppercase tracking-widest mb-2">BNL Admin Status Report</p>
       <p><strong>Discord Source:</strong> <span className="text-foreground">{SOURCE_LABELS[bnl.source || "unknown"]}</span></p>
       <p><strong>Discord Last Update:</strong> <span className="text-foreground">{lastSeenLocal}</span></p>
-      <p><strong>Website Relay Status:</strong> <span className="text-foreground">{bnl.status}</span> / <span className="text-foreground">{bnl.mode}</span></p>
-      <p><strong>Website Relay Message:</strong> {bnl.message}</p>
+      <p><strong>BNL Operator Note:</strong> <span className="text-foreground">{bnl.adminNote && bnl.adminNote.trim().length > 0 ? bnl.adminNote : "No fresh admin analysis for this relay."}</span></p>
       <p><strong>Sync Health:</strong> <span className="text-foreground">{lastSeenAge}</span> • <span className="text-foreground">{bnl.persisted ? "Stored in Redis (persistent shared storage)" : "In-memory fallback (temporary local storage)"}</span></p>
-      <p className="text-xs text-muted mt-2">Admin view only. Use this to compare BNL Discord updates to current website relay output.</p>
+      <p className="text-xs text-muted mt-2">Operator-only context. This note does not appear in the public website relay.</p>
     </div>
   </div>
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><select value={relayForm.status} onChange={(e)=>setRelayForm({...relayForm,status:e.target.value as BNLStatusValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>ONLINE</option><option>OFFLINE</option></select><select value={relayForm.mode} onChange={(e)=>setRelayForm({...relayForm,mode:e.target.value as BNLModeValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>STANDBY</option><option>OBSERVATION</option><option>ACTIVE_LIAISON</option><option>SIGNAL_DEGRADATION</option><option>RESTRICTED</option></select></div>
@@ -217,7 +221,7 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
     <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Show-Day Discord Posts Enabled:</strong> Allows BNL to post scheduled Friday show updates in Discord.</span><input type="checkbox" checked={flags.showdayDiscordPostsEnabled} onChange={(e)=>updateFlags({...flags,showdayDiscordPostsEnabled:e.target.checked})} /></label>
     <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Heartbeat Enabled:</strong> Allows BNL to keep the website relay fresh with periodic status updates.</span><input type="checkbox" checked={flags.heartbeatEnabled} onChange={(e)=>updateFlags({...flags,heartbeatEnabled:e.target.checked})} /></label>
   </div>
-  <div><div className="flex items-center justify-between"><p className="text-xs text-muted mb-2">Admin Relay History (admin only) — most recent 25 updates received from BNL/admin actions.</p><button onClick={clearHistory} className="px-3 py-1.5 text-xs uppercase tracking-widest border border-danger/40 text-danger hover:bg-danger hover:text-background transition-all">Clear Relay History</button></div><div className="space-y-2 text-xs">{history.map((entry, idx)=><div key={idx} className="border border-border p-2"><p>{formatLocalTimestamp(entry.timestamp)} — {entry.status} / {entry.mode} ({SOURCE_LABELS[entry.source || 'unknown']})</p>{entry.currentDirective && <p>Directive: {entry.currentDirective}</p>}<p>{entry.message}</p><p className="text-muted">Persistence: {entry.persisted === undefined ? "unknown" : entry.persisted ? "Stored in Redis (persistent shared storage)" : "In-memory fallback (temporary local storage)"}</p></div>)}</div></div>
+  <div><div className="flex items-center justify-between"><p className="text-xs text-muted mb-2">Admin Relay History (admin only) — most recent 25 updates received from BNL/admin actions.</p><button onClick={clearHistory} className="px-3 py-1.5 text-xs uppercase tracking-widest border border-danger/40 text-danger hover:bg-danger hover:text-background transition-all">Clear Relay History</button></div><div className="space-y-2 text-xs">{history.map((entry, idx)=><div key={idx} className="border border-border p-2"><p>{formatLocalTimestamp(entry.timestamp)} — {entry.status} / {entry.mode} ({SOURCE_LABELS[entry.source || 'unknown']})</p>{entry.currentDirective && <p>Directive: {entry.currentDirective}</p>}<p>{entry.message}</p>{entry.adminNote && <p>Operator Note: {entry.adminNote}</p>}<p className="text-muted">Persistence: {entry.persisted === undefined ? "unknown" : entry.persisted ? "Stored in Redis (persistent shared storage)" : "In-memory fallback (temporary local storage)"}</p></div>)}</div></div>
   </div>
 
   </div></section>;

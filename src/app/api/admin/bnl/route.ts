@@ -29,7 +29,7 @@ const DEFAULT_FLAGS: BNLFlags = {
 const ALLOWED_STATUS = new Set<BNLStatusValue>(["ONLINE", "OFFLINE"]);
 const ALLOWED_MODES = new Set<BNLModeValue>(["STANDBY", "OBSERVATION", "ACTIVE_LIAISON", "SIGNAL_DEGRADATION", "RESTRICTED"]);
 
-let memoryHistory: Array<{ timestamp: string; status: BNLStatusValue; mode: BNLModeValue; currentDirective?: string; message: string; source: BNLSourceValue; persisted?: boolean }> = [];
+let memoryHistory: Array<{ timestamp: string; status: BNLStatusValue; mode: BNLModeValue; currentDirective?: string; message: string; source: BNLSourceValue; adminNote?: string; persisted?: boolean }> = [];
 let memoryFlags: BNLFlags = { ...DEFAULT_FLAGS };
 
 function getRedis(): Redis | null {
@@ -69,6 +69,7 @@ function sanitizeHistory(value: unknown): typeof memoryHistory {
       currentDirective: typeof rec.currentDirective === "string" ? rec.currentDirective.trim().slice(0, 160) : undefined,
       message: rec.message.trim().slice(0, MAX_MESSAGE_LENGTH),
       source: normalizedSource,
+      adminNote: typeof rec.adminNote === "string" && rec.adminNote.trim().length > 0 ? rec.adminNote.trim().slice(0, 400) : undefined,
       persisted: typeof rec.persisted === "boolean" ? rec.persisted : undefined,
     });
   }
@@ -127,7 +128,8 @@ function sameHistoryContent(
     a.mode === b.mode &&
     a.source === b.source &&
     a.message === b.message &&
-    (a.currentDirective ?? "") === (b.currentDirective ?? "")
+    (a.currentDirective ?? "") === (b.currentDirective ?? "") &&
+    (a.adminNote ?? "") === (b.adminNote ?? "")
   );
 }
 

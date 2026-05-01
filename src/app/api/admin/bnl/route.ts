@@ -88,8 +88,9 @@ function sanitizeFlags(value: unknown): BNLFlags {
 async function notifyForcePull(now: string): Promise<{ delivered: boolean; reason?: string; status?: number }> {
   const webhookUrl = process.env.BNL_FORCE_PULL_WEBHOOK_URL;
   if (!webhookUrl) return { delivered: false, reason: "BNL_FORCE_PULL_WEBHOOK_URL is not configured" };
-
-  const sharedSecret = process.env.BNL_FORCE_PULL_SHARED_SECRET || process.env.BNL_API_KEY || "";
+  const sharedSecret = process.env.BNL_FORCE_PULL_SHARED_SECRET || "";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
 
   try {
     const response = await fetch(webhookUrl, {
@@ -100,7 +101,9 @@ async function notifyForcePull(now: string): Promise<{ delivered: boolean; reaso
       },
       body: JSON.stringify({ action: "forcePull", requestedAt: now, source: "website-admin" }),
       cache: "no-store",
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
     if (!response.ok) {
       console.error("[admin/bnl] forcePull webhook returned non-OK status", { status: response.status });
@@ -109,6 +112,7 @@ async function notifyForcePull(now: string): Promise<{ delivered: boolean; reaso
 
     return { delivered: true, status: response.status };
   } catch (error) {
+    clearTimeout(timeout);
     console.error("[admin/bnl] forcePull webhook request failed", error);
     return { delivered: false, reason: "Webhook request failed" };
   }
@@ -257,6 +261,14 @@ export async function POST(req: Request) {
       const webhookDelivery = await notifyForcePull(now);
 
       console.info('[admin/bnl] forcePull requested at', now, { webhookDelivered: webhookDelivery.delivered, webhookStatus: webhookDelivery.status ?? null });
+      if (!webhookDelivery.delivered && process.env.BNL_FORCE_PULL_WEBHOOK_URL) {
+        return NextResponse.json({
+          error: "Immediate check-in relay delivery failed.",
+          forcePullRequestedAt: now,
+          webhookDelivery,
+          persisted: Boolean(redis),
+        }, { status: 502 });
+      }
       return NextResponse.json({
         ok: true,
         forcePullRequestedAt: now,

@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 type BNLStatusValue = "ONLINE" | "OFFLINE";
 type BNLModeValue = "STANDBY" | "OBSERVATION" | "ACTIVE_LIAISON" | "SIGNAL_DEGRADATION" | "RESTRICTED";
-type BNLSourceValue = "bot" | "admin" | "showtest" | "heartbeat" | "unknown";
+type BNLSourceValue = "bot" | "startup" | "relay" | "heartbeat" | "showday" | "showtest" | "admin" | "reset" | "unknown";
 
 type BNLFlags = {
   websiteRelayEnabled: boolean;
@@ -17,6 +17,7 @@ type BNLFlags = {
 const STATUS_KEY = "bnl:status";
 const HISTORY_KEY = "bnl:history";
 const FLAGS_KEY = "bnl:flags";
+const FORCE_PULL_KEY = "bnl:force_pull_requested_at";
 
 const DEFAULT_FLAGS: BNLFlags = {
   websiteRelayEnabled: true,
@@ -27,7 +28,7 @@ const DEFAULT_FLAGS: BNLFlags = {
 const ALLOWED_STATUS = new Set<BNLStatusValue>(["ONLINE", "OFFLINE"]);
 const ALLOWED_MODES = new Set<BNLModeValue>(["STANDBY", "OBSERVATION", "ACTIVE_LIAISON", "SIGNAL_DEGRADATION", "RESTRICTED"]);
 
-let memoryHistory: Array<{ timestamp: string; status: BNLStatusValue; mode: BNLModeValue; message: string; source: BNLSourceValue }> = [];
+let memoryHistory: Array<{ timestamp: string; status: BNLStatusValue; mode: BNLModeValue; currentDirective?: string; message: string; source: BNLSourceValue; persisted?: boolean }> = [];
 let memoryFlags: BNLFlags = { ...DEFAULT_FLAGS };
 
 function getRedis(): Redis | null {
@@ -49,23 +50,28 @@ async function isAuthenticated(req: Request): Promise<boolean> {
 
 function sanitizeHistory(value: unknown): typeof memoryHistory {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      if (!item || typeof item !== "object") return null;
-      const rec = item as Record<string, unknown>;
-      if (!ALLOWED_STATUS.has(rec.status as BNLStatusValue) || !ALLOWED_MODES.has(rec.mode as BNLModeValue)) return null;
-      if (typeof rec.timestamp !== "string" || typeof rec.message !== "string") return null;
-      const source = rec.source as BNLSourceValue;
-      return {
-        timestamp: rec.timestamp,
-        status: rec.status as BNLStatusValue,
-        mode: rec.mode as BNLModeValue,
-        message: rec.message.trim().slice(0, 240),
-        source: source === "bot" || source === "admin" || source === "showtest" || source === "heartbeat" ? source : "unknown",
-      };
-    })
-    .filter((item): item is (typeof memoryHistory)[number] => Boolean(item))
-    .slice(0, 10);
+  const allowedSources = new Set<BNLSourceValue>(["bot", "startup", "relay", "heartbeat", "showday", "showtest", "admin", "reset", "unknown"]);
+  const normalized: typeof memoryHistory = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    if (!ALLOWED_STATUS.has(rec.status as BNLStatusValue) || !ALLOWED_MODES.has(rec.mode as BNLModeValue)) continue;
+    if (typeof rec.timestamp !== "string" || typeof rec.message !== "string") continue;
+    const source = rec.source;
+    const normalizedSource: BNLSourceValue = typeof source === "string" && allowedSources.has(source as BNLSourceValue)
+      ? (source as BNLSourceValue)
+      : "unknown";
+    normalized.push({
+      timestamp: rec.timestamp,
+      status: rec.status as BNLStatusValue,
+      mode: rec.mode as BNLModeValue,
+      currentDirective: typeof rec.currentDirective === "string" ? rec.currentDirective.trim().slice(0, 160) : undefined,
+      message: rec.message.trim().slice(0, 240),
+      source: normalizedSource,
+      persisted: typeof rec.persisted === "boolean" ? rec.persisted : undefined,
+    });
+  }
+  return normalized.slice(0, 25);
 }
 
 function sanitizeFlags(value: unknown): BNLFlags {
@@ -78,6 +84,19 @@ function sanitizeFlags(value: unknown): BNLFlags {
   };
 }
 
+function sameHistoryContent(
+  a: (typeof memoryHistory)[number],
+  b: (typeof memoryHistory)[number],
+): boolean {
+  return (
+    a.status === b.status &&
+    a.mode === b.mode &&
+    a.source === b.source &&
+    a.message === b.message &&
+    (a.currentDirective ?? "") === (b.currentDirective ?? "")
+  );
+}
+
 export async function GET(req: Request) {
   if (!(await isAuthenticated(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -87,21 +106,24 @@ export async function GET(req: Request) {
   let status: unknown = null;
   let history = memoryHistory;
   let flags = memoryFlags;
+  let forcePullRequestedAt: string | null = null;
 
   if (redis) {
-    const [s, h, f] = await Promise.all([
+    const [s, h, f, fp] = await Promise.all([
       redis.get<unknown>(STATUS_KEY),
       redis.get<unknown>(HISTORY_KEY),
       redis.get<unknown>(FLAGS_KEY),
+      redis.get<unknown>(FORCE_PULL_KEY),
     ]);
     status = s;
     history = sanitizeHistory(h) as typeof memoryHistory;
     flags = sanitizeFlags(f);
+    forcePullRequestedAt = typeof fp === "string" ? fp : null;
     memoryHistory = history;
     memoryFlags = flags;
   }
 
-  return NextResponse.json({ status, history, flags, persisted: Boolean(redis) });
+  return NextResponse.json({ status, history, flags, forcePullRequestedAt, persisted: Boolean(redis) });
 }
 
 export async function POST(req: Request) {
@@ -133,25 +155,42 @@ export async function POST(req: Request) {
         status: status as BNLStatusValue,
         mode: mode as BNLModeValue,
         message: trimmedMessage,
+        currentDirective: action === "resetStandby" ? "Monitoring Discord-side relay traffic." : undefined,
+        source: action === "resetStandby" ? "reset" : "admin",
         lastSeen: now,
       };
       const nextEntry: (typeof memoryHistory)[number] = {
         timestamp: now,
         status: status as BNLStatusValue,
         mode: mode as BNLModeValue,
+        currentDirective: nextStatus.currentDirective,
         message: trimmedMessage,
-        source: "admin",
+        source: action === "resetStandby" ? "reset" : "admin",
+        persisted: Boolean(redis),
       };
 
       if (redis) {
         const priorHistory = sanitizeHistory(await redis.get<unknown>(HISTORY_KEY)) as typeof memoryHistory;
         await redis.set(STATUS_KEY, nextStatus);
-        await redis.set(HISTORY_KEY, [nextEntry, ...priorHistory].slice(0, 10));
+        const latest = priorHistory[0];
+        const nextHistory = latest && sameHistoryContent(latest, nextEntry)
+          ? priorHistory.slice(0, 25)
+          : [nextEntry, ...priorHistory].slice(0, 25);
+        await redis.set(HISTORY_KEY, nextHistory);
       } else {
-        memoryHistory = [nextEntry, ...memoryHistory].slice(0, 10);
+        const latest = memoryHistory[0];
+        memoryHistory = latest && sameHistoryContent(latest, nextEntry)
+          ? memoryHistory.slice(0, 25)
+          : [nextEntry, ...memoryHistory].slice(0, 25);
       }
 
       return NextResponse.json({ ok: true, status: nextStatus, persisted: Boolean(redis) });
+    }
+
+    if (action === "clearHistory") {
+      if (redis) await redis.set(HISTORY_KEY, []);
+      memoryHistory = [];
+      return NextResponse.json({ ok: true, cleared: true, persisted: Boolean(redis) });
     }
 
     if (action === "updateFlags") {
@@ -175,6 +214,17 @@ export async function POST(req: Request) {
       if (redis) await redis.set(FLAGS_KEY, nextFlags);
       memoryFlags = nextFlags;
       return NextResponse.json({ ok: true, flags: nextFlags, persisted: Boolean(redis) });
+    }
+
+    if (action === "forcePull") {
+      const now = new Date().toISOString();
+      if (redis) await redis.set(FORCE_PULL_KEY, now);
+      return NextResponse.json({
+        ok: true,
+        forcePullRequestedAt: now,
+        note: "Immediate check-in requested. BNL must consume this request to publish a new relay update.",
+        persisted: Boolean(redis),
+      });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });

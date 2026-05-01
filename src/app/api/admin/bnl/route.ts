@@ -49,20 +49,24 @@ async function isAuthenticated(req: Request): Promise<boolean> {
 
 function sanitizeHistory(value: unknown): typeof memoryHistory {
   if (!Array.isArray(value)) return [];
+  const allowedSources = new Set<BNLSourceValue>(["bot", "startup", "relay", "heartbeat", "showday", "showtest", "admin", "reset", "unknown"]);
   return value
     .map((item) => {
       if (!item || typeof item !== "object") return null;
       const rec = item as Record<string, unknown>;
       if (!ALLOWED_STATUS.has(rec.status as BNLStatusValue) || !ALLOWED_MODES.has(rec.mode as BNLModeValue)) return null;
       if (typeof rec.timestamp !== "string" || typeof rec.message !== "string") return null;
-      const source = rec.source as BNLSourceValue;
+      const source = rec.source;
+      const normalizedSource: BNLSourceValue = typeof source === "string" && allowedSources.has(source as BNLSourceValue)
+        ? (source as BNLSourceValue)
+        : "unknown";
       return {
         timestamp: rec.timestamp,
         status: rec.status as BNLStatusValue,
         mode: rec.mode as BNLModeValue,
         currentDirective: typeof rec.currentDirective === "string" ? rec.currentDirective.trim().slice(0, 160) : undefined,
         message: rec.message.trim().slice(0, 240),
-        source: source === "bot" || source === "startup" || source === "relay" || source === "heartbeat" || source === "showday" || source === "showtest" || source === "admin" || source === "reset" ? source : "unknown",
+        source: normalizedSource,
         persisted: typeof rec.persisted === "boolean" ? rec.persisted : undefined,
       };
     })

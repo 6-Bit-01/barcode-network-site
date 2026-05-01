@@ -3,7 +3,7 @@
 import { useBNLStatus } from "@/components/useBNLStatus";
 
 function bnlTone(online: boolean) {
-  return online ? "text-accent" : "text-muted";
+  return online ? "text-foreground" : "text-foreground/70";
 }
 
 export function BNLNetworkRelayTicker() {
@@ -11,20 +11,18 @@ export function BNLNetworkRelayTicker() {
   const online = data.status === "ONLINE";
 
   return (
-    <div className="border-b border-border bg-surface/95 px-4 py-2 text-xs uppercase tracking-[0.18em] text-foreground/80">
-      <div className="mx-auto flex max-w-7xl items-center gap-4 overflow-hidden">
-        <span className="shrink-0 border border-border-light px-2 py-1 text-[10px] tracking-[0.25em] text-muted">
-          BNL-01 RELAY
-        </span>
+    <div className="border-b border-border/80 bg-black px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.2em] text-white">
+      <div className="mx-auto flex max-w-7xl items-center gap-3 overflow-hidden">
+        <span className="shrink-0 text-white/85">&gt; NETWORK RELAY // BNL-01</span>
         <div className="bnl-relay-scroll min-w-0">
           <div className="bnl-relay-scroll-track">
             <span>
-              STATUS: <span className={bnlTone(online)}>{data.status}</span> · MODE: {data.mode} · MESSAGE: {data.message}
-              {data.lastSeen ? ` · LAST SEEN: ${data.lastSeen}` : ""} ·
+              STATUS <span className={bnlTone(online)}>{data.status}</span> :: MODE {data.mode} :: MESSAGE {data.message}
+              {data.lastSeen ? ` :: LAST SEEN ${data.lastSeen}` : ""} ::
             </span>
             <span aria-hidden>
-              STATUS: <span className={bnlTone(online)}>{data.status}</span> · MODE: {data.mode} · MESSAGE: {data.message}
-              {data.lastSeen ? ` · LAST SEEN: ${data.lastSeen}` : ""} ·
+              STATUS <span className={bnlTone(online)}>{data.status}</span> :: MODE {data.mode} :: MESSAGE {data.message}
+              {data.lastSeen ? ` :: LAST SEEN ${data.lastSeen}` : ""} ::
             </span>
           </div>
         </div>

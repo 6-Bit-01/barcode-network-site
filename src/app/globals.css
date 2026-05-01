@@ -458,6 +458,7 @@ body {
 .bnl-relay-scroll {
   overflow: hidden;
   white-space: nowrap;
+  mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
 }
 
 .bnl-relay-scroll-track {
@@ -465,7 +466,7 @@ body {
   gap: 2.5rem;
   min-width: max-content;
   padding-right: 2.5rem;
-  animation: bnl-relay-crawl 36s linear infinite;
+  animation: bnl-relay-crawl 48s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

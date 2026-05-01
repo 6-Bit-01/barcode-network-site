@@ -7,6 +7,7 @@ import { LiveStatusProvider } from "@/components/LiveStatusProvider";
 import { DataStream } from "@/components/DataStream";
 import { SystemTicker } from "@/components/SystemTicker";
 import { LiveBanner } from "@/components/LiveBanner";
+import { BNLNetworkRelayTicker } from "@/components/BNLRelay";
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
@@ -71,6 +72,7 @@ export default function RootLayout({
           <DataStream />
           <LiveBanner />
           <Header />
+          <BNLNetworkRelayTicker />
           <main className="min-h-screen animate-interference overflow-x-hidden">
             {children}
           </main>

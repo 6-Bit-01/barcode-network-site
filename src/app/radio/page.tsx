@@ -3,6 +3,7 @@ import { radioPage, externalLinks } from "@/content";
 import { RadioHero, SectionDot } from "@/components/LiveEffects";
 import { LocalSchedule } from "@/components/LocalSchedule";
 import type { Metadata } from "next";
+import { BNLRelayModule } from "@/components/BNLRelay";
 
 export const metadata: Metadata = {
   title: "BARCODE Radio — Submit Music & Listen Live",
@@ -70,6 +71,13 @@ export default function RadioPage() {
               {radioPage.hero.tiktokButton.text}
             </a>
           </div>
+        </div>
+      </section>
+
+      {/* BNL-01 Broadcast Monitor */}
+      <section className="border-b border-border">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-12">
+          <BNLRelayModule title="BNL-01 Broadcast Monitor" />
         </div>
       </section>
 

@@ -33,7 +33,7 @@ interface BNLHistoryEntry {
 
 const KEY = "bnl:status";
 const HISTORY_KEY = "bnl:history";
-const DEFAULT_DIRECTIVE = "Monitoring Discord-side relay traffic.";
+const DEFAULT_DIRECTIVE = "Reading Discord memory files for relay updates.";
 const DEFAULT_STATUS: BNLStatus = {
   status: "OFFLINE",
   mode: "STANDBY",

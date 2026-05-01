@@ -63,6 +63,23 @@ function formatLocalTimestamp(value: string | null): string {
   }).format(parsed);
 }
 
+function formatLastSeenSentence(value: string | null): string {
+  if (!value) return "unknown";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "unknown";
+  const time = new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(parsed);
+  const date = new Intl.DateTimeFormat(undefined, {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(parsed);
+  return `Last seen at ${time} on ${date}`;
+}
+
 export default function AdminPage() {
   const { isLive, toggleLive, streamUrl, setStreamUrl, isScheduled, manualOverride, lastError, persisted } = useLiveStatus();
   const [urlInput, setUrlInput] = useState(streamUrl);
@@ -131,6 +148,7 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
 
   const lastSeenAge = formatLastSeenAge(bnl.lastSeen);
   const lastSeenLocal = formatLocalTimestamp(bnl.lastSeen);
+  const lastSeenSentence = formatLastSeenSentence(bnl.lastSeen);
 
   return <section><div className="mx-auto max-w-7xl px-4 sm:px-6 py-16 space-y-8">{/* existing cards omitted for brevity in source */}
   <div className="grid grid-cols-1 md:grid-cols-2 gap-8"><div className="border border-border bg-surface p-6"><h2 className="text-[10px] uppercase tracking-[0.5em] text-muted mb-6">BARCODE Radio — Live Status</h2><button onClick={toggleLive} className="w-full px-4 py-3 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all font-bold">{isLive ? 'GO OFFLINE':'GO LIVE'}</button><div className="text-xs text-muted/50 mt-3"><p>// Scheduled: {isScheduled ? 'YES' : 'NO'}</p><p>// Override: {manualOverride ? 'ACTIVE' : 'NONE'}</p><p>// Persistence: {persisted === null ? 'UNKNOWN' : persisted ? 'REDIS' : 'IN-MEMORY'}</p>{lastError && <p className='text-danger'>{lastError}</p>}</div></div><div className="border border-border bg-surface p-6"><h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted mb-6">Stream URL</h2><input type="url" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /><button onClick={() => setStreamUrl(urlInput)} className="mt-4 w-full px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all">Update Stream URL</button></div></div>
@@ -144,7 +162,7 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
       <p>Mode: {bnl.mode}</p>
       <p>Message: {bnl.message}</p>
       <p>Current Directive: {bnl.currentDirective || 'Monitoring Discord-side relay traffic.'}</p>
-      <p>Last Seen (your local time): {lastSeenLocal}</p>
+      <p>{lastSeenSentence} (your local time)</p>
       <p>Last Seen Age: {lastSeenAge}</p>
     </div>
     <div className="text-sm border border-border p-4 bg-background/30">

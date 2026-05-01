@@ -43,7 +43,9 @@ const SOURCE_LABELS: Record<BNLSourceValue, string> = {
 
 function formatLastSeenAge(lastSeen: string | null): string {
   if (!lastSeen) return "unknown";
-  const diffMs = Date.now() - new Date(lastSeen).getTime();
+  const parsed = new Date(lastSeen).getTime();
+  if (Number.isNaN(parsed)) return "unknown";
+  const diffMs = Date.now() - parsed;
   const minutes = Math.max(0, Math.floor(diffMs / 60000));
   if (minutes === 0) return "just now";
   if (minutes === 1) return "1 minute ago";
@@ -136,11 +138,12 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
     </div>
     <div className="text-sm border border-border p-4 bg-background/20">
       <p className="text-xs text-accent uppercase tracking-widest mb-2">BNL Admin Status Report</p>
-      <p><strong>Discord Activity:</strong> Latest relay source indicates <span className="text-foreground">{SOURCE_LABELS[bnl.source || "unknown"]}</span>{bnl.lastSeen ? ` at ${bnl.lastSeen}` : "."}</p>
-      <p><strong>Website Relay:</strong> Public ticker currently shows <span className="text-foreground">{bnl.status}</span> in <span className="text-foreground">{bnl.mode}</span>.</p>
-      <p><strong>Public Relay Message:</strong> {bnl.message}</p>
-      <p><strong>Sync Health:</strong> Last seen age is <span className="text-foreground">{lastSeenAge}</span>; storage path is <span className="text-foreground">{bnl.persisted ? "Redis" : "in-memory fallback"}</span>.</p>
-      <p className="text-xs text-muted mt-2">Use this report to compare Discord-side BNL updates against the current website relay output.</p>
+      <p><strong>Discord Source:</strong> <span className="text-foreground">{SOURCE_LABELS[bnl.source || "unknown"]}</span></p>
+      <p><strong>Discord Last Update:</strong> <span className="text-foreground">{bnl.lastSeen || "unknown"}</span></p>
+      <p><strong>Website Relay Status:</strong> <span className="text-foreground">{bnl.status}</span> / <span className="text-foreground">{bnl.mode}</span></p>
+      <p><strong>Website Relay Message:</strong> {bnl.message}</p>
+      <p><strong>Sync Health:</strong> <span className="text-foreground">{lastSeenAge}</span> • <span className="text-foreground">{bnl.persisted ? "Redis" : "in-memory fallback"}</span></p>
+      <p className="text-xs text-muted mt-2">Admin view only. Use this to compare BNL Discord updates to current website relay output.</p>
     </div>
   </div>
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><select value={relayForm.status} onChange={(e)=>setRelayForm({...relayForm,status:e.target.value as BNLStatusValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>ONLINE</option><option>OFFLINE</option></select><select value={relayForm.mode} onChange={(e)=>setRelayForm({...relayForm,mode:e.target.value as BNLModeValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>STANDBY</option><option>OBSERVATION</option><option>ACTIVE_LIAISON</option><option>SIGNAL_DEGRADATION</option><option>RESTRICTED</option></select></div>

@@ -5,12 +5,14 @@ import { useState, useEffect } from "react";
 
 type BNLStatusValue = "ONLINE" | "OFFLINE";
 type BNLModeValue = "STANDBY" | "OBSERVATION" | "ACTIVE_LIAISON" | "SIGNAL_DEGRADATION" | "RESTRICTED";
-type BNLSourceValue = "bot" | "admin" | "showtest" | "heartbeat" | "unknown";
+type BNLSourceValue = "bot" | "startup" | "relay" | "heartbeat" | "showday" | "showtest" | "admin" | "reset" | "unknown";
 
 interface BNLAdminState {
   status: BNLStatusValue;
   mode: BNLModeValue;
   message: string;
+  currentDirective?: string;
+  source?: BNLSourceValue;
   lastSeen: string | null;
   persisted?: boolean;
 }
@@ -87,7 +89,7 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
 
   <div className="border border-border bg-surface p-6 space-y-5"><div><h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted">BNL-01 Relay Control</h2><p className="text-xs text-muted/70 mt-2">Admin controls for relay state, safety flags, and operator history.</p></div>
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-muted"><p>BNL status API reachable: <span className="text-foreground">{bnlApiReachable ? 'yes':'no'}</span></p><p>Last seen age: <span className="text-foreground">{lastSeenAge}</span></p><p>Redis persistence: <span className="text-foreground">{bnl.persisted ? 'enabled':'in-memory fallback'}</span></p><p>Current mode: <span className="text-foreground">{bnl.mode}</span></p></div>
-  <div className="text-sm border border-border p-4 bg-background/40"><p className="text-xs text-muted mb-2">Current BNL status from /api/bnl/status.</p><p>Status: {bnl.status}</p><p>Mode: {bnl.mode}</p><p>Message: {bnl.message}</p><p>Last seen: {bnl.lastSeen || 'never'}</p></div>
+  <div className="text-sm border border-border p-4 bg-background/40"><p className="text-xs text-muted mb-2">Current BNL status from /api/bnl/status.</p><p>Status: {bnl.status}</p><p>Mode: {bnl.mode}</p><p>Message: {bnl.message}</p><p>Current directive: {bnl.currentDirective || 'Monitoring Discord-side relay traffic.'}</p><p>Source: {bnl.source || 'unknown'}</p><p>Last seen: {bnl.lastSeen || 'never'}</p></div>
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><select value={relayForm.status} onChange={(e)=>setRelayForm({...relayForm,status:e.target.value as BNLStatusValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>ONLINE</option><option>OFFLINE</option></select><select value={relayForm.mode} onChange={(e)=>setRelayForm({...relayForm,mode:e.target.value as BNLModeValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>STANDBY</option><option>OBSERVATION</option><option>ACTIVE_LIAISON</option><option>SIGNAL_DEGRADATION</option><option>RESTRICTED</option></select></div>
   <textarea value={relayForm.message} maxLength={240} onChange={(e)=>setRelayForm({...relayForm,message:e.target.value.slice(0,240)})} className="w-full bg-background border border-border px-3 py-2.5 text-sm" />
   <div className="flex gap-3"><button onClick={()=>updateRelay('updateStatus')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all">Update BNL Relay</button><button onClick={()=>updateRelay('resetStandby')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all">Reset BNL Relay to Standby</button></div>

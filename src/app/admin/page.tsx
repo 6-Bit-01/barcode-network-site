@@ -107,6 +107,8 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
   const [relayForm, setRelayForm] = useState({ status: "ONLINE" as BNLStatusValue, mode: "OBSERVATION" as BNLModeValue, message: defaultRelayMessage });
   const [bnlApiReachable, setBnlApiReachable] = useState(false);
   const [forcePullRequestedAt, setForcePullRequestedAt] = useState<string | null>(null);
+  const [relayActionError, setRelayActionError] = useState<string | null>(null);
+  const [relayActionNote, setRelayActionNote] = useState<string | null>(null);
 
   const loadBnl = async () => {
     const [publicRes, adminRes] = await Promise.all([fetch('/api/bnl/status', { cache: 'no-store' }), fetch('/api/admin/bnl', { cache: 'no-store' })]);
@@ -142,8 +144,25 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
     await loadBnl();
   };
   const requestForcePull = async () => {
-    await fetch('/api/admin/bnl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'forcePull' }) });
-    await loadBnl();
+    setRelayActionError(null);
+    setRelayActionNote(null);
+    try {
+      const res = await fetch('/api/admin/bnl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'forcePull' }) });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const reason = typeof payload?.error === 'string' ? payload.error : `Request failed (${res.status})`;
+        throw new Error(reason);
+      }
+      if (typeof payload?.note === "string") setRelayActionNote(payload.note);
+      if (payload?.webhookDelivery && payload.webhookDelivery.delivered === false) {
+        console.warn("[admin] forcePull webhook delivery warning:", payload.webhookDelivery);
+      }
+      await loadBnl();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to request immediate check-in';
+      console.error('[admin] forcePull request failed:', error);
+      setRelayActionError(message);
+    }
   };
 
   const lastSeenAge = formatLastSeenAge(bnl.lastSeen);
@@ -191,6 +210,8 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
   </div>
   <p className="text-xs text-muted">Last immediate check-in request: {forcePullRequestedAt || "never"}.</p>
   <p className="text-xs text-muted">This requests a bot-side check-in and does not itself generate a new relay message. If BNL has not posted new status data yet, the public relay may remain unchanged.</p>
+  {relayActionError && <p className="text-xs text-danger">Immediate check-in request failed: {relayActionError}</p>}
+  {relayActionNote && <p className="text-xs text-muted">{relayActionNote}</p>}
   <div><p className="text-xs text-muted mb-2">Kill switches are stored for future bot consumption.</p>
     <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Website Relay Enabled:</strong> Allows BNL to update the public website relay automatically.</span><input type="checkbox" checked={flags.websiteRelayEnabled} onChange={(e)=>updateFlags({...flags,websiteRelayEnabled:e.target.checked})} /></label>
     <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Show-Day Discord Posts Enabled:</strong> Allows BNL to post scheduled Friday show updates in Discord.</span><input type="checkbox" checked={flags.showdayDiscordPostsEnabled} onChange={(e)=>updateFlags({...flags,showdayDiscordPostsEnabled:e.target.checked})} /></label>

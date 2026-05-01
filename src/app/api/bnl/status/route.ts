@@ -15,6 +15,7 @@ type BNLSourceValue = "bot" | "admin" | "showtest" | "heartbeat" | "unknown";
 interface BNLStatus {
   status: BNLStatusValue;
   mode: BNLModeValue;
+  currentDirective: string;
   message: string;
   lastSeen: string | null;
 }
@@ -23,6 +24,7 @@ interface BNLHistoryEntry {
   timestamp: string;
   status: BNLStatusValue;
   mode: BNLModeValue;
+  currentDirective?: string;
   message: string;
   source: BNLSourceValue;
 }
@@ -32,6 +34,7 @@ const HISTORY_KEY = "bnl:history";
 const DEFAULT_STATUS: BNLStatus = {
   status: "OFFLINE",
   mode: "STANDBY",
+  currentDirective: "Monitoring Discord-side relay traffic.",
   message: "BNL-01 relay awaiting signal.",
   lastSeen: null,
 };
@@ -70,12 +73,16 @@ function sanitizeStoredStatus(value: unknown): BNLStatus {
     typeof record.message === "string" && record.message.trim().length > 0
       ? record.message.trim().slice(0, 240)
       : DEFAULT_STATUS.message;
+  const currentDirective =
+    typeof record.currentDirective === "string" && record.currentDirective.trim().length > 0
+      ? record.currentDirective.trim().slice(0, 160)
+      : DEFAULT_STATUS.currentDirective;
   const lastSeen =
     typeof record.lastSeen === "string" && record.lastSeen.length > 0
       ? record.lastSeen
       : null;
 
-  return { status, mode, message, lastSeen };
+  return { status, mode, currentDirective, message, lastSeen };
 }
 
 function sanitizeHistory(value: unknown): BNLHistoryEntry[] {
@@ -91,8 +98,12 @@ function sanitizeHistory(value: unknown): BNLHistoryEntry[] {
         : "unknown";
       const timestamp = typeof rec.timestamp === "string" && rec.timestamp ? rec.timestamp : null;
       const message = typeof rec.message === "string" ? rec.message.trim().slice(0, 240) : "";
+      const currentDirective =
+        typeof rec.currentDirective === "string" && rec.currentDirective.trim().length > 0
+          ? rec.currentDirective.trim().slice(0, 160)
+          : undefined;
       if (!status || !mode || !timestamp || !message) return null;
-      return { timestamp, status, mode, message, source };
+      return { timestamp, status, mode, currentDirective, message, source };
     })
     .filter((entry): entry is BNLHistoryEntry => Boolean(entry))
     .slice(0, 10);
@@ -128,7 +139,7 @@ export async function POST(req: Request) {
 
   try {
     const body = (await req.json()) as Record<string, unknown>;
-    const allowedKeys = ["status", "mode", "message", "source"];
+    const allowedKeys = ["status", "mode", "currentDirective", "message", "source"];
     const bodyKeys = Object.keys(body);
     const hasOnlyAllowedKeys = bodyKeys.every((key) => allowedKeys.includes(key));
 
@@ -138,12 +149,14 @@ export async function POST(req: Request) {
 
     const status = body.status;
     const mode = body.mode;
+    const currentDirective = body.currentDirective;
     const message = body.message;
     const source = body.source;
 
     if (
       !ALLOWED_STATUS.has(status as BNLStatusValue) ||
       !ALLOWED_MODES.has(mode as BNLModeValue) ||
+      (currentDirective !== undefined && typeof currentDirective !== "string") ||
       typeof message !== "string" ||
       (source !== undefined && !ALLOWED_SOURCES.has(source as BNLSourceValue))
     ) {
@@ -151,10 +164,15 @@ export async function POST(req: Request) {
     }
 
     const now = new Date().toISOString();
+    const trimmedDirective =
+      typeof currentDirective === "string" && currentDirective.trim().length > 0
+        ? currentDirective.trim().slice(0, 160)
+        : DEFAULT_STATUS.currentDirective;
     const trimmedMessage = message.trim().slice(0, 240);
     const nextStatus: BNLStatus = {
       status: status as BNLStatusValue,
       mode: mode as BNLModeValue,
+      currentDirective: trimmedDirective,
       message: trimmedMessage,
       lastSeen: now,
     };
@@ -167,6 +185,7 @@ export async function POST(req: Request) {
       timestamp: now,
       status: nextStatus.status,
       mode: nextStatus.mode,
+      currentDirective: nextStatus.currentDirective,
       message: nextStatus.message,
       source: ALLOWED_SOURCES.has(source as BNLSourceValue) ? (source as BNLSourceValue) : "unknown",
     });

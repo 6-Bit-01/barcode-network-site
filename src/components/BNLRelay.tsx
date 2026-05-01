@@ -46,6 +46,7 @@ export function BNLRelayModule({ title }: { title: string }) {
       </div>
       <div className="space-y-2 text-sm text-foreground/70">
         <p>&gt; MODE: {data.mode}</p>
+        <p className="text-xs text-muted">&gt; CURRENT_DIRECTIVE: {data.currentDirective}</p>
         <p>&gt; MESSAGE: {data.message}</p>
         <p>&gt; LAST_SEEN: {data.lastSeen ?? "NULL"}</p>
         {loading ? <p className="text-muted">&gt; FETCHING RELAY...</p> : null}

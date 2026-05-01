@@ -9,6 +9,7 @@ export type BNLModeValue =
 export interface BNLStatus {
   status: BNLStatusValue;
   mode: BNLModeValue;
+  currentDirective: string;
   message: string;
   lastSeen: string | null;
 }
@@ -16,6 +17,7 @@ export interface BNLStatus {
 export const FALLBACK_STATUS: BNLStatus = {
   status: "OFFLINE",
   mode: "STANDBY",
+  currentDirective: "Monitoring Discord-side relay traffic.",
   message: "BNL-01 relay awaiting signal.",
   lastSeen: null,
 };

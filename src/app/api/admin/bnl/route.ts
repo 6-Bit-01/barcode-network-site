@@ -27,7 +27,7 @@ const DEFAULT_FLAGS: BNLFlags = {
 const ALLOWED_STATUS = new Set<BNLStatusValue>(["ONLINE", "OFFLINE"]);
 const ALLOWED_MODES = new Set<BNLModeValue>(["STANDBY", "OBSERVATION", "ACTIVE_LIAISON", "SIGNAL_DEGRADATION", "RESTRICTED"]);
 
-let memoryHistory: Array<{ timestamp: string; status: BNLStatusValue; mode: BNLModeValue; message: string; source: BNLSourceValue }> = [];
+let memoryHistory: Array<{ timestamp: string; status: BNLStatusValue; mode: BNLModeValue; currentDirective?: string; message: string; source: BNLSourceValue }> = [];
 let memoryFlags: BNLFlags = { ...DEFAULT_FLAGS };
 
 function getRedis(): Redis | null {
@@ -60,6 +60,10 @@ function sanitizeHistory(value: unknown): typeof memoryHistory {
         timestamp: rec.timestamp,
         status: rec.status as BNLStatusValue,
         mode: rec.mode as BNLModeValue,
+        currentDirective:
+          typeof rec.currentDirective === "string" && rec.currentDirective.trim().length > 0
+            ? rec.currentDirective.trim().slice(0, 160)
+            : undefined,
         message: rec.message.trim().slice(0, 240),
         source: source === "bot" || source === "admin" || source === "showtest" || source === "heartbeat" ? source : "unknown",
       };
@@ -120,18 +124,24 @@ export async function POST(req: Request) {
       const message = action === "resetStandby"
         ? "BNL-01 relay standing by. Discord-side signal monitoring active."
         : body.message;
+      const currentDirective = action === "resetStandby" ? "Monitoring Discord-side relay traffic." : body.currentDirective;
 
-      if (!ALLOWED_STATUS.has(status as BNLStatusValue) || !ALLOWED_MODES.has(mode as BNLModeValue) || typeof message !== "string") {
+      if (!ALLOWED_STATUS.has(status as BNLStatusValue) || !ALLOWED_MODES.has(mode as BNLModeValue) || typeof message !== "string" || (currentDirective !== undefined && typeof currentDirective !== "string")) {
         return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
       }
 
       const trimmedMessage = message.trim().slice(0, 240);
+      const trimmedDirective =
+        typeof currentDirective === "string" && currentDirective.trim().length > 0
+          ? currentDirective.trim().slice(0, 160)
+          : "Monitoring Discord-side relay traffic.";
       if (!trimmedMessage) return NextResponse.json({ error: "Message required" }, { status: 400 });
 
       const now = new Date().toISOString();
       const nextStatus = {
         status: status as BNLStatusValue,
         mode: mode as BNLModeValue,
+        currentDirective: trimmedDirective,
         message: trimmedMessage,
         lastSeen: now,
       };
@@ -139,6 +149,7 @@ export async function POST(req: Request) {
         timestamp: now,
         status: status as BNLStatusValue,
         mode: mode as BNLModeValue,
+        currentDirective: trimmedDirective,
         message: trimmedMessage,
         source: "admin",
       };

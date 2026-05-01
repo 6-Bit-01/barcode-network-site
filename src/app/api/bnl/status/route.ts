@@ -94,27 +94,43 @@ function sanitizeStoredStatus(value: unknown): BNLStatus {
 
 function sanitizeHistory(value: unknown): BNLHistoryEntry[] {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      if (!item || typeof item !== "object") return null;
-      const rec = item as Record<string, unknown>;
-      const status = ALLOWED_STATUS.has(rec.status as BNLStatusValue) ? (rec.status as BNLStatusValue) : null;
-      const mode = ALLOWED_MODES.has(rec.mode as BNLModeValue) ? (rec.mode as BNLModeValue) : null;
-      const source = ALLOWED_SOURCES.has(rec.source as BNLSourceValue)
-        ? (rec.source as BNLSourceValue)
-        : "unknown";
-      const timestamp = typeof rec.timestamp === "string" && rec.timestamp ? rec.timestamp : null;
-      const message = typeof rec.message === "string" ? rec.message.trim().slice(0, 240) : "";
-      if (!status || !mode || !timestamp || !message) return null;
-      return { timestamp, status, mode, message, source };
-    })
-    .filter((entry): entry is BNLHistoryEntry => Boolean(entry))
-    .slice(0, 25);
+  const normalized: BNLHistoryEntry[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    const status = ALLOWED_STATUS.has(rec.status as BNLStatusValue) ? (rec.status as BNLStatusValue) : null;
+    const mode = ALLOWED_MODES.has(rec.mode as BNLModeValue) ? (rec.mode as BNLModeValue) : null;
+    const source = ALLOWED_SOURCES.has(rec.source as BNLSourceValue)
+      ? (rec.source as BNLSourceValue)
+      : "unknown";
+    const timestamp = typeof rec.timestamp === "string" && rec.timestamp ? rec.timestamp : null;
+    const message = typeof rec.message === "string" ? rec.message.trim().slice(0, 240) : "";
+    const currentDirective =
+      typeof rec.currentDirective === "string" && rec.currentDirective.trim().length > 0
+        ? rec.currentDirective.trim().slice(0, 160)
+        : undefined;
+    if (!status || !mode || !timestamp || !message) continue;
+    normalized.push({ timestamp, status, mode, currentDirective, message, source });
+  }
+  return normalized.slice(0, 25);
+}
+
+function sameHistoryContent(a: BNLHistoryEntry, b: BNLHistoryEntry): boolean {
+  return (
+    a.status === b.status &&
+    a.mode === b.mode &&
+    a.source === b.source &&
+    a.message === b.message &&
+    (a.currentDirective ?? "") === (b.currentDirective ?? "")
+  );
 }
 
 async function appendHistory(redis: Redis | null, entry: BNLHistoryEntry) {
   const current = redis ? sanitizeHistory(await redis.get<unknown>(HISTORY_KEY)) : memoryHistory;
-  const nextHistory = [entry, ...current].slice(0, 25);
+  const latest = current[0];
+  const nextHistory = latest && sameHistoryContent(latest, entry)
+    ? current.slice(0, 25)
+    : [entry, ...current].slice(0, 25);
   if (redis) await redis.set(HISTORY_KEY, nextHistory);
   memoryHistory = nextHistory;
 }

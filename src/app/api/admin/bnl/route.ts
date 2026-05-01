@@ -83,6 +83,19 @@ function sanitizeFlags(value: unknown): BNLFlags {
   };
 }
 
+function sameHistoryContent(
+  a: (typeof memoryHistory)[number],
+  b: (typeof memoryHistory)[number],
+): boolean {
+  return (
+    a.status === b.status &&
+    a.mode === b.mode &&
+    a.source === b.source &&
+    a.message === b.message &&
+    (a.currentDirective ?? "") === (b.currentDirective ?? "")
+  );
+}
+
 export async function GET(req: Request) {
   if (!(await isAuthenticated(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -155,9 +168,16 @@ export async function POST(req: Request) {
       if (redis) {
         const priorHistory = sanitizeHistory(await redis.get<unknown>(HISTORY_KEY)) as typeof memoryHistory;
         await redis.set(STATUS_KEY, nextStatus);
-        await redis.set(HISTORY_KEY, [nextEntry, ...priorHistory].slice(0, 25));
+        const latest = priorHistory[0];
+        const nextHistory = latest && sameHistoryContent(latest, nextEntry)
+          ? priorHistory.slice(0, 25)
+          : [nextEntry, ...priorHistory].slice(0, 25);
+        await redis.set(HISTORY_KEY, nextHistory);
       } else {
-        memoryHistory = [nextEntry, ...memoryHistory].slice(0, 25);
+        const latest = memoryHistory[0];
+        memoryHistory = latest && sameHistoryContent(latest, nextEntry)
+          ? memoryHistory.slice(0, 25)
+          : [nextEntry, ...memoryHistory].slice(0, 25);
       }
 
       return NextResponse.json({ ok: true, status: nextStatus, persisted: Boolean(redis) });

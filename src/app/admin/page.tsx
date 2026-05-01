@@ -119,11 +119,18 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
       <p>Last Seen Age: {lastSeenAge}</p>
     </div>
     <div className="text-sm border border-border p-4 bg-background/30">
-      <p className="text-xs text-muted uppercase tracking-widest mb-2">Admin Relay Metadata (mods only)</p>
+      <p className="text-xs text-muted uppercase tracking-widest mb-2">Admin Relay Metadata (admin only)</p>
       <p>Source Label: {SOURCE_LABELS[bnl.source || "unknown"]}</p>
       <p>Raw Source Code: {bnl.source || "unknown"}</p>
       <p>Persistence Layer: {bnl.persisted ? "Redis" : "In-memory fallback"}</p>
-      <p className="text-xs text-muted mt-2">This metadata is for admin/moderator visibility and is not part of the public ticker display.</p>
+      <p className="text-xs text-muted mt-2">This metadata is for admin visibility and is not part of the public ticker display.</p>
+    </div>
+    <div className="text-sm border border-border p-4 bg-background/20">
+      <p className="text-xs text-accent uppercase tracking-widest mb-2">BNL Admin Status Report</p>
+      <p><strong>Discord Activity:</strong> Latest relay source indicates <span className="text-foreground">{SOURCE_LABELS[bnl.source || "unknown"]}</span>{bnl.lastSeen ? ` at ${bnl.lastSeen}` : "."}</p>
+      <p><strong>Website Relay:</strong> Public ticker currently shows <span className="text-foreground">{bnl.status}</span> in <span className="text-foreground">{bnl.mode}</span> with message: "{bnl.message}"</p>
+      <p><strong>Sync Health:</strong> Last seen age is <span className="text-foreground">{lastSeenAge}</span>; storage path is <span className="text-foreground">{bnl.persisted ? "Redis" : "in-memory fallback"}</span>.</p>
+      <p className="text-xs text-muted mt-2">Use this report to compare Discord-side BNL updates against the current website relay output.</p>
     </div>
   </div>
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><select value={relayForm.status} onChange={(e)=>setRelayForm({...relayForm,status:e.target.value as BNLStatusValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>ONLINE</option><option>OFFLINE</option></select><select value={relayForm.mode} onChange={(e)=>setRelayForm({...relayForm,mode:e.target.value as BNLModeValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>STANDBY</option><option>OBSERVATION</option><option>ACTIVE_LIAISON</option><option>SIGNAL_DEGRADATION</option><option>RESTRICTED</option></select></div>
@@ -134,7 +141,7 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
     <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Show-Day Discord Posts Enabled:</strong> Allows BNL to post scheduled Friday show updates in Discord.</span><input type="checkbox" checked={flags.showdayDiscordPostsEnabled} onChange={(e)=>updateFlags({...flags,showdayDiscordPostsEnabled:e.target.checked})} /></label>
     <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Heartbeat Enabled:</strong> Allows BNL to keep the website relay fresh with periodic status updates.</span><input type="checkbox" checked={flags.heartbeatEnabled} onChange={(e)=>updateFlags({...flags,heartbeatEnabled:e.target.checked})} /></label>
   </div>
-  <div><div className="flex items-center justify-between"><p className="text-xs text-muted mb-2">Admin Relay History (mods only) — most recent 25 updates received from BNL/admin actions.</p><button onClick={clearHistory} className="px-3 py-1.5 text-xs uppercase tracking-widest border border-danger/40 text-danger hover:bg-danger hover:text-background transition-all">Clear Relay History</button></div><div className="space-y-2 text-xs">{history.map((entry, idx)=><div key={idx} className="border border-border p-2"><p>{entry.timestamp} — {entry.status} / {entry.mode} ({SOURCE_LABELS[entry.source || 'unknown']})</p>{entry.currentDirective && <p>Directive: {entry.currentDirective}</p>}<p>{entry.message}</p><p className="text-muted">Persistence: {entry.persisted === undefined ? "unknown" : entry.persisted ? "redis" : "in-memory fallback"}</p></div>)}</div></div>
+  <div><div className="flex items-center justify-between"><p className="text-xs text-muted mb-2">Admin Relay History (admin only) — most recent 25 updates received from BNL/admin actions.</p><button onClick={clearHistory} className="px-3 py-1.5 text-xs uppercase tracking-widest border border-danger/40 text-danger hover:bg-danger hover:text-background transition-all">Clear Relay History</button></div><div className="space-y-2 text-xs">{history.map((entry, idx)=><div key={idx} className="border border-border p-2"><p>{entry.timestamp} — {entry.status} / {entry.mode} ({SOURCE_LABELS[entry.source || 'unknown']})</p>{entry.currentDirective && <p>Directive: {entry.currentDirective}</p>}<p>{entry.message}</p><p className="text-muted">Persistence: {entry.persisted === undefined ? "unknown" : entry.persisted ? "redis" : "in-memory fallback"}</p></div>)}</div></div>
   </div>
 
   </div></section>;

@@ -13,6 +13,7 @@ export function BNLStatusCard() {
           &gt; STATUS: <span className={data.status === "ONLINE" ? "text-accent" : "text-muted"}>{data.status}</span>
         </p>
         <p>&gt; MODE: {data.mode}</p>
+        <p>&gt; CURRENT_DIRECTIVE: {data.currentDirective}</p>
         <p>&gt; MESSAGE: {data.message}</p>
         <p>&gt; LAST_SEEN: {data.lastSeen ?? "NULL"}</p>
         {loading ? <p className="text-muted">&gt; FETCHING RELAY...</p> : null}

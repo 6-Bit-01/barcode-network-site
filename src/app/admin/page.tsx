@@ -10,6 +10,7 @@ type BNLSourceValue = "bot" | "admin" | "showtest" | "heartbeat" | "unknown";
 interface BNLAdminState {
   status: BNLStatusValue;
   mode: BNLModeValue;
+  currentDirective: string;
   message: string;
   lastSeen: string | null;
   persisted?: boolean;
@@ -19,12 +20,13 @@ interface BNLHistoryEntry {
   timestamp: string;
   status: BNLStatusValue;
   mode: BNLModeValue;
+  currentDirective?: string;
   message: string;
   source: BNLSourceValue;
 }
 
 const defaultRelayMessage = "BNL-01 relay standing by. Discord-side signal monitoring active.";
-const defaultBNL: BNLAdminState = { status: "OFFLINE", mode: "STANDBY", message: "BNL-01 relay awaiting signal.", lastSeen: null };
+const defaultBNL: BNLAdminState = { status: "OFFLINE", mode: "STANDBY", currentDirective: "Monitoring Discord-side relay traffic.", message: "BNL-01 relay awaiting signal.", lastSeen: null };
 
 export default function AdminPage() {
   const { isLive, toggleLive, streamUrl, setStreamUrl, isScheduled, manualOverride, lastError, persisted } = useLiveStatus();
@@ -50,7 +52,7 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
   const [bnl, setBnl] = useState<BNLAdminState>(defaultBNL);
   const [history, setHistory] = useState<BNLHistoryEntry[]>([]);
   const [flags, setFlags] = useState({ websiteRelayEnabled: true, showdayDiscordPostsEnabled: true, heartbeatEnabled: true });
-  const [relayForm, setRelayForm] = useState({ status: "ONLINE" as BNLStatusValue, mode: "OBSERVATION" as BNLModeValue, message: defaultRelayMessage });
+  const [relayForm, setRelayForm] = useState({ status: "ONLINE" as BNLStatusValue, mode: "OBSERVATION" as BNLModeValue, currentDirective: "Monitoring Discord-side relay traffic.", message: defaultRelayMessage });
   const [bnlApiReachable, setBnlApiReachable] = useState(false);
 
   const loadBnl = async () => {
@@ -59,7 +61,7 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
     if (publicRes.ok) {
       const publicData = await publicRes.json();
       setBnl(publicData);
-      setRelayForm((x) => ({ ...x, status: publicData.status, mode: publicData.mode, message: publicData.message }));
+      setRelayForm((x) => ({ ...x, status: publicData.status, mode: publicData.mode, currentDirective: publicData.currentDirective, message: publicData.message }));
     }
     if (adminRes.ok) {
       const adminData = await adminRes.json();
@@ -87,12 +89,13 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
 
   <div className="border border-border bg-surface p-6 space-y-5"><div><h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted">BNL-01 Relay Control</h2><p className="text-xs text-muted/70 mt-2">Admin controls for relay state, safety flags, and operator history.</p></div>
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-muted"><p>BNL status API reachable: <span className="text-foreground">{bnlApiReachable ? 'yes':'no'}</span></p><p>Last seen age: <span className="text-foreground">{lastSeenAge}</span></p><p>Redis persistence: <span className="text-foreground">{bnl.persisted ? 'enabled':'in-memory fallback'}</span></p><p>Current mode: <span className="text-foreground">{bnl.mode}</span></p></div>
-  <div className="text-sm border border-border p-4 bg-background/40"><p className="text-xs text-muted mb-2">Current BNL status from /api/bnl/status.</p><p>Status: {bnl.status}</p><p>Mode: {bnl.mode}</p><p>Message: {bnl.message}</p><p>Last seen: {bnl.lastSeen || 'never'}</p></div>
+  <div className="text-sm border border-border p-4 bg-background/40"><p className="text-xs text-muted mb-2">Current BNL status from /api/bnl/status.</p><p>Status: {bnl.status}</p><p>Mode: {bnl.mode}</p><p>Current Directive: {bnl.currentDirective}</p><p>Message: {bnl.message}</p><p>Last seen: {bnl.lastSeen || 'never'}</p></div>
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><select value={relayForm.status} onChange={(e)=>setRelayForm({...relayForm,status:e.target.value as BNLStatusValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>ONLINE</option><option>OFFLINE</option></select><select value={relayForm.mode} onChange={(e)=>setRelayForm({...relayForm,mode:e.target.value as BNLModeValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>STANDBY</option><option>OBSERVATION</option><option>ACTIVE_LIAISON</option><option>SIGNAL_DEGRADATION</option><option>RESTRICTED</option></select></div>
+  <div><label className="block text-xs text-muted mb-2">Current Directive</label><input type="text" value={relayForm.currentDirective} maxLength={160} onChange={(e)=>setRelayForm({...relayForm,currentDirective:e.target.value.slice(0,160)})} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /><p className="text-xs text-muted/70 mt-2">What BNL-01 is currently doing. This appears on public relay displays where space allows.</p></div>
   <textarea value={relayForm.message} maxLength={240} onChange={(e)=>setRelayForm({...relayForm,message:e.target.value.slice(0,240)})} className="w-full bg-background border border-border px-3 py-2.5 text-sm" />
   <div className="flex gap-3"><button onClick={()=>updateRelay('updateStatus')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all">Update BNL Relay</button><button onClick={()=>updateRelay('resetStandby')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all">Reset BNL Relay to Standby</button></div>
   <div><p className="text-xs text-muted mb-2">Kill switches are stored for future bot consumption.</p>{Object.entries(flags).map(([k,v])=><label key={k} className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span>{k}</span><input type="checkbox" checked={v} onChange={(e)=>updateFlags({...flags,[k]:e.target.checked})} /></label>)}</div>
-  <div><p className="text-xs text-muted mb-2">Most recent 10 relay updates (bot/admin/showtest/heartbeat).</p><div className="space-y-2 text-xs">{history.map((entry, idx)=><div key={idx} className="border border-border p-2"><p>{entry.timestamp} — {entry.status} / {entry.mode} ({entry.source || 'unknown'})</p><p>{entry.message}</p></div>)}</div></div>
+  <div><p className="text-xs text-muted mb-2">Most recent 10 relay updates (bot/admin/showtest/heartbeat).</p><div className="space-y-2 text-xs">{history.map((entry, idx)=><div key={idx} className="border border-border p-2"><p>{entry.timestamp} — {entry.status} / {entry.mode} ({entry.source || 'unknown'})</p>{entry.currentDirective ? <p>Directive: {entry.currentDirective}</p> : null}<p>{entry.message}</p></div>)}</div></div>
   </div>
 
   </div></section>;

@@ -27,7 +27,7 @@ const DEFAULT_FLAGS: BNLFlags = {
 const ALLOWED_STATUS = new Set<BNLStatusValue>(["ONLINE", "OFFLINE"]);
 const ALLOWED_MODES = new Set<BNLModeValue>(["STANDBY", "OBSERVATION", "ACTIVE_LIAISON", "SIGNAL_DEGRADATION", "RESTRICTED"]);
 
-let memoryHistory: Array<{ timestamp: string; status: BNLStatusValue; mode: BNLModeValue; message: string; source: BNLSourceValue }> = [];
+let memoryHistory: Array<{ timestamp: string; status: BNLStatusValue; mode: BNLModeValue; currentDirective?: string; message: string; source: BNLSourceValue }> = [];
 let memoryFlags: BNLFlags = { ...DEFAULT_FLAGS };
 
 function getRedis(): Redis | null {
@@ -50,18 +50,25 @@ async function isAuthenticated(req: Request): Promise<boolean> {
 function sanitizeHistory(value: unknown): typeof memoryHistory {
   if (!Array.isArray(value)) return [];
   return value
-    .map((item) => {
+    .map((item): (typeof memoryHistory)[number] | null => {
       if (!item || typeof item !== "object") return null;
       const rec = item as Record<string, unknown>;
       if (!ALLOWED_STATUS.has(rec.status as BNLStatusValue) || !ALLOWED_MODES.has(rec.mode as BNLModeValue)) return null;
       if (typeof rec.timestamp !== "string" || typeof rec.message !== "string") return null;
-      const source = rec.source as BNLSourceValue;
+      const source: BNLSourceValue =
+        rec.source === "bot" || rec.source === "admin" || rec.source === "showtest" || rec.source === "heartbeat"
+          ? rec.source
+          : "unknown";
       return {
         timestamp: rec.timestamp,
         status: rec.status as BNLStatusValue,
         mode: rec.mode as BNLModeValue,
+        currentDirective:
+          typeof rec.currentDirective === "string" && rec.currentDirective.trim().length > 0
+            ? rec.currentDirective.trim().slice(0, 160)
+            : undefined,
         message: rec.message.trim().slice(0, 240),
-        source: source === "bot" || source === "admin" || source === "showtest" || source === "heartbeat" ? source : "unknown",
+        source,
       };
     })
     .filter((item): item is (typeof memoryHistory)[number] => Boolean(item))
@@ -120,18 +127,24 @@ export async function POST(req: Request) {
       const message = action === "resetStandby"
         ? "BNL-01 relay standing by. Discord-side signal monitoring active."
         : body.message;
+      const currentDirective = action === "resetStandby" ? "Monitoring Discord-side relay traffic." : body.currentDirective;
 
-      if (!ALLOWED_STATUS.has(status as BNLStatusValue) || !ALLOWED_MODES.has(mode as BNLModeValue) || typeof message !== "string") {
+      if (!ALLOWED_STATUS.has(status as BNLStatusValue) || !ALLOWED_MODES.has(mode as BNLModeValue) || typeof message !== "string" || (currentDirective !== undefined && typeof currentDirective !== "string")) {
         return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
       }
 
       const trimmedMessage = message.trim().slice(0, 240);
+      const trimmedDirective =
+        typeof currentDirective === "string" && currentDirective.trim().length > 0
+          ? currentDirective.trim().slice(0, 160)
+          : "Monitoring Discord-side relay traffic.";
       if (!trimmedMessage) return NextResponse.json({ error: "Message required" }, { status: 400 });
 
       const now = new Date().toISOString();
       const nextStatus = {
         status: status as BNLStatusValue,
         mode: mode as BNLModeValue,
+        currentDirective: trimmedDirective,
         message: trimmedMessage,
         lastSeen: now,
       };
@@ -139,6 +152,7 @@ export async function POST(req: Request) {
         timestamp: now,
         status: status as BNLStatusValue,
         mode: mode as BNLModeValue,
+        currentDirective: trimmedDirective,
         message: trimmedMessage,
         source: "admin",
       };

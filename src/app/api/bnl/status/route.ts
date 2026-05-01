@@ -25,8 +25,10 @@ interface BNLHistoryEntry {
   timestamp: string;
   status: BNLStatusValue;
   mode: BNLModeValue;
+  currentDirective?: string;
   message: string;
   source: BNLSourceValue;
+  persisted?: boolean;
 }
 
 const KEY = "bnl:status";
@@ -107,12 +109,12 @@ function sanitizeHistory(value: unknown): BNLHistoryEntry[] {
       return { timestamp, status, mode, message, source };
     })
     .filter((entry): entry is BNLHistoryEntry => Boolean(entry))
-    .slice(0, 10);
+    .slice(0, 25);
 }
 
 async function appendHistory(redis: Redis | null, entry: BNLHistoryEntry) {
   const current = redis ? sanitizeHistory(await redis.get<unknown>(HISTORY_KEY)) : memoryHistory;
-  const nextHistory = [entry, ...current].slice(0, 10);
+  const nextHistory = [entry, ...current].slice(0, 25);
   if (redis) await redis.set(HISTORY_KEY, nextHistory);
   memoryHistory = nextHistory;
 }
@@ -187,8 +189,10 @@ export async function POST(req: Request) {
       timestamp: now,
       status: nextStatus.status,
       mode: nextStatus.mode,
+      currentDirective: nextStatus.currentDirective,
       message: nextStatus.message,
       source: nextStatus.source,
+      persisted: Boolean(redis),
     });
 
     return NextResponse.json({ ok: true, status: nextStatus, persisted: Boolean(redis) });

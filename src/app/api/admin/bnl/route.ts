@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 type BNLStatusValue = "ONLINE" | "OFFLINE";
 type BNLModeValue = "STANDBY" | "OBSERVATION" | "ACTIVE_LIAISON" | "SIGNAL_DEGRADATION" | "RESTRICTED";
-type BNLSourceValue = "bot" | "admin" | "showtest" | "heartbeat" | "unknown";
+type BNLSourceValue = "bot" | "startup" | "relay" | "heartbeat" | "showday" | "showtest" | "admin" | "reset" | "unknown";
 
 type BNLFlags = {
   websiteRelayEnabled: boolean;
@@ -27,7 +27,7 @@ const DEFAULT_FLAGS: BNLFlags = {
 const ALLOWED_STATUS = new Set<BNLStatusValue>(["ONLINE", "OFFLINE"]);
 const ALLOWED_MODES = new Set<BNLModeValue>(["STANDBY", "OBSERVATION", "ACTIVE_LIAISON", "SIGNAL_DEGRADATION", "RESTRICTED"]);
 
-let memoryHistory: Array<{ timestamp: string; status: BNLStatusValue; mode: BNLModeValue; message: string; source: BNLSourceValue }> = [];
+let memoryHistory: Array<{ timestamp: string; status: BNLStatusValue; mode: BNLModeValue; currentDirective?: string; message: string; source: BNLSourceValue; persisted?: boolean }> = [];
 let memoryFlags: BNLFlags = { ...DEFAULT_FLAGS };
 
 function getRedis(): Redis | null {
@@ -60,12 +60,14 @@ function sanitizeHistory(value: unknown): typeof memoryHistory {
         timestamp: rec.timestamp,
         status: rec.status as BNLStatusValue,
         mode: rec.mode as BNLModeValue,
+        currentDirective: typeof rec.currentDirective === "string" ? rec.currentDirective.trim().slice(0, 160) : undefined,
         message: rec.message.trim().slice(0, 240),
-        source: source === "bot" || source === "admin" || source === "showtest" || source === "heartbeat" ? source : "unknown",
+        source: source === "bot" || source === "startup" || source === "relay" || source === "heartbeat" || source === "showday" || source === "showtest" || source === "admin" || source === "reset" ? source : "unknown",
+        persisted: typeof rec.persisted === "boolean" ? rec.persisted : undefined,
       };
     })
     .filter((item): item is (typeof memoryHistory)[number] => Boolean(item))
-    .slice(0, 10);
+    .slice(0, 25);
 }
 
 function sanitizeFlags(value: unknown): BNLFlags {
@@ -133,25 +135,35 @@ export async function POST(req: Request) {
         status: status as BNLStatusValue,
         mode: mode as BNLModeValue,
         message: trimmedMessage,
+        currentDirective: action === "resetStandby" ? "Monitoring Discord-side relay traffic." : undefined,
+        source: action === "resetStandby" ? "reset" : "admin",
         lastSeen: now,
       };
       const nextEntry: (typeof memoryHistory)[number] = {
         timestamp: now,
         status: status as BNLStatusValue,
         mode: mode as BNLModeValue,
+        currentDirective: nextStatus.currentDirective,
         message: trimmedMessage,
-        source: "admin",
+        source: action === "resetStandby" ? "reset" : "admin",
+        persisted: Boolean(redis),
       };
 
       if (redis) {
         const priorHistory = sanitizeHistory(await redis.get<unknown>(HISTORY_KEY)) as typeof memoryHistory;
         await redis.set(STATUS_KEY, nextStatus);
-        await redis.set(HISTORY_KEY, [nextEntry, ...priorHistory].slice(0, 10));
+        await redis.set(HISTORY_KEY, [nextEntry, ...priorHistory].slice(0, 25));
       } else {
-        memoryHistory = [nextEntry, ...memoryHistory].slice(0, 10);
+        memoryHistory = [nextEntry, ...memoryHistory].slice(0, 25);
       }
 
       return NextResponse.json({ ok: true, status: nextStatus, persisted: Boolean(redis) });
+    }
+
+    if (action === "clearHistory") {
+      if (redis) await redis.set(HISTORY_KEY, []);
+      memoryHistory = [];
+      return NextResponse.json({ ok: true, cleared: true, persisted: Boolean(redis) });
     }
 
     if (action === "updateFlags") {

@@ -4,7 +4,7 @@ import { useLiveStatus } from "@/components/LiveStatusProvider";
 import { useState, useEffect } from "react";
 
 export default function AdminPage() {
-  const { isLive, toggleLive, streamUrl, setStreamUrl, isScheduled, manualOverride } = useLiveStatus();
+  const { isLive, toggleLive, streamUrl, setStreamUrl, isScheduled, manualOverride, lastError, persisted } = useLiveStatus();
   const [urlInput, setUrlInput] = useState(streamUrl);
   const [authenticated, setAuthenticated] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
@@ -132,6 +132,8 @@ export default function AdminPage() {
         manualOverride={manualOverride}
         urlInput={urlInput}
         setUrlInput={setUrlInput}
+        lastError={lastError}
+        persisted={persisted}
       />
     </div>
   );
@@ -144,6 +146,7 @@ export default function AdminPage() {
 function AdminContent({
   isLive, toggleLive, streamUrl, setStreamUrl, isScheduled, manualOverride,
   urlInput, setUrlInput,
+  lastError, persisted,
 }: {
   isLive: boolean;
   toggleLive: () => void;
@@ -153,6 +156,8 @@ function AdminContent({
   manualOverride: boolean;
   urlInput: string;
   setUrlInput: (v: string) => void;
+  lastError: string | null;
+  persisted: boolean | null;
 }) {
   return (
     <section>
@@ -192,8 +197,13 @@ function AdminContent({
                 <p>// Scheduled: {isScheduled ? "YES — within broadcast window" : "NO — outside broadcast window"}</p>
                 <p>// Override: {manualOverride ? "ACTIVE (admin override)" : "NONE (auto-schedule)"}</p>
                 <p>// Toggle cycles: Auto → On → Off → Auto</p>
-                <p>// Changes persist to Redis — visible to all visitors</p>
+                <p>// Persistence: {persisted === null ? "UNKNOWN" : persisted ? "REDIS (shared)" : "IN-MEMORY (local only)"}</p>
               </div>
+              {lastError && (
+                <p className="text-xs text-danger border border-danger/30 bg-danger/10 px-3 py-2">
+                  {lastError}
+                </p>
+              )}
             </div>
           </div>
 

@@ -88,7 +88,7 @@ function sanitizeStoredStatus(value: unknown): BNLStatus {
 function sanitizeHistory(value: unknown): BNLHistoryEntry[] {
   if (!Array.isArray(value)) return [];
   return value
-    .map((item) => {
+    .map((item): BNLHistoryEntry | null => {
       if (!item || typeof item !== "object") return null;
       const rec = item as Record<string, unknown>;
       const status = ALLOWED_STATUS.has(rec.status as BNLStatusValue) ? (rec.status as BNLStatusValue) : null;

@@ -261,13 +261,16 @@ export async function POST(req: Request) {
       const webhookDelivery = await notifyForcePull(now);
 
       console.info('[admin/bnl] forcePull requested at', now, { webhookDelivered: webhookDelivery.delivered, webhookStatus: webhookDelivery.status ?? null });
-      if (!webhookDelivery.delivered && process.env.BNL_FORCE_PULL_WEBHOOK_URL) {
+      if (!webhookDelivery.delivered) {
+        const statusCode = webhookDelivery.reason === "BNL_FORCE_PULL_WEBHOOK_URL is not configured" ? 503 : 502;
         return NextResponse.json({
-          error: "Immediate check-in relay delivery failed.",
+          error: webhookDelivery.reason === "BNL_FORCE_PULL_WEBHOOK_URL is not configured"
+            ? "Immediate check-in relay is not configured."
+            : "Immediate check-in relay delivery failed.",
           forcePullRequestedAt: now,
           webhookDelivery,
           persisted: Boolean(redis),
-        }, { status: 502 });
+        }, { status: statusCode });
       }
       return NextResponse.json({
         ok: true,

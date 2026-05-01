@@ -3,6 +3,7 @@ import Image from "next/image";
 import { LiveBanner } from "@/components/LiveBanner";
 import { HeroHeading, StatusBadge, SectionDot } from "@/components/LiveEffects";
 import { homePage, siteConfig, externalLinks } from "@/content";
+import { BNLRelayModule } from "@/components/BNLRelay";
 
 function resolveHref(href: string): string {
   if (href.startsWith("EXTERNAL:")) {
@@ -56,6 +57,13 @@ export default function Home() {
               </Link>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Latest Network Relay */}
+      <section className="border-b border-border">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-10">
+          <BNLRelayModule title="Latest Network Relay" />
         </div>
       </section>
 

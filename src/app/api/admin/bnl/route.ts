@@ -85,6 +85,35 @@ function sanitizeFlags(value: unknown): BNLFlags {
   };
 }
 
+async function notifyForcePull(now: string): Promise<{ delivered: boolean; reason?: string; status?: number }> {
+  const webhookUrl = process.env.BNL_FORCE_PULL_WEBHOOK_URL;
+  if (!webhookUrl) return { delivered: false, reason: "BNL_FORCE_PULL_WEBHOOK_URL is not configured" };
+
+  const sharedSecret = process.env.BNL_FORCE_PULL_SHARED_SECRET || process.env.BNL_API_KEY || "";
+
+  try {
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(sharedSecret ? { "x-bnl-secret": sharedSecret } : {}),
+      },
+      body: JSON.stringify({ action: "forcePull", requestedAt: now, source: "website-admin" }),
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      console.error("[admin/bnl] forcePull webhook returned non-OK status", { status: response.status });
+      return { delivered: false, status: response.status, reason: `Webhook returned ${response.status}` };
+    }
+
+    return { delivered: true, status: response.status };
+  } catch (error) {
+    console.error("[admin/bnl] forcePull webhook request failed", error);
+    return { delivered: false, reason: "Webhook request failed" };
+  }
+}
+
 function sameHistoryContent(
   a: (typeof memoryHistory)[number],
   b: (typeof memoryHistory)[number],
@@ -219,11 +248,22 @@ export async function POST(req: Request) {
 
     if (action === "forcePull") {
       const now = new Date().toISOString();
-      if (redis) await redis.set(FORCE_PULL_KEY, now);
+      if (redis) {
+        await redis.set(FORCE_PULL_KEY, now);
+      } else {
+        console.warn('[admin/bnl] forcePull requested without redis persistence; request timestamp may not be visible across serverless instances');
+      }
+
+      const webhookDelivery = await notifyForcePull(now);
+
+      console.info('[admin/bnl] forcePull requested at', now, { webhookDelivered: webhookDelivery.delivered, webhookStatus: webhookDelivery.status ?? null });
       return NextResponse.json({
         ok: true,
         forcePullRequestedAt: now,
-        note: "Immediate check-in requested. BNL must consume this request to publish a new relay update.",
+        note: webhookDelivery.delivered
+          ? "Immediate check-in request delivered to BNL endpoint."
+          : "Immediate check-in recorded, but BNL webhook delivery failed or is not configured.",
+        webhookDelivery,
         persisted: Boolean(redis),
       });
     }

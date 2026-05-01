@@ -20,7 +20,7 @@ export const externalLinks = {
   discord: "https://discord.gg/4tHazmD528",
   auxchord: "https://aux.fan/@barcode_radio",
   tiktok: "https://www.tiktok.com/@six.bit",
-  tiktokLive: "https://www.tiktok.com/@six.bit",
+  tiktokLive: "https://www.tiktok.com/@six.bit/live",
 };
 
 // ----- HOMEPAGE -----
@@ -98,7 +98,7 @@ export const radioPage = {
       "A live intake frequency. Submit a track. It enters the broadcast and becomes part of the network.",
     submitButton: { text: "Submit Music", emoji: "🎵" },
     discordButton: { text: "Join Discord", emoji: "💬" },
-    tiktokButton: { text: "Watch TikTok", emoji: "📺" },
+    tiktokButton: { text: "WATCH ON TIKTOK", emoji: "📺" },
   },
 
   schedule: {

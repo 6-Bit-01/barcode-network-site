@@ -108,7 +108,24 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
 
   <div className="border border-border bg-surface p-6 space-y-5"><div><h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted">BNL-01 Relay Control</h2><p className="text-xs text-muted/70 mt-2">Admin controls for relay state, safety flags, and operator history.</p></div>
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-muted"><p>BNL status API reachable: <span className="text-foreground">{bnlApiReachable ? 'yes':'no'}</span></p><p>Last seen age: <span className="text-foreground">{lastSeenAge}</span></p><p>Redis persistence: <span className="text-foreground">{bnl.persisted ? 'enabled':'in-memory fallback'}</span></p><p>Current mode: <span className="text-foreground">{bnl.mode}</span></p></div>
-  <div className="text-sm border border-border p-4 bg-background/40"><p className="text-xs text-muted mb-2">Current Public Relay</p><p>Status: {bnl.status}</p><p>Mode: {bnl.mode}</p><p>Current Directive: {bnl.currentDirective || 'Monitoring Discord-side relay traffic.'}</p><p>Message: {bnl.message}</p><p>Source: {SOURCE_LABELS[bnl.source || "unknown"]}</p><p>Last Seen: {bnl.lastSeen || 'never'}</p><p>Last Seen Age: {lastSeenAge}</p></div>
+  <div className="space-y-3">
+    <div className="text-sm border border-border p-4 bg-background/40">
+      <p className="text-xs text-accent uppercase tracking-widest mb-2">Public Website Relay (what visitors see)</p>
+      <p>Status: {bnl.status}</p>
+      <p>Mode: {bnl.mode}</p>
+      <p>Message: {bnl.message}</p>
+      <p>Current Directive: {bnl.currentDirective || 'Monitoring Discord-side relay traffic.'}</p>
+      <p>Last Seen: {bnl.lastSeen || 'never'}</p>
+      <p>Last Seen Age: {lastSeenAge}</p>
+    </div>
+    <div className="text-sm border border-border p-4 bg-background/30">
+      <p className="text-xs text-muted uppercase tracking-widest mb-2">Admin Relay Metadata (mods only)</p>
+      <p>Source Label: {SOURCE_LABELS[bnl.source || "unknown"]}</p>
+      <p>Raw Source Code: {bnl.source || "unknown"}</p>
+      <p>Persistence Layer: {bnl.persisted ? "Redis" : "In-memory fallback"}</p>
+      <p className="text-xs text-muted mt-2">This metadata is for admin/moderator visibility and is not part of the public ticker display.</p>
+    </div>
+  </div>
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><select value={relayForm.status} onChange={(e)=>setRelayForm({...relayForm,status:e.target.value as BNLStatusValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>ONLINE</option><option>OFFLINE</option></select><select value={relayForm.mode} onChange={(e)=>setRelayForm({...relayForm,mode:e.target.value as BNLModeValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>STANDBY</option><option>OBSERVATION</option><option>ACTIVE_LIAISON</option><option>SIGNAL_DEGRADATION</option><option>RESTRICTED</option></select></div>
   <textarea value={relayForm.message} maxLength={240} onChange={(e)=>setRelayForm({...relayForm,message:e.target.value.slice(0,240)})} className="w-full bg-background border border-border px-3 py-2.5 text-sm" />
   <div className="flex gap-3"><button onClick={()=>updateRelay('updateStatus')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all">Update BNL Relay</button><button onClick={()=>updateRelay('resetStandby')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all">Reset BNL Relay to Standby</button></div>
@@ -117,7 +134,7 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
     <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Show-Day Discord Posts Enabled:</strong> Allows BNL to post scheduled Friday show updates in Discord.</span><input type="checkbox" checked={flags.showdayDiscordPostsEnabled} onChange={(e)=>updateFlags({...flags,showdayDiscordPostsEnabled:e.target.checked})} /></label>
     <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Heartbeat Enabled:</strong> Allows BNL to keep the website relay fresh with periodic status updates.</span><input type="checkbox" checked={flags.heartbeatEnabled} onChange={(e)=>updateFlags({...flags,heartbeatEnabled:e.target.checked})} /></label>
   </div>
-  <div><div className="flex items-center justify-between"><p className="text-xs text-muted mb-2">Most recent 25 relay updates.</p><button onClick={clearHistory} className="px-3 py-1.5 text-xs uppercase tracking-widest border border-danger/40 text-danger hover:bg-danger hover:text-background transition-all">Clear Relay History</button></div><div className="space-y-2 text-xs">{history.map((entry, idx)=><div key={idx} className="border border-border p-2"><p>{entry.timestamp} — {entry.status} / {entry.mode} ({SOURCE_LABELS[entry.source || 'unknown']})</p>{entry.currentDirective && <p>Directive: {entry.currentDirective}</p>}<p>{entry.message}</p><p className="text-muted">Persistence: {entry.persisted === undefined ? "unknown" : entry.persisted ? "redis" : "in-memory fallback"}</p></div>)}</div></div>
+  <div><div className="flex items-center justify-between"><p className="text-xs text-muted mb-2">Admin Relay History (mods only) — most recent 25 updates received from BNL/admin actions.</p><button onClick={clearHistory} className="px-3 py-1.5 text-xs uppercase tracking-widest border border-danger/40 text-danger hover:bg-danger hover:text-background transition-all">Clear Relay History</button></div><div className="space-y-2 text-xs">{history.map((entry, idx)=><div key={idx} className="border border-border p-2"><p>{entry.timestamp} — {entry.status} / {entry.mode} ({SOURCE_LABELS[entry.source || 'unknown']})</p>{entry.currentDirective && <p>Directive: {entry.currentDirective}</p>}<p>{entry.message}</p><p className="text-muted">Persistence: {entry.persisted === undefined ? "unknown" : entry.persisted ? "redis" : "in-memory fallback"}</p></div>)}</div></div>
   </div>
 
   </div></section>;

@@ -18,6 +18,8 @@ const KEYS = {
 };
 
 const DEFAULT_URL = "https://www.tiktok.com/@six.bit/live";
+let memoryLiveOverride: string | null = null;
+let memoryStreamUrl: string = DEFAULT_URL;
 
 function getRedis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -32,8 +34,8 @@ export async function GET() {
   const redis = getRedis();
   const isScheduled = isWithinBroadcastWindow();
 
-  let manualOverride: string | null = null;
-  let streamUrl = DEFAULT_URL;
+  let manualOverride: string | null = memoryLiveOverride;
+  let streamUrl = memoryStreamUrl;
 
   if (redis) {
     const [liveVal, urlVal] = await Promise.all([
@@ -79,37 +81,45 @@ export async function POST(req: Request) {
   }
 
   const redis = getRedis();
-  if (!redis) {
-    return NextResponse.json({ error: "Redis not configured" }, { status: 503 });
-  }
 
   try {
     const body = await req.json();
     const { action, streamUrl } = body;
 
+    const getCurrent = async () =>
+      redis ? await redis.get<string>(KEYS.live) : memoryLiveOverride;
+    const setLive = async (value: "1" | "0" | null) => {
+      if (redis) {
+        if (value === null) await redis.del(KEYS.live);
+        else await redis.set(KEYS.live, value);
+      }
+      memoryLiveOverride = value;
+    };
+
     if (action === "toggle") {
       // Toggle: null → "1", "1" → "0", "0" → null (cycle: auto → on → off → auto)
-      const current = await redis.get<string>(KEYS.live);
+      const current = await getCurrent();
       if (current === null) {
-        await redis.set(KEYS.live, "1");
+        await setLive("1");
       } else if (current === "1") {
-        await redis.set(KEYS.live, "0");
+        await setLive("0");
       } else {
-        await redis.del(KEYS.live);
+        await setLive(null);
       }
     } else if (action === "setLive") {
-      await redis.set(KEYS.live, "1");
+      await setLive("1");
     } else if (action === "setOffline") {
-      await redis.set(KEYS.live, "0");
+      await setLive("0");
     } else if (action === "auto") {
-      await redis.del(KEYS.live);
+      await setLive(null);
     }
 
     if (streamUrl && typeof streamUrl === "string") {
-      await redis.set(KEYS.url, streamUrl);
+      if (redis) await redis.set(KEYS.url, streamUrl);
+      memoryStreamUrl = streamUrl;
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, persisted: Boolean(redis) });
   } catch (error) {
     console.error("[admin/live] error:", error);
     return NextResponse.json({ error: "Failed to update" }, { status: 500 });

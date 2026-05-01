@@ -15,6 +15,7 @@ interface BNLAdminState {
   source?: BNLSourceValue;
   lastSeen: string | null;
   persisted?: boolean;
+  forcePullRequestedAt?: string | null;
 }
 
 interface BNLHistoryEntry {
@@ -78,6 +79,7 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
   const [flags, setFlags] = useState({ websiteRelayEnabled: true, showdayDiscordPostsEnabled: true, heartbeatEnabled: true });
   const [relayForm, setRelayForm] = useState({ status: "ONLINE" as BNLStatusValue, mode: "OBSERVATION" as BNLModeValue, message: defaultRelayMessage });
   const [bnlApiReachable, setBnlApiReachable] = useState(false);
+  const [forcePullRequestedAt, setForcePullRequestedAt] = useState<string | null>(null);
 
   const loadBnl = async () => {
     const [publicRes, adminRes] = await Promise.all([fetch('/api/bnl/status', { cache: 'no-store' }), fetch('/api/admin/bnl', { cache: 'no-store' })]);
@@ -91,6 +93,7 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
       const adminData = await adminRes.json();
       setHistory(adminData.history || []);
       setFlags(adminData.flags || flags);
+      setForcePullRequestedAt(typeof adminData.forcePullRequestedAt === "string" ? adminData.forcePullRequestedAt : null);
     }
   };
 
@@ -109,6 +112,10 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
     const confirmed = window.confirm("This clears the admin history log only. It does not reset BNL, change the public ticker, or affect Discord.");
     if (!confirmed) return;
     await fetch('/api/admin/bnl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clearHistory' }) });
+    await loadBnl();
+  };
+  const requestForcePull = async () => {
+    await fetch('/api/admin/bnl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'forcePull' }) });
     await loadBnl();
   };
 
@@ -148,7 +155,8 @@ function AdminContent({ isLive, toggleLive, streamUrl, setStreamUrl, isScheduled
   </div>
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><select value={relayForm.status} onChange={(e)=>setRelayForm({...relayForm,status:e.target.value as BNLStatusValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>ONLINE</option><option>OFFLINE</option></select><select value={relayForm.mode} onChange={(e)=>setRelayForm({...relayForm,mode:e.target.value as BNLModeValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>STANDBY</option><option>OBSERVATION</option><option>ACTIVE_LIAISON</option><option>SIGNAL_DEGRADATION</option><option>RESTRICTED</option></select></div>
   <textarea value={relayForm.message} maxLength={240} onChange={(e)=>setRelayForm({...relayForm,message:e.target.value.slice(0,240)})} className="w-full bg-background border border-border px-3 py-2.5 text-sm" />
-  <div className="flex gap-3"><button onClick={()=>updateRelay('updateStatus')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all">Update BNL Relay</button><button onClick={()=>updateRelay('resetStandby')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all">Reset BNL Relay to Standby</button></div>
+  <div className="flex flex-wrap gap-3"><button onClick={()=>updateRelay('updateStatus')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all">Update BNL Relay</button><button onClick={()=>updateRelay('resetStandby')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all">Reset BNL Relay to Standby</button><button onClick={requestForcePull} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all">Force Pull from BNL</button></div>
+  <p className="text-xs text-muted">Last force pull request: {forcePullRequestedAt || "never"} (sets admin request flag for BNL to fetch/send an immediate update)</p>
   <div><p className="text-xs text-muted mb-2">Kill switches are stored for future bot consumption.</p>
     <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Website Relay Enabled:</strong> Allows BNL to update the public website relay automatically.</span><input type="checkbox" checked={flags.websiteRelayEnabled} onChange={(e)=>updateFlags({...flags,websiteRelayEnabled:e.target.checked})} /></label>
     <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Show-Day Discord Posts Enabled:</strong> Allows BNL to post scheduled Friday show updates in Discord.</span><input type="checkbox" checked={flags.showdayDiscordPostsEnabled} onChange={(e)=>updateFlags({...flags,showdayDiscordPostsEnabled:e.target.checked})} /></label>

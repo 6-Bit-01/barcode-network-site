@@ -17,6 +17,7 @@ type BNLFlags = {
 const STATUS_KEY = "bnl:status";
 const HISTORY_KEY = "bnl:history";
 const FLAGS_KEY = "bnl:flags";
+const FORCE_PULL_KEY = "bnl:force_pull_requested_at";
 
 const DEFAULT_FLAGS: BNLFlags = {
   websiteRelayEnabled: true,
@@ -105,21 +106,24 @@ export async function GET(req: Request) {
   let status: unknown = null;
   let history = memoryHistory;
   let flags = memoryFlags;
+  let forcePullRequestedAt: string | null = null;
 
   if (redis) {
-    const [s, h, f] = await Promise.all([
+    const [s, h, f, fp] = await Promise.all([
       redis.get<unknown>(STATUS_KEY),
       redis.get<unknown>(HISTORY_KEY),
       redis.get<unknown>(FLAGS_KEY),
+      redis.get<unknown>(FORCE_PULL_KEY),
     ]);
     status = s;
     history = sanitizeHistory(h) as typeof memoryHistory;
     flags = sanitizeFlags(f);
+    forcePullRequestedAt = typeof fp === "string" ? fp : null;
     memoryHistory = history;
     memoryFlags = flags;
   }
 
-  return NextResponse.json({ status, history, flags, persisted: Boolean(redis) });
+  return NextResponse.json({ status, history, flags, forcePullRequestedAt, persisted: Boolean(redis) });
 }
 
 export async function POST(req: Request) {
@@ -210,6 +214,12 @@ export async function POST(req: Request) {
       if (redis) await redis.set(FLAGS_KEY, nextFlags);
       memoryFlags = nextFlags;
       return NextResponse.json({ ok: true, flags: nextFlags, persisted: Boolean(redis) });
+    }
+
+    if (action === "forcePull") {
+      const now = new Date().toISOString();
+      if (redis) await redis.set(FORCE_PULL_KEY, now);
+      return NextResponse.json({ ok: true, forcePullRequestedAt: now, persisted: Boolean(redis) });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });

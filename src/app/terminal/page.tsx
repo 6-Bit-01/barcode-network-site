@@ -2,6 +2,7 @@ import { terminalPage, externalLinks } from "@/content";
 import Link from "next/link";
 import { TerminalLogin } from "@/components/TerminalLogin";
 import { SectionDot } from "@/components/LiveEffects";
+import { BNLStatusCard } from "@/components/BNLStatusCard";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -102,7 +103,8 @@ export default function TerminalPage() {
 
       {/* Terminal Output */}
       <section>
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16 space-y-6">
+          <BNLStatusCard />
           <div className="bg-surface border border-border p-6 font-mono">
             <p className="text-xs text-muted mb-4">
               &gt; BARCODE_NETWORK // TERMINAL ACCESS

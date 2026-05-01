@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import type { QueueState, QueueEntry, QueueTier } from "@/lib/queue-types";
 import { normalizeTier } from "@/lib/queue-types";
+import { isWithinBroadcastWindow } from "@/lib/broadcastSchedule";
 
 const LIVE_URL = "https://www.tiktok.com/@six.bit/live";
 
@@ -10,25 +11,7 @@ const LIVE_URL = "https://www.tiktok.com/@six.bit/live";
 const DRIVE_BG = "https://drive.google.com/file/d/1HahJcc_ChAjEwerezfHjerQq2wOKuaAo/preview";
 const DRIVE_WAITING = "https://drive.google.com/file/d/1UP4P36vHeD5sWs-EhGOwgFlpntNoeI_L/preview";
 
-/* ---- Schedule check (mirrors LiveStatusProvider logic) ---- */
-function isWithinBroadcastWindow(): boolean {
-  const now = new Date();
-  const pstParts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    weekday: "short",
-    hour: "numeric",
-    minute: "numeric",
-    hour12: false,
-  }).formatToParts(now);
-
-  const weekday = pstParts.find((p) => p.type === "weekday")?.value;
-  const hour = parseInt(pstParts.find((p) => p.type === "hour")?.value || "0", 10);
-  const minute = parseInt(pstParts.find((p) => p.type === "minute")?.value || "0", 10);
-
-  if (weekday !== "Fri") return false;
-  const t = hour * 60 + minute;
-  return t >= 18 * 60 + 40 && t < 23 * 60 + 30; // 6:40 PM – 11:30 PM PST
-}
+/* ---- Schedule check (shared with server live status logic) ---- */
 
 const TIER_CLASS: Record<QueueTier, string> = {
   free: "obs-tier-free",

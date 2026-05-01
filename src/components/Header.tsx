@@ -20,7 +20,7 @@ const navItems = [
 
 export function Header() {
   const pathname = usePathname();
-  const { isLive, streamUrl } = useLiveStatus();
+  const { isLive } = useLiveStatus();
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm">
@@ -72,15 +72,13 @@ export function Header() {
           <div className="flex items-center gap-4">
             {/* LIVE NOW indicator */}
             {isLive && (
-              <a
-                href={streamUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+              <Link
+                href="/radio"
                 className="flex items-center gap-2 px-3 py-1 border border-danger rounded text-sm uppercase tracking-wider text-danger live-indicator hover:bg-danger/10 transition-colors"
               >
                 <span className="w-2 h-2 rounded-full bg-danger" />
-                LIVE NOW
-              </a>
+                WE ARE LIVE
+              </Link>
             )}
 
             {/* Mobile hamburger */}

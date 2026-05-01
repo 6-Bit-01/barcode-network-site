@@ -6,6 +6,7 @@ import { Footer } from "@/components/Footer";
 import { LiveStatusProvider } from "@/components/LiveStatusProvider";
 import { DataStream } from "@/components/DataStream";
 import { SystemTicker } from "@/components/SystemTicker";
+import { LiveBanner } from "@/components/LiveBanner";
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
@@ -68,6 +69,7 @@ export default function RootLayout({
       >
         <LiveStatusProvider>
           <DataStream />
+          <LiveBanner />
           <Header />
           <main className="min-h-screen animate-interference overflow-x-hidden">
             {children}

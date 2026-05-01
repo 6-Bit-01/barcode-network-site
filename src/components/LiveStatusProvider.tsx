@@ -10,6 +10,8 @@ interface LiveStatusContextType {
   isScheduled: boolean;
   isAdmin: boolean;
   manualOverride: boolean;
+  lastError: string | null;
+  persisted: boolean | null;
 }
 
 const LiveStatusContext = createContext<LiveStatusContextType>({
@@ -20,6 +22,8 @@ const LiveStatusContext = createContext<LiveStatusContextType>({
   isScheduled: false,
   isAdmin: false,
   manualOverride: false,
+  lastError: null,
+  persisted: null,
 });
 
 export function useLiveStatus() {
@@ -32,20 +36,23 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
   const [streamUrl, setStreamUrlState] = useState("https://www.tiktok.com/@six.bit/live");
   const [manualOverride, setManualOverride] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [lastError, setLastError] = useState<string | null>(null);
+  const [persisted, setPersisted] = useState<boolean | null>(null);
 
   // Poll the server for live status
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/live");
+      const res = await fetch("/api/admin/live", { cache: "no-store", credentials: "include" });
       if (res.ok) {
         const data = await res.json();
         setIsLive(data.isLive);
         setIsScheduled(data.isScheduled);
         setStreamUrlState(data.streamUrl);
         setManualOverride(data.manualOverride);
+        setLastError(null);
       }
     } catch {
-      // Silent fail — keep current state
+      setLastError("Failed to fetch live status");
     }
   }, []);
 
@@ -71,29 +78,54 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
   // Admin toggle — persists to Redis via API
   const toggleLive = useCallback(async () => {
     try {
-      await fetch("/api/admin/live", {
+      const toggleRes = await fetch("/api/admin/live", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "toggle" }),
+        credentials: "include",
       });
-      fetchStatus(); // Refresh immediately
+      const toggleBody = await toggleRes.json().catch(() => ({}));
+      if (!toggleRes.ok) {
+        setLastError(toggleBody?.error ? `Toggle failed: ${toggleBody.error}` : `Toggle failed (${toggleRes.status})`);
+        return;
+      }
+      if (typeof toggleBody?.persisted === "boolean") setPersisted(toggleBody.persisted);
+      const res = await fetch("/api/admin/live", { cache: "no-store", credentials: "include" });
+      if (!res.ok) {
+        setLastError(`Toggle failed (${res.status})`);
+        return;
+      }
+      const data = await res.json();
+      setIsLive(data.isLive);
+      setIsScheduled(data.isScheduled);
+      setStreamUrlState(data.streamUrl);
+      setManualOverride(data.manualOverride);
+      setLastError(null);
     } catch {
-      // Silent fail
+      setLastError("Toggle failed");
     }
-  }, [fetchStatus]);
+  }, []);
 
   // Admin stream URL update — persists to Redis via API
   const setStreamUrl = useCallback(async (url: string) => {
     try {
-      await fetch("/api/admin/live", {
+      const res = await fetch("/api/admin/live", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ streamUrl: url }),
+        credentials: "include",
       });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLastError(body?.error ? `Stream URL update failed: ${body.error}` : "Stream URL update failed");
+        return;
+      }
+      if (typeof body?.persisted === "boolean") setPersisted(body.persisted);
       setStreamUrlState(url);
       fetchStatus();
+      setLastError(null);
     } catch {
-      // Silent fail
+      setLastError("Stream URL update failed");
     }
   }, [fetchStatus]);
 
@@ -106,6 +138,8 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
       isScheduled,
       isAdmin,
       manualOverride,
+      lastError,
+      persisted,
     }}>
       {children}
     </LiveStatusContext.Provider>

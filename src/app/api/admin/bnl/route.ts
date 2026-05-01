@@ -219,7 +219,12 @@ export async function POST(req: Request) {
     if (action === "forcePull") {
       const now = new Date().toISOString();
       if (redis) await redis.set(FORCE_PULL_KEY, now);
-      return NextResponse.json({ ok: true, forcePullRequestedAt: now, persisted: Boolean(redis) });
+      return NextResponse.json({
+        ok: true,
+        forcePullRequestedAt: now,
+        note: "Immediate check-in requested. BNL must consume this request to publish a new relay update.",
+        persisted: Boolean(redis),
+      });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });

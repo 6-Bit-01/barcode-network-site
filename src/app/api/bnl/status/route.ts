@@ -25,12 +25,15 @@ interface BNLHistoryEntry {
   timestamp: string;
   status: BNLStatusValue;
   mode: BNLModeValue;
+  currentDirective?: string;
   message: string;
   source: BNLSourceValue;
+  persisted?: boolean;
 }
 
 const KEY = "bnl:status";
 const HISTORY_KEY = "bnl:history";
+const MAX_MESSAGE_LENGTH = 600;
 const DEFAULT_DIRECTIVE = "Monitoring Discord-side relay traffic.";
 const DEFAULT_STATUS: BNLStatus = {
   status: "OFFLINE",
@@ -72,8 +75,8 @@ function sanitizeStoredStatus(value: unknown): BNLStatus {
     ? (record.mode as BNLModeValue)
     : DEFAULT_STATUS.mode;
   const message =
-    typeof record.message === "string" && record.message.trim().length > 0
-      ? record.message.trim().slice(0, 240)
+      typeof record.message === "string" && record.message.trim().length > 0
+      ? record.message.trim().slice(0, MAX_MESSAGE_LENGTH)
       : DEFAULT_STATUS.message;
   const currentDirective =
     typeof record.currentDirective === "string" && record.currentDirective.trim().length > 0
@@ -92,27 +95,43 @@ function sanitizeStoredStatus(value: unknown): BNLStatus {
 
 function sanitizeHistory(value: unknown): BNLHistoryEntry[] {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      if (!item || typeof item !== "object") return null;
-      const rec = item as Record<string, unknown>;
-      const status = ALLOWED_STATUS.has(rec.status as BNLStatusValue) ? (rec.status as BNLStatusValue) : null;
-      const mode = ALLOWED_MODES.has(rec.mode as BNLModeValue) ? (rec.mode as BNLModeValue) : null;
-      const source = ALLOWED_SOURCES.has(rec.source as BNLSourceValue)
-        ? (rec.source as BNLSourceValue)
-        : "unknown";
-      const timestamp = typeof rec.timestamp === "string" && rec.timestamp ? rec.timestamp : null;
-      const message = typeof rec.message === "string" ? rec.message.trim().slice(0, 240) : "";
-      if (!status || !mode || !timestamp || !message) return null;
-      return { timestamp, status, mode, message, source };
-    })
-    .filter((entry): entry is BNLHistoryEntry => Boolean(entry))
-    .slice(0, 10);
+  const normalized: BNLHistoryEntry[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    const status = ALLOWED_STATUS.has(rec.status as BNLStatusValue) ? (rec.status as BNLStatusValue) : null;
+    const mode = ALLOWED_MODES.has(rec.mode as BNLModeValue) ? (rec.mode as BNLModeValue) : null;
+    const source = ALLOWED_SOURCES.has(rec.source as BNLSourceValue)
+      ? (rec.source as BNLSourceValue)
+      : "unknown";
+    const timestamp = typeof rec.timestamp === "string" && rec.timestamp ? rec.timestamp : null;
+    const message = typeof rec.message === "string" ? rec.message.trim().slice(0, MAX_MESSAGE_LENGTH) : "";
+    const currentDirective =
+      typeof rec.currentDirective === "string" && rec.currentDirective.trim().length > 0
+        ? rec.currentDirective.trim().slice(0, 160)
+        : undefined;
+    if (!status || !mode || !timestamp || !message) continue;
+    normalized.push({ timestamp, status, mode, currentDirective, message, source });
+  }
+  return normalized.slice(0, 25);
+}
+
+function sameHistoryContent(a: BNLHistoryEntry, b: BNLHistoryEntry): boolean {
+  return (
+    a.status === b.status &&
+    a.mode === b.mode &&
+    a.source === b.source &&
+    a.message === b.message &&
+    (a.currentDirective ?? "") === (b.currentDirective ?? "")
+  );
 }
 
 async function appendHistory(redis: Redis | null, entry: BNLHistoryEntry) {
   const current = redis ? sanitizeHistory(await redis.get<unknown>(HISTORY_KEY)) : memoryHistory;
-  const nextHistory = [entry, ...current].slice(0, 10);
+  const latest = current[0];
+  const nextHistory = latest && sameHistoryContent(latest, entry)
+    ? current.slice(0, 25)
+    : [entry, ...current].slice(0, 25);
   if (redis) await redis.set(HISTORY_KEY, nextHistory);
   memoryHistory = nextHistory;
 }
@@ -157,7 +176,7 @@ export async function POST(req: Request) {
     }
 
     const trimmedMessage = message.trim();
-    if (!trimmedMessage || trimmedMessage.length > 240) {
+    if (!trimmedMessage || trimmedMessage.length > MAX_MESSAGE_LENGTH) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
@@ -187,8 +206,10 @@ export async function POST(req: Request) {
       timestamp: now,
       status: nextStatus.status,
       mode: nextStatus.mode,
+      currentDirective: nextStatus.currentDirective,
       message: nextStatus.message,
       source: nextStatus.source,
+      persisted: Boolean(redis),
     });
 
     return NextResponse.json({ ok: true, status: nextStatus, persisted: Boolean(redis) });

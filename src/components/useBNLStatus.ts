@@ -12,7 +12,8 @@ export function useBNLStatus() {
 
     const loadStatus = async (isBackgroundRefresh = false) => {
       try {
-        const res = await fetch("/api/bnl/status", { cache: "no-store" });
+        const stamp = Date.now();
+        const res = await fetch(`/api/bnl/status?t=${stamp}`, { cache: "no-store" });
         if (!res.ok) throw new Error("Failed to load BNL status");
         const payload = (await res.json()) as BNLStatus;
         if (mounted) setData(payload);

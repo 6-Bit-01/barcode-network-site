@@ -28,7 +28,7 @@ interface BNLHistoryEntry {
   persisted?: boolean;
 }
 
-const defaultRelayMessage = "BNL-01 relay standing by. Discord-side signal monitoring active.";
+const defaultRelayMessage = "BNL-01 relay standing by. Discord memory file monitoring active.";
 const defaultBNL: BNLAdminState = { status: "OFFLINE", mode: "STANDBY", message: "BNL-01 relay awaiting signal.", lastSeen: null };
 const SOURCE_LABELS: Record<BNLSourceValue, string> = {
   bot: "BNL bot",

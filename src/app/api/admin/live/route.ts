@@ -7,7 +7,8 @@
 
 import { NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
-import { verifyAdminToken, COOKIE_NAME } from "@/lib/auth";
+import { requireAdminPermission } from "@/lib/adminAccess";
+import { writeAdminAuditLog } from "@/lib/adminAudit";
 import { isWithinBroadcastWindow } from "@/lib/broadcastSchedule";
 
 export const dynamic = "force-dynamic";
@@ -73,16 +74,8 @@ export async function GET() {
 // ---- POST: Update status (admin-only) ----
 
 export async function POST(req: Request) {
-  // Verify admin token
-  const cookieHeader = req.headers.get("cookie") || "";
-  const cookies = Object.fromEntries(
-    cookieHeader.split(";").map((c) => {
-      const [k, ...v] = c.trim().split("=");
-      return [k, v.join("=")];
-    })
-  );
-  const token = cookies[COOKIE_NAME];
-  if (!token || !(await verifyAdminToken(token))) {
+  const admin = await requireAdminPermission(req, "live:write");
+  if (!admin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -124,6 +117,8 @@ export async function POST(req: Request) {
       if (redis) await redis.set(KEYS.url, streamUrl);
       memoryStreamUrl = streamUrl;
     }
+
+    await writeAdminAuditLog(admin, "admin.live.update", "stream:live", { action, streamUrlUpdated: Boolean(streamUrl) });
 
     return NextResponse.json({ ok: true, persisted: Boolean(redis) });
   } catch (error) {

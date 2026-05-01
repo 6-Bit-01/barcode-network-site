@@ -14,6 +14,8 @@ export function BNLStatusCard() {
         </p>
         <p>&gt; MODE: {data.mode}</p>
         <p>&gt; MESSAGE: {data.message}</p>
+        <p>&gt; CURRENT_DIRECTIVE: {data.currentDirective ?? "Monitoring Discord-side relay traffic."}</p>
+        <p>&gt; SOURCE: {data.source ?? "unknown"}</p>
         <p>&gt; LAST_SEEN: {data.lastSeen ?? "NULL"}</p>
         {loading ? <p className="text-muted">&gt; FETCHING RELAY...</p> : null}
       </div>

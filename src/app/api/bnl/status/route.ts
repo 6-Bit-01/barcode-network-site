@@ -10,12 +10,14 @@ type BNLModeValue =
   | "ACTIVE_LIAISON"
   | "SIGNAL_DEGRADATION"
   | "RESTRICTED";
-type BNLSourceValue = "bot" | "admin" | "showtest" | "heartbeat" | "unknown";
+type BNLSourceValue = "bot" | "startup" | "relay" | "heartbeat" | "showday" | "showtest" | "admin" | "reset" | "unknown";
 
 interface BNLStatus {
   status: BNLStatusValue;
   mode: BNLModeValue;
   message: string;
+  currentDirective: string;
+  source: BNLSourceValue;
   lastSeen: string | null;
 }
 
@@ -29,10 +31,13 @@ interface BNLHistoryEntry {
 
 const KEY = "bnl:status";
 const HISTORY_KEY = "bnl:history";
+const DEFAULT_DIRECTIVE = "Monitoring Discord-side relay traffic.";
 const DEFAULT_STATUS: BNLStatus = {
   status: "OFFLINE",
   mode: "STANDBY",
   message: "BNL-01 relay awaiting signal.",
+  currentDirective: DEFAULT_DIRECTIVE,
+  source: "unknown",
   lastSeen: null,
 };
 
@@ -44,7 +49,7 @@ const ALLOWED_MODES = new Set<BNLModeValue>([
   "SIGNAL_DEGRADATION",
   "RESTRICTED",
 ]);
-const ALLOWED_SOURCES = new Set<BNLSourceValue>(["bot", "admin", "showtest", "heartbeat", "unknown"]);
+const ALLOWED_SOURCES = new Set<BNLSourceValue>(["bot", "startup", "relay", "heartbeat", "showday", "showtest", "admin", "reset", "unknown"]);
 
 let memoryStatus: BNLStatus = { ...DEFAULT_STATUS };
 let memoryHistory: BNLHistoryEntry[] = [];
@@ -70,12 +75,19 @@ function sanitizeStoredStatus(value: unknown): BNLStatus {
     typeof record.message === "string" && record.message.trim().length > 0
       ? record.message.trim().slice(0, 240)
       : DEFAULT_STATUS.message;
+  const currentDirective =
+    typeof record.currentDirective === "string" && record.currentDirective.trim().length > 0
+      ? record.currentDirective.trim().slice(0, 160)
+      : DEFAULT_STATUS.currentDirective;
+  const source = ALLOWED_SOURCES.has(record.source as BNLSourceValue)
+    ? (record.source as BNLSourceValue)
+    : DEFAULT_STATUS.source;
   const lastSeen =
     typeof record.lastSeen === "string" && record.lastSeen.length > 0
       ? record.lastSeen
       : null;
 
-  return { status, mode, message, lastSeen };
+  return { status, mode, message, currentDirective, source, lastSeen };
 }
 
 function sanitizeHistory(value: unknown): BNLHistoryEntry[] {
@@ -128,34 +140,42 @@ export async function POST(req: Request) {
 
   try {
     const body = (await req.json()) as Record<string, unknown>;
-    const allowedKeys = ["status", "mode", "message", "source"];
+    const allowedKeys = ["status", "mode", "message", "currentDirective", "source"];
     const bodyKeys = Object.keys(body);
-    const hasOnlyAllowedKeys = bodyKeys.every((key) => allowedKeys.includes(key));
-
-    if (!hasOnlyAllowedKeys) {
+    if (!bodyKeys.every((key) => allowedKeys.includes(key))) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
     const status = body.status;
     const mode = body.mode;
     const message = body.message;
+    const currentDirective = body.currentDirective;
     const source = body.source;
 
-    if (
-      !ALLOWED_STATUS.has(status as BNLStatusValue) ||
-      !ALLOWED_MODES.has(mode as BNLModeValue) ||
-      typeof message !== "string" ||
-      (source !== undefined && !ALLOWED_SOURCES.has(source as BNLSourceValue))
-    ) {
+    if (!ALLOWED_STATUS.has(status as BNLStatusValue) || !ALLOWED_MODES.has(mode as BNLModeValue) || typeof message !== "string") {
+      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+    }
+
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage || trimmedMessage.length > 240) {
+      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+    }
+
+    if (currentDirective !== undefined && (typeof currentDirective !== "string" || currentDirective.trim().length === 0 || currentDirective.trim().length > 160)) {
+      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+    }
+
+    if (source !== undefined && (!ALLOWED_SOURCES.has(source as BNLSourceValue) || typeof source !== "string")) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
     const now = new Date().toISOString();
-    const trimmedMessage = message.trim().slice(0, 240);
     const nextStatus: BNLStatus = {
       status: status as BNLStatusValue,
       mode: mode as BNLModeValue,
       message: trimmedMessage,
+      currentDirective: typeof currentDirective === "string" ? currentDirective.trim() : DEFAULT_DIRECTIVE,
+      source: typeof source === "string" && ALLOWED_SOURCES.has(source as BNLSourceValue) ? (source as BNLSourceValue) : "unknown",
       lastSeen: now,
     };
 
@@ -168,7 +188,7 @@ export async function POST(req: Request) {
       status: nextStatus.status,
       mode: nextStatus.mode,
       message: nextStatus.message,
-      source: ALLOWED_SOURCES.has(source as BNLSourceValue) ? (source as BNLSourceValue) : "unknown",
+      source: nextStatus.source,
     });
 
     return NextResponse.json({ ok: true, status: nextStatus, persisted: Boolean(redis) });

@@ -2,16 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useLiveStatus } from "./LiveStatusProvider";
+import { BROADCAST_TZ } from "@/lib/broadcastSchedule";
 
 /**
- * Converts a PST time string (e.g. "6:40 PM") to the visitor's
- * local timezone. Falls back to showing the original PST time
+ * Converts a PT time string (e.g. "6:40 PM") to the visitor's
+ * local timezone. Falls back to showing the original PT time
  * if conversion fails or before hydration.
  */
-function pstToLocal(pstTime: string): { local: string; zone: string } | null {
+function pacificToLocal(pacificTime: string): { local: string; zone: string } | null {
   try {
-    // Parse the PST time string
-    const match = pstTime.match(/^~?(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+    // Parse the PT time string
+    const match = pacificTime.match(/^~?(\d{1,2}):(\d{2})\s*(AM|PM)/i);
     if (!match) return null;
 
     let hours = parseInt(match[1], 10);
@@ -21,10 +22,9 @@ function pstToLocal(pstTime: string): { local: string; zone: string } | null {
     if (ampm === "PM" && hours !== 12) hours += 12;
     if (ampm === "AM" && hours === 12) hours = 0;
 
-    // Create a date in PST (use a known Friday for context)
-    // PST = UTC-8, but we use America/Los_Angeles to handle DST correctly
+    // Create a date in PT context.
     const now = new Date();
-    const pstDate = new Date(
+    const pacificDate = new Date(
       now.getFullYear(),
       now.getMonth(),
       now.getDate(),
@@ -34,23 +34,13 @@ function pstToLocal(pstTime: string): { local: string; zone: string } | null {
     );
 
     // Convert: build the date as if in LA timezone, then read in local
-    const laFormatter = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Los_Angeles",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-
-    // Get the UTC offset of LA right now
-    const laOffset = getTimezoneOffset("America/Los_Angeles", now);
+    // Get the UTC offset of PT right now
+    const laOffset = getTimezoneOffset(BROADCAST_TZ, now);
     const localOffset = now.getTimezoneOffset();
 
-    // Adjust: pstDate is in LA time, convert to UTC then to local
+    // Adjust: base time is in PT, convert to UTC then to local
     const utcMs =
-      pstDate.getTime() + laOffset * 60000;
+      pacificDate.getTime() + laOffset * 60000;
     const localDate = new Date(utcMs - localOffset * 60000);
 
     const localFormatter = new Intl.DateTimeFormat("en-US", {
@@ -67,7 +57,7 @@ function pstToLocal(pstTime: string): { local: string; zone: string } | null {
     const zone =
       zoneParts.find((p) => p.type === "timeZoneName")?.value ?? "";
 
-    const prefix = pstTime.startsWith("~") ? "~" : "";
+    const prefix = pacificTime.startsWith("~") ? "~" : "";
 
     return {
       local: prefix + localFormatter.format(localDate),
@@ -121,20 +111,20 @@ export function LocalSchedule({
 
   useEffect(() => {
     if (isPacificTime()) {
-      // Already in Pacific — just show PST times
+      // Already in Pacific — show PT values as entered.
       setLocalTimes({
         queue: queueOpens,
         show: showBegins,
         first: firstTrack,
-        zone: "PST",
+        zone: "PT",
         converted: false,
       });
       return;
     }
 
-    const q = pstToLocal(queueOpens);
-    const s = pstToLocal(showBegins);
-    const f = pstToLocal(firstTrack);
+    const q = pacificToLocal(queueOpens);
+    const s = pacificToLocal(showBegins);
+    const f = pacificToLocal(firstTrack);
 
     if (q && s && f) {
       setLocalTimes({
@@ -149,17 +139,17 @@ export function LocalSchedule({
         queue: queueOpens,
         show: showBegins,
         first: firstTrack,
-        zone: "PST",
+        zone: "PT",
         converted: false,
       });
     }
   }, [queueOpens, showBegins, firstTrack]);
 
-  // Before hydration — show PST as fallback (no layout shift)
+  // Before hydration — show configured PT values as fallback (no layout shift)
   const displayQueue = localTimes?.queue ?? queueOpens;
   const displayShow = localTimes?.show ?? showBegins;
   const displayFirst = localTimes?.first ?? firstTrack;
-  const displayZone = localTimes?.zone ?? "PST";
+  const displayZone = localTimes?.zone ?? "PT";
   const isConverted = localTimes?.converted ?? false;
 
   const { isLive } = useLiveStatus();

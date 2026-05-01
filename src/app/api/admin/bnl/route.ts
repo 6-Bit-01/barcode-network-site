@@ -18,6 +18,7 @@ const STATUS_KEY = "bnl:status";
 const HISTORY_KEY = "bnl:history";
 const FLAGS_KEY = "bnl:flags";
 const FORCE_PULL_KEY = "bnl:force_pull_requested_at";
+const MAX_MESSAGE_LENGTH = 600;
 
 const DEFAULT_FLAGS: BNLFlags = {
   websiteRelayEnabled: true,
@@ -66,7 +67,7 @@ function sanitizeHistory(value: unknown): typeof memoryHistory {
       status: rec.status as BNLStatusValue,
       mode: rec.mode as BNLModeValue,
       currentDirective: typeof rec.currentDirective === "string" ? rec.currentDirective.trim().slice(0, 160) : undefined,
-      message: rec.message.trim().slice(0, 240),
+      message: rec.message.trim().slice(0, MAX_MESSAGE_LENGTH),
       source: normalizedSource,
       persisted: typeof rec.persisted === "boolean" ? rec.persisted : undefined,
     });
@@ -147,7 +148,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
       }
 
-      const trimmedMessage = message.trim().slice(0, 240);
+      const trimmedMessage = message.trim().slice(0, MAX_MESSAGE_LENGTH);
       if (!trimmedMessage) return NextResponse.json({ error: "Message required" }, { status: 400 });
 
       const now = new Date().toISOString();

@@ -47,9 +47,25 @@ async function isAuthenticated(req: Request): Promise<boolean> {
   return Boolean(token && (await verifyAdminToken(token)));
 }
 
-function sanitizeHistory(value: unknown) {
+function sanitizeHistory(value: unknown): typeof memoryHistory {
   if (!Array.isArray(value)) return [];
-  return value.filter((item) => item && typeof item === "object").slice(0, 10);
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const rec = item as Record<string, unknown>;
+      if (!ALLOWED_STATUS.has(rec.status as BNLStatusValue) || !ALLOWED_MODES.has(rec.mode as BNLModeValue)) return null;
+      if (typeof rec.timestamp !== "string" || typeof rec.message !== "string") return null;
+      const source = rec.source as BNLSourceValue;
+      return {
+        timestamp: rec.timestamp,
+        status: rec.status as BNLStatusValue,
+        mode: rec.mode as BNLModeValue,
+        message: rec.message.trim().slice(0, 240),
+        source: source === "bot" || source === "admin" || source === "showtest" || source === "heartbeat" ? source : "unknown",
+      };
+    })
+    .filter((item): item is (typeof memoryHistory)[number] => Boolean(item))
+    .slice(0, 10);
 }
 
 function sanitizeFlags(value: unknown): BNLFlags {
@@ -113,8 +129,19 @@ export async function POST(req: Request) {
       if (!trimmedMessage) return NextResponse.json({ error: "Message required" }, { status: 400 });
 
       const now = new Date().toISOString();
-      const nextStatus = { status, mode, message: trimmedMessage, lastSeen: now };
-      const nextEntry = { timestamp: now, status, mode, message: trimmedMessage, source: "admin" as const };
+      const nextStatus = {
+        status: status as BNLStatusValue,
+        mode: mode as BNLModeValue,
+        message: trimmedMessage,
+        lastSeen: now,
+      };
+      const nextEntry: (typeof memoryHistory)[number] = {
+        timestamp: now,
+        status: status as BNLStatusValue,
+        mode: mode as BNLModeValue,
+        message: trimmedMessage,
+        source: "admin",
+      };
 
       if (redis) {
         const priorHistory = sanitizeHistory(await redis.get<unknown>(HISTORY_KEY)) as typeof memoryHistory;

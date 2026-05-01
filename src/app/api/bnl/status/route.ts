@@ -10,7 +10,7 @@ type BNLModeValue =
   | "ACTIVE_LIAISON"
   | "SIGNAL_DEGRADATION"
   | "RESTRICTED";
-type BNLSourceValue = "bot" | "admin" | "showtest" | "heartbeat" | "unknown";
+type BNLSourceValue = "admin" | "reset" | "bot" | "startup" | "showday" | "heartbeat" | "showtest" | "unknown";
 
 interface BNLStatus {
   status: BNLStatusValue;
@@ -44,7 +44,7 @@ const ALLOWED_MODES = new Set<BNLModeValue>([
   "SIGNAL_DEGRADATION",
   "RESTRICTED",
 ]);
-const ALLOWED_SOURCES = new Set<BNLSourceValue>(["bot", "admin", "showtest", "heartbeat", "unknown"]);
+const ALLOWED_SOURCES = new Set<BNLSourceValue>(["admin", "reset", "bot", "startup", "showday", "showtest", "heartbeat", "unknown"]);
 
 let memoryStatus: BNLStatus = { ...DEFAULT_STATUS };
 let memoryHistory: BNLHistoryEntry[] = [];

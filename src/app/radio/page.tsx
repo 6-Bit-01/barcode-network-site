@@ -7,11 +7,11 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "BARCODE Radio — Submit Music & Listen Live",
   description:
-    "A live intake frequency. Submissions open at 6:40 PM PST, show starts at 7:00 PM PST, music starts at 7:05 PM PST.",
+    "A live intake frequency. Submissions open at 6:40 PM PT, show starts at 7:00 PM PT, music starts at 7:05 PM PT.",
   openGraph: {
     title: "BARCODE Radio — Submit Music & Listen Live",
     description:
-      "A live intake frequency. Submissions open at 6:40 PM PST, show starts at 7:00 PM PST, music starts at 7:05 PM PST.",
+      "A live intake frequency. Submissions open at 6:40 PM PT, show starts at 7:00 PM PT, music starts at 7:05 PM PT.",
     images: [{ url: "/radio-cover.png", width: 1400, height: 1400 }],
   },
 };

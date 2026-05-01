@@ -11,23 +11,26 @@ export function BNLNetworkRelayTicker() {
   const online = data.status === "ONLINE";
 
   return (
-    <div className="border-b border-border/80 bg-black px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.2em] text-white">
-      <div className="mx-auto flex max-w-7xl items-center gap-3 overflow-hidden">
-        <span className="shrink-0 text-white/85">&gt; NETWORK RELAY // BNL-01</span>
-        <div className="bnl-relay-scroll min-w-0">
-          <div className="bnl-relay-scroll-track">
-            <span>
-              STATUS <span className={bnlTone(online)}>{data.status}</span> :: MODE {data.mode} :: MESSAGE {data.message}
-              {data.lastSeen ? ` :: LAST SEEN ${data.lastSeen}` : ""} ::
-            </span>
-            <span aria-hidden>
-              STATUS <span className={bnlTone(online)}>{data.status}</span> :: MODE {data.mode} :: MESSAGE {data.message}
-              {data.lastSeen ? ` :: LAST SEEN ${data.lastSeen}` : ""} ::
-            </span>
+    <>
+      <div aria-hidden className="h-8" />
+      <div className="fixed left-0 right-0 top-14 z-40 border-b border-border/80 bg-black px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.2em] text-white">
+        <div className="mx-auto flex max-w-7xl items-center gap-3 overflow-hidden">
+          <span className="shrink-0 text-white/85">&gt; NETWORK RELAY // BNL-01</span>
+          <div className="bnl-relay-scroll min-w-0">
+            <div className="bnl-relay-scroll-track">
+              <span>
+                STATUS <span className={bnlTone(online)}>{data.status}</span> :: MODE {data.mode} :: MESSAGE {data.message}
+                {data.lastSeen ? ` :: LAST SEEN ${data.lastSeen}` : ""} ::
+              </span>
+              <span aria-hidden>
+                STATUS <span className={bnlTone(online)}>{data.status}</span> :: MODE {data.mode} :: MESSAGE {data.message}
+                {data.lastSeen ? ` :: LAST SEEN ${data.lastSeen}` : ""} ::
+              </span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 

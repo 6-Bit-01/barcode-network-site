@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 type BNLStatusValue = "ONLINE" | "OFFLINE";
 type BNLModeValue = "STANDBY" | "OBSERVATION" | "ACTIVE_LIAISON" | "SIGNAL_DEGRADATION" | "RESTRICTED";
-type BNLSourceValue = "bot" | "admin" | "showtest" | "heartbeat" | "unknown";
+type BNLSourceValue = "admin" | "reset" | "bot" | "startup" | "showday" | "heartbeat" | "showtest" | "unknown";
 
 type BNLFlags = {
   websiteRelayEnabled: boolean;
@@ -61,7 +61,7 @@ function sanitizeHistory(value: unknown): typeof memoryHistory {
         status: rec.status as BNLStatusValue,
         mode: rec.mode as BNLModeValue,
         message: rec.message.trim().slice(0, 240),
-        source: source === "bot" || source === "admin" || source === "showtest" || source === "heartbeat" ? source : "unknown",
+        source: source === "admin" || source === "reset" || source === "bot" || source === "startup" || source === "showday" || source === "showtest" || source === "heartbeat" ? source : "unknown",
       };
     })
     .filter((item): item is (typeof memoryHistory)[number] => Boolean(item))
@@ -140,7 +140,7 @@ export async function POST(req: Request) {
         status: status as BNLStatusValue,
         mode: mode as BNLModeValue,
         message: trimmedMessage,
-        source: "admin",
+        source: action === "resetStandby" ? "reset" : "admin",
       };
 
       if (redis) {

@@ -21,6 +21,12 @@ const DEFAULT_URL = "https://www.tiktok.com/@six.bit/live";
 let memoryLiveOverride: string | null = null;
 let memoryStreamUrl: string = DEFAULT_URL;
 
+function normalizeLiveOverride(value: unknown): "1" | "0" | null {
+  if (value === "1" || value === 1 || value === true) return "1";
+  if (value === "0" || value === 0 || value === false) return "0";
+  return null;
+}
+
 function getRedis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -34,7 +40,7 @@ export async function GET() {
   const redis = getRedis();
   const isScheduled = isWithinBroadcastWindow();
 
-  let manualOverride: string | null = memoryLiveOverride;
+  let manualOverride: "1" | "0" | null = normalizeLiveOverride(memoryLiveOverride);
   let streamUrl = memoryStreamUrl;
 
   if (redis) {
@@ -42,7 +48,7 @@ export async function GET() {
       redis.get<string>(KEYS.live),
       redis.get<string>(KEYS.url),
     ]);
-    manualOverride = liveVal;
+    manualOverride = normalizeLiveOverride(liveVal);
     if (urlVal) streamUrl = urlVal;
   }
 
@@ -87,7 +93,7 @@ export async function POST(req: Request) {
     const { action, streamUrl } = body;
 
     const getCurrent = async () =>
-      redis ? await redis.get<string>(KEYS.live) : memoryLiveOverride;
+      normalizeLiveOverride(redis ? await redis.get<string | number | boolean>(KEYS.live) : memoryLiveOverride);
     const setLive = async (value: "1" | "0" | null) => {
       if (redis) {
         if (value === null) await redis.del(KEYS.live);

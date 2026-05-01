@@ -235,6 +235,11 @@ export const terminalPage = {
       href: "EXTERNAL:discord",
     },
     {
+      label: "BNL-01",
+      description: "Liaison entity interface",
+      href: "EXTERNAL:discord",
+    },
+    {
       label: "Auxchord",
       description: "Music submission platform",
       href: "EXTERNAL:auxchord",
@@ -377,6 +382,21 @@ export const databasePage = {
       tags: ["mod", "producer", "artist", "broadcast"],
       notes: "Active moderator across Discord and live sessions. Contributes original music within the BARCODE ecosystem.",
       link: "",
+      files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
+    },
+    {
+      id: "EN-011",
+      name: "BNL-01",
+      image: "",
+      category: "Entity" as const,
+      status: "ACTIVE" as const,
+      clearance: "INTERNAL" as const,
+      role: "BARCODE Network Liaison Entity",
+      origin: "UNKNOWN" as const,
+      summary: "BNL-01 is the BARCODE Network Liaison Entity assigned to Discord-side signal interpretation, community response, and controlled lore retrieval. It operates as a public-facing archive interface rather than a performer, translating fragmented Network records into usable guidance without granting full access to restricted systems. Its function is to answer questions, stabilize confusion, monitor community activity, and keep BARCODE Network information consistent across live broadcasts, Discord discussions, and public-facing transmissions.",
+      tags: ["ai", "systems", "handler", "broadcast"],
+      notes: "Primary interface: Discord. Operational behavior includes concise corporate responses, subtle hostile undertones, occasional controlled glitch events, and strict refusal to invent unverified canon. BNL-01 may reference BARCODE Radio, BARCODE Network, 6 Bit, known personnel, approved entities, and documented broadcast mechanics, but restricted files remain sealed unless clearance changes.",
+      link: externalLinks.discord,
       files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
     },
     {

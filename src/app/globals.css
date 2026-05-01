@@ -445,3 +445,31 @@ body {
     rgba(0, 0, 0, 0.12) 2px
   );
 }
+@keyframes bnl-relay-crawl {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.bnl-relay-scroll {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.bnl-relay-scroll-track {
+  display: inline-flex;
+  gap: 2.5rem;
+  min-width: max-content;
+  padding-right: 2.5rem;
+  animation: bnl-relay-crawl 36s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bnl-relay-scroll-track {
+    animation: none;
+  }
+}

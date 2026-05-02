@@ -18,6 +18,7 @@ interface BNLStatus {
   message: string;
   currentDirective: string;
   source: BNLSourceValue;
+  adminNote?: string;
   lastSeen: string | null;
 }
 
@@ -28,6 +29,7 @@ interface BNLHistoryEntry {
   currentDirective?: string;
   message: string;
   source: BNLSourceValue;
+  adminNote?: string;
   persisted?: boolean;
 }
 
@@ -90,7 +92,12 @@ function sanitizeStoredStatus(value: unknown): BNLStatus {
       ? record.lastSeen
       : null;
 
-  return { status, mode, message, currentDirective, source, lastSeen };
+  const adminNote =
+    typeof record.adminNote === "string" && record.adminNote.trim().length > 0
+      ? record.adminNote.trim().slice(0, 400)
+      : undefined;
+
+  return { status, mode, message, currentDirective, source, adminNote, lastSeen };
 }
 
 function sanitizeHistory(value: unknown): BNLHistoryEntry[] {
@@ -110,8 +117,12 @@ function sanitizeHistory(value: unknown): BNLHistoryEntry[] {
       typeof rec.currentDirective === "string" && rec.currentDirective.trim().length > 0
         ? rec.currentDirective.trim().slice(0, 160)
         : undefined;
+    const adminNote =
+      typeof rec.adminNote === "string" && rec.adminNote.trim().length > 0
+        ? rec.adminNote.trim().slice(0, 400)
+        : undefined;
     if (!status || !mode || !timestamp || !message) continue;
-    normalized.push({ timestamp, status, mode, currentDirective, message, source });
+    normalized.push({ timestamp, status, mode, currentDirective, message, source, adminNote });
   }
   return normalized.slice(0, 25);
 }
@@ -122,7 +133,8 @@ function sameHistoryContent(a: BNLHistoryEntry, b: BNLHistoryEntry): boolean {
     a.mode === b.mode &&
     a.source === b.source &&
     a.message === b.message &&
-    (a.currentDirective ?? "") === (b.currentDirective ?? "")
+    (a.currentDirective ?? "") === (b.currentDirective ?? "") &&
+    (a.adminNote ?? "") === (b.adminNote ?? "")
   );
 }
 
@@ -143,10 +155,12 @@ export async function GET() {
     const stored = await redis.get<unknown>(KEY);
     const resolved = sanitizeStoredStatus(stored);
     memoryStatus = resolved;
-    return NextResponse.json({ ...resolved, persisted: true });
+    const { adminNote: _adminNote, ...publicStatus } = resolved;
+    return NextResponse.json({ ...publicStatus, persisted: true });
   }
 
-  return NextResponse.json({ ...memoryStatus, persisted: false });
+  const { adminNote: _adminNote, ...publicStatus } = memoryStatus;
+  return NextResponse.json({ ...publicStatus, persisted: false });
 }
 
 export async function POST(req: Request) {
@@ -159,7 +173,7 @@ export async function POST(req: Request) {
 
   try {
     const body = (await req.json()) as Record<string, unknown>;
-    const allowedKeys = ["status", "mode", "message", "currentDirective", "source"];
+    const allowedKeys = ["status", "mode", "message", "currentDirective", "source", "adminNote"];
     const bodyKeys = Object.keys(body);
     if (!bodyKeys.every((key) => allowedKeys.includes(key))) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
@@ -170,6 +184,7 @@ export async function POST(req: Request) {
     const message = body.message;
     const currentDirective = body.currentDirective;
     const source = body.source;
+    const adminNote = body.adminNote;
 
     if (!ALLOWED_STATUS.has(status as BNLStatusValue) || !ALLOWED_MODES.has(mode as BNLModeValue) || typeof message !== "string") {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
@@ -188,6 +203,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
+    if (adminNote !== undefined && (typeof adminNote !== "string" || adminNote.trim().length > 400)) {
+      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+    }
+
     const now = new Date().toISOString();
     const nextStatus: BNLStatus = {
       status: status as BNLStatusValue,
@@ -195,6 +214,7 @@ export async function POST(req: Request) {
       message: trimmedMessage,
       currentDirective: typeof currentDirective === "string" ? currentDirective.trim() : DEFAULT_DIRECTIVE,
       source: typeof source === "string" && ALLOWED_SOURCES.has(source as BNLSourceValue) ? (source as BNLSourceValue) : "unknown",
+      adminNote: typeof adminNote === "string" && adminNote.trim().length > 0 ? adminNote.trim() : undefined,
       lastSeen: now,
     };
 
@@ -209,6 +229,7 @@ export async function POST(req: Request) {
       currentDirective: nextStatus.currentDirective,
       message: nextStatus.message,
       source: nextStatus.source,
+      adminNote: nextStatus.adminNote,
       persisted: Boolean(redis),
     });
 

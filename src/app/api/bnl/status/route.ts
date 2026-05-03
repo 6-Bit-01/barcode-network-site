@@ -10,7 +10,17 @@ type BNLModeValue =
   | "ACTIVE_LIAISON"
   | "SIGNAL_DEGRADATION"
   | "RESTRICTED";
-type BNLSourceValue = "bot" | "startup" | "relay" | "heartbeat" | "showday" | "showtest" | "admin" | "reset" | "unknown";
+type BNLSourceValue =
+  | "bot"
+  | "startup"
+  | "relay"
+  | "heartbeat"
+  | "showday"
+  | "showtest"
+  | "admin"
+  | "reset"
+  | "forcePull"
+  | "unknown";
 
 interface BNLStatus {
   status: BNLStatusValue;
@@ -36,6 +46,8 @@ interface BNLHistoryEntry {
 const KEY = "bnl:status";
 const HISTORY_KEY = "bnl:history";
 const MAX_MESSAGE_LENGTH = 600;
+const MAX_DIRECTIVE_LENGTH = 220;
+const MAX_ADMIN_NOTE_LENGTH = 400;
 const DEFAULT_DIRECTIVE = "Monitoring Discord-side relay traffic.";
 const DEFAULT_STATUS: BNLStatus = {
   status: "OFFLINE",
@@ -54,7 +66,18 @@ const ALLOWED_MODES = new Set<BNLModeValue>([
   "SIGNAL_DEGRADATION",
   "RESTRICTED",
 ]);
-const ALLOWED_SOURCES = new Set<BNLSourceValue>(["bot", "startup", "relay", "heartbeat", "showday", "showtest", "admin", "reset", "unknown"]);
+const ALLOWED_SOURCES = new Set<BNLSourceValue>([
+  "bot",
+  "startup",
+  "relay",
+  "heartbeat",
+  "showday",
+  "showtest",
+  "admin",
+  "reset",
+  "forcePull",
+  "unknown",
+]);
 
 let memoryStatus: BNLStatus = { ...DEFAULT_STATUS };
 let memoryHistory: BNLHistoryEntry[] = [];
@@ -81,8 +104,8 @@ function sanitizeStoredStatus(value: unknown): BNLStatus {
       ? record.message.trim().slice(0, MAX_MESSAGE_LENGTH)
       : DEFAULT_STATUS.message;
   const currentDirective =
-    typeof record.currentDirective === "string" && record.currentDirective.trim().length > 0
-      ? record.currentDirective.trim().slice(0, 160)
+      typeof record.currentDirective === "string" && record.currentDirective.trim().length > 0
+      ? record.currentDirective.trim().slice(0, MAX_DIRECTIVE_LENGTH)
       : DEFAULT_STATUS.currentDirective;
   const source = ALLOWED_SOURCES.has(record.source as BNLSourceValue)
     ? (record.source as BNLSourceValue)
@@ -93,8 +116,8 @@ function sanitizeStoredStatus(value: unknown): BNLStatus {
       : null;
 
   const adminNote =
-    typeof record.adminNote === "string" && record.adminNote.trim().length > 0
-      ? record.adminNote.trim().slice(0, 400)
+      typeof record.adminNote === "string" && record.adminNote.trim().length > 0
+      ? record.adminNote.trim().slice(0, MAX_ADMIN_NOTE_LENGTH)
       : undefined;
 
   return { status, mode, message, currentDirective, source, adminNote, lastSeen };
@@ -115,11 +138,11 @@ function sanitizeHistory(value: unknown): BNLHistoryEntry[] {
     const message = typeof rec.message === "string" ? rec.message.trim().slice(0, MAX_MESSAGE_LENGTH) : "";
     const currentDirective =
       typeof rec.currentDirective === "string" && rec.currentDirective.trim().length > 0
-        ? rec.currentDirective.trim().slice(0, 160)
+        ? rec.currentDirective.trim().slice(0, MAX_DIRECTIVE_LENGTH)
         : undefined;
     const adminNote =
       typeof rec.adminNote === "string" && rec.adminNote.trim().length > 0
-        ? rec.adminNote.trim().slice(0, 400)
+        ? rec.adminNote.trim().slice(0, MAX_ADMIN_NOTE_LENGTH)
         : undefined;
     if (!status || !mode || !timestamp || !message) continue;
     normalized.push({ timestamp, status, mode, currentDirective, message, source, adminNote });
@@ -195,7 +218,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
-    if (currentDirective !== undefined && (typeof currentDirective !== "string" || currentDirective.trim().length === 0 || currentDirective.trim().length > 160)) {
+    if (
+      currentDirective !== undefined
+      && (typeof currentDirective !== "string"
+      || currentDirective.trim().length === 0
+      || currentDirective.trim().length > MAX_DIRECTIVE_LENGTH)
+    ) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
@@ -203,7 +231,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
-    if (adminNote !== undefined && (typeof adminNote !== "string" || adminNote.trim().length > 400)) {
+    if (adminNote !== undefined && (typeof adminNote !== "string" || adminNote.trim().length > MAX_ADMIN_NOTE_LENGTH)) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 

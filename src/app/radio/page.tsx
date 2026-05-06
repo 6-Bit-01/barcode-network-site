@@ -30,50 +30,15 @@ export default function RadioPage() {
             description={radioPage.hero.description}
           />
 
-          {/* Schedule notice — auto-converts to visitor's timezone */}
-          <LocalSchedule
-            day={radioPage.schedule.day}
-            queueOpens={radioPage.schedule.queueOpens}
-            showBegins={radioPage.schedule.showBegins}
-            firstTrack={radioPage.schedule.firstTrack}
-            notice={radioPage.schedule.notice}
-          />
-
-          {/* Primary CTAs + Discord signal note — above the fold */}
+          {/* Schedule notice + Discord signal note — operational info */}
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,32rem)_minmax(18rem,24rem)] gap-4 lg:gap-6 max-w-5xl items-stretch">
-            <div>
-              <div className="flex flex-col sm:flex-row gap-4">
-                <a
-                  href={externalLinks.auxchord}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold bg-accent text-background hover:bg-accent-dim transition-all text-center"
-                >
-                  <span className="text-lg">{radioPage.hero.submitButton.emoji}</span>
-                  {radioPage.hero.submitButton.text}
-                </a>
-                <a
-                  href={externalLinks.discord}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
-                >
-                  <span className="text-lg">{radioPage.hero.discordButton.emoji}</span>
-                  {radioPage.hero.discordButton.text}
-                </a>
-              </div>
-              <div className="mt-4">
-                <a
-                  href={externalLinks.tiktokLive}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
-                >
-                  <span className="text-lg">{radioPage.hero.tiktokButton.emoji}</span>
-                  {radioPage.hero.tiktokButton.text}
-                </a>
-              </div>
-            </div>
+            <LocalSchedule
+              day={radioPage.schedule.day}
+              queueOpens={radioPage.schedule.queueOpens}
+              showBegins={radioPage.schedule.showBegins}
+              firstTrack={radioPage.schedule.firstTrack}
+              notice={radioPage.schedule.notice}
+            />
 
             <div className="relative overflow-hidden border border-accent/30 bg-background/70 p-4 sm:p-5 shadow-[0_0_30px_rgba(255,0,0,0.08)]">
               <div className="absolute inset-x-0 top-0 h-px bg-accent/50" aria-hidden="true" />
@@ -91,6 +56,41 @@ export default function RadioPage() {
                   </p>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Primary CTAs — above the fold */}
+          <div className="mt-6 max-w-lg">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <a
+                href={externalLinks.auxchord}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold bg-accent text-background hover:bg-accent-dim transition-all text-center"
+              >
+                <span className="text-lg">{radioPage.hero.submitButton.emoji}</span>
+                {radioPage.hero.submitButton.text}
+              </a>
+              <a
+                href={externalLinks.discord}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
+              >
+                <span className="text-lg">{radioPage.hero.discordButton.emoji}</span>
+                {radioPage.hero.discordButton.text}
+              </a>
+            </div>
+            <div className="mt-4">
+              <a
+                href={externalLinks.tiktokLive}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
+              >
+                <span className="text-lg">{radioPage.hero.tiktokButton.emoji}</span>
+                {radioPage.hero.tiktokButton.text}
+              </a>
             </div>
           </div>
         </div>

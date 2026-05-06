@@ -56,6 +56,7 @@ function publicSourceLabel(source?: string): string {
 function BNLRelayExplainer() {
   const [visible, setVisible] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [glitchingOut, setGlitchingOut] = useState(false);
 
   useEffect(() => {
     if (window.sessionStorage.getItem("bnl-relay-explainer-dismissed") === "true") {
@@ -69,8 +70,9 @@ function BNLRelayExplainer() {
 
   function dismiss() {
     window.sessionStorage.setItem("bnl-relay-explainer-dismissed", "true");
+    setGlitchingOut(true);
     setVisible(false);
-    setDismissed(true);
+    window.setTimeout(() => setDismissed(true), 520);
   }
 
   if (dismissed) return null;
@@ -79,8 +81,9 @@ function BNLRelayExplainer() {
     <div
       className={`fixed right-3 top-24 z-30 w-[calc(100vw-1.5rem)] max-w-sm border border-accent/30 bg-black/95 p-4 font-mono text-white shadow-[0_0_35px_rgba(255,0,0,0.16)] transition-opacity duration-[1800ms] ease-out sm:right-6 ${
         visible ? "opacity-100" : "opacity-0 pointer-events-none"
-      }`}
+      } ${glitchingOut ? "animate-[bnl-relay-glitch-out_520ms_steps(2,end)_forwards]" : ""}`}
     >
+      <div className="pointer-events-none absolute inset-0 opacity-0 animate-none bg-[linear-gradient(transparent_0%,rgba(255,255,255,0.09)_49%,transparent_50%)] bg-[length:100%_6px]" aria-hidden="true" />
       <div className="absolute -top-3 right-8 h-3 w-px bg-accent/60" aria-hidden="true" />
       <div className="mb-2 flex items-start justify-between gap-3">
         <p className="text-[10px] uppercase tracking-[0.35em] text-accent">Relay Explained</p>
@@ -111,6 +114,52 @@ function BNLRelayExplainer() {
       >
         Join Discord + Feed The Relay
       </a>
+      <style jsx>{`
+        @keyframes bnl-relay-glitch-out {
+          0% {
+            opacity: 1;
+            filter: none;
+            transform: translate(0, 0) skewX(0deg);
+            clip-path: inset(0 0 0 0);
+          }
+          14% {
+            opacity: 0.88;
+            filter: blur(0.5px) contrast(1.5);
+            transform: translate(-4px, 1px) skewX(-2deg);
+            clip-path: inset(8% 0 6% 0);
+          }
+          28% {
+            opacity: 1;
+            filter: blur(0) contrast(1.2);
+            transform: translate(5px, -1px) skewX(2deg);
+            clip-path: inset(0 0 18% 0);
+          }
+          42% {
+            opacity: 0.65;
+            filter: blur(1px) contrast(1.8);
+            transform: translate(-2px, 2px) skewX(-4deg);
+            clip-path: inset(22% 0 0 0);
+          }
+          60% {
+            opacity: 0.45;
+            filter: blur(1.5px) contrast(2);
+            transform: translate(7px, 0) skewX(5deg);
+            clip-path: inset(0 0 42% 0);
+          }
+          78% {
+            opacity: 0.2;
+            filter: blur(2px) contrast(2.4);
+            transform: translate(-8px, -1px) skewX(-6deg);
+            clip-path: inset(48% 0 22% 0);
+          }
+          100% {
+            opacity: 0;
+            filter: blur(3px) contrast(2.8);
+            transform: translate(10px, 0) skewX(8deg);
+            clip-path: inset(50% 0 50% 0);
+          }
+        }
+      `}</style>
     </div>
   );
 }

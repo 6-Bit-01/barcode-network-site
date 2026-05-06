@@ -63,7 +63,7 @@ function BNLRelayExplainer() {
       return;
     }
 
-    const timer = window.setTimeout(() => setVisible(true), 1600);
+    const timer = window.setTimeout(() => setVisible(true), 5000);
     return () => window.clearTimeout(timer);
   }, []);
 
@@ -77,8 +77,8 @@ function BNLRelayExplainer() {
 
   return (
     <div
-      className={`fixed right-3 top-24 z-30 w-[calc(100vw-1.5rem)] max-w-sm border border-accent/30 bg-black/95 p-4 font-mono text-white shadow-[0_0_35px_rgba(255,0,0,0.16)] transition-all duration-700 sm:right-6 ${
-        visible ? "translate-y-0 opacity-100" : "-translate-y-2 opacity-0 pointer-events-none"
+      className={`fixed right-3 top-24 z-30 w-[calc(100vw-1.5rem)] max-w-sm border border-accent/30 bg-black/95 p-4 font-mono text-white shadow-[0_0_35px_rgba(255,0,0,0.16)] transition-opacity duration-[1800ms] ease-out sm:right-6 ${
+        visible ? "opacity-100" : "opacity-0 pointer-events-none"
       }`}
     >
       <div className="absolute -top-3 right-8 h-3 w-px bg-accent/60" aria-hidden="true" />

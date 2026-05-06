@@ -79,38 +79,38 @@ function BNLRelayExplainer() {
 
   return (
     <div
-      className={`fixed right-3 top-24 z-30 w-[calc(100vw-1.5rem)] max-w-sm border border-accent/30 bg-black/95 p-4 font-mono text-white shadow-[0_0_35px_rgba(255,0,0,0.16)] transition-opacity duration-[1800ms] ease-out sm:right-6 ${
+      className={`fixed inset-x-3 top-24 z-30 border border-accent/30 bg-black/95 p-3 font-mono text-white shadow-[0_0_35px_rgba(255,0,0,0.16)] transition-opacity duration-[1800ms] ease-out sm:inset-x-auto sm:right-6 sm:w-[calc(100vw-1.5rem)] sm:max-w-sm sm:p-4 ${
         visible ? "opacity-100" : "opacity-0 pointer-events-none"
       } ${glitchingOut ? "animate-[bnl-relay-glitch-out_520ms_steps(2,end)_forwards]" : ""}`}
     >
       <div className="pointer-events-none absolute inset-0 opacity-0 animate-none bg-[linear-gradient(transparent_0%,rgba(255,255,255,0.09)_49%,transparent_50%)] bg-[length:100%_6px]" aria-hidden="true" />
       <div className="absolute -top-3 right-8 h-3 w-px bg-accent/60" aria-hidden="true" />
-      <div className="mb-2 flex items-start justify-between gap-3">
-        <p className="text-[10px] uppercase tracking-[0.35em] text-accent">Relay Explained</p>
+      <div className="mb-1.5 flex items-start justify-between gap-3 sm:mb-2">
+        <p className="text-[9px] uppercase tracking-[0.28em] text-accent sm:text-[10px] sm:tracking-[0.35em]">Relay Explained</p>
         <button
           type="button"
           onClick={dismiss}
-          className="text-xs text-white/45 transition-colors hover:text-accent"
+          className="-m-2 p-2 text-sm leading-none text-white/55 transition-colors hover:text-accent sm:text-xs"
           aria-label="Dismiss relay explanation"
         >
           ×
         </button>
       </div>
-      <p className="text-xs leading-relaxed text-white/70">
-        That black ticker above is BNL-01&apos;s live relay. Public Discord activity can pass through BNL, get filtered into a Network-safe signal, and echo across the site.
+      <p className="text-[11px] leading-relaxed text-white/70 sm:text-xs">
+        The black ticker is BNL-01&apos;s live relay. Public Discord activity can pass through BNL and echo across the site.
       </p>
-      <div className="my-3 flex flex-wrap items-center gap-1.5 text-[9px] uppercase tracking-[0.16em] text-white/65">
-        <span className="border border-white/15 px-2 py-1">Discord</span>
+      <div className="my-2 flex flex-wrap items-center gap-1 text-[8px] uppercase tracking-[0.12em] text-white/65 sm:my-3 sm:gap-1.5 sm:text-[9px] sm:tracking-[0.16em]">
+        <span className="border border-white/15 px-1.5 py-0.5 sm:px-2 sm:py-1">Discord</span>
         <span className="text-accent/70">→</span>
-        <span className="border border-white/15 px-2 py-1">BNL-01</span>
+        <span className="border border-white/15 px-1.5 py-0.5 sm:px-2 sm:py-1">BNL-01</span>
         <span className="text-accent/70">→</span>
-        <span className="border border-accent/40 bg-accent/10 px-2 py-1 text-accent">Ticker</span>
+        <span className="border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-accent sm:px-2 sm:py-1">Ticker</span>
       </div>
       <a
         href={externalLinks.discord}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex w-full items-center justify-center border border-accent/60 px-3 py-2 text-[10px] uppercase tracking-[0.28em] text-accent transition-colors hover:bg-accent hover:text-background"
+        className="inline-flex w-full items-center justify-center border border-accent/60 px-3 py-1.5 text-[9px] uppercase tracking-[0.2em] text-accent transition-colors hover:bg-accent hover:text-background sm:py-2 sm:text-[10px] sm:tracking-[0.28em]"
       >
         Join Discord + Feed The Relay
       </a>

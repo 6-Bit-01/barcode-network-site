@@ -78,6 +78,22 @@ export default function RadioPage() {
       <section className="border-b border-border">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-12">
           <BNLRelayModule title="BNL-01 Broadcast Monitor" />
+          <div className="mt-4 border border-border bg-surface/70 p-4 sm:p-5 max-w-3xl">
+            <div className="flex items-start gap-3">
+              <span className="mt-1 h-2 w-2 shrink-0 bg-accent" aria-hidden="true" />
+              <div>
+                <p className="text-[10px] sm:text-xs uppercase tracking-[0.35em] text-accent/70 mb-2">
+                  Discord Signal Link
+                </p>
+                <p className="text-sm text-muted leading-relaxed">
+                  Some BNL-01 relay updates are connected to public activity inside the BARCODE Network Discord. Talk to BNL, ask questions, drop music, or start a strange enough signal — your name may surface here as a relay fragment, observation, or unexpected shoutout.
+                </p>
+                <p className="mt-3 text-[10px] uppercase tracking-[0.28em] text-muted/40">
+                  No warning. No guarantee. The outer channel decides what echoes.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

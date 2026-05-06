@@ -46,7 +46,7 @@ interface BNLHistoryEntry {
 const KEY = "bnl:status";
 const HISTORY_KEY = "bnl:history";
 const MAX_MESSAGE_LENGTH = 600;
-const MAX_DIRECTIVE_LENGTH = 220;
+const MAX_DIRECTIVE_LENGTH = 800;
 const MAX_ADMIN_NOTE_LENGTH = 400;
 const DEFAULT_DIRECTIVE = "Monitoring Discord-side relay traffic.";
 const DEFAULT_STATUS: BNLStatus = {

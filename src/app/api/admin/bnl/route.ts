@@ -19,6 +19,7 @@ const HISTORY_KEY = "bnl:history";
 const FLAGS_KEY = "bnl:flags";
 const FORCE_PULL_KEY = "bnl:force_pull_requested_at";
 const MAX_MESSAGE_LENGTH = 600;
+const MAX_DIRECTIVE_LENGTH = 800;
 
 const DEFAULT_FLAGS: BNLFlags = {
   websiteRelayEnabled: true,
@@ -66,7 +67,7 @@ function sanitizeHistory(value: unknown): typeof memoryHistory {
       timestamp: rec.timestamp,
       status: rec.status as BNLStatusValue,
       mode: rec.mode as BNLModeValue,
-      currentDirective: typeof rec.currentDirective === "string" ? rec.currentDirective.trim().slice(0, 160) : undefined,
+      currentDirective: typeof rec.currentDirective === "string" ? rec.currentDirective.trim().slice(0, MAX_DIRECTIVE_LENGTH) : undefined,
       message: rec.message.trim().slice(0, MAX_MESSAGE_LENGTH),
       source: normalizedSource,
       adminNote: typeof rec.adminNote === "string" && rec.adminNote.trim().length > 0 ? rec.adminNote.trim().slice(0, 400) : undefined,

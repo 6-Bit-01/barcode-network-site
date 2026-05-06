@@ -60,10 +60,11 @@ export function BNLNetworkRelayTicker() {
   return (
     <>
       <div aria-hidden className="h-8" />
-      <div className="fixed left-0 right-0 top-14 z-40 border-b border-border/80 bg-black px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.2em] text-white">
-        <div className="mx-auto flex max-w-7xl items-center gap-3 overflow-hidden">
-          <span className="shrink-0 text-white/85">&gt; NETWORK RELAY // BNL-01</span>
-          <div className="bnl-relay-scroll min-w-0">
+      <div className="fixed left-0 right-0 top-14 z-40 border-b border-border/80 bg-black px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-white sm:px-4 sm:text-[11px] sm:tracking-[0.2em]">
+        <div className="mx-auto flex max-w-7xl items-center gap-2 overflow-hidden sm:gap-3">
+          <span className="hidden shrink-0 text-white/85 sm:inline">&gt; NETWORK RELAY // BNL-01</span>
+          <span className="shrink-0 text-white/85 sm:hidden">&gt; BNL-01 //</span>
+          <div className="bnl-relay-scroll min-w-0 flex-1">
             <div className="bnl-relay-scroll-track">
               <span>
                 SIGNAL CONDITION <span className={bnlTone(online)}>{signalCondition}</span> :: SURFACE READING {data.message}

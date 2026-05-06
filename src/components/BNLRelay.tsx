@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { externalLinks } from "@/content";
 import { useBNLStatus } from "@/components/useBNLStatus";
 
 function bnlTone(online: boolean) {
@@ -51,6 +53,117 @@ function publicSourceLabel(source?: string): string {
   return SOURCE_LABELS[source ?? "unknown"] ?? "Unmarked Signal";
 }
 
+function BNLRelayExplainer() {
+  const [visible, setVisible] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const [glitchingOut, setGlitchingOut] = useState(false);
+
+  useEffect(() => {
+    if (window.sessionStorage.getItem("bnl-relay-explainer-dismissed") === "true") {
+      setDismissed(true);
+      return;
+    }
+
+    const timer = window.setTimeout(() => setVisible(true), 5000);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  function dismiss() {
+    window.sessionStorage.setItem("bnl-relay-explainer-dismissed", "true");
+    setGlitchingOut(true);
+    setVisible(false);
+    window.setTimeout(() => setDismissed(true), 520);
+  }
+
+  if (dismissed) return null;
+
+  return (
+    <div
+      className={`fixed right-3 top-24 z-30 w-[calc(100vw-1.5rem)] max-w-sm border border-accent/30 bg-black/95 p-4 font-mono text-white shadow-[0_0_35px_rgba(255,0,0,0.16)] transition-opacity duration-[1800ms] ease-out sm:right-6 ${
+        visible ? "opacity-100" : "opacity-0 pointer-events-none"
+      } ${glitchingOut ? "animate-[bnl-relay-glitch-out_520ms_steps(2,end)_forwards]" : ""}`}
+    >
+      <div className="pointer-events-none absolute inset-0 opacity-0 animate-none bg-[linear-gradient(transparent_0%,rgba(255,255,255,0.09)_49%,transparent_50%)] bg-[length:100%_6px]" aria-hidden="true" />
+      <div className="absolute -top-3 right-8 h-3 w-px bg-accent/60" aria-hidden="true" />
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <p className="text-[10px] uppercase tracking-[0.35em] text-accent">Relay Explained</p>
+        <button
+          type="button"
+          onClick={dismiss}
+          className="text-xs text-white/45 transition-colors hover:text-accent"
+          aria-label="Dismiss relay explanation"
+        >
+          ×
+        </button>
+      </div>
+      <p className="text-xs leading-relaxed text-white/70">
+        That black ticker above is BNL-01&apos;s live relay. Public Discord activity can pass through BNL, get filtered into a Network-safe signal, and echo across the site.
+      </p>
+      <div className="my-3 flex flex-wrap items-center gap-1.5 text-[9px] uppercase tracking-[0.16em] text-white/65">
+        <span className="border border-white/15 px-2 py-1">Discord</span>
+        <span className="text-accent/70">→</span>
+        <span className="border border-white/15 px-2 py-1">BNL-01</span>
+        <span className="text-accent/70">→</span>
+        <span className="border border-accent/40 bg-accent/10 px-2 py-1 text-accent">Ticker</span>
+      </div>
+      <a
+        href={externalLinks.discord}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex w-full items-center justify-center border border-accent/60 px-3 py-2 text-[10px] uppercase tracking-[0.28em] text-accent transition-colors hover:bg-accent hover:text-background"
+      >
+        Join Discord + Feed The Relay
+      </a>
+      <style jsx>{`
+        @keyframes bnl-relay-glitch-out {
+          0% {
+            opacity: 1;
+            filter: none;
+            transform: translate(0, 0) skewX(0deg);
+            clip-path: inset(0 0 0 0);
+          }
+          14% {
+            opacity: 0.88;
+            filter: blur(0.5px) contrast(1.5);
+            transform: translate(-4px, 1px) skewX(-2deg);
+            clip-path: inset(8% 0 6% 0);
+          }
+          28% {
+            opacity: 1;
+            filter: blur(0) contrast(1.2);
+            transform: translate(5px, -1px) skewX(2deg);
+            clip-path: inset(0 0 18% 0);
+          }
+          42% {
+            opacity: 0.65;
+            filter: blur(1px) contrast(1.8);
+            transform: translate(-2px, 2px) skewX(-4deg);
+            clip-path: inset(22% 0 0 0);
+          }
+          60% {
+            opacity: 0.45;
+            filter: blur(1.5px) contrast(2);
+            transform: translate(7px, 0) skewX(5deg);
+            clip-path: inset(0 0 42% 0);
+          }
+          78% {
+            opacity: 0.2;
+            filter: blur(2px) contrast(2.4);
+            transform: translate(-8px, -1px) skewX(-6deg);
+            clip-path: inset(48% 0 22% 0);
+          }
+          100% {
+            opacity: 0;
+            filter: blur(3px) contrast(2.8);
+            transform: translate(10px, 0) skewX(8deg);
+            clip-path: inset(50% 0 50% 0);
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 export function BNLNetworkRelayTicker() {
   const { data } = useBNLStatus();
   const online = data.status === "ONLINE";
@@ -60,10 +173,11 @@ export function BNLNetworkRelayTicker() {
   return (
     <>
       <div aria-hidden className="h-8" />
-      <div className="fixed left-0 right-0 top-14 z-40 border-b border-border/80 bg-black px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.2em] text-white">
-        <div className="mx-auto flex max-w-7xl items-center gap-3 overflow-hidden">
-          <span className="shrink-0 text-white/85">&gt; NETWORK RELAY // BNL-01</span>
-          <div className="bnl-relay-scroll min-w-0">
+      <div className="fixed left-0 right-0 top-14 z-40 border-b border-border/80 bg-black px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-white sm:px-4 sm:text-[11px] sm:tracking-[0.2em]">
+        <div className="mx-auto flex max-w-7xl items-center gap-2 overflow-hidden sm:gap-3">
+          <span className="hidden shrink-0 text-white/85 sm:inline">&gt; NETWORK RELAY // BNL-01</span>
+          <span className="shrink-0 text-white/85 sm:hidden">&gt; BNL-01 //</span>
+          <div className="bnl-relay-scroll min-w-0 flex-1">
             <div className="bnl-relay-scroll-track">
               <span>
                 SIGNAL CONDITION <span className={bnlTone(online)}>{signalCondition}</span> :: SURFACE READING {data.message}
@@ -77,6 +191,7 @@ export function BNLNetworkRelayTicker() {
           </div>
         </div>
       </div>
+      <BNLRelayExplainer />
     </>
   );
 }

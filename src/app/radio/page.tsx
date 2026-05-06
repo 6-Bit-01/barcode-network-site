@@ -30,46 +30,75 @@ export default function RadioPage() {
             description={radioPage.hero.description}
           />
 
-          {/* Schedule notice — auto-converts to visitor's timezone */}
-          <LocalSchedule
-            day={radioPage.schedule.day}
-            queueOpens={radioPage.schedule.queueOpens}
-            showBegins={radioPage.schedule.showBegins}
-            firstTrack={radioPage.schedule.firstTrack}
-            notice={radioPage.schedule.notice}
-          />
+          {/* Schedule notice + Discord signal note — operational info */}
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,32rem)_minmax(18rem,24rem)] gap-4 lg:gap-6 max-w-5xl items-stretch">
+            <LocalSchedule
+              day={radioPage.schedule.day}
+              queueOpens={radioPage.schedule.queueOpens}
+              showBegins={radioPage.schedule.showBegins}
+              firstTrack={radioPage.schedule.firstTrack}
+              notice={radioPage.schedule.notice}
+            />
+
+            <div className="relative overflow-hidden border border-accent/30 bg-background/70 p-4 sm:p-5 shadow-[0_0_30px_rgba(255,0,0,0.08)]">
+              <div className="absolute inset-x-0 top-0 h-px bg-accent/50" aria-hidden="true" />
+              <div className="flex items-start gap-3">
+                <span className="mt-1 h-2 w-2 shrink-0 bg-accent shadow-[0_0_12px_rgba(255,0,0,0.75)]" aria-hidden="true" />
+                <div>
+                  <p className="text-[10px] sm:text-xs uppercase tracking-[0.35em] text-accent mb-2">
+                    Discord Signal Link
+                  </p>
+                  <div className="mb-3 flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-foreground/70">
+                    <span className="border border-border bg-surface/70 px-2 py-1">Discord Input</span>
+                    <span className="text-accent/70">→</span>
+                    <span className="border border-border bg-surface/70 px-2 py-1">BNL-01 Filter</span>
+                    <span className="text-accent/70">→</span>
+                    <span className="border border-accent/40 bg-accent/10 px-2 py-1 text-accent">Top Relay Ticker ↑</span>
+                  </div>
+                  <p className="text-sm text-muted leading-relaxed">
+                    Use the Discord button below to enter the outer channel. Public activity there can be filtered by BNL-01 and echoed into the black relay ticker at the top of this page.
+                  </p>
+                  <p className="mt-3 text-[10px] uppercase tracking-[0.28em] text-muted/50">
+                    Names may surface. No warning. No guarantee.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
 
           {/* Primary CTAs — above the fold */}
-          <div className="flex flex-col sm:flex-row gap-4 max-w-lg">
-            <a
-              href={externalLinks.auxchord}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold bg-accent text-background hover:bg-accent-dim transition-all text-center"
-            >
-              <span className="text-lg">{radioPage.hero.submitButton.emoji}</span>
-              {radioPage.hero.submitButton.text}
-            </a>
-            <a
-              href={externalLinks.discord}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
-            >
-              <span className="text-lg">{radioPage.hero.discordButton.emoji}</span>
-              {radioPage.hero.discordButton.text}
-            </a>
-          </div>
-          <div className="mt-4 max-w-lg">
-            <a
-              href={externalLinks.tiktokLive}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
-            >
-              <span className="text-lg">{radioPage.hero.tiktokButton.emoji}</span>
-              {radioPage.hero.tiktokButton.text}
-            </a>
+          <div className="mt-6 max-w-lg">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <a
+                href={externalLinks.auxchord}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold bg-accent text-background hover:bg-accent-dim transition-all text-center"
+              >
+                <span className="text-lg">{radioPage.hero.submitButton.emoji}</span>
+                {radioPage.hero.submitButton.text}
+              </a>
+              <a
+                href={externalLinks.discord}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
+              >
+                <span className="text-lg">{radioPage.hero.discordButton.emoji}</span>
+                {radioPage.hero.discordButton.text}
+              </a>
+            </div>
+            <div className="mt-4">
+              <a
+                href={externalLinks.tiktokLive}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
+              >
+                <span className="text-lg">{radioPage.hero.tiktokButton.emoji}</span>
+                {radioPage.hero.tiktokButton.text}
+              </a>
+            </div>
           </div>
         </div>
       </section>

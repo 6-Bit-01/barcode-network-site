@@ -48,11 +48,18 @@ export default function RadioPage() {
                   <p className="text-[10px] sm:text-xs uppercase tracking-[0.35em] text-accent mb-2">
                     Discord Signal Link
                   </p>
+                  <div className="mb-3 flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-foreground/70">
+                    <span className="border border-border bg-surface/70 px-2 py-1">Discord Input</span>
+                    <span className="text-accent/70">→</span>
+                    <span className="border border-border bg-surface/70 px-2 py-1">BNL-01 Filter</span>
+                    <span className="text-accent/70">→</span>
+                    <span className="border border-accent/40 bg-accent/10 px-2 py-1 text-accent">Top Relay Ticker ↑</span>
+                  </div>
                   <p className="text-sm text-muted leading-relaxed">
-                    BNL-01 relay updates can echo public activity from the BARCODE Network Discord. Talk to BNL, ask questions, drop music, or start a strange enough signal — your name may surface here as a relay fragment, observation, or unexpected shoutout.
+                    Use the Discord button below to enter the outer channel. Public activity there can be filtered by BNL-01 and echoed into the black relay ticker at the top of this page.
                   </p>
                   <p className="mt-3 text-[10px] uppercase tracking-[0.28em] text-muted/50">
-                    No warning. No guarantee. The outer channel decides what echoes.
+                    Names may surface. No warning. No guarantee.
                   </p>
                 </div>
               </div>

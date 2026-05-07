@@ -31,7 +31,7 @@ const STATE_KEY = "radioQueue:v2:sessions";
 const LEGACY_STATE_KEY = "radioQueue:v1:state";
 const DEFAULT_QUEUE_CAPACITY = 50;
 
-type QueueAdminAction = "load" | "finish" | "remove" | "priority" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority";
+type QueueAdminAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority";
 
 interface QueueStore {
   activeSessionId: string;
@@ -44,6 +44,7 @@ interface ProviderMetadata {
   providerTitle: string | null;
   detectedDurationSeconds: number | null;
   durationSource: QueueDurationSource;
+  artworkUrl?: string | null;
 }
 
 function getRedis(): Redis | null {
@@ -113,6 +114,9 @@ function defaultSession(options: { title?: string; showDate?: string; descriptio
     nextInLineHoldTrackId: null,
     currentTrackPreviousLane: null,
     currentTrackPreviousIndex: null,
+    loadedTrackPreviousLane: null,
+    loadedTrackPreviousIndex: null,
+    autoRoutingPaused: false,
   });
 }
 
@@ -153,12 +157,9 @@ function getLoadedTrack(session: Pick<QueueSession, "loadedTrack">): QueueEntry 
   return session.loadedTrack ?? null;
 }
 
-function pullNextInLine(session: QueueSession, excludeId?: string): void {
-  if (session.nextInLineTrack) {
-    const queuedPriority = laneTop(session, "priority", session.nextInLineTrack.id);
-    if (!queuedPriority || (session.nextInLineTrack.lane ?? "regular") === "priority") return;
-    moveNextInLineBackToQueue(session);
-  }
+function pullNextInLine(session: QueueSession, excludeId?: string, force = false): void {
+  if (session.autoRoutingPaused && !force) return;
+  if (session.nextInLineTrack) return;
   const next = chooseNextWaitingEntry(session, excludeId);
   if (!next) return;
   const sorted = sortActive(session.queue);
@@ -170,6 +171,7 @@ function pullNextInLine(session: QueueSession, excludeId?: string): void {
   session.currentTrackPreviousLane = next.lane ?? "regular";
   session.currentTrackPreviousIndex = previousIndex >= 0 ? previousIndex : null;
   if (next.lane !== "priority") session.nextNonPriorityLane = nextLaneAfterFinish(next.lane);
+  session.autoRoutingPaused = false;
 }
 
 function clearNextInLine(session: QueueSession): QueueEntry | null {
@@ -185,13 +187,17 @@ function clearLoadedTrack(session: QueueSession): QueueEntry | null {
   const current = session.loadedTrack ?? null;
   session.loadedTrack = null;
   session.loadedTrackId = null;
+  session.loadedTrackPreviousLane = null;
+  session.loadedTrackPreviousIndex = null;
   return current;
 }
 
-function setLoadedTrack(session: QueueSession, entry: QueueEntry): QueueEntry {
+function setLoadedTrack(session: QueueSession, entry: QueueEntry, previousLane?: QueueLane | null, previousIndex?: number | null): QueueEntry {
   const loaded = normalizeEntry({ ...entry, status: "playing", playedAt: entry.playedAt ?? new Date().toISOString() });
   session.loadedTrack = loaded;
   session.loadedTrackId = loaded.id;
+  session.loadedTrackPreviousLane = previousLane ?? entry.lane ?? "regular";
+  session.loadedTrackPreviousIndex = typeof previousIndex === "number" ? previousIndex : null;
   session.queue = session.queue.filter((track) => track.id !== loaded.id);
   if (session.nextInLineTrack?.id === loaded.id) clearNextInLine(session);
   return loaded;
@@ -210,12 +216,21 @@ function moveNextInLineBackToQueue(session: QueueSession): QueueEntry | null {
   return restored;
 }
 
+function insertRestoredTrack(session: QueueSession, entry: QueueEntry, lane: QueueLane, index: number | null): QueueEntry {
+  const restored = normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : lane === "wheel" ? "frontrow" : "free", status: "queued", playedAt: null });
+  const queue = sortActive(session.queue.filter((track) => track.id !== restored.id));
+  const safeIndex = typeof index === "number" ? Math.max(0, Math.min(index, queue.length)) : queue.length;
+  queue.splice(safeIndex, 0, restored);
+  session.queue = queue;
+  return restored;
+}
+
 function moveLoadedTrackBackToQueue(session: QueueSession): QueueEntry | null {
   const current = session.loadedTrack ?? null;
   if (!current) return null;
-  const lane = current.lane ?? "regular";
-  const restored = normalizeEntry({ ...current, lane, tier: lane === "priority" ? "fastlane" : lane === "wheel" ? "frontrow" : "free", status: "queued", playedAt: null });
-  session.queue = sortActive([restored, ...session.queue]);
+  const lane = session.loadedTrackPreviousLane ?? current.lane ?? "regular";
+  const index = typeof session.loadedTrackPreviousIndex === "number" ? session.loadedTrackPreviousIndex : null;
+  const restored = insertRestoredTrack(session, current, lane, index);
   clearLoadedTrack(session);
   return restored;
 }
@@ -328,6 +343,9 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     loadedTrack: raw.loadedTrack ? normalizeEntry(raw.loadedTrack) : null,
     loadedTrackId: raw.loadedTrack?.id ?? raw.loadedTrackId ?? null,
     nextInLineHoldTrackId: raw.nextInLineHoldTrackId ?? null,
+    loadedTrackPreviousLane: raw.loadedTrackPreviousLane ?? raw.loadedTrack?.lane ?? null,
+    loadedTrackPreviousIndex: typeof raw.loadedTrackPreviousIndex === "number" ? raw.loadedTrackPreviousIndex : null,
+    autoRoutingPaused: raw.autoRoutingPaused === true,
     currentTrackPreviousLane: raw.currentTrackPreviousLane ?? raw.nextInLineTrack?.lane ?? null,
     currentTrackPreviousIndex: typeof raw.currentTrackPreviousIndex === "number" ? raw.currentTrackPreviousIndex : null,
     queue: sortActive((raw.queue ?? []).map(normalizeEntry).filter((entry) => entry.id !== raw.nextInLineTrack?.id && entry.id !== raw.nextInLineTrackId && entry.id !== raw.loadedTrack?.id && entry.id !== raw.loadedTrackId)),
@@ -404,7 +422,7 @@ function parseFilenameMetadata(fileName?: string | null): { artist: string | nul
 }
 
 function blankProvider(source: QueueDurationSource = "internal_estimate"): ProviderMetadata {
-  return { detectedArtistName: null, detectedSongTitle: null, providerTitle: null, detectedDurationSeconds: null, durationSource: source };
+  return { detectedArtistName: null, detectedSongTitle: null, providerTitle: null, detectedDurationSeconds: null, durationSource: source, artworkUrl: null };
 }
 
 export function parseYouTubeVideoId(link: string): string | null {
@@ -437,7 +455,7 @@ async function lookupYouTubeMetadata(link: string): Promise<ProviderMetadata> {
   const duration = item?.contentDetails?.duration ? parseYouTubeDuration(item.contentDetails.duration) : null;
   const providerTitle = typeof item?.snippet?.title === "string" ? item.snippet.title : null;
   const channelTitle = typeof item?.snippet?.channelTitle === "string" ? item.snippet.channelTitle : null;
-  return { detectedArtistName: channelTitle, detectedSongTitle: providerTitle, providerTitle, detectedDurationSeconds: duration, durationSource: duration ? "youtube" : "internal_estimate" };
+  return { detectedArtistName: channelTitle, detectedSongTitle: providerTitle, providerTitle, detectedDurationSeconds: duration, durationSource: duration ? "youtube" : "internal_estimate", artworkUrl: id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null };
 }
 
 async function lookupSpotifyMetadata(link: string): Promise<ProviderMetadata> {
@@ -462,7 +480,8 @@ async function lookupSpotifyMetadata(link: string): Promise<ProviderMetadata> {
   const seconds = typeof track.duration_ms === "number" ? Math.round(track.duration_ms / 1000) : null;
   const artist = Array.isArray(track.artists) ? track.artists.map((item: { name?: string }) => item.name).filter(Boolean).join(", ") : null;
   const title = typeof track.name === "string" ? track.name : null;
-  return { detectedArtistName: artist || null, detectedSongTitle: title, providerTitle: title, detectedDurationSeconds: seconds, durationSource: seconds ? "spotify" : "internal_estimate" };
+  const artworkUrl = Array.isArray(track.album?.images) ? track.album.images.find((image: { url?: string }) => typeof image.url === "string")?.url ?? null : null;
+  return { detectedArtistName: artist || null, detectedSongTitle: title, providerTitle: title, detectedDurationSeconds: seconds, durationSource: seconds ? "spotify" : "internal_estimate", artworkUrl };
 }
 
 async function lookupSoundCloudMetadata(link: string): Promise<ProviderMetadata> {
@@ -475,7 +494,8 @@ async function lookupSoundCloudMetadata(link: string): Promise<ProviderMetadata>
   const seconds = typeof track.duration === "number" ? Math.round(track.duration / 1000) : null;
   const title = typeof track.title === "string" ? track.title : null;
   const artist = typeof track.user?.username === "string" ? track.user.username : null;
-  return { detectedArtistName: artist, detectedSongTitle: title, providerTitle: title, detectedDurationSeconds: seconds, durationSource: seconds ? "soundcloud" : "internal_estimate" };
+  const artworkUrl = typeof track.artwork_url === "string" ? track.artwork_url.replace("-large.", "-t500x500.") : null;
+  return { detectedArtistName: artist, detectedSongTitle: title, providerTitle: title, detectedDurationSeconds: seconds, durationSource: seconds ? "soundcloud" : "internal_estimate", artworkUrl };
 }
 
 export async function detectProviderMetadata(sourceType: QueueSourceType, link: string): Promise<ProviderMetadata> {
@@ -490,9 +510,103 @@ export async function detectProviderMetadata(sourceType: QueueSourceType, link: 
   }
 }
 
+function normalizeIdentity(value?: string | null): string {
+  return (value ?? "").trim().toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9@._-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+export function normalizeTikTokHandle(value: string): string {
+  let cleaned = value.trim().toLowerCase();
+  try {
+    const parsed = new URL(cleaned.startsWith("http") ? cleaned : `https://${cleaned}`);
+    if (parsed.hostname.includes("tiktok.com")) cleaned = parsed.pathname.split("/").find((part) => part.startsWith("@")) ?? cleaned;
+  } catch {}
+  cleaned = cleaned.replace(/^@+/, "").split(/[/?#]/)[0] ?? cleaned;
+  cleaned = cleaned.replace(/[^a-z0-9._-]/g, "");
+  return cleaned ? `@${cleaned}` : "";
+}
+
+function normalizeEmail(value?: string | null): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function normalizeSourceKey(value?: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value.trim());
+    url.hash = "";
+    if (["utm_source", "utm_medium", "utm_campaign", "fbclid", "si"].some((key) => url.searchParams.has(key))) {
+      ["utm_source", "utm_medium", "utm_campaign", "fbclid", "si"].forEach((key) => url.searchParams.delete(key));
+    }
+    return `${url.hostname.replace(/^www\./, "").toLowerCase()}${url.pathname.replace(/\/$/, "")}${url.search}`.toLowerCase();
+  } catch {
+    return value.trim().toLowerCase() || null;
+  }
+}
+
+function parseProviderId(sourceType: QueueSourceType, link: string): string | null {
+  if (sourceType === "youtube") {
+    const id = parseYouTubeVideoId(link);
+    return id ? `youtube:${id}` : null;
+  }
+  if (sourceType === "spotify") {
+    const id = link.match(/spotify\.com\/track\/([a-zA-Z0-9]+)/)?.[1] ?? link.match(/spotify:track:([a-zA-Z0-9]+)/)?.[1];
+    return id ? `spotify:${id}` : null;
+  }
+  if (sourceType === "soundcloud") {
+    const key = normalizeSourceKey(link);
+    return key ? `soundcloud:${key}` : null;
+  }
+  return null;
+}
+
+function countMatches(entries: QueueEntry[], predicate: (entry: QueueEntry) => boolean): number {
+  return entries.filter(predicate).length;
+}
+
+function findSubmissionBlocks(session: QueueSession, track: QueueEntry): string[] {
+  const entries = [...session.queue, ...(session.nextInLineTrack ? [session.nextInLineTrack] : []), ...(session.loadedTrack ? [session.loadedTrack] : []), ...session.completed, ...session.removed];
+  const reasons: string[] = [];
+  const tikTok = track.normalizedTikTokHandle;
+  const submitter = normalizeIdentity(track.submitterArtistName ?? track.submittedArtistName);
+  const email = normalizeEmail(track.contactEmail);
+  const token = track.submitterToken ?? "";
+  if (tikTok && countMatches(entries, (entry) => entry.normalizedTikTokHandle === tikTok) >= session.trackLimitPerArtist) reasons.push("Limit matched by TikTok handle");
+  if (submitter && countMatches(entries, (entry) => normalizeIdentity(entry.submitterArtistName ?? entry.submittedArtistName) === submitter) >= session.trackLimitPerArtist) reasons.push("Limit matched by submitter artist name");
+  if (email && countMatches(entries, (entry) => normalizeEmail(entry.contactEmail) === email) >= session.trackLimitPerArtist) reasons.push("Limit matched by contact/email");
+  if (token && countMatches(entries, (entry) => entry.submitterToken === token) >= session.trackLimitPerArtist) reasons.push("Limit matched by browser token");
+  if (track.normalizedSourceKey && entries.some((entry) => entry.normalizedSourceKey === track.normalizedSourceKey)) reasons.push("Duplicate source");
+  if (track.providerId && entries.some((entry) => entry.providerId === track.providerId)) reasons.push("Duplicate provider source");
+  return reasons;
+}
+
+function suspiciousFlagsFor(session: QueueSession, track: QueueEntry): string[] {
+  const entries = [...session.queue, ...(session.nextInLineTrack ? [session.nextInLineTrack] : []), ...(session.loadedTrack ? [session.loadedTrack] : []), ...session.completed, ...session.removed];
+  const flags = new Set<string>();
+  const submitter = normalizeIdentity(track.submitterArtistName ?? track.submittedArtistName);
+  if (track.submitterToken && entries.some((entry) => entry.submitterToken === track.submitterToken && normalizeIdentity(entry.submitterArtistName ?? entry.submittedArtistName) !== submitter)) flags.add("Same browser token using different artist names");
+  if (track.fileName && track.fileSize && entries.some((entry) => entry.fileName === track.fileName && entry.fileSize === track.fileSize && entry.detectedDurationSeconds === track.detectedDurationSeconds)) flags.add("Same file name, size, and duration");
+  if (track.submittedSongTitle && entries.some((entry) => normalizeIdentity(entry.submittedSongTitle) === normalizeIdentity(track.submittedSongTitle) && normalizeIdentity(entry.submittedArtistName) !== normalizeIdentity(track.submittedArtistName))) flags.add("Same source/title with changed artist name");
+  const recent = entries.filter((entry) => Date.now() - new Date(entry.createdAt).getTime() < 10 * 60 * 1000).length;
+  if (recent >= 5) flags.add("Many attempts in a short time");
+  return [...flags];
+}
+
+class QueueSubmissionBlockedError extends Error {
+  reasons: string[];
+  constructor(reasons: string[]) {
+    super("Submission limit reached for this session.");
+    this.reasons = reasons;
+  }
+}
+
 export async function createQueueTrack(input: {
   artist: string;
   title: string;
+  submitterArtistName?: string;
+  tiktokHandle: string;
+  collaboratorNames?: string | null;
+  contactEmail?: string | null;
+  submitterToken?: string | null;
   link?: string;
   note?: string | null;
   fileUrl?: string | null;
@@ -509,7 +623,12 @@ export async function createQueueTrack(input: {
   const sourceType = input.sourceType ?? (input.fileUrl ? "upload" : detectQueueSourceType(input.link ?? ""));
   const submittedArtistName = input.artist.trim();
   const submittedSongTitle = input.title.trim();
+  const submitterArtistName = (input.submitterArtistName?.trim() || submittedArtistName).trim();
+  const normalizedTikTokHandle = normalizeTikTokHandle(input.tiktokHandle);
+  if (!normalizedTikTokHandle) throw new Error("TikTok handle is required.");
   const providerMetadata = sourceType === "upload" ? blankProvider() : await detectProviderMetadata(sourceType, input.link ?? "");
+  const providerId = parseProviderId(sourceType, input.link ?? input.fileUrl ?? "");
+  const normalizedSourceKey = normalizeSourceKey(input.fileUrl || input.link || "");
   const fileMetadata = sourceType === "upload" ? parseFilenameMetadata(input.fileName) : { artist: null, title: null, providerTitle: null };
   const detectedDurationSeconds = typeof input.detectedDurationSeconds === "number" && Number.isFinite(input.detectedDurationSeconds)
     ? Math.max(1, Math.round(input.detectedDurationSeconds))
@@ -535,8 +654,17 @@ export async function createQueueTrack(input: {
     restoredAt: null,
     spotlightedAt: null,
     note: input.note?.trim() || null,
+    submitterArtistName,
     submittedArtistName,
     submittedSongTitle,
+    collaboratorNames: input.collaboratorNames?.trim() || null,
+    tiktokHandle: normalizedTikTokHandle,
+    normalizedTikTokHandle,
+    contactEmail: input.contactEmail?.trim() || null,
+    submitterToken: input.submitterToken?.trim() || null,
+    normalizedSourceKey,
+    providerId,
+    sourceArtworkUrl: sourceType === "youtube" && providerId?.startsWith("youtube:") ? `https://img.youtube.com/vi/${providerId.slice("youtube:".length)}/hqdefault.jpg` : providerMetadata.artworkUrl ?? null,
     detectedArtistName: input.detectedArtistName ?? providerMetadata.detectedArtistName ?? fileMetadata.artist,
     detectedSongTitle: input.detectedSongTitle ?? providerMetadata.detectedSongTitle ?? fileMetadata.title,
     providerTitle: input.providerTitle ?? providerMetadata.providerTitle ?? fileMetadata.providerTitle,
@@ -558,6 +686,9 @@ export async function submitRadioTrack(input: Parameters<typeof createQueueTrack
   if (session.status !== "open" || !session.queueOpen) throw new Error("Queue is closed");
   if (publicStatusForSession(session).isFull) throw new Error("Queue is full for new transmissions.");
   const track = await createQueueTrack(input);
+  const blockReasons = findSubmissionBlocks(session, track);
+  if (blockReasons.length > 0) throw new QueueSubmissionBlockedError(blockReasons);
+  track.suspiciousFlags = suspiciousFlagsFor(session, track);
   session.queue.push(track);
   pullNextInLine(session);
   await writeStore(replaceSession(store, session));
@@ -578,6 +709,7 @@ function queueStateFromSession(session: QueueSession, store: QueueStore, viewedS
     session: summarizeSession(normalized),
     nextInLine: getNextInLine(normalized),
     loadedTrack: getLoadedTrack(normalized),
+    autoRoutingPaused: normalized.autoRoutingPaused === true,
     nextNonPriorityLane: normalized.nextNonPriorityLane,
     sessions: store.sessions.map(summarizeSession).sort((a, b) => b.showDate.localeCompare(a.showDate) || b.createdAt.localeCompare(a.createdAt)),
     viewedSessionId,
@@ -609,6 +741,8 @@ export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
     lane: normalized.lane ?? "regular",
     durationLabel: normalized.durationIsEstimate ? "estimated/pending" : formatRuntime(getTrackRuntimeSeconds(normalized)),
     durationIsEstimate: normalized.durationIsEstimate ?? true,
+    sourceArtworkUrl: normalized.sourceArtworkUrl ?? null,
+    tiktokHandle: normalized.tiktokHandle ?? null,
   };
 }
 
@@ -620,7 +754,7 @@ export async function getPublicQueueSnapshot(sessionId?: string): Promise<QueueP
     await writeStore(replaceSession(store, session));
   }
   const normalized = normalizeSession(session);
-  return { session: summarizeSession(normalized), status: normalized.publicStatus, queue: normalized.queue.map(toPublicQueueTrack), completed: normalized.completed.slice(0, 10).map(toPublicQueueTrack), nowPlaying: normalized.loadedTrack ? toPublicQueueTrack(normalized.loadedTrack) : null };
+  return { session: summarizeSession(normalized), status: normalized.publicStatus, queue: normalized.queue.map(toPublicQueueTrack), completed: normalized.completed.slice(0, 10).map(toPublicQueueTrack), nowPlaying: normalized.loadedTrack ? toPublicQueueTrack(normalized.loadedTrack) : null, upNext: normalized.nextInLineTrack ? toPublicQueueTrack(normalized.nextInLineTrack) : null };
 }
 
 export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> {
@@ -681,6 +815,14 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
   const session = getSession(store);
   if (session.status === "archived") return queueStateFromSession(session, store);
 
+  if (action === "pullNext") {
+    session.autoRoutingPaused = false;
+    pullNextInLine(session, undefined, true);
+    const nextStore = replaceSession(store, session);
+    await writeStore(nextStore);
+    return queueStateFromSession(session, nextStore);
+  }
+
   if (action === "removeSpotlight") {
     session.spotlight = session.spotlight.filter((entry) => entry.id !== id);
     await writeStore(replaceSession(store, session));
@@ -713,6 +855,9 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
     if (action === "moveBack") {
       const restored = moveLoadedTrackBackToQueue(session);
       session.nextInLineHoldTrackId = restored?.id ?? null;
+      const staged = session.nextInLineTrack;
+      if (staged) moveNextInLineBackToQueue(session);
+      session.autoRoutingPaused = true;
     }
     if (action === "finish") {
       const current = clearLoadedTrack(session);
@@ -728,7 +873,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
         session.nextNonPriorityLane = nextLaneAfterFinish(current.lane);
       }
     }
-    pullNextInLine(session);
+    if (action !== "moveBack") pullNextInLine(session);
     const nextStore = replaceSession(store, session);
     await writeStore(nextStore);
     return queueStateFromSession(session, nextStore);
@@ -737,13 +882,16 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
   if (nextInLine) {
     if (action === "load") {
       if (session.loadedTrack && session.loadedTrack.id !== nextInLine.id) moveLoadedTrackBackToQueue(session);
+      const previousLane = session.currentTrackPreviousLane;
+      const previousIndex = session.currentTrackPreviousIndex;
       const current = clearNextInLine(session);
-      if (current) setLoadedTrack(session, current);
+      if (current) setLoadedTrack(session, current, previousLane, previousIndex);
       pullNextInLine(session);
     }
     if (action === "moveBack") {
       const restored = moveNextInLineBackToQueue(session);
       session.nextInLineHoldTrackId = restored?.id ?? null;
+      session.autoRoutingPaused = true;
     }
     if (action === "finish") {
       const current = clearNextInLine(session);
@@ -769,11 +917,15 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
   if (!active) return getRadioQueueState();
   if (action === "load") {
     if (session.loadedTrack && session.loadedTrack.id !== active.id) moveLoadedTrackBackToQueue(session);
-    setLoadedTrack(session, active);
+    setLoadedTrack(session, active, active.lane ?? "regular", index);
   }
   if (action === "priority") {
     session.queue.splice(index, 1);
     session.queue.push({ ...active, lane: "priority", tier: "fastlane", status: "queued" });
+  }
+  if (action === "regular") {
+    session.queue.splice(index, 1);
+    session.queue.push({ ...active, lane: "regular", tier: "free", status: "queued" });
   }
   if (action === "wheel" && (!active.lane || active.lane === "regular")) {
     session.queue.splice(index, 1);

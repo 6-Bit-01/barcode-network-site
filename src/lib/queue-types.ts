@@ -27,8 +27,19 @@ export interface QueueEntry {
   restoredAt?: string | null;
   spotlightedAt?: string | null;
   note?: string | null;
+  submitterArtistName?: string;
   submittedArtistName?: string;
   submittedSongTitle?: string;
+  collaboratorNames?: string | null;
+  tiktokHandle?: string;
+  normalizedTikTokHandle?: string;
+  contactEmail?: string | null;
+  submitterToken?: string | null;
+  normalizedSourceKey?: string | null;
+  providerId?: string | null;
+  sourceArtworkUrl?: string | null;
+  suspiciousFlags?: string[];
+  limitMatchReasons?: string[];
   detectedArtistName?: string | null;
   detectedSongTitle?: string | null;
   providerTitle?: string | null;
@@ -89,7 +100,10 @@ export interface QueueSession extends QueueSessionSummary {
   loadedTrackId?: string | null;
   currentTrackPreviousLane?: QueueLane | null;
   currentTrackPreviousIndex?: number | null;
+  loadedTrackPreviousLane?: QueueLane | null;
+  loadedTrackPreviousIndex?: number | null;
   nextInLineHoldTrackId?: string | null;
+  autoRoutingPaused?: boolean;
 }
 
 export interface QueuePublicTrack {
@@ -103,6 +117,8 @@ export interface QueuePublicTrack {
   lane: QueueLane;
   durationLabel: string;
   durationIsEstimate: boolean;
+  sourceArtworkUrl?: string | null;
+  tiktokHandle?: string | null;
 }
 
 export interface QueuePublicSnapshot {
@@ -111,6 +127,7 @@ export interface QueuePublicSnapshot {
   queue: QueuePublicTrack[];
   completed: QueuePublicTrack[];
   nowPlaying?: QueuePublicTrack | null;
+  upNext?: QueuePublicTrack | null;
 }
 
 export interface QueueState {
@@ -128,6 +145,7 @@ export interface QueueState {
   readOnly?: boolean;
   nextInLine?: QueueEntry | null;
   loadedTrack?: QueueEntry | null;
+  autoRoutingPaused?: boolean;
   nextNonPriorityLane?: QueueNonPriorityLane;
 }
 

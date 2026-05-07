@@ -60,6 +60,10 @@ export async function POST(req: Request) {
     const mode = cleanText(form.get("mode"));
     const detectedDurationSeconds = parseDuration(form.get("detectedDurationSeconds"));
     const note = cleanText(form.get("note")).slice(0, 500);
+    const tiktokHandle = cleanText(form.get("tiktokHandle"));
+    const collaboratorNames = cleanText(form.get("collaboratorNames")).slice(0, 200);
+    const contactEmail = cleanText(form.get("contactEmail")).slice(0, 200);
+    const submitterToken = cleanText(form.get("submitterToken")).slice(0, 120);
     const sessionId = cleanText(form.get("sessionId"));
     const active = await getPublicQueueSnapshot();
     if (sessionId && active.session.sessionId !== sessionId) {
@@ -73,6 +77,7 @@ export async function POST(req: Request) {
     }
 
     if (!artist || !title) return NextResponse.json({ error: "Artist and title are required." }, { status: 400 });
+    if (!tiktokHandle) return NextResponse.json({ error: "TikTok handle is required." }, { status: 400 });
 
     if (mode === "upload") {
       const file = form.get("file");
@@ -94,6 +99,11 @@ export async function POST(req: Request) {
         detectedDurationSeconds,
         durationSource: detectedDurationSeconds ? "upload_metadata" : "file_metadata",
         note,
+        submitterArtistName: artist,
+        tiktokHandle,
+        collaboratorNames,
+        contactEmail,
+        submitterToken,
       });
       return NextResponse.json({ track, message: "Track entered the Regular Queue." }, { status: 201 });
     }
@@ -103,10 +113,11 @@ export async function POST(req: Request) {
     try { new URL(link); } catch { return NextResponse.json({ error: "Enter a valid track URL." }, { status: 400 }); }
 
     const sourceType = detectQueueSourceType(link);
-    const track = await submitRadioTrack({ artist, title, link, sourceType, note });
+    const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, contactEmail, submitterToken });
     return NextResponse.json({ track, message: "Track entered the Regular Queue." }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Submission failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const isLimitBlock = message === "Submission limit reached for this session.";
+    return NextResponse.json({ error: isLimitBlock ? "Submission limit reached for this session." : message }, { status: isLimitBlock ? 409 : 500 });
   }
 }

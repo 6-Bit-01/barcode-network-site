@@ -42,7 +42,7 @@ function readAudioDuration(file: File): Promise<number | null> {
   });
 }
 
-function publicTrackFromApi(track: { id: string; submittedArtistName?: string; submittedSongTitle?: string; artist?: string; title?: string; sourceType?: QueuePublicTrack["sourceType"]; lane?: QueuePublicTrack["lane"]; detectedArtistName?: string | null; detectedSongTitle?: string | null; detectedDurationSeconds?: number | null; durationIsEstimate?: boolean }): QueuePublicTrack {
+function publicTrackFromApi(track: { id: string; submittedArtistName?: string; submittedSongTitle?: string; artist?: string; title?: string; sourceType?: QueuePublicTrack["sourceType"]; lane?: QueuePublicTrack["lane"]; detectedArtistName?: string | null; detectedSongTitle?: string | null; detectedDurationSeconds?: number | null; durationIsEstimate?: boolean; sourceArtworkUrl?: string | null; tiktokHandle?: string | null }): QueuePublicTrack {
   return {
     id: track.id,
     submittedArtistName: track.submittedArtistName ?? track.artist ?? "Submitted artist",
@@ -53,10 +53,12 @@ function publicTrackFromApi(track: { id: string; submittedArtistName?: string; s
     lane: track.lane ?? "regular",
     durationLabel: track.durationIsEstimate === false && track.detectedDurationSeconds ? formatRuntime(track.detectedDurationSeconds) : "estimated/pending",
     durationIsEstimate: track.durationIsEstimate ?? true,
+    sourceArtworkUrl: track.sourceArtworkUrl ?? null,
+    tiktokHandle: track.tiktokHandle ?? null,
   };
 }
 
-export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string; onSubmitted?: () => void } = {}) {
+export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string; onSubmitted?: (trackId?: string) => void } = {}) {
   const [status, setStatus] = useState<QueuePublicStatus | null>(null);
   const [publicQueue, setPublicQueue] = useState<QueuePublicTrack[]>([]);
   const [session, setSession] = useState<QueuePublicSnapshot["session"] | null>(null);
@@ -65,6 +67,10 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
   const [artist, setArtist] = useState("");
   const [title, setTitle] = useState("");
   const [link, setLink] = useState("");
+  const [tiktokHandle, setTikTokHandle] = useState("");
+  const [collaboratorNames, setCollaboratorNames] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [submitterToken, setSubmitterToken] = useState("");
   const [note, setNote] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [detectedDuration, setDetectedDuration] = useState<number | null>(null);
@@ -72,7 +78,7 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [transmissionState, setTransmissionState] = useState<"idle" | "routing" | "aligning" | "confirmed">("idle");
+  const [transmissionState, setTransmissionState] = useState<"idle" | "routing" | "parsed" | "aligning" | "mixing" | "confirmed">("idle");
 
   async function loadStatus() {
     const res = await fetch(`/api/queue${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""}`, { cache: "no-store" });
@@ -86,8 +92,20 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
 
   useEffect(() => {
     loadStatus();
-    const interval = setInterval(loadStatus, 15_000);
+    const interval = setInterval(loadStatus, 5_000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const key = "barcode-radio-submitter-token";
+    const existing = window.localStorage.getItem(key);
+    if (existing) {
+      setSubmitterToken(existing);
+      return;
+    }
+    const next = `br_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    window.localStorage.setItem(key, next);
+    setSubmitterToken(next);
   }, []);
 
   useEffect(() => {
@@ -139,32 +157,41 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
       body.set("mode", mode);
       body.set("artist", artist.trim());
       body.set("title", title.trim());
+      body.set("tiktokHandle", tiktokHandle.trim());
+      body.set("collaboratorNames", collaboratorNames.trim());
+      body.set("contactEmail", contactEmail.trim());
+      body.set("submitterToken", submitterToken);
       if (sessionId) body.set("sessionId", sessionId);
       if (note.trim()) body.set("note", note.trim());
       if (detectedDuration) body.set("detectedDurationSeconds", String(detectedDuration));
       if (mode === "upload" && file) body.set("file", file);
       if (mode === "link") body.set("link", link.trim());
 
-      window.setTimeout(() => setTransmissionState("aligning"), 350);
+      window.setTimeout(() => setTransmissionState("parsed"), 900);
+      window.setTimeout(() => setTransmissionState("aligning"), 2200);
+      window.setTimeout(() => setTransmissionState("mixing"), 3800);
       const res = await fetch("/api/queue", { method: "POST", body });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.error || "Submission failed");
       if (payload.track?.id) {
         const submitted = publicTrackFromApi(payload.track);
         setLastSubmittedTrackId(submitted.id);
-        setTransmissionState("confirmed");
+        window.setTimeout(() => setTransmissionState("confirmed"), 5200);
         setPublicQueue((current) => [submitted, ...current.filter((entry) => entry.id !== submitted.id)]);
       }
       setArtist("");
       setTitle("");
       setLink("");
+      setTikTokHandle("");
+      setCollaboratorNames("");
+      setContactEmail("");
       setNote("");
       setFile(null);
       setDetectedDuration(null);
       setReadState("idle");
       setSuccess("Transmission stabilized in the Regular Queue.");
       await loadStatus();
-      onSubmitted?.();
+      window.setTimeout(() => onSubmitted?.(payload.track?.id), 6200);
     } catch (err) {
       setTransmissionState("idle");
       setError(err instanceof Error ? err.message : "Submission failed");
@@ -187,7 +214,7 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
       </aside>
 
       <form onSubmit={submit} className="border border-border bg-surface p-5 space-y-5">
-        {(success || transmissionState !== "idle") && <div className="border border-accent/40 bg-accent/5 p-4"><p className="text-accent font-bold">✓ {transmissionState === "routing" ? "Transmission received." : transmissionState === "aligning" ? "Cross-dimensional queue alignment in progress…" : success}</p><p className="text-xs text-muted mt-1">{transmissionState === "routing" ? "Routing track through the BARCODE Network…" : transmissionState === "aligning" ? "Your track is crossing the signal aperture." : "Transmission stabilized in the Regular Queue."}</p></div>}
+        {(success || transmissionState !== "idle") && <div className="border border-accent/40 bg-accent/5 p-4 space-y-3"><div><p className="text-accent font-bold">✓ {transmissionState === "routing" ? "TRANSMISSION RECEIVED" : transmissionState === "parsed" ? "SOURCE SIGNAL PARSED" : transmissionState === "aligning" ? "CROSS-DIMENSIONAL QUEUE ALIGNMENT" : transmissionState === "mixing" ? "MIXING WITH OFF-WORLD SUBMISSIONS" : "REGULAR QUEUE STABILIZED"}</p><p className="text-xs text-muted mt-1">{transmissionState === "confirmed" ? "Transmission stabilized in the Regular Queue." : "Routing track through the BARCODE Network…"}</p></div><div className="border border-border bg-background/40 p-3"><p className="text-xs uppercase tracking-widest text-muted">Priority Signal Upgrade</p><p className="mt-1 text-xs text-muted">Move this track into the Priority Lane when priority access is active.</p><button type="button" disabled className="mt-3 border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted opacity-60">Coming soon</button></div></div>}
         {error && <div className="border border-danger/40 bg-danger/5 p-4 text-danger text-sm">{error}</div>}
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -199,6 +226,12 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
           <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Artist</span><input value={artist} onChange={(e) => setArtist(e.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" required /></label>
           <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" required /></label>
         </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">TikTok handle</span><input value={tiktokHandle} onChange={(e) => setTikTokHandle(e.target.value)} placeholder="@six.bit" className="w-full bg-background border border-border px-3 py-2.5 text-sm" required /></label>
+          <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Featured/collaborator artist(s)</span><input value={collaboratorNames} onChange={(e) => setCollaboratorNames(e.target.value)} placeholder="Optional" className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label>
+        </div>
+        <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Contact email</span><input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="Optional, private" className="w-full bg-background border border-border px-3 py-2.5 text-sm" /><span className="block text-[11px] text-muted">Private. Used only for queue safety and session limits.</span></label>
 
         {mode === "link" ? (
           <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Track link</span><input type="url" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://soundcloud.com/..." className="w-full bg-background border border-border px-3 py-2.5 text-sm" required /></label>

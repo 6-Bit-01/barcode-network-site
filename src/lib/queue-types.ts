@@ -5,6 +5,7 @@
 export type QueueTier = "free" | "featured" | "fastlane" | "frontrow";
 export type QueueSourceType = "upload" | "link" | "youtube" | "soundcloud" | "spotify" | "other";
 export type QueueLane = "priority" | "wheel" | "regular";
+export type QueueNonPriorityLane = "wheel" | "regular";
 export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | "pending" | "played" | "refunded" | "expired";
 export type QueueDurationSource = "upload_metadata" | "file_metadata" | "youtube" | "soundcloud" | "spotify" | "provider_metadata" | "internal_estimate" | "unknown";
 export type QueueSessionStatus = "prepared" | "open" | "closed" | "archived";
@@ -67,6 +68,7 @@ export interface QueueSessionSummary {
   spotlightCount: number;
   estimatedActiveRuntimeSeconds: number;
   completedRuntimeSeconds: number;
+  nextNonPriorityLane: QueueNonPriorityLane;
 }
 
 export interface QueueSession extends QueueSessionSummary {
@@ -75,6 +77,7 @@ export interface QueueSession extends QueueSessionSummary {
   completed: QueueEntry[];
   removed: QueueEntry[];
   publicStatus: QueuePublicStatus;
+  nextNonPriorityLane: QueueNonPriorityLane;
 }
 
 export interface QueuePublicTrack {
@@ -110,6 +113,8 @@ export interface QueueState {
   sessions?: QueueSessionSummary[];
   viewedSessionId?: string;
   readOnly?: boolean;
+  nextInLine?: QueueEntry | null;
+  nextNonPriorityLane?: QueueNonPriorityLane;
 }
 
 export const INTERNAL_BUFFER_DURATION_SECONDS = 240;

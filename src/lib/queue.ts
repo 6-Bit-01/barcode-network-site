@@ -16,6 +16,7 @@ import type {
   QueueDurationSource,
   QueueEntry,
   QueueLane,
+  QueueNonPriorityLane,
   QueuePublicSnapshot,
   QueuePublicStatus,
   QueuePublicTrack,
@@ -30,7 +31,7 @@ import type {
 const STATE_KEY = "radioQueue:v2:sessions";
 const LEGACY_STATE_KEY = "radioQueue:v1:state";
 
-type QueueAdminAction = "finish" | "remove" | "priority" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority";
+type QueueAdminAction = "finish" | "remove" | "priority" | "wheel" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority";
 
 interface QueueStore {
   activeSessionId: string;
@@ -103,6 +104,7 @@ function defaultSession(options: { title?: string; showDate?: string; descriptio
     completed: [],
     removed: [],
     publicStatus: { isOpen: false, activeCount: 0, estimatedRuntimeSeconds: 0, capacity: RADIO_QUEUE_CAPACITY, pressure: "low" },
+    nextNonPriorityLane: "wheel",
   });
 }
 
@@ -119,6 +121,25 @@ function laneRank(lane: QueueLane | undefined): number {
 
 function sortActive(entries: QueueEntry[]): QueueEntry[] {
   return [...entries].sort((a, b) => laneRank(a.lane) - laneRank(b.lane) || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+}
+
+function laneTop(session: Pick<QueueSession, "queue">, lane: QueueLane): QueueEntry | null {
+  return sortActive(session.queue).find((entry) => entry.status === "queued" && (entry.lane ?? "regular") === lane) ?? null;
+}
+
+function getNextInLine(session: Pick<QueueSession, "queue" | "nextNonPriorityLane">): QueueEntry | null {
+  const priority = laneTop(session, "priority");
+  if (priority) return priority;
+
+  const preferredLane: QueueNonPriorityLane = session.nextNonPriorityLane === "regular" ? "regular" : "wheel";
+  const fallbackLane: QueueNonPriorityLane = preferredLane === "wheel" ? "regular" : "wheel";
+  return laneTop(session, preferredLane) ?? laneTop(session, fallbackLane);
+}
+
+function nextLaneAfterFinish(lane: QueueLane | undefined): QueueNonPriorityLane {
+  if (lane === "wheel") return "regular";
+  if (!lane || lane === "regular") return "wheel";
+  return "wheel";
 }
 
 function publicStatusForSession(session: Pick<QueueSession, "queue" | "queueOpen">): QueuePublicStatus {
@@ -153,6 +174,7 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     spotlightCount: session.spotlight.length,
     estimatedActiveRuntimeSeconds: publicStatus.estimatedRuntimeSeconds,
     completedRuntimeSeconds: session.completed.reduce((sum, entry) => sum + getTrackRuntimeSeconds(entry), 0),
+    nextNonPriorityLane: session.nextNonPriorityLane ?? "wheel",
   };
 }
 
@@ -207,6 +229,7 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     trackLimitPerArtist: raw.trackLimitPerArtist ?? 3,
     skipGameTapTarget: raw.skipGameTapTarget ?? 10000,
     queueOpen: status === "open" ? true : false,
+    nextNonPriorityLane: raw.nextNonPriorityLane === "regular" ? "regular" : "wheel",
     queue: sortActive((raw.queue ?? []).map(normalizeEntry)),
     completed: (raw.completed ?? []).map(normalizeEntry),
     removed: (raw.removed ?? []).map(normalizeEntry),
@@ -451,6 +474,8 @@ function queueStateFromSession(session: QueueSession, store: QueueStore, viewedS
     spotlight: normalized.spotlight,
     publicStatus: normalized.publicStatus,
     session: summarizeSession(normalized),
+    nextInLine: getNextInLine(normalized),
+    nextNonPriorityLane: normalized.nextNonPriorityLane,
     sessions: store.sessions.map(summarizeSession).sort((a, b) => b.showDate.localeCompare(a.showDate) || b.createdAt.localeCompare(a.createdAt)),
     viewedSessionId,
     readOnly: normalized.status === "archived" || normalized.sessionId !== store.activeSessionId,
@@ -505,6 +530,8 @@ export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> 
 
 export async function startNewQueueSession(options: { title?: string; showDate?: string; description?: string; trackLimitPerArtist?: number; skipGameTapTarget?: number } = {}): Promise<QueueState> {
   const store = await readStore();
+  const current = getSession(store);
+  if (current.status === "open" || current.queueOpen) return queueStateFromSession(current, store);
   const preserved = store.sessions.map((session) => session.sessionId === store.activeSessionId && session.status !== "archived" ? normalizeSession({ ...session, status: "closed", queueOpen: false, updatedAt: new Date().toISOString() }) : session);
   const next = defaultSession(options);
   const nextStore = { activeSessionId: next.sessionId, sessions: [next, ...preserved] };
@@ -571,9 +598,14 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
     session.queue.splice(index, 1);
     session.queue.push({ ...active, lane: "priority", tier: "fastlane", status: "queued" });
   }
+  if (action === "wheel" && (!active.lane || active.lane === "regular")) {
+    session.queue.splice(index, 1);
+    session.queue.push({ ...active, lane: "wheel", tier: "frontrow", status: "queued" });
+  }
   if (action === "finish") {
     session.queue.splice(index, 1);
     session.completed.unshift({ ...active, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
+    session.nextNonPriorityLane = nextLaneAfterFinish(active.lane);
   }
   if (action === "remove") {
     session.queue.splice(index, 1);
@@ -598,13 +630,14 @@ export async function getQueueState(): Promise<QueueState> { return getRadioQueu
 export async function advanceQueue(): Promise<QueueEntry | null> {
   const store = await readStore();
   const session = getSession(store);
-  const queue = sortActive(session.queue);
-  const next = queue[0] ?? null;
+  const next = getNextInLine(session);
   if (!next) return null;
-  session.queue = queue.slice(1);
+  const queue = sortActive(session.queue);
+  session.queue = queue.filter((entry) => entry.id !== next.id);
   session.completed.unshift({ ...next, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
+  session.nextNonPriorityLane = nextLaneAfterFinish(next.lane);
   await writeStore(replaceSession(store, session));
-  return queue[1] ?? null;
+  return getNextInLine(session);
 }
 
 export async function resetQueue(): Promise<{ cleared: number; preserved: number }> {

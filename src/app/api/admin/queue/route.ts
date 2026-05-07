@@ -20,7 +20,8 @@ export async function POST(req: Request) {
   if (!(await assertAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   if (body.action === "setOpen") {
-    return NextResponse.json({ publicStatus: await setQueueOpen(Boolean(body.isOpen)) });
+    await setQueueOpen(Boolean(body.isOpen));
+    return NextResponse.json(await getRadioQueueState());
   }
   if (body.action === "startSession") {
     const trackLimitPerArtist = Number(body.trackLimitPerArtist);
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
   if (body.action === "archiveSession") return NextResponse.json(await archiveCurrentQueueSession());
   if (body.action === "activateSession" && typeof body.sessionId === "string") return NextResponse.json(await activateQueueSession(body.sessionId));
   if (body.action === "viewSession" && typeof body.sessionId === "string") return NextResponse.json(await getRadioQueueState(body.sessionId));
-  if (["finish", "remove", "priority", "spotlight", "removeSpotlight", "restoreRegular", "restorePriority"].includes(body.action) && typeof body.id === "string") {
+  if (["finish", "remove", "priority", "wheel", "spotlight", "removeSpotlight", "restoreRegular", "restorePriority"].includes(body.action) && typeof body.id === "string") {
     return NextResponse.json(await updateRadioTrack(body.id, body.action));
   }
   return NextResponse.json({ error: "Unknown queue action" }, { status: 400 });

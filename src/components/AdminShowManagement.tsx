@@ -53,6 +53,7 @@ export function AdminShowManagement() {
   }
 
   async function startSession() {
+    if (queueIsOpen) return;
     await post({ action: "startSession", title, showDate, description, trackLimitPerArtist, skipGameTapTarget });
   }
 
@@ -69,27 +70,29 @@ export function AdminShowManagement() {
   const session = state?.session;
   const hasCurrent = Boolean(session && session.status !== "archived" && !state?.readOnly);
   const pastSessions = (state?.sessions ?? []).filter((item) => item.sessionId !== session?.sessionId);
+  const queueIsOpen = Boolean(hasCurrent && session?.queueOpen);
 
   return (
     <div className="space-y-6">
-      <section className="border border-accent/40 bg-surface p-6 space-y-5">
+      <section className={`space-y-5 border p-6 ${queueIsOpen ? "border-danger/60 bg-danger/10" : "border-accent/40 bg-surface"}`}>
         <div>
           <p className="text-xs uppercase tracking-[0.4em] text-accent">Start New BARCODE Radio Session</p>
           <p className="text-sm text-muted mt-2">Create a clean, isolated show queue. Submissions start closed until the operator opens the gate.</p>
+          {queueIsOpen && <div className="mt-4 border border-danger/50 bg-danger/10 p-4"><p className="text-sm font-bold uppercase tracking-[0.25em] text-danger">QUEUE OPEN</p><p className="mt-2 text-sm text-muted">Start New Session is locked while submissions are open for the current broadcast.</p><div className="mt-3 flex flex-wrap gap-2"><a href={`/queue/${session?.sessionId}`} className="border border-danger/50 px-3 py-2 text-xs uppercase tracking-widest text-danger">Go to Current Session</a><a href="/admin/queue" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Open Queue Control</a><button onClick={() => post({ action: "setOpen", isOpen: false })} className="border border-danger px-3 py-2 text-xs uppercase tracking-widest text-danger">Close Submissions</button></div></div>}
         </div>
         <div className="grid gap-4 lg:grid-cols-2">
-          <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Session title</span><input value={title} onChange={(event) => setTitle(event.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label>
-          <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Show date</span><input type="date" value={showDate} onChange={(event) => updateShowDate(event.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label>
-          <label className="space-y-2 lg:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Session description / rule blurb</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={4} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label>
-          <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Track limit per artist</span><input type="number" min={1} value={trackLimitPerArtist} onChange={(event) => setTrackLimitPerArtist(Number(event.target.value))} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label>
-          <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Skip game tap target</span><input type="number" min={1} value={skipGameTapTarget} onChange={(event) => setSkipGameTapTarget(Number(event.target.value))} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label>
+          <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Session title</span><input disabled={queueIsOpen} value={title} onChange={(event) => setTitle(event.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label>
+          <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Show date</span><input disabled={queueIsOpen} type="date" value={showDate} onChange={(event) => updateShowDate(event.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label>
+          <label className="space-y-2 lg:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Session description / rule blurb</span><textarea disabled={queueIsOpen} value={description} onChange={(event) => setDescription(event.target.value)} rows={4} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label>
+          <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Track limit per artist</span><input disabled={queueIsOpen} type="number" min={1} value={trackLimitPerArtist} onChange={(event) => setTrackLimitPerArtist(Number(event.target.value))} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label>
+          <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Skip game tap target</span><input disabled={queueIsOpen} type="number" min={1} value={skipGameTapTarget} onChange={(event) => setSkipGameTapTarget(Number(event.target.value))} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 text-sm">
           <div className="border border-border bg-background/40 p-3"><p className="text-xs text-muted uppercase tracking-widest">Submissions start closed</p><p className="text-accent mt-1">True — operator must click Open Submissions.</p></div>
           <div className="border border-border bg-background/40 p-3"><p className="text-xs text-muted uppercase tracking-widest">Priority Lane</p><p className="text-muted mt-1">Placeholder ready. Stripe/payment is not active in this pass.</p></div>
         </div>
         {/* TODO: Later map this session lifecycle to website show state: prepared, submissionsOpen, live, submissionsClosed, archived. */}
-        <button onClick={startSession} className="border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Start New Session</button>
+        <button onClick={startSession} disabled={queueIsOpen} className="border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Start New Session</button>
       </section>
 
       <CurrentSession session={hasCurrent ? session : null} onPost={post} />

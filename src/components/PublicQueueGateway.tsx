@@ -47,10 +47,10 @@ export function PublicQueueGateway() {
           <p className="text-xs uppercase tracking-[0.35em] text-muted">// Queue Gateway</p>
           <p className="text-[11px] uppercase tracking-[0.3em] text-muted mt-2">Portal state: {portalState}</p>
           <h2 className="text-3xl font-bold text-danger mt-4">QUEUE CLOSED</h2>
-          <p className="text-sm text-muted mt-3">No broadcast queue is currently accepting transmissions.</p>
+          <p className="text-sm text-muted mt-3">No broadcast queue is currently accepting new transmissions.</p>
         </div>
         <div className="border border-border bg-background/40 p-4">
-          <p className="text-sm font-bold text-foreground">Follow 6 Bit for signal alerts:</p>
+          <p className="text-sm font-bold text-foreground">Follow 6 Bit on TikTok, Instagram, and Facebook for signal alerts.</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <a href={externalLinks.tiktok} target="_blank" rel="noreferrer" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">TikTok</a>
             <a href={externalLinks.instagram} target="_blank" rel="noreferrer" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Instagram</a>

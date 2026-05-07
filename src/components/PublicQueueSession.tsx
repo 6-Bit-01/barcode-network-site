@@ -34,8 +34,27 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   }, [snapshot]);
 
   const isOpen = snapshot?.status.isOpen ?? false;
+  const isEnded = snapshot?.session.status === "archived";
   const isFull = Boolean(snapshot?.status.isFull || (snapshot && snapshot.status.activeCount >= snapshot.status.capacity));
-  const canSubmit = isOpen && !isFull;
+  const canSubmit = !isEnded && isOpen && !isFull;
+
+  if (isEnded) {
+    return (
+      <div className="space-y-8">
+        <section className="border border-border bg-surface p-6 space-y-4">
+          <p className="text-xs uppercase tracking-[0.35em] text-danger">SESSION ENDED</p>
+          <h2 className="text-3xl font-bold text-foreground">{snapshot?.session.title ?? "BARCODE Radio"}</h2>
+          <p className="text-sm text-muted">This transmission window has collapsed. Temporal alignment for this broadcast has expired. Review the completed signal log below.</p>
+          <div className="grid gap-3 sm:grid-cols-3 text-sm">
+            <div className="border border-border p-3"><p className="text-xs text-muted">Show date</p><p>{snapshot?.session.showDate ?? "—"}</p></div>
+            <div className="border border-border p-3"><p className="text-xs text-muted">Completed tracks</p><p>{snapshot?.completed.length ?? 0}</p></div>
+            <div className="border border-border p-3"><p className="text-xs text-muted">Runtime logged</p><p>{snapshot ? formatRuntime(snapshot.status.estimatedRuntimeSeconds) : "—"}</p></div>
+          </div>
+        </section>
+        <PublicLane title="Completed Signal Log" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -53,12 +72,12 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
               <div className="border border-border p-3"><p className="text-xs text-muted">Runtime</p><p>{snapshot ? formatRuntime(snapshot.status.estimatedRuntimeSeconds) : "—"}</p></div>
               <div className="border border-border p-3"><p className="text-xs text-muted">Pressure</p><p>{snapshot?.status.pressure ?? "syncing"}</p></div>
             </div>
-            <button type="button" disabled={!canSubmit} onClick={() => setSubmitOpen(true)} className="w-full border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:cursor-not-allowed disabled:border-danger/50 disabled:text-danger disabled:hover:bg-transparent">{canSubmit ? "Submit a Track" : isFull ? "Queue Full" : "Submissions Closed"}</button>
+            {canSubmit ? <button type="button" onClick={() => setSubmitOpen(true)} className="w-full border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Submit a Track</button> : <div className="border border-danger/40 bg-danger/5 p-3"><p className="text-xs uppercase tracking-[0.25em] text-danger">SUBMISSIONS CLOSED</p><p className="mt-2 text-sm text-muted">This broadcast queue is still visible, but no new tracks are being accepted. Stay near the signal. The current queue is still processing.</p></div>}
           </div>
         </div>
       </section>
 
-      {!canSubmit && <p className="border border-danger/40 bg-danger/5 p-3 text-sm text-danger">{isFull ? "This broadcast queue is full for new transmissions." : "This broadcast queue is closed for new transmissions."}</p>}
+      {isFull && <p className="border border-danger/40 bg-danger/5 p-3 text-sm text-danger">This broadcast queue is full for new transmissions.</p>}
 
       <div className="grid gap-5 xl:grid-cols-3">
         <PublicLane title="Priority Signal" tracks={lanes.priority} lastSubmittedTrackId={lastSubmittedTrackId} />
@@ -69,7 +88,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
       <PublicLane title="Recently Played" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} />
       <DiscordQueueCTA />
 
-      {submitOpen && <div className="fixed inset-0 z-[10000] grid place-items-center overflow-y-auto bg-black/70 p-3 backdrop-blur-sm"><div className="my-4 max-h-[88vh] w-full max-w-[920px] overflow-y-auto border border-accent/50 bg-background/95 p-4 shadow-[0_0_60px_rgba(255,0,0,0.18)]"><div className="mb-4 flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.35em] text-accent">Transmission Intake</p><p className="text-sm text-muted mt-1">Queue remains live behind this terminal while you route your signal.</p></div><button type="button" onClick={() => setSubmitOpen(false)} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">Collapse Intake</button></div><RadioQueueForm sessionId={sessionId} onSubmitted={(trackId) => { setLastSubmittedTrackId(trackId ?? null); window.setTimeout(() => setSubmitOpen(false), 450); load(); }} /></div></div>}
+      {submitOpen && <div className="fixed inset-0 z-[10000] grid place-items-center overflow-y-auto bg-black/70 p-3 backdrop-blur-sm"><div className="my-4 w-full max-w-[1280px] border border-accent/50 bg-background/95 p-4 shadow-[0_0_60px_rgba(255,0,0,0.18)]"><div className="mb-4 flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.35em] text-accent">Transmission Intake</p><p className="text-sm text-muted mt-1">Queue remains live behind this terminal while you route your signal.</p></div><button type="button" onClick={() => setSubmitOpen(false)} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">Collapse Intake</button></div><RadioQueueForm sessionId={sessionId} onSubmitted={(trackId) => { setLastSubmittedTrackId(trackId ?? null); window.setTimeout(() => setSubmitOpen(false), 450); load(); }} /></div></div>}
     </div>
   );
 }

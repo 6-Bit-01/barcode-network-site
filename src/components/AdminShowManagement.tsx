@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { formatRuntime } from "@/lib/queue-types";
 import type { QueueSessionSummary, QueueState } from "@/lib/queue-types";
 
@@ -40,6 +41,7 @@ export function AdminShowManagement() {
   const [description, setDescription] = useState(defaultDescription(todayDate()));
   const [trackLimitPerArtist, setTrackLimitPerArtist] = useState(3);
   const [queueCapacity, setQueueCapacity] = useState(50);
+  const router = useRouter();
 
   async function load(sessionId?: string) {
     const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
@@ -52,14 +54,18 @@ export function AdminShowManagement() {
     setState(await res.json());
   }
 
-  async function post(body: Record<string, unknown>) {
+  async function post(body: Record<string, unknown>): Promise<QueueState | null> {
     const res = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (res.ok) setState(await res.json());
+    if (!res.ok) return null;
+    const next = await res.json();
+    setState(next);
+    return next;
   }
 
   async function startSession() {
     if (queueIsOpen) return;
-    await post({ action: "startSession", title, showDate, description, trackLimitPerArtist, queueCapacity });
+    const next = await post({ action: "startSession", title, showDate, description, trackLimitPerArtist, queueCapacity });
+    if (next?.session?.sessionId) router.push(`/admin/queue?sessionId=${encodeURIComponent(next.session.sessionId)}`);
   }
 
   useEffect(() => { load(); }, []);
@@ -73,7 +79,7 @@ export function AdminShowManagement() {
 
   return (
     <div className="space-y-6">
-      <StartNewSession queueIsOpen={queueIsOpen} title={title} description={description} trackLimitPerArtist={trackLimitPerArtist} queueCapacity={queueCapacity} onTitle={setTitle} onDescription={setDescription} onTrackLimit={setTrackLimitPerArtist} onCapacity={setQueueCapacity} onStart={startSession} sessionId={session?.sessionId} />
+      <StartNewSession queueIsOpen={queueIsOpen} onCloseSubmissions={() => post({ action: "setOpen", isOpen: false })} title={title} description={description} trackLimitPerArtist={trackLimitPerArtist} queueCapacity={queueCapacity} onTitle={setTitle} onDescription={setDescription} onTrackLimit={setTrackLimitPerArtist} onCapacity={setQueueCapacity} onStart={startSession} sessionId={session?.sessionId} />
       <CurrentSession session={session ?? null} readOnly={readOnly} onPost={post} />
       <SessionData session={session ?? null} />
       <ArchivedShows sessions={pastSessions} />
@@ -81,8 +87,8 @@ export function AdminShowManagement() {
   );
 }
 
-function StartNewSession({ queueIsOpen, title, description, trackLimitPerArtist, queueCapacity, onTitle, onDescription, onTrackLimit, onCapacity, onStart, sessionId }: { queueIsOpen: boolean; title: string; description: string; trackLimitPerArtist: number; queueCapacity: number; onTitle: (value: string) => void; onDescription: (value: string) => void; onTrackLimit: (value: number) => void; onCapacity: (value: number) => void; onStart: () => void; sessionId?: string }) {
-  return <section className={`space-y-5 border p-6 ${queueIsOpen ? "border-danger/60 bg-danger/10" : "border-accent/40 bg-surface"}`}><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Start New Session</p><p className="text-sm text-muted mt-2">Create a clean BARCODE Radio session. Submissions start closed; open them from Current Session when ready.</p></div>{queueIsOpen && <div className="border border-danger/50 bg-danger/10 p-4"><p className="text-sm font-bold uppercase tracking-[0.25em] text-danger">QUEUE OPEN</p><p className="mt-2 text-sm text-muted">Start New Session is locked while submissions are open for the current broadcast.</p><div className="mt-3 flex flex-wrap gap-2">{sessionId && <a href={`/queue/${sessionId}`} className="border border-danger/50 px-3 py-2 text-xs uppercase tracking-widest text-danger">Go to Current Session</a>}<a href="/admin/queue" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Open Queue Control</a></div></div>}<div className="grid gap-4 lg:grid-cols-2"><label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Session title</span><input disabled={queueIsOpen} value={title} onChange={(event) => onTitle(event.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label><label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Track limit</span><input disabled={queueIsOpen} type="number" min={1} value={trackLimitPerArtist} onChange={(event) => onTrackLimit(Number(event.target.value))} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label><label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Queue capacity</span><input disabled={queueIsOpen} type="number" min={1} value={queueCapacity} onChange={(event) => onCapacity(Number(event.target.value))} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label><label className="space-y-2 lg:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Description / rule blurb</span><textarea disabled={queueIsOpen} value={description} onChange={(event) => onDescription(event.target.value)} rows={4} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label></div><button onClick={onStart} disabled={queueIsOpen} className="border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Start New Session</button></section>;
+function StartNewSession({ queueIsOpen, onCloseSubmissions, title, description, trackLimitPerArtist, queueCapacity, onTitle, onDescription, onTrackLimit, onCapacity, onStart, sessionId }: { queueIsOpen: boolean; onCloseSubmissions: () => void; title: string; description: string; trackLimitPerArtist: number; queueCapacity: number; onTitle: (value: string) => void; onDescription: (value: string) => void; onTrackLimit: (value: number) => void; onCapacity: (value: number) => void; onStart: () => void; sessionId?: string }) {
+  return <section className={`space-y-5 border p-6 ${queueIsOpen ? "border-danger/60 bg-danger/10" : "border-accent/40 bg-surface"}`}><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Start New Session</p><p className="text-sm text-muted mt-2">Create a clean BARCODE Radio session. Submissions start closed; open them from Current Session when ready.</p></div>{queueIsOpen && <div className="border border-danger/50 bg-danger/10 p-4"><p className="text-sm font-bold uppercase tracking-[0.25em] text-danger">QUEUE OPEN</p><p className="mt-2 text-sm text-muted">Start New Session is locked while submissions are open for the current broadcast.</p><div className="mt-3 flex flex-wrap gap-2"><a href="/admin/queue" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Open Queue Control</a><button type="button" onClick={onCloseSubmissions} className="border border-danger/60 px-3 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background">Close Submissions</button>{sessionId && <a href={`/queue/${sessionId}`} className="border border-danger/50 px-3 py-2 text-xs uppercase tracking-widest text-danger">View Public Session</a>}</div></div>}<div className="grid gap-4 lg:grid-cols-2"><label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Session title</span><input disabled={queueIsOpen} value={title} onChange={(event) => onTitle(event.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label><label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Track limit</span><input disabled={queueIsOpen} type="number" min={1} value={trackLimitPerArtist} onChange={(event) => onTrackLimit(Number(event.target.value))} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label><label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Queue capacity</span><input disabled={queueIsOpen} type="number" min={1} value={queueCapacity} onChange={(event) => onCapacity(Number(event.target.value))} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label><label className="space-y-2 lg:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Description / rule blurb</span><textarea disabled={queueIsOpen} value={description} onChange={(event) => onDescription(event.target.value)} rows={4} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label></div><button onClick={onStart} disabled={queueIsOpen} className="border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Start New Session</button></section>;
 }
 
 function CurrentSession({ session, readOnly, onPost }: { session: QueueSessionSummary | null | undefined; readOnly: boolean; onPost: (body: Record<string, unknown>) => void }) {

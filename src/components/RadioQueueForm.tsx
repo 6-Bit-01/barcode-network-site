@@ -221,8 +221,8 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
           sessionTitle: session?.title ?? "BARCODE Radio",
           sessionDate: session?.showDate ?? "ACTIVE SESSION",
           queueStatus: status ? `${status.activeCount + 1}/${status.capacity}` : "SYNCING",
-          submissionSlot: "INCOMING_TRANSMISSIONS",
-          lane: "INCOMING_TRANSMISSIONS",
+          submissionSlot: status ? `#${Math.min(status.activeCount + 1, status.capacity)}` : "INCOMING_TRANSMISSIONS",
+          lane: submitted.lane === "priority" ? "PRIORITY_SIGNAL" : submitted.lane === "wheel" ? "WHEEL_CHOSEN" : "REGULAR_QUEUE",
         });
         setTransmissionState("received");
         window.setTimeout(() => setTransmissionState("encoded"), 900);
@@ -311,10 +311,10 @@ function formatCooldown(seconds: number): string {
 function warpLabel(state: TransmissionState): string {
   if (state === "received") return "TRANSMISSION RECEIVED";
   if (state === "encoded") return "AUDIO SIGNAL ENCODED";
-  if (state === "converting") return "CONVERTING TRACK DATA TO NETWORK CODE";
-  if (state === "temporal") return "TEMPORAL ROUTING GRID ONLINE";
-  if (state === "aligning") return "CROSS-DIMENSIONAL QUEUE ALIGNMENT";
-  if (state === "confirmed") return "TRANSMISSION STABILIZED";
+  if (state === "converting") return "DATA PACKET FORMED";
+  if (state === "temporal") return "TEMPORAL ROUTE OPEN";
+  if (state === "aligning") return "QUEUE INSERTION LOCKED";
+  if (state === "confirmed") return "SIGNAL STABILIZED";
   return "TRANSMISSION RECEIVED";
 }
 
@@ -326,6 +326,7 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
     ["TRACK_TITLE", data?.title ?? "UNKNOWN TRACK"],
     ["TIKTOK_SIGNAL", data?.tiktokHandle || "@pending"],
     ["SOURCE_TYPE", data?.sourceType ?? "SOURCE"],
+    ["FILE_NAME", data?.fileName ?? "LINK_PACKET"],
     ["DURATION_LOCK", data?.durationLabel ?? "ESTIMATED/PENDING"],
     ["SESSION", data?.sessionTitle ?? "BARCODE Radio"],
     ["SESSION_DATE", data?.sessionDate ?? "ACTIVE"],
@@ -333,7 +334,43 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
     ["SUBMISSION_SLOT", data?.submissionSlot ?? "INCOMING_TRANSMISSIONS"],
     ["QUEUE_PRESSURE", data?.queueStatus ?? "SYNCING"],
   ];
-  return <div className="barcode-warp relative overflow-hidden border border-accent/50 bg-background/95 p-5 shadow-[0_0_80px_rgba(255,0,0,0.24)]"><div className="absolute inset-0 opacity-30 [background:linear-gradient(90deg,transparent,rgba(255,0,0,0.18),transparent)] animate-pulse" /><div className="relative z-10 space-y-5"><div><p className="text-xs uppercase tracking-[0.4em] text-accent">BARCODE Network Transmission</p><h2 className="mt-2 text-2xl font-bold text-foreground">{warpLabel(state)}</h2><p className="mt-2 text-xs text-muted">{state === "confirmed" ? "Queue insertion pulse locked. Returning to broadcast view." : "Audio fragments are being pulled through the temporal routing grid."}</p></div><div className="grid grid-cols-6 gap-1">{steps.map((step, index) => <span key={step} className={`h-1.5 ${index <= activeIndex ? "bg-accent shadow-[0_0_12px_rgba(255,0,0,0.7)]" : "bg-border"}`} />)}</div><div className="grid gap-4 lg:grid-cols-[1fr_9rem_1fr]"><div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80">{fragments.slice(0, 5).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}</div><div className="relative flex aspect-square items-center justify-center overflow-hidden border border-accent/40 bg-accent/5"><div className="absolute inset-4 rounded-full border border-accent/40 animate-spin motion-reduce:animate-none" /><div className="absolute inset-8 rounded-full border border-accent/20 animate-ping motion-reduce:animate-none" /><span className="relative text-5xl text-accent">▦</span></div><div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80">{fragments.slice(5).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}</div></div><div className="grid grid-cols-12 items-end gap-1 border border-border bg-background/60 p-3">{[16, 42, 24, 68, 34, 78, 28, 58, 44, 72, 30, 52].map((height, index) => <span key={index} className="bg-accent/70 shadow-[0_0_10px_rgba(255,0,0,0.45)]" style={{ height }} />)}</div><div className="border border-border bg-background/50 p-3"><p className="text-xs uppercase tracking-widest text-muted">Priority Signal Upgrade</p><p className="mt-1 text-xs text-muted">Move this track into the Priority Lane when priority access is active.</p><button type="button" disabled className="mt-3 border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted opacity-60">Coming soon</button></div></div><style jsx>{`@keyframes barcode-warp-shake{0%,100%{transform:translate3d(0,0,0)}18%{transform:translate3d(-2px,1px,0)}34%{transform:translate3d(2px,-1px,0)}56%{transform:translate3d(-1px,-2px,0)}72%{transform:translate3d(1px,2px,0)}}.barcode-warp{animation:barcode-warp-shake 760ms steps(2,end) 5}@media (prefers-reduced-motion: reduce){.barcode-warp{animation:none}}`}</style></div>;
+  return (
+    <div className="barcode-warp relative overflow-hidden border border-accent/50 bg-background/95 p-5 shadow-[0_0_80px_rgba(255,0,0,0.24)]">
+      <div className="absolute inset-0 opacity-25 [background:radial-gradient(circle_at_20%_30%,rgba(255,0,0,0.24),transparent_24%),linear-gradient(90deg,transparent,rgba(255,0,0,0.16),transparent)] animate-pulse motion-reduce:animate-none" />
+      <div className="absolute left-6 right-6 top-1/2 h-px bg-gradient-to-r from-transparent via-accent/70 to-transparent" />
+      <div className="absolute left-6 right-6 top-[56%] h-px bg-gradient-to-r from-transparent via-accent/30 to-transparent" />
+      <div className="relative z-10 space-y-5">
+        <div>
+          <p className="text-xs uppercase tracking-[0.4em] text-accent">BARCODE Network Transmission</p>
+          <h2 className="mt-2 text-2xl font-bold text-foreground">{warpLabel(state)}</h2>
+          <p className="mt-2 text-xs text-muted">{state === "confirmed" ? "Destination card energized. Returning to broadcast view." : "Audio fragments are encoding into a routed data packet."}</p>
+        </div>
+        <div className="grid grid-cols-6 gap-1">{steps.map((step, index) => <span key={step} className={`h-1.5 ${index <= activeIndex ? "bg-accent shadow-[0_0_12px_rgba(255,0,0,0.7)]" : "bg-border"}`} />)}</div>
+        <div className="grid gap-4 lg:grid-cols-[1fr_12rem_1fr]">
+          <div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80">{fragments.slice(0, 6).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}</div>
+          <div className="relative min-h-44 overflow-hidden border border-accent/40 bg-accent/5 p-3">
+            <div className="absolute inset-3 border border-accent/20" />
+            <div className="absolute left-3 right-3 top-1/2 h-px bg-accent/40" />
+            <div className="packet-transfer absolute left-4 top-1/2 w-24 -translate-y-1/2 border border-accent bg-background/90 p-2 shadow-[0_0_22px_rgba(255,0,0,0.45)]">
+              <p className="font-mono text-[9px] uppercase tracking-widest text-accent">packet</p>
+              <p className="mt-1 truncate text-xs font-bold text-foreground">{data?.title ?? "TRACK"}</p>
+              <p className="truncate text-[10px] text-muted">{data?.artist ?? "SOURCE"}</p>
+              <div className="mt-2 grid grid-cols-8 gap-0.5">{"1011010010110110".split("").map((bit, index) => <span key={`${bit}-${index}`} className="text-[8px] leading-none text-accent/80">{bit}</span>)}</div>
+            </div>
+            <div className="absolute bottom-3 left-3 right-3 grid grid-cols-12 items-end gap-1">{[16, 42, 24, 68, 34, 78, 28, 58, 44, 72, 30, 52].map((height, index) => <span key={index} className="bg-accent/70 shadow-[0_0_10px_rgba(255,0,0,0.45)]" style={{ height: `${height / 2}px` }} />)}</div>
+          </div>
+          <div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80">{fragments.slice(6).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}</div>
+        </div>
+        <div className="border border-accent/40 bg-background/70 p-3">
+          <p className="text-xs uppercase tracking-widest text-accent">Destination queue card</p>
+          <p className="mt-1 text-sm font-bold text-foreground">{data?.artist ?? "Submitted artist"} — {data?.title ?? "Submitted track"}</p>
+          <p className="mt-1 text-xs text-muted">{data?.lane ?? "REGULAR_QUEUE"} · {data?.submissionSlot ?? "incoming"} · {data?.queueStatus ?? "syncing"}</p>
+        </div>
+        <div className="border border-border bg-background/50 p-3"><p className="text-xs uppercase tracking-widest text-muted">Priority Signal Upgrade</p><p className="mt-1 text-xs text-muted">Move this track into the Priority Lane when priority access is active.</p><button type="button" disabled className="mt-3 border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted opacity-60">Coming soon</button></div>
+      </div>
+      <style jsx>{`@keyframes barcode-warp-shake{0%,100%{transform:translate3d(0,0,0)}18%{transform:translate3d(-2px,1px,0)}34%{transform:translate3d(2px,-1px,0)}56%{transform:translate3d(-1px,-2px,0)}72%{transform:translate3d(1px,2px,0)}}@keyframes barcode-packet-route{0%{transform:translate3d(0,-50%,0) scale(1);opacity:.35}22%{transform:translate3d(18px,-50%,0) scale(.92);opacity:1}58%{transform:translate3d(72px,-50%,0) scale(.78);opacity:.95}100%{transform:translate3d(124px,-50%,0) scale(.62);opacity:.65}}.barcode-warp{animation:barcode-warp-shake 760ms steps(2,end) 5}.packet-transfer{animation:barcode-packet-route 6.6s cubic-bezier(.2,.72,.2,1) forwards}@media (prefers-reduced-motion: reduce){.barcode-warp,.packet-transfer{animation:none}}`}</style>
+    </div>
+  );
 }
 
 function PublicQueuePreview({ queue, lastSubmittedTrackId }: { queue: QueuePublicTrack[]; lastSubmittedTrackId: string | null }) {
@@ -343,8 +380,8 @@ function PublicQueuePreview({ queue, lastSubmittedTrackId }: { queue: QueuePubli
         <p className="text-xs uppercase tracking-[0.25em] text-muted">Public queue preview</p>
         <p className="text-[11px] text-muted mt-1">Artist/title and source type only. Removed tracks, notes, and control metadata stay private.</p>
       </div>
-      <div className="space-y-2 max-h-[28rem] overflow-auto pr-1">
-        {queue.length === 0 ? <p className="border border-border/60 p-3 text-sm text-muted">No active transmissions are visible yet.</p> : queue.map((entry, index) => {
+      <div className="space-y-2">
+        {queue.length === 0 ? <p className="border border-border/60 p-3 text-sm text-muted">No active transmissions are visible yet.</p> : queue.slice(0, 4).map((entry, index) => {
           const highlighted = entry.id === lastSubmittedTrackId;
           return (
             <div key={entry.id} className={`border p-3 transition-all ${highlighted ? "border-accent bg-accent/10 animate-pulse" : "border-border bg-background/30"}`}>
@@ -360,6 +397,7 @@ function PublicQueuePreview({ queue, lastSubmittedTrackId }: { queue: QueuePubli
             </div>
           );
         })}
+        {queue.length > 4 && <p className="border border-border/60 p-2 text-[11px] uppercase tracking-widest text-muted">+{queue.length - 4} more signals visible after intake collapse</p>}
       </div>
     </div>
   );

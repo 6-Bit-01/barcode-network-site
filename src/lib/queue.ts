@@ -1,15 +1,17 @@
 // ============================================================
-// QUEUE OPERATIONS — Upstash Redis
-// ============================================================
-// Uses sorted sets for priority ordering.
-// Falls back to in-memory store when Redis is not configured.
+// BARCODE RADIO QUEUE OPERATIONS — Upstash Redis + memory fallback
 // ============================================================
 
 import { Redis } from "@upstash/redis";
-import { QueueEntry, QueueState, TIERS, generateQueueId } from "./queue-types";
-import type { QueueTier } from "./queue-types";
-
-// --------------- Redis client ---------------
+import {
+  INTERNAL_BUFFER_DURATION_SECONDS,
+  RADIO_QUEUE_CAPACITY,
+  detectQueueSourceType,
+  generateQueueId,
+  getTrackRuntimeSeconds,
+  normalizeTier,
+} from "./queue-types";
+import type { QueueEntry, QueueLane, QueuePublicStatus, QueueSourceType, QueueState, QueueTier } from "./queue-types";
 
 function getRedis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -18,295 +20,245 @@ function getRedis(): Redis | null {
   return new Redis({ url, token });
 }
 
-// Redis keys
-const KEYS = {
-  queue: "queue:entries",       // sorted set: score = priority*1e13 + (1e13 - timestamp)
-  nowPlaying: "queue:current",  // string (JSON)
-  history: "queue:history",     // list (JSON entries, most recent first)
-  totalPlayed: "queue:played",  // counter
-  streamStatus: "queue:status", // string: "online" | "offline"
-  entry: (id: string) => `queue:entry:${id}`, // hash
-};
+const STATE_KEY = "radioQueue:v1:state";
 
-// --------------- In-memory fallback (dev) ---------------
-
-const mem: {
-  entries: QueueEntry[];
-  nowPlaying: QueueEntry | null;
-  history: QueueEntry[];
-  totalPlayed: number;
-  streamStatus: "online" | "offline";
-} = {
-  entries: [],
-  nowPlaying: null,
-  history: [],
-  totalPlayed: 0,
-  streamStatus: "offline",
-};
-
-// --------------- Priority score ---------------
-
-function priorityScore(tier: QueueTier, createdAt: string): number {
-  const tierWeight = TIERS[tier].priority;
-  const ts = new Date(createdAt).getTime();
-  // Higher tier = higher score. Within same tier, earlier = higher score.
-  return tierWeight * 1e13 + (1e13 - ts);
+interface StoredQueueState {
+  queue: QueueEntry[];
+  completed: QueueEntry[];
+  removed: QueueEntry[];
+  spotlight: QueueEntry[];
+  isOpen: boolean;
 }
 
-// --------------- Public API ---------------
+const mem: StoredQueueState = {
+  queue: [],
+  completed: [],
+  removed: [],
+  spotlight: [],
+  isOpen: true,
+};
 
-/** Add a confirmed entry to the queue */
+function laneRank(lane: QueueLane | undefined): number {
+  if (lane === "priority") return 0;
+  if (lane === "wheel") return 1;
+  return 2;
+}
+
+function sortActive(entries: QueueEntry[]): QueueEntry[] {
+  return [...entries].sort((a, b) => laneRank(a.lane) - laneRank(b.lane) || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+}
+
+function publicStatus(state: StoredQueueState): QueuePublicStatus {
+  const active = state.queue.filter((entry) => entry.status === "queued" || entry.status === "playing");
+  const estimatedRuntimeSeconds = active.reduce((sum, entry) => sum + getTrackRuntimeSeconds(entry), 0);
+  const load = active.length / RADIO_QUEUE_CAPACITY;
+  const pressure: QueuePublicStatus["pressure"] = load >= 1 ? "max" : load >= 0.75 ? "high" : load >= 0.4 ? "medium" : "low";
+  return {
+    isOpen: state.isOpen,
+    activeCount: active.length,
+    estimatedRuntimeSeconds,
+    capacity: RADIO_QUEUE_CAPACITY,
+    pressure,
+  };
+}
+
+async function readStoredState(): Promise<StoredQueueState> {
+  const redis = getRedis();
+  if (!redis) return mem;
+  const raw = await redis.get<StoredQueueState | string>(STATE_KEY);
+  if (!raw) return { queue: [], completed: [], removed: [], spotlight: [], isOpen: true };
+  const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+  return {
+    queue: Array.isArray(parsed.queue) ? parsed.queue : [],
+    completed: Array.isArray(parsed.completed) ? parsed.completed : [],
+    removed: Array.isArray(parsed.removed) ? parsed.removed : [],
+    spotlight: Array.isArray(parsed.spotlight) ? parsed.spotlight : [],
+    isOpen: parsed.isOpen !== false,
+  };
+}
+
+async function writeStoredState(state: StoredQueueState): Promise<void> {
+  const normalized = { ...state, queue: sortActive(state.queue) };
+  const redis = getRedis();
+  if (!redis) {
+    mem.queue = normalized.queue;
+    mem.completed = normalized.completed;
+    mem.removed = normalized.removed;
+    mem.spotlight = normalized.spotlight;
+    mem.isOpen = normalized.isOpen;
+    return;
+  }
+  await redis.set(STATE_KEY, JSON.stringify(normalized));
+}
+
+export function createQueueTrack(input: {
+  artist: string;
+  title: string;
+  link?: string;
+  fileUrl?: string | null;
+  fileName?: string | null;
+  fileSize?: number | null;
+  mimeType?: string | null;
+  sourceType?: QueueSourceType;
+  detectedDurationSeconds?: number | null;
+}): QueueEntry {
+  const sourceType = input.sourceType ?? (input.fileUrl ? "upload" : detectQueueSourceType(input.link ?? ""));
+  const detected = typeof input.detectedDurationSeconds === "number" && Number.isFinite(input.detectedDurationSeconds)
+    ? Math.max(1, Math.round(input.detectedDurationSeconds))
+    : null;
+
+  return {
+    id: generateQueueId(),
+    artist: input.artist,
+    title: input.title,
+    link: input.fileUrl || input.link || "",
+    tier: "free",
+    lane: "regular",
+    amount: 0,
+    stripeSessionId: null,
+    status: "queued",
+    createdAt: new Date().toISOString(),
+    playedAt: null,
+    completedAt: null,
+    removedAt: null,
+    spotlightedAt: null,
+    fileUrl: input.fileUrl ?? null,
+    fileName: input.fileName ?? null,
+    fileSize: input.fileSize ?? null,
+    mimeType: input.mimeType ?? null,
+    sourceType,
+    detectedDurationSeconds: detected,
+    estimatedDurationSeconds: detected ?? INTERNAL_BUFFER_DURATION_SECONDS,
+    durationIsEstimate: detected === null,
+  };
+}
+
+export async function submitRadioTrack(input: Parameters<typeof createQueueTrack>[0]): Promise<QueueEntry> {
+  const state = await readStoredState();
+  if (!state.isOpen) throw new Error("Queue is closed");
+  const track = createQueueTrack(input);
+  state.queue.push(track);
+  await writeStoredState(state);
+  return track;
+}
+
+export async function getRadioQueueState(): Promise<QueueState> {
+  const state = await readStoredState();
+  const queue = sortActive(state.queue);
+  return {
+    nowPlaying: queue.find((entry) => entry.status === "playing") ?? null,
+    queue,
+    history: state.completed,
+    totalPlayed: state.completed.length,
+    streamStatus: state.isOpen ? "online" : "offline",
+    removed: state.removed,
+    spotlight: state.spotlight,
+    publicStatus: publicStatus({ ...state, queue }),
+  };
+}
+
+export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> {
+  const state = await readStoredState();
+  state.isOpen = isOpen;
+  await writeStoredState(state);
+  return publicStatus(state);
+}
+
+export async function updateRadioTrack(id: string, action: "finish" | "remove" | "priority" | "spotlight"): Promise<QueueState> {
+  const state = await readStoredState();
+  const index = state.queue.findIndex((entry) => entry.id === id);
+  const active = index >= 0 ? state.queue[index] : null;
+
+  if (action === "spotlight") {
+    const source = active ?? state.completed.find((entry) => entry.id === id) ?? state.removed.find((entry) => entry.id === id);
+    if (source && !state.spotlight.some((entry) => entry.id === source.id)) {
+      state.spotlight.push({ ...source, spotlightedAt: new Date().toISOString() });
+    }
+    await writeStoredState(state);
+    return getRadioQueueState();
+  }
+
+  if (!active) return getRadioQueueState();
+
+  if (action === "priority") {
+    state.queue.splice(index, 1);
+    state.queue.push({ ...active, lane: "priority", tier: "fastlane", status: "queued" });
+  }
+
+  if (action === "finish") {
+    state.queue.splice(index, 1);
+    state.completed.unshift({ ...active, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
+  }
+
+  if (action === "remove") {
+    state.queue.splice(index, 1);
+    state.removed.unshift({ ...active, status: "removed", removedAt: new Date().toISOString() });
+  }
+
+  await writeStoredState(state);
+  return getRadioQueueState();
+}
+
+// Legacy-compatible helpers used by archived/OBS components.
 export async function addToQueue(entry: Omit<QueueEntry, "id" | "status" | "playedAt">): Promise<QueueEntry> {
-  const full: QueueEntry = {
+  const track: QueueEntry = {
     ...entry,
     id: generateQueueId(),
     status: "queued",
     playedAt: null,
+    lane: entry.lane ?? (normalizeTier(entry.tier) === "fastlane" ? "priority" : "regular"),
+    sourceType: entry.sourceType ?? detectQueueSourceType(entry.link),
+    estimatedDurationSeconds: entry.estimatedDurationSeconds ?? entry.detectedDurationSeconds ?? INTERNAL_BUFFER_DURATION_SECONDS,
+    durationIsEstimate: entry.detectedDurationSeconds == null,
   };
-
-  const redis = getRedis();
-  if (redis) {
-    const score = priorityScore(full.tier, full.createdAt);
-    await redis.zadd(KEYS.queue, { score, member: JSON.stringify(full) });
-    await redis.set(KEYS.entry(full.id), JSON.stringify(full));
-  } else {
-    mem.entries.push(full);
-    // Sort: higher priority first, then earlier timestamp
-    mem.entries.sort((a, b) => priorityScore(b.tier, b.createdAt) - priorityScore(a.tier, a.createdAt));
-  }
-
-  return full;
+  const state = await readStoredState();
+  state.queue.push(track);
+  await writeStoredState(state);
+  return track;
 }
 
-/** Get the full queue state */
 export async function getQueueState(): Promise<QueueState> {
-  const redis = getRedis();
-
-  if (redis) {
-    const [queueRaw, nowPlayingRaw, historyRaw, totalPlayed, streamStatus] = await Promise.all([
-      redis.zrange(KEYS.queue, 0, -1, { rev: true }),
-      redis.get<string>(KEYS.nowPlaying),
-      redis.lrange(KEYS.history, 0, 19), // last 20
-      redis.get<number>(KEYS.totalPlayed),
-      redis.get<string>(KEYS.streamStatus),
-    ]);
-
-    const queue: QueueEntry[] = (queueRaw as string[]).map((raw) =>
-      typeof raw === "string" ? JSON.parse(raw) : raw
-    );
-
-    const nowPlaying: QueueEntry | null = nowPlayingRaw
-      ? (typeof nowPlayingRaw === "string" ? JSON.parse(nowPlayingRaw) : nowPlayingRaw)
-      : null;
-
-    const history: QueueEntry[] = (historyRaw as string[]).map((raw) =>
-      typeof raw === "string" ? JSON.parse(raw) : raw
-    );
-
-    return {
-      nowPlaying,
-      queue,
-      history,
-      totalPlayed: totalPlayed ?? 0,
-      streamStatus: (streamStatus as "online" | "offline") ?? "offline",
-    };
-  }
-
-  // In-memory fallback
-  return {
-    nowPlaying: mem.nowPlaying,
-    queue: [...mem.entries],
-    history: mem.history.slice(0, 20),
-    totalPlayed: mem.totalPlayed,
-    streamStatus: mem.streamStatus,
-  };
+  return getRadioQueueState();
 }
 
-/** Advance: move current to history, pop next from queue */
 export async function advanceQueue(): Promise<QueueEntry | null> {
-  const redis = getRedis();
-
-  if (redis) {
-    // Move current to history
-    const currentRaw = await redis.get<string>(KEYS.nowPlaying);
-    if (currentRaw) {
-      const current: QueueEntry = typeof currentRaw === "string" ? JSON.parse(currentRaw) : currentRaw;
-      current.status = "played";
-      current.playedAt = new Date().toISOString();
-      await redis.lpush(KEYS.history, JSON.stringify(current));
-      await redis.ltrim(KEYS.history, 0, 99); // keep last 100
-      await redis.incr(KEYS.totalPlayed);
-      await redis.del(KEYS.entry(current.id));
-    }
-
-    // Pop highest priority entry
-    const top = await redis.zrange(KEYS.queue, -1, -1);
-    if (!top || top.length === 0) {
-      await redis.del(KEYS.nowPlaying);
-      return null;
-    }
-
-    const nextRaw = top[0] as string;
-    const next: QueueEntry = typeof nextRaw === "string" ? JSON.parse(nextRaw) : nextRaw;
-    next.status = "playing";
-
-    // Remove from sorted set and set as now playing
-    await redis.zrem(KEYS.queue, nextRaw);
-    await redis.set(KEYS.nowPlaying, JSON.stringify(next));
-    await redis.set(KEYS.entry(next.id), JSON.stringify(next));
-
-    return next;
-  }
-
-  // In-memory fallback
-  if (mem.nowPlaying) {
-    mem.nowPlaying.status = "played";
-    mem.nowPlaying.playedAt = new Date().toISOString();
-    mem.history.unshift(mem.nowPlaying);
-    if (mem.history.length > 100) mem.history.pop();
-    mem.totalPlayed++;
-  }
-
-  const next = mem.entries.shift() ?? null;
-  if (next) next.status = "playing";
-  mem.nowPlaying = next;
-  return next;
+  const state = await readStoredState();
+  const queue = sortActive(state.queue);
+  const next = queue[0] ?? null;
+  if (!next) return null;
+  state.queue = queue.slice(1);
+  state.completed.unshift({ ...next, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
+  await writeStoredState(state);
+  return queue[1] ?? null;
 }
 
-/** Reset the queue (nightly). Refunds/carries over paid entries. */
 export async function resetQueue(): Promise<{ cleared: number; preserved: number }> {
-  const redis = getRedis();
-
-  if (redis) {
-    const allRaw = await redis.zrange(KEYS.queue, 0, -1);
-    const entries: QueueEntry[] = (allRaw as string[]).map((raw) =>
-      typeof raw === "string" ? JSON.parse(raw) : raw
-    );
-
-    // Paid entries that haven't played get preserved (carry-over)
-    const paid = entries.filter((e) => e.amount > 0);
-    const free = entries.filter((e) => e.amount === 0);
-
-    // Clear the queue
-    await redis.del(KEYS.queue);
-    await redis.del(KEYS.nowPlaying);
-
-    // Re-add paid entries
-    if (paid.length > 0) {
-      for (const e of paid) {
-        await redis.zadd(KEYS.queue, {
-          score: priorityScore(e.tier, e.createdAt),
-          member: JSON.stringify(e),
-        });
-      }
-    }
-
-    return { cleared: free.length, preserved: paid.length };
-  }
-
-  // In-memory
-  const paid = mem.entries.filter((e) => e.amount > 0);
-  const cleared = mem.entries.length - paid.length;
-  mem.entries = paid;
-  mem.nowPlaying = null;
-  return { cleared, preserved: paid.length };
+  const state = await readStoredState();
+  const cleared = state.queue.length;
+  state.queue = [];
+  await writeStoredState(state);
+  return { cleared, preserved: 0 };
 }
 
-/** Set stream status */
-export async function setStreamStatus(status: "online" | "offline"): Promise<void> {
-  const redis = getRedis();
-  if (redis) {
-    await redis.set(KEYS.streamStatus, status);
-  } else {
-    mem.streamStatus = status;
-  }
-}
-
-/** Get a single entry by ID */
 export async function getEntry(id: string): Promise<QueueEntry | null> {
-  const redis = getRedis();
-  if (redis) {
-    const raw = await redis.get<string>(KEYS.entry(id));
-    if (!raw) return null;
-    return typeof raw === "string" ? JSON.parse(raw) : raw;
-  }
-  const found = mem.entries.find((e) => e.id === id);
-  if (found) return found;
-  if (mem.nowPlaying?.id === id) return mem.nowPlaying;
-  return null;
+  const state = await getRadioQueueState();
+  return [...state.queue, ...state.history, ...(state.removed ?? [])].find((entry) => entry.id === id) ?? null;
 }
 
-/** Upgrade an existing queue entry to a higher tier */
 export async function upgradeEntryTier(id: string, newTier: QueueTier, additionalAmount: number): Promise<QueueEntry | null> {
-  const redis = getRedis();
-
-  if (redis) {
-    // Find the entry in the sorted set
-    const allRaw = await redis.zrange(KEYS.queue, 0, -1, { rev: true });
-    let found: QueueEntry | null = null;
-    let foundRaw: string | null = null;
-
-    for (const raw of allRaw as string[]) {
-      const entry: QueueEntry = typeof raw === "string" ? JSON.parse(raw) : raw;
-      if (entry.id === id) {
-        found = entry;
-        foundRaw = typeof raw === "string" ? raw : JSON.stringify(raw);
-        break;
-      }
-    }
-
-    if (!found || !foundRaw) return null;
-
-    // Remove old entry from sorted set
-    await redis.zrem(KEYS.queue, foundRaw);
-
-    // Update tier and amount
-    found.tier = newTier;
-    found.amount += additionalAmount;
-
-    // Re-add with new priority score
-    const score = priorityScore(found.tier, found.createdAt);
-    await redis.zadd(KEYS.queue, { score, member: JSON.stringify(found) });
-    await redis.set(KEYS.entry(found.id), JSON.stringify(found));
-
-    return found;
-  }
-
-  // In-memory fallback
-  const idx = mem.entries.findIndex((e) => e.id === id);
-  if (idx === -1) return null;
-
-  mem.entries[idx].tier = newTier;
-  mem.entries[idx].amount += additionalAmount;
-  mem.entries.sort((a, b) => priorityScore(b.tier, b.createdAt) - priorityScore(a.tier, a.createdAt));
-
-  return mem.entries[idx];
+  const state = await readStoredState();
+  const index = state.queue.findIndex((entry) => entry.id === id);
+  if (index === -1) return null;
+  const updated = { ...state.queue[index], tier: newTier, amount: state.queue[index].amount + additionalAmount, lane: newTier === "fastlane" ? "priority" as QueueLane : state.queue[index].lane };
+  state.queue[index] = updated;
+  await writeStoredState(state);
+  return updated;
 }
 
-// --------------- Stripe session dedup ---------------
-
-const STRIPE_KEY = (sessionId: string) => `queue:stripe:${sessionId}`;
-
-/** Check if a Stripe session has already been processed */
-export async function isStripeSessionProcessed(sessionId: string): Promise<boolean> {
-  const redis = getRedis();
-  if (redis) {
-    const exists = await redis.exists(STRIPE_KEY(sessionId));
-    return exists === 1;
-  }
-  // In-memory: check entries + nowPlaying + history
-  return (
-    mem.entries.some((e) => e.stripeSessionId === sessionId) ||
-    mem.nowPlaying?.stripeSessionId === sessionId ||
-    mem.history.some((e) => e.stripeSessionId === sessionId)
-  );
+const stripeSessions = new Map<string, string>();
+export async function storeStripeSession(sessionId: string, entryId: string): Promise<void> {
+  stripeSessions.set(sessionId, entryId);
 }
-
-/** Mark a Stripe session as processed (with 48h TTL) */
-export async function markStripeSessionProcessed(sessionId: string): Promise<void> {
-  const redis = getRedis();
-  if (redis) {
-    await redis.set(STRIPE_KEY(sessionId), "1", { ex: 172800 }); // 48h TTL
-  }
-  // In-memory: no-op (dedup handled by isStripeSessionProcessed check)
+export async function getStripeSessionEntry(sessionId: string): Promise<string | null> {
+  return stripeSessions.get(sessionId) ?? null;
 }

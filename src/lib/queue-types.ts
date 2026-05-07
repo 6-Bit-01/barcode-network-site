@@ -1,8 +1,11 @@
 // ============================================================
-// QUEUE SYSTEM — TYPE DEFINITIONS
+// BARCODE RADIO QUEUE — TYPE DEFINITIONS
 // ============================================================
 
 export type QueueTier = "free" | "featured" | "fastlane" | "frontrow";
+export type QueueSourceType = "upload" | "link" | "youtube" | "soundcloud" | "spotify" | "other";
+export type QueueLane = "priority" | "wheel" | "regular";
+export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | "pending" | "played" | "refunded" | "expired";
 
 export interface QueueEntry {
   id: string;
@@ -10,11 +13,31 @@ export interface QueueEntry {
   title: string;
   link: string;
   tier: QueueTier;
+  lane?: QueueLane;
   amount: number; // cents
   stripeSessionId: string | null;
-  status: "pending" | "queued" | "playing" | "played" | "refunded" | "expired";
+  status: QueueTrackStatus;
   createdAt: string; // ISO
   playedAt: string | null;
+  completedAt?: string | null;
+  removedAt?: string | null;
+  spotlightedAt?: string | null;
+  fileUrl?: string | null;
+  fileName?: string | null;
+  fileSize?: number | null;
+  mimeType?: string | null;
+  sourceType?: QueueSourceType;
+  detectedDurationSeconds?: number | null;
+  estimatedDurationSeconds?: number;
+  durationIsEstimate?: boolean;
+}
+
+export interface QueuePublicStatus {
+  isOpen: boolean;
+  activeCount: number;
+  estimatedRuntimeSeconds: number;
+  capacity: number;
+  pressure: "low" | "medium" | "high" | "max";
 }
 
 export interface QueueState {
@@ -23,44 +46,49 @@ export interface QueueState {
   history: QueueEntry[];
   totalPlayed: number;
   streamStatus: "online" | "offline";
+  removed?: QueueEntry[];
+  spotlight?: QueueEntry[];
+  publicStatus?: QueuePublicStatus;
 }
+
+export const INTERNAL_BUFFER_DURATION_SECONDS = 240;
+export const RADIO_QUEUE_CAPACITY = 40;
 
 export const TIERS = {
   free: {
-    name: "Free",
+    name: "Regular Queue",
     price: 0,
-    label: "FREE",
+    label: "REGULAR",
     priority: 0,
-    description: "Join the queue for free. Plays when no paid requests are waiting.",
+    description: "Enter the live BARCODE Radio request flow.",
     icon: "○",
   },
   featured: {
-    name: "Featured",
-    price: 300, // $3.00
-    label: "$3",
+    name: "Spotlight",
+    price: 0,
+    label: "SPOTLIGHT",
     priority: 1,
-    description: "Skip the free line. Plays when no Fast Lane or Front Row requests are queued.",
-    icon: "▸",
+    description: "Host-selected spotlight lane for special attention.",
+    icon: "✦",
   },
   fastlane: {
-    name: "Fast Lane",
-    price: 500, // $5.00
-    label: "$5",
+    name: "Priority Lane",
+    price: 0,
+    label: "PRIORITY",
     priority: 2,
-    description: "Skip ahead — plays when no Front Row requests are in the queue.",
+    description: "Host-controlled priority lane. Payment flow is not enabled yet.",
     icon: "▸▸",
   },
   frontrow: {
-    name: "Front Row",
-    price: 1000, // $10.00
-    label: "$10",
+    name: "Wheel Winners",
+    price: 0,
+    label: "WHEEL",
     priority: 3,
-    description: "Top of the queue. Guaranteed next play. Stacks in order paid.",
-    icon: "▸▸▸",
+    description: "Winner lane controlled by the BARCODE Radio host.",
+    icon: "◈",
   },
 } as const;
 
-/** Tiers a user can upgrade TO from a given tier (pay difference) */
 export const UPGRADE_PATHS: Record<QueueTier, QueueTier[]> = {
   free: ["featured", "fastlane", "frontrow"],
   featured: ["fastlane", "frontrow"],
@@ -68,22 +96,45 @@ export const UPGRADE_PATHS: Record<QueueTier, QueueTier[]> = {
   frontrow: [],
 };
 
-/** Map legacy tier names (from Redis) to current tier names */
 const LEGACY_TIER_MAP: Record<string, QueueTier> = {
   expedited: "featured",
   priority: "fastlane",
   vip: "frontrow",
 };
 
-/** Normalize a tier value — handles old entries still stored in Redis */
 export function normalizeTier(tier: string): QueueTier {
   if (tier in TIERS) return tier as QueueTier;
   return LEGACY_TIER_MAP[tier] ?? "free";
 }
 
-/** Generate a unique queue entry ID */
 export function generateQueueId(): string {
   const ts = Date.now().toString(36);
   const rand = Math.random().toString(36).slice(2, 8);
   return `q_${ts}_${rand}`;
+}
+
+export function getTrackRuntimeSeconds(entry: Pick<QueueEntry, "detectedDurationSeconds" | "estimatedDurationSeconds">): number {
+  return entry.detectedDurationSeconds ?? entry.estimatedDurationSeconds ?? INTERNAL_BUFFER_DURATION_SECONDS;
+}
+
+export function formatRuntime(seconds: number): string {
+  const safe = Math.max(0, Math.round(seconds));
+  const h = Math.floor(safe / 3600);
+  const m = Math.floor((safe % 3600) / 60);
+  const s = safe % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+export function detectQueueSourceType(value: string): QueueSourceType {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.replace(/^www\./, "").toLowerCase();
+    if (host.includes("youtube.com") || host.includes("youtu.be")) return "youtube";
+    if (host.includes("soundcloud.com")) return "soundcloud";
+    if (host.includes("spotify.com")) return "spotify";
+    return "other";
+  } catch {
+    return "link";
+  }
 }

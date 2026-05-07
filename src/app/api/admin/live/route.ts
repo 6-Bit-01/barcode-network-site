@@ -90,7 +90,7 @@ export async function POST(req: Request) {
   const cookies = Object.fromEntries(
     cookieHeader.split(";").map((c) => {
       const [k, ...v] = c.trim().split("=");
-      return [k, v.join("")];
+      return [k, v.join("=")];
     })
   );
   const token = cookies[COOKIE_NAME];

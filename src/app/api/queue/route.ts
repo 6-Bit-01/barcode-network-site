@@ -105,7 +105,7 @@ export async function POST(req: Request) {
         contactEmail,
         submitterToken,
       });
-      return NextResponse.json({ track, message: "Track entered the Regular Queue." }, { status: 201 });
+      return NextResponse.json({ track, message: "Track entered the Regular Queue.", cooldownRemainingSeconds: 300 }, { status: 201 });
     }
 
     const link = cleanText(form.get("link"));
@@ -114,10 +114,12 @@ export async function POST(req: Request) {
 
     const sourceType = detectQueueSourceType(link);
     const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, contactEmail, submitterToken });
-    return NextResponse.json({ track, message: "Track entered the Regular Queue." }, { status: 201 });
+    return NextResponse.json({ track, message: "Track entered the Regular Queue.", cooldownRemainingSeconds: 300 }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Submission failed";
     const isLimitBlock = message === "Submission limit reached for this session.";
+    const cooldownRemainingSeconds = typeof (error as { remainingSeconds?: unknown }).remainingSeconds === "number" ? (error as { remainingSeconds: number }).remainingSeconds : 0;
+    if (cooldownRemainingSeconds > 0) return NextResponse.json({ error: "Submission cooldown active.", cooldownRemainingSeconds }, { status: 429 });
     return NextResponse.json({ error: isLimitBlock ? "Submission limit reached for this session." : message }, { status: isLimitBlock ? 409 : 500 });
   }
 }

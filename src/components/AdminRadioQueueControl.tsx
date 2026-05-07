@@ -150,7 +150,7 @@ export function AdminRadioQueueControl() {
         {canControlSession && <div className="flex flex-wrap gap-3"><button onClick={() => action("", "pullNext")} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Pull Next Track</button><button onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} border px-4 py-2 text-xs uppercase tracking-widest hover:text-background`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button></div>}
       </section>
 
-      {showSessions && <SessionArchive sessions={state?.sessions ?? []} activeSessionId={state?.session?.sessionId} onView={(id) => load(id)} onActivate={(id) => post({ action: "activateSession", sessionId: id })} />}
+      {showSessions && <SessionArchive sessions={state?.sessions ?? []} activeSessionId={state?.session?.sessionId} onView={(id) => load(id)} />}
 
       {!hasSession ? (
         <section className="border border-border bg-surface p-6">
@@ -177,8 +177,8 @@ export function AdminRadioQueueControl() {
   );
 }
 
-function SessionArchive({ sessions, activeSessionId, onView, onActivate }: { sessions: QueueSessionSummary[]; activeSessionId?: string; onView: (id: string) => void; onActivate: (id: string) => void }) {
-  return <section className="border border-border bg-surface p-4 space-y-3"><h2 className="text-sm uppercase tracking-[0.25em] text-foreground">Saved Sessions</h2><div className="grid gap-3">{sessions.map((session) => <div key={session.sessionId} className="border border-border bg-background/40 p-3"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><p className="font-bold">{session.title}</p><p className="text-xs text-muted">{session.showDate} · {session.status} · active {session.activeCount} · completed {session.completedCount}</p></div><div className="flex gap-2"><button onClick={() => onView(session.sessionId)} className="border border-accent/60 px-3 py-1.5 text-xs text-accent">View</button>{session.sessionId !== activeSessionId && <button onClick={() => onActivate(session.sessionId)} className="border border-border px-3 py-1.5 text-xs text-muted">Reactivate</button>}</div></div></div>)}</div></section>;
+function SessionArchive({ sessions, activeSessionId, onView }: { sessions: QueueSessionSummary[]; activeSessionId?: string; onView: (id: string) => void }) {
+  return <section className="border border-border bg-surface p-4 space-y-3"><h2 className="text-sm uppercase tracking-[0.25em] text-foreground">Saved Sessions</h2><div className="grid gap-3">{sessions.map((session) => <div key={session.sessionId} className="border border-border bg-background/40 p-3"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><p className="font-bold">{session.title}</p><p className="text-xs text-muted">{session.showDate} · {session.status} · active {session.activeCount} · completed {session.completedCount}</p></div><div className="flex gap-2"><button onClick={() => onView(session.sessionId)} className="border border-accent/60 px-3 py-1.5 text-xs text-accent">View</button>{session.sessionId !== activeSessionId && <a href={`/admin/show-management/session/${encodeURIComponent(session.sessionId)}`} className="border border-border px-3 py-1.5 text-xs text-muted">Finished Report</a>}</div></div></div>)}</div></section>;
 }
 
 function NextInLineBox({ entry, readOnly, onAction, onPlayer, onCopy }: { entry: QueueEntry | null; readOnly: boolean; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void }) {
@@ -193,7 +193,7 @@ function PlayerDock({ player, minimized, setMinimized, readOnly, onAction, onCop
   const embedded = embedUrl(player);
   return (
     <div className="fixed bottom-0 left-0 right-0 z-[9999] border-t border-accent/40 bg-background/95 p-3 shadow-[0_-20px_60px_rgba(0,0,0,0.45)] backdrop-blur">
-      <div className="mx-auto max-w-7xl">
+      <div className="mx-auto w-full max-w-7xl">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.35em] text-accent">{minimized ? "Queue Player Dock" : "Command Deck Player"}</p>
@@ -205,7 +205,6 @@ function PlayerDock({ player, minimized, setMinimized, readOnly, onAction, onCop
             <button type="button" onClick={() => setMinimized(!minimized)} className="border border-border px-3 py-2 text-xs text-muted">{minimized ? "Expand Player" : "Minimize Player"}</button>
             <a href={openUrl(player)} target="_blank" rel="noreferrer" className="border border-accent px-3 py-2 text-xs text-accent">Open Link</a>
             <button type="button" onClick={onCopy} className="border border-border px-3 py-2 text-xs text-muted">Copy Link</button>
-            <button type="button" onClick={() => setMinimized(true)} className="border border-border px-3 py-2 text-xs text-muted">Minimize Player</button>
           </div>
         </div>
         <div className={`${minimized ? "h-0 overflow-hidden opacity-0" : "mt-4 opacity-100"} grid items-end gap-4 lg:grid-cols-[1fr_auto]`} aria-hidden={minimized}>

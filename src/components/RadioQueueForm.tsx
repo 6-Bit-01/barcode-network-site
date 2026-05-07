@@ -7,6 +7,21 @@ import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@
 
 type Mode = "link" | "upload";
 type ReadState = "idle" | "checking" | "reading" | "detected" | "pending";
+type TransmissionState = "idle" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed";
+
+interface WarpData {
+  artist: string;
+  title: string;
+  tiktokHandle: string;
+  sourceType: string;
+  fileName?: string | null;
+  durationLabel: string;
+  sessionTitle: string;
+  sessionDate: string;
+  queueStatus: string;
+  submissionSlot: string;
+  lane: string;
+}
 
 function pressureLabel(status: QueuePublicStatus | null): string {
   if (!status) return "Syncing";
@@ -77,8 +92,9 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
   const [readState, setReadState] = useState<ReadState>("idle");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [transmissionState, setTransmissionState] = useState<"idle" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed">("idle");
+  const [transmissionState, setTransmissionState] = useState<TransmissionState>("idle");
+  const [warpData, setWarpData] = useState<WarpData | null>(null);
+  const [cooldownRemaining, setCooldownRemaining] = useState(0);
 
   async function loadStatus() {
     const res = await fetch(`/api/queue${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""}`, { cache: "no-store" });
@@ -107,6 +123,21 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
     window.localStorage.setItem(key, next);
     setSubmitterToken(next);
   }, []);
+
+
+  useEffect(() => {
+    if (cooldownRemaining <= 0) return;
+    const timer = window.setInterval(() => setCooldownRemaining((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [cooldownRemaining]);
+
+  useEffect(() => {
+    if (!submitterToken) return;
+    const key = `barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}`;
+    const until = Number(window.localStorage.getItem(key) ?? 0);
+    const remaining = Math.ceil((until - Date.now()) / 1000);
+    if (remaining > 0) setCooldownRemaining(remaining);
+  }, [sessionId, submitterToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -149,7 +180,6 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    setSuccess(null);
     setSubmitting(true);
     try {
       const body = new FormData();
@@ -168,10 +198,32 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
 
       const res = await fetch("/api/queue", { method: "POST", body });
       const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload.error || "Submission failed");
+      if (!res.ok) {
+        if (typeof payload.cooldownRemainingSeconds === "number") {
+          setCooldownRemaining(payload.cooldownRemainingSeconds);
+          if (submitterToken) window.localStorage.setItem(`barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}`, String(Date.now() + payload.cooldownRemainingSeconds * 1000));
+        }
+        throw new Error(payload.cooldownRemainingSeconds ? `Next transmission available in ${formatCooldown(payload.cooldownRemainingSeconds)}` : payload.error || "Submission failed");
+      }
       if (payload.track?.id) {
         const submitted = publicTrackFromApi(payload.track);
         setLastSubmittedTrackId(submitted.id);
+        const nextCooldown = typeof payload.cooldownRemainingSeconds === "number" ? payload.cooldownRemainingSeconds : 300;
+        setCooldownRemaining(nextCooldown);
+        if (submitterToken) window.localStorage.setItem(`barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}`, String(Date.now() + nextCooldown * 1000));
+        setWarpData({
+          artist: artist.trim(),
+          title: title.trim(),
+          tiktokHandle: tiktokHandle.trim(),
+          sourceType: mode === "upload" ? "UPLOAD" : (submitted.sourceType ?? "other").toUpperCase(),
+          fileName: file?.name ?? null,
+          durationLabel: detectedDuration ? formatRuntime(detectedDuration) : submitted.durationLabel,
+          sessionTitle: session?.title ?? "BARCODE Radio",
+          sessionDate: session?.showDate ?? "ACTIVE SESSION",
+          queueStatus: status ? `${status.activeCount + 1}/${status.capacity}` : "SYNCING",
+          submissionSlot: "INCOMING_TRANSMISSIONS",
+          lane: "INCOMING_TRANSMISSIONS",
+        });
         setTransmissionState("received");
         window.setTimeout(() => setTransmissionState("encoded"), 900);
         window.setTimeout(() => setTransmissionState("converting"), 2000);
@@ -190,7 +242,6 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
       setFile(null);
       setDetectedDuration(null);
       setReadState("idle");
-      setSuccess("Transmission stabilized in the Regular Queue.");
       await loadStatus();
       window.setTimeout(() => onSubmitted?.(payload.track?.id), 7200);
     } catch (err) {
@@ -201,9 +252,11 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
     }
   }
 
+  if (transmissionState !== "idle") return <WarpSequence state={transmissionState} data={warpData} />;
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
-      <aside className="border border-border bg-surface p-5 space-y-4">
+    <div className="grid gap-4 lg:grid-cols-[0.72fr_1fr]">
+      <aside className="border border-border bg-surface p-4 space-y-3">
         <div><p className="text-xs uppercase tracking-[0.35em] text-muted">// Current Broadcast Queue</p><p className="text-sm font-bold text-foreground mt-2">{session?.title ?? "BARCODE Radio"}</p><p className="text-xs text-muted">{session?.showDate ?? "Active show date syncing"}</p></div>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="border border-border p-3"><p className="text-xs text-muted">Queue</p><p className={status?.isOpen ? "text-accent" : "text-danger"}>{status?.isOpen ? "Open" : "Closed"}</p></div>
@@ -214,9 +267,9 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
         <PublicQueuePreview queue={publicQueue} lastSubmittedTrackId={lastSubmittedTrackId} />
       </aside>
 
-      <form onSubmit={submit} className="border border-border bg-surface p-5 space-y-5">
-        {(success || transmissionState !== "idle") && <WarpSequence state={transmissionState} />}
+      <form onSubmit={submit} className="border border-border bg-surface p-4 space-y-4">
         {error && <div className="border border-danger/40 bg-danger/5 p-4 text-danger text-sm">{error}</div>}
+        {cooldownRemaining > 0 && <div className="border border-accent/40 bg-accent/5 p-3 text-sm text-accent">Next transmission available in {formatCooldown(cooldownRemaining)}</div>}
 
         <div className="grid gap-3 sm:grid-cols-2">
           <button type="button" onClick={() => setMode("link")} className={`border p-4 text-left ${mode === "link" ? "border-accent bg-accent/10" : "border-border"}`}><span className="text-xs uppercase tracking-widest text-muted">Submit a link</span><p className="text-sm mt-1">YouTube, SoundCloud, Spotify, or other URL.</p></button>
@@ -240,16 +293,22 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
           <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">MP3/WAV file</span><input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,.mp3,.wav" onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" required /></label>
         )}
 
-        <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Optional transmission note</span><textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} rows={3} placeholder="Any clean context the host should know. Do not include private contact info." className="w-full bg-background border border-border px-3 py-2.5 text-sm" /><span className="block text-[11px] text-muted">Visible to queue control only. Public queue preview never shows notes.</span></label>
+        <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Optional transmission note</span><textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} rows={2} placeholder="Any clean context the host should know. Do not include private contact info." className="w-full bg-background border border-border px-3 py-2.5 text-sm" /><span className="block text-[11px] text-muted">Visible to queue control only. Public queue preview never shows notes.</span></label>
 
         <div className="border border-border bg-background/40 p-3 text-sm text-muted">{checkCopy}</div>
-        <button disabled={submitting || status?.isOpen === false || status?.isFull === true} className="w-full border border-accent px-4 py-3 text-sm uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{submitting ? "Submitting…" : status?.isFull ? "Queue Full" : "Enter Regular Queue"}</button>
+        <button disabled={submitting || cooldownRemaining > 0 || status?.isOpen === false || status?.isFull === true} className="w-full border border-accent px-4 py-3 text-sm uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{submitting ? "Submitting…" : cooldownRemaining > 0 ? `Next transmission available in ${formatCooldown(cooldownRemaining)}` : status?.isFull ? "Queue Full" : "Enter Regular Queue"}</button>
       </form>
     </div>
   );
 }
 
-function warpLabel(state: "idle" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed"): string {
+function formatCooldown(seconds: number): string {
+  const minutes = Math.floor(seconds / 60).toString().padStart(2, "0");
+  const rest = Math.max(0, seconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${rest}`;
+}
+
+function warpLabel(state: TransmissionState): string {
   if (state === "received") return "TRANSMISSION RECEIVED";
   if (state === "encoded") return "AUDIO SIGNAL ENCODED";
   if (state === "converting") return "CONVERTING TRACK DATA TO NETWORK CODE";
@@ -259,10 +318,22 @@ function warpLabel(state: "idle" | "received" | "encoded" | "converting" | "temp
   return "TRANSMISSION RECEIVED";
 }
 
-function WarpSequence({ state }: { state: "idle" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed" }) {
-  const steps = ["received", "encoded", "converting", "temporal", "aligning", "confirmed"];
+function WarpSequence({ state, data }: { state: TransmissionState; data: WarpData | null }) {
+  const steps: TransmissionState[] = ["received", "encoded", "converting", "temporal", "aligning", "confirmed"];
   const activeIndex = Math.max(0, steps.indexOf(state));
-  return <div className="overflow-hidden border border-accent/40 bg-accent/5 p-4 space-y-3"><div><p className="text-accent font-bold">✓ {warpLabel(state)}</p><p className="text-xs text-muted mt-1">{state === "confirmed" ? "Track stabilized in Incoming Transmissions." : "Encoding audio fragments through BARCODE Network temporal infrastructure…"}</p></div><div className="relative border border-border bg-background/60 p-3"><div className="mb-3 grid grid-cols-6 gap-1">{steps.map((step, index) => <span key={step} className={`h-1 ${index <= activeIndex ? "bg-accent" : "bg-border"}`} />)}</div><div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr]"><div className="font-mono text-[10px] leading-tight text-accent/70">01000010 01000001<br />01010010 01000011<br />01001111 01000100<br />01000101</div><div className="flex items-center justify-center text-accent">▦</div><div className="flex items-end gap-1">{[18, 34, 24, 44, 28, 38, 22, 30].map((height, index) => <span key={index} className="w-2 bg-accent/70" style={{ height }} />)}</div></div></div><div className="border border-border bg-background/40 p-3"><p className="text-xs uppercase tracking-widest text-muted">Priority Signal Upgrade</p><p className="mt-1 text-xs text-muted">Move this track into the Priority Lane when priority access is active.</p><button type="button" disabled className="mt-3 border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted opacity-60">Coming soon</button></div></div>;
+  const fragments = [
+    ["ARTIST_ID", data?.artist ?? "SIGNAL SOURCE"],
+    ["TRACK_TITLE", data?.title ?? "UNKNOWN TRACK"],
+    ["TIKTOK_SIGNAL", data?.tiktokHandle || "@pending"],
+    ["SOURCE_TYPE", data?.sourceType ?? "SOURCE"],
+    ["DURATION_LOCK", data?.durationLabel ?? "ESTIMATED/PENDING"],
+    ["SESSION", data?.sessionTitle ?? "BARCODE Radio"],
+    ["SESSION_DATE", data?.sessionDate ?? "ACTIVE"],
+    ["QUEUE_LANE", data?.lane ?? "INCOMING_TRANSMISSIONS"],
+    ["SUBMISSION_SLOT", data?.submissionSlot ?? "INCOMING_TRANSMISSIONS"],
+    ["QUEUE_PRESSURE", data?.queueStatus ?? "SYNCING"],
+  ];
+  return <div className="barcode-warp relative overflow-hidden border border-accent/50 bg-background/95 p-5 shadow-[0_0_80px_rgba(255,0,0,0.24)]"><div className="absolute inset-0 opacity-30 [background:linear-gradient(90deg,transparent,rgba(255,0,0,0.18),transparent)] animate-pulse" /><div className="relative z-10 space-y-5"><div><p className="text-xs uppercase tracking-[0.4em] text-accent">BARCODE Network Transmission</p><h2 className="mt-2 text-2xl font-bold text-foreground">{warpLabel(state)}</h2><p className="mt-2 text-xs text-muted">{state === "confirmed" ? "Queue insertion pulse locked. Returning to broadcast view." : "Audio fragments are being pulled through the temporal routing grid."}</p></div><div className="grid grid-cols-6 gap-1">{steps.map((step, index) => <span key={step} className={`h-1.5 ${index <= activeIndex ? "bg-accent shadow-[0_0_12px_rgba(255,0,0,0.7)]" : "bg-border"}`} />)}</div><div className="grid gap-4 lg:grid-cols-[1fr_9rem_1fr]"><div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80">{fragments.slice(0, 5).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}</div><div className="relative flex aspect-square items-center justify-center overflow-hidden border border-accent/40 bg-accent/5"><div className="absolute inset-4 rounded-full border border-accent/40 animate-spin motion-reduce:animate-none" /><div className="absolute inset-8 rounded-full border border-accent/20 animate-ping motion-reduce:animate-none" /><span className="relative text-5xl text-accent">▦</span></div><div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80">{fragments.slice(5).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}</div></div><div className="grid grid-cols-12 items-end gap-1 border border-border bg-background/60 p-3">{[16, 42, 24, 68, 34, 78, 28, 58, 44, 72, 30, 52].map((height, index) => <span key={index} className="bg-accent/70 shadow-[0_0_10px_rgba(255,0,0,0.45)]" style={{ height }} />)}</div><div className="border border-border bg-background/50 p-3"><p className="text-xs uppercase tracking-widest text-muted">Priority Signal Upgrade</p><p className="mt-1 text-xs text-muted">Move this track into the Priority Lane when priority access is active.</p><button type="button" disabled className="mt-3 border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted opacity-60">Coming soon</button></div></div><style jsx>{`@keyframes barcode-warp-shake{0%,100%{transform:translate3d(0,0,0)}18%{transform:translate3d(-2px,1px,0)}34%{transform:translate3d(2px,-1px,0)}56%{transform:translate3d(-1px,-2px,0)}72%{transform:translate3d(1px,2px,0)}}.barcode-warp{animation:barcode-warp-shake 760ms steps(2,end) 5}@media (prefers-reduced-motion: reduce){.barcode-warp{animation:none}}`}</style></div>;
 }
 
 function PublicQueuePreview({ queue, lastSubmittedTrackId }: { queue: QueuePublicTrack[]; lastSubmittedTrackId: string | null }) {

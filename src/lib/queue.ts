@@ -31,6 +31,7 @@ import type {
 const STATE_KEY = "radioQueue:v2:sessions";
 const LEGACY_STATE_KEY = "radioQueue:v1:state";
 const DEFAULT_QUEUE_CAPACITY = 50;
+const SUBMISSION_COOLDOWN_SECONDS = 5 * 60;
 
 type QueueAdminAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority";
 
@@ -592,6 +593,31 @@ function suspiciousFlagsFor(session: QueueSession, track: QueueEntry): string[] 
   return [...flags];
 }
 
+function findSubmissionCooldown(session: QueueSession, track: QueueEntry): number {
+  const entries = [...session.queue, ...(session.nextInLineTrack ? [session.nextInLineTrack] : []), ...(session.loadedTrack ? [session.loadedTrack] : []), ...session.completed, ...session.removed];
+  const submitter = normalizeIdentity(track.submitterArtistName ?? track.submittedArtistName);
+  const email = normalizeEmail(track.contactEmail);
+  const matching = entries.filter((entry) => {
+    if (track.submitterToken && entry.submitterToken === track.submitterToken) return true;
+    if (track.normalizedTikTokHandle && entry.normalizedTikTokHandle === track.normalizedTikTokHandle) return true;
+    if (submitter && normalizeIdentity(entry.submitterArtistName ?? entry.submittedArtistName) === submitter) return true;
+    if (email && normalizeEmail(entry.contactEmail) === email) return true;
+    return false;
+  });
+  const lastSubmittedAt = matching.reduce((latest, entry) => Math.max(latest, new Date(entry.createdAt).getTime()), 0);
+  if (!lastSubmittedAt) return 0;
+  const elapsedSeconds = Math.floor((Date.now() - lastSubmittedAt) / 1000);
+  return Math.max(0, SUBMISSION_COOLDOWN_SECONDS - elapsedSeconds);
+}
+
+class QueueSubmissionCooldownError extends Error {
+  remainingSeconds: number;
+  constructor(remainingSeconds: number) {
+    super("Submission cooldown active.");
+    this.remainingSeconds = remainingSeconds;
+  }
+}
+
 class QueueSubmissionBlockedError extends Error {
   reasons: string[];
   constructor(reasons: string[]) {
@@ -689,6 +715,8 @@ export async function submitRadioTrack(input: Parameters<typeof createQueueTrack
   const track = await createQueueTrack(input);
   const blockReasons = findSubmissionBlocks(session, track);
   if (blockReasons.length > 0) throw new QueueSubmissionBlockedError(blockReasons);
+  const cooldownRemainingSeconds = findSubmissionCooldown(session, track);
+  if (cooldownRemainingSeconds > 0) throw new QueueSubmissionCooldownError(cooldownRemainingSeconds);
   track.suspiciousFlags = suspiciousFlagsFor(session, track);
   session.queue.push(track);
   pullNextInLine(session);

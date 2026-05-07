@@ -1,29 +1,83 @@
 // ============================================================
-// QUEUE SYSTEM — TYPE DEFINITIONS
+// BARCODE RADIO QUEUE v1 — TYPE DEFINITIONS
 // ============================================================
 
-export type QueueTier = "free" | "featured" | "fastlane" | "frontrow";
+export type RadioQueueLane = "priority" | "wheel" | "regular";
+export type RadioQueueStatus = "active" | "completed" | "removed";
+export type RadioQueueDurationSource = "detected" | "fallback" | "unknown";
 
-export interface QueueEntry {
+export interface QueueTrack {
   id: string;
+  artistName: string;
+  songTitle: string;
+  songUrl: string;
+  submitterContact?: string;
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+  lane: RadioQueueLane;
+  status: RadioQueueStatus;
+  detectedDurationSeconds: number | null;
+  durationSource: RadioQueueDurationSource;
+  fallbackDurationSeconds: number;
+  completedAt?: string;
+  removedAt?: string;
+  spotlightedAt?: string;
+
+  // Legacy display aliases kept so older overlay/components can render safely
+  // until they are retired from the previous queue experiment.
   artist: string;
   title: string;
   link: string;
   tier: QueueTier;
-  amount: number; // cents
-  stripeSessionId: string | null;
-  status: "pending" | "queued" | "playing" | "played" | "refunded" | "expired";
-  createdAt: string; // ISO
   playedAt: string | null;
 }
 
+export interface QueueRuntimeSummary {
+  activeTrackCount: number;
+  activeRuntimeSeconds: number;
+  completedCount: number;
+  completedRuntimeSeconds: number;
+  projectedTotalSessionSeconds: number;
+  queueOpen: boolean;
+}
+
+export interface QueueActiveLanes {
+  priority: QueueTrack[];
+  wheel: QueueTrack[];
+  regular: QueueTrack[];
+}
+
 export interface QueueState {
-  nowPlaying: QueueEntry | null;
-  queue: QueueEntry[];
-  history: QueueEntry[];
+  active: QueueActiveLanes;
+  completed: QueueTrack[];
+  removed: QueueTrack[];
+  spotlight: QueueTrack[];
+  summary: QueueRuntimeSummary;
+
+  // Legacy state aliases for the retired AI-stream queue clients.
+  nowPlaying: QueueTrack | null;
+  queue: QueueTrack[];
+  history: QueueTrack[];
   totalPlayed: number;
   streamStatus: "online" | "offline";
 }
+
+export interface QueueSubmissionInput {
+  artistName: string;
+  songTitle: string;
+  songUrl: string;
+  submitterContact?: string;
+  note?: string;
+  fallbackDurationSeconds?: number;
+}
+
+export type QueueAdminAction = "finish" | "remove" | "moveToPriority" | "spotlight" | "setOpen";
+
+export type QueueTier = "free" | "featured" | "fastlane" | "frontrow";
+export type QueueEntry = QueueTrack;
+
+export const DEFAULT_FALLBACK_DURATION_SECONDS = 240;
 
 export const TIERS = {
   free: {
@@ -31,36 +85,35 @@ export const TIERS = {
     price: 0,
     label: "FREE",
     priority: 0,
-    description: "Join the queue for free. Plays when no paid requests are waiting.",
+    description: "Join the regular BARCODE Radio queue.",
     icon: "○",
   },
   featured: {
     name: "Featured",
-    price: 300, // $3.00
+    price: 300,
     label: "$3",
     priority: 1,
-    description: "Skip the free line. Plays when no Fast Lane or Front Row requests are queued.",
+    description: "Reserved legacy tier. Stripe is not active in Radio Queue v1.",
     icon: "▸",
   },
   fastlane: {
     name: "Fast Lane",
-    price: 500, // $5.00
+    price: 500,
     label: "$5",
     priority: 2,
-    description: "Skip ahead — plays when no Front Row requests are in the queue.",
+    description: "Reserved legacy tier. Stripe is not active in Radio Queue v1.",
     icon: "▸▸",
   },
   frontrow: {
     name: "Front Row",
-    price: 1000, // $10.00
+    price: 1000,
     label: "$10",
     priority: 3,
-    description: "Top of the queue. Guaranteed next play. Stacks in order paid.",
+    description: "Reserved legacy tier. Stripe is not active in Radio Queue v1.",
     icon: "▸▸▸",
   },
 } as const;
 
-/** Tiers a user can upgrade TO from a given tier (pay difference) */
 export const UPGRADE_PATHS: Record<QueueTier, QueueTier[]> = {
   free: ["featured", "fastlane", "frontrow"],
   featured: ["fastlane", "frontrow"],
@@ -68,22 +121,19 @@ export const UPGRADE_PATHS: Record<QueueTier, QueueTier[]> = {
   frontrow: [],
 };
 
-/** Map legacy tier names (from Redis) to current tier names */
 const LEGACY_TIER_MAP: Record<string, QueueTier> = {
   expedited: "featured",
   priority: "fastlane",
   vip: "frontrow",
 };
 
-/** Normalize a tier value — handles old entries still stored in Redis */
 export function normalizeTier(tier: string): QueueTier {
   if (tier in TIERS) return tier as QueueTier;
   return LEGACY_TIER_MAP[tier] ?? "free";
 }
 
-/** Generate a unique queue entry ID */
 export function generateQueueId(): string {
   const ts = Date.now().toString(36);
   const rand = Math.random().toString(36).slice(2, 8);
-  return `q_${ts}_${rand}`;
+  return `rq_${ts}_${rand}`;
 }

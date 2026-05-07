@@ -149,6 +149,28 @@ export interface QueueState {
   nextNonPriorityLane?: QueueNonPriorityLane;
 }
 
+export function parseQueueYouTubeVideoId(link?: string | null): string | null {
+  if (!link) return null;
+  try {
+    const url = new URL(link);
+    const host = url.hostname.replace(/^www\./, "").toLowerCase();
+    if (host === "youtu.be") return url.pathname.split("/").filter(Boolean)[0] ?? null;
+    if (host.includes("youtube.com")) return url.searchParams.get("v") || url.pathname.match(/\/shorts\/([^/?#]+)/)?.[1] || url.pathname.match(/\/embed\/([^/?#]+)/)?.[1] || null;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function getTrackArtworkUrl(track: Pick<QueueEntry, "sourceType" | "sourceArtworkUrl" | "link"> | Pick<QueuePublicTrack, "sourceType" | "sourceArtworkUrl">): string | null {
+  if (track.sourceType === "youtube" && "link" in track) {
+    const videoId = parseQueueYouTubeVideoId(track.link);
+    if (videoId) return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+  }
+  if ((track.sourceType === "spotify" || track.sourceType === "soundcloud" || track.sourceType === "youtube") && track.sourceArtworkUrl) return track.sourceArtworkUrl;
+  return null;
+}
+
 export const INTERNAL_BUFFER_DURATION_SECONDS = 240;
 export const RADIO_QUEUE_CAPACITY = 40;
 

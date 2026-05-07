@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { RadioQueueForm } from "@/components/RadioQueueForm";
 import { externalLinks } from "@/content";
-import { formatRuntime } from "@/lib/queue-types";
+import { formatRuntime, getTrackArtworkUrl } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicTrack } from "@/lib/queue-types";
 
 export function PublicQueueSession({ sessionId }: { sessionId: string }) {
@@ -69,14 +69,15 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
       <PublicLane title="Recently Played" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} />
       <DiscordQueueCTA />
 
-      {submitOpen && <div className="fixed inset-0 z-[10000] overflow-y-auto bg-black/75 p-3 backdrop-blur-sm"><div className="mx-auto my-6 max-w-5xl border border-accent/50 bg-background p-4 shadow-[0_0_60px_rgba(255,0,0,0.18)]"><div className="mb-4 flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.35em] text-accent">Transmission Intake</p><p className="text-sm text-muted mt-1">Queue remains live behind this terminal while you route your signal.</p></div><button type="button" onClick={() => setSubmitOpen(false)} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">Collapse Intake</button></div><RadioQueueForm sessionId={sessionId} onSubmitted={(trackId) => { setLastSubmittedTrackId(trackId ?? null); window.setTimeout(() => setSubmitOpen(false), 6500); load(); }} /></div></div>}
+      {submitOpen && <div className="fixed inset-0 z-[10000] grid place-items-center overflow-y-auto bg-black/70 p-3 backdrop-blur-sm"><div className="my-4 max-h-[92vh] w-full max-w-[720px] overflow-y-auto border border-accent/50 bg-background/95 p-4 shadow-[0_0_60px_rgba(255,0,0,0.18)]"><div className="mb-4 flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.35em] text-accent">Transmission Intake</p><p className="text-sm text-muted mt-1">Queue remains live behind this terminal while you route your signal.</p></div><button type="button" onClick={() => setSubmitOpen(false)} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">Collapse Intake</button></div><RadioQueueForm sessionId={sessionId} onSubmitted={(trackId) => { setLastSubmittedTrackId(trackId ?? null); window.setTimeout(() => setSubmitOpen(false), 450); load(); }} /></div></div>}
     </div>
   );
 }
 
 function SourceArt({ track }: { track: QueuePublicTrack | null }) {
   const [failed, setFailed] = useState(false);
-  if (track?.sourceArtworkUrl && !failed) return <img src={track.sourceArtworkUrl} alt="" className="h-full w-full object-cover" onError={() => setFailed(true)} />;
+  const artworkUrl = track ? getTrackArtworkUrl(track) : null;
+  if (artworkUrl && !failed) return <img src={artworkUrl} alt="" className="h-full w-full object-cover" onError={() => setFailed(true)} />;
   return <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_center,rgba(255,0,0,0.25),transparent_60%)] text-4xl text-accent">▦</div>;
 }
 

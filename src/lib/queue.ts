@@ -9,6 +9,7 @@ import {
   formatRuntime,
   generateQueueId,
   getTrackRuntimeSeconds,
+  getTrackArtworkUrl,
   normalizeTier,
 } from "./queue-types";
 import type {
@@ -741,7 +742,7 @@ export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
     lane: normalized.lane ?? "regular",
     durationLabel: normalized.durationIsEstimate ? "estimated/pending" : formatRuntime(getTrackRuntimeSeconds(normalized)),
     durationIsEstimate: normalized.durationIsEstimate ?? true,
-    sourceArtworkUrl: normalized.sourceArtworkUrl ?? null,
+    sourceArtworkUrl: getTrackArtworkUrl(normalized),
     tiktokHandle: normalized.tiktokHandle ?? null,
   };
 }
@@ -755,6 +756,72 @@ export async function getPublicQueueSnapshot(sessionId?: string): Promise<QueueP
   }
   const normalized = normalizeSession(session);
   return { session: summarizeSession(normalized), status: normalized.publicStatus, queue: normalized.queue.map(toPublicQueueTrack), completed: normalized.completed.slice(0, 10).map(toPublicQueueTrack), nowPlaying: normalized.loadedTrack ? toPublicQueueTrack(normalized.loadedTrack) : null, upNext: normalized.nextInLineTrack ? toPublicQueueTrack(normalized.nextInLineTrack) : null };
+}
+
+export interface QueueSessionSubmitterRow {
+  sessionId: string;
+  sessionTitle: string;
+  showDate: string;
+  submitterArtistName: string;
+  submittedArtistName: string;
+  submittedSongTitle: string;
+  tiktokHandle: string;
+  contactEmail: string;
+  sourceLink: string;
+  sourceType: string;
+  submittedAt: string;
+  status: string;
+  lane: string;
+  spotlight: boolean;
+}
+
+function sessionEntriesForExport(session: QueueSession): QueueEntry[] {
+  return [
+    ...(session.loadedTrack ? [session.loadedTrack] : []),
+    ...(session.nextInLineTrack ? [session.nextInLineTrack] : []),
+    ...session.queue,
+    ...session.completed,
+    ...session.removed,
+  ];
+}
+
+function exportRowsForSession(session: QueueSession): QueueSessionSubmitterRow[] {
+  const spotlightIds = new Set(session.spotlight.map((entry) => entry.id));
+  return sessionEntriesForExport(session).map((entry) => ({
+    sessionId: session.sessionId,
+    sessionTitle: session.title,
+    showDate: session.showDate,
+    submitterArtistName: entry.submitterArtistName ?? entry.submittedArtistName ?? entry.artist,
+    submittedArtistName: entry.submittedArtistName ?? entry.artist,
+    submittedSongTitle: entry.submittedSongTitle ?? entry.title,
+    tiktokHandle: entry.tiktokHandle ?? entry.normalizedTikTokHandle ?? "",
+    contactEmail: entry.contactEmail ?? "",
+    sourceLink: entry.link,
+    sourceType: entry.sourceType ?? "other",
+    submittedAt: entry.createdAt,
+    status: entry.status,
+    lane: entry.lane ?? "regular",
+    spotlight: spotlightIds.has(entry.id),
+  }));
+}
+
+function csvEscape(value: string | number | boolean): string {
+  const text = String(value ?? "");
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+export async function getQueueSessionSubmitterList(sessionId?: string): Promise<{ session: QueueSessionSummary; rows: QueueSessionSubmitterRow[] }> {
+  const store = await readStore();
+  const session = normalizeSession(getSession(store, sessionId));
+  return { session: summarizeSession(session), rows: exportRowsForSession(session) };
+}
+
+export async function getQueueSessionSubmissionsCsv(sessionId?: string): Promise<{ filename: string; csv: string }> {
+  const { session, rows } = await getQueueSessionSubmitterList(sessionId);
+  const headers = ["sessionId", "session title", "show date", "submitted artist / submitter artist", "public/display artist credit", "song title", "TikTok handle", "email/contact", "source link", "source type", "submitted timestamp", "current status", "current lane", "spotlight"];
+  const body = rows.map((row) => [row.sessionId, row.sessionTitle, row.showDate, row.submitterArtistName, row.submittedArtistName, row.submittedSongTitle, row.tiktokHandle, row.contactEmail, row.sourceLink, row.sourceType, row.submittedAt, row.status, row.lane, row.spotlight].map(csvEscape).join(","));
+  const safeDate = session.showDate || new Date().toISOString().slice(0, 10);
+  return { filename: `barcode-radio-session-${safeDate}-submissions.csv`, csv: [headers.map(csvEscape).join(","), ...body].join("\n") };
 }
 
 export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> {

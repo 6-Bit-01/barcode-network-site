@@ -78,7 +78,7 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [transmissionState, setTransmissionState] = useState<"idle" | "routing" | "parsed" | "aligning" | "mixing" | "confirmed">("idle");
+  const [transmissionState, setTransmissionState] = useState<"idle" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed">("idle");
 
   async function loadStatus() {
     const res = await fetch(`/api/queue${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""}`, { cache: "no-store" });
@@ -151,7 +151,6 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
     setError(null);
     setSuccess(null);
     setSubmitting(true);
-    setTransmissionState("routing");
     try {
       const body = new FormData();
       body.set("mode", mode);
@@ -167,16 +166,18 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
       if (mode === "upload" && file) body.set("file", file);
       if (mode === "link") body.set("link", link.trim());
 
-      window.setTimeout(() => setTransmissionState("parsed"), 900);
-      window.setTimeout(() => setTransmissionState("aligning"), 2200);
-      window.setTimeout(() => setTransmissionState("mixing"), 3800);
       const res = await fetch("/api/queue", { method: "POST", body });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.error || "Submission failed");
       if (payload.track?.id) {
         const submitted = publicTrackFromApi(payload.track);
         setLastSubmittedTrackId(submitted.id);
-        window.setTimeout(() => setTransmissionState("confirmed"), 5200);
+        setTransmissionState("received");
+        window.setTimeout(() => setTransmissionState("encoded"), 900);
+        window.setTimeout(() => setTransmissionState("converting"), 2000);
+        window.setTimeout(() => setTransmissionState("temporal"), 3300);
+        window.setTimeout(() => setTransmissionState("aligning"), 4700);
+        window.setTimeout(() => setTransmissionState("confirmed"), 6100);
         setPublicQueue((current) => [submitted, ...current.filter((entry) => entry.id !== submitted.id)]);
       }
       setArtist("");
@@ -191,7 +192,7 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
       setReadState("idle");
       setSuccess("Transmission stabilized in the Regular Queue.");
       await loadStatus();
-      window.setTimeout(() => onSubmitted?.(payload.track?.id), 6200);
+      window.setTimeout(() => onSubmitted?.(payload.track?.id), 7200);
     } catch (err) {
       setTransmissionState("idle");
       setError(err instanceof Error ? err.message : "Submission failed");
@@ -214,7 +215,7 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
       </aside>
 
       <form onSubmit={submit} className="border border-border bg-surface p-5 space-y-5">
-        {(success || transmissionState !== "idle") && <div className="border border-accent/40 bg-accent/5 p-4 space-y-3"><div><p className="text-accent font-bold">✓ {transmissionState === "routing" ? "TRANSMISSION RECEIVED" : transmissionState === "parsed" ? "SOURCE SIGNAL PARSED" : transmissionState === "aligning" ? "CROSS-DIMENSIONAL QUEUE ALIGNMENT" : transmissionState === "mixing" ? "MIXING WITH OFF-WORLD SUBMISSIONS" : "REGULAR QUEUE STABILIZED"}</p><p className="text-xs text-muted mt-1">{transmissionState === "confirmed" ? "Transmission stabilized in the Regular Queue." : "Routing track through the BARCODE Network…"}</p></div><div className="border border-border bg-background/40 p-3"><p className="text-xs uppercase tracking-widest text-muted">Priority Signal Upgrade</p><p className="mt-1 text-xs text-muted">Move this track into the Priority Lane when priority access is active.</p><button type="button" disabled className="mt-3 border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted opacity-60">Coming soon</button></div></div>}
+        {(success || transmissionState !== "idle") && <WarpSequence state={transmissionState} />}
         {error && <div className="border border-danger/40 bg-danger/5 p-4 text-danger text-sm">{error}</div>}
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -246,6 +247,22 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
       </form>
     </div>
   );
+}
+
+function warpLabel(state: "idle" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed"): string {
+  if (state === "received") return "TRANSMISSION RECEIVED";
+  if (state === "encoded") return "AUDIO SIGNAL ENCODED";
+  if (state === "converting") return "CONVERTING TRACK DATA TO NETWORK CODE";
+  if (state === "temporal") return "TEMPORAL ROUTING GRID ONLINE";
+  if (state === "aligning") return "CROSS-DIMENSIONAL QUEUE ALIGNMENT";
+  if (state === "confirmed") return "TRANSMISSION STABILIZED";
+  return "TRANSMISSION RECEIVED";
+}
+
+function WarpSequence({ state }: { state: "idle" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed" }) {
+  const steps = ["received", "encoded", "converting", "temporal", "aligning", "confirmed"];
+  const activeIndex = Math.max(0, steps.indexOf(state));
+  return <div className="overflow-hidden border border-accent/40 bg-accent/5 p-4 space-y-3"><div><p className="text-accent font-bold">✓ {warpLabel(state)}</p><p className="text-xs text-muted mt-1">{state === "confirmed" ? "Track stabilized in Incoming Transmissions." : "Encoding audio fragments through BARCODE Network temporal infrastructure…"}</p></div><div className="relative border border-border bg-background/60 p-3"><div className="mb-3 grid grid-cols-6 gap-1">{steps.map((step, index) => <span key={step} className={`h-1 ${index <= activeIndex ? "bg-accent" : "bg-border"}`} />)}</div><div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr]"><div className="font-mono text-[10px] leading-tight text-accent/70">01000010 01000001<br />01010010 01000011<br />01001111 01000100<br />01000101</div><div className="flex items-center justify-center text-accent">▦</div><div className="flex items-end gap-1">{[18, 34, 24, 44, 28, 38, 22, 30].map((height, index) => <span key={index} className="w-2 bg-accent/70" style={{ height }} />)}</div></div></div><div className="border border-border bg-background/40 p-3"><p className="text-xs uppercase tracking-widest text-muted">Priority Signal Upgrade</p><p className="mt-1 text-xs text-muted">Move this track into the Priority Lane when priority access is active.</p><button type="button" disabled className="mt-3 border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted opacity-60">Coming soon</button></div></div>;
 }
 
 function PublicQueuePreview({ queue, lastSubmittedTrackId }: { queue: QueuePublicTrack[]; lastSubmittedTrackId: string | null }) {

@@ -29,7 +29,7 @@ export function PublicQueueGateway() {
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 15_000);
+    const interval = setInterval(load, 5_000);
     return () => clearInterval(interval);
   }, []);
 
@@ -74,7 +74,7 @@ export function PublicQueueGateway() {
           <div className="border border-border p-3"><p className="text-xs text-muted">Queue pressure</p><p>{snapshot?.status.pressure ?? "syncing"}</p></div>
           <div className="border border-border p-3"><p className="text-xs text-muted">Regular Queue</p><p>{regularCount}</p></div>
           <div className="border border-border p-3"><p className="text-xs text-muted">Priority Lane</p><p>{priorityCount}</p></div>
-          <div className="border border-border p-3"><p className="text-xs text-muted">Wheel Winners</p><p>{wheelCount}</p></div>
+          <div className="border border-border p-3"><p className="text-xs text-muted">Wheel Chosen</p><p>{wheelCount}</p></div>
         </div>
       </section>
       <section className="border border-border bg-surface p-5 space-y-4">

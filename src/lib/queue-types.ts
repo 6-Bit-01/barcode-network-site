@@ -73,6 +73,7 @@ export interface QueueSessionSummary {
   nextNonPriorityLane: QueueNonPriorityLane;
   nextInLineTrackId?: string | null;
   nextInLineHoldTrackId?: string | null;
+  loadedTrackId?: string | null;
 }
 
 export interface QueueSession extends QueueSessionSummary {
@@ -84,6 +85,8 @@ export interface QueueSession extends QueueSessionSummary {
   nextNonPriorityLane: QueueNonPriorityLane;
   nextInLineTrack?: QueueEntry | null;
   nextInLineTrackId?: string | null;
+  loadedTrack?: QueueEntry | null;
+  loadedTrackId?: string | null;
   currentTrackPreviousLane?: QueueLane | null;
   currentTrackPreviousIndex?: number | null;
   nextInLineHoldTrackId?: string | null;
@@ -124,6 +127,7 @@ export interface QueueState {
   viewedSessionId?: string;
   readOnly?: boolean;
   nextInLine?: QueueEntry | null;
+  loadedTrack?: QueueEntry | null;
   nextNonPriorityLane?: QueueNonPriorityLane;
 }
 
@@ -134,7 +138,7 @@ export const TIERS = {
   free: { name: "Regular Queue", price: 0, label: "REGULAR", priority: 0, description: "Enter the live BARCODE Radio request flow.", icon: "○" },
   featured: { name: "Spotlight", price: 0, label: "SPOTLIGHT", priority: 1, description: "Host-selected spotlight lane for special attention.", icon: "✦" },
   fastlane: { name: "Priority Lane", price: 0, label: "PRIORITY", priority: 2, description: "Host-controlled priority lane. Payment flow is not enabled yet.", icon: "▸▸" },
-  frontrow: { name: "Wheel Winners", price: 0, label: "WHEEL", priority: 3, description: "Winner lane controlled by the BARCODE Radio host.", icon: "◈" },
+  frontrow: { name: "Wheel Chosen", price: 0, label: "WHEEL", priority: 3, description: "Winner lane controlled by the BARCODE Radio host.", icon: "◈" },
 } as const;
 
 export const UPGRADE_PATHS: Record<QueueTier, QueueTier[]> = {

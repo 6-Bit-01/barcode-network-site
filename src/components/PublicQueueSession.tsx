@@ -18,7 +18,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 15_000);
+    const interval = setInterval(load, 5_000);
     return () => clearInterval(interval);
   }, [sessionId]);
 
@@ -73,7 +73,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
       <div className="grid gap-5 xl:grid-cols-3">
         <PublicLane title="Priority Signal" tracks={lanes.priority} />
-        <PublicLane title="Wheel Breach Winners" tracks={lanes.wheel} />
+        <PublicLane title="Wheel Chosen" tracks={lanes.wheel} />
         <PublicLane title="Incoming Transmissions" tracks={lanes.regular} />
       </div>
 

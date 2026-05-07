@@ -7,7 +7,7 @@ import { formatRuntime, getTrackRuntimeSeconds } from "@/lib/queue-types";
 import type { QueueEntry, QueueLane, QueueSessionSummary, QueueState } from "@/lib/queue-types";
 
 type Tab = "active" | "completed" | "removed";
-type AdminQueueAction = "finish" | "remove" | "priority" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority";
+type AdminQueueAction = "load" | "finish" | "remove" | "priority" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority";
 
 const LANE_LABELS: Record<QueueLane, string> = { priority: "Priority Lane", wheel: "Wheel Winner", regular: "Regular Queue" };
 
@@ -70,7 +70,7 @@ export function AdminRadioQueueControl() {
     setMounted(true);
     const sessionId = initialSessionIdFromUrl();
     load(sessionId);
-    const interval = setInterval(() => load(initialSessionIdFromUrl()), 10_000);
+    const interval = setInterval(() => load(initialSessionIdFromUrl()), 5_000);
     return () => clearInterval(interval);
   }, []);
 
@@ -79,11 +79,16 @@ export function AdminRadioQueueControl() {
     if (res.ok) setState(await res.json());
   }
   async function action(id: string, next: AdminQueueAction) { await post({ id, action: next }); }
+  async function playerAction(id: string, next: AdminQueueAction) {
+    await action(id, next);
+    if (next === "finish" || next === "remove" || next === "moveBack") setPlayer(null);
+  }
   async function toggleOpen(isOpen: boolean) { await post({ action: "setOpen", isOpen }); }
   async function copy(entry: QueueEntry) { await navigator.clipboard.writeText(openUrl(entry)); }
-  function loadPlayer(entry: QueueEntry) {
+  async function loadPlayer(entry: QueueEntry) {
     setPlayer(entry);
     setMinimized(false);
+    await action(entry.id, "load");
   }
   async function markWheelWinner() {
     if (!wheelSelection) return;
@@ -116,7 +121,8 @@ export function AdminRadioQueueControl() {
   const canControlSession = Boolean(state?.session && state.session.status !== "archived" && !readOnly);
   const isArchivedReview = Boolean(state?.session?.status === "archived" || readOnly);
   const nextInLine = state?.nextInLine ?? null;
-  const playerPadding = player ? (minimized ? "pb-32" : "pb-[28rem]") : "pb-16";
+  const loadedPlayer = state?.nowPlaying ?? player;
+  const playerPadding = loadedPlayer ? (minimized ? "pb-32" : "pb-[28rem]") : "pb-16";
 
   return (
     <div className={`${playerPadding} space-y-6`}>
@@ -166,7 +172,7 @@ export function AdminRadioQueueControl() {
         {tab === "removed" && <Lane title="Removed" tracks={state?.removed ?? []} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="removed" readOnly={readOnly} />}
       </>}
 
-      {mounted && player && createPortal(<PlayerDock player={player} minimized={minimized} setMinimized={setMinimized} onClose={() => setPlayer(null)} onCopy={() => copy(player)} />, document.body)}
+      {mounted && loadedPlayer && createPortal(<PlayerDock player={loadedPlayer} minimized={minimized} setMinimized={setMinimized} readOnly={readOnly} onAction={playerAction} onClose={() => setPlayer(null)} onCopy={() => copy(loadedPlayer)} />, document.body)}
     </div>
   );
 }
@@ -183,7 +189,7 @@ function WheelWinnerSelector({ tracks, search, selection, readOnly, onSearch, on
   return <section className="border border-border bg-surface p-4 space-y-3"><div><p className="text-xs uppercase tracking-[0.3em] text-muted">Wheel Spin Winner Selector</p><p className="text-sm text-muted mt-2">Search active Regular Queue tracks only. Marking a winner moves the selected track into Wheel Winners without duplicating it.</p></div><div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]"><input value={search} onChange={(event) => onSearch(event.target.value)} disabled={readOnly} placeholder="Search artist, title, or link" className="w-full border border-border bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50" /><select value={selection} onChange={(event) => onSelection(event.target.value)} disabled={readOnly || tracks.length === 0} className="w-full border border-border bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"><option value="">{tracks.length === 0 ? "No active regular tracks found" : "Select a Regular Queue track"}</option>{tracks.map((entry) => <option key={entry.id} value={entry.id}>{submittedArtist(entry)} — {submittedTitle(entry)}</option>)}</select><button onClick={onMark} disabled={readOnly || !selection} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent disabled:cursor-not-allowed disabled:opacity-40">Mark Wheel Winner</button></div></section>;
 }
 
-function PlayerDock({ player, minimized, setMinimized, onClose, onCopy }: { player: QueueEntry; minimized: boolean; setMinimized: (value: boolean) => void; onClose: () => void; onCopy: () => void }) {
+function PlayerDock({ player, minimized, setMinimized, readOnly, onAction, onClose, onCopy }: { player: QueueEntry; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; onAction: (id: string, action: AdminQueueAction) => void; onClose: () => void; onCopy: () => void }) {
   const embedded = embedUrl(player);
   return (
     <div className="fixed bottom-0 left-0 right-0 z-[9999] border-t border-accent/40 bg-background/95 p-3 shadow-[0_-20px_60px_rgba(0,0,0,0.45)] backdrop-blur">
@@ -199,7 +205,7 @@ function PlayerDock({ player, minimized, setMinimized, onClose, onCopy }: { play
             <button type="button" onClick={() => setMinimized(!minimized)} className="border border-border px-3 py-2 text-xs text-muted">{minimized ? "Expand" : "Minimize"}</button>
             <a href={openUrl(player)} target="_blank" rel="noreferrer" className="border border-accent px-3 py-2 text-xs text-accent">Open Link</a>
             <button type="button" onClick={onCopy} className="border border-border px-3 py-2 text-xs text-muted">Copy Link</button>
-            <button type="button" onClick={onClose} className="border border-danger/40 px-3 py-2 text-xs text-danger">Close</button>
+            <button type="button" onClick={onClose} className="border border-danger/40 px-3 py-2 text-xs text-danger">Close Dock</button>
           </div>
         </div>
         <div className={`${minimized ? "h-0 overflow-hidden opacity-0" : "mt-4 opacity-100"} grid items-end gap-4 lg:grid-cols-[1fr_auto]`} aria-hidden={minimized}>
@@ -211,6 +217,7 @@ function PlayerDock({ player, minimized, setMinimized, onClose, onCopy }: { play
           <div className="flex flex-wrap gap-2">
             <a href={openUrl(player)} target="_blank" rel="noreferrer" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent">Open Link</a>
             <button type="button" onClick={onCopy} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Copy Link</button>
+            {!readOnly && <><button type="button" onClick={() => onAction(player.id, "finish")} className="border border-accent bg-accent px-4 py-2 text-xs uppercase tracking-widest text-background">Finish Track</button><button type="button" onClick={() => onAction(player.id, "remove")} className="border border-danger/40 px-4 py-2 text-xs uppercase tracking-widest text-danger">Remove Track</button><button type="button" onClick={() => onAction(player.id, "moveBack")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Move Back to Queue</button><button type="button" onClick={() => onAction(player.id, "spotlight")} className="border border-foreground/40 px-4 py-2 text-xs uppercase tracking-widest text-foreground">Spotlight</button></>}
           </div>
         </div>
       </div>

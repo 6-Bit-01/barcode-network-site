@@ -22,7 +22,17 @@ export async function POST(req: Request) {
   if (body.action === "setOpen") {
     return NextResponse.json({ publicStatus: await setQueueOpen(Boolean(body.isOpen)) });
   }
-  if (body.action === "startSession") return NextResponse.json(await startNewQueueSession());
+  if (body.action === "startSession") {
+    const trackLimitPerArtist = Number(body.trackLimitPerArtist);
+    const skipGameTapTarget = Number(body.skipGameTapTarget);
+    return NextResponse.json(await startNewQueueSession({
+      title: typeof body.title === "string" ? body.title : undefined,
+      showDate: typeof body.showDate === "string" ? body.showDate : undefined,
+      description: typeof body.description === "string" ? body.description : undefined,
+      trackLimitPerArtist: Number.isFinite(trackLimitPerArtist) && trackLimitPerArtist > 0 ? trackLimitPerArtist : undefined,
+      skipGameTapTarget: Number.isFinite(skipGameTapTarget) && skipGameTapTarget > 0 ? skipGameTapTarget : undefined,
+    }));
+  }
   if (body.action === "archiveSession") return NextResponse.json(await archiveCurrentQueueSession());
   if (body.action === "activateSession" && typeof body.sessionId === "string") return NextResponse.json(await activateQueueSession(body.sessionId));
   if (body.action === "viewSession" && typeof body.sessionId === "string") return NextResponse.json(await getRadioQueueState(body.sessionId));

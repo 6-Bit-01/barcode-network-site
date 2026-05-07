@@ -59,6 +59,8 @@ export interface QueueSessionSummary {
   updatedAt: string;
   queueOpen: boolean;
   description: string;
+  trackLimitPerArtist: number;
+  skipGameTapTarget: number;
   activeCount: number;
   completedCount: number;
   removedCount: number;

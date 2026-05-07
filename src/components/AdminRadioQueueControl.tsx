@@ -107,13 +107,21 @@ export function AdminRadioQueueControl() {
 
       {showSessions && <SessionArchive sessions={state?.sessions ?? []} activeSessionId={state?.session?.sessionId} onView={(id) => load(id)} onActivate={(id) => post({ action: "activateSession", sessionId: id })} />}
 
-      <div className="flex gap-2 border-b border-border">
-        {(["active", "completed", "removed"] as Tab[]).map((key) => <button key={key} onClick={() => setTab(key)} className={`px-4 py-3 text-xs uppercase tracking-widest ${tab === key ? "text-accent border-b border-accent" : "text-muted"}`}>{key === "active" ? "Active Queue" : key === "completed" ? "Completed Tracks" : "Removed"}</button>)}
-      </div>
+      {!hasPreparedSession ? (
+        <section className="border border-border bg-surface p-6">
+          <h2 className="text-2xl font-bold text-foreground">No active BARCODE Radio session is prepared.</h2>
+          <p className="text-sm text-muted mt-2">Create or reactivate a session before using the live queue control room.</p>
+          <a href="/admin/show-management" className="inline-flex mt-4 border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Go to Show Management</a>
+        </section>
+      ) : <>
+        <div className="flex gap-2 border-b border-border">
+          {(["active", "completed", "removed"] as Tab[]).map((key) => <button key={key} onClick={() => setTab(key)} className={`px-4 py-3 text-xs uppercase tracking-widest ${tab === key ? "text-accent border-b border-accent" : "text-muted"}`}>{key === "active" ? "Active Queue" : key === "completed" ? "Completed Tracks" : "Removed"}</button>)}
+        </div>
 
-      {tab === "active" && <div className="grid gap-5 xl:grid-cols-2"><Lane title="Priority Lane" tracks={lanes.priority} onAction={action} onPlayer={setPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Wheel Winners" tracks={lanes.wheel} onAction={action} onPlayer={setPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Regular Queue" tracks={lanes.regular} onAction={action} onPlayer={setPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Spotlight List" tracks={lanes.spotlight} onAction={action} onPlayer={setPlayer} onCopy={copy} mode="spotlight" readOnly={readOnly} /></div>}
-      {tab === "completed" && <Lane title="Completed Tracks" tracks={state?.history ?? []} onAction={action} onPlayer={setPlayer} onCopy={copy} mode="completed" readOnly={readOnly} />}
-      {tab === "removed" && <Lane title="Removed" tracks={state?.removed ?? []} onAction={action} onPlayer={setPlayer} onCopy={copy} mode="removed" readOnly={readOnly} />}
+        {tab === "active" && <div className="grid gap-5 xl:grid-cols-2"><Lane title="Priority Lane" tracks={lanes.priority} onAction={action} onPlayer={setPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Wheel Winners" tracks={lanes.wheel} onAction={action} onPlayer={setPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Regular Queue" tracks={lanes.regular} onAction={action} onPlayer={setPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Spotlight List" tracks={lanes.spotlight} onAction={action} onPlayer={setPlayer} onCopy={copy} mode="spotlight" readOnly={readOnly} /></div>}
+        {tab === "completed" && <Lane title="Completed Tracks" tracks={state?.history ?? []} onAction={action} onPlayer={setPlayer} onCopy={copy} mode="completed" readOnly={readOnly} />}
+        {tab === "removed" && <Lane title="Removed" tracks={state?.removed ?? []} onAction={action} onPlayer={setPlayer} onCopy={copy} mode="removed" readOnly={readOnly} />}
+      </>}
 
       {player && <PlayerDock player={player} minimized={minimized} setMinimized={setMinimized} onClose={() => setPlayer(null)} onCopy={() => copy(player)} />}
     </div>

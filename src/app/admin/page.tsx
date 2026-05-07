@@ -1,10 +1,8 @@
-/* eslint-disable react-hooks/set-state-in-effect, react/jsx-no-comment-textnodes, @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps */
+/* eslint-disable react-hooks/set-state-in-effect, react/jsx-no-comment-textnodes, @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useLiveStatus } from "@/components/LiveStatusProvider";
 import { useState, useEffect } from "react";
-import { formatRuntime } from "@/lib/queue-types";
-import type { QueuePublicSnapshot, QueuePublicStatus } from "@/lib/queue-types";
 
 type BNLStatusValue = "ONLINE" | "OFFLINE";
 type BNLModeValue = "STANDBY" | "OBSERVATION" | "ACTIVE_LIAISON" | "SIGNAL_DEGRADATION" | "RESTRICTED";
@@ -114,8 +112,6 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
   const [forcePullRequestedAt, setForcePullRequestedAt] = useState<string | null>(null);
   const [relayActionError, setRelayActionError] = useState<string | null>(null);
   const [relayActionNote, setRelayActionNote] = useState<string | null>(null);
-  const [queueStatus, setQueueStatus] = useState<QueuePublicStatus | null>(null);
-  const [queueSession, setQueueSession] = useState<QueuePublicSnapshot["session"] | null>(null);
 
   const loadBnl = async () => {
     const [publicRes, adminRes] = await Promise.all([fetch('/api/bnl/status', { cache: 'no-store' }), fetch('/api/admin/bnl', { cache: 'no-store' })]);
@@ -135,21 +131,6 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
       setForcePullRequestedAt(typeof adminData.forcePullRequestedAt === "string" ? adminData.forcePullRequestedAt : null);
     }
   };
-
-  const loadQueueStatus = async () => {
-    try {
-      const res = await fetch("/api/queue", { cache: "no-store" });
-      if (res.ok) {
-        const payload = await res.json();
-        setQueueStatus(payload.status ?? null);
-        setQueueSession(payload.session ?? null);
-      }
-    } catch {
-      setQueueStatus(null);
-    }
-  };
-
-  useEffect(() => { loadBnl(); loadQueueStatus(); }, []);
 
   const updateRelay = async (action: 'updateStatus' | 'resetStandby') => {
     await fetch('/api/admin/bnl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action === 'resetStandby' ? { action } : { action, ...relayForm }) });
@@ -193,9 +174,8 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
   const modSignalBriefing = bnl.adminNote?.trim();
 
   return <section><div className="mx-auto max-w-7xl px-4 sm:px-6 py-16 space-y-8">{/* existing cards omitted for brevity in source */}
-  <div className="border border-accent/40 bg-surface p-6 space-y-4"><div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"><div><p className="text-xs uppercase tracking-[0.5em] text-accent mb-3">Show Management</p><h2 className="text-2xl font-bold text-foreground">Show Management</h2><p className="text-sm text-muted mt-2">Start sessions, open submissions, and review archived show queues.</p></div><a href="/admin/show-management" className="inline-flex items-center justify-center border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background transition-all">Open Show Management</a></div></div>
+  <div className="border border-accent/40 bg-surface p-6 space-y-4"><div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"><div><p className="text-xs uppercase tracking-[0.5em] text-accent mb-3">Show Management</p><h2 className="text-2xl font-bold text-foreground">Show Management</h2><p className="text-sm text-muted mt-2">Start sessions, open submissions, run the queue, and review archived shows.</p></div><a href="/admin/show-management" className="inline-flex items-center justify-center border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background transition-all">Open Show Management</a></div></div>
 
-<div className="border border-accent/40 bg-surface p-6 space-y-4"><div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"><div><p className="text-xs uppercase tracking-[0.5em] text-accent mb-3">BARCODE Radio Queue</p><h2 className="text-2xl font-bold text-foreground">{queueSession?.title ?? "Queue Control"}</h2><p className="text-sm text-muted mt-2">{queueSession?.showDate ? `${queueSession.showDate} · ${queueSession.status} session` : "Open Queue Control for live lanes, moderation, runtime, and preview playback."}</p></div><a href="/admin/queue" className="inline-flex items-center justify-center border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background transition-all">Open Queue Control</a></div><div className="grid gap-3 sm:grid-cols-3 text-sm"><p className="border border-border p-3"><span className="block text-xs text-muted">Open/Closed</span><span className={queueStatus?.isOpen ? "text-accent" : "text-danger"}>{queueStatus ? queueStatus.isOpen ? "Open" : "Closed" : "Syncing"}</span></p><p className="border border-border p-3"><span className="block text-xs text-muted">Active count</span>{queueStatus?.activeCount ?? "—"}</p><p className="border border-border p-3"><span className="block text-xs text-muted">Runtime</span>{queueStatus ? formatRuntime(queueStatus.estimatedRuntimeSeconds) : "—"}</p></div></div>
 
   <div className="grid grid-cols-1 md:grid-cols-2 gap-8"><div className="border border-border bg-surface p-6"><h2 className="text-[10px] uppercase tracking-[0.5em] text-muted mb-6">BARCODE Radio — Live Status</h2><button onClick={toggleLive} className="w-full px-4 py-3 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all font-bold">{isLive ? 'GO OFFLINE':'GO LIVE'}</button><div className="text-xs text-muted/50 mt-3"><p>// Scheduled: {isScheduled ? 'YES' : 'NO'}</p><p>// Override: {manualOverride ? 'ACTIVE' : 'NONE'}</p><p>// Persistence: {persisted === null ? 'UNKNOWN' : persisted ? 'REDIS' : 'IN-MEMORY'}</p>{lastError && <p className='text-danger'>{lastError}</p>}</div></div><div className="border border-border bg-surface p-6"><h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted mb-6">Stream URL</h2><input type="url" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /><button onClick={() => setStreamUrl(urlInput)} className="mt-4 w-full px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all">Update Stream URL</button></div></div>
 

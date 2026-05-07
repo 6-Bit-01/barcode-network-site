@@ -78,17 +78,20 @@ function sessionDescriptionFor(date: string): string {
   return SESSION_DESCRIPTIONS[index];
 }
 
-function defaultSession(date = todayDate()): QueueSession {
+function defaultSession(options: { title?: string; showDate?: string; description?: string; trackLimitPerArtist?: number; skipGameTapTarget?: number } = {}): QueueSession {
+  const date = options.showDate ?? todayDate();
   const now = new Date().toISOString();
   return normalizeSession({
     sessionId: makeSessionId(),
-    title: `BARCODE Radio — ${date}`,
+    title: options.title?.trim() || `BARCODE Radio — ${date}`,
     status: "prepared",
     showDate: date,
     createdAt: now,
     updatedAt: now,
     queueOpen: false,
-    description: sessionDescriptionFor(date),
+    description: options.description?.trim() || sessionDescriptionFor(date),
+    trackLimitPerArtist: options.trackLimitPerArtist ?? 3,
+    skipGameTapTarget: options.skipGameTapTarget ?? 10000,
     activeCount: 0,
     completedCount: 0,
     removedCount: 0,
@@ -142,6 +145,8 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     updatedAt: session.updatedAt,
     queueOpen: session.queueOpen,
     description: session.description ?? sessionDescriptionFor(session.showDate),
+    trackLimitPerArtist: session.trackLimitPerArtist ?? 3,
+    skipGameTapTarget: session.skipGameTapTarget ?? 10000,
     activeCount: publicStatus.activeCount,
     completedCount: session.completed.length,
     removedCount: session.removed.length,
@@ -199,6 +204,8 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     ...raw,
     status,
     description: raw.description ?? sessionDescriptionFor(raw.showDate),
+    trackLimitPerArtist: raw.trackLimitPerArtist ?? 3,
+    skipGameTapTarget: raw.skipGameTapTarget ?? 10000,
     queueOpen: status === "open" ? true : false,
     queue: sortActive((raw.queue ?? []).map(normalizeEntry)),
     completed: (raw.completed ?? []).map(normalizeEntry),
@@ -496,10 +503,10 @@ export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> 
   return publicStatusForSession(getSession(nextStore));
 }
 
-export async function startNewQueueSession(): Promise<QueueState> {
+export async function startNewQueueSession(options: { title?: string; showDate?: string; description?: string; trackLimitPerArtist?: number; skipGameTapTarget?: number } = {}): Promise<QueueState> {
   const store = await readStore();
   const preserved = store.sessions.map((session) => session.sessionId === store.activeSessionId && session.status !== "archived" ? normalizeSession({ ...session, status: "closed", queueOpen: false, updatedAt: new Date().toISOString() }) : session);
-  const next = defaultSession();
+  const next = defaultSession(options);
   const nextStore = { activeSessionId: next.sessionId, sessions: [next, ...preserved] };
   await writeStore(nextStore);
   return queueStateFromSession(next, nextStore);

@@ -4,6 +4,7 @@
 // Redis keys:
 //   stream:live  — "1" | "0" | null (null = use schedule)
 //   stream:url   — string (defaults to TikTok live URL)
+//   stream:sponsors_active — "1" | "0" sponsor/ad signal state
 
 import { NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
@@ -15,16 +16,22 @@ export const dynamic = "force-dynamic";
 const KEYS = {
   live: "stream:live",   // "1" (force on), "0" (force off), or absent (auto-schedule)
   url: "stream:url",
+  sponsorsActive: "stream:sponsors_active",
 };
 
 const DEFAULT_URL = "https://www.tiktok.com/@six.bit/live";
 let memoryLiveOverride: string | null = null;
 let memoryStreamUrl: string = DEFAULT_URL;
+let memorySponsorsActive = false;
 
 function normalizeLiveOverride(value: unknown): "1" | "0" | null {
   if (value === "1" || value === 1 || value === true) return "1";
   if (value === "0" || value === 0 || value === false) return "0";
   return null;
+}
+
+function normalizeBooleanFlag(value: unknown): boolean {
+  return value === "1" || value === 1 || value === true;
 }
 
 function getRedis(): Redis | null {
@@ -42,14 +49,18 @@ export async function GET() {
 
   let manualOverride: "1" | "0" | null = normalizeLiveOverride(memoryLiveOverride);
   let streamUrl = memoryStreamUrl;
+  let sponsorsActive = memorySponsorsActive;
 
   if (redis) {
-    const [liveVal, urlVal] = await Promise.all([
+    const [liveVal, urlVal, sponsorsActiveVal] = await Promise.all([
       redis.get<string>(KEYS.live),
       redis.get<string>(KEYS.url),
+      redis.get<string | number | boolean>(KEYS.sponsorsActive),
     ]);
     manualOverride = normalizeLiveOverride(liveVal);
     if (urlVal) streamUrl = urlVal;
+    sponsorsActive = normalizeBooleanFlag(sponsorsActiveVal);
+    memorySponsorsActive = sponsorsActive;
   }
 
   // Resolve: manual override wins, else schedule
@@ -66,6 +77,7 @@ export async function GET() {
     isLive,
     isScheduled,
     streamUrl,
+    sponsorsActive,
     manualOverride: manualOverride !== null,
   });
 }
@@ -78,7 +90,7 @@ export async function POST(req: Request) {
   const cookies = Object.fromEntries(
     cookieHeader.split(";").map((c) => {
       const [k, ...v] = c.trim().split("=");
-      return [k, v.join("=")];
+      return [k, v.join("")];
     })
   );
   const token = cookies[COOKIE_NAME];
@@ -101,6 +113,10 @@ export async function POST(req: Request) {
       }
       memoryLiveOverride = value;
     };
+    const setSponsorsActive = async (value: boolean) => {
+      if (redis) await redis.set(KEYS.sponsorsActive, value ? "1" : "0");
+      memorySponsorsActive = value;
+    };
 
     if (action === "toggle") {
       // Toggle: null → "1", "1" → "0", "0" → null (cycle: auto → on → off → auto)
@@ -118,6 +134,10 @@ export async function POST(req: Request) {
       await setLive("0");
     } else if (action === "auto") {
       await setLive(null);
+    } else if (action === "setSponsorsActive") {
+      await setSponsorsActive(true);
+    } else if (action === "setSponsorsInactive") {
+      await setSponsorsActive(false);
     }
 
     if (streamUrl && typeof streamUrl === "string") {
@@ -125,7 +145,7 @@ export async function POST(req: Request) {
       memoryStreamUrl = streamUrl;
     }
 
-    return NextResponse.json({ ok: true, persisted: Boolean(redis) });
+    return NextResponse.json({ ok: true, sponsorsActive: memorySponsorsActive, persisted: Boolean(redis) });
   } catch (error) {
     console.error("[admin/live] error:", error);
     return NextResponse.json({ error: "Failed to update" }, { status: 500 });

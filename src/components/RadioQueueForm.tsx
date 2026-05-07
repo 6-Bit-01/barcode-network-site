@@ -131,11 +131,14 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
     const existing = window.localStorage.getItem(key);
     if (existing) {
       setSubmitterToken(existing);
-      return;
+    } else {
+      const next = `br_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+      window.localStorage.setItem(key, next);
+      setSubmitterToken(next);
     }
-    const next = `br_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-    window.localStorage.setItem(key, next);
-    setSubmitterToken(next);
+    setArtist(window.localStorage.getItem("barcode-radio-submit-artist") ?? "");
+    setTikTokHandle(window.localStorage.getItem("barcode-radio-submit-tiktok") ?? "");
+    setContactEmail(window.localStorage.getItem("barcode-radio-submit-email") ?? "");
   }, []);
 
 
@@ -221,6 +224,9 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
       }
       if (payload.track?.id) {
         const submitted = publicTrackFromApi(payload.track);
+        window.localStorage.setItem("barcode-radio-submit-artist", artist.trim());
+        window.localStorage.setItem("barcode-radio-submit-tiktok", tiktokHandle.trim());
+        window.localStorage.setItem("barcode-radio-submit-email", contactEmail.trim());
         setLastSubmittedTrackId(submitted.id);
         const nextCooldown = typeof payload.cooldownRemainingSeconds === "number" ? payload.cooldownRemainingSeconds : 300;
         setCooldownRemaining(nextCooldown);
@@ -235,8 +241,8 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
           sessionTitle: session?.title ?? "BARCODE Radio",
           sessionDate: session?.showDate ?? "ACTIVE SESSION",
           queueStatus: status ? `${status.activeCount + 1}/${status.capacity}` : "SYNCING",
-          submissionSlot: status ? `#${Math.min(status.activeCount + 1, status.capacity)}` : "INCOMING_TRANSMISSIONS",
-          lane: submitted.lane === "priority" ? "PRIORITY_SIGNAL" : submitted.lane === "wheel" ? "WHEEL_CHOSEN" : "REGULAR_QUEUE",
+          submissionSlot: status ? `#${Math.min(status.activeCount + 1, status.capacity)}` : "FREE_TRANSMISSIONS",
+          lane: submitted.lane === "priority" ? "PRIORITY_SIGNAL" : submitted.lane === "wheel" ? "WHEEL_CHOSEN" : "FREE_TRANSMISSIONS",
         });
         setTransmissionState("received");
         window.setTimeout(() => setTransmissionState("encoded"), 900);
@@ -246,12 +252,12 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
         window.setTimeout(() => setTransmissionState("confirmed"), 6100);
         setPublicQueue((current) => [submitted, ...current.filter((entry) => entry.id !== submitted.id)]);
       }
-      setArtist("");
+      setArtist(window.localStorage.getItem("barcode-radio-submit-artist") ?? artist.trim());
       setTitle("");
       setLink("");
-      setTikTokHandle("");
+      setTikTokHandle(window.localStorage.getItem("barcode-radio-submit-tiktok") ?? tiktokHandle.trim());
       setCollaboratorNames("");
-      setContactEmail("");
+      setContactEmail(window.localStorage.getItem("barcode-radio-submit-email") ?? contactEmail.trim());
       setNote("");
       setFile(null);
       setDetectedDuration(null);
@@ -269,6 +275,7 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
   if (transmissionState !== "idle") return <WarpSequence state={transmissionState} data={warpData} />;
 
   const effectiveCooldown = Math.max(cooldownRemaining, submitterStatus?.cooldownRemainingSeconds ?? 0);
+  const estimatedPosition = Math.min((status?.activeCount ?? publicQueue.length) + 1, status?.capacity ?? ((status?.activeCount ?? publicQueue.length) + 1));
 
   return (
     <div className="grid gap-4 lg:grid-cols-[0.72fr_1fr]">
@@ -313,7 +320,8 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
         <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Optional transmission note</span><textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} rows={2} placeholder="Any clean context the host should know. Do not include private contact info." className="w-full bg-background border border-border px-3 py-2.5 text-sm" /><span className="block text-[11px] text-muted">Visible to queue control only. Public queue preview never shows notes.</span></label>
 
         <div className="border border-border bg-background/40 p-3 text-sm text-muted">{checkCopy}</div>
-        <button disabled={submitting || effectiveCooldown > 0 || status?.isOpen === false || status?.isFull === true} className="w-full border border-accent px-4 py-3 text-sm uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{submitting ? "Submitting…" : effectiveCooldown > 0 ? `Next transmission available in ${formatCooldown(effectiveCooldown)}` : status?.isFull ? "Queue Full" : "Enter Regular Queue"}</button>
+        <div className="border border-accent/30 bg-accent/5 p-3 text-sm text-muted">If you submit now, this track enters Free Transmissions around position #{estimatedPosition} in the active broadcast queue.</div>
+        <button disabled={submitting || effectiveCooldown > 0 || status?.isOpen === false || status?.isFull === true} className="w-full border border-accent px-4 py-3 text-sm uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{submitting ? "Submitting…" : effectiveCooldown > 0 ? `Next transmission available in ${formatCooldown(effectiveCooldown)}` : status?.isFull ? "Queue Full" : "Enter Free Transmissions"}</button>
       </form>
     </div>
   );
@@ -347,8 +355,8 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
     ["DURATION_LOCK", data?.durationLabel ?? "ESTIMATED/PENDING"],
     ["SESSION", data?.sessionTitle ?? "BARCODE Radio"],
     ["SESSION_DATE", data?.sessionDate ?? "ACTIVE"],
-    ["QUEUE_LANE", data?.lane ?? "INCOMING_TRANSMISSIONS"],
-    ["SUBMISSION_SLOT", data?.submissionSlot ?? "INCOMING_TRANSMISSIONS"],
+    ["QUEUE_LANE", data?.lane ?? "FREE_TRANSMISSIONS"],
+    ["SUBMISSION_SLOT", data?.submissionSlot ?? "FREE_TRANSMISSIONS"],
     ["QUEUE_PRESSURE", data?.queueStatus ?? "SYNCING"],
   ];
   return (
@@ -381,7 +389,7 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
         <div className="border border-accent/40 bg-background/70 p-3">
           <p className="text-xs uppercase tracking-widest text-accent">Destination queue card</p>
           <p className="mt-1 text-sm font-bold text-foreground">{data?.artist ?? "Submitted artist"} — {data?.title ?? "Submitted track"}</p>
-          <p className="mt-1 text-xs text-muted">{data?.lane ?? "REGULAR_QUEUE"} · {data?.submissionSlot ?? "incoming"} · {data?.queueStatus ?? "syncing"}</p>
+          <p className="mt-1 text-xs text-muted">{data?.lane ?? "FREE_TRANSMISSIONS"} · {data?.submissionSlot ?? "incoming"} · {data?.queueStatus ?? "syncing"}</p>
         </div>
         <div className="border border-border bg-background/50 p-3"><p className="text-xs uppercase tracking-widest text-muted">Priority Signal Upgrade</p><p className="mt-1 text-xs text-muted">Move this track into the Priority Lane when priority access is active.</p><button type="button" disabled className="mt-3 border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted opacity-60">Coming soon</button></div>
       </div>
@@ -404,7 +412,7 @@ function PublicQueuePreview({ queue, lastSubmittedTrackId }: { queue: QueuePubli
             <div key={entry.id} className={`border p-3 transition-all ${highlighted ? "border-accent bg-accent/10 animate-pulse" : "border-border bg-background/30"}`}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs text-muted">#{index + 1} · {entry.sourceType.toUpperCase()} · {entry.lane === "priority" ? "Priority" : entry.lane === "wheel" ? "Wheel" : "Regular"}</p>
+                  <p className="text-xs text-muted">#{index + 1} · {entry.sourceType.toUpperCase()} · {entry.lane === "priority" ? "Priority" : entry.lane === "wheel" ? "Wheel" : "Free Transmissions"}</p>
                   <p className="text-sm font-bold text-foreground">{entry.submittedArtistName} — {entry.submittedSongTitle}</p>
                   {(entry.detectedArtistName || entry.detectedSongTitle) && <p className="text-[11px] text-muted">Detected: {entry.detectedArtistName || "Unknown artist"} — {entry.detectedSongTitle || "Unknown title"}</p>}
                 </div>

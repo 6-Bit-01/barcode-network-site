@@ -184,7 +184,7 @@ export const INTERNAL_BUFFER_DURATION_SECONDS = 240;
 export const RADIO_QUEUE_CAPACITY = 40;
 
 export const TIERS = {
-  free: { name: "Regular Queue", price: 0, label: "REGULAR", priority: 0, description: "Enter the live BARCODE Radio request flow.", icon: "○" },
+  free: { name: "Free Transmissions", price: 0, label: "FREE", priority: 0, description: "Enter the live BARCODE Radio request flow.", icon: "○" },
   featured: { name: "Spotlight", price: 0, label: "SPOTLIGHT", priority: 1, description: "Host-selected spotlight lane for special attention.", icon: "✦" },
   fastlane: { name: "Priority Lane", price: 0, label: "PRIORITY", priority: 2, description: "Host-controlled priority lane. Payment flow is not enabled yet.", icon: "▸▸" },
   frontrow: { name: "Wheel Chosen", price: 0, label: "WHEEL", priority: 3, description: "Winner lane controlled by the BARCODE Radio host.", icon: "◈" },

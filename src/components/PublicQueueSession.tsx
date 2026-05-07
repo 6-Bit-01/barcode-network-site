@@ -11,17 +11,35 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const [snapshot, setSnapshot] = useState<QueuePublicSnapshot | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [lastSubmittedTrackId, setLastSubmittedTrackId] = useState<string | null>(null);
+  const [submitterToken, setSubmitterToken] = useState("");
+  const [cooldownRemaining, setCooldownRemaining] = useState(0);
 
   async function load() {
-    const res = await fetch(`/api/queue?sessionId=${encodeURIComponent(sessionId)}`, { cache: "no-store" });
-    if (res.ok) setSnapshot(await res.json());
+    const params = new URLSearchParams({ sessionId });
+    if (submitterToken) params.set("submitterToken", submitterToken);
+    const res = await fetch(`/api/queue?${params.toString()}`, { cache: "no-store" });
+    if (res.ok) {
+      const next = await res.json();
+      setSnapshot(next);
+      setCooldownRemaining(next.submitterStatus?.cooldownRemainingSeconds ?? 0);
+    }
   }
+
+  useEffect(() => {
+    setSubmitterToken(window.localStorage.getItem("barcode-radio-submitter-token") ?? "");
+  }, []);
 
   useEffect(() => {
     load();
     const interval = setInterval(load, 5_000);
     return () => clearInterval(interval);
-  }, [sessionId]);
+  }, [sessionId, submitterToken]);
+
+  useEffect(() => {
+    if (cooldownRemaining <= 0) return;
+    const timer = window.setInterval(() => setCooldownRemaining((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [cooldownRemaining]);
 
   const lanes = useMemo(() => {
     const hidden = new Set([snapshot?.nowPlaying?.id, snapshot?.upNext?.id].filter(Boolean));
@@ -80,18 +98,19 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
       {isFull && <p className="border border-danger/40 bg-danger/5 p-3 text-sm text-danger">This broadcast queue is full for new transmissions.</p>}
 
+      <SubmitterStatusPanel status={snapshot?.submitterStatus ?? null} cooldownRemaining={cooldownRemaining} />
       <QueueMechanicsInfo />
 
       <div className="space-y-5">
         <PublicLane title="Priority Signal" tracks={lanes.priority} lastSubmittedTrackId={lastSubmittedTrackId} />
         <PublicLane title="Wheel Chosen" subtitle="Tracks selected by the 10K tap wheel." tracks={lanes.wheel} lastSubmittedTrackId={lastSubmittedTrackId} />
-        <PublicLane title="Incoming Transmissions" tracks={lanes.regular} lastSubmittedTrackId={lastSubmittedTrackId} />
+        <PublicLane title="Free Transmissions" tracks={lanes.regular} lastSubmittedTrackId={lastSubmittedTrackId} />
       </div>
 
       <section className="border-t border-border pt-6"><PublicLane title="Recently Played" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} /></section>
       <DiscordQueueCTA />
 
-      {submitOpen && <div className="fixed inset-0 z-[10000] grid place-items-center overflow-y-auto bg-black/70 p-3 backdrop-blur-sm"><div className="my-4 w-full max-w-[1280px] border border-accent/50 bg-background/95 p-4 shadow-[0_0_60px_rgba(255,0,0,0.18)]"><div className="mb-4 flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.35em] text-accent">Transmission Intake</p><p className="text-sm text-muted mt-1">Queue remains live behind this terminal while you route your signal.</p></div><button type="button" onClick={() => setSubmitOpen(false)} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">Collapse Intake</button></div><RadioQueueForm sessionId={sessionId} onSubmitted={(trackId) => { setLastSubmittedTrackId(trackId ?? null); window.setTimeout(() => setSubmitOpen(false), 450); load(); }} /></div></div>}
+      {submitOpen && <div className="fixed inset-0 z-[10000] grid place-items-center overflow-y-auto bg-black/70 p-3 backdrop-blur-sm"><div className="my-4 w-full max-w-[1280px] border border-accent/50 bg-background/95 p-4 shadow-[0_0_60px_rgba(255,0,0,0.18)]"><div className="mb-4 flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.35em] text-accent">Transmission Intake</p><p className="text-sm text-muted mt-1">Queue remains live behind this terminal while you route your signal.</p></div><button type="button" onClick={() => setSubmitOpen(false)} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">Collapse Intake</button></div><RadioQueueForm sessionId={sessionId} onSubmitted={(trackId) => { setLastSubmittedTrackId(trackId ?? null); setSubmitterToken(window.localStorage.getItem("barcode-radio-submitter-token") ?? ""); window.setTimeout(() => setSubmitOpen(false), 450); load(); }} /></div></div>}
     </div>
   );
 }
@@ -103,16 +122,38 @@ function SourceArt({ track }: { track: QueuePublicTrack | null }) {
   return <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_center,rgba(255,0,0,0.25),transparent_60%)] text-4xl text-accent">▦</div>;
 }
 
+function tiktokHref(handle?: string | null): string | null {
+  const cleaned = (handle ?? "").trim().replace(/^@+/, "").split(/[/?#]/)[0]?.replace(/[^a-zA-Z0-9._-]/g, "");
+  return cleaned ? `https://www.tiktok.com/@${cleaned}` : null;
+}
+
+function TikTokLink({ handle }: { handle?: string | null }) {
+  const href = tiktokHref(handle);
+  if (!href || !handle) return null;
+  return <a href={href} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">TikTok: {handle.startsWith("@") ? handle : `@${handle}`}</a>;
+}
+
 function NowPlaying({ title, track, compact = false }: { title: string; track: QueuePublicTrack | null; compact?: boolean }) {
-  return <div className="border border-accent/40 bg-surface p-5"><p className="text-xs uppercase tracking-[0.35em] text-accent">{title}</p>{track ? <div className={`mt-4 grid gap-4 ${compact ? "grid-cols-[5rem_1fr]" : "sm:grid-cols-[9rem_1fr]"}`}><div className={`${compact ? "h-20" : "aspect-square"} overflow-hidden border border-accent/40`}><SourceArt track={track} /></div><div><h3 className={`${compact ? "text-lg" : "text-2xl"} font-bold text-foreground`}>{track.submittedArtistName}</h3><p className="text-foreground/90">{track.submittedSongTitle}</p><div className="mt-3 grid gap-1 text-xs text-muted"><p>Platform / source: {track.sourceType.toUpperCase()}</p>{track.tiktokHandle && <p>TikTok: {track.tiktokHandle}</p>}{!track.durationIsEstimate && <p>Duration: {track.durationLabel}</p>}</div></div></div> : <div className="mt-4 border border-border bg-background/40 p-6"><div className="mb-4 flex h-24 items-center justify-center border border-accent/30 text-4xl text-accent">▦</div><p className="text-sm text-muted">No transmission is in this slot yet.</p></div>}</div>;
+  return <div className="border border-accent/40 bg-surface p-5"><p className="text-xs uppercase tracking-[0.35em] text-accent">{title}</p>{track ? <div className={`mt-4 grid gap-4 ${compact ? "grid-cols-[5rem_1fr]" : "sm:grid-cols-[9rem_1fr]"}`}><div className={`${compact ? "h-20" : "aspect-square"} overflow-hidden border border-accent/40`}><SourceArt track={track} /></div><div><h3 className={`${compact ? "text-lg" : "text-2xl"} font-bold text-foreground`}>{track.submittedArtistName}</h3><p className="text-foreground/90">{track.submittedSongTitle}</p><div className="mt-3 grid gap-1 text-xs text-muted"><p>Platform / source: {track.sourceType.toUpperCase()}</p><TikTokLink handle={track.tiktokHandle} />{!track.durationIsEstimate && <p>Duration: {track.durationLabel}</p>}</div></div></div> : <div className="mt-4 border border-border bg-background/40 p-6"><div className="mb-4 flex h-24 items-center justify-center border border-accent/30 text-4xl text-accent">▦</div><p className="text-sm text-muted">No transmission is in this slot yet.</p></div>}</div>;
+}
+
+function SubmitterStatusPanel({ status, cooldownRemaining }: { status: QueuePublicSnapshot["submitterStatus"] | null; cooldownRemaining: number }) {
+  if (!status) return null;
+  return <section className="border border-accent/40 bg-accent/5 p-4 text-sm text-muted"><p className="font-bold text-accent">Your transmissions this session: {status.used} / {status.limit}</p><p className="mt-1">Remaining submissions: {status.remaining}</p>{cooldownRemaining > 0 && <p className="mt-1 text-accent">Next transmission available in {formatCooldown(cooldownRemaining)}</p>}</section>;
 }
 
 function QueueMechanicsInfo() {
-  return <section className="border border-accent/30 bg-accent/5 p-5"><p className="text-xs uppercase tracking-[0.3em] text-accent">Queue Mechanics</p><p className="mt-2 text-sm text-muted">Priority Signal cuts first. When priority is clear, the system alternates between Wheel Chosen and Incoming Transmissions. Tap energy during the show can destabilize the wheel and pull a track forward. New submissions enter Incoming Transmissions unless a future Priority Signal Upgrade or wheel selection moves them.</p></section>;
+  return <section className="border border-accent/30 bg-accent/5 p-5"><p className="text-xs uppercase tracking-[0.3em] text-accent">Queue Mechanics</p><p className="mt-2 text-sm text-muted">Priority Signals jump to the top. When priority is clear, the system alternates between Wheel Chosen and Free Transmissions. Tap energy during the show can destabilize the broadcast relay and move a Free Transmission forward. New submissions enter Free Transmissions unless a future Priority Signal Upgrade or wheel selection moves them.</p></section>;
 }
 
 function PublicLane({ title, tracks, subtitle, lastSubmittedTrackId }: { title: string; tracks: QueuePublicTrack[]; subtitle?: string; lastSubmittedTrackId: string | null }) {
-  return <section className="w-full border border-border bg-surface p-5"><div className="mb-4 flex items-start justify-between gap-3"><div><h2 className="text-sm uppercase tracking-[0.25em] text-foreground">{title}</h2>{subtitle && <p className="mt-1 text-xs text-muted">{subtitle}</p>}</div><span className="text-xs text-muted">{tracks.length}</span></div><div className="space-y-3">{tracks.length === 0 ? <p className="border border-border/60 p-4 text-sm text-muted">No visible transmissions.</p> : tracks.map((track, index) => <article key={track.id} className={`grid gap-3 border bg-background/40 p-3 sm:grid-cols-[5rem_1fr_auto] sm:items-center ${track.id === lastSubmittedTrackId ? "border-accent animate-pulse" : "border-border"}`}><div className="h-20 overflow-hidden border border-border/70"><SourceArt track={track} /></div><div><p className="text-xs text-muted">#{index + 1} · {track.sourceType.toUpperCase()}</p><p className="font-bold text-foreground">{track.submittedArtistName}</p><p className="text-sm text-foreground/85">{track.submittedSongTitle}</p>{track.id === lastSubmittedTrackId && <p className="mt-2 text-[11px] uppercase tracking-widest text-accent">Transmission received</p>}</div><p className="text-xs text-muted sm:text-right">{track.durationLabel}</p></article>)}</div></section>;
+  return <section className="w-full border border-border bg-surface p-5"><div className="mb-4 flex items-start justify-between gap-3"><div><h2 className="text-sm uppercase tracking-[0.25em] text-foreground">{title}</h2>{subtitle && <p className="mt-1 text-xs text-muted">{subtitle}</p>}</div><span className="text-xs text-muted">{tracks.length}</span></div><div className="space-y-3">{tracks.length === 0 ? <p className="border border-border/60 p-4 text-sm text-muted">No visible transmissions.</p> : tracks.map((track, index) => <article key={track.id} className={`grid gap-3 border bg-background/40 p-3 sm:grid-cols-[5rem_1fr_auto] sm:items-center ${track.id === lastSubmittedTrackId ? "border-accent animate-pulse" : "border-border"}`}><div className="h-20 overflow-hidden border border-border/70"><SourceArt track={track} /></div><div><p className="text-xs text-muted">#{index + 1} · {track.sourceType.toUpperCase()}</p><p className="font-bold text-foreground">{track.submittedArtistName}</p><p className="text-sm text-foreground/85">{track.submittedSongTitle}</p><div className="mt-2 text-xs text-muted"><TikTokLink handle={track.tiktokHandle} /></div>{track.id === lastSubmittedTrackId && <p className="mt-2 text-[11px] uppercase tracking-widest text-accent">Transmission received</p>}</div><p className="text-xs text-muted sm:text-right">{track.durationLabel}</p></article>)}</div></section>;
+}
+
+function formatCooldown(seconds: number): string {
+  const minutes = Math.floor(seconds / 60).toString().padStart(2, "0");
+  const rest = Math.max(0, seconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${rest}`;
 }
 
 function DiscordQueueCTA() {

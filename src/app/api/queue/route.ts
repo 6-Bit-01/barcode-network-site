@@ -111,7 +111,7 @@ export async function POST(req: Request) {
         contactEmail,
         submitterToken,
       });
-      return NextResponse.json({ track, message: "Track entered the Regular Queue.", cooldownRemainingSeconds: 300 }, { status: 201 });
+      return NextResponse.json({ track, message: "Track entered Free Transmissions.", cooldownRemainingSeconds: 300 }, { status: 201 });
     }
 
     const link = cleanText(form.get("link"));
@@ -120,7 +120,7 @@ export async function POST(req: Request) {
 
     const sourceType = detectQueueSourceType(link);
     const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, contactEmail, submitterToken });
-    return NextResponse.json({ track, message: "Track entered the Regular Queue.", cooldownRemainingSeconds: 300 }, { status: 201 });
+    return NextResponse.json({ track, message: "Track entered Free Transmissions.", cooldownRemainingSeconds: 300 }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Submission failed";
     const reasons = Array.isArray((error as { reasons?: unknown }).reasons) ? (error as { reasons: string[] }).reasons : [];

@@ -459,44 +459,69 @@ async function lookupYouTubeMetadata(link: string): Promise<ProviderMetadata> {
   return { detectedArtistName: channelTitle, detectedSongTitle: providerTitle, providerTitle, detectedDurationSeconds: duration, durationSource: duration ? "youtube" : "internal_estimate", artworkUrl: id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null };
 }
 
+function spotifyOEmbedUrl(link: string): string {
+  const trackId = link.match(/spotify:track:([a-zA-Z0-9]+)/)?.[1];
+  return trackId ? `https://open.spotify.com/track/${trackId}` : link;
+}
+
+async function lookupSpotifyOEmbed(link: string, base: ProviderMetadata = blankProvider("internal_estimate")): Promise<ProviderMetadata> {
+  const res = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(spotifyOEmbedUrl(link))}`, { cache: "no-store" });
+  if (!res.ok) return base;
+  const payload = await res.json();
+  const artworkUrl = typeof payload.thumbnail_url === "string" ? payload.thumbnail_url : base.artworkUrl ?? null;
+  const providerTitle = base.providerTitle ?? (typeof payload.title === "string" ? payload.title : null);
+  return { ...base, providerTitle, artworkUrl };
+}
+
 async function lookupSpotifyMetadata(link: string): Promise<ProviderMetadata> {
+  const fallback = () => lookupSpotifyOEmbed(link).catch(() => blankProvider("internal_estimate"));
   const clientId = process.env.SPOTIFY_CLIENT_ID;
   const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return blankProvider("internal_estimate");
   const match = link.match(/spotify\.com\/track\/([a-zA-Z0-9]+)/) || link.match(/spotify:track:([a-zA-Z0-9]+)/);
   const trackId = match?.[1];
-  if (!trackId) return blankProvider("internal_estimate");
+  if (!trackId || !clientId || !clientSecret) return fallback();
   const tokenRes = await fetch("https://accounts.spotify.com/api/token", {
     method: "POST",
     headers: { Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`, "Content-Type": "application/x-www-form-urlencoded" },
     body: "grant_type=client_credentials",
     cache: "no-store",
   });
-  if (!tokenRes.ok) return blankProvider("internal_estimate");
+  if (!tokenRes.ok) return fallback();
   const token = await tokenRes.json();
-  if (!token.access_token) return blankProvider("internal_estimate");
+  if (!token.access_token) return fallback();
   const trackRes = await fetch(`https://api.spotify.com/v1/tracks/${encodeURIComponent(trackId)}`, { headers: { Authorization: `Bearer ${token.access_token}` }, cache: "no-store" });
-  if (!trackRes.ok) return blankProvider("internal_estimate");
+  if (!trackRes.ok) return fallback();
   const track = await trackRes.json();
   const seconds = typeof track.duration_ms === "number" ? Math.round(track.duration_ms / 1000) : null;
   const artist = Array.isArray(track.artists) ? track.artists.map((item: { name?: string }) => item.name).filter(Boolean).join(", ") : null;
   const title = typeof track.name === "string" ? track.name : null;
   const artworkUrl = Array.isArray(track.album?.images) ? track.album.images.find((image: { url?: string }) => typeof image.url === "string")?.url ?? null : null;
-  return { detectedArtistName: artist || null, detectedSongTitle: title, providerTitle: title, detectedDurationSeconds: seconds, durationSource: seconds ? "spotify" : "internal_estimate", artworkUrl };
+  const metadata = { detectedArtistName: artist || null, detectedSongTitle: title, providerTitle: title, detectedDurationSeconds: seconds, durationSource: seconds ? "spotify" as const : "internal_estimate" as const, artworkUrl };
+  return artworkUrl ? metadata : lookupSpotifyOEmbed(link, metadata).catch(() => metadata);
+}
+
+async function lookupSoundCloudOEmbed(link: string, base: ProviderMetadata = blankProvider("internal_estimate")): Promise<ProviderMetadata> {
+  const res = await fetch(`https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(link)}`, { cache: "no-store" });
+  if (!res.ok) return base;
+  const payload = await res.json();
+  const artworkUrl = typeof payload.thumbnail_url === "string" ? payload.thumbnail_url : base.artworkUrl ?? null;
+  const providerTitle = base.providerTitle ?? (typeof payload.title === "string" ? payload.title : null);
+  return { ...base, providerTitle, artworkUrl };
 }
 
 async function lookupSoundCloudMetadata(link: string): Promise<ProviderMetadata> {
   const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
-  if (!clientId) return blankProvider("internal_estimate");
+  if (!clientId) return lookupSoundCloudOEmbed(link).catch(() => blankProvider("internal_estimate"));
   const resolveUrl = `https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(link)}&client_id=${encodeURIComponent(clientId)}`;
   const res = await fetch(resolveUrl, { cache: "no-store" });
-  if (!res.ok) return blankProvider("internal_estimate");
+  if (!res.ok) return lookupSoundCloudOEmbed(link).catch(() => blankProvider("internal_estimate"));
   const track = await res.json();
   const seconds = typeof track.duration === "number" ? Math.round(track.duration / 1000) : null;
   const title = typeof track.title === "string" ? track.title : null;
   const artist = typeof track.user?.username === "string" ? track.user.username : null;
   const artworkUrl = typeof track.artwork_url === "string" ? track.artwork_url.replace("-large.", "-t500x500.") : null;
-  return { detectedArtistName: artist, detectedSongTitle: title, providerTitle: title, detectedDurationSeconds: seconds, durationSource: seconds ? "soundcloud" : "internal_estimate", artworkUrl };
+  const metadata = { detectedArtistName: artist, detectedSongTitle: title, providerTitle: title, detectedDurationSeconds: seconds, durationSource: seconds ? "soundcloud" as const : "internal_estimate" as const, artworkUrl };
+  return artworkUrl ? metadata : lookupSoundCloudOEmbed(link, metadata).catch(() => metadata);
 }
 
 export async function detectProviderMetadata(sourceType: QueueSourceType, link: string): Promise<ProviderMetadata> {
@@ -756,6 +781,47 @@ export async function getRadioQueueState(sessionId?: string): Promise<QueueState
   return queueStateFromSession(session, store, sessionId ?? store.activeSessionId);
 }
 
+async function resolvePublicArtworkForSession(session: QueueSession): Promise<boolean> {
+  let changed = false;
+  const entries = [
+    ...session.queue,
+    ...(session.nextInLineTrack ? [session.nextInLineTrack] : []),
+    ...(session.loadedTrack ? [session.loadedTrack] : []),
+    ...session.completed,
+  ];
+  for (const entry of entries) {
+    const normalized = normalizeEntry(entry);
+    if (!entry.providerId) {
+      const providerId = parseProviderId(normalized.sourceType ?? "other", entry.link || entry.fileUrl || "");
+      if (providerId) {
+        entry.providerId = providerId;
+        changed = true;
+      }
+    }
+    if (entry.sourceArtworkUrl) continue;
+    if (normalized.sourceType === "youtube") {
+      const videoId = parseYouTubeVideoId(entry.link);
+      if (videoId) {
+        entry.sourceArtworkUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+        changed = true;
+      }
+      continue;
+    }
+    if (normalized.sourceType === "spotify" || normalized.sourceType === "soundcloud") {
+      const metadata = await detectProviderMetadata(normalized.sourceType, entry.link);
+      if (metadata.artworkUrl) {
+        entry.sourceArtworkUrl = metadata.artworkUrl;
+        changed = true;
+      }
+      if (!entry.providerTitle && metadata.providerTitle) {
+        entry.providerTitle = metadata.providerTitle;
+        changed = true;
+      }
+    }
+  }
+  return changed;
+}
+
 export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
   const normalized = normalizeEntry(entry);
   return {
@@ -804,10 +870,13 @@ function publicSubmitterStatus(session: QueueSession, identity?: { submitterToke
 export async function getPublicQueueSnapshot(sessionId?: string, identity?: { submitterToken?: string | null; tiktokHandle?: string | null; contactEmail?: string | null; artist?: string | null }): Promise<QueuePublicSnapshot> {
   const store = await readStore();
   const session = getSession(store, sessionId);
+  let changed = false;
   if (session.status !== "archived") {
     pullNextInLine(session);
-    await writeStore(replaceSession(store, session));
+    changed = true;
   }
+  changed = (await resolvePublicArtworkForSession(session)) || changed;
+  if (changed) await writeStore(replaceSession(store, session));
   const normalized = normalizeSession(session);
   return { session: summarizeSession(normalized), status: normalized.publicStatus, queue: normalized.queue.map(toPublicQueueTrack), completed: normalized.completed.slice(0, 10).map(toPublicQueueTrack), nowPlaying: normalized.loadedTrack ? toPublicQueueTrack(normalized.loadedTrack) : null, upNext: normalized.nextInLineTrack ? toPublicQueueTrack(normalized.nextInLineTrack) : null, submitterStatus: publicSubmitterStatus(normalized, identity) };
 }

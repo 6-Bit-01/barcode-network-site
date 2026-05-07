@@ -72,7 +72,7 @@ export function PublicQueueGateway() {
           <div className="border border-border p-3"><p className="text-xs text-muted">Active transmissions</p><p>{snapshot ? `${snapshot.status.activeCount}/${snapshot.status.capacity}` : "—"}</p></div>
           <div className="border border-border p-3"><p className="text-xs text-muted">Estimated runtime</p><p>{snapshot ? formatRuntime(snapshot.status.estimatedRuntimeSeconds) : "—"}</p></div>
           <div className="border border-border p-3"><p className="text-xs text-muted">Queue pressure</p><p>{snapshot?.status.pressure ?? "syncing"}</p></div>
-          <div className="border border-border p-3"><p className="text-xs text-muted">Regular Queue</p><p>{regularCount}</p></div>
+          <div className="border border-border p-3"><p className="text-xs text-muted">Free Transmissions</p><p>{regularCount}</p></div>
           <div className="border border-border p-3"><p className="text-xs text-muted">Priority Lane</p><p>{priorityCount}</p></div>
           <div className="border border-border p-3"><p className="text-xs text-muted">Wheel Chosen</p><p>{wheelCount}</p></div>
         </div>

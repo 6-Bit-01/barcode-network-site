@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { formatRuntime } from "@/lib/queue-types";
-import type { QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
+import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
 
 type Mode = "link" | "upload";
 type ReadState = "idle" | "checking" | "reading" | "detected" | "pending";
@@ -49,6 +49,7 @@ function publicTrackFromApi(track: { id: string; submittedArtistName?: string; s
 export function RadioQueueForm() {
   const [status, setStatus] = useState<QueuePublicStatus | null>(null);
   const [publicQueue, setPublicQueue] = useState<QueuePublicTrack[]>([]);
+  const [session, setSession] = useState<QueuePublicSnapshot["session"] | null>(null);
   const [lastSubmittedTrackId, setLastSubmittedTrackId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("link");
   const [artist, setArtist] = useState("");
@@ -67,6 +68,7 @@ export function RadioQueueForm() {
     if (res.ok) {
       const payload = await res.json();
       setStatus(payload.status ?? null);
+      setSession(payload.session ?? null);
       setPublicQueue(Array.isArray(payload.queue) ? payload.queue : []);
     }
   }
@@ -157,7 +159,7 @@ export function RadioQueueForm() {
   return (
     <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
       <aside className="border border-border bg-surface p-5 space-y-4">
-        <p className="text-xs uppercase tracking-[0.35em] text-muted">// Queue Signal</p>
+        <div><p className="text-xs uppercase tracking-[0.35em] text-muted">// Current Broadcast Queue</p><p className="text-sm font-bold text-foreground mt-2">{session?.title ?? "BARCODE Radio"}</p><p className="text-xs text-muted">{session?.showDate ?? "Active show date syncing"}</p></div>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="border border-border p-3"><p className="text-xs text-muted">Queue</p><p className={status?.isOpen ? "text-accent" : "text-danger"}>{status?.isOpen ? "Open" : "Closed"}</p></div>
           <div className="border border-border p-3"><p className="text-xs text-muted">Active transmissions</p><p>{status?.activeCount ?? "—"}</p></div>

@@ -80,7 +80,7 @@ export async function POST(req: Request) {
         mimeType: file.type,
         sourceType: "upload",
         detectedDurationSeconds,
-        durationSource: detectedDurationSeconds ? "browser-audio-metadata" : "internal-estimate",
+        durationSource: detectedDurationSeconds ? "upload_metadata" : "internal_estimate",
         note,
       });
       return NextResponse.json({ track, message: "Track entered the Regular Queue." }, { status: 201 });

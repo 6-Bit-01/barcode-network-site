@@ -6,7 +6,8 @@ export type QueueTier = "free" | "featured" | "fastlane" | "frontrow";
 export type QueueSourceType = "upload" | "link" | "youtube" | "soundcloud" | "spotify" | "other";
 export type QueueLane = "priority" | "wheel" | "regular";
 export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | "pending" | "played" | "refunded" | "expired";
-export type QueueDurationSource = "browser-audio-metadata" | "provider-metadata" | "filename-metadata" | "internal-estimate" | "unknown";
+export type QueueDurationSource = "upload_metadata" | "file_metadata" | "youtube" | "soundcloud" | "spotify" | "provider_metadata" | "internal_estimate" | "unknown";
+export type QueueSessionStatus = "active" | "archived";
 
 export interface QueueEntry {
   id: string;
@@ -15,10 +16,10 @@ export interface QueueEntry {
   link: string;
   tier: QueueTier;
   lane?: QueueLane;
-  amount: number; // cents
+  amount: number;
   stripeSessionId: string | null;
   status: QueueTrackStatus;
-  createdAt: string; // ISO
+  createdAt: string;
   playedAt: string | null;
   completedAt?: string | null;
   removedAt?: string | null;
@@ -29,6 +30,7 @@ export interface QueueEntry {
   submittedSongTitle?: string;
   detectedArtistName?: string | null;
   detectedSongTitle?: string | null;
+  providerTitle?: string | null;
   fileUrl?: string | null;
   fileName?: string | null;
   fileSize?: number | null;
@@ -48,16 +50,47 @@ export interface QueuePublicStatus {
   pressure: "low" | "medium" | "high" | "max";
 }
 
+export interface QueueSessionSummary {
+  sessionId: string;
+  title: string;
+  status: QueueSessionStatus;
+  showDate: string;
+  createdAt: string;
+  updatedAt: string;
+  queueOpen: boolean;
+  activeCount: number;
+  completedCount: number;
+  removedCount: number;
+  spotlightCount: number;
+  estimatedActiveRuntimeSeconds: number;
+  completedRuntimeSeconds: number;
+}
+
+export interface QueueSession extends QueueSessionSummary {
+  queue: QueueEntry[];
+  spotlight: QueueEntry[];
+  completed: QueueEntry[];
+  removed: QueueEntry[];
+  publicStatus: QueuePublicStatus;
+}
+
 export interface QueuePublicTrack {
   id: string;
   submittedArtistName: string;
   submittedSongTitle: string;
   detectedArtistName?: string | null;
   detectedSongTitle?: string | null;
+  providerTitle?: string | null;
   sourceType: QueueSourceType;
   lane: QueueLane;
   durationLabel: string;
   durationIsEstimate: boolean;
+}
+
+export interface QueuePublicSnapshot {
+  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status">;
+  status: QueuePublicStatus;
+  queue: QueuePublicTrack[];
 }
 
 export interface QueueState {
@@ -69,44 +102,20 @@ export interface QueueState {
   removed?: QueueEntry[];
   spotlight?: QueueEntry[];
   publicStatus?: QueuePublicStatus;
+  session?: QueueSessionSummary;
+  sessions?: QueueSessionSummary[];
+  viewedSessionId?: string;
+  readOnly?: boolean;
 }
 
 export const INTERNAL_BUFFER_DURATION_SECONDS = 240;
 export const RADIO_QUEUE_CAPACITY = 40;
 
 export const TIERS = {
-  free: {
-    name: "Regular Queue",
-    price: 0,
-    label: "REGULAR",
-    priority: 0,
-    description: "Enter the live BARCODE Radio request flow.",
-    icon: "○",
-  },
-  featured: {
-    name: "Spotlight",
-    price: 0,
-    label: "SPOTLIGHT",
-    priority: 1,
-    description: "Host-selected spotlight lane for special attention.",
-    icon: "✦",
-  },
-  fastlane: {
-    name: "Priority Lane",
-    price: 0,
-    label: "PRIORITY",
-    priority: 2,
-    description: "Host-controlled priority lane. Payment flow is not enabled yet.",
-    icon: "▸▸",
-  },
-  frontrow: {
-    name: "Wheel Winners",
-    price: 0,
-    label: "WHEEL",
-    priority: 3,
-    description: "Winner lane controlled by the BARCODE Radio host.",
-    icon: "◈",
-  },
+  free: { name: "Regular Queue", price: 0, label: "REGULAR", priority: 0, description: "Enter the live BARCODE Radio request flow.", icon: "○" },
+  featured: { name: "Spotlight", price: 0, label: "SPOTLIGHT", priority: 1, description: "Host-selected spotlight lane for special attention.", icon: "✦" },
+  fastlane: { name: "Priority Lane", price: 0, label: "PRIORITY", priority: 2, description: "Host-controlled priority lane. Payment flow is not enabled yet.", icon: "▸▸" },
+  frontrow: { name: "Wheel Winners", price: 0, label: "WHEEL", priority: 3, description: "Winner lane controlled by the BARCODE Radio host.", icon: "◈" },
 } as const;
 
 export const UPGRADE_PATHS: Record<QueueTier, QueueTier[]> = {
@@ -116,11 +125,7 @@ export const UPGRADE_PATHS: Record<QueueTier, QueueTier[]> = {
   frontrow: [],
 };
 
-const LEGACY_TIER_MAP: Record<string, QueueTier> = {
-  expedited: "featured",
-  priority: "fastlane",
-  vip: "frontrow",
-};
+const LEGACY_TIER_MAP: Record<string, QueueTier> = { expedited: "featured", priority: "fastlane", vip: "frontrow" };
 
 export function normalizeTier(tier: string): QueueTier {
   if (tier in TIERS) return tier as QueueTier;

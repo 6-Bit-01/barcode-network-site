@@ -1,5 +1,5 @@
 // ============================================================
-// BARCODE RADIO QUEUE OPERATIONS — Upstash Redis + memory fallback
+// BARCODE RADIO QUEUE OPERATIONS — session-based Redis + memory
 // ============================================================
 
 import { Redis } from "@upstash/redis";
@@ -16,12 +16,34 @@ import type {
   QueueDurationSource,
   QueueEntry,
   QueueLane,
+  QueuePublicSnapshot,
   QueuePublicStatus,
   QueuePublicTrack,
+  QueueSession,
+  QueueSessionStatus,
+  QueueSessionSummary,
   QueueSourceType,
   QueueState,
   QueueTier,
 } from "./queue-types";
+
+const STATE_KEY = "radioQueue:v2:sessions";
+const LEGACY_STATE_KEY = "radioQueue:v1:state";
+
+type QueueAdminAction = "finish" | "remove" | "priority" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority";
+
+interface QueueStore {
+  activeSessionId: string;
+  sessions: QueueSession[];
+}
+
+interface ProviderMetadata {
+  detectedArtistName: string | null;
+  detectedSongTitle: string | null;
+  providerTitle: string | null;
+  detectedDurationSeconds: number | null;
+  durationSource: QueueDurationSource;
+}
 
 function getRedis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -30,25 +52,42 @@ function getRedis(): Redis | null {
   return new Redis({ url, token });
 }
 
-const STATE_KEY = "radioQueue:v1:state";
-
-type QueueAdminAction = "finish" | "remove" | "priority" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority";
-
-interface StoredQueueState {
-  queue: QueueEntry[];
-  completed: QueueEntry[];
-  removed: QueueEntry[];
-  spotlight: QueueEntry[];
-  isOpen: boolean;
+function todayDate(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
-const mem: StoredQueueState = {
-  queue: [],
-  completed: [],
-  removed: [],
-  spotlight: [],
-  isOpen: true,
-};
+function makeSessionId(): string {
+  return `session_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function defaultSession(date = todayDate()): QueueSession {
+  const now = new Date().toISOString();
+  return normalizeSession({
+    sessionId: makeSessionId(),
+    title: `BARCODE Radio — ${date}`,
+    status: "active",
+    showDate: date,
+    createdAt: now,
+    updatedAt: now,
+    queueOpen: true,
+    activeCount: 0,
+    completedCount: 0,
+    removedCount: 0,
+    spotlightCount: 0,
+    estimatedActiveRuntimeSeconds: 0,
+    completedRuntimeSeconds: 0,
+    queue: [],
+    spotlight: [],
+    completed: [],
+    removed: [],
+    publicStatus: { isOpen: true, activeCount: 0, estimatedRuntimeSeconds: 0, capacity: RADIO_QUEUE_CAPACITY, pressure: "low" },
+  });
+}
+
+const mem: QueueStore = (() => {
+  const session = defaultSession();
+  return { activeSessionId: session.sessionId, sessions: [session] };
+})();
 
 function laneRank(lane: QueueLane | undefined): number {
   if (lane === "priority") return 0;
@@ -60,17 +99,35 @@ function sortActive(entries: QueueEntry[]): QueueEntry[] {
   return [...entries].sort((a, b) => laneRank(a.lane) - laneRank(b.lane) || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 }
 
-function publicStatus(state: StoredQueueState): QueuePublicStatus {
-  const active = state.queue.filter((entry) => entry.status === "queued" || entry.status === "playing");
+function publicStatusForSession(session: Pick<QueueSession, "queue" | "queueOpen">): QueuePublicStatus {
+  const active = session.queue.filter((entry) => entry.status === "queued" || entry.status === "playing");
   const estimatedRuntimeSeconds = active.reduce((sum, entry) => sum + getTrackRuntimeSeconds(entry), 0);
   const load = active.length / RADIO_QUEUE_CAPACITY;
-  const pressure: QueuePublicStatus["pressure"] = load >= 1 ? "max" : load >= 0.75 ? "high" : load >= 0.4 ? "medium" : "low";
   return {
-    isOpen: state.isOpen,
+    isOpen: session.queueOpen,
     activeCount: active.length,
     estimatedRuntimeSeconds,
     capacity: RADIO_QUEUE_CAPACITY,
-    pressure,
+    pressure: load >= 1 ? "max" : load >= 0.75 ? "high" : load >= 0.4 ? "medium" : "low",
+  };
+}
+
+function summarizeSession(session: QueueSession): QueueSessionSummary {
+  const publicStatus = publicStatusForSession(session);
+  return {
+    sessionId: session.sessionId,
+    title: session.title,
+    status: session.status,
+    showDate: session.showDate,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    queueOpen: session.queueOpen,
+    activeCount: publicStatus.activeCount,
+    completedCount: session.completed.length,
+    removedCount: session.removed.length,
+    spotlightCount: session.spotlight.length,
+    estimatedActiveRuntimeSeconds: publicStatus.estimatedRuntimeSeconds,
+    completedRuntimeSeconds: session.completed.reduce((sum, entry) => sum + getTrackRuntimeSeconds(entry), 0),
   };
 }
 
@@ -78,6 +135,8 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
   const submittedArtistName = entry.submittedArtistName ?? entry.artist;
   const submittedSongTitle = entry.submittedSongTitle ?? entry.title;
   const detectedDurationSeconds = entry.detectedDurationSeconds ?? null;
+  const sourceType = entry.sourceType ?? detectQueueSourceType(entry.link);
+  const durationSource = normalizeDurationSource(entry.durationSource, detectedDurationSeconds, sourceType);
   return {
     ...entry,
     artist: entry.artist ?? submittedArtistName,
@@ -86,84 +145,190 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     submittedSongTitle,
     detectedArtistName: entry.detectedArtistName ?? null,
     detectedSongTitle: entry.detectedSongTitle ?? null,
-    sourceType: entry.sourceType ?? detectQueueSourceType(entry.link),
+    providerTitle: entry.providerTitle ?? null,
+    sourceType,
     estimatedDurationSeconds: entry.estimatedDurationSeconds ?? detectedDurationSeconds ?? INTERNAL_BUFFER_DURATION_SECONDS,
     detectedDurationSeconds,
     durationIsEstimate: detectedDurationSeconds === null,
-    durationSource: entry.durationSource ?? (detectedDurationSeconds ? "provider-metadata" : "internal-estimate"),
+    durationSource,
     note: entry.note ?? null,
   };
 }
 
-async function readStoredState(): Promise<StoredQueueState> {
-  const redis = getRedis();
-  if (!redis) return mem;
-  const raw = await redis.get<StoredQueueState | string>(STATE_KEY);
-  if (!raw) return { queue: [], completed: [], removed: [], spotlight: [], isOpen: true };
-  const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-  return {
-    queue: Array.isArray(parsed.queue) ? parsed.queue.map(normalizeEntry) : [],
-    completed: Array.isArray(parsed.completed) ? parsed.completed.map(normalizeEntry) : [],
-    removed: Array.isArray(parsed.removed) ? parsed.removed.map(normalizeEntry) : [],
-    spotlight: Array.isArray(parsed.spotlight) ? parsed.spotlight.map(normalizeEntry) : [],
-    isOpen: parsed.isOpen !== false,
-  };
+function normalizeDurationSource(source: QueueDurationSource | string | undefined, detected: number | null, sourceType: QueueSourceType): QueueDurationSource {
+  if (source === "browser-audio-metadata" || source === "upload_metadata") return "upload_metadata";
+  if (source === "file-metadata" || source === "file_metadata") return "file_metadata";
+  if (source === "provider-metadata" || source === "provider_metadata") return sourceType === "youtube" || sourceType === "soundcloud" || sourceType === "spotify" ? sourceType : "provider_metadata";
+  if (source === "internal-estimate" || source === "internal_estimate") return "internal_estimate";
+  if (source === "youtube" || source === "soundcloud" || source === "spotify" || source === "unknown") return source;
+  if (detected && sourceType === "upload") return "upload_metadata";
+  if (detected && (sourceType === "youtube" || sourceType === "soundcloud" || sourceType === "spotify")) return sourceType;
+  return detected ? "provider_metadata" : "internal_estimate";
 }
 
-async function writeStoredState(state: StoredQueueState): Promise<void> {
-  const normalized = {
-    ...state,
-    queue: sortActive(state.queue.map(normalizeEntry)),
-    completed: state.completed.map(normalizeEntry),
-    removed: state.removed.map(normalizeEntry),
-    spotlight: state.spotlight.map(normalizeEntry),
-  };
+function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; title: string; status: QueueSessionStatus; showDate: string; createdAt: string; updatedAt: string; queueOpen: boolean }): QueueSession {
+  const session = {
+    ...raw,
+    queue: sortActive((raw.queue ?? []).map(normalizeEntry)),
+    completed: (raw.completed ?? []).map(normalizeEntry),
+    removed: (raw.removed ?? []).map(normalizeEntry),
+    spotlight: (raw.spotlight ?? []).map(normalizeEntry),
+  } as QueueSession;
+  const summary = summarizeSession(session);
+  return { ...session, ...summary, publicStatus: publicStatusForSession(session) };
+}
+
+function normalizeStore(input: unknown): QueueStore {
+  const maybe = input as Partial<QueueStore> | null;
+  if (maybe && Array.isArray(maybe.sessions)) {
+    const sessions = maybe.sessions.map((session) => normalizeSession(session));
+    const activeSessionId = maybe.activeSessionId && sessions.some((session) => session.sessionId === maybe.activeSessionId)
+      ? maybe.activeSessionId
+      : sessions.find((session) => session.status === "active")?.sessionId ?? sessions[0]?.sessionId;
+    if (activeSessionId) return { activeSessionId, sessions };
+  }
+  const legacy = input as { queue?: QueueEntry[]; completed?: QueueEntry[]; removed?: QueueEntry[]; spotlight?: QueueEntry[]; isOpen?: boolean } | null;
+  if (legacy && (Array.isArray(legacy.queue) || Array.isArray(legacy.completed))) {
+    const session = normalizeSession({
+      ...defaultSession(),
+      queue: legacy.queue ?? [],
+      completed: legacy.completed ?? [],
+      removed: legacy.removed ?? [],
+      spotlight: legacy.spotlight ?? [],
+      queueOpen: legacy.isOpen !== false,
+      updatedAt: new Date().toISOString(),
+    });
+    return { activeSessionId: session.sessionId, sessions: [session] };
+  }
+  const session = defaultSession();
+  return { activeSessionId: session.sessionId, sessions: [session] };
+}
+
+async function readStore(): Promise<QueueStore> {
+  const redis = getRedis();
+  if (!redis) return normalizeStore(mem);
+  const raw = await redis.get<QueueStore | string>(STATE_KEY);
+  if (raw) return normalizeStore(typeof raw === "string" ? JSON.parse(raw) : raw);
+  const legacy = await redis.get<unknown>(LEGACY_STATE_KEY);
+  return normalizeStore(typeof legacy === "string" ? JSON.parse(legacy) : legacy);
+}
+
+async function writeStore(store: QueueStore): Promise<void> {
+  const normalized = normalizeStore(store);
   const redis = getRedis();
   if (!redis) {
-    mem.queue = normalized.queue;
-    mem.completed = normalized.completed;
-    mem.removed = normalized.removed;
-    mem.spotlight = normalized.spotlight;
-    mem.isOpen = normalized.isOpen;
+    mem.activeSessionId = normalized.activeSessionId;
+    mem.sessions = normalized.sessions;
     return;
   }
   await redis.set(STATE_KEY, JSON.stringify(normalized));
 }
 
-function parseFilenameMetadata(fileName?: string | null): { artist: string | null; title: string | null } {
-  if (!fileName) return { artist: null, title: null };
+function getSession(store: QueueStore, sessionId?: string): QueueSession {
+  const targetId = sessionId ?? store.activeSessionId;
+  return store.sessions.find((session) => session.sessionId === targetId) ?? store.sessions.find((session) => session.sessionId === store.activeSessionId) ?? store.sessions[0];
+}
+
+function replaceSession(store: QueueStore, session: QueueSession): QueueStore {
+  return { ...store, sessions: store.sessions.map((item) => item.sessionId === session.sessionId ? normalizeSession({ ...session, updatedAt: new Date().toISOString() }) : item) };
+}
+
+function parseFilenameMetadata(fileName?: string | null): { artist: string | null; title: string | null; providerTitle: string | null } {
+  if (!fileName) return { artist: null, title: null, providerTitle: null };
   const base = fileName.replace(/\.(mp3|wav)$/i, "").replace(/[_]+/g, " ").trim();
   const parts = base.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean);
-  if (parts.length >= 2) return { artist: parts[0], title: parts.slice(1).join(" - ") };
-  return { artist: null, title: base || null };
+  if (parts.length >= 2) return { artist: parts[0], title: parts.slice(1).join(" - "), providerTitle: base || null };
+  return { artist: null, title: null, providerTitle: base || null };
 }
 
-export function getLinkMetadataPlaceholder(sourceType: QueueSourceType, link: string): {
-  detectedArtistName: string | null;
-  detectedSongTitle: string | null;
-  detectedDurationSeconds: number | null;
-  durationSource: QueueDurationSource;
-} {
-  // Provider duration/title lookup belongs here next. The current v1 keeps this
-  // helper explicit so YouTube/SoundCloud/Spotify API adapters can be plugged in
-  // without changing the public form contract.
-  if (["youtube", "soundcloud", "spotify", "other", "link"].includes(sourceType) && link) {
-    return {
-      detectedArtistName: null,
-      detectedSongTitle: null,
-      detectedDurationSeconds: null,
-      durationSource: "internal-estimate",
-    };
+function blankProvider(source: QueueDurationSource = "internal_estimate"): ProviderMetadata {
+  return { detectedArtistName: null, detectedSongTitle: null, providerTitle: null, detectedDurationSeconds: null, durationSource: source };
+}
+
+export function parseYouTubeVideoId(link: string): string | null {
+  try {
+    const url = new URL(link);
+    const host = url.hostname.replace(/^www\./, "").toLowerCase();
+    if (host === "youtu.be") return url.pathname.split("/").filter(Boolean)[0] ?? null;
+    if (host.includes("youtube.com")) return url.searchParams.get("v") || url.pathname.match(/\/shorts\/([^/?#]+)/)?.[1] || url.pathname.match(/\/embed\/([^/?#]+)/)?.[1] || null;
+    return null;
+  } catch {
+    return null;
   }
-  return {
-    detectedArtistName: null,
-    detectedSongTitle: null,
-    detectedDurationSeconds: null,
-    durationSource: "unknown",
-  };
 }
 
-export function createQueueTrack(input: {
+export function parseYouTubeDuration(duration: string): number | null {
+  const match = duration.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+  if (!match) return null;
+  return (Number(match[1] ?? 0) * 3600) + (Number(match[2] ?? 0) * 60) + Number(match[3] ?? 0);
+}
+
+async function lookupYouTubeMetadata(link: string): Promise<ProviderMetadata> {
+  const key = process.env.YOUTUBE_API_KEY || process.env.YOUTUBE_DATA_API_KEY;
+  const id = parseYouTubeVideoId(link);
+  if (!key || !id) return blankProvider("internal_estimate");
+  const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${encodeURIComponent(id)}&key=${encodeURIComponent(key)}`;
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) return blankProvider("internal_estimate");
+  const payload = await res.json();
+  const item = Array.isArray(payload.items) ? payload.items[0] : null;
+  const duration = item?.contentDetails?.duration ? parseYouTubeDuration(item.contentDetails.duration) : null;
+  const providerTitle = typeof item?.snippet?.title === "string" ? item.snippet.title : null;
+  const channelTitle = typeof item?.snippet?.channelTitle === "string" ? item.snippet.channelTitle : null;
+  return { detectedArtistName: channelTitle, detectedSongTitle: providerTitle, providerTitle, detectedDurationSeconds: duration, durationSource: duration ? "youtube" : "internal_estimate" };
+}
+
+async function lookupSpotifyMetadata(link: string): Promise<ProviderMetadata> {
+  const clientId = process.env.SPOTIFY_CLIENT_ID;
+  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return blankProvider("internal_estimate");
+  const match = link.match(/spotify\.com\/track\/([a-zA-Z0-9]+)/) || link.match(/spotify:track:([a-zA-Z0-9]+)/);
+  const trackId = match?.[1];
+  if (!trackId) return blankProvider("internal_estimate");
+  const tokenRes = await fetch("https://accounts.spotify.com/api/token", {
+    method: "POST",
+    headers: { Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: "grant_type=client_credentials",
+    cache: "no-store",
+  });
+  if (!tokenRes.ok) return blankProvider("internal_estimate");
+  const token = await tokenRes.json();
+  if (!token.access_token) return blankProvider("internal_estimate");
+  const trackRes = await fetch(`https://api.spotify.com/v1/tracks/${encodeURIComponent(trackId)}`, { headers: { Authorization: `Bearer ${token.access_token}` }, cache: "no-store" });
+  if (!trackRes.ok) return blankProvider("internal_estimate");
+  const track = await trackRes.json();
+  const seconds = typeof track.duration_ms === "number" ? Math.round(track.duration_ms / 1000) : null;
+  const artist = Array.isArray(track.artists) ? track.artists.map((item: { name?: string }) => item.name).filter(Boolean).join(", ") : null;
+  const title = typeof track.name === "string" ? track.name : null;
+  return { detectedArtistName: artist || null, detectedSongTitle: title, providerTitle: title, detectedDurationSeconds: seconds, durationSource: seconds ? "spotify" : "internal_estimate" };
+}
+
+async function lookupSoundCloudMetadata(link: string): Promise<ProviderMetadata> {
+  const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
+  if (!clientId) return blankProvider("internal_estimate");
+  const resolveUrl = `https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(link)}&client_id=${encodeURIComponent(clientId)}`;
+  const res = await fetch(resolveUrl, { cache: "no-store" });
+  if (!res.ok) return blankProvider("internal_estimate");
+  const track = await res.json();
+  const seconds = typeof track.duration === "number" ? Math.round(track.duration / 1000) : null;
+  const title = typeof track.title === "string" ? track.title : null;
+  const artist = typeof track.user?.username === "string" ? track.user.username : null;
+  return { detectedArtistName: artist, detectedSongTitle: title, providerTitle: title, detectedDurationSeconds: seconds, durationSource: seconds ? "soundcloud" : "internal_estimate" };
+}
+
+export async function detectProviderMetadata(sourceType: QueueSourceType, link: string): Promise<ProviderMetadata> {
+  try {
+    if (sourceType === "youtube") return lookupYouTubeMetadata(link);
+    if (sourceType === "spotify") return lookupSpotifyMetadata(link);
+    if (sourceType === "soundcloud") return lookupSoundCloudMetadata(link);
+    return blankProvider("internal_estimate");
+  } catch (error) {
+    console.warn("[queue] provider metadata lookup failed", error);
+    return blankProvider("internal_estimate");
+  }
+}
+
+export async function createQueueTrack(input: {
   artist: string;
   title: string;
   link?: string;
@@ -175,24 +340,23 @@ export function createQueueTrack(input: {
   sourceType?: QueueSourceType;
   detectedArtistName?: string | null;
   detectedSongTitle?: string | null;
+  providerTitle?: string | null;
   detectedDurationSeconds?: number | null;
   durationSource?: QueueDurationSource;
-}): QueueEntry {
+}): Promise<QueueEntry> {
   const sourceType = input.sourceType ?? (input.fileUrl ? "upload" : detectQueueSourceType(input.link ?? ""));
   const submittedArtistName = input.artist.trim();
   const submittedSongTitle = input.title.trim();
-  const duration = typeof input.detectedDurationSeconds === "number" && Number.isFinite(input.detectedDurationSeconds)
+  const providerMetadata = sourceType === "upload" ? blankProvider() : await detectProviderMetadata(sourceType, input.link ?? "");
+  const fileMetadata = sourceType === "upload" ? parseFilenameMetadata(input.fileName) : { artist: null, title: null, providerTitle: null };
+  const detectedDurationSeconds = typeof input.detectedDurationSeconds === "number" && Number.isFinite(input.detectedDurationSeconds)
     ? Math.max(1, Math.round(input.detectedDurationSeconds))
-    : null;
-  const filenameMetadata = sourceType === "upload" ? parseFilenameMetadata(input.fileName) : { artist: null, title: null };
-  const linkMetadata = sourceType === "upload" ? null : getLinkMetadataPlaceholder(sourceType, input.link ?? "");
-  const detectedArtistName = input.detectedArtistName ?? filenameMetadata.artist ?? linkMetadata?.detectedArtistName ?? null;
-  const detectedSongTitle = input.detectedSongTitle ?? filenameMetadata.title ?? linkMetadata?.detectedSongTitle ?? null;
-  const durationSource = duration
-    ? input.durationSource ?? (sourceType === "upload" ? "browser-audio-metadata" : "provider-metadata")
-    : input.durationSource ?? linkMetadata?.durationSource ?? "internal-estimate";
+    : providerMetadata.detectedDurationSeconds;
+  const durationSource = detectedDurationSeconds
+    ? input.durationSource ?? providerMetadata.durationSource ?? (sourceType === "upload" ? "upload_metadata" : "provider_metadata")
+    : "internal_estimate";
 
-  return {
+  return normalizeEntry({
     id: generateQueueId(),
     artist: submittedArtistName,
     title: submittedSongTitle,
@@ -211,42 +375,52 @@ export function createQueueTrack(input: {
     note: input.note?.trim() || null,
     submittedArtistName,
     submittedSongTitle,
-    detectedArtistName,
-    detectedSongTitle,
+    detectedArtistName: input.detectedArtistName ?? providerMetadata.detectedArtistName ?? fileMetadata.artist,
+    detectedSongTitle: input.detectedSongTitle ?? providerMetadata.detectedSongTitle ?? fileMetadata.title,
+    providerTitle: input.providerTitle ?? providerMetadata.providerTitle ?? fileMetadata.providerTitle,
     fileUrl: input.fileUrl ?? null,
     fileName: input.fileName ?? null,
     fileSize: input.fileSize ?? null,
     mimeType: input.mimeType ?? null,
     sourceType,
-    detectedDurationSeconds: duration,
-    estimatedDurationSeconds: duration ?? INTERNAL_BUFFER_DURATION_SECONDS,
-    durationIsEstimate: duration === null,
+    detectedDurationSeconds,
+    estimatedDurationSeconds: detectedDurationSeconds ?? INTERNAL_BUFFER_DURATION_SECONDS,
+    durationIsEstimate: detectedDurationSeconds === null,
     durationSource,
-  };
+  });
 }
 
 export async function submitRadioTrack(input: Parameters<typeof createQueueTrack>[0]): Promise<QueueEntry> {
-  const state = await readStoredState();
-  if (!state.isOpen) throw new Error("Queue is closed");
-  const track = createQueueTrack(input);
-  state.queue.push(track);
-  await writeStoredState(state);
+  const store = await readStore();
+  const session = getSession(store);
+  if (session.status !== "active" || !session.queueOpen) throw new Error("Queue is closed");
+  const track = await createQueueTrack(input);
+  session.queue.push(track);
+  await writeStore(replaceSession(store, session));
   return track;
 }
 
-export async function getRadioQueueState(): Promise<QueueState> {
-  const state = await readStoredState();
-  const queue = sortActive(state.queue);
+function queueStateFromSession(session: QueueSession, store: QueueStore, viewedSessionId = session.sessionId): QueueState {
+  const normalized = normalizeSession(session);
   return {
-    nowPlaying: queue.find((entry) => entry.status === "playing") ?? null,
-    queue,
-    history: state.completed,
-    totalPlayed: state.completed.length,
-    streamStatus: state.isOpen ? "online" : "offline",
-    removed: state.removed,
-    spotlight: state.spotlight,
-    publicStatus: publicStatus({ ...state, queue }),
+    nowPlaying: normalized.queue.find((entry) => entry.status === "playing") ?? null,
+    queue: normalized.queue,
+    history: normalized.completed,
+    totalPlayed: normalized.completed.length,
+    streamStatus: normalized.queueOpen ? "online" : "offline",
+    removed: normalized.removed,
+    spotlight: normalized.spotlight,
+    publicStatus: normalized.publicStatus,
+    session: summarizeSession(normalized),
+    sessions: store.sessions.map(summarizeSession).sort((a, b) => b.showDate.localeCompare(a.showDate) || b.createdAt.localeCompare(a.createdAt)),
+    viewedSessionId,
+    readOnly: normalized.status === "archived" || normalized.sessionId !== store.activeSessionId,
   };
+}
+
+export async function getRadioQueueState(sessionId?: string): Promise<QueueState> {
+  const store = await readStore();
+  return queueStateFromSession(getSession(store, sessionId), store, sessionId ?? store.activeSessionId);
 }
 
 export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
@@ -257,6 +431,7 @@ export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
     submittedSongTitle: normalized.submittedSongTitle ?? normalized.title,
     detectedArtistName: normalized.detectedArtistName ?? null,
     detectedSongTitle: normalized.detectedSongTitle ?? null,
+    providerTitle: normalized.providerTitle ?? null,
     sourceType: normalized.sourceType ?? "other",
     lane: normalized.lane ?? "regular",
     durationLabel: normalized.durationIsEstimate ? "estimated/pending" : formatRuntime(getTrackRuntimeSeconds(normalized)),
@@ -264,123 +439,131 @@ export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
   };
 }
 
-export async function getPublicQueueSnapshot(): Promise<{ status: QueuePublicStatus; queue: QueuePublicTrack[] }> {
-  const state = await getRadioQueueState();
-  return {
-    status: state.publicStatus ?? publicStatus({ queue: state.queue, completed: state.history, removed: state.removed ?? [], spotlight: state.spotlight ?? [], isOpen: state.streamStatus === "online" }),
-    queue: state.queue.map(toPublicQueueTrack),
-  };
+export async function getPublicQueueSnapshot(): Promise<QueuePublicSnapshot> {
+  const store = await readStore();
+  const session = getSession(store);
+  return { session: summarizeSession(session), status: session.publicStatus, queue: session.queue.map(toPublicQueueTrack) };
 }
 
 export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> {
-  const state = await readStoredState();
-  state.isOpen = isOpen;
-  await writeStoredState(state);
-  return publicStatus(state);
+  const store = await readStore();
+  const session = getSession(store);
+  if (session.status !== "active") return session.publicStatus;
+  session.queueOpen = isOpen;
+  await writeStore(replaceSession(store, session));
+  return publicStatusForSession(session);
+}
+
+export async function startNewQueueSession(): Promise<QueueState> {
+  const store = await readStore();
+  const archived = store.sessions.map((session) => session.sessionId === store.activeSessionId ? normalizeSession({ ...session, status: "archived", queueOpen: false, updatedAt: new Date().toISOString() }) : session);
+  const next = defaultSession();
+  const nextStore = { activeSessionId: next.sessionId, sessions: [next, ...archived] };
+  await writeStore(nextStore);
+  return queueStateFromSession(next, nextStore);
+}
+
+export async function archiveCurrentQueueSession(): Promise<QueueState> {
+  const store = await readStore();
+  const session = normalizeSession({ ...getSession(store), status: "archived", queueOpen: false, updatedAt: new Date().toISOString() });
+  const archivedStore = replaceSession(store, session);
+  const active = archivedStore.sessions.find((item) => item.status === "active") ?? session;
+  archivedStore.activeSessionId = active.sessionId;
+  await writeStore(archivedStore);
+  return queueStateFromSession(session, archivedStore, session.sessionId);
+}
+
+export async function activateQueueSession(sessionId: string): Promise<QueueState> {
+  const store = await readStore();
+  const sessions = store.sessions.map((session) => normalizeSession({ ...session, status: session.sessionId === sessionId ? "active" : "archived", queueOpen: session.sessionId === sessionId ? session.queueOpen : false, updatedAt: new Date().toISOString() }));
+  const active = sessions.find((session) => session.sessionId === sessionId) ?? sessions[0];
+  const nextStore = { activeSessionId: active.sessionId, sessions };
+  await writeStore(nextStore);
+  return queueStateFromSession(active, nextStore);
 }
 
 function restoreEntry(entry: QueueEntry, lane: QueueLane): QueueEntry {
-  return {
-    ...entry,
-    lane,
-    tier: lane === "priority" ? "fastlane" : "free",
-    status: "queued",
-    createdAt: new Date().toISOString(),
-    playedAt: null,
-    completedAt: null,
-    removedAt: null,
-    restoredAt: new Date().toISOString(),
-  };
+  return normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : "free", status: "queued", createdAt: new Date().toISOString(), playedAt: null, completedAt: null, removedAt: null, restoredAt: new Date().toISOString() });
 }
 
 export async function updateRadioTrack(id: string, action: QueueAdminAction): Promise<QueueState> {
-  const state = await readStoredState();
+  const store = await readStore();
+  const session = getSession(store);
+  if (session.status !== "active") return queueStateFromSession(session, store);
 
   if (action === "removeSpotlight") {
-    state.spotlight = state.spotlight.filter((entry) => entry.id !== id);
-    await writeStoredState(state);
+    session.spotlight = session.spotlight.filter((entry) => entry.id !== id);
+    await writeStore(replaceSession(store, session));
     return getRadioQueueState();
   }
 
   if (action === "restoreRegular" || action === "restorePriority") {
     const lane: QueueLane = action === "restorePriority" ? "priority" : "regular";
-    const completedIndex = state.completed.findIndex((entry) => entry.id === id);
-    const removedIndex = state.removed.findIndex((entry) => entry.id === id);
-    const source = completedIndex >= 0 ? state.completed.splice(completedIndex, 1)[0] : removedIndex >= 0 ? state.removed.splice(removedIndex, 1)[0] : null;
-    if (source) state.queue.push(restoreEntry(source, lane));
-    await writeStoredState(state);
+    const completedIndex = session.completed.findIndex((entry) => entry.id === id);
+    const removedIndex = session.removed.findIndex((entry) => entry.id === id);
+    const source = completedIndex >= 0 ? session.completed.splice(completedIndex, 1)[0] : removedIndex >= 0 ? session.removed.splice(removedIndex, 1)[0] : null;
+    if (source) session.queue.push(restoreEntry(source, lane));
+    await writeStore(replaceSession(store, session));
     return getRadioQueueState();
   }
 
-  const index = state.queue.findIndex((entry) => entry.id === id);
-  const active = index >= 0 ? state.queue[index] : null;
+  const index = session.queue.findIndex((entry) => entry.id === id);
+  const active = index >= 0 ? session.queue[index] : null;
 
   if (action === "spotlight") {
-    const source = active ?? state.completed.find((entry) => entry.id === id) ?? state.removed.find((entry) => entry.id === id);
-    if (source && !state.spotlight.some((entry) => entry.id === source.id)) {
-      state.spotlight.push({ ...source, spotlightedAt: new Date().toISOString() });
-    }
-    await writeStoredState(state);
+    const source = active ?? session.completed.find((entry) => entry.id === id) ?? session.removed.find((entry) => entry.id === id);
+    if (source && !session.spotlight.some((entry) => entry.id === source.id)) session.spotlight.push({ ...source, spotlightedAt: new Date().toISOString() });
+    await writeStore(replaceSession(store, session));
     return getRadioQueueState();
   }
 
   if (!active) return getRadioQueueState();
-
   if (action === "priority") {
-    state.queue.splice(index, 1);
-    state.queue.push({ ...active, lane: "priority", tier: "fastlane", status: "queued" });
+    session.queue.splice(index, 1);
+    session.queue.push({ ...active, lane: "priority", tier: "fastlane", status: "queued" });
   }
-
   if (action === "finish") {
-    state.queue.splice(index, 1);
-    state.completed.unshift({ ...active, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
+    session.queue.splice(index, 1);
+    session.completed.unshift({ ...active, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
   }
-
   if (action === "remove") {
-    state.queue.splice(index, 1);
-    state.removed.unshift({ ...active, status: "removed", removedAt: new Date().toISOString() });
+    session.queue.splice(index, 1);
+    session.removed.unshift({ ...active, status: "removed", removedAt: new Date().toISOString() });
   }
-
-  await writeStoredState(state);
+  await writeStore(replaceSession(store, session));
   return getRadioQueueState();
 }
 
 // Legacy-compatible helpers used by archived/OBS components.
 export async function addToQueue(entry: Omit<QueueEntry, "id" | "status" | "playedAt">): Promise<QueueEntry> {
-  const track = normalizeEntry({
-    ...entry,
-    id: generateQueueId(),
-    status: "queued",
-    playedAt: null,
-    lane: entry.lane ?? (normalizeTier(entry.tier) === "fastlane" ? "priority" : "regular"),
-    sourceType: entry.sourceType ?? detectQueueSourceType(entry.link),
-  });
-  const state = await readStoredState();
-  state.queue.push(track);
-  await writeStoredState(state);
+  const track = normalizeEntry({ ...entry, id: generateQueueId(), status: "queued", playedAt: null, lane: entry.lane ?? (normalizeTier(entry.tier) === "fastlane" ? "priority" : "regular"), sourceType: entry.sourceType ?? detectQueueSourceType(entry.link) });
+  const store = await readStore();
+  const session = getSession(store);
+  session.queue.push(track);
+  await writeStore(replaceSession(store, session));
   return track;
 }
 
-export async function getQueueState(): Promise<QueueState> {
-  return getRadioQueueState();
-}
+export async function getQueueState(): Promise<QueueState> { return getRadioQueueState(); }
 
 export async function advanceQueue(): Promise<QueueEntry | null> {
-  const state = await readStoredState();
-  const queue = sortActive(state.queue);
+  const store = await readStore();
+  const session = getSession(store);
+  const queue = sortActive(session.queue);
   const next = queue[0] ?? null;
   if (!next) return null;
-  state.queue = queue.slice(1);
-  state.completed.unshift({ ...next, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
-  await writeStoredState(state);
+  session.queue = queue.slice(1);
+  session.completed.unshift({ ...next, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
+  await writeStore(replaceSession(store, session));
   return queue[1] ?? null;
 }
 
 export async function resetQueue(): Promise<{ cleared: number; preserved: number }> {
-  const state = await readStoredState();
-  const cleared = state.queue.length;
-  state.queue = [];
-  await writeStoredState(state);
+  const store = await readStore();
+  const session = getSession(store);
+  const cleared = session.queue.length;
+  session.queue = [];
+  await writeStore(replaceSession(store, session));
   return { cleared, preserved: 0 };
 }
 
@@ -390,19 +573,16 @@ export async function getEntry(id: string): Promise<QueueEntry | null> {
 }
 
 export async function upgradeEntryTier(id: string, newTier: QueueTier, additionalAmount: number): Promise<QueueEntry | null> {
-  const state = await readStoredState();
-  const index = state.queue.findIndex((entry) => entry.id === id);
+  const store = await readStore();
+  const session = getSession(store);
+  const index = session.queue.findIndex((entry) => entry.id === id);
   if (index === -1) return null;
-  const updated = { ...state.queue[index], tier: newTier, amount: state.queue[index].amount + additionalAmount, lane: newTier === "fastlane" ? "priority" as QueueLane : state.queue[index].lane };
-  state.queue[index] = updated;
-  await writeStoredState(state);
+  const updated = { ...session.queue[index], tier: newTier, amount: session.queue[index].amount + additionalAmount, lane: newTier === "fastlane" ? "priority" as QueueLane : session.queue[index].lane };
+  session.queue[index] = updated;
+  await writeStore(replaceSession(store, session));
   return updated;
 }
 
 const stripeSessions = new Map<string, string>();
-export async function storeStripeSession(sessionId: string, entryId: string): Promise<void> {
-  stripeSessions.set(sessionId, entryId);
-}
-export async function getStripeSessionEntry(sessionId: string): Promise<string | null> {
-  return stripeSessions.get(sessionId) ?? null;
-}
+export async function storeStripeSession(sessionId: string, entryId: string): Promise<void> { stripeSessions.set(sessionId, entryId); }
+export async function getStripeSessionEntry(sessionId: string): Promise<string | null> { return stripeSessions.get(sessionId) ?? null; }

@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
-import { getRadioQueueState, setQueueOpen, updateRadioTrack } from "@/lib/queue";
+import { archiveCurrentQueueSession, getRadioQueueState, setQueueOpen, startNewQueueSession, activateQueueSession, updateRadioTrack } from "@/lib/queue";
 
 export const dynamic = "force-dynamic";
 
@@ -10,9 +10,10 @@ async function assertAdmin(): Promise<boolean> {
   return token ? verifyAdminToken(token) : false;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   if (!(await assertAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  return NextResponse.json(await getRadioQueueState());
+  const sessionId = new URL(req.url).searchParams.get("sessionId") ?? undefined;
+  return NextResponse.json(await getRadioQueueState(sessionId));
 }
 
 export async function POST(req: Request) {
@@ -21,6 +22,10 @@ export async function POST(req: Request) {
   if (body.action === "setOpen") {
     return NextResponse.json({ publicStatus: await setQueueOpen(Boolean(body.isOpen)) });
   }
+  if (body.action === "startSession") return NextResponse.json(await startNewQueueSession());
+  if (body.action === "archiveSession") return NextResponse.json(await archiveCurrentQueueSession());
+  if (body.action === "activateSession" && typeof body.sessionId === "string") return NextResponse.json(await activateQueueSession(body.sessionId));
+  if (body.action === "viewSession" && typeof body.sessionId === "string") return NextResponse.json(await getRadioQueueState(body.sessionId));
   if (["finish", "remove", "priority", "spotlight", "removeSpotlight", "restoreRegular", "restorePriority"].includes(body.action) && typeof body.id === "string") {
     return NextResponse.json(await updateRadioTrack(body.id, body.action));
   }

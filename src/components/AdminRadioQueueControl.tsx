@@ -87,13 +87,12 @@ export function AdminRadioQueueControl() {
           <div>
             <p className="text-xs uppercase tracking-[0.4em] text-accent">Current Broadcast Session</p>
             <h2 className="text-2xl font-bold text-foreground mt-2">{hasPreparedSession ? state?.session?.title : "No active broadcast session prepared."}</h2>
-            <p className="text-xs text-muted">{hasPreparedSession ? `${state?.session?.showDate} · ${state?.session?.status}` : "Prepare a new session before opening submissions."} {readOnly ? "· read-only review" : ""}</p>
+            <p className="text-xs text-muted">{hasPreparedSession ? `${state?.session?.showDate} · ${state?.session?.status}` : "Prepare a new session in Show Management before opening submissions."} {readOnly ? "· read-only review" : ""}</p>
             {hasPreparedSession && state?.session?.description && <p className="text-xs text-muted mt-2 max-w-2xl">{state.session.description}</p>}
           </div>
           <div className="flex flex-wrap gap-2">
             <button onClick={() => load()} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">View Current Session</button>
-            <button onClick={() => post({ action: "startSession" })} className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Prepare New Session</button>
-            <button onClick={() => post({ action: "archiveSession" })} disabled={readOnly} className="border border-danger/50 px-3 py-2 text-xs uppercase tracking-widest text-danger disabled:opacity-40">Archive Current Session</button>
+            <a href="/admin/show-management" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Show Management</a>
             <button onClick={() => setShowSessions((value) => !value)} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">View Saved Sessions</button>
           </div>
         </div>

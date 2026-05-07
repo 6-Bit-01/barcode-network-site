@@ -62,6 +62,7 @@ export function RadioQueueForm({ sessionId }: { sessionId?: string } = {}) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [transmissionState, setTransmissionState] = useState<"idle" | "routing" | "aligning" | "confirmed">("idle");
 
   async function loadStatus() {
     const res = await fetch(`/api/queue${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""}`, { cache: "no-store" });
@@ -122,6 +123,7 @@ export function RadioQueueForm({ sessionId }: { sessionId?: string } = {}) {
     setError(null);
     setSuccess(null);
     setSubmitting(true);
+    setTransmissionState("routing");
     try {
       const body = new FormData();
       body.set("mode", mode);
@@ -133,12 +135,14 @@ export function RadioQueueForm({ sessionId }: { sessionId?: string } = {}) {
       if (mode === "upload" && file) body.set("file", file);
       if (mode === "link") body.set("link", link.trim());
 
+      window.setTimeout(() => setTransmissionState("aligning"), 350);
       const res = await fetch("/api/queue", { method: "POST", body });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.error || "Submission failed");
       if (payload.track?.id) {
         const submitted = publicTrackFromApi(payload.track);
         setLastSubmittedTrackId(submitted.id);
+        setTransmissionState("confirmed");
         setPublicQueue((current) => [submitted, ...current.filter((entry) => entry.id !== submitted.id)]);
       }
       setArtist("");
@@ -148,9 +152,10 @@ export function RadioQueueForm({ sessionId }: { sessionId?: string } = {}) {
       setFile(null);
       setDetectedDuration(null);
       setReadState("idle");
-      setSuccess("Track entered the Regular Queue.");
+      setSuccess("Transmission stabilized in the Regular Queue.");
       await loadStatus();
     } catch (err) {
+      setTransmissionState("idle");
       setError(err instanceof Error ? err.message : "Submission failed");
     } finally {
       setSubmitting(false);
@@ -171,7 +176,7 @@ export function RadioQueueForm({ sessionId }: { sessionId?: string } = {}) {
       </aside>
 
       <form onSubmit={submit} className="border border-border bg-surface p-5 space-y-5">
-        {success && <div className="border border-accent/40 bg-accent/5 p-4"><p className="text-accent font-bold">✓ {success}</p><p className="text-xs text-muted mt-1">Upgrade to Priority placeholder reserved for a future flow. Stripe is not active in this v1 control pass.</p></div>}
+        {(success || transmissionState !== "idle") && <div className="border border-accent/40 bg-accent/5 p-4"><p className="text-accent font-bold">✓ {transmissionState === "routing" ? "Transmission received." : transmissionState === "aligning" ? "Cross-dimensional queue alignment in progress…" : success}</p><p className="text-xs text-muted mt-1">{transmissionState === "routing" ? "Routing track through the BARCODE Network…" : transmissionState === "aligning" ? "Your track is crossing the signal aperture." : "Transmission stabilized in the Regular Queue."}</p></div>}
         {error && <div className="border border-danger/40 bg-danger/5 p-4 text-danger text-sm">{error}</div>}
 
         <div className="grid gap-3 sm:grid-cols-2">

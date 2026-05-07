@@ -481,10 +481,19 @@ export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> 
   const store = await readStore();
   const session = getSession(store);
   if (session.status === "archived") return session.publicStatus;
-  session.queueOpen = isOpen;
-  session.status = isOpen ? "open" : "closed";
-  await writeStore(replaceSession(store, session));
-  return publicStatusForSession(session);
+
+  const sessions = store.sessions.map((item) => {
+    if (item.sessionId === session.sessionId) {
+      return normalizeSession({ ...item, queueOpen: isOpen, status: isOpen ? "open" : "closed", updatedAt: new Date().toISOString() });
+    }
+    if (isOpen && item.status === "open") {
+      return normalizeSession({ ...item, queueOpen: false, status: "closed", updatedAt: new Date().toISOString() });
+    }
+    return item;
+  });
+  const nextStore = { ...store, sessions };
+  await writeStore(nextStore);
+  return publicStatusForSession(getSession(nextStore));
 }
 
 export async function startNewQueueSession(): Promise<QueueState> {

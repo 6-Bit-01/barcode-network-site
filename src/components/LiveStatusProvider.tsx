@@ -8,6 +8,8 @@ interface LiveStatusContextType {
   streamUrl: string;
   setStreamUrl: (url: string) => void;
   isScheduled: boolean;
+  sponsorsActive: boolean;
+  toggleSponsorsActive: () => void;
   isAdmin: boolean;
   manualOverride: boolean;
   lastError: string | null;
@@ -20,6 +22,8 @@ const LiveStatusContext = createContext<LiveStatusContextType>({
   streamUrl: "https://www.tiktok.com/@six.bit/live",
   setStreamUrl: () => {},
   isScheduled: false,
+  sponsorsActive: false,
+  toggleSponsorsActive: () => {},
   isAdmin: false,
   manualOverride: false,
   lastError: null,
@@ -34,6 +38,7 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
   const [isLive, setIsLive] = useState(false);
   const [isScheduled, setIsScheduled] = useState(false);
   const [streamUrl, setStreamUrlState] = useState("https://www.tiktok.com/@six.bit/live");
+  const [sponsorsActive, setSponsorsActive] = useState(false);
   const [manualOverride, setManualOverride] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
@@ -48,6 +53,7 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
         setIsLive(data.isLive);
         setIsScheduled(data.isScheduled);
         setStreamUrlState(data.streamUrl);
+        setSponsorsActive(Boolean(data.sponsorsActive));
         setManualOverride(data.manualOverride);
         setLastError(null);
       }
@@ -99,6 +105,7 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
       setIsLive(data.isLive);
       setIsScheduled(data.isScheduled);
       setStreamUrlState(data.streamUrl);
+      setSponsorsActive(Boolean(data.sponsorsActive));
       setManualOverride(data.manualOverride);
       setLastError(null);
     } catch {
@@ -129,6 +136,29 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
     }
   }, [fetchStatus]);
 
+  // Admin sponsor signal toggle — persists to Redis via API
+  const toggleSponsorsActive = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/live", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: sponsorsActive ? "setSponsorsInactive" : "setSponsorsActive" }),
+        credentials: "include",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLastError(body?.error ? `Sponsor signal toggle failed: ${body.error}` : `Sponsor signal toggle failed (${res.status})`);
+        return;
+      }
+      if (typeof body?.persisted === "boolean") setPersisted(body.persisted);
+      setSponsorsActive(Boolean(body?.sponsorsActive));
+      fetchStatus();
+      setLastError(null);
+    } catch {
+      setLastError("Sponsor signal toggle failed");
+    }
+  }, [fetchStatus, sponsorsActive]);
+
   return (
     <LiveStatusContext.Provider value={{
       isLive,
@@ -136,6 +166,8 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
       streamUrl,
       setStreamUrl,
       isScheduled,
+      sponsorsActive,
+      toggleSponsorsActive,
       isAdmin,
       manualOverride,
       lastError,

@@ -77,6 +77,7 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
   const [status, setStatus] = useState<QueuePublicStatus | null>(null);
   const [publicQueue, setPublicQueue] = useState<QueuePublicTrack[]>([]);
   const [session, setSession] = useState<QueuePublicSnapshot["session"] | null>(null);
+  const [submitterStatus, setSubmitterStatus] = useState<QueuePublicSnapshot["submitterStatus"] | null>(null);
   const [lastSubmittedTrackId, setLastSubmittedTrackId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("link");
   const [artist, setArtist] = useState("");
@@ -97,11 +98,18 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
 
   async function loadStatus() {
-    const res = await fetch(`/api/queue${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""}`, { cache: "no-store" });
+    const params = new URLSearchParams();
+    if (sessionId) params.set("sessionId", sessionId);
+    if (submitterToken) params.set("submitterToken", submitterToken);
+    if (tiktokHandle.trim()) params.set("tiktokHandle", tiktokHandle.trim());
+    if (contactEmail.trim()) params.set("contactEmail", contactEmail.trim());
+    if (artist.trim()) params.set("artist", artist.trim());
+    const res = await fetch(`/api/queue${params.size ? `?${params.toString()}` : ""}`, { cache: "no-store" });
     if (res.ok) {
       const payload = await res.json();
       setStatus(payload.status ?? null);
       setSession(payload.session ?? null);
+      setSubmitterStatus(payload.submitterStatus ?? null);
       setPublicQueue(Array.isArray(payload.queue) ? payload.queue : []);
     }
   }
@@ -110,7 +118,13 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
     loadStatus();
     const interval = setInterval(loadStatus, 5_000);
     return () => clearInterval(interval);
-  }, []);
+  }, [submitterToken]);
+
+  useEffect(() => {
+    if (!submitterToken) return;
+    const timer = window.setTimeout(loadStatus, 350);
+    return () => window.clearTimeout(timer);
+  }, [artist, contactEmail, submitterToken, tiktokHandle]);
 
   useEffect(() => {
     const key = "barcode-radio-submitter-token";
@@ -254,13 +268,15 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
 
   if (transmissionState !== "idle") return <WarpSequence state={transmissionState} data={warpData} />;
 
+  const effectiveCooldown = Math.max(cooldownRemaining, submitterStatus?.cooldownRemainingSeconds ?? 0);
+
   return (
     <div className="grid gap-4 lg:grid-cols-[0.72fr_1fr]">
       <aside className="border border-border bg-surface p-4 space-y-3">
         <div><p className="text-xs uppercase tracking-[0.35em] text-muted">// Current Broadcast Queue</p><p className="text-sm font-bold text-foreground mt-2">{session?.title ?? "BARCODE Radio"}</p><p className="text-xs text-muted">{session?.showDate ?? "Active show date syncing"}</p></div>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="border border-border p-3"><p className="text-xs text-muted">Queue</p><p className={status?.isOpen ? "text-accent" : "text-danger"}>{status?.isOpen ? "Open" : "Closed"}</p></div>
-          <div className="border border-border p-3"><p className="text-xs text-muted">Active transmissions</p><p>{status?.activeCount ?? "—"}</p></div>
+          <div className="border border-border p-3"><p className="text-xs text-muted">Active transmissions</p><p>{status?.activeCount ?? "—"}</p><p className="mt-1 text-[10px] text-muted">Includes Now Playing + Up Next + waiting lanes.</p></div>
           <div className="border border-border p-3"><p className="text-xs text-muted">Estimated active runtime</p><p>{status ? formatRuntime(status.estimatedRuntimeSeconds) : "—"}</p></div>
           <div className="border border-border p-3"><p className="text-xs text-muted">Queue pressure</p><p>{pressureLabel(status)}</p></div>
         </div>
@@ -269,7 +285,8 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
 
       <form onSubmit={submit} className="border border-border bg-surface p-4 space-y-4">
         {error && <div className="border border-danger/40 bg-danger/5 p-4 text-danger text-sm">{error}</div>}
-        {cooldownRemaining > 0 && <div className="border border-accent/40 bg-accent/5 p-3 text-sm text-accent">Next transmission available in {formatCooldown(cooldownRemaining)}</div>}
+        {effectiveCooldown > 0 && <div className="border border-accent/40 bg-accent/5 p-3 text-sm text-accent">Next transmission available in {formatCooldown(effectiveCooldown)}</div>}
+        {submitterStatus && <div className="border border-accent/40 bg-accent/5 p-3 text-sm text-muted"><p className="font-bold text-accent">Your transmissions this session: {submitterStatus.used} / {submitterStatus.limit}</p><p className="mt-1">Remaining slots: {submitterStatus.remaining}</p>{submitterStatus.submitted.length > 0 && <p className="mt-1">Already sent: {submitterStatus.submitted.map((entry) => entry.submittedSongTitle).join(", ")}</p>}{submitterStatus.cooldownRemainingSeconds > 0 && <p className="mt-1 text-accent">Next transmission available in {formatCooldown(submitterStatus.cooldownRemainingSeconds)}</p>}</div>}
 
         <div className="grid gap-3 sm:grid-cols-2">
           <button type="button" onClick={() => setMode("link")} className={`border p-4 text-left ${mode === "link" ? "border-accent bg-accent/10" : "border-border"}`}><span className="text-xs uppercase tracking-widest text-muted">Submit a link</span><p className="text-sm mt-1">YouTube, SoundCloud, Spotify, or other URL.</p></button>
@@ -296,7 +313,7 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
         <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Optional transmission note</span><textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} rows={2} placeholder="Any clean context the host should know. Do not include private contact info." className="w-full bg-background border border-border px-3 py-2.5 text-sm" /><span className="block text-[11px] text-muted">Visible to queue control only. Public queue preview never shows notes.</span></label>
 
         <div className="border border-border bg-background/40 p-3 text-sm text-muted">{checkCopy}</div>
-        <button disabled={submitting || cooldownRemaining > 0 || status?.isOpen === false || status?.isFull === true} className="w-full border border-accent px-4 py-3 text-sm uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{submitting ? "Submitting…" : cooldownRemaining > 0 ? `Next transmission available in ${formatCooldown(cooldownRemaining)}` : status?.isFull ? "Queue Full" : "Enter Regular Queue"}</button>
+        <button disabled={submitting || effectiveCooldown > 0 || status?.isOpen === false || status?.isFull === true} className="w-full border border-accent px-4 py-3 text-sm uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{submitting ? "Submitting…" : effectiveCooldown > 0 ? `Next transmission available in ${formatCooldown(effectiveCooldown)}` : status?.isFull ? "Queue Full" : "Enter Regular Queue"}</button>
       </form>
     </div>
   );

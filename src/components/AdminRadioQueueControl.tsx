@@ -146,7 +146,7 @@ export function AdminRadioQueueControl() {
           <div className="border border-border bg-background/40 p-4"><p className="text-xs text-muted">Runtime</p><p>{formatRuntime(runtime)}</p></div>
           <div className="border border-border bg-background/40 p-4"><p className="text-xs text-muted">Pressure</p><p>{state?.publicStatus?.pressure ?? "syncing"}</p></div>
         </div>
-        {isArchivedReview && <div className="border border-danger/40 bg-danger/10 p-3 text-xs uppercase tracking-widest text-danger">ARCHIVED / READ ONLY — queue review actions are locked until this session is reactivated.</div>}
+        {isArchivedReview && <div className="border border-danger/40 bg-danger/10 p-3 text-xs uppercase tracking-widest text-danger">ARCHIVED / READ ONLY — queue review actions are locked for this finished session.</div>}
         {canControlSession && <div className="flex flex-wrap gap-3"><button onClick={() => action("", "pullNext")} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Pull Next Track</button><button onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} border px-4 py-2 text-xs uppercase tracking-widest hover:text-background`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button></div>}
       </section>
 
@@ -192,8 +192,8 @@ function WheelWinnerSelector({ tracks, search, selection, readOnly, onSearch, on
 function PlayerDock({ player, minimized, setMinimized, readOnly, onAction, onCopy }: { player: QueueEntry; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; onAction: (id: string, action: AdminQueueAction) => void; onCopy: () => void }) {
   const embedded = embedUrl(player);
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-[9999] border-t border-accent/40 bg-background/95 p-3 shadow-[0_-20px_60px_rgba(0,0,0,0.45)] backdrop-blur">
-      <div className="mx-auto w-full max-w-7xl">
+    <div className="fixed inset-x-0 bottom-0 z-[9999] w-screen border-t border-accent/40 bg-background/95 p-3 shadow-[0_-20px_60px_rgba(0,0,0,0.45)] backdrop-blur">
+      <div className="w-full px-2 sm:px-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.35em] text-accent">{minimized ? "Queue Player Dock" : "Command Deck Player"}</p>
@@ -207,10 +207,10 @@ function PlayerDock({ player, minimized, setMinimized, readOnly, onAction, onCop
             <button type="button" onClick={onCopy} className="border border-border px-3 py-2 text-xs text-muted">Copy Link</button>
           </div>
         </div>
-        <div className={`${minimized ? "h-0 overflow-hidden opacity-0" : "mt-4 opacity-100"} grid items-end gap-4 lg:grid-cols-[1fr_auto]`} aria-hidden={minimized}>
+        <div className={`${minimized ? "h-0 overflow-hidden opacity-0" : "mt-4 opacity-100"} grid w-full items-end gap-4 xl:grid-cols-[minmax(0,1fr)_auto]`} aria-hidden={minimized}>
           <div className="min-h-20">
             {player.sourceType === "upload" && player.fileUrl && <audio src={player.fileUrl} controls className="w-full" />}
-            {player.sourceType !== "upload" && embedded && <iframe title="Queue preview" src={embedded} className="h-48 w-full border border-border" allow="clipboard-write; encrypted-media; picture-in-picture" />}
+            {player.sourceType !== "upload" && embedded && <iframe title="Queue preview" src={embedded} className="h-56 w-full border border-border" allow="clipboard-write; encrypted-media; picture-in-picture" />}
             {player.sourceType !== "upload" && !embedded && <div className="border border-border p-6 text-sm text-muted">No embeddable preview available for this source. Use Open Link or Copy Link.</div>}
           </div>
           <div className="flex flex-wrap gap-2">

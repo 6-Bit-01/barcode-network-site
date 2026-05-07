@@ -48,8 +48,14 @@ async function putBlob(file: File): Promise<{ url: string }> {
 }
 
 export async function GET(req: Request) {
-  const sessionId = new URL(req.url).searchParams.get("sessionId") ?? undefined;
-  return NextResponse.json(await getPublicQueueSnapshot(sessionId));
+  const params = new URL(req.url).searchParams;
+  const sessionId = params.get("sessionId") ?? undefined;
+  return NextResponse.json(await getPublicQueueSnapshot(sessionId, {
+    submitterToken: params.get("submitterToken"),
+    tiktokHandle: params.get("tiktokHandle"),
+    contactEmail: params.get("contactEmail"),
+    artist: params.get("artist"),
+  }));
 }
 
 export async function POST(req: Request) {
@@ -117,9 +123,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ track, message: "Track entered the Regular Queue.", cooldownRemainingSeconds: 300 }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Submission failed";
+    const reasons = Array.isArray((error as { reasons?: unknown }).reasons) ? (error as { reasons: string[] }).reasons : [];
     const isLimitBlock = message === "Submission limit reached for this session.";
+    const isDuplicateBlock = reasons.some((reason) => reason.toLowerCase().includes("duplicate"));
     const cooldownRemainingSeconds = typeof (error as { remainingSeconds?: unknown }).remainingSeconds === "number" ? (error as { remainingSeconds: number }).remainingSeconds : 0;
     if (cooldownRemainingSeconds > 0) return NextResponse.json({ error: "Submission cooldown active.", cooldownRemainingSeconds }, { status: 429 });
-    return NextResponse.json({ error: isLimitBlock ? "Submission limit reached for this session." : message }, { status: isLimitBlock ? 409 : 500 });
+    if (isDuplicateBlock) return NextResponse.json({ error: "This track has already been submitted to this session.", reasons }, { status: 409 });
+    return NextResponse.json({ error: isLimitBlock ? "Submission limit reached for this session." : message, reasons }, { status: isLimitBlock ? 409 : 500 });
   }
 }

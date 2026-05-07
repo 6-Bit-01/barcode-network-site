@@ -172,7 +172,6 @@ function pullNextInLine(session: QueueSession, excludeId?: string, force = false
   session.nextInLineHoldTrackId = null;
   session.currentTrackPreviousLane = next.lane ?? "regular";
   session.currentTrackPreviousIndex = previousIndex >= 0 ? previousIndex : null;
-  if (next.lane !== "priority") session.nextNonPriorityLane = nextLaneAfterFinish(next.lane);
   session.autoRoutingPaused = false;
 }
 
@@ -536,9 +535,8 @@ function normalizeSourceKey(value?: string | null): string | null {
   try {
     const url = new URL(value.trim());
     url.hash = "";
-    if (["utm_source", "utm_medium", "utm_campaign", "fbclid", "si"].some((key) => url.searchParams.has(key))) {
-      ["utm_source", "utm_medium", "utm_campaign", "fbclid", "si"].forEach((key) => url.searchParams.delete(key));
-    }
+    const trackingParams = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "fbclid", "gclid", "si"];
+    trackingParams.forEach((key) => url.searchParams.delete(key));
     return `${url.hostname.replace(/^www\./, "").toLowerCase()}${url.pathname.replace(/\/$/, "")}${url.search}`.toLowerCase();
   } catch {
     return value.trim().toLowerCase() || null;
@@ -578,6 +576,7 @@ function findSubmissionBlocks(session: QueueSession, track: QueueEntry): string[
   if (token && countMatches(entries, (entry) => entry.submitterToken === token) >= session.trackLimitPerArtist) reasons.push("Limit matched by browser token");
   if (track.normalizedSourceKey && entries.some((entry) => entry.normalizedSourceKey === track.normalizedSourceKey)) reasons.push("Duplicate source");
   if (track.providerId && entries.some((entry) => entry.providerId === track.providerId)) reasons.push("Duplicate provider source");
+  if (track.sourceType === "upload" && track.fileName && track.fileSize && entries.some((entry) => entry.sourceType === "upload" && entry.fileName === track.fileName && entry.fileSize === track.fileSize && (!track.detectedDurationSeconds || !entry.detectedDurationSeconds || entry.detectedDurationSeconds === track.detectedDurationSeconds))) reasons.push("Duplicate upload metadata");
   return reasons;
 }
 
@@ -775,7 +774,34 @@ export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
   };
 }
 
-export async function getPublicQueueSnapshot(sessionId?: string): Promise<QueuePublicSnapshot> {
+function publicSubmitterStatus(session: QueueSession, identity?: { submitterToken?: string | null; tiktokHandle?: string | null; contactEmail?: string | null; artist?: string | null }): QueuePublicSnapshot["submitterStatus"] {
+  const token = identity?.submitterToken?.trim();
+  const tikTok = identity?.tiktokHandle ? normalizeTikTokHandle(identity.tiktokHandle) : "";
+  const email = normalizeEmail(identity?.contactEmail);
+  const artist = normalizeIdentity(identity?.artist);
+  if (!token && !tikTok && !email && !artist) return null;
+
+  const entries = [...session.queue, ...(session.nextInLineTrack ? [session.nextInLineTrack] : []), ...(session.loadedTrack ? [session.loadedTrack] : []), ...session.completed, ...session.removed];
+  const matching = entries.filter((entry) => {
+    if (token && entry.submitterToken === token) return true;
+    if (tikTok && entry.normalizedTikTokHandle === tikTok) return true;
+    if (email && normalizeEmail(entry.contactEmail) === email) return true;
+    if (artist && normalizeIdentity(entry.submitterArtistName ?? entry.submittedArtistName) === artist) return true;
+    return false;
+  });
+  const latest = matching.reduce((time, entry) => Math.max(time, new Date(entry.createdAt).getTime()), 0);
+  const cooldownRemainingSeconds = latest ? Math.max(0, SUBMISSION_COOLDOWN_SECONDS - Math.floor((Date.now() - latest) / 1000)) : 0;
+  const limit = session.trackLimitPerArtist ?? 3;
+  return {
+    used: matching.length,
+    limit,
+    remaining: Math.max(0, limit - matching.length),
+    cooldownRemainingSeconds,
+    submitted: matching.slice(0, limit).map(toPublicQueueTrack).map(({ id, submittedArtistName, submittedSongTitle, sourceType, lane, durationLabel }) => ({ id, submittedArtistName, submittedSongTitle, sourceType, lane, durationLabel })),
+  };
+}
+
+export async function getPublicQueueSnapshot(sessionId?: string, identity?: { submitterToken?: string | null; tiktokHandle?: string | null; contactEmail?: string | null; artist?: string | null }): Promise<QueuePublicSnapshot> {
   const store = await readStore();
   const session = getSession(store, sessionId);
   if (session.status !== "archived") {
@@ -783,7 +809,7 @@ export async function getPublicQueueSnapshot(sessionId?: string): Promise<QueueP
     await writeStore(replaceSession(store, session));
   }
   const normalized = normalizeSession(session);
-  return { session: summarizeSession(normalized), status: normalized.publicStatus, queue: normalized.queue.map(toPublicQueueTrack), completed: normalized.completed.slice(0, 10).map(toPublicQueueTrack), nowPlaying: normalized.loadedTrack ? toPublicQueueTrack(normalized.loadedTrack) : null, upNext: normalized.nextInLineTrack ? toPublicQueueTrack(normalized.nextInLineTrack) : null };
+  return { session: summarizeSession(normalized), status: normalized.publicStatus, queue: normalized.queue.map(toPublicQueueTrack), completed: normalized.completed.slice(0, 10).map(toPublicQueueTrack), nowPlaying: normalized.loadedTrack ? toPublicQueueTrack(normalized.loadedTrack) : null, upNext: normalized.nextInLineTrack ? toPublicQueueTrack(normalized.nextInLineTrack) : null, submitterStatus: publicSubmitterStatus(normalized, identity) };
 }
 
 export interface QueueSessionSubmitterRow {
@@ -894,6 +920,8 @@ export async function archiveCurrentQueueSession(): Promise<QueueState> {
 
 export async function activateQueueSession(sessionId: string): Promise<QueueState> {
   const store = await readStore();
+  const target = store.sessions.find((session) => session.sessionId === sessionId);
+  if (!target || target.status === "archived") return queueStateFromSession(target ?? getSession(store), store, sessionId);
   const sessions = store.sessions.map((session) => normalizeSession({ ...session, status: session.sessionId === sessionId ? "prepared" : session.status === "archived" ? "archived" : "closed", queueOpen: false, updatedAt: new Date().toISOString() }));
   const active = sessions.find((session) => session.sessionId === sessionId) ?? sessions[0];
   const nextStore = { activeSessionId: active.sessionId, sessions };
@@ -912,6 +940,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
 
   if (action === "pullNext") {
     session.autoRoutingPaused = false;
+    session.nextInLineHoldTrackId = null;
     pullNextInLine(session, undefined, true);
     const nextStore = replaceSession(store, session);
     await writeStore(nextStore);
@@ -948,10 +977,10 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
 
   if (loaded) {
     if (action === "moveBack") {
-      const restored = moveLoadedTrackBackToQueue(session);
-      session.nextInLineHoldTrackId = restored?.id ?? null;
       const staged = session.nextInLineTrack;
       if (staged) moveNextInLineBackToQueue(session);
+      const restored = moveLoadedTrackBackToQueue(session);
+      session.nextInLineHoldTrackId = restored?.id ?? null;
       session.autoRoutingPaused = true;
     }
     if (action === "finish") {

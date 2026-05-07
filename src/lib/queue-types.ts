@@ -121,13 +121,22 @@ export interface QueuePublicTrack {
   tiktokHandle?: string | null;
 }
 
+export interface QueuePublicSubmitterStatus {
+  used: number;
+  limit: number;
+  remaining: number;
+  cooldownRemainingSeconds: number;
+  submitted: Pick<QueuePublicTrack, "id" | "submittedArtistName" | "submittedSongTitle" | "sourceType" | "lane" | "durationLabel">[];
+}
+
 export interface QueuePublicSnapshot {
-  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description">;
+  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount">;
   status: QueuePublicStatus;
   queue: QueuePublicTrack[];
   completed: QueuePublicTrack[];
   nowPlaying?: QueuePublicTrack | null;
   upNext?: QueuePublicTrack | null;
+  submitterStatus?: QueuePublicSubmitterStatus | null;
 }
 
 export interface QueueState {

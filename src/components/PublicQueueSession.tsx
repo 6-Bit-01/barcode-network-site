@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { RadioQueueForm } from "@/components/RadioQueueForm";
 import { externalLinks } from "@/content";
-import { formatRuntime, getTrackArtworkUrl } from "@/lib/queue-types";
+import { formatRuntime } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicTrack } from "@/lib/queue-types";
 
 export function PublicQueueSession({ sessionId }: { sessionId: string }) {
@@ -37,6 +37,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const isEnded = snapshot?.session.status === "archived";
   const isFull = Boolean(snapshot?.status.isFull || (snapshot && snapshot.status.activeCount >= snapshot.status.capacity));
   const canSubmit = !isEnded && isOpen && !isFull;
+  const completedRuntime = snapshot?.session.completedRuntimeSeconds ?? 0;
 
   if (isEnded) {
     return (
@@ -47,8 +48,8 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
           <p className="text-sm text-muted">This transmission window has collapsed. Temporal alignment for this broadcast has expired. Review the completed signal log below.</p>
           <div className="grid gap-3 sm:grid-cols-3 text-sm">
             <div className="border border-border p-3"><p className="text-xs text-muted">Show date</p><p>{snapshot?.session.showDate ?? "—"}</p></div>
-            <div className="border border-border p-3"><p className="text-xs text-muted">Completed tracks</p><p>{snapshot?.completed.length ?? 0}</p></div>
-            <div className="border border-border p-3"><p className="text-xs text-muted">Runtime logged</p><p>{snapshot ? formatRuntime(snapshot.status.estimatedRuntimeSeconds) : "—"}</p></div>
+            <div className="border border-border p-3"><p className="text-xs text-muted">Completed tracks</p><p>{snapshot?.session.completedCount ?? snapshot?.completed.length ?? 0}</p></div>
+            <div className="border border-border p-3"><p className="text-xs text-muted">Completed runtime</p><p>{snapshot ? formatRuntime(completedRuntime) : "—"}</p></div>
           </div>
         </section>
         <PublicLane title="Completed Signal Log" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} />
@@ -79,13 +80,15 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
       {isFull && <p className="border border-danger/40 bg-danger/5 p-3 text-sm text-danger">This broadcast queue is full for new transmissions.</p>}
 
-      <div className="grid gap-5 xl:grid-cols-3">
+      <QueueMechanicsInfo />
+
+      <div className="space-y-5">
         <PublicLane title="Priority Signal" tracks={lanes.priority} lastSubmittedTrackId={lastSubmittedTrackId} />
         <PublicLane title="Wheel Chosen" subtitle="Tracks selected by the 10K tap wheel." tracks={lanes.wheel} lastSubmittedTrackId={lastSubmittedTrackId} />
         <PublicLane title="Incoming Transmissions" tracks={lanes.regular} lastSubmittedTrackId={lastSubmittedTrackId} />
       </div>
 
-      <PublicLane title="Recently Played" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} />
+      <section className="border-t border-border pt-6"><PublicLane title="Recently Played" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} /></section>
       <DiscordQueueCTA />
 
       {submitOpen && <div className="fixed inset-0 z-[10000] grid place-items-center overflow-y-auto bg-black/70 p-3 backdrop-blur-sm"><div className="my-4 w-full max-w-[1280px] border border-accent/50 bg-background/95 p-4 shadow-[0_0_60px_rgba(255,0,0,0.18)]"><div className="mb-4 flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.35em] text-accent">Transmission Intake</p><p className="text-sm text-muted mt-1">Queue remains live behind this terminal while you route your signal.</p></div><button type="button" onClick={() => setSubmitOpen(false)} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">Collapse Intake</button></div><RadioQueueForm sessionId={sessionId} onSubmitted={(trackId) => { setLastSubmittedTrackId(trackId ?? null); window.setTimeout(() => setSubmitOpen(false), 450); load(); }} /></div></div>}
@@ -95,7 +98,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
 function SourceArt({ track }: { track: QueuePublicTrack | null }) {
   const [failed, setFailed] = useState(false);
-  const artworkUrl = track ? getTrackArtworkUrl(track) : null;
+  const artworkUrl = track?.sourceArtworkUrl ?? null;
   if (artworkUrl && !failed) return <img src={artworkUrl} alt="" className="h-full w-full object-cover" onError={() => setFailed(true)} />;
   return <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_center,rgba(255,0,0,0.25),transparent_60%)] text-4xl text-accent">▦</div>;
 }
@@ -104,8 +107,12 @@ function NowPlaying({ title, track, compact = false }: { title: string; track: Q
   return <div className="border border-accent/40 bg-surface p-5"><p className="text-xs uppercase tracking-[0.35em] text-accent">{title}</p>{track ? <div className={`mt-4 grid gap-4 ${compact ? "grid-cols-[5rem_1fr]" : "sm:grid-cols-[9rem_1fr]"}`}><div className={`${compact ? "h-20" : "aspect-square"} overflow-hidden border border-accent/40`}><SourceArt track={track} /></div><div><h3 className={`${compact ? "text-lg" : "text-2xl"} font-bold text-foreground`}>{track.submittedArtistName}</h3><p className="text-foreground/90">{track.submittedSongTitle}</p><div className="mt-3 grid gap-1 text-xs text-muted"><p>Platform / source: {track.sourceType.toUpperCase()}</p>{track.tiktokHandle && <p>TikTok: {track.tiktokHandle}</p>}{!track.durationIsEstimate && <p>Duration: {track.durationLabel}</p>}</div></div></div> : <div className="mt-4 border border-border bg-background/40 p-6"><div className="mb-4 flex h-24 items-center justify-center border border-accent/30 text-4xl text-accent">▦</div><p className="text-sm text-muted">No transmission is in this slot yet.</p></div>}</div>;
 }
 
+function QueueMechanicsInfo() {
+  return <section className="border border-accent/30 bg-accent/5 p-5"><p className="text-xs uppercase tracking-[0.3em] text-accent">Queue Mechanics</p><p className="mt-2 text-sm text-muted">Priority Signal cuts first. When priority is clear, the system alternates between Wheel Chosen and Incoming Transmissions. Tap energy during the show can destabilize the wheel and pull a track forward. New submissions enter Incoming Transmissions unless a future Priority Signal Upgrade or wheel selection moves them.</p></section>;
+}
+
 function PublicLane({ title, tracks, subtitle, lastSubmittedTrackId }: { title: string; tracks: QueuePublicTrack[]; subtitle?: string; lastSubmittedTrackId: string | null }) {
-  return <section className="border border-border bg-surface p-5"><div className="mb-4 flex items-start justify-between gap-3"><div><h2 className="text-sm uppercase tracking-[0.25em] text-foreground">{title}</h2>{subtitle && <p className="mt-1 text-xs text-muted">{subtitle}</p>}</div><span className="text-xs text-muted">{tracks.length}</span></div><div className="space-y-3">{tracks.length === 0 ? <p className="border border-border/60 p-4 text-sm text-muted">No visible transmissions.</p> : tracks.map((track, index) => <article key={track.id} className={`grid gap-3 border bg-background/40 p-3 sm:grid-cols-[4.5rem_1fr] ${track.id === lastSubmittedTrackId ? "border-accent animate-pulse" : "border-border"}`}><div className="h-20 overflow-hidden border border-border/70"><SourceArt track={track} /></div><div><p className="text-xs text-muted">#{index + 1} · {track.sourceType.toUpperCase()} · {track.durationLabel}</p><p className="font-bold text-foreground">{track.submittedArtistName}</p><p className="text-sm text-foreground/85">{track.submittedSongTitle}</p>{track.id === lastSubmittedTrackId && <p className="mt-2 text-[11px] uppercase tracking-widest text-accent">Transmission received</p>}</div></article>)}</div></section>;
+  return <section className="w-full border border-border bg-surface p-5"><div className="mb-4 flex items-start justify-between gap-3"><div><h2 className="text-sm uppercase tracking-[0.25em] text-foreground">{title}</h2>{subtitle && <p className="mt-1 text-xs text-muted">{subtitle}</p>}</div><span className="text-xs text-muted">{tracks.length}</span></div><div className="space-y-3">{tracks.length === 0 ? <p className="border border-border/60 p-4 text-sm text-muted">No visible transmissions.</p> : tracks.map((track, index) => <article key={track.id} className={`grid gap-3 border bg-background/40 p-3 sm:grid-cols-[5rem_1fr_auto] sm:items-center ${track.id === lastSubmittedTrackId ? "border-accent animate-pulse" : "border-border"}`}><div className="h-20 overflow-hidden border border-border/70"><SourceArt track={track} /></div><div><p className="text-xs text-muted">#{index + 1} · {track.sourceType.toUpperCase()}</p><p className="font-bold text-foreground">{track.submittedArtistName}</p><p className="text-sm text-foreground/85">{track.submittedSongTitle}</p>{track.id === lastSubmittedTrackId && <p className="mt-2 text-[11px] uppercase tracking-widest text-accent">Transmission received</p>}</div><p className="text-xs text-muted sm:text-right">{track.durationLabel}</p></article>)}</div></section>;
 }
 
 function DiscordQueueCTA() {

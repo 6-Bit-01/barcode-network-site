@@ -7,7 +7,7 @@ export type QueueSourceType = "upload" | "link" | "youtube" | "soundcloud" | "sp
 export type QueueLane = "priority" | "wheel" | "regular";
 export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | "pending" | "played" | "refunded" | "expired";
 export type QueueDurationSource = "upload_metadata" | "file_metadata" | "youtube" | "soundcloud" | "spotify" | "provider_metadata" | "internal_estimate" | "unknown";
-export type QueueSessionStatus = "active" | "archived";
+export type QueueSessionStatus = "prepared" | "open" | "closed" | "archived";
 
 export interface QueueEntry {
   id: string;
@@ -58,6 +58,7 @@ export interface QueueSessionSummary {
   createdAt: string;
   updatedAt: string;
   queueOpen: boolean;
+  description: string;
   activeCount: number;
   completedCount: number;
   removedCount: number;
@@ -88,9 +89,10 @@ export interface QueuePublicTrack {
 }
 
 export interface QueuePublicSnapshot {
-  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status">;
+  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description">;
   status: QueuePublicStatus;
   queue: QueuePublicTrack[];
+  completed: QueuePublicTrack[];
 }
 
 export interface QueueState {

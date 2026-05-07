@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/set-state-in-effect, react/jsx-no-comment-textnodes */
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps, react/jsx-no-comment-textnodes */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -46,7 +46,7 @@ function publicTrackFromApi(track: { id: string; submittedArtistName?: string; s
   };
 }
 
-export function RadioQueueForm() {
+export function RadioQueueForm({ sessionId }: { sessionId?: string } = {}) {
   const [status, setStatus] = useState<QueuePublicStatus | null>(null);
   const [publicQueue, setPublicQueue] = useState<QueuePublicTrack[]>([]);
   const [session, setSession] = useState<QueuePublicSnapshot["session"] | null>(null);
@@ -64,7 +64,7 @@ export function RadioQueueForm() {
   const [success, setSuccess] = useState<string | null>(null);
 
   async function loadStatus() {
-    const res = await fetch("/api/queue", { cache: "no-store" });
+    const res = await fetch(`/api/queue${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""}`, { cache: "no-store" });
     if (res.ok) {
       const payload = await res.json();
       setStatus(payload.status ?? null);
@@ -127,6 +127,7 @@ export function RadioQueueForm() {
       body.set("mode", mode);
       body.set("artist", artist.trim());
       body.set("title", title.trim());
+      if (sessionId) body.set("sessionId", sessionId);
       if (note.trim()) body.set("note", note.trim());
       if (detectedDuration) body.set("detectedDurationSeconds", String(detectedDuration));
       if (mode === "upload" && file) body.set("file", file);

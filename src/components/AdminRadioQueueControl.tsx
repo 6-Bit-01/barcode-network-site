@@ -78,19 +78,21 @@ export function AdminRadioQueueControl() {
   if (error) return <div className="border border-danger/40 bg-danger/5 p-6 text-danger">{error}</div>;
   const runtime = state?.publicStatus?.estimatedRuntimeSeconds ?? 0;
   const readOnly = state?.readOnly ?? false;
+  const hasPreparedSession = Boolean(state?.session && state.session.status !== "archived" && !readOnly);
 
   return (
     <div className="pb-72 space-y-6">
       <section className="border border-accent/40 bg-surface p-5 space-y-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.4em] text-accent">Current Queue Session</p>
-            <h2 className="text-2xl font-bold text-foreground mt-2">{state?.session?.title ?? "BARCODE Radio"}</h2>
-            <p className="text-xs text-muted">{state?.session?.showDate ?? "show date syncing"} · {state?.session?.status ?? "active"} {readOnly ? "· read-only review" : ""}</p>
+            <p className="text-xs uppercase tracking-[0.4em] text-accent">Current Broadcast Session</p>
+            <h2 className="text-2xl font-bold text-foreground mt-2">{hasPreparedSession ? state?.session?.title : "No active broadcast session prepared."}</h2>
+            <p className="text-xs text-muted">{hasPreparedSession ? `${state?.session?.showDate} · ${state?.session?.status}` : "Prepare a new session before opening submissions."} {readOnly ? "· read-only review" : ""}</p>
+            {hasPreparedSession && state?.session?.description && <p className="text-xs text-muted mt-2 max-w-2xl">{state.session.description}</p>}
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => load()} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">View Active Session</button>
-            <button onClick={() => post({ action: "startSession" })} className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Start New Session</button>
+            <button onClick={() => load()} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">View Current Session</button>
+            <button onClick={() => post({ action: "startSession" })} className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Prepare New Session</button>
             <button onClick={() => post({ action: "archiveSession" })} disabled={readOnly} className="border border-danger/50 px-3 py-2 text-xs uppercase tracking-widest text-danger disabled:opacity-40">Archive Current Session</button>
             <button onClick={() => setShowSessions((value) => !value)} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">View Saved Sessions</button>
           </div>
@@ -101,7 +103,7 @@ export function AdminRadioQueueControl() {
           <div className="border border-border bg-background/40 p-4"><p className="text-xs text-muted">Runtime</p><p>{formatRuntime(runtime)}</p></div>
           <div className="border border-border bg-background/40 p-4"><p className="text-xs text-muted">Pressure</p><p>{state?.publicStatus?.pressure ?? "syncing"}</p></div>
         </div>
-        {!readOnly && <div className="flex flex-wrap gap-3"><button onClick={() => toggleOpen(true)} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Queue</button><button onClick={() => toggleOpen(false)} className="border border-danger/50 px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background">Close Queue</button></div>}
+        {hasPreparedSession && !readOnly && <div className="flex flex-wrap gap-3"><button onClick={() => toggleOpen(true)} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Queue</button><button onClick={() => toggleOpen(false)} className="border border-danger/50 px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background">Close Queue</button></div>}
       </section>
 
       {showSessions && <SessionArchive sessions={state?.sessions ?? []} activeSessionId={state?.session?.sessionId} onView={(id) => load(id)} onActivate={(id) => post({ action: "activateSession", sessionId: id })} />}

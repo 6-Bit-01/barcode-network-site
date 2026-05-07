@@ -47,8 +47,9 @@ async function putBlob(file: File): Promise<{ url: string }> {
   return { url: payload.url };
 }
 
-export async function GET() {
-  return NextResponse.json(await getPublicQueueSnapshot());
+export async function GET(req: Request) {
+  const sessionId = new URL(req.url).searchParams.get("sessionId") ?? undefined;
+  return NextResponse.json(await getPublicQueueSnapshot(sessionId));
 }
 
 export async function POST(req: Request) {
@@ -59,6 +60,13 @@ export async function POST(req: Request) {
     const mode = cleanText(form.get("mode"));
     const detectedDurationSeconds = parseDuration(form.get("detectedDurationSeconds"));
     const note = cleanText(form.get("note")).slice(0, 500);
+    const sessionId = cleanText(form.get("sessionId"));
+    if (sessionId) {
+      const active = await getPublicQueueSnapshot();
+      if (active.session.sessionId !== sessionId || !active.status.isOpen) {
+        return NextResponse.json({ error: "This broadcast queue is closed." }, { status: 409 });
+      }
+    }
 
     if (!artist || !title) return NextResponse.json({ error: "Artist and title are required." }, { status: 400 });
 

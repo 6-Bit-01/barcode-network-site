@@ -60,16 +60,35 @@ function makeSessionId(): string {
   return `session_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
+const SESSION_DESCRIPTIONS = [
+  "Three transmissions per artist. At 10k taps, the skip game opens a fracture in the line. Priority access remains reserved for urgent signals unwilling to wait.",
+  "Limit three tracks per signal source. The 10k tap event may pull a winner through the queue. Standard transmissions continue in order unless priority access intervenes.",
+  "Each artist may load three tracks into the system. At 10k taps, the wheel selects a breach point. The Priority Lane remains separate from the standard crawl.",
+  "Three tracks per artist maximum. When taps reach 10k, the skip game can reroute one signal. Priority access is reserved for future urgent transmissions.",
+  "Queue discipline: three tracks per artist, regular crawl by order received, 10k taps triggers the skip game, and Priority Lane access stays separate.",
+  "Every artist gets three standard transmissions. At 10k taps, the wheel may fracture the order. Priority access is the future route for signals that cannot wait.",
+  "Load up to three tracks per artist. The queue crawls in order until the 10k tap event opens the wheel. Priority access remains a separate lane.",
+  "Three submissions per artist source. 10k taps unlock the skip game. Standard tracks hold formation unless future priority access cuts through.",
+  "The system accepts three tracks per artist. At 10k taps, the wheel chooses a breach point. Priority Lane remains reserved outside the regular line.",
+  "Artist cap: three tracks. Queue movement stays standard until the 10k tap event. Future priority access exists for signals unwilling to wait for turn or wheel.",
+];
+
+function sessionDescriptionFor(date: string): string {
+  const index = Math.abs([...date].reduce((sum, char) => sum + char.charCodeAt(0), 0)) % SESSION_DESCRIPTIONS.length;
+  return SESSION_DESCRIPTIONS[index];
+}
+
 function defaultSession(date = todayDate()): QueueSession {
   const now = new Date().toISOString();
   return normalizeSession({
     sessionId: makeSessionId(),
     title: `BARCODE Radio — ${date}`,
-    status: "active",
+    status: "prepared",
     showDate: date,
     createdAt: now,
     updatedAt: now,
-    queueOpen: true,
+    queueOpen: false,
+    description: sessionDescriptionFor(date),
     activeCount: 0,
     completedCount: 0,
     removedCount: 0,
@@ -80,7 +99,7 @@ function defaultSession(date = todayDate()): QueueSession {
     spotlight: [],
     completed: [],
     removed: [],
-    publicStatus: { isOpen: true, activeCount: 0, estimatedRuntimeSeconds: 0, capacity: RADIO_QUEUE_CAPACITY, pressure: "low" },
+    publicStatus: { isOpen: false, activeCount: 0, estimatedRuntimeSeconds: 0, capacity: RADIO_QUEUE_CAPACITY, pressure: "low" },
   });
 }
 
@@ -122,6 +141,7 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     queueOpen: session.queueOpen,
+    description: session.description ?? sessionDescriptionFor(session.showDate),
     activeCount: publicStatus.activeCount,
     completedCount: session.completed.length,
     removedCount: session.removed.length,
@@ -166,9 +186,20 @@ function normalizeDurationSource(source: QueueDurationSource | string | undefine
   return detected ? "provider_metadata" : "internal_estimate";
 }
 
+function normalizeSessionStatus(status: unknown, queueOpen: boolean): QueueSessionStatus {
+  if (status === "open" || status === "prepared" || status === "closed" || status === "archived") return status;
+  if (status === "active") return queueOpen ? "open" : "closed";
+  return queueOpen ? "open" : "prepared";
+}
+
 function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; title: string; status: QueueSessionStatus; showDate: string; createdAt: string; updatedAt: string; queueOpen: boolean }): QueueSession {
+  const queueOpen = raw.status === "open" ? true : raw.queueOpen === true;
+  const status = normalizeSessionStatus(raw.status, queueOpen);
   const session = {
     ...raw,
+    status,
+    description: raw.description ?? sessionDescriptionFor(raw.showDate),
+    queueOpen: status === "open" ? true : false,
     queue: sortActive((raw.queue ?? []).map(normalizeEntry)),
     completed: (raw.completed ?? []).map(normalizeEntry),
     removed: (raw.removed ?? []).map(normalizeEntry),
@@ -184,7 +215,7 @@ function normalizeStore(input: unknown): QueueStore {
     const sessions = maybe.sessions.map((session) => normalizeSession(session));
     const activeSessionId = maybe.activeSessionId && sessions.some((session) => session.sessionId === maybe.activeSessionId)
       ? maybe.activeSessionId
-      : sessions.find((session) => session.status === "active")?.sessionId ?? sessions[0]?.sessionId;
+      : sessions.find((session) => session.status !== "archived")?.sessionId ?? sessions[0]?.sessionId;
     if (activeSessionId) return { activeSessionId, sessions };
   }
   const legacy = input as { queue?: QueueEntry[]; completed?: QueueEntry[]; removed?: QueueEntry[]; spotlight?: QueueEntry[]; isOpen?: boolean } | null;
@@ -195,6 +226,7 @@ function normalizeStore(input: unknown): QueueStore {
       completed: legacy.completed ?? [],
       removed: legacy.removed ?? [],
       spotlight: legacy.spotlight ?? [],
+      status: legacy.isOpen === false ? "closed" : "open",
       queueOpen: legacy.isOpen !== false,
       updatedAt: new Date().toISOString(),
     });
@@ -393,7 +425,7 @@ export async function createQueueTrack(input: {
 export async function submitRadioTrack(input: Parameters<typeof createQueueTrack>[0]): Promise<QueueEntry> {
   const store = await readStore();
   const session = getSession(store);
-  if (session.status !== "active" || !session.queueOpen) throw new Error("Queue is closed");
+  if (session.status !== "open" || !session.queueOpen) throw new Error("Queue is closed");
   const track = await createQueueTrack(input);
   session.queue.push(track);
   await writeStore(replaceSession(store, session));
@@ -407,7 +439,7 @@ function queueStateFromSession(session: QueueSession, store: QueueStore, viewedS
     queue: normalized.queue,
     history: normalized.completed,
     totalPlayed: normalized.completed.length,
-    streamStatus: normalized.queueOpen ? "online" : "offline",
+    streamStatus: normalized.status === "open" && normalized.queueOpen ? "online" : "offline",
     removed: normalized.removed,
     spotlight: normalized.spotlight,
     publicStatus: normalized.publicStatus,
@@ -439,26 +471,27 @@ export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
   };
 }
 
-export async function getPublicQueueSnapshot(): Promise<QueuePublicSnapshot> {
+export async function getPublicQueueSnapshot(sessionId?: string): Promise<QueuePublicSnapshot> {
   const store = await readStore();
-  const session = getSession(store);
-  return { session: summarizeSession(session), status: session.publicStatus, queue: session.queue.map(toPublicQueueTrack) };
+  const session = getSession(store, sessionId);
+  return { session: summarizeSession(session), status: session.publicStatus, queue: session.queue.map(toPublicQueueTrack), completed: session.completed.slice(0, 10).map(toPublicQueueTrack) };
 }
 
 export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> {
   const store = await readStore();
   const session = getSession(store);
-  if (session.status !== "active") return session.publicStatus;
+  if (session.status === "archived") return session.publicStatus;
   session.queueOpen = isOpen;
+  session.status = isOpen ? "open" : "closed";
   await writeStore(replaceSession(store, session));
   return publicStatusForSession(session);
 }
 
 export async function startNewQueueSession(): Promise<QueueState> {
   const store = await readStore();
-  const archived = store.sessions.map((session) => session.sessionId === store.activeSessionId ? normalizeSession({ ...session, status: "archived", queueOpen: false, updatedAt: new Date().toISOString() }) : session);
+  const preserved = store.sessions.map((session) => session.sessionId === store.activeSessionId && session.status !== "archived" ? normalizeSession({ ...session, status: "closed", queueOpen: false, updatedAt: new Date().toISOString() }) : session);
   const next = defaultSession();
-  const nextStore = { activeSessionId: next.sessionId, sessions: [next, ...archived] };
+  const nextStore = { activeSessionId: next.sessionId, sessions: [next, ...preserved] };
   await writeStore(nextStore);
   return queueStateFromSession(next, nextStore);
 }
@@ -467,7 +500,7 @@ export async function archiveCurrentQueueSession(): Promise<QueueState> {
   const store = await readStore();
   const session = normalizeSession({ ...getSession(store), status: "archived", queueOpen: false, updatedAt: new Date().toISOString() });
   const archivedStore = replaceSession(store, session);
-  const active = archivedStore.sessions.find((item) => item.status === "active") ?? session;
+  const active = archivedStore.sessions.find((item) => item.status !== "archived") ?? session;
   archivedStore.activeSessionId = active.sessionId;
   await writeStore(archivedStore);
   return queueStateFromSession(session, archivedStore, session.sessionId);
@@ -475,7 +508,7 @@ export async function archiveCurrentQueueSession(): Promise<QueueState> {
 
 export async function activateQueueSession(sessionId: string): Promise<QueueState> {
   const store = await readStore();
-  const sessions = store.sessions.map((session) => normalizeSession({ ...session, status: session.sessionId === sessionId ? "active" : "archived", queueOpen: session.sessionId === sessionId ? session.queueOpen : false, updatedAt: new Date().toISOString() }));
+  const sessions = store.sessions.map((session) => normalizeSession({ ...session, status: session.sessionId === sessionId ? "prepared" : session.status === "archived" ? "archived" : "closed", queueOpen: false, updatedAt: new Date().toISOString() }));
   const active = sessions.find((session) => session.sessionId === sessionId) ?? sessions[0];
   const nextStore = { activeSessionId: active.sessionId, sessions };
   await writeStore(nextStore);
@@ -489,7 +522,7 @@ function restoreEntry(entry: QueueEntry, lane: QueueLane): QueueEntry {
 export async function updateRadioTrack(id: string, action: QueueAdminAction): Promise<QueueState> {
   const store = await readStore();
   const session = getSession(store);
-  if (session.status !== "active") return queueStateFromSession(session, store);
+  if (session.status === "archived") return queueStateFromSession(session, store);
 
   if (action === "removeSpotlight") {
     session.spotlight = session.spotlight.filter((entry) => entry.id !== id);

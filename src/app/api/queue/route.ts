@@ -61,11 +61,15 @@ export async function POST(req: Request) {
     const detectedDurationSeconds = parseDuration(form.get("detectedDurationSeconds"));
     const note = cleanText(form.get("note")).slice(0, 500);
     const sessionId = cleanText(form.get("sessionId"));
-    if (sessionId) {
-      const active = await getPublicQueueSnapshot();
-      if (active.session.sessionId !== sessionId || !active.status.isOpen) {
-        return NextResponse.json({ error: "This broadcast queue is closed." }, { status: 409 });
-      }
+    const active = await getPublicQueueSnapshot();
+    if (sessionId && active.session.sessionId !== sessionId) {
+      return NextResponse.json({ error: "This broadcast queue is closed." }, { status: 409 });
+    }
+    if (!active.status.isOpen) {
+      return NextResponse.json({ error: "This broadcast queue is closed." }, { status: 409 });
+    }
+    if (active.status.isFull || active.status.activeCount >= active.status.capacity) {
+      return NextResponse.json({ error: "This broadcast queue is full for new transmissions." }, { status: 409 });
     }
 
     if (!artist || !title) return NextResponse.json({ error: "Artist and title are required." }, { status: 400 });

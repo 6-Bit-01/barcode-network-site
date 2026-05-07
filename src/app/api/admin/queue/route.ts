@@ -26,11 +26,13 @@ export async function POST(req: Request) {
   if (body.action === "startSession") {
     const trackLimitPerArtist = Number(body.trackLimitPerArtist);
     const skipGameTapTarget = Number(body.skipGameTapTarget);
+    const queueCapacity = Number(body.queueCapacity);
     return NextResponse.json(await startNewQueueSession({
       title: typeof body.title === "string" ? body.title : undefined,
       showDate: typeof body.showDate === "string" ? body.showDate : undefined,
       description: typeof body.description === "string" ? body.description : undefined,
       trackLimitPerArtist: Number.isFinite(trackLimitPerArtist) && trackLimitPerArtist > 0 ? trackLimitPerArtist : undefined,
+      queueCapacity: Number.isFinite(queueCapacity) && queueCapacity > 0 ? queueCapacity : undefined,
       skipGameTapTarget: Number.isFinite(skipGameTapTarget) && skipGameTapTarget > 0 ? skipGameTapTarget : undefined,
     }));
   }

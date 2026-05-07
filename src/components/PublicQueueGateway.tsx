@@ -69,7 +69,7 @@ export function PublicQueueGateway() {
         <h2 className="text-2xl font-bold text-accent">QUEUE OPEN</h2>
         {session && <div className="border border-border bg-background/40 p-4 text-sm"><p className="font-bold">{session.title}</p><p className="text-xs text-muted">{session.showDate} · {session.status}</p><p className="text-xs text-muted mt-2">{session.description}</p></div>}
         <div className="grid grid-cols-2 gap-3 text-sm">
-          <div className="border border-border p-3"><p className="text-xs text-muted">Active transmissions</p><p>{snapshot?.status.activeCount ?? "—"}</p></div>
+          <div className="border border-border p-3"><p className="text-xs text-muted">Active transmissions</p><p>{snapshot ? `${snapshot.status.activeCount}/${snapshot.status.capacity}` : "—"}</p></div>
           <div className="border border-border p-3"><p className="text-xs text-muted">Estimated runtime</p><p>{snapshot ? formatRuntime(snapshot.status.estimatedRuntimeSeconds) : "—"}</p></div>
           <div className="border border-border p-3"><p className="text-xs text-muted">Queue pressure</p><p>{snapshot?.status.pressure ?? "syncing"}</p></div>
           <div className="border border-border p-3"><p className="text-xs text-muted">Regular Queue</p><p>{regularCount}</p></div>
@@ -80,7 +80,9 @@ export function PublicQueueGateway() {
       <section className="border border-border bg-surface p-5 space-y-4">
         <p className="text-xs uppercase tracking-[0.35em] text-muted">// Session Access</p>
         <p className="text-sm text-muted">This gateway shows current queue pressure and lane counts only. The full public queue remains inside the session page.</p>
+        {snapshot?.status.isFull && <p className="border border-danger/40 bg-danger/5 p-3 text-sm text-danger">Queue is full for new transmissions.</p>}
         {session && <a href={`/queue/${session.sessionId}`} className="inline-flex border border-accent px-4 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background transition-all">Enter Session Queue</a>}
+        <div className="border border-border bg-background/40 p-4"><p className="text-xs uppercase tracking-[0.25em] text-muted">Discord Signal Alerts</p><p className="mt-2 text-sm text-muted">Join Discord for queue updates, future reminder experiments, signal alerts, and missed-track prevention later.</p><a href={externalLinks.discord} target="_blank" rel="noreferrer" className="mt-3 inline-flex border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Join Discord</a></div>
       </section>
     </div>
   );

@@ -56,7 +56,7 @@ function publicTrackFromApi(track: { id: string; submittedArtistName?: string; s
   };
 }
 
-export function RadioQueueForm({ sessionId }: { sessionId?: string } = {}) {
+export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string; onSubmitted?: () => void } = {}) {
   const [status, setStatus] = useState<QueuePublicStatus | null>(null);
   const [publicQueue, setPublicQueue] = useState<QueuePublicTrack[]>([]);
   const [session, setSession] = useState<QueuePublicSnapshot["session"] | null>(null);
@@ -164,6 +164,7 @@ export function RadioQueueForm({ sessionId }: { sessionId?: string } = {}) {
       setReadState("idle");
       setSuccess("Transmission stabilized in the Regular Queue.");
       await loadStatus();
+      onSubmitted?.();
     } catch (err) {
       setTransmissionState("idle");
       setError(err instanceof Error ? err.message : "Submission failed");
@@ -208,7 +209,7 @@ export function RadioQueueForm({ sessionId }: { sessionId?: string } = {}) {
         <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Optional transmission note</span><textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} rows={3} placeholder="Any clean context the host should know. Do not include private contact info." className="w-full bg-background border border-border px-3 py-2.5 text-sm" /><span className="block text-[11px] text-muted">Visible to queue control only. Public queue preview never shows notes.</span></label>
 
         <div className="border border-border bg-background/40 p-3 text-sm text-muted">{checkCopy}</div>
-        <button disabled={submitting || status?.isOpen === false} className="w-full border border-accent px-4 py-3 text-sm uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{submitting ? "Submitting…" : "Enter Regular Queue"}</button>
+        <button disabled={submitting || status?.isOpen === false || status?.isFull === true} className="w-full border border-accent px-4 py-3 text-sm uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{submitting ? "Submitting…" : status?.isFull ? "Queue Full" : "Enter Regular Queue"}</button>
       </form>
     </div>
   );

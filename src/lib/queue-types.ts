@@ -48,6 +48,7 @@ export interface QueuePublicStatus {
   activeCount: number;
   estimatedRuntimeSeconds: number;
   capacity: number;
+  isFull?: boolean;
   pressure: "low" | "medium" | "high" | "max";
 }
 
@@ -61,6 +62,7 @@ export interface QueueSessionSummary {
   queueOpen: boolean;
   description: string;
   trackLimitPerArtist: number;
+  queueCapacity: number;
   skipGameTapTarget: number;
   activeCount: number;
   completedCount: number;
@@ -70,6 +72,7 @@ export interface QueueSessionSummary {
   completedRuntimeSeconds: number;
   nextNonPriorityLane: QueueNonPriorityLane;
   nextInLineTrackId?: string | null;
+  nextInLineHoldTrackId?: string | null;
 }
 
 export interface QueueSession extends QueueSessionSummary {
@@ -83,6 +86,7 @@ export interface QueueSession extends QueueSessionSummary {
   nextInLineTrackId?: string | null;
   currentTrackPreviousLane?: QueueLane | null;
   currentTrackPreviousIndex?: number | null;
+  nextInLineHoldTrackId?: string | null;
 }
 
 export interface QueuePublicTrack {
@@ -103,6 +107,7 @@ export interface QueuePublicSnapshot {
   status: QueuePublicStatus;
   queue: QueuePublicTrack[];
   completed: QueuePublicTrack[];
+  nowPlaying?: QueuePublicTrack | null;
 }
 
 export interface QueueState {

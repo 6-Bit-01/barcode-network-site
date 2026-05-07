@@ -50,6 +50,7 @@ export async function GET() {
   let manualOverride: "1" | "0" | null = normalizeLiveOverride(memoryLiveOverride);
   let streamUrl = memoryStreamUrl;
   let sponsorsActive = memorySponsorsActive;
+  const persisted = Boolean(redis);
 
   if (redis) {
     const [liveVal, urlVal, sponsorsActiveVal] = await Promise.all([
@@ -79,6 +80,7 @@ export async function GET() {
     streamUrl,
     sponsorsActive,
     manualOverride: manualOverride !== null,
+    persisted,
   });
 }
 
@@ -135,9 +137,7 @@ export async function POST(req: Request) {
     } else if (action === "auto") {
       await setLive(null);
     } else if (action === "setSponsorsActive") {
-      await setSponsorsActive(true);
-    } else if (action === "setSponsorsInactive") {
-      await setSponsorsActive(false);
+      await setSponsorsActive(Boolean(body.sponsorsActive));
     }
 
     if (streamUrl && typeof streamUrl === "string") {

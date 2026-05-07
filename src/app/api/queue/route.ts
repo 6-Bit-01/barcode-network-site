@@ -88,7 +88,7 @@ export async function POST(req: Request) {
         mimeType: file.type,
         sourceType: "upload",
         detectedDurationSeconds,
-        durationSource: detectedDurationSeconds ? "upload_metadata" : "internal_estimate",
+        durationSource: detectedDurationSeconds ? "upload_metadata" : "file_metadata",
         note,
       });
       return NextResponse.json({ track, message: "Track entered the Regular Queue." }, { status: 201 });
@@ -99,7 +99,7 @@ export async function POST(req: Request) {
     try { new URL(link); } catch { return NextResponse.json({ error: "Enter a valid track URL." }, { status: 400 }); }
 
     const sourceType = detectQueueSourceType(link);
-    const track = await submitRadioTrack({ artist, title, link, sourceType, detectedDurationSeconds, note });
+    const track = await submitRadioTrack({ artist, title, link, sourceType, note });
     return NextResponse.json({ track, message: "Track entered the Regular Queue." }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Submission failed";

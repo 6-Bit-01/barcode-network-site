@@ -6,7 +6,7 @@ export type QueueTier = "free" | "featured" | "fastlane" | "frontrow";
 export type QueueSourceType = "upload" | "link" | "youtube" | "soundcloud" | "spotify" | "other";
 export type QueueLane = "priority" | "wheel" | "regular";
 export type QueueNonPriorityLane = "wheel" | "regular";
-export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | "pending" | "played" | "refunded" | "expired";
+export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | "next" | "pending" | "played" | "refunded" | "expired";
 export type QueueDurationSource = "upload_metadata" | "file_metadata" | "youtube" | "soundcloud" | "spotify" | "provider_metadata" | "internal_estimate" | "unknown";
 export type QueueSessionStatus = "prepared" | "open" | "closed" | "archived";
 
@@ -69,6 +69,7 @@ export interface QueueSessionSummary {
   estimatedActiveRuntimeSeconds: number;
   completedRuntimeSeconds: number;
   nextNonPriorityLane: QueueNonPriorityLane;
+  nextInLineTrackId?: string | null;
 }
 
 export interface QueueSession extends QueueSessionSummary {
@@ -78,6 +79,10 @@ export interface QueueSession extends QueueSessionSummary {
   removed: QueueEntry[];
   publicStatus: QueuePublicStatus;
   nextNonPriorityLane: QueueNonPriorityLane;
+  nextInLineTrack?: QueueEntry | null;
+  nextInLineTrackId?: string | null;
+  currentTrackPreviousLane?: QueueLane | null;
+  currentTrackPreviousIndex?: number | null;
 }
 
 export interface QueuePublicTrack {

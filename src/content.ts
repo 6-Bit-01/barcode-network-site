@@ -20,6 +20,8 @@ export const externalLinks = {
   discord: "https://discord.gg/4tHazmD528",
   auxchord: "https://aux.fan/@barcode_radio",
   tiktok: "https://www.tiktok.com/@six.bit",
+  instagram: "https://www.instagram.com/six.bit",
+  facebook: "https://www.facebook.com/six.bit",
   tiktokLive: "https://www.tiktok.com/@six.bit/live",
 };
 

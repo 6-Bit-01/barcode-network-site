@@ -37,7 +37,7 @@ export async function POST(req: Request) {
   if (body.action === "archiveSession") return NextResponse.json(await archiveCurrentQueueSession());
   if (body.action === "activateSession" && typeof body.sessionId === "string") return NextResponse.json(await activateQueueSession(body.sessionId));
   if (body.action === "viewSession" && typeof body.sessionId === "string") return NextResponse.json(await getRadioQueueState(body.sessionId));
-  if (["finish", "remove", "priority", "wheel", "spotlight", "removeSpotlight", "restoreRegular", "restorePriority"].includes(body.action) && typeof body.id === "string") {
+  if (["finish", "remove", "priority", "wheel", "moveBack", "spotlight", "removeSpotlight", "restoreRegular", "restorePriority"].includes(body.action) && typeof body.id === "string") {
     return NextResponse.json(await updateRadioTrack(body.id, body.action));
   }
   return NextResponse.json({ error: "Unknown queue action" }, { status: 400 });

@@ -17,22 +17,32 @@ function readAudioDuration(file: File): Promise<number | null> {
   return new Promise((resolve) => {
     const audio = document.createElement("audio");
     const url = URL.createObjectURL(file);
-    const cleanup = () => URL.revokeObjectURL(url);
+    let settled = false;
+    const finish = (duration: number | null) => {
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(url);
+      resolve(duration && Number.isFinite(duration) && duration > 0 ? Math.round(duration) : null);
+    };
+    const read = () => {
+      if (Number.isFinite(audio.duration) && audio.duration > 0) finish(audio.duration);
+    };
     audio.preload = "metadata";
     audio.onloadedmetadata = () => {
-      const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.round(audio.duration) : null;
-      cleanup();
-      resolve(duration);
+      read();
+      if (!settled && audio.duration === Infinity) {
+        audio.currentTime = 24 * 60 * 60;
+      }
     };
-    audio.onerror = () => {
-      cleanup();
-      resolve(null);
-    };
+    audio.ondurationchange = read;
+    audio.ontimeupdate = read;
+    audio.onerror = () => finish(null);
+    window.setTimeout(() => finish(null), 5000);
     audio.src = url;
   });
 }
 
-function publicTrackFromApi(track: { id: string; submittedArtistName?: string; submittedSongTitle?: string; artist?: string; title?: string; sourceType?: QueuePublicTrack["sourceType"]; lane?: QueuePublicTrack["lane"]; durationIsEstimate?: boolean; detectedArtistName?: string | null; detectedSongTitle?: string | null }): QueuePublicTrack {
+function publicTrackFromApi(track: { id: string; submittedArtistName?: string; submittedSongTitle?: string; artist?: string; title?: string; sourceType?: QueuePublicTrack["sourceType"]; lane?: QueuePublicTrack["lane"]; detectedArtistName?: string | null; detectedSongTitle?: string | null; detectedDurationSeconds?: number | null; durationIsEstimate?: boolean }): QueuePublicTrack {
   return {
     id: track.id,
     submittedArtistName: track.submittedArtistName ?? track.artist ?? "Submitted artist",
@@ -41,7 +51,7 @@ function publicTrackFromApi(track: { id: string; submittedArtistName?: string; s
     detectedSongTitle: track.detectedSongTitle ?? null,
     sourceType: track.sourceType ?? "other",
     lane: track.lane ?? "regular",
-    durationLabel: track.durationIsEstimate === false ? "detected" : "estimated/pending",
+    durationLabel: track.durationIsEstimate === false && track.detectedDurationSeconds ? formatRuntime(track.detectedDurationSeconds) : "estimated/pending",
     durationIsEstimate: track.durationIsEstimate ?? true,
   };
 }

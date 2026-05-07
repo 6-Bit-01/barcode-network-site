@@ -21,7 +21,7 @@ export async function POST(req: Request) {
   if (body.action === "setOpen") {
     return NextResponse.json({ publicStatus: await setQueueOpen(Boolean(body.isOpen)) });
   }
-  if (["finish", "remove", "priority", "spotlight"].includes(body.action) && typeof body.id === "string") {
+  if (["finish", "remove", "priority", "spotlight", "removeSpotlight", "restoreRegular", "restorePriority"].includes(body.action) && typeof body.id === "string") {
     return NextResponse.json(await updateRadioTrack(body.id, body.action));
   }
   return NextResponse.json({ error: "Unknown queue action" }, { status: 400 });

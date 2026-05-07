@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { detectQueueSourceType } from "@/lib/queue-types";
-import { getRadioQueueState, submitRadioTrack } from "@/lib/queue";
+import { getPublicQueueSnapshot, submitRadioTrack } from "@/lib/queue";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -48,8 +48,7 @@ async function putBlob(file: File): Promise<{ url: string }> {
 }
 
 export async function GET() {
-  const state = await getRadioQueueState();
-  return NextResponse.json({ status: state.publicStatus });
+  return NextResponse.json(await getPublicQueueSnapshot());
 }
 
 export async function POST(req: Request) {
@@ -59,6 +58,7 @@ export async function POST(req: Request) {
     const title = cleanText(form.get("title"));
     const mode = cleanText(form.get("mode"));
     const detectedDurationSeconds = parseDuration(form.get("detectedDurationSeconds"));
+    const note = cleanText(form.get("note")).slice(0, 500);
 
     if (!artist || !title) return NextResponse.json({ error: "Artist and title are required." }, { status: 400 });
 
@@ -80,6 +80,8 @@ export async function POST(req: Request) {
         mimeType: file.type,
         sourceType: "upload",
         detectedDurationSeconds,
+        durationSource: detectedDurationSeconds ? "browser-audio-metadata" : "internal-estimate",
+        note,
       });
       return NextResponse.json({ track, message: "Track entered the Regular Queue." }, { status: 201 });
     }
@@ -89,7 +91,7 @@ export async function POST(req: Request) {
     try { new URL(link); } catch { return NextResponse.json({ error: "Enter a valid track URL." }, { status: 400 }); }
 
     const sourceType = detectQueueSourceType(link);
-    const track = await submitRadioTrack({ artist, title, link, sourceType, detectedDurationSeconds });
+    const track = await submitRadioTrack({ artist, title, link, sourceType, detectedDurationSeconds, note });
     return NextResponse.json({ track, message: "Track entered the Regular Queue." }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Submission failed";

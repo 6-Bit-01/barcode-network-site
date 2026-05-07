@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { formatRuntime } from "@/lib/queue-types";
-import type { QueuePublicStatus } from "@/lib/queue-types";
+import type { QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
 
 type Mode = "link" | "upload";
 type ReadState = "idle" | "checking" | "reading" | "detected" | "pending";
@@ -32,12 +32,29 @@ function readAudioDuration(file: File): Promise<number | null> {
   });
 }
 
+function publicTrackFromApi(track: { id: string; submittedArtistName?: string; submittedSongTitle?: string; artist?: string; title?: string; sourceType?: QueuePublicTrack["sourceType"]; lane?: QueuePublicTrack["lane"]; durationIsEstimate?: boolean; detectedArtistName?: string | null; detectedSongTitle?: string | null }): QueuePublicTrack {
+  return {
+    id: track.id,
+    submittedArtistName: track.submittedArtistName ?? track.artist ?? "Submitted artist",
+    submittedSongTitle: track.submittedSongTitle ?? track.title ?? "Submitted track",
+    detectedArtistName: track.detectedArtistName ?? null,
+    detectedSongTitle: track.detectedSongTitle ?? null,
+    sourceType: track.sourceType ?? "other",
+    lane: track.lane ?? "regular",
+    durationLabel: track.durationIsEstimate === false ? "detected" : "estimated/pending",
+    durationIsEstimate: track.durationIsEstimate ?? true,
+  };
+}
+
 export function RadioQueueForm() {
   const [status, setStatus] = useState<QueuePublicStatus | null>(null);
+  const [publicQueue, setPublicQueue] = useState<QueuePublicTrack[]>([]);
+  const [lastSubmittedTrackId, setLastSubmittedTrackId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("link");
   const [artist, setArtist] = useState("");
   const [title, setTitle] = useState("");
   const [link, setLink] = useState("");
+  const [note, setNote] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [detectedDuration, setDetectedDuration] = useState<number | null>(null);
   const [readState, setReadState] = useState<ReadState>("idle");
@@ -50,6 +67,7 @@ export function RadioQueueForm() {
     if (res.ok) {
       const payload = await res.json();
       setStatus(payload.status ?? null);
+      setPublicQueue(Array.isArray(payload.queue) ? payload.queue : []);
     }
   }
 
@@ -107,6 +125,7 @@ export function RadioQueueForm() {
       body.set("mode", mode);
       body.set("artist", artist.trim());
       body.set("title", title.trim());
+      if (note.trim()) body.set("note", note.trim());
       if (detectedDuration) body.set("detectedDurationSeconds", String(detectedDuration));
       if (mode === "upload" && file) body.set("file", file);
       if (mode === "link") body.set("link", link.trim());
@@ -114,9 +133,15 @@ export function RadioQueueForm() {
       const res = await fetch("/api/queue", { method: "POST", body });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.error || "Submission failed");
+      if (payload.track?.id) {
+        const submitted = publicTrackFromApi(payload.track);
+        setLastSubmittedTrackId(submitted.id);
+        setPublicQueue((current) => [submitted, ...current.filter((entry) => entry.id !== submitted.id)]);
+      }
       setArtist("");
       setTitle("");
       setLink("");
+      setNote("");
       setFile(null);
       setDetectedDuration(null);
       setReadState("idle");
@@ -139,7 +164,7 @@ export function RadioQueueForm() {
           <div className="border border-border p-3"><p className="text-xs text-muted">Estimated active runtime</p><p>{status ? formatRuntime(status.estimatedRuntimeSeconds) : "—"}</p></div>
           <div className="border border-border p-3"><p className="text-xs text-muted">Queue pressure</p><p>{pressureLabel(status)}</p></div>
         </div>
-        <p className="text-xs text-muted">Exact queue order is visible only to show control while v1 is being tuned.</p>
+        <PublicQueuePreview queue={publicQueue} lastSubmittedTrackId={lastSubmittedTrackId} />
       </aside>
 
       <form onSubmit={submit} className="border border-border bg-surface p-5 space-y-5">
@@ -162,9 +187,40 @@ export function RadioQueueForm() {
           <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">MP3/WAV file</span><input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,.mp3,.wav" onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" required /></label>
         )}
 
+        <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Optional transmission note</span><textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} rows={3} placeholder="Any clean context the host should know. Do not include private contact info." className="w-full bg-background border border-border px-3 py-2.5 text-sm" /><span className="block text-[11px] text-muted">Visible to queue control only. Public queue preview never shows notes.</span></label>
+
         <div className="border border-border bg-background/40 p-3 text-sm text-muted">{checkCopy}</div>
         <button disabled={submitting || status?.isOpen === false} className="w-full border border-accent px-4 py-3 text-sm uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{submitting ? "Submitting…" : "Enter Regular Queue"}</button>
       </form>
+    </div>
+  );
+}
+
+function PublicQueuePreview({ queue, lastSubmittedTrackId }: { queue: QueuePublicTrack[]; lastSubmittedTrackId: string | null }) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="text-xs uppercase tracking-[0.25em] text-muted">Public queue preview</p>
+        <p className="text-[11px] text-muted mt-1">Artist/title and source type only. Removed tracks, notes, and control metadata stay private.</p>
+      </div>
+      <div className="space-y-2 max-h-[28rem] overflow-auto pr-1">
+        {queue.length === 0 ? <p className="border border-border/60 p-3 text-sm text-muted">No active transmissions are visible yet.</p> : queue.map((entry, index) => {
+          const highlighted = entry.id === lastSubmittedTrackId;
+          return (
+            <div key={entry.id} className={`border p-3 transition-all ${highlighted ? "border-accent bg-accent/10 animate-pulse" : "border-border bg-background/30"}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs text-muted">#{index + 1} · {entry.sourceType.toUpperCase()} · {entry.lane === "priority" ? "Priority" : entry.lane === "wheel" ? "Wheel" : "Regular"}</p>
+                  <p className="text-sm font-bold text-foreground">{entry.submittedArtistName} — {entry.submittedSongTitle}</p>
+                  {(entry.detectedArtistName || entry.detectedSongTitle) && <p className="text-[11px] text-muted">Detected: {entry.detectedArtistName || "Unknown artist"} — {entry.detectedSongTitle || "Unknown title"}</p>}
+                </div>
+                <span className="shrink-0 text-[11px] text-muted">{entry.durationLabel}</span>
+              </div>
+              {highlighted && <p className="text-[11px] text-accent mt-2">Transmission received — warp hook ready.</p>}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

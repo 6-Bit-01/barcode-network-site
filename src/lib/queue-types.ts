@@ -6,6 +6,7 @@ export type QueueTier = "free" | "featured" | "fastlane" | "frontrow";
 export type QueueSourceType = "upload" | "link" | "youtube" | "soundcloud" | "spotify" | "other";
 export type QueueLane = "priority" | "wheel" | "regular";
 export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | "pending" | "played" | "refunded" | "expired";
+export type QueueDurationSource = "browser-audio-metadata" | "provider-metadata" | "filename-metadata" | "internal-estimate" | "unknown";
 
 export interface QueueEntry {
   id: string;
@@ -21,7 +22,13 @@ export interface QueueEntry {
   playedAt: string | null;
   completedAt?: string | null;
   removedAt?: string | null;
+  restoredAt?: string | null;
   spotlightedAt?: string | null;
+  note?: string | null;
+  submittedArtistName?: string;
+  submittedSongTitle?: string;
+  detectedArtistName?: string | null;
+  detectedSongTitle?: string | null;
   fileUrl?: string | null;
   fileName?: string | null;
   fileSize?: number | null;
@@ -30,6 +37,7 @@ export interface QueueEntry {
   detectedDurationSeconds?: number | null;
   estimatedDurationSeconds?: number;
   durationIsEstimate?: boolean;
+  durationSource?: QueueDurationSource;
 }
 
 export interface QueuePublicStatus {
@@ -38,6 +46,18 @@ export interface QueuePublicStatus {
   estimatedRuntimeSeconds: number;
   capacity: number;
   pressure: "low" | "medium" | "high" | "max";
+}
+
+export interface QueuePublicTrack {
+  id: string;
+  submittedArtistName: string;
+  submittedSongTitle: string;
+  detectedArtistName?: string | null;
+  detectedSongTitle?: string | null;
+  sourceType: QueueSourceType;
+  lane: QueueLane;
+  durationLabel: string;
+  durationIsEstimate: boolean;
 }
 
 export interface QueueState {

@@ -7,11 +7,21 @@ import {
   INTERNAL_BUFFER_DURATION_SECONDS,
   RADIO_QUEUE_CAPACITY,
   detectQueueSourceType,
+  formatRuntime,
   generateQueueId,
   getTrackRuntimeSeconds,
   normalizeTier,
 } from "./queue-types";
-import type { QueueEntry, QueueLane, QueuePublicStatus, QueueSourceType, QueueState, QueueTier } from "./queue-types";
+import type {
+  QueueDurationSource,
+  QueueEntry,
+  QueueLane,
+  QueuePublicStatus,
+  QueuePublicTrack,
+  QueueSourceType,
+  QueueState,
+  QueueTier,
+} from "./queue-types";
 
 function getRedis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -21,6 +31,8 @@ function getRedis(): Redis | null {
 }
 
 const STATE_KEY = "radioQueue:v1:state";
+
+type QueueAdminAction = "finish" | "remove" | "priority" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority";
 
 interface StoredQueueState {
   queue: QueueEntry[];
@@ -62,6 +74,27 @@ function publicStatus(state: StoredQueueState): QueuePublicStatus {
   };
 }
 
+function normalizeEntry(entry: QueueEntry): QueueEntry {
+  const submittedArtistName = entry.submittedArtistName ?? entry.artist;
+  const submittedSongTitle = entry.submittedSongTitle ?? entry.title;
+  const detectedDurationSeconds = entry.detectedDurationSeconds ?? null;
+  return {
+    ...entry,
+    artist: entry.artist ?? submittedArtistName,
+    title: entry.title ?? submittedSongTitle,
+    submittedArtistName,
+    submittedSongTitle,
+    detectedArtistName: entry.detectedArtistName ?? null,
+    detectedSongTitle: entry.detectedSongTitle ?? null,
+    sourceType: entry.sourceType ?? detectQueueSourceType(entry.link),
+    estimatedDurationSeconds: entry.estimatedDurationSeconds ?? detectedDurationSeconds ?? INTERNAL_BUFFER_DURATION_SECONDS,
+    detectedDurationSeconds,
+    durationIsEstimate: detectedDurationSeconds === null,
+    durationSource: entry.durationSource ?? (detectedDurationSeconds ? "provider-metadata" : "internal-estimate"),
+    note: entry.note ?? null,
+  };
+}
+
 async function readStoredState(): Promise<StoredQueueState> {
   const redis = getRedis();
   if (!redis) return mem;
@@ -69,16 +102,22 @@ async function readStoredState(): Promise<StoredQueueState> {
   if (!raw) return { queue: [], completed: [], removed: [], spotlight: [], isOpen: true };
   const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
   return {
-    queue: Array.isArray(parsed.queue) ? parsed.queue : [],
-    completed: Array.isArray(parsed.completed) ? parsed.completed : [],
-    removed: Array.isArray(parsed.removed) ? parsed.removed : [],
-    spotlight: Array.isArray(parsed.spotlight) ? parsed.spotlight : [],
+    queue: Array.isArray(parsed.queue) ? parsed.queue.map(normalizeEntry) : [],
+    completed: Array.isArray(parsed.completed) ? parsed.completed.map(normalizeEntry) : [],
+    removed: Array.isArray(parsed.removed) ? parsed.removed.map(normalizeEntry) : [],
+    spotlight: Array.isArray(parsed.spotlight) ? parsed.spotlight.map(normalizeEntry) : [],
     isOpen: parsed.isOpen !== false,
   };
 }
 
 async function writeStoredState(state: StoredQueueState): Promise<void> {
-  const normalized = { ...state, queue: sortActive(state.queue) };
+  const normalized = {
+    ...state,
+    queue: sortActive(state.queue.map(normalizeEntry)),
+    completed: state.completed.map(normalizeEntry),
+    removed: state.removed.map(normalizeEntry),
+    spotlight: state.spotlight.map(normalizeEntry),
+  };
   const redis = getRedis();
   if (!redis) {
     mem.queue = normalized.queue;
@@ -91,26 +130,72 @@ async function writeStoredState(state: StoredQueueState): Promise<void> {
   await redis.set(STATE_KEY, JSON.stringify(normalized));
 }
 
+function parseFilenameMetadata(fileName?: string | null): { artist: string | null; title: string | null } {
+  if (!fileName) return { artist: null, title: null };
+  const base = fileName.replace(/\.(mp3|wav)$/i, "").replace(/[_]+/g, " ").trim();
+  const parts = base.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean);
+  if (parts.length >= 2) return { artist: parts[0], title: parts.slice(1).join(" - ") };
+  return { artist: null, title: base || null };
+}
+
+export function getLinkMetadataPlaceholder(sourceType: QueueSourceType, link: string): {
+  detectedArtistName: string | null;
+  detectedSongTitle: string | null;
+  detectedDurationSeconds: number | null;
+  durationSource: QueueDurationSource;
+} {
+  // Provider duration/title lookup belongs here next. The current v1 keeps this
+  // helper explicit so YouTube/SoundCloud/Spotify API adapters can be plugged in
+  // without changing the public form contract.
+  if (["youtube", "soundcloud", "spotify", "other", "link"].includes(sourceType) && link) {
+    return {
+      detectedArtistName: null,
+      detectedSongTitle: null,
+      detectedDurationSeconds: null,
+      durationSource: "internal-estimate",
+    };
+  }
+  return {
+    detectedArtistName: null,
+    detectedSongTitle: null,
+    detectedDurationSeconds: null,
+    durationSource: "unknown",
+  };
+}
+
 export function createQueueTrack(input: {
   artist: string;
   title: string;
   link?: string;
+  note?: string | null;
   fileUrl?: string | null;
   fileName?: string | null;
   fileSize?: number | null;
   mimeType?: string | null;
   sourceType?: QueueSourceType;
+  detectedArtistName?: string | null;
+  detectedSongTitle?: string | null;
   detectedDurationSeconds?: number | null;
+  durationSource?: QueueDurationSource;
 }): QueueEntry {
   const sourceType = input.sourceType ?? (input.fileUrl ? "upload" : detectQueueSourceType(input.link ?? ""));
-  const detected = typeof input.detectedDurationSeconds === "number" && Number.isFinite(input.detectedDurationSeconds)
+  const submittedArtistName = input.artist.trim();
+  const submittedSongTitle = input.title.trim();
+  const duration = typeof input.detectedDurationSeconds === "number" && Number.isFinite(input.detectedDurationSeconds)
     ? Math.max(1, Math.round(input.detectedDurationSeconds))
     : null;
+  const filenameMetadata = sourceType === "upload" ? parseFilenameMetadata(input.fileName) : { artist: null, title: null };
+  const linkMetadata = sourceType === "upload" ? null : getLinkMetadataPlaceholder(sourceType, input.link ?? "");
+  const detectedArtistName = input.detectedArtistName ?? filenameMetadata.artist ?? linkMetadata?.detectedArtistName ?? null;
+  const detectedSongTitle = input.detectedSongTitle ?? filenameMetadata.title ?? linkMetadata?.detectedSongTitle ?? null;
+  const durationSource = duration
+    ? input.durationSource ?? (sourceType === "upload" ? "browser-audio-metadata" : "provider-metadata")
+    : input.durationSource ?? linkMetadata?.durationSource ?? "internal-estimate";
 
   return {
     id: generateQueueId(),
-    artist: input.artist,
-    title: input.title,
+    artist: submittedArtistName,
+    title: submittedSongTitle,
     link: input.fileUrl || input.link || "",
     tier: "free",
     lane: "regular",
@@ -121,15 +206,22 @@ export function createQueueTrack(input: {
     playedAt: null,
     completedAt: null,
     removedAt: null,
+    restoredAt: null,
     spotlightedAt: null,
+    note: input.note?.trim() || null,
+    submittedArtistName,
+    submittedSongTitle,
+    detectedArtistName,
+    detectedSongTitle,
     fileUrl: input.fileUrl ?? null,
     fileName: input.fileName ?? null,
     fileSize: input.fileSize ?? null,
     mimeType: input.mimeType ?? null,
     sourceType,
-    detectedDurationSeconds: detected,
-    estimatedDurationSeconds: detected ?? INTERNAL_BUFFER_DURATION_SECONDS,
-    durationIsEstimate: detected === null,
+    detectedDurationSeconds: duration,
+    estimatedDurationSeconds: duration ?? INTERNAL_BUFFER_DURATION_SECONDS,
+    durationIsEstimate: duration === null,
+    durationSource,
   };
 }
 
@@ -157,6 +249,29 @@ export async function getRadioQueueState(): Promise<QueueState> {
   };
 }
 
+export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
+  const normalized = normalizeEntry(entry);
+  return {
+    id: normalized.id,
+    submittedArtistName: normalized.submittedArtistName ?? normalized.artist,
+    submittedSongTitle: normalized.submittedSongTitle ?? normalized.title,
+    detectedArtistName: normalized.detectedArtistName ?? null,
+    detectedSongTitle: normalized.detectedSongTitle ?? null,
+    sourceType: normalized.sourceType ?? "other",
+    lane: normalized.lane ?? "regular",
+    durationLabel: normalized.durationIsEstimate ? "estimated/pending" : formatRuntime(getTrackRuntimeSeconds(normalized)),
+    durationIsEstimate: normalized.durationIsEstimate ?? true,
+  };
+}
+
+export async function getPublicQueueSnapshot(): Promise<{ status: QueuePublicStatus; queue: QueuePublicTrack[] }> {
+  const state = await getRadioQueueState();
+  return {
+    status: state.publicStatus ?? publicStatus({ queue: state.queue, completed: state.history, removed: state.removed ?? [], spotlight: state.spotlight ?? [], isOpen: state.streamStatus === "online" }),
+    queue: state.queue.map(toPublicQueueTrack),
+  };
+}
+
 export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> {
   const state = await readStoredState();
   state.isOpen = isOpen;
@@ -164,8 +279,39 @@ export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> 
   return publicStatus(state);
 }
 
-export async function updateRadioTrack(id: string, action: "finish" | "remove" | "priority" | "spotlight"): Promise<QueueState> {
+function restoreEntry(entry: QueueEntry, lane: QueueLane): QueueEntry {
+  return {
+    ...entry,
+    lane,
+    tier: lane === "priority" ? "fastlane" : "free",
+    status: "queued",
+    createdAt: new Date().toISOString(),
+    playedAt: null,
+    completedAt: null,
+    removedAt: null,
+    restoredAt: new Date().toISOString(),
+  };
+}
+
+export async function updateRadioTrack(id: string, action: QueueAdminAction): Promise<QueueState> {
   const state = await readStoredState();
+
+  if (action === "removeSpotlight") {
+    state.spotlight = state.spotlight.filter((entry) => entry.id !== id);
+    await writeStoredState(state);
+    return getRadioQueueState();
+  }
+
+  if (action === "restoreRegular" || action === "restorePriority") {
+    const lane: QueueLane = action === "restorePriority" ? "priority" : "regular";
+    const completedIndex = state.completed.findIndex((entry) => entry.id === id);
+    const removedIndex = state.removed.findIndex((entry) => entry.id === id);
+    const source = completedIndex >= 0 ? state.completed.splice(completedIndex, 1)[0] : removedIndex >= 0 ? state.removed.splice(removedIndex, 1)[0] : null;
+    if (source) state.queue.push(restoreEntry(source, lane));
+    await writeStoredState(state);
+    return getRadioQueueState();
+  }
+
   const index = state.queue.findIndex((entry) => entry.id === id);
   const active = index >= 0 ? state.queue[index] : null;
 
@@ -201,16 +347,14 @@ export async function updateRadioTrack(id: string, action: "finish" | "remove" |
 
 // Legacy-compatible helpers used by archived/OBS components.
 export async function addToQueue(entry: Omit<QueueEntry, "id" | "status" | "playedAt">): Promise<QueueEntry> {
-  const track: QueueEntry = {
+  const track = normalizeEntry({
     ...entry,
     id: generateQueueId(),
     status: "queued",
     playedAt: null,
     lane: entry.lane ?? (normalizeTier(entry.tier) === "fastlane" ? "priority" : "regular"),
     sourceType: entry.sourceType ?? detectQueueSourceType(entry.link),
-    estimatedDurationSeconds: entry.estimatedDurationSeconds ?? entry.detectedDurationSeconds ?? INTERNAL_BUFFER_DURATION_SECONDS,
-    durationIsEstimate: entry.detectedDurationSeconds == null,
-  };
+  });
   const state = await readStoredState();
   state.queue.push(track);
   await writeStoredState(state);

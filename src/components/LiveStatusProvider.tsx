@@ -9,6 +9,7 @@ interface LiveStatusContextType {
   setStreamUrl: (url: string) => void;
   isScheduled: boolean;
   sponsorsActive: boolean;
+  setSponsorsActiveSignal: (active: boolean) => void;
   toggleSponsorsActive: () => void;
   isAdmin: boolean;
   manualOverride: boolean;
@@ -23,6 +24,7 @@ const LiveStatusContext = createContext<LiveStatusContextType>({
   setStreamUrl: () => {},
   isScheduled: false,
   sponsorsActive: false,
+  setSponsorsActiveSignal: () => {},
   toggleSponsorsActive: () => {},
   isAdmin: false,
   manualOverride: false,
@@ -50,11 +52,12 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
       const res = await fetch("/api/admin/live", { cache: "no-store", credentials: "include" });
       if (res.ok) {
         const data = await res.json();
-        setIsLive(data.isLive);
-        setIsScheduled(data.isScheduled);
+        setIsLive(Boolean(data.isLive));
+        setIsScheduled(Boolean(data.isScheduled));
         setStreamUrlState(data.streamUrl);
         setSponsorsActive(Boolean(data.sponsorsActive));
-        setManualOverride(data.manualOverride);
+        setManualOverride(Boolean(data.manualOverride));
+        if (typeof data?.persisted === "boolean") setPersisted(data.persisted);
         setLastError(null);
       }
     } catch {
@@ -102,11 +105,12 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
         return;
       }
       const data = await res.json();
-      setIsLive(data.isLive);
-      setIsScheduled(data.isScheduled);
+      setIsLive(Boolean(data.isLive));
+      setIsScheduled(Boolean(data.isScheduled));
       setStreamUrlState(data.streamUrl);
       setSponsorsActive(Boolean(data.sponsorsActive));
-      setManualOverride(data.manualOverride);
+      if (typeof data?.persisted === "boolean") setPersisted(data.persisted);
+      setManualOverride(Boolean(data.manualOverride));
       setLastError(null);
     } catch {
       setLastError("Toggle failed");
@@ -136,18 +140,20 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
     }
   }, [fetchStatus]);
 
-  // Admin sponsor signal toggle — persists to Redis via API
-  const toggleSponsorsActive = useCallback(async () => {
+  // Admin sponsor signal update — persists to Redis via API
+  const setSponsorsActiveSignal = useCallback(async (active: boolean) => {
+    setSponsorsActive(active);
     try {
       const res = await fetch("/api/admin/live", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: sponsorsActive ? "setSponsorsInactive" : "setSponsorsActive" }),
+        body: JSON.stringify({ action: "setSponsorsActive", sponsorsActive: active }),
         credentials: "include",
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setLastError(body?.error ? `Sponsor signal toggle failed: ${body.error}` : `Sponsor signal toggle failed (${res.status})`);
+        setSponsorsActive(!active);
+        setLastError(body?.error ? `Sponsor signal update failed: ${body.error}` : `Sponsor signal update failed (${res.status})`);
         return;
       }
       if (typeof body?.persisted === "boolean") setPersisted(body.persisted);
@@ -155,9 +161,14 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
       fetchStatus();
       setLastError(null);
     } catch {
-      setLastError("Sponsor signal toggle failed");
+      setSponsorsActive(!active);
+      setLastError("Sponsor signal update failed");
     }
-  }, [fetchStatus, sponsorsActive]);
+  }, [fetchStatus]);
+
+  const toggleSponsorsActive = useCallback(() => {
+    setSponsorsActiveSignal(!sponsorsActive);
+  }, [setSponsorsActiveSignal, sponsorsActive]);
 
   return (
     <LiveStatusContext.Provider value={{
@@ -167,6 +178,7 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
       setStreamUrl,
       isScheduled,
       sponsorsActive,
+      setSponsorsActiveSignal,
       toggleSponsorsActive,
       isAdmin,
       manualOverride,

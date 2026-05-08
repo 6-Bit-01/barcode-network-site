@@ -70,6 +70,9 @@ export interface QueueEntry {
   priorityUpgradeAmountCents?: number | null;
   priorityUpgradeCurrency?: string | null;
   priorityOverlayDisplacedAt?: string | null;
+  priorityPausedAt?: string | null;
+  priorityResumedAt?: string | null;
+  priorityQueueOrderAt?: string | null;
 }
 
 export interface QueuePublicStatus {

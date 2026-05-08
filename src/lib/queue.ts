@@ -38,7 +38,7 @@ const DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS = "Priority Signal Upgrade is being 
 const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 1000;
 const DEFAULT_PRIORITY_UPGRADE_CURRENCY = "usd";
 
-type QueueAdminAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending";
+type QueueAdminAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "pausePriority" | "resumePriority";
 
 export interface PriorityUpgradeSettingsInput {
   enabled?: boolean;
@@ -174,16 +174,30 @@ function laneRank(lane: QueueLane | undefined): number {
   return 2;
 }
 
+function isPausedPriorityTrack(entry: QueueEntry | null | undefined): boolean {
+  return Boolean(entry?.priorityPausedAt);
+}
+
+function isActivePriorityTrack(entry: QueueEntry | null | undefined): boolean {
+  if (!entry || (entry.lane ?? "regular") !== "priority") return false;
+  if (entry.status !== "queued" && entry.status !== "next") return false;
+  if (isPausedPriorityTrack(entry)) return false;
+  return entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual";
+}
+
+function getPriorityOrderTime(entry: QueueEntry): number {
+  return new Date(entry.priorityQueueOrderAt ?? entry.priorityUpgradePaidAt ?? entry.priorityUpgradeAt ?? entry.createdAt).getTime();
+}
+
 function queueRank(entry: QueueEntry): number {
-  if ((entry.lane ?? "regular") === "priority") return 0;
+  if (isActivePriorityTrack(entry)) return 0;
   if (entry.priorityOverlayDisplacedAt) return 1;
+  if ((entry.lane ?? "regular") === "priority") return 4;
   return laneRank(entry.lane) + 1;
 }
 
 function queueOrderTime(entry: QueueEntry): number {
-  if ((entry.lane ?? "regular") === "priority" && entry.priorityUpgradeStatus === "paid" && entry.priorityUpgradePaidAt) {
-    return new Date(entry.priorityUpgradePaidAt).getTime();
-  }
+  if (isActivePriorityTrack(entry)) return getPriorityOrderTime(entry);
   return new Date(entry.priorityOverlayDisplacedAt ?? entry.createdAt).getTime();
 }
 
@@ -192,7 +206,7 @@ function sortActive(entries: QueueEntry[]): QueueEntry[] {
 }
 
 function laneTop(session: Pick<QueueSession, "queue">, lane: QueueLane, excludeId?: string): QueueEntry | null {
-  return sortActive(session.queue).find((entry) => entry.id !== excludeId && entry.status === "queued" && (entry.lane ?? "regular") === lane) ?? null;
+  return sortActive(session.queue).find((entry) => entry.id !== excludeId && entry.status === "queued" && (entry.lane ?? "regular") === lane && (lane !== "priority" || isActivePriorityTrack(entry))) ?? null;
 }
 
 function chooseNextWaitingEntry(session: Pick<QueueSession, "queue" | "nextNonPriorityLane" | "nextInLineHoldTrackId" | "loadedTrackId">, excludeId?: string): QueueEntry | null {
@@ -225,12 +239,8 @@ function stageNextInLineTrack(session: QueueSession, next: QueueEntry): void {
   session.autoRoutingPaused = false;
 }
 
-function isPriorityTrack(entry: QueueEntry | null | undefined): boolean {
-  return (entry?.lane ?? "regular") === "priority";
-}
-
 function preserveDisplacedNonPriorityFront(session: QueueSession, entry: QueueEntry): void {
-  if (isPriorityTrack(entry)) return;
+  if ((entry.lane ?? "regular") === "priority") return;
   const lane = entry.lane === "wheel" ? "wheel" : "regular";
   const restored = normalizeEntry({
     ...entry,
@@ -248,8 +258,13 @@ function preserveDisplacedNonPriorityFront(session: QueueSession, entry: QueueEn
 function resolveNextInLine(session: QueueSession, excludeId?: string, force = false): void {
   if (session.autoRoutingPaused && !force) return;
 
-  const current = session.nextInLineTrack ?? null;
-  if (isPriorityTrack(current)) return;
+  let current = session.nextInLineTrack ?? null;
+  if (isActivePriorityTrack(current)) return;
+  if (current && (current.lane ?? "regular") === "priority") {
+    if (!session.queue.some((entry) => entry.id === current?.id)) session.queue.push(normalizeEntry({ ...current, status: "queued" }));
+    clearNextInLine(session);
+    current = null;
+  }
 
   const priority = laneTop(session, "priority", excludeId ?? session.nextInLineHoldTrackId ?? session.loadedTrackId ?? undefined);
   if (priority) {
@@ -304,7 +319,7 @@ function moveNextInLineBackToQueue(session: QueueSession): QueueEntry | null {
   const current = session.nextInLineTrack ?? null;
   if (!current) return null;
   const lane = session.currentTrackPreviousLane ?? current.lane ?? "regular";
-  const restored = normalizeEntry({ ...current, lane, tier: lane === "priority" ? "fastlane" : lane === "wheel" ? "frontrow" : "free", status: "queued" });
+  const restored = normalizeEntry({ ...current, lane, tier: lane === "priority" ? "fastlane" : lane === "wheel" ? "frontrow" : "free", status: "queued", priorityOverlayDisplacedAt: lane === "priority" ? null : current.priorityOverlayDisplacedAt ?? null });
   const index = typeof session.currentTrackPreviousIndex === "number" ? Math.max(0, session.currentTrackPreviousIndex) : 0;
   const queue = sortActive(session.queue);
   queue.splice(Math.min(index, queue.length), 0, restored);
@@ -314,7 +329,7 @@ function moveNextInLineBackToQueue(session: QueueSession): QueueEntry | null {
 }
 
 function insertRestoredTrack(session: QueueSession, entry: QueueEntry, lane: QueueLane, index: number | null): QueueEntry {
-  const restored = normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : lane === "wheel" ? "frontrow" : "free", status: "queued", playedAt: null });
+  const restored = normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : lane === "wheel" ? "frontrow" : "free", status: "queued", playedAt: null, priorityOverlayDisplacedAt: null });
   const queue = sortActive(session.queue.filter((track) => track.id !== restored.id));
   const safeIndex = typeof index === "number" ? Math.max(0, Math.min(index, queue.length)) : queue.length;
   queue.splice(safeIndex, 0, restored);
@@ -441,6 +456,9 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     priorityUpgradeAmountCents: typeof entry.priorityUpgradeAmountCents === "number" ? Math.max(0, Math.round(entry.priorityUpgradeAmountCents)) : null,
     priorityUpgradeCurrency: entry.priorityUpgradeCurrency ? normalizeCurrency(entry.priorityUpgradeCurrency) : null,
     priorityOverlayDisplacedAt: entry.priorityOverlayDisplacedAt ?? null,
+    priorityPausedAt: entry.priorityPausedAt ?? null,
+    priorityResumedAt: entry.priorityResumedAt ?? null,
+    priorityQueueOrderAt: entry.priorityQueueOrderAt ?? entry.priorityUpgradePaidAt ?? null,
   };
 }
 
@@ -903,6 +921,9 @@ export async function createQueueTrack(input: {
     priorityUpgradeAmountCents: null,
     priorityUpgradeCurrency: null,
     priorityOverlayDisplacedAt: null,
+    priorityPausedAt: null,
+    priorityResumedAt: null,
+    priorityQueueOrderAt: null,
   });
 }
 
@@ -1197,6 +1218,9 @@ export async function markPriorityUpgradePaidFromStripe(trackId: string, queueSe
     priorityUpgradePaidAt: now,
     priorityUpgradePaymentProvider: "stripe",
     priorityUpgradePaymentId: payment.paymentId,
+    priorityPausedAt: null,
+    priorityResumedAt: null,
+    priorityQueueOrderAt: now,
     priorityUpgradeCheckoutProvider: null,
     priorityUpgradeCheckoutSessionId: null,
     priorityUpgradeCheckoutUrl: null,
@@ -1204,6 +1228,7 @@ export async function markPriorityUpgradePaidFromStripe(trackId: string, queueSe
     priorityUpgradeCheckoutExpiresAt: null,
     priorityUpgradeAmountCents: normalizePriceCents(payment.amountCents),
     priorityUpgradeCurrency: normalizeCurrency(payment.currency),
+    ...(status === "paid" ? { priorityOverlayDisplacedAt: null } : {}),
   });
   const markPaid = (entry: QueueEntry, moveToPriority: boolean): QueueEntry => normalizeEntry({
     ...entry,
@@ -1408,9 +1433,9 @@ export async function activateQueueSession(sessionId: string): Promise<QueueStat
 }
 
 function priorityUpgradeMetadata(entry: QueueEntry, lane: QueueLane): Partial<QueueEntry> {
-  if (lane !== "priority") return entry.priorityUpgradeStatus === "manual" ? { priorityUpgradeRequested: false, priorityUpgradeStatus: "none", priorityUpgradeSource: null, priorityUpgradeAt: null, priorityUpgradeRequestedAt: null } : {};
+  if (lane !== "priority") return { priorityOverlayDisplacedAt: null, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: null, ...(entry.priorityUpgradeStatus === "manual" ? { priorityUpgradeRequested: false, priorityUpgradeStatus: "none" as const, priorityUpgradeSource: null, priorityUpgradeAt: null, priorityUpgradeRequestedAt: null } : {}) };
   const now = new Date().toISOString();
-  return { priorityUpgradeRequested: true, priorityUpgradeStatus: "manual", priorityUpgradeSource: "admin", priorityUpgradeAt: now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now };
+  return { priorityUpgradeRequested: true, priorityUpgradeStatus: "manual", priorityUpgradeSource: "admin", priorityUpgradeAt: now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: now, priorityOverlayDisplacedAt: null };
 }
 
 
@@ -1422,7 +1447,49 @@ function priorityUpgradeAdminCorrection(entry: QueueEntry, action: QueueAdminAct
   if (action === "markPriorityCheckoutPending") {
     return normalizeEntry({ ...entry, priorityUpgradeRequested: true, priorityUpgradeStatus: "checkout_pending", priorityUpgradeSource: "future_payment", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now });
   }
-  return normalizeEntry({ ...entry, lane: "priority", tier: "fastlane", priorityUpgradeRequested: true, priorityUpgradeStatus: "manual", priorityUpgradeSource: "admin", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now });
+  return normalizeEntry({ ...entry, lane: "priority", tier: "fastlane", priorityUpgradeRequested: true, priorityUpgradeStatus: "manual", priorityUpgradeSource: "admin", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: entry.priorityQueueOrderAt ?? now, priorityOverlayDisplacedAt: null });
+}
+
+function pausePriorityTrack(session: QueueSession, id: string): boolean {
+  const now = new Date().toISOString();
+  const pause = (entry: QueueEntry): QueueEntry | null => {
+    if ((entry.lane ?? "regular") !== "priority" || (entry.priorityUpgradeStatus !== "paid" && entry.priorityUpgradeStatus !== "manual")) return null;
+    return normalizeEntry({ ...entry, status: "queued", priorityPausedAt: entry.priorityPausedAt ?? now, priorityResumedAt: null });
+  };
+  const queueIndex = session.queue.findIndex((entry) => entry.id === id);
+  if (queueIndex >= 0) {
+    const paused = pause(session.queue[queueIndex]);
+    if (!paused) return false;
+    session.queue[queueIndex] = paused;
+    resolveNextInLine(session, undefined, true);
+    return true;
+  }
+  if (session.nextInLineTrack?.id === id) {
+    const paused = pause(session.nextInLineTrack);
+    if (!paused) return false;
+    clearNextInLine(session);
+    session.queue.push(paused);
+    session.queue = sortActive(session.queue);
+    resolveNextInLine(session, undefined, true);
+    return true;
+  }
+  return false;
+}
+
+function resumePriorityTrack(session: QueueSession, id: string): boolean {
+  const now = new Date().toISOString();
+  const resume = (entry: QueueEntry): QueueEntry | null => {
+    if ((entry.lane ?? "regular") !== "priority" || (entry.priorityUpgradeStatus !== "paid" && entry.priorityUpgradeStatus !== "manual") || !isPausedPriorityTrack(entry)) return null;
+    return normalizeEntry({ ...entry, status: "queued", priorityPausedAt: null, priorityResumedAt: now, priorityQueueOrderAt: now });
+  };
+  const queueIndex = session.queue.findIndex((entry) => entry.id === id);
+  if (queueIndex < 0) return false;
+  const resumed = resume(session.queue[queueIndex]);
+  if (!resumed) return false;
+  session.queue[queueIndex] = resumed;
+  session.queue = sortActive(session.queue);
+  resolveNextInLine(session, undefined, true);
+  return true;
 }
 
 function applyPriorityUpgradeAdminCorrection(session: QueueSession, id: string, action: QueueAdminAction): boolean {
@@ -1444,7 +1511,7 @@ function applyPriorityUpgradeAdminCorrection(session: QueueSession, id: string, 
 }
 
 function restoreEntry(entry: QueueEntry, lane: QueueLane): QueueEntry {
-  return normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : "free", status: "queued", createdAt: new Date().toISOString(), playedAt: null, completedAt: null, removedAt: null, restoredAt: new Date().toISOString(), ...priorityUpgradeMetadata(entry, lane) });
+  return normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : "free", status: "queued", createdAt: new Date().toISOString(), playedAt: null, completedAt: null, removedAt: null, restoredAt: new Date().toISOString(), priorityOverlayDisplacedAt: null, ...priorityUpgradeMetadata(entry, lane) });
 }
 
 export async function updateRadioTrack(id: string, action: QueueAdminAction): Promise<QueueState> {
@@ -1453,9 +1520,19 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
   if (session.status === "archived") return queueStateFromSession(session, store);
 
   if (applyPriorityUpgradeAdminCorrection(session, id, action)) {
+    resolveNextInLine(session, undefined, true);
     const nextStore = replaceSession(store, session);
     await writeStore(nextStore);
     return queueStateFromSession(session, nextStore);
+  }
+
+  if (action === "pausePriority" || action === "resumePriority") {
+    const changed = action === "pausePriority" ? pausePriorityTrack(session, id) : resumePriorityTrack(session, id);
+    if (changed) {
+      const nextStore = replaceSession(store, session);
+      await writeStore(nextStore);
+      return queueStateFromSession(session, nextStore);
+    }
   }
 
   if (action === "pullNext") {
@@ -1573,7 +1650,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
   }
   if (action === "wheel" && (!active.lane || active.lane === "regular")) {
     session.queue.splice(index, 1);
-    session.queue.push({ ...active, lane: "wheel", tier: "frontrow", status: "queued" });
+    session.queue.push(normalizeEntry({ ...active, lane: "wheel", tier: "frontrow", status: "queued", priorityOverlayDisplacedAt: null, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: null }));
   }
   if (action === "finish") {
     session.queue.splice(index, 1);

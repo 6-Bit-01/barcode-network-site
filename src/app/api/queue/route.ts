@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { detectQueueSourceType } from "@/lib/queue-types";
-import { getPublicQueueSnapshot, submitRadioTrack } from "@/lib/queue";
+import { getPublicQueueSnapshot, requestPriorityUpgradePlaceholder, submitRadioTrack } from "@/lib/queue";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -60,6 +60,16 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const contentType = req.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const body = await req.json().catch(() => ({}));
+      if (body.action === "priorityUpgradePlaceholder" && typeof body.id === "string") {
+        const track = await requestPriorityUpgradePlaceholder(body.id);
+        if (!track) return NextResponse.json({ error: "Priority Signal Upgrade is not available for this track." }, { status: 409 });
+        return NextResponse.json({ track, message: "Priority Signal Upgrade placeholder noted. No charge was made." });
+      }
+      return NextResponse.json({ error: "Unknown queue action" }, { status: 400 });
+    }
     const form = await req.formData();
     const artist = cleanText(form.get("artist"));
     const title = cleanText(form.get("title"));

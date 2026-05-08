@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
-import { archiveCurrentQueueSession, getRadioQueueState, setQueueOpen, startNewQueueSession, activateQueueSession, updateRadioTrack } from "@/lib/queue";
+import { archiveCurrentQueueSession, getRadioQueueState, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateRadioTrack } from "@/lib/queue";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +34,16 @@ export async function POST(req: Request) {
       trackLimitPerArtist: Number.isFinite(trackLimitPerArtist) && trackLimitPerArtist > 0 ? trackLimitPerArtist : undefined,
       queueCapacity: Number.isFinite(queueCapacity) && queueCapacity > 0 ? queueCapacity : undefined,
       skipGameTapTarget: Number.isFinite(skipGameTapTarget) && skipGameTapTarget > 0 ? skipGameTapTarget : undefined,
+      priorityUpgradesEnabled: body.priorityUpgradesEnabled === true,
+      priorityUpgradeLabel: typeof body.priorityUpgradeLabel === "string" ? body.priorityUpgradeLabel : undefined,
+      priorityUpgradeInstructions: typeof body.priorityUpgradeInstructions === "string" ? body.priorityUpgradeInstructions : undefined,
+    }));
+  }
+  if (body.action === "updatePriorityUpgradeSettings") {
+    return NextResponse.json(await updatePriorityUpgradeSettings({
+      enabled: body.enabled === true,
+      label: typeof body.label === "string" ? body.label : undefined,
+      instructions: typeof body.instructions === "string" ? body.instructions : undefined,
     }));
   }
   if (body.action === "archiveSession") return NextResponse.json(await archiveCurrentQueueSession());

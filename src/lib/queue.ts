@@ -32,8 +32,16 @@ const STATE_KEY = "radioQueue:v2:sessions";
 const LEGACY_STATE_KEY = "radioQueue:v1:state";
 const DEFAULT_QUEUE_CAPACITY = 50;
 const SUBMISSION_COOLDOWN_SECONDS = 5 * 60;
+const DEFAULT_PRIORITY_UPGRADE_LABEL = "Priority Signal Upgrade";
+const DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS = "Priority Signal Upgrade is being prepared for this session. This placeholder does not charge money or move your track automatically.";
 
 type QueueAdminAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority";
+
+export interface PriorityUpgradeSettingsInput {
+  enabled?: boolean;
+  label?: string;
+  instructions?: string;
+}
 
 interface QueueStore {
   activeSessionId: string;
@@ -82,7 +90,7 @@ function sessionDescriptionFor(date: string): string {
   return SESSION_DESCRIPTIONS[index];
 }
 
-function defaultSession(options: { title?: string; showDate?: string; description?: string; trackLimitPerArtist?: number; queueCapacity?: number; skipGameTapTarget?: number } = {}): QueueSession {
+function defaultSession(options: { title?: string; showDate?: string; description?: string; trackLimitPerArtist?: number; queueCapacity?: number; skipGameTapTarget?: number; priorityUpgradesEnabled?: boolean; priorityUpgradeLabel?: string; priorityUpgradeInstructions?: string } = {}): QueueSession {
   const date = options.showDate ?? todayDate();
   const now = new Date().toISOString();
   return normalizeSession({
@@ -119,6 +127,9 @@ function defaultSession(options: { title?: string; showDate?: string; descriptio
     loadedTrackPreviousLane: null,
     loadedTrackPreviousIndex: null,
     autoRoutingPaused: false,
+    priorityUpgradesEnabled: options.priorityUpgradesEnabled === true,
+    priorityUpgradeLabel: options.priorityUpgradeLabel?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
+    priorityUpgradeInstructions: options.priorityUpgradeInstructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
   });
 }
 
@@ -283,6 +294,9 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     estimatedActiveRuntimeSeconds: publicStatus.estimatedRuntimeSeconds,
     completedRuntimeSeconds: session.completed.reduce((sum, entry) => sum + getTrackRuntimeSeconds(entry), 0),
     nextNonPriorityLane: session.nextNonPriorityLane ?? "wheel",
+    priorityUpgradesEnabled: session.priorityUpgradesEnabled === true,
+    priorityUpgradeLabel: session.priorityUpgradeLabel?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
+    priorityUpgradeInstructions: session.priorityUpgradeInstructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
   };
 }
 
@@ -307,6 +321,10 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     durationIsEstimate: detectedDurationSeconds === null,
     durationSource,
     note: entry.note ?? null,
+    priorityUpgradeRequested: entry.priorityUpgradeRequested === true,
+    priorityUpgradeStatus: entry.priorityUpgradeStatus === "requested" || entry.priorityUpgradeStatus === "manual" || entry.priorityUpgradeStatus === "paid_placeholder" ? entry.priorityUpgradeStatus : "none",
+    priorityUpgradeSource: entry.priorityUpgradeSource === "admin" || entry.priorityUpgradeSource === "public_placeholder" || entry.priorityUpgradeSource === "future_payment" ? entry.priorityUpgradeSource : null,
+    priorityUpgradeAt: entry.priorityUpgradeAt ?? null,
   };
 }
 
@@ -347,6 +365,9 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     loadedTrackPreviousLane: raw.loadedTrackPreviousLane ?? raw.loadedTrack?.lane ?? null,
     loadedTrackPreviousIndex: typeof raw.loadedTrackPreviousIndex === "number" ? raw.loadedTrackPreviousIndex : null,
     autoRoutingPaused: raw.autoRoutingPaused === true,
+    priorityUpgradesEnabled: raw.priorityUpgradesEnabled === true,
+    priorityUpgradeLabel: raw.priorityUpgradeLabel?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
+    priorityUpgradeInstructions: raw.priorityUpgradeInstructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
     currentTrackPreviousLane: raw.currentTrackPreviousLane ?? raw.nextInLineTrack?.lane ?? null,
     currentTrackPreviousIndex: typeof raw.currentTrackPreviousIndex === "number" ? raw.currentTrackPreviousIndex : null,
     queue: sortActive((raw.queue ?? []).map(normalizeEntry).filter((entry) => entry.id !== raw.nextInLineTrack?.id && entry.id !== raw.nextInLineTrackId && entry.id !== raw.loadedTrack?.id && entry.id !== raw.loadedTrackId)),
@@ -853,6 +874,8 @@ export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
     sourceArtworkUrl: getTrackArtworkUrl(normalized),
     publicSourceUrl: publicSourceUrlForTrack(normalized),
     tiktokHandle: normalized.tiktokHandle ?? null,
+    priorityUpgradeRequested: normalized.priorityUpgradeRequested === true,
+    priorityUpgradeStatus: normalized.priorityUpgradeStatus ?? "none",
   };
 }
 
@@ -895,6 +918,37 @@ export async function getPublicQueueSnapshot(sessionId?: string, identity?: { su
   if (changed) await writeStore(replaceSession(store, session));
   const normalized = normalizeSession(session);
   return { session: summarizeSession(normalized), status: normalized.publicStatus, queue: normalized.queue.map(toPublicQueueTrack), completed: normalized.completed.slice(0, 10).map(toPublicQueueTrack), nowPlaying: normalized.loadedTrack ? toPublicQueueTrack(normalized.loadedTrack) : null, upNext: normalized.nextInLineTrack ? toPublicQueueTrack(normalized.nextInLineTrack) : null, submitterStatus: publicSubmitterStatus(normalized, identity) };
+}
+
+export async function requestPriorityUpgradePlaceholder(id: string): Promise<QueuePublicTrack | null> {
+  const store = await readStore();
+  const session = getSession(store);
+  if (session.status === "archived" || !session.priorityUpgradesEnabled) return null;
+  const now = new Date().toISOString();
+  let updated: QueueEntry | null = null;
+  const update = (entry: QueueEntry): QueueEntry => normalizeEntry({
+    ...entry,
+    priorityUpgradeRequested: true,
+    priorityUpgradeStatus: entry.priorityUpgradeStatus === "manual" ? "manual" : "requested",
+    priorityUpgradeSource: entry.priorityUpgradeSource ?? "public_placeholder",
+    priorityUpgradeAt: entry.priorityUpgradeAt ?? now,
+  });
+  session.queue = session.queue.map((entry) => {
+    if (entry.id !== id) return entry;
+    updated = update(entry);
+    return updated;
+  });
+  if (!updated && session.nextInLineTrack?.id === id) {
+    session.nextInLineTrack = update(session.nextInLineTrack);
+    updated = session.nextInLineTrack;
+  }
+  if (!updated && session.loadedTrack?.id === id) {
+    session.loadedTrack = update(session.loadedTrack);
+    updated = session.loadedTrack;
+  }
+  if (!updated) return null;
+  await writeStore(replaceSession(store, session));
+  return toPublicQueueTrack(updated);
 }
 
 export interface QueueSessionSubmitterRow {
@@ -963,6 +1017,22 @@ export async function getQueueSessionSubmissionsCsv(sessionId?: string): Promise
   return { filename: `barcode-radio-session-${safeDate}-submissions.csv`, csv: [headers.map(csvEscape).join(","), ...body].join("\n") };
 }
 
+export async function updatePriorityUpgradeSettings(input: PriorityUpgradeSettingsInput): Promise<QueueState> {
+  const store = await readStore();
+  const session = getSession(store);
+  if (session.status === "archived") return queueStateFromSession(session, store);
+  const next = normalizeSession({
+    ...session,
+    priorityUpgradesEnabled: input.enabled === true,
+    priorityUpgradeLabel: input.label?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
+    priorityUpgradeInstructions: input.instructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
+    updatedAt: new Date().toISOString(),
+  });
+  const nextStore = replaceSession(store, next);
+  await writeStore(nextStore);
+  return queueStateFromSession(next, nextStore);
+}
+
 export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> {
   const store = await readStore();
   const session = getSession(store);
@@ -982,7 +1052,7 @@ export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> 
   return publicStatusForSession(getSession(nextStore));
 }
 
-export async function startNewQueueSession(options: { title?: string; showDate?: string; description?: string; trackLimitPerArtist?: number; queueCapacity?: number; skipGameTapTarget?: number } = {}): Promise<QueueState> {
+export async function startNewQueueSession(options: { title?: string; showDate?: string; description?: string; trackLimitPerArtist?: number; queueCapacity?: number; skipGameTapTarget?: number; priorityUpgradesEnabled?: boolean; priorityUpgradeLabel?: string; priorityUpgradeInstructions?: string } = {}): Promise<QueueState> {
   const store = await readStore();
   const current = getSession(store);
   if (current.status === "open" || current.queueOpen) return queueStateFromSession(current, store);
@@ -1014,8 +1084,13 @@ export async function activateQueueSession(sessionId: string): Promise<QueueStat
   return queueStateFromSession(active, nextStore);
 }
 
+function priorityUpgradeMetadata(entry: QueueEntry, lane: QueueLane): Partial<QueueEntry> {
+  if (lane !== "priority") return entry.priorityUpgradeStatus === "manual" ? { priorityUpgradeRequested: false, priorityUpgradeStatus: "none", priorityUpgradeSource: null, priorityUpgradeAt: null } : {};
+  return { priorityUpgradeRequested: true, priorityUpgradeStatus: "manual", priorityUpgradeSource: "admin", priorityUpgradeAt: new Date().toISOString() };
+}
+
 function restoreEntry(entry: QueueEntry, lane: QueueLane): QueueEntry {
-  return normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : "free", status: "queued", createdAt: new Date().toISOString(), playedAt: null, completedAt: null, removedAt: null, restoredAt: new Date().toISOString() });
+  return normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : "free", status: "queued", createdAt: new Date().toISOString(), playedAt: null, completedAt: null, removedAt: null, restoredAt: new Date().toISOString(), ...priorityUpgradeMetadata(entry, lane) });
 }
 
 export async function updateRadioTrack(id: string, action: QueueAdminAction): Promise<QueueState> {
@@ -1130,11 +1205,11 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
   }
   if (action === "priority") {
     session.queue.splice(index, 1);
-    session.queue.push({ ...active, lane: "priority", tier: "fastlane", status: "queued" });
+    session.queue.push(normalizeEntry({ ...active, lane: "priority", tier: "fastlane", status: "queued", ...priorityUpgradeMetadata(active, "priority") }));
   }
   if (action === "regular") {
     session.queue.splice(index, 1);
-    session.queue.push({ ...active, lane: "regular", tier: "free", status: "queued" });
+    session.queue.push(normalizeEntry({ ...active, lane: "regular", tier: "free", status: "queued", ...priorityUpgradeMetadata(active, "regular") }));
   }
   if (action === "wheel" && (!active.lane || active.lane === "regular")) {
     session.queue.splice(index, 1);
@@ -1198,7 +1273,7 @@ export async function upgradeEntryTier(id: string, newTier: QueueTier, additiona
   const session = getSession(store);
   const index = session.queue.findIndex((entry) => entry.id === id);
   if (index === -1) return null;
-  const updated = { ...session.queue[index], tier: newTier, amount: session.queue[index].amount + additionalAmount, lane: newTier === "fastlane" ? "priority" as QueueLane : session.queue[index].lane };
+  const updated = normalizeEntry({ ...session.queue[index], tier: newTier, amount: session.queue[index].amount + additionalAmount, lane: newTier === "fastlane" ? "priority" as QueueLane : session.queue[index].lane, ...(newTier === "fastlane" ? { priorityUpgradeRequested: true, priorityUpgradeStatus: "paid_placeholder" as const, priorityUpgradeSource: "future_payment" as const, priorityUpgradeAt: new Date().toISOString() } : {}) });
   session.queue[index] = updated;
   await writeStore(replaceSession(store, session));
   return updated;

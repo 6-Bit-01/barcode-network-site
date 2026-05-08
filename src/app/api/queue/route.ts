@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { detectQueueSourceType } from "@/lib/queue-types";
-import { getPublicQueueSnapshot, requestPriorityUpgradePlaceholder, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
+import { getPublicQueueSnapshot, getRadioQueueState, normalizeQueueSourceKey, requestPriorityUpgradePlaceholder, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
+import type { QueueEntry } from "@/lib/queue-types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -8,6 +9,7 @@ export const runtime = "nodejs";
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 const AUDIO_MIME_TYPES = new Set(["audio/mpeg", "audio/mp3", "audio/wav", "audio/wave", "audio/x-wav"]);
 const UPLOAD_FALLBACK_MESSAGE = "Upload could not be completed. Please try again or submit a Spotify, SoundCloud, YouTube, or direct track link.";
+const DUPLICATE_TRANSMISSION_MESSAGE = "Duplicate transmission detected. This track is already in the queue for this session.";
 const BLOB_HOST_SUFFIX = ".private.blob.vercel-storage.com";
 const UPLOAD_PREFIX = "/barcode-radio-queue/";
 
@@ -48,6 +50,47 @@ function parseBodyDuration(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
 }
 
+function duplicateResponse(): NextResponse {
+  return NextResponse.json({ error: DUPLICATE_TRANSMISSION_MESSAGE, code: "duplicate_transmission" }, { status: 409 });
+}
+
+function acceptedResponse(track: ReturnType<typeof toPublicQueueTrack>, cooldownSeconds: number): NextResponse {
+  return NextResponse.json({ track, message: "Track entered Free Transmissions.", ...(cooldownSeconds > 0 ? { cooldownRemainingSeconds: cooldownSeconds } : {}) }, { status: 201 });
+}
+
+function queueEntriesForDuplicatePreflight(state: Awaited<ReturnType<typeof getRadioQueueState>>): QueueEntry[] {
+  return [
+    ...state.queue,
+    ...(state.nextInLine ? [state.nextInLine] : []),
+    ...(state.nowPlaying ? [state.nowPlaying] : []),
+    ...state.history,
+    ...(state.removed ?? []),
+  ];
+}
+
+function entryNormalizedSourceKeys(entry: QueueEntry): string[] {
+  return [entry.normalizedSourceKey, normalizeQueueSourceKey(entry.link), normalizeQueueSourceKey(entry.fileUrl)].filter((key): key is string => Boolean(key));
+}
+
+async function hasDuplicateLinkSubmission(link: string): Promise<boolean> {
+  const normalizedLink = normalizeQueueSourceKey(link);
+  if (!normalizedLink) return false;
+  const state = await getRadioQueueState();
+  return queueEntriesForDuplicatePreflight(state).some((entry) => entryNormalizedSourceKeys(entry).includes(normalizedLink));
+}
+
+async function hasDuplicateUploadSubmission(fileName: string, fileSize: number, detectedDurationSeconds: number | null): Promise<boolean> {
+  const normalizedFileName = fileName.toLowerCase();
+  const state = await getRadioQueueState();
+  return queueEntriesForDuplicatePreflight(state).some((entry) => {
+    if (entry.sourceType !== "upload") return false;
+    if (!entry.fileName || entry.fileName.toLowerCase() !== normalizedFileName) return false;
+    if (entry.fileSize !== fileSize) return false;
+    if (detectedDurationSeconds && entry.detectedDurationSeconds && entry.detectedDurationSeconds !== detectedDurationSeconds) return false;
+    return true;
+  });
+}
+
 export async function GET(req: Request) {
   const params = new URL(req.url).searchParams;
   const sessionId = params.get("sessionId") ?? undefined;
@@ -79,11 +122,12 @@ export async function POST(req: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Submission failed";
     const reasons = Array.isArray((error as { reasons?: unknown }).reasons) ? (error as { reasons: string[] }).reasons : [];
-    const isLimitBlock = message === "Submission limit reached for this session.";
-    const isDuplicateBlock = reasons.some((reason) => reason.toLowerCase().includes("duplicate"));
+    const code = typeof (error as { code?: unknown }).code === "string" ? (error as { code: string }).code : undefined;
+    const isLimitBlock = code === "submission_limit" || message === "Submission limit reached for this session.";
+    const isDuplicateBlock = code === "duplicate_transmission";
     const cooldownRemainingSeconds = typeof (error as { remainingSeconds?: unknown }).remainingSeconds === "number" ? (error as { remainingSeconds: number }).remainingSeconds : 0;
+    if (isDuplicateBlock) return NextResponse.json({ error: DUPLICATE_TRANSMISSION_MESSAGE, code: "duplicate_transmission" }, { status: 409 });
     if (cooldownRemainingSeconds > 0) return NextResponse.json({ error: "Submission cooldown active.", cooldownRemainingSeconds }, { status: 429 });
-    if (isDuplicateBlock) return NextResponse.json({ error: "This track has already been submitted to this session.", reasons }, { status: 409 });
     const publicMessage = isLimitBlock ? "Submission limit reached for this session." : message === "Queue is closed" ? "This broadcast queue is closed." : message === "Queue is full for new transmissions." ? "This broadcast queue is full for new transmissions." : message === "Uploaded audio file is missing." || message === "Uploaded audio file is invalid." ? UPLOAD_FALLBACK_MESSAGE : message === "Only MP3 and WAV uploads are accepted." || message === "Uploads must be 100MB or less." || message === "Uploaded audio file name is missing." || message === "Uploaded audio file size is missing." ? message : "Submission failed. Please try again.";
     const status = isLimitBlock ? 409 : message === "Queue is closed" ? 409 : message.startsWith("Uploaded audio") || message === "Only MP3 and WAV uploads are accepted." || message === "Uploads must be 100MB or less." ? 400 : 500;
     return NextResponse.json({ error: publicMessage, reasons }, { status });
@@ -122,6 +166,8 @@ async function submitTrackFromBody(body: Record<string, unknown>): Promise<NextR
     const fileSize = validateUploadFileSize(body.fileSize);
     const mimeType = validateUploadMimeType(body.mimeType);
 
+    if (await hasDuplicateUploadSubmission(fileName, fileSize, detectedDurationSeconds)) return duplicateResponse();
+
     const track = await submitRadioTrack({
       artist,
       title,
@@ -140,14 +186,15 @@ async function submitTrackFromBody(body: Record<string, unknown>): Promise<NextR
       contactEmail,
       submitterToken,
     });
-    return NextResponse.json({ track: toPublicQueueTrack(track), message: "Track entered Free Transmissions.", cooldownRemainingSeconds: 300 }, { status: 201 });
+    return acceptedResponse(toPublicQueueTrack(track), active.session.submissionCooldownSeconds);
   }
 
   const link = cleanBodyText(body.link);
   if (!link) return NextResponse.json({ error: "Paste a track link." }, { status: 400 });
   try { new URL(link); } catch { return NextResponse.json({ error: "Enter a valid track URL." }, { status: 400 }); }
+  if (await hasDuplicateLinkSubmission(link)) return duplicateResponse();
 
   const sourceType = detectQueueSourceType(link);
   const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, contactEmail, submitterToken });
-  return NextResponse.json({ track: toPublicQueueTrack(track), message: "Track entered Free Transmissions.", cooldownRemainingSeconds: 300 }, { status: 201 });
+  return acceptedResponse(toPublicQueueTrack(track), active.session.submissionCooldownSeconds);
 }

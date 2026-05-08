@@ -16,6 +16,9 @@ type RouteChoice = "free" | "priority";
 
 const UPLOAD_FALLBACK_MESSAGE = "Upload could not be completed. Please try again or submit a Spotify, SoundCloud, YouTube, or direct track link.";
 const PRIORITY_SIGNAL_LABEL = "Priority Signal Upgrade";
+const PRIORITY_CHECKOUT_UNAVAILABLE_MESSAGE = "Priority checkout could not be started. Your track entered Free Transmissions.";
+const PRIORITY_DEPTH_UNAVAILABLE_MESSAGE = "Priority Signal opens once the broadcast line has enough active transmissions to overtake.";
+const MIN_PRIORITY_ACTIVE_DEPTH = 2;
 function formatPrice(cents: number, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }
 
 interface WarpData {
@@ -118,6 +121,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
   const [note, setNote] = useState("");
   const [routeChoice, setRouteChoice] = useState<RouteChoice>("free");
   const [file, setFile] = useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [detectedDuration, setDetectedDuration] = useState<number | null>(null);
   const [readState, setReadState] = useState<ReadState>("idle");
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -293,19 +297,34 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
 
   const priorityPriceCents = session?.priorityUpgradePriceCents ?? 0;
   const priorityCurrency = session?.priorityUpgradeCurrency ?? "usd";
-  const priorityCheckoutAvailable = session?.priorityUpgradesEnabled === true && session?.priorityUpgradePaymentsEnabled === true && priorityPriceCents > 0;
+  const priorityPaymentsAvailable = session?.priorityUpgradesEnabled === true && session?.priorityUpgradePaymentsEnabled === true && priorityPriceCents > 0;
+  const priorityDepthAvailable = (status?.activeCount ?? 0) >= MIN_PRIORITY_ACTIVE_DEPTH;
+  const priorityCheckoutAvailable = priorityPaymentsAvailable && status?.isOpen === true && priorityDepthAvailable;
   const selectedRoute: RouteChoice = priorityCheckoutAvailable ? routeChoice : "free";
 
-  async function startPriorityCheckout(trackId: string): Promise<void> {
+  function clearTrackDraftFields() {
+    setTitle("");
+    setLink("");
+    setCollaboratorNames("");
+    setNote("");
+    setFile(null);
+    setFileInputKey((value) => value + 1);
+    setDetectedDuration(null);
+    setReadState("idle");
+    setUploadProgress(null);
+    setRouteChoice("free");
+  }
+
+  async function startPriorityCheckout(trackId: string): Promise<boolean> {
     const checkoutSessionId = sessionId ?? session?.sessionId;
-    if (!checkoutSessionId) throw new Error("Priority Signal checkout is not available for this session.");
+    if (!checkoutSessionId) return false;
     const res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId, sessionId: checkoutSessionId }) });
     const payload = await res.json().catch(() => ({}));
     if (res.ok && typeof payload.url === "string") {
       window.location.href = payload.url;
-      return;
+      return true;
     }
-    throw new Error(payload.error ?? "Priority Signal checkout is not available right now. Your track remains in Free Transmissions.");
+    return false;
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -347,6 +366,9 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
       const res = await fetch("/api/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (payload.code === "duplicate_transmission") {
+          throw new Error(payload.error || "Duplicate transmission detected. This track is already in the queue for this session.");
+        }
         if (typeof payload.cooldownRemainingSeconds === "number") {
           setCooldownRemaining(payload.cooldownRemainingSeconds);
           if (submitterToken) window.localStorage.setItem(`barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}`, String(Date.now() + payload.cooldownRemainingSeconds * 1000));
@@ -358,11 +380,25 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
         window.localStorage.setItem("barcode-radio-submit-artist", artist.trim());
         window.localStorage.setItem("barcode-radio-submit-tiktok", tiktokHandle.trim());
         window.localStorage.setItem("barcode-radio-submit-email", contactEmail.trim());
-        const nextCooldown = typeof payload.cooldownRemainingSeconds === "number" ? payload.cooldownRemainingSeconds : 300;
+        const nextCooldown = typeof payload.cooldownRemainingSeconds === "number" ? payload.cooldownRemainingSeconds : 0;
         setCooldownRemaining(nextCooldown);
-        if (submitterToken) window.localStorage.setItem(`barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}`, String(Date.now() + nextCooldown * 1000));
+        if (submitterToken) {
+          const cooldownKey = `barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}`;
+          if (nextCooldown > 0) window.localStorage.setItem(cooldownKey, String(Date.now() + nextCooldown * 1000));
+          else window.localStorage.removeItem(cooldownKey);
+        }
         if (selectedRoute === "priority") {
-          await startPriorityCheckout(submitted.id);
+          const checkoutStarted = await startPriorityCheckout(submitted.id);
+          if (checkoutStarted) return;
+          setError(PRIORITY_CHECKOUT_UNAVAILABLE_MESSAGE);
+          setPublicQueue((current) => [submitted, ...current.filter((entry) => entry.id !== submitted.id)]);
+          await loadStatus();
+          onSubmitted?.(submitted.id, "resolved", "free-transmissions-lane");
+          setArtist(window.localStorage.getItem("barcode-radio-submit-artist") ?? artist.trim());
+          setTikTokHandle(window.localStorage.getItem("barcode-radio-submit-tiktok") ?? tiktokHandle.trim());
+          setContactEmail(window.localStorage.getItem("barcode-radio-submit-email") ?? contactEmail.trim());
+          clearTrackDraftFields();
+          setStep("track");
           return;
         }
         const preSubmit = { nowPlayingWasEmpty: !nowPlaying, upNextWasEmpty: !upNext, activeCount: status?.activeCount ?? publicQueue.length };
@@ -413,20 +449,14 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
         onSubmitted?.(submitted.id, "complete", resolved.targetId);
       }
       setArtist(window.localStorage.getItem("barcode-radio-submit-artist") ?? artist.trim());
-      setTitle("");
-      setLink("");
       setTikTokHandle(window.localStorage.getItem("barcode-radio-submit-tiktok") ?? tiktokHandle.trim());
-      setCollaboratorNames("");
       setContactEmail(window.localStorage.getItem("barcode-radio-submit-email") ?? contactEmail.trim());
-      setNote("");
-      setFile(null);
-      setDetectedDuration(null);
-      setReadState("idle");
-      setUploadProgress(null);
-      setRouteChoice("free");
+      clearTrackDraftFields();
       setStep("track");
     } catch (err) {
       setTransmissionState("idle");
+      clearTrackDraftFields();
+      setStep("track");
       setError(err instanceof Error ? err.message : "Submission failed");
     } finally {
       finalSubmitIntent.current = false;
@@ -454,7 +484,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
 
   if (transmissionState !== "idle") return createPortal(<WarpSequence state={transmissionState} data={warpData} />, document.body);
 
-  const effectiveCooldown = Math.max(cooldownRemaining, submitterStatus?.cooldownRemainingSeconds ?? 0);
+  const effectiveCooldown = session?.submissionCooldownSeconds === 0 ? 0 : Math.max(cooldownRemaining, submitterStatus?.cooldownRemainingSeconds ?? 0);
   const estimatedPosition = Math.min((status?.activeCount ?? publicQueue.length) + 1, status?.capacity ?? ((status?.activeCount ?? publicQueue.length) + 1));
 
   return (
@@ -492,7 +522,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
             {mode === "link" ? (
               <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Track link</span><input type="url" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://soundcloud.com/..." className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
             ) : (
-              <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">MP3/WAV file</span><input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,.mp3,.wav" onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+              <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">MP3/WAV file</span><input key={fileInputKey} type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,.mp3,.wav" onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
             )}
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               <button type="button" onClick={onCancel} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Collapse Intake</button>
@@ -514,13 +544,13 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
             </div>
             <div className="grid gap-3 text-xs sm:grid-cols-2">
               <button type="button" onClick={() => setRouteChoice("free")} className={`border p-4 text-left transition-all ${selectedRoute === "free" ? "border-accent bg-accent/10 text-foreground" : "border-border bg-background/40 text-muted"}`}><span className="text-sm font-bold text-foreground">Free Transmission</span><span className="mt-2 block">Enters Free Transmissions.</span><span className="block">No payment required.</span><span className="mt-3 block text-muted">If you submit now, you’ll enter around position #{estimatedPosition} in Free Transmissions. Estimated wait may shift during the show.</span></button>
-              {priorityCheckoutAvailable && <button type="button" onClick={() => setRouteChoice("priority")} className={`border p-4 text-left transition-all ${selectedRoute === "priority" ? "border-[#ffaa00] bg-[#ffaa00]/10 text-foreground" : "border-[#ffaa00]/40 bg-background/40 text-muted"}`}><span className="text-sm font-bold text-[#ffaa00]">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">Moves this track into Priority Signal after payment confirmation.</span><span className="block">Priority Signals clear before Wheel Chosen and Free Transmissions.</span><span className="block">Funds BARCODE Network broadcast systems.</span><span className="mt-3 block text-[#ffaa00]">{formatPrice(priorityPriceCents, priorityCurrency)}</span><span className="mt-2 block text-muted">Priority Signal placement activates after payment confirmation. Queue position may shift during checkout.</span></button>}
+              {priorityCheckoutAvailable ? <button type="button" onClick={() => setRouteChoice("priority")} className={`border p-4 text-left transition-all ${selectedRoute === "priority" ? "border-[#ffaa00] bg-[#ffaa00]/10 text-foreground" : "border-[#ffaa00]/40 bg-background/40 text-muted"}`}><span className="text-sm font-bold text-[#ffaa00]">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">Moves this track into the Priority Signal lane after payment confirmation.</span><span className="block">Priority Signals clear before Wheel Chosen and Free Transmissions.</span><span className="block">Funds BARCODE Network broadcast systems.</span><span className="mt-3 block text-[#ffaa00]">{formatPrice(priorityPriceCents, priorityCurrency)}</span><span className="mt-2 block text-muted">Priority Signal placement activates after payment confirmation. Queue position may shift during checkout.</span></button> : priorityPaymentsAvailable && <div className="border border-[#ffaa00]/30 bg-background/40 p-4 text-left text-muted"><span className="text-sm font-bold text-[#ffaa00]/70">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">{PRIORITY_DEPTH_UNAVAILABLE_MESSAGE}</span><span className="mt-3 block text-[#ffaa00]/70">{formatPrice(priorityPriceCents, priorityCurrency)}</span></div>}
             </div>
             <div className="grid gap-2 text-xs sm:grid-cols-2">
               {submitterStatus && <div className="border border-accent/40 bg-accent/5 p-2 text-muted"><p className="font-bold text-accent">Your transmissions: {submitterStatus.used} / {submitterStatus.limit}</p><p>Remaining: {submitterStatus.remaining}</p>{submitterStatus.cooldownRemainingSeconds > 0 && <p className="text-accent">Cooldown: {formatCooldown(submitterStatus.cooldownRemainingSeconds)}</p>}</div>}
               {effectiveCooldown > 0 && <div className="border border-accent/40 bg-accent/5 p-2 text-accent">Next transmission available in {formatCooldown(effectiveCooldown)}</div>}
               <div className="border border-border bg-background/40 p-2 text-muted">{checkCopy}</div>
-              {!priorityCheckoutAvailable && <div className="border border-border bg-background/40 p-2 text-muted">Priority Signal Upgrade is unavailable for this session. Free Transmission remains active.</div>}
+              {!priorityPaymentsAvailable && <div className="border border-border bg-background/40 p-2 text-muted">Priority Signal Upgrade is unavailable for this session. Free Transmission remains active.</div>}
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               <button type="button" onClick={() => setStep("track")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Back</button>

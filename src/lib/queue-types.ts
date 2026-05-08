@@ -62,6 +62,11 @@ export interface QueueEntry {
   priorityUpgradePaidAt?: string | null;
   priorityUpgradePaymentProvider?: string | null;
   priorityUpgradePaymentId?: string | null;
+  priorityUpgradeCheckoutProvider?: string | null;
+  priorityUpgradeCheckoutSessionId?: string | null;
+  priorityUpgradeCheckoutUrl?: string | null;
+  priorityUpgradeCheckoutCreatedAt?: string | null;
+  priorityUpgradeCheckoutExpiresAt?: string | null;
   priorityUpgradeAmountCents?: number | null;
   priorityUpgradeCurrency?: string | null;
 }
@@ -87,6 +92,7 @@ export interface QueueSessionSummary {
   trackLimitPerArtist: number;
   queueCapacity: number;
   skipGameTapTarget: number;
+  submissionCooldownSeconds: number;
   activeCount: number;
   completedCount: number;
   removedCount: number;
@@ -151,7 +157,7 @@ export interface QueuePublicSubmitterStatus {
 }
 
 export interface QueuePublicSnapshot {
-  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled">;
+  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "submissionCooldownSeconds" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled">;
   status: QueuePublicStatus;
   queue: QueuePublicTrack[];
   completed: QueuePublicTrack[];

@@ -41,7 +41,7 @@ export async function createPrioritySignalCheckoutSession({
   amountCents: number;
   currency: string;
   label: string;
-}): Promise<{ url: string; sessionId: string }> {
+}): Promise<{ url: string; sessionId: string; createdAt: string; expiresAt: string | null }> {
   const stripe = getStripe();
   const origin = getSiteUrl();
   const metadata = { trackId, queueSessionId, source: PRIORITY_SIGNAL_SOURCE };
@@ -69,7 +69,12 @@ export async function createPrioritySignalCheckoutSession({
   });
 
   if (!session.url) throw new Error("Stripe did not return a checkout URL.");
-  return { url: session.url, sessionId: session.id };
+  return {
+    url: session.url,
+    sessionId: session.id,
+    createdAt: new Date(session.created * 1000).toISOString(),
+    expiresAt: typeof session.expires_at === "number" ? new Date(session.expires_at * 1000).toISOString() : null,
+  };
 }
 
 export function isPrioritySignalCheckoutSession(session: Stripe.Checkout.Session): boolean {

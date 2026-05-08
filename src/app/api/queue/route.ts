@@ -1,4 +1,3 @@
-import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { detectQueueSourceType } from "@/lib/queue-types";
 import { getPublicQueueSnapshot, requestPriorityUpgradePlaceholder, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
@@ -9,32 +8,44 @@ export const runtime = "nodejs";
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 const AUDIO_MIME_TYPES = new Set(["audio/mpeg", "audio/mp3", "audio/wav", "audio/wave", "audio/x-wav"]);
 const UPLOAD_FALLBACK_MESSAGE = "Upload could not be completed. Please try again or submit a Spotify, SoundCloud, YouTube, or direct track link.";
+const BLOB_HOST_SUFFIX = ".private.blob.vercel-storage.com";
+const UPLOAD_PREFIX = "/barcode-radio-queue/";
 
-function cleanText(value: FormDataEntryValue | null): string {
+function validateUploadedBlobUrl(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) throw new Error("Uploaded audio file is missing.");
+  try {
+    const parsed = new URL(value.trim());
+    if (parsed.protocol !== "https:" || !parsed.hostname.endsWith(BLOB_HOST_SUFFIX) || !parsed.pathname.startsWith(UPLOAD_PREFIX)) throw new Error("Uploaded audio file is invalid.");
+    return parsed.toString();
+  } catch {
+    throw new Error("Uploaded audio file is invalid.");
+  }
+}
+
+function validateUploadFileName(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) throw new Error("Uploaded audio file name is missing.");
+  return value.trim().slice(0, 240);
+}
+
+function validateUploadFileSize(value: unknown): number {
+  const size = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(size) || size <= 0) throw new Error("Uploaded audio file size is missing.");
+  if (size > MAX_UPLOAD_BYTES) throw new Error("Uploads must be 100MB or less.");
+  return Math.round(size);
+}
+
+function validateUploadMimeType(value: unknown): string {
+  if (typeof value !== "string" || !AUDIO_MIME_TYPES.has(value)) throw new Error("Only MP3 and WAV uploads are accepted.");
+  return value;
+}
+
+function cleanBodyText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function parseDuration(value: FormDataEntryValue | null): number | null {
-  if (typeof value !== "string" || !value) return null;
-  const parsed = Number(value);
+function parseBodyDuration(value: unknown): number | null {
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
-}
-
-function safeFileName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-").slice(0, 120) || "track";
-}
-
-async function putBlob(file: File): Promise<{ url: string }> {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) throw new Error("UPLOAD_STORAGE_NOT_CONFIGURED");
-
-  const pathname = `barcode-radio-queue/${Date.now()}-${safeFileName(file.name)}`;
-  const blob = await put(pathname, file, {
-    access: "private",
-    addRandomSuffix: true,
-    contentType: file.type || "application/octet-stream",
-  });
-
-  return { url: blob.url };
 }
 
 export async function GET(req: Request) {
@@ -58,75 +69,13 @@ export async function POST(req: Request) {
         if (!track) return NextResponse.json({ error: "Priority Signal Upgrade is not available for this track." }, { status: 409 });
         return NextResponse.json({ track, message: "Priority Signal Upgrade is being prepared. No payment has been processed." });
       }
-      return NextResponse.json({ error: "Unknown queue action" }, { status: 400 });
+      if (typeof body.action === "string") return NextResponse.json({ error: "Unknown queue action" }, { status: 400 });
+      return submitTrackFromBody(body);
     }
+
     const form = await req.formData();
-    const artist = cleanText(form.get("artist"));
-    const title = cleanText(form.get("title"));
-    const mode = cleanText(form.get("mode"));
-    const detectedDurationSeconds = parseDuration(form.get("detectedDurationSeconds"));
-    const note = cleanText(form.get("note")).slice(0, 500);
-    const tiktokHandle = cleanText(form.get("tiktokHandle"));
-    const collaboratorNames = cleanText(form.get("collaboratorNames")).slice(0, 200);
-    const contactEmail = cleanText(form.get("contactEmail")).slice(0, 200);
-    const submitterToken = cleanText(form.get("submitterToken")).slice(0, 120);
-    const sessionId = cleanText(form.get("sessionId"));
-    const active = await getPublicQueueSnapshot();
-    if (sessionId && active.session.sessionId !== sessionId) {
-      return NextResponse.json({ error: "This broadcast queue is closed." }, { status: 409 });
-    }
-    if (!active.status.isOpen) {
-      return NextResponse.json({ error: "This broadcast queue is closed." }, { status: 409 });
-    }
-    if (active.status.isFull || active.status.activeCount >= active.status.capacity) {
-      return NextResponse.json({ error: "This broadcast queue is full for new transmissions." }, { status: 409 });
-    }
-
-    if (!artist || !title) return NextResponse.json({ error: "Artist and title are required." }, { status: 400 });
-    if (!tiktokHandle) return NextResponse.json({ error: "TikTok handle is required." }, { status: 400 });
-
-    if (mode === "upload") {
-      const file = form.get("file");
-      if (!(file instanceof File) || file.size === 0) return NextResponse.json({ error: "Select an MP3 or WAV file." }, { status: 400 });
-      const extOk = /\.(mp3|wav)$/i.test(file.name);
-      if (!extOk || !AUDIO_MIME_TYPES.has(file.type)) return NextResponse.json({ error: "Only MP3 and WAV uploads are accepted." }, { status: 400 });
-      if (file.size > MAX_UPLOAD_BYTES) return NextResponse.json({ error: "Uploads must be 100MB or less." }, { status: 400 });
-
-      let blob: { url: string };
-      try {
-        blob = await putBlob(file);
-      } catch (uploadError) {
-        console.warn("[queue] artist upload failed", uploadError);
-        return NextResponse.json({ error: UPLOAD_FALLBACK_MESSAGE }, { status: 503 });
-      }
-      const track = await submitRadioTrack({
-        artist,
-        title,
-        link: blob.url,
-        fileUrl: blob.url,
-        fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.type,
-        sourceType: "upload",
-        detectedDurationSeconds,
-        durationSource: detectedDurationSeconds ? "upload_metadata" : "file_metadata",
-        note,
-        submitterArtistName: artist,
-        tiktokHandle,
-        collaboratorNames,
-        contactEmail,
-        submitterToken,
-      });
-      return NextResponse.json({ track: toPublicQueueTrack(track), message: "Track entered Free Transmissions.", cooldownRemainingSeconds: 300 }, { status: 201 });
-    }
-
-    const link = cleanText(form.get("link"));
-    if (!link) return NextResponse.json({ error: "Paste a track link." }, { status: 400 });
-    try { new URL(link); } catch { return NextResponse.json({ error: "Enter a valid track URL." }, { status: 400 }); }
-
-    const sourceType = detectQueueSourceType(link);
-    const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, contactEmail, submitterToken });
-    return NextResponse.json({ track: toPublicQueueTrack(track), message: "Track entered Free Transmissions.", cooldownRemainingSeconds: 300 }, { status: 201 });
+    const body = Object.fromEntries(form.entries());
+    return submitTrackFromBody(body);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Submission failed";
     const reasons = Array.isArray((error as { reasons?: unknown }).reasons) ? (error as { reasons: string[] }).reasons : [];
@@ -135,7 +84,70 @@ export async function POST(req: Request) {
     const cooldownRemainingSeconds = typeof (error as { remainingSeconds?: unknown }).remainingSeconds === "number" ? (error as { remainingSeconds: number }).remainingSeconds : 0;
     if (cooldownRemainingSeconds > 0) return NextResponse.json({ error: "Submission cooldown active.", cooldownRemainingSeconds }, { status: 429 });
     if (isDuplicateBlock) return NextResponse.json({ error: "This track has already been submitted to this session.", reasons }, { status: 409 });
-    const publicMessage = isLimitBlock ? "Submission limit reached for this session." : message === "Queue is closed" ? "This broadcast queue is closed." : message === "Queue is full for new transmissions." ? "This broadcast queue is full for new transmissions." : "Submission failed. Please try again.";
-    return NextResponse.json({ error: publicMessage, reasons }, { status: isLimitBlock ? 409 : message === "Queue is closed" ? 409 : 500 });
+    const publicMessage = isLimitBlock ? "Submission limit reached for this session." : message === "Queue is closed" ? "This broadcast queue is closed." : message === "Queue is full for new transmissions." ? "This broadcast queue is full for new transmissions." : message === "Uploaded audio file is missing." || message === "Uploaded audio file is invalid." ? UPLOAD_FALLBACK_MESSAGE : message === "Only MP3 and WAV uploads are accepted." || message === "Uploads must be 100MB or less." || message === "Uploaded audio file name is missing." || message === "Uploaded audio file size is missing." ? message : "Submission failed. Please try again.";
+    const status = isLimitBlock ? 409 : message === "Queue is closed" ? 409 : message.startsWith("Uploaded audio") || message === "Only MP3 and WAV uploads are accepted." || message === "Uploads must be 100MB or less." ? 400 : 500;
+    return NextResponse.json({ error: publicMessage, reasons }, { status });
   }
+}
+
+async function submitTrackFromBody(body: Record<string, unknown>): Promise<NextResponse> {
+  const artist = cleanBodyText(body.artist);
+  const title = cleanBodyText(body.title);
+  const mode = cleanBodyText(body.mode);
+  const detectedDurationSeconds = parseBodyDuration(body.detectedDurationSeconds);
+  const note = cleanBodyText(body.note).slice(0, 500);
+  const tiktokHandle = cleanBodyText(body.tiktokHandle);
+  const collaboratorNames = cleanBodyText(body.collaboratorNames).slice(0, 200);
+  const contactEmail = cleanBodyText(body.contactEmail).slice(0, 200);
+  const submitterToken = cleanBodyText(body.submitterToken).slice(0, 120);
+  const sessionId = cleanBodyText(body.sessionId);
+  const active = await getPublicQueueSnapshot();
+
+  if (sessionId && active.session.sessionId !== sessionId) {
+    return NextResponse.json({ error: "This broadcast queue is closed." }, { status: 409 });
+  }
+  if (!active.status.isOpen) {
+    return NextResponse.json({ error: "This broadcast queue is closed." }, { status: 409 });
+  }
+  if (active.status.isFull || active.status.activeCount >= active.status.capacity) {
+    return NextResponse.json({ error: "This broadcast queue is full for new transmissions." }, { status: 409 });
+  }
+
+  if (!artist || !title) return NextResponse.json({ error: "Artist and title are required." }, { status: 400 });
+  if (!tiktokHandle) return NextResponse.json({ error: "TikTok handle is required." }, { status: 400 });
+
+  if (mode === "upload") {
+    const fileUrl = validateUploadedBlobUrl(body.uploadedBlobUrl || body.fileUrl);
+    const fileName = validateUploadFileName(body.fileName);
+    const fileSize = validateUploadFileSize(body.fileSize);
+    const mimeType = validateUploadMimeType(body.mimeType);
+
+    const track = await submitRadioTrack({
+      artist,
+      title,
+      link: fileUrl,
+      fileUrl,
+      fileName,
+      fileSize,
+      mimeType,
+      sourceType: "upload",
+      detectedDurationSeconds,
+      durationSource: detectedDurationSeconds ? "upload_metadata" : "file_metadata",
+      note,
+      submitterArtistName: artist,
+      tiktokHandle,
+      collaboratorNames,
+      contactEmail,
+      submitterToken,
+    });
+    return NextResponse.json({ track: toPublicQueueTrack(track), message: "Track entered Free Transmissions.", cooldownRemainingSeconds: 300 }, { status: 201 });
+  }
+
+  const link = cleanBodyText(body.link);
+  if (!link) return NextResponse.json({ error: "Paste a track link." }, { status: 400 });
+  try { new URL(link); } catch { return NextResponse.json({ error: "Enter a valid track URL." }, { status: 400 }); }
+
+  const sourceType = detectQueueSourceType(link);
+  const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, contactEmail, submitterToken });
+  return NextResponse.json({ track: toPublicQueueTrack(track), message: "Track entered Free Transmissions.", cooldownRemainingSeconds: 300 }, { status: 201 });
 }

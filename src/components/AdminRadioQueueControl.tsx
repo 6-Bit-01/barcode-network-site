@@ -10,8 +10,11 @@ type Tab = "active" | "completed" | "removed";
 type AdminQueueAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority";
 
 const LANE_LABELS: Record<QueueLane, string> = { priority: "Priority Signal", wheel: "Wheel Winner", regular: "Regular Queue" };
+const FIXED_PRIORITY_LABEL = "Priority Signal Upgrade";
+const FIXED_PRIORITY_INSTRUCTIONS = "Moves this track into the Priority Signal lane after payment confirmation.";
 
 function sourceLabel(entry: QueueEntry): string { return (entry.sourceType ?? "other").toUpperCase(); }
+function formatPrice(cents = 0, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }
 function adminAudioUrl(entry: QueueEntry): string {
   const params = new URLSearchParams({ id: entry.id });
   const sessionId = initialSessionIdFromUrl();
@@ -69,6 +72,13 @@ export function AdminRadioQueueControl() {
   const [mounted, setMounted] = useState(false);
   const [endConfirmOpen, setEndConfirmOpen] = useState(false);
   const [endingSession, setEndingSession] = useState(false);
+  const [sessionOptionsOpen, setSessionOptionsOpen] = useState(false);
+  const [priorityEnabled, setPriorityEnabled] = useState(false);
+  const [priorityPriceCents, setPriorityPriceCents] = useState(0);
+  const [priorityCurrency, setPriorityCurrency] = useState("usd");
+  const [prioritySaving, setPrioritySaving] = useState(false);
+  const [priorityMessage, setPriorityMessage] = useState<string | null>(null);
+  const [prioritySaveError, setPrioritySaveError] = useState<string | null>(null);
 
   async function load(sessionId?: string) {
     const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
@@ -89,9 +99,19 @@ export function AdminRadioQueueControl() {
     return () => clearInterval(interval);
   }, []);
 
-  async function post(body: Record<string, unknown>) {
+  useEffect(() => {
+    if (!state?.session || sessionOptionsOpen) return;
+    setPriorityEnabled(state.session.priorityUpgradePaymentsEnabled === true);
+    setPriorityPriceCents(state.session.priorityUpgradePriceCents ?? 0);
+    setPriorityCurrency(state.session.priorityUpgradeCurrency ?? "usd");
+  }, [sessionOptionsOpen, state?.session]);
+
+  async function post(body: Record<string, unknown>): Promise<QueueState | null> {
     const res = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (res.ok) setState(await res.json());
+    if (!res.ok) return null;
+    const next = await res.json();
+    setState(next);
+    return next;
   }
   async function action(id: string, next: AdminQueueAction) { await post(next === "pullNext" ? { action: next } : { id, action: next }); }
   async function playerAction(id: string, next: AdminQueueAction) {
@@ -118,6 +138,35 @@ export function AdminRadioQueueControl() {
     await action(wheelSelection, "wheel");
     setWheelSelection("");
     setWheelSearch("");
+  }
+  function openSessionOptions() {
+    if (state?.session) {
+      setPriorityEnabled(state.session.priorityUpgradePaymentsEnabled === true);
+      setPriorityPriceCents(state.session.priorityUpgradePriceCents ?? 0);
+      setPriorityCurrency(state.session.priorityUpgradeCurrency ?? "usd");
+    }
+    setPriorityMessage(null);
+    setPrioritySaveError(null);
+    setSessionOptionsOpen((value) => !value);
+  }
+  async function savePrioritySettings() {
+    if (priorityEnabled && priorityPriceCents <= 0) {
+      setPrioritySaveError("Checkout requires a price above 0.");
+      setPriorityMessage(null);
+      return;
+    }
+    const paidUpgradesEnabled = priorityEnabled && priorityPriceCents > 0;
+    setPrioritySaving(true);
+    setPrioritySaveError(null);
+    setPriorityMessage(null);
+    const next = await post({ action: "updatePriorityUpgradeSettings", enabled: paidUpgradesEnabled, label: FIXED_PRIORITY_LABEL, instructions: FIXED_PRIORITY_INSTRUCTIONS, priceCents: priorityPriceCents, currency: priorityCurrency, paymentsEnabled: paidUpgradesEnabled });
+    setPrioritySaving(false);
+    if (!next) {
+      setPrioritySaveError("Priority Signal settings could not be saved.");
+      return;
+    }
+    setPriorityMessage("Priority Signal settings saved.");
+    window.setTimeout(() => setPriorityMessage(null), 3500);
   }
 
   const lanes = useMemo(() => {
@@ -173,9 +222,13 @@ export function AdminRadioQueueControl() {
         {hasCurrentSession ? (
           <div className="space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <a href="/admin/show-management" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Show Management</a>
+              <div className="flex flex-wrap gap-2">
+                <a href="/admin/show-management" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Show Management</a>
+                {canControlSession && <button type="button" onClick={openSessionOptions} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">{sessionOptionsOpen ? "Hide Session Options" : "Edit Session Options"}</button>}
+              </div>
               {canControlSession && <button onClick={() => setEndConfirmOpen(true)} className="border border-danger/60 px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Session</button>}
             </div>
+            {canControlSession && sessionOptionsOpen && <section className="space-y-3 border border-border bg-background/40 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-xs uppercase tracking-[0.3em] text-accent">Priority Signal Upgrade</p><h3 className="mt-1 text-lg font-bold text-foreground">Session Options</h3><p className="mt-1 text-xs text-muted">Only the verified Stripe webhook marks a track paid or moves it into Priority Signal.</p></div><div className="border border-border bg-surface p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Display price</p><p className="mt-1 font-bold text-foreground">{formatPrice(priorityPriceCents, priorityCurrency)}</p></div></div><div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(10rem,0.35fr)]"><label className="flex items-center justify-between gap-3 border border-border bg-surface p-3 text-sm"><span><span className="block font-bold text-foreground">Paid upgrades {priorityEnabled ? "enabled" : "disabled"}</span><span className="text-xs text-muted">Controls Stripe checkout availability for this session.</span></span><input type="checkbox" checked={priorityEnabled} onChange={(event) => setPriorityEnabled(event.target.checked)} /></label><label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Price</span><input type="number" min={0} value={priorityPriceCents} onChange={(event) => setPriorityPriceCents(Math.max(0, Number(event.target.value)))} className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-xs text-muted">Enter cents. Example: 1000 = $10.00.</span></label></div>{prioritySaveError && <p className="border border-danger/40 bg-danger/10 p-2 text-sm text-danger">{prioritySaveError}</p>}{priorityMessage && <p className="border border-accent/50 bg-accent/10 p-2 text-sm font-bold text-accent">{priorityMessage}</p>}<div className="flex flex-wrap gap-2"><button type="button" onClick={savePrioritySettings} disabled={prioritySaving} className="border border-accent bg-accent/10 px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{prioritySaving ? "Saving…" : "Save Settings"}</button><button type="button" onClick={() => setSessionOptionsOpen(false)} disabled={prioritySaving} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">Close</button></div></section>}
             <div className="grid gap-3 sm:grid-cols-4">
               <div className="border border-border bg-background/40 p-4"><p className="text-xs text-muted">Queue</p><p className={state?.publicStatus?.isOpen ? "text-accent" : "text-danger"}>{state?.publicStatus?.isOpen ? "Open" : "Closed"}</p></div>
               <div className="border border-border bg-background/40 p-4"><p className="text-xs text-muted">Active count</p><p>{state?.publicStatus?.activeCount ?? "—"}</p></div>

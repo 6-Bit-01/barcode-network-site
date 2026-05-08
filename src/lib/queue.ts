@@ -34,7 +34,7 @@ const DEFAULT_QUEUE_CAPACITY = 50;
 const SUBMISSION_COOLDOWN_SECONDS = 5 * 60;
 const DEFAULT_PRIORITY_UPGRADE_LABEL = "Priority Signal Upgrade";
 const DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS = "Priority Signal Upgrade is being prepared. No payment has been processed.";
-const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 0;
+const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 1000;
 const DEFAULT_PRIORITY_UPGRADE_CURRENCY = "usd";
 
 type QueueAdminAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending";

@@ -328,50 +328,50 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
   const estimatedPosition = Math.min((status?.activeCount ?? publicQueue.length) + 1, status?.capacity ?? ((status?.activeCount ?? publicQueue.length) + 1));
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[0.72fr_1fr]">
-      <aside className="border border-border bg-surface p-4 space-y-3">
-        <div><p className="text-xs uppercase tracking-[0.35em] text-muted">// Current Broadcast Queue</p><p className="text-sm font-bold text-foreground mt-2">{session?.title ?? "BARCODE Radio"}</p><p className="text-xs text-muted">{session?.showDate ?? "Active show date syncing"}</p></div>
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div className="border border-border p-3"><p className="text-xs text-muted">Queue</p><p className={status?.isOpen ? "text-accent" : "text-danger"}>{status?.isOpen ? "Open" : "Closed"}</p></div>
-          <div className="border border-border p-3"><p className="text-xs text-muted">Active transmissions</p><p>{status?.activeCount ?? "—"}</p><p className="mt-1 text-[10px] text-muted">Includes Now Playing + Up Next + waiting lanes.</p></div>
-          <div className="border border-border p-3"><p className="text-xs text-muted">Estimated active runtime</p><p>{status ? formatRuntime(status.estimatedRuntimeSeconds) : "—"}</p></div>
-          <div className="border border-border p-3"><p className="text-xs text-muted">Queue pressure</p><p>{pressureLabel(status)}</p></div>
+    <div className="grid gap-3 lg:grid-cols-[0.56fr_1fr]">
+      <aside className="border border-border bg-surface p-3 space-y-2 lg:max-h-[calc(100dvh-8rem)] lg:overflow-hidden">
+        <div><p className="text-[10px] uppercase tracking-[0.3em] text-muted">// Current Broadcast Queue</p><p className="mt-1 text-sm font-bold text-foreground">{session?.title ?? "BARCODE Radio"}</p><p className="text-xs text-muted">{session?.showDate ?? "Active show date syncing"}</p></div>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="border border-border p-2"><p className="text-[10px] text-muted">Queue</p><p className={status?.isOpen ? "text-accent" : "text-danger"}>{status?.isOpen ? "Open" : "Closed"}</p></div>
+          <div className="border border-border p-2"><p className="text-[10px] text-muted">Active transmissions</p><p>{status?.activeCount ?? "—"}</p></div>
+          <div className="border border-border p-2"><p className="text-[10px] text-muted">Estimated active runtime</p><p>{status ? formatRuntime(status.estimatedRuntimeSeconds) : "—"}</p></div>
+          <div className="border border-border p-2"><p className="text-[10px] text-muted">Queue pressure</p><p>{pressureLabel(status)}</p></div>
         </div>
         <PublicQueuePreview queue={publicQueue} lastSubmittedTrackId={lastSubmittedTrackId} />
       </aside>
 
-      <form onSubmit={submit} className="border border-border bg-surface p-4 space-y-4">
-        {error && <div className="border border-danger/40 bg-danger/5 p-4 text-danger text-sm">{error}</div>}
-        {effectiveCooldown > 0 && <div className="border border-accent/40 bg-accent/5 p-3 text-sm text-accent">Next transmission available in {formatCooldown(effectiveCooldown)}</div>}
-        {submitterStatus && <div className="border border-accent/40 bg-accent/5 p-3 text-sm text-muted"><p className="font-bold text-accent">Your transmissions this session: {submitterStatus.used} / {submitterStatus.limit}</p><p className="mt-1">Remaining slots: {submitterStatus.remaining}</p>{submitterStatus.submitted.length > 0 && <p className="mt-1">Already sent: {submitterStatus.submitted.map((entry) => entry.submittedSongTitle).join(", ")}</p>}{submitterStatus.cooldownRemainingSeconds > 0 && <p className="mt-1 text-accent">Next transmission available in {formatCooldown(submitterStatus.cooldownRemainingSeconds)}</p>}</div>}
+      <form onSubmit={submit} className="border border-border bg-surface p-3 space-y-2.5">
+        {error && <div className="border border-danger/40 bg-danger/5 p-2 text-danger text-xs">{error}</div>}
+        {effectiveCooldown > 0 && <div className="border border-accent/40 bg-accent/5 p-2 text-xs text-accent">Next transmission available in {formatCooldown(effectiveCooldown)}</div>}
+        {submitterStatus && <div className="border border-accent/40 bg-accent/5 p-2 text-xs text-muted"><p className="font-bold text-accent">Your transmissions this session: {submitterStatus.used} / {submitterStatus.limit}</p><p className="inline pl-2">Remaining: {submitterStatus.remaining}</p>{submitterStatus.submitted.length > 0 && <p className="mt-1">Already sent: {submitterStatus.submitted.map((entry) => entry.submittedSongTitle).join(", ")}</p>}{submitterStatus.cooldownRemainingSeconds > 0 && <p className="mt-1 text-accent">Next transmission available in {formatCooldown(submitterStatus.cooldownRemainingSeconds)}</p>}</div>}
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <button type="button" onClick={() => setMode("link")} className={`border p-4 text-left ${mode === "link" ? "border-accent bg-accent/10" : "border-border"}`}><span className="text-xs uppercase tracking-widest text-muted">Submit a link</span><p className="text-sm mt-1">YouTube, SoundCloud, Spotify, or other URL.</p></button>
-          <button type="button" onClick={() => setMode("upload")} className={`border p-4 text-left ${mode === "upload" ? "border-accent bg-accent/10" : "border-border"}`}><span className="text-xs uppercase tracking-widest text-muted">Upload MP3/WAV</span><p className="text-sm mt-1">Audio files up to 100MB.</p></button>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button type="button" onClick={() => setMode("link")} className={`border p-2.5 text-left ${mode === "link" ? "border-accent bg-accent/10" : "border-border"}`}><span className="text-xs uppercase tracking-widest text-muted">Submit a link</span><p className="mt-1 text-xs text-muted">YouTube, SoundCloud, Spotify, or URL.</p></button>
+          <button type="button" onClick={() => setMode("upload")} className={`border p-2.5 text-left ${mode === "upload" ? "border-accent bg-accent/10" : "border-border"}`}><span className="text-xs uppercase tracking-widest text-muted">Upload MP3/WAV</span><p className="mt-1 text-xs text-muted">Audio files up to 100MB.</p></button>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Artist</span><input value={artist} onChange={(e) => setArtist(e.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" required /></label>
-          <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" required /></label>
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Artist</span><input value={artist} onChange={(e) => setArtist(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+          <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">TikTok handle</span><input value={tiktokHandle} onChange={(e) => setTikTokHandle(e.target.value)} placeholder="@six.bit" className="w-full bg-background border border-border px-3 py-2.5 text-sm" required /></label>
-          <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Featured/collaborator artist(s)</span><input value={collaboratorNames} onChange={(e) => setCollaboratorNames(e.target.value)} placeholder="Optional" className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label>
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">TikTok handle</span><input value={tiktokHandle} onChange={(e) => setTikTokHandle(e.target.value)} placeholder="@six.bit" className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+          <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Featured/collaborator artist(s)</span><input value={collaboratorNames} onChange={(e) => setCollaboratorNames(e.target.value)} placeholder="Optional" className="w-full bg-background border border-border px-3 py-2 text-sm" /></label>
         </div>
-        <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Contact email</span><input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="Optional, private" className="w-full bg-background border border-border px-3 py-2.5 text-sm" /><span className="block text-[11px] text-muted">Private. Used only for queue safety and session limits.</span></label>
+        <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Contact email</span><input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="Optional, private" className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-[11px] text-muted">Private queue safety only.</span></label>
 
         {mode === "link" ? (
-          <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Track link</span><input type="url" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://soundcloud.com/..." className="w-full bg-background border border-border px-3 py-2.5 text-sm" required /></label>
+          <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Track link</span><input type="url" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://soundcloud.com/..." className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
         ) : (
-          <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">MP3/WAV file</span><input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,.mp3,.wav" onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" required /></label>
+          <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">MP3/WAV file</span><input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,.mp3,.wav" onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
         )}
 
-        <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Optional transmission note</span><textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} rows={2} placeholder="Any clean context the host should know. Do not include private contact info." className="w-full bg-background border border-border px-3 py-2.5 text-sm" /><span className="block text-[11px] text-muted">Visible to queue control only. Public queue preview never shows notes.</span></label>
+        <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Optional transmission note</span><textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} rows={1} placeholder="Optional host note. No private contact info." className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-[11px] text-muted">Queue control only; never public.</span></label>
 
-        <div className="border border-border bg-background/40 p-3 text-sm text-muted">{checkCopy}</div>
-        <div className="border border-accent/30 bg-accent/5 p-3 text-sm text-muted">If you submit now, this track enters Free Transmissions around position #{estimatedPosition} in the active broadcast queue.</div>
-        <button disabled={submitting || effectiveCooldown > 0 || status?.isOpen === false || status?.isFull === true} className="w-full border border-accent px-4 py-3 text-sm uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{submitting ? "Submitting…" : effectiveCooldown > 0 ? `Next transmission available in ${formatCooldown(effectiveCooldown)}` : status?.isFull ? "Queue Full" : "Enter Free Transmissions"}</button>
+        <div className="border border-border bg-background/40 p-2 text-xs text-muted">{checkCopy}</div>
+        <div className="border border-accent/30 bg-accent/5 p-2 text-xs text-muted">If you submit now, this track enters Free Transmissions around position #{estimatedPosition} in the active broadcast queue.</div>
+        <button disabled={submitting || effectiveCooldown > 0 || status?.isOpen === false || status?.isFull === true} className="w-full border border-accent px-4 py-2.5 text-sm uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{submitting ? "Submitting…" : effectiveCooldown > 0 ? `Next transmission available in ${formatCooldown(effectiveCooldown)}` : status?.isFull ? "Queue Full" : "Enter Free Transmissions"}</button>
       </form>
     </div>
   );
@@ -451,18 +451,17 @@ function PublicQueuePreview({ queue, lastSubmittedTrackId }: { queue: QueuePubli
   return (
     <div className="space-y-3">
       <div>
-        <p className="text-xs uppercase tracking-[0.25em] text-muted">Public queue preview</p>
-        <p className="text-[11px] text-muted mt-1">Artist/title and source type only. Removed tracks, notes, and control metadata stay private.</p>
+        <p className="text-[10px] uppercase tracking-[0.25em] text-muted">Public queue preview</p>
       </div>
-      <div className="space-y-2">
-        {queue.length === 0 ? <p className="border border-border/60 p-3 text-sm text-muted">No active transmissions are visible yet.</p> : queue.slice(0, 4).map((entry, index) => {
+      <div className="space-y-1.5 lg:max-h-48 lg:overflow-hidden">
+        {queue.length === 0 ? <p className="border border-border/60 p-2 text-xs text-muted">No active transmissions are visible yet.</p> : queue.slice(0, 3).map((entry, index) => {
           const highlighted = entry.id === lastSubmittedTrackId;
           return (
-            <div key={entry.id} className={`border p-3 transition-all ${highlighted ? "border-accent bg-accent/10 animate-pulse" : "border-border bg-background/30"}`}>
+            <div key={entry.id} className={`border p-2 transition-all ${highlighted ? "border-accent bg-accent/10 animate-pulse" : "border-border bg-background/30"}`}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs text-muted">#{index + 1} · {entry.sourceType.toUpperCase()} · {entry.lane === "priority" ? "Priority" : entry.lane === "wheel" ? "Wheel" : "Free Transmissions"}</p>
-                  <p className="text-sm font-bold text-foreground">{entry.submittedArtistName} — {entry.submittedSongTitle}</p>
+                  <p className="text-xs font-bold text-foreground">{entry.submittedArtistName} — {entry.submittedSongTitle}</p>
                   {(entry.detectedArtistName || entry.detectedSongTitle) && <p className="text-[11px] text-muted">Detected: {entry.detectedArtistName || "Unknown artist"} — {entry.detectedSongTitle || "Unknown title"}</p>}
                 </div>
                 <span className="shrink-0 text-[11px] text-muted">{entry.durationLabel}</span>
@@ -471,7 +470,7 @@ function PublicQueuePreview({ queue, lastSubmittedTrackId }: { queue: QueuePubli
             </div>
           );
         })}
-        {queue.length > 4 && <p className="border border-border/60 p-2 text-[11px] uppercase tracking-widest text-muted">+{queue.length - 4} more signals visible after intake collapse</p>}
+        {queue.length > 3 && <p className="border border-border/60 p-2 text-[11px] uppercase tracking-widest text-muted">+{queue.length - 3} more signals visible after intake collapse</p>}
       </div>
     </div>
   );

@@ -41,6 +41,8 @@ export function AdminShowManagement() {
   const [description, setDescription] = useState(defaultDescription(todayDate()));
   const [trackLimitPerArtist, setTrackLimitPerArtist] = useState(3);
   const [queueCapacity, setQueueCapacity] = useState(50);
+  const [endConfirmOpen, setEndConfirmOpen] = useState(false);
+  const [endingSession, setEndingSession] = useState(false);
   const router = useRouter();
 
   async function load(sessionId?: string) {
@@ -68,20 +70,30 @@ export function AdminShowManagement() {
     if (next?.session?.sessionId) router.push(`/admin/queue?sessionId=${encodeURIComponent(next.session.sessionId)}`);
   }
 
+  async function endSession() {
+    setEndingSession(true);
+    await post({ action: "archiveSession" });
+    setEndConfirmOpen(false);
+    setEndingSession(false);
+    await load();
+  }
+
   useEffect(() => { load(); }, []);
 
   if (error) return <div className="border border-danger/40 bg-danger/5 p-6 text-danger">{error}</div>;
 
   const session = state?.session;
   const readOnly = Boolean(state?.readOnly || session?.status === "archived");
-  const pastSessions = (state?.sessions ?? []).filter((item) => item.sessionId !== session?.sessionId);
-  const queueIsOpen = Boolean(session && !readOnly && session.queueOpen);
+  const currentSession = session && !readOnly ? session : null;
+  const pastSessions = (state?.sessions ?? []).filter((item) => item.sessionId !== currentSession?.sessionId);
+  const queueIsOpen = Boolean(currentSession?.queueOpen);
 
   return (
     <div className="space-y-6">
-      <StartNewSession queueIsOpen={queueIsOpen} onCloseSubmissions={() => post({ action: "setOpen", isOpen: false })} title={title} description={description} trackLimitPerArtist={trackLimitPerArtist} queueCapacity={queueCapacity} onTitle={setTitle} onDescription={setDescription} onTrackLimit={setTrackLimitPerArtist} onCapacity={setQueueCapacity} onStart={startSession} sessionId={session?.sessionId} />
-      <CurrentSession session={session ?? null} readOnly={readOnly} onPost={post} />
-      <SessionData session={session ?? null} />
+      <StartNewSession queueIsOpen={queueIsOpen} onCloseSubmissions={() => post({ action: "setOpen", isOpen: false })} title={title} description={description} trackLimitPerArtist={trackLimitPerArtist} queueCapacity={queueCapacity} onTitle={setTitle} onDescription={setDescription} onTrackLimit={setTrackLimitPerArtist} onCapacity={setQueueCapacity} onStart={startSession} sessionId={currentSession?.sessionId} />
+      <CurrentSession session={currentSession} onPost={post} onEnd={() => setEndConfirmOpen(true)} />
+      <SessionData session={currentSession} />
+      {endConfirmOpen && <EndSessionConfirm ending={endingSession} onCancel={() => setEndConfirmOpen(false)} onConfirm={endSession} />}
       <ArchivedShows sessions={pastSessions} />
     </div>
   );
@@ -91,10 +103,50 @@ function StartNewSession({ queueIsOpen, onCloseSubmissions, title, description, 
   return <section className={`space-y-5 border p-6 ${queueIsOpen ? "border-danger/60 bg-danger/10" : "border-accent/40 bg-surface"}`}><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Start New Session</p><p className="text-sm text-muted mt-2">Create a clean BARCODE Radio session. Submissions start closed; open them from Current Session when ready.</p></div>{queueIsOpen && <div className="border border-danger/50 bg-danger/10 p-4"><p className="text-sm font-bold uppercase tracking-[0.25em] text-danger">QUEUE OPEN</p><p className="mt-2 text-sm text-muted">Start New Session is locked while submissions are open for the current broadcast.</p><div className="mt-3 flex flex-wrap gap-2"><a href="/admin/queue" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Open Queue Control</a><button type="button" onClick={onCloseSubmissions} className="border border-danger/60 px-3 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background">Close Submissions</button>{sessionId && <a href={`/queue/${sessionId}`} className="border border-danger/50 px-3 py-2 text-xs uppercase tracking-widest text-danger">View Public Session</a>}</div></div>}<div className="grid gap-4 lg:grid-cols-2"><label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Session title</span><input disabled={queueIsOpen} value={title} onChange={(event) => onTitle(event.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label><label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Track limit</span><input disabled={queueIsOpen} type="number" min={1} value={trackLimitPerArtist} onChange={(event) => onTrackLimit(Number(event.target.value))} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label><label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Queue capacity</span><input disabled={queueIsOpen} type="number" min={1} value={queueCapacity} onChange={(event) => onCapacity(Number(event.target.value))} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label><label className="space-y-2 lg:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Description / rule blurb</span><textarea disabled={queueIsOpen} value={description} onChange={(event) => onDescription(event.target.value)} rows={4} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label></div><button onClick={onStart} disabled={queueIsOpen} className="border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Start New Session</button></section>;
 }
 
-function CurrentSession({ session, readOnly, onPost }: { session: QueueSessionSummary | null | undefined; readOnly: boolean; onPost: (body: Record<string, unknown>) => void }) {
-  if (!session) return <section className="border border-border bg-surface p-6"><h2 className="text-2xl font-bold text-foreground">No active broadcast session prepared.</h2><p className="text-sm text-muted mt-2">Use Start New Session to create a clean session.</p></section>;
-  return <section className="border border-border bg-surface p-6 space-y-4"><div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-xs uppercase tracking-[0.35em] text-muted">// Current Session</p><h2 className="text-2xl font-bold text-foreground mt-2">{session.title}</h2><p className="text-sm text-muted mt-1">{session.showDate} · {session.status}{readOnly ? " · read-only" : ""}</p><p className="text-sm text-muted mt-3 max-w-3xl">{session.description}</p></div><div className="flex flex-wrap gap-2"><a href={`/admin/queue?sessionId=${encodeURIComponent(session.sessionId)}`} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">{readOnly ? "Review Queue" : "Open Queue Control"}</a>{!readOnly && <button onClick={() => onPost({ action: "setOpen", isOpen: !session.queueOpen })} className={`${session.queueOpen ? "border-danger text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} border px-4 py-2 text-xs uppercase tracking-widest hover:text-background`}>{session.queueOpen ? "Close Submissions" : "Open Submissions"}</button>}</div></div><div className="grid gap-3 sm:grid-cols-4 text-sm"><div className="border border-border p-3"><p className="text-xs text-muted">Submissions</p><p className={session.queueOpen ? "text-accent" : "text-danger"}>{session.queueOpen ? "Open" : "Closed"}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Active / Capacity</p><p>{session.activeCount}/{session.queueCapacity}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed</p><p>{session.completedCount}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Removed</p><p>{session.removedCount}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Spotlight</p><p>{session.spotlightCount}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Track limit</p><p>{session.trackLimitPerArtist}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Active runtime</p><p>{formatRuntime(session.estimatedActiveRuntimeSeconds)}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed runtime</p><p>{formatRuntime(session.completedRuntimeSeconds)}</p></div></div>{!readOnly && <button onClick={() => onPost({ action: "archiveSession" })} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-danger hover:text-danger">Archive Session</button>}</section>;
+function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSummary | null | undefined; onPost: (body: Record<string, unknown>) => void; onEnd: () => void }) {
+  if (!session) {
+    return (
+      <section className="border border-border bg-surface p-5">
+        <p className="text-xs uppercase tracking-[0.35em] text-muted">// Current Session</p>
+        <h2 className="mt-2 text-xl font-bold text-foreground">No session in progress.</h2>
+        <p className="mt-1 text-sm text-muted">Start a new session or select an archived session below.</p>
+        <a href="#archived-shows" className="mt-4 inline-flex border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Archived Shows</a>
+      </section>
+    );
+  }
+  return (
+    <section className="border border-border bg-surface p-5 space-y-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.35em] text-muted">// Current Session</p>
+          <h2 className="mt-2 text-2xl font-bold text-foreground">{session.title}</h2>
+          <p className="mt-1 text-sm text-muted">{session.showDate} · {session.status}</p>
+          <p className="mt-2 max-w-3xl text-sm text-muted">{session.description}</p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap lg:justify-end">
+          <a href={`/admin/queue?sessionId=${encodeURIComponent(session.sessionId)}`} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Queue Control</a>
+          <button onClick={() => onPost({ action: "setOpen", isOpen: !session.queueOpen })} className={`${session.queueOpen ? "border-danger text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} border px-4 py-2 text-xs uppercase tracking-widest hover:text-background`}>{session.queueOpen ? "Close Submissions" : "Open Submissions"}</button>
+          <button onClick={onEnd} className="border border-danger/60 px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Session</button>
+        </div>
+      </div>
+      <div className="grid gap-3 text-sm sm:grid-cols-4">
+        <div className="border border-border p-3"><p className="text-xs text-muted">Submissions</p><p className={session.queueOpen ? "text-accent" : "text-danger"}>{session.queueOpen ? "Open" : "Closed"}</p></div>
+        <div className="border border-border p-3"><p className="text-xs text-muted">Active / Capacity</p><p>{session.activeCount}/{session.queueCapacity}</p></div>
+        <div className="border border-border p-3"><p className="text-xs text-muted">Completed</p><p>{session.completedCount}</p></div>
+        <div className="border border-border p-3"><p className="text-xs text-muted">Removed</p><p>{session.removedCount}</p></div>
+        <div className="border border-border p-3"><p className="text-xs text-muted">Spotlight</p><p>{session.spotlightCount}</p></div>
+        <div className="border border-border p-3"><p className="text-xs text-muted">Track limit</p><p>{session.trackLimitPerArtist}</p></div>
+        <div className="border border-border p-3"><p className="text-xs text-muted">Active runtime</p><p>{formatRuntime(session.estimatedActiveRuntimeSeconds)}</p></div>
+        <div className="border border-border p-3"><p className="text-xs text-muted">Completed runtime</p><p>{formatRuntime(session.completedRuntimeSeconds)}</p></div>
+      </div>
+    </section>
+  );
 }
+
+function EndSessionConfirm({ ending, onCancel, onConfirm }: { ending: boolean; onCancel: () => void; onConfirm: () => void }) {
+  return <div className="fixed inset-0 z-[10000] grid place-items-center bg-black/75 p-4 backdrop-blur-sm"><div className="w-full max-w-md border border-danger/50 bg-background p-5 shadow-[0_0_70px_rgba(255,0,0,0.24)]"><p className="text-xs uppercase tracking-[0.35em] text-danger">End Session</p><h2 className="mt-3 text-2xl font-bold text-foreground">End this session?</h2><p className="mt-2 text-sm text-muted">This will close submissions, finish the broadcast session, and move it to the archive.</p><div className="mt-5 flex flex-wrap justify-end gap-2"><button type="button" onClick={onCancel} disabled={ending} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">No, Cancel</button><button type="button" onClick={onConfirm} disabled={ending} className="border border-danger px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background disabled:opacity-50">{ending ? "Ending…" : "Yes, End Session"}</button></div></div></div>;
+}
+
 
 function SessionData({ session }: { session: QueueSessionSummary | null | undefined }) {
   const [open, setOpen] = useState(false);
@@ -118,5 +170,5 @@ function SessionData({ session }: { session: QueueSessionSummary | null | undefi
 }
 
 function ArchivedShows({ sessions }: { sessions: QueueSessionSummary[] }) {
-  return <section className="border border-border bg-surface p-5 space-y-4"><div><p className="text-xs uppercase tracking-[0.35em] text-muted">// Archived Shows</p><p className="text-sm text-muted mt-2">Past sessions stay closed. Review finished-session reports and export session-scoped data here.</p></div><div className="grid gap-3">{sessions.length === 0 ? <p className="border border-border/60 p-4 text-sm text-muted">No archived or past shows saved yet.</p> : sessions.map((session) => <article key={session.sessionId} className="border border-border bg-background/40 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><p className="font-bold text-foreground">{session.title}</p><p className="text-xs text-muted">{session.showDate} · {session.status} · active {session.activeCount}/{session.queueCapacity} · completed {session.completedCount} · removed {session.removedCount}</p><p className="text-xs text-muted">Active runtime {formatRuntime(session.estimatedActiveRuntimeSeconds)} · completed runtime {formatRuntime(session.completedRuntimeSeconds)}</p></div><div className="flex flex-wrap gap-2"><a href={`/admin/show-management/session/${encodeURIComponent(session.sessionId)}`} className="border border-accent/60 px-3 py-1.5 text-xs text-accent">View Finished Session</a><a href={`/admin/queue?sessionId=${encodeURIComponent(session.sessionId)}`} className="border border-border px-3 py-1.5 text-xs text-muted">Review Queue</a><a href={exportHref(session.sessionId)} className="border border-border px-3 py-1.5 text-xs text-muted">Download CSV</a></div></div></article>)}</div></section>;
+  return <section id="archived-shows" className="border border-border bg-surface p-5 space-y-4"><div><p className="text-xs uppercase tracking-[0.35em] text-muted">// Archived Shows</p><p className="text-sm text-muted mt-2">Past sessions stay closed. Review finished-session reports and export session-scoped data here.</p></div><div className="grid gap-3">{sessions.length === 0 ? <p className="border border-border/60 p-4 text-sm text-muted">No archived or past shows saved yet.</p> : sessions.map((session) => <article key={session.sessionId} className="border border-border bg-background/40 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><p className="font-bold text-foreground">{session.title}</p><p className="text-xs text-muted">{session.showDate} · {session.status} · active {session.activeCount}/{session.queueCapacity} · completed {session.completedCount} · removed {session.removedCount}</p><p className="text-xs text-muted">Active runtime {formatRuntime(session.estimatedActiveRuntimeSeconds)} · completed runtime {formatRuntime(session.completedRuntimeSeconds)}</p></div><div className="flex flex-wrap gap-2"><a href={`/admin/show-management/session/${encodeURIComponent(session.sessionId)}`} className="border border-accent/60 px-3 py-1.5 text-xs text-accent">View Finished Session</a><a href={`/admin/queue?sessionId=${encodeURIComponent(session.sessionId)}`} className="border border-border px-3 py-1.5 text-xs text-muted">Review Queue</a><a href={exportHref(session.sessionId)} className="border border-border px-3 py-1.5 text-xs text-muted">Download CSV</a></div></div></article>)}</div></section>;
 }

@@ -37,7 +37,7 @@ const DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS = "Priority Signal Upgrade is being 
 const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 0;
 const DEFAULT_PRIORITY_UPGRADE_CURRENCY = "usd";
 
-type QueueAdminAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityPaid" | "markPriorityRequested" | "markPriorityCheckoutPending";
+type QueueAdminAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending";
 
 export interface PriorityUpgradeSettingsInput {
   enabled?: boolean;
@@ -147,7 +147,7 @@ function defaultSession(options: { title?: string; showDate?: string; descriptio
     priorityUpgradeInstructions: options.priorityUpgradeInstructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
     priorityUpgradePriceCents: Number.isFinite(options.priorityUpgradePriceCents) ? Math.max(0, Math.round(options.priorityUpgradePriceCents ?? 0)) : DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS,
     priorityUpgradeCurrency: normalizeCurrency(options.priorityUpgradeCurrency),
-    priorityUpgradePaymentsEnabled: false,
+    priorityUpgradePaymentsEnabled: options.priorityUpgradePaymentsEnabled === true,
   });
 }
 
@@ -317,7 +317,7 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     priorityUpgradeInstructions: session.priorityUpgradeInstructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
     priorityUpgradePriceCents: normalizePriceCents(session.priorityUpgradePriceCents),
     priorityUpgradeCurrency: normalizeCurrency(session.priorityUpgradeCurrency),
-    priorityUpgradePaymentsEnabled: false,
+    priorityUpgradePaymentsEnabled: session.priorityUpgradePaymentsEnabled === true,
   };
 }
 
@@ -408,7 +408,7 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     priorityUpgradeInstructions: raw.priorityUpgradeInstructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
     priorityUpgradePriceCents: normalizePriceCents(raw.priorityUpgradePriceCents),
     priorityUpgradeCurrency: normalizeCurrency(raw.priorityUpgradeCurrency),
-    priorityUpgradePaymentsEnabled: false,
+    priorityUpgradePaymentsEnabled: raw.priorityUpgradePaymentsEnabled === true,
     currentTrackPreviousLane: raw.currentTrackPreviousLane ?? raw.nextInLineTrack?.lane ?? null,
     currentTrackPreviousIndex: typeof raw.currentTrackPreviousIndex === "number" ? raw.currentTrackPreviousIndex : null,
     queue: sortActive((raw.queue ?? []).map(normalizeEntry).filter((entry) => entry.id !== raw.nextInLineTrack?.id && entry.id !== raw.nextInLineTrackId && entry.id !== raw.loadedTrack?.id && entry.id !== raw.loadedTrackId)),
@@ -1017,6 +1017,126 @@ export async function requestPriorityUpgradePlaceholder(id: string): Promise<Que
   return toPublicQueueTrack(updated);
 }
 
+
+export interface PriorityCheckoutRequestResult {
+  session: QueueSessionSummary;
+  track: QueueEntry;
+  amountCents: number;
+  currency: string;
+  label: string;
+}
+
+export interface StripePriorityPaymentMetadata {
+  paymentId: string;
+  amountCents: number;
+  currency: string;
+  paidAt?: string;
+}
+
+export async function requestPriorityCheckout(trackId: string, queueSessionId: string): Promise<PriorityCheckoutRequestResult> {
+  const store = await readStore();
+  const session = getSession(store, queueSessionId);
+  if (session.sessionId !== store.activeSessionId || session.status !== "open" || !session.queueOpen) throw new Error("Priority Signal upgrades are available only while this broadcast queue is open.");
+  if (!session.priorityUpgradesEnabled || !session.priorityUpgradePaymentsEnabled) throw new Error("Priority Signal upgrades are unavailable for this broadcast.");
+  const amountCents = normalizePriceCents(session.priorityUpgradePriceCents);
+  if (amountCents <= 0) throw new Error("Priority Signal upgrade price is not configured yet.");
+  const index = session.queue.findIndex((entry) => entry.id === trackId);
+  if (index < 0) throw new Error("Priority Signal Upgrade is not available for this track.");
+  const track = normalizeEntry(session.queue[index]);
+  if (track.status !== "queued" || track.lane === "priority" || track.priorityUpgradeStatus === "paid") throw new Error("Priority Signal Upgrade is not available for this track.");
+  return { session: summarizeSession(session), track, amountCents, currency: normalizeCurrency(session.priorityUpgradeCurrency), label: session.priorityUpgradeLabel || DEFAULT_PRIORITY_UPGRADE_LABEL };
+}
+
+export async function markPriorityUpgradeCheckoutPending(trackId: string, queueSessionId: string, metadata: { provider?: string; checkoutSessionId?: string } = {}): Promise<QueuePublicTrack | null> {
+  const store = await readStore();
+  const session = getSession(store, queueSessionId);
+  if (session.sessionId !== store.activeSessionId || session.status === "archived") return null;
+  const now = new Date().toISOString();
+  const update = (entry: QueueEntry): QueueEntry => normalizeEntry({
+    ...entry,
+    priorityUpgradeRequested: true,
+    priorityUpgradeStatus: entry.priorityUpgradeStatus === "paid" ? "paid" : "checkout_pending",
+    priorityUpgradeSource: metadata.provider === "stripe" ? "stripe" : "future_payment",
+    priorityUpgradeAt: entry.priorityUpgradeAt ?? now,
+    priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now,
+    priorityUpgradePaymentProvider: entry.priorityUpgradePaymentProvider ?? metadata.provider ?? null,
+    priorityUpgradePaymentId: entry.priorityUpgradePaymentId ?? metadata.checkoutSessionId ?? null,
+  });
+  const index = session.queue.findIndex((entry) => entry.id === trackId);
+  if (index < 0) return null;
+  session.queue[index] = update(session.queue[index]);
+  await writeStore(replaceSession(store, session));
+  return toPublicQueueTrack(session.queue[index]);
+}
+
+export async function markPriorityUpgradePaidFromStripe(trackId: string, queueSessionId: string, payment: StripePriorityPaymentMetadata): Promise<{ updated: boolean; reason?: string; track?: QueueEntry }> {
+  const store = await readStore();
+  const session = store.sessions.find((item) => item.sessionId === queueSessionId);
+  if (!session) return { updated: false, reason: "missing_session" };
+  const normalized = normalizeSession(session);
+  if (normalized.status === "archived") return { updated: false, reason: "archived_session" };
+  const canMoveIntoPriority = normalized.sessionId === store.activeSessionId && normalized.status === "open";
+  const now = payment.paidAt ?? new Date().toISOString();
+  const paidFields: Partial<QueueEntry> = {
+    priorityUpgradeRequested: true,
+    priorityUpgradeStatus: "paid",
+    priorityUpgradeSource: "stripe",
+    priorityUpgradeAt: now,
+    priorityUpgradeRequestedAt: now,
+    priorityUpgradePaidAt: now,
+    priorityUpgradePaymentProvider: "stripe",
+    priorityUpgradePaymentId: payment.paymentId,
+    priorityUpgradeAmountCents: normalizePriceCents(payment.amountCents),
+    priorityUpgradeCurrency: normalizeCurrency(payment.currency),
+  };
+  const markPaid = (entry: QueueEntry, moveToPriority: boolean): QueueEntry => normalizeEntry({
+    ...entry,
+    ...paidFields,
+    ...(moveToPriority ? { lane: "priority" as QueueLane, tier: "fastlane" as QueueTier, status: "queued" as const } : {}),
+  });
+
+  const queueIndex = normalized.queue.findIndex((entry) => entry.id === trackId);
+  if (queueIndex >= 0) {
+    const existing = normalized.queue[queueIndex];
+    if (existing.priorityUpgradeStatus === "paid" && existing.priorityUpgradePaymentId === payment.paymentId && existing.lane === "priority") return { updated: false, reason: "already_paid", track: existing };
+    normalized.queue.splice(queueIndex, 1);
+    const alreadyQueued = normalized.queue.some((entry) => entry.id === trackId);
+    const updated = markPaid(existing, canMoveIntoPriority);
+    if (!alreadyQueued) normalized.queue.push(updated);
+    normalized.queue = sortActive(normalized.queue);
+    await writeStore(replaceSession(store, normalized));
+    return { updated: true, track: updated };
+  }
+
+  if (normalized.nextInLineTrack?.id === trackId) {
+    normalized.nextInLineTrack = markPaid(normalized.nextInLineTrack, false);
+    await writeStore(replaceSession(store, normalized));
+    return { updated: true, track: normalized.nextInLineTrack };
+  }
+
+  if (normalized.loadedTrack?.id === trackId) {
+    normalized.loadedTrack = markPaid(normalized.loadedTrack, false);
+    await writeStore(replaceSession(store, normalized));
+    return { updated: true, track: normalized.loadedTrack };
+  }
+
+  const completedIndex = normalized.completed.findIndex((entry) => entry.id === trackId);
+  if (completedIndex >= 0) {
+    normalized.completed[completedIndex] = markPaid(normalized.completed[completedIndex], false);
+    await writeStore(replaceSession(store, normalized));
+    return { updated: true, reason: "completed_track_recorded", track: normalized.completed[completedIndex] };
+  }
+
+  const removedIndex = normalized.removed.findIndex((entry) => entry.id === trackId);
+  if (removedIndex >= 0) {
+    normalized.removed[removedIndex] = markPaid(normalized.removed[removedIndex], false);
+    await writeStore(replaceSession(store, normalized));
+    return { updated: true, reason: "removed_track_recorded", track: normalized.removed[removedIndex] };
+  }
+
+  return { updated: false, reason: "missing_track" };
+}
+
 export interface QueueSessionSubmitterRow {
   sessionId: string;
   sessionTitle: string;
@@ -1094,7 +1214,7 @@ export async function updatePriorityUpgradeSettings(input: PriorityUpgradeSettin
     priorityUpgradeInstructions: input.instructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
     priorityUpgradePriceCents: normalizePriceCents(input.priceCents ?? session.priorityUpgradePriceCents),
     priorityUpgradeCurrency: normalizeCurrency(input.currency ?? session.priorityUpgradeCurrency),
-    priorityUpgradePaymentsEnabled: false,
+    priorityUpgradePaymentsEnabled: input.paymentsEnabled === true,
     updatedAt: new Date().toISOString(),
   });
   const nextStore = replaceSession(store, next);
@@ -1168,14 +1288,11 @@ function priorityUpgradeAdminCorrection(entry: QueueEntry, action: QueueAdminAct
   if (action === "markPriorityCheckoutPending") {
     return normalizeEntry({ ...entry, priorityUpgradeRequested: true, priorityUpgradeStatus: "checkout_pending", priorityUpgradeSource: "future_payment", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now });
   }
-  if (action === "markPriorityPaid") {
-    return normalizeEntry({ ...entry, priorityUpgradeRequested: true, priorityUpgradeStatus: "paid", priorityUpgradeSource: "admin", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now, priorityUpgradePaidAt: entry.priorityUpgradePaidAt ?? now, priorityUpgradePaymentProvider: entry.priorityUpgradePaymentProvider ?? "admin_manual" });
-  }
   return normalizeEntry({ ...entry, lane: "priority", tier: "fastlane", priorityUpgradeRequested: true, priorityUpgradeStatus: "manual", priorityUpgradeSource: "admin", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now });
 }
 
 function applyPriorityUpgradeAdminCorrection(session: QueueSession, id: string, action: QueueAdminAction): boolean {
-  if (action !== "markPriorityManual" && action !== "markPriorityPaid" && action !== "markPriorityRequested" && action !== "markPriorityCheckoutPending") return false;
+  if (action !== "markPriorityManual" && action !== "markPriorityRequested" && action !== "markPriorityCheckoutPending") return false;
   const queueIndex = session.queue.findIndex((entry) => entry.id === id);
   if (queueIndex >= 0) {
     session.queue[queueIndex] = priorityUpgradeAdminCorrection(session.queue[queueIndex], action);

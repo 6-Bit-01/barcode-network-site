@@ -25,8 +25,8 @@ function entryLane(entry: QueueEntry): QueueLane { return entry.lane ?? "regular
 function durationSourceLabel(entry: QueueEntry): string { return (entry.durationSource ?? "internal_estimate").replace(/_/g, " "); }
 function priorityUpgradeLabel(entry: QueueEntry): string | null {
   if (entry.priorityUpgradeStatus === "requested") return "Priority requested";
-  if (entry.priorityUpgradeStatus === "checkout_pending") return "Checkout pending";
-  if (entry.priorityUpgradeStatus === "paid") return "Paid priority";
+  if (entry.priorityUpgradeStatus === "checkout_pending") return "Payment processing";
+  if (entry.priorityUpgradeStatus === "paid") return "Paid Priority";
   if (entry.priorityUpgradeStatus === "manual" || entry.lane === "priority") return "Priority Signal";
   return null;
 }

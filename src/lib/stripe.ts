@@ -18,6 +18,64 @@ export function getStripeWebhookSecret(): string {
   return secret;
 }
 
+
+const PRIORITY_SIGNAL_SOURCE = "barcode-radio-priority-signal";
+
+export function getSiteUrl(): string {
+  return (process.env.NEXT_PUBLIC_SITE_URL || "https://barcode-network.com").replace(/\/$/, "");
+}
+
+export async function createPrioritySignalCheckoutSession({
+  trackId,
+  queueSessionId,
+  artist,
+  title,
+  amountCents,
+  currency,
+  label,
+}: {
+  trackId: string;
+  queueSessionId: string;
+  artist: string;
+  title: string;
+  amountCents: number;
+  currency: string;
+  label: string;
+}): Promise<{ url: string; sessionId: string }> {
+  const stripe = getStripe();
+  const origin = getSiteUrl();
+  const metadata = { trackId, queueSessionId, source: PRIORITY_SIGNAL_SOURCE };
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "payment",
+    payment_method_types: ["card"],
+    line_items: [
+      {
+        price_data: {
+          currency,
+          unit_amount: amountCents,
+          product_data: {
+            name: label || "Priority Signal Upgrade",
+            description: `${artist} — ${title}`,
+          },
+        },
+        quantity: 1,
+      },
+    ],
+    metadata,
+    payment_intent_data: { metadata },
+    success_url: `${origin}/queue/${encodeURIComponent(queueSessionId)}?priority=processing`,
+    cancel_url: `${origin}/queue/${encodeURIComponent(queueSessionId)}?priority=cancelled`,
+  });
+
+  if (!session.url) throw new Error("Stripe did not return a checkout URL.");
+  return { url: session.url, sessionId: session.id };
+}
+
+export function isPrioritySignalCheckoutSession(session: Stripe.Checkout.Session): boolean {
+  return session.metadata?.source === PRIORITY_SIGNAL_SOURCE;
+}
+
 /** Create a Stripe checkout session for a queue request */
 export async function createCheckoutSession({
   tier,

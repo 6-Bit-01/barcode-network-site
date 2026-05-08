@@ -621,7 +621,7 @@ function normalizeEmail(value?: string | null): string {
   return (value ?? "").trim().toLowerCase();
 }
 
-function normalizeSourceKey(value?: string | null): string | null {
+export function normalizeQueueSourceKey(value?: string | null): string | null {
   if (!value) return null;
   try {
     const url = new URL(value.trim());
@@ -644,7 +644,7 @@ function parseProviderId(sourceType: QueueSourceType, link: string): string | nu
     return id ? `spotify:${id}` : null;
   }
   if (sourceType === "soundcloud") {
-    const key = normalizeSourceKey(link);
+    const key = normalizeQueueSourceKey(link);
     return key ? `soundcloud:${key}` : null;
   }
   return null;
@@ -659,7 +659,7 @@ function submissionCheckEntries(session: QueueSession): QueueEntry[] {
 }
 
 function entrySourceKey(entry: QueueEntry): string | null {
-  return entry.normalizedSourceKey ?? normalizeSourceKey(entry.fileUrl || entry.link || "");
+  return entry.normalizedSourceKey ?? normalizeQueueSourceKey(entry.fileUrl || entry.link || "");
 }
 
 function findDuplicateSubmissionReasons(session: QueueSession, track: QueueEntry): string[] {
@@ -761,7 +761,7 @@ export async function createQueueTrack(input: {
   if (!normalizedTikTokHandle) throw new Error("TikTok handle is required.");
   const providerMetadata = sourceType === "upload" ? blankProvider() : await detectProviderMetadata(sourceType, input.link ?? "");
   const providerId = parseProviderId(sourceType, input.link ?? input.fileUrl ?? "");
-  const normalizedSourceKey = normalizeSourceKey(input.fileUrl || input.link || "");
+  const normalizedSourceKey = normalizeQueueSourceKey(input.fileUrl || input.link || "");
   const fileMetadata = sourceType === "upload" ? parseFilenameMetadata(input.fileName) : { artist: null, title: null, providerTitle: null };
   const detectedDurationSeconds = typeof input.detectedDurationSeconds === "number" && Number.isFinite(input.detectedDurationSeconds)
     ? Math.max(1, Math.round(input.detectedDurationSeconds))

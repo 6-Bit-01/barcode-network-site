@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { detectQueueSourceType } from "@/lib/queue-types";
-import { getPublicQueueSnapshot, requestPriorityUpgradePlaceholder, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
+import { getPublicQueueSnapshot, getRadioQueueState, normalizeQueueSourceKey, requestPriorityUpgradePlaceholder, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
+import type { QueueEntry } from "@/lib/queue-types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -47,6 +48,43 @@ function cleanBodyText(value: unknown): string {
 function parseBodyDuration(value: unknown): number | null {
   const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
+}
+
+function duplicateResponse(): NextResponse {
+  return NextResponse.json({ error: DUPLICATE_TRANSMISSION_MESSAGE, code: "duplicate_transmission" }, { status: 409 });
+}
+
+function queueEntriesForDuplicatePreflight(state: Awaited<ReturnType<typeof getRadioQueueState>>): QueueEntry[] {
+  return [
+    ...state.queue,
+    ...(state.nextInLine ? [state.nextInLine] : []),
+    ...(state.nowPlaying ? [state.nowPlaying] : []),
+    ...state.history,
+    ...(state.removed ?? []),
+  ];
+}
+
+function entryNormalizedSourceKeys(entry: QueueEntry): string[] {
+  return [entry.normalizedSourceKey, normalizeQueueSourceKey(entry.link), normalizeQueueSourceKey(entry.fileUrl)].filter((key): key is string => Boolean(key));
+}
+
+async function hasDuplicateLinkSubmission(link: string): Promise<boolean> {
+  const normalizedLink = normalizeQueueSourceKey(link);
+  if (!normalizedLink) return false;
+  const state = await getRadioQueueState();
+  return queueEntriesForDuplicatePreflight(state).some((entry) => entryNormalizedSourceKeys(entry).includes(normalizedLink));
+}
+
+async function hasDuplicateUploadSubmission(fileName: string, fileSize: number, detectedDurationSeconds: number | null): Promise<boolean> {
+  const normalizedFileName = fileName.toLowerCase();
+  const state = await getRadioQueueState();
+  return queueEntriesForDuplicatePreflight(state).some((entry) => {
+    if (entry.sourceType !== "upload") return false;
+    if (!entry.fileName || entry.fileName.toLowerCase() !== normalizedFileName) return false;
+    if (entry.fileSize !== fileSize) return false;
+    if (detectedDurationSeconds && entry.detectedDurationSeconds && entry.detectedDurationSeconds !== detectedDurationSeconds) return false;
+    return true;
+  });
 }
 
 export async function GET(req: Request) {
@@ -124,6 +162,8 @@ async function submitTrackFromBody(body: Record<string, unknown>): Promise<NextR
     const fileSize = validateUploadFileSize(body.fileSize);
     const mimeType = validateUploadMimeType(body.mimeType);
 
+    if (await hasDuplicateUploadSubmission(fileName, fileSize, detectedDurationSeconds)) return duplicateResponse();
+
     const track = await submitRadioTrack({
       artist,
       title,
@@ -148,6 +188,7 @@ async function submitTrackFromBody(body: Record<string, unknown>): Promise<NextR
   const link = cleanBodyText(body.link);
   if (!link) return NextResponse.json({ error: "Paste a track link." }, { status: 400 });
   try { new URL(link); } catch { return NextResponse.json({ error: "Enter a valid track URL." }, { status: 400 }); }
+  if (await hasDuplicateLinkSubmission(link)) return duplicateResponse();
 
   const sourceType = detectQueueSourceType(link);
   const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, contactEmail, submitterToken });

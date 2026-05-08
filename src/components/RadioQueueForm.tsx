@@ -362,6 +362,9 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
       const res = await fetch("/api/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (payload.code === "duplicate_transmission") {
+          throw new Error(payload.error || "Duplicate transmission detected. This track is already in the queue for this session.");
+        }
         if (typeof payload.cooldownRemainingSeconds === "number") {
           setCooldownRemaining(payload.cooldownRemainingSeconds);
           if (submitterToken) window.localStorage.setItem(`barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}`, String(Date.now() + payload.cooldownRemainingSeconds * 1000));
@@ -456,17 +459,14 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
 
   function continueToRouting() {
     if (!artist.trim() || !title.trim() || !tiktokHandle.trim()) {
-      clearTrackDraftFields();
       setError("Artist, title, and TikTok handle are required before final routing.");
       return;
     }
     if (mode === "link" && !link.trim()) {
-      clearTrackDraftFields();
       setError("Add a track link before final routing.");
       return;
     }
     if (mode === "upload" && !file) {
-      clearTrackDraftFields();
       setError("Select an MP3/WAV file before final routing.");
       return;
     }

@@ -1,3 +1,4 @@
+import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { detectQueueSourceType } from "@/lib/queue-types";
 import { getPublicQueueSnapshot, requestPriorityUpgradePlaceholder, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
@@ -24,29 +25,16 @@ function safeFileName(name: string): string {
 }
 
 async function putBlob(file: File): Promise<{ url: string }> {
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) throw new Error("UPLOAD_STORAGE_NOT_CONFIGURED");
+  if (!process.env.BLOB_READ_WRITE_TOKEN) throw new Error("UPLOAD_STORAGE_NOT_CONFIGURED");
 
   const pathname = `barcode-radio-queue/${Date.now()}-${safeFileName(file.name)}`;
-  const endpoint = `https://blob.vercel-storage.com/${pathname}`;
-  const response = await fetch(endpoint, {
-    method: "PUT",
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": file.type || "application/octet-stream",
-      "x-api-version": "7",
-      "x-add-random-suffix": "1",
-      "x-access": "private",
-    },
-    body: file,
+  const blob = await put(pathname, file, {
+    access: "private",
+    addRandomSuffix: true,
+    contentType: file.type || "application/octet-stream",
   });
 
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || typeof payload?.url !== "string") {
-    console.warn("[queue] private blob upload failed", payload?.error ?? response.status);
-    throw new Error("UPLOAD_STORAGE_FAILED");
-  }
-  return { url: payload.url };
+  return { url: blob.url };
 }
 
 export async function GET(req: Request) {

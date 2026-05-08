@@ -54,6 +54,8 @@ export function AdminRadioQueueControl() {
   const [wheelSelection, setWheelSelection] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [endConfirmOpen, setEndConfirmOpen] = useState(false);
+  const [endingSession, setEndingSession] = useState(false);
 
   async function load(sessionId?: string) {
     const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
@@ -82,6 +84,14 @@ export function AdminRadioQueueControl() {
   async function playerAction(id: string, next: AdminQueueAction) {
     await action(id, next);
     if (next === "finish" || next === "remove" || next === "moveBack") setPlayer(null);
+  }
+
+  async function endCurrentSession() {
+    setEndingSession(true);
+    await post({ action: "archiveSession" });
+    setEndConfirmOpen(false);
+    setEndingSession(false);
+    await load();
   }
   async function toggleOpen(isOpen: boolean) { await post({ action: "setOpen", isOpen }); }
   async function copy(entry: QueueEntry) { await navigator.clipboard.writeText(openUrl(entry)); }
@@ -118,7 +128,8 @@ export function AdminRadioQueueControl() {
   const runtime = state?.publicStatus?.estimatedRuntimeSeconds ?? 0;
   const readOnly = state?.readOnly ?? false;
   const hasSession = Boolean(state?.session);
-  const canControlSession = Boolean(state?.session && state.session.status !== "archived" && !readOnly);
+  const hasCurrentSession = Boolean(state?.session && state.session.status !== "archived" && !readOnly);
+  const canControlSession = hasCurrentSession;
   const isArchivedReview = Boolean(state?.session?.status === "archived" || readOnly);
   const nextInLine = state?.nextInLine ?? null;
   const loadedPlayer = state?.nowPlaying ?? player;
@@ -130,27 +141,40 @@ export function AdminRadioQueueControl() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.4em] text-accent">Current Broadcast Session</p>
-            <h2 className="text-2xl font-bold text-foreground mt-2">{hasSession ? state?.session?.title : "No active broadcast session prepared."}</h2>
-            <p className="text-xs text-muted">{hasSession ? `${state?.session?.showDate} · ${state?.session?.status}` : "Prepare a new session in Show Management before opening submissions."} {isArchivedReview ? "· ARCHIVED / READ ONLY" : ""}</p>
-            {hasSession && state?.session?.description && <p className="text-xs text-muted mt-2 max-w-2xl">{state.session.description}</p>}
+            {hasCurrentSession ? (
+              <>
+                <h2 className="text-2xl font-bold text-foreground mt-2">{state?.session?.title}</h2>
+                <p className="text-xs text-muted">{state?.session?.showDate} · {state?.session?.status}</p>
+                {state?.session?.description && <p className="text-xs text-muted mt-2 max-w-2xl">{state.session.description}</p>}
+              </>
+            ) : (
+              <>
+                <h2 className="text-xl font-bold text-foreground mt-2">No session in progress.</h2>
+                <p className="text-sm text-muted mt-1">Start or select a session from Show Management.</p>
+              </>
+            )}
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap lg:justify-end">
             <button onClick={() => load()} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">View Current Session</button>
             <a href="/admin/show-management" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Show Management</a>
+            {canControlSession && <button onClick={() => setEndConfirmOpen(true)} className="border border-danger/60 px-3 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Session</button>}
             <button onClick={() => setShowSessions((value) => !value)} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">View Saved Sessions</button>
           </div>
         </div>
-        <div className="grid gap-3 sm:grid-cols-4">
+        {hasCurrentSession && <div className="grid gap-3 sm:grid-cols-4">
           <div className="border border-border bg-background/40 p-4"><p className="text-xs text-muted">Queue</p><p className={state?.publicStatus?.isOpen ? "text-accent" : "text-danger"}>{state?.publicStatus?.isOpen ? "Open" : "Closed"}</p></div>
           <div className="border border-border bg-background/40 p-4"><p className="text-xs text-muted">Active count</p><p>{state?.publicStatus?.activeCount ?? "—"}</p></div>
           <div className="border border-border bg-background/40 p-4"><p className="text-xs text-muted">Runtime</p><p>{formatRuntime(runtime)}</p></div>
           <div className="border border-border bg-background/40 p-4"><p className="text-xs text-muted">Pressure</p><p>{state?.publicStatus?.pressure ?? "syncing"}</p></div>
-        </div>
-        {isArchivedReview && <div className="border border-danger/40 bg-danger/10 p-3 text-xs uppercase tracking-widest text-danger">ARCHIVED / READ ONLY — queue review actions are locked for this finished session.</div>}
+        </div>}
+        {isArchivedReview && hasSession && <div className="border border-danger/40 bg-danger/10 p-3 text-xs uppercase tracking-widest text-danger">ARCHIVED / READ ONLY — viewing {state?.session?.title ?? "finished session"}. Queue review actions are locked for this finished session.</div>}
         {canControlSession && <div className="flex flex-wrap gap-3"><button onClick={() => action("", "pullNext")} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Pull Next Track</button><button onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} border px-4 py-2 text-xs uppercase tracking-widest hover:text-background`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button></div>}
       </section>
 
-      {showSessions && <SessionArchive sessions={state?.sessions ?? []} activeSessionId={state?.session?.sessionId} onView={(id) => load(id)} />}
+
+      {endConfirmOpen && <div className="fixed inset-0 z-[10000] grid place-items-center bg-black/75 p-4 backdrop-blur-sm"><div className="w-full max-w-md border border-danger/50 bg-background p-5 shadow-[0_0_70px_rgba(255,0,0,0.24)]"><p className="text-xs uppercase tracking-[0.35em] text-danger">End Session</p><h2 className="mt-3 text-2xl font-bold text-foreground">End this session?</h2><p className="mt-2 text-sm text-muted">This will close submissions, finish the broadcast session, and move it to the archive.</p><div className="mt-5 flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setEndConfirmOpen(false)} disabled={endingSession} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">No, Cancel</button><button type="button" onClick={endCurrentSession} disabled={endingSession} className="border border-danger px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background disabled:opacity-50">{endingSession ? "Ending…" : "Yes, End Session"}</button></div></div></div>}
+
+      {showSessions && <SessionArchive sessions={state?.sessions ?? []} activeSessionId={hasCurrentSession ? state?.session?.sessionId : undefined} onView={(id) => load(id)} />}
 
       {!hasSession ? (
         <section className="border border-border bg-surface p-6">

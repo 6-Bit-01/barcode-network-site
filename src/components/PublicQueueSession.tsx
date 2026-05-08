@@ -12,6 +12,7 @@ type QueueView = "active" | "recent";
 export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const [snapshot, setSnapshot] = useState<QueuePublicSnapshot | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
+  const [intakeScrollLocked, setIntakeScrollLocked] = useState(false);
   const [lastSubmittedTrackId, setLastSubmittedTrackId] = useState<string | null>(null);
   const [submitterToken, setSubmitterToken] = useState("");
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
@@ -31,6 +32,14 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   useEffect(() => { setSubmitterToken(window.localStorage.getItem("barcode-radio-submitter-token") ?? ""); }, []);
   useEffect(() => { load(); const interval = setInterval(load, 5_000); return () => clearInterval(interval); }, [sessionId, submitterToken]);
   useEffect(() => { if (cooldownRemaining <= 0) return; const timer = window.setInterval(() => setCooldownRemaining((value) => Math.max(0, value - 1)), 1000); return () => window.clearInterval(timer); }, [cooldownRemaining]);
+  useEffect(() => {
+    if (!submitOpen || !intakeScrollLocked) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [submitOpen, intakeScrollLocked]);
 
   const lanes = useMemo(() => {
     const hidden = new Set([snapshot?.nowPlaying?.id, snapshot?.upNext?.id].filter(Boolean));
@@ -58,7 +67,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
         <div id="broadcast-queue-top"><NowPlaying title="Now Playing" track={snapshot?.nowPlaying ?? null} domId="now-playing-slot" lastSubmittedTrackId={lastSubmittedTrackId} /></div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
           <NowPlaying title="Up Next" track={snapshot?.upNext ?? null} compact domId="up-next-slot" lastSubmittedTrackId={lastSubmittedTrackId} />
-          <QueueStatusPanel snapshot={snapshot} canSubmit={canSubmit} isFull={isFull} onSubmit={() => setSubmitOpen(true)} />
+          <QueueStatusPanel snapshot={snapshot} canSubmit={canSubmit} isFull={isFull} onSubmit={() => { setIntakeScrollLocked(true); setSubmitOpen(true); }} />
         </div>
       </section>
 
@@ -78,7 +87,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
       <DiscordQueueCTA />
 
-      {submitOpen && <div className="fixed inset-0 z-[10000] grid place-items-center bg-black/75 p-3 backdrop-blur-md"><div className="w-full max-w-[1280px] max-h-[calc(100dvh-1.5rem)] overflow-y-auto border border-accent/50 bg-background/95 p-4 shadow-[0_0_70px_rgba(255,0,0,0.22)] md:max-h-none md:overflow-visible"><div className="mb-3 flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.35em] text-accent">Transmission Intake</p><p className="mt-1 text-xs text-muted">Queue remains live behind this terminal while you route your signal.</p></div><button type="button" onClick={() => setSubmitOpen(false)} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">Collapse Intake</button></div><RadioQueueForm sessionId={sessionId} onSubmitted={(trackId, phase, targetId) => { setLastSubmittedTrackId(trackId ?? null); setSubmitterToken(window.localStorage.getItem("barcode-radio-submitter-token") ?? ""); setView("active"); if (phase === "resolved") { load(); window.setTimeout(() => document.getElementById(targetId ?? "active-queue-panel")?.scrollIntoView({ behavior: "smooth", block: "center" }), 250); } if (phase === "complete") { setSubmitOpen(false); load(); } }} /></div></div>}
+      {submitOpen && <div className="fixed inset-0 z-[10000] grid place-items-center overscroll-contain bg-black/75 p-3 backdrop-blur-md"><div className="w-full max-w-[1280px] max-h-[calc(100dvh-1.5rem)] overflow-y-auto border border-accent/50 bg-background/95 p-4 shadow-[0_0_70px_rgba(255,0,0,0.22)] md:max-h-none md:overflow-visible"><div className="mb-3 flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.35em] text-accent">Transmission Intake</p><p className="mt-1 text-xs text-muted">Queue remains live behind this terminal while you route your signal.</p></div><button type="button" onClick={() => { setSubmitOpen(false); setIntakeScrollLocked(false); }} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">Collapse Intake</button></div><RadioQueueForm sessionId={sessionId} onSubmitted={(trackId, phase, targetId) => { setLastSubmittedTrackId(trackId ?? null); setSubmitterToken(window.localStorage.getItem("barcode-radio-submitter-token") ?? ""); setView("active"); if (phase === "resolved") { setIntakeScrollLocked(false); load(); window.setTimeout(() => document.getElementById(targetId ?? "active-queue-panel")?.scrollIntoView({ behavior: "smooth", block: "center" }), 250); } if (phase === "complete") { setSubmitOpen(false); setIntakeScrollLocked(false); load(); } }} /></div></div>}
     </div>
   );
 }

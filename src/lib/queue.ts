@@ -33,14 +33,19 @@ const LEGACY_STATE_KEY = "radioQueue:v1:state";
 const DEFAULT_QUEUE_CAPACITY = 50;
 const SUBMISSION_COOLDOWN_SECONDS = 5 * 60;
 const DEFAULT_PRIORITY_UPGRADE_LABEL = "Priority Signal Upgrade";
-const DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS = "Priority Signal Upgrade is being prepared for this session. This placeholder does not charge money or move your track automatically.";
+const DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS = "Priority Signal Upgrade is being prepared. No payment has been processed.";
+const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 0;
+const DEFAULT_PRIORITY_UPGRADE_CURRENCY = "usd";
 
-type QueueAdminAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority";
+type QueueAdminAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityPaid" | "markPriorityRequested" | "markPriorityCheckoutPending";
 
 export interface PriorityUpgradeSettingsInput {
   enabled?: boolean;
   label?: string;
   instructions?: string;
+  priceCents?: number;
+  currency?: string;
+  paymentsEnabled?: boolean;
 }
 
 interface QueueStore {
@@ -90,7 +95,17 @@ function sessionDescriptionFor(date: string): string {
   return SESSION_DESCRIPTIONS[index];
 }
 
-function defaultSession(options: { title?: string; showDate?: string; description?: string; trackLimitPerArtist?: number; queueCapacity?: number; skipGameTapTarget?: number; priorityUpgradesEnabled?: boolean; priorityUpgradeLabel?: string; priorityUpgradeInstructions?: string } = {}): QueueSession {
+function normalizeCurrency(value?: string | null): string {
+  const cleaned = (value ?? DEFAULT_PRIORITY_UPGRADE_CURRENCY).trim().toLowerCase().replace(/[^a-z]/g, "").slice(0, 3);
+  return cleaned.length === 3 ? cleaned : DEFAULT_PRIORITY_UPGRADE_CURRENCY;
+}
+
+function normalizePriceCents(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS;
+}
+
+function defaultSession(options: { title?: string; showDate?: string; description?: string; trackLimitPerArtist?: number; queueCapacity?: number; skipGameTapTarget?: number; priorityUpgradesEnabled?: boolean; priorityUpgradeLabel?: string; priorityUpgradeInstructions?: string; priorityUpgradePriceCents?: number; priorityUpgradeCurrency?: string; priorityUpgradePaymentsEnabled?: boolean } = {}): QueueSession {
   const date = options.showDate ?? todayDate();
   const now = new Date().toISOString();
   return normalizeSession({
@@ -130,6 +145,9 @@ function defaultSession(options: { title?: string; showDate?: string; descriptio
     priorityUpgradesEnabled: options.priorityUpgradesEnabled === true,
     priorityUpgradeLabel: options.priorityUpgradeLabel?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
     priorityUpgradeInstructions: options.priorityUpgradeInstructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
+    priorityUpgradePriceCents: Number.isFinite(options.priorityUpgradePriceCents) ? Math.max(0, Math.round(options.priorityUpgradePriceCents ?? 0)) : DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS,
+    priorityUpgradeCurrency: normalizeCurrency(options.priorityUpgradeCurrency),
+    priorityUpgradePaymentsEnabled: false,
   });
 }
 
@@ -297,7 +315,21 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     priorityUpgradesEnabled: session.priorityUpgradesEnabled === true,
     priorityUpgradeLabel: session.priorityUpgradeLabel?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
     priorityUpgradeInstructions: session.priorityUpgradeInstructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
+    priorityUpgradePriceCents: normalizePriceCents(session.priorityUpgradePriceCents),
+    priorityUpgradeCurrency: normalizeCurrency(session.priorityUpgradeCurrency),
+    priorityUpgradePaymentsEnabled: false,
   };
+}
+
+function normalizePriorityUpgradeStatus(status: unknown): QueueEntry["priorityUpgradeStatus"] {
+  if (status === "paid_placeholder") return "checkout_pending";
+  if (status === "requested" || status === "manual" || status === "checkout_pending" || status === "paid" || status === "failed" || status === "refunded") return status;
+  return "none";
+}
+
+function normalizePriorityUpgradeSource(source: unknown): QueueEntry["priorityUpgradeSource"] {
+  if (source === "admin" || source === "public_placeholder" || source === "future_payment" || source === "stripe") return source;
+  return null;
 }
 
 function normalizeEntry(entry: QueueEntry): QueueEntry {
@@ -322,9 +354,15 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     durationSource,
     note: entry.note ?? null,
     priorityUpgradeRequested: entry.priorityUpgradeRequested === true,
-    priorityUpgradeStatus: entry.priorityUpgradeStatus === "requested" || entry.priorityUpgradeStatus === "manual" || entry.priorityUpgradeStatus === "paid_placeholder" ? entry.priorityUpgradeStatus : "none",
-    priorityUpgradeSource: entry.priorityUpgradeSource === "admin" || entry.priorityUpgradeSource === "public_placeholder" || entry.priorityUpgradeSource === "future_payment" ? entry.priorityUpgradeSource : null,
-    priorityUpgradeAt: entry.priorityUpgradeAt ?? null,
+    priorityUpgradeStatus: normalizePriorityUpgradeStatus(entry.priorityUpgradeStatus),
+    priorityUpgradeSource: normalizePriorityUpgradeSource(entry.priorityUpgradeSource),
+    priorityUpgradeAt: entry.priorityUpgradeAt ?? entry.priorityUpgradeRequestedAt ?? entry.priorityUpgradePaidAt ?? null,
+    priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? entry.priorityUpgradeAt ?? null,
+    priorityUpgradePaidAt: entry.priorityUpgradePaidAt ?? null,
+    priorityUpgradePaymentProvider: entry.priorityUpgradePaymentProvider ?? null,
+    priorityUpgradePaymentId: entry.priorityUpgradePaymentId ?? null,
+    priorityUpgradeAmountCents: typeof entry.priorityUpgradeAmountCents === "number" ? Math.max(0, Math.round(entry.priorityUpgradeAmountCents)) : null,
+    priorityUpgradeCurrency: entry.priorityUpgradeCurrency ? normalizeCurrency(entry.priorityUpgradeCurrency) : null,
   };
 }
 
@@ -368,6 +406,9 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     priorityUpgradesEnabled: raw.priorityUpgradesEnabled === true,
     priorityUpgradeLabel: raw.priorityUpgradeLabel?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
     priorityUpgradeInstructions: raw.priorityUpgradeInstructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
+    priorityUpgradePriceCents: normalizePriceCents(raw.priorityUpgradePriceCents),
+    priorityUpgradeCurrency: normalizeCurrency(raw.priorityUpgradeCurrency),
+    priorityUpgradePaymentsEnabled: false,
     currentTrackPreviousLane: raw.currentTrackPreviousLane ?? raw.nextInLineTrack?.lane ?? null,
     currentTrackPreviousIndex: typeof raw.currentTrackPreviousIndex === "number" ? raw.currentTrackPreviousIndex : null,
     queue: sortActive((raw.queue ?? []).map(normalizeEntry).filter((entry) => entry.id !== raw.nextInLineTrack?.id && entry.id !== raw.nextInLineTrackId && entry.id !== raw.loadedTrack?.id && entry.id !== raw.loadedTrackId)),
@@ -622,7 +663,7 @@ function findSubmissionBlocks(session: QueueSession, track: QueueEntry): string[
   if (token && countMatches(entries, (entry) => entry.submitterToken === token) >= session.trackLimitPerArtist) reasons.push("Limit matched by browser token");
   if (track.normalizedSourceKey && entries.some((entry) => entry.normalizedSourceKey === track.normalizedSourceKey)) reasons.push("Duplicate source");
   if (track.providerId && entries.some((entry) => entry.providerId === track.providerId)) reasons.push("Duplicate provider source");
-  if (track.sourceType === "upload" && track.fileName && track.fileSize && entries.some((entry) => entry.sourceType === "upload" && entry.fileName === track.fileName && entry.fileSize === track.fileSize && (!track.detectedDurationSeconds || !entry.detectedDurationSeconds || entry.detectedDurationSeconds === track.detectedDurationSeconds))) reasons.push("Duplicate upload metadata");
+  if (track.sourceType === "upload" && track.fileName && track.fileSize && entries.some((entry) => entry.sourceType === "upload" && entry.fileName?.toLowerCase() === (track.fileName ?? "").toLowerCase() && entry.fileSize === track.fileSize && (!track.detectedDurationSeconds || !entry.detectedDurationSeconds || entry.detectedDurationSeconds === track.detectedDurationSeconds))) reasons.push("Duplicate upload metadata");
   return reasons;
 }
 
@@ -631,7 +672,7 @@ function suspiciousFlagsFor(session: QueueSession, track: QueueEntry): string[] 
   const flags = new Set<string>();
   const submitter = normalizeIdentity(track.submitterArtistName ?? track.submittedArtistName);
   if (track.submitterToken && entries.some((entry) => entry.submitterToken === track.submitterToken && normalizeIdentity(entry.submitterArtistName ?? entry.submittedArtistName) !== submitter)) flags.add("Same browser token using different artist names");
-  if (track.fileName && track.fileSize && entries.some((entry) => entry.fileName === track.fileName && entry.fileSize === track.fileSize && entry.detectedDurationSeconds === track.detectedDurationSeconds)) flags.add("Same file name, size, and duration");
+  if (track.fileName && track.fileSize && entries.some((entry) => entry.fileName?.toLowerCase() === (track.fileName ?? "").toLowerCase() && entry.fileSize === track.fileSize && (!track.detectedDurationSeconds || !entry.detectedDurationSeconds || entry.detectedDurationSeconds === track.detectedDurationSeconds))) flags.add("Same file name, size, and duration");
   if (track.submittedSongTitle && entries.some((entry) => normalizeIdentity(entry.submittedSongTitle) === normalizeIdentity(track.submittedSongTitle) && normalizeIdentity(entry.submittedArtistName) !== normalizeIdentity(track.submittedArtistName))) flags.add("Same source/title with changed artist name");
   const recent = entries.filter((entry) => Date.now() - new Date(entry.createdAt).getTime() < 10 * 60 * 1000).length;
   if (recent >= 5) flags.add("Many attempts in a short time");
@@ -749,6 +790,16 @@ export async function createQueueTrack(input: {
     estimatedDurationSeconds: detectedDurationSeconds ?? INTERNAL_BUFFER_DURATION_SECONDS,
     durationIsEstimate: detectedDurationSeconds === null,
     durationSource,
+    priorityUpgradeRequested: false,
+    priorityUpgradeStatus: "none",
+    priorityUpgradeSource: null,
+    priorityUpgradeAt: null,
+    priorityUpgradeRequestedAt: null,
+    priorityUpgradePaidAt: null,
+    priorityUpgradePaymentProvider: null,
+    priorityUpgradePaymentId: null,
+    priorityUpgradeAmountCents: null,
+    priorityUpgradeCurrency: null,
   });
 }
 
@@ -929,9 +980,10 @@ export async function requestPriorityUpgradePlaceholder(id: string): Promise<Que
   const update = (entry: QueueEntry): QueueEntry => normalizeEntry({
     ...entry,
     priorityUpgradeRequested: true,
-    priorityUpgradeStatus: entry.priorityUpgradeStatus === "manual" ? "manual" : "requested",
+    priorityUpgradeStatus: entry.priorityUpgradeStatus === "manual" || entry.priorityUpgradeStatus === "paid" ? entry.priorityUpgradeStatus : "requested",
     priorityUpgradeSource: entry.priorityUpgradeSource ?? "public_placeholder",
     priorityUpgradeAt: entry.priorityUpgradeAt ?? now,
+    priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now,
   });
   session.queue = session.queue.map((entry) => {
     if (entry.id !== id) return entry;
@@ -1026,6 +1078,9 @@ export async function updatePriorityUpgradeSettings(input: PriorityUpgradeSettin
     priorityUpgradesEnabled: input.enabled === true,
     priorityUpgradeLabel: input.label?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
     priorityUpgradeInstructions: input.instructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
+    priorityUpgradePriceCents: normalizePriceCents(input.priceCents ?? session.priorityUpgradePriceCents),
+    priorityUpgradeCurrency: normalizeCurrency(input.currency ?? session.priorityUpgradeCurrency),
+    priorityUpgradePaymentsEnabled: false,
     updatedAt: new Date().toISOString(),
   });
   const nextStore = replaceSession(store, next);
@@ -1052,7 +1107,7 @@ export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> 
   return publicStatusForSession(getSession(nextStore));
 }
 
-export async function startNewQueueSession(options: { title?: string; showDate?: string; description?: string; trackLimitPerArtist?: number; queueCapacity?: number; skipGameTapTarget?: number; priorityUpgradesEnabled?: boolean; priorityUpgradeLabel?: string; priorityUpgradeInstructions?: string } = {}): Promise<QueueState> {
+export async function startNewQueueSession(options: { title?: string; showDate?: string; description?: string; trackLimitPerArtist?: number; queueCapacity?: number; skipGameTapTarget?: number; priorityUpgradesEnabled?: boolean; priorityUpgradeLabel?: string; priorityUpgradeInstructions?: string; priorityUpgradePriceCents?: number; priorityUpgradeCurrency?: string; priorityUpgradePaymentsEnabled?: boolean } = {}): Promise<QueueState> {
   const store = await readStore();
   const current = getSession(store);
   if (current.status === "open" || current.queueOpen) return queueStateFromSession(current, store);
@@ -1085,8 +1140,42 @@ export async function activateQueueSession(sessionId: string): Promise<QueueStat
 }
 
 function priorityUpgradeMetadata(entry: QueueEntry, lane: QueueLane): Partial<QueueEntry> {
-  if (lane !== "priority") return entry.priorityUpgradeStatus === "manual" ? { priorityUpgradeRequested: false, priorityUpgradeStatus: "none", priorityUpgradeSource: null, priorityUpgradeAt: null } : {};
-  return { priorityUpgradeRequested: true, priorityUpgradeStatus: "manual", priorityUpgradeSource: "admin", priorityUpgradeAt: new Date().toISOString() };
+  if (lane !== "priority") return entry.priorityUpgradeStatus === "manual" ? { priorityUpgradeRequested: false, priorityUpgradeStatus: "none", priorityUpgradeSource: null, priorityUpgradeAt: null, priorityUpgradeRequestedAt: null } : {};
+  const now = new Date().toISOString();
+  return { priorityUpgradeRequested: true, priorityUpgradeStatus: "manual", priorityUpgradeSource: "admin", priorityUpgradeAt: now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now };
+}
+
+
+function priorityUpgradeAdminCorrection(entry: QueueEntry, action: QueueAdminAction): QueueEntry {
+  const now = new Date().toISOString();
+  if (action === "markPriorityRequested") {
+    return normalizeEntry({ ...entry, priorityUpgradeRequested: true, priorityUpgradeStatus: "requested", priorityUpgradeSource: entry.priorityUpgradeSource ?? "public_placeholder", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now });
+  }
+  if (action === "markPriorityCheckoutPending") {
+    return normalizeEntry({ ...entry, priorityUpgradeRequested: true, priorityUpgradeStatus: "checkout_pending", priorityUpgradeSource: "future_payment", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now });
+  }
+  if (action === "markPriorityPaid") {
+    return normalizeEntry({ ...entry, priorityUpgradeRequested: true, priorityUpgradeStatus: "paid", priorityUpgradeSource: "admin", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now, priorityUpgradePaidAt: entry.priorityUpgradePaidAt ?? now, priorityUpgradePaymentProvider: entry.priorityUpgradePaymentProvider ?? "admin_manual" });
+  }
+  return normalizeEntry({ ...entry, lane: "priority", tier: "fastlane", priorityUpgradeRequested: true, priorityUpgradeStatus: "manual", priorityUpgradeSource: "admin", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now });
+}
+
+function applyPriorityUpgradeAdminCorrection(session: QueueSession, id: string, action: QueueAdminAction): boolean {
+  if (action !== "markPriorityManual" && action !== "markPriorityPaid" && action !== "markPriorityRequested" && action !== "markPriorityCheckoutPending") return false;
+  const queueIndex = session.queue.findIndex((entry) => entry.id === id);
+  if (queueIndex >= 0) {
+    session.queue[queueIndex] = priorityUpgradeAdminCorrection(session.queue[queueIndex], action);
+    return true;
+  }
+  if (session.nextInLineTrack?.id === id) {
+    session.nextInLineTrack = priorityUpgradeAdminCorrection(session.nextInLineTrack, action);
+    return true;
+  }
+  if (session.loadedTrack?.id === id) {
+    session.loadedTrack = priorityUpgradeAdminCorrection(session.loadedTrack, action);
+    return true;
+  }
+  return false;
 }
 
 function restoreEntry(entry: QueueEntry, lane: QueueLane): QueueEntry {
@@ -1097,6 +1186,12 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
   const store = await readStore();
   const session = getSession(store);
   if (session.status === "archived") return queueStateFromSession(session, store);
+
+  if (applyPriorityUpgradeAdminCorrection(session, id, action)) {
+    const nextStore = replaceSession(store, session);
+    await writeStore(nextStore);
+    return queueStateFromSession(session, nextStore);
+  }
 
   if (action === "pullNext") {
     session.autoRoutingPaused = false;
@@ -1273,7 +1368,7 @@ export async function upgradeEntryTier(id: string, newTier: QueueTier, additiona
   const session = getSession(store);
   const index = session.queue.findIndex((entry) => entry.id === id);
   if (index === -1) return null;
-  const updated = normalizeEntry({ ...session.queue[index], tier: newTier, amount: session.queue[index].amount + additionalAmount, lane: newTier === "fastlane" ? "priority" as QueueLane : session.queue[index].lane, ...(newTier === "fastlane" ? { priorityUpgradeRequested: true, priorityUpgradeStatus: "paid_placeholder" as const, priorityUpgradeSource: "future_payment" as const, priorityUpgradeAt: new Date().toISOString() } : {}) });
+  const updated = normalizeEntry({ ...session.queue[index], tier: newTier, amount: session.queue[index].amount + additionalAmount, lane: newTier === "fastlane" ? "priority" as QueueLane : session.queue[index].lane, ...(newTier === "fastlane" ? { priorityUpgradeRequested: true, priorityUpgradeStatus: "checkout_pending" as const, priorityUpgradeSource: "future_payment" as const, priorityUpgradeAt: new Date().toISOString(), priorityUpgradeRequestedAt: new Date().toISOString() } : {}) });
   session.queue[index] = updated;
   await writeStore(replaceSession(store, session));
   return updated;

@@ -37,6 +37,9 @@ export async function POST(req: Request) {
       priorityUpgradesEnabled: body.priorityUpgradesEnabled === true,
       priorityUpgradeLabel: typeof body.priorityUpgradeLabel === "string" ? body.priorityUpgradeLabel : undefined,
       priorityUpgradeInstructions: typeof body.priorityUpgradeInstructions === "string" ? body.priorityUpgradeInstructions : undefined,
+      priorityUpgradePriceCents: Number.isFinite(Number(body.priorityUpgradePriceCents)) ? Number(body.priorityUpgradePriceCents) : undefined,
+      priorityUpgradeCurrency: typeof body.priorityUpgradeCurrency === "string" ? body.priorityUpgradeCurrency : undefined,
+      priorityUpgradePaymentsEnabled: false,
     }));
   }
   if (body.action === "updatePriorityUpgradeSettings") {
@@ -44,13 +47,16 @@ export async function POST(req: Request) {
       enabled: body.enabled === true,
       label: typeof body.label === "string" ? body.label : undefined,
       instructions: typeof body.instructions === "string" ? body.instructions : undefined,
+      priceCents: Number.isFinite(Number(body.priceCents)) ? Number(body.priceCents) : undefined,
+      currency: typeof body.currency === "string" ? body.currency : undefined,
+      paymentsEnabled: false,
     }));
   }
   if (body.action === "archiveSession") return NextResponse.json(await archiveCurrentQueueSession());
   if (body.action === "activateSession" && typeof body.sessionId === "string") return NextResponse.json(await activateQueueSession(body.sessionId));
   if (body.action === "viewSession" && typeof body.sessionId === "string") return NextResponse.json(await getRadioQueueState(body.sessionId));
   if (body.action === "pullNext") return NextResponse.json(await updateRadioTrack("", "pullNext"));
-  if (["load", "finish", "remove", "priority", "regular", "wheel", "moveBack", "spotlight", "removeSpotlight", "restoreRegular", "restorePriority"].includes(body.action) && typeof body.id === "string") {
+  if (["load", "finish", "remove", "priority", "regular", "wheel", "moveBack", "spotlight", "removeSpotlight", "restoreRegular", "restorePriority", "markPriorityManual", "markPriorityPaid", "markPriorityRequested", "markPriorityCheckoutPending"].includes(body.action) && typeof body.id === "string") {
     return NextResponse.json(await updateRadioTrack(body.id, body.action));
   }
   return NextResponse.json({ error: "Unknown queue action" }, { status: 400 });

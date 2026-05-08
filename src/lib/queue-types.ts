@@ -9,8 +9,8 @@ export type QueueNonPriorityLane = "wheel" | "regular";
 export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | "next" | "pending" | "played" | "refunded" | "expired";
 export type QueueDurationSource = "upload_metadata" | "file_metadata" | "youtube" | "soundcloud" | "spotify" | "provider_metadata" | "internal_estimate" | "unknown";
 export type QueueSessionStatus = "prepared" | "open" | "closed" | "archived";
-export type PriorityUpgradeStatus = "none" | "requested" | "manual" | "paid_placeholder";
-export type PriorityUpgradeSource = "admin" | "public_placeholder" | "future_payment";
+export type PriorityUpgradeStatus = "none" | "requested" | "manual" | "checkout_pending" | "paid" | "failed" | "refunded";
+export type PriorityUpgradeSource = "admin" | "public_placeholder" | "future_payment" | "stripe";
 
 export interface QueueEntry {
   id: string;
@@ -58,6 +58,12 @@ export interface QueueEntry {
   priorityUpgradeStatus?: PriorityUpgradeStatus;
   priorityUpgradeSource?: PriorityUpgradeSource | null;
   priorityUpgradeAt?: string | null;
+  priorityUpgradeRequestedAt?: string | null;
+  priorityUpgradePaidAt?: string | null;
+  priorityUpgradePaymentProvider?: string | null;
+  priorityUpgradePaymentId?: string | null;
+  priorityUpgradeAmountCents?: number | null;
+  priorityUpgradeCurrency?: string | null;
 }
 
 export interface QueuePublicStatus {
@@ -94,6 +100,9 @@ export interface QueueSessionSummary {
   priorityUpgradesEnabled: boolean;
   priorityUpgradeLabel: string;
   priorityUpgradeInstructions: string;
+  priorityUpgradePriceCents: number;
+  priorityUpgradeCurrency: string;
+  priorityUpgradePaymentsEnabled: boolean;
 }
 
 export interface QueueSession extends QueueSessionSummary {
@@ -142,7 +151,7 @@ export interface QueuePublicSubmitterStatus {
 }
 
 export interface QueuePublicSnapshot {
-  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions">;
+  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled">;
   status: QueuePublicStatus;
   queue: QueuePublicTrack[];
   completed: QueuePublicTrack[];

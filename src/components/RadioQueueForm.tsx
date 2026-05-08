@@ -1,16 +1,19 @@
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps, @next/next/no-img-element */
 "use client";
 
+import { upload } from "@vercel/blob/client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatRuntime } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
 
 type Mode = "link" | "upload";
-type ReadState = "idle" | "checking" | "reading" | "detected" | "pending";
+type ReadState = "idle" | "checking" | "reading" | "detected" | "pending" | "uploading";
 type TransmissionState = "idle" | "signal" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed";
 type SubmitPhase = "resolved" | "complete";
 type IntakeStep = "track" | "routing";
+
+const UPLOAD_FALLBACK_MESSAGE = "Upload could not be completed. Please try again or submit a Spotify, SoundCloud, YouTube, or direct track link.";
 
 interface WarpData {
   artist: string;
@@ -30,6 +33,18 @@ interface WarpData {
 function pressureLabel(status: QueuePublicStatus | null): string {
   if (!status) return "Syncing";
   return `${status.pressure.toUpperCase()} / ${status.activeCount}/${status.capacity}`;
+}
+
+function safeFileName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-").slice(0, 120) || "track";
+}
+
+function audioMimeTypeForFile(file: File): string {
+  const browserType = file.type.toLowerCase();
+  if (["audio/mpeg", "audio/mp3", "audio/wav", "audio/wave", "audio/x-wav"].includes(browserType)) return browserType;
+  if (/\.mp3$/i.test(file.name)) return "audio/mpeg";
+  if (/\.wav$/i.test(file.name)) return "audio/wav";
+  return browserType || "application/octet-stream";
 }
 
 function readAudioDuration(file: File): Promise<number | null> {
@@ -102,6 +117,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
   const [file, setFile] = useState<File | null>(null);
   const [detectedDuration, setDetectedDuration] = useState<number | null>(null);
   const [readState, setReadState] = useState<ReadState>("idle");
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [transmissionState, setTransmissionState] = useState<TransmissionState>("idle");
@@ -191,6 +207,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
     if (mode !== "link" || !link.trim()) {
       if (mode === "link") {
         setReadState("idle");
+        setUploadProgress(null);
         setDetectedDuration(null);
       }
       return;
@@ -225,6 +242,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
   async function onFileSelected(next: File | null) {
     setFile(next);
     setDetectedDuration(null);
+    setUploadProgress(null);
     setReadState(next ? "reading" : "idle");
     if (!next) return;
     const duration = await readAudioDuration(next);
@@ -232,13 +250,43 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
     setReadState(duration ? "detected" : "pending");
   }
 
+  async function uploadAudioPacket(selectedFile: File): Promise<{ url: string }> {
+    setReadState("uploading");
+    setUploadProgress(0);
+    try {
+      const pathname = `barcode-radio-queue/${Date.now()}-${safeFileName(selectedFile.name)}`;
+      const mimeType = audioMimeTypeForFile(selectedFile);
+      const blob = await upload(pathname, selectedFile, {
+        access: "private",
+        contentType: mimeType,
+        multipart: true,
+        handleUploadUrl: "/api/queue/upload",
+        clientPayload: JSON.stringify({
+          sessionId: sessionId ?? session?.sessionId,
+          fileName: selectedFile.name,
+          fileSize: selectedFile.size,
+          mimeType,
+        }),
+        onUploadProgress: ({ percentage }) => setUploadProgress(Math.round(percentage)),
+      });
+      setUploadProgress(100);
+      return { url: blob.url };
+    } catch (uploadError) {
+      console.warn("[queue] client audio upload failed", uploadError);
+      setUploadProgress(null);
+      setReadState(detectedDuration ? "detected" : "pending");
+      throw new Error(UPLOAD_FALLBACK_MESSAGE);
+    }
+  }
+
   const checkCopy = useMemo(() => {
     if (readState === "checking") return "Checking track…";
     if (readState === "reading") return "Reading source…";
     if (readState === "detected" && detectedDuration) return `Duration detected: ${formatRuntime(detectedDuration)}`;
+    if (readState === "uploading") return uploadProgress === null ? "Uploading audio packet…" : `Uploading audio packet… ${uploadProgress}%`;
     if (readState === "pending") return "Duration pending — queue will buffer this track internally.";
     return "Paste a supported link or select an MP3/WAV to begin source checks.";
-  }, [detectedDuration, readState]);
+  }, [detectedDuration, readState, uploadProgress]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -254,21 +302,29 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
     setError(null);
     setSubmitting(true);
     try {
-      const body = new FormData();
-      body.set("mode", mode);
-      body.set("artist", artist.trim());
-      body.set("title", title.trim());
-      body.set("tiktokHandle", tiktokHandle.trim());
-      body.set("collaboratorNames", collaboratorNames.trim());
-      body.set("contactEmail", contactEmail.trim());
-      body.set("submitterToken", submitterToken);
-      if (sessionId) body.set("sessionId", sessionId);
-      if (note.trim()) body.set("note", note.trim());
-      if (detectedDuration) body.set("detectedDurationSeconds", String(detectedDuration));
-      if (mode === "upload" && file) body.set("file", file);
-      if (mode === "link") body.set("link", link.trim());
+      const body: Record<string, string | number> = {
+        mode,
+        artist: artist.trim(),
+        title: title.trim(),
+        tiktokHandle: tiktokHandle.trim(),
+        collaboratorNames: collaboratorNames.trim(),
+        contactEmail: contactEmail.trim(),
+        submitterToken,
+      };
+      if (sessionId) body.sessionId = sessionId;
+      if (note.trim()) body.note = note.trim();
+      if (detectedDuration) body.detectedDurationSeconds = detectedDuration;
+      if (mode === "upload") {
+        if (!file) throw new Error("Select an MP3/WAV file before final routing.");
+        const blob = await uploadAudioPacket(file);
+        body.uploadedBlobUrl = blob.url;
+        body.fileName = file.name;
+        body.fileSize = file.size;
+        body.mimeType = audioMimeTypeForFile(file);
+      }
+      if (mode === "link") body.link = link.trim();
 
-      const res = await fetch("/api/queue", { method: "POST", body });
+      const res = await fetch("/api/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (typeof payload.cooldownRemainingSeconds === "number") {
@@ -343,6 +399,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
       setFile(null);
       setDetectedDuration(null);
       setReadState("idle");
+      setUploadProgress(null);
       setStep("track");
     } catch (err) {
       setTransmissionState("idle");
@@ -441,7 +498,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               <button type="button" onClick={() => setStep("track")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Back</button>
-              <button type="submit" onClick={() => { finalSubmitIntent.current = true; }} disabled={submitting || routingLockRemaining > 0 || effectiveCooldown > 0 || status?.isOpen === false || status?.isFull === true} className="border border-accent px-5 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{submitting ? "Submitting…" : routingLockRemaining > 0 ? `Routing lock: ${routingLockRemaining}` : effectiveCooldown > 0 ? `Next transmission available in ${formatCooldown(effectiveCooldown)}` : status?.isFull ? "Queue Full" : "Enter Free Transmissions"}</button>
+              <button type="submit" onClick={() => { finalSubmitIntent.current = true; }} disabled={submitting || readState === "uploading" || routingLockRemaining > 0 || effectiveCooldown > 0 || status?.isOpen === false || status?.isFull === true} className="border border-accent px-5 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{readState === "uploading" ? "Uploading audio packet…" : submitting ? "Submitting…" : routingLockRemaining > 0 ? `Routing lock: ${routingLockRemaining}` : effectiveCooldown > 0 ? `Next transmission available in ${formatCooldown(effectiveCooldown)}` : status?.isFull ? "Queue Full" : "Enter Free Transmissions"}</button>
             </div>
           </div>
         )}

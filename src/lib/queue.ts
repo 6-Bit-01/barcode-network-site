@@ -909,6 +909,19 @@ function publicSourceUrlForTrack(entry: QueueEntry): string | null {
   }
 }
 
+function publicArtworkUrlForTrack(entry: QueueEntry): string | null {
+  const artworkUrl = getTrackArtworkUrl(entry) ?? ((entry.sourceType ?? "other") === "upload" ? entry.sourceArtworkUrl ?? null : null);
+  if (!artworkUrl) return null;
+  try {
+    const parsed = new URL(artworkUrl);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    if (parsed.hostname.endsWith(".private.blob.vercel-storage.com") && parsed.pathname.startsWith("/barcode-radio-queue/")) return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
   const normalized = normalizeEntry(entry);
   const isUpload = (normalized.sourceType ?? "other") === "upload";
@@ -923,7 +936,7 @@ export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
     lane: normalized.lane ?? "regular",
     durationLabel: normalized.durationIsEstimate ? "estimated/pending" : formatRuntime(getTrackRuntimeSeconds(normalized)),
     durationIsEstimate: normalized.durationIsEstimate ?? true,
-    sourceArtworkUrl: isUpload ? null : getTrackArtworkUrl(normalized),
+    sourceArtworkUrl: publicArtworkUrlForTrack(normalized),
     publicSourceUrl: publicSourceUrlForTrack(normalized),
     tiktokHandle: normalized.tiktokHandle ?? null,
     priorityUpgradeRequested: normalized.priorityUpgradeRequested === true,

@@ -20,7 +20,6 @@ interface WarpData {
   title: string;
   tiktokHandle: string;
   sourceType: string;
-  fileName?: string | null;
   durationLabel: string;
   sessionTitle: string;
   sessionDate: string;
@@ -263,7 +262,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
         handleUploadUrl: "/api/queue/upload",
         clientPayload: JSON.stringify({
           sessionId: sessionId ?? session?.sessionId,
-          fileName: selectedFile.name,
+          uploadOriginalName: selectedFile.name,
           fileSize: selectedFile.size,
           mimeType,
         }),
@@ -318,7 +317,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
         if (!file) throw new Error("Select an MP3/WAV file before final routing.");
         const blob = await uploadAudioPacket(file);
         body.uploadedBlobUrl = blob.url;
-        body.fileName = file.name;
+        body.uploadOriginalName = file.name;
         body.fileSize = file.size;
         body.mimeType = audioMimeTypeForFile(file);
       }
@@ -347,7 +346,6 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
           title: title.trim(),
           tiktokHandle: tiktokHandle.trim(),
           sourceType: mode === "upload" ? "UPLOAD" : (submitted.sourceType ?? "other").toUpperCase(),
-          fileName: file?.name ?? null,
           durationLabel: detectedDuration ? formatRuntime(detectedDuration) : submitted.durationLabel,
           sessionTitle: session?.title ?? "BARCODE Radio",
           sessionDate: session?.showDate ?? "ACTIVE SESSION",

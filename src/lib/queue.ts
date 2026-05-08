@@ -911,18 +911,19 @@ function publicSourceUrlForTrack(entry: QueueEntry): string | null {
 
 export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
   const normalized = normalizeEntry(entry);
+  const isUpload = (normalized.sourceType ?? "other") === "upload";
   return {
     id: normalized.id,
     submittedArtistName: normalized.submittedArtistName ?? normalized.artist,
     submittedSongTitle: normalized.submittedSongTitle ?? normalized.title,
-    detectedArtistName: normalized.detectedArtistName ?? null,
-    detectedSongTitle: normalized.detectedSongTitle ?? null,
-    providerTitle: normalized.providerTitle ?? null,
+    detectedArtistName: isUpload ? null : normalized.detectedArtistName ?? null,
+    detectedSongTitle: isUpload ? null : normalized.detectedSongTitle ?? null,
+    providerTitle: isUpload ? null : normalized.providerTitle ?? null,
     sourceType: normalized.sourceType ?? "other",
     lane: normalized.lane ?? "regular",
     durationLabel: normalized.durationIsEstimate ? "estimated/pending" : formatRuntime(getTrackRuntimeSeconds(normalized)),
     durationIsEstimate: normalized.durationIsEstimate ?? true,
-    sourceArtworkUrl: getTrackArtworkUrl(normalized),
+    sourceArtworkUrl: isUpload ? null : getTrackArtworkUrl(normalized),
     publicSourceUrl: publicSourceUrlForTrack(normalized),
     tiktokHandle: normalized.tiktokHandle ?? null,
     priorityUpgradeRequested: normalized.priorityUpgradeRequested === true,

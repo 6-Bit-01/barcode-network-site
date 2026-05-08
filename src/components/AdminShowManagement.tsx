@@ -32,6 +32,7 @@ type SubmitterRow = {
 function todayDate(): string { return new Date().toISOString().slice(0, 10); }
 function defaultDescription(date: string): string { return SESSION_DESCRIPTION_OPTIONS[[...date].reduce((sum, char) => sum + char.charCodeAt(0), 0) % SESSION_DESCRIPTION_OPTIONS.length]; }
 function exportHref(sessionId?: string): string { return `/api/admin/queue/export${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""}`; }
+function formatPrice(cents: number, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }
 
 export function AdminShowManagement() {
   const [state, setState] = useState<QueueState | null>(null);
@@ -132,20 +133,20 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
   }, [session]);
 
   async function savePrioritySettings() {
+    const gatedPaymentsEnabled = priorityEnabled && priorityPriceCents > 0 && priorityPaymentsEnabled;
     setPrioritySaving(true);
     setPrioritySaveError(null);
-    const next = await onPost({ action: "updatePriorityUpgradeSettings", enabled: priorityEnabled, label: priorityLabel, instructions: priorityInstructions, priceCents: priorityPriceCents, currency: priorityCurrency, paymentsEnabled: priorityPaymentsEnabled });
+    const next = await onPost({ action: "updatePriorityUpgradeSettings", enabled: priorityEnabled, label: priorityLabel, instructions: priorityInstructions, priceCents: priorityPriceCents, currency: priorityCurrency, paymentsEnabled: gatedPaymentsEnabled });
     setPrioritySaving(false);
     if (!next) {
       setPrioritySaveError("Priority Signal settings could not be saved.");
       setPriorityEditing(true);
       return;
     }
+    setPriorityPaymentsEnabled(gatedPaymentsEnabled);
     setPriorityJustSaved(true);
-    window.setTimeout(() => {
-      setPriorityEditing(false);
-      setPriorityJustSaved(false);
-    }, 520);
+    setPriorityEditing(false);
+    window.setTimeout(() => setPriorityJustSaved(false), 3500);
   }
 
   if (!session) {
@@ -159,14 +160,15 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
     );
   }
 
-  const compactStatus = session.priorityUpgradesEnabled ? "Priority Signal Upgrade: Activated" : "Priority Signal Upgrade: Disabled";
-  const compactLabel = session.priorityUpgradeLabel?.trim();
+  const compactLabel = session.priorityUpgradeLabel?.trim() || "Priority Signal Upgrade";
+  const paymentsCanBeEnabled = priorityEnabled && priorityPriceCents > 0;
+  const editingPaymentsChecked = priorityPaymentsEnabled && paymentsCanBeEnabled;
 
   return (
     <section className="border border-border bg-surface p-5 space-y-4">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.35em] text-muted">// Current Session</p>
+          <p className="text-xs uppercase tracking-[0.35em] text-muted">// Current Broadcast Session</p>
           <h2 className="mt-2 text-2xl font-bold text-foreground">{session.title}</h2>
           <p className="mt-1 text-sm text-muted">{session.showDate} · {session.status}</p>
           <p className="mt-2 max-w-3xl text-sm text-muted">{session.description}</p>
@@ -179,25 +181,45 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
       </div>
 
       {priorityEditing ? (
-        <section className={`space-y-3 border bg-accent/5 p-4 transition-all duration-300 ${priorityJustSaved ? "border-accent shadow-[0_0_28px_rgba(255,0,0,0.28)]" : "border-accent/30"}`}>
+        <section className={`space-y-5 border bg-accent/5 p-5 transition-all duration-300 ${priorityJustSaved ? "border-accent shadow-[0_0_28px_rgba(255,0,0,0.28)]" : "border-accent/40"}`}>
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-accent">Priority Signal Upgrade</p>
-            <p className="mt-1 text-xs text-muted">Enable live Stripe checkout only after a price is configured and Stripe env vars are set.</p>
+            <h3 className="mt-2 text-xl font-bold text-foreground">Edit Priority Settings</h3>
+            <p className="mt-1 text-sm text-muted">Configure the public upgrade CTA, price, and Stripe checkout availability for this broadcast session.</p>
           </div>
-          <label className="flex items-center justify-between gap-3 text-sm"><span>{priorityEnabled ? "Enabled for public queue" : "Disabled for public queue"}</span><input type="checkbox" checked={priorityEnabled} onChange={(event) => setPriorityEnabled(event.target.checked)} /></label>
-          <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Public label</span><input value={priorityLabel} onChange={(event) => setPriorityLabel(event.target.value)} disabled={!priorityEnabled} className="w-full bg-background border border-border px-3 py-2 text-sm disabled:opacity-50" /></label>
-          <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Public instructions</span><textarea value={priorityInstructions} onChange={(event) => setPriorityInstructions(event.target.value)} disabled={!priorityEnabled} rows={3} className="w-full bg-background border border-border px-3 py-2 text-sm disabled:opacity-50" /></label><div className="grid gap-3 sm:grid-cols-2"><label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Future price (cents)</span><input type="number" min={0} value={priorityPriceCents} onChange={(event) => setPriorityPriceCents(Number(event.target.value))} className="w-full bg-background border border-border px-3 py-2 text-sm" /></label><label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Future currency</span><input value={priorityCurrency} onChange={(event) => setPriorityCurrency(event.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" /></label></div><label className="flex items-center justify-between gap-3 border border-border bg-background/50 p-3 text-sm"><span><span className="block text-xs uppercase tracking-widest text-muted">Stripe checkout payments</span><span className="text-xs text-muted">Disabled by default. Requires STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, and a non-zero price.</span></span><input type="checkbox" checked={priorityPaymentsEnabled} onChange={(event) => setPriorityPaymentsEnabled(event.target.checked)} disabled={!priorityEnabled || priorityPriceCents <= 0} /></label><p className="text-xs text-muted">Only the verified Stripe webhook marks a track paid or moves it into Priority Signal.</p>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="flex items-center justify-between gap-3 border border-border bg-background/50 p-4 text-sm lg:col-span-2"><span><span className="block font-bold text-foreground">Enable Priority Signal Upgrade</span><span className="text-xs text-muted">Show the Priority Signal Upgrade option for eligible public queue tracks.</span></span><input type="checkbox" checked={priorityEnabled} onChange={(event) => setPriorityEnabled(event.target.checked)} /></label>
+            <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Public label</span><input value={priorityLabel} onChange={(event) => setPriorityLabel(event.target.value)} disabled={!priorityEnabled} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /></label>
+            <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Currency</span><input value={priorityCurrency} onChange={(event) => setPriorityCurrency(event.target.value)} disabled={!priorityEnabled} className="w-full bg-background border border-border px-3 py-2.5 text-sm uppercase disabled:opacity-50" /></label>
+            <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Priority Signal price</span><input type="number" min={0} value={priorityPriceCents} onChange={(event) => setPriorityPriceCents(Math.max(0, Number(event.target.value)))} disabled={!priorityEnabled} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /><span className="block text-xs text-muted">Enter cents. Example: 500 = $5.00.</span></label>
+            <div className="border border-border bg-background/50 p-4"><p className="text-xs uppercase tracking-widest text-muted">Current display price</p><p className="mt-2 text-2xl font-bold text-foreground">{formatPrice(priorityPriceCents, priorityCurrency)}</p></div>
+            <label className="space-y-2 block lg:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Public instructions</span><textarea value={priorityInstructions} onChange={(event) => setPriorityInstructions(event.target.value)} disabled={!priorityEnabled} rows={3} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /></label>
+            <label className="flex items-center justify-between gap-3 border border-border bg-background/60 p-4 text-sm lg:col-span-2"><span><span className="block font-bold text-foreground">Enable Stripe checkout payments</span><span className="text-xs text-muted">Disabled unless Priority Signal Upgrade is enabled and Priority Signal price is greater than 0.</span></span><input type="checkbox" checked={editingPaymentsChecked} onChange={(event) => setPriorityPaymentsEnabled(event.target.checked)} disabled={!paymentsCanBeEnabled} /></label>
+          </div>
+          <p className="border border-border bg-background/50 p-3 text-sm text-muted">Only the verified Stripe webhook marks a track paid or moves it into Priority Signal.</p>
           {prioritySaveError && <p className="border border-danger/40 bg-danger/5 p-2 text-xs text-danger">{prioritySaveError}</p>}
-          <button type="button" onClick={savePrioritySettings} disabled={prioritySaving} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{prioritySaving ? "Saving…" : "Save Priority Upgrade Setting"}</button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={savePrioritySettings} disabled={prioritySaving} className="border border-accent bg-accent/10 px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{prioritySaving ? "Saving…" : "Save Priority Settings"}</button>
+            <button type="button" onClick={() => { setPrioritySaveError(null); setPriorityEditing(false); }} disabled={prioritySaving} className="border border-border px-5 py-3 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">Cancel</button>
+          </div>
         </section>
       ) : (
-        <section className={`flex flex-col gap-3 border bg-background/40 p-4 transition-all duration-300 sm:flex-row sm:items-center sm:justify-between ${priorityJustSaved ? "border-accent shadow-[0_0_28px_rgba(255,0,0,0.24)]" : "border-accent/30"}`}>
-          <div>
-            <p className={`text-xs uppercase tracking-[0.3em] ${session.priorityUpgradesEnabled ? "text-accent" : "text-muted"}`}>{compactStatus}</p>
-            {compactLabel && <p className="mt-1 text-sm text-foreground">Public label: {compactLabel}</p>}
-            <p className="mt-1 text-xs text-muted">Settings saved for this session. Price: {session.priorityUpgradePriceCents} {session.priorityUpgradeCurrency?.toUpperCase()} cents. Payments enabled: {session.priorityUpgradePaymentsEnabled ? "yes" : "no"}.</p>
+        <section className={`space-y-4 border bg-background/40 p-5 transition-all duration-300 ${priorityJustSaved ? "border-accent shadow-[0_0_28px_rgba(255,0,0,0.24)]" : "border-accent/40"}`}>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-accent">Priority Signal Upgrade</p>
+              <h3 className="mt-2 text-xl font-bold text-foreground">Payment Settings</h3>
+              {priorityJustSaved && <p className="mt-2 border border-accent/50 bg-accent/10 p-2 text-sm font-bold text-accent">Priority Signal settings saved.</p>}
+            </div>
+            <button type="button" onClick={() => { setPrioritySaveError(null); setPriorityEditing(true); }} className="border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Edit Priority Settings</button>
           </div>
-          <button type="button" onClick={() => { setPrioritySaveError(null); setPriorityEditing(true); }} className="border border-accent/70 px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Edit Settings</button>
+          <div className="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
+            <div className="border border-border bg-surface p-4"><p className="text-xs uppercase tracking-widest text-muted">Priority Upgrade</p><p className={session.priorityUpgradesEnabled ? "mt-2 text-lg font-bold text-accent" : "mt-2 text-lg font-bold text-muted"}>{session.priorityUpgradesEnabled ? "Enabled" : "Disabled"}</p></div>
+            <div className="border border-border bg-surface p-4"><p className="text-xs uppercase tracking-widest text-muted">Stripe Payments</p><p className={session.priorityUpgradePaymentsEnabled ? "mt-2 text-lg font-bold text-accent" : "mt-2 text-lg font-bold text-muted"}>{session.priorityUpgradePaymentsEnabled ? "Enabled" : "Disabled"}</p></div>
+            <div className="border border-border bg-surface p-4"><p className="text-xs uppercase tracking-widest text-muted">Price</p><p className="mt-2 text-lg font-bold text-foreground">{formatPrice(session.priorityUpgradePriceCents, session.priorityUpgradeCurrency)}</p></div>
+            <div className="border border-border bg-surface p-4"><p className="text-xs uppercase tracking-widest text-muted">Public label</p><p className="mt-2 text-sm font-bold text-foreground">{compactLabel}</p></div>
+          </div>
+          <p className="border border-border bg-surface p-3 text-sm text-muted">Only the verified Stripe webhook marks a track paid or moves it into Priority Signal.</p>
         </section>
       )}
 
@@ -210,7 +232,6 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
         <div className="border border-border p-3"><p className="text-xs text-muted">Track limit</p><p>{session.trackLimitPerArtist}</p></div>
         <div className="border border-border p-3"><p className="text-xs text-muted">Active runtime</p><p>{formatRuntime(session.estimatedActiveRuntimeSeconds)}</p></div>
         <div className="border border-border p-3"><p className="text-xs text-muted">Completed runtime</p><p>{formatRuntime(session.completedRuntimeSeconds)}</p></div>
-        <div className="border border-border p-3"><p className="text-xs text-muted">Priority upgrades</p><p className={session.priorityUpgradesEnabled ? "text-accent" : "text-muted"}>{session.priorityUpgradesEnabled ? "Enabled" : "Disabled"}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Priority payments</p><p className={session.priorityUpgradePaymentsEnabled ? "text-accent" : "text-muted"}>{session.priorityUpgradePaymentsEnabled ? "Enabled" : "Disabled"} · {session.priorityUpgradePriceCents} {session.priorityUpgradeCurrency?.toUpperCase()} cents</p></div>
       </div>
     </section>
   );

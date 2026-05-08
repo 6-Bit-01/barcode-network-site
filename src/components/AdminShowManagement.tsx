@@ -106,17 +106,39 @@ function StartNewSession({ queueIsOpen, onCloseSubmissions, title, description, 
   return <section className={`space-y-5 border p-6 ${queueIsOpen ? "border-danger/60 bg-danger/10" : "border-accent/40 bg-surface"}`}><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Start New Session</p><p className="text-sm text-muted mt-2">Create a clean BARCODE Radio session. Submissions start closed; open them from Current Session when ready.</p></div>{queueIsOpen && <div className="border border-danger/50 bg-danger/10 p-4"><p className="text-sm font-bold uppercase tracking-[0.25em] text-danger">QUEUE OPEN</p><p className="mt-2 text-sm text-muted">Start New Session is locked while submissions are open for the current broadcast.</p><div className="mt-3 flex flex-wrap gap-2"><a href="/admin/queue" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Open Queue Control</a><button type="button" onClick={onCloseSubmissions} className="border border-danger/60 px-3 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background">Close Submissions</button>{sessionId && <a href={`/queue/${sessionId}`} className="border border-danger/50 px-3 py-2 text-xs uppercase tracking-widest text-danger">View Public Session</a>}</div></div>}<div className="grid gap-4 lg:grid-cols-2"><label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Session title</span><input disabled={queueIsOpen} value={title} onChange={(event) => onTitle(event.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label><label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Track limit</span><input disabled={queueIsOpen} type="number" min={1} value={trackLimitPerArtist} onChange={(event) => onTrackLimit(Number(event.target.value))} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label><label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Queue capacity</span><input disabled={queueIsOpen} type="number" min={1} value={queueCapacity} onChange={(event) => onCapacity(Number(event.target.value))} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label><label className="space-y-2 lg:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Description / rule blurb</span><textarea disabled={queueIsOpen} value={description} onChange={(event) => onDescription(event.target.value)} rows={4} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /></label><div className="space-y-3 border border-accent/30 bg-accent/5 p-3 lg:col-span-2"><label className="flex items-center justify-between gap-3 text-sm"><span><span className="block text-xs uppercase tracking-widest text-muted">Priority Signal Upgrade</span><span className="text-xs text-muted">Disabled by default; enable only for this session.</span></span><input disabled={queueIsOpen} type="checkbox" checked={priorityUpgradesEnabled} onChange={(event) => onPriorityEnabled(event.target.checked)} /></label><label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Public label</span><input disabled={queueIsOpen || !priorityUpgradesEnabled} value={priorityUpgradeLabel} onChange={(event) => onPriorityLabel(event.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /></label><label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Public placeholder instructions</span><textarea disabled={queueIsOpen || !priorityUpgradesEnabled} value={priorityUpgradeInstructions} onChange={(event) => onPriorityInstructions(event.target.value)} rows={3} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /></label></div></div><button onClick={onStart} disabled={queueIsOpen} className="border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Start New Session</button></section>;
 }
 
-function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSummary | null | undefined; onPost: (body: Record<string, unknown>) => void; onEnd: () => void }) {
+function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSummary | null | undefined; onPost: (body: Record<string, unknown>) => Promise<QueueState | null>; onEnd: () => void }) {
   const [priorityEnabled, setPriorityEnabled] = useState(false);
   const [priorityLabel, setPriorityLabel] = useState("Priority Signal Upgrade");
   const [priorityInstructions, setPriorityInstructions] = useState("Priority Signal Upgrade is being prepared for this session. This placeholder does not charge money or move your track automatically.");
+  const [priorityEditing, setPriorityEditing] = useState(false);
+  const [prioritySaving, setPrioritySaving] = useState(false);
+  const [prioritySaveError, setPrioritySaveError] = useState<string | null>(null);
+  const [priorityJustSaved, setPriorityJustSaved] = useState(false);
 
   useEffect(() => {
     if (!session) return;
     setPriorityEnabled(session.priorityUpgradesEnabled === true);
     setPriorityLabel(session.priorityUpgradeLabel || "Priority Signal Upgrade");
     setPriorityInstructions(session.priorityUpgradeInstructions || "Priority Signal Upgrade is being prepared for this session. This placeholder does not charge money or move your track automatically.");
+    setPrioritySaveError(null);
   }, [session]);
+
+  async function savePrioritySettings() {
+    setPrioritySaving(true);
+    setPrioritySaveError(null);
+    const next = await onPost({ action: "updatePriorityUpgradeSettings", enabled: priorityEnabled, label: priorityLabel, instructions: priorityInstructions });
+    setPrioritySaving(false);
+    if (!next) {
+      setPrioritySaveError("Priority Signal settings could not be saved.");
+      setPriorityEditing(true);
+      return;
+    }
+    setPriorityJustSaved(true);
+    window.setTimeout(() => {
+      setPriorityEditing(false);
+      setPriorityJustSaved(false);
+    }, 520);
+  }
 
   if (!session) {
     return (
@@ -128,6 +150,10 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
       </section>
     );
   }
+
+  const compactStatus = session.priorityUpgradesEnabled ? "Priority Signal Upgrade: Activated" : "Priority Signal Upgrade: Disabled";
+  const compactLabel = session.priorityUpgradeLabel?.trim();
+
   return (
     <section className="border border-border bg-surface p-5 space-y-4">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -143,7 +169,30 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
           <button onClick={onEnd} className="border border-danger/60 px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Session</button>
         </div>
       </div>
-      <section className="border border-accent/30 bg-accent/5 p-4 space-y-3"><div><p className="text-xs uppercase tracking-[0.3em] text-accent">Priority Signal Upgrade</p><p className="mt-1 text-xs text-muted">Session-level placeholder foundation only. This does not enable payments.</p></div><label className="flex items-center justify-between gap-3 text-sm"><span>{priorityEnabled ? "Enabled for public queue" : "Disabled for public queue"}</span><input type="checkbox" checked={priorityEnabled} onChange={(event) => setPriorityEnabled(event.target.checked)} /></label><label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Public label</span><input value={priorityLabel} onChange={(event) => setPriorityLabel(event.target.value)} disabled={!priorityEnabled} className="w-full bg-background border border-border px-3 py-2 text-sm disabled:opacity-50" /></label><label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Public placeholder instructions</span><textarea value={priorityInstructions} onChange={(event) => setPriorityInstructions(event.target.value)} disabled={!priorityEnabled} rows={3} className="w-full bg-background border border-border px-3 py-2 text-sm disabled:opacity-50" /></label><button type="button" onClick={() => onPost({ action: "updatePriorityUpgradeSettings", enabled: priorityEnabled, label: priorityLabel, instructions: priorityInstructions })} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Save Priority Upgrade Setting</button></section>
+
+      {priorityEditing ? (
+        <section className={`space-y-3 border bg-accent/5 p-4 transition-all duration-300 ${priorityJustSaved ? "border-accent shadow-[0_0_28px_rgba(255,0,0,0.28)]" : "border-accent/30"}`}>
+          <div>
+            <p className="text-xs uppercase tracking-[0.3em] text-accent">Priority Signal Upgrade</p>
+            <p className="mt-1 text-xs text-muted">Session-level placeholder foundation only. This does not enable payments.</p>
+          </div>
+          <label className="flex items-center justify-between gap-3 text-sm"><span>{priorityEnabled ? "Enabled for public queue" : "Disabled for public queue"}</span><input type="checkbox" checked={priorityEnabled} onChange={(event) => setPriorityEnabled(event.target.checked)} /></label>
+          <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Public label</span><input value={priorityLabel} onChange={(event) => setPriorityLabel(event.target.value)} disabled={!priorityEnabled} className="w-full bg-background border border-border px-3 py-2 text-sm disabled:opacity-50" /></label>
+          <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Public placeholder instructions</span><textarea value={priorityInstructions} onChange={(event) => setPriorityInstructions(event.target.value)} disabled={!priorityEnabled} rows={3} className="w-full bg-background border border-border px-3 py-2 text-sm disabled:opacity-50" /></label>
+          {prioritySaveError && <p className="border border-danger/40 bg-danger/5 p-2 text-xs text-danger">{prioritySaveError}</p>}
+          <button type="button" onClick={savePrioritySettings} disabled={prioritySaving} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{prioritySaving ? "Saving…" : "Save Priority Upgrade Setting"}</button>
+        </section>
+      ) : (
+        <section className={`flex flex-col gap-3 border bg-background/40 p-4 transition-all duration-300 sm:flex-row sm:items-center sm:justify-between ${priorityJustSaved ? "border-accent shadow-[0_0_28px_rgba(255,0,0,0.24)]" : "border-accent/30"}`}>
+          <div>
+            <p className={`text-xs uppercase tracking-[0.3em] ${session.priorityUpgradesEnabled ? "text-accent" : "text-muted"}`}>{compactStatus}</p>
+            {compactLabel && <p className="mt-1 text-sm text-foreground">Public label: {compactLabel}</p>}
+            <p className="mt-1 text-xs text-muted">Settings saved for this session.</p>
+          </div>
+          <button type="button" onClick={() => { setPrioritySaveError(null); setPriorityEditing(true); }} className="border border-accent/70 px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Edit Settings</button>
+        </section>
+      )}
+
       <div className="grid gap-3 text-sm sm:grid-cols-4">
         <div className="border border-border p-3"><p className="text-xs text-muted">Submissions</p><p className={session.queueOpen ? "text-accent" : "text-danger"}>{session.queueOpen ? "Open" : "Closed"}</p></div>
         <div className="border border-border p-3"><p className="text-xs text-muted">Active / Capacity</p><p>{session.activeCount}/{session.queueCapacity}</p></div>
@@ -152,7 +201,8 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
         <div className="border border-border p-3"><p className="text-xs text-muted">Spotlight</p><p>{session.spotlightCount}</p></div>
         <div className="border border-border p-3"><p className="text-xs text-muted">Track limit</p><p>{session.trackLimitPerArtist}</p></div>
         <div className="border border-border p-3"><p className="text-xs text-muted">Active runtime</p><p>{formatRuntime(session.estimatedActiveRuntimeSeconds)}</p></div>
-        <div className="border border-border p-3"><p className="text-xs text-muted">Completed runtime</p><p>{formatRuntime(session.completedRuntimeSeconds)}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Priority upgrades</p><p className={session.priorityUpgradesEnabled ? "text-accent" : "text-muted"}>{session.priorityUpgradesEnabled ? "Enabled" : "Disabled"}</p></div>
+        <div className="border border-border p-3"><p className="text-xs text-muted">Completed runtime</p><p>{formatRuntime(session.completedRuntimeSeconds)}</p></div>
+        <div className="border border-border p-3"><p className="text-xs text-muted">Priority upgrades</p><p className={session.priorityUpgradesEnabled ? "text-accent" : "text-muted"}>{session.priorityUpgradesEnabled ? "Enabled" : "Disabled"}</p></div>
       </div>
     </section>
   );

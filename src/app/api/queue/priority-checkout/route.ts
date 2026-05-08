@@ -9,6 +9,9 @@ function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+const PRIORITY_DEPTH_UNAVAILABLE_MESSAGE = "Priority Signal opens once the broadcast line has enough active transmissions to overtake.";
+const MIN_PRIORITY_ACTIVE_DEPTH = 2;
+
 function stripeReady(): boolean {
   return Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
 }
@@ -33,6 +36,7 @@ export async function POST(req: Request) {
     if (storedCheckoutStillUsable(checkoutRequest.track)) {
       return NextResponse.json({ url: checkoutRequest.track.priorityUpgradeCheckoutUrl, sessionId: checkoutRequest.track.priorityUpgradeCheckoutSessionId, message: "Payment confirmation may take a moment." });
     }
+    if (checkoutRequest.session.activeCount < MIN_PRIORITY_ACTIVE_DEPTH) return NextResponse.json({ error: PRIORITY_DEPTH_UNAVAILABLE_MESSAGE }, { status: 409 });
 
     const checkout = await createPrioritySignalCheckoutSession({
       trackId,

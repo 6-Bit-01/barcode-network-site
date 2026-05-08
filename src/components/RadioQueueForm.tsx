@@ -17,6 +17,8 @@ type RouteChoice = "free" | "priority";
 const UPLOAD_FALLBACK_MESSAGE = "Upload could not be completed. Please try again or submit a Spotify, SoundCloud, YouTube, or direct track link.";
 const PRIORITY_SIGNAL_LABEL = "Priority Signal Upgrade";
 const PRIORITY_CHECKOUT_UNAVAILABLE_MESSAGE = "Priority checkout could not be started. Your track entered Free Transmissions.";
+const PRIORITY_DEPTH_UNAVAILABLE_MESSAGE = "Priority Signal opens once the broadcast line has enough active transmissions to overtake.";
+const MIN_PRIORITY_ACTIVE_DEPTH = 2;
 function formatPrice(cents: number, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }
 
 interface WarpData {
@@ -295,7 +297,9 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
 
   const priorityPriceCents = session?.priorityUpgradePriceCents ?? 0;
   const priorityCurrency = session?.priorityUpgradeCurrency ?? "usd";
-  const priorityCheckoutAvailable = session?.priorityUpgradesEnabled === true && session?.priorityUpgradePaymentsEnabled === true && priorityPriceCents > 0;
+  const priorityPaymentsAvailable = session?.priorityUpgradesEnabled === true && session?.priorityUpgradePaymentsEnabled === true && priorityPriceCents > 0;
+  const priorityDepthAvailable = (status?.activeCount ?? 0) >= MIN_PRIORITY_ACTIVE_DEPTH;
+  const priorityCheckoutAvailable = priorityPaymentsAvailable && status?.isOpen === true && priorityDepthAvailable;
   const selectedRoute: RouteChoice = priorityCheckoutAvailable ? routeChoice : "free";
 
   function clearTrackDraftFields() {
@@ -540,13 +544,13 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
             </div>
             <div className="grid gap-3 text-xs sm:grid-cols-2">
               <button type="button" onClick={() => setRouteChoice("free")} className={`border p-4 text-left transition-all ${selectedRoute === "free" ? "border-accent bg-accent/10 text-foreground" : "border-border bg-background/40 text-muted"}`}><span className="text-sm font-bold text-foreground">Free Transmission</span><span className="mt-2 block">Enters Free Transmissions.</span><span className="block">No payment required.</span><span className="mt-3 block text-muted">If you submit now, you’ll enter around position #{estimatedPosition} in Free Transmissions. Estimated wait may shift during the show.</span></button>
-              {priorityCheckoutAvailable && <button type="button" onClick={() => setRouteChoice("priority")} className={`border p-4 text-left transition-all ${selectedRoute === "priority" ? "border-[#ffaa00] bg-[#ffaa00]/10 text-foreground" : "border-[#ffaa00]/40 bg-background/40 text-muted"}`}><span className="text-sm font-bold text-[#ffaa00]">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">Moves this track into the Priority Signal lane after payment confirmation.</span><span className="block">Priority Signals clear before Wheel Chosen and Free Transmissions.</span><span className="block">Funds BARCODE Network broadcast systems.</span><span className="mt-3 block text-[#ffaa00]">{formatPrice(priorityPriceCents, priorityCurrency)}</span><span className="mt-2 block text-muted">Priority Signal placement activates after payment confirmation. Queue position may shift during checkout.</span></button>}
+              {priorityCheckoutAvailable ? <button type="button" onClick={() => setRouteChoice("priority")} className={`border p-4 text-left transition-all ${selectedRoute === "priority" ? "border-[#ffaa00] bg-[#ffaa00]/10 text-foreground" : "border-[#ffaa00]/40 bg-background/40 text-muted"}`}><span className="text-sm font-bold text-[#ffaa00]">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">Moves this track into the Priority Signal lane after payment confirmation.</span><span className="block">Priority Signals clear before Wheel Chosen and Free Transmissions.</span><span className="block">Funds BARCODE Network broadcast systems.</span><span className="mt-3 block text-[#ffaa00]">{formatPrice(priorityPriceCents, priorityCurrency)}</span><span className="mt-2 block text-muted">Priority Signal placement activates after payment confirmation. Queue position may shift during checkout.</span></button> : priorityPaymentsAvailable && <div className="border border-[#ffaa00]/30 bg-background/40 p-4 text-left text-muted"><span className="text-sm font-bold text-[#ffaa00]/70">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">{PRIORITY_DEPTH_UNAVAILABLE_MESSAGE}</span><span className="mt-3 block text-[#ffaa00]/70">{formatPrice(priorityPriceCents, priorityCurrency)}</span></div>}
             </div>
             <div className="grid gap-2 text-xs sm:grid-cols-2">
               {submitterStatus && <div className="border border-accent/40 bg-accent/5 p-2 text-muted"><p className="font-bold text-accent">Your transmissions: {submitterStatus.used} / {submitterStatus.limit}</p><p>Remaining: {submitterStatus.remaining}</p>{submitterStatus.cooldownRemainingSeconds > 0 && <p className="text-accent">Cooldown: {formatCooldown(submitterStatus.cooldownRemainingSeconds)}</p>}</div>}
               {effectiveCooldown > 0 && <div className="border border-accent/40 bg-accent/5 p-2 text-accent">Next transmission available in {formatCooldown(effectiveCooldown)}</div>}
               <div className="border border-border bg-background/40 p-2 text-muted">{checkCopy}</div>
-              {!priorityCheckoutAvailable && <div className="border border-border bg-background/40 p-2 text-muted">Priority Signal Upgrade is unavailable for this session. Free Transmission remains active.</div>}
+              {!priorityPaymentsAvailable && <div className="border border-border bg-background/40 p-2 text-muted">Priority Signal Upgrade is unavailable for this session. Free Transmission remains active.</div>}
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               <button type="button" onClick={() => setStep("track")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Back</button>

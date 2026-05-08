@@ -12,6 +12,7 @@ type QueueView = "active" | "recent";
 
 const PRIORITY_SIGNAL_LABEL = "Priority Signal Upgrade";
 const PRIORITY_SIGNAL_EXPLANATION = "Moves this track into the Priority Signal lane after payment confirmation.";
+const MIN_PRIORITY_ACTIVE_DEPTH = 2;
 function formatPrice(cents: number, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }
 function sourceTypeLabel(track: QueuePublicTrack): string {
   if (track.sourceType === "upload") return "Uploaded audio packet";
@@ -81,7 +82,8 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const completedRuntime = snapshot?.session.completedRuntimeSeconds ?? 0;
   const priorityUpgradeEnabled = snapshot?.session.priorityUpgradesEnabled === true;
   const priorityPaymentsEnabled = snapshot?.session.priorityUpgradePaymentsEnabled === true && (snapshot?.session.priorityUpgradePriceCents ?? 0) > 0;
-  const priorityUpgradeAvailable = priorityUpgradeEnabled && priorityPaymentsEnabled;
+  const priorityPaymentsAvailable = priorityUpgradeEnabled && priorityPaymentsEnabled;
+  const priorityUpgradeAvailable = priorityPaymentsAvailable && (snapshot?.status.activeCount ?? 0) >= MIN_PRIORITY_ACTIVE_DEPTH;
   const priorityPriceCents = snapshot?.session.priorityUpgradePriceCents ?? 0;
   const priorityCurrency = snapshot?.session.priorityUpgradeCurrency ?? "usd";
 
@@ -96,7 +98,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   }
 
   function canResumePriorityPayment(track: QueuePublicTrack): boolean {
-    if (!priorityUpgradeAvailable || isEnded || snapshot?.session.status !== "open") return false;
+    if (!priorityPaymentsAvailable || isEnded || snapshot?.session.status !== "open") return false;
     return track.priorityUpgradeStatus === "checkout_pending";
   }
 
@@ -107,7 +109,11 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   }
 
   async function beginPriorityCheckout(track: QueuePublicTrack) {
-    if (!priorityUpgradeAvailable) {
+    if (track.priorityUpgradeStatus !== "checkout_pending" && !priorityUpgradeAvailable) {
+      setPriorityRequestMessage("Priority Signal upgrades unavailable.");
+      return;
+    }
+    if (track.priorityUpgradeStatus === "checkout_pending" && !priorityPaymentsAvailable) {
       setPriorityRequestMessage("Priority Signal upgrades unavailable.");
       return;
     }

@@ -822,6 +822,19 @@ async function resolvePublicArtworkForSession(session: QueueSession): Promise<bo
   return changed;
 }
 
+
+function publicSourceUrlForTrack(entry: QueueEntry): string | null {
+  if ((entry.sourceType ?? "other") === "upload") return null;
+  const raw = entry.link?.trim();
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
   const normalized = normalizeEntry(entry);
   return {
@@ -836,6 +849,7 @@ export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
     durationLabel: normalized.durationIsEstimate ? "estimated/pending" : formatRuntime(getTrackRuntimeSeconds(normalized)),
     durationIsEstimate: normalized.durationIsEstimate ?? true,
     sourceArtworkUrl: getTrackArtworkUrl(normalized),
+    publicSourceUrl: publicSourceUrlForTrack(normalized),
     tiktokHandle: normalized.tiktokHandle ?? null,
   };
 }

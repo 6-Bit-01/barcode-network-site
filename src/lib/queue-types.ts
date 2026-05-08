@@ -118,6 +118,7 @@ export interface QueuePublicTrack {
   durationLabel: string;
   durationIsEstimate: boolean;
   sourceArtworkUrl?: string | null;
+  publicSourceUrl?: string | null;
   tiktokHandle?: string | null;
 }
 

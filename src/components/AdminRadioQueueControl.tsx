@@ -229,6 +229,54 @@ function TrackActions({ entry, onAction, onPlayer, onCopy, mode, readOnly }: { e
   return <div className="flex flex-wrap gap-2">{mode === "next" && <button type="button" onClick={() => onPlayer(entry)} className="border border-accent px-3 py-1.5 text-xs text-accent">Load in Player</button>}<a href={openUrl(entry)} target="_blank" rel="noreferrer" className="border border-border px-3 py-1.5 text-xs text-muted">Open Link</a><button type="button" onClick={() => onCopy(entry)} className="border border-border px-3 py-1.5 text-xs text-muted">Copy Link</button>{!readOnly && mode === "next" && <><button type="button" onClick={() => onAction(entry.id, "moveBack")} className="border border-border px-3 py-1.5 text-xs text-muted">Return to Queue</button><button type="button" onClick={() => onAction(entry.id, "remove")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove</button><button type="button" onClick={() => onAction(entry.id, "spotlight")} className="border border-foreground/40 px-3 py-1.5 text-xs text-foreground">Spotlight</button></>}{!readOnly && mode === "active" && <><button type="button" onClick={() => onAction(entry.id, "remove")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove</button>{lane === "regular" ? <><button type="button" onClick={() => onAction(entry.id, "priority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move to Priority Lane</button><button type="button" onClick={() => onAction(entry.id, "wheel")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Mark Wheel Chosen</button></> : <button type="button" onClick={() => onAction(entry.id, "regular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Move to Regular Queue</button>}<button type="button" onClick={() => onAction(entry.id, "spotlight")} className="border border-foreground/40 px-3 py-1.5 text-xs text-foreground">Spotlight</button></>}{!readOnly && mode === "spotlight" && <button type="button" onClick={() => onAction(entry.id, "removeSpotlight")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove from Spotlight</button>}{!readOnly && mode === "completed" && <><button type="button" onClick={() => onAction(entry.id, "restoreRegular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Move back to Regular Queue</button><button type="button" onClick={() => onAction(entry.id, "restorePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move back to Priority Lane</button></>}{!readOnly && mode === "removed" && <><button type="button" onClick={() => onAction(entry.id, "restoreRegular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Restore to Regular Queue</button><button type="button" onClick={() => onAction(entry.id, "restorePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Restore to Priority Lane</button></>}</div>;
 }
 
+function AdminTrackMetadata({ entry }: { entry: QueueEntry }) {
+  const detected = detectedLabel(entry);
+  return (
+    <div className="grid gap-3 text-xs md:grid-cols-[1.2fr_1fr]">
+      <div className="border border-border/60 p-3">
+        <span className="block text-muted uppercase tracking-widest">Submitted</span>
+        <p className="mt-1 font-bold text-foreground">{submittedArtist(entry)} — {submittedTitle(entry)}</p>
+        {entry.tiktokHandle && <p className="mt-1 text-muted">TikTok: {entry.tiktokHandle.startsWith("@") ? entry.tiktokHandle : `@${entry.tiktokHandle}`}</p>}
+        {entry.contactEmail && <p className="mt-1 text-muted">Contact: {entry.contactEmail}</p>}
+        {entry.submitterArtistName && <p className="mt-1 text-muted">Submitted by: {entry.submitterArtistName}</p>}
+      </div>
+      <div className="border border-border/60 p-3">
+        <span className="block text-muted uppercase tracking-widest">Detected source</span>
+        <p className="mt-1 text-foreground">{detected ?? "Pending provider metadata"}</p>
+        <p className="mt-1 text-muted">{sourceLabel(entry)} · {durationLabel(entry)}</p>
+        {entry.fileName && <p className="mt-1 text-muted">File: {entry.fileName}</p>}
+      </div>
+    </div>
+  );
+}
+
 function Lane({ title, tracks, onAction, onPlayer, onCopy, mode, readOnly }: { title: string; tracks: QueueEntry[]; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void; mode: "next" | "active" | "spotlight" | "completed" | "removed"; readOnly: boolean }) {
-  return <section className="border border-border bg-surface p-4"><div className="mb-4 flex items-center justify-between"><h2 className="text-sm uppercase tracking-[0.25em] text-foreground">{title}</h2><span className="text-xs text-muted">{tracks.length}</span></div><div className="space-y-3">{tracks.length === 0 ? <p className="border border-border/60 p-4 text-sm text-muted">No tracks in this lane.</p> : tracks.map((entry) => <article key={`${title}-${entry.id}`} className="space-y-3 border border-border bg-background/40 p-4"><div className="space-y-2"><div><p className="font-bold">{submittedArtist(entry)} — {submittedTitle(entry)}</p><p className="text-xs text-muted">{sourceLabel(entry)} · {durationLabel(entry)} · {entry.fileName || entry.link}</p></div><div className="grid gap-2 text-xs sm:grid-cols-3"><div className="border border-border/60 p-2"><span className="block text-muted uppercase tracking-widest">Submitted</span>{submittedArtist(entry)} — {submittedTitle(entry)}</div><div className="border border-border/60 p-2"><span className="block text-muted uppercase tracking-widest">Detected / Provider</span>{detectedLabel(entry) ?? "Pending provider metadata"}</div><div className="border border-border/60 p-2"><span className="block text-muted uppercase tracking-widest">Artwork Debug</span>{sourceLabel(entry)} · {entry.providerId ?? "no provider id"} · artwork {entry.sourceArtworkUrl ? "present" : "missing"}</div></div>{entry.suspiciousFlags && entry.suspiciousFlags.length > 0 && <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 p-2 text-xs text-[#ffaa00]">Admin flags: {entry.suspiciousFlags.join(" / ")}</div>}{entry.note && <details className="border border-accent/30 bg-accent/5 p-2 text-xs"><summary className="cursor-pointer text-accent uppercase tracking-widest">Submission note</summary><p className="mt-2 line-clamp-4 whitespace-pre-wrap break-words text-foreground">{entry.note}</p></details>}</div><TrackActions entry={entry} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} mode={mode} readOnly={readOnly} /></article>)}</div></section>;
+  return (
+    <section className="border border-border bg-surface p-4">
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-sm uppercase tracking-[0.25em] text-foreground">{title}</h2>
+        <span className="text-xs text-muted">{tracks.length}</span>
+      </div>
+      <div className="space-y-3">
+        {tracks.length === 0 ? (
+          <p className="border border-border/60 p-4 text-sm text-muted">No tracks in this lane.</p>
+        ) : (
+          tracks.map((entry) => (
+            <article key={`${title}-${entry.id}`} className="space-y-3 border border-border bg-background/40 p-4">
+              <div className="space-y-3">
+                <div>
+                  <p className="font-bold">{submittedArtist(entry)} — {submittedTitle(entry)}</p>
+                  <p className="text-xs text-muted">{sourceLabel(entry)} · {durationLabel(entry)}</p>
+                </div>
+                <AdminTrackMetadata entry={entry} />
+                {entry.suspiciousFlags && entry.suspiciousFlags.length > 0 && <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 p-2 text-xs text-[#ffaa00]">Admin flags: {entry.suspiciousFlags.join(" / ")}</div>}
+                {entry.note && <details className="border border-accent/30 bg-accent/5 p-2 text-xs"><summary className="cursor-pointer text-accent uppercase tracking-widest">Submission note</summary><p className="mt-2 line-clamp-4 whitespace-pre-wrap break-words text-foreground">{entry.note}</p></details>}
+              </div>
+              <TrackActions entry={entry} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} mode={mode} readOnly={readOnly} />
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  );
 }

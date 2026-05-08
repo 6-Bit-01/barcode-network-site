@@ -7,7 +7,8 @@ import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@
 
 type Mode = "link" | "upload";
 type ReadState = "idle" | "checking" | "reading" | "detected" | "pending";
-type TransmissionState = "idle" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed";
+type TransmissionState = "idle" | "signal" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed";
+type SubmitPhase = "resolved" | "complete";
 
 interface WarpData {
   artist: string;
@@ -58,7 +59,7 @@ function readAudioDuration(file: File): Promise<number | null> {
   });
 }
 
-function publicTrackFromApi(track: { id: string; submittedArtistName?: string; submittedSongTitle?: string; artist?: string; title?: string; sourceType?: QueuePublicTrack["sourceType"]; lane?: QueuePublicTrack["lane"]; detectedArtistName?: string | null; detectedSongTitle?: string | null; detectedDurationSeconds?: number | null; durationIsEstimate?: boolean; sourceArtworkUrl?: string | null; tiktokHandle?: string | null }): QueuePublicTrack {
+function publicTrackFromApi(track: { id: string; submittedArtistName?: string; submittedSongTitle?: string; artist?: string; title?: string; sourceType?: QueuePublicTrack["sourceType"]; lane?: QueuePublicTrack["lane"]; detectedArtistName?: string | null; detectedSongTitle?: string | null; detectedDurationSeconds?: number | null; durationIsEstimate?: boolean; sourceArtworkUrl?: string | null; publicSourceUrl?: string | null; tiktokHandle?: string | null }): QueuePublicTrack {
   return {
     id: track.id,
     submittedArtistName: track.submittedArtistName ?? track.artist ?? "Submitted artist",
@@ -70,13 +71,16 @@ function publicTrackFromApi(track: { id: string; submittedArtistName?: string; s
     durationLabel: track.durationIsEstimate === false && track.detectedDurationSeconds ? formatRuntime(track.detectedDurationSeconds) : "estimated/pending",
     durationIsEstimate: track.durationIsEstimate ?? true,
     sourceArtworkUrl: track.sourceArtworkUrl ?? null,
+    publicSourceUrl: track.publicSourceUrl ?? null,
     tiktokHandle: track.tiktokHandle ?? null,
   };
 }
 
-export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string; onSubmitted?: (trackId?: string) => void } = {}) {
+export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string; onSubmitted?: (trackId?: string, phase?: SubmitPhase, targetId?: string) => void } = {}) {
   const [status, setStatus] = useState<QueuePublicStatus | null>(null);
   const [publicQueue, setPublicQueue] = useState<QueuePublicTrack[]>([]);
+  const [nowPlaying, setNowPlaying] = useState<QueuePublicTrack | null>(null);
+  const [upNext, setUpNext] = useState<QueuePublicTrack | null>(null);
   const [session, setSession] = useState<QueuePublicSnapshot["session"] | null>(null);
   const [submitterStatus, setSubmitterStatus] = useState<QueuePublicSnapshot["submitterStatus"] | null>(null);
   const [lastSubmittedTrackId, setLastSubmittedTrackId] = useState<string | null>(null);
@@ -112,7 +116,11 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
       setSession(payload.session ?? null);
       setSubmitterStatus(payload.submitterStatus ?? null);
       setPublicQueue(Array.isArray(payload.queue) ? payload.queue : []);
+      setNowPlaying(payload.nowPlaying ?? null);
+      setUpNext(payload.upNext ?? null);
+      return payload as QueuePublicSnapshot;
     }
+    return null;
   }
 
   useEffect(() => {
@@ -177,6 +185,22 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
     };
   }, [link, mode]);
 
+
+  function findSubmittedTrack(snapshot: QueuePublicSnapshot | null, trackId: string): { track: QueuePublicTrack | null; targetId: string; laneLabel: string } {
+    if (!snapshot) return { track: null, targetId: "active-queue-panel", laneLabel: "ACTIVE_QUEUE" };
+    if (snapshot.nowPlaying?.id === trackId) return { track: snapshot.nowPlaying, targetId: "now-playing-slot", laneLabel: "NOW_PLAYING" };
+    if (snapshot.upNext?.id === trackId) return { track: snapshot.upNext, targetId: "up-next-slot", laneLabel: "UP_NEXT" };
+    const queued = snapshot.queue.find((entry) => entry.id === trackId) ?? null;
+    if (queued?.lane === "priority") return { track: queued, targetId: "priority-lane", laneLabel: "PRIORITY_SIGNAL" };
+    if (queued?.lane === "wheel") return { track: queued, targetId: "wheel-lane", laneLabel: "WHEEL_CHOSEN" };
+    if (queued?.lane === "regular") return { track: queued, targetId: "free-transmissions-lane", laneLabel: "FREE_TRANSMISSIONS" };
+    return { track: queued, targetId: "active-queue-panel", laneLabel: "ACTIVE_QUEUE" };
+  }
+
+  function wait(ms: number) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+  }
+
   async function onFileSelected(next: File | null) {
     setFile(next);
     setDetectedDuration(null);
@@ -232,7 +256,8 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
         const nextCooldown = typeof payload.cooldownRemainingSeconds === "number" ? payload.cooldownRemainingSeconds : 300;
         setCooldownRemaining(nextCooldown);
         if (submitterToken) window.localStorage.setItem(`barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}`, String(Date.now() + nextCooldown * 1000));
-        setWarpData({
+        const preSubmit = { nowPlayingWasEmpty: !nowPlaying, upNextWasEmpty: !upNext, activeCount: status?.activeCount ?? publicQueue.length };
+        const baseWarpData: WarpData = {
           artist: artist.trim(),
           title: title.trim(),
           tiktokHandle: tiktokHandle.trim(),
@@ -245,14 +270,39 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
           submissionSlot: status ? `#${Math.min(status.activeCount + 1, status.capacity)}` : "FREE_TRANSMISSIONS",
           lane: submitted.lane === "priority" ? "PRIORITY_SIGNAL" : submitted.lane === "wheel" ? "WHEEL_CHOSEN" : "FREE_TRANSMISSIONS",
           artworkUrl: submitted.sourceArtworkUrl ?? null,
-        });
-        setTransmissionState("received");
-        window.setTimeout(() => setTransmissionState("encoded"), 900);
-        window.setTimeout(() => setTransmissionState("converting"), 2000);
-        window.setTimeout(() => setTransmissionState("temporal"), 3300);
-        window.setTimeout(() => setTransmissionState("aligning"), 4700);
-        window.setTimeout(() => setTransmissionState("confirmed"), 6100);
+        };
+        setWarpData(baseWarpData);
+        setTransmissionState("signal");
         setPublicQueue((current) => [submitted, ...current.filter((entry) => entry.id !== submitted.id)]);
+        await wait(1000);
+        const refreshed = await loadStatus();
+        let resolved = findSubmittedTrack(refreshed, submitted.id);
+        if (resolved.targetId === "up-next-slot" && preSubmit.upNextWasEmpty) {
+          resolved = { ...resolved, targetId: preSubmit.nowPlayingWasEmpty && preSubmit.activeCount === 0 ? "broadcast-queue-top" : "up-next-slot", laneLabel: "UP_NEXT" };
+        }
+        const resolvedTrack = resolved.track ?? submitted;
+        setWarpData({
+          ...baseWarpData,
+          durationLabel: resolvedTrack.durationLabel,
+          lane: resolved.laneLabel,
+          artworkUrl: resolvedTrack.sourceArtworkUrl ?? baseWarpData.artworkUrl,
+          queueStatus: refreshed ? `${refreshed.status.activeCount}/${refreshed.status.capacity}` : baseWarpData.queueStatus,
+          submissionSlot: resolvedTrack.id === refreshed?.upNext?.id ? "UP_NEXT" : baseWarpData.submissionSlot,
+        });
+        onSubmitted?.(submitted.id, "resolved", resolved.targetId);
+        setTransmissionState("received");
+        await wait(900);
+        setTransmissionState("encoded");
+        await wait(1100);
+        setTransmissionState("converting");
+        await wait(1300);
+        setTransmissionState("temporal");
+        await wait(1400);
+        setTransmissionState("aligning");
+        await wait(1400);
+        setTransmissionState("confirmed");
+        await wait(900);
+        onSubmitted?.(submitted.id, "complete", resolved.targetId);
       }
       setArtist(window.localStorage.getItem("barcode-radio-submit-artist") ?? artist.trim());
       setTitle("");
@@ -264,8 +314,6 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
       setFile(null);
       setDetectedDuration(null);
       setReadState("idle");
-      await loadStatus();
-      window.setTimeout(() => onSubmitted?.(payload.track?.id), 7200);
     } catch (err) {
       setTransmissionState("idle");
       setError(err instanceof Error ? err.message : "Submission failed");
@@ -336,6 +384,7 @@ function formatCooldown(seconds: number): string {
 }
 
 function warpLabel(state: TransmissionState): string {
+  if (state === "signal") return "SIGNAL LOCKED / TRANSMISSION RECEIVED";
   if (state === "received") return "TRANSMISSION RECEIVED";
   if (state === "encoded") return "AUDIO SIGNAL ENCODED";
   if (state === "converting") return "DATA PACKET FORMED";
@@ -352,7 +401,11 @@ function PacketArtwork({ data }: { data: WarpData | null }) {
 
 function WarpSequence({ state, data }: { state: TransmissionState; data: WarpData | null }) {
   const steps: TransmissionState[] = ["received", "encoded", "converting", "temporal", "aligning", "confirmed"];
-  const activeIndex = Math.max(0, steps.indexOf(state));
+  const activeIndex = state === "signal" ? -1 : Math.max(0, steps.indexOf(state));
+  const motionClass = state === "signal" ? "signal-lock" : "barcode-warp";
+  const packetClass = state === "signal" ? "" : "packet-transfer";
+  const artClass = state === "signal" ? "" : "art-card";
+  const landingClass = state === "signal" ? "" : "landing-card";
   const fragments = [
     ["ARTIST", data?.artist ?? "SIGNAL SOURCE"],
     ["TITLE", data?.title ?? "UNKNOWN TRACK"],
@@ -364,13 +417,13 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
     ["SOURCE", data?.sourceType ?? "SOURCE"],
   ];
   return (
-    <div className="barcode-warp relative overflow-hidden border border-accent/60 bg-background/95 p-5 shadow-[0_0_100px_rgba(255,0,0,0.32)]">
+    <div className={`${motionClass} relative overflow-hidden border border-accent/60 bg-background/95 p-5 shadow-[0_0_100px_rgba(255,0,0,0.32)]`}>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_15%,rgba(255,0,0,0.26),transparent_28%),radial-gradient(circle_at_80%_70%,rgba(255,255,255,0.08),transparent_24%)]" />
       <div className="scanlines absolute inset-0 opacity-25" />
       <div className="absolute left-0 right-0 top-1/2 h-px bg-gradient-to-r from-transparent via-accent to-transparent" />
       <div className="relative z-10 space-y-5">
         <div className="flex items-start justify-between gap-4">
-          <div><p className="text-xs uppercase tracking-[0.4em] text-accent">BARCODE Network Transmission</p><h2 className="mt-2 text-2xl font-bold text-foreground">{warpLabel(state)}</h2><p className="mt-1 text-xs text-muted">{state === "confirmed" ? "QUEUE INSERTION CONFIRMED" : "Artwork, metadata, and waveform fragments are compressing into a routed signal packet."}</p></div>
+          <div><p className="text-xs uppercase tracking-[0.4em] text-accent">BARCODE Network Transmission</p><h2 className="mt-2 text-2xl font-bold text-foreground">{warpLabel(state)}</h2><p className="mt-1 text-xs text-muted">{state === "signal" ? "Saving complete. Refreshing the live queue snapshot before routing begins." : state === "confirmed" ? "QUEUE INSERTION CONFIRMED" : "Artwork, metadata, and waveform fragments are compressing into a routed signal packet."}</p></div>
           <div className="hidden border border-accent/40 bg-accent/5 px-3 py-2 text-xs uppercase tracking-widest text-accent sm:block">TRANSMISSION LOCKED</div>
         </div>
         <div className="grid grid-cols-6 gap-1">{steps.map((step, index) => <span key={step} className={`h-1.5 ${index <= activeIndex ? "bg-accent shadow-[0_0_12px_rgba(255,0,0,0.7)]" : "bg-border"}`} />)}</div>
@@ -379,14 +432,14 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
           <div className="relative min-h-72 overflow-hidden border border-accent/50 bg-black/30 p-4">
             <div className="absolute inset-x-4 top-1/2 h-px bg-accent/50" />
             <div className="absolute inset-y-8 left-1/2 w-px bg-accent/20" />
-            <div className="art-card relative z-10 mx-auto w-52 overflow-hidden border border-accent/60 bg-background shadow-[0_0_38px_rgba(255,0,0,0.4)]">
+            <div className={`${artClass} relative z-10 mx-auto w-52 overflow-hidden border border-accent/60 bg-background shadow-[0_0_38px_rgba(255,0,0,0.4)]`}>
               <div className="relative aspect-square overflow-hidden"><PacketArtwork data={data} /><div className="absolute inset-0 bg-[linear-gradient(transparent_50%,rgba(255,0,0,0.16)_50%)] bg-[length:100%_6px]" /></div>
               <div className="p-3"><p className="truncate text-sm font-bold text-foreground">{data?.artist ?? "Submitted artist"}</p><p className="truncate text-xs text-muted">{data?.title ?? "Submitted track"}</p></div>
             </div>
-            <div className="packet-transfer absolute left-5 top-1/2 z-20 w-28 -translate-y-1/2 border border-accent bg-background/90 p-2 shadow-[0_0_28px_rgba(255,0,0,0.55)]"><div className="relative h-12 overflow-hidden border border-accent/30"><PacketArtwork data={data} /></div><p className="mt-1 font-mono text-[9px] uppercase tracking-widest text-accent">signal packet</p></div>
+            <div className={`${packetClass} absolute left-5 top-1/2 z-20 w-28 -translate-y-1/2 border border-accent bg-background/90 p-2 shadow-[0_0_28px_rgba(255,0,0,0.55)]`}><div className="relative h-12 overflow-hidden border border-accent/30"><PacketArtwork data={data} /></div><p className="mt-1 font-mono text-[9px] uppercase tracking-widest text-accent">signal packet</p></div>
             <div className="absolute bottom-4 left-4 right-4 grid grid-cols-16 items-end gap-1">{[18, 44, 28, 70, 34, 82, 30, 62, 46, 76, 32, 56, 40, 68, 24, 50].map((height, index) => <span key={index} className="wave-fragment bg-accent/70 shadow-[0_0_10px_rgba(255,0,0,0.45)]" style={{ height: `${height / 2}px` }} />)}</div>
           </div>
-          <div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80">{fragments.slice(4).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}<div className="landing-card mt-4 border border-accent/50 bg-background/80 p-3"><p className="text-xs uppercase tracking-widest text-accent">Destination card</p><div className="mt-2 grid grid-cols-[3rem_1fr] gap-2"><div className="relative h-12 overflow-hidden border border-accent/30"><PacketArtwork data={data} /></div><div><p className="truncate text-sm font-bold text-foreground">{data?.artist ?? "Submitted artist"}</p><p className="truncate text-xs text-muted">{data?.title ?? "Submitted track"}</p></div></div><p className="mt-2 text-[10px] text-accent">SIGNAL INSERTED</p></div></div>
+          <div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80">{fragments.slice(4).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}<div className={`${landingClass} mt-4 border border-accent/50 bg-background/80 p-3`}><p className="text-xs uppercase tracking-widest text-accent">Destination card</p><div className="mt-2 grid grid-cols-[3rem_1fr] gap-2"><div className="relative h-12 overflow-hidden border border-accent/30"><PacketArtwork data={data} /></div><div><p className="truncate text-sm font-bold text-foreground">{data?.artist ?? "Submitted artist"}</p><p className="truncate text-xs text-muted">{data?.title ?? "Submitted track"}</p></div></div><p className="mt-2 text-[10px] text-accent">SIGNAL INSERTED</p></div></div>
         </div>
       </div>
       <style jsx>{`@keyframes barcode-warp-shake{0%,100%{transform:translate3d(0,0,0)}18%{transform:translate3d(-2px,1px,0)}34%{transform:translate3d(2px,-1px,0)}56%{transform:translate3d(-1px,-2px,0)}72%{transform:translate3d(1px,2px,0)}}@keyframes barcode-packet-route{0%{transform:translate3d(0,-50%,0) scale(.85);opacity:0}18%{opacity:1}55%{transform:translate3d(46vw,-50%,0) scale(.72)}100%{transform:translate3d(62vw,-50%,0) scale(.5);opacity:.15}}@keyframes art-glitch{0%,100%{filter:none;transform:translateZ(0)}30%{filter:contrast(1.3) hue-rotate(-12deg);transform:skewX(-2deg)}60%{filter:contrast(1.6) saturate(1.2);transform:translate3d(2px,-1px,0)}}@keyframes landing-pulse{0%,70%{box-shadow:0 0 0 rgba(255,0,0,0)}88%{box-shadow:0 0 38px rgba(255,0,0,.55)}100%{box-shadow:0 0 14px rgba(255,0,0,.25)}}.scanlines{background:linear-gradient(transparent 50%,rgba(255,255,255,.08) 50%);background-size:100% 6px}.barcode-warp{animation:barcode-warp-shake 760ms steps(2,end) 5}.packet-transfer{animation:barcode-packet-route 6.8s cubic-bezier(.2,.72,.2,1) forwards}.art-card{animation:art-glitch 900ms steps(2,end) 7}.landing-card{animation:landing-pulse 7s ease-out forwards}.wave-fragment{animation:art-glitch 1.2s steps(2,end) 5}@media (prefers-reduced-motion: reduce){.barcode-warp,.packet-transfer,.art-card,.landing-card,.wave-fragment{animation:none}}`}</style>

@@ -1,0 +1,41 @@
+import { NextResponse } from "next/server";
+import { createPrioritySignalCheckoutSession } from "@/lib/stripe";
+import { markPriorityUpgradeCheckoutPending, requestPriorityCheckout } from "@/lib/queue";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+function cleanText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function stripeReady(): boolean {
+  return Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
+}
+
+export async function POST(req: Request) {
+  try {
+    if (!stripeReady()) return NextResponse.json({ error: "Priority Signal checkout is temporarily unavailable. Please try again later." }, { status: 503 });
+    const body = await req.json().catch(() => ({}));
+    const trackId = cleanText(body.trackId);
+    const sessionId = cleanText(body.sessionId);
+    if (!trackId || !sessionId) return NextResponse.json({ error: "Priority Signal Upgrade is not available for this track." }, { status: 400 });
+
+    const checkoutRequest = await requestPriorityCheckout(trackId, sessionId);
+    const checkout = await createPrioritySignalCheckoutSession({
+      trackId,
+      queueSessionId: checkoutRequest.session.sessionId,
+      artist: checkoutRequest.track.submittedArtistName ?? checkoutRequest.track.artist,
+      title: checkoutRequest.track.submittedSongTitle ?? checkoutRequest.track.title,
+      amountCents: checkoutRequest.amountCents,
+      currency: checkoutRequest.currency,
+      label: checkoutRequest.label,
+    });
+    await markPriorityUpgradeCheckoutPending(trackId, checkoutRequest.session.sessionId, { provider: "stripe", checkoutSessionId: checkout.sessionId });
+    return NextResponse.json({ url: checkout.url, sessionId: checkout.sessionId, message: "Payment confirmation may take a moment." });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Priority Signal checkout is unavailable.";
+    const status = message.includes("temporarily") ? 503 : 409;
+    return NextResponse.json({ error: message }, { status });
+  }
+}

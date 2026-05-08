@@ -27,6 +27,10 @@ export async function POST(req: Request) {
     const trackLimitPerArtist = Number(body.trackLimitPerArtist);
     const skipGameTapTarget = Number(body.skipGameTapTarget);
     const queueCapacity = Number(body.queueCapacity);
+    const priorityPriceCents = Number(body.priorityUpgradePriceCents);
+    const safePriorityPriceCents = Number.isFinite(priorityPriceCents) ? Math.max(0, Math.round(priorityPriceCents)) : undefined;
+    const priorityPaidRequested = body.priorityUpgradesEnabled === true || body.priorityUpgradePaymentsEnabled === true;
+    const priorityPaidEnabled = priorityPaidRequested && (safePriorityPriceCents ?? 0) > 0;
     return NextResponse.json(await startNewQueueSession({
       title: typeof body.title === "string" ? body.title : undefined,
       showDate: typeof body.showDate === "string" ? body.showDate : undefined,
@@ -34,29 +38,33 @@ export async function POST(req: Request) {
       trackLimitPerArtist: Number.isFinite(trackLimitPerArtist) && trackLimitPerArtist > 0 ? trackLimitPerArtist : undefined,
       queueCapacity: Number.isFinite(queueCapacity) && queueCapacity > 0 ? queueCapacity : undefined,
       skipGameTapTarget: Number.isFinite(skipGameTapTarget) && skipGameTapTarget > 0 ? skipGameTapTarget : undefined,
-      priorityUpgradesEnabled: body.priorityUpgradesEnabled === true,
+      priorityUpgradesEnabled: priorityPaidEnabled,
       priorityUpgradeLabel: typeof body.priorityUpgradeLabel === "string" ? body.priorityUpgradeLabel : undefined,
       priorityUpgradeInstructions: typeof body.priorityUpgradeInstructions === "string" ? body.priorityUpgradeInstructions : undefined,
-      priorityUpgradePriceCents: Number.isFinite(Number(body.priorityUpgradePriceCents)) ? Number(body.priorityUpgradePriceCents) : undefined,
+      priorityUpgradePriceCents: safePriorityPriceCents,
       priorityUpgradeCurrency: typeof body.priorityUpgradeCurrency === "string" ? body.priorityUpgradeCurrency : undefined,
-      priorityUpgradePaymentsEnabled: false,
+      priorityUpgradePaymentsEnabled: priorityPaidEnabled,
     }));
   }
   if (body.action === "updatePriorityUpgradeSettings") {
+    const priorityPriceCents = Number(body.priceCents);
+    const safePriorityPriceCents = Number.isFinite(priorityPriceCents) ? Math.max(0, Math.round(priorityPriceCents)) : undefined;
+    const priorityPaidRequested = body.enabled === true || body.paymentsEnabled === true;
+    const priorityPaidEnabled = priorityPaidRequested && (safePriorityPriceCents ?? 0) > 0;
     return NextResponse.json(await updatePriorityUpgradeSettings({
-      enabled: body.enabled === true,
+      enabled: priorityPaidEnabled,
       label: typeof body.label === "string" ? body.label : undefined,
       instructions: typeof body.instructions === "string" ? body.instructions : undefined,
-      priceCents: Number.isFinite(Number(body.priceCents)) ? Number(body.priceCents) : undefined,
+      priceCents: safePriorityPriceCents,
       currency: typeof body.currency === "string" ? body.currency : undefined,
-      paymentsEnabled: false,
+      paymentsEnabled: priorityPaidEnabled,
     }));
   }
   if (body.action === "archiveSession") return NextResponse.json(await archiveCurrentQueueSession());
   if (body.action === "activateSession" && typeof body.sessionId === "string") return NextResponse.json(await activateQueueSession(body.sessionId));
   if (body.action === "viewSession" && typeof body.sessionId === "string") return NextResponse.json(await getRadioQueueState(body.sessionId));
   if (body.action === "pullNext") return NextResponse.json(await updateRadioTrack("", "pullNext"));
-  if (["load", "finish", "remove", "priority", "regular", "wheel", "moveBack", "spotlight", "removeSpotlight", "restoreRegular", "restorePriority", "markPriorityManual", "markPriorityPaid", "markPriorityRequested", "markPriorityCheckoutPending"].includes(body.action) && typeof body.id === "string") {
+  if (["load", "finish", "remove", "priority", "regular", "wheel", "moveBack", "spotlight", "removeSpotlight", "restoreRegular", "restorePriority", "markPriorityManual", "markPriorityRequested", "markPriorityCheckoutPending"].includes(body.action) && typeof body.id === "string") {
     return NextResponse.json(await updateRadioTrack(body.id, body.action));
   }
   return NextResponse.json({ error: "Unknown queue action" }, { status: 400 });

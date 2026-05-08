@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
-import { archiveCurrentQueueSession, getRadioQueueState, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateRadioTrack } from "@/lib/queue";
+import { archiveCurrentQueueSession, getRadioQueueState, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateRadioTrack, updateSubmissionCooldownSettings } from "@/lib/queue";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +27,7 @@ export async function POST(req: Request) {
     const trackLimitPerArtist = Number(body.trackLimitPerArtist);
     const skipGameTapTarget = Number(body.skipGameTapTarget);
     const queueCapacity = Number(body.queueCapacity);
+    const submissionCooldownSeconds = Number(body.submissionCooldownSeconds);
     const priorityPriceCents = Number(body.priorityUpgradePriceCents);
     const safePriorityPriceCents = Number.isFinite(priorityPriceCents) ? Math.max(0, Math.round(priorityPriceCents)) : undefined;
     const priorityPaidRequested = body.priorityUpgradesEnabled === true || body.priorityUpgradePaymentsEnabled === true;
@@ -38,6 +39,7 @@ export async function POST(req: Request) {
       trackLimitPerArtist: Number.isFinite(trackLimitPerArtist) && trackLimitPerArtist > 0 ? trackLimitPerArtist : undefined,
       queueCapacity: Number.isFinite(queueCapacity) && queueCapacity > 0 ? queueCapacity : undefined,
       skipGameTapTarget: Number.isFinite(skipGameTapTarget) && skipGameTapTarget > 0 ? skipGameTapTarget : undefined,
+      submissionCooldownSeconds: Number.isFinite(submissionCooldownSeconds) ? submissionCooldownSeconds : undefined,
       priorityUpgradesEnabled: priorityPaidEnabled,
       priorityUpgradeLabel: typeof body.priorityUpgradeLabel === "string" ? body.priorityUpgradeLabel : undefined,
       priorityUpgradeInstructions: typeof body.priorityUpgradeInstructions === "string" ? body.priorityUpgradeInstructions : undefined,
@@ -45,6 +47,10 @@ export async function POST(req: Request) {
       priorityUpgradeCurrency: typeof body.priorityUpgradeCurrency === "string" ? body.priorityUpgradeCurrency : undefined,
       priorityUpgradePaymentsEnabled: priorityPaidEnabled,
     }));
+  }
+  if (body.action === "updateSubmissionCooldownSettings") {
+    const submissionCooldownSeconds = Number(body.submissionCooldownSeconds);
+    return NextResponse.json(await updateSubmissionCooldownSettings({ submissionCooldownSeconds: Number.isFinite(submissionCooldownSeconds) ? submissionCooldownSeconds : undefined }));
   }
   if (body.action === "updatePriorityUpgradeSettings") {
     const priorityPriceCents = Number(body.priceCents);

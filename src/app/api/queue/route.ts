@@ -54,6 +54,10 @@ function duplicateResponse(): NextResponse {
   return NextResponse.json({ error: DUPLICATE_TRANSMISSION_MESSAGE, code: "duplicate_transmission" }, { status: 409 });
 }
 
+function acceptedResponse(track: ReturnType<typeof toPublicQueueTrack>, cooldownSeconds: number): NextResponse {
+  return NextResponse.json({ track, message: "Track entered Free Transmissions.", ...(cooldownSeconds > 0 ? { cooldownRemainingSeconds: cooldownSeconds } : {}) }, { status: 201 });
+}
+
 function queueEntriesForDuplicatePreflight(state: Awaited<ReturnType<typeof getRadioQueueState>>): QueueEntry[] {
   return [
     ...state.queue,
@@ -182,7 +186,7 @@ async function submitTrackFromBody(body: Record<string, unknown>): Promise<NextR
       contactEmail,
       submitterToken,
     });
-    return NextResponse.json({ track: toPublicQueueTrack(track), message: "Track entered Free Transmissions.", cooldownRemainingSeconds: 300 }, { status: 201 });
+    return acceptedResponse(toPublicQueueTrack(track), active.session.submissionCooldownSeconds);
   }
 
   const link = cleanBodyText(body.link);
@@ -192,5 +196,5 @@ async function submitTrackFromBody(body: Record<string, unknown>): Promise<NextR
 
   const sourceType = detectQueueSourceType(link);
   const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, contactEmail, submitterToken });
-  return NextResponse.json({ track: toPublicQueueTrack(track), message: "Track entered Free Transmissions.", cooldownRemainingSeconds: 300 }, { status: 201 });
+  return acceptedResponse(toPublicQueueTrack(track), active.session.submissionCooldownSeconds);
 }

@@ -31,7 +31,8 @@ import type {
 const STATE_KEY = "radioQueue:v2:sessions";
 const LEGACY_STATE_KEY = "radioQueue:v1:state";
 const DEFAULT_QUEUE_CAPACITY = 50;
-const SUBMISSION_COOLDOWN_SECONDS = 5 * 60;
+const DEFAULT_SUBMISSION_COOLDOWN_SECONDS = 5 * 60;
+const MAX_SUBMISSION_COOLDOWN_SECONDS = 60 * 60;
 const DEFAULT_PRIORITY_UPGRADE_LABEL = "Priority Signal Upgrade";
 const DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS = "Priority Signal Upgrade is being prepared. No payment has been processed.";
 const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 1000;
@@ -105,11 +106,17 @@ function normalizePriceCents(value: unknown): number {
   return Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS;
 }
 
+function normalizeSubmissionCooldownSeconds(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return DEFAULT_SUBMISSION_COOLDOWN_SECONDS;
+  return Math.min(MAX_SUBMISSION_COOLDOWN_SECONDS, Math.max(0, Math.round(numeric)));
+}
+
 function normalizePaidPriorityEnabled(input: { priorityUpgradesEnabled?: boolean | null; priorityUpgradePaymentsEnabled?: boolean | null; priorityUpgradePriceCents?: unknown }): boolean {
   return (input.priorityUpgradesEnabled === true || input.priorityUpgradePaymentsEnabled === true) && normalizePriceCents(input.priorityUpgradePriceCents) > 0;
 }
 
-function defaultSession(options: { title?: string; showDate?: string; description?: string; trackLimitPerArtist?: number; queueCapacity?: number; skipGameTapTarget?: number; priorityUpgradesEnabled?: boolean; priorityUpgradeLabel?: string; priorityUpgradeInstructions?: string; priorityUpgradePriceCents?: number; priorityUpgradeCurrency?: string; priorityUpgradePaymentsEnabled?: boolean } = {}): QueueSession {
+function defaultSession(options: { title?: string; showDate?: string; description?: string; trackLimitPerArtist?: number; queueCapacity?: number; skipGameTapTarget?: number; submissionCooldownSeconds?: number; priorityUpgradesEnabled?: boolean; priorityUpgradeLabel?: string; priorityUpgradeInstructions?: string; priorityUpgradePriceCents?: number; priorityUpgradeCurrency?: string; priorityUpgradePaymentsEnabled?: boolean } = {}): QueueSession {
   const date = options.showDate ?? todayDate();
   const now = new Date().toISOString();
   return normalizeSession({
@@ -124,6 +131,7 @@ function defaultSession(options: { title?: string; showDate?: string; descriptio
     trackLimitPerArtist: options.trackLimitPerArtist ?? 3,
     queueCapacity: options.queueCapacity ?? DEFAULT_QUEUE_CAPACITY,
     skipGameTapTarget: options.skipGameTapTarget ?? 10000,
+    submissionCooldownSeconds: normalizeSubmissionCooldownSeconds(options.submissionCooldownSeconds),
     activeCount: 0,
     completedCount: 0,
     removedCount: 0,
@@ -306,6 +314,7 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     trackLimitPerArtist: session.trackLimitPerArtist ?? 3,
     queueCapacity: session.queueCapacity ?? DEFAULT_QUEUE_CAPACITY,
     skipGameTapTarget: session.skipGameTapTarget ?? 10000,
+    submissionCooldownSeconds: normalizeSubmissionCooldownSeconds(session.submissionCooldownSeconds),
     activeCount: publicStatus.activeCount,
     nextInLineTrackId: session.nextInLineTrackId ?? session.nextInLineTrack?.id ?? null,
     nextInLineHoldTrackId: session.nextInLineHoldTrackId ?? null,
@@ -402,6 +411,7 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     trackLimitPerArtist: raw.trackLimitPerArtist ?? 3,
     queueCapacity: raw.queueCapacity ?? raw.publicStatus?.capacity ?? DEFAULT_QUEUE_CAPACITY,
     skipGameTapTarget: raw.skipGameTapTarget ?? 10000,
+    submissionCooldownSeconds: normalizeSubmissionCooldownSeconds(raw.submissionCooldownSeconds),
     queueOpen: status === "open" ? true : false,
     nextNonPriorityLane: raw.nextNonPriorityLane === "regular" ? "regular" : "wheel",
     nextInLineTrack: raw.nextInLineTrack ? normalizeEntry(raw.nextInLineTrack) : null,
@@ -703,6 +713,8 @@ function suspiciousFlagsFor(session: QueueSession, track: QueueEntry): string[] 
 }
 
 function findSubmissionCooldown(session: QueueSession, track: QueueEntry): number {
+  const cooldownSeconds = normalizeSubmissionCooldownSeconds(session.submissionCooldownSeconds);
+  if (cooldownSeconds <= 0) return 0;
   const entries = [...session.queue, ...(session.nextInLineTrack ? [session.nextInLineTrack] : []), ...(session.loadedTrack ? [session.loadedTrack] : []), ...session.completed, ...session.removed];
   const submitter = normalizeIdentity(track.submitterArtistName ?? track.submittedArtistName);
   const email = normalizeEmail(track.contactEmail);
@@ -716,7 +728,7 @@ function findSubmissionCooldown(session: QueueSession, track: QueueEntry): numbe
   const lastSubmittedAt = matching.reduce((latest, entry) => Math.max(latest, new Date(entry.createdAt).getTime()), 0);
   if (!lastSubmittedAt) return 0;
   const elapsedSeconds = Math.floor((Date.now() - lastSubmittedAt) / 1000);
-  return Math.max(0, SUBMISSION_COOLDOWN_SECONDS - elapsedSeconds);
+  return Math.max(0, cooldownSeconds - elapsedSeconds);
 }
 
 class QueueSubmissionCooldownError extends Error {
@@ -992,7 +1004,8 @@ function publicSubmitterStatus(session: QueueSession, identity?: { submitterToke
     return false;
   });
   const latest = matching.reduce((time, entry) => Math.max(time, new Date(entry.createdAt).getTime()), 0);
-  const cooldownRemainingSeconds = latest ? Math.max(0, SUBMISSION_COOLDOWN_SECONDS - Math.floor((Date.now() - latest) / 1000)) : 0;
+  const cooldownSeconds = normalizeSubmissionCooldownSeconds(session.submissionCooldownSeconds);
+  const cooldownRemainingSeconds = latest && cooldownSeconds > 0 ? Math.max(0, cooldownSeconds - Math.floor((Date.now() - latest) / 1000)) : 0;
   const limit = session.trackLimitPerArtist ?? 3;
   return {
     used: matching.length,
@@ -1266,6 +1279,20 @@ export async function updatePriorityUpgradeSettings(input: PriorityUpgradeSettin
   return queueStateFromSession(next, nextStore);
 }
 
+export async function updateSubmissionCooldownSettings(input: { submissionCooldownSeconds?: number }): Promise<QueueState> {
+  const store = await readStore();
+  const session = getSession(store);
+  if (session.status === "archived") return queueStateFromSession(session, store);
+  const next = normalizeSession({
+    ...session,
+    submissionCooldownSeconds: normalizeSubmissionCooldownSeconds(input.submissionCooldownSeconds),
+    updatedAt: new Date().toISOString(),
+  });
+  const nextStore = replaceSession(store, next);
+  await writeStore(nextStore);
+  return queueStateFromSession(next, nextStore);
+}
+
 export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> {
   const store = await readStore();
   const session = getSession(store);
@@ -1285,7 +1312,7 @@ export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> 
   return publicStatusForSession(getSession(nextStore));
 }
 
-export async function startNewQueueSession(options: { title?: string; showDate?: string; description?: string; trackLimitPerArtist?: number; queueCapacity?: number; skipGameTapTarget?: number; priorityUpgradesEnabled?: boolean; priorityUpgradeLabel?: string; priorityUpgradeInstructions?: string; priorityUpgradePriceCents?: number; priorityUpgradeCurrency?: string; priorityUpgradePaymentsEnabled?: boolean } = {}): Promise<QueueState> {
+export async function startNewQueueSession(options: { title?: string; showDate?: string; description?: string; trackLimitPerArtist?: number; queueCapacity?: number; skipGameTapTarget?: number; submissionCooldownSeconds?: number; priorityUpgradesEnabled?: boolean; priorityUpgradeLabel?: string; priorityUpgradeInstructions?: string; priorityUpgradePriceCents?: number; priorityUpgradeCurrency?: string; priorityUpgradePaymentsEnabled?: boolean } = {}): Promise<QueueState> {
   const store = await readStore();
   const current = getSession(store);
   if (current.status === "open" || current.queueOpen) return queueStateFromSession(current, store);

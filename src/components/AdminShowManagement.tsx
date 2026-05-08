@@ -45,6 +45,7 @@ export function AdminShowManagement() {
   const [description, setDescription] = useState(defaultDescription(todayDate()));
   const [trackLimitPerArtist, setTrackLimitPerArtist] = useState(3);
   const [queueCapacity, setQueueCapacity] = useState(50);
+  const [submissionCooldownSeconds, setSubmissionCooldownSeconds] = useState(300);
   const [priorityUpgradesEnabled, setPriorityUpgradesEnabled] = useState(true);
   const [priorityUpgradePriceCents, setPriorityUpgradePriceCents] = useState(1000);
   const [priorityStartError, setPriorityStartError] = useState<string | null>(null);
@@ -80,7 +81,7 @@ export function AdminShowManagement() {
     }
     setPriorityStartError(null);
     const paidUpgradesEnabled = priorityUpgradesEnabled && priorityUpgradePriceCents > 0;
-    const next = await post({ action: "startSession", title, showDate, description, trackLimitPerArtist, queueCapacity, priorityUpgradesEnabled: paidUpgradesEnabled, priorityUpgradeLabel: FIXED_PRIORITY_LABEL, priorityUpgradeInstructions: FIXED_PRIORITY_INSTRUCTIONS, priorityUpgradePriceCents, priorityUpgradeCurrency, priorityUpgradePaymentsEnabled: paidUpgradesEnabled });
+    const next = await post({ action: "startSession", title, showDate, description, trackLimitPerArtist, queueCapacity, submissionCooldownSeconds, priorityUpgradesEnabled: paidUpgradesEnabled, priorityUpgradeLabel: FIXED_PRIORITY_LABEL, priorityUpgradeInstructions: FIXED_PRIORITY_INSTRUCTIONS, priorityUpgradePriceCents, priorityUpgradeCurrency, priorityUpgradePaymentsEnabled: paidUpgradesEnabled });
     if (next?.session?.sessionId) router.push(`/admin/queue?sessionId=${encodeURIComponent(next.session.sessionId)}`);
   }
 
@@ -105,7 +106,7 @@ export function AdminShowManagement() {
 
   return (
     <div className="space-y-6">
-      <StartNewSession locked={startLocked} queueIsOpen={queueIsOpen} onCloseSubmissions={() => post({ action: "setOpen", isOpen: false })} onEnd={() => setEndConfirmOpen(true)} title={title} description={description} trackLimitPerArtist={trackLimitPerArtist} queueCapacity={queueCapacity} onTitle={setTitle} onDescription={setDescription} onTrackLimit={setTrackLimitPerArtist} onCapacity={setQueueCapacity} priorityUpgradesEnabled={priorityUpgradesEnabled} priorityUpgradePriceCents={priorityUpgradePriceCents} priorityUpgradeCurrency={priorityUpgradeCurrency} priorityStartError={priorityStartError} onPriorityEnabled={setPriorityUpgradesEnabled} onPriorityPrice={(value) => { setPriorityUpgradePriceCents(value); if (value > 0) setPriorityStartError(null); }} onStart={startSession} sessionId={currentSession?.sessionId} />
+      <StartNewSession locked={startLocked} queueIsOpen={queueIsOpen} onCloseSubmissions={() => post({ action: "setOpen", isOpen: false })} onEnd={() => setEndConfirmOpen(true)} title={title} description={description} trackLimitPerArtist={trackLimitPerArtist} queueCapacity={queueCapacity} onTitle={setTitle} onDescription={setDescription} onTrackLimit={setTrackLimitPerArtist} onCapacity={setQueueCapacity} submissionCooldownSeconds={submissionCooldownSeconds} onSubmissionCooldown={setSubmissionCooldownSeconds} priorityUpgradesEnabled={priorityUpgradesEnabled} priorityUpgradePriceCents={priorityUpgradePriceCents} priorityUpgradeCurrency={priorityUpgradeCurrency} priorityStartError={priorityStartError} onPriorityEnabled={setPriorityUpgradesEnabled} onPriorityPrice={(value) => { setPriorityUpgradePriceCents(value); if (value > 0) setPriorityStartError(null); }} onStart={startSession} sessionId={currentSession?.sessionId} />
       <CurrentSession session={currentSession} onPost={post} onEnd={() => setEndConfirmOpen(true)} />
       <SessionData session={currentSession} />
       {endConfirmOpen && createPortal(<EndSessionConfirm ending={endingSession} onCancel={() => setEndConfirmOpen(false)} onConfirm={endSession} />, document.body)}
@@ -114,7 +115,7 @@ export function AdminShowManagement() {
   );
 }
 
-function StartNewSession({ locked, queueIsOpen, onCloseSubmissions, onEnd, title, description, trackLimitPerArtist, queueCapacity, priorityUpgradesEnabled, priorityUpgradePriceCents, priorityUpgradeCurrency, priorityStartError, onTitle, onDescription, onTrackLimit, onCapacity, onPriorityEnabled, onPriorityPrice, onStart, sessionId }: { locked: boolean; queueIsOpen: boolean; onCloseSubmissions: () => void; onEnd: () => void; title: string; description: string; trackLimitPerArtist: number; queueCapacity: number; priorityUpgradesEnabled: boolean; priorityUpgradePriceCents: number; priorityUpgradeCurrency: string; priorityStartError: string | null; onTitle: (value: string) => void; onDescription: (value: string) => void; onTrackLimit: (value: number) => void; onCapacity: (value: number) => void; onPriorityEnabled: (value: boolean) => void; onPriorityPrice: (value: number) => void; onStart: () => void; sessionId?: string }) {
+function StartNewSession({ locked, queueIsOpen, onCloseSubmissions, onEnd, title, description, trackLimitPerArtist, queueCapacity, submissionCooldownSeconds, priorityUpgradesEnabled, priorityUpgradePriceCents, priorityUpgradeCurrency, priorityStartError, onTitle, onDescription, onTrackLimit, onCapacity, onSubmissionCooldown, onPriorityEnabled, onPriorityPrice, onStart, sessionId }: { locked: boolean; queueIsOpen: boolean; onCloseSubmissions: () => void; onEnd: () => void; title: string; description: string; trackLimitPerArtist: number; queueCapacity: number; submissionCooldownSeconds: number; priorityUpgradesEnabled: boolean; priorityUpgradePriceCents: number; priorityUpgradeCurrency: string; priorityStartError: string | null; onTitle: (value: string) => void; onDescription: (value: string) => void; onTrackLimit: (value: number) => void; onCapacity: (value: number) => void; onSubmissionCooldown: (value: number) => void; onPriorityEnabled: (value: boolean) => void; onPriorityPrice: (value: number) => void; onStart: () => void; sessionId?: string }) {
   const priceWarning = priorityUpgradesEnabled && priorityUpgradePriceCents <= 0 ? "Checkout requires a price above 0." : null;
   return (
     <section className={`space-y-5 border p-6 ${locked ? "border-danger/60 bg-danger/10" : "border-accent/40 bg-surface"}`}>
@@ -127,6 +128,7 @@ function StartNewSession({ locked, queueIsOpen, onCloseSubmissions, onEnd, title
         <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Session title</span><input disabled={locked} value={title} onChange={(event) => onTitle(event.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /></label>
         <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Track limit</span><input disabled={locked} type="number" min={1} value={trackLimitPerArtist} onChange={(event) => onTrackLimit(Number(event.target.value))} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /></label>
         <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Queue capacity</span><input disabled={locked} type="number" min={1} value={queueCapacity} onChange={(event) => onCapacity(Number(event.target.value))} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /></label>
+        <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Submission Delay</span><input disabled={locked} type="number" min={0} max={3600} value={submissionCooldownSeconds} onChange={(event) => onSubmissionCooldown(Math.max(0, Math.min(3600, Number(event.target.value))))} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /><span className="block text-xs text-muted">Delay between accepted submissions from the same source. Set to 0 to disable during testing.</span></label>
         <label className="space-y-2 lg:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Description / rule blurb</span><textarea disabled={locked} value={description} onChange={(event) => onDescription(event.target.value)} rows={4} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /></label>
         <section className="space-y-4 border border-[#ffaa00]/40 bg-[#ffaa00]/10 p-4 lg:col-span-2"><div><p className="text-xs uppercase tracking-[0.3em] text-[#ffaa00]">Priority Signal Paid Upgrades</p><p className="mt-1 text-sm text-muted">Default: ON at 1000 cents ($10.00 USD). Admin can disable paid upgrades for this session.</p></div><div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(12rem,0.35fr)] md:items-center"><label className="flex items-center justify-between gap-3 border border-border bg-background/60 p-4 text-sm"><span><span className="block text-lg font-bold text-foreground">{priorityUpgradesEnabled ? "ON" : "OFF"}</span><span className="text-xs text-muted">Priority Signal paid upgrades</span></span><input disabled={locked} type="checkbox" checked={priorityUpgradesEnabled} onChange={(event) => onPriorityEnabled(event.target.checked)} /></label><div className="border border-border bg-background/50 p-4"><p className="text-xs uppercase tracking-widest text-muted">Display price</p><p className="mt-1 text-xl font-bold text-foreground">{formatPrice(priorityUpgradePriceCents, priorityUpgradeCurrency)}</p></div></div><label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Price</span><input disabled={locked} type="number" min={0} value={priorityUpgradePriceCents} onChange={(event) => onPriorityPrice(Math.max(0, Number(event.target.value)))} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /><span className="block text-xs text-muted">Enter cents. Example: 1000 = $10.00.</span></label>{(priceWarning || priorityStartError) && <p className="border border-danger/40 bg-danger/10 p-3 text-sm text-danger">{priorityStartError ?? priceWarning}</p>}</section>
       </div>
@@ -139,6 +141,7 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
   const [priorityEnabled, setPriorityEnabled] = useState(false);
   const [priorityPriceCents, setPriorityPriceCents] = useState(0);
   const [priorityCurrency, setPriorityCurrency] = useState("usd");
+  const [sessionCooldownSeconds, setSessionCooldownSeconds] = useState(300);
   const [priorityEditing, setPriorityEditing] = useState(false);
   const [prioritySaving, setPrioritySaving] = useState(false);
   const [prioritySaveError, setPrioritySaveError] = useState<string | null>(null);
@@ -149,6 +152,7 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
     setPriorityEnabled(session.priorityUpgradePaymentsEnabled === true);
     setPriorityPriceCents(session.priorityUpgradePriceCents ?? 0);
     setPriorityCurrency(session.priorityUpgradeCurrency ?? "usd");
+    setSessionCooldownSeconds(session.submissionCooldownSeconds ?? 300);
     setPrioritySaveError(null);
   }, [session]);
 
@@ -156,10 +160,11 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
     const gatedPaymentsEnabled = priorityEnabled && priorityPriceCents > 0;
     setPrioritySaving(true);
     setPrioritySaveError(null);
-    const next = await onPost({ action: "updatePriorityUpgradeSettings", enabled: gatedPaymentsEnabled, label: FIXED_PRIORITY_LABEL, instructions: FIXED_PRIORITY_INSTRUCTIONS, priceCents: priorityPriceCents, currency: priorityCurrency, paymentsEnabled: gatedPaymentsEnabled });
+    const cooldownNext = await onPost({ action: "updateSubmissionCooldownSettings", submissionCooldownSeconds: sessionCooldownSeconds });
+    const next = cooldownNext ? await onPost({ action: "updatePriorityUpgradeSettings", enabled: gatedPaymentsEnabled, label: FIXED_PRIORITY_LABEL, instructions: FIXED_PRIORITY_INSTRUCTIONS, priceCents: priorityPriceCents, currency: priorityCurrency, paymentsEnabled: gatedPaymentsEnabled }) : null;
     setPrioritySaving(false);
     if (!next) {
-      setPrioritySaveError("Priority Signal settings could not be saved.");
+      setPrioritySaveError("Session options could not be saved.");
       setPriorityEditing(true);
       return;
     }
@@ -198,11 +203,12 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
       {priorityEditing ? (
         <section className={`space-y-5 border bg-accent/5 p-5 transition-all duration-300 ${priorityJustSaved ? "border-accent shadow-[0_0_28px_rgba(255,0,0,0.28)]" : "border-accent/40"}`}>
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-accent">Priority Signal Upgrade</p>
+            <p className="text-xs uppercase tracking-[0.3em] text-accent">Session Options</p>
             <h3 className="mt-2 text-xl font-bold text-foreground">Edit Session Options</h3>
-            <p className="mt-1 text-sm text-muted">Configure whether paid Priority Signal upgrades are available for this broadcast session.</p>
+            <p className="mt-1 text-sm text-muted">Configure session-level submission behavior and paid Priority Signal upgrades.</p>
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
+            <label className="space-y-2 block lg:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Submission Delay</span><input type="number" min={0} max={3600} value={sessionCooldownSeconds} onChange={(event) => setSessionCooldownSeconds(Math.max(0, Math.min(3600, Number(event.target.value))))} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /><span className="block text-xs text-muted">Delay between accepted submissions from the same source. Set to 0 to disable during testing.</span></label>
             <label className="flex items-center justify-between gap-3 border border-border bg-background/50 p-4 text-sm lg:col-span-2"><span><span className="block font-bold text-foreground">Priority Signal paid upgrades</span><span className="text-xs text-muted">Enables automated Stripe checkout when the price is greater than 0.</span></span><input type="checkbox" checked={priorityEnabled} onChange={(event) => setPriorityEnabled(event.target.checked)} /></label>
             <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Priority Signal price</span><input type="number" min={0} value={priorityPriceCents} onChange={(event) => setPriorityPriceCents(Math.max(0, Number(event.target.value)))} disabled={!priorityEnabled} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /><span className="block text-xs text-muted">Enter cents. Example: 1000 = $10.00.</span></label>
             <div className="border border-border bg-background/50 p-4"><p className="text-xs uppercase tracking-widest text-muted">Current display price</p><p className="mt-2 text-2xl font-bold text-foreground">{formatPrice(priorityPriceCents, priorityCurrency)}</p></div>
@@ -210,7 +216,7 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
           <p className="border border-border bg-background/50 p-3 text-sm text-muted">Saving paid upgrades with a zero price keeps checkout disabled. Only the verified Stripe webhook marks a track paid or moves it into Priority Signal.</p>
           {prioritySaveError && <p className="border border-danger/40 bg-danger/5 p-2 text-xs text-danger">{prioritySaveError}</p>}
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={savePrioritySettings} disabled={prioritySaving} className="border border-accent bg-accent/10 px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{prioritySaving ? "Saving…" : "Save Priority Settings"}</button>
+            <button type="button" onClick={savePrioritySettings} disabled={prioritySaving} className="border border-accent bg-accent/10 px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{prioritySaving ? "Saving…" : "Save Session Options"}</button>
             <button type="button" onClick={() => { setPrioritySaveError(null); setPriorityEditing(false); }} disabled={prioritySaving} className="border border-border px-5 py-3 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">Cancel</button>
           </div>
         </section>
@@ -218,13 +224,14 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
         <section className={`space-y-4 border bg-background/40 p-5 transition-all duration-300 ${priorityJustSaved ? "border-accent shadow-[0_0_28px_rgba(255,0,0,0.24)]" : "border-accent/40"}`}>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-accent">Priority Signal Upgrade</p>
+              <p className="text-xs uppercase tracking-[0.3em] text-accent">Session Options</p>
               <h3 className="mt-2 text-xl font-bold text-foreground">Session Options</h3>
-              {priorityJustSaved && <p className="mt-2 border border-accent/50 bg-accent/10 p-2 text-sm font-bold text-accent">Priority Signal settings saved.</p>}
+              {priorityJustSaved && <p className="mt-2 border border-accent/50 bg-accent/10 p-2 text-sm font-bold text-accent">Session options saved.</p>}
             </div>
             <button type="button" onClick={() => { setPrioritySaveError(null); setPriorityEditing(true); }} className="border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Edit Session Options</button>
           </div>
           <div className="grid gap-3 text-sm md:grid-cols-2">
+            <div className="border border-border bg-surface p-4"><p className="text-xs uppercase tracking-widest text-muted">Submission Delay</p><p className="mt-2 text-lg font-bold text-foreground">{session.submissionCooldownSeconds === 0 ? "Disabled" : `${session.submissionCooldownSeconds}s`}</p></div>
             <div className="border border-border bg-surface p-4"><p className="text-xs uppercase tracking-widest text-muted">Priority Signal Paid Upgrades</p><p className={session.priorityUpgradePaymentsEnabled ? "mt-2 text-lg font-bold text-accent" : "mt-2 text-lg font-bold text-muted"}>{session.priorityUpgradePaymentsEnabled ? "Enabled" : "Disabled"}</p></div>
             <div className="border border-border bg-surface p-4"><p className="text-xs uppercase tracking-widest text-muted">Price</p><p className="mt-2 text-lg font-bold text-foreground">{formatPrice(session.priorityUpgradePriceCents, session.priorityUpgradeCurrency)}</p></div>
           </div>
@@ -239,6 +246,7 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
         <div className="border border-border p-3"><p className="text-xs text-muted">Removed</p><p>{session.removedCount}</p></div>
         <div className="border border-border p-3"><p className="text-xs text-muted">Spotlight</p><p>{session.spotlightCount}</p></div>
         <div className="border border-border p-3"><p className="text-xs text-muted">Track limit</p><p>{session.trackLimitPerArtist}</p></div>
+        <div className="border border-border p-3"><p className="text-xs text-muted">Submission Delay</p><p>{session.submissionCooldownSeconds === 0 ? "Disabled" : `${session.submissionCooldownSeconds}s`}</p></div>
         <div className="border border-border p-3"><p className="text-xs text-muted">Active runtime</p><p>{formatRuntime(session.estimatedActiveRuntimeSeconds)}</p></div>
         <div className="border border-border p-3"><p className="text-xs text-muted">Completed runtime</p><p>{formatRuntime(session.completedRuntimeSeconds)}</p></div>
       </div>

@@ -376,9 +376,13 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
         window.localStorage.setItem("barcode-radio-submit-artist", artist.trim());
         window.localStorage.setItem("barcode-radio-submit-tiktok", tiktokHandle.trim());
         window.localStorage.setItem("barcode-radio-submit-email", contactEmail.trim());
-        const nextCooldown = typeof payload.cooldownRemainingSeconds === "number" ? payload.cooldownRemainingSeconds : 300;
+        const nextCooldown = typeof payload.cooldownRemainingSeconds === "number" ? payload.cooldownRemainingSeconds : 0;
         setCooldownRemaining(nextCooldown);
-        if (submitterToken) window.localStorage.setItem(`barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}`, String(Date.now() + nextCooldown * 1000));
+        if (submitterToken) {
+          const cooldownKey = `barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}`;
+          if (nextCooldown > 0) window.localStorage.setItem(cooldownKey, String(Date.now() + nextCooldown * 1000));
+          else window.localStorage.removeItem(cooldownKey);
+        }
         if (selectedRoute === "priority") {
           const checkoutStarted = await startPriorityCheckout(submitted.id);
           if (checkoutStarted) return;
@@ -476,7 +480,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
 
   if (transmissionState !== "idle") return createPortal(<WarpSequence state={transmissionState} data={warpData} />, document.body);
 
-  const effectiveCooldown = Math.max(cooldownRemaining, submitterStatus?.cooldownRemainingSeconds ?? 0);
+  const effectiveCooldown = session?.submissionCooldownSeconds === 0 ? 0 : Math.max(cooldownRemaining, submitterStatus?.cooldownRemainingSeconds ?? 0);
   const estimatedPosition = Math.min((status?.activeCount ?? publicQueue.length) + 1, status?.capacity ?? ((status?.activeCount ?? publicQueue.length) + 1));
 
   return (

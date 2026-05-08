@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps, @next/next/no-img-element */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatRuntime } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
 
@@ -86,6 +86,8 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
   const [submitterStatus, setSubmitterStatus] = useState<QueuePublicSnapshot["submitterStatus"] | null>(null);
   const [mode, setMode] = useState<Mode>("link");
   const [step, setStep] = useState<IntakeStep>("track");
+  const [routingLockRemaining, setRoutingLockRemaining] = useState(0);
+  const finalSubmitIntent = useRef(false);
   const [artist, setArtist] = useState("");
   const [title, setTitle] = useState("");
   const [link, setLink] = useState("");
@@ -166,6 +168,21 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
     if (remaining > 0) setCooldownRemaining(remaining);
   }, [sessionId, submitterToken]);
 
+
+  useEffect(() => {
+    if (step !== "routing") {
+      setRoutingLockRemaining(0);
+      return;
+    }
+    setRoutingLockRemaining(2);
+    const first = window.setTimeout(() => setRoutingLockRemaining(1), 1000);
+    const second = window.setTimeout(() => setRoutingLockRemaining(0), 2000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearTimeout(second);
+    };
+  }, [step]);
+
   useEffect(() => {
     let cancelled = false;
     if (mode !== "link" || !link.trim()) {
@@ -226,6 +243,11 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
       continueToRouting();
       return;
     }
+    if (!finalSubmitIntent.current || routingLockRemaining > 0) {
+      finalSubmitIntent.current = false;
+      return;
+    }
+    finalSubmitIntent.current = false;
     setError(null);
     setSubmitting(true);
     try {
@@ -323,6 +345,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
       setTransmissionState("idle");
       setError(err instanceof Error ? err.message : "Submission failed");
     } finally {
+      finalSubmitIntent.current = false;
       setSubmitting(false);
     }
   }
@@ -413,7 +436,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               <button type="button" onClick={() => setStep("track")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Back</button>
-              <button type="submit" disabled={submitting || effectiveCooldown > 0 || status?.isOpen === false || status?.isFull === true} className="border border-accent px-5 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{submitting ? "Submitting…" : effectiveCooldown > 0 ? `Next transmission available in ${formatCooldown(effectiveCooldown)}` : status?.isFull ? "Queue Full" : "Enter Free Transmissions"}</button>
+              <button type="submit" onClick={() => { finalSubmitIntent.current = true; }} disabled={submitting || routingLockRemaining > 0 || effectiveCooldown > 0 || status?.isOpen === false || status?.isFull === true} className="border border-accent px-5 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{submitting ? "Submitting…" : routingLockRemaining > 0 ? `Routing lock: ${routingLockRemaining}` : effectiveCooldown > 0 ? `Next transmission available in ${formatCooldown(effectiveCooldown)}` : status?.isFull ? "Queue Full" : "Enter Free Transmissions"}</button>
             </div>
           </div>
         )}

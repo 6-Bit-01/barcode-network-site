@@ -13,6 +13,14 @@ function stripeReady(): boolean {
   return Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
 }
 
+function storedCheckoutStillUsable(track: { priorityUpgradeStatus?: string | null; priorityUpgradeCheckoutUrl?: string | null; priorityUpgradeCheckoutSessionId?: string | null; priorityUpgradeCheckoutExpiresAt?: string | null }): boolean {
+  if (track.priorityUpgradeStatus !== "checkout_pending") return false;
+  if (!track.priorityUpgradeCheckoutUrl || !track.priorityUpgradeCheckoutSessionId) return false;
+  if (!track.priorityUpgradeCheckoutExpiresAt) return false;
+  const expiresAt = new Date(track.priorityUpgradeCheckoutExpiresAt).getTime();
+  return Number.isFinite(expiresAt) && expiresAt > Date.now() + 60_000;
+}
+
 export async function POST(req: Request) {
   try {
     if (!stripeReady()) return NextResponse.json({ error: "Priority Signal checkout is temporarily unavailable. Please try again later." }, { status: 503 });
@@ -22,6 +30,10 @@ export async function POST(req: Request) {
     if (!trackId || !sessionId) return NextResponse.json({ error: "Priority Signal Upgrade is not available for this track." }, { status: 400 });
 
     const checkoutRequest = await requestPriorityCheckout(trackId, sessionId);
+    if (storedCheckoutStillUsable(checkoutRequest.track)) {
+      return NextResponse.json({ url: checkoutRequest.track.priorityUpgradeCheckoutUrl, sessionId: checkoutRequest.track.priorityUpgradeCheckoutSessionId, message: "Payment confirmation may take a moment." });
+    }
+
     const checkout = await createPrioritySignalCheckoutSession({
       trackId,
       queueSessionId: checkoutRequest.session.sessionId,
@@ -31,7 +43,7 @@ export async function POST(req: Request) {
       currency: checkoutRequest.currency,
       label: checkoutRequest.label,
     });
-    await markPriorityUpgradeCheckoutPending(trackId, checkoutRequest.session.sessionId, { provider: "stripe", checkoutSessionId: checkout.sessionId });
+    await markPriorityUpgradeCheckoutPending(trackId, checkoutRequest.session.sessionId, { provider: "stripe", checkoutSessionId: checkout.sessionId, checkoutUrl: checkout.url, checkoutCreatedAt: checkout.createdAt, checkoutExpiresAt: checkout.expiresAt });
     return NextResponse.json({ url: checkout.url, sessionId: checkout.sessionId, message: "Payment confirmation may take a moment." });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Priority Signal checkout is unavailable.";

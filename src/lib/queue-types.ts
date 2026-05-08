@@ -62,6 +62,11 @@ export interface QueueEntry {
   priorityUpgradePaidAt?: string | null;
   priorityUpgradePaymentProvider?: string | null;
   priorityUpgradePaymentId?: string | null;
+  priorityUpgradeCheckoutProvider?: string | null;
+  priorityUpgradeCheckoutSessionId?: string | null;
+  priorityUpgradeCheckoutUrl?: string | null;
+  priorityUpgradeCheckoutCreatedAt?: string | null;
+  priorityUpgradeCheckoutExpiresAt?: string | null;
   priorityUpgradeAmountCents?: number | null;
   priorityUpgradeCurrency?: string | null;
 }

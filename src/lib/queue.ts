@@ -365,6 +365,11 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     priorityUpgradePaidAt: entry.priorityUpgradePaidAt ?? null,
     priorityUpgradePaymentProvider: entry.priorityUpgradePaymentProvider ?? null,
     priorityUpgradePaymentId: entry.priorityUpgradePaymentId ?? null,
+    priorityUpgradeCheckoutProvider: entry.priorityUpgradeCheckoutProvider ?? null,
+    priorityUpgradeCheckoutSessionId: entry.priorityUpgradeCheckoutSessionId ?? null,
+    priorityUpgradeCheckoutUrl: entry.priorityUpgradeCheckoutUrl ?? null,
+    priorityUpgradeCheckoutCreatedAt: entry.priorityUpgradeCheckoutCreatedAt ?? null,
+    priorityUpgradeCheckoutExpiresAt: entry.priorityUpgradeCheckoutExpiresAt ?? null,
     priorityUpgradeAmountCents: typeof entry.priorityUpgradeAmountCents === "number" ? Math.max(0, Math.round(entry.priorityUpgradeAmountCents)) : null,
     priorityUpgradeCurrency: entry.priorityUpgradeCurrency ? normalizeCurrency(entry.priorityUpgradeCurrency) : null,
   };
@@ -818,6 +823,11 @@ export async function createQueueTrack(input: {
     priorityUpgradePaidAt: null,
     priorityUpgradePaymentProvider: null,
     priorityUpgradePaymentId: null,
+    priorityUpgradeCheckoutProvider: null,
+    priorityUpgradeCheckoutSessionId: null,
+    priorityUpgradeCheckoutUrl: null,
+    priorityUpgradeCheckoutCreatedAt: null,
+    priorityUpgradeCheckoutExpiresAt: null,
     priorityUpgradeAmountCents: null,
     priorityUpgradeCurrency: null,
   });
@@ -1069,7 +1079,7 @@ export async function requestPriorityCheckout(trackId: string, queueSessionId: s
   return { session: summarizeSession(session), track, amountCents, currency: normalizeCurrency(session.priorityUpgradeCurrency), label: session.priorityUpgradeLabel || DEFAULT_PRIORITY_UPGRADE_LABEL };
 }
 
-export async function markPriorityUpgradeCheckoutPending(trackId: string, queueSessionId: string, metadata: { provider?: string; checkoutSessionId?: string } = {}): Promise<QueuePublicTrack | null> {
+export async function markPriorityUpgradeCheckoutPending(trackId: string, queueSessionId: string, metadata: { provider?: string; checkoutSessionId?: string; checkoutUrl?: string; checkoutCreatedAt?: string | null; checkoutExpiresAt?: string | null } = {}): Promise<QueuePublicTrack | null> {
   const store = await readStore();
   const session = getSession(store, queueSessionId);
   if (session.sessionId !== store.activeSessionId || session.status === "archived") return null;
@@ -1082,7 +1092,12 @@ export async function markPriorityUpgradeCheckoutPending(trackId: string, queueS
     priorityUpgradeAt: entry.priorityUpgradeAt ?? now,
     priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now,
     priorityUpgradePaymentProvider: entry.priorityUpgradePaymentProvider ?? metadata.provider ?? null,
-    priorityUpgradePaymentId: entry.priorityUpgradePaymentId ?? metadata.checkoutSessionId ?? null,
+    priorityUpgradePaymentId: entry.priorityUpgradePaymentId ?? null,
+    priorityUpgradeCheckoutProvider: metadata.provider ?? entry.priorityUpgradeCheckoutProvider ?? null,
+    priorityUpgradeCheckoutSessionId: metadata.checkoutSessionId ?? entry.priorityUpgradeCheckoutSessionId ?? null,
+    priorityUpgradeCheckoutUrl: metadata.checkoutUrl ?? entry.priorityUpgradeCheckoutUrl ?? null,
+    priorityUpgradeCheckoutCreatedAt: metadata.checkoutCreatedAt ?? entry.priorityUpgradeCheckoutCreatedAt ?? now,
+    priorityUpgradeCheckoutExpiresAt: metadata.checkoutExpiresAt ?? entry.priorityUpgradeCheckoutExpiresAt ?? null,
   });
   const index = session.queue.findIndex((entry) => entry.id === trackId);
   if (index < 0) return null;
@@ -1108,6 +1123,11 @@ export async function markPriorityUpgradePaidFromStripe(trackId: string, queueSe
     priorityUpgradePaidAt: now,
     priorityUpgradePaymentProvider: "stripe",
     priorityUpgradePaymentId: payment.paymentId,
+    priorityUpgradeCheckoutProvider: null,
+    priorityUpgradeCheckoutSessionId: null,
+    priorityUpgradeCheckoutUrl: null,
+    priorityUpgradeCheckoutCreatedAt: null,
+    priorityUpgradeCheckoutExpiresAt: null,
     priorityUpgradeAmountCents: normalizePriceCents(payment.amountCents),
     priorityUpgradeCurrency: normalizeCurrency(payment.currency),
   });
@@ -1120,7 +1140,7 @@ export async function markPriorityUpgradePaidFromStripe(trackId: string, queueSe
   const queueIndex = normalized.queue.findIndex((entry) => entry.id === trackId);
   if (queueIndex >= 0) {
     const existing = normalized.queue[queueIndex];
-    if ((existing.priorityUpgradeStatus === "paid" || existing.priorityUpgradeStatus === "paid_needs_attention") && existing.priorityUpgradePaymentId === payment.paymentId && (existing.lane === "priority" || !canMoveIntoPriority)) return { updated: false, reason: "already_paid", track: existing };
+    if (existing.priorityUpgradeStatus === "paid" || existing.priorityUpgradeStatus === "paid_needs_attention") return { updated: false, reason: "already_paid", track: existing };
     normalized.queue.splice(queueIndex, 1);
     const alreadyQueued = normalized.queue.some((entry) => entry.id === trackId);
     const updated = markPaid(existing, canMoveIntoPriority);

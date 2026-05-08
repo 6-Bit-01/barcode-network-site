@@ -38,7 +38,7 @@ const DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS = "Priority Signal Upgrade is being 
 const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 1000;
 const DEFAULT_PRIORITY_UPGRADE_CURRENCY = "usd";
 
-type QueueAdminAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "pausePriority" | "resumePriority";
+type QueueAdminAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "pausePriority" | "resumePriority" | "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
 
 export interface PriorityUpgradeSettingsInput {
   enabled?: boolean;
@@ -459,6 +459,7 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     priorityPausedAt: entry.priorityPausedAt ?? null,
     priorityResumedAt: entry.priorityResumedAt ?? null,
     priorityQueueOrderAt: entry.priorityQueueOrderAt ?? entry.priorityUpgradePaidAt ?? null,
+    isTestTrack: entry.isTestTrack === true,
   };
 }
 
@@ -924,6 +925,7 @@ export async function createQueueTrack(input: {
     priorityPausedAt: null,
     priorityResumedAt: null,
     priorityQueueOrderAt: null,
+    isTestTrack: false,
   });
 }
 
@@ -1514,10 +1516,209 @@ function restoreEntry(entry: QueueEntry, lane: QueueLane): QueueEntry {
   return normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : "free", status: "queued", createdAt: new Date().toISOString(), playedAt: null, completedAt: null, removedAt: null, restoredAt: new Date().toISOString(), priorityOverlayDisplacedAt: null, ...priorityUpgradeMetadata(entry, lane) });
 }
 
+const SIMULATION_TRACK_NOTE = "[QUEUE SIMULATION TRACK]";
+
+function isSimulationTrack(entry: QueueEntry | null | undefined): boolean {
+  if (!entry) return false;
+  return entry.isTestTrack === true || entry.note?.includes(SIMULATION_TRACK_NOTE) === true || entry.artist.startsWith("SIM ") || entry.title.startsWith("SIM ");
+}
+
+function simulationSequence(session: QueueSession, prefix: string): number {
+  const entries = [
+    ...session.queue,
+    ...(session.nextInLineTrack ? [session.nextInLineTrack] : []),
+    ...(session.loadedTrack ? [session.loadedTrack] : []),
+    ...session.completed,
+    ...session.removed,
+    ...session.spotlight,
+  ];
+  const pattern = new RegExp(`^SIM ${prefix}(\\d+)`);
+  return entries.reduce((max, entry) => {
+    const match = entry.title.match(pattern);
+    return match?.[1] ? Math.max(max, Number(match[1])) : max;
+  }, 0) + 1;
+}
+
+function simulationTrackBase(session: QueueSession, prefix: string, titleSuffix: string, artistPrefix: string): QueueEntry {
+  const sequence = simulationSequence(session, prefix);
+  const number = String(sequence).padStart(3, "0");
+  const code = `${prefix}${number}`;
+  const now = new Date().toISOString();
+  return normalizeEntry({
+    id: generateQueueId(),
+    artist: `${artistPrefix} ${number}`,
+    title: `SIM ${code} — ${titleSuffix}`,
+    link: `https://example.com/sim-${code.toLowerCase()}`,
+    tier: "free",
+    lane: "regular",
+    amount: 0,
+    stripeSessionId: null,
+    status: "queued",
+    createdAt: now,
+    playedAt: null,
+    completedAt: null,
+    removedAt: null,
+    restoredAt: null,
+    spotlightedAt: null,
+    note: `${SIMULATION_TRACK_NOTE} Admin-only queue engine simulation data.`,
+    submitterArtistName: `${artistPrefix} ${number}`,
+    submittedArtistName: `${artistPrefix} ${number}`,
+    submittedSongTitle: `SIM ${code} — ${titleSuffix}`,
+    collaboratorNames: null,
+    tiktokHandle: `@sim_${code.toLowerCase()}`,
+    normalizedTikTokHandle: `sim_${code.toLowerCase()}`,
+    contactEmail: `sim-${code.toLowerCase()}@example.com`,
+    submitterToken: `sim-${code.toLowerCase()}`,
+    normalizedSourceKey: `https://example.com/sim-${code.toLowerCase()}`,
+    providerId: null,
+    sourceArtworkUrl: null,
+    suspiciousFlags: [],
+    limitMatchReasons: [],
+    detectedArtistName: null,
+    detectedSongTitle: null,
+    providerTitle: null,
+    fileUrl: null,
+    fileName: null,
+    fileSize: null,
+    mimeType: null,
+    sourceType: "other",
+    detectedDurationSeconds: null,
+    estimatedDurationSeconds: INTERNAL_BUFFER_DURATION_SECONDS,
+    durationIsEstimate: true,
+    durationSource: "internal_estimate",
+    priorityUpgradeRequested: false,
+    priorityUpgradeStatus: "none",
+    priorityUpgradeSource: null,
+    priorityUpgradeAt: null,
+    priorityUpgradeRequestedAt: null,
+    priorityUpgradePaidAt: null,
+    priorityUpgradePaymentProvider: null,
+    priorityUpgradePaymentId: null,
+    priorityUpgradeCheckoutProvider: null,
+    priorityUpgradeCheckoutSessionId: null,
+    priorityUpgradeCheckoutUrl: null,
+    priorityUpgradeCheckoutCreatedAt: null,
+    priorityUpgradeCheckoutExpiresAt: null,
+    priorityUpgradeAmountCents: null,
+    priorityUpgradeCurrency: null,
+    priorityOverlayDisplacedAt: null,
+    priorityPausedAt: null,
+    priorityResumedAt: null,
+    priorityQueueOrderAt: null,
+    isTestTrack: true,
+  });
+}
+
+function addSimulationTrack(session: QueueSession, action: QueueAdminAction): boolean {
+  if (action === "clearSimulationTracks") {
+    session.queue = session.queue.filter((entry) => !isSimulationTrack(entry));
+    session.completed = session.completed.filter((entry) => !isSimulationTrack(entry));
+    session.removed = session.removed.filter((entry) => !isSimulationTrack(entry));
+    session.spotlight = session.spotlight.filter((entry) => !isSimulationTrack(entry));
+    if (isSimulationTrack(session.nextInLineTrack)) clearNextInLine(session);
+    if (isSimulationTrack(session.loadedTrack)) clearLoadedTrack(session);
+    pullNextInLine(session, undefined, true);
+    return true;
+  }
+
+  const now = new Date().toISOString();
+  if (action === "addSimulationFreeTrack") {
+    session.queue.push(simulationTrackBase(session, "F", "Free Transmission", "SIM Artist"));
+    pullNextInLine(session);
+    return true;
+  }
+  if (action === "addSimulationPaidPriority") {
+    session.queue.push(normalizeEntry({
+      ...simulationTrackBase(session, "P", "Paid Priority", "SIM Priority Artist"),
+      tier: "fastlane",
+      lane: "priority",
+      priorityUpgradeRequested: true,
+      priorityUpgradeStatus: "paid",
+      priorityUpgradeSource: "stripe",
+      priorityUpgradeAt: now,
+      priorityUpgradeRequestedAt: now,
+      priorityUpgradePaidAt: now,
+      priorityUpgradePaymentProvider: "stripe",
+      priorityUpgradePaymentId: `sim_pi_${Date.now().toString(36)}`,
+      priorityUpgradeAmountCents: normalizePriceCents(session.priorityUpgradePriceCents),
+      priorityUpgradeCurrency: normalizeCurrency(session.priorityUpgradeCurrency),
+      priorityQueueOrderAt: now,
+      priorityPausedAt: null,
+      priorityResumedAt: null,
+      priorityOverlayDisplacedAt: null,
+    }));
+    resolveNextInLine(session);
+    return true;
+  }
+  if (action === "addSimulationCheckoutPending") {
+    session.queue.push(normalizeEntry({
+      ...simulationTrackBase(session, "CP", "Checkout Pending", "SIM Checkout Artist"),
+      tier: "fastlane",
+      lane: "priority",
+      priorityUpgradeRequested: true,
+      priorityUpgradeStatus: "checkout_pending",
+      priorityUpgradeSource: "future_payment",
+      priorityUpgradeAt: now,
+      priorityUpgradeRequestedAt: now,
+      priorityUpgradeCheckoutProvider: "stripe",
+      priorityUpgradeCheckoutSessionId: `sim_cs_${Date.now().toString(36)}`,
+      priorityUpgradeCheckoutUrl: "https://example.com/sim-checkout-pending",
+      priorityUpgradeCheckoutCreatedAt: now,
+      priorityUpgradeCheckoutExpiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    }));
+    return true;
+  }
+  if (action === "addSimulationPaymentFailed") {
+    session.queue.push(normalizeEntry({
+      ...simulationTrackBase(session, "FAIL", "Failed Payment", "SIM Failed Artist"),
+      tier: "fastlane",
+      lane: "priority",
+      priorityUpgradeRequested: true,
+      priorityUpgradeStatus: "failed",
+      priorityUpgradeSource: "stripe",
+      priorityUpgradeAt: now,
+      priorityUpgradeRequestedAt: now,
+      priorityUpgradePaymentProvider: "stripe",
+      priorityUpgradePaymentId: `sim_failed_${Date.now().toString(36)}`,
+    }));
+    return true;
+  }
+  if (action === "addSimulationHeldPriority") {
+    session.queue.push(normalizeEntry({
+      ...simulationTrackBase(session, "HOLD", "Held Priority", "SIM Held Artist"),
+      tier: "fastlane",
+      lane: "priority",
+      priorityUpgradeRequested: true,
+      priorityUpgradeStatus: "paid",
+      priorityUpgradeSource: "stripe",
+      priorityUpgradeAt: now,
+      priorityUpgradeRequestedAt: now,
+      priorityUpgradePaidAt: now,
+      priorityUpgradePaymentProvider: "stripe",
+      priorityUpgradePaymentId: `sim_hold_${Date.now().toString(36)}`,
+      priorityUpgradeAmountCents: normalizePriceCents(session.priorityUpgradePriceCents),
+      priorityUpgradeCurrency: normalizeCurrency(session.priorityUpgradeCurrency),
+      priorityQueueOrderAt: now,
+      priorityPausedAt: now,
+      priorityResumedAt: null,
+      priorityOverlayDisplacedAt: null,
+    }));
+    resolveNextInLine(session);
+    return true;
+  }
+  return false;
+}
+
 export async function updateRadioTrack(id: string, action: QueueAdminAction): Promise<QueueState> {
   const store = await readStore();
   const session = getSession(store);
   if (session.status === "archived") return queueStateFromSession(session, store);
+
+  if (addSimulationTrack(session, action)) {
+    const nextStore = replaceSession(store, session);
+    await writeStore(nextStore);
+    return queueStateFromSession(session, nextStore);
+  }
 
   if (applyPriorityUpgradeAdminCorrection(session, id, action)) {
     resolveNextInLine(session, undefined, true);

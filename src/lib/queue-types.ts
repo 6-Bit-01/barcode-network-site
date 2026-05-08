@@ -73,6 +73,7 @@ export interface QueueEntry {
   priorityPausedAt?: string | null;
   priorityResumedAt?: string | null;
   priorityQueueOrderAt?: string | null;
+  isTestTrack?: boolean;
 }
 
 export interface QueuePublicStatus {

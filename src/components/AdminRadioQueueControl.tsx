@@ -1,17 +1,24 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatRuntime, getTrackRuntimeSeconds } from "@/lib/queue-types";
 import type { QueueEntry, QueueLane, QueueState } from "@/lib/queue-types";
 
 type Tab = "active" | "completed" | "removed";
 type AdminQueueAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "pausePriority" | "resumePriority";
+type SimulationSpeed = "slow" | "normal" | "fast";
+type SimulationAction = "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
 
 const LANE_LABELS: Record<QueueLane, string> = { priority: "Priority Signal", wheel: "Wheel Winner", regular: "Regular Queue" };
 const FIXED_PRIORITY_LABEL = "Priority Signal Upgrade";
 const FIXED_PRIORITY_INSTRUCTIONS = "Moves this track into the Priority Signal lane after payment confirmation.";
+const SIMULATION_SPEEDS: Record<SimulationSpeed, { label: string; minDelayMs: number; maxDelayMs: number; priorityChance: number }> = {
+  slow: { label: "Slow", minDelayMs: 40_000, maxDelayMs: 90_000, priorityChance: 0.15 },
+  normal: { label: "Normal", minDelayMs: 20_000, maxDelayMs: 60_000, priorityChance: 0.25 },
+  fast: { label: "Fast", minDelayMs: 5_000, maxDelayMs: 15_000, priorityChance: 0.4 },
+};
 
 function sourceLabel(entry: QueueEntry): string { return (entry.sourceType ?? "other").toUpperCase(); }
 function formatPrice(cents = 0, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }
@@ -83,6 +90,12 @@ export function AdminRadioQueueControl() {
   const [prioritySaving, setPrioritySaving] = useState(false);
   const [priorityMessage, setPriorityMessage] = useState<string | null>(null);
   const [prioritySaveError, setPrioritySaveError] = useState<string | null>(null);
+  const [simulationRunning, setSimulationRunning] = useState(false);
+  const [simulationSpeed, setSimulationSpeed] = useState<SimulationSpeed>("normal");
+  const [simulationMessage, setSimulationMessage] = useState<string | null>(null);
+  const simulationTimerRef = useRef<number | null>(null);
+  const simulationRunningRef = useRef(false);
+  const simulationSpeedRef = useRef<SimulationSpeed>("normal");
 
   async function load(sessionId?: string) {
     const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
@@ -111,6 +124,11 @@ export function AdminRadioQueueControl() {
     setSessionCooldownSeconds(state.session.submissionCooldownSeconds ?? 300);
   }, [sessionOptionsOpen, state?.session]);
 
+  useEffect(() => () => {
+    simulationRunningRef.current = false;
+    if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current);
+  }, []);
+
   async function post(body: Record<string, unknown>): Promise<QueueState | null> {
     const res = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!res.ok) return null;
@@ -119,6 +137,43 @@ export function AdminRadioQueueControl() {
     return next;
   }
   async function action(id: string, next: AdminQueueAction) { await post(next === "pullNext" ? { action: next } : { id, action: next }); }
+  async function simulationAction(next: SimulationAction, label: string) {
+    const updated = await post({ action: next });
+    setSimulationMessage(updated ? label : "Simulation action failed. Confirm admin auth and active session.");
+    return updated;
+  }
+  function simulationDelay(speed: SimulationSpeed): number {
+    const config = SIMULATION_SPEEDS[speed];
+    return config.minDelayMs + Math.floor(Math.random() * (config.maxDelayMs - config.minDelayMs));
+  }
+  function queueSimulationTick() {
+    if (!simulationRunningRef.current) return;
+    const speed = simulationSpeedRef.current;
+    simulationTimerRef.current = window.setTimeout(async () => {
+      if (!simulationRunningRef.current) return;
+      await simulationAction("addSimulationFreeTrack", "Simulation added a Free SIM track.");
+      if (Math.random() < SIMULATION_SPEEDS[speed].priorityChance) await simulationAction("addSimulationPaidPriority", "Simulation added a paid Priority SIM track.");
+      queueSimulationTick();
+    }, simulationDelay(speed));
+  }
+  function startSimulation() {
+    if (simulationRunningRef.current) return;
+    simulationRunningRef.current = true;
+    setSimulationRunning(true);
+    setSimulationMessage("Simulation running. Free SIM tracks will arrive over time; Wheel winners remain manual.");
+    queueSimulationTick();
+  }
+  function stopSimulation() {
+    simulationRunningRef.current = false;
+    setSimulationRunning(false);
+    if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current);
+    simulationTimerRef.current = null;
+    setSimulationMessage("Simulation stopped.");
+  }
+  function updateSimulationSpeed(next: SimulationSpeed) {
+    simulationSpeedRef.current = next;
+    setSimulationSpeed(next);
+  }
   async function playerAction(id: string, next: AdminQueueAction) {
     await action(id, next);
     if (next === "finish" || next === "remove" || next === "moveBack") setPlayer(null);
@@ -255,6 +310,8 @@ export function AdminRadioQueueControl() {
         {isArchivedReview && hasSession && <div className="border border-danger/40 bg-danger/10 p-3 text-xs uppercase tracking-widest text-danger">ARCHIVED / READ ONLY — viewing {state?.session?.title ?? "finished session"}. Queue review actions are locked for this finished session.</div>}
       </section>
 
+      {canControlSession && <section className="space-y-4 border border-[#ffaa00]/50 bg-[#ffaa00]/10 p-5"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-xs uppercase tracking-[0.35em] text-[#ffaa00]">Admin Queue Simulation — Test Only</p><h2 className="mt-2 text-xl font-bold text-foreground">Queue Simulation Mode</h2><p className="mt-1 text-sm text-muted">Creates fake SIM tracks. Use Clear Simulation Tracks before going live. Wheel winners are never automated; select them manually.</p></div><div className="border border-[#ffaa00]/40 bg-background/60 p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Status</p><p className={simulationRunning ? "font-bold text-[#ffaa00]" : "font-bold text-muted"}>{simulationRunning ? "Running" : "Stopped"}</p></div></div><div className="flex flex-wrap items-end gap-3"><label className="space-y-1 text-xs uppercase tracking-widest text-muted"><span>Simulation speed</span><select value={simulationSpeed} onChange={(event) => updateSimulationSpeed(event.target.value as SimulationSpeed)} className="block border border-border bg-background px-3 py-2 text-sm normal-case tracking-normal text-foreground">{(Object.keys(SIMULATION_SPEEDS) as SimulationSpeed[]).map((speed) => <option key={speed} value={speed}>{SIMULATION_SPEEDS[speed].label}</option>)}</select></label><button type="button" onClick={startSimulation} disabled={simulationRunning} className="border border-[#ffaa00] px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00] disabled:cursor-not-allowed disabled:opacity-40">Start Simulation</button><button type="button" onClick={stopSimulation} disabled={!simulationRunning} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:cursor-not-allowed disabled:opacity-40">Stop Simulation</button><button type="button" onClick={() => simulationAction("addSimulationFreeTrack", "Added one Free SIM submission.")} className="border border-accent/50 px-4 py-2 text-xs uppercase tracking-widest text-accent">Add Free Test Submission Now</button><button type="button" onClick={() => simulationAction("addSimulationPaidPriority", "Sent one paid Priority SIM skip.")} className="border border-[#ffaa00]/60 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00]">Send Paid Priority Skip Now</button><button type="button" onClick={() => simulationAction("addSimulationCheckoutPending", "Sent one checkout-pending SIM track.")} className="border border-[#ffaa00]/40 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00]">Send Checkout Pending Test Now</button><button type="button" onClick={() => simulationAction("addSimulationPaymentFailed", "Sent one failed-payment SIM track.")} className="border border-danger/50 px-4 py-2 text-xs uppercase tracking-widest text-danger">Send Failed Payment Test Now</button><button type="button" onClick={() => simulationAction("addSimulationHeldPriority", "Sent one held paid Priority SIM track.")} className="border border-[#ffaa00]/60 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00]">Send Held Priority Test Now</button><button type="button" onClick={() => simulationAction("clearSimulationTracks", "Cleared SIM/test tracks only.")} className="border border-danger px-4 py-2 text-xs uppercase tracking-widest text-danger">Clear Simulation Tracks</button></div>{simulationMessage && <p className="border border-[#ffaa00]/30 bg-background/40 p-2 text-sm text-[#ffaa00]">{simulationMessage}</p>}</section>}
+
 
       {mounted && endConfirmOpen && createPortal(<div className="fixed inset-0 z-[100000] grid place-items-center bg-black/80 p-4 backdrop-blur-sm"><div role="dialog" aria-modal="true" aria-labelledby="end-session-confirm-title" className="w-full max-w-md border border-danger/50 bg-background p-5 shadow-[0_0_70px_rgba(255,0,0,0.24)]"><p className="text-xs uppercase tracking-[0.35em] text-danger">End Session</p><h2 id="end-session-confirm-title" className="mt-3 text-2xl font-bold text-foreground">End this session?</h2><p className="mt-2 text-sm text-muted">This will close submissions, finish the broadcast session, and move it to the archive.</p><div className="mt-5 flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setEndConfirmOpen(false)} disabled={endingSession} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">No, Cancel</button><button type="button" onClick={endCurrentSession} disabled={endingSession} className="border border-danger px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background disabled:opacity-50">{endingSession ? "Ending…" : "Yes, End Session"}</button></div></div></div>, document.body)}
 
@@ -320,7 +377,7 @@ function PlayerDock({ player, minimized, setMinimized, readOnly, onAction, onCop
           <div className="flex flex-wrap gap-2">
             <a href={openUrl(player)} target="_blank" rel="noreferrer" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent">Open Link</a>
             <button type="button" onClick={onCopy} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Copy Link</button>
-            {!readOnly && <><button type="button" onClick={() => onAction(player.id, "finish")} className="border border-accent bg-accent px-4 py-2 text-xs uppercase tracking-widest text-background">Finish Track</button><button type="button" onClick={() => onAction(player.id, "remove")} className="border border-danger/40 px-4 py-2 text-xs uppercase tracking-widest text-danger">Remove Track</button><button type="button" onClick={() => onAction(player.id, "moveBack")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Return to Queue</button><button type="button" onClick={() => onAction(player.id, "spotlight")} className="border border-foreground/40 px-4 py-2 text-xs uppercase tracking-widest text-foreground">Spotlight</button></>}
+            {!readOnly && <><button type="button" onClick={() => onAction(player.id, "finish")} className="border border-accent bg-accent px-4 py-2 text-xs uppercase tracking-widest text-background">Finish Track</button><button type="button" onClick={() => onAction(player.id, "remove")} className="border border-danger/40 px-4 py-2 text-xs uppercase tracking-widest text-danger">Remove Track</button>{entryLane(player) !== "priority" && <button type="button" onClick={() => onAction(player.id, "moveBack")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Return to Queue</button>}<button type="button" onClick={() => onAction(player.id, "spotlight")} className="border border-foreground/40 px-4 py-2 text-xs uppercase tracking-widest text-foreground">Spotlight</button></>}
           </div>
         </div>
       </div>
@@ -389,7 +446,7 @@ function TrackActions({ entry, onAction, onPlayer, onCopy, mode, readOnly }: { e
       {mode === "next" && <button type="button" onClick={() => onPlayer(entry)} className="border border-accent px-3 py-1.5 text-xs text-accent">Load in Player</button>}
       <a href={openUrl(entry)} target="_blank" rel="noreferrer" className="border border-border px-3 py-1.5 text-xs text-muted">{entry.sourceType === "upload" ? "Open Admin Audio" : "Open Link"}</a>
       <button type="button" onClick={() => onCopy(entry)} className="border border-border px-3 py-1.5 text-xs text-muted">Copy {entry.sourceType === "upload" ? "Admin Audio Link" : "Link"}</button>
-      {!readOnly && mode === "next" && <><button type="button" onClick={() => onAction(entry.id, "moveBack")} className="border border-border px-3 py-1.5 text-xs text-muted">Return to Queue</button>{canPausePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "pausePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Pause Priority</button>}{canResumePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "resumePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Resume Priority</button>}<button type="button" onClick={() => onAction(entry.id, "remove")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove</button><button type="button" onClick={() => onAction(entry.id, "spotlight")} className="border border-foreground/40 px-3 py-1.5 text-xs text-foreground">Spotlight</button></>}
+      {!readOnly && mode === "next" && <>{lane !== "priority" && <button type="button" onClick={() => onAction(entry.id, "moveBack")} className="border border-border px-3 py-1.5 text-xs text-muted">Return to Queue</button>}{canPausePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "pausePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Pause Priority</button>}{canResumePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "resumePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Resume Priority</button>}<button type="button" onClick={() => onAction(entry.id, "remove")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove</button><button type="button" onClick={() => onAction(entry.id, "spotlight")} className="border border-foreground/40 px-3 py-1.5 text-xs text-foreground">Spotlight</button></>}
       {!readOnly && mode === "active" && <><button type="button" onClick={() => onAction(entry.id, "remove")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove</button>{lane === "regular" ? <><button type="button" onClick={() => onAction(entry.id, "priority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move to Priority Signal</button><button type="button" onClick={() => onAction(entry.id, "wheel")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Mark Wheel Chosen</button></> : <><button type="button" onClick={() => onAction(entry.id, "regular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Move to Regular Queue</button>{lane === "wheel" && <button type="button" onClick={() => onAction(entry.id, "priority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move to Priority Signal</button>}{canPausePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "pausePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Pause Priority</button>}{canResumePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "resumePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Resume Priority</button>}</>}<button type="button" onClick={() => onAction(entry.id, "spotlight")} className="border border-foreground/40 px-3 py-1.5 text-xs text-foreground">Spotlight</button></>}
       {!readOnly && mode === "spotlight" && <button type="button" onClick={() => onAction(entry.id, "removeSpotlight")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove from Spotlight</button>}
       {!readOnly && mode === "completed" && <><button type="button" onClick={() => onAction(entry.id, "restoreRegular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Move back to Regular Queue</button><button type="button" onClick={() => onAction(entry.id, "restorePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move back to Priority Signal</button></>}

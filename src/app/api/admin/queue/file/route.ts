@@ -35,7 +35,7 @@ export async function GET(req: Request) {
     ...(range ? { headers: { range } } : {}),
   });
 
-  if (!result?.stream || result.statusCode === 304) return NextResponse.json({ error: "Audio unavailable" }, { status: 404 });
+  if (!result?.stream) return NextResponse.json({ error: "Audio unavailable" }, { status: 404 });
 
   const headers = new Headers(result.headers);
   headers.set("content-type", entry.mimeType || result.blob.contentType || result.headers.get("content-type") || "audio/mpeg");

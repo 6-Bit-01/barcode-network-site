@@ -11,7 +11,7 @@ const UPLOAD_PREFIX = "barcode-radio-queue/";
 
 type ClientPayload = {
   sessionId?: string;
-  fileName?: string;
+  uploadOriginalName?: string;
   fileSize?: number;
   mimeType?: string;
 };
@@ -41,7 +41,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         if (!snapshot.status.isOpen) throw new Error("This broadcast queue is closed.");
         if (snapshot.status.isFull || snapshot.status.activeCount >= snapshot.status.capacity) throw new Error("This broadcast queue is full for new transmissions.");
         if (!pathname.startsWith(UPLOAD_PREFIX)) throw new Error("Invalid upload path.");
-        if (!payload.fileName?.trim()) throw new Error("Uploaded audio file name is missing.");
+        if (!payload.uploadOriginalName?.trim()) throw new Error("Uploaded audio file name is missing.");
         if (!payload.mimeType || !AUDIO_MIME_TYPES.includes(payload.mimeType)) throw new Error("Only MP3 and WAV uploads are accepted.");
         if (!Number.isFinite(payload.fileSize) || Number(payload.fileSize) <= 0) throw new Error("Uploaded audio file size is missing.");
         if (Number(payload.fileSize) > MAX_UPLOAD_BYTES) throw new Error("Uploads must be 100MB or less.");

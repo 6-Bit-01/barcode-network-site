@@ -118,7 +118,7 @@ async function submitTrackFromBody(body: Record<string, unknown>): Promise<NextR
 
   if (mode === "upload") {
     const fileUrl = validateUploadedBlobUrl(body.uploadedBlobUrl || body.fileUrl);
-    const fileName = validateUploadFileName(body.fileName);
+    const fileName = validateUploadFileName(body.uploadOriginalName || body.fileName);
     const fileSize = validateUploadFileSize(body.fileSize);
     const mimeType = validateUploadMimeType(body.mimeType);
 

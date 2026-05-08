@@ -909,20 +909,34 @@ function publicSourceUrlForTrack(entry: QueueEntry): string | null {
   }
 }
 
+function publicArtworkUrlForTrack(entry: QueueEntry): string | null {
+  const artworkUrl = getTrackArtworkUrl(entry) ?? ((entry.sourceType ?? "other") === "upload" ? entry.sourceArtworkUrl ?? null : null);
+  if (!artworkUrl) return null;
+  try {
+    const parsed = new URL(artworkUrl);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    if (parsed.hostname.endsWith(".private.blob.vercel-storage.com") && parsed.pathname.startsWith("/barcode-radio-queue/")) return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
   const normalized = normalizeEntry(entry);
+  const isUpload = (normalized.sourceType ?? "other") === "upload";
   return {
     id: normalized.id,
     submittedArtistName: normalized.submittedArtistName ?? normalized.artist,
     submittedSongTitle: normalized.submittedSongTitle ?? normalized.title,
-    detectedArtistName: normalized.detectedArtistName ?? null,
-    detectedSongTitle: normalized.detectedSongTitle ?? null,
-    providerTitle: normalized.providerTitle ?? null,
+    detectedArtistName: isUpload ? null : normalized.detectedArtistName ?? null,
+    detectedSongTitle: isUpload ? null : normalized.detectedSongTitle ?? null,
+    providerTitle: isUpload ? null : normalized.providerTitle ?? null,
     sourceType: normalized.sourceType ?? "other",
     lane: normalized.lane ?? "regular",
     durationLabel: normalized.durationIsEstimate ? "estimated/pending" : formatRuntime(getTrackRuntimeSeconds(normalized)),
     durationIsEstimate: normalized.durationIsEstimate ?? true,
-    sourceArtworkUrl: getTrackArtworkUrl(normalized),
+    sourceArtworkUrl: publicArtworkUrlForTrack(normalized),
     publicSourceUrl: publicSourceUrlForTrack(normalized),
     tiktokHandle: normalized.tiktokHandle ?? null,
     priorityUpgradeRequested: normalized.priorityUpgradeRequested === true,

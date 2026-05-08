@@ -37,10 +37,17 @@ export async function GET(req: Request) {
 
   if (!result?.stream) return NextResponse.json({ error: "Audio unavailable" }, { status: 404 });
 
-  const headers = new Headers(result.headers);
-  headers.set("content-type", entry.mimeType || result.blob.contentType || result.headers.get("content-type") || "audio/mpeg");
+  const headers = new Headers();
+  const sourceContentType = typeof result.headers?.get === "function" ? result.headers.get("content-type") : null;
+  const sourceAcceptRanges = typeof result.headers?.get === "function" ? result.headers.get("accept-ranges") : null;
+  const sourceContentRange = typeof result.headers?.get === "function" ? result.headers.get("content-range") : null;
+  const sourceContentLength = typeof result.headers?.get === "function" ? result.headers.get("content-length") : null;
+
+  headers.set("content-type", entry.mimeType || result.blob.contentType || sourceContentType || "audio/mpeg");
   headers.set("cache-control", "private, no-store");
-  headers.set("accept-ranges", result.headers.get("accept-ranges") || "bytes");
+  headers.set("accept-ranges", sourceAcceptRanges || "bytes");
+  if (sourceContentRange) headers.set("content-range", sourceContentRange);
+  if (sourceContentLength) headers.set("content-length", sourceContentLength);
 
   return new Response(result.stream, { status: result.statusCode, headers });
 }

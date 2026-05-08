@@ -2,37 +2,8 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
 import { archiveCurrentQueueSession, getRadioQueueState, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateRadioTrack } from "@/lib/queue";
-import type { QueueEntry } from "@/lib/queue-types";
 
 export const dynamic = "force-dynamic";
-
-
-function findAdminTrack(state: Awaited<ReturnType<typeof getRadioQueueState>>, id: string): QueueEntry | null {
-  return [state.nowPlaying, state.nextInLine, state.loadedTrack, ...state.queue, ...state.history, ...(state.removed ?? []), ...(state.spotlight ?? [])].find((entry): entry is QueueEntry => Boolean(entry && entry.id === id)) ?? null;
-}
-
-async function privateAudioResponse(entry: QueueEntry, range: string | null): Promise<Response> {
-  if (entry.sourceType !== "upload" || !entry.fileUrl) return NextResponse.json({ error: "Audio not found" }, { status: 404 });
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) return NextResponse.json({ error: "Upload storage is not configured" }, { status: 503 });
-  const response = await fetch(entry.fileUrl, {
-    headers: {
-      authorization: `Bearer ${token}`,
-      ...(range ? { range } : {}),
-    },
-    cache: "no-store",
-  });
-  if (!response.ok || !response.body) return NextResponse.json({ error: "Audio unavailable" }, { status: response.status === 404 ? 404 : 502 });
-  const headers = new Headers();
-  headers.set("content-type", entry.mimeType || response.headers.get("content-type") || "audio/mpeg");
-  headers.set("cache-control", "private, no-store");
-  headers.set("accept-ranges", response.headers.get("accept-ranges") || "bytes");
-  for (const key of ["content-length", "content-range"]) {
-    const value = response.headers.get(key);
-    if (value) headers.set(key, value);
-  }
-  return new Response(response.body, { status: response.status, headers });
-}
 
 async function assertAdmin(): Promise<boolean> {
   const token = (await cookies()).get(COOKIE_NAME)?.value;
@@ -41,16 +12,8 @@ async function assertAdmin(): Promise<boolean> {
 
 export async function GET(req: Request) {
   if (!(await assertAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const params = new URL(req.url).searchParams;
-  const audioId = params.get("audioId");
-  const sessionId = params.get("sessionId") ?? undefined;
-  const state = await getRadioQueueState(sessionId);
-  if (audioId) {
-    const entry = findAdminTrack(state, audioId);
-    if (!entry) return NextResponse.json({ error: "Audio not found" }, { status: 404 });
-    return privateAudioResponse(entry, req.headers.get("range"));
-  }
-  return NextResponse.json(state);
+  const sessionId = new URL(req.url).searchParams.get("sessionId") ?? undefined;
+  return NextResponse.json(await getRadioQueueState(sessionId));
 }
 
 export async function POST(req: Request) {

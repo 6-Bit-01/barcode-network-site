@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps, react/jsx-no-comment-textnodes */
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps, react/jsx-no-comment-textnodes, @next/next/no-img-element */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -21,6 +21,7 @@ interface WarpData {
   queueStatus: string;
   submissionSlot: string;
   lane: string;
+  artworkUrl?: string | null;
 }
 
 function pressureLabel(status: QueuePublicStatus | null): string {
@@ -243,6 +244,7 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
           queueStatus: status ? `${status.activeCount + 1}/${status.capacity}` : "SYNCING",
           submissionSlot: status ? `#${Math.min(status.activeCount + 1, status.capacity)}` : "FREE_TRANSMISSIONS",
           lane: submitted.lane === "priority" ? "PRIORITY_SIGNAL" : submitted.lane === "wheel" ? "WHEEL_CHOSEN" : "FREE_TRANSMISSIONS",
+          artworkUrl: submitted.sourceArtworkUrl ?? null,
         });
         setTransmissionState("received");
         window.setTimeout(() => setTransmissionState("encoded"), 900);
@@ -343,57 +345,51 @@ function warpLabel(state: TransmissionState): string {
   return "TRANSMISSION RECEIVED";
 }
 
+function PacketArtwork({ data }: { data: WarpData | null }) {
+  if (data?.artworkUrl) return <img src={data.artworkUrl} alt="" className="absolute inset-0 h-full w-full object-cover opacity-80 mix-blend-screen" />;
+  return <div className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle,rgba(255,0,0,0.32),transparent_60%)] text-5xl text-accent">▦</div>;
+}
+
 function WarpSequence({ state, data }: { state: TransmissionState; data: WarpData | null }) {
   const steps: TransmissionState[] = ["received", "encoded", "converting", "temporal", "aligning", "confirmed"];
   const activeIndex = Math.max(0, steps.indexOf(state));
   const fragments = [
-    ["ARTIST_ID", data?.artist ?? "SIGNAL SOURCE"],
-    ["TRACK_TITLE", data?.title ?? "UNKNOWN TRACK"],
-    ["TIKTOK_SIGNAL", data?.tiktokHandle || "@pending"],
-    ["SOURCE_TYPE", data?.sourceType ?? "SOURCE"],
-    ["FILE_NAME", data?.fileName ?? "LINK_PACKET"],
-    ["DURATION_LOCK", data?.durationLabel ?? "ESTIMATED/PENDING"],
+    ["ARTIST", data?.artist ?? "SIGNAL SOURCE"],
+    ["TITLE", data?.title ?? "UNKNOWN TRACK"],
+    ["TIKTOK", data?.tiktokHandle || "@pending"],
     ["SESSION", data?.sessionTitle ?? "BARCODE Radio"],
-    ["SESSION_DATE", data?.sessionDate ?? "ACTIVE"],
-    ["QUEUE_LANE", data?.lane ?? "FREE_TRANSMISSIONS"],
-    ["SUBMISSION_SLOT", data?.submissionSlot ?? "FREE_TRANSMISSIONS"],
-    ["QUEUE_PRESSURE", data?.queueStatus ?? "SYNCING"],
+    ["LANE", data?.lane ?? "FREE_TRANSMISSIONS"],
+    ["SLOT", data?.submissionSlot ?? "FREE_TRANSMISSIONS"],
+    ["PRESSURE", data?.queueStatus ?? "SYNCING"],
+    ["SOURCE", data?.sourceType ?? "SOURCE"],
   ];
   return (
-    <div className="barcode-warp relative overflow-hidden border border-accent/50 bg-background/95 p-5 shadow-[0_0_80px_rgba(255,0,0,0.24)]">
-      <div className="absolute inset-0 opacity-25 [background:radial-gradient(circle_at_20%_30%,rgba(255,0,0,0.24),transparent_24%),linear-gradient(90deg,transparent,rgba(255,0,0,0.16),transparent)] animate-pulse motion-reduce:animate-none" />
-      <div className="absolute left-6 right-6 top-1/2 h-px bg-gradient-to-r from-transparent via-accent/70 to-transparent" />
-      <div className="absolute left-6 right-6 top-[56%] h-px bg-gradient-to-r from-transparent via-accent/30 to-transparent" />
+    <div className="barcode-warp relative overflow-hidden border border-accent/60 bg-background/95 p-5 shadow-[0_0_100px_rgba(255,0,0,0.32)]">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_15%,rgba(255,0,0,0.26),transparent_28%),radial-gradient(circle_at_80%_70%,rgba(255,255,255,0.08),transparent_24%)]" />
+      <div className="scanlines absolute inset-0 opacity-25" />
+      <div className="absolute left-0 right-0 top-1/2 h-px bg-gradient-to-r from-transparent via-accent to-transparent" />
       <div className="relative z-10 space-y-5">
-        <div>
-          <p className="text-xs uppercase tracking-[0.4em] text-accent">BARCODE Network Transmission</p>
-          <h2 className="mt-2 text-2xl font-bold text-foreground">{warpLabel(state)}</h2>
-          <p className="mt-2 text-xs text-muted">{state === "confirmed" ? "Destination card energized. Returning to broadcast view." : "Audio fragments are encoding into a routed data packet."}</p>
+        <div className="flex items-start justify-between gap-4">
+          <div><p className="text-xs uppercase tracking-[0.4em] text-accent">BARCODE Network Transmission</p><h2 className="mt-2 text-2xl font-bold text-foreground">{warpLabel(state)}</h2><p className="mt-1 text-xs text-muted">{state === "confirmed" ? "QUEUE INSERTION CONFIRMED" : "Artwork, metadata, and waveform fragments are compressing into a routed signal packet."}</p></div>
+          <div className="hidden border border-accent/40 bg-accent/5 px-3 py-2 text-xs uppercase tracking-widest text-accent sm:block">TRANSMISSION LOCKED</div>
         </div>
         <div className="grid grid-cols-6 gap-1">{steps.map((step, index) => <span key={step} className={`h-1.5 ${index <= activeIndex ? "bg-accent shadow-[0_0_12px_rgba(255,0,0,0.7)]" : "bg-border"}`} />)}</div>
-        <div className="grid gap-4 lg:grid-cols-[1fr_12rem_1fr]">
-          <div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80">{fragments.slice(0, 6).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}</div>
-          <div className="relative min-h-44 overflow-hidden border border-accent/40 bg-accent/5 p-3">
-            <div className="absolute inset-3 border border-accent/20" />
-            <div className="absolute left-3 right-3 top-1/2 h-px bg-accent/40" />
-            <div className="packet-transfer absolute left-4 top-1/2 w-24 -translate-y-1/2 border border-accent bg-background/90 p-2 shadow-[0_0_22px_rgba(255,0,0,0.45)]">
-              <p className="font-mono text-[9px] uppercase tracking-widest text-accent">packet</p>
-              <p className="mt-1 truncate text-xs font-bold text-foreground">{data?.title ?? "TRACK"}</p>
-              <p className="truncate text-[10px] text-muted">{data?.artist ?? "SOURCE"}</p>
-              <div className="mt-2 grid grid-cols-8 gap-0.5">{"1011010010110110".split("").map((bit, index) => <span key={`${bit}-${index}`} className="text-[8px] leading-none text-accent/80">{bit}</span>)}</div>
+        <div className="grid gap-4 lg:grid-cols-[0.85fr_1.3fr_0.85fr]">
+          <div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80">{fragments.slice(0, 4).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}<div className="mt-4 grid grid-cols-10 gap-1">{"10110011100101101100".split("").map((bit, index) => <span key={`${bit}-${index}`} className="text-[9px] text-accent/70">{bit}</span>)}</div></div>
+          <div className="relative min-h-72 overflow-hidden border border-accent/50 bg-black/30 p-4">
+            <div className="absolute inset-x-4 top-1/2 h-px bg-accent/50" />
+            <div className="absolute inset-y-8 left-1/2 w-px bg-accent/20" />
+            <div className="art-card relative z-10 mx-auto w-52 overflow-hidden border border-accent/60 bg-background shadow-[0_0_38px_rgba(255,0,0,0.4)]">
+              <div className="relative aspect-square overflow-hidden"><PacketArtwork data={data} /><div className="absolute inset-0 bg-[linear-gradient(transparent_50%,rgba(255,0,0,0.16)_50%)] bg-[length:100%_6px]" /></div>
+              <div className="p-3"><p className="truncate text-sm font-bold text-foreground">{data?.artist ?? "Submitted artist"}</p><p className="truncate text-xs text-muted">{data?.title ?? "Submitted track"}</p></div>
             </div>
-            <div className="absolute bottom-3 left-3 right-3 grid grid-cols-12 items-end gap-1">{[16, 42, 24, 68, 34, 78, 28, 58, 44, 72, 30, 52].map((height, index) => <span key={index} className="bg-accent/70 shadow-[0_0_10px_rgba(255,0,0,0.45)]" style={{ height: `${height / 2}px` }} />)}</div>
+            <div className="packet-transfer absolute left-5 top-1/2 z-20 w-28 -translate-y-1/2 border border-accent bg-background/90 p-2 shadow-[0_0_28px_rgba(255,0,0,0.55)]"><div className="relative h-12 overflow-hidden border border-accent/30"><PacketArtwork data={data} /></div><p className="mt-1 font-mono text-[9px] uppercase tracking-widest text-accent">signal packet</p></div>
+            <div className="absolute bottom-4 left-4 right-4 grid grid-cols-16 items-end gap-1">{[18, 44, 28, 70, 34, 82, 30, 62, 46, 76, 32, 56, 40, 68, 24, 50].map((height, index) => <span key={index} className="wave-fragment bg-accent/70 shadow-[0_0_10px_rgba(255,0,0,0.45)]" style={{ height: `${height / 2}px` }} />)}</div>
           </div>
-          <div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80">{fragments.slice(6).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}</div>
+          <div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80">{fragments.slice(4).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}<div className="landing-card mt-4 border border-accent/50 bg-background/80 p-3"><p className="text-xs uppercase tracking-widest text-accent">Destination card</p><div className="mt-2 grid grid-cols-[3rem_1fr] gap-2"><div className="relative h-12 overflow-hidden border border-accent/30"><PacketArtwork data={data} /></div><div><p className="truncate text-sm font-bold text-foreground">{data?.artist ?? "Submitted artist"}</p><p className="truncate text-xs text-muted">{data?.title ?? "Submitted track"}</p></div></div><p className="mt-2 text-[10px] text-accent">SIGNAL INSERTED</p></div></div>
         </div>
-        <div className="border border-accent/40 bg-background/70 p-3">
-          <p className="text-xs uppercase tracking-widest text-accent">Destination queue card</p>
-          <p className="mt-1 text-sm font-bold text-foreground">{data?.artist ?? "Submitted artist"} — {data?.title ?? "Submitted track"}</p>
-          <p className="mt-1 text-xs text-muted">{data?.lane ?? "FREE_TRANSMISSIONS"} · {data?.submissionSlot ?? "incoming"} · {data?.queueStatus ?? "syncing"}</p>
-        </div>
-        <div className="border border-border bg-background/50 p-3"><p className="text-xs uppercase tracking-widest text-muted">Priority Signal Upgrade</p><p className="mt-1 text-xs text-muted">Move this track into the Priority Lane when priority access is active.</p><button type="button" disabled className="mt-3 border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted opacity-60">Coming soon</button></div>
       </div>
-      <style jsx>{`@keyframes barcode-warp-shake{0%,100%{transform:translate3d(0,0,0)}18%{transform:translate3d(-2px,1px,0)}34%{transform:translate3d(2px,-1px,0)}56%{transform:translate3d(-1px,-2px,0)}72%{transform:translate3d(1px,2px,0)}}@keyframes barcode-packet-route{0%{transform:translate3d(0,-50%,0) scale(1);opacity:.35}22%{transform:translate3d(18px,-50%,0) scale(.92);opacity:1}58%{transform:translate3d(72px,-50%,0) scale(.78);opacity:.95}100%{transform:translate3d(124px,-50%,0) scale(.62);opacity:.65}}.barcode-warp{animation:barcode-warp-shake 760ms steps(2,end) 5}.packet-transfer{animation:barcode-packet-route 6.6s cubic-bezier(.2,.72,.2,1) forwards}@media (prefers-reduced-motion: reduce){.barcode-warp,.packet-transfer{animation:none}}`}</style>
+      <style jsx>{`@keyframes barcode-warp-shake{0%,100%{transform:translate3d(0,0,0)}18%{transform:translate3d(-2px,1px,0)}34%{transform:translate3d(2px,-1px,0)}56%{transform:translate3d(-1px,-2px,0)}72%{transform:translate3d(1px,2px,0)}}@keyframes barcode-packet-route{0%{transform:translate3d(0,-50%,0) scale(.85);opacity:0}18%{opacity:1}55%{transform:translate3d(46vw,-50%,0) scale(.72)}100%{transform:translate3d(62vw,-50%,0) scale(.5);opacity:.15}}@keyframes art-glitch{0%,100%{filter:none;transform:translateZ(0)}30%{filter:contrast(1.3) hue-rotate(-12deg);transform:skewX(-2deg)}60%{filter:contrast(1.6) saturate(1.2);transform:translate3d(2px,-1px,0)}}@keyframes landing-pulse{0%,70%{box-shadow:0 0 0 rgba(255,0,0,0)}88%{box-shadow:0 0 38px rgba(255,0,0,.55)}100%{box-shadow:0 0 14px rgba(255,0,0,.25)}}.scanlines{background:linear-gradient(transparent 50%,rgba(255,255,255,.08) 50%);background-size:100% 6px}.barcode-warp{animation:barcode-warp-shake 760ms steps(2,end) 5}.packet-transfer{animation:barcode-packet-route 6.8s cubic-bezier(.2,.72,.2,1) forwards}.art-card{animation:art-glitch 900ms steps(2,end) 7}.landing-card{animation:landing-pulse 7s ease-out forwards}.wave-fragment{animation:art-glitch 1.2s steps(2,end) 5}@media (prefers-reduced-motion: reduce){.barcode-warp,.packet-transfer,.art-card,.landing-card,.wave-fragment{animation:none}}`}</style>
     </div>
   );
 }

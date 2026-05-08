@@ -7,12 +7,13 @@ import { formatRuntime, getTrackRuntimeSeconds } from "@/lib/queue-types";
 import type { QueueEntry, QueueLane, QueueState } from "@/lib/queue-types";
 
 type Tab = "active" | "completed" | "removed";
-type AdminQueueAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority";
+type AdminQueueAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityPaid" | "markPriorityRequested" | "markPriorityCheckoutPending";
 
 const LANE_LABELS: Record<QueueLane, string> = { priority: "Priority Lane", wheel: "Wheel Winner", regular: "Regular Queue" };
 
 function sourceLabel(entry: QueueEntry): string { return (entry.sourceType ?? "other").toUpperCase(); }
-function openUrl(entry: QueueEntry): string { return entry.fileUrl || entry.link; }
+function adminAudioUrl(entry: QueueEntry): string { return `/api/admin/queue?audioId=${encodeURIComponent(entry.id)}`; }
+function openUrl(entry: QueueEntry): string { return entry.sourceType === "upload" ? adminAudioUrl(entry) : entry.link; }
 function submittedArtist(entry: QueueEntry): string { return entry.submittedArtistName ?? entry.artist; }
 function submittedTitle(entry: QueueEntry): string { return entry.submittedSongTitle ?? entry.title; }
 function entryLane(entry: QueueEntry): QueueLane { return entry.lane ?? "regular"; }
@@ -20,7 +21,10 @@ function durationSourceLabel(entry: QueueEntry): string { return (entry.duration
 function priorityUpgradeLabel(entry: QueueEntry): string | null {
   if (entry.priorityUpgradeStatus === "manual") return "Manual Priority Signal";
   if (entry.priorityUpgradeStatus === "requested") return "Public placeholder requested";
-  if (entry.priorityUpgradeStatus === "paid_placeholder") return "Future payment placeholder";
+  if (entry.priorityUpgradeStatus === "checkout_pending") return "Checkout pending (metadata only)";
+  if (entry.priorityUpgradeStatus === "paid") return "Paid (admin-marked)";
+  if (entry.priorityUpgradeStatus === "failed") return "Payment failed";
+  if (entry.priorityUpgradeStatus === "refunded") return "Payment refunded";
   return null;
 }
 function durationLabel(entry: QueueEntry): string {
@@ -245,7 +249,7 @@ function PlayerDock({ player, minimized, setMinimized, readOnly, onAction, onCop
         </div>
         <div className={`${minimized ? "h-0 overflow-hidden opacity-0" : "mt-4 opacity-100"} grid w-full items-end gap-4 xl:grid-cols-[minmax(0,1fr)_auto]`} aria-hidden={minimized}>
           <div className="min-h-20 w-full min-w-0">
-            {player.sourceType === "upload" && player.fileUrl && <audio src={player.fileUrl} controls className="w-full" />}
+            {player.sourceType === "upload" && player.fileUrl && <audio src={adminAudioUrl(player)} controls className="w-full" />}
             {player.sourceType !== "upload" && embedded && <iframe title="Queue preview" src={embedded} className="h-56 w-full border border-border" allow="clipboard-write; encrypted-media; picture-in-picture" />}
             {player.sourceType !== "upload" && !embedded && <div className="border border-border p-6 text-sm text-muted">No embeddable preview available for this source. Use Open Link or Copy Link.</div>}
           </div>
@@ -260,10 +264,6 @@ function PlayerDock({ player, minimized, setMinimized, readOnly, onAction, onCop
   );
 }
 
-function TrackActions({ entry, onAction, onPlayer, onCopy, mode, readOnly }: { entry: QueueEntry; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void; mode: "next" | "active" | "spotlight" | "completed" | "removed"; readOnly: boolean }) {
-  const lane = entryLane(entry);
-  return <div className="flex flex-wrap gap-2">{mode === "next" && <button type="button" onClick={() => onPlayer(entry)} className="border border-accent px-3 py-1.5 text-xs text-accent">Load in Player</button>}<a href={openUrl(entry)} target="_blank" rel="noreferrer" className="border border-border px-3 py-1.5 text-xs text-muted">Open Link</a><button type="button" onClick={() => onCopy(entry)} className="border border-border px-3 py-1.5 text-xs text-muted">Copy Link</button>{!readOnly && mode === "next" && <><button type="button" onClick={() => onAction(entry.id, "moveBack")} className="border border-border px-3 py-1.5 text-xs text-muted">Return to Queue</button><button type="button" onClick={() => onAction(entry.id, "remove")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove</button><button type="button" onClick={() => onAction(entry.id, "spotlight")} className="border border-foreground/40 px-3 py-1.5 text-xs text-foreground">Spotlight</button></>}{!readOnly && mode === "active" && <><button type="button" onClick={() => onAction(entry.id, "remove")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove</button>{lane === "regular" ? <><button type="button" onClick={() => onAction(entry.id, "priority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move to Priority Lane</button><button type="button" onClick={() => onAction(entry.id, "wheel")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Mark Wheel Chosen</button></> : <><button type="button" onClick={() => onAction(entry.id, "regular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Move to Regular Queue</button>{lane === "wheel" && <button type="button" onClick={() => onAction(entry.id, "priority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move to Priority Lane</button>}</>}<button type="button" onClick={() => onAction(entry.id, "spotlight")} className="border border-foreground/40 px-3 py-1.5 text-xs text-foreground">Spotlight</button></>}{!readOnly && mode === "spotlight" && <button type="button" onClick={() => onAction(entry.id, "removeSpotlight")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove from Spotlight</button>}{!readOnly && mode === "completed" && <><button type="button" onClick={() => onAction(entry.id, "restoreRegular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Move back to Regular Queue</button><button type="button" onClick={() => onAction(entry.id, "restorePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move back to Priority Lane</button></>}{!readOnly && mode === "removed" && <><button type="button" onClick={() => onAction(entry.id, "restoreRegular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Restore to Regular Queue</button><button type="button" onClick={() => onAction(entry.id, "restorePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Restore to Priority Lane</button></>}</div>;
-}
 
 function AdminTrackMetadata({ entry }: { entry: QueueEntry }) {
   const detected = detectedLabel(entry);
@@ -276,6 +276,7 @@ function AdminTrackMetadata({ entry }: { entry: QueueEntry }) {
         {entry.contactEmail && <p className="mt-1 text-muted">Contact: {entry.contactEmail}</p>}
         {entry.submitterArtistName && <p className="mt-1 text-muted">Submitted by: {entry.submitterArtistName}</p>}
         {priorityUpgradeLabel(entry) && <p className="mt-2 inline-flex border border-[#ffaa00]/50 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">{priorityUpgradeLabel(entry)}</p>}
+        {(entry.priorityUpgradeStatus && entry.priorityUpgradeStatus !== "none") && <p className="mt-1 text-muted">Priority status: {entry.priorityUpgradeStatus.replace(/_/g, " ")} · Source: {entry.priorityUpgradeSource ?? "—"}</p>}
       </div>
       <div className="border border-border/60 p-3">
         <span className="block text-muted uppercase tracking-widest">Detected source</span>
@@ -315,5 +316,25 @@ function Lane({ title, tracks, onAction, onPlayer, onCopy, mode, readOnly }: { t
         )}
       </div>
     </section>
+  );
+}
+
+function TrackActions({ entry, onAction, onPlayer, onCopy, mode, readOnly }: { entry: QueueEntry; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void; mode: "next" | "active" | "spotlight" | "completed" | "removed"; readOnly: boolean }) {
+  const lane = entryLane(entry);
+  const canCorrectPriority = !readOnly && (mode === "active" || mode === "next");
+  return (
+    <div className="flex flex-wrap gap-2">
+      {mode === "next" && <button type="button" onClick={() => onPlayer(entry)} className="border border-accent px-3 py-1.5 text-xs text-accent">Load in Player</button>}
+      <a href={openUrl(entry)} target="_blank" rel="noreferrer" className="border border-border px-3 py-1.5 text-xs text-muted">{entry.sourceType === "upload" ? "Open Admin Audio" : "Open Link"}</a>
+      <button type="button" onClick={() => onCopy(entry)} className="border border-border px-3 py-1.5 text-xs text-muted">Copy {entry.sourceType === "upload" ? "Admin Audio Link" : "Link"}</button>
+      {canCorrectPriority && <button type="button" onClick={() => onAction(entry.id, "markPriorityManual")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Admin Mark Manual Priority</button>}
+      {canCorrectPriority && <button type="button" onClick={() => onAction(entry.id, "markPriorityPaid")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Admin Mark Paid</button>}
+      {canCorrectPriority && <button type="button" onClick={() => onAction(entry.id, "markPriorityCheckoutPending")} className="border border-border px-3 py-1.5 text-xs text-muted">Admin Mark Checkout Pending</button>}
+      {!readOnly && mode === "next" && <><button type="button" onClick={() => onAction(entry.id, "moveBack")} className="border border-border px-3 py-1.5 text-xs text-muted">Return to Queue</button><button type="button" onClick={() => onAction(entry.id, "remove")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove</button><button type="button" onClick={() => onAction(entry.id, "spotlight")} className="border border-foreground/40 px-3 py-1.5 text-xs text-foreground">Spotlight</button></>}
+      {!readOnly && mode === "active" && <><button type="button" onClick={() => onAction(entry.id, "remove")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove</button>{lane === "regular" ? <><button type="button" onClick={() => onAction(entry.id, "priority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move to Priority Lane</button><button type="button" onClick={() => onAction(entry.id, "wheel")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Mark Wheel Chosen</button></> : <><button type="button" onClick={() => onAction(entry.id, "regular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Move to Regular Queue</button>{lane === "wheel" && <button type="button" onClick={() => onAction(entry.id, "priority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move to Priority Lane</button>}</>}<button type="button" onClick={() => onAction(entry.id, "spotlight")} className="border border-foreground/40 px-3 py-1.5 text-xs text-foreground">Spotlight</button></>}
+      {!readOnly && mode === "spotlight" && <button type="button" onClick={() => onAction(entry.id, "removeSpotlight")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove from Spotlight</button>}
+      {!readOnly && mode === "completed" && <><button type="button" onClick={() => onAction(entry.id, "restoreRegular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Move back to Regular Queue</button><button type="button" onClick={() => onAction(entry.id, "restorePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move back to Priority Lane</button></>}
+      {!readOnly && mode === "removed" && <><button type="button" onClick={() => onAction(entry.id, "restoreRegular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Restore to Regular Queue</button><button type="button" onClick={() => onAction(entry.id, "restorePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Restore to Priority Lane</button></>}
+    </div>
   );
 }

@@ -1,6 +1,8 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { externalLinks } from "@/content";
 import { useBNLStatus } from "@/components/useBNLStatus";
 
@@ -57,29 +59,32 @@ function BNLRelayExplainer() {
   const [visible, setVisible] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [glitchingOut, setGlitchingOut] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
-    if (window.sessionStorage.getItem("bnl-relay-explainer-dismissed") === "true") {
+    if (pathname === "/queue" || pathname.startsWith("/queue/")) return;
+    if (window.localStorage.getItem("bnl-relay-explainer-never-show") === "true" || window.sessionStorage.getItem("bnl-relay-explainer-dismissed") === "true") {
       setDismissed(true);
       return;
     }
 
-    const timer = window.setTimeout(() => setVisible(true), 5000);
+    const timer = window.setTimeout(() => setVisible(true), 10000);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [pathname]);
 
-  function dismiss() {
+  function dismiss(neverShow = false) {
+    if (neverShow) window.localStorage.setItem("bnl-relay-explainer-never-show", "true");
     window.sessionStorage.setItem("bnl-relay-explainer-dismissed", "true");
     setGlitchingOut(true);
     setVisible(false);
     window.setTimeout(() => setDismissed(true), 520);
   }
 
-  if (dismissed) return null;
+  if (pathname === "/queue" || pathname.startsWith("/queue/") || dismissed) return null;
 
   return (
     <div
-      className={`fixed inset-x-3 top-24 z-30 border border-accent/30 bg-black/95 p-3 font-mono text-white shadow-[0_0_35px_rgba(255,0,0,0.16)] transition-opacity duration-[1800ms] ease-out sm:inset-x-auto sm:right-6 sm:w-[calc(100vw-1.5rem)] sm:max-w-sm sm:p-4 ${
+      className={`fixed inset-x-3 bottom-16 z-30 sm:top-24 sm:bottom-auto border border-accent/30 bg-black/95 p-3 font-mono text-white shadow-[0_0_35px_rgba(255,0,0,0.16)] transition-opacity duration-[2600ms] ease-out sm:inset-x-auto sm:right-6 sm:w-[calc(100vw-1.5rem)] sm:max-w-sm sm:p-4 ${
         visible ? "opacity-100" : "opacity-0 pointer-events-none"
       } ${glitchingOut ? "animate-[bnl-relay-glitch-out_520ms_steps(2,end)_forwards]" : ""}`}
     >
@@ -89,7 +94,7 @@ function BNLRelayExplainer() {
         <p className="text-[9px] uppercase tracking-[0.28em] text-accent sm:text-[10px] sm:tracking-[0.35em]">Relay Explained</p>
         <button
           type="button"
-          onClick={dismiss}
+          onClick={() => dismiss()}
           className="-m-2 p-2 text-sm leading-none text-white/55 transition-colors hover:text-accent sm:text-xs"
           aria-label="Dismiss relay explanation"
         >
@@ -114,6 +119,7 @@ function BNLRelayExplainer() {
       >
         Join Discord + Feed The Relay
       </a>
+      <button type="button" onClick={() => dismiss(true)} className="mt-2 w-full text-center text-[9px] uppercase tracking-[0.18em] text-white/45 transition-colors hover:text-white/75">Don&apos;t show this again</button>
       <style jsx>{`
         @keyframes bnl-relay-glitch-out {
           0% {

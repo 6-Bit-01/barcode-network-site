@@ -61,7 +61,7 @@ function readAudioDuration(file: File): Promise<number | null> {
   });
 }
 
-function publicTrackFromApi(track: { id: string; submittedArtistName?: string; submittedSongTitle?: string; artist?: string; title?: string; sourceType?: QueuePublicTrack["sourceType"]; lane?: QueuePublicTrack["lane"]; detectedArtistName?: string | null; detectedSongTitle?: string | null; detectedDurationSeconds?: number | null; durationIsEstimate?: boolean; sourceArtworkUrl?: string | null; publicSourceUrl?: string | null; tiktokHandle?: string | null }): QueuePublicTrack {
+function publicTrackFromApi(track: { id: string; submittedArtistName?: string; submittedSongTitle?: string; artist?: string; title?: string; sourceType?: QueuePublicTrack["sourceType"]; lane?: QueuePublicTrack["lane"]; detectedArtistName?: string | null; detectedSongTitle?: string | null; detectedDurationSeconds?: number | null; durationIsEstimate?: boolean; sourceArtworkUrl?: string | null; publicSourceUrl?: string | null; tiktokHandle?: string | null; priorityUpgradeRequested?: boolean; priorityUpgradeStatus?: QueuePublicTrack["priorityUpgradeStatus"] }): QueuePublicTrack {
   return {
     id: track.id,
     submittedArtistName: track.submittedArtistName ?? track.artist ?? "Submitted artist",
@@ -75,6 +75,8 @@ function publicTrackFromApi(track: { id: string; submittedArtistName?: string; s
     sourceArtworkUrl: track.sourceArtworkUrl ?? null,
     publicSourceUrl: track.publicSourceUrl ?? null,
     tiktokHandle: track.tiktokHandle ?? null,
+    priorityUpgradeRequested: track.priorityUpgradeRequested === true,
+    priorityUpgradeStatus: track.priorityUpgradeStatus ?? "none",
   };
 }
 
@@ -373,6 +375,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
 
   const effectiveCooldown = Math.max(cooldownRemaining, submitterStatus?.cooldownRemainingSeconds ?? 0);
   const estimatedPosition = Math.min((status?.activeCount ?? publicQueue.length) + 1, status?.capacity ?? ((status?.activeCount ?? publicQueue.length) + 1));
+  const priorityUpgradeEnabled = session?.priorityUpgradesEnabled === true;
 
   return (
     <form onSubmit={submit} className="space-y-3">
@@ -432,6 +435,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
             <div className="grid gap-2 text-xs sm:grid-cols-2">
               {submitterStatus && <div className="border border-accent/40 bg-accent/5 p-2 text-muted"><p className="font-bold text-accent">Your transmissions: {submitterStatus.used} / {submitterStatus.limit}</p><p>Remaining: {submitterStatus.remaining}</p>{submitterStatus.cooldownRemainingSeconds > 0 && <p className="text-accent">Cooldown: {formatCooldown(submitterStatus.cooldownRemainingSeconds)}</p>}</div>}
               {effectiveCooldown > 0 && <div className="border border-accent/40 bg-accent/5 p-2 text-accent">Next transmission available in {formatCooldown(effectiveCooldown)}</div>}
+              {priorityUpgradeEnabled && <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 p-2 text-[#ffaa00]"><p className="font-bold">{session?.priorityUpgradeLabel || "Priority Signal Upgrade"}</p><p className="mt-1 text-muted">Placeholder only: no charge happens here, and admin/manual action is required before a track moves to Priority Signal.</p></div>}
               <div className="border border-border bg-background/40 p-2 text-muted">{checkCopy}</div>
               <div className="border border-accent/30 bg-accent/5 p-2 text-muted">Estimated placement: Free Transmissions position #{estimatedPosition}</div>
             </div>

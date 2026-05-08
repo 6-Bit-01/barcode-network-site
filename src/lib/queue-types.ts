@@ -9,6 +9,8 @@ export type QueueNonPriorityLane = "wheel" | "regular";
 export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | "next" | "pending" | "played" | "refunded" | "expired";
 export type QueueDurationSource = "upload_metadata" | "file_metadata" | "youtube" | "soundcloud" | "spotify" | "provider_metadata" | "internal_estimate" | "unknown";
 export type QueueSessionStatus = "prepared" | "open" | "closed" | "archived";
+export type PriorityUpgradeStatus = "none" | "requested" | "manual" | "paid_placeholder";
+export type PriorityUpgradeSource = "admin" | "public_placeholder" | "future_payment";
 
 export interface QueueEntry {
   id: string;
@@ -52,6 +54,10 @@ export interface QueueEntry {
   estimatedDurationSeconds?: number;
   durationIsEstimate?: boolean;
   durationSource?: QueueDurationSource;
+  priorityUpgradeRequested?: boolean;
+  priorityUpgradeStatus?: PriorityUpgradeStatus;
+  priorityUpgradeSource?: PriorityUpgradeSource | null;
+  priorityUpgradeAt?: string | null;
 }
 
 export interface QueuePublicStatus {
@@ -85,6 +91,9 @@ export interface QueueSessionSummary {
   nextInLineTrackId?: string | null;
   nextInLineHoldTrackId?: string | null;
   loadedTrackId?: string | null;
+  priorityUpgradesEnabled: boolean;
+  priorityUpgradeLabel: string;
+  priorityUpgradeInstructions: string;
 }
 
 export interface QueueSession extends QueueSessionSummary {
@@ -120,6 +129,8 @@ export interface QueuePublicTrack {
   sourceArtworkUrl?: string | null;
   publicSourceUrl?: string | null;
   tiktokHandle?: string | null;
+  priorityUpgradeRequested?: boolean;
+  priorityUpgradeStatus?: PriorityUpgradeStatus;
 }
 
 export interface QueuePublicSubmitterStatus {
@@ -131,7 +142,7 @@ export interface QueuePublicSubmitterStatus {
 }
 
 export interface QueuePublicSnapshot {
-  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount">;
+  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions">;
   status: QueuePublicStatus;
   queue: QueuePublicTrack[];
   completed: QueuePublicTrack[];

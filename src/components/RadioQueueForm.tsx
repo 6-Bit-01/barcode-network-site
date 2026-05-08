@@ -119,6 +119,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
   const [note, setNote] = useState("");
   const [routeChoice, setRouteChoice] = useState<RouteChoice>("free");
   const [file, setFile] = useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [detectedDuration, setDetectedDuration] = useState<number | null>(null);
   const [readState, setReadState] = useState<ReadState>("idle");
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -297,6 +298,19 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
   const priorityCheckoutAvailable = session?.priorityUpgradesEnabled === true && session?.priorityUpgradePaymentsEnabled === true && priorityPriceCents > 0;
   const selectedRoute: RouteChoice = priorityCheckoutAvailable ? routeChoice : "free";
 
+  function clearTrackDraftFields() {
+    setTitle("");
+    setLink("");
+    setCollaboratorNames("");
+    setNote("");
+    setFile(null);
+    setFileInputKey((value) => value + 1);
+    setDetectedDuration(null);
+    setReadState("idle");
+    setUploadProgress(null);
+    setRouteChoice("free");
+  }
+
   async function startPriorityCheckout(trackId: string): Promise<boolean> {
     const checkoutSessionId = sessionId ?? session?.sessionId;
     if (!checkoutSessionId) return false;
@@ -370,17 +384,9 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
           await loadStatus();
           onSubmitted?.(submitted.id, "resolved", "free-transmissions-lane");
           setArtist(window.localStorage.getItem("barcode-radio-submit-artist") ?? artist.trim());
-          setTitle("");
-          setLink("");
           setTikTokHandle(window.localStorage.getItem("barcode-radio-submit-tiktok") ?? tiktokHandle.trim());
-          setCollaboratorNames("");
           setContactEmail(window.localStorage.getItem("barcode-radio-submit-email") ?? contactEmail.trim());
-          setNote("");
-          setFile(null);
-          setDetectedDuration(null);
-          setReadState("idle");
-          setUploadProgress(null);
-          setRouteChoice("free");
+          clearTrackDraftFields();
           setStep("track");
           return;
         }
@@ -432,20 +438,14 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
         onSubmitted?.(submitted.id, "complete", resolved.targetId);
       }
       setArtist(window.localStorage.getItem("barcode-radio-submit-artist") ?? artist.trim());
-      setTitle("");
-      setLink("");
       setTikTokHandle(window.localStorage.getItem("barcode-radio-submit-tiktok") ?? tiktokHandle.trim());
-      setCollaboratorNames("");
       setContactEmail(window.localStorage.getItem("barcode-radio-submit-email") ?? contactEmail.trim());
-      setNote("");
-      setFile(null);
-      setDetectedDuration(null);
-      setReadState("idle");
-      setUploadProgress(null);
-      setRouteChoice("free");
+      clearTrackDraftFields();
       setStep("track");
     } catch (err) {
       setTransmissionState("idle");
+      clearTrackDraftFields();
+      setStep("track");
       setError(err instanceof Error ? err.message : "Submission failed");
     } finally {
       finalSubmitIntent.current = false;
@@ -456,14 +456,17 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
 
   function continueToRouting() {
     if (!artist.trim() || !title.trim() || !tiktokHandle.trim()) {
+      clearTrackDraftFields();
       setError("Artist, title, and TikTok handle are required before final routing.");
       return;
     }
     if (mode === "link" && !link.trim()) {
+      clearTrackDraftFields();
       setError("Add a track link before final routing.");
       return;
     }
     if (mode === "upload" && !file) {
+      clearTrackDraftFields();
       setError("Select an MP3/WAV file before final routing.");
       return;
     }
@@ -511,7 +514,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
             {mode === "link" ? (
               <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Track link</span><input type="url" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://soundcloud.com/..." className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
             ) : (
-              <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">MP3/WAV file</span><input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,.mp3,.wav" onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+              <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">MP3/WAV file</span><input key={fileInputKey} type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,.mp3,.wav" onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
             )}
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               <button type="button" onClick={onCancel} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Collapse Intake</button>

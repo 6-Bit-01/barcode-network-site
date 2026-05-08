@@ -174,8 +174,21 @@ function laneRank(lane: QueueLane | undefined): number {
   return 2;
 }
 
+function queueRank(entry: QueueEntry): number {
+  if ((entry.lane ?? "regular") === "priority") return 0;
+  if (entry.priorityOverlayDisplacedAt) return 1;
+  return laneRank(entry.lane) + 1;
+}
+
+function queueOrderTime(entry: QueueEntry): number {
+  if ((entry.lane ?? "regular") === "priority" && entry.priorityUpgradeStatus === "paid" && entry.priorityUpgradePaidAt) {
+    return new Date(entry.priorityUpgradePaidAt).getTime();
+  }
+  return new Date(entry.priorityOverlayDisplacedAt ?? entry.createdAt).getTime();
+}
+
 function sortActive(entries: QueueEntry[]): QueueEntry[] {
-  return [...entries].sort((a, b) => laneRank(a.lane) - laneRank(b.lane) || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  return [...entries].sort((a, b) => queueRank(a) - queueRank(b) || queueOrderTime(a) - queueOrderTime(b));
 }
 
 function laneTop(session: Pick<QueueSession, "queue">, lane: QueueLane, excludeId?: string): QueueEntry | null {
@@ -200,20 +213,62 @@ function getLoadedTrack(session: Pick<QueueSession, "loadedTrack">): QueueEntry 
   return session.loadedTrack ?? null;
 }
 
-function pullNextInLine(session: QueueSession, excludeId?: string, force = false): void {
-  if (session.autoRoutingPaused && !force) return;
-  if (session.nextInLineTrack) return;
-  const next = chooseNextWaitingEntry(session, excludeId);
-  if (!next) return;
+function stageNextInLineTrack(session: QueueSession, next: QueueEntry): void {
   const sorted = sortActive(session.queue);
   const previousIndex = sorted.findIndex((entry) => entry.id === next.id);
   session.queue = sorted.filter((entry) => entry.id !== next.id);
-  session.nextInLineTrack = normalizeEntry({ ...next, status: "next" });
+  session.nextInLineTrack = normalizeEntry({ ...next, status: "next", priorityOverlayDisplacedAt: null });
   session.nextInLineTrackId = next.id;
   session.nextInLineHoldTrackId = null;
   session.currentTrackPreviousLane = next.lane ?? "regular";
   session.currentTrackPreviousIndex = previousIndex >= 0 ? previousIndex : null;
   session.autoRoutingPaused = false;
+}
+
+function isPriorityTrack(entry: QueueEntry | null | undefined): boolean {
+  return (entry?.lane ?? "regular") === "priority";
+}
+
+function preserveDisplacedNonPriorityFront(session: QueueSession, entry: QueueEntry): void {
+  if (isPriorityTrack(entry)) return;
+  const lane = entry.lane === "wheel" ? "wheel" : "regular";
+  const restored = normalizeEntry({
+    ...entry,
+    lane,
+    tier: lane === "wheel" ? "frontrow" : "free",
+    status: "queued",
+    playedAt: null,
+    priorityOverlayDisplacedAt: new Date().toISOString(),
+  });
+  const priorityQueue = sortActive(session.queue.filter((track) => track.id !== restored.id && (track.lane ?? "regular") === "priority"));
+  const baseQueue = sortActive(session.queue.filter((track) => track.id !== restored.id && (track.lane ?? "regular") !== "priority"));
+  session.queue = [...priorityQueue, restored, ...baseQueue];
+}
+
+function resolveNextInLine(session: QueueSession, excludeId?: string, force = false): void {
+  if (session.autoRoutingPaused && !force) return;
+
+  const current = session.nextInLineTrack ?? null;
+  if (isPriorityTrack(current)) return;
+
+  const priority = laneTop(session, "priority", excludeId ?? session.nextInLineHoldTrackId ?? session.loadedTrackId ?? undefined);
+  if (priority) {
+    if (current) {
+      preserveDisplacedNonPriorityFront(session, current);
+      clearNextInLine(session);
+    }
+    stageNextInLineTrack(session, priority);
+    return;
+  }
+
+  if (current) return;
+  const next = chooseNextWaitingEntry(session, excludeId);
+  if (!next) return;
+  stageNextInLineTrack(session, next);
+}
+
+function pullNextInLine(session: QueueSession, excludeId?: string, force = false): void {
+  resolveNextInLine(session, excludeId, force);
 }
 
 function clearNextInLine(session: QueueSession): QueueEntry | null {
@@ -279,8 +334,12 @@ function moveLoadedTrackBackToQueue(session: QueueSession): QueueEntry | null {
 
 function nextLaneAfterFinish(lane: QueueLane | undefined): QueueNonPriorityLane {
   if (lane === "wheel") return "regular";
-  if (!lane || lane === "regular") return "wheel";
   return "wheel";
+}
+
+function advanceNonPriorityLaneAfter(session: QueueSession, lane: QueueLane | undefined): void {
+  if (lane === "priority") return;
+  session.nextNonPriorityLane = nextLaneAfterFinish(lane);
 }
 
 function publicStatusForSession(session: Pick<QueueSession, "queue" | "queueOpen" | "nextInLineTrack" | "loadedTrack" | "queueCapacity">): QueuePublicStatus {
@@ -381,6 +440,7 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     priorityUpgradeCheckoutExpiresAt: entry.priorityUpgradeCheckoutExpiresAt ?? null,
     priorityUpgradeAmountCents: typeof entry.priorityUpgradeAmountCents === "number" ? Math.max(0, Math.round(entry.priorityUpgradeAmountCents)) : null,
     priorityUpgradeCurrency: entry.priorityUpgradeCurrency ? normalizeCurrency(entry.priorityUpgradeCurrency) : null,
+    priorityOverlayDisplacedAt: entry.priorityOverlayDisplacedAt ?? null,
   };
 }
 
@@ -842,6 +902,7 @@ export async function createQueueTrack(input: {
     priorityUpgradeCheckoutExpiresAt: null,
     priorityUpgradeAmountCents: null,
     priorityUpgradeCurrency: null,
+    priorityOverlayDisplacedAt: null,
   });
 }
 
@@ -1159,12 +1220,14 @@ export async function markPriorityUpgradePaidFromStripe(trackId: string, queueSe
     const updated = markPaid(existing, canMoveIntoPriority);
     if (!alreadyQueued) normalized.queue.push(updated);
     normalized.queue = sortActive(normalized.queue);
+    resolveNextInLine(normalized);
     await writeStore(replaceSession(store, normalized));
     return { updated: true, track: updated };
   }
 
   if (normalized.nextInLineTrack?.id === trackId) {
     normalized.nextInLineTrack = markPaid(normalized.nextInLineTrack, false);
+    resolveNextInLine(normalized);
     await writeStore(replaceSession(store, normalized));
     return { updated: true, track: normalized.nextInLineTrack };
   }
@@ -1444,14 +1507,14 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
       const current = clearLoadedTrack(session);
       if (current) {
         session.completed.unshift({ ...current, status: "played", playedAt: current.playedAt ?? new Date().toISOString(), completedAt: new Date().toISOString() });
-        session.nextNonPriorityLane = nextLaneAfterFinish(current.lane);
+        advanceNonPriorityLaneAfter(session, current.lane);
       }
     }
     if (action === "remove") {
       const current = clearLoadedTrack(session);
       if (current) {
         session.removed.unshift({ ...current, status: "removed", removedAt: new Date().toISOString() });
-        session.nextNonPriorityLane = nextLaneAfterFinish(current.lane);
+        advanceNonPriorityLaneAfter(session, current.lane);
       }
     }
     if (action !== "moveBack") pullNextInLine(session);
@@ -1478,7 +1541,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
       const current = clearNextInLine(session);
       if (current) {
         session.completed.unshift({ ...current, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
-        session.nextNonPriorityLane = nextLaneAfterFinish(current.lane);
+        advanceNonPriorityLaneAfter(session, current.lane);
       }
       pullNextInLine(session);
     }
@@ -1486,7 +1549,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
       const current = clearNextInLine(session);
       if (current) {
         session.removed.unshift({ ...current, status: "removed", removedAt: new Date().toISOString() });
-        session.nextNonPriorityLane = nextLaneAfterFinish(current.lane);
+        advanceNonPriorityLaneAfter(session, current.lane);
       }
       pullNextInLine(session);
     }
@@ -1515,7 +1578,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
   if (action === "finish") {
     session.queue.splice(index, 1);
     session.completed.unshift({ ...active, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
-    session.nextNonPriorityLane = nextLaneAfterFinish(active.lane);
+    advanceNonPriorityLaneAfter(session, active.lane);
   }
   if (action === "remove") {
     session.queue.splice(index, 1);
@@ -1545,7 +1608,7 @@ export async function advanceQueue(): Promise<QueueEntry | null> {
   const next = clearNextInLine(session);
   if (!next) return null;
   session.completed.unshift({ ...next, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
-  session.nextNonPriorityLane = nextLaneAfterFinish(next.lane);
+  advanceNonPriorityLaneAfter(session, next.lane);
   pullNextInLine(session);
   await writeStore(replaceSession(store, session));
   return getNextInLine(session);

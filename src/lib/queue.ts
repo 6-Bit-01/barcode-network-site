@@ -105,6 +105,10 @@ function normalizePriceCents(value: unknown): number {
   return Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS;
 }
 
+function normalizePaidPriorityEnabled(input: { priorityUpgradesEnabled?: boolean | null; priorityUpgradePaymentsEnabled?: boolean | null; priorityUpgradePriceCents?: unknown }): boolean {
+  return (input.priorityUpgradesEnabled === true || input.priorityUpgradePaymentsEnabled === true) && normalizePriceCents(input.priorityUpgradePriceCents) > 0;
+}
+
 function defaultSession(options: { title?: string; showDate?: string; description?: string; trackLimitPerArtist?: number; queueCapacity?: number; skipGameTapTarget?: number; priorityUpgradesEnabled?: boolean; priorityUpgradeLabel?: string; priorityUpgradeInstructions?: string; priorityUpgradePriceCents?: number; priorityUpgradeCurrency?: string; priorityUpgradePaymentsEnabled?: boolean } = {}): QueueSession {
   const date = options.showDate ?? todayDate();
   const now = new Date().toISOString();
@@ -142,12 +146,12 @@ function defaultSession(options: { title?: string; showDate?: string; descriptio
     loadedTrackPreviousLane: null,
     loadedTrackPreviousIndex: null,
     autoRoutingPaused: false,
-    priorityUpgradesEnabled: options.priorityUpgradesEnabled === true,
+    priorityUpgradesEnabled: normalizePaidPriorityEnabled(options),
     priorityUpgradeLabel: options.priorityUpgradeLabel?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
     priorityUpgradeInstructions: options.priorityUpgradeInstructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
     priorityUpgradePriceCents: Number.isFinite(options.priorityUpgradePriceCents) ? Math.max(0, Math.round(options.priorityUpgradePriceCents ?? 0)) : DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS,
     priorityUpgradeCurrency: normalizeCurrency(options.priorityUpgradeCurrency),
-    priorityUpgradePaymentsEnabled: options.priorityUpgradePaymentsEnabled === true,
+    priorityUpgradePaymentsEnabled: normalizePaidPriorityEnabled(options),
   });
 }
 
@@ -312,12 +316,12 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     estimatedActiveRuntimeSeconds: publicStatus.estimatedRuntimeSeconds,
     completedRuntimeSeconds: session.completed.reduce((sum, entry) => sum + getTrackRuntimeSeconds(entry), 0),
     nextNonPriorityLane: session.nextNonPriorityLane ?? "wheel",
-    priorityUpgradesEnabled: session.priorityUpgradesEnabled === true,
+    priorityUpgradesEnabled: normalizePaidPriorityEnabled(session),
     priorityUpgradeLabel: session.priorityUpgradeLabel?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
     priorityUpgradeInstructions: session.priorityUpgradeInstructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
     priorityUpgradePriceCents: normalizePriceCents(session.priorityUpgradePriceCents),
     priorityUpgradeCurrency: normalizeCurrency(session.priorityUpgradeCurrency),
-    priorityUpgradePaymentsEnabled: session.priorityUpgradePaymentsEnabled === true,
+    priorityUpgradePaymentsEnabled: normalizePaidPriorityEnabled(session),
   };
 }
 
@@ -403,12 +407,12 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     loadedTrackPreviousLane: raw.loadedTrackPreviousLane ?? raw.loadedTrack?.lane ?? null,
     loadedTrackPreviousIndex: typeof raw.loadedTrackPreviousIndex === "number" ? raw.loadedTrackPreviousIndex : null,
     autoRoutingPaused: raw.autoRoutingPaused === true,
-    priorityUpgradesEnabled: raw.priorityUpgradesEnabled === true,
+    priorityUpgradesEnabled: normalizePaidPriorityEnabled(raw),
     priorityUpgradeLabel: raw.priorityUpgradeLabel?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
     priorityUpgradeInstructions: raw.priorityUpgradeInstructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
     priorityUpgradePriceCents: normalizePriceCents(raw.priorityUpgradePriceCents),
     priorityUpgradeCurrency: normalizeCurrency(raw.priorityUpgradeCurrency),
-    priorityUpgradePaymentsEnabled: raw.priorityUpgradePaymentsEnabled === true,
+    priorityUpgradePaymentsEnabled: normalizePaidPriorityEnabled(raw),
     currentTrackPreviousLane: raw.currentTrackPreviousLane ?? raw.nextInLineTrack?.lane ?? null,
     currentTrackPreviousIndex: typeof raw.currentTrackPreviousIndex === "number" ? raw.currentTrackPreviousIndex : null,
     queue: sortActive((raw.queue ?? []).map(normalizeEntry).filter((entry) => entry.id !== raw.nextInLineTrack?.id && entry.id !== raw.nextInLineTrackId && entry.id !== raw.loadedTrack?.id && entry.id !== raw.loadedTrackId)),
@@ -1207,14 +1211,16 @@ export async function updatePriorityUpgradeSettings(input: PriorityUpgradeSettin
   const store = await readStore();
   const session = getSession(store);
   if (session.status === "archived") return queueStateFromSession(session, store);
+  const priorityUpgradePriceCents = normalizePriceCents(input.priceCents ?? session.priorityUpgradePriceCents);
+  const priorityPaidEnabled = normalizePaidPriorityEnabled({ priorityUpgradesEnabled: input.enabled, priorityUpgradePaymentsEnabled: input.paymentsEnabled, priorityUpgradePriceCents });
   const next = normalizeSession({
     ...session,
-    priorityUpgradesEnabled: input.enabled === true,
+    priorityUpgradesEnabled: priorityPaidEnabled,
     priorityUpgradeLabel: input.label?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
     priorityUpgradeInstructions: input.instructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
-    priorityUpgradePriceCents: normalizePriceCents(input.priceCents ?? session.priorityUpgradePriceCents),
+    priorityUpgradePriceCents,
     priorityUpgradeCurrency: normalizeCurrency(input.currency ?? session.priorityUpgradeCurrency),
-    priorityUpgradePaymentsEnabled: input.paymentsEnabled === true,
+    priorityUpgradePaymentsEnabled: priorityPaidEnabled,
     updatedAt: new Date().toISOString(),
   });
   const nextStore = replaceSession(store, next);

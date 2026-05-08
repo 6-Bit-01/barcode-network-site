@@ -323,7 +323,7 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
 
 function normalizePriorityUpgradeStatus(status: unknown): QueueEntry["priorityUpgradeStatus"] {
   if (status === "paid_placeholder") return "checkout_pending";
-  if (status === "requested" || status === "manual" || status === "checkout_pending" || status === "paid" || status === "failed" || status === "refunded") return status;
+  if (status === "requested" || status === "manual" || status === "checkout_pending" || status === "paid" || status === "paid_needs_attention" || status === "failed" || status === "refunded") return status;
   return "none";
 }
 
@@ -1043,7 +1043,7 @@ export async function requestPriorityCheckout(trackId: string, queueSessionId: s
   const index = session.queue.findIndex((entry) => entry.id === trackId);
   if (index < 0) throw new Error("Priority Signal Upgrade is not available for this track.");
   const track = normalizeEntry(session.queue[index]);
-  if (track.status !== "queued" || track.lane === "priority" || track.priorityUpgradeStatus === "paid") throw new Error("Priority Signal Upgrade is not available for this track.");
+  if (track.status !== "queued" || (track.lane !== "regular" && track.lane !== "wheel") || track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "paid_needs_attention") throw new Error("Priority Signal Upgrade is not available for this track.");
   return { session: summarizeSession(session), track, amountCents, currency: normalizeCurrency(session.priorityUpgradeCurrency), label: session.priorityUpgradeLabel || DEFAULT_PRIORITY_UPGRADE_LABEL };
 }
 
@@ -1077,9 +1077,9 @@ export async function markPriorityUpgradePaidFromStripe(trackId: string, queueSe
   if (normalized.status === "archived") return { updated: false, reason: "archived_session" };
   const canMoveIntoPriority = normalized.sessionId === store.activeSessionId && normalized.status === "open";
   const now = payment.paidAt ?? new Date().toISOString();
-  const paidFields: Partial<QueueEntry> = {
+  const paidFields = (status: QueueEntry["priorityUpgradeStatus"]): Partial<QueueEntry> => ({
     priorityUpgradeRequested: true,
-    priorityUpgradeStatus: "paid",
+    priorityUpgradeStatus: status,
     priorityUpgradeSource: "stripe",
     priorityUpgradeAt: now,
     priorityUpgradeRequestedAt: now,
@@ -1088,17 +1088,17 @@ export async function markPriorityUpgradePaidFromStripe(trackId: string, queueSe
     priorityUpgradePaymentId: payment.paymentId,
     priorityUpgradeAmountCents: normalizePriceCents(payment.amountCents),
     priorityUpgradeCurrency: normalizeCurrency(payment.currency),
-  };
+  });
   const markPaid = (entry: QueueEntry, moveToPriority: boolean): QueueEntry => normalizeEntry({
     ...entry,
-    ...paidFields,
+    ...paidFields(moveToPriority ? "paid" : "paid_needs_attention"),
     ...(moveToPriority ? { lane: "priority" as QueueLane, tier: "fastlane" as QueueTier, status: "queued" as const } : {}),
   });
 
   const queueIndex = normalized.queue.findIndex((entry) => entry.id === trackId);
   if (queueIndex >= 0) {
     const existing = normalized.queue[queueIndex];
-    if (existing.priorityUpgradeStatus === "paid" && existing.priorityUpgradePaymentId === payment.paymentId && existing.lane === "priority") return { updated: false, reason: "already_paid", track: existing };
+    if ((existing.priorityUpgradeStatus === "paid" || existing.priorityUpgradeStatus === "paid_needs_attention") && existing.priorityUpgradePaymentId === payment.paymentId && (existing.lane === "priority" || !canMoveIntoPriority)) return { updated: false, reason: "already_paid", track: existing };
     normalized.queue.splice(queueIndex, 1);
     const alreadyQueued = normalized.queue.some((entry) => entry.id === trackId);
     const updated = markPaid(existing, canMoveIntoPriority);

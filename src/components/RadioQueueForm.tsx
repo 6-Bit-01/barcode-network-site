@@ -12,8 +12,11 @@ type ReadState = "idle" | "checking" | "reading" | "detected" | "pending" | "upl
 type TransmissionState = "idle" | "signal" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed";
 type SubmitPhase = "resolved" | "complete";
 type IntakeStep = "track" | "routing";
+type RouteChoice = "free" | "priority";
 
 const UPLOAD_FALLBACK_MESSAGE = "Upload could not be completed. Please try again or submit a Spotify, SoundCloud, YouTube, or direct track link.";
+const PRIORITY_SIGNAL_LABEL = "Priority Signal Upgrade";
+function formatPrice(cents: number, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }
 
 interface WarpData {
   artist: string;
@@ -113,6 +116,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
   const [contactEmail, setContactEmail] = useState("");
   const [submitterToken, setSubmitterToken] = useState("");
   const [note, setNote] = useState("");
+  const [routeChoice, setRouteChoice] = useState<RouteChoice>("free");
   const [file, setFile] = useState<File | null>(null);
   const [detectedDuration, setDetectedDuration] = useState<number | null>(null);
   const [readState, setReadState] = useState<ReadState>("idle");
@@ -287,6 +291,23 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
     return "Paste a supported link or select an MP3/WAV to begin source checks.";
   }, [detectedDuration, readState, uploadProgress]);
 
+  const priorityPriceCents = session?.priorityUpgradePriceCents ?? 0;
+  const priorityCurrency = session?.priorityUpgradeCurrency ?? "usd";
+  const priorityCheckoutAvailable = session?.priorityUpgradesEnabled === true && session?.priorityUpgradePaymentsEnabled === true && priorityPriceCents > 0;
+  const selectedRoute: RouteChoice = priorityCheckoutAvailable ? routeChoice : "free";
+
+  async function startPriorityCheckout(trackId: string): Promise<void> {
+    const checkoutSessionId = sessionId ?? session?.sessionId;
+    if (!checkoutSessionId) throw new Error("Priority Signal checkout is not available for this session.");
+    const res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId, sessionId: checkoutSessionId }) });
+    const payload = await res.json().catch(() => ({}));
+    if (res.ok && typeof payload.url === "string") {
+      window.location.href = payload.url;
+      return;
+    }
+    throw new Error(payload.error ?? "Priority Signal checkout is not available right now. Your track remains in Free Transmissions.");
+  }
+
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (step !== "routing") {
@@ -340,6 +361,10 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
         const nextCooldown = typeof payload.cooldownRemainingSeconds === "number" ? payload.cooldownRemainingSeconds : 300;
         setCooldownRemaining(nextCooldown);
         if (submitterToken) window.localStorage.setItem(`barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}`, String(Date.now() + nextCooldown * 1000));
+        if (selectedRoute === "priority") {
+          await startPriorityCheckout(submitted.id);
+          return;
+        }
         const preSubmit = { nowPlayingWasEmpty: !nowPlaying, upNextWasEmpty: !upNext, activeCount: status?.activeCount ?? publicQueue.length };
         const baseWarpData: WarpData = {
           artist: artist.trim(),
@@ -398,6 +423,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
       setDetectedDuration(null);
       setReadState("idle");
       setUploadProgress(null);
+      setRouteChoice("free");
       setStep("track");
     } catch (err) {
       setTransmissionState("idle");
@@ -430,7 +456,6 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
 
   const effectiveCooldown = Math.max(cooldownRemaining, submitterStatus?.cooldownRemainingSeconds ?? 0);
   const estimatedPosition = Math.min((status?.activeCount ?? publicQueue.length) + 1, status?.capacity ?? ((status?.activeCount ?? publicQueue.length) + 1));
-  const priorityUpgradeEnabled = session?.priorityUpgradesEnabled === true;
 
   return (
     <form onSubmit={submit} className="space-y-3">
@@ -487,16 +512,19 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
               <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Contact email</span><input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="Optional, private" className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-[11px] text-muted">Private queue safety only.</span></label>
               <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Optional transmission note</span><textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} rows={2} placeholder="Optional host note. No private contact info." className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-[11px] text-muted">Queue control only; never public.</span></label>
             </div>
+            <div className="grid gap-3 text-xs sm:grid-cols-2">
+              <button type="button" onClick={() => setRouteChoice("free")} className={`border p-4 text-left transition-all ${selectedRoute === "free" ? "border-accent bg-accent/10 text-foreground" : "border-border bg-background/40 text-muted"}`}><span className="text-sm font-bold text-foreground">Free Transmission</span><span className="mt-2 block">Enters Free Transmissions.</span><span className="block">No payment required.</span><span className="mt-3 block text-muted">If you submit now, you’ll enter around position #{estimatedPosition} in Free Transmissions. Estimated wait may shift during the show.</span></button>
+              {priorityCheckoutAvailable && <button type="button" onClick={() => setRouteChoice("priority")} className={`border p-4 text-left transition-all ${selectedRoute === "priority" ? "border-[#ffaa00] bg-[#ffaa00]/10 text-foreground" : "border-[#ffaa00]/40 bg-background/40 text-muted"}`}><span className="text-sm font-bold text-[#ffaa00]">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">Moves this track into Priority Signal after payment confirmation.</span><span className="block">Priority Signals clear before Wheel Chosen and Free Transmissions.</span><span className="block">Funds BARCODE Network broadcast systems.</span><span className="mt-3 block text-[#ffaa00]">{formatPrice(priorityPriceCents, priorityCurrency)}</span><span className="mt-2 block text-muted">Priority Signal placement activates after payment confirmation. Queue position may shift during checkout.</span></button>}
+            </div>
             <div className="grid gap-2 text-xs sm:grid-cols-2">
               {submitterStatus && <div className="border border-accent/40 bg-accent/5 p-2 text-muted"><p className="font-bold text-accent">Your transmissions: {submitterStatus.used} / {submitterStatus.limit}</p><p>Remaining: {submitterStatus.remaining}</p>{submitterStatus.cooldownRemainingSeconds > 0 && <p className="text-accent">Cooldown: {formatCooldown(submitterStatus.cooldownRemainingSeconds)}</p>}</div>}
               {effectiveCooldown > 0 && <div className="border border-accent/40 bg-accent/5 p-2 text-accent">Next transmission available in {formatCooldown(effectiveCooldown)}</div>}
-              {priorityUpgradeEnabled && <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 p-2 text-[#ffaa00]"><p className="font-bold">{session?.priorityUpgradeLabel || "Priority Signal Upgrade"}</p><p className="mt-1 text-muted">Placeholder only: no charge happens here, and admin/manual action is required before a track moves to Priority Signal.</p></div>}
               <div className="border border-border bg-background/40 p-2 text-muted">{checkCopy}</div>
-              <div className="border border-accent/30 bg-accent/5 p-2 text-muted">Estimated placement: Free Transmissions position #{estimatedPosition}</div>
+              {!priorityCheckoutAvailable && <div className="border border-border bg-background/40 p-2 text-muted">Priority Signal Upgrade is unavailable for this session. Free Transmission remains active.</div>}
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               <button type="button" onClick={() => setStep("track")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Back</button>
-              <button type="submit" onClick={() => { finalSubmitIntent.current = true; }} disabled={submitting || readState === "uploading" || routingLockRemaining > 0 || effectiveCooldown > 0 || status?.isOpen === false || status?.isFull === true} className="border border-accent px-5 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{readState === "uploading" ? "Uploading audio packet…" : submitting ? "Submitting…" : routingLockRemaining > 0 ? `Routing lock: ${routingLockRemaining}` : effectiveCooldown > 0 ? `Next transmission available in ${formatCooldown(effectiveCooldown)}` : status?.isFull ? "Queue Full" : "Enter Free Transmissions"}</button>
+              <button type="submit" onClick={() => { finalSubmitIntent.current = true; }} disabled={submitting || readState === "uploading" || routingLockRemaining > 0 || effectiveCooldown > 0 || status?.isOpen === false || status?.isFull === true} className="border border-accent px-5 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{readState === "uploading" ? "Uploading audio packet…" : submitting ? "Submitting…" : routingLockRemaining > 0 ? `Routing lock: ${routingLockRemaining}` : effectiveCooldown > 0 ? `Next transmission available in ${formatCooldown(effectiveCooldown)}` : status?.isFull ? "Queue Full" : selectedRoute === "priority" ? "Submit & Continue to Payment" : "Enter Free Transmissions"}</button>
             </div>
           </div>
         )}

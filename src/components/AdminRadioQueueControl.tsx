@@ -27,6 +27,7 @@ function priorityUpgradeLabel(entry: QueueEntry): string | null {
   if (entry.priorityUpgradeStatus === "requested") return "Priority requested";
   if (entry.priorityUpgradeStatus === "checkout_pending") return "Payment processing";
   if (entry.priorityUpgradeStatus === "paid") return "Paid Priority";
+  if (entry.priorityUpgradeStatus === "paid_needs_attention") return "Paid · Needs Attention";
   if (entry.priorityUpgradeStatus === "manual" || entry.lane === "priority") return "Priority Signal";
   return null;
 }

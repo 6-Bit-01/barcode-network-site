@@ -654,8 +654,25 @@ function countMatches(entries: QueueEntry[], predicate: (entry: QueueEntry) => b
   return entries.filter(predicate).length;
 }
 
-function findSubmissionBlocks(session: QueueSession, track: QueueEntry): string[] {
-  const entries = [...session.queue, ...(session.nextInLineTrack ? [session.nextInLineTrack] : []), ...(session.loadedTrack ? [session.loadedTrack] : []), ...session.completed, ...session.removed];
+function submissionCheckEntries(session: QueueSession): QueueEntry[] {
+  return [...session.queue, ...(session.nextInLineTrack ? [session.nextInLineTrack] : []), ...(session.loadedTrack ? [session.loadedTrack] : []), ...session.completed, ...session.removed];
+}
+
+function entrySourceKey(entry: QueueEntry): string | null {
+  return entry.normalizedSourceKey ?? normalizeSourceKey(entry.fileUrl || entry.link || "");
+}
+
+function findDuplicateSubmissionReasons(session: QueueSession, track: QueueEntry): string[] {
+  const entries = submissionCheckEntries(session);
+  const reasons: string[] = [];
+  if (track.normalizedSourceKey && entries.some((entry) => entrySourceKey(entry) === track.normalizedSourceKey)) reasons.push("Duplicate source");
+  if (track.providerId && entries.some((entry) => entry.providerId === track.providerId)) reasons.push("Duplicate provider source");
+  if (track.sourceType === "upload" && track.fileName && track.fileSize && entries.some((entry) => entry.sourceType === "upload" && entry.fileName?.toLowerCase() === (track.fileName ?? "").toLowerCase() && entry.fileSize === track.fileSize && (!track.detectedDurationSeconds || !entry.detectedDurationSeconds || entry.detectedDurationSeconds === track.detectedDurationSeconds))) reasons.push("Duplicate upload metadata");
+  return reasons;
+}
+
+function findSubmissionLimitBlocks(session: QueueSession, track: QueueEntry): string[] {
+  const entries = submissionCheckEntries(session);
   const reasons: string[] = [];
   const tikTok = track.normalizedTikTokHandle;
   const submitter = normalizeIdentity(track.submitterArtistName ?? track.submittedArtistName);
@@ -665,9 +682,6 @@ function findSubmissionBlocks(session: QueueSession, track: QueueEntry): string[
   if (submitter && countMatches(entries, (entry) => normalizeIdentity(entry.submitterArtistName ?? entry.submittedArtistName) === submitter) >= session.trackLimitPerArtist) reasons.push("Limit matched by submitter artist name");
   if (email && countMatches(entries, (entry) => normalizeEmail(entry.contactEmail) === email) >= session.trackLimitPerArtist) reasons.push("Limit matched by contact/email");
   if (token && countMatches(entries, (entry) => entry.submitterToken === token) >= session.trackLimitPerArtist) reasons.push("Limit matched by browser token");
-  if (track.normalizedSourceKey && entries.some((entry) => entry.normalizedSourceKey === track.normalizedSourceKey)) reasons.push("Duplicate source");
-  if (track.providerId && entries.some((entry) => entry.providerId === track.providerId)) reasons.push("Duplicate provider source");
-  if (track.sourceType === "upload" && track.fileName && track.fileSize && entries.some((entry) => entry.sourceType === "upload" && entry.fileName?.toLowerCase() === (track.fileName ?? "").toLowerCase() && entry.fileSize === track.fileSize && (!track.detectedDurationSeconds || !entry.detectedDurationSeconds || entry.detectedDurationSeconds === track.detectedDurationSeconds))) reasons.push("Duplicate upload metadata");
   return reasons;
 }
 
@@ -709,9 +723,11 @@ class QueueSubmissionCooldownError extends Error {
 }
 
 class QueueSubmissionBlockedError extends Error {
+  code: "duplicate_transmission" | "submission_limit";
   reasons: string[];
-  constructor(reasons: string[]) {
-    super("Submission limit reached for this session.");
+  constructor(code: "duplicate_transmission" | "submission_limit", reasons: string[]) {
+    super(code === "duplicate_transmission" ? "Duplicate transmission detected." : "Submission limit reached for this session.");
+    this.code = code;
     this.reasons = reasons;
   }
 }
@@ -813,8 +829,10 @@ export async function submitRadioTrack(input: Parameters<typeof createQueueTrack
   if (session.status !== "open" || !session.queueOpen) throw new Error("Queue is closed");
   if (publicStatusForSession(session).isFull) throw new Error("Queue is full for new transmissions.");
   const track = await createQueueTrack(input);
-  const blockReasons = findSubmissionBlocks(session, track);
-  if (blockReasons.length > 0) throw new QueueSubmissionBlockedError(blockReasons);
+  const duplicateReasons = findDuplicateSubmissionReasons(session, track);
+  if (duplicateReasons.length > 0) throw new QueueSubmissionBlockedError("duplicate_transmission", duplicateReasons);
+  const blockReasons = findSubmissionLimitBlocks(session, track);
+  if (blockReasons.length > 0) throw new QueueSubmissionBlockedError("submission_limit", blockReasons);
   const cooldownRemainingSeconds = findSubmissionCooldown(session, track);
   if (cooldownRemainingSeconds > 0) throw new QueueSubmissionCooldownError(cooldownRemainingSeconds);
   track.suspiciousFlags = suspiciousFlagsFor(session, track);

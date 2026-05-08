@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatRuntime, getTrackRuntimeSeconds } from "@/lib/queue-types";
-import type { QueueEntry, QueueLane, QueueSessionSummary, QueueState } from "@/lib/queue-types";
+import type { QueueEntry, QueueLane, QueueState } from "@/lib/queue-types";
 
 type Tab = "active" | "completed" | "removed";
 type AdminQueueAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority";
@@ -49,7 +49,6 @@ export function AdminRadioQueueControl() {
   const [tab, setTab] = useState<Tab>("active");
   const [player, setPlayer] = useState<QueueEntry | null>(null);
   const [minimized, setMinimized] = useState(false);
-  const [showSessions, setShowSessions] = useState(false);
   const [wheelSearch, setWheelSearch] = useState("");
   const [wheelSelection, setWheelSelection] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -128,12 +127,14 @@ export function AdminRadioQueueControl() {
   const runtime = state?.publicStatus?.estimatedRuntimeSeconds ?? 0;
   const readOnly = state?.readOnly ?? false;
   const hasSession = Boolean(state?.session);
-  const hasCurrentSession = Boolean(state?.session && state.session.status !== "archived" && !readOnly);
+  const hasCurrentSession = Boolean(state?.session && state.isCurrentSession && state.session.status !== "archived" && !readOnly);
   const canControlSession = hasCurrentSession;
   const isArchivedReview = Boolean(state?.session?.status === "archived" || readOnly);
   const nextInLine = state?.nextInLine ?? null;
   const loadedPlayer = state?.nowPlaying ?? player;
   const playerPadding = loadedPlayer ? (minimized ? "pb-32" : "pb-[28rem]") : "pb-16";
+  const isExplicitReview = Boolean(initialSessionIdFromUrl());
+  const showQueueReview = hasCurrentSession || isExplicitReview;
 
   return (
     <div className={`${playerPadding} space-y-6`}>
@@ -155,10 +156,7 @@ export function AdminRadioQueueControl() {
             )}
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap lg:justify-end">
-            <button onClick={() => load()} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">View Current Session</button>
             <a href="/admin/show-management" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Show Management</a>
-            {canControlSession && <button onClick={() => setEndConfirmOpen(true)} className="border border-danger/60 px-3 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Session</button>}
-            <button onClick={() => setShowSessions((value) => !value)} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">View Saved Sessions</button>
           </div>
         </div>
         {hasCurrentSession && <div className="grid gap-3 sm:grid-cols-4">
@@ -168,18 +166,17 @@ export function AdminRadioQueueControl() {
           <div className="border border-border bg-background/40 p-4"><p className="text-xs text-muted">Pressure</p><p>{state?.publicStatus?.pressure ?? "syncing"}</p></div>
         </div>}
         {isArchivedReview && hasSession && <div className="border border-danger/40 bg-danger/10 p-3 text-xs uppercase tracking-widest text-danger">ARCHIVED / READ ONLY — viewing {state?.session?.title ?? "finished session"}. Queue review actions are locked for this finished session.</div>}
-        {canControlSession && <div className="flex flex-wrap gap-3"><button onClick={() => action("", "pullNext")} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Pull Next Track</button><button onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} border px-4 py-2 text-xs uppercase tracking-widest hover:text-background`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button></div>}
+        {canControlSession && <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end"><button onClick={() => action("", "pullNext")} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Pull Next Track</button><button onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} border px-4 py-2 text-xs uppercase tracking-widest hover:text-background`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button><button onClick={() => setEndConfirmOpen(true)} className="border border-danger/60 px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Session</button></div>}
       </section>
 
 
       {endConfirmOpen && <div className="fixed inset-0 z-[10000] grid place-items-center bg-black/75 p-4 backdrop-blur-sm"><div className="w-full max-w-md border border-danger/50 bg-background p-5 shadow-[0_0_70px_rgba(255,0,0,0.24)]"><p className="text-xs uppercase tracking-[0.35em] text-danger">End Session</p><h2 className="mt-3 text-2xl font-bold text-foreground">End this session?</h2><p className="mt-2 text-sm text-muted">This will close submissions, finish the broadcast session, and move it to the archive.</p><div className="mt-5 flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setEndConfirmOpen(false)} disabled={endingSession} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">No, Cancel</button><button type="button" onClick={endCurrentSession} disabled={endingSession} className="border border-danger px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background disabled:opacity-50">{endingSession ? "Ending…" : "Yes, End Session"}</button></div></div></div>}
 
-      {showSessions && <SessionArchive sessions={state?.sessions ?? []} activeSessionId={hasCurrentSession ? state?.session?.sessionId : undefined} onView={(id) => load(id)} />}
 
-      {!hasSession ? (
+      {!showQueueReview ? (
         <section className="border border-border bg-surface p-6">
-          <h2 className="text-2xl font-bold text-foreground">No active BARCODE Radio session is prepared.</h2>
-          <p className="text-sm text-muted mt-2">Create or reactivate a session before using the live queue control room.</p>
+          <h2 className="text-2xl font-bold text-foreground">No active session.</h2>
+          <p className="text-sm text-muted mt-2">Start a new session from Show Management.</p>
           <a href="/admin/show-management" className="inline-flex mt-4 border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Go to Show Management</a>
         </section>
       ) : <>
@@ -201,9 +198,6 @@ export function AdminRadioQueueControl() {
   );
 }
 
-function SessionArchive({ sessions, activeSessionId, onView }: { sessions: QueueSessionSummary[]; activeSessionId?: string; onView: (id: string) => void }) {
-  return <section className="border border-border bg-surface p-4 space-y-3"><h2 className="text-sm uppercase tracking-[0.25em] text-foreground">Saved Sessions</h2><div className="grid gap-3">{sessions.map((session) => <div key={session.sessionId} className="border border-border bg-background/40 p-3"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><p className="font-bold">{session.title}</p><p className="text-xs text-muted">{session.showDate} · {session.status} · active {session.activeCount} · completed {session.completedCount}</p></div><div className="flex gap-2"><button onClick={() => onView(session.sessionId)} className="border border-accent/60 px-3 py-1.5 text-xs text-accent">View</button>{session.sessionId !== activeSessionId && <a href={`/admin/show-management/session/${encodeURIComponent(session.sessionId)}`} className="border border-border px-3 py-1.5 text-xs text-muted">Finished Report</a>}</div></div></div>)}</div></section>;
-}
 
 function NextInLineBox({ entry, readOnly, onAction, onPlayer, onCopy }: { entry: QueueEntry | null; readOnly: boolean; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void }) {
   return <section className="border border-accent/60 bg-accent/5 p-5 space-y-4"><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Next in Line</p>{!entry ? <p className="mt-3 text-lg text-muted">No active transmissions waiting.</p> : <><h2 className="mt-3 text-2xl font-bold text-foreground">{submittedArtist(entry)} — {submittedTitle(entry)}</h2><p className="text-sm text-muted mt-1">Lane: {LANE_LABELS[entryLane(entry)]} · Source: {sourceLabel(entry)} · Duration: {durationLabel(entry)}</p>{detectedLabel(entry) && <p className="text-xs text-muted mt-1">Detected / Provider: {detectedLabel(entry)}</p>}</>}</div>{entry && <TrackActions entry={entry} mode="next" readOnly={readOnly} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} />}</section>;

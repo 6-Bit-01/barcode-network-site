@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps, react/jsx-no-comment-textnodes, @next/next/no-img-element */
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps, @next/next/no-img-element */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -9,6 +9,7 @@ type Mode = "link" | "upload";
 type ReadState = "idle" | "checking" | "reading" | "detected" | "pending";
 type TransmissionState = "idle" | "signal" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed";
 type SubmitPhase = "resolved" | "complete";
+type IntakeStep = "track" | "routing";
 
 interface WarpData {
   artist: string;
@@ -76,15 +77,15 @@ function publicTrackFromApi(track: { id: string; submittedArtistName?: string; s
   };
 }
 
-export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string; onSubmitted?: (trackId?: string, phase?: SubmitPhase, targetId?: string) => void } = {}) {
+export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId?: string; onSubmitted?: (trackId?: string, phase?: SubmitPhase, targetId?: string) => void; onCancel?: () => void } = {}) {
   const [status, setStatus] = useState<QueuePublicStatus | null>(null);
   const [publicQueue, setPublicQueue] = useState<QueuePublicTrack[]>([]);
   const [nowPlaying, setNowPlaying] = useState<QueuePublicTrack | null>(null);
   const [upNext, setUpNext] = useState<QueuePublicTrack | null>(null);
   const [session, setSession] = useState<QueuePublicSnapshot["session"] | null>(null);
   const [submitterStatus, setSubmitterStatus] = useState<QueuePublicSnapshot["submitterStatus"] | null>(null);
-  const [lastSubmittedTrackId, setLastSubmittedTrackId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("link");
+  const [step, setStep] = useState<IntakeStep>("track");
   const [artist, setArtist] = useState("");
   const [title, setTitle] = useState("");
   const [link, setLink] = useState("");
@@ -221,6 +222,10 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (step !== "routing") {
+      continueToRouting();
+      return;
+    }
     setError(null);
     setSubmitting(true);
     try {
@@ -252,7 +257,6 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
         window.localStorage.setItem("barcode-radio-submit-artist", artist.trim());
         window.localStorage.setItem("barcode-radio-submit-tiktok", tiktokHandle.trim());
         window.localStorage.setItem("barcode-radio-submit-email", contactEmail.trim());
-        setLastSubmittedTrackId(submitted.id);
         const nextCooldown = typeof payload.cooldownRemainingSeconds === "number" ? payload.cooldownRemainingSeconds : 300;
         setCooldownRemaining(nextCooldown);
         if (submitterToken) window.localStorage.setItem(`barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}`, String(Date.now() + nextCooldown * 1000));
@@ -314,6 +318,7 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
       setFile(null);
       setDetectedDuration(null);
       setReadState("idle");
+      setStep("track");
     } catch (err) {
       setTransmissionState("idle");
       setError(err instanceof Error ? err.message : "Submission failed");
@@ -322,58 +327,98 @@ export function RadioQueueForm({ sessionId, onSubmitted }: { sessionId?: string;
     }
   }
 
+
+  function continueToRouting() {
+    if (!artist.trim() || !title.trim() || !tiktokHandle.trim()) {
+      setError("Artist, title, and TikTok handle are required before final routing.");
+      return;
+    }
+    if (mode === "link" && !link.trim()) {
+      setError("Add a track link before final routing.");
+      return;
+    }
+    if (mode === "upload" && !file) {
+      setError("Select an MP3/WAV file before final routing.");
+      return;
+    }
+    setError(null);
+    setStep("routing");
+  }
+
   if (transmissionState !== "idle") return <WarpSequence state={transmissionState} data={warpData} />;
 
   const effectiveCooldown = Math.max(cooldownRemaining, submitterStatus?.cooldownRemainingSeconds ?? 0);
   const estimatedPosition = Math.min((status?.activeCount ?? publicQueue.length) + 1, status?.capacity ?? ((status?.activeCount ?? publicQueue.length) + 1));
 
   return (
-    <div className="grid gap-3 lg:grid-cols-[0.56fr_1fr]">
-      <aside className="border border-border bg-surface p-3 space-y-2 lg:max-h-[calc(100dvh-8rem)] lg:overflow-hidden">
-        <div><p className="text-[10px] uppercase tracking-[0.3em] text-muted">// Current Broadcast Queue</p><p className="mt-1 text-sm font-bold text-foreground">{session?.title ?? "BARCODE Radio"}</p><p className="text-xs text-muted">{session?.showDate ?? "Active show date syncing"}</p></div>
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <div className="border border-border p-2"><p className="text-[10px] text-muted">Queue</p><p className={status?.isOpen ? "text-accent" : "text-danger"}>{status?.isOpen ? "Open" : "Closed"}</p></div>
-          <div className="border border-border p-2"><p className="text-[10px] text-muted">Active transmissions</p><p>{status?.activeCount ?? "—"}</p></div>
-          <div className="border border-border p-2"><p className="text-[10px] text-muted">Estimated active runtime</p><p>{status ? formatRuntime(status.estimatedRuntimeSeconds) : "—"}</p></div>
-          <div className="border border-border p-2"><p className="text-[10px] text-muted">Queue pressure</p><p>{pressureLabel(status)}</p></div>
-        </div>
-        <PublicQueuePreview queue={publicQueue} lastSubmittedTrackId={lastSubmittedTrackId} />
-      </aside>
+    <form onSubmit={submit} className="space-y-3">
+      <div className="grid gap-2 border border-border bg-surface p-3 text-xs sm:grid-cols-4">
+        <div><p className="text-[10px] uppercase tracking-widest text-muted">Session</p><p className="truncate text-foreground">{session?.title ?? "BARCODE Radio"}</p></div>
+        <div><p className="text-[10px] uppercase tracking-widest text-muted">Queue</p><p className={status?.isOpen ? "text-accent" : "text-danger"}>{status?.isOpen ? "Open" : "Closed"}</p></div>
+        <div><p className="text-[10px] uppercase tracking-widest text-muted">Active</p><p>{status ? `${status.activeCount}/${status.capacity}` : "—"}</p></div>
+        <div><p className="text-[10px] uppercase tracking-widest text-muted">Pressure</p><p>{pressureLabel(status)}</p></div>
+      </div>
 
-      <form onSubmit={submit} className="border border-border bg-surface p-3 space-y-2.5">
-        {error && <div className="border border-danger/40 bg-danger/5 p-2 text-danger text-xs">{error}</div>}
-        {effectiveCooldown > 0 && <div className="border border-accent/40 bg-accent/5 p-2 text-xs text-accent">Next transmission available in {formatCooldown(effectiveCooldown)}</div>}
-        {submitterStatus && <div className="border border-accent/40 bg-accent/5 p-2 text-xs text-muted"><p className="font-bold text-accent">Your transmissions this session: {submitterStatus.used} / {submitterStatus.limit}</p><p className="inline pl-2">Remaining: {submitterStatus.remaining}</p>{submitterStatus.submitted.length > 0 && <p className="mt-1">Already sent: {submitterStatus.submitted.map((entry) => entry.submittedSongTitle).join(", ")}</p>}{submitterStatus.cooldownRemainingSeconds > 0 && <p className="mt-1 text-accent">Next transmission available in {formatCooldown(submitterStatus.cooldownRemainingSeconds)}</p>}</div>}
-
-        <div className="grid gap-2 sm:grid-cols-2">
-          <button type="button" onClick={() => setMode("link")} className={`border p-2.5 text-left ${mode === "link" ? "border-accent bg-accent/10" : "border-border"}`}><span className="text-xs uppercase tracking-widest text-muted">Submit a link</span><p className="mt-1 text-xs text-muted">YouTube, SoundCloud, Spotify, or URL.</p></button>
-          <button type="button" onClick={() => setMode("upload")} className={`border p-2.5 text-left ${mode === "upload" ? "border-accent bg-accent/10" : "border-border"}`}><span className="text-xs uppercase tracking-widest text-muted">Upload MP3/WAV</span><p className="mt-1 text-xs text-muted">Audio files up to 100MB.</p></button>
+      <div className="border border-border bg-surface p-3">
+        <div className="mb-3 flex items-center justify-between gap-3 border-b border-border pb-2">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.35em] text-muted">{step === "track" ? "Step 1 / Track Signal" : "Step 2 / Final Routing"}</p>
+            <h3 className="mt-1 text-lg font-bold text-foreground">{step === "track" ? "Route the track source" : "Confirm routing details"}</h3>
+          </div>
+          <p className="text-xs text-muted">{step === "track" ? "Signal data" : "Private admin info"}</p>
         </div>
 
-        <div className="grid gap-2.5 sm:grid-cols-2">
-          <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Artist</span><input value={artist} onChange={(e) => setArtist(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
-          <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
-        </div>
+        {error && <div className="mb-2 border border-danger/40 bg-danger/5 p-2 text-xs text-danger">{error}</div>}
 
-        <div className="grid gap-2.5 sm:grid-cols-2">
-          <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">TikTok handle</span><input value={tiktokHandle} onChange={(e) => setTikTokHandle(e.target.value)} placeholder="@six.bit" className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
-          <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Featured/collaborator artist(s)</span><input value={collaboratorNames} onChange={(e) => setCollaboratorNames(e.target.value)} placeholder="Optional" className="w-full bg-background border border-border px-3 py-2 text-sm" /></label>
-        </div>
-        <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Contact email</span><input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="Optional, private" className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-[11px] text-muted">Private queue safety only.</span></label>
-
-        {mode === "link" ? (
-          <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Track link</span><input type="url" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://soundcloud.com/..." className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+        {step === "track" ? (
+          <div className="space-y-3">
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Artist</span><input value={artist} onChange={(e) => setArtist(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Song title</span><input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">TikTok handle</span><input value={tiktokHandle} onChange={(e) => setTikTokHandle(e.target.value)} placeholder="@six.bit" className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Featured/collaborator artist(s)</span><input value={collaboratorNames} onChange={(e) => setCollaboratorNames(e.target.value)} placeholder="Optional" className="w-full bg-background border border-border px-3 py-2 text-sm" /></label>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button type="button" onClick={() => setMode("link")} className={`border p-2.5 text-left ${mode === "link" ? "border-accent bg-accent/10" : "border-border"}`}><span className="text-xs uppercase tracking-widest text-muted">Submit a link</span><p className="mt-1 text-xs text-muted">YouTube, SoundCloud, Spotify, or URL.</p></button>
+              <button type="button" onClick={() => setMode("upload")} className={`border p-2.5 text-left ${mode === "upload" ? "border-accent bg-accent/10" : "border-border"}`}><span className="text-xs uppercase tracking-widest text-muted">Upload MP3/WAV</span><p className="mt-1 text-xs text-muted">Audio files up to 100MB.</p></button>
+            </div>
+            {mode === "link" ? (
+              <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Track link</span><input type="url" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://soundcloud.com/..." className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+            ) : (
+              <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">MP3/WAV file</span><input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,.mp3,.wav" onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+            )}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+              <button type="button" onClick={onCancel} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Collapse Intake</button>
+              <button type="button" onClick={continueToRouting} className="border border-accent px-5 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Continue</button>
+            </div>
+          </div>
         ) : (
-          <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">MP3/WAV file</span><input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,.mp3,.wav" onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+          <div className="space-y-3">
+            <div className="grid gap-2 border border-accent/30 bg-accent/5 p-3 text-xs sm:grid-cols-2">
+              <p><span className="text-muted">Artist:</span> {artist.trim() || "—"}</p>
+              <p><span className="text-muted">Song:</span> {title.trim() || "—"}</p>
+              <p><span className="text-muted">TikTok:</span> {tiktokHandle.trim() || "—"}</p>
+              {collaboratorNames.trim() && <p><span className="text-muted">Featured:</span> {collaboratorNames.trim()}</p>}
+              <p><span className="text-muted">Source type:</span> {mode === "upload" ? "Upload" : "Link"}</p>
+            </div>
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Contact email</span><input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="Optional, private" className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-[11px] text-muted">Private queue safety only.</span></label>
+              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Optional transmission note</span><textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} rows={2} placeholder="Optional host note. No private contact info." className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-[11px] text-muted">Queue control only; never public.</span></label>
+            </div>
+            <div className="grid gap-2 text-xs sm:grid-cols-2">
+              {submitterStatus && <div className="border border-accent/40 bg-accent/5 p-2 text-muted"><p className="font-bold text-accent">Your transmissions: {submitterStatus.used} / {submitterStatus.limit}</p><p>Remaining: {submitterStatus.remaining}</p>{submitterStatus.cooldownRemainingSeconds > 0 && <p className="text-accent">Cooldown: {formatCooldown(submitterStatus.cooldownRemainingSeconds)}</p>}</div>}
+              {effectiveCooldown > 0 && <div className="border border-accent/40 bg-accent/5 p-2 text-accent">Next transmission available in {formatCooldown(effectiveCooldown)}</div>}
+              <div className="border border-border bg-background/40 p-2 text-muted">{checkCopy}</div>
+              <div className="border border-accent/30 bg-accent/5 p-2 text-muted">Estimated placement: Free Transmissions position #{estimatedPosition}</div>
+            </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+              <button type="button" onClick={() => setStep("track")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Back</button>
+              <button type="submit" disabled={submitting || effectiveCooldown > 0 || status?.isOpen === false || status?.isFull === true} className="border border-accent px-5 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{submitting ? "Submitting…" : effectiveCooldown > 0 ? `Next transmission available in ${formatCooldown(effectiveCooldown)}` : status?.isFull ? "Queue Full" : "Enter Free Transmissions"}</button>
+            </div>
+          </div>
         )}
-
-        <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Optional transmission note</span><textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} rows={1} placeholder="Optional host note. No private contact info." className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-[11px] text-muted">Queue control only; never public.</span></label>
-
-        <div className="border border-border bg-background/40 p-2 text-xs text-muted">{checkCopy}</div>
-        <div className="border border-accent/30 bg-accent/5 p-2 text-xs text-muted">If you submit now, this track enters Free Transmissions around position #{estimatedPosition} in the active broadcast queue.</div>
-        <button disabled={submitting || effectiveCooldown > 0 || status?.isOpen === false || status?.isFull === true} className="w-full border border-accent px-4 py-2.5 text-sm uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{submitting ? "Submitting…" : effectiveCooldown > 0 ? `Next transmission available in ${formatCooldown(effectiveCooldown)}` : status?.isFull ? "Queue Full" : "Enter Free Transmissions"}</button>
-      </form>
-    </div>
+      </div>
+    </form>
   );
 }
 
@@ -443,35 +488,6 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
         </div>
       </div>
       <style jsx>{`@keyframes barcode-warp-shake{0%,100%{transform:translate3d(0,0,0)}18%{transform:translate3d(-2px,1px,0)}34%{transform:translate3d(2px,-1px,0)}56%{transform:translate3d(-1px,-2px,0)}72%{transform:translate3d(1px,2px,0)}}@keyframes barcode-packet-route{0%{transform:translate3d(0,-50%,0) scale(.85);opacity:0}18%{opacity:1}55%{transform:translate3d(46vw,-50%,0) scale(.72)}100%{transform:translate3d(62vw,-50%,0) scale(.5);opacity:.15}}@keyframes art-glitch{0%,100%{filter:none;transform:translateZ(0)}30%{filter:contrast(1.3) hue-rotate(-12deg);transform:skewX(-2deg)}60%{filter:contrast(1.6) saturate(1.2);transform:translate3d(2px,-1px,0)}}@keyframes landing-pulse{0%,70%{box-shadow:0 0 0 rgba(255,0,0,0)}88%{box-shadow:0 0 38px rgba(255,0,0,.55)}100%{box-shadow:0 0 14px rgba(255,0,0,.25)}}.scanlines{background:linear-gradient(transparent 50%,rgba(255,255,255,.08) 50%);background-size:100% 6px}.barcode-warp{animation:barcode-warp-shake 760ms steps(2,end) 5}.packet-transfer{animation:barcode-packet-route 6.8s cubic-bezier(.2,.72,.2,1) forwards}.art-card{animation:art-glitch 900ms steps(2,end) 7}.landing-card{animation:landing-pulse 7s ease-out forwards}.wave-fragment{animation:art-glitch 1.2s steps(2,end) 5}@media (prefers-reduced-motion: reduce){.barcode-warp,.packet-transfer,.art-card,.landing-card,.wave-fragment{animation:none}}`}</style>
-    </div>
-  );
-}
-
-function PublicQueuePreview({ queue, lastSubmittedTrackId }: { queue: QueuePublicTrack[]; lastSubmittedTrackId: string | null }) {
-  return (
-    <div className="space-y-3">
-      <div>
-        <p className="text-[10px] uppercase tracking-[0.25em] text-muted">Public queue preview</p>
-      </div>
-      <div className="space-y-1.5 lg:max-h-48 lg:overflow-hidden">
-        {queue.length === 0 ? <p className="border border-border/60 p-2 text-xs text-muted">No active transmissions are visible yet.</p> : queue.slice(0, 3).map((entry, index) => {
-          const highlighted = entry.id === lastSubmittedTrackId;
-          return (
-            <div key={entry.id} className={`border p-2 transition-all ${highlighted ? "border-accent bg-accent/10 animate-pulse" : "border-border bg-background/30"}`}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs text-muted">#{index + 1} · {entry.sourceType.toUpperCase()} · {entry.lane === "priority" ? "Priority" : entry.lane === "wheel" ? "Wheel" : "Free Transmissions"}</p>
-                  <p className="text-xs font-bold text-foreground">{entry.submittedArtistName} — {entry.submittedSongTitle}</p>
-                  {(entry.detectedArtistName || entry.detectedSongTitle) && <p className="text-[11px] text-muted">Detected: {entry.detectedArtistName || "Unknown artist"} — {entry.detectedSongTitle || "Unknown title"}</p>}
-                </div>
-                <span className="shrink-0 text-[11px] text-muted">{entry.durationLabel}</span>
-              </div>
-              {highlighted && <p className="text-[11px] text-accent mt-2">Transmission received — warp hook ready.</p>}
-            </div>
-          );
-        })}
-        {queue.length > 3 && <p className="border border-border/60 p-2 text-[11px] uppercase tracking-widest text-muted">+{queue.length - 3} more signals visible after intake collapse</p>}
-      </div>
     </div>
   );
 }

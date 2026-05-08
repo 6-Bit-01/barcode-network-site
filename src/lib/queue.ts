@@ -750,6 +750,7 @@ export async function submitRadioTrack(input: Parameters<typeof createQueueTrack
 
 function queueStateFromSession(session: QueueSession, store: QueueStore, viewedSessionId = session.sessionId): QueueState {
   const normalized = normalizeSession(session);
+  const isCurrentSession = normalized.sessionId === store.activeSessionId && normalized.status !== "archived";
   return {
     nowPlaying: getLoadedTrack(normalized),
     queue: normalized.queue,
@@ -766,7 +767,8 @@ function queueStateFromSession(session: QueueSession, store: QueueStore, viewedS
     nextNonPriorityLane: normalized.nextNonPriorityLane,
     sessions: store.sessions.map(summarizeSession).sort((a, b) => b.showDate.localeCompare(a.showDate) || b.createdAt.localeCompare(a.createdAt)),
     viewedSessionId,
-    readOnly: normalized.status === "archived" || normalized.sessionId !== store.activeSessionId,
+    readOnly: !isCurrentSession,
+    isCurrentSession,
   };
 }
 
@@ -995,7 +997,7 @@ export async function archiveCurrentQueueSession(): Promise<QueueState> {
   const store = await readStore();
   const session = normalizeSession({ ...getSession(store), status: "archived", queueOpen: false, updatedAt: new Date().toISOString() });
   const archivedStore = replaceSession(store, session);
-  const active = archivedStore.sessions.find((item) => item.status !== "archived") ?? session;
+  const active = archivedStore.sessions.find((item) => item.status === "open" || item.status === "prepared") ?? session;
   archivedStore.activeSessionId = active.sessionId;
   await writeStore(archivedStore);
   return queueStateFromSession(session, archivedStore, session.sessionId);

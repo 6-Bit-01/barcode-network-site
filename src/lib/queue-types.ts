@@ -153,6 +153,7 @@ export interface QueueState {
   sessions?: QueueSessionSummary[];
   viewedSessionId?: string;
   readOnly?: boolean;
+  isCurrentSession?: boolean;
   nextInLine?: QueueEntry | null;
   loadedTrack?: QueueEntry | null;
   autoRoutingPaused?: boolean;

@@ -84,7 +84,7 @@ export function AdminShowManagement() {
 
   const session = state?.session;
   const readOnly = Boolean(state?.readOnly || session?.status === "archived");
-  const currentSession = session && !readOnly ? session : null;
+  const currentSession = session && state?.isCurrentSession && !readOnly ? session : null;
   const pastSessions = (state?.sessions ?? []).filter((item) => item.sessionId !== currentSession?.sessionId);
   const queueIsOpen = Boolean(currentSession?.queueOpen);
 

@@ -33,17 +33,23 @@ function submittedArtist(entry: QueueEntry): string { return entry.submittedArti
 function submittedTitle(entry: QueueEntry): string { return entry.submittedSongTitle ?? entry.title; }
 function entryLane(entry: QueueEntry): QueueLane { return entry.lane ?? "regular"; }
 function durationSourceLabel(entry: QueueEntry): string { return (entry.durationSource ?? "internal_estimate").replace(/_/g, " "); }
-function priorityUpgradeLabel(entry: QueueEntry): string | null {
-  if (entry.priorityPausedAt) return "Priority Paused";
-  if (entry.priorityUpgradeStatus === "requested") return "Priority requested";
-  if (entry.priorityUpgradeStatus === "checkout_pending") return "Payment processing";
-  if (entry.priorityUpgradeStatus === "paid") return "Paid Priority";
-  if (entry.priorityUpgradeStatus === "paid_needs_attention") return "Paid · Needs Attention";
-  if (entry.priorityUpgradeStatus === "manual" || entry.lane === "priority") return "Priority Signal";
-  return null;
-}
 function canPausePriority(entry: QueueEntry): boolean { return entry.lane === "priority" && !entry.priorityPausedAt && (entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual"); }
 function canResumePriority(entry: QueueEntry): boolean { return entry.lane === "priority" && Boolean(entry.priorityPausedAt) && (entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual"); }
+function isWheelEligibleTrack(entry: QueueEntry): boolean { return (!entry.lane || entry.lane === "regular") && entry.status === "queued" && (entry.priorityUpgradeStatus ?? "none") === "none" && !entry.priorityPausedAt; }
+function queueTrackVisual(entry: QueueEntry): { label: string; badgeClass: string; cardClass: string; sectionClass: string } {
+  const status = entry.priorityUpgradeStatus ?? "none";
+  if (status === "failed" || status === "refunded") return { label: "Payment Failed", badgeClass: "border-danger bg-danger text-background", cardClass: "border-danger/60 bg-danger/10 shadow-[inset_4px_0_0_rgba(255,0,0,0.8)]", sectionClass: "border-danger/50 bg-danger/5" };
+  if (status === "checkout_pending" || status === "requested" || status === "paid_needs_attention") return { label: "Payment Processing", badgeClass: "border-[#ff8a00] bg-[#ff8a00]/90 text-background", cardClass: "border-[#ff8a00]/60 bg-[#ff8a00]/10 shadow-[inset_4px_0_0_rgba(255,138,0,0.8)]", sectionClass: "border-[#ff8a00]/50 bg-[#ff8a00]/5" };
+  if (entry.priorityPausedAt) return { label: "Held Priority", badgeClass: "border-[#8a5a00] bg-[#ffaa00] text-background", cardClass: "border-[#ffaa00]/80 bg-[#ffaa00]/15 shadow-[inset_4px_0_0_rgba(255,170,0,1)]", sectionClass: "border-[#ffaa00]/70 bg-[#ffaa00]/10" };
+  if (status === "paid") return { label: "Paid Priority", badgeClass: "border-[#ffaa00] bg-[#ffaa00]/20 text-[#ffaa00]", cardClass: "border-[#ffaa00]/70 bg-[#ffaa00]/10 shadow-[inset_4px_0_0_rgba(255,170,0,0.85)]", sectionClass: "border-[#ffaa00]/60 bg-[#ffaa00]/5" };
+  if (status === "manual" || entry.lane === "priority") return { label: "Manual Priority", badgeClass: "border-[#ffaa00] bg-[#ffaa00]/15 text-[#ffaa00]", cardClass: "border-[#ffaa00]/60 bg-[#ffaa00]/10 shadow-[inset_4px_0_0_rgba(255,170,0,0.7)]", sectionClass: "border-[#ffaa00]/60 bg-[#ffaa00]/5" };
+  if (entry.lane === "wheel") return { label: "Wheel Chosen", badgeClass: "border-cyan-300 bg-cyan-300/15 text-cyan-200", cardClass: "border-cyan-300/60 bg-cyan-300/10 shadow-[inset_4px_0_0_rgba(103,232,249,0.8)]", sectionClass: "border-cyan-300/50 bg-cyan-300/5" };
+  return { label: "Free Submission", badgeClass: "border-foreground/40 bg-foreground/10 text-foreground", cardClass: "border-border bg-background/40 shadow-[inset_4px_0_0_rgba(255,255,255,0.25)]", sectionClass: "border-border bg-surface" };
+}
+function LaneStatusBadge({ entry }: { entry: QueueEntry }) {
+  const visual = queueTrackVisual(entry);
+  return <p className={`mt-2 inline-flex px-2 py-1 text-[10px] uppercase tracking-widest ${visual.badgeClass}`}>{visual.label}</p>;
+}
 function durationLabel(entry: QueueEntry): string {
   const duration = formatRuntime(getTrackRuntimeSeconds(entry));
   return entry.durationIsEstimate ? `${duration} estimated / pending · ${durationSourceLabel(entry)}` : `${duration} detected · ${durationSourceLabel(entry)}`;
@@ -189,6 +195,7 @@ export function AdminRadioQueueControl() {
   async function toggleOpen(isOpen: boolean) { await post({ action: "setOpen", isOpen }); }
   async function copy(entry: QueueEntry) { await navigator.clipboard.writeText(openUrl(entry)); }
   async function loadPlayer(entry: QueueEntry) {
+    if (state?.nowPlaying && state.nowPlaying.id !== entry.id) return;
     setPlayer(entry);
     setMinimized(false);
     await action(entry.id, "load");
@@ -243,7 +250,7 @@ export function AdminRadioQueueControl() {
 
   const wheelMatches = useMemo(() => {
     const query = wheelSearch.trim().toLowerCase();
-    const regular = lanes.regular.filter((entry) => entry.status === "queued");
+    const regular = lanes.regular.filter(isWheelEligibleTrack);
     if (!query) return regular.slice(0, 8);
     return regular.filter((entry) => `${submittedArtist(entry)} ${submittedTitle(entry)} ${entry.link} ${entry.fileName ?? ""}`.toLowerCase().includes(query)).slice(0, 8);
   }, [lanes.regular, wheelSearch]);
@@ -328,7 +335,7 @@ export function AdminRadioQueueControl() {
         </div>
 
         {tab === "active" && <>
-          <NextInLineBox entry={nextInLine} readOnly={readOnly} onAction={action} onPlayer={loadPlayer} onCopy={copy} />
+          <NextInLineBox entry={nextInLine} playerOccupied={Boolean(loadedPlayer)} readOnly={readOnly} onAction={action} onPlayer={loadPlayer} onCopy={copy} />
           <WheelWinnerSelector tracks={wheelMatches} search={wheelSearch} selection={wheelSelection} readOnly={readOnly} onSearch={setWheelSearch} onSelection={setWheelSelection} onMark={markWheelWinner} />
           <div className="grid gap-5 xl:grid-cols-2"><Lane title="Priority Signal" tracks={lanes.priority} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Wheel Winners" tracks={lanes.wheel} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Regular Queue" tracks={lanes.regular} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Spotlight List" tracks={lanes.spotlight} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="spotlight" readOnly={readOnly} /></div>
         </>}
@@ -342,8 +349,9 @@ export function AdminRadioQueueControl() {
 }
 
 
-function NextInLineBox({ entry, readOnly, onAction, onPlayer, onCopy }: { entry: QueueEntry | null; readOnly: boolean; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void }) {
-  return <section className="border border-accent/60 bg-accent/5 p-5 space-y-4"><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Next in Line</p>{!entry ? <p className="mt-3 text-lg text-muted">No active transmissions waiting.</p> : <><h2 className="mt-3 text-2xl font-bold text-foreground">{submittedArtist(entry)} — {submittedTitle(entry)}</h2><p className="text-sm text-muted mt-1">Lane: {LANE_LABELS[entryLane(entry)]} · Source: {sourceLabel(entry)} · Duration: {durationLabel(entry)}</p>{detectedLabel(entry) && <p className="text-xs text-muted mt-1">Detected / Provider: {detectedLabel(entry)}</p>}</>}</div>{entry && <TrackActions entry={entry} mode="next" readOnly={readOnly} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} />}</section>;
+function NextInLineBox({ entry, playerOccupied, readOnly, onAction, onPlayer, onCopy }: { entry: QueueEntry | null; playerOccupied: boolean; readOnly: boolean; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void }) {
+  const visual = entry ? queueTrackVisual(entry) : null;
+  return <section className={`p-5 space-y-4 ${visual?.sectionClass ?? "border border-accent/60 bg-accent/5"}`}><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Next in Line</p>{!entry ? <p className="mt-3 text-lg text-muted">No active transmissions waiting.</p> : <><div className="mt-3"><LaneStatusBadge entry={entry} /></div><h2 className="mt-3 text-2xl font-bold text-foreground">{submittedArtist(entry)} — {submittedTitle(entry)}</h2><p className="text-sm text-muted mt-1">Lane: {LANE_LABELS[entryLane(entry)]} · Source: {sourceLabel(entry)} · Duration: {durationLabel(entry)}</p>{detectedLabel(entry) && <p className="text-xs text-muted mt-1">Detected / Provider: {detectedLabel(entry)}</p>}</>}</div>{entry && <TrackActions entry={entry} mode="next" playerOccupied={playerOccupied} readOnly={readOnly} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} />}</section>;
 }
 
 function WheelWinnerSelector({ tracks, search, selection, readOnly, onSearch, onSelection, onMark }: { tracks: QueueEntry[]; search: string; selection: string; readOnly: boolean; onSearch: (value: string) => void; onSelection: (value: string) => void; onMark: () => void }) {
@@ -353,12 +361,12 @@ function WheelWinnerSelector({ tracks, search, selection, readOnly, onSearch, on
 function PlayerDock({ player, minimized, setMinimized, readOnly, onAction, onCopy }: { player: QueueEntry; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; onAction: (id: string, action: AdminQueueAction) => void; onCopy: () => void }) {
   const embedded = embedUrl(player);
   return (
-    <div className="fixed inset-x-0 bottom-0 z-[9999] w-screen border-t border-accent/40 bg-background/95 p-3 shadow-[0_-20px_60px_rgba(0,0,0,0.45)] backdrop-blur">
+    <div className={`fixed inset-x-0 bottom-0 z-[9999] w-screen border-t bg-background/95 p-3 shadow-[0_-20px_60px_rgba(0,0,0,0.45)] backdrop-blur ${queueTrackVisual(player).sectionClass}`}>
       <div className="w-full px-2 sm:px-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.35em] text-accent">{minimized ? "Queue Player Dock" : "Command Deck Player"}</p>
-            <h3 className="text-lg font-bold">{submittedArtist(player)} — {submittedTitle(player)}</h3>
+            <h3 className="text-lg font-bold">{submittedArtist(player)} — {submittedTitle(player)}</h3><LaneStatusBadge entry={player} />
             {detectedLabel(player) && <p className="text-xs text-muted mt-1">Detected / Provider: {detectedLabel(player)}</p>}
             <p className="text-xs text-muted mt-1">{sourceLabel(player)} · {durationLabel(player)}</p>
           </div>
@@ -396,7 +404,7 @@ function AdminTrackMetadata({ entry }: { entry: QueueEntry }) {
         {entry.tiktokHandle && <p className="mt-1 text-muted">TikTok: {entry.tiktokHandle.startsWith("@") ? entry.tiktokHandle : `@${entry.tiktokHandle}`}</p>}
         {entry.contactEmail && <p className="mt-1 text-muted">Contact: {entry.contactEmail}</p>}
         {entry.submitterArtistName && <p className="mt-1 text-muted">Submitted by: {entry.submitterArtistName}</p>}
-        {priorityUpgradeLabel(entry) && <p className="mt-2 inline-flex border border-[#ffaa00]/40 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">{priorityUpgradeLabel(entry)}</p>}
+        <LaneStatusBadge entry={entry} />
       </div>
       <div className="border border-border/60 p-3">
         <span className="block text-muted uppercase tracking-widest">Detected source</span>
@@ -409,10 +417,12 @@ function AdminTrackMetadata({ entry }: { entry: QueueEntry }) {
 }
 
 function Lane({ title, tracks, onAction, onPlayer, onCopy, mode, readOnly }: { title: string; tracks: QueueEntry[]; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void; mode: "next" | "active" | "spotlight" | "completed" | "removed"; readOnly: boolean }) {
+  const sectionClass = title.includes("Priority") ? "border-[#ffaa00]/50 bg-[#ffaa00]/5" : title.includes("Wheel") ? "border-cyan-300/50 bg-cyan-300/5" : title.includes("Regular") ? "border-border bg-surface" : "border-border bg-surface";
+  const titleClass = title.includes("Priority") ? "text-[#ffaa00]" : title.includes("Wheel") ? "text-cyan-200" : "text-foreground";
   return (
-    <section className="border border-border bg-surface p-4">
+    <section className={`border p-4 ${sectionClass}`}>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm uppercase tracking-[0.25em] text-foreground">{title}</h2>
+        <h2 className={`text-sm uppercase tracking-[0.25em] ${titleClass}`}>{title}</h2>
         <span className="text-xs text-muted">{tracks.length}</span>
       </div>
       <div className="space-y-3">
@@ -420,7 +430,7 @@ function Lane({ title, tracks, onAction, onPlayer, onCopy, mode, readOnly }: { t
           <p className="border border-border/60 p-4 text-sm text-muted">No tracks in this lane.</p>
         ) : (
           tracks.map((entry) => (
-            <article key={`${title}-${entry.id}`} className="space-y-3 border border-border bg-background/40 p-4">
+            <article key={`${title}-${entry.id}`} className={`space-y-3 p-4 ${queueTrackVisual(entry).cardClass}`}>
               <div className="space-y-3">
                 <div>
                   <p className="font-bold">{submittedArtist(entry)} — {submittedTitle(entry)}</p>
@@ -439,15 +449,15 @@ function Lane({ title, tracks, onAction, onPlayer, onCopy, mode, readOnly }: { t
   );
 }
 
-function TrackActions({ entry, onAction, onPlayer, onCopy, mode, readOnly }: { entry: QueueEntry; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void; mode: "next" | "active" | "spotlight" | "completed" | "removed"; readOnly: boolean }) {
+function TrackActions({ entry, onAction, onPlayer, onCopy, mode, readOnly, playerOccupied = false }: { entry: QueueEntry; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void; mode: "next" | "active" | "spotlight" | "completed" | "removed"; readOnly: boolean; playerOccupied?: boolean }) {
   const lane = entryLane(entry);
   return (
     <div className="flex flex-wrap gap-2">
-      {mode === "next" && <button type="button" onClick={() => onPlayer(entry)} className="border border-accent px-3 py-1.5 text-xs text-accent">Load in Player</button>}
+      {mode === "next" && <button type="button" onClick={() => onPlayer(entry)} disabled={playerOccupied} className="border border-accent px-3 py-1.5 text-xs text-accent disabled:cursor-not-allowed disabled:border-border disabled:text-muted">{playerOccupied ? "Player Occupied" : "Load in Player"}</button>}
       <a href={openUrl(entry)} target="_blank" rel="noreferrer" className="border border-border px-3 py-1.5 text-xs text-muted">{entry.sourceType === "upload" ? "Open Admin Audio" : "Open Link"}</a>
       <button type="button" onClick={() => onCopy(entry)} className="border border-border px-3 py-1.5 text-xs text-muted">Copy {entry.sourceType === "upload" ? "Admin Audio Link" : "Link"}</button>
-      {!readOnly && mode === "next" && <>{lane !== "priority" && <button type="button" onClick={() => onAction(entry.id, "moveBack")} className="border border-border px-3 py-1.5 text-xs text-muted">Return to Queue</button>}{canPausePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "pausePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Pause Priority</button>}{canResumePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "resumePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Resume Priority</button>}<button type="button" onClick={() => onAction(entry.id, "remove")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove</button><button type="button" onClick={() => onAction(entry.id, "spotlight")} className="border border-foreground/40 px-3 py-1.5 text-xs text-foreground">Spotlight</button></>}
-      {!readOnly && mode === "active" && <><button type="button" onClick={() => onAction(entry.id, "remove")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove</button>{lane === "regular" ? <><button type="button" onClick={() => onAction(entry.id, "priority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move to Priority Signal</button><button type="button" onClick={() => onAction(entry.id, "wheel")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Mark Wheel Chosen</button></> : <><button type="button" onClick={() => onAction(entry.id, "regular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Move to Regular Queue</button>{lane === "wheel" && <button type="button" onClick={() => onAction(entry.id, "priority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move to Priority Signal</button>}{canPausePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "pausePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Pause Priority</button>}{canResumePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "resumePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Resume Priority</button>}</>}<button type="button" onClick={() => onAction(entry.id, "spotlight")} className="border border-foreground/40 px-3 py-1.5 text-xs text-foreground">Spotlight</button></>}
+      {!readOnly && mode === "next" && <>{lane !== "priority" && <button type="button" onClick={() => onAction(entry.id, "moveBack")} className="border border-border px-3 py-1.5 text-xs text-muted">Return to Queue</button>}{canPausePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "pausePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Pause Priority</button>}{canResumePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "resumePriority")} className="border border-[#ffaa00] bg-[#ffaa00] px-3 py-1.5 text-xs text-background">Unpause Priority</button>}<button type="button" onClick={() => onAction(entry.id, "remove")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove</button><button type="button" onClick={() => onAction(entry.id, "spotlight")} className="border border-foreground/40 px-3 py-1.5 text-xs text-foreground">Spotlight</button></>}
+      {!readOnly && mode === "active" && <><button type="button" onClick={() => onAction(entry.id, "remove")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove</button>{lane === "regular" ? <><button type="button" onClick={() => onAction(entry.id, "priority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move to Priority Signal</button>{isWheelEligibleTrack(entry) && <button type="button" onClick={() => onAction(entry.id, "wheel")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Mark Wheel Chosen</button>}</> : <><button type="button" onClick={() => onAction(entry.id, "regular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Move to Regular Queue</button>{lane === "wheel" && <button type="button" onClick={() => onAction(entry.id, "priority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move to Priority Signal</button>}{canPausePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "pausePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Pause Priority</button>}{canResumePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "resumePriority")} className="border border-[#ffaa00] bg-[#ffaa00] px-3 py-1.5 text-xs text-background">Unpause Priority</button>}</>}<button type="button" onClick={() => onAction(entry.id, "spotlight")} className="border border-foreground/40 px-3 py-1.5 text-xs text-foreground">Spotlight</button></>}
       {!readOnly && mode === "spotlight" && <button type="button" onClick={() => onAction(entry.id, "removeSpotlight")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove from Spotlight</button>}
       {!readOnly && mode === "completed" && <><button type="button" onClick={() => onAction(entry.id, "restoreRegular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Move back to Regular Queue</button><button type="button" onClick={() => onAction(entry.id, "restorePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move back to Priority Signal</button></>}
       {!readOnly && mode === "removed" && <><button type="button" onClick={() => onAction(entry.id, "restoreRegular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Restore to Regular Queue</button><button type="button" onClick={() => onAction(entry.id, "restorePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Restore to Priority Signal</button></>}

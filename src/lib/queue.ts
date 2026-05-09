@@ -185,6 +185,11 @@ function isActivePriorityTrack(entry: QueueEntry | null | undefined): boolean {
   return entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual";
 }
 
+function isWheelEligibleTrack(entry: QueueEntry | null | undefined): boolean {
+  if (!entry) return false;
+  return (!entry.lane || entry.lane === "regular") && entry.status === "queued" && (entry.priorityUpgradeStatus ?? "none") === "none" && !entry.priorityPausedAt;
+}
+
 function getPriorityOrderTime(entry: QueueEntry): number {
   return new Date(entry.priorityQueueOrderAt ?? entry.priorityUpgradePaidAt ?? entry.priorityUpgradeAt ?? entry.createdAt).getTime();
 }
@@ -198,6 +203,7 @@ function queueRank(entry: QueueEntry): number {
 
 function queueOrderTime(entry: QueueEntry): number {
   if (isActivePriorityTrack(entry)) return getPriorityOrderTime(entry);
+  if ((entry.lane ?? "regular") === "priority") return new Date(entry.priorityPausedAt ?? entry.priorityQueueOrderAt ?? entry.priorityUpgradePaidAt ?? entry.createdAt).getTime();
   return new Date(entry.priorityOverlayDisplacedAt ?? entry.createdAt).getTime();
 }
 
@@ -213,6 +219,9 @@ function chooseNextWaitingEntry(session: Pick<QueueSession, "queue" | "nextNonPr
   const blockedId = excludeId ?? session.nextInLineHoldTrackId ?? session.loadedTrackId ?? undefined;
   const priority = laneTop(session, "priority", blockedId);
   if (priority) return priority;
+
+  const protectedFront = sortActive(session.queue).find((entry) => entry.id !== blockedId && entry.status === "queued" && (entry.lane ?? "regular") !== "priority" && Boolean(entry.priorityOverlayDisplacedAt));
+  if (protectedFront) return protectedFront;
 
   const preferredLane: QueueNonPriorityLane = session.nextNonPriorityLane === "regular" ? "regular" : "wheel";
   const fallbackLane: QueueNonPriorityLane = preferredLane === "wheel" ? "regular" : "wheel";
@@ -1456,7 +1465,7 @@ function pausePriorityTrack(session: QueueSession, id: string): boolean {
   const now = new Date().toISOString();
   const pause = (entry: QueueEntry): QueueEntry | null => {
     if ((entry.lane ?? "regular") !== "priority" || (entry.priorityUpgradeStatus !== "paid" && entry.priorityUpgradeStatus !== "manual")) return null;
-    return normalizeEntry({ ...entry, status: "queued", priorityPausedAt: entry.priorityPausedAt ?? now, priorityResumedAt: null });
+    return normalizeEntry({ ...entry, status: "queued", priorityPausedAt: entry.priorityPausedAt ?? now, priorityResumedAt: null, priorityQueueOrderAt: now });
   };
   const queueIndex = session.queue.findIndex((entry) => entry.id === id);
   if (queueIndex >= 0) {
@@ -1517,13 +1526,15 @@ function restoreEntry(entry: QueueEntry, lane: QueueLane): QueueEntry {
 }
 
 const SIMULATION_TRACK_NOTE = "[QUEUE SIMULATION TRACK]";
+const SIMULATION_ARTISTS = ["Glass Circuit", "Motel Satellite", "Neon Janitor", "Cold Pager", "Velvet Firewall", "Ghost Copier", "Cassette Animal", "Blue Exit", "Static Orchard", "Paper Terminal", "Night Receipt", "Dust Channel", "Soft Reboot", "Broken Antenna", "Chrome Basement", "Signal Dog"];
+const SIMULATION_TITLES = ["Static Bloom", "Afterimage", "Dust Channel", "Midnight Receipt", "Soft Reboot", "Paper Teeth", "Room Tone", "No Signal Home", "Borrowed Thunder", "Plastic Moon", "Dead Mall Weather", "Return Path", "Window Error", "Ghost Light", "Low Battery Saint", "Frequency Teeth"];
 
 function isSimulationTrack(entry: QueueEntry | null | undefined): boolean {
   if (!entry) return false;
   return entry.isTestTrack === true || entry.note?.includes(SIMULATION_TRACK_NOTE) === true || entry.artist.startsWith("SIM ") || entry.title.startsWith("SIM ");
 }
 
-function simulationSequence(session: QueueSession, prefix: string): number {
+function simulationSequence(session: QueueSession): number {
   const entries = [
     ...session.queue,
     ...(session.nextInLineTrack ? [session.nextInLineTrack] : []),
@@ -1532,23 +1543,20 @@ function simulationSequence(session: QueueSession, prefix: string): number {
     ...session.removed,
     ...session.spotlight,
   ];
-  const pattern = new RegExp(`^SIM ${prefix}(\\d+)`);
-  return entries.reduce((max, entry) => {
-    const match = entry.title.match(pattern);
-    return match?.[1] ? Math.max(max, Number(match[1])) : max;
-  }, 0) + 1;
+  return entries.filter(isSimulationTrack).length + 1;
 }
 
-function simulationTrackBase(session: QueueSession, prefix: string, titleSuffix: string, artistPrefix: string): QueueEntry {
-  const sequence = simulationSequence(session, prefix);
+function simulationTrackBase(session: QueueSession): QueueEntry {
+  const sequence = simulationSequence(session);
   const number = String(sequence).padStart(3, "0");
-  const code = `${prefix}${number}`;
+  const artist = SIMULATION_ARTISTS[(sequence - 1) % SIMULATION_ARTISTS.length];
+  const title = SIMULATION_TITLES[(sequence - 1) % SIMULATION_TITLES.length];
   const now = new Date().toISOString();
   return normalizeEntry({
     id: generateQueueId(),
-    artist: `${artistPrefix} ${number}`,
-    title: `SIM ${code} — ${titleSuffix}`,
-    link: `https://example.com/sim-${code.toLowerCase()}`,
+    artist,
+    title,
+    link: `https://example.com/sim-track-${number}`,
     tier: "free",
     lane: "regular",
     amount: 0,
@@ -1560,16 +1568,16 @@ function simulationTrackBase(session: QueueSession, prefix: string, titleSuffix:
     removedAt: null,
     restoredAt: null,
     spotlightedAt: null,
-    note: `${SIMULATION_TRACK_NOTE} Admin-only queue engine simulation data.`,
-    submitterArtistName: `${artistPrefix} ${number}`,
-    submittedArtistName: `${artistPrefix} ${number}`,
-    submittedSongTitle: `SIM ${code} — ${titleSuffix}`,
+    note: `${SIMULATION_TRACK_NOTE} SIM ${number}. Admin-only queue engine simulation data.`,
+    submitterArtistName: artist,
+    submittedArtistName: artist,
+    submittedSongTitle: title,
     collaboratorNames: null,
-    tiktokHandle: `@sim_${code.toLowerCase()}`,
-    normalizedTikTokHandle: `sim_${code.toLowerCase()}`,
-    contactEmail: `sim-${code.toLowerCase()}@example.com`,
-    submitterToken: `sim-${code.toLowerCase()}`,
-    normalizedSourceKey: `https://example.com/sim-${code.toLowerCase()}`,
+    tiktokHandle: `@sim_track_${number}`,
+    normalizedTikTokHandle: `sim_track_${number}`,
+    contactEmail: `sim-track-${number}@example.com`,
+    submitterToken: `sim-track-${number}`,
+    normalizedSourceKey: `https://example.com/sim-track-${number}`,
     providerId: null,
     sourceArtworkUrl: null,
     suspiciousFlags: [],
@@ -1623,13 +1631,13 @@ function addSimulationTrack(session: QueueSession, action: QueueAdminAction): bo
 
   const now = new Date().toISOString();
   if (action === "addSimulationFreeTrack") {
-    session.queue.push(simulationTrackBase(session, "F", "Free Transmission", "SIM Artist"));
+    session.queue.push(simulationTrackBase(session));
     pullNextInLine(session);
     return true;
   }
   if (action === "addSimulationPaidPriority") {
     session.queue.push(normalizeEntry({
-      ...simulationTrackBase(session, "P", "Paid Priority", "SIM Priority Artist"),
+      ...simulationTrackBase(session),
       tier: "fastlane",
       lane: "priority",
       priorityUpgradeRequested: true,
@@ -1652,7 +1660,7 @@ function addSimulationTrack(session: QueueSession, action: QueueAdminAction): bo
   }
   if (action === "addSimulationCheckoutPending") {
     session.queue.push(normalizeEntry({
-      ...simulationTrackBase(session, "CP", "Checkout Pending", "SIM Checkout Artist"),
+      ...simulationTrackBase(session),
       tier: "fastlane",
       lane: "priority",
       priorityUpgradeRequested: true,
@@ -1670,7 +1678,7 @@ function addSimulationTrack(session: QueueSession, action: QueueAdminAction): bo
   }
   if (action === "addSimulationPaymentFailed") {
     session.queue.push(normalizeEntry({
-      ...simulationTrackBase(session, "FAIL", "Failed Payment", "SIM Failed Artist"),
+      ...simulationTrackBase(session),
       tier: "fastlane",
       lane: "priority",
       priorityUpgradeRequested: true,
@@ -1685,7 +1693,7 @@ function addSimulationTrack(session: QueueSession, action: QueueAdminAction): bo
   }
   if (action === "addSimulationHeldPriority") {
     session.queue.push(normalizeEntry({
-      ...simulationTrackBase(session, "HOLD", "Held Priority", "SIM Held Artist"),
+      ...simulationTrackBase(session),
       tier: "fastlane",
       lane: "priority",
       priorityUpgradeRequested: true,
@@ -1773,6 +1781,10 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
     return getRadioQueueState();
   }
 
+  if (action === "load" && session.loadedTrack && session.loadedTrack.id !== id) {
+    return queueStateFromSession(session, store);
+  }
+
   if (loaded) {
     if (action === "moveBack") {
       const staged = session.nextInLineTrack;
@@ -1803,7 +1815,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
 
   if (nextInLine) {
     if (action === "load") {
-      if (session.loadedTrack && session.loadedTrack.id !== nextInLine.id) moveLoadedTrackBackToQueue(session);
+      if (session.loadedTrack && session.loadedTrack.id !== nextInLine.id) return queueStateFromSession(session, store);
       const previousLane = session.currentTrackPreviousLane;
       const previousIndex = session.currentTrackPreviousIndex;
       const current = clearNextInLine(session);
@@ -1838,7 +1850,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
 
   if (!active) return getRadioQueueState();
   if (action === "load") {
-    if (session.loadedTrack && session.loadedTrack.id !== active.id) moveLoadedTrackBackToQueue(session);
+    if (session.loadedTrack && session.loadedTrack.id !== active.id) return queueStateFromSession(session, store);
     setLoadedTrack(session, active, active.lane ?? "regular", index);
   }
   if (action === "priority") {
@@ -1849,7 +1861,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
     session.queue.splice(index, 1);
     session.queue.push(normalizeEntry({ ...active, lane: "regular", tier: "free", status: "queued", ...priorityUpgradeMetadata(active, "regular") }));
   }
-  if (action === "wheel" && (!active.lane || active.lane === "regular")) {
+  if (action === "wheel" && isWheelEligibleTrack(active)) {
     session.queue.splice(index, 1);
     session.queue.push(normalizeEntry({ ...active, lane: "wheel", tier: "frontrow", status: "queued", priorityOverlayDisplacedAt: null, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: null }));
   }

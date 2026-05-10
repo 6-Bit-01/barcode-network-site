@@ -196,7 +196,7 @@ function getPriorityOrderTime(entry: QueueEntry): number {
 
 function queueRank(entry: QueueEntry): number {
   if (isActivePriorityTrack(entry)) return 0;
-  if (entry.priorityOverlayDisplacedAt) return 1;
+  if (entry.displacedFromNextInLineAt) return 1;
   if ((entry.lane ?? "regular") === "priority") return 4;
   return laneRank(entry.lane) + 1;
 }
@@ -204,7 +204,7 @@ function queueRank(entry: QueueEntry): number {
 function queueOrderTime(entry: QueueEntry): number {
   if (isActivePriorityTrack(entry)) return getPriorityOrderTime(entry);
   if ((entry.lane ?? "regular") === "priority") return new Date(entry.priorityPausedAt ?? entry.priorityQueueOrderAt ?? entry.priorityUpgradePaidAt ?? entry.createdAt).getTime();
-  return new Date(entry.priorityOverlayDisplacedAt ?? entry.createdAt).getTime();
+  return new Date(entry.displacedFromNextInLineAt ?? entry.createdAt).getTime();
 }
 
 function sortActive(entries: QueueEntry[]): QueueEntry[] {
@@ -219,8 +219,8 @@ function isOpeningState(session: Pick<QueueSession, "playbackStarted">): boolean
   return session.playbackStarted !== true;
 }
 
-function getProtectedNonPriorityFront(session: Pick<QueueSession, "queue">, blockedId?: string): QueueEntry | null {
-  return sortActive(session.queue).find((entry) => entry.id !== blockedId && entry.status === "queued" && (entry.lane ?? "regular") !== "priority" && Boolean(entry.priorityOverlayDisplacedAt)) ?? null;
+function getDisplacedNonPriorityNext(session: Pick<QueueSession, "queue">, blockedId?: string): QueueEntry | null {
+  return sortActive(session.queue).find((entry) => entry.id !== blockedId && entry.status === "queued" && (entry.lane ?? "regular") !== "priority" && Boolean(entry.displacedFromNextInLineAt)) ?? null;
 }
 
 function chooseNextWaitingEntry(session: QueueSession, excludeId?: string): QueueEntry | null {
@@ -228,8 +228,8 @@ function chooseNextWaitingEntry(session: QueueSession, excludeId?: string): Queu
   const priority = laneTop(session, "priority", blockedId);
   if (priority) return priority;
 
-  const protectedFront = getProtectedNonPriorityFront(session, blockedId);
-  if (protectedFront) return protectedFront;
+  const displacedNonPriorityNext = getDisplacedNonPriorityNext(session, blockedId);
+  if (displacedNonPriorityNext) return displacedNonPriorityNext;
 
   if (isOpeningState(session)) return laneTop(session, "wheel", blockedId);
 
@@ -250,7 +250,7 @@ function stageNextInLineTrack(session: QueueSession, next: QueueEntry): void {
   const sorted = sortActive(session.queue);
   const previousIndex = sorted.findIndex((entry) => entry.id === next.id);
   session.queue = sorted.filter((entry) => entry.id !== next.id);
-  session.nextInLineTrack = normalizeEntry({ ...next, status: "next", priorityOverlayDisplacedAt: null });
+  session.nextInLineTrack = normalizeEntry({ ...next, status: "next", displacedFromNextInLineAt: null });
   session.nextInLineTrackId = next.id;
   session.nextInLineHoldTrackId = null;
   session.currentTrackPreviousLane = next.lane ?? "regular";
@@ -258,7 +258,7 @@ function stageNextInLineTrack(session: QueueSession, next: QueueEntry): void {
   session.autoRoutingPaused = false;
 }
 
-function preserveDisplacedNonPriorityFront(session: QueueSession, entry: QueueEntry): void {
+function preserveDisplacedNonPriorityNext(session: QueueSession, entry: QueueEntry): void {
   if ((entry.lane ?? "regular") === "priority") return;
   const lane = entry.lane === "wheel" ? "wheel" : "regular";
   const restored = normalizeEntry({
@@ -267,7 +267,7 @@ function preserveDisplacedNonPriorityFront(session: QueueSession, entry: QueueEn
     tier: lane === "wheel" ? "frontrow" : "free",
     status: "queued",
     playedAt: null,
-    priorityOverlayDisplacedAt: new Date().toISOString(),
+    displacedFromNextInLineAt: new Date().toISOString(),
   });
   const priorityQueue = sortActive(session.queue.filter((track) => track.id !== restored.id && (track.lane ?? "regular") === "priority"));
   const baseQueue = sortActive(session.queue.filter((track) => track.id !== restored.id && (track.lane ?? "regular") !== "priority"));
@@ -288,7 +288,7 @@ function resolveNextInLine(session: QueueSession, excludeId?: string, force = fa
   const priority = laneTop(session, "priority", excludeId ?? session.nextInLineHoldTrackId ?? session.loadedTrackId ?? undefined);
   if (priority) {
     if (current) {
-      preserveDisplacedNonPriorityFront(session, current);
+      preserveDisplacedNonPriorityNext(session, current);
       clearNextInLine(session);
     }
     stageNextInLineTrack(session, priority);
@@ -338,7 +338,7 @@ function moveNextInLineBackToQueue(session: QueueSession): QueueEntry | null {
   const current = session.nextInLineTrack ?? null;
   if (!current) return null;
   const lane = session.currentTrackPreviousLane ?? current.lane ?? "regular";
-  const restored = normalizeEntry({ ...current, lane, tier: lane === "priority" ? "fastlane" : lane === "wheel" ? "frontrow" : "free", status: "queued", priorityOverlayDisplacedAt: lane === "priority" ? null : current.priorityOverlayDisplacedAt ?? null });
+  const restored = normalizeEntry({ ...current, lane, tier: lane === "priority" ? "fastlane" : lane === "wheel" ? "frontrow" : "free", status: "queued", displacedFromNextInLineAt: lane === "priority" ? null : current.displacedFromNextInLineAt ?? null });
   const index = typeof session.currentTrackPreviousIndex === "number" ? Math.max(0, session.currentTrackPreviousIndex) : 0;
   const queue = sortActive(session.queue);
   queue.splice(Math.min(index, queue.length), 0, restored);
@@ -348,7 +348,7 @@ function moveNextInLineBackToQueue(session: QueueSession): QueueEntry | null {
 }
 
 function insertRestoredTrack(session: QueueSession, entry: QueueEntry, lane: QueueLane, index: number | null): QueueEntry {
-  const restored = normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : lane === "wheel" ? "frontrow" : "free", status: "queued", playedAt: null, priorityOverlayDisplacedAt: null });
+  const restored = normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : lane === "wheel" ? "frontrow" : "free", status: "queued", playedAt: null, displacedFromNextInLineAt: null });
   const queue = sortActive(session.queue.filter((track) => track.id !== restored.id));
   const safeIndex = typeof index === "number" ? Math.max(0, Math.min(index, queue.length)) : queue.length;
   queue.splice(safeIndex, 0, restored);
@@ -440,13 +440,14 @@ function normalizePriorityUpgradeSource(source: unknown): QueueEntry["priorityUp
 }
 
 function normalizeEntry(entry: QueueEntry): QueueEntry {
+  const { priorityOverlayDisplacedAt: legacyDisplacedFromNextInLineAt, ...entryWithoutLegacyMarker } = entry as QueueEntry & { priorityOverlayDisplacedAt?: string | null };
   const submittedArtistName = entry.submittedArtistName ?? entry.artist;
   const submittedSongTitle = entry.submittedSongTitle ?? entry.title;
   const detectedDurationSeconds = entry.detectedDurationSeconds ?? null;
   const sourceType = entry.sourceType ?? detectQueueSourceType(entry.link);
   const durationSource = normalizeDurationSource(entry.durationSource, detectedDurationSeconds, sourceType);
   return {
-    ...entry,
+    ...entryWithoutLegacyMarker,
     artist: entry.artist ?? submittedArtistName,
     title: entry.title ?? submittedSongTitle,
     submittedArtistName,
@@ -475,7 +476,7 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     priorityUpgradeCheckoutExpiresAt: entry.priorityUpgradeCheckoutExpiresAt ?? null,
     priorityUpgradeAmountCents: typeof entry.priorityUpgradeAmountCents === "number" ? Math.max(0, Math.round(entry.priorityUpgradeAmountCents)) : null,
     priorityUpgradeCurrency: entry.priorityUpgradeCurrency ? normalizeCurrency(entry.priorityUpgradeCurrency) : null,
-    priorityOverlayDisplacedAt: entry.priorityOverlayDisplacedAt ?? null,
+    displacedFromNextInLineAt: entry.displacedFromNextInLineAt ?? legacyDisplacedFromNextInLineAt ?? null,
     priorityPausedAt: entry.priorityPausedAt ?? null,
     priorityResumedAt: entry.priorityResumedAt ?? null,
     priorityQueueOrderAt: entry.priorityQueueOrderAt ?? entry.priorityUpgradePaidAt ?? null,
@@ -942,7 +943,7 @@ export async function createQueueTrack(input: {
     priorityUpgradeCheckoutExpiresAt: null,
     priorityUpgradeAmountCents: null,
     priorityUpgradeCurrency: null,
-    priorityOverlayDisplacedAt: null,
+    displacedFromNextInLineAt: null,
     priorityPausedAt: null,
     priorityResumedAt: null,
     priorityQueueOrderAt: null,
@@ -1251,7 +1252,7 @@ export async function markPriorityUpgradePaidFromStripe(trackId: string, queueSe
     priorityUpgradeCheckoutExpiresAt: null,
     priorityUpgradeAmountCents: normalizePriceCents(payment.amountCents),
     priorityUpgradeCurrency: normalizeCurrency(payment.currency),
-    ...(status === "paid" ? { priorityOverlayDisplacedAt: null } : {}),
+    ...(status === "paid" ? { displacedFromNextInLineAt: null } : {}),
   });
   const markPaid = (entry: QueueEntry, moveToPriority: boolean): QueueEntry => normalizeEntry({
     ...entry,
@@ -1456,9 +1457,9 @@ export async function activateQueueSession(sessionId: string): Promise<QueueStat
 }
 
 function priorityUpgradeMetadata(entry: QueueEntry, lane: QueueLane): Partial<QueueEntry> {
-  if (lane !== "priority") return { priorityOverlayDisplacedAt: null, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: null, ...(entry.priorityUpgradeStatus === "manual" ? { priorityUpgradeRequested: false, priorityUpgradeStatus: "none" as const, priorityUpgradeSource: null, priorityUpgradeAt: null, priorityUpgradeRequestedAt: null } : {}) };
+  if (lane !== "priority") return { displacedFromNextInLineAt: null, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: null, ...(entry.priorityUpgradeStatus === "manual" ? { priorityUpgradeRequested: false, priorityUpgradeStatus: "none" as const, priorityUpgradeSource: null, priorityUpgradeAt: null, priorityUpgradeRequestedAt: null } : {}) };
   const now = new Date().toISOString();
-  return { priorityUpgradeRequested: true, priorityUpgradeStatus: "manual", priorityUpgradeSource: "admin", priorityUpgradeAt: now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: now, priorityOverlayDisplacedAt: null };
+  return { priorityUpgradeRequested: true, priorityUpgradeStatus: "manual", priorityUpgradeSource: "admin", priorityUpgradeAt: now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: now, displacedFromNextInLineAt: null };
 }
 
 
@@ -1470,7 +1471,7 @@ function priorityUpgradeAdminCorrection(entry: QueueEntry, action: QueueAdminAct
   if (action === "markPriorityCheckoutPending") {
     return normalizeEntry({ ...entry, priorityUpgradeRequested: true, priorityUpgradeStatus: "checkout_pending", priorityUpgradeSource: "future_payment", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now });
   }
-  return normalizeEntry({ ...entry, lane: "priority", tier: "fastlane", priorityUpgradeRequested: true, priorityUpgradeStatus: "manual", priorityUpgradeSource: "admin", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: entry.priorityQueueOrderAt ?? now, priorityOverlayDisplacedAt: null });
+  return normalizeEntry({ ...entry, lane: "priority", tier: "fastlane", priorityUpgradeRequested: true, priorityUpgradeStatus: "manual", priorityUpgradeSource: "admin", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: entry.priorityQueueOrderAt ?? now, displacedFromNextInLineAt: null });
 }
 
 function pausePriorityTrack(session: QueueSession, id: string): boolean {
@@ -1534,7 +1535,7 @@ function applyPriorityUpgradeAdminCorrection(session: QueueSession, id: string, 
 }
 
 function restoreEntry(entry: QueueEntry, lane: QueueLane): QueueEntry {
-  return normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : "free", status: "queued", createdAt: new Date().toISOString(), playedAt: null, completedAt: null, removedAt: null, restoredAt: new Date().toISOString(), priorityOverlayDisplacedAt: null, ...priorityUpgradeMetadata(entry, lane) });
+  return normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : "free", status: "queued", createdAt: new Date().toISOString(), playedAt: null, completedAt: null, removedAt: null, restoredAt: new Date().toISOString(), displacedFromNextInLineAt: null, ...priorityUpgradeMetadata(entry, lane) });
 }
 
 function canStageFirstFree(session: QueueSession): boolean {
@@ -1635,7 +1636,7 @@ function simulationTrackBase(session: QueueSession): QueueEntry {
     priorityUpgradeCheckoutExpiresAt: null,
     priorityUpgradeAmountCents: null,
     priorityUpgradeCurrency: null,
-    priorityOverlayDisplacedAt: null,
+    displacedFromNextInLineAt: null,
     priorityPausedAt: null,
     priorityResumedAt: null,
     priorityQueueOrderAt: null,
@@ -1679,7 +1680,7 @@ function addSimulationTrack(session: QueueSession, action: QueueAdminAction): bo
       priorityQueueOrderAt: now,
       priorityPausedAt: null,
       priorityResumedAt: null,
-      priorityOverlayDisplacedAt: null,
+      displacedFromNextInLineAt: null,
     }));
     resolveNextInLine(session);
     return true;
@@ -1735,7 +1736,7 @@ function addSimulationTrack(session: QueueSession, action: QueueAdminAction): bo
       priorityQueueOrderAt: now,
       priorityPausedAt: now,
       priorityResumedAt: null,
-      priorityOverlayDisplacedAt: null,
+      displacedFromNextInLineAt: null,
     }));
     resolveNextInLine(session);
     return true;
@@ -1903,7 +1904,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
   }
   if (action === "wheel" && isWheelEligibleTrack(active)) {
     session.queue.splice(index, 1);
-    session.queue.push(normalizeEntry({ ...active, lane: "wheel", tier: "frontrow", status: "queued", priorityOverlayDisplacedAt: null, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: null }));
+    session.queue.push(normalizeEntry({ ...active, lane: "wheel", tier: "frontrow", status: "queued", displacedFromNextInLineAt: null, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: null }));
   }
   if (action === "finish") {
     session.queue.splice(index, 1);

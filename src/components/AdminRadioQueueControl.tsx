@@ -7,7 +7,7 @@ import { formatRuntime, getTrackRuntimeSeconds } from "@/lib/queue-types";
 import type { QueueEntry, QueueLane, QueueState } from "@/lib/queue-types";
 
 type Tab = "active" | "completed" | "removed";
-type AdminQueueAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "pausePriority" | "resumePriority" | "stageFirstFree";
+type AdminQueueAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "pausePriority" | "resumePriority" | "stageFirstFree" | "startPlayback";
 type SimulationSpeed = "slow" | "normal" | "fast";
 type SimulationAction = "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
 
@@ -142,7 +142,7 @@ export function AdminRadioQueueControl() {
     setState(next);
     return next;
   }
-  async function action(id: string, next: AdminQueueAction) { await post(next === "pullNext" || next === "stageFirstFree" ? { action: next } : { id, action: next }); }
+  async function action(id: string, next: AdminQueueAction) { await post(next === "pullNext" || next === "stageFirstFree" || next === "startPlayback" ? { action: next } : { id, action: next }); }
   async function simulationAction(next: SimulationAction, label: string) {
     const updated = await post({ action: next });
     setSimulationMessage(updated ? label : "Simulation action failed. Confirm admin auth and active session.");
@@ -267,7 +267,7 @@ export function AdminRadioQueueControl() {
   const playerPadding = loadedPlayer ? (minimized ? "pb-32" : "pb-[28rem]") : "pb-16";
   const isExplicitReview = Boolean(initialSessionIdFromUrl());
   const showQueueReview = hasCurrentSession || isExplicitReview;
-  const openingState = state?.session?.playbackStarted !== true && !state?.nowPlaying;
+  const openingState = state?.session?.playbackStarted !== true;
   const protectedFront = (state?.queue ?? []).find((entry) => entry.priorityOverlayDisplacedAt && entry.lane !== "priority") ?? null;
   const activePriorityCount = [state?.nextInLine, ...(state?.queue ?? [])].filter((entry): entry is QueueEntry => {
     if (!entry) return false;
@@ -353,7 +353,7 @@ export function AdminRadioQueueControl() {
         {tab === "removed" && <Lane title="Removed" tracks={state?.removed ?? []} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="removed" readOnly={readOnly} />}
       </>}
 
-      {mounted && loadedPlayer && createPortal(<PlayerDock player={loadedPlayer} minimized={minimized} setMinimized={setMinimized} readOnly={readOnly} onAction={playerAction} onCopy={() => copy(loadedPlayer)} />, document.body)}
+      {mounted && loadedPlayer && createPortal(<PlayerDock player={loadedPlayer} playbackStarted={state?.session?.playbackStarted === true} minimized={minimized} setMinimized={setMinimized} readOnly={readOnly} onAction={playerAction} onCopy={() => copy(loadedPlayer)} />, document.body)}
     </div>
   );
 }
@@ -368,7 +368,7 @@ function WheelWinnerSelector({ tracks, search, selection, readOnly, onSearch, on
   return <section className="border border-border bg-surface p-4 space-y-3"><div><p className="text-xs uppercase tracking-[0.3em] text-muted">Wheel Spin Winner Selector</p><p className="text-sm text-muted mt-2">Search active Regular Queue tracks only. Marking a winner moves the selected track into Wheel Winners without duplicating it.</p></div><div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]"><input value={search} onChange={(event) => onSearch(event.target.value)} disabled={readOnly} placeholder="Search artist, title, or link" className="w-full border border-border bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50" /><select value={selection} onChange={(event) => onSelection(event.target.value)} disabled={readOnly || tracks.length === 0} className="w-full border border-border bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"><option value="">{tracks.length === 0 ? "No active regular tracks found" : "Select a Regular Queue track"}</option>{tracks.map((entry) => <option key={entry.id} value={entry.id}>{submittedArtist(entry)} — {submittedTitle(entry)}</option>)}</select><button onClick={onMark} disabled={readOnly || !selection} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent disabled:cursor-not-allowed disabled:opacity-40">Mark Wheel Winner</button></div></section>;
 }
 
-function PlayerDock({ player, minimized, setMinimized, readOnly, onAction, onCopy }: { player: QueueEntry; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; onAction: (id: string, action: AdminQueueAction) => void; onCopy: () => void }) {
+function PlayerDock({ player, playbackStarted, minimized, setMinimized, readOnly, onAction, onCopy }: { player: QueueEntry; playbackStarted: boolean; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; onAction: (id: string, action: AdminQueueAction) => void; onCopy: () => void }) {
   const embedded = embedUrl(player);
   return (
     <div className={`fixed inset-x-0 bottom-0 z-[9999] w-screen border-t bg-background/95 p-3 shadow-[0_-20px_60px_rgba(0,0,0,0.45)] backdrop-blur ${queueTrackVisual(player).sectionClass}`}>
@@ -395,7 +395,7 @@ function PlayerDock({ player, minimized, setMinimized, readOnly, onAction, onCop
           <div className="flex flex-wrap gap-2">
             <a href={openUrl(player)} target="_blank" rel="noreferrer" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent">Open Link</a>
             <button type="button" onClick={onCopy} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Copy Link</button>
-            {!readOnly && <><button type="button" onClick={() => onAction(player.id, "finish")} className="border border-accent bg-accent px-4 py-2 text-xs uppercase tracking-widest text-background">Finish Track</button><button type="button" onClick={() => onAction(player.id, "remove")} className="border border-danger/40 px-4 py-2 text-xs uppercase tracking-widest text-danger">Remove Track</button>{entryLane(player) !== "priority" && <button type="button" onClick={() => onAction(player.id, "moveBack")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Return to Queue</button>}<button type="button" onClick={() => onAction(player.id, "spotlight")} className="border border-foreground/40 px-4 py-2 text-xs uppercase tracking-widest text-foreground">Spotlight</button></>}
+            {!readOnly && <>{!playbackStarted && <button type="button" onClick={() => onAction(player.id, "startPlayback")} className="border border-accent bg-accent px-4 py-2 text-xs uppercase tracking-widest text-background">Start Playback</button>}<button type="button" onClick={() => onAction(player.id, "finish")} className="border border-accent bg-accent px-4 py-2 text-xs uppercase tracking-widest text-background">Finish Track</button><button type="button" onClick={() => onAction(player.id, "remove")} className="border border-danger/40 px-4 py-2 text-xs uppercase tracking-widest text-danger">Remove Track</button>{entryLane(player) !== "priority" && <button type="button" onClick={() => onAction(player.id, "moveBack")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Return to Queue</button>}<button type="button" onClick={() => onAction(player.id, "spotlight")} className="border border-foreground/40 px-4 py-2 text-xs uppercase tracking-widest text-foreground">Spotlight</button></>}
           </div>
         </div>
       </div>

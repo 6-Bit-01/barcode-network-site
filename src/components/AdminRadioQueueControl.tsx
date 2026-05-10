@@ -7,7 +7,7 @@ import { formatRuntime, getTrackRuntimeSeconds } from "@/lib/queue-types";
 import type { QueueEntry, QueueLane, QueueState } from "@/lib/queue-types";
 
 type Tab = "active" | "completed" | "removed";
-type AdminQueueAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "pausePriority" | "resumePriority";
+type AdminQueueAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "pausePriority" | "resumePriority" | "stageFirstFree";
 type SimulationSpeed = "slow" | "normal" | "fast";
 type SimulationAction = "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
 
@@ -142,7 +142,7 @@ export function AdminRadioQueueControl() {
     setState(next);
     return next;
   }
-  async function action(id: string, next: AdminQueueAction) { await post(next === "pullNext" ? { action: next } : { id, action: next }); }
+  async function action(id: string, next: AdminQueueAction) { await post(next === "pullNext" || next === "stageFirstFree" ? { action: next } : { id, action: next }); }
   async function simulationAction(next: SimulationAction, label: string) {
     const updated = await post({ action: next });
     setSimulationMessage(updated ? label : "Simulation action failed. Confirm admin auth and active session.");
@@ -267,6 +267,14 @@ export function AdminRadioQueueControl() {
   const playerPadding = loadedPlayer ? (minimized ? "pb-32" : "pb-[28rem]") : "pb-16";
   const isExplicitReview = Boolean(initialSessionIdFromUrl());
   const showQueueReview = hasCurrentSession || isExplicitReview;
+  const openingState = state?.session?.playbackStarted !== true && !state?.nowPlaying;
+  const protectedFront = (state?.queue ?? []).find((entry) => entry.priorityOverlayDisplacedAt && entry.lane !== "priority") ?? null;
+  const activePriorityCount = [state?.nextInLine, ...(state?.queue ?? [])].filter((entry): entry is QueueEntry => {
+    if (!entry) return false;
+    return entry.lane === "priority" && !entry.priorityPausedAt && (entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual") && (entry.status === "queued" || entry.status === "next");
+  }).length;
+  const heldPriorityCount = (state?.queue ?? []).filter((entry) => entry.lane === "priority" && Boolean(entry.priorityPausedAt)).length;
+  const canStageFirstFree = openingState && !nextInLine && activePriorityCount === 0 && lanes.wheel.length === 0 && lanes.regular.some(isWheelEligibleTrack);
 
   return (
     <div className={`${playerPadding} space-y-6`}>
@@ -305,7 +313,7 @@ export function AdminRadioQueueControl() {
               <div className="border border-border bg-background/40 p-4"><p className="text-xs text-muted">Pressure</p><p>{state?.publicStatus?.pressure ?? "syncing"}</p></div>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              {canControlSession && <button onClick={() => action("", "pullNext")} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Pull Next Track</button>}
+              {canControlSession && <button onClick={() => action("", "pullNext")} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Pull Next Track</button>}{canControlSession && canStageFirstFree && <button onClick={() => action("", "stageFirstFree")} className="border border-foreground/50 px-4 py-2 text-xs uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background">Stage First Free Track</button>}
               {canControlSession && <button onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} border px-4 py-2 text-xs uppercase tracking-widest hover:text-background`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button>}
             </div>
           </div>
@@ -316,6 +324,8 @@ export function AdminRadioQueueControl() {
         )}
         {isArchivedReview && hasSession && <div className="border border-danger/40 bg-danger/10 p-3 text-xs uppercase tracking-widest text-danger">ARCHIVED / READ ONLY — viewing {state?.session?.title ?? "finished session"}. Queue review actions are locked for this finished session.</div>}
       </section>
+
+      {canControlSession && <section className="grid gap-3 border border-border bg-surface p-4 text-xs md:grid-cols-5"><div><p className="uppercase tracking-widest text-muted">Opening state</p><p className="mt-1 font-bold text-foreground">{openingState ? "Yes" : "No"}</p></div><div><p className="uppercase tracking-widest text-muted">Next owed</p><p className="mt-1 font-bold text-foreground">{state?.nextNonPriorityLane === "regular" ? "Free" : "Wheel"}</p></div><div><p className="uppercase tracking-widest text-muted">Protected front</p><p className="mt-1 font-bold text-foreground">{protectedFront ? submittedTitle(protectedFront) : "None"}</p></div><div><p className="uppercase tracking-widest text-muted">Active Priority</p><p className="mt-1 font-bold text-[#ffaa00]">{activePriorityCount}</p></div><div><p className="uppercase tracking-widest text-muted">Held Priority</p><p className="mt-1 font-bold text-[#ffaa00]">{heldPriorityCount}</p></div></section>}
 
       {canControlSession && <section className="space-y-4 border border-[#ffaa00]/50 bg-[#ffaa00]/10 p-5"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-xs uppercase tracking-[0.35em] text-[#ffaa00]">Admin Queue Simulation — Test Only</p><h2 className="mt-2 text-xl font-bold text-foreground">Queue Simulation Mode</h2><p className="mt-1 text-sm text-muted">Creates fake SIM tracks. Use Clear Simulation Tracks before going live. Wheel winners are never automated; select them manually.</p></div><div className="border border-[#ffaa00]/40 bg-background/60 p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Status</p><p className={simulationRunning ? "font-bold text-[#ffaa00]" : "font-bold text-muted"}>{simulationRunning ? "Running" : "Stopped"}</p></div></div><div className="flex flex-wrap items-end gap-3"><label className="space-y-1 text-xs uppercase tracking-widest text-muted"><span>Simulation speed</span><select value={simulationSpeed} onChange={(event) => updateSimulationSpeed(event.target.value as SimulationSpeed)} className="block border border-border bg-background px-3 py-2 text-sm normal-case tracking-normal text-foreground">{(Object.keys(SIMULATION_SPEEDS) as SimulationSpeed[]).map((speed) => <option key={speed} value={speed}>{SIMULATION_SPEEDS[speed].label}</option>)}</select></label><button type="button" onClick={startSimulation} disabled={simulationRunning} className="border border-[#ffaa00] px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00] disabled:cursor-not-allowed disabled:opacity-40">Start Simulation</button><button type="button" onClick={stopSimulation} disabled={!simulationRunning} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:cursor-not-allowed disabled:opacity-40">Stop Simulation</button><button type="button" onClick={() => simulationAction("addSimulationFreeTrack", "Added one Free SIM submission.")} className="border border-accent/50 px-4 py-2 text-xs uppercase tracking-widest text-accent">Add Free Test Submission Now</button><button type="button" onClick={() => simulationAction("addSimulationPaidPriority", "Sent one paid Priority SIM skip.")} className="border border-[#ffaa00]/60 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00]">Send Paid Priority Skip Now</button><button type="button" onClick={() => simulationAction("addSimulationCheckoutPending", "Sent one checkout-pending SIM track.")} className="border border-[#ffaa00]/40 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00]">Send Checkout Pending Test Now</button><button type="button" onClick={() => simulationAction("addSimulationPaymentFailed", "Sent one failed-payment SIM track.")} className="border border-danger/50 px-4 py-2 text-xs uppercase tracking-widest text-danger">Send Failed Payment Test Now</button><button type="button" onClick={() => simulationAction("addSimulationHeldPriority", "Sent one held paid Priority SIM track.")} className="border border-[#ffaa00]/60 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00]">Send Held Priority Test Now</button><button type="button" onClick={() => simulationAction("clearSimulationTracks", "Cleared SIM/test tracks only.")} className="border border-danger px-4 py-2 text-xs uppercase tracking-widest text-danger">Clear Simulation Tracks</button></div>{simulationMessage && <p className="border border-[#ffaa00]/30 bg-background/40 p-2 text-sm text-[#ffaa00]">{simulationMessage}</p>}</section>}
 

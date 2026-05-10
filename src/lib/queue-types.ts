@@ -105,6 +105,7 @@ export interface QueueSessionSummary {
   estimatedActiveRuntimeSeconds: number;
   completedRuntimeSeconds: number;
   nextNonPriorityLane: QueueNonPriorityLane;
+  playbackStarted?: boolean;
   nextInLineTrackId?: string | null;
   nextInLineHoldTrackId?: string | null;
   loadedTrackId?: string | null;
@@ -133,6 +134,7 @@ export interface QueueSession extends QueueSessionSummary {
   loadedTrackPreviousIndex?: number | null;
   nextInLineHoldTrackId?: string | null;
   autoRoutingPaused?: boolean;
+  playbackStarted?: boolean;
 }
 
 export interface QueuePublicTrack {

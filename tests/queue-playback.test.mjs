@@ -90,6 +90,65 @@ test("pull next falls back to the first free track when no wheel track exists", 
   assert.equal(state.nowPlaying, null);
 });
 
+test("first wheel winner replaces a fallback free while wheel remains owed", async () => {
+  await freshOpenSession("first wheel replaces fallback");
+  const fallbackFree = await addTrack("Fallback Free");
+  const wheelWinner = await addTrack("First Wheel Winner");
+
+  let state = await queue.updateRadioTrack("", "pullNext");
+  assert.equal(state.nextNonPriorityLane, "wheel");
+  assert.equal(state.nextInLine?.id, fallbackFree.id);
+  assert.equal(state.nextInLine?.stagedAsFallbackForLane, "wheel");
+
+  state = await queue.updateRadioTrack(wheelWinner.id, "wheel");
+  assert.equal(state.nextInLine?.id, wheelWinner.id, "first real Wheel winner should replace fallback Free");
+  assert.equal(state.nextInLine?.lane, "wheel");
+  assert.equal(queuedTrack(state, fallbackFree.id)?.lane, "regular", "fallback Free returns to regular queue");
+  assert.equal(queuedTrack(state, fallbackFree.id)?.stagedAsFallbackForLane ?? null, null);
+  assert.equal(state.nextNonPriorityLane, "wheel");
+});
+
+test("wheel winner does not replace a truly owed free turn", async () => {
+  await freshOpenSession("wheel waits behind true free");
+  const wheel = await addTrack("Opening Wheel");
+  const free = await addTrack("True Free");
+  const laterWheel = await addTrack("Later Wheel");
+
+  let state = await queue.updateRadioTrack(wheel.id, "wheel");
+  state = await queue.updateRadioTrack(wheel.id, "finish");
+  assert.equal(state.nextNonPriorityLane, "regular");
+
+  state = await queue.updateRadioTrack("", "pullNext");
+  assert.equal(state.nextInLine?.id, free.id);
+  assert.equal(state.nextInLine?.stagedAsFallbackForLane ?? null, null);
+
+  state = await queue.updateRadioTrack(laterWheel.id, "wheel");
+  assert.equal(state.nextInLine?.id, free.id, "true Free turn should remain staged");
+  assert.equal(queuedTrack(state, laterWheel.id)?.lane, "wheel", "new Wheel winner waits in Wheel lane");
+  assert.equal(state.nextNonPriorityLane, "regular");
+});
+
+test("first wheel winner during priority becomes the next non-priority after priority", async () => {
+  const sessionId = await freshOpenSession("wheel during priority");
+  const fallbackFree = await addTrack("Fallback Free");
+  const priority = await addTrack("Priority");
+  const wheelWinner = await addTrack("Wheel During Priority");
+
+  let state = await queue.updateRadioTrack("", "pullNext");
+  assert.equal(state.nextInLine?.id, fallbackFree.id);
+  assert.equal(state.nextInLine?.stagedAsFallbackForLane, "wheel");
+
+  state = await payPriority(priority, sessionId);
+  assert.equal(state.nextInLine?.id, priority.id);
+
+  state = await queue.updateRadioTrack(wheelWinner.id, "wheel");
+  assert.equal(state.nextInLine?.id, priority.id, "Priority remains first");
+  assert.equal(queuedTrack(state, wheelWinner.id)?.lane, "wheel", "Wheel winner waits as next non-priority");
+  assert.equal(queuedTrack(state, fallbackFree.id)?.lane, "regular", "fallback Free returns to regular queue");
+  assert.equal(queuedTrack(state, fallbackFree.id)?.stagedAsFallbackForLane ?? null, null);
+  assert.equal(state.nextNonPriorityLane, "wheel");
+});
+
 test("paid priority interrupts wheel already in Next In Line and restores that wheel after priority finishes", async () => {
   const sessionId = await freshOpenSession("priority interrupts wheel");
   const free = await addTrack("Free");
@@ -131,16 +190,23 @@ test("paid priority interrupts free already in Next In Line and restores that fr
 
 test("random wheel lane track is not marked as interrupted unless priority displaced it from Next In Line", async () => {
   await freshOpenSession("random wheel is not interrupted");
+  const openingWheel = await addTrack("Opening Wheel");
   const stagedFree = await addTrack("Staged Free");
-  let state = await queue.updateRadioTrack("", "pullNext");
-  assert.equal(state.nextInLine?.id, stagedFree.id);
-
   const randomWheel = await addTrack("Random Wheel");
+
+  let state = await queue.updateRadioTrack(openingWheel.id, "wheel");
+  state = await queue.updateRadioTrack(openingWheel.id, "finish");
+  assert.equal(state.nextNonPriorityLane, "regular");
+
+  state = await queue.updateRadioTrack("", "pullNext");
+  assert.equal(state.nextInLine?.id, stagedFree.id);
+  assert.equal(state.nextInLine?.stagedAsFallbackForLane ?? null, null);
+
   state = await queue.updateRadioTrack(randomWheel.id, "wheel");
   const wheelEntry = queuedTrack(state, randomWheel.id);
   assert.equal(wheelEntry?.lane, "wheel");
   assert.equal(wheelEntry?.displacedFromNextInLineAt ?? null, null, "wheel lane assignment alone must not mark the track as interrupted");
-  assert.equal(state.nextInLine?.id, stagedFree.id, "wheel assignment should not override existing non-priority Next In Line");
+  assert.equal(state.nextInLine?.id, stagedFree.id, "wheel assignment should not override a true regular Next In Line");
 });
 
 test("finish, remove, and load actions preserve or advance the non-priority pointer correctly without Start Playback", async () => {
@@ -197,7 +263,8 @@ test("undo load for regular clears the player and returns the track without coun
 
   state = await queue.updateRadioTrack(regular.id, "moveBack");
   assert.equal(state.nowPlaying, null, "Undo Load clears the player");
-  assert.equal(queuedTrack(state, regular.id)?.lane, "regular", "regular track returns to the regular queue");
+  assert.equal(state.nextInLine?.id, regular.id, "regular track returns to its previous Next In Line slot");
+  assert.equal(state.nextInLine?.lane, "regular");
   assert.equal(completedTrack(state, regular.id), null);
   assert.equal(removedTrack(state, regular.id), null);
   assert.equal(state.nextNonPriorityLane, owedBeforeUndo);
@@ -216,7 +283,8 @@ test("undo load for wheel clears the player and returns the track without counti
 
   state = await queue.updateRadioTrack(wheel.id, "moveBack");
   assert.equal(state.nowPlaying, null, "Undo Load clears the player");
-  assert.equal(queuedTrack(state, wheel.id)?.lane, "wheel", "wheel track returns to the Wheel lane");
+  assert.equal(state.nextInLine?.id, wheel.id, "wheel track returns to its previous Next In Line slot");
+  assert.equal(state.nextInLine?.lane, "wheel");
   assert.equal(completedTrack(state, wheel.id), null);
   assert.equal(removedTrack(state, wheel.id), null);
   assert.equal(state.nextNonPriorityLane, owedBeforeUndo);
@@ -266,16 +334,125 @@ test("pause loaded priority clears the player and returns it as held without rer
   assert.equal(state.nowPlaying, null, "no track is automatically loaded after pausing priority");
 });
 
-test("wheel live event moves a specific track to Wheel without overriding a staged non-priority Next In Line", async () => {
-  await freshOpenSession("wheel live event with staged next");
-  const stagedFree = await addTrack("Staged Free");
+test("undo loaded wheel after priority arrives restores wheel to Next In Line", async () => {
+  const sessionId = await freshOpenSession("undo wheel after priority");
+  const wheel = await addTrack("Loaded Wheel");
+  let state = await queue.updateRadioTrack(wheel.id, "wheel");
+  const owedBeforeUndo = state.nextNonPriorityLane;
+
+  state = await queue.updateRadioTrack(wheel.id, "load");
+  assert.equal(state.nowPlaying?.id, wheel.id);
+
+  const priority = await addTrack("Arriving Priority");
+  state = await payPriority(priority, sessionId);
+  assert.equal(state.nextInLine?.id, priority.id);
+
+  state = await queue.updateRadioTrack(wheel.id, "moveBack");
+  assert.equal(state.nowPlaying, null);
+  assert.equal(state.nextInLine?.id, wheel.id, "Undo Load restores loaded Wheel to Next In Line");
+  assert.equal(state.nextInLine?.lane, "wheel");
+  assert.equal(queuedTrack(state, priority.id)?.lane, "priority", "Priority returns to Priority lane");
+  assert.equal(queuedTrack(state, priority.id)?.priorityPausedAt ?? null, null);
+  assert.equal(completedTrack(state, wheel.id), null);
+  assert.equal(removedTrack(state, wheel.id), null);
+  assert.equal(completedTrack(state, priority.id), null);
+  assert.equal(removedTrack(state, priority.id), null);
+  assert.equal(state.nextNonPriorityLane, owedBeforeUndo);
+});
+
+test("undo loaded free after priority arrives restores free to Next In Line", async () => {
+  const sessionId = await freshOpenSession("undo free after priority");
+  const free = await addTrack("Loaded Free");
   let state = await queue.updateRadioTrack("", "pullNext");
+  const owedBeforeUndo = state.nextNonPriorityLane;
+
+  state = await queue.updateRadioTrack(free.id, "load");
+  assert.equal(state.nowPlaying?.id, free.id);
+
+  const priority = await addTrack("Arriving Priority");
+  state = await payPriority(priority, sessionId);
+  assert.equal(state.nextInLine?.id, priority.id);
+
+  state = await queue.updateRadioTrack(free.id, "moveBack");
+  assert.equal(state.nowPlaying, null);
+  assert.equal(state.nextInLine?.id, free.id, "Undo Load restores loaded Free to Next In Line");
+  assert.equal(state.nextInLine?.lane, "regular");
+  assert.equal(queuedTrack(state, priority.id)?.lane, "priority", "Priority returns to Priority lane");
+  assert.equal(queuedTrack(state, priority.id)?.priorityPausedAt ?? null, null);
+  assert.equal(completedTrack(state, free.id), null);
+  assert.equal(removedTrack(state, free.id), null);
+  assert.equal(completedTrack(state, priority.id), null);
+  assert.equal(removedTrack(state, priority.id), null);
+  assert.equal(state.nextNonPriorityLane, owedBeforeUndo);
+});
+
+test("undo loaded fallback free after wheel winner is chosen restores real wheel next", async () => {
+  await freshOpenSession("undo fallback after wheel");
+  const fallbackFree = await addTrack("Loaded Fallback Free");
+  const secondFallback = await addTrack("Second Fallback Free");
+  const wheelWinner = await addTrack("Chosen Wheel While Loaded");
+  let state = await queue.updateRadioTrack("", "pullNext");
+  assert.equal(state.nextInLine?.id, fallbackFree.id);
+  assert.equal(state.nextInLine?.stagedAsFallbackForLane, "wheel");
+  const owedBeforeUndo = state.nextNonPriorityLane;
+
+  state = await queue.updateRadioTrack(fallbackFree.id, "load");
+  assert.equal(state.nowPlaying?.id, fallbackFree.id);
+  assert.equal(state.nextInLine?.id, secondFallback.id);
+
+  state = await queue.updateRadioTrack(wheelWinner.id, "wheel");
+  assert.equal(state.nowPlaying?.id, fallbackFree.id, "selecting Wheel must not disturb loaded track");
+
+  state = await queue.updateRadioTrack(fallbackFree.id, "moveBack");
+  assert.equal(state.nowPlaying, null);
+  assert.equal(state.nextInLine?.id, wheelWinner.id, "real Wheel winner becomes Next In Line");
+  assert.equal(queuedTrack(state, fallbackFree.id)?.lane, "regular", "fallback Free returns to regular queue");
+  assert.equal(queuedTrack(state, fallbackFree.id)?.stagedAsFallbackForLane ?? null, null);
+  assert.equal(completedTrack(state, fallbackFree.id), null);
+  assert.equal(removedTrack(state, fallbackFree.id), null);
+  assert.equal(state.nextNonPriorityLane, owedBeforeUndo);
+});
+
+test("undo loaded priority after another priority arrives keeps both active priorities ordered", async () => {
+  const sessionId = await freshOpenSession("undo priority after priority");
+  const priorityA = await addTrack("Priority A");
+  let state = await queue.updateRadioTrack(priorityA.id, "priority");
+  const owedBeforeUndo = state.nextNonPriorityLane;
+
+  state = await queue.updateRadioTrack(priorityA.id, "load");
+  assert.equal(state.nowPlaying?.id, priorityA.id);
+
+  const priorityB = await addTrack("Priority B");
+  state = await payPriority(priorityB, sessionId);
+  assert.equal(state.nextInLine?.id, priorityB.id);
+
+  state = await queue.updateRadioTrack(priorityA.id, "moveBack");
+  assert.equal(state.nowPlaying, null);
+  assert.equal(state.nextInLine?.id, priorityA.id, "original loaded Priority restores to its Next In Line slot");
+  assert.equal(state.nextInLine?.priorityPausedAt ?? null, null);
+  assert.equal(queuedTrack(state, priorityB.id)?.lane, "priority");
+  assert.equal(queuedTrack(state, priorityB.id)?.priorityPausedAt ?? null, null);
+  assert.equal(completedTrack(state, priorityA.id), null);
+  assert.equal(removedTrack(state, priorityA.id), null);
+  assert.equal(completedTrack(state, priorityB.id), null);
+  assert.equal(removedTrack(state, priorityB.id), null);
+  assert.equal(state.nextNonPriorityLane, owedBeforeUndo);
+});
+
+test("wheel live event moves a specific track to Wheel without overriding a true staged regular Next In Line", async () => {
+  await freshOpenSession("wheel live event with staged next");
+  const openingWheel = await addTrack("Opening Wheel");
+  const stagedFree = await addTrack("Staged Free");
+  const wheelWinner = await addTrack("Wheel Winner");
+  let state = await queue.updateRadioTrack(openingWheel.id, "wheel");
+  state = await queue.updateRadioTrack(openingWheel.id, "finish");
+  assert.equal(state.nextNonPriorityLane, "regular");
+  state = await queue.updateRadioTrack("", "pullNext");
   assert.equal(state.nextInLine?.id, stagedFree.id);
 
-  const wheelWinner = await addTrack("Wheel Winner");
   state = await queue.updateRadioTrack(wheelWinner.id, "wheel");
   assert.equal(queuedTrack(state, wheelWinner.id)?.lane, "wheel", "wheel action should move the selected track to Wheel lane");
-  assert.equal(state.nextInLine?.id, stagedFree.id, "wheel winner should not override an already staged non-priority track");
+  assert.equal(state.nextInLine?.id, stagedFree.id, "wheel winner should not override a true staged regular track");
 
   await freshOpenSession("wheel live event with empty next");
   const openWinner = await addTrack("Open Winner");

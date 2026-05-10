@@ -70,6 +70,7 @@ export interface QueueEntry {
   priorityUpgradeAmountCents?: number | null;
   priorityUpgradeCurrency?: string | null;
   displacedFromNextInLineAt?: string | null;
+  stagedAsFallbackForLane?: QueueNonPriorityLane | null;
   priorityPausedAt?: string | null;
   priorityResumedAt?: string | null;
   priorityQueueOrderAt?: string | null;
@@ -132,6 +133,8 @@ export interface QueueSession extends QueueSessionSummary {
   currentTrackPreviousIndex?: number | null;
   loadedTrackPreviousLane?: QueueLane | null;
   loadedTrackPreviousIndex?: number | null;
+  loadedTrackWasNextInLine?: boolean;
+  loadedTrackFallbackForLane?: QueueNonPriorityLane | null;
   nextInLineHoldTrackId?: string | null;
   autoRoutingPaused?: boolean;
   playbackStarted?: boolean;

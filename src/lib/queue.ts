@@ -153,6 +153,8 @@ function defaultSession(options: { title?: string; showDate?: string; descriptio
     currentTrackPreviousIndex: null,
     loadedTrackPreviousLane: null,
     loadedTrackPreviousIndex: null,
+    loadedTrackWasNextInLine: false,
+    loadedTrackFallbackForLane: null,
     autoRoutingPaused: false,
     priorityUpgradesEnabled: normalizePaidPriorityEnabled(options),
     priorityUpgradeLabel: options.priorityUpgradeLabel?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
@@ -220,17 +222,21 @@ function getDisplacedNonPriorityNext(session: Pick<QueueSession, "queue">, block
   return sortActive(session.queue).find((entry) => entry.id !== blockedId && entry.status === "queued" && (entry.lane ?? "regular") !== "priority" && Boolean(entry.displacedFromNextInLineAt)) ?? null;
 }
 
-function chooseNextWaitingEntry(session: QueueSession, excludeId?: string): QueueEntry | null {
+function chooseNextWaitingCandidate(session: QueueSession, excludeId?: string): { entry: QueueEntry; fallbackForLane: QueueNonPriorityLane | null } | null {
   const blockedId = excludeId ?? session.nextInLineHoldTrackId ?? session.loadedTrackId ?? undefined;
   const priority = laneTop(session, "priority", blockedId);
-  if (priority) return priority;
+  if (priority) return { entry: priority, fallbackForLane: null };
 
   const displacedNonPriorityNext = getDisplacedNonPriorityNext(session, blockedId);
-  if (displacedNonPriorityNext) return displacedNonPriorityNext;
+  if (displacedNonPriorityNext) return { entry: displacedNonPriorityNext, fallbackForLane: displacedNonPriorityNext.stagedAsFallbackForLane ?? null };
 
   const preferredLane: QueueNonPriorityLane = session.nextNonPriorityLane === "regular" ? "regular" : "wheel";
+  const preferred = laneTop(session, preferredLane, blockedId);
+  if (preferred) return { entry: preferred, fallbackForLane: null };
+
   const fallbackLane: QueueNonPriorityLane = preferredLane === "wheel" ? "regular" : "wheel";
-  return laneTop(session, preferredLane, blockedId) ?? laneTop(session, fallbackLane, blockedId);
+  const fallback = laneTop(session, fallbackLane, blockedId);
+  return fallback ? { entry: fallback, fallbackForLane: preferredLane } : null;
 }
 
 function getNextInLine(session: Pick<QueueSession, "nextInLineTrack">): QueueEntry | null {
@@ -241,11 +247,11 @@ function getLoadedTrack(session: Pick<QueueSession, "loadedTrack">): QueueEntry 
   return session.loadedTrack ?? null;
 }
 
-function stageNextInLineTrack(session: QueueSession, next: QueueEntry): void {
+function stageNextInLineTrack(session: QueueSession, next: QueueEntry, fallbackForLane: QueueNonPriorityLane | null = null): void {
   const sorted = sortActive(session.queue);
   const previousIndex = sorted.findIndex((entry) => entry.id === next.id);
   session.queue = sorted.filter((entry) => entry.id !== next.id);
-  session.nextInLineTrack = normalizeEntry({ ...next, status: "next", displacedFromNextInLineAt: null });
+  session.nextInLineTrack = normalizeEntry({ ...next, status: "next", displacedFromNextInLineAt: null, stagedAsFallbackForLane: fallbackForLane });
   session.nextInLineTrackId = next.id;
   session.nextInLineHoldTrackId = null;
   session.currentTrackPreviousLane = next.lane ?? "regular";
@@ -291,9 +297,9 @@ function resolveNextInLine(session: QueueSession, excludeId?: string, force = fa
   }
 
   if (current) return;
-  const next = chooseNextWaitingEntry(session, excludeId);
+  const next = chooseNextWaitingCandidate(session, excludeId);
   if (!next) return;
-  stageNextInLineTrack(session, next);
+  stageNextInLineTrack(session, next.entry, next.fallbackForLane);
 }
 
 function pullNextInLine(session: QueueSession, excludeId?: string, force = false): void {
@@ -315,15 +321,19 @@ function clearLoadedTrack(session: QueueSession): QueueEntry | null {
   session.loadedTrackId = null;
   session.loadedTrackPreviousLane = null;
   session.loadedTrackPreviousIndex = null;
+  session.loadedTrackWasNextInLine = false;
+  session.loadedTrackFallbackForLane = null;
   return current;
 }
 
-function setLoadedTrack(session: QueueSession, entry: QueueEntry, previousLane?: QueueLane | null, previousIndex?: number | null): QueueEntry {
+function setLoadedTrack(session: QueueSession, entry: QueueEntry, previousLane?: QueueLane | null, previousIndex?: number | null, wasNextInLine = false): QueueEntry {
   const loaded = normalizeEntry({ ...entry, status: "playing", playedAt: entry.playedAt ?? new Date().toISOString() });
   session.loadedTrack = loaded;
   session.loadedTrackId = loaded.id;
   session.loadedTrackPreviousLane = previousLane ?? entry.lane ?? "regular";
   session.loadedTrackPreviousIndex = typeof previousIndex === "number" ? previousIndex : null;
+  session.loadedTrackWasNextInLine = wasNextInLine;
+  session.loadedTrackFallbackForLane = entry.stagedAsFallbackForLane ?? null;
   session.queue = session.queue.filter((track) => track.id !== loaded.id);
   if (session.nextInLineTrack?.id === loaded.id) clearNextInLine(session);
   return loaded;
@@ -342,8 +352,8 @@ function moveNextInLineBackToQueue(session: QueueSession): QueueEntry | null {
   return restored;
 }
 
-function insertRestoredTrack(session: QueueSession, entry: QueueEntry, lane: QueueLane, index: number | null): QueueEntry {
-  const restored = normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : lane === "wheel" ? "frontrow" : "free", status: "queued", playedAt: null, displacedFromNextInLineAt: null });
+function insertRestoredTrack(session: QueueSession, entry: QueueEntry, lane: QueueLane, index: number | null, fallbackForLane: QueueNonPriorityLane | null = null): QueueEntry {
+  const restored = normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : lane === "wheel" ? "frontrow" : "free", status: "queued", playedAt: null, displacedFromNextInLineAt: null, stagedAsFallbackForLane: fallbackForLane });
   const queue = sortActive(session.queue.filter((track) => track.id !== restored.id));
   const safeIndex = typeof index === "number" ? Math.max(0, Math.min(index, queue.length)) : queue.length;
   queue.splice(safeIndex, 0, restored);
@@ -356,9 +366,86 @@ function moveLoadedTrackBackToQueue(session: QueueSession): QueueEntry | null {
   if (!current) return null;
   const lane = session.loadedTrackPreviousLane ?? current.lane ?? "regular";
   const index = typeof session.loadedTrackPreviousIndex === "number" ? session.loadedTrackPreviousIndex : null;
-  const restored = insertRestoredTrack(session, current, lane, index);
+  const restored = insertRestoredTrack(session, current, lane, index, session.loadedTrackFallbackForLane ?? current.stagedAsFallbackForLane ?? null);
   clearLoadedTrack(session);
   return restored;
+}
+
+function restoreTrackToNextInLine(session: QueueSession, entry: QueueEntry, lane: QueueLane, previousIndex: number | null, fallbackForLane: QueueNonPriorityLane | null): QueueEntry {
+  const restored = normalizeEntry({
+    ...entry,
+    lane,
+    tier: lane === "priority" ? "fastlane" : lane === "wheel" ? "frontrow" : "free",
+    status: "next",
+    playedAt: null,
+    displacedFromNextInLineAt: null,
+    stagedAsFallbackForLane: fallbackForLane,
+  });
+  session.nextInLineTrack = restored;
+  session.nextInLineTrackId = restored.id;
+  session.nextInLineHoldTrackId = null;
+  session.currentTrackPreviousLane = lane;
+  session.currentTrackPreviousIndex = previousIndex;
+  session.autoRoutingPaused = false;
+  return restored;
+}
+
+function queuedLaneExists(session: QueueSession, lane: QueueLane, excludeId?: string): boolean {
+  return Boolean(laneTop(session, lane, excludeId));
+}
+
+function clearFallbackMarkersForLane(session: QueueSession, lane: QueueNonPriorityLane): void {
+  session.queue = session.queue.map((entry) => {
+    if ((entry.lane ?? "regular") === "priority" || entry.stagedAsFallbackForLane !== lane) return entry;
+    const restoredLane = entry.lane === "wheel" ? "wheel" : "regular";
+    return normalizeEntry({
+      ...entry,
+      lane: restoredLane,
+      tier: restoredLane === "wheel" ? "frontrow" : "free",
+      status: "queued",
+      displacedFromNextInLineAt: null,
+      stagedAsFallbackForLane: null,
+    });
+  });
+}
+
+function releaseFallbackNextForLane(session: QueueSession, lane: QueueNonPriorityLane): void {
+  const current = session.nextInLineTrack;
+  if (current && (current.lane ?? "regular") !== "priority" && current.stagedAsFallbackForLane === lane) {
+    const restoredLane = session.currentTrackPreviousLane ?? current.lane ?? "regular";
+    const restoredIndex = typeof session.currentTrackPreviousIndex === "number" ? session.currentTrackPreviousIndex : null;
+    clearNextInLine(session);
+    insertRestoredTrack(session, current, restoredLane, restoredIndex, null);
+  }
+  clearFallbackMarkersForLane(session, lane);
+}
+
+function handleWheelWinnerSelected(session: QueueSession): void {
+  if (session.nextNonPriorityLane !== "wheel" || !queuedLaneExists(session, "wheel", session.loadedTrackId ?? undefined)) return;
+  releaseFallbackNextForLane(session, "wheel");
+  resolveNextInLine(session, undefined, true);
+}
+
+function undoLoadedTrack(session: QueueSession): QueueEntry | null {
+  const current = session.loadedTrack ?? null;
+  if (!current) return null;
+  const lane = session.loadedTrackPreviousLane ?? current.lane ?? "regular";
+  const previousIndex = typeof session.loadedTrackPreviousIndex === "number" ? session.loadedTrackPreviousIndex : null;
+  const wasNextInLine = session.loadedTrackWasNextInLine === true;
+  const fallbackForLane = session.loadedTrackFallbackForLane ?? current.stagedAsFallbackForLane ?? null;
+
+  if (!wasNextInLine) return moveLoadedTrackBackToQueue(session);
+
+  if (session.nextInLineTrack) moveNextInLineBackToQueue(session);
+  clearLoadedTrack(session);
+
+  if (fallbackForLane && session.nextNonPriorityLane === fallbackForLane && queuedLaneExists(session, fallbackForLane)) {
+    const restored = insertRestoredTrack(session, current, lane, previousIndex, null);
+    resolveNextInLine(session, undefined, true);
+    return restored;
+  }
+
+  return restoreTrackToNextInLine(session, current, lane, previousIndex, fallbackForLane);
 }
 
 function nextLaneAfterFinish(lane: QueueLane | undefined): QueueNonPriorityLane {
@@ -472,6 +559,7 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     priorityUpgradeAmountCents: typeof entry.priorityUpgradeAmountCents === "number" ? Math.max(0, Math.round(entry.priorityUpgradeAmountCents)) : null,
     priorityUpgradeCurrency: entry.priorityUpgradeCurrency ? normalizeCurrency(entry.priorityUpgradeCurrency) : null,
     displacedFromNextInLineAt: entry.displacedFromNextInLineAt ?? legacyDisplacedFromNextInLineAt ?? null,
+    stagedAsFallbackForLane: entry.stagedAsFallbackForLane === "regular" || entry.stagedAsFallbackForLane === "wheel" ? entry.stagedAsFallbackForLane : null,
     priorityPausedAt: entry.priorityPausedAt ?? null,
     priorityResumedAt: entry.priorityResumedAt ?? null,
     priorityQueueOrderAt: entry.priorityQueueOrderAt ?? entry.priorityUpgradePaidAt ?? null,
@@ -517,6 +605,8 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     nextInLineHoldTrackId: raw.nextInLineHoldTrackId ?? null,
     loadedTrackPreviousLane: raw.loadedTrackPreviousLane ?? raw.loadedTrack?.lane ?? null,
     loadedTrackPreviousIndex: typeof raw.loadedTrackPreviousIndex === "number" ? raw.loadedTrackPreviousIndex : null,
+    loadedTrackWasNextInLine: raw.loadedTrackWasNextInLine === true,
+    loadedTrackFallbackForLane: raw.loadedTrackFallbackForLane === "regular" || raw.loadedTrackFallbackForLane === "wheel" ? raw.loadedTrackFallbackForLane : null,
     autoRoutingPaused: raw.autoRoutingPaused === true,
     priorityUpgradesEnabled: normalizePaidPriorityEnabled(raw),
     priorityUpgradeLabel: raw.priorityUpgradeLabel?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
@@ -942,6 +1032,7 @@ export async function createQueueTrack(input: {
     priorityPausedAt: null,
     priorityResumedAt: null,
     priorityQueueOrderAt: null,
+    stagedAsFallbackForLane: null,
     isTestTrack: false,
   });
 }
@@ -1452,9 +1543,9 @@ export async function activateQueueSession(sessionId: string): Promise<QueueStat
 }
 
 function priorityUpgradeMetadata(entry: QueueEntry, lane: QueueLane): Partial<QueueEntry> {
-  if (lane !== "priority") return { displacedFromNextInLineAt: null, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: null, ...(entry.priorityUpgradeStatus === "manual" ? { priorityUpgradeRequested: false, priorityUpgradeStatus: "none" as const, priorityUpgradeSource: null, priorityUpgradeAt: null, priorityUpgradeRequestedAt: null } : {}) };
+  if (lane !== "priority") return { displacedFromNextInLineAt: null, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: null, stagedAsFallbackForLane: null, ...(entry.priorityUpgradeStatus === "manual" ? { priorityUpgradeRequested: false, priorityUpgradeStatus: "none" as const, priorityUpgradeSource: null, priorityUpgradeAt: null, priorityUpgradeRequestedAt: null } : {}) };
   const now = new Date().toISOString();
-  return { priorityUpgradeRequested: true, priorityUpgradeStatus: "manual", priorityUpgradeSource: "admin", priorityUpgradeAt: now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: now, displacedFromNextInLineAt: null };
+  return { priorityUpgradeRequested: true, priorityUpgradeStatus: "manual", priorityUpgradeSource: "admin", priorityUpgradeAt: now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: now, stagedAsFallbackForLane: null, displacedFromNextInLineAt: null };
 }
 
 
@@ -1466,7 +1557,7 @@ function priorityUpgradeAdminCorrection(entry: QueueEntry, action: QueueAdminAct
   if (action === "markPriorityCheckoutPending") {
     return normalizeEntry({ ...entry, priorityUpgradeRequested: true, priorityUpgradeStatus: "checkout_pending", priorityUpgradeSource: "future_payment", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now });
   }
-  return normalizeEntry({ ...entry, lane: "priority", tier: "fastlane", priorityUpgradeRequested: true, priorityUpgradeStatus: "manual", priorityUpgradeSource: "admin", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: entry.priorityQueueOrderAt ?? now, displacedFromNextInLineAt: null });
+  return normalizeEntry({ ...entry, lane: "priority", tier: "fastlane", priorityUpgradeRequested: true, priorityUpgradeStatus: "manual", priorityUpgradeSource: "admin", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: entry.priorityQueueOrderAt ?? now, stagedAsFallbackForLane: null, displacedFromNextInLineAt: null });
 }
 
 function pausePriorityTrack(session: QueueSession, id: string): boolean {
@@ -1644,6 +1735,7 @@ function simulationTrackBase(session: QueueSession): QueueEntry {
     priorityPausedAt: null,
     priorityResumedAt: null,
     priorityQueueOrderAt: null,
+    stagedAsFallbackForLane: null,
     isTestTrack: true,
   });
 }
@@ -1827,9 +1919,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
 
   if (loaded) {
     if (action === "moveBack") {
-      const restored = moveLoadedTrackBackToQueue(session);
-      session.nextInLineHoldTrackId = restored && (restored.lane ?? "regular") !== "priority" ? restored.id : null;
-      session.autoRoutingPaused = false;
+      undoLoadedTrack(session);
     }
     if (action === "finish") {
       session.nextInLineHoldTrackId = null;
@@ -1846,7 +1936,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
         session.removed.unshift({ ...current, status: "removed", removedAt: new Date().toISOString() });
       }
     }
-    pullNextInLine(session, session.nextInLineHoldTrackId ?? undefined, true);
+    if (action !== "moveBack") pullNextInLine(session, session.nextInLineHoldTrackId ?? undefined, true);
     const nextStore = replaceSession(store, session);
     await writeStore(nextStore);
     return queueStateFromSession(session, nextStore);
@@ -1858,7 +1948,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
       const previousLane = session.currentTrackPreviousLane;
       const previousIndex = session.currentTrackPreviousIndex;
       const current = clearNextInLine(session);
-      if (current) setLoadedTrack(session, current, previousLane, previousIndex);
+      if (current) setLoadedTrack(session, current, previousLane, previousIndex, true);
       pullNextInLine(session);
     }
     if (action === "moveBack") {
@@ -1901,7 +1991,8 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
   }
   if (action === "wheel" && isWheelEligibleTrack(active)) {
     session.queue.splice(index, 1);
-    session.queue.push(normalizeEntry({ ...active, lane: "wheel", tier: "frontrow", status: "queued", displacedFromNextInLineAt: null, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: null }));
+    session.queue.push(normalizeEntry({ ...active, lane: "wheel", tier: "frontrow", status: "queued", displacedFromNextInLineAt: null, stagedAsFallbackForLane: null, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: null }));
+    handleWheelWinnerSelected(session);
   }
   if (action === "finish") {
     session.queue.splice(index, 1);

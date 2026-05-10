@@ -71,6 +71,25 @@ function queuedTrack(state, id) {
   return state.queue.find((entry) => entry.id === id) ?? null;
 }
 
+function completedTrack(state, id) {
+  return state.history.find((entry) => entry.id === id) ?? null;
+}
+
+function removedTrack(state, id) {
+  return state.removed.find((entry) => entry.id === id) ?? null;
+}
+
+test("pull next falls back to the first free track when no wheel track exists", async () => {
+  await freshOpenSession("pull next free fallback");
+  const free = await addTrack("Free");
+
+  const state = await queue.updateRadioTrack("", "pullNext");
+
+  assert.equal(state.nextInLine?.id, free.id, "Pull Next should stage a free track without Stage First Free or Start Playback");
+  assert.equal(state.nextInLine?.lane, "regular");
+  assert.equal(state.nowPlaying, null);
+});
+
 test("paid priority interrupts wheel already in Next In Line and restores that wheel after priority finishes", async () => {
   const sessionId = await freshOpenSession("priority interrupts wheel");
   const free = await addTrack("Free");
@@ -86,8 +105,6 @@ test("paid priority interrupts wheel already in Next In Line and restores that w
 
   state = await queue.updateRadioTrack(priority.id, "load");
   assert.equal(state.session.playbackStarted, false, "loading/cueing must not start playback");
-  state = await queue.updateRadioTrack("", "startPlayback");
-  assert.equal(state.session.playbackStarted, true, "explicit playback start should mark playback as started");
 
   state = await queue.updateRadioTrack(priority.id, "finish");
   assert.equal(state.nextNonPriorityLane, "wheel", "finishing priority must not advance the non-priority pointer");
@@ -98,7 +115,7 @@ test("paid priority interrupts wheel already in Next In Line and restores that w
 test("paid priority interrupts free already in Next In Line and restores that free after priority finishes", async () => {
   const sessionId = await freshOpenSession("priority interrupts free");
   const free = await addTrack("Free");
-  let state = await queue.updateRadioTrack("", "stageFirstFree");
+  let state = await queue.updateRadioTrack("", "pullNext");
   assert.equal(state.nextInLine?.id, free.id, "free track should be staged as Next In Line");
   const owedBeforePriority = state.nextNonPriorityLane;
 
@@ -115,7 +132,7 @@ test("paid priority interrupts free already in Next In Line and restores that fr
 test("random wheel lane track is not marked as interrupted unless priority displaced it from Next In Line", async () => {
   await freshOpenSession("random wheel is not interrupted");
   const stagedFree = await addTrack("Staged Free");
-  let state = await queue.updateRadioTrack("", "stageFirstFree");
+  let state = await queue.updateRadioTrack("", "pullNext");
   assert.equal(state.nextInLine?.id, stagedFree.id);
 
   const randomWheel = await addTrack("Random Wheel");
@@ -126,7 +143,7 @@ test("random wheel lane track is not marked as interrupted unless priority displ
   assert.equal(state.nextInLine?.id, stagedFree.id, "wheel assignment should not override existing non-priority Next In Line");
 });
 
-test("finish, remove, load, and start-playback actions preserve or advance the non-priority pointer correctly", async () => {
+test("finish, remove, and load actions preserve or advance the non-priority pointer correctly without Start Playback", async () => {
   await freshOpenSession("finishing rules priority");
   const priority = await addTrack("Priority");
   let state = await queue.updateRadioTrack(priority.id, "priority");
@@ -141,46 +158,118 @@ test("finish, remove, load, and start-playback actions preserve or advance the n
   state = await queue.updateRadioTrack(wheel.id, "finish");
   assert.equal(state.nextNonPriorityLane, "regular", "finishing wheel advances nextNonPriorityLane to regular");
 
-  await freshOpenSession("finishing rules free");
+  await freshOpenSession("finish direct without start playback");
   const free = await addTrack("Free");
-  state = await queue.updateRadioTrack("", "stageFirstFree");
-  assert.equal(state.nextNonPriorityLane, "wheel");
+  state = await queue.updateRadioTrack("", "pullNext");
+  assert.equal(state.nextInLine?.id, free.id);
+  state = await queue.updateRadioTrack(free.id, "load");
+  assert.equal(state.nowPlaying?.id, free.id);
+  assert.equal(state.session.playbackStarted, false);
   state = await queue.updateRadioTrack(free.id, "finish");
+  assert.ok(completedTrack(state, free.id), "finishing directly after load should complete the track");
   assert.equal(state.nextNonPriorityLane, "wheel", "finishing free advances nextNonPriorityLane to wheel");
 
   await freshOpenSession("remove does not advance");
   const removeTrack = await addTrack("Remove");
-  state = await queue.updateRadioTrack("", "stageFirstFree");
+  state = await queue.updateRadioTrack("", "pullNext");
   const owedBeforeRemove = state.nextNonPriorityLane;
   state = await queue.updateRadioTrack(removeTrack.id, "remove");
   assert.equal(state.nextNonPriorityLane, owedBeforeRemove, "removing a track does not advance nextNonPriorityLane");
 
   await freshOpenSession("load does not advance");
   const loadTrack = await addTrack("Load");
-  state = await queue.updateRadioTrack("", "stageFirstFree");
+  state = await queue.updateRadioTrack("", "pullNext");
   const owedBeforeLoad = state.nextNonPriorityLane;
   state = await queue.updateRadioTrack(loadTrack.id, "load");
   assert.equal(state.nextNonPriorityLane, owedBeforeLoad, "loading a track does not advance nextNonPriorityLane");
+});
 
-  const orderBeforeStart = {
-    queue: state.queue.map((entry) => entry.id),
-    next: state.nextInLine?.id ?? null,
-    loaded: state.nowPlaying?.id ?? null,
-  };
-  state = await queue.updateRadioTrack("", "startPlayback");
-  assert.equal(state.session.playbackStarted, true, "startPlayback flips playbackStarted");
-  assert.deepEqual({
-    queue: state.queue.map((entry) => entry.id),
-    next: state.nextInLine?.id ?? null,
-    loaded: state.nowPlaying?.id ?? null,
-  }, orderBeforeStart, "startPlayback must not alter queue order or staged/loaded tracks");
-  assert.equal(state.nextNonPriorityLane, owedBeforeLoad, "startPlayback does not advance nextNonPriorityLane");
+test("undo load for regular clears the player and returns the track without counting it", async () => {
+  await freshOpenSession("undo regular");
+  const regular = await addTrack("Regular Undo");
+  const other = await addTrack("Other Regular");
+  let state = await queue.updateRadioTrack("", "pullNext");
+  const owedBeforeUndo = state.nextNonPriorityLane;
+
+  state = await queue.updateRadioTrack(regular.id, "load");
+  assert.equal(state.nowPlaying?.id, regular.id);
+  assert.equal(state.nextInLine?.id, other.id);
+
+  state = await queue.updateRadioTrack(regular.id, "moveBack");
+  assert.equal(state.nowPlaying, null, "Undo Load clears the player");
+  assert.equal(queuedTrack(state, regular.id)?.lane, "regular", "regular track returns to the regular queue");
+  assert.equal(completedTrack(state, regular.id), null);
+  assert.equal(removedTrack(state, regular.id), null);
+  assert.equal(state.nextNonPriorityLane, owedBeforeUndo);
+});
+
+test("undo load for wheel clears the player and returns the track without counting it", async () => {
+  await freshOpenSession("undo wheel");
+  const wheel = await addTrack("Wheel Undo");
+  const regular = await addTrack("Regular After Wheel");
+  let state = await queue.updateRadioTrack(wheel.id, "wheel");
+  const owedBeforeUndo = state.nextNonPriorityLane;
+
+  state = await queue.updateRadioTrack(wheel.id, "load");
+  assert.equal(state.nowPlaying?.id, wheel.id);
+  assert.equal(state.nextInLine?.id, regular.id);
+
+  state = await queue.updateRadioTrack(wheel.id, "moveBack");
+  assert.equal(state.nowPlaying, null, "Undo Load clears the player");
+  assert.equal(queuedTrack(state, wheel.id)?.lane, "wheel", "wheel track returns to the Wheel lane");
+  assert.equal(completedTrack(state, wheel.id), null);
+  assert.equal(removedTrack(state, wheel.id), null);
+  assert.equal(state.nextNonPriorityLane, owedBeforeUndo);
+});
+
+test("undo load for active priority returns it as active priority, not paused", async () => {
+  await freshOpenSession("undo priority");
+  const priority = await addTrack("Priority Undo");
+  const regular = await addTrack("Regular Behind Priority");
+  let state = await queue.updateRadioTrack(priority.id, "priority");
+  const owedBeforeUndo = state.nextNonPriorityLane;
+
+  state = await queue.updateRadioTrack(priority.id, "load");
+  assert.equal(state.nowPlaying?.id, priority.id);
+  assert.equal(state.nextInLine?.id, regular.id);
+
+  state = await queue.updateRadioTrack(priority.id, "moveBack");
+  assert.equal(state.nowPlaying, null, "Undo Load clears the player");
+  assert.equal(state.nextInLine?.id, priority.id, "active priority can route normally after Undo Load");
+  assert.equal(state.nextInLine?.lane, "priority");
+  assert.equal(state.nextInLine?.priorityPausedAt ?? null, null);
+  assert.equal(completedTrack(state, priority.id), null);
+  assert.equal(removedTrack(state, priority.id), null);
+  assert.equal(state.nextNonPriorityLane, owedBeforeUndo);
+});
+
+test("pause loaded priority clears the player and returns it as held without rerouting it", async () => {
+  await freshOpenSession("pause loaded priority");
+  const priority = await addTrack("Priority Pause");
+  const regular = await addTrack("Regular Behind Pause");
+  let state = await queue.updateRadioTrack(priority.id, "priority");
+  const owedBeforePause = state.nextNonPriorityLane;
+
+  state = await queue.updateRadioTrack(priority.id, "load");
+  assert.equal(state.nowPlaying?.id, priority.id);
+  assert.equal(state.nextInLine?.id, regular.id);
+
+  state = await queue.updateRadioTrack(priority.id, "pausePriority");
+  assert.equal(state.nowPlaying, null, "Pause Priority clears the player");
+  const paused = queuedTrack(state, priority.id);
+  assert.equal(paused?.lane, "priority");
+  assert.ok(paused?.priorityPausedAt, "loaded priority should return as held/paused");
+  assert.equal(completedTrack(state, priority.id), null);
+  assert.equal(removedTrack(state, priority.id), null);
+  assert.equal(state.nextNonPriorityLane, owedBeforePause);
+  assert.notEqual(state.nextInLine?.id, priority.id, "paused priority must not route as active priority");
+  assert.equal(state.nowPlaying, null, "no track is automatically loaded after pausing priority");
 });
 
 test("wheel live event moves a specific track to Wheel without overriding a staged non-priority Next In Line", async () => {
   await freshOpenSession("wheel live event with staged next");
   const stagedFree = await addTrack("Staged Free");
-  let state = await queue.updateRadioTrack("", "stageFirstFree");
+  let state = await queue.updateRadioTrack("", "pullNext");
   assert.equal(state.nextInLine?.id, stagedFree.id);
 
   const wheelWinner = await addTrack("Wheel Winner");

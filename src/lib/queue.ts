@@ -38,7 +38,7 @@ const DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS = "Priority Signal Upgrade is being 
 const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 1000;
 const DEFAULT_PRIORITY_UPGRADE_CURRENCY = "usd";
 
-type QueueAdminAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "pausePriority" | "resumePriority" | "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks" | "stageFirstFree" | "startPlayback";
+type QueueAdminAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "pausePriority" | "resumePriority" | "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks" | "stageFirstFree";
 
 export interface PriorityUpgradeSettingsInput {
   enabled?: boolean;
@@ -215,9 +215,6 @@ function laneTop(session: Pick<QueueSession, "queue">, lane: QueueLane, excludeI
   return sortActive(session.queue).find((entry) => entry.id !== excludeId && entry.status === "queued" && (entry.lane ?? "regular") === lane && (lane !== "priority" || isActivePriorityTrack(entry))) ?? null;
 }
 
-function isOpeningState(session: Pick<QueueSession, "playbackStarted">): boolean {
-  return session.playbackStarted !== true;
-}
 
 function getDisplacedNonPriorityNext(session: Pick<QueueSession, "queue">, blockedId?: string): QueueEntry | null {
   return sortActive(session.queue).find((entry) => entry.id !== blockedId && entry.status === "queued" && (entry.lane ?? "regular") !== "priority" && Boolean(entry.displacedFromNextInLineAt)) ?? null;
@@ -230,8 +227,6 @@ function chooseNextWaitingEntry(session: QueueSession, excludeId?: string): Queu
 
   const displacedNonPriorityNext = getDisplacedNonPriorityNext(session, blockedId);
   if (displacedNonPriorityNext) return displacedNonPriorityNext;
-
-  if (isOpeningState(session)) return laneTop(session, "wheel", blockedId);
 
   const preferredLane: QueueNonPriorityLane = session.nextNonPriorityLane === "regular" ? "regular" : "wheel";
   const fallbackLane: QueueNonPriorityLane = preferredLane === "wheel" ? "regular" : "wheel";
@@ -1497,6 +1492,15 @@ function pausePriorityTrack(session: QueueSession, id: string): boolean {
     resolveNextInLine(session, undefined, true);
     return true;
   }
+  if (session.loadedTrack?.id === id) {
+    const paused = pause(session.loadedTrack);
+    if (!paused) return false;
+    clearLoadedTrack(session);
+    session.queue.push(paused);
+    session.queue = sortActive(session.queue);
+    resolveNextInLine(session, undefined, true);
+    return true;
+  }
   return false;
 }
 
@@ -1539,7 +1543,7 @@ function restoreEntry(entry: QueueEntry, lane: QueueLane): QueueEntry {
 }
 
 function canStageFirstFree(session: QueueSession): boolean {
-  if (!isOpeningState(session) || session.nextInLineTrack) return false;
+  if (session.nextInLineTrack) return false;
   if (laneTop(session, "priority") || laneTop(session, "wheel")) return false;
   return Boolean(laneTop(session, "regular"));
 }
@@ -1758,13 +1762,6 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
     return queueStateFromSession(session, store);
   }
 
-  if (action === "startPlayback") {
-    if (session.loadedTrack) session.playbackStarted = true;
-    const nextStore = replaceSession(store, session);
-    await writeStore(nextStore);
-    return queueStateFromSession(session, nextStore);
-  }
-
   if (addSimulationTrack(session, action)) {
     const nextStore = replaceSession(store, session);
     await writeStore(nextStore);
@@ -1830,13 +1827,12 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
 
   if (loaded) {
     if (action === "moveBack") {
-      const staged = session.nextInLineTrack;
-      if (staged) moveNextInLineBackToQueue(session);
       const restored = moveLoadedTrackBackToQueue(session);
-      session.nextInLineHoldTrackId = restored?.id ?? null;
-      session.autoRoutingPaused = true;
+      session.nextInLineHoldTrackId = restored && (restored.lane ?? "regular") !== "priority" ? restored.id : null;
+      session.autoRoutingPaused = false;
     }
     if (action === "finish") {
+      session.nextInLineHoldTrackId = null;
       const current = clearLoadedTrack(session);
       if (current) {
         session.completed.unshift({ ...current, status: "played", playedAt: current.playedAt ?? new Date().toISOString(), completedAt: new Date().toISOString() });
@@ -1844,12 +1840,13 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
       }
     }
     if (action === "remove") {
+      session.nextInLineHoldTrackId = null;
       const current = clearLoadedTrack(session);
       if (current) {
         session.removed.unshift({ ...current, status: "removed", removedAt: new Date().toISOString() });
       }
     }
-    if (action !== "moveBack") pullNextInLine(session);
+    pullNextInLine(session, session.nextInLineHoldTrackId ?? undefined, true);
     const nextStore = replaceSession(store, session);
     await writeStore(nextStore);
     return queueStateFromSession(session, nextStore);

@@ -206,6 +206,19 @@ test("pre-show active priority can stage while free waits", async () => {
   assert.ok(state.queue.some((entry) => entry.lane === "regular"));
 });
 
+test("pre-show manual wheel can stage while free waits", async () => {
+  await freshOpenSession("pre show wheel", { showStarted: false });
+  await addTrack("Pre Wheel Free One");
+  const wheel = await addTrack("Pre Wheel Winner");
+
+  const state = await queue.updateRadioTrack(wheel.id, "wheel");
+
+  assert.equal(state.session.showStarted, false);
+  assert.equal(state.nextInLine?.id, wheel.id);
+  assert.equal(state.nextInLine?.lane, "wheel");
+  assert.ok(state.queue.some((entry) => entry.lane === "regular"), "Free submissions should wait in regular lane before broadcast running");
+});
+
 test("start show with priority and owed wheel stages priority first", async () => {
   await freshOpenSession("start show priority owed", { showStarted: false });
   await addTrack("Free Waiting");
@@ -698,7 +711,7 @@ test("wheel live event moves a specific track to Wheel without overriding a true
 });
 
 
-test("timer expiration starts routing but keeps submissions open", async () => {
+test("timer expiration keeps submissions open without starting routing", async () => {
   await freshOpenSession("timer expiry", { showStarted: false });
   const free = await addTrack("Timer Free");
   let state = await queue.getRadioQueueState();
@@ -710,9 +723,10 @@ test("timer expiration starts routing but keeps submissions open", async () => {
   state = await withFakeNow(afterTimer, () => queue.getRadioQueueState());
 
   assert.equal(state.session.queueOpen, true, "timer expiration must not close submissions");
-  assert.equal(state.session.showStarted, true);
-  assert.equal(state.session.broadcastPhase, "broadcast_active");
-  assert.equal(state.nextInLine?.id, free.id, "normal resolver may route after timer starts broadcast routing");
+  assert.equal(state.session.showStarted, false, "timer expiration alone must not start broadcast routing");
+  assert.equal(state.session.broadcastPhase, "submission_window");
+  assert.equal(state.nextInLine, null, "timer expiration alone must not route Free into Next In Line");
+  assert.ok(queuedTrack(state, free.id));
 });
 
 test("broadcast active still accepts submissions while submissions are open", async () => {
@@ -798,6 +812,18 @@ test("admin phase display uses showStarted language instead of opening state", (
   assert.match(source, /Ended \/ Disconnecting/);
   assert.doesNotMatch(source, /Opening state/);
   assert.doesNotMatch(source, /playbackStarted/);
+});
+
+test("simulation tracks include visible sequence numbers without lane status titles", async () => {
+  await freshOpenSession("simulation names", { showStarted: false });
+
+  const state = await queue.updateRadioTrack("", "addSimulationFreeTrack");
+  const sim = state.queue.find((entry) => entry.isTestTrack);
+
+  assert.ok(sim, "simulation track should be queued as a test track");
+  assert.match(sim.submittedArtistName ?? sim.artist, /\d{3}$/);
+  assert.doesNotMatch(sim.submittedSongTitle ?? sim.title, /Free|Wheel|Priority|Checkout Pending|Failed Payment/i);
+  assert.match(sim.note ?? "", /\[QUEUE SIMULATION TRACK\]/);
 });
 
 test("removing lower queued free and wheel tracks does not advance or rebuild hidden alternation", async () => {

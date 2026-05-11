@@ -232,7 +232,10 @@ function chooseNextWaitingCandidate(session: QueueSession, excludeId?: string): 
   const priority = laneTop(session, "priority", blockedId);
   if (priority) return { entry: priority, fallbackForLane: null };
 
-  if (session.showStarted !== true) return null;
+  if (session.showStarted !== true) {
+    const wheel = laneTop(session, "wheel", blockedId);
+    return wheel ? { entry: wheel, fallbackForLane: null } : null;
+  }
 
   const displacedNonPriorityNext = getDisplacedNonPriorityNext(session, blockedId);
   if (displacedNonPriorityNext) return { entry: displacedNonPriorityNext, fallbackForLane: displacedNonPriorityNext.stagedAsFallbackForLane ?? null };
@@ -343,6 +346,7 @@ function setLoadedTrack(session: QueueSession, entry: QueueEntry, previousLane?:
   session.loadedTrackPreviousIndex = typeof previousIndex === "number" ? previousIndex : null;
   session.loadedTrackWasNextInLine = wasNextInLine;
   session.loadedTrackFallbackForLane = entry.stagedAsFallbackForLane ?? null;
+  if (session.showStarted !== true) session.showStarted = true;
   session.queue = session.queue.filter((track) => track.id !== loaded.id);
   if (session.nextInLineTrack?.id === loaded.id) clearNextInLine(session);
   return loaded;
@@ -537,10 +541,7 @@ function applyPreShowTimer(session: QueueSession, now = new Date()): boolean {
   if (session.status === "archived" || session.showStarted === true || session.queueOpen !== true || !session.preShowEndsAt) return false;
   const endsAt = new Date(session.preShowEndsAt).getTime();
   if (!Number.isFinite(endsAt) || endsAt > now.getTime()) return false;
-  session.showStarted = true;
-  session.updatedAt = now.toISOString();
-  resolveNextInLine(session, undefined, true);
-  return true;
+  return false;
 }
 
 function normalizeWheelSpinsOwed(value: unknown): number {
@@ -1723,7 +1724,8 @@ function simulationSequence(session: QueueSession): number {
 function simulationTrackBase(session: QueueSession): QueueEntry {
   const sequence = simulationSequence(session);
   const number = String(sequence).padStart(3, "0");
-  const artist = SIMULATION_ARTISTS[(sequence - 1) % SIMULATION_ARTISTS.length];
+  const baseArtist = SIMULATION_ARTISTS[(sequence - 1) % SIMULATION_ARTISTS.length];
+  const artist = `${baseArtist} ${number}`;
   const title = SIMULATION_TITLES[(sequence - 1) % SIMULATION_TITLES.length];
   const now = new Date().toISOString();
   return normalizeEntry({

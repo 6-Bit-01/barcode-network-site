@@ -108,7 +108,6 @@ export interface QueueSessionSummary {
   nextNonPriorityLane: QueueNonPriorityLane;
   showStarted?: boolean;
   wheelSpinsOwed?: number;
-  playbackStarted?: boolean;
   nextInLineTrackId?: string | null;
   nextInLineHoldTrackId?: string | null;
   loadedTrackId?: string | null;
@@ -139,7 +138,6 @@ export interface QueueSession extends QueueSessionSummary {
   loadedTrackFallbackForLane?: QueueNonPriorityLane | null;
   nextInLineHoldTrackId?: string | null;
   autoRoutingPaused?: boolean;
-  playbackStarted?: boolean;
 }
 
 export interface QueuePublicTrack {

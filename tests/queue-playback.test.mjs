@@ -94,6 +94,30 @@ test("pre-show free tracks do not auto-stage", async () => {
   assert.equal(state.queue.filter((entry) => entry.lane === "regular").length, 2);
 });
 
+test("stageFirstFree cannot bypass pre-show gating", async () => {
+  await freshOpenSession("stage first free blocked", { showStarted: false });
+  await addTrack("Pre Stage Free");
+
+  const state = await queue.updateRadioTrack("", "stageFirstFree");
+
+  assert.equal(state.session.showStarted, false);
+  assert.equal(state.nextInLine, null);
+  assert.equal(state.queue.filter((entry) => entry.lane === "regular").length, 1);
+});
+
+test("pull next after show start stages free through normal routing", async () => {
+  await freshOpenSession("pull next live free", { showStarted: false });
+  const free = await addTrack("Live Free");
+  await queue.updateRadioTrack("", "startShow");
+  let state = await queue.updateRadioTrack(free.id, "moveBack");
+  assert.equal(state.nextInLine, null);
+
+  state = await queue.updateRadioTrack("", "pullNext");
+
+  assert.equal(state.session.showStarted, true);
+  assert.equal(state.nextInLine?.id, free.id);
+});
+
 test("pre-show active priority can stage while free waits", async () => {
   await freshOpenSession("pre show priority", { showStarted: false });
   await addTrack("Pre Free");
@@ -302,7 +326,7 @@ test("paid priority interrupts wheel already in Next In Line and restores that w
   assert.ok(queuedTrack(state, wheel.id)?.displacedFromNextInLineAt, "interrupted wheel should carry the displaced-from-next marker");
 
   state = await queue.updateRadioTrack(priority.id, "load");
-  assert.equal(state.session.playbackStarted, false, "loading/cueing must not start playback");
+  assert.equal(state.nowPlaying?.id, priority.id, "loading/cueing should put priority in the player without changing pointer state");
 
   state = await queue.updateRadioTrack(priority.id, "finish");
   assert.equal(state.nextNonPriorityLane, "wheel", "finishing priority must not advance the non-priority pointer");
@@ -369,7 +393,6 @@ test("finish, remove, and load actions preserve or advance the non-priority poin
   assert.equal(state.nextInLine?.id, free.id);
   state = await queue.updateRadioTrack(free.id, "load");
   assert.equal(state.nowPlaying?.id, free.id);
-  assert.equal(state.session.playbackStarted, false);
   state = await queue.updateRadioTrack(free.id, "finish");
   assert.ok(completedTrack(state, free.id), "finishing directly after load should complete the track");
   assert.equal(state.nextNonPriorityLane, "wheel", "finishing free advances nextNonPriorityLane to wheel");
@@ -597,4 +620,14 @@ test("wheel live event moves a specific track to Wheel without overriding a true
   const openWinner = await addTrack("Open Winner");
   state = await queue.updateRadioTrack(openWinner.id, "wheel");
   assert.equal(state.nextInLine?.id, openWinner.id, "normal resolver may stage a Wheel track when Next In Line is empty and no Priority is active");
+});
+
+
+test("admin phase display uses showStarted language instead of opening state", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
+
+  assert.match(source, /Submission Window/);
+  assert.match(source, /Live Show/);
+  assert.doesNotMatch(source, /Opening state/);
+  assert.doesNotMatch(source, /playbackStarted/);
 });

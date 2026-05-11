@@ -267,7 +267,7 @@ export function AdminRadioQueueControl() {
   const playerPadding = loadedPlayer ? (minimized ? "pb-32" : "pb-[28rem]") : "pb-16";
   const isExplicitReview = Boolean(initialSessionIdFromUrl());
   const showQueueReview = hasCurrentSession || isExplicitReview;
-  const phaseLabel = state?.session?.broadcastPhase === "ended" ? "Ended / Disconnecting" : state?.session?.broadcastPhase === "broadcast_active" ? "Broadcast Active" : "Warmup / Submission Window";
+  const phaseLabel = state?.session?.broadcastPhase === "ended" ? "Ended / Disconnecting" : state?.session?.broadcastPhase === "broadcast_active" ? "Broadcast Active" : state?.session?.broadcastPhase === "submission_window" ? "Submission Window" : "Warmup";
   const displacedNonPriorityNext = (state?.queue ?? []).find((entry) => entry.displacedFromNextInLineAt && entry.lane !== "priority") ?? null;
   const activePriorityCount = [state?.nextInLine, ...(state?.queue ?? [])].filter((entry): entry is QueueEntry => {
     if (!entry) return false;

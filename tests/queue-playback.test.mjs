@@ -109,13 +109,38 @@ function removedTrack(state, id) {
   return state.removed.find((entry) => entry.id === id) ?? null;
 }
 
+test("new active session begins in warmup before submissions open", async () => {
+  await queue.setQueueOpen(false);
+  await queue.startNewQueueSession({ title: `warmup start ${Date.now()} ${trackSequence}` });
+  const free = await addTrack("Warmup Free");
+
+  const state = await queue.updateRadioTrack("", "pullNext");
+
+  assert.equal(state.session.broadcastPhase, "warmup");
+  assert.equal(state.session.queueOpen, false);
+  assert.equal(state.session.showStarted, false);
+  assert.equal(state.session.preShowEndsAt, null);
+  assert.equal(state.nextInLine, null);
+  assert.equal(queuedTrack(state, free.id)?.id, free.id);
+});
+
+test("warmup rejects public submissions while submissions are closed", async () => {
+  await queue.setQueueOpen(false);
+  await queue.startNewQueueSession({ title: `warmup rejects ${Date.now()} ${trackSequence}` });
+  const state = await queue.getRadioQueueState();
+  assert.equal(state.session.broadcastPhase, "warmup");
+  assert.equal(state.session.queueOpen, false);
+
+  await assert.rejects(() => submitTrack("Warmup Rejected"), /Queue is closed/);
+});
+
 test("opening submissions starts the pre-show routing timer without starting routing", async () => {
   await queue.setQueueOpen(false);
   await queue.startNewQueueSession({ title: `timer start ${Date.now()} ${trackSequence}` });
   const beforeOpen = Date.now();
 
   await queue.setQueueOpen(true);
-  const state = await queue.getRadioQueueState();
+  let state = await queue.getRadioQueueState();
 
   assert.equal(state.session.queueOpen, true);
   assert.equal(state.session.showStarted, false);
@@ -124,6 +149,11 @@ test("opening submissions starts the pre-show routing timer without starting rou
   const timerMs = new Date(state.session.preShowEndsAt).getTime() - beforeOpen;
   assert.ok(timerMs > 20 * 60 * 1000, `timer should be more than 20 minutes, got ${timerMs}`);
   assert.ok(timerMs <= (20 * 60 + 16) * 1000, `timer should be about 20:15, got ${timerMs}`);
+
+  const submitted = await submitTrack("Submission Window Free");
+  state = await queue.getRadioQueueState();
+  assert.ok(state.queue.some((entry) => entry.id === submitted.id), "submissions should be accepted during submission window");
+  assert.equal(state.nextInLine, null, "accepted Free tracks should collect without staging before routing starts");
 });
 
 
@@ -696,6 +726,23 @@ test("broadcast active still accepts submissions while submissions are open", as
   assert.ok(state.queue.some((entry) => entry.id === submitted.id) || state.nextInLine?.id === submitted.id);
 });
 
+test("closing submissions during submission window returns to warmup without routing", async () => {
+  await freshOpenSession("close submissions warmup", { showStarted: false });
+  const free = await addTrack("Close Window Free");
+  let state = await queue.getRadioQueueState();
+  assert.equal(state.session.broadcastPhase, "submission_window");
+  assert.equal(state.nextInLine, null);
+
+  await queue.setQueueOpen(false);
+  state = await queue.updateRadioTrack("", "pullNext");
+
+  assert.equal(state.session.queueOpen, false);
+  assert.equal(state.session.showStarted, false);
+  assert.equal(state.session.broadcastPhase, "warmup");
+  assert.equal(state.nextInLine, null);
+  assert.equal(queuedTrack(state, free.id)?.id, free.id);
+});
+
 test("closing submissions does not end active broadcast routing", async () => {
   await freshOpenSession("close submissions live");
   const free = await addTrack("Close Live Free");
@@ -745,7 +792,8 @@ test("ending broadcast is separate from closing submissions", async () => {
 test("admin phase display uses showStarted language instead of opening state", () => {
   const source = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
 
-  assert.match(source, /Warmup \/ Submission Window/);
+  assert.match(source, /Warmup/);
+  assert.match(source, /Submission Window/);
   assert.match(source, /Broadcast Active/);
   assert.match(source, /Ended \/ Disconnecting/);
   assert.doesNotMatch(source, /Opening state/);

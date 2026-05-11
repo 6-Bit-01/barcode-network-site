@@ -527,9 +527,10 @@ function preShowEndsAtFrom(date = new Date()): string {
   return new Date(date.getTime() + PRE_SHOW_ROUTING_DELAY_MS).toISOString();
 }
 
-function broadcastPhaseForSession(session: Pick<QueueSession, "status" | "showStarted">): "submission_window" | "broadcast_active" | "ended" {
+function broadcastPhaseForSession(session: Pick<QueueSession, "status" | "queueOpen" | "showStarted">): "warmup" | "submission_window" | "broadcast_active" | "ended" {
   if (session.status === "archived") return "ended";
-  return session.showStarted === true ? "broadcast_active" : "submission_window";
+  if (session.showStarted === true) return "broadcast_active";
+  return session.queueOpen ? "submission_window" : "warmup";
 }
 
 function applyPreShowTimer(session: QueueSession, now = new Date()): boolean {
@@ -1275,6 +1276,7 @@ export async function getPublicQueueSnapshot(sessionId?: string, identity?: { su
   const session = getSession(store, sessionId);
   let changed = false;
   if (session.status !== "archived") {
+    changed = applyPreShowTimer(session) || changed;
     pullNextInLine(session);
     changed = true;
   }
@@ -1562,7 +1564,7 @@ export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> 
   const sessions = store.sessions.map((item) => {
     if (item.sessionId === session.sessionId) {
       const openingPreShow = isOpen && item.showStarted !== true;
-      return normalizeSession({ ...item, queueOpen: isOpen, status: isOpen ? "open" : "closed", preShowEndsAt: openingPreShow ? preShowEndsAtFrom(now) : item.preShowEndsAt ?? null, updatedAt: now.toISOString() });
+      return normalizeSession({ ...item, queueOpen: isOpen, status: isOpen ? "open" : "closed", preShowEndsAt: openingPreShow ? (item.queueOpen && item.preShowEndsAt ? item.preShowEndsAt : preShowEndsAtFrom(now)) : item.preShowEndsAt ?? null, updatedAt: now.toISOString() });
     }
     if (isOpen && item.status === "open") {
       return normalizeSession({ ...item, queueOpen: false, status: "closed", updatedAt: now.toISOString() });

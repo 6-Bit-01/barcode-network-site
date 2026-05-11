@@ -799,3 +799,44 @@ test("admin phase display uses showStarted language instead of opening state", (
   assert.doesNotMatch(source, /Opening state/);
   assert.doesNotMatch(source, /playbackStarted/);
 });
+
+test("removing lower queued free and wheel tracks does not advance or rebuild hidden alternation", async () => {
+  await freshOpenSession("low queued removal");
+  const firstWheel = await addTrack("Low Removal First Wheel");
+  const lowWheel = await addTrack("Low Removal Low Wheel");
+  const firstFree = await addTrack("Low Removal First Free");
+  const lowFree = await addTrack("Low Removal Low Free");
+
+  let state = await queue.updateRadioTrack(firstWheel.id, "wheel");
+  state = await queue.updateRadioTrack(lowWheel.id, "wheel");
+  assert.equal(state.nextNonPriorityLane, "wheel");
+  assert.equal(state.nextInLine?.id, firstWheel.id);
+
+  state = await queue.updateRadioTrack(lowFree.id, "remove");
+  assert.equal(state.nextNonPriorityLane, "wheel", "removing a lower queued Free track must not advance the owed lane");
+  assert.equal(state.nextInLine?.id, firstWheel.id, "removing a lower queued Free track must not disturb staged Wheel");
+  assert.ok(removedTrack(state, lowFree.id));
+  assert.ok(queuedTrack(state, firstFree.id), "the top Free bucket entry remains queued for when Free is owed");
+
+  state = await queue.updateRadioTrack(lowWheel.id, "remove");
+  assert.equal(state.nextNonPriorityLane, "wheel", "removing a lower queued Wheel track must not advance the owed lane");
+  assert.equal(state.nextInLine?.id, firstWheel.id, "removing a lower queued Wheel track must not disturb staged Wheel");
+  assert.ok(removedTrack(state, lowWheel.id));
+});
+
+test("loaded player boundary prevents replacing now playing with another load action", async () => {
+  await freshOpenSession("loaded boundary");
+  const first = await addTrack("Loaded Boundary First");
+  const second = await addTrack("Loaded Boundary Second");
+
+  let state = await queue.updateRadioTrack("", "pullNext");
+  assert.equal(state.nextInLine?.id, first.id);
+  state = await queue.updateRadioTrack(first.id, "load");
+  assert.equal(state.nowPlaying?.id, first.id);
+
+  state = await queue.updateRadioTrack(second.id, "load");
+
+  assert.equal(state.nowPlaying?.id, first.id, "loading a second track must not replace an occupied player");
+  assert.equal(completedTrack(state, first.id), null);
+  assert.equal(removedTrack(state, first.id), null);
+});

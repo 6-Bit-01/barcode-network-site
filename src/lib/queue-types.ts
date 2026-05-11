@@ -9,6 +9,7 @@ export type QueueNonPriorityLane = "wheel" | "regular";
 export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | "next" | "pending" | "played" | "refunded" | "expired";
 export type QueueDurationSource = "upload_metadata" | "file_metadata" | "youtube" | "soundcloud" | "spotify" | "provider_metadata" | "internal_estimate" | "unknown";
 export type QueueSessionStatus = "prepared" | "open" | "closed" | "archived";
+export type QueueBroadcastPhase = "submission_window" | "broadcast_active" | "ended";
 export type PriorityUpgradeStatus = "none" | "requested" | "manual" | "checkout_pending" | "paid" | "paid_needs_attention" | "failed" | "refunded";
 export type PriorityUpgradeSource = "admin" | "public_placeholder" | "future_payment" | "stripe";
 
@@ -107,7 +108,9 @@ export interface QueueSessionSummary {
   completedRuntimeSeconds: number;
   nextNonPriorityLane: QueueNonPriorityLane;
   showStarted?: boolean;
+  preShowEndsAt?: string | null;
   wheelSpinsOwed?: number;
+  broadcastPhase?: QueueBroadcastPhase;
   nextInLineTrackId?: string | null;
   nextInLineHoldTrackId?: string | null;
   loadedTrackId?: string | null;

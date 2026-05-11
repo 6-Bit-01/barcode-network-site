@@ -58,6 +58,34 @@ async function addTrack(label, options = {}) {
   });
 }
 
+async function submitTrack(label, options = {}) {
+  trackSequence += 1;
+  const artistName = options.artist ?? `${label} Artist`;
+  return queue.submitRadioTrack({
+    artist: artistName,
+    title: `${label} Track`,
+    tiktokHandle: `@${artistName.toLowerCase().replace(/[^a-z0-9]/g, "")}${trackSequence}`,
+    link: `https://example.com/${label.toLowerCase().replace(/[^a-z0-9]/g, "")}-submit-${trackSequence}`,
+    sourceType: "other",
+  });
+}
+
+async function withFakeNow(fakeNow, callback) {
+  const RealDate = global.Date;
+  class FakeDate extends RealDate {
+    constructor(...args) {
+      super(...(args.length === 0 ? [fakeNow] : args));
+    }
+    static now() { return fakeNow.getTime(); }
+  }
+  global.Date = FakeDate;
+  try {
+    return await callback();
+  } finally {
+    global.Date = RealDate;
+  }
+}
+
 async function payPriority(track, sessionId) {
   const result = await queue.markPriorityUpgradePaidFromStripe(track.id, sessionId, {
     paymentId: `pi_test_${trackSequence}_${track.id}`,
@@ -80,6 +108,23 @@ function completedTrack(state, id) {
 function removedTrack(state, id) {
   return state.removed.find((entry) => entry.id === id) ?? null;
 }
+
+test("opening submissions starts the pre-show routing timer without starting routing", async () => {
+  await queue.setQueueOpen(false);
+  await queue.startNewQueueSession({ title: `timer start ${Date.now()} ${trackSequence}` });
+  const beforeOpen = Date.now();
+
+  await queue.setQueueOpen(true);
+  const state = await queue.getRadioQueueState();
+
+  assert.equal(state.session.queueOpen, true);
+  assert.equal(state.session.showStarted, false);
+  assert.equal(state.session.broadcastPhase, "submission_window");
+  assert.ok(state.session.preShowEndsAt, "opening submissions should set preShowEndsAt");
+  const timerMs = new Date(state.session.preShowEndsAt).getTime() - beforeOpen;
+  assert.ok(timerMs > 20 * 60 * 1000, `timer should be more than 20 minutes, got ${timerMs}`);
+  assert.ok(timerMs <= (20 * 60 + 16) * 1000, `timer should be about 20:15, got ${timerMs}`);
+});
 
 
 test("pre-show free tracks do not auto-stage", async () => {
@@ -623,11 +668,86 @@ test("wheel live event moves a specific track to Wheel without overriding a true
 });
 
 
+test("timer expiration starts routing but keeps submissions open", async () => {
+  await freshOpenSession("timer expiry", { showStarted: false });
+  const free = await addTrack("Timer Free");
+  let state = await queue.getRadioQueueState();
+  assert.equal(state.session.queueOpen, true);
+  assert.equal(state.session.showStarted, false);
+  assert.equal(state.nextInLine, null);
+
+  const afterTimer = new Date(new Date(state.session.preShowEndsAt).getTime() + 1000);
+  state = await withFakeNow(afterTimer, () => queue.getRadioQueueState());
+
+  assert.equal(state.session.queueOpen, true, "timer expiration must not close submissions");
+  assert.equal(state.session.showStarted, true);
+  assert.equal(state.session.broadcastPhase, "broadcast_active");
+  assert.equal(state.nextInLine?.id, free.id, "normal resolver may route after timer starts broadcast routing");
+});
+
+test("broadcast active still accepts submissions while submissions are open", async () => {
+  await freshOpenSession("broadcast accepts submissions");
+
+  const submitted = await submitTrack("Live Submission");
+  const state = await queue.getRadioQueueState();
+
+  assert.equal(state.session.showStarted, true);
+  assert.equal(state.session.queueOpen, true);
+  assert.ok(state.queue.some((entry) => entry.id === submitted.id) || state.nextInLine?.id === submitted.id);
+});
+
+test("closing submissions does not end active broadcast routing", async () => {
+  await freshOpenSession("close submissions live");
+  const free = await addTrack("Close Live Free");
+  let state = await queue.updateRadioTrack("", "pullNext");
+  const owedBeforeClose = state.nextNonPriorityLane;
+  assert.equal(state.nextInLine?.id, free.id);
+
+  await queue.setQueueOpen(false);
+  state = await queue.getRadioQueueState();
+
+  assert.equal(state.session.queueOpen, false);
+  assert.equal(state.session.showStarted, true);
+  assert.equal(state.session.broadcastPhase, "broadcast_active");
+  assert.equal(state.nextNonPriorityLane, owedBeforeClose);
+  assert.equal(state.nextInLine?.id, free.id);
+});
+
+test("start broadcast manually overrides a future pre-show timer", async () => {
+  await freshOpenSession("manual start broadcast", { showStarted: false });
+  const free = await addTrack("Manual Start Free");
+  let state = await queue.getRadioQueueState();
+  assert.equal(state.session.showStarted, false);
+  assert.ok(new Date(state.session.preShowEndsAt).getTime() > Date.now());
+
+  state = await queue.updateRadioTrack("", "startShow");
+
+  assert.equal(state.session.queueOpen, true);
+  assert.equal(state.session.showStarted, true);
+  assert.equal(state.session.broadcastPhase, "broadcast_active");
+  assert.equal(state.nextInLine?.id, free.id);
+});
+
+test("ending broadcast is separate from closing submissions", async () => {
+  await freshOpenSession("end broadcast separate");
+  let state = await queue.getRadioQueueState();
+  assert.equal(state.session.showStarted, true);
+
+  state = await queue.archiveCurrentQueueSession();
+
+  assert.equal(state.session.status, "archived");
+  assert.equal(state.session.queueOpen, false);
+  assert.equal(state.session.showStarted, false);
+  assert.equal(state.session.broadcastPhase, "ended");
+  assert.equal(state.streamStatus, "offline");
+});
+
 test("admin phase display uses showStarted language instead of opening state", () => {
   const source = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
 
-  assert.match(source, /Submission Window/);
-  assert.match(source, /Live Show/);
+  assert.match(source, /Warmup \/ Submission Window/);
+  assert.match(source, /Broadcast Active/);
+  assert.match(source, /Ended \/ Disconnecting/);
   assert.doesNotMatch(source, /Opening state/);
   assert.doesNotMatch(source, /playbackStarted/);
 });

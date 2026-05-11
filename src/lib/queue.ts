@@ -38,6 +38,7 @@ const DEFAULT_PRIORITY_UPGRADE_LABEL = "Priority Signal Upgrade";
 const DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS = "Priority Signal Upgrade is being prepared. No payment has been processed.";
 const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 1000;
 const DEFAULT_PRIORITY_UPGRADE_CURRENCY = "usd";
+const PRE_SHOW_ROUTING_DELAY_MS = (20 * 60 + 15) * 1000;
 
 type QueueAdminAction = "pullNext" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "pausePriority" | "resumePriority" | "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
 
@@ -146,6 +147,7 @@ function defaultSession(options: { title?: string; showDate?: string; descriptio
     publicStatus: { isOpen: false, activeCount: 0, estimatedRuntimeSeconds: 0, capacity: options.queueCapacity ?? DEFAULT_QUEUE_CAPACITY, pressure: "low" },
     nextNonPriorityLane: "wheel",
     showStarted: false,
+    preShowEndsAt: null,
     wheelSpinsOwed: 0,
     nextInLineTrack: null,
     nextInLineTrackId: null,
@@ -508,7 +510,9 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     completedRuntimeSeconds: session.completed.reduce((sum, entry) => sum + getTrackRuntimeSeconds(entry), 0),
     nextNonPriorityLane: session.nextNonPriorityLane ?? "wheel",
     showStarted: session.showStarted === true,
+    preShowEndsAt: session.preShowEndsAt ?? null,
     wheelSpinsOwed: normalizeWheelSpinsOwed(session.wheelSpinsOwed),
+    broadcastPhase: broadcastPhaseForSession(session),
     priorityUpgradesEnabled: normalizePaidPriorityEnabled(session),
     priorityUpgradeLabel: session.priorityUpgradeLabel?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
     priorityUpgradeInstructions: session.priorityUpgradeInstructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
@@ -516,6 +520,26 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     priorityUpgradeCurrency: normalizeCurrency(session.priorityUpgradeCurrency),
     priorityUpgradePaymentsEnabled: normalizePaidPriorityEnabled(session),
   };
+}
+
+
+function preShowEndsAtFrom(date = new Date()): string {
+  return new Date(date.getTime() + PRE_SHOW_ROUTING_DELAY_MS).toISOString();
+}
+
+function broadcastPhaseForSession(session: Pick<QueueSession, "status" | "showStarted">): "submission_window" | "broadcast_active" | "ended" {
+  if (session.status === "archived") return "ended";
+  return session.showStarted === true ? "broadcast_active" : "submission_window";
+}
+
+function applyPreShowTimer(session: QueueSession, now = new Date()): boolean {
+  if (session.status === "archived" || session.showStarted === true || session.queueOpen !== true || !session.preShowEndsAt) return false;
+  const endsAt = new Date(session.preShowEndsAt).getTime();
+  if (!Number.isFinite(endsAt) || endsAt > now.getTime()) return false;
+  session.showStarted = true;
+  session.updatedAt = now.toISOString();
+  resolveNextInLine(session, undefined, true);
+  return true;
 }
 
 function normalizeWheelSpinsOwed(value: unknown): number {
@@ -611,6 +635,7 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     queueOpen: status === "open" ? true : false,
     nextNonPriorityLane: raw.nextNonPriorityLane === "regular" ? "regular" : "wheel",
     showStarted: raw.showStarted === true,
+    preShowEndsAt: typeof raw.preShowEndsAt === "string" && raw.preShowEndsAt ? raw.preShowEndsAt : null,
     wheelSpinsOwed: normalizeWheelSpinsOwed(raw.wheelSpinsOwed),
     nextInLineTrack: raw.nextInLineTrack ? normalizeEntry(raw.nextInLineTrack) : null,
     nextInLineTrackId: raw.nextInLineTrack?.id ?? raw.nextInLineTrackId ?? null,
@@ -1054,6 +1079,7 @@ export async function createQueueTrack(input: {
 export async function submitRadioTrack(input: Parameters<typeof createQueueTrack>[0]): Promise<QueueEntry> {
   const store = await readStore();
   const session = getSession(store);
+  applyPreShowTimer(session);
   if (session.status !== "open" || !session.queueOpen) throw new Error("Queue is closed");
   if (publicStatusForSession(session).isFull) throw new Error("Queue is full for new transmissions.");
   const track = await createQueueTrack(input);
@@ -1098,7 +1124,7 @@ function queueStateFromSession(session: QueueSession, store: QueueStore, viewedS
     queue: normalized.queue,
     history: normalized.completed,
     totalPlayed: normalized.completed.length,
-    streamStatus: normalized.status === "open" && normalized.queueOpen ? "online" : "offline",
+    streamStatus: normalized.status !== "archived" && (normalized.queueOpen || normalized.showStarted) ? "online" : "offline",
     removed: normalized.removed,
     spotlight: normalized.spotlight,
     publicStatus: normalized.publicStatus,
@@ -1119,6 +1145,7 @@ export async function getRadioQueueState(sessionId?: string): Promise<QueueState
   const store = await readStore();
   const session = getSession(store, sessionId);
   if (session.status !== "archived") {
+    applyPreShowTimer(session);
     pullNextInLine(session);
     await writeStore(replaceSession(store, session));
     return queueStateFromSession(session, replaceSession(store, session), sessionId ?? store.activeSessionId);
@@ -1531,12 +1558,14 @@ export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> 
   const session = getSession(store);
   if (session.status === "archived") return session.publicStatus;
 
+  const now = new Date();
   const sessions = store.sessions.map((item) => {
     if (item.sessionId === session.sessionId) {
-      return normalizeSession({ ...item, queueOpen: isOpen, status: isOpen ? "open" : "closed", updatedAt: new Date().toISOString() });
+      const openingPreShow = isOpen && item.showStarted !== true;
+      return normalizeSession({ ...item, queueOpen: isOpen, status: isOpen ? "open" : "closed", preShowEndsAt: openingPreShow ? preShowEndsAtFrom(now) : item.preShowEndsAt ?? null, updatedAt: now.toISOString() });
     }
     if (isOpen && item.status === "open") {
-      return normalizeSession({ ...item, queueOpen: false, status: "closed", updatedAt: new Date().toISOString() });
+      return normalizeSession({ ...item, queueOpen: false, status: "closed", updatedAt: now.toISOString() });
     }
     return item;
   });
@@ -1558,7 +1587,7 @@ export async function startNewQueueSession(options: { title?: string; showDate?:
 
 export async function archiveCurrentQueueSession(): Promise<QueueState> {
   const store = await readStore();
-  const session = normalizeSession({ ...getSession(store), status: "archived", queueOpen: false, updatedAt: new Date().toISOString() });
+  const session = normalizeSession({ ...getSession(store), status: "archived", queueOpen: false, showStarted: false, updatedAt: new Date().toISOString() });
   const archivedStore = replaceSession(store, session);
   const active = archivedStore.sessions.find((item) => item.status === "open" || item.status === "prepared") ?? session;
   archivedStore.activeSessionId = active.sessionId;
@@ -1865,6 +1894,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
   const store = await readStore();
   const session = getSession(store);
   if (session.status === "archived") return queueStateFromSession(session, store);
+  applyPreShowTimer(session);
 
   if (action === "startShow") {
     session.showStarted = true;
@@ -2046,6 +2076,7 @@ export async function addToQueue(entry: Omit<QueueEntry, "id" | "status" | "play
   const track = normalizeEntry({ ...entry, id: generateQueueId(), status: "queued", playedAt: null, lane: entry.lane ?? (normalizeTier(entry.tier) === "fastlane" ? "priority" : "regular"), sourceType: entry.sourceType ?? detectQueueSourceType(entry.link) });
   const store = await readStore();
   const session = getSession(store);
+  applyPreShowTimer(session);
   session.queue.push(track);
   await writeStore(replaceSession(store, session));
   return track;

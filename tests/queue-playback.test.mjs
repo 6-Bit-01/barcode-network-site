@@ -35,19 +35,21 @@ const require = createRequire(import.meta.url);
 const queue = require("../src/lib/queue.ts");
 
 let trackSequence = 0;
-async function freshOpenSession(label) {
+async function freshOpenSession(label, options = {}) {
   await queue.setQueueOpen(false);
   const state = await queue.startNewQueueSession({ title: `${label} ${Date.now()} ${trackSequence}` });
   await queue.setQueueOpen(true);
+  if (options.showStarted !== false) await queue.updateRadioTrack("", "startShow");
   return state.session.sessionId;
 }
 
-async function addTrack(label) {
+async function addTrack(label, options = {}) {
   trackSequence += 1;
+  const artistName = options.artist ?? `${label} Artist`;
   return queue.addToQueue({
-    artist: `${label} Artist`,
+    artist: artistName,
     title: `${label} Track`,
-    tiktokHandle: `@${label.toLowerCase().replace(/[^a-z0-9]/g, "")}${trackSequence}`,
+    tiktokHandle: `@${artistName.toLowerCase().replace(/[^a-z0-9]/g, "")}${trackSequence}`,
     link: `https://example.com/${label.toLowerCase().replace(/[^a-z0-9]/g, "")}-${trackSequence}`,
     tier: "free",
     lane: "regular",
@@ -79,13 +81,150 @@ function removedTrack(state, id) {
   return state.removed.find((entry) => entry.id === id) ?? null;
 }
 
-test("pull next falls back to the first free track when no wheel track exists", async () => {
+
+test("pre-show free tracks do not auto-stage", async () => {
+  await freshOpenSession("pre show free blocked", { showStarted: false });
+  await addTrack("Pre Free One");
+  await addTrack("Pre Free Two");
+
+  const state = await queue.updateRadioTrack("", "pullNext");
+
+  assert.equal(state.session.showStarted, false);
+  assert.equal(state.nextInLine, null);
+  assert.equal(state.queue.filter((entry) => entry.lane === "regular").length, 2);
+});
+
+test("pre-show active priority can stage while free waits", async () => {
+  await freshOpenSession("pre show priority", { showStarted: false });
+  await addTrack("Pre Free");
+  const priority = await addTrack("Pre Priority");
+
+  const state = await queue.updateRadioTrack(priority.id, "priority");
+
+  assert.equal(state.session.showStarted, false);
+  assert.equal(state.nextInLine?.id, priority.id);
+  assert.equal(state.nextInLine?.lane, "priority");
+  assert.ok(state.queue.some((entry) => entry.lane === "regular"));
+});
+
+test("start show with priority and owed wheel stages priority first", async () => {
+  await freshOpenSession("start show priority owed", { showStarted: false });
+  await addTrack("Free Waiting");
+  await queue.updateRadioTrack("", "addWheelSpinOwed");
+  const priority = await addTrack("Opening Priority");
+  await queue.updateRadioTrack(priority.id, "priority");
+
+  const state = await queue.updateRadioTrack("", "startShow");
+
+  assert.equal(state.session.showStarted, true);
+  assert.equal(state.session.wheelSpinsOwed, 1);
+  assert.equal(state.nextInLine?.id, priority.id);
+  assert.equal(state.nextInLine?.lane, "priority");
+});
+
+test("start show with unresolved owed wheel does not pull free fallback", async () => {
+  await freshOpenSession("start show owed wheel", { showStarted: false });
+  await addTrack("Free Waiting");
+  await queue.updateRadioTrack("", "addWheelSpinOwed");
+
+  const state = await queue.updateRadioTrack("", "startShow");
+
+  assert.equal(state.session.showStarted, true);
+  assert.equal(state.session.wheelSpinsOwed, 1);
+  assert.equal(state.nextInLine, null);
+});
+
+test("start show with no priority and no owed wheel stages top free", async () => {
+  await freshOpenSession("start show free", { showStarted: false });
+  const free = await addTrack("Opening Free");
+
+  const state = await queue.updateRadioTrack("", "startShow");
+
+  assert.equal(state.session.showStarted, true);
+  assert.equal(state.session.wheelSpinsOwed, 0);
+  assert.equal(state.nextInLine?.id, free.id);
+  assert.equal(state.nextInLine?.stagedAsFallbackForLane, "wheel");
+});
+
+test("add owed wheel spin increments without moving tracks or advancing pointer", async () => {
+  await freshOpenSession("add owed wheel");
+  const free = await addTrack("Loaded Free For Owed Spin");
+  let state = await queue.updateRadioTrack("", "pullNext");
+  state = await queue.updateRadioTrack(free.id, "load");
+  const owedBefore = state.nextNonPriorityLane;
+  const loadedBefore = state.nowPlaying?.id;
+
+  state = await queue.updateRadioTrack("", "addWheelSpinOwed");
+
+  assert.equal(state.session.wheelSpinsOwed, 1);
+  assert.equal(state.nowPlaying?.id, loadedBefore);
+  assert.equal(state.nextNonPriorityLane, owedBefore);
+  assert.equal(state.queue.some((entry) => entry.lane === "wheel"), false);
+});
+
+test("resolving owed wheel by selected track decrements owed and keeps artist siblings", async () => {
+  await freshOpenSession("resolve owed wheel");
+  const selected = await addTrack("Same Artist Selected", { artist: "Same Artist" });
+  const sibling = await addTrack("Same Artist Sibling", { artist: "Same Artist" });
+  await queue.updateRadioTrack("", "addWheelSpinOwed");
+
+  const state = await queue.updateRadioTrack(selected.id, "wheel");
+
+  assert.equal(state.session.wheelSpinsOwed, 0);
+  assert.ok(state.wheelEligibleArtists?.some((artist) => artist.normalizedArtist === "same artist" && artist.trackIds.includes(sibling.id)), "remaining sibling keeps artist eligible for future spins");
+  assert.equal(state.nextInLine?.id, selected.id);
+  assert.equal(state.nextInLine?.lane, "wheel");
+  assert.equal(queuedTrack(state, sibling.id)?.lane, "regular");
+});
+
+test("stacked owed wheel spins decrement one at a time", async () => {
+  await freshOpenSession("stacked owed wheel");
+  const selected = await addTrack("Stacked Wheel Winner");
+  await queue.updateRadioTrack("", "addWheelSpinOwed");
+  await queue.updateRadioTrack("", "addWheelSpinOwed");
+
+  const state = await queue.updateRadioTrack(selected.id, "wheel");
+
+  assert.equal(state.session.wheelSpinsOwed, 1);
+  assert.equal(state.nextInLine?.id, selected.id);
+  assert.equal(state.nextInLine?.lane, "wheel");
+});
+
+test("adding owed wheel spin releases existing fallback free", async () => {
+  await freshOpenSession("owed releases fallback");
+  const fallbackFree = await addTrack("Fallback Before Owed");
+  let state = await queue.updateRadioTrack("", "pullNext");
+  assert.equal(state.nextInLine?.id, fallbackFree.id);
+  assert.equal(state.nextInLine?.stagedAsFallbackForLane, "wheel");
+
+  state = await queue.updateRadioTrack("", "addWheelSpinOwed");
+
+  assert.equal(state.session.wheelSpinsOwed, 1);
+  assert.equal(state.nextInLine, null);
+  assert.equal(queuedTrack(state, fallbackFree.id)?.lane, "regular");
+  assert.equal(queuedTrack(state, fallbackFree.id)?.stagedAsFallbackForLane ?? null, null);
+  assert.equal(state.nextNonPriorityLane, "wheel");
+});
+
+test("live wheel owed blocks free fallback", async () => {
+  await freshOpenSession("owed blocks fallback");
+  await addTrack("Blocked Free");
+  await queue.updateRadioTrack("", "addWheelSpinOwed");
+
+  const state = await queue.updateRadioTrack("", "pullNext");
+
+  assert.equal(state.session.showStarted, true);
+  assert.equal(state.session.wheelSpinsOwed, 1);
+  assert.equal(state.nextInLine, null);
+});
+
+test("after show start pull next falls back to the first free track when no wheel exists", async () => {
   await freshOpenSession("pull next free fallback");
   const free = await addTrack("Free");
 
   const state = await queue.updateRadioTrack("", "pullNext");
 
-  assert.equal(state.nextInLine?.id, free.id, "Pull Next should stage a free track without Stage First Free or Start Playback");
+  assert.equal(state.nextInLine?.id, free.id, "Pull Next should stage a free track after show start without Stage First Free");
   assert.equal(state.nextInLine?.lane, "regular");
   assert.equal(state.nowPlaying, null);
 });

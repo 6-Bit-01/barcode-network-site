@@ -24,6 +24,7 @@ import type {
   QueueSessionStatus,
   QueueSessionSummary,
   QueueSourceType,
+  QueueWheelArtistOption,
   QueueState,
   QueueTier,
 } from "./queue-types";
@@ -38,7 +39,7 @@ const DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS = "Priority Signal Upgrade is being 
 const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 1000;
 const DEFAULT_PRIORITY_UPGRADE_CURRENCY = "usd";
 
-type QueueAdminAction = "pullNext" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "pausePriority" | "resumePriority" | "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks" | "stageFirstFree";
+type QueueAdminAction = "pullNext" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "pausePriority" | "resumePriority" | "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks" | "stageFirstFree";
 
 export interface PriorityUpgradeSettingsInput {
   enabled?: boolean;
@@ -144,6 +145,8 @@ function defaultSession(options: { title?: string; showDate?: string; descriptio
     removed: [],
     publicStatus: { isOpen: false, activeCount: 0, estimatedRuntimeSeconds: 0, capacity: options.queueCapacity ?? DEFAULT_QUEUE_CAPACITY, pressure: "low" },
     nextNonPriorityLane: "wheel",
+    showStarted: false,
+    wheelSpinsOwed: 0,
     nextInLineTrack: null,
     nextInLineTrackId: null,
     loadedTrack: null,
@@ -227,12 +230,16 @@ function chooseNextWaitingCandidate(session: QueueSession, excludeId?: string): 
   const priority = laneTop(session, "priority", blockedId);
   if (priority) return { entry: priority, fallbackForLane: null };
 
+  if (session.showStarted !== true) return null;
+
   const displacedNonPriorityNext = getDisplacedNonPriorityNext(session, blockedId);
   if (displacedNonPriorityNext) return { entry: displacedNonPriorityNext, fallbackForLane: displacedNonPriorityNext.stagedAsFallbackForLane ?? null };
 
   const preferredLane: QueueNonPriorityLane = session.nextNonPriorityLane === "regular" ? "regular" : "wheel";
   const preferred = laneTop(session, preferredLane, blockedId);
   if (preferred) return { entry: preferred, fallbackForLane: null };
+
+  if (preferredLane === "wheel" && normalizeWheelSpinsOwed(session.wheelSpinsOwed) > 0) return null;
 
   const fallbackLane: QueueNonPriorityLane = preferredLane === "wheel" ? "regular" : "wheel";
   const fallback = laneTop(session, fallbackLane, blockedId);
@@ -500,6 +507,8 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     estimatedActiveRuntimeSeconds: publicStatus.estimatedRuntimeSeconds,
     completedRuntimeSeconds: session.completed.reduce((sum, entry) => sum + getTrackRuntimeSeconds(entry), 0),
     nextNonPriorityLane: session.nextNonPriorityLane ?? "wheel",
+    showStarted: session.showStarted === true,
+    wheelSpinsOwed: normalizeWheelSpinsOwed(session.wheelSpinsOwed),
     playbackStarted: session.playbackStarted === true,
     priorityUpgradesEnabled: normalizePaidPriorityEnabled(session),
     priorityUpgradeLabel: session.priorityUpgradeLabel?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
@@ -508,6 +517,11 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     priorityUpgradeCurrency: normalizeCurrency(session.priorityUpgradeCurrency),
     priorityUpgradePaymentsEnabled: normalizePaidPriorityEnabled(session),
   };
+}
+
+function normalizeWheelSpinsOwed(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
 }
 
 function normalizePriorityUpgradeStatus(status: unknown): QueueEntry["priorityUpgradeStatus"] {
@@ -597,6 +611,8 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     submissionCooldownSeconds: normalizeSubmissionCooldownSeconds(raw.submissionCooldownSeconds),
     queueOpen: status === "open" ? true : false,
     nextNonPriorityLane: raw.nextNonPriorityLane === "regular" ? "regular" : "wheel",
+    showStarted: raw.showStarted === true,
+    wheelSpinsOwed: normalizeWheelSpinsOwed(raw.wheelSpinsOwed),
     playbackStarted: raw.playbackStarted === true,
     nextInLineTrack: raw.nextInLineTrack ? normalizeEntry(raw.nextInLineTrack) : null,
     nextInLineTrackId: raw.nextInLineTrack?.id ?? raw.nextInLineTrackId ?? null,
@@ -1056,6 +1072,26 @@ export async function submitRadioTrack(input: Parameters<typeof createQueueTrack
   return track;
 }
 
+
+function wheelEligibleArtistsForSession(session: QueueSession): QueueWheelArtistOption[] {
+  const byArtist = new Map<string, QueueWheelArtistOption>();
+  for (const entry of sortActive(session.queue)) {
+    if (!isWheelEligibleTrack(entry)) continue;
+    const artist = submittedArtistForEntry(entry);
+    const normalizedArtist = artist.trim().toLowerCase();
+    if (!normalizedArtist) continue;
+    const existing = byArtist.get(normalizedArtist) ?? { artist, normalizedArtist, trackIds: [], trackCount: 0 };
+    existing.trackIds.push(entry.id);
+    existing.trackCount = existing.trackIds.length;
+    byArtist.set(normalizedArtist, existing);
+  }
+  return [...byArtist.values()];
+}
+
+function submittedArtistForEntry(entry: QueueEntry): string {
+  return entry.submitterArtistName ?? entry.submittedArtistName ?? entry.artist;
+}
+
 function queueStateFromSession(session: QueueSession, store: QueueStore, viewedSessionId = session.sessionId): QueueState {
   const normalized = normalizeSession(session);
   const isCurrentSession = normalized.sessionId === store.activeSessionId && normalized.status !== "archived";
@@ -1073,6 +1109,7 @@ function queueStateFromSession(session: QueueSession, store: QueueStore, viewedS
     loadedTrack: getLoadedTrack(normalized),
     autoRoutingPaused: normalized.autoRoutingPaused === true,
     nextNonPriorityLane: normalized.nextNonPriorityLane,
+    wheelEligibleArtists: wheelEligibleArtistsForSession(normalized),
     sessions: store.sessions.map(summarizeSession).sort((a, b) => b.showDate.localeCompare(a.showDate) || b.createdAt.localeCompare(a.createdAt)),
     viewedSessionId,
     readOnly: !isCurrentSession,
@@ -1845,6 +1882,25 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
   const session = getSession(store);
   if (session.status === "archived") return queueStateFromSession(session, store);
 
+  if (action === "startShow") {
+    session.showStarted = true;
+    pullNextInLine(session, undefined, true);
+    const nextStore = replaceSession(store, session);
+    await writeStore(nextStore);
+    return queueStateFromSession(session, nextStore);
+  }
+
+  if (action === "addWheelSpinOwed") {
+    session.wheelSpinsOwed = normalizeWheelSpinsOwed(session.wheelSpinsOwed) + 1;
+    if (session.nextNonPriorityLane === "wheel") {
+      releaseFallbackNextForLane(session, "wheel");
+      resolveNextInLine(session, undefined, true);
+    }
+    const nextStore = replaceSession(store, session);
+    await writeStore(nextStore);
+    return queueStateFromSession(session, nextStore);
+  }
+
   if (action === "stageFirstFree") {
     if (stageFirstFreeTrack(session)) {
       const nextStore = replaceSession(store, session);
@@ -1992,6 +2048,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
   if (action === "wheel" && isWheelEligibleTrack(active)) {
     session.queue.splice(index, 1);
     session.queue.push(normalizeEntry({ ...active, lane: "wheel", tier: "frontrow", status: "queued", displacedFromNextInLineAt: null, stagedAsFallbackForLane: null, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: null }));
+    session.wheelSpinsOwed = Math.max(0, normalizeWheelSpinsOwed(session.wheelSpinsOwed) - 1);
     handleWheelWinnerSelected(session);
   }
   if (action === "finish") {

@@ -106,6 +106,8 @@ export interface QueueSessionSummary {
   estimatedActiveRuntimeSeconds: number;
   completedRuntimeSeconds: number;
   nextNonPriorityLane: QueueNonPriorityLane;
+  showStarted?: boolean;
+  wheelSpinsOwed?: number;
   playbackStarted?: boolean;
   nextInLineTrackId?: string | null;
   nextInLineHoldTrackId?: string | null;
@@ -176,6 +178,13 @@ export interface QueuePublicSnapshot {
   submitterStatus?: QueuePublicSubmitterStatus | null;
 }
 
+export interface QueueWheelArtistOption {
+  artist: string;
+  normalizedArtist: string;
+  trackIds: string[];
+  trackCount: number;
+}
+
 export interface QueueState {
   nowPlaying: QueueEntry | null;
   queue: QueueEntry[];
@@ -194,6 +203,7 @@ export interface QueueState {
   loadedTrack?: QueueEntry | null;
   autoRoutingPaused?: boolean;
   nextNonPriorityLane?: QueueNonPriorityLane;
+  wheelEligibleArtists?: QueueWheelArtistOption[];
 }
 
 export function parseQueueYouTubeVideoId(link?: string | null): string | null {

@@ -9,6 +9,7 @@ export type QueueNonPriorityLane = "wheel" | "regular";
 export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | "next" | "pending" | "played" | "refunded" | "expired";
 export type QueueDurationSource = "upload_metadata" | "file_metadata" | "youtube" | "soundcloud" | "spotify" | "provider_metadata" | "internal_estimate" | "unknown";
 export type QueueSessionStatus = "prepared" | "open" | "closed" | "archived";
+export type QueueBroadcastPhase = "warmup" | "submission_window" | "broadcast_active" | "ended";
 export type PriorityUpgradeStatus = "none" | "requested" | "manual" | "checkout_pending" | "paid" | "paid_needs_attention" | "failed" | "refunded";
 export type PriorityUpgradeSource = "admin" | "public_placeholder" | "future_payment" | "stripe";
 
@@ -69,6 +70,12 @@ export interface QueueEntry {
   priorityUpgradeCheckoutExpiresAt?: string | null;
   priorityUpgradeAmountCents?: number | null;
   priorityUpgradeCurrency?: string | null;
+  displacedFromNextInLineAt?: string | null;
+  stagedAsFallbackForLane?: QueueNonPriorityLane | null;
+  priorityPausedAt?: string | null;
+  priorityResumedAt?: string | null;
+  priorityQueueOrderAt?: string | null;
+  isTestTrack?: boolean;
 }
 
 export interface QueuePublicStatus {
@@ -100,6 +107,10 @@ export interface QueueSessionSummary {
   estimatedActiveRuntimeSeconds: number;
   completedRuntimeSeconds: number;
   nextNonPriorityLane: QueueNonPriorityLane;
+  showStarted?: boolean;
+  preShowEndsAt?: string | null;
+  wheelSpinsOwed?: number;
+  broadcastPhase?: QueueBroadcastPhase;
   nextInLineTrackId?: string | null;
   nextInLineHoldTrackId?: string | null;
   loadedTrackId?: string | null;
@@ -126,6 +137,8 @@ export interface QueueSession extends QueueSessionSummary {
   currentTrackPreviousIndex?: number | null;
   loadedTrackPreviousLane?: QueueLane | null;
   loadedTrackPreviousIndex?: number | null;
+  loadedTrackWasNextInLine?: boolean;
+  loadedTrackFallbackForLane?: QueueNonPriorityLane | null;
   nextInLineHoldTrackId?: string | null;
   autoRoutingPaused?: boolean;
 }
@@ -166,6 +179,13 @@ export interface QueuePublicSnapshot {
   submitterStatus?: QueuePublicSubmitterStatus | null;
 }
 
+export interface QueueWheelArtistOption {
+  artist: string;
+  normalizedArtist: string;
+  trackIds: string[];
+  trackCount: number;
+}
+
 export interface QueueState {
   nowPlaying: QueueEntry | null;
   queue: QueueEntry[];
@@ -184,6 +204,7 @@ export interface QueueState {
   loadedTrack?: QueueEntry | null;
   autoRoutingPaused?: boolean;
   nextNonPriorityLane?: QueueNonPriorityLane;
+  wheelEligibleArtists?: QueueWheelArtistOption[];
 }
 
 export function parseQueueYouTubeVideoId(link?: string | null): string | null {

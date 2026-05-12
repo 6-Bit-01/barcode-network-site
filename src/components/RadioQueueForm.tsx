@@ -9,7 +9,7 @@ import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@
 
 type Mode = "link" | "upload";
 type ReadState = "idle" | "checking" | "reading" | "detected" | "pending" | "uploading";
-type TransmissionState = "idle" | "signal" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed";
+type TransmissionState = "idle" | "priority_requested" | "signal" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed";
 type SubmitPhase = "resolved" | "complete";
 type IntakeStep = "track" | "routing";
 type RouteChoice = "free" | "priority";
@@ -318,12 +318,15 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
   async function startPriorityCheckout(trackId: string): Promise<boolean> {
     const checkoutSessionId = sessionId ?? session?.sessionId;
     if (!checkoutSessionId) return false;
+    setTransmissionState("priority_requested");
+    await wait(650);
     const res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId, sessionId: checkoutSessionId }) });
     const payload = await res.json().catch(() => ({}));
     if (res.ok && typeof payload.url === "string") {
       window.location.href = payload.url;
       return true;
     }
+    setTransmissionState("idle");
     return false;
   }
 
@@ -388,6 +391,19 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
           else window.localStorage.removeItem(cooldownKey);
         }
         if (selectedRoute === "priority") {
+          setWarpData({
+            artist: artist.trim(),
+            title: title.trim(),
+            tiktokHandle: tiktokHandle.trim(),
+            sourceType: mode === "upload" ? "UPLOAD" : (submitted.sourceType ?? "other").toUpperCase(),
+            durationLabel: detectedDuration ? formatRuntime(detectedDuration) : submitted.durationLabel,
+            sessionTitle: session?.title ?? "BARCODE Radio",
+            sessionDate: session?.showDate ?? "ACTIVE SESSION",
+            queueStatus: status ? `${status.activeCount + 1}/${status.capacity}` : "SYNCING",
+            submissionSlot: "CHECKOUT_PENDING",
+            lane: "FREE_TRANSMISSIONS / STRIPE_REQUIRED",
+            artworkUrl: submitted.sourceArtworkUrl ?? null,
+          });
           const checkoutStarted = await startPriorityCheckout(submitted.id);
           if (checkoutStarted) return;
           setError(PRIORITY_CHECKOUT_UNAVAILABLE_MESSAGE);
@@ -570,24 +586,26 @@ function formatCooldown(seconds: number): string {
 }
 
 function warpLabel(state: TransmissionState): string {
+  if (state === "priority_requested") return "PRIORITY SIGNAL REQUESTED";
   if (state === "signal") return "SIGNAL LOCKED";
   if (state === "received") return "SOURCE ARTIFACT CAPTURED";
   if (state === "encoded") return "AUDIO BODY DISASSEMBLED";
   if (state === "converting") return "DATA PACKET FORMED";
   if (state === "temporal") return "TEMPORAL ROUTE OPENED";
   if (state === "aligning") return "PACKET TRANSFER IN PROGRESS";
-  if (state === "confirmed") return "QUEUE INSERTION CONFIRMED";
+  if (state === "confirmed") return "TRANSMISSION ACCEPTED";
   return "SIGNAL LOCKED";
 }
 
-function warpDescription(state: TransmissionState): string {
+function warpDescription(state: TransmissionState, data: WarpData | null): string {
+  if (state === "priority_requested") return "Opening secure checkout. Payment must confirm before this transmission enters Priority.";
   if (state === "signal") return "Terminal lock stable. Intake origin is charging the carrier signal.";
   if (state === "received") return "Source artwork is captured and promoted before conversion.";
   if (state === "encoded") return "Waveform, metadata, and code fragments are tearing into routed components.";
   if (state === "converting") return "Artwork, title, and artist data are compressing into a visible packet.";
   if (state === "temporal") return "Destination route is open. Network background power is destabilizing.";
   if (state === "aligning") return "Packet transfer is being pulled toward the resolved queue destination.";
-  if (state === "confirmed") return "QUEUE INSERTION CONFIRMED. Signal residue is stabilizing.";
+  if (state === "confirmed") return `ROUTED TO ${data?.lane ?? "FREE_TRANSMISSIONS"}. Queue insertion confirmed by the public backend snapshot.`;
   return "BARCODE Network transmission in progress.";
 }
 
@@ -602,8 +620,9 @@ function WaveformSweep({ offset = 0 }: { offset?: number }) {
 }
 
 function WarpSequence({ state, data }: { state: TransmissionState; data: WarpData | null }) {
-  const steps: TransmissionState[] = ["signal", "received", "encoded", "converting", "temporal", "aligning", "confirmed"];
+  const steps: TransmissionState[] = ["priority_requested", "signal", "received", "encoded", "converting", "temporal", "aligning", "confirmed"];
   const activeIndex = Math.max(0, steps.indexOf(state));
+  const isPriorityRequested = state === "priority_requested";
   const isSignal = state === "signal";
   const isArtifact = state === "received";
   const isDisassembling = state === "encoded";
@@ -611,9 +630,9 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
   const isRoute = state === "temporal";
   const isTransfer = state === "aligning";
   const isConfirmed = state === "confirmed";
-  const motionClass = isSignal ? "signal-lock" : isRoute || isTransfer ? "barcode-warp power-instability" : "barcode-warp";
-  const packetClass = isSignal || isArtifact || isDisassembling ? "packet-forming" : isPacket || isRoute ? "packet-charging" : isTransfer ? "packet-transfer" : "packet-landed";
-  const artClass = isSignal ? "art-source" : isArtifact ? "art-captured" : isDisassembling || isPacket ? "art-disassemble" : "art-compressed";
+  const motionClass = isPriorityRequested || isSignal ? "signal-lock" : isRoute || isTransfer ? "barcode-warp power-instability" : "barcode-warp";
+  const packetClass = isPriorityRequested || isSignal || isArtifact || isDisassembling ? "packet-forming" : isPacket || isRoute ? "packet-charging" : isTransfer ? "packet-transfer" : "packet-landed";
+  const artClass = isPriorityRequested || isSignal ? "art-source" : isArtifact ? "art-captured" : isDisassembling || isPacket ? "art-disassemble" : "art-compressed";
   const landingClass = isConfirmed ? "landing-card landing-impact" : isTransfer ? "landing-card landing-armed" : "landing-card";
   const fragments = [
     ["ARTIST", data?.artist ?? "SIGNAL SOURCE"],
@@ -647,7 +666,7 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,0,0,0.14),transparent_34%)]" />
           <div className="relative z-10 space-y-4">
             <div className="flex items-start justify-between gap-4">
-              <div><p className="text-xs uppercase tracking-[0.4em] text-accent">BARCODE Network Transmission</p><h2 className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">{warpLabel(state)}</h2><p className="mt-1 text-xs text-muted">{warpDescription(state)}</p></div>
+              <div><p className="text-xs uppercase tracking-[0.4em] text-accent">BARCODE Network Transmission</p><h2 className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">{warpLabel(state)}</h2><p className="mt-1 text-xs text-muted">{warpDescription(state, data)}</p></div>
               <div className="hidden border border-accent/40 bg-accent/5 px-3 py-2 text-xs uppercase tracking-widest text-accent sm:block">TRANSMISSION LOCKED</div>
             </div>
             <div className="grid grid-cols-7 gap-1">{steps.map((step, index) => <span key={step} className={`h-1.5 ${index <= activeIndex ? "bg-accent shadow-[0_0_14px_rgba(255,0,0,0.75)]" : "bg-border"}`} />)}</div>
@@ -664,7 +683,7 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
                 <div className={`${packetClass} absolute left-[12%] top-1/2 z-30 w-28 -translate-y-1/2 border border-accent bg-background/92 p-2 shadow-[0_0_34px_rgba(255,0,0,0.62)]`}><div className="relative h-12 overflow-hidden border border-accent/30"><PacketArtwork data={data} /><div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(255,0,0,0.18),transparent)]" /></div><p className="mt-1 font-mono text-[9px] uppercase tracking-widest text-accent">signal packet</p></div>
                 <div className="absolute bottom-4 left-4 right-4 grid grid-cols-16 items-end gap-1">{[18, 44, 28, 70, 34, 82, 30, 62, 46, 76, 32, 56, 40, 68, 24, 50].map((height, index) => <span key={index} className="wave-fragment bg-accent/70 shadow-[0_0_10px_rgba(255,0,0,0.45)]" style={{ height: `${height / 2}px`, animationDelay: `${index * 45}ms` }} />)}</div>
               </div>
-              <div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80">{fragments.slice(4).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}<div className={`${landingClass} mt-4 border border-accent/50 bg-background/80 p-3`}><p className="text-xs uppercase tracking-widest text-accent">Destination card</p><div className="mt-2 grid grid-cols-[3rem_1fr] gap-2"><div className="relative h-12 overflow-hidden border border-accent/30"><PacketArtwork data={data} /></div><div><p className="truncate text-sm font-bold text-foreground">{data?.artist ?? "Submitted artist"}</p><p className="truncate text-xs text-muted">{data?.title ?? "Submitted track"}</p></div></div><p className="mt-2 text-[10px] text-accent">{isConfirmed ? "QUEUE INSERTION CONFIRMED" : "AWAITING LOCK"}</p></div></div>
+              <div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80">{fragments.slice(4).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}<div className={`${landingClass} mt-4 border border-accent/50 bg-background/80 p-3`}><p className="text-xs uppercase tracking-widest text-accent">Destination card</p><div className="mt-2 grid grid-cols-[3rem_1fr] gap-2"><div className="relative h-12 overflow-hidden border border-accent/30"><PacketArtwork data={data} /></div><div><p className="truncate text-sm font-bold text-foreground">{data?.artist ?? "Submitted artist"}</p><p className="truncate text-xs text-muted">{data?.title ?? "Submitted track"}</p></div></div><p className="mt-2 text-[10px] text-accent">{isConfirmed ? `ROUTED TO ${data?.lane ?? "FREE_TRANSMISSIONS"}` : isPriorityRequested ? "STRIPE CONFIRMATION REQUIRED" : "AWAITING LOCK"}</p></div></div>
             </div>
           </div>
         </div>

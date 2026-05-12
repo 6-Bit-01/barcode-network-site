@@ -77,7 +77,8 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   }, [snapshot]);
 
   const isOpen = snapshot?.status.isOpen ?? false;
-  const isEnded = snapshot?.session.status === "archived";
+  const isEnded = snapshot?.session.status === "archived" || snapshot?.session.broadcastPhase === "ended";
+  const isBroadcastActive = Boolean(snapshot?.nowPlaying || snapshot?.upNext || snapshot?.session.broadcastPhase === "broadcast_active" || snapshot?.session.showStarted);
   const isFull = Boolean(snapshot?.status.isFull || (snapshot && snapshot.status.activeCount >= snapshot.status.capacity));
   const canSubmit = !isEnded && isOpen && !isFull;
   const completedRuntime = snapshot?.session.completedRuntimeSeconds ?? 0;
@@ -143,7 +144,9 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="space-y-6">
-      {checkoutNotice && <div className="border border-accent/40 bg-accent/5 p-3 text-sm text-accent">{checkoutNotice}</div>}
+      {checkoutNotice && <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/5 p-3 text-sm text-[#ffaa00]">{checkoutNotice}</div>}
+
+      <SessionPhasePanel snapshot={snapshot} canSubmit={canSubmit} isBroadcastActive={isBroadcastActive} />
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)]">
         <div id="broadcast-queue-top"><NowPlaying title="Now Playing" track={snapshot?.nowPlaying ?? null} domId="now-playing-slot" lastSubmittedTrackId={lastSubmittedTrackId} /></div>
@@ -192,6 +195,51 @@ function TrackTitleLink({ track }: { track: QueuePublicTrack }) {
   return <a href={track.publicSourceUrl} target="_blank" rel="noreferrer" className="mt-1 block text-lg text-foreground/90 underline-offset-2 hover:text-accent hover:underline">{track.submittedSongTitle}</a>;
 }
 
+
+function SessionPhasePanel({ snapshot, canSubmit, isBroadcastActive }: { snapshot: QueuePublicSnapshot | null; canSubmit: boolean; isBroadcastActive: boolean }) {
+  const [nowMs, setNowMs] = useState(0);
+  useEffect(() => {
+    setNowMs(Date.now());
+    const interval = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+  const session = snapshot?.session;
+  const isArchived = !snapshot || session?.status === "archived" || session?.broadcastPhase === "ended";
+  const intakeClock = session?.preShowEndsAt ? new Date(session.preShowEndsAt).getTime() - nowMs : 0;
+  const intakeWindow = Number.isFinite(intakeClock) && intakeClock > 0 ? `${Math.floor(intakeClock / 60000)}:${Math.floor((intakeClock % 60000) / 1000).toString().padStart(2, "0")}` : null;
+  const copy = isArchived ? {
+    eyebrow: "BROADCAST ENDED",
+    title: "TRANSMISSION ARCHIVED",
+    body: "SUBMISSIONS CLOSED. No active BARCODE Radio session is currently accepting transmissions.",
+    tone: "text-danger",
+    border: "border-danger/35",
+    meter: "bg-danger/60",
+  } : isBroadcastActive ? {
+    eyebrow: "BROADCAST ACTIVE",
+    title: "HOST PROTOCOL INITIALIZED",
+    body: `Now Playing and Next In Line remain live broadcast slots. Submissions are ${canSubmit ? "open" : "closed"}; closed intake does not mean the broadcast ended.`,
+    tone: "text-[#ffaa00]",
+    border: "border-[#ffaa00]/45",
+    meter: "bg-[#ffaa00]/70",
+  } : canSubmit ? {
+    eyebrow: "SIGNAL INTAKE OPEN",
+    title: "TRANSMIT YOUR TRACK NOW",
+    body: "Free Transmissions are open. Priority Signal unlocks once the line is deep enough, then activates only after Stripe confirms payment.",
+    tone: "text-accent",
+    border: "border-accent/45",
+    meter: "bg-accent/70",
+  } : {
+    eyebrow: "SESSION ONLINE",
+    title: "SUBMISSION GATE CLOSED",
+    body: "The broadcast corridor is active, but new transmissions are not currently being accepted. Stand by for intake.",
+    tone: "text-muted",
+    border: "border-border",
+    meter: "bg-muted/60",
+  };
+
+  return <section className={`relative overflow-hidden border bg-surface p-5 ${copy.border}`}><div className="pointer-events-none absolute inset-0 opacity-20 [background:linear-gradient(transparent_50%,rgba(255,255,255,.08)_50%)] [background-size:100%_6px]" /><div className="relative grid gap-5 lg:grid-cols-[1.2fr_0.8fr]"><div><p className={`text-xs uppercase tracking-[0.35em] ${copy.tone}`}>{copy.eyebrow}</p><h2 className={`mt-2 text-2xl font-bold ${copy.tone}`}>{copy.title}</h2><p className="mt-3 max-w-3xl text-sm text-muted">{copy.body}</p>{intakeWindow && canSubmit && <p className="mt-3 inline-flex border border-accent/35 bg-accent/5 px-3 py-2 text-[11px] uppercase tracking-widest text-accent">Intake window display: {intakeWindow}</p>}</div><div className="grid gap-2 text-xs"><div className="border border-border bg-background/50 p-3"><p className="uppercase tracking-widest text-muted">Session existence</p><p className="mt-1 text-foreground">{snapshot ? session?.status ?? "syncing" : "no active public snapshot"}</p></div><div className="border border-border bg-background/50 p-3"><p className="uppercase tracking-widest text-muted">Submissions</p><p className={canSubmit ? "mt-1 text-accent" : "mt-1 text-danger"}>{canSubmit ? "Open / intake corridor unlocked" : "Closed / gate sealed"}</p></div><div className="border border-border bg-background/50 p-3"><p className="uppercase tracking-widest text-muted">Broadcast monitor</p><p className={isBroadcastActive ? "mt-1 text-[#ffaa00]" : "mt-1 text-muted"}>{isBroadcastActive ? "Live playback signal detected" : "No loaded track in public snapshot"}</p><div className="mt-2 h-1 bg-border"><div className={`h-full ${copy.meter}`} style={{ width: isBroadcastActive ? "100%" : canSubmit ? "70%" : isArchived ? "18%" : "42%" }} /></div></div></div></div></section>;
+}
+
 function NowPlaying({ title, track, compact = false, domId, lastSubmittedTrackId }: { title: string; track: QueuePublicTrack | null; compact?: boolean; domId?: string; lastSubmittedTrackId?: string | null }) {
   const detected = track ? usefulDetected(track) : null;
   const isLanding = Boolean(track?.id && track.id === lastSubmittedTrackId);
@@ -208,7 +256,7 @@ function QueueMechanicsInfo() { return <section className="border border-accent/
 function PublicLane({ title, tracks, subtitle, lastSubmittedTrackId, collapsible = false, domId, canPriorityUpgrade, canResumePriorityPayment, priorityPriceCents, priorityCurrency, onPriorityUpgrade, onPriorityPayment }: { title: string; tracks: QueuePublicTrack[]; subtitle?: string; lastSubmittedTrackId: string | null; collapsible?: boolean; domId?: string; canPriorityUpgrade: (track: QueuePublicTrack) => boolean; canResumePriorityPayment: (track: QueuePublicTrack) => boolean; priorityPriceCents: number; priorityCurrency: string; onPriorityUpgrade: (track: QueuePublicTrack) => void; onPriorityPayment: (track: QueuePublicTrack) => void }) {
   const collapsed = collapsible && tracks.length === 0;
   const id = domId ?? (title === "Free Transmissions" ? "free-transmissions-lane" : undefined);
-  return <section id={id} className={`w-full border bg-surface transition-all ${lastSubmittedTrackId && tracks.some((track) => track.id === lastSubmittedTrackId) ? "border-accent shadow-[0_0_34px_rgba(255,0,0,0.22)]" : "border-border"} ${collapsed ? "p-3" : "p-5"}`}><div className="flex items-start justify-between gap-3"><div><h2 className="text-sm uppercase tracking-[0.25em] text-foreground">{title}</h2>{subtitle && !collapsed && <p className="mt-1 text-xs text-muted">{subtitle}</p>}</div><span className="text-xs text-muted">{tracks.length}</span></div>{collapsed ? <p className="mt-1 text-xs text-muted">No active signals in this lane.</p> : <div className="mt-4 space-y-3">{tracks.length === 0 ? <p className="border border-border/60 p-4 text-sm text-muted">No visible transmissions.</p> : tracks.map((track, index) => <article key={track.id} data-track-id={track.id} id={`track-card-${track.id}`} className={`grid gap-3 border bg-background/40 p-3 sm:grid-cols-[5rem_1fr_auto] sm:items-center ${track.id === lastSubmittedTrackId ? "border-accent animate-pulse" : "border-border"}`}><div className="h-20 overflow-hidden border border-border/70"><SourceArt track={track} /></div><div><p className="text-xs text-muted">#{index + 1} · {track.sourceType.toUpperCase()}</p><p className="font-bold text-foreground">{track.submittedArtistName}</p>{track.publicSourceUrl ? <a href={track.publicSourceUrl} target="_blank" rel="noreferrer" className="text-sm text-foreground/85 underline-offset-2 hover:text-accent hover:underline">{track.submittedSongTitle}</a> : <p className="text-sm text-foreground/85">{track.submittedSongTitle}</p>}<div className="mt-2 text-xs text-muted"><TikTokLink handle={track.tiktokHandle} /></div>{(track.lane === "priority" || track.priorityUpgradeStatus === "manual" || track.priorityUpgradeStatus === "paid") && <p className="mt-2 inline-flex border border-[#ffaa00]/40 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Priority Signal</p>}{track.priorityUpgradeStatus === "checkout_pending" && <p className="mt-2 inline-flex border border-[#ffaa00]/40 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Payment processing</p>}{track.priorityUpgradeStatus === "requested" && <p className="mt-2 inline-flex border border-accent/30 px-2 py-1 text-[10px] uppercase tracking-widest text-accent">Priority requested</p>}{track.id === lastSubmittedTrackId && <p className="mt-2 text-[11px] uppercase tracking-widest text-accent">QUEUE INSERTION CONFIRMED</p>}</div><div className="space-y-2 sm:text-right"><p className="text-xs text-muted">{track.durationLabel}</p>{canResumePriorityPayment(track) && <button type="button" onClick={() => onPriorityPayment(track)} className="border border-[#ffaa00]/50 px-3 py-1.5 text-[10px] uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Resume Priority Payment</button>}{canPriorityUpgrade(track) && <button type="button" onClick={() => onPriorityUpgrade(track)} className="border border-[#ffaa00]/50 px-3 py-1.5 text-[10px] uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Upgrade to Priority Signal · {formatPrice(priorityPriceCents, priorityCurrency)}</button>}</div></article>)}</div>}</section>;
+  return <section id={id} className={`w-full border bg-surface transition-all ${lastSubmittedTrackId && tracks.some((track) => track.id === lastSubmittedTrackId) ? "border-accent shadow-[0_0_34px_rgba(255,0,0,0.22)]" : "border-border"} ${collapsed ? "p-3" : "p-5"}`}><div className="flex items-start justify-between gap-3"><div><h2 className="text-sm uppercase tracking-[0.25em] text-foreground">{title}</h2>{subtitle && !collapsed && <p className="mt-1 text-xs text-muted">{subtitle}</p>}</div><span className="text-xs text-muted">{tracks.length}</span></div>{collapsed ? <p className="mt-1 text-xs text-muted">No active signals in this lane.</p> : <div className="mt-4 space-y-3">{tracks.length === 0 ? <p className="border border-border/60 p-4 text-sm text-muted">No visible transmissions.</p> : tracks.map((track, index) => <article key={track.id} data-track-id={track.id} id={`track-card-${track.id}`} className={`grid gap-3 border bg-background/40 p-3 sm:grid-cols-[5rem_1fr_auto] sm:items-center ${track.id === lastSubmittedTrackId ? "border-accent animate-pulse" : "border-border"}`}><div className="h-20 overflow-hidden border border-border/70"><SourceArt track={track} /></div><div><p className="text-xs text-muted">#{index + 1} · {track.sourceType.toUpperCase()}</p><p className="font-bold text-foreground">{track.submittedArtistName}</p>{track.publicSourceUrl ? <a href={track.publicSourceUrl} target="_blank" rel="noreferrer" className="text-sm text-foreground/85 underline-offset-2 hover:text-accent hover:underline">{track.submittedSongTitle}</a> : <p className="text-sm text-foreground/85">{track.submittedSongTitle}</p>}<div className="mt-2 text-xs text-muted"><TikTokLink handle={track.tiktokHandle} /></div>{(track.lane === "priority" || track.priorityUpgradeStatus === "manual" || track.priorityUpgradeStatus === "paid") && <p className="mt-2 inline-flex border border-[#ffaa00]/40 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Priority Signal Confirmed</p>}{track.priorityUpgradeStatus === "checkout_pending" && <p className="mt-2 inline-flex border border-[#ffaa00]/40 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Payment Processing · still Free</p>}{track.priorityUpgradeStatus === "requested" && <p className="mt-2 inline-flex border border-accent/30 px-2 py-1 text-[10px] uppercase tracking-widest text-accent">Priority checkout requested</p>}{(track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded") && <p className="mt-2 inline-flex border border-danger/40 px-2 py-1 text-[10px] uppercase tracking-widest text-danger">Priority Signal not completed · Free line</p>}{track.id === lastSubmittedTrackId && <p className="mt-2 text-[11px] uppercase tracking-widest text-accent">QUEUE INSERTION CONFIRMED</p>}</div><div className="space-y-2 sm:text-right"><p className="text-xs text-muted">{track.durationLabel}</p>{canResumePriorityPayment(track) && <button type="button" onClick={() => onPriorityPayment(track)} className="border border-[#ffaa00]/50 px-3 py-1.5 text-[10px] uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Resume Priority Payment</button>}{canPriorityUpgrade(track) && <button type="button" onClick={() => onPriorityUpgrade(track)} className="border border-[#ffaa00]/50 px-3 py-1.5 text-[10px] uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Upgrade to Priority Signal · {formatPrice(priorityPriceCents, priorityCurrency)}</button>}</div></article>)}</div>}</section>;
 }
 
 function PriorityUpgradeModal({ track, price, pending, message, onConfirm, onClose }: { track: QueuePublicTrack; price: string; pending: boolean; message: string | null; onConfirm: () => void; onClose: () => void }) {

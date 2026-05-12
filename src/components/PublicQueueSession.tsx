@@ -59,6 +59,10 @@ function actionVariant(seed: string, kind: "intake" | "upgrade" | "resume"): Pub
   return stableVariant(`${seed}:${kind}`, variants[kind]);
 }
 function formatPrice(cents: number, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }
+function snapshotBroadcastActive(snapshot: QueuePublicSnapshot | null): boolean {
+  return Boolean(snapshot?.nowPlaying || snapshot?.session.broadcastPhase === "broadcast_active" || snapshot?.session.showStarted);
+}
+
 function sourceTypeLabel(track: QueuePublicTrack): string {
   if (track.sourceType === "upload") return "Uploaded audio packet";
   if (track.sourceType === "spotify") return "Spotify";
@@ -84,6 +88,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const [activity, setActivity] = useState<QueueActivity[]>([]);
   const [activityToast, setActivityToast] = useState<QueueActivity | null>(null);
   const [residueMap, setResidueMap] = useState<ResidueMap>({});
+  const [broadcastStartPulse, setBroadcastStartPulse] = useState(false);
   const previousSnapshotRef = useRef<QueuePublicSnapshot | null>(null);
 
   function triggerResidue(trackId: string | null | undefined, tone: ActivityTone) {
@@ -99,7 +104,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     if (items.length === 0) return;
     const createdAt = Date.now();
     const nextItems = items.map((item, index) => ({ ...item, id: `${createdAt}:${index}:${item.text}`, createdAt }));
-    setActivity((current) => [...nextItems, ...current].slice(0, 6));
+    setActivity((current) => [...nextItems, ...current].slice(0, 4));
     setActivityToast(nextItems[0] ?? null);
     window.setTimeout(() => setActivityToast((current) => current?.id === nextItems[0]?.id ? null : current), 3200);
   }
@@ -107,6 +112,13 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   function processSnapshotChanges(previous: QueuePublicSnapshot | null, next: QueuePublicSnapshot) {
     if (!previous) return;
     const changes: Omit<QueueActivity, "id" | "createdAt">[] = [];
+    if (!snapshotBroadcastActive(previous) && snapshotBroadcastActive(next)) {
+      changes.push({ text: "BROADCAST ACTIVE", detail: "HOST PROTOCOL INITIALIZED", tone: "gold" });
+      setBroadcastStartPulse(true);
+      window.setTimeout(() => setBroadcastStartPulse(false), 1800);
+      triggerResidue(next.nowPlaying?.id, next.nowPlaying ? trackTone(next.nowPlaying) : "gold");
+      triggerResidue(next.upNext?.id, next.upNext ? trackTone(next.upNext) : "gold");
+    }
     const previousTracks = publicTrackStateMap(previous);
     if (previous.status.isOpen !== next.status.isOpen) {
       changes.push(next.status.isOpen ? { text: "Submissions opened", detail: "Intake corridor unlocked.", tone: "red" } : { text: "Submissions closed", detail: "Intake gate sealed.", tone: "danger" });
@@ -136,7 +148,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
           triggerResidue(track.id, "amber");
         }
         if (track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "manual") {
-          changes.push({ text: "Priority Signal confirmed", detail: "Transmission promoted by verified payment.", tone: "gold" });
+          changes.push({ text: "Priority Signal confirmed", detail: track.priorityUpgradeStatus === "paid" ? "Transmission promoted by verified payment." : "Transmission promoted by verified Priority status.", tone: "gold" });
           triggerResidue(track.id, "gold");
         }
         if (track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded") {
@@ -205,7 +217,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
   const isOpen = snapshot?.status.isOpen ?? false;
   const isEnded = snapshot?.session.status === "archived" || snapshot?.session.broadcastPhase === "ended";
-  const isBroadcastActive = Boolean(snapshot?.nowPlaying || snapshot?.session.broadcastPhase === "broadcast_active" || snapshot?.session.showStarted);
+  const isBroadcastActive = snapshotBroadcastActive(snapshot);
   const isFull = Boolean(snapshot?.status.isFull || (snapshot && snapshot.status.activeCount >= snapshot.status.capacity));
   const canSubmit = !isEnded && isOpen && !isFull;
   const completedRuntime = snapshot?.session.completedRuntimeSeconds ?? 0;
@@ -294,6 +306,9 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
       <TransmissionActivity items={activity} />
 
+      <div data-live={isBroadcastActive ? "true" : "false"} data-pulse={broadcastStartPulse ? "true" : undefined} className="queue-live-system relative space-y-6 overflow-hidden">
+        {broadcastStartPulse && <div className="broadcast-start-banner border border-[#ffaa00]/55 bg-[#ffaa00]/10 p-3 text-center shadow-[0_0_46px_rgba(255,170,0,0.18)]" role="status" aria-live="polite"><p className="text-xs uppercase tracking-[0.38em] text-[#ffaa00]">BROADCAST ACTIVE</p><p className="mt-1 text-sm font-bold uppercase tracking-[0.24em] text-foreground">HOST PROTOCOL INITIALIZED</p></div>}
+
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)]">
         <div id="broadcast-queue-top"><NowPlaying title="Now Playing" track={snapshot?.nowPlaying ?? null} domId="now-playing-slot" lastSubmittedTrackId={lastSubmittedTrackId} residue={snapshot?.nowPlaying?.id ? residueMap[snapshot.nowPlaying.id] : undefined} /></div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
@@ -315,6 +330,8 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
       </div>
 
       {view === "active" ? <div id="active-queue-panel" className="space-y-3"><PublicLane title="Priority Signal" tracks={lanes.priority} lastSubmittedTrackId={lastSubmittedTrackId} collapsible domId="priority-lane" canPriorityUpgrade={() => false} canResumePriorityPayment={canResumePriorityPayment} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} /><PublicLane title="Wheel Chosen" subtitle="Tracks selected by the 10K tap wheel." tracks={lanes.wheel} lastSubmittedTrackId={lastSubmittedTrackId} collapsible domId="wheel-lane" canPriorityUpgrade={() => false} canResumePriorityPayment={canResumePriorityPayment} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} /><PublicLane title="Free Transmissions" tracks={lanes.regular} lastSubmittedTrackId={lastSubmittedTrackId} domId="free-transmissions-lane" canPriorityUpgrade={canShowPriorityUpgrade} canResumePriorityPayment={canResumePriorityPayment} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} /></div> : <PublicLane title="Recently Played" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} canPriorityUpgrade={() => false} canResumePriorityPayment={() => false} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} />}
+        <style jsx>{`.queue-live-system{border:1px solid transparent;padding:0;transition:border-color .5s ease,box-shadow .5s ease,filter .5s ease}.queue-live-system[data-live="true"]{border-color:rgba(255,170,0,.16);box-shadow:0 0 44px rgba(255,170,0,.06);padding:.35rem}.queue-live-system[data-pulse="true"]{animation:queue-broadcast-lock 1.55s ease-out}.queue-live-system[data-pulse="true"]::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(255,170,0,.32),rgba(255,255,255,.22),transparent);animation:broadcast-sweep 1.1s ease-out forwards}.broadcast-start-banner{animation:broadcast-banner-lock .9s ease-out}.queue-live-system[data-live="true"] :global(#now-playing-slot){box-shadow:0 0 48px rgba(255,170,0,.20)}.queue-live-system[data-live="true"] :global(#up-next-slot){box-shadow:0 0 34px rgba(255,0,0,.14)}@keyframes queue-broadcast-lock{0%{filter:brightness(1);transform:translateY(0)}26%{filter:brightness(1.55);transform:translateY(-2px)}100%{filter:brightness(1);transform:translateY(0)}}@keyframes broadcast-sweep{0%{transform:translateX(-120%);opacity:0}20%{opacity:1}100%{transform:translateX(120%);opacity:0}}@keyframes broadcast-banner-lock{0%{opacity:0;transform:scale(.98);filter:brightness(1.8)}100%{opacity:1;transform:scale(1);filter:brightness(1)}}@media (prefers-reduced-motion: reduce){.queue-live-system[data-pulse="true"],.queue-live-system[data-pulse="true"]::before,.broadcast-start-banner{animation:none}.queue-live-system[data-pulse="true"]::before{display:none}}`}</style>
+      </div>
 
       <DiscordQueueCTA />
 
@@ -385,7 +402,7 @@ function QueueUpdateToast({ item }: { item: QueueActivity }) {
 }
 
 function TransmissionActivity({ items }: { items: QueueActivity[] }) {
-  return <section className="activity-console relative overflow-hidden border border-border bg-surface p-4"><div className="activity-bus pointer-events-none absolute inset-x-0 top-10 h-px bg-accent/25" aria-hidden="true" /><div className="flex items-center justify-between gap-3"><p className="text-xs uppercase tracking-[0.3em] text-muted">Transmission Activity</p><span className="text-[10px] uppercase tracking-widest text-muted">Portal event log · Public snapshot</span></div>{items.length === 0 ? <p className="mt-3 text-xs text-muted">Queue changes detected during this visit will appear here as packet route events.</p> : <div className="mt-3 grid gap-2">{items.map((item) => <article key={item.id} className={`activity-item relative overflow-hidden border bg-background/45 p-3 ${toneClass(item.tone)}`}><span className="activity-node" aria-hidden="true" /><p className="text-sm font-bold text-foreground">{item.text}</p><p className="mt-1 text-xs text-muted">{item.detail}</p></article>)}</div>}<style jsx>{`.activity-console::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,0,0,.06),transparent);pointer-events:none}.activity-bus{box-shadow:0 0 16px rgba(255,0,0,.22)}.activity-item{animation:activity-land .55s ease-out}.activity-node{position:absolute;left:.7rem;top:50%;width:.4rem;height:.4rem;border:1px solid currentColor;background:currentColor;box-shadow:0 0 14px currentColor;transform:translateY(-50%)}.activity-item p{padding-left:1rem}@keyframes activity-land{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}@media (prefers-reduced-motion: reduce){.activity-item{animation:none}}`}</style></section>;
+  return <section className="activity-console relative overflow-hidden border border-border bg-surface p-4"><div className="activity-bus pointer-events-none absolute inset-x-0 top-10 h-px bg-accent/25" aria-hidden="true" /><div className="flex items-center justify-between gap-3"><p className="text-xs uppercase tracking-[0.3em] text-muted">Transmission Activity</p><span className="text-[10px] uppercase tracking-widest text-muted">Portal event log · Public snapshot</span></div>{items.length === 0 ? <p className="mt-3 text-xs text-muted">Queue changes detected during this visit will appear here as packet route events.</p> : <div className="mt-3 grid gap-2">{items.slice(0, 4).map((item) => <article key={item.id} className={`activity-item relative overflow-hidden border bg-background/45 p-3 ${toneClass(item.tone)}`}><span className="activity-node" aria-hidden="true" /><p className="text-sm font-bold text-foreground">{item.text}</p><p className="mt-1 text-xs text-muted">{item.detail}</p></article>)}</div>}<style jsx>{`.activity-console::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,0,0,.06),transparent);pointer-events:none}.activity-bus{box-shadow:0 0 16px rgba(255,0,0,.22)}.activity-item{animation:activity-land .55s ease-out}.activity-node{position:absolute;left:.7rem;top:50%;width:.4rem;height:.4rem;border:1px solid currentColor;background:currentColor;box-shadow:0 0 14px currentColor;transform:translateY(-50%)}.activity-item p{padding-left:1rem}@keyframes activity-land{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}@media (prefers-reduced-motion: reduce){.activity-item{animation:none}}`}</style></section>;
 }
 
 function SignalResidue({ tone, seed }: { tone: ActivityTone; seed: string }) {
@@ -468,6 +485,12 @@ function SessionPortalAperture({ phase, counts, intakeWindow, isBroadcastActive,
         <div className="session-rings absolute inset-0" aria-hidden="true"><span /><span /><span /></div>
         <div className="session-wave absolute inset-x-8 top-1/2 h-20 -translate-y-1/2" aria-hidden="true">{Array.from({ length: 24 }).map((_, index) => <span key={index} style={{ animationDelay: `${index * 42}ms` }} />)}</div>
         <div className="session-packets absolute inset-0" aria-hidden="true">{Array.from({ length: Math.min(8, Math.max(2, counts.active + counts.pending + counts.wheel)) }).map((_, index) => <span key={index} style={{ animationDelay: `${index * 150}ms` }} />)}</div>
+        <div className="session-scene-core absolute inset-0" aria-hidden="true"><span /><span /></div>
+        <div className="session-archive-vault absolute inset-0" aria-hidden="true"><span className="vault-shell" /><span className="vault-spool left" /><span className="vault-spool right" /></div>
+        <div className="session-gate-latches absolute inset-0" aria-hidden="true"><span /><span /><span /><span /></div>
+        <div className="session-intake-fragments absolute inset-0" aria-hidden="true">{Array.from({ length: 14 }).map((_, index) => <span key={index} style={{ animationDelay: `${index * 88}ms` }} />)}</div>
+        <div className="session-monitor-reticle absolute inset-0" aria-hidden="true"><span /><span /><span /></div>
+        <div className="session-live-bars absolute bottom-12 left-1/2 flex h-16 -translate-x-1/2 items-end gap-1" aria-hidden="true">{Array.from({ length: 20 }).map((_, index) => <span key={index} style={{ animationDelay: `${index * 32}ms` }} />)}</div>
         {counts.pending > 0 && <div className="session-handshake absolute right-3 top-3 border border-[#ffaa00]/45 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">{counts.pending} payment processing</div>}
         {counts.priority > 0 && <div className="session-relay absolute left-0 right-0 top-7 h-px bg-[#ffaa00]/60" aria-hidden="true" />}
         {counts.wheel > 0 && <div className="session-wheel absolute bottom-9 left-6 right-6 h-px bg-cyan-200/60" aria-hidden="true" />}
@@ -478,6 +501,7 @@ function SessionPortalAperture({ phase, counts, intakeWindow, isBroadcastActive,
           {intakeWindow && canSubmit && <span className="submission-window border border-accent/40 bg-accent/10 px-2 py-1 text-accent">{intakeWindow} window</span>}
         </div>
       </div>
+      <style jsx>{`.session-archive-vault,.session-gate-latches,.session-intake-fragments,.session-monitor-reticle,.session-live-bars{opacity:0;transition:opacity .45s ease}.session-scene-core span{position:absolute;left:50%;top:50%;border:1px solid rgba(255,255,255,.18);transform:translate(-50%,-50%);box-shadow:0 0 28px rgba(255,255,255,.08)}.session-scene-core span:first-child{width:34%;height:28%;animation:session-scene-core-pulse 2.8s ease-in-out infinite}.session-scene-core span:last-child{width:16%;height:12%;animation:session-scene-core-pulse 2.8s ease-in-out infinite reverse}.session-archive-vault{background:radial-gradient(circle at center,rgba(255,0,0,.08),transparent 32%),repeating-linear-gradient(0deg,transparent 0 9px,rgba(255,255,255,.025) 9px 10px)}.session-portal[data-phase="archived"] .session-archive-vault{opacity:1}.session-portal[data-phase="archived"] .session-scene-core span{width:10%;height:7%;border-color:rgba(255,0,0,.38);animation:session-archive-core 4.8s ease-in-out infinite}.vault-shell{position:absolute;left:22%;right:22%;top:24%;bottom:24%;border:1px solid rgba(183,183,183,.18);background:linear-gradient(90deg,rgba(255,255,255,.03),rgba(255,0,0,.045),rgba(255,255,255,.02));box-shadow:inset 0 0 28px rgba(255,0,0,.06)}.vault-spool{position:absolute;top:42%;width:3rem;height:3rem;border:1px solid rgba(183,183,183,.22);border-radius:999px;box-shadow:0 0 18px rgba(255,255,255,.06);animation:session-vault-spool 7s linear infinite}.vault-spool.left{left:28%}.vault-spool.right{right:28%;animation-direction:reverse}.session-portal[data-phase="closed"] .session-gate-latches,.session-portal[data-phase="liveClosed"] .session-gate-latches{opacity:1}.session-gate-latches span{position:absolute;left:14%;right:14%;height:2px;background:linear-gradient(90deg,transparent,rgba(103,232,249,.56),transparent);box-shadow:0 0 16px rgba(103,232,249,.18);animation:session-gate-lock-sweep 1.9s ease-in-out infinite}.session-gate-latches span:nth-child(1){top:28%}.session-gate-latches span:nth-child(2){top:42%;animation-delay:.2s}.session-gate-latches span:nth-child(3){top:58%;animation-delay:.4s}.session-gate-latches span:nth-child(4){top:72%;animation-delay:.6s}.session-portal[data-phase="open"] .session-intake-fragments,.session-portal[data-phase="liveOpen"] .session-intake-fragments{opacity:1}.session-intake-fragments span{position:absolute;left:10%;top:50%;width:8px;height:2px;background:#fff;box-shadow:0 0 12px rgba(255,0,0,.75);animation:session-intake-fragment 1.18s ease-in-out infinite}.session-intake-fragments span:nth-child(3n){background:#ff2a2a}.session-intake-fragments span:nth-child(even){left:auto;right:10%;animation-name:session-intake-fragment-reverse}.session-portal[data-phase="liveOpen"] .session-monitor-reticle,.session-portal[data-phase="liveClosed"] .session-monitor-reticle,.session-portal[data-phase="liveOpen"] .session-live-bars,.session-portal[data-phase="liveClosed"] .session-live-bars{opacity:1}.session-monitor-reticle span{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);border:1px solid rgba(255,170,0,.42);box-shadow:0 0 30px rgba(255,170,0,.18);animation:session-monitor-lock 1.8s ease-in-out infinite}.session-monitor-reticle span:nth-child(1){width:52%;height:58%}.session-monitor-reticle span:nth-child(2){width:32%;height:34%;animation-delay:.2s}.session-monitor-reticle span:nth-child(3){width:68%;height:2px;border-left:0;border-right:0}.session-live-bars span{width:4px;background:rgba(255,170,0,.82);box-shadow:0 0 14px rgba(255,170,0,.32);animation:session-live-bar 720ms ease-in-out infinite}.session-portal[data-phase="liveClosed"] .session-intake-fragments{opacity:.16}.session-portal[data-phase="liveClosed"] .session-packets{opacity:.18}@keyframes session-scene-core-pulse{0%,100%{opacity:.36;transform:translate(-50%,-50%) scale(.92)}50%{opacity:.86;transform:translate(-50%,-50%) scale(1.08)}}@keyframes session-archive-core{0%,100%{opacity:.25;filter:brightness(.8)}50%{opacity:.55;filter:brightness(1.2)}}@keyframes session-vault-spool{to{transform:rotate(360deg)}}@keyframes session-gate-lock-sweep{0%,100%{opacity:.18;transform:scaleX(.25)}45%{opacity:.85;transform:scaleX(1)}}@keyframes session-intake-fragment{0%{opacity:0;transform:translateX(-10vw) translateY(-20px) scaleX(.4)}40%{opacity:1}100%{opacity:0;transform:translateX(34vw) translateY(0) scaleX(.05)}}@keyframes session-intake-fragment-reverse{0%{opacity:0;transform:translateX(10vw) translateY(20px) scaleX(.4)}40%{opacity:1}100%{opacity:0;transform:translateX(-34vw) translateY(0) scaleX(.05)}}@keyframes session-monitor-lock{0%,100%{opacity:.45;transform:translate(-50%,-50%) scale(.96)}50%{opacity:1;transform:translate(-50%,-50%) scale(1.02)}}@keyframes session-live-bar{0%,100%{height:18%;opacity:.45}50%{height:100%;opacity:1}}@media (prefers-reduced-motion: reduce){.session-scene-core span,.vault-spool,.session-gate-latches span,.session-intake-fragments span,.session-monitor-reticle span,.session-live-bars span{animation:none}}`}</style>
     </div>
   );
 }

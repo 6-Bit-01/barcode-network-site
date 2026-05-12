@@ -9,6 +9,9 @@ import { formatRuntime } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicTrack } from "@/lib/queue-types";
 
 type QueueView = "active" | "recent";
+type ActivityTone = "red" | "amber" | "gold" | "cyan" | "archive" | "danger";
+type QueueActivity = { id: string; text: string; detail: string; tone: ActivityTone; createdAt: number };
+type ResidueMap = Record<string, { tone: ActivityTone; nonce: number }>;
 
 const PRIORITY_SIGNAL_LABEL = "Priority Signal Upgrade";
 const PRIORITY_SIGNAL_EXPLANATION = "Moves this track into the Priority Signal lane after payment confirmation.";
@@ -77,13 +80,94 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const [priorityRequestMessage, setPriorityRequestMessage] = useState<string | null>(null);
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
   const [actionTransition, setActionTransition] = useState<PublicActionVariant | null>(null);
+  const [activity, setActivity] = useState<QueueActivity[]>([]);
+  const [activityToast, setActivityToast] = useState<QueueActivity | null>(null);
+  const [residueMap, setResidueMap] = useState<ResidueMap>({});
+  const previousSnapshotRef = useRef<QueuePublicSnapshot | null>(null);
+
+  function triggerResidue(trackId: string | null | undefined, tone: ActivityTone) {
+    if (!trackId) return;
+    const nonce = Date.now();
+    setResidueMap((current) => ({ ...current, [trackId]: { tone, nonce } }));
+    window.setTimeout(() => {
+      setResidueMap((current) => current[trackId]?.nonce === nonce ? Object.fromEntries(Object.entries(current).filter(([id]) => id !== trackId)) as ResidueMap : current);
+    }, 1050);
+  }
+
+  function pushActivities(items: Omit<QueueActivity, "id" | "createdAt">[]) {
+    if (items.length === 0) return;
+    const createdAt = Date.now();
+    const nextItems = items.map((item, index) => ({ ...item, id: `${createdAt}:${index}:${item.text}`, createdAt }));
+    setActivity((current) => [...nextItems, ...current].slice(0, 6));
+    setActivityToast(nextItems[0] ?? null);
+    window.setTimeout(() => setActivityToast((current) => current?.id === nextItems[0]?.id ? null : current), 3200);
+  }
+
+  function processSnapshotChanges(previous: QueuePublicSnapshot | null, next: QueuePublicSnapshot) {
+    if (!previous) return;
+    const changes: Omit<QueueActivity, "id" | "createdAt">[] = [];
+    const previousTracks = publicTrackStateMap(previous);
+    if (previous.status.isOpen !== next.status.isOpen) {
+      changes.push(next.status.isOpen ? { text: "Submissions opened", detail: "Intake corridor unlocked.", tone: "red" } : { text: "Submissions closed", detail: "Intake gate sealed.", tone: "danger" });
+    }
+    if (previous.nowPlaying?.id !== next.nowPlaying?.id && next.nowPlaying) {
+      changes.push({ text: "Now Playing updated", detail: "Host loaded a transmission.", tone: trackTone(next.nowPlaying) });
+      triggerResidue(next.nowPlaying.id, trackTone(next.nowPlaying));
+    }
+    if (previous.upNext?.id !== next.upNext?.id && next.upNext) {
+      changes.push({ text: "Next In Line updated", detail: "Resolver selected the next transmission.", tone: trackTone(next.upNext) });
+      triggerResidue(next.upNext.id, trackTone(next.upNext));
+    }
+    for (const track of next.queue) {
+      const before = previousTracks.get(track.id);
+      if (!before) {
+        changes.push({ text: "Transmission accepted", detail: "Free Transmission entered the visible queue.", tone: "red" });
+        triggerResidue(track.id, "red");
+        continue;
+      }
+      if (before.lane !== track.lane && track.lane === "wheel") {
+        changes.push({ text: "Wheel Chosen", detail: "Transmission entered the Wheel lane.", tone: "cyan" });
+        triggerResidue(track.id, "cyan");
+      }
+      if (before.priorityUpgradeStatus !== track.priorityUpgradeStatus) {
+        if (track.priorityUpgradeStatus === "checkout_pending") {
+          changes.push({ text: "Payment Processing", detail: "Transmission remains in Free until confirmation.", tone: "amber" });
+          triggerResidue(track.id, "amber");
+        }
+        if (track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "manual") {
+          changes.push({ text: "Priority Signal confirmed", detail: "Transmission promoted by verified payment or host authority.", tone: "gold" });
+          triggerResidue(track.id, "gold");
+        }
+        if (track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded") {
+          changes.push({ text: "Priority Signal not completed", detail: "Payment was not confirmed.", tone: "danger" });
+          triggerResidue(track.id, "danger");
+        }
+      }
+    }
+    const previousCompleted = new Set(previous.completed.map((track) => track.id));
+    for (const track of next.completed) {
+      if (!previousCompleted.has(track.id)) {
+        changes.push({ text: "Played Tonight", detail: "Transmission archived after playback.", tone: "archive" });
+        triggerResidue(track.id, "archive");
+      }
+    }
+    const previousActive = new Set([previous.nowPlaying?.id, previous.upNext?.id, ...previous.queue.map((track) => track.id)].filter(Boolean));
+    const nextKnown = new Set([next.nowPlaying?.id, next.upNext?.id, ...next.queue.map((track) => track.id), ...next.completed.map((track) => track.id)].filter(Boolean));
+    const removedCountIncreased = (next.session.removedCount ?? 0) > (previous.session.removedCount ?? 0);
+    if (removedCountIncreased && [...previousActive].some((id) => !nextKnown.has(id))) {
+      changes.push({ text: "Removed from active queue", detail: "Transmission no longer active.", tone: "danger" });
+    }
+    pushActivities(dedupeActivities(changes).slice(0, 4));
+  }
 
   async function load() {
     const params = new URLSearchParams({ sessionId });
     if (submitterToken) params.set("submitterToken", submitterToken);
     const res = await fetch(`/api/queue?${params.toString()}`, { cache: "no-store" });
     if (res.ok) {
-      const next = await res.json();
+      const next = await res.json() as QueuePublicSnapshot;
+      processSnapshotChanges(previousSnapshotRef.current, next);
+      previousSnapshotRef.current = next;
       setSnapshot(next);
       setCooldownRemaining(next.submitterStatus?.cooldownRemainingSeconds ?? 0);
     }
@@ -207,10 +291,12 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
       <SessionPhasePanel snapshot={snapshot} canSubmit={canSubmit} isBroadcastActive={isBroadcastActive} />
 
+      <TransmissionActivity items={activity} />
+
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)]">
-        <div id="broadcast-queue-top"><NowPlaying title="Now Playing" track={snapshot?.nowPlaying ?? null} domId="now-playing-slot" lastSubmittedTrackId={lastSubmittedTrackId} /></div>
+        <div id="broadcast-queue-top"><NowPlaying title="Now Playing" track={snapshot?.nowPlaying ?? null} domId="now-playing-slot" lastSubmittedTrackId={lastSubmittedTrackId} residue={snapshot?.nowPlaying?.id ? residueMap[snapshot.nowPlaying.id] : undefined} /></div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
-          <NowPlaying title="Up Next" track={snapshot?.upNext ?? null} compact domId="up-next-slot" lastSubmittedTrackId={lastSubmittedTrackId} />
+          <NowPlaying title="Up Next" track={snapshot?.upNext ?? null} compact domId="up-next-slot" lastSubmittedTrackId={lastSubmittedTrackId} residue={snapshot?.upNext?.id ? residueMap[snapshot.upNext.id] : undefined} />
           <QueueStatusPanel snapshot={snapshot} canSubmit={canSubmit} isFull={isFull} onSubmit={openIntakeCorridor} />
         </div>
       </section>
@@ -227,9 +313,11 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
         <button type="button" onClick={() => setView("recent")} className={`px-4 py-3 text-xs uppercase tracking-widest ${view === "recent" ? "border-b border-accent text-accent" : "text-muted"}`}>Recently Played</button>
       </div>
 
-      {view === "active" ? <div id="active-queue-panel" className="space-y-3"><PublicLane title="Priority Signal" tracks={lanes.priority} lastSubmittedTrackId={lastSubmittedTrackId} collapsible domId="priority-lane" canPriorityUpgrade={() => false} canResumePriorityPayment={canResumePriorityPayment} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} /><PublicLane title="Wheel Chosen" subtitle="Tracks selected by the 10K tap wheel." tracks={lanes.wheel} lastSubmittedTrackId={lastSubmittedTrackId} collapsible domId="wheel-lane" canPriorityUpgrade={() => false} canResumePriorityPayment={canResumePriorityPayment} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} /><PublicLane title="Free Transmissions" tracks={lanes.regular} lastSubmittedTrackId={lastSubmittedTrackId} domId="free-transmissions-lane" canPriorityUpgrade={canShowPriorityUpgrade} canResumePriorityPayment={canResumePriorityPayment} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} /></div> : <PublicLane title="Recently Played" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} canPriorityUpgrade={() => false} canResumePriorityPayment={() => false} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} />}
+      {view === "active" ? <div id="active-queue-panel" className="space-y-3"><PublicLane title="Priority Signal" tracks={lanes.priority} lastSubmittedTrackId={lastSubmittedTrackId} collapsible domId="priority-lane" canPriorityUpgrade={() => false} canResumePriorityPayment={canResumePriorityPayment} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} /><PublicLane title="Wheel Chosen" subtitle="Tracks selected by the 10K tap wheel." tracks={lanes.wheel} lastSubmittedTrackId={lastSubmittedTrackId} collapsible domId="wheel-lane" canPriorityUpgrade={() => false} canResumePriorityPayment={canResumePriorityPayment} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} /><PublicLane title="Free Transmissions" tracks={lanes.regular} lastSubmittedTrackId={lastSubmittedTrackId} domId="free-transmissions-lane" canPriorityUpgrade={canShowPriorityUpgrade} canResumePriorityPayment={canResumePriorityPayment} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} /></div> : <PublicLane title="Recently Played" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} canPriorityUpgrade={() => false} canResumePriorityPayment={() => false} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} />}
 
       <DiscordQueueCTA />
+
+      {mounted && activityToast && createPortal(<QueueUpdateToast item={activityToast} />, document.body)}
 
       {mounted && actionTransition && createPortal(<NavigationTransition label={actionTransition.label} detail={actionTransition.detail} mode={actionTransition.mode} />, document.body)}
 
@@ -254,6 +342,46 @@ function SourceArt({ track, className = "h-full w-full" }: { track: QueuePublicT
 function tiktokHref(handle?: string | null): string | null { const cleaned = (handle ?? "").trim().replace(/^@+/, "").split(/[/?#]/)[0]?.replace(/[^a-zA-Z0-9._-]/g, ""); return cleaned ? `https://www.tiktok.com/@${cleaned}` : null; }
 function TikTokLink({ handle }: { handle?: string | null }) { const href = tiktokHref(handle); if (!href || !handle) return null; return <a href={href} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">{handle.startsWith("@") ? handle : `@${handle}`}</a>; }
 function usefulDetected(track: QueuePublicTrack): string | null { const artist = track.detectedArtistName?.trim(); const title = track.detectedSongTitle?.trim() || track.providerTitle?.trim(); if (!artist && !title) return null; const submitted = `${track.submittedArtistName} ${track.submittedSongTitle}`.toLowerCase(); const detected = `${artist ?? ""} ${title ?? ""}`.trim(); return detected && !submitted.includes(detected.toLowerCase()) ? detected : null; }
+
+function publicTrackStateMap(snapshot: QueuePublicSnapshot): Map<string, Pick<QueuePublicTrack, "lane" | "priorityUpgradeStatus">> {
+  const map = new Map<string, Pick<QueuePublicTrack, "lane" | "priorityUpgradeStatus">>();
+  for (const track of [snapshot.nowPlaying, snapshot.upNext, ...snapshot.queue, ...snapshot.completed]) {
+    if (track) map.set(track.id, { lane: track.lane, priorityUpgradeStatus: track.priorityUpgradeStatus });
+  }
+  return map;
+}
+
+function trackTone(track: QueuePublicTrack): ActivityTone {
+  if (track.priorityUpgradeStatus === "checkout_pending") return "amber";
+  if (track.lane === "priority" || track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "manual") return "gold";
+  if (track.lane === "wheel") return "cyan";
+  if (track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded") return "danger";
+  return "red";
+}
+
+function dedupeActivities(items: Omit<QueueActivity, "id" | "createdAt">[]): Omit<QueueActivity, "id" | "createdAt">[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = `${item.text}:${item.detail}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+
+function QueueUpdateToast({ item }: { item: QueueActivity }) {
+  return <div className="fixed right-4 top-20 z-[120100] w-[min(24rem,calc(100vw-2rem))] border border-accent/45 bg-background/95 p-3 shadow-[0_0_42px_rgba(255,0,0,0.22)]" role="status" aria-live="polite"><p className="text-[10px] uppercase tracking-[0.3em] text-accent">Queue Updated</p><p className="mt-1 text-sm font-bold text-foreground">{item.text}</p><p className="mt-1 text-xs text-muted">{item.detail}</p><style jsx>{`div{animation:queue-toast-in .28s ease-out}@keyframes queue-toast-in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}@media (prefers-reduced-motion: reduce){div{animation:none}}`}</style></div>;
+}
+
+function TransmissionActivity({ items }: { items: QueueActivity[] }) {
+  return <section className="border border-border bg-surface p-4"><div className="flex items-center justify-between gap-3"><p className="text-xs uppercase tracking-[0.3em] text-muted">Transmission Activity</p><span className="text-[10px] uppercase tracking-widest text-muted">Public snapshot</span></div>{items.length === 0 ? <p className="mt-3 text-xs text-muted">Queue changes detected during this visit will appear here.</p> : <div className="mt-3 grid gap-2">{items.map((item) => <article key={item.id} className={`activity-item border bg-background/45 p-3 ${item.tone === "gold" ? "border-[#ffaa00]/45" : item.tone === "cyan" ? "border-cyan-200/40" : item.tone === "amber" ? "border-[#ffaa00]/35" : item.tone === "danger" ? "border-danger/40" : "border-accent/30"}`}><p className="text-sm font-bold text-foreground">{item.text}</p><p className="mt-1 text-xs text-muted">{item.detail}</p></article>)}</div>}<style jsx>{`.activity-item{animation:activity-land .55s ease-out}@keyframes activity-land{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}@media (prefers-reduced-motion: reduce){.activity-item{animation:none}}`}</style></section>;
+}
+
+function SignalResidue({ tone, seed }: { tone: ActivityTone; seed: string }) {
+  const color = tone === "gold" ? "#ffaa00" : tone === "cyan" ? "#67e8f9" : tone === "amber" ? "#ffaa00" : tone === "archive" ? "#b7b7b7" : tone === "danger" ? "#ff3b3b" : "#ff2a2a";
+  return <div className="signal-residue pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">{Array.from({ length: 12 }).map((_, index) => { const hash = stableHash(`${seed}:${index}:${tone}`); return <span key={index} style={{ left: `${8 + (hash % 84)}%`, top: `${12 + ((hash >> 4) % 76)}%`, color, animationDelay: `${index * 38}ms` }} />; })}<style jsx>{`.signal-residue span{position:absolute;width:3px;height:3px;background:currentColor;box-shadow:0 0 10px currentColor;animation:signal-residue-drift .9s ease-out forwards}.signal-residue span:nth-child(3n){width:1px;height:9px}.signal-residue span:nth-child(4n){width:7px;height:1px}@keyframes signal-residue-drift{0%{opacity:0;transform:translate3d(0,0,0) scale(.6)}25%{opacity:.95}100%{opacity:0;transform:translate3d(10px,-14px,0) scale(1.1)}}@media (prefers-reduced-motion: reduce){.signal-residue span{animation:none;opacity:.45}}`}</style></div>;
+}
 
 function TrackTitleLink({ track }: { track: QueuePublicTrack }) {
   if (!track.publicSourceUrl) return <p className="mt-1 text-lg text-foreground/90">{track.submittedSongTitle}</p>;
@@ -351,12 +479,12 @@ function PhaseChip({ label, value, active }: { label: string; value: string; act
   return <div className={`border p-2 ${active ? "border-accent/40 bg-accent/5" : "border-border bg-background/45"}`}><p className="uppercase tracking-widest text-muted">{label}</p><p className={active ? "mt-1 text-accent" : "mt-1 text-muted"}>{value}</p></div>;
 }
 
-function NowPlaying({ title, track, compact = false, domId, lastSubmittedTrackId }: { title: string; track: QueuePublicTrack | null; compact?: boolean; domId?: string; lastSubmittedTrackId?: string | null }) {
+function NowPlaying({ title, track, compact = false, domId, lastSubmittedTrackId, residue }: { title: string; track: QueuePublicTrack | null; compact?: boolean; domId?: string; lastSubmittedTrackId?: string | null; residue?: { tone: ActivityTone; nonce: number } }) {
   const detected = track ? usefulDetected(track) : null;
   const isLanding = Boolean(track?.id && track.id === lastSubmittedTrackId);
   const isNowPlaying = title === "Now Playing";
   const tone = isNowPlaying ? "text-[#ffaa00]" : "text-accent";
-  return <div id={domId} data-track-id={track?.id} className={`broadcast-slot relative overflow-hidden border bg-surface p-4 transition-all ${isNowPlaying ? "broadcast-now border-[#ffaa00]/50 shadow-[0_0_34px_rgba(255,170,0,0.14)]" : "broadcast-next border-accent/40"} ${isLanding ? "packet-lock border-accent shadow-[0_0_44px_rgba(255,0,0,0.34)]" : ""} ${compact ? "" : "min-h-[15rem]"}`}><div className="slot-scan pointer-events-none absolute inset-0" /><p className={`relative text-xs uppercase tracking-[0.35em] ${tone}`}>{title}</p>{track ? <div className={`relative mt-3 grid gap-4 ${compact ? "grid-cols-[5.5rem_1fr]" : "sm:grid-cols-[12rem_1fr]"}`}><div className={`${compact ? "h-24" : "aspect-square max-h-56"} overflow-hidden border ${isNowPlaying ? "border-[#ffaa00]/45" : "border-accent/40"}`}><SourceArt track={track} /></div><div className="self-center"><h3 className={`${compact ? "text-xl" : "text-3xl"} font-bold text-foreground`}>{track.submittedArtistName}</h3><TrackTitleLink track={track} /><div className="mt-3 grid gap-1 text-xs text-muted"><TikTokLink handle={track.tiktokHandle} />{detected && <p>Detected signal: {detected}</p>}{!track.durationIsEstimate && <p>Runtime locked: {track.durationLabel}</p>}</div>{isNowPlaying && <div className="live-meter mt-4 grid grid-cols-12 items-end gap-1" aria-hidden="true">{[20, 46, 32, 70, 38, 82, 28, 56, 44, 76, 34, 62].map((height, index) => <span key={index} className="bg-[#ffaa00]/70" style={{ height: `${height / 3}px`, animationDelay: `${index * 55}ms` }} />)}</div>}</div></div> : <div className="relative mt-3 grid gap-4 sm:grid-cols-[8rem_1fr]"><div className="h-32 overflow-hidden border border-accent/30"><SourceArt track={null} /></div><p className="self-center text-sm text-muted">No transmission is in this slot yet.</p></div>}<style jsx>{`.slot-scan{background:linear-gradient(transparent 50%,rgba(255,255,255,.06) 50%);background-size:100% 6px;opacity:.12}.broadcast-now .slot-scan{animation:slot-scan 2.2s linear infinite}.broadcast-next{animation:next-slot-pulse 2.8s ease-in-out infinite}.packet-lock{animation:packet-card-lock 900ms ease-out}.live-meter span{animation:live-meter 900ms ease-in-out infinite}@keyframes slot-scan{from{background-position:0 0}to{background-position:0 42px}}@keyframes next-slot-pulse{0%,100%{box-shadow:0 0 0 rgba(255,0,0,0)}50%{box-shadow:0 0 22px rgba(255,0,0,.12)}}@keyframes packet-card-lock{0%{transform:translateY(4px);filter:brightness(1.5)}100%{transform:translateY(0);filter:brightness(1)}}@keyframes live-meter{0%,100%{transform:scaleY(.45);opacity:.45}50%{transform:scaleY(1);opacity:1}}@media (prefers-reduced-motion: reduce){.broadcast-now .slot-scan,.broadcast-next,.packet-lock,.live-meter span{animation:none}}`}</style></div>;
+  return <div id={domId} data-track-id={track?.id} className={`broadcast-slot relative overflow-hidden border bg-surface p-4 transition-all ${isNowPlaying ? "broadcast-now border-[#ffaa00]/50 shadow-[0_0_34px_rgba(255,170,0,0.14)]" : "broadcast-next border-accent/40"} ${isLanding ? "packet-lock border-accent shadow-[0_0_44px_rgba(255,0,0,0.34)]" : ""} ${compact ? "" : "min-h-[15rem]"}`}><div className="slot-scan pointer-events-none absolute inset-0" />{track && residue && <SignalResidue tone={residue.tone} seed={`${track.id}:${residue.nonce}`} />}<p className={`relative text-xs uppercase tracking-[0.35em] ${tone}`}>{title}</p>{track ? <div className={`relative mt-3 grid gap-4 ${compact ? "grid-cols-[5.5rem_1fr]" : "sm:grid-cols-[12rem_1fr]"}`}><div className={`${compact ? "h-24" : "aspect-square max-h-56"} overflow-hidden border ${isNowPlaying ? "border-[#ffaa00]/45" : "border-accent/40"}`}><SourceArt track={track} /></div><div className="self-center"><h3 className={`${compact ? "text-xl" : "text-3xl"} font-bold text-foreground`}>{track.submittedArtistName}</h3><TrackTitleLink track={track} /><div className="mt-3 grid gap-1 text-xs text-muted"><TikTokLink handle={track.tiktokHandle} />{detected && <p>Detected signal: {detected}</p>}{!track.durationIsEstimate && <p>Runtime locked: {track.durationLabel}</p>}</div>{isNowPlaying && <div className="live-meter mt-4 grid grid-cols-12 items-end gap-1" aria-hidden="true">{[20, 46, 32, 70, 38, 82, 28, 56, 44, 76, 34, 62].map((height, index) => <span key={index} className="bg-[#ffaa00]/70" style={{ height: `${height / 3}px`, animationDelay: `${index * 55}ms` }} />)}</div>}</div></div> : <div className="relative mt-3 grid gap-4 sm:grid-cols-[8rem_1fr]"><div className="h-32 overflow-hidden border border-accent/30"><SourceArt track={null} /></div><p className="self-center text-sm text-muted">No transmission is in this slot yet.</p></div>}<style jsx>{`.slot-scan{background:linear-gradient(transparent 50%,rgba(255,255,255,.06) 50%);background-size:100% 6px;opacity:.12}.broadcast-now .slot-scan{animation:slot-scan 2.2s linear infinite}.broadcast-next{animation:next-slot-pulse 2.8s ease-in-out infinite}.packet-lock{animation:packet-card-lock 900ms ease-out}.live-meter span{animation:live-meter 900ms ease-in-out infinite}@keyframes slot-scan{from{background-position:0 0}to{background-position:0 42px}}@keyframes next-slot-pulse{0%,100%{box-shadow:0 0 0 rgba(255,0,0,0)}50%{box-shadow:0 0 22px rgba(255,0,0,.12)}}@keyframes packet-card-lock{0%{transform:translateY(4px);filter:brightness(1.5)}100%{transform:translateY(0);filter:brightness(1)}}@keyframes live-meter{0%,100%{transform:scaleY(.45);opacity:.45}50%{transform:scaleY(1);opacity:1}}@media (prefers-reduced-motion: reduce){.broadcast-now .slot-scan,.broadcast-next,.packet-lock,.live-meter span{animation:none}}`}</style></div>;
 }
 
 function QueueStatusPanel({ snapshot, canSubmit, isFull, onSubmit }: { snapshot: QueuePublicSnapshot | null; canSubmit: boolean; isFull: boolean; onSubmit: () => void }) {
@@ -381,11 +509,11 @@ function trackStatusStyle(track: QueuePublicTrack, isLanding: boolean, isComplet
   return { card: "border-border", stamp: null };
 }
 
-function PublicLane({ title, tracks, subtitle, lastSubmittedTrackId, collapsible = false, domId, canPriorityUpgrade, canResumePriorityPayment, priorityPriceCents, priorityCurrency, onPriorityUpgrade, onPriorityPayment }: { title: string; tracks: QueuePublicTrack[]; subtitle?: string; lastSubmittedTrackId: string | null; collapsible?: boolean; domId?: string; canPriorityUpgrade: (track: QueuePublicTrack) => boolean; canResumePriorityPayment: (track: QueuePublicTrack) => boolean; priorityPriceCents: number; priorityCurrency: string; onPriorityUpgrade: (track: QueuePublicTrack) => void; onPriorityPayment: (track: QueuePublicTrack) => void }) {
+function PublicLane({ title, tracks, subtitle, lastSubmittedTrackId, collapsible = false, domId, canPriorityUpgrade, canResumePriorityPayment, priorityPriceCents, priorityCurrency, onPriorityUpgrade, onPriorityPayment, residueMap = {} }: { title: string; tracks: QueuePublicTrack[]; subtitle?: string; lastSubmittedTrackId: string | null; collapsible?: boolean; domId?: string; canPriorityUpgrade: (track: QueuePublicTrack) => boolean; canResumePriorityPayment: (track: QueuePublicTrack) => boolean; priorityPriceCents: number; priorityCurrency: string; onPriorityUpgrade: (track: QueuePublicTrack) => void; onPriorityPayment: (track: QueuePublicTrack) => void; residueMap?: ResidueMap }) {
   const collapsed = collapsible && tracks.length === 0;
   const id = domId ?? (title === "Free Transmissions" ? "free-transmissions-lane" : undefined);
   const isCompletedLane = title === "Recently Played" || title === "Completed Signal Log";
-  return <section id={id} className={`w-full border bg-surface transition-all ${lastSubmittedTrackId && tracks.some((track) => track.id === lastSubmittedTrackId) ? "border-accent shadow-[0_0_34px_rgba(255,0,0,0.22)]" : "border-border"} ${collapsed ? "p-3" : "p-5"}`}><div className="flex items-start justify-between gap-3"><div><h2 className="text-sm uppercase tracking-[0.25em] text-foreground">{title}</h2>{subtitle && !collapsed && <p className="mt-1 text-xs text-muted">{subtitle}</p>}</div><span className="text-xs text-muted">{tracks.length}</span></div>{collapsed ? <p className="mt-1 text-xs text-muted">No active signals in this lane.</p> : <div className="mt-4 space-y-3">{tracks.length === 0 ? <p className="border border-border/60 p-4 text-sm text-muted">No visible transmissions.</p> : tracks.map((track, index) => { const isLanding = track.id === lastSubmittedTrackId; const style = trackStatusStyle(track, isLanding, isCompletedLane); const sourceClass = track.sourceType === "upload" ? "source-upload" : track.sourceType === "other" ? "source-other" : "source-link"; return <article key={track.id} data-track-id={track.id} id={`track-card-${track.id}`} className={`queue-track-card grid gap-3 border bg-background/40 p-3 sm:grid-cols-[5rem_1fr_auto] sm:items-center ${style.card} ${sourceClass}`}><div className="h-20 overflow-hidden border border-border/70"><SourceArt track={track} /></div><div><p className="text-xs text-muted">#{index + 1} · {track.sourceType.toUpperCase()}</p><p className="font-bold text-foreground">{track.submittedArtistName}</p>{track.publicSourceUrl ? <a href={track.publicSourceUrl} target="_blank" rel="noreferrer" className="text-sm text-foreground/85 underline-offset-2 hover:text-accent hover:underline">{track.submittedSongTitle}</a> : <p className="text-sm text-foreground/85">{track.submittedSongTitle}</p>}<div className="mt-2 text-xs text-muted"><TikTokLink handle={track.tiktokHandle} /></div>{style.stamp && <p className={`status-stamp mt-2 inline-flex border px-2 py-1 text-[10px] uppercase tracking-widest ${track.priorityUpgradeStatus === "checkout_pending" ? "border-[#ffaa00]/45 text-[#ffaa00]" : track.lane === "priority" || track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "manual" ? "border-[#ffaa00]/50 text-[#ffaa00]" : track.lane === "wheel" ? "border-cyan-200/45 text-cyan-200" : isCompletedLane ? "border-border text-muted" : "border-accent/35 text-accent"}`}>{style.stamp}</p>}{track.priorityUpgradeStatus === "requested" && <p className="mt-2 inline-flex border border-accent/30 px-2 py-1 text-[10px] uppercase tracking-widest text-accent">Priority checkout requested</p>}{(track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded") && <p className="mt-2 inline-flex border border-danger/40 px-2 py-1 text-[10px] uppercase tracking-widest text-danger">Track remains Free if still active</p>}</div><div className="space-y-2 sm:text-right"><p className="text-xs text-muted">{track.durationLabel}</p>{canResumePriorityPayment(track) && <button type="button" onClick={() => onPriorityPayment(track)} className="border border-[#ffaa00]/50 px-3 py-1.5 text-[10px] uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Resume Priority Payment</button>}{canPriorityUpgrade(track) && <button type="button" onClick={() => onPriorityUpgrade(track)} className="border border-[#ffaa00]/50 px-3 py-1.5 text-[10px] uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Upgrade to Priority Signal · {formatPrice(priorityPriceCents, priorityCurrency)}</button>}</div></article>; })}</div>}<style jsx>{`.queue-track-card{position:relative;transition:border-color .35s ease,box-shadow .35s ease,filter .35s ease}.queue-track-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;opacity:.75}.source-upload::before{background:linear-gradient(#fff,rgba(255,255,255,.2))}.source-link::before{background:linear-gradient(rgba(255,0,0,.8),rgba(255,0,0,.12))}.source-other::before{background:linear-gradient(rgba(255,255,255,.35),transparent)}.packet-lock{animation:packet-lock-in .95s ease-out;box-shadow:0 0 26px rgba(255,0,0,.20)}.payment-pending{animation:payment-pending-flicker 1.4s steps(2,end) infinite;box-shadow:0 0 20px rgba(255,170,0,.10)}.priority-lock{animation:priority-relay-lock 1.2s ease-out;box-shadow:0 0 24px rgba(255,170,0,.18)}.wheel-pulse{animation:wheel-signal-pulse 2.2s ease-in-out infinite;box-shadow:0 0 20px rgba(103,232,249,.12)}.completed-stamp{filter:saturate(.72)}.removed-stamp{filter:saturate(.65);box-shadow:0 0 18px rgba(255,0,0,.10)}.status-stamp{animation:status-stamp-in .42s ease-out}@keyframes packet-lock-in{0%{transform:translateY(5px);filter:brightness(1.5)}100%{transform:translateY(0);filter:brightness(1)}}@keyframes payment-pending-flicker{0%,100%{border-color:rgba(255,170,0,.28)}50%{border-color:rgba(255,170,0,.65)}}@keyframes priority-relay-lock{0%{box-shadow:0 0 0 rgba(255,170,0,0);filter:brightness(1.6)}100%{box-shadow:0 0 24px rgba(255,170,0,.18);filter:brightness(1)}}@keyframes wheel-signal-pulse{0%,100%{border-color:rgba(103,232,249,.28)}50%{border-color:rgba(103,232,249,.72)}}@keyframes status-stamp-in{0%{transform:scale(.96);opacity:0}100%{transform:scale(1);opacity:1}}@media (prefers-reduced-motion: reduce){.packet-lock,.payment-pending,.priority-lock,.wheel-pulse,.status-stamp{animation:none}}`}</style></section>;
+  return <section id={id} className={`w-full border bg-surface transition-all ${lastSubmittedTrackId && tracks.some((track) => track.id === lastSubmittedTrackId) ? "border-accent shadow-[0_0_34px_rgba(255,0,0,0.22)]" : "border-border"} ${collapsed ? "p-3" : "p-5"}`}><div className="flex items-start justify-between gap-3"><div><h2 className="text-sm uppercase tracking-[0.25em] text-foreground">{title}</h2>{subtitle && !collapsed && <p className="mt-1 text-xs text-muted">{subtitle}</p>}</div><span className="text-xs text-muted">{tracks.length}</span></div>{collapsed ? <p className="mt-1 text-xs text-muted">No active signals in this lane.</p> : <div className="mt-4 space-y-3">{tracks.length === 0 ? <p className="border border-border/60 p-4 text-sm text-muted">No visible transmissions.</p> : tracks.map((track, index) => { const isLanding = track.id === lastSubmittedTrackId; const style = trackStatusStyle(track, isLanding, isCompletedLane); const sourceClass = track.sourceType === "upload" ? "source-upload" : track.sourceType === "other" ? "source-other" : "source-link"; const residue = residueMap[track.id]; return <article key={track.id} data-track-id={track.id} id={`track-card-${track.id}`} className={`queue-track-card grid gap-3 border bg-background/40 p-3 sm:grid-cols-[5rem_1fr_auto] sm:items-center ${style.card} ${sourceClass}`}>{residue && <SignalResidue tone={residue.tone} seed={`${track.id}:${residue.nonce}`} />}<div className="h-20 overflow-hidden border border-border/70"><SourceArt track={track} /></div><div><p className="text-xs text-muted">#{index + 1} · {track.sourceType.toUpperCase()}</p><p className="font-bold text-foreground">{track.submittedArtistName}</p>{track.publicSourceUrl ? <a href={track.publicSourceUrl} target="_blank" rel="noreferrer" className="text-sm text-foreground/85 underline-offset-2 hover:text-accent hover:underline">{track.submittedSongTitle}</a> : <p className="text-sm text-foreground/85">{track.submittedSongTitle}</p>}<div className="mt-2 text-xs text-muted"><TikTokLink handle={track.tiktokHandle} /></div>{style.stamp && <p className={`status-stamp mt-2 inline-flex border px-2 py-1 text-[10px] uppercase tracking-widest ${track.priorityUpgradeStatus === "checkout_pending" ? "border-[#ffaa00]/45 text-[#ffaa00]" : track.lane === "priority" || track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "manual" ? "border-[#ffaa00]/50 text-[#ffaa00]" : track.lane === "wheel" ? "border-cyan-200/45 text-cyan-200" : isCompletedLane ? "border-border text-muted" : "border-accent/35 text-accent"}`}>{style.stamp}</p>}{track.priorityUpgradeStatus === "requested" && <p className="mt-2 inline-flex border border-accent/30 px-2 py-1 text-[10px] uppercase tracking-widest text-accent">Priority checkout requested</p>}{(track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded") && <p className="mt-2 inline-flex border border-danger/40 px-2 py-1 text-[10px] uppercase tracking-widest text-danger">Track remains Free if still active</p>}</div><div className="space-y-2 sm:text-right"><p className="text-xs text-muted">{track.durationLabel}</p>{canResumePriorityPayment(track) && <button type="button" onClick={() => onPriorityPayment(track)} className="border border-[#ffaa00]/50 px-3 py-1.5 text-[10px] uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Resume Priority Payment</button>}{canPriorityUpgrade(track) && <button type="button" onClick={() => onPriorityUpgrade(track)} className="border border-[#ffaa00]/50 px-3 py-1.5 text-[10px] uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Upgrade to Priority Signal · {formatPrice(priorityPriceCents, priorityCurrency)}</button>}</div></article>; })}</div>}<style jsx>{`.queue-track-card{position:relative;transition:border-color .35s ease,box-shadow .35s ease,filter .35s ease}.queue-track-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;opacity:.75}.source-upload::before{background:linear-gradient(#fff,rgba(255,255,255,.2))}.source-link::before{background:linear-gradient(rgba(255,0,0,.8),rgba(255,0,0,.12))}.source-other::before{background:linear-gradient(rgba(255,255,255,.35),transparent)}.packet-lock{animation:packet-lock-in .95s ease-out;box-shadow:0 0 26px rgba(255,0,0,.20)}.payment-pending{animation:payment-pending-flicker 1.4s steps(2,end) infinite;box-shadow:0 0 20px rgba(255,170,0,.10)}.priority-lock{animation:priority-relay-lock 1.2s ease-out;box-shadow:0 0 24px rgba(255,170,0,.18)}.wheel-pulse{animation:wheel-signal-pulse 2.2s ease-in-out infinite;box-shadow:0 0 20px rgba(103,232,249,.12)}.completed-stamp{filter:saturate(.72)}.removed-stamp{filter:saturate(.65);box-shadow:0 0 18px rgba(255,0,0,.10)}.status-stamp{animation:status-stamp-in .42s ease-out}@keyframes packet-lock-in{0%{transform:translateY(5px);filter:brightness(1.5)}100%{transform:translateY(0);filter:brightness(1)}}@keyframes payment-pending-flicker{0%,100%{border-color:rgba(255,170,0,.28)}50%{border-color:rgba(255,170,0,.65)}}@keyframes priority-relay-lock{0%{box-shadow:0 0 0 rgba(255,170,0,0);filter:brightness(1.6)}100%{box-shadow:0 0 24px rgba(255,170,0,.18);filter:brightness(1)}}@keyframes wheel-signal-pulse{0%,100%{border-color:rgba(103,232,249,.28)}50%{border-color:rgba(103,232,249,.72)}}@keyframes status-stamp-in{0%{transform:scale(.96);opacity:0}100%{transform:scale(1);opacity:1}}@media (prefers-reduced-motion: reduce){.packet-lock,.payment-pending,.priority-lock,.wheel-pulse,.status-stamp{animation:none}}`}</style></section>;
 }
 
 function PriorityUpgradeModal({ track, price, pending, message, onConfirm, onClose }: { track: QueuePublicTrack; price: string; pending: boolean; message: string | null; onConfirm: () => void; onClose: () => void }) {

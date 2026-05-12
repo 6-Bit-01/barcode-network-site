@@ -35,6 +35,7 @@ function entryLane(entry: QueueEntry): QueueLane { return entry.lane ?? "regular
 function durationSourceLabel(entry: QueueEntry): string { return (entry.durationSource ?? "internal_estimate").replace(/_/g, " "); }
 function canPausePriority(entry: QueueEntry): boolean { return entry.lane === "priority" && !entry.priorityPausedAt && (entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual"); }
 function canResumePriority(entry: QueueEntry): boolean { return entry.lane === "priority" && Boolean(entry.priorityPausedAt) && (entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual"); }
+function isPaidPriorityTrack(entry: QueueEntry): boolean { return entry.lane === "priority" && (entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual"); }
 function isWheelEligibleTrack(entry: QueueEntry): boolean { return (!entry.lane || entry.lane === "regular") && entry.status === "queued" && (entry.priorityUpgradeStatus ?? "none") === "none" && !entry.priorityPausedAt; }
 function queueTrackVisual(entry: QueueEntry): { label: string; badgeClass: string; cardClass: string; sectionClass: string } {
   const status = entry.priorityUpgradeStatus ?? "none";
@@ -241,9 +242,9 @@ export function AdminRadioQueueControl() {
   const lanes = useMemo(() => {
     const active = state?.queue ?? [];
     return {
-      priority: active.filter((entry) => entry.lane === "priority"),
+      priority: active.filter(isPaidPriorityTrack),
       wheel: active.filter((entry) => entry.lane === "wheel"),
-      regular: active.filter((entry) => !entry.lane || entry.lane === "regular"),
+      regular: active.filter((entry) => !entry.lane || entry.lane === "regular" || (entry.lane === "priority" && !isPaidPriorityTrack(entry))),
       spotlight: state?.spotlight ?? [],
     };
   }, [state]);
@@ -273,7 +274,7 @@ export function AdminRadioQueueControl() {
     if (!entry) return false;
     return entry.lane === "priority" && !entry.priorityPausedAt && (entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual") && (entry.status === "queued" || entry.status === "next");
   }).length;
-  const heldPriorityCount = (state?.queue ?? []).filter((entry) => entry.lane === "priority" && Boolean(entry.priorityPausedAt)).length;
+  const heldPriorityCount = (state?.queue ?? []).filter((entry) => isPaidPriorityTrack(entry) && Boolean(entry.priorityPausedAt)).length;
 
   return (
     <div className={`${playerPadding} space-y-6`}>

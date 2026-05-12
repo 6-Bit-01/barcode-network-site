@@ -573,8 +573,13 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
   const detectedDurationSeconds = entry.detectedDurationSeconds ?? null;
   const sourceType = entry.sourceType ?? detectQueueSourceType(entry.link);
   const durationSource = normalizeDurationSource(entry.durationSource, detectedDurationSeconds, sourceType);
+  const priorityUpgradeStatus = normalizePriorityUpgradeStatus(entry.priorityUpgradeStatus);
+  const paidPriorityStatus = priorityUpgradeStatus === "paid" || priorityUpgradeStatus === "manual";
+  const lane = entry.lane === "priority" && !paidPriorityStatus ? "regular" : entry.lane;
   return {
     ...entryWithoutLegacyMarker,
+    lane,
+    tier: lane === "regular" && entry.lane === "priority" && !paidPriorityStatus ? "free" : entry.tier,
     artist: entry.artist ?? submittedArtistName,
     title: entry.title ?? submittedSongTitle,
     submittedArtistName,
@@ -589,7 +594,7 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     durationSource,
     note: entry.note ?? null,
     priorityUpgradeRequested: entry.priorityUpgradeRequested === true,
-    priorityUpgradeStatus: normalizePriorityUpgradeStatus(entry.priorityUpgradeStatus),
+    priorityUpgradeStatus,
     priorityUpgradeSource: normalizePriorityUpgradeSource(entry.priorityUpgradeSource),
     priorityUpgradeAt: entry.priorityUpgradeAt ?? entry.priorityUpgradeRequestedAt ?? entry.priorityUpgradePaidAt ?? null,
     priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? entry.priorityUpgradeAt ?? null,

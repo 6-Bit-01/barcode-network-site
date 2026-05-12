@@ -68,10 +68,11 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const lanes = useMemo(() => {
     const hidden = new Set([snapshot?.nowPlaying?.id, snapshot?.upNext?.id].filter(Boolean));
     const queue = (snapshot?.queue ?? []).filter((track) => !hidden.has(track.id));
+    const paidPriority = (track: typeof queue[number]) => track.lane === "priority" && (track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "manual");
     return {
-      priority: queue.filter((track) => track.lane === "priority"),
+      priority: queue.filter(paidPriority),
       wheel: queue.filter((track) => track.lane === "wheel"),
-      regular: queue.filter((track) => track.lane === "regular"),
+      regular: queue.filter((track) => track.lane === "regular" || (track.lane === "priority" && !paidPriority(track))),
     };
   }, [snapshot]);
 

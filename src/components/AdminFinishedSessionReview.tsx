@@ -68,6 +68,7 @@ export function AdminFinishedSessionReview({ sessionId }: { sessionId: string })
             <p className="mt-1 text-sm text-muted">{session.showDate} · {session.status === "archived" ? "finished / archived" : session.status} · read-only archive record</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <a href="/admin/queue" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Return to Queue Dashboard</a>
             <a href={exportHref(session.sessionId)} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Download CSV</a>
             <a href={`/admin/queue?sessionId=${encodeURIComponent(session.sessionId)}`} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Review Queue</a>
           </div>

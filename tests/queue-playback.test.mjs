@@ -887,6 +887,44 @@ test("checkout pending and failed payment simulations stay regular until paid", 
   assert.equal(state.nextInLine?.priorityUpgradeStatus, "paid");
 });
 
+
+test("legacy unpaid priority-lane records normalize back to regular", async () => {
+  await freshOpenSession("legacy pending priority lane", { showStarted: false });
+
+  const pending = await queue.addToQueue({
+    artist: "Legacy Pending Artist",
+    title: "Legacy Pending Track",
+    tiktokHandle: "@legacypending",
+    link: "https://example.com/legacy-pending",
+    tier: "fastlane",
+    lane: "priority",
+    amount: 0,
+    createdAt: new Date(Date.UTC(2026, 0, 3, 0, 0, trackSequence++)).toISOString(),
+    priorityUpgradeRequested: true,
+    priorityUpgradeStatus: "checkout_pending",
+    priorityUpgradeSource: "stripe",
+  });
+  const failed = await queue.addToQueue({
+    artist: "Legacy Failed Artist",
+    title: "Legacy Failed Track",
+    tiktokHandle: "@legacyfailed",
+    link: "https://example.com/legacy-failed",
+    tier: "fastlane",
+    lane: "priority",
+    amount: 0,
+    createdAt: new Date(Date.UTC(2026, 0, 3, 0, 0, trackSequence++)).toISOString(),
+    priorityUpgradeRequested: true,
+    priorityUpgradeStatus: "failed",
+    priorityUpgradeSource: "stripe",
+  });
+
+  const state = await queue.getRadioQueueState();
+  assert.equal(queuedTrack(state, pending.id)?.lane, "regular", "checkout pending legacy records must not remain Priority");
+  assert.equal(queuedTrack(state, pending.id)?.tier, "free", "checkout pending legacy records should render as Free/Regular until paid");
+  assert.equal(queuedTrack(state, failed.id)?.lane, "regular", "failed payment legacy records must not remain Priority");
+  assert.equal(state.nextInLine, null, "unpaid legacy records must not claim Next In Line as Priority");
+});
+
 test("removing wheel from Next In Line restores owed wheel and leaves Next In Line blank", async () => {
   await freshOpenSession("remove next wheel");
   const wheel = await addTrack("Unavailable Wheel");

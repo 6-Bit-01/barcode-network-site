@@ -866,3 +866,65 @@ test("loaded player boundary prevents replacing now playing with another load ac
   assert.equal(completedTrack(state, first.id), null);
   assert.equal(removedTrack(state, first.id), null);
 });
+
+test("checkout pending and failed payment simulations stay regular until paid", async () => {
+  const sessionId = await freshOpenSession("payment processing regular", { showStarted: false });
+
+  let state = await queue.updateRadioTrack("", "addSimulationCheckoutPending");
+  const pending = state.queue.find((entry) => entry.isTestTrack && entry.priorityUpgradeStatus === "checkout_pending");
+  assert.ok(pending, "checkout-pending simulation should exist");
+  assert.equal(pending.lane, "regular", "checkout pending must not move into Priority lane");
+  assert.equal(state.nextInLine, null, "checkout pending must not affect Next In Line");
+
+  state = await queue.updateRadioTrack("", "addSimulationPaymentFailed");
+  const failed = state.queue.find((entry) => entry.isTestTrack && entry.priorityUpgradeStatus === "failed");
+  assert.ok(failed, "failed-payment simulation should exist");
+  assert.equal(failed.lane, "regular", "failed payment must not sit in Priority lane");
+
+  state = await payPriority(pending, sessionId);
+  assert.equal(state.nextInLine?.id, pending.id, "paid webhook should move the pending track into active Priority");
+  assert.equal(state.nextInLine?.lane, "priority");
+  assert.equal(state.nextInLine?.priorityUpgradeStatus, "paid");
+});
+
+test("removing wheel from Next In Line restores owed wheel and leaves Next In Line blank", async () => {
+  await freshOpenSession("remove next wheel");
+  const wheel = await addTrack("Unavailable Wheel");
+  const free = await addTrack("Waiting Free");
+  const replacement = await addTrack("Replacement Wheel");
+
+  let state = await queue.updateRadioTrack(wheel.id, "wheel");
+  assert.equal(state.nextInLine?.id, wheel.id);
+  const owedBeforeRemove = state.nextNonPriorityLane;
+  const owedSpinsBeforeRemove = state.session.wheelSpinsOwed ?? 0;
+
+  state = await queue.updateRadioTrack(wheel.id, "remove");
+
+  assert.ok(removedTrack(state, wheel.id), "removed wheel should move to removed history");
+  assert.equal(state.nextInLine, null, "failed Wheel result should leave Next In Line blank");
+  assert.equal(state.nextNonPriorityLane, owedBeforeRemove, "removing failed Wheel should not consume the owed lane");
+  assert.equal(state.session.wheelSpinsOwed, owedSpinsBeforeRemove + 1, "failed Wheel result should restore one owed wheel spin");
+  assert.ok(queuedTrack(state, free.id), "Free should not be auto-filled after failed Wheel removal");
+
+  state = await queue.getRadioQueueState();
+  assert.equal(state.nextInLine, null, "state refresh should not auto-fill while replacement Wheel is pending manual choice");
+
+  state = await queue.updateRadioTrack(replacement.id, "wheel");
+  assert.equal(state.nextInLine?.id, replacement.id, "manual replacement Wheel winner should stage normally");
+  assert.equal(state.session.wheelSpinsOwed, owedSpinsBeforeRemove, "replacement Wheel should consume the restored owed spin");
+});
+
+test("priority can claim Next In Line after failed wheel removal hold", async () => {
+  const sessionId = await freshOpenSession("priority after failed wheel");
+  const wheel = await addTrack("Failed Wheel Before Priority");
+  let state = await queue.updateRadioTrack(wheel.id, "wheel");
+  state = await queue.updateRadioTrack(wheel.id, "remove");
+  assert.equal(state.nextInLine, null);
+
+  const priority = await addTrack("Priority After Hold");
+  state = await payPriority(priority, sessionId);
+
+  assert.equal(state.nextInLine?.id, priority.id, "active Priority should still claim Next In Line during failed-wheel hold");
+  assert.equal(state.nextInLine?.lane, "priority");
+  assert.equal(state.session.wheelSpinsOwed, 1, "owed Wheel remains underneath Priority");
+});

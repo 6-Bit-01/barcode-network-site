@@ -288,9 +288,15 @@ function preserveDisplacedNonPriorityNext(session: QueueSession, entry: QueueEnt
 }
 
 function resolveNextInLine(session: QueueSession, excludeId?: string, force = false): void {
-  if (session.autoRoutingPaused && !force) return;
-
   let current = session.nextInLineTrack ?? null;
+  if (session.autoRoutingPaused && !force) {
+    if (current) return;
+    const priority = laneTop(session, "priority", excludeId ?? session.nextInLineHoldTrackId ?? session.loadedTrackId ?? undefined);
+    if (!priority) return;
+    stageNextInLineTrack(session, priority);
+    return;
+  }
+
   if (isActivePriorityTrack(current)) return;
   if (current && (current.lane ?? "regular") === "priority") {
     if (!session.queue.some((entry) => entry.id === current?.id)) session.queue.push(normalizeEntry({ ...current, status: "queued" }));
@@ -1622,7 +1628,8 @@ function priorityUpgradeAdminCorrection(entry: QueueEntry, action: QueueAdminAct
     return normalizeEntry({ ...entry, priorityUpgradeRequested: true, priorityUpgradeStatus: "requested", priorityUpgradeSource: entry.priorityUpgradeSource ?? "public_placeholder", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now });
   }
   if (action === "markPriorityCheckoutPending") {
-    return normalizeEntry({ ...entry, priorityUpgradeRequested: true, priorityUpgradeStatus: "checkout_pending", priorityUpgradeSource: "future_payment", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now });
+    const lane = (entry.lane ?? "regular") === "priority" ? "regular" : entry.lane ?? "regular";
+    return normalizeEntry({ ...entry, lane, tier: lane === "wheel" ? "frontrow" : "free", priorityUpgradeRequested: true, priorityUpgradeStatus: "checkout_pending", priorityUpgradeSource: "future_payment", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: null, displacedFromNextInLineAt: null });
   }
   return normalizeEntry({ ...entry, lane: "priority", tier: "fastlane", priorityUpgradeRequested: true, priorityUpgradeStatus: "manual", priorityUpgradeSource: "admin", priorityUpgradeAt: entry.priorityUpgradeAt ?? now, priorityUpgradeRequestedAt: entry.priorityUpgradeRequestedAt ?? now, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: entry.priorityQueueOrderAt ?? now, stagedAsFallbackForLane: null, displacedFromNextInLineAt: null });
 }
@@ -1838,8 +1845,8 @@ function addSimulationTrack(session: QueueSession, action: QueueAdminAction): bo
   if (action === "addSimulationCheckoutPending") {
     session.queue.push(normalizeEntry({
       ...simulationTrackBase(session),
-      tier: "fastlane",
-      lane: "priority",
+      tier: "free",
+      lane: "regular",
       priorityUpgradeRequested: true,
       priorityUpgradeStatus: "checkout_pending",
       priorityUpgradeSource: "future_payment",
@@ -1856,8 +1863,8 @@ function addSimulationTrack(session: QueueSession, action: QueueAdminAction): bo
   if (action === "addSimulationPaymentFailed") {
     session.queue.push(normalizeEntry({
       ...simulationTrackBase(session),
-      tier: "fastlane",
-      lane: "priority",
+      tier: "free",
+      lane: "regular",
       priorityUpgradeRequested: true,
       priorityUpgradeStatus: "failed",
       priorityUpgradeSource: "stripe",
@@ -2034,8 +2041,13 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
       const current = clearNextInLine(session);
       if (current) {
         session.removed.unshift({ ...current, status: "removed", removedAt: new Date().toISOString() });
+        if ((current.lane ?? "regular") === "wheel") {
+          session.wheelSpinsOwed = normalizeWheelSpinsOwed(session.wheelSpinsOwed) + 1;
+          session.autoRoutingPaused = true;
+          session.nextInLineHoldTrackId = current.id;
+        }
       }
-      pullNextInLine(session);
+      if ((current?.lane ?? "regular") !== "wheel") pullNextInLine(session);
     }
     const nextStore = replaceSession(store, session);
     await writeStore(nextStore);
@@ -2120,7 +2132,7 @@ export async function upgradeEntryTier(id: string, newTier: QueueTier, additiona
   const session = getSession(store);
   const index = session.queue.findIndex((entry) => entry.id === id);
   if (index === -1) return null;
-  const updated = normalizeEntry({ ...session.queue[index], tier: newTier, amount: session.queue[index].amount + additionalAmount, lane: newTier === "fastlane" ? "priority" as QueueLane : session.queue[index].lane, ...(newTier === "fastlane" ? { priorityUpgradeRequested: true, priorityUpgradeStatus: "checkout_pending" as const, priorityUpgradeSource: "future_payment" as const, priorityUpgradeAt: new Date().toISOString(), priorityUpgradeRequestedAt: new Date().toISOString() } : {}) });
+  const updated = normalizeEntry({ ...session.queue[index], tier: newTier === "fastlane" ? session.queue[index].tier : newTier, amount: session.queue[index].amount + additionalAmount, lane: session.queue[index].lane, ...(newTier === "fastlane" ? { priorityUpgradeRequested: true, priorityUpgradeStatus: "checkout_pending" as const, priorityUpgradeSource: "future_payment" as const, priorityUpgradeAt: new Date().toISOString(), priorityUpgradeRequestedAt: new Date().toISOString() } : {}) });
   session.queue[index] = updated;
   await writeStore(replaceSession(store, session));
   return updated;

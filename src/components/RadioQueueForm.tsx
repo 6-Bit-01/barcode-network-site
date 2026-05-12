@@ -508,7 +508,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
       <div className="grid gap-2 border border-border bg-surface p-3 text-xs sm:grid-cols-4">
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Session</p><p className="truncate text-foreground">{session?.title ?? "BARCODE Radio"}</p></div>
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Queue</p><p className={status?.isOpen ? "text-accent" : "text-danger"}>{status?.isOpen ? "Open" : "Closed"}</p></div>
-        <div><p className="text-[10px] uppercase tracking-widest text-muted">Active</p><p>{status ? `${status.activeCount}/${status.capacity}` : "—"}</p></div>
+        <div><p className="text-[10px] uppercase tracking-widest text-muted">Active Transmissions</p><p>{status ? `${status.activeCount}/${status.capacity}` : "—"}</p></div>
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Pressure</p><p>{pressureLabel(status)}</p></div>
       </div>
 
@@ -634,6 +634,7 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
   const packetClass = isPriorityRequested || isSignal || isArtifact || isDisassembling ? "packet-forming" : isPacket || isRoute ? "packet-charging" : isTransfer ? "packet-transfer" : "packet-landed";
   const artClass = isPriorityRequested || isSignal ? "art-source" : isArtifact ? "art-captured" : isDisassembling || isPacket ? "art-disassemble" : "art-compressed";
   const landingClass = isConfirmed ? "landing-card landing-impact" : isTransfer ? "landing-card landing-armed" : "landing-card";
+  const priorityTone = isPriorityRequested ? "border-[#ffaa00]/75 shadow-[0_0_120px_rgba(255,170,0,0.26)]" : "border-accent/70 shadow-[0_0_120px_rgba(255,0,0,0.34)]";
   const fragments = [
     ["ARTIST", data?.artist ?? "SIGNAL SOURCE"],
     ["TITLE", data?.title ?? "UNKNOWN TRACK"],
@@ -662,14 +663,14 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
         <WaveformSweep offset={68} />
       </div>
       <div className="relative z-10 grid min-h-dvh place-items-center p-3 sm:p-6">
-        <div className="relative w-full max-w-6xl overflow-hidden border border-accent/70 bg-background/88 p-4 shadow-[0_0_120px_rgba(255,0,0,0.34)] backdrop-blur-md sm:p-5">
+        <div className={`relative w-full max-w-6xl overflow-hidden border bg-background/88 p-4 ${priorityTone} backdrop-blur-md sm:p-5`}>
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,0,0,0.14),transparent_34%)]" />
           <div className="relative z-10 space-y-4">
             <div className="flex items-start justify-between gap-4">
               <div><p className="text-xs uppercase tracking-[0.4em] text-accent">BARCODE Network Transmission</p><h2 className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">{warpLabel(state)}</h2><p className="mt-1 text-xs text-muted">{warpDescription(state, data)}</p></div>
-              <div className="hidden border border-accent/40 bg-accent/5 px-3 py-2 text-xs uppercase tracking-widest text-accent sm:block">TRANSMISSION LOCKED</div>
+              <div className={`hidden border px-3 py-2 text-xs uppercase tracking-widest sm:block ${isPriorityRequested ? "border-[#ffaa00]/50 bg-[#ffaa00]/5 text-[#ffaa00]" : "border-accent/40 bg-accent/5 text-accent"}`}>{isPriorityRequested ? "CHECKOUT RELAY" : "TRANSMISSION LOCKED"}</div>
             </div>
-            <div className="grid grid-cols-7 gap-1">{steps.map((step, index) => <span key={step} className={`h-1.5 ${index <= activeIndex ? "bg-accent shadow-[0_0_14px_rgba(255,0,0,0.75)]" : "bg-border"}`} />)}</div>
+            <div className="grid grid-cols-7 gap-1">{steps.map((step, index) => <span key={step} className={`h-1.5 ${index <= activeIndex ? isPriorityRequested ? "bg-[#ffaa00] shadow-[0_0_14px_rgba(255,170,0,0.75)]" : "bg-accent shadow-[0_0_14px_rgba(255,0,0,0.75)]" : "bg-border"}`} />)}</div>
             <div className="grid gap-4 lg:grid-cols-[0.82fr_1.46fr_0.82fr]">
               <div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80">{fragments.slice(0, 4).map(([key, value]) => <p key={key} className={isDisassembling ? "fragment-pulse" : ""}><span className="text-muted">{key}:</span> {value}</p>)}<div className="mt-4 grid grid-cols-10 gap-1">{"10110011100101101100".split("").map((bit, index) => <span key={`${bit}-${index}`} className="binary-bit text-[9px] text-accent/70" style={{ animationDelay: `${index * 70}ms` }}>{bit}</span>)}</div></div>
               <div className="relative min-h-[22rem] overflow-hidden border border-accent/50 bg-black/45 p-4">

@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps, react/jsx-no-comment-textnodes, @next/next/no-img-element */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { RadioQueueForm } from "@/components/RadioQueueForm";
 import { externalLinks } from "@/content";
@@ -78,7 +78,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
   const isOpen = snapshot?.status.isOpen ?? false;
   const isEnded = snapshot?.session.status === "archived" || snapshot?.session.broadcastPhase === "ended";
-  const isBroadcastActive = Boolean(snapshot?.nowPlaying || snapshot?.upNext || snapshot?.session.broadcastPhase === "broadcast_active" || snapshot?.session.showStarted);
+  const isBroadcastActive = Boolean(snapshot?.nowPlaying || snapshot?.session.broadcastPhase === "broadcast_active" || snapshot?.session.showStarted);
   const isFull = Boolean(snapshot?.status.isFull || (snapshot && snapshot.status.activeCount >= snapshot.status.capacity));
   const canSubmit = !isEnded && isOpen && !isFull;
   const completedRuntime = snapshot?.session.completedRuntimeSeconds ?? 0;
@@ -196,48 +196,75 @@ function TrackTitleLink({ track }: { track: QueuePublicTrack }) {
 }
 
 
+
+type PublicSessionPhase = "syncing" | "archived" | "closed" | "open" | "liveOpen" | "liveClosed";
+
+function publicSessionPhase(snapshot: QueuePublicSnapshot | null, canSubmit: boolean, isBroadcastActive: boolean): PublicSessionPhase {
+  if (!snapshot) return "syncing";
+  if (snapshot.session.status === "archived" || snapshot.session.broadcastPhase === "ended") return "archived";
+  if (isBroadcastActive) return canSubmit ? "liveOpen" : "liveClosed";
+  return canSubmit ? "open" : "closed";
+}
+
+function uniqueActiveTracks(snapshot: QueuePublicSnapshot | null): QueuePublicTrack[] {
+  if (!snapshot || snapshot.session.status === "archived" || snapshot.session.broadcastPhase === "ended") return [];
+  const seen = new Set<string>();
+  return [snapshot.nowPlaying, snapshot.upNext, ...snapshot.queue].filter((track): track is QueuePublicTrack => {
+    if (!track || seen.has(track.id)) return false;
+    seen.add(track.id);
+    return true;
+  });
+}
+
+function publicQueueCounts(snapshot: QueuePublicSnapshot | null) {
+  const activeTracks = uniqueActiveTracks(snapshot);
+  const completed = snapshot?.session.completedCount ?? snapshot?.completed.length ?? 0;
+  const removed = snapshot?.session.removedCount ?? 0;
+  return {
+    active: activeTracks.length,
+    waiting: snapshot?.queue.length ?? 0,
+    completed,
+    total: activeTracks.length + completed + removed,
+    pending: activeTracks.filter((track) => track.priorityUpgradeStatus === "checkout_pending").length,
+  };
+}
+
+function phaseVisual(phase: PublicSessionPhase) {
+  if (phase === "syncing") return { eyebrow: "SYNCING PUBLIC SIGNAL", title: "QUEUE TERMINAL HANDSHAKE", body: "Reading the public BARCODE Radio snapshot before opening the monitor.", tone: "text-muted", border: "border-border", meter: "bg-muted/60", gate: "SIGNAL SEARCH" };
+  if (phase === "archived") return { eyebrow: "BROADCAST ENDED", title: "TRANSMISSION ARCHIVED", body: "SUBMISSIONS CLOSED. No active BARCODE Radio session is currently accepting transmissions.", tone: "text-danger", border: "border-danger/35", meter: "bg-danger/60", gate: "ARCHIVE SEAL" };
+  if (phase === "closed") return { eyebrow: "SESSION ONLINE", title: "SUBMISSION GATE CLOSED", body: "The broadcast corridor is powered on, but new transmissions are not currently being accepted. Stand by for intake.", tone: "text-cyan-200", border: "border-cyan-200/30", meter: "bg-cyan-200/60", gate: "INTAKE BARRIER SEALED" };
+  if (phase === "open") return { eyebrow: "SIGNAL INTAKE OPEN", title: "TRANSMIT YOUR TRACK NOW", body: "Free Transmissions are open. Priority Signal unlocks once the line is deep enough and activates only after Stripe confirms payment.", tone: "text-accent", border: "border-accent/50", meter: "bg-accent/70", gate: "ROUTING CHANNEL OPEN" };
+  if (phase === "liveClosed") return { eyebrow: "BROADCAST ACTIVE", title: "HOST PROTOCOL INITIALIZED", body: "The live monitor remains locked while the intake gate is resealed. Submissions are closed; the broadcast is not ended.", tone: "text-[#ffaa00]", border: "border-[#ffaa00]/50", meter: "bg-[#ffaa00]/70", gate: "LIVE SIGNAL / INTAKE CLOSED" };
+  return { eyebrow: "BROADCAST ACTIVE", title: "HOST PROTOCOL INITIALIZED", body: "Now Playing is live and the host protocol is engaged. Submissions remain open while the broadcast machine is running.", tone: "text-[#ffaa00]", border: "border-[#ffaa00]/50", meter: "bg-[#ffaa00]/70", gate: "LIVE SIGNAL / INTAKE OPEN" };
+}
+
 function SessionPhasePanel({ snapshot, canSubmit, isBroadcastActive }: { snapshot: QueuePublicSnapshot | null; canSubmit: boolean; isBroadcastActive: boolean }) {
   const [nowMs, setNowMs] = useState(0);
+  const [transitionPhase, setTransitionPhase] = useState<PublicSessionPhase | null>(null);
+  const phaseRef = useRef<PublicSessionPhase>("syncing");
   useEffect(() => {
     setNowMs(Date.now());
     const interval = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(interval);
   }, []);
+  const phase = publicSessionPhase(snapshot, canSubmit, isBroadcastActive);
+  useEffect(() => {
+    if (phaseRef.current === phase) return;
+    phaseRef.current = phase;
+    setTransitionPhase(phase);
+    const timer = window.setTimeout(() => setTransitionPhase(null), 1400);
+    return () => window.clearTimeout(timer);
+  }, [phase]);
   const session = snapshot?.session;
-  const isArchived = !snapshot || session?.status === "archived" || session?.broadcastPhase === "ended";
   const intakeClock = session?.preShowEndsAt ? new Date(session.preShowEndsAt).getTime() - nowMs : 0;
   const intakeWindow = Number.isFinite(intakeClock) && intakeClock > 0 ? `${Math.floor(intakeClock / 60000)}:${Math.floor((intakeClock % 60000) / 1000).toString().padStart(2, "0")}` : null;
-  const copy = isArchived ? {
-    eyebrow: "BROADCAST ENDED",
-    title: "TRANSMISSION ARCHIVED",
-    body: "SUBMISSIONS CLOSED. No active BARCODE Radio session is currently accepting transmissions.",
-    tone: "text-danger",
-    border: "border-danger/35",
-    meter: "bg-danger/60",
-  } : isBroadcastActive ? {
-    eyebrow: "BROADCAST ACTIVE",
-    title: "HOST PROTOCOL INITIALIZED",
-    body: `Now Playing and Next In Line remain live broadcast slots. Submissions are ${canSubmit ? "open" : "closed"}; closed intake does not mean the broadcast ended.`,
-    tone: "text-[#ffaa00]",
-    border: "border-[#ffaa00]/45",
-    meter: "bg-[#ffaa00]/70",
-  } : canSubmit ? {
-    eyebrow: "SIGNAL INTAKE OPEN",
-    title: "TRANSMIT YOUR TRACK NOW",
-    body: "Free Transmissions are open. Priority Signal unlocks once the line is deep enough, then activates only after Stripe confirms payment.",
-    tone: "text-accent",
-    border: "border-accent/45",
-    meter: "bg-accent/70",
-  } : {
-    eyebrow: "SESSION ONLINE",
-    title: "SUBMISSION GATE CLOSED",
-    body: "The broadcast corridor is active, but new transmissions are not currently being accepted. Stand by for intake.",
-    tone: "text-muted",
-    border: "border-border",
-    meter: "bg-muted/60",
-  };
+  const copy = phaseVisual(phase);
 
-  return <section className={`relative overflow-hidden border bg-surface p-5 ${copy.border}`}><div className="pointer-events-none absolute inset-0 opacity-20 [background:linear-gradient(transparent_50%,rgba(255,255,255,.08)_50%)] [background-size:100%_6px]" /><div className="relative grid gap-5 lg:grid-cols-[1.2fr_0.8fr]"><div><p className={`text-xs uppercase tracking-[0.35em] ${copy.tone}`}>{copy.eyebrow}</p><h2 className={`mt-2 text-2xl font-bold ${copy.tone}`}>{copy.title}</h2><p className="mt-3 max-w-3xl text-sm text-muted">{copy.body}</p>{intakeWindow && canSubmit && <p className="mt-3 inline-flex border border-accent/35 bg-accent/5 px-3 py-2 text-[11px] uppercase tracking-widest text-accent">Intake window display: {intakeWindow}</p>}</div><div className="grid gap-2 text-xs"><div className="border border-border bg-background/50 p-3"><p className="uppercase tracking-widest text-muted">Session existence</p><p className="mt-1 text-foreground">{snapshot ? session?.status ?? "syncing" : "no active public snapshot"}</p></div><div className="border border-border bg-background/50 p-3"><p className="uppercase tracking-widest text-muted">Submissions</p><p className={canSubmit ? "mt-1 text-accent" : "mt-1 text-danger"}>{canSubmit ? "Open / intake corridor unlocked" : "Closed / gate sealed"}</p></div><div className="border border-border bg-background/50 p-3"><p className="uppercase tracking-widest text-muted">Broadcast monitor</p><p className={isBroadcastActive ? "mt-1 text-[#ffaa00]" : "mt-1 text-muted"}>{isBroadcastActive ? "Live playback signal detected" : "No loaded track in public snapshot"}</p><div className="mt-2 h-1 bg-border"><div className={`h-full ${copy.meter}`} style={{ width: isBroadcastActive ? "100%" : canSubmit ? "70%" : isArchived ? "18%" : "42%" }} /></div></div></div></div></section>;
+  return <section data-phase={phase} data-transition={transitionPhase ?? undefined} className={`session-machine relative overflow-hidden border bg-surface p-5 ${copy.border}`}><div className="phase-scan pointer-events-none absolute inset-0" /><div className="phase-routes pointer-events-none absolute inset-0"><span /><span /><span /></div><div className="relative grid gap-5 lg:grid-cols-[1.15fr_0.85fr]"><div><p className={`text-xs uppercase tracking-[0.35em] ${copy.tone}`}>{copy.eyebrow}</p><h2 className={`mt-2 text-2xl font-bold ${copy.tone}`}>{copy.title}</h2><p className="mt-3 max-w-3xl text-sm text-muted">{copy.body}</p>{intakeWindow && canSubmit && <div className="submission-window mt-3 inline-flex flex-col border border-accent/35 bg-accent/5 px-3 py-2"><span className="text-[10px] uppercase tracking-widest text-accent">Submission Window</span><span className="text-lg font-bold text-foreground">{intakeWindow} remaining</span></div>}<div className="mt-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4"><PhaseChip label="Broadcast" value={isBroadcastActive ? "Active" : "Standby"} active={isBroadcastActive} /><PhaseChip label="Submissions" value={canSubmit ? "Open" : "Closed"} active={canSubmit} /><PhaseChip label="Session" value={snapshot ? session?.status ?? "Syncing" : "Syncing"} active={Boolean(snapshot && session?.status !== "archived")} /><PhaseChip label="Gate" value={copy.gate} active={phase === "open" || phase === "liveOpen"} /></div></div><div className="gate-console border border-border bg-background/50 p-3"><div className="flex items-center justify-between text-[10px] uppercase tracking-[0.25em]"><span className={copy.tone}>{copy.gate}</span><span className="text-muted">Public Monitor</span></div><div className="mt-3 grid grid-cols-8 gap-1" aria-hidden="true">{Array.from({ length: 16 }).map((_, index) => <span key={index} className="gate-bar h-7 border border-border/60 bg-background/60" />)}</div><div className="mt-3 h-1.5 bg-border"><div className={`h-full ${copy.meter}`} style={{ width: isBroadcastActive ? "100%" : canSubmit ? "76%" : phase === "archived" ? "18%" : phase === "syncing" ? "34%" : "52%" }} /></div></div></div><style jsx>{`.session-machine{transition:border-color .7s ease,box-shadow .7s ease,filter .7s ease}.phase-scan{background:linear-gradient(transparent 50%,rgba(255,255,255,.075) 50%);background-size:100% 6px;animation:phase-scan 3s linear infinite;opacity:.16}.phase-routes span{position:absolute;left:10%;right:10%;height:1px;background:linear-gradient(90deg,transparent,rgba(255,0,0,.48),transparent);animation:phase-route 2.4s ease-in-out infinite}.phase-routes span:nth-child(1){top:30%}.phase-routes span:nth-child(2){top:52%;animation-delay:.3s}.phase-routes span:nth-child(3){top:74%;animation-delay:.6s}.gate-bar{transition:transform .7s ease,opacity .7s ease,background-color .7s ease}.session-machine[data-phase="archived"]{filter:saturate(.55)}.session-machine[data-phase="archived"] .phase-scan{opacity:.07;animation-duration:5s}.session-machine[data-phase="closed"] .gate-bar{background:rgba(103,232,249,.10)}.session-machine[data-phase="open"] .gate-bar{transform:scaleY(.45);background:rgba(255,0,0,.16)}.session-machine[data-phase="liveOpen"] .gate-bar,.session-machine[data-phase="liveClosed"] .gate-bar{background:rgba(255,170,0,.14)}.session-machine[data-phase="liveClosed"] .gate-bar:nth-child(even){transform:scaleY(.34);opacity:.45}.session-machine[data-transition]{animation:session-mode-swap 1.15s ease-out}.submission-window{animation:submission-window-in .85s ease-out}@keyframes phase-scan{from{background-position:0 0}to{background-position:0 48px}}@keyframes phase-route{0%,100%{opacity:.08;transform:scaleX(.18)}45%{opacity:.72;transform:scaleX(1)}}@keyframes session-mode-swap{0%{clip-path:inset(0 100% 0 0);filter:brightness(1.55)}42%{clip-path:inset(0 0 0 0);filter:brightness(1.2)}100%{filter:brightness(1)}}@keyframes submission-window-in{0%{opacity:0;transform:translateY(8px)}100%{opacity:1;transform:translateY(0)}}@media (prefers-reduced-motion: reduce){.phase-scan,.phase-routes span,.session-machine[data-transition],.submission-window{animation:none}.gate-bar{transition:none}}`}</style></section>;
+}
+
+function PhaseChip({ label, value, active }: { label: string; value: string; active: boolean }) {
+  return <div className={`border p-2 ${active ? "border-accent/40 bg-accent/5" : "border-border bg-background/45"}`}><p className="uppercase tracking-widest text-muted">{label}</p><p className={active ? "mt-1 text-accent" : "mt-1 text-muted"}>{value}</p></div>;
 }
 
 function NowPlaying({ title, track, compact = false, domId, lastSubmittedTrackId }: { title: string; track: QueuePublicTrack | null; compact?: boolean; domId?: string; lastSubmittedTrackId?: string | null }) {
@@ -247,7 +274,12 @@ function NowPlaying({ title, track, compact = false, domId, lastSubmittedTrackId
 }
 
 function QueueStatusPanel({ snapshot, canSubmit, isFull, onSubmit }: { snapshot: QueuePublicSnapshot | null; canSubmit: boolean; isFull: boolean; onSubmit: () => void }) {
-  return <div className="border border-border bg-surface p-4 space-y-3"><div><p className="text-xs uppercase tracking-[0.3em] text-muted">// Queue Status</p><h2 className="mt-1 text-xl font-bold text-foreground">{snapshot?.session.title ?? "BARCODE Radio"}</h2><p className="text-xs text-muted">{snapshot?.session.showDate ?? "show date syncing"} · {snapshot?.session.status ?? "syncing"}</p></div><div className="grid grid-cols-2 gap-2 text-sm"><div className="border border-border p-2"><p className="text-xs text-muted">Submissions</p><p className={canSubmit ? "text-accent" : "text-danger"}>{canSubmit ? "Open" : isFull ? "Full" : "Closed"}</p></div><div className="border border-border p-2"><p className="text-xs text-muted">Active</p><p>{snapshot ? `${snapshot.status.activeCount}/${snapshot.status.capacity}` : "—"}</p></div><div className="border border-border p-2"><p className="text-xs text-muted">Runtime</p><p>{snapshot ? formatRuntime(snapshot.status.estimatedRuntimeSeconds) : "—"}</p></div><div className="border border-border p-2"><p className="text-xs text-muted">Pressure</p><p>{snapshot?.status.pressure ?? "syncing"}</p></div></div>{canSubmit ? <button type="button" onClick={onSubmit} className="w-full border border-accent px-4 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Submit a Track</button> : <div className="border border-danger/40 bg-danger/5 p-3"><p className="text-xs uppercase tracking-[0.25em] text-danger">SUBMISSIONS CLOSED</p><p className="mt-1 text-xs text-muted">Visible queue. No new tracks accepted right now.</p></div>}</div>;
+  const counts = publicQueueCounts(snapshot);
+  return <div className={`border bg-surface p-4 space-y-3 ${canSubmit ? "border-accent/45 shadow-[0_0_28px_rgba(255,0,0,0.14)]" : "border-border"}`}><div><p className="text-xs uppercase tracking-[0.3em] text-muted">// Queue Status</p><h2 className="mt-1 text-xl font-bold text-foreground">{snapshot?.session.title ?? "BARCODE Radio"}</h2><p className="text-xs text-muted">{snapshot?.session.showDate ?? "show date syncing"} · {snapshot?.session.status ?? "syncing"}</p></div><div className="grid grid-cols-2 gap-2 text-sm"><QueueStat label="Active Transmissions" value={counts.active} helper="Now Playing, Next In Line, and waiting tracks." /><QueueStat label="Waiting in Queue" value={counts.waiting} helper="Below current broadcast slots." /><QueueStat label="Played Tonight" value={counts.completed} helper="Finished tracks only." /><QueueStat label="Total Received" value={counts.total} helper="Accepted active, played, and removed signals." />{counts.pending > 0 && <QueueStat label="Payment Processing" value={counts.pending} helper="Still Free until confirmed." accent="text-[#ffaa00]" />}</div>{canSubmit ? <button type="button" onClick={onSubmit} className="intake-cta w-full border border-accent px-4 py-2.5 text-xs uppercase tracking-widest text-accent shadow-[0_0_24px_rgba(255,0,0,0.16)] hover:bg-accent hover:text-background">Submit a Track</button> : <div className="border border-danger/40 bg-danger/5 p-3"><p className="text-xs uppercase tracking-[0.25em] text-danger">{isFull ? "QUEUE FULL" : "SUBMISSIONS CLOSED"}</p><p className="mt-1 text-xs text-muted">{isFull ? "This broadcast queue is full for new transmissions." : "Visible queue. No new tracks accepted right now."}</p></div>}<p className="text-[11px] leading-relaxed text-muted">Active transmissions remain in play until finished or removed. Payment Processing tracks remain in Free Transmissions until confirmed.</p><style jsx>{`.intake-cta{animation:intake-cta-pulse 2.1s ease-in-out infinite}@keyframes intake-cta-pulse{0%,100%{box-shadow:0 0 16px rgba(255,0,0,.12)}50%{box-shadow:0 0 34px rgba(255,0,0,.30)}}@media (prefers-reduced-motion: reduce){.intake-cta{animation:none}}`}</style></div>;
+}
+
+function QueueStat({ label, value, helper, accent = "text-foreground" }: { label: string; value: number | string; helper: string; accent?: string }) {
+  return <div className="border border-border bg-background/45 p-2"><p className="text-[10px] uppercase tracking-widest text-muted">{label}</p><p className={`mt-1 text-lg font-bold ${accent}`}>{value}</p><p className="mt-1 text-[10px] leading-snug text-muted">{helper}</p></div>;
 }
 
 function SubmitterStatusPanel({ status, cooldownRemaining }: { status: QueuePublicSnapshot["submitterStatus"] | null; cooldownRemaining: number }) { if (!status) return <section className="border border-border bg-surface p-4 text-xs text-muted">Your transmission counter appears here after your first signal.</section>; return <section className="border border-accent/40 bg-accent/5 p-4 text-sm text-muted"><p className="font-bold text-accent">Your transmissions: {status.used} / {status.limit}</p><p className="mt-1">Remaining: {status.remaining}</p>{cooldownRemaining > 0 && <p className="mt-1 text-accent">Next transmission in {formatCooldown(cooldownRemaining)}</p>}</section>; }

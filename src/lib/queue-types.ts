@@ -7,7 +7,7 @@ export type QueueSourceType = "upload" | "link" | "youtube" | "soundcloud" | "sp
 export type QueueLane = "priority" | "wheel" | "regular";
 export type QueueNonPriorityLane = "wheel" | "regular";
 export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | "next" | "pending" | "played" | "refunded" | "expired";
-export type QueueDurationSource = "upload_metadata" | "file_metadata" | "youtube" | "soundcloud" | "spotify" | "provider_metadata" | "internal_estimate" | "unknown";
+export type QueueDurationSource = "upload_metadata" | "file_metadata" | "youtube" | "soundcloud" | "spotify" | "youtube_api" | "spotify_api" | "soundcloud_api" | "direct_metadata" | "provider_metadata" | "internal_estimate" | "estimated" | "unknown";
 export type QueueSessionStatus = "prepared" | "open" | "closed" | "archived";
 export type QueueBroadcastPhase = "warmup" | "submission_window" | "broadcast_active" | "ended";
 export type PriorityUpgradeStatus = "none" | "requested" | "manual" | "checkout_pending" | "paid" | "paid_needs_attention" | "failed" | "refunded";
@@ -229,7 +229,7 @@ export function getTrackArtworkUrl(track: Pick<QueueEntry, "sourceType" | "sourc
   return null;
 }
 
-export const INTERNAL_BUFFER_DURATION_SECONDS = 240;
+export const INTERNAL_BUFFER_DURATION_SECONDS = 300;
 export const RADIO_QUEUE_CAPACITY = 40;
 
 export const TIERS = {
@@ -261,6 +261,11 @@ export function generateQueueId(): string {
 
 export function getTrackRuntimeSeconds(entry: Pick<QueueEntry, "detectedDurationSeconds" | "estimatedDurationSeconds">): number {
   return entry.detectedDurationSeconds ?? entry.estimatedDurationSeconds ?? INTERNAL_BUFFER_DURATION_SECONDS;
+}
+
+export function getTrackDurationLabel(entry: Pick<QueueEntry, "detectedDurationSeconds" | "estimatedDurationSeconds" | "durationIsEstimate">): string {
+  const runtime = getTrackRuntimeSeconds(entry);
+  return entry.durationIsEstimate ? `est. ${formatRuntime(runtime)}` : formatRuntime(runtime);
 }
 
 export function formatRuntime(seconds: number): string {

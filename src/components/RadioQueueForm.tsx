@@ -623,7 +623,8 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
   const steps: TransmissionState[] = ["priority_requested", "signal", "received", "encoded", "converting", "temporal", "aligning", "confirmed"];
   const activeIndex = Math.max(0, steps.indexOf(state));
   const topProgressSteps = steps.slice(0, 6);
-  const topProgressActiveIndex = Math.min(activeIndex, topProgressSteps.length - 1);
+  const isConfirmed = state === "confirmed";
+  const topProgressActiveIndex = isConfirmed ? topProgressSteps.length - 1 : Math.min(activeIndex, topProgressSteps.length - 1);
   const isPriorityRequested = state === "priority_requested";
   const isSignal = state === "signal";
   const isArtifact = state === "received";
@@ -631,7 +632,6 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
   const isPacket = state === "converting";
   const isRoute = state === "temporal";
   const isTransfer = state === "aligning";
-  const isConfirmed = state === "confirmed";
   const motionClass = isPriorityRequested || isSignal ? "signal-lock" : isRoute || isTransfer ? "barcode-warp power-instability" : "barcode-warp";
   const packetClass = isPriorityRequested || isSignal || isArtifact || isDisassembling ? "packet-forming" : isPacket || isRoute ? "packet-charging" : isTransfer ? "packet-transfer" : "packet-landed";
   const artClass = isPriorityRequested || isSignal ? "art-source" : isArtifact ? "art-captured" : isDisassembling || isPacket ? "art-disassemble" : "art-compressed";

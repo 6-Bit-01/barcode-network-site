@@ -7,9 +7,9 @@ import { detectTrackDurationFromLink, parseIso8601DurationToSeconds, parseSpotif
 import {
   INTERNAL_BUFFER_DURATION_SECONDS,
   detectQueueSourceType,
-  formatRuntime,
   generateQueueId,
   getTrackRuntimeSeconds,
+  getTrackDurationLabel,
   getTrackArtworkUrl,
   normalizeTier,
 } from "./queue-types";
@@ -1277,7 +1277,7 @@ export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
     providerTitle: isUpload ? null : normalized.providerTitle ?? null,
     sourceType: normalized.sourceType ?? "other",
     lane: normalized.lane ?? "regular",
-    durationLabel: normalized.durationIsEstimate ? "estimated/pending" : formatRuntime(getTrackRuntimeSeconds(normalized)),
+    durationLabel: getTrackDurationLabel(normalized),
     durationIsEstimate: normalized.durationIsEstimate ?? true,
     sourceArtworkUrl: publicArtworkUrlForTrack(normalized),
     publicSourceUrl: publicSourceUrlForTrack(normalized),

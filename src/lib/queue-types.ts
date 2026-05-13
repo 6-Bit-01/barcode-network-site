@@ -263,6 +263,11 @@ export function getTrackRuntimeSeconds(entry: Pick<QueueEntry, "detectedDuration
   return entry.detectedDurationSeconds ?? entry.estimatedDurationSeconds ?? INTERNAL_BUFFER_DURATION_SECONDS;
 }
 
+export function getTrackDurationLabel(entry: Pick<QueueEntry, "detectedDurationSeconds" | "estimatedDurationSeconds" | "durationIsEstimate">): string {
+  const runtime = getTrackRuntimeSeconds(entry);
+  return entry.durationIsEstimate ? `est. ${formatRuntime(runtime)}` : formatRuntime(runtime);
+}
+
 export function formatRuntime(seconds: number): string {
   const safe = Math.max(0, Math.round(seconds));
   const h = Math.floor(safe / 3600);

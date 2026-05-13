@@ -81,7 +81,7 @@ function readAudioDuration(file: File): Promise<number | null> {
   });
 }
 
-function publicTrackFromApi(track: { id: string; submittedArtistName?: string; submittedSongTitle?: string; artist?: string; title?: string; sourceType?: QueuePublicTrack["sourceType"]; lane?: QueuePublicTrack["lane"]; detectedArtistName?: string | null; detectedSongTitle?: string | null; detectedDurationSeconds?: number | null; durationIsEstimate?: boolean; sourceArtworkUrl?: string | null; publicSourceUrl?: string | null; tiktokHandle?: string | null; priorityUpgradeRequested?: boolean; priorityUpgradeStatus?: QueuePublicTrack["priorityUpgradeStatus"] }): QueuePublicTrack {
+function publicTrackFromApi(track: { id: string; submittedArtistName?: string; submittedSongTitle?: string; artist?: string; title?: string; sourceType?: QueuePublicTrack["sourceType"]; lane?: QueuePublicTrack["lane"]; detectedArtistName?: string | null; detectedSongTitle?: string | null; detectedDurationSeconds?: number | null; durationLabel?: string; durationIsEstimate?: boolean; sourceArtworkUrl?: string | null; publicSourceUrl?: string | null; tiktokHandle?: string | null; priorityUpgradeRequested?: boolean; priorityUpgradeStatus?: QueuePublicTrack["priorityUpgradeStatus"] }): QueuePublicTrack {
   return {
     id: track.id,
     submittedArtistName: track.submittedArtistName ?? track.artist ?? "Submitted artist",
@@ -90,7 +90,7 @@ function publicTrackFromApi(track: { id: string; submittedArtistName?: string; s
     detectedSongTitle: track.detectedSongTitle ?? null,
     sourceType: track.sourceType ?? "other",
     lane: track.lane ?? "regular",
-    durationLabel: track.durationIsEstimate === false && track.detectedDurationSeconds ? formatRuntime(track.detectedDurationSeconds) : "estimated/pending",
+    durationLabel: track.durationLabel ?? (track.durationIsEstimate === false && track.detectedDurationSeconds ? formatRuntime(track.detectedDurationSeconds) : "est. 5:00"),
     durationIsEstimate: track.durationIsEstimate ?? true,
     sourceArtworkUrl: track.sourceArtworkUrl ?? null,
     publicSourceUrl: track.publicSourceUrl ?? null,

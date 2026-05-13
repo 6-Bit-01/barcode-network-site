@@ -26,6 +26,13 @@ export interface ParsedTrackProviderUrl {
   normalizedUrl: string;
 }
 
+export interface TrackDurationStorageFields {
+  detectedDurationSeconds: number | null;
+  estimatedDurationSeconds: number;
+  durationIsEstimate: boolean;
+  durationSource: TrackDurationSource;
+}
+
 const YOUTUBE_VIDEO_ID_PATTERN = /^[a-zA-Z0-9_-]{6,}$/;
 const SPOTIFY_TRACK_ID_PATTERN = /^[a-zA-Z0-9]{10,}$/;
 const FETCH_TIMEOUT_MS = 2500;
@@ -47,6 +54,24 @@ export function uploadTrackDurationResult(durationSeconds: unknown): TrackDurati
   const detected = positiveSeconds(durationSeconds);
   if (!detected) return estimatedTrackDurationResult(["Upload duration metadata was not available from the client."]);
   return { durationSeconds: detected, durationIsEstimate: false, durationSource: "upload_metadata", provider: "direct", notes: ["Upload duration came from client-side audio metadata."] };
+}
+
+export function trackDurationStorageFields(result: TrackDurationDetectionResult): TrackDurationStorageFields {
+  if (result.durationSeconds && result.durationIsEstimate === false) {
+    return {
+      detectedDurationSeconds: result.durationSeconds,
+      estimatedDurationSeconds: result.durationSeconds,
+      durationIsEstimate: false,
+      durationSource: result.durationSource,
+    };
+  }
+
+  return {
+    detectedDurationSeconds: null,
+    estimatedDurationSeconds: INTERNAL_BUFFER_DURATION_SECONDS,
+    durationIsEstimate: true,
+    durationSource: "estimated",
+  };
 }
 
 export function parseYouTubeVideoId(link?: string | null): string | null {
@@ -155,7 +180,7 @@ async function detectSpotifyDuration(trackId: string): Promise<TrackDurationDete
 
 async function detectSoundCloudDuration(normalizedUrl: string): Promise<TrackDurationDetectionResult> {
   const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
-  if (!clientId) return unavailable("soundcloud", ["SoundCloud API client id is not configured; duration unavailable."]);
+  if (!clientId) return unavailable("soundcloud", ["SoundCloud client id is not configured; duration unavailable."]);
   const payload = await fetchJsonWithTimeout(`https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(normalizedUrl)}&client_id=${encodeURIComponent(clientId)}`);
   const duration = positiveSeconds(typeof (payload as { duration?: unknown } | null)?.duration === "number" ? (payload as { duration: number }).duration / 1000 : null);
   if (!duration) return unavailable("soundcloud", ["SoundCloud API did not return a usable duration."]);

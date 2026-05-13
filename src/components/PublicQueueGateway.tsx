@@ -31,13 +31,13 @@ function pressureLevel(snapshot: QueuePublicSnapshot | null): "low" | "medium" |
 
 function terminalReadouts(snapshot: QueuePublicSnapshot | null, counts: ReturnType<typeof publicCounts>): string[] {
   const lines = [
-    counts.active > 0 ? `${counts.active} remaining transmissions still in play.` : "No remaining transmissions in play.",
-    counts.waiting > 0 ? `${counts.waiting} waiting below the broadcast slots.` : "Waiting queue clear.",
+    counts.active > 0 ? `${counts.active} songs still waiting or coming up.` : "No songs still waiting or coming up.",
+    counts.waiting > 0 ? `${counts.waiting} waiting below Now Playing and Next In Line.` : "Waiting queue clear.",
   ];
-  if (counts.pending > 0) lines.push(`${counts.pending} payment handshakes pending.`);
-  if (counts.priority > 0) lines.push("Priority relay active.");
-  if (counts.wheel > 0) lines.push("Wheel signal detected.");
-  if (counts.completed > 0) lines.push(`${counts.completed} transmissions archived tonight.`);
+  if (counts.pending > 0) lines.push(`${counts.pending} Payment Processing: checkout started. Skip is not active yet.`);
+  if (counts.priority > 0) lines.push("Priority Signal active.");
+  if (counts.wheel > 0) lines.push("Wheel Chosen: picked from the 10K tap wheel.");
+  if (counts.completed > 0) lines.push(`${counts.completed} songs already played.`);
   if (snapshot?.status.pressure === "high" || snapshot?.status.pressure === "max") lines.push("Archive pressure rising.");
   const flavorSeed = `${snapshot?.session.sessionId ?? "sync"}:${counts.total}:${snapshot?.status.pressure ?? "low"}`;
   const flavor = ["BNL-01 receiver trace stabilized.", "Host band interference cleared.", "Corridor alignment corrected.", "Signal anomaly contained."];
@@ -68,12 +68,12 @@ function phaseForSnapshot(snapshot: QueuePublicSnapshot | null): GatewayPhase {
 }
 
 function phaseCopy(phase: GatewayPhase) {
-  if (phase === "syncing") return { eyebrow: "SYNCING PUBLIC SIGNAL", title: "QUEUE TERMINAL HANDSHAKE", body: "Reading the current BARCODE Radio public snapshot before opening the monitor.", tone: "text-muted", border: "border-border", glow: "shadow-[0_0_36px_rgba(255,255,255,0.06)]", gate: "SIGNAL SEARCH" };
-  if (phase === "archived") return { eyebrow: "BROADCAST ENDED", title: "TRANSMISSION ARCHIVED", body: "SUBMISSIONS CLOSED. No active BARCODE Radio session is currently accepting transmissions.", tone: "text-danger", border: "border-danger/35", glow: "shadow-[0_0_44px_rgba(255,0,0,0.12)]", gate: "ARCHIVE SEAL" };
-  if (phase === "closed") return { eyebrow: "BARCODE RECEIVER ONLINE", title: "TRANSMISSION GATE SEALED", body: "The underground receiver is powered and standing by. Stand by for intake access.", tone: "text-cyan-200", border: "border-cyan-200/30", glow: "shadow-[0_0_46px_rgba(103,232,249,0.10)]", gate: "GATE SEALED" };
-  if (phase === "open") return { eyebrow: "INTAKE CORRIDOR OPEN", title: "BARCODE NETWORK ACCEPTING TRANSMISSIONS", body: "Free Transmissions are open. Priority Signal unlocks once the line is deep enough and activates only after Stripe confirms payment.", tone: "text-accent", border: "border-accent/50", glow: "shadow-[0_0_64px_rgba(255,0,0,0.20)]", gate: "INTAKE UNLOCKED" };
+  if (phase === "syncing") return { eyebrow: "SYNCING PUBLIC SIGNAL", title: "QUEUE TERMINAL HANDSHAKE", body: "Reading the current BARCODE Radio queue before opening the monitor.", tone: "text-muted", border: "border-border", glow: "shadow-[0_0_36px_rgba(255,255,255,0.06)]", gate: "SIGNAL SEARCH" };
+  if (phase === "archived") return { eyebrow: "BROADCAST ENDED", title: "SESSION ARCHIVED", body: "SUBMISSIONS CLOSED. No active BARCODE Radio session is currently accepting songs.", tone: "text-danger", border: "border-danger/35", glow: "shadow-[0_0_44px_rgba(255,0,0,0.12)]", gate: "ARCHIVE SEAL" };
+  if (phase === "closed") return { eyebrow: "BARCODE RECEIVER ONLINE", title: "SUBMISSION GATE CLOSED", body: "The underground receiver is powered and standing by. Stand by for intake access.", tone: "text-cyan-200", border: "border-cyan-200/30", glow: "shadow-[0_0_46px_rgba(103,232,249,0.10)]", gate: "GATE SEALED" };
+  if (phase === "open") return { eyebrow: "INTAKE CORRIDOR OPEN", title: "BARCODE NETWORK ACCEPTING SONGS", body: "Free queue submissions are open. Priority Signal is a paid skip after payment clears.", tone: "text-accent", border: "border-accent/50", glow: "shadow-[0_0_64px_rgba(255,0,0,0.20)]", gate: "INTAKE UNLOCKED" };
   if (phase === "liveClosed") return { eyebrow: "BROADCAST ACTIVE", title: "HOST PROTOCOL INITIALIZED", body: "Broadcast playback is live. The intake gate is resealed, but the queue remains active until tracks are finished or removed.", tone: "text-[#ffaa00]", border: "border-[#ffaa00]/50", glow: "shadow-[0_0_70px_rgba(255,170,0,0.18)]", gate: "LIVE / INTAKE CLOSED" };
-  return { eyebrow: "BROADCAST ACTIVE", title: "HOST PROTOCOL INITIALIZED", body: "Live monitor locked. Submissions remain open while the host protocol is running.", tone: "text-[#ffaa00]", border: "border-[#ffaa00]/50", glow: "shadow-[0_0_70px_rgba(255,170,0,0.20)]", gate: "LIVE / INTAKE OPEN" };
+  return { eyebrow: "BROADCAST ACTIVE", title: "HOST PROTOCOL INITIALIZED", body: "Live monitor locked. Submissions remain open while the show is running.", tone: "text-[#ffaa00]", border: "border-[#ffaa00]/50", glow: "shadow-[0_0_70px_rgba(255,170,0,0.20)]", gate: "LIVE / INTAKE OPEN" };
 }
 
 function uniqueActiveTracks(snapshot: QueuePublicSnapshot | null): QueuePublicTrack[] {
@@ -177,23 +177,23 @@ export function PublicQueueGateway() {
           </div>
           <div className="terminal-readouts grid gap-2 border border-border/70 bg-background/45 p-3 text-xs text-muted">{readouts.map((line) => <p key={line} className="font-mono uppercase tracking-[0.16em]">{line}</p>)}</div>
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <StatCard label="Remaining" value={counts.remaining} helper="Still in play until finished or removed." />
-            <StatCard label="Waiting Below" value={counts.waiting} helper="Below Now Playing and Next In Line." />
-            <StatCard label="Total Received" value={counts.total} helper="Accepted active, played, and removed signals." />
-            <StatCard label="Played Tonight" value={counts.completed} helper="Completed/finished tracks only." />
-            {counts.pending > 0 && <StatCard label="Payment Processing" value={counts.pending} helper="Still Free until payment is confirmed." accent="text-[#ffaa00]" />}
-            <StatCard label="Priority Confirmed" value={counts.priority} helper="Paid/manual Priority only." accent="text-[#ffaa00]" />
-            <StatCard label="Wheel Chosen" value={counts.wheel} helper="Current Wheel lane items." />
-            <StatCard label="Runtime" value={snapshot ? formatRuntime(snapshot.status.estimatedRuntimeSeconds) : "—"} helper="Estimated active runtime." />
+            <StatCard label="Remaining" value={counts.remaining} helper="Songs still waiting or coming up." />
+            <StatCard label="Waiting Below" value={counts.waiting} helper="Songs below Now Playing and Next In Line." />
+            <StatCard label="Total Received" value={counts.total} helper="Songs submitted this session." />
+            <StatCard label="Played Tonight" value={counts.completed} helper="Songs already played." />
+            {counts.pending > 0 && <StatCard label="Payment Processing" value={counts.pending} helper="Checkout started. Skip is not active yet." accent="text-[#ffaa00]" />}
+            <StatCard label="Priority Confirmed" value={counts.priority} helper="Payment cleared. Priority Signal active." accent="text-[#ffaa00]" />
+            <StatCard label="Wheel Chosen" value={counts.wheel} helper="Picked from the 10K tap wheel." />
+            <StatCard label="Runtime" value={snapshot ? formatRuntime(snapshot.status.estimatedRuntimeSeconds) : "—"} helper="Estimated time for songs still waiting." />
           </div>
         </div>
       </section>
       <section className="border border-border bg-surface p-5 space-y-4">
         <p className="text-xs uppercase tracking-[0.35em] text-muted">// Session Access</p>
-        <p className="text-sm text-muted">Public counts are display-only. Remaining transmissions stay in play until finished or removed.</p>
+        <p className="text-sm text-muted">Public counts help you see what is playing, coming up, and still waiting.</p>
         {snapshot?.nowPlaying && <BroadcastSlot label="Now Playing" track={snapshot.nowPlaying} tone="text-[#ffaa00]" />}
         {snapshot?.upNext && <BroadcastSlot label="Next In Line" track={snapshot.upNext} tone="text-accent" />}
-        {snapshot?.status.isFull && <p className="border border-danger/40 bg-danger/5 p-3 text-sm text-danger">Queue is full for new transmissions.</p>}
+        {snapshot?.status.isFull && <p className="border border-danger/40 bg-danger/5 p-3 text-sm text-danger">Queue is full for new songs.</p>}
         {session && session.status !== "archived" ? <div className="space-y-3"><a href={`/queue/${session.sessionId}`} onClick={(event) => beginNavigation(event, `/queue/${session.sessionId}`)} aria-busy={Boolean(pendingNavigation)} className={`nav-corridor-link inline-flex border px-4 py-3 text-xs uppercase tracking-widest transition-all ${pendingNavigation ? "border-emerald-300 bg-emerald-300/10 text-emerald-200" : isBroadcastActive(snapshot) ? "border-[#ffaa00]/60 text-[#ffaa00] shadow-[0_0_22px_rgba(255,170,0,0.16)] hover:bg-[#ffaa00] hover:text-background" : "border-emerald-300/60 text-emerald-200 shadow-[0_0_22px_rgba(16,185,129,0.14)] hover:bg-emerald-300 hover:text-background"}`}>{pendingNavigation ? pendingNavigation.label : "Enter Session Monitor"}</a><div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.18em]"><span className="border border-emerald-300/45 px-2 py-1 text-emerald-200">Session: Online</span><span className={`${snapshot?.status.isOpen ? "border-accent/45 text-accent" : "border-border text-muted"} border px-2 py-1`}>Submissions: {snapshot?.status.isOpen ? "Open" : "Closed"}</span><span className={`${isBroadcastActive(snapshot) ? "border-[#ffaa00]/45 text-[#ffaa00]" : "border-border text-muted"} border px-2 py-1`}>Broadcast: {isBroadcastActive(snapshot) ? "Active" : "Standby"}</span></div></div> : <div className="space-y-3"><button type="button" disabled className="inline-flex cursor-not-allowed border border-border px-4 py-3 text-xs uppercase tracking-widest text-muted opacity-60">Enter Session Monitor Offline</button><div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.18em]"><span className="border border-border px-2 py-1 text-muted">Session: Offline</span><span className="border border-border px-2 py-1 text-muted">Submissions: Closed</span><span className="border border-border px-2 py-1 text-muted">Broadcast: Standby</span></div></div>}
         <div className="border border-border bg-background/40 p-4"><p className="text-xs uppercase tracking-[0.25em] text-muted">Discord Signal Alerts</p><p className="mt-2 text-sm text-muted">Join Discord for queue updates and BARCODE Radio signal alerts.</p><a href={externalLinks.discord} target="_blank" rel="noreferrer" className="mt-3 inline-flex border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Join Discord</a></div>
       </section>
@@ -268,7 +268,7 @@ function GatewayPortalAperture({ phase, counts, intakeWindow }: { phase: Gateway
         <div className="portal-shutters absolute inset-0" aria-hidden="true"><span /><span /></div>
         {phase === "archived" && <div className="archive-seal absolute inset-0 grid place-items-center"><span>ARCHIVE SEAL</span></div>}
         <div className="portal-label absolute bottom-3 left-3 right-3 flex items-end justify-between gap-3 text-[10px] uppercase tracking-[0.25em]">
-          <span className={isLive ? "text-[#ffaa00]" : isOpen ? "text-accent" : "text-muted"}>{isLive ? "Broadcast monitor lock" : isOpen ? "Intake corridor open" : phase === "syncing" ? "Receiver tuning" : "Transmission gate sealed"}</span>
+          <span className={isLive ? "text-[#ffaa00]" : isOpen ? "text-accent" : "text-muted"}>{isLive ? "Broadcast monitor lock" : isOpen ? "Intake corridor open" : phase === "syncing" ? "Receiver tuning" : "Submission gate closed"}</span>
           {intakeWindow && isOpen && <span className="submission-window border border-accent/40 bg-accent/10 px-2 py-1 text-accent">{intakeWindow} window</span>}
         </div>
       </div>

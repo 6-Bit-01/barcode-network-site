@@ -48,12 +48,8 @@ function terminalReadouts(snapshot: QueuePublicSnapshot | null, counts: ReturnTy
 type NavigationVariant = { label: string; detail: string; mode: string; kind: "monitor" };
 
 function navigationVariant(sessionId: string): NavigationVariant {
-  const monitor: NavigationVariant[] = [
-    { label: "SESSION MONITOR LOCKED", detail: "PUBLIC RECEIVER ONLINE", mode: "BROADCAST MONITOR ACCESS", kind: "monitor" },
-    { label: "SESSION LINK ESTABLISHED", detail: "RECEIVER HANDOFF COMPLETE", mode: "PUBLIC QUEUE MONITOR", kind: "monitor" },
-    { label: "BROADCAST MONITOR ACCESS GRANTED", detail: "PUBLIC RECEIVER LINK STABLE", mode: "SESSION MONITOR", kind: "monitor" },
-  ];
-  return stableVariant(`${sessionId}:monitor`, monitor);
+  void sessionId;
+  return { label: "SESSION MONITOR LOCKED", detail: "BARCODE RECEIVER ONLINE", mode: "HOST BAND ACCESS", kind: "monitor" };
 }
 
 function isBroadcastActive(snapshot: QueuePublicSnapshot | null): boolean {
@@ -71,8 +67,8 @@ function phaseForSnapshot(snapshot: QueuePublicSnapshot | null): GatewayPhase {
 function phaseCopy(phase: GatewayPhase) {
   if (phase === "syncing") return { eyebrow: "SYNCING PUBLIC SIGNAL", title: "QUEUE TERMINAL HANDSHAKE", body: "Reading the current BARCODE Radio public snapshot before opening the monitor.", tone: "text-muted", border: "border-border", glow: "shadow-[0_0_36px_rgba(255,255,255,0.06)]", gate: "SIGNAL SEARCH" };
   if (phase === "archived") return { eyebrow: "BROADCAST ENDED", title: "TRANSMISSION ARCHIVED", body: "SUBMISSIONS CLOSED. No active BARCODE Radio session is currently accepting transmissions.", tone: "text-danger", border: "border-danger/35", glow: "shadow-[0_0_44px_rgba(255,0,0,0.12)]", gate: "ARCHIVE SEAL" };
-  if (phase === "closed") return { eyebrow: "SESSION ONLINE", title: "SUBMISSION GATE CLOSED", body: "The station is awake and standing by. The intake barrier is sealed until transmissions open.", tone: "text-cyan-200", border: "border-cyan-200/30", glow: "shadow-[0_0_46px_rgba(103,232,249,0.10)]", gate: "GATE SEALED" };
-  if (phase === "open") return { eyebrow: "SIGNAL INTAKE OPEN", title: "TRANSMIT YOUR TRACK NOW", body: "Free Transmissions are open. Priority Signal unlocks once the line is deep enough and activates only after Stripe confirms payment.", tone: "text-accent", border: "border-accent/50", glow: "shadow-[0_0_64px_rgba(255,0,0,0.20)]", gate: "INTAKE UNLOCKED" };
+  if (phase === "closed") return { eyebrow: "BARCODE RECEIVER ONLINE", title: "TRANSMISSION GATE SEALED", body: "The underground receiver is powered and standing by. Stand by for intake access.", tone: "text-cyan-200", border: "border-cyan-200/30", glow: "shadow-[0_0_46px_rgba(103,232,249,0.10)]", gate: "GATE SEALED" };
+  if (phase === "open") return { eyebrow: "INTAKE CORRIDOR OPEN", title: "BARCODE NETWORK ACCEPTING TRANSMISSIONS", body: "Free Transmissions are open. Priority Signal unlocks once the line is deep enough and activates only after Stripe confirms payment.", tone: "text-accent", border: "border-accent/50", glow: "shadow-[0_0_64px_rgba(255,0,0,0.20)]", gate: "INTAKE UNLOCKED" };
   if (phase === "liveClosed") return { eyebrow: "BROADCAST ACTIVE", title: "HOST PROTOCOL INITIALIZED", body: "Broadcast playback is live. The intake gate is resealed, but the queue remains active until tracks are finished or removed.", tone: "text-[#ffaa00]", border: "border-[#ffaa00]/50", glow: "shadow-[0_0_70px_rgba(255,170,0,0.18)]", gate: "LIVE / INTAKE CLOSED" };
   return { eyebrow: "BROADCAST ACTIVE", title: "HOST PROTOCOL INITIALIZED", body: "Live monitor locked. Submissions remain open while the host protocol is running.", tone: "text-[#ffaa00]", border: "border-[#ffaa00]/50", glow: "shadow-[0_0_70px_rgba(255,170,0,0.20)]", gate: "LIVE / INTAKE OPEN" };
 }
@@ -210,7 +206,13 @@ function AsciiSessionPortalIntro({ label, detail, mode, seed }: { label: string;
   const tunnelRows = ["/////=====#####_____000111", "[[]]{}{}::::;;;;++++****", "▓▒░█░▒▓__--||\\\\//<<>>"];
   const noise = Array.from({ length: 72 }).map((_, index) => glyphs[stableHash(`${seed}:noise:${index}`) % glyphs.length]);
   const streams = Array.from({ length: 14 }).map((_, index) => tunnelRows[stableHash(`${seed}:stream:${index}`) % tunnelRows.length]);
-  const phases = ["SIGNAL ACQUISITION STARTED", "OUTER RECEIVER CALIBRATING", "HOST BAND SEARCHING", "SESSION MONITOR ALIGNING", label];
+  const phases = [
+    { label: "BARCODE SIGNAL DETECTED", chatter: "SIGNAL LEAK CONFIRMED" },
+    { label: "CORRUPTED RECEIVER CALIBRATING", chatter: "NETWORK STATIC COMPENSATED" },
+    { label: "BARCODE NETWORK HANDSHAKE", chatter: "UNAUTHORIZED SIGNAL PATH STABLE" },
+    { label: "HOST BAND ALIGNING", chatter: "MONITOR PATH STABLE" },
+    { label, chatter: detail },
+  ];
   return (
     <div className="ascii-session-overlay fixed inset-0 z-[9900] overflow-hidden bg-black p-4 text-center font-mono text-emerald-200" role="status" aria-live="polite">
       <div className="ascii-crt pointer-events-none absolute inset-0" aria-hidden="true" />
@@ -228,7 +230,7 @@ function AsciiSessionPortalIntro({ label, detail, mode, seed }: { label: string;
         <div className="ascii-core">[BARCODE]</div>
       </div>
       <div className="ascii-phase-stack absolute inset-x-4 bottom-[10vh] mx-auto max-w-4xl">
-        {phases.map((phase, index) => <p key={phase} className="ascii-phase text-xs uppercase tracking-[0.36em] sm:text-sm" style={{ animationDelay: `${[0, 1, 2.2, 3.5, 4.7][index]}s` }}>{phase}</p>)}
+        {phases.map((phase, index) => <div key={phase.label} className="ascii-phase" style={{ animationDelay: `${[0, 1, 2.2, 3.5, 4.7][index]}s` }}><p className="text-xs uppercase tracking-[0.36em] sm:text-sm">{phase.label}</p><p className="mt-2 text-[10px] uppercase tracking-[0.28em] text-emerald-200/70">{phase.chatter}</p></div>)}
         <h2 className="ascii-final mt-4 text-2xl font-bold uppercase tracking-[0.24em] text-foreground sm:text-4xl">{label}</h2>
         <p className="ascii-final mt-3 text-sm uppercase tracking-[0.3em] text-emerald-200">{detail}</p>
         <p className="ascii-final mt-2 text-[11px] uppercase tracking-[0.32em] text-muted">{mode}</p>

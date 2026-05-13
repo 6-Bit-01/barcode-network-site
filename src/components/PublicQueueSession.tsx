@@ -889,7 +889,6 @@ function PersonalSignalStatusBar({ snapshot, mounted }: { snapshot: QueuePublicS
     const paymentNotCompleted = allSubmitted.some((track) => "priorityUpgradeStatus" in track && (track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded"));
     const closestQueueIndex = (snapshot?.queue ?? []).findIndex((track) => submittedIds.has(track.id));
     const songsAway = closestQueueIndex >= 0 ? closestQueueIndex + 1 : null;
-    const waitMinutes = songsAway ? songsAway * 5 : null;
     main = `${pluralizeSongs(status.used)} submitted${status.used === 1 && waiting.length > 0 ? " · waiting in the free queue." : ""}`;
     detail = `${waiting.length} waiting · ${played.length} already played.`;
     if (nowPlaying) { main = "Your track is playing now."; detail = "Personal receiver locked to your submitted track."; }
@@ -898,7 +897,7 @@ function PersonalSignalStatusBar({ snapshot, mounted }: { snapshot: QueuePublicS
     else if (priorityActive) { main = "Priority Signal active."; detail = "Confirmed skip is active."; }
     else if (paymentNotCompleted) { main = "Payment was not completed."; detail = "Song stays in the free queue if still active."; }
     else if (waiting.length === 0 && played.length > 0) { main = status.used === 1 ? "Your track already played tonight." : `${pluralizeSongs(status.used)} submitted · ${played.length} already played.`; detail = "Played songs remain visible in Recently Played while available."; }
-    else if (songsAway && waitMinutes) detail = `Closest track: ${songsAway} ${songsAway === 1 ? "song" : "songs"} away · Estimated wait: about ${waitMinutes} min.`;
+    else if (songsAway) detail = `Closest track: ${songsAway} ${songsAway === 1 ? "song" : "songs"} away.`;
   }
   const band = <section className="personal-signal-bar pointer-events-none fixed inset-x-0 z-[8995] w-screen overflow-hidden border-b border-accent/35 border-t border-border/70 bg-black/95 font-mono text-white backdrop-blur-md" aria-label="Your Signal Status" role="status" aria-live="polite"><div className="personal-signal-scan pointer-events-none absolute inset-0" aria-hidden="true" /><div className="personal-signal-line pointer-events-none absolute inset-x-0 bottom-0 h-px bg-accent/55" aria-hidden="true" /><div className="relative mx-auto flex min-h-[5rem] max-w-7xl flex-col justify-center px-3 py-3 sm:min-h-[6rem] sm:px-4"><p className="text-[10px] font-bold uppercase tracking-[0.34em] text-accent sm:text-xs">Your Signal Status</p><p className="mt-1 truncate text-sm font-bold text-foreground sm:text-lg">{main}</p><p className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted sm:text-sm">{detail}</p></div><style jsx>{`.personal-signal-bar{top:calc(5.375rem + env(safe-area-inset-top))}.personal-signal-spacer{height:5.25rem}.personal-signal-scan{background:linear-gradient(transparent 50%,rgba(255,255,255,.06) 50%);background-size:100% 6px;opacity:.14}@media (min-width:900px){.personal-signal-spacer{height:6rem}}@media (max-width:640px){.personal-signal-bar p{max-width:100%}.personal-signal-spacer{height:5rem}}`}</style></section>;
   return <><div className="personal-signal-spacer" aria-hidden="true" />{mounted && createPortal(band, document.body)}</>;

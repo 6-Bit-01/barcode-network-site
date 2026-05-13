@@ -620,8 +620,7 @@ function WaveformSweep({ offset = 0 }: { offset?: number }) {
 }
 
 function WarpSequence({ state, data }: { state: TransmissionState; data: WarpData | null }) {
-  const steps: TransmissionState[] = ["priority_requested", "signal", "received", "encoded", "converting", "temporal", "aligning", "confirmed"];
-  const topProgressSteps: TransmissionState[] = steps.filter((step) => step !== "priority_requested");
+  const topProgressSteps: TransmissionState[] = ["signal", "received", "encoded", "converting", "temporal", "aligning", "confirmed"];
   const activeProgressIndex = topProgressSteps.indexOf(state);
   const isConfirmed = state === topProgressSteps[topProgressSteps.length - 1];
   const topProgressActiveIndex = isConfirmed ? topProgressSteps.length - 1 : activeProgressIndex;

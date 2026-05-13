@@ -135,7 +135,8 @@ function useFlipTrackMovement(snapshotKey: string, emitGhost: (ghost: Omit<Routi
           const sameZone = previous.zone === current.zone;
           const distance = Math.hypot(dx, dy);
           node.dataset.routeMotion = sameZone ? "reorder" : "transfer";
-          if (!sameZone && distance > 8) {
+          const routeDuration = current.zone === "now" ? 980 : current.zone === "next" ? 900 : 820;
+          if (!sameZone && distance > 2) {
             emitGhost({
               trackId,
               artist: current.artist || previous.artist,
@@ -145,8 +146,9 @@ function useFlipTrackMovement(snapshotKey: string, emitGhost: (ghost: Omit<Routi
               zone: current.zone,
               from: rectToGhostRect(previous.rect),
               to: rectToGhostRect(current.rect),
-              duration: current.zone === "now" ? 940 : current.zone === "next" ? 860 : 780,
+              duration: routeDuration,
             });
+            window.setTimeout(() => node.classList.add("route-arrival"), Math.max(180, routeDuration - 280));
           }
           node.style.transition = "none";
           node.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
@@ -157,21 +159,21 @@ function useFlipTrackMovement(snapshotKey: string, emitGhost: (ghost: Omit<Routi
             node.style.transform = "translate3d(0, 0, 0)";
           });
           window.setTimeout(() => {
-            node.classList.remove("flip-routing");
+            node.classList.remove("flip-routing", "route-arrival");
             node.removeAttribute("data-route-motion");
             node.style.transition = "";
             node.style.transform = "";
             node.style.zIndex = "";
-          }, sameZone ? 760 : 820);
+          }, sameZone ? 760 : routeDuration + 160);
           return;
         }
         if (!previous) {
           node.dataset.routeMotion = "landing";
-          node.classList.add("flip-landing");
+          node.classList.add("flip-landing", "route-arrival");
           window.setTimeout(() => {
-            node.classList.remove("flip-landing");
+            node.classList.remove("flip-landing", "route-arrival");
             node.removeAttribute("data-route-motion");
-          }, 620);
+          }, 860);
         }
       });
     }
@@ -469,29 +471,32 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
           .broadcast-start-banner{animation:broadcast-banner-lock .9s ease-out}
           .queue-live-system[data-live="true"] :global(#now-playing-slot){box-shadow:0 0 48px rgba(255,170,0,.20)}
           .queue-live-system[data-live="true"] :global(#up-next-slot){box-shadow:0 0 34px rgba(255,0,0,.14)}
-          :global([data-track-card="true"].flip-routing),:global([data-track-card="true"].flip-landing){will-change:transform,filter;filter:brightness(1.16) saturate(1.08)}
-          :global([data-track-card="true"].flip-routing)::after,:global([data-track-card="true"].flip-landing)::after{content:"";position:absolute;inset:-1px;z-index:1;pointer-events:none;border:1px solid currentColor;opacity:.78;mix-blend-mode:screen}
-          :global([data-track-card="true"].flip-routing[data-route-tone="red"]),:global([data-track-card="true"].flip-landing[data-route-tone="red"]){color:#ff2a2a;box-shadow:0 0 20px rgba(255,0,0,.16),inset 0 0 18px rgba(255,255,255,.035)}
+          :global([data-track-card="true"].flip-routing),:global([data-track-card="true"].flip-landing){will-change:transform,filter;filter:brightness(1.22) saturate(1.12)}
+          :global([data-track-card="true"].flip-landing){animation:route-card-slam .82s cubic-bezier(.16,1,.3,1)}
+          :global([data-track-card="true"].route-arrival){filter:brightness(1.42) saturate(1.18)}
+          :global([data-track-card="true"].flip-routing)::after,:global([data-track-card="true"].flip-landing)::after{content:"";position:absolute;inset:-4px;z-index:1;pointer-events:none;border:2px solid currentColor;opacity:.9;mix-blend-mode:screen;box-shadow:0 0 34px currentColor,inset 0 0 26px currentColor}
+          :global([data-track-card="true"].route-arrival)::after{animation:route-arrival-impact .58s ease-out forwards}
+          :global([data-track-card="true"].flip-routing[data-route-tone="red"]),:global([data-track-card="true"].flip-landing[data-route-tone="red"]){color:#ff2a2a;box-shadow:0 0 34px rgba(255,0,0,.28),inset 0 0 26px rgba(255,255,255,.055)}
           :global([data-track-card="true"].flip-routing[data-route-tone="red"]::after),:global([data-track-card="true"].flip-landing[data-route-tone="red"]::after){background:linear-gradient(90deg,transparent 0 8%,rgba(255,255,255,.34) 18%,rgba(255,0,0,.42) 31%,transparent 46%),repeating-linear-gradient(0deg,transparent 0 5px,rgba(255,255,255,.055) 5px 6px);animation:route-free-ripple .58s ease-out forwards}
           :global(.queue-track-card.flip-routing[data-route-tone="red"] .packet-trail),:global(.queue-track-card.flip-landing[data-route-tone="red"] .packet-trail){height:2px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.8),rgba(255,0,0,.7),transparent);animation:route-free-packet .62s ease-out forwards}
-          :global([data-track-card="true"].flip-routing[data-route-tone="cyan"]),:global([data-track-card="true"].flip-landing[data-route-tone="cyan"]){color:#67e8f9;box-shadow:0 0 26px rgba(103,232,249,.23),inset 0 0 22px rgba(103,232,249,.05)}
+          :global([data-track-card="true"].flip-routing[data-route-tone="cyan"]),:global([data-track-card="true"].flip-landing[data-route-tone="cyan"]){color:#67e8f9;box-shadow:0 0 42px rgba(103,232,249,.34),inset 0 0 30px rgba(103,232,249,.08)}
           :global([data-track-card="true"].flip-routing[data-route-tone="cyan"]::after),:global([data-track-card="true"].flip-landing[data-route-tone="cyan"]::after){border-radius:999px;background:radial-gradient(circle at 82% 50%,transparent 0 1.05rem,rgba(103,232,249,.78) 1.12rem 1.18rem,transparent 1.28rem),conic-gradient(from 90deg at 82% 50%,transparent,rgba(103,232,249,.42),transparent 42%,rgba(103,232,249,.30),transparent 72%);animation:route-wheel-radar .86s ease-out forwards}
           :global(.queue-track-card.flip-routing[data-route-tone="cyan"] .packet-trail),:global(.queue-track-card.flip-landing[data-route-tone="cyan"] .packet-trail){height:2px;background:radial-gradient(circle,rgba(103,232,249,.95) 0 2px,transparent 3px) 0 50%/18px 8px repeat-x;animation:route-wheel-packet .74s ease-out forwards}
           :global(.queue-track-card.flip-routing[data-route-tone="cyan"] .mini-aperture),:global(.queue-track-card.flip-landing[data-route-tone="cyan"] .mini-aperture){border-radius:999px;transform:rotate(18deg);box-shadow:0 0 26px rgba(103,232,249,.30)}
-          :global([data-track-card="true"].flip-routing[data-route-tone="amber"]),:global([data-track-card="true"].flip-landing[data-route-tone="amber"]){color:#ffaa00;box-shadow:0 0 20px rgba(255,170,0,.15),inset 0 0 16px rgba(255,170,0,.035);filter:brightness(1.08) saturate(.98)}
+          :global([data-track-card="true"].flip-routing[data-route-tone="amber"]),:global([data-track-card="true"].flip-landing[data-route-tone="amber"]){color:#ffaa00;box-shadow:0 0 34px rgba(255,170,0,.24),inset 0 0 24px rgba(255,170,0,.06);filter:brightness(1.08) saturate(.98)}
           :global([data-track-card="true"].flip-routing[data-route-tone="amber"]::after),:global([data-track-card="true"].flip-landing[data-route-tone="amber"]::after){border-style:dashed;background:repeating-linear-gradient(90deg,transparent 0 10px,rgba(255,170,0,.54) 10px 15px,transparent 15px 24px) 50% 50%/100% 2px no-repeat,linear-gradient(90deg,transparent,rgba(255,170,0,.09),transparent);animation:route-pending-handshake .95s steps(3,end) forwards}
           :global(.queue-track-card.flip-routing[data-route-tone="amber"] .packet-trail),:global(.queue-track-card.flip-landing[data-route-tone="amber"] .packet-trail){height:2px;background:repeating-linear-gradient(90deg,rgba(255,170,0,.75) 0 6px,transparent 6px 12px);animation:route-pending-dots .82s steps(5,end) forwards}
-          :global([data-track-card="true"].flip-routing[data-route-tone="gold"]),:global([data-track-card="true"].flip-landing[data-route-tone="gold"]){color:#ffaa00;box-shadow:0 0 34px rgba(255,170,0,.30),inset 0 0 28px rgba(255,255,255,.045);filter:brightness(1.26) saturate(1.16)}
+          :global([data-track-card="true"].flip-routing[data-route-tone="gold"]),:global([data-track-card="true"].flip-landing[data-route-tone="gold"]){color:#ffaa00;box-shadow:0 0 52px rgba(255,170,0,.42),inset 0 0 34px rgba(255,255,255,.07);filter:brightness(1.26) saturate(1.16)}
           :global([data-track-card="true"].flip-routing[data-route-tone="gold"]::after),:global([data-track-card="true"].flip-landing[data-route-tone="gold"]::after){background:linear-gradient(135deg,transparent 0 36%,rgba(255,255,255,.42) 43%,rgba(255,170,0,.72) 48%,transparent 58%),radial-gradient(circle at 88% 16%,rgba(255,255,255,.46),transparent 18%);animation:route-priority-relay .78s cubic-bezier(.16,1,.3,1) forwards}
           :global(.queue-track-card.flip-routing[data-route-tone="gold"] .packet-trail),:global(.queue-track-card.flip-landing[data-route-tone="gold"] .packet-trail){left:14%;right:10%;top:28%;height:2px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.95),rgba(255,170,0,.88),transparent);transform:rotate(-8deg);animation:route-priority-line .72s ease-out forwards}
-          :global([data-track-card="true"].flip-routing[data-route-tone="archive"]),:global([data-track-card="true"].flip-landing[data-route-tone="archive"]){color:#b7b7b7;box-shadow:0 0 18px rgba(183,183,183,.12);filter:saturate(.72) brightness(.96)}
+          :global([data-track-card="true"].flip-routing[data-route-tone="archive"]),:global([data-track-card="true"].flip-landing[data-route-tone="archive"]){color:#b7b7b7;box-shadow:0 0 30px rgba(183,183,183,.20);filter:saturate(.72) brightness(.96)}
           :global([data-track-card="true"].flip-routing[data-route-tone="archive"]::after),:global([data-track-card="true"].flip-landing[data-route-tone="archive"]::after){border-style:double;background:radial-gradient(circle at 18% 32%,rgba(183,183,183,.28) 0 1px,transparent 2px),radial-gradient(circle at 62% 68%,rgba(183,183,183,.22) 0 1px,transparent 2px),repeating-linear-gradient(0deg,transparent 0 7px,rgba(183,183,183,.07) 7px 8px);animation:route-archive-dust .9s ease-out forwards}
-          :global([data-track-card="true"].flip-routing[data-route-tone="danger"]),:global([data-track-card="true"].flip-landing[data-route-tone="danger"]){color:#ff3b3b;box-shadow:0 0 28px rgba(255,0,0,.26),inset 0 0 22px rgba(255,0,0,.05);filter:saturate(.85) brightness(.98)}
+          :global([data-track-card="true"].flip-routing[data-route-tone="danger"]),:global([data-track-card="true"].flip-landing[data-route-tone="danger"]){color:#ff3b3b;box-shadow:0 0 42px rgba(255,0,0,.36),inset 0 0 28px rgba(255,0,0,.08);filter:saturate(.85) brightness(.98)}
           :global([data-track-card="true"].flip-routing[data-route-tone="danger"]::after),:global([data-track-card="true"].flip-landing[data-route-tone="danger"]::after){background:linear-gradient(90deg,rgba(255,0,0,.52),transparent 34%),repeating-linear-gradient(90deg,transparent 0 12px,rgba(255,0,0,.26) 12px 14px,transparent 14px 22px);animation:route-danger-wipe .68s ease-out forwards}
           :global(.queue-track-card.flip-routing[data-route-tone="danger"] .packet-trail),:global(.queue-track-card.flip-landing[data-route-tone="danger"] .packet-trail){height:8px;background:repeating-linear-gradient(90deg,rgba(255,0,0,.65) 0 8px,transparent 8px 14px);animation:route-danger-fragments .62s ease-out forwards}
           :global([data-track-card="true"][data-route-motion="reorder"]){filter:brightness(1.06);box-shadow:0 0 14px currentColor}
           :global([data-track-card="true"][data-route-motion="reorder"]::after){inset:auto .75rem .55rem auto;width:2.8rem;height:2px;border:0;background:currentColor;opacity:.72;animation:route-reorder-tick .5s ease-out forwards}
-          :global([data-track-card="true"][data-route-motion="landing"]::after){animation-duration:.66s}
+          :global([data-track-card="true"][data-route-motion="landing"]::after){animation-duration:.82s}
           :global([data-track-card="true"].flip-routing[data-route-zone="next"]),:global([data-track-card="true"].flip-landing[data-route-zone="next"]){box-shadow:0 0 32px currentColor,inset 0 0 28px rgba(255,255,255,.04)}
           :global([data-track-card="true"].flip-routing[data-route-zone="next"]::after),:global([data-track-card="true"].flip-landing[data-route-zone="next"]::after){background:linear-gradient(90deg,currentColor 0 10px,transparent 10px calc(100% - 10px),currentColor calc(100% - 10px)),linear-gradient(0deg,currentColor 0 10px,transparent 10px calc(100% - 10px),currentColor calc(100% - 10px));animation:route-next-clamp .78s ease-out forwards}
           :global([data-track-card="true"].flip-routing[data-route-zone="now"]),:global([data-track-card="true"].flip-landing[data-route-zone="now"]){color:#fff6d8;box-shadow:0 0 52px rgba(255,170,0,.34),0 0 24px rgba(255,255,255,.18);filter:brightness(1.34) saturate(1.2)}
@@ -499,6 +504,8 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
           @keyframes queue-broadcast-lock{0%{filter:brightness(1);transform:translateY(0)}26%{filter:brightness(1.55);transform:translateY(-2px)}100%{filter:brightness(1);transform:translateY(0)}}
           @keyframes broadcast-sweep{0%{transform:translateX(-120%);opacity:0}20%{opacity:1}100%{transform:translateX(120%);opacity:0}}
           @keyframes broadcast-banner-lock{0%{opacity:0;transform:scale(.98);filter:brightness(1.8)}100%{opacity:1;transform:scale(1);filter:brightness(1)}}
+          @keyframes route-card-slam{0%{transform:scale(.975);filter:brightness(1.9)}42%{transform:scale(1.018);filter:brightness(1.45)}100%{transform:scale(1);filter:brightness(1)}}
+          @keyframes route-arrival-impact{0%{opacity:0;transform:scale(.965)}30%{opacity:.96;transform:scale(1)}100%{opacity:0;transform:scale(1.03)}}
           @keyframes route-free-ripple{0%{opacity:0;transform:translateX(-9%)}35%{opacity:.72}100%{opacity:0;transform:translateX(9%)}}
           @keyframes route-free-packet{0%{transform:translateX(-38%) scaleX(.28);opacity:.15}42%{opacity:.9}100%{transform:translateX(38%) scaleX(.62);opacity:0}}
           @keyframes route-wheel-radar{0%{opacity:0;transform:scale(.72) rotate(-34deg)}45%{opacity:.86}100%{opacity:0;transform:scale(1.16) rotate(105deg)}}
@@ -634,21 +641,30 @@ function QueueUpdateToast({ item }: { item: QueueActivity }) {
 
 
 function RoutingGhostLayer({ ghosts }: { ghosts: RoutingGhost[] }) {
-  return <div className="routing-ghost-layer fixed inset-0 z-[9400] pointer-events-none" aria-hidden="true">{ghosts.map((ghost) => {
-    const width = Math.min(420, Math.max(230, Math.min(ghost.from.width, ghost.to.width || ghost.from.width)));
-    const height = Math.min(126, Math.max(76, Math.min(ghost.from.height, 118)));
-    const tx = ghost.to.left - ghost.from.left;
-    const ty = ghost.to.top - ghost.from.top;
-    return <div key={ghost.id} className="routing-ghost" data-tone={ghost.tone} data-zone={ghost.zone} style={{ left: ghost.from.left, top: ghost.from.top, width, minHeight: height, "--tx": `${tx}px`, "--ty": `${ty}px`, "--duration": `${ghost.duration}ms` } as CSSProperties}><div className="ghost-scan" /><div className="ghost-trail" /><div className="ghost-clamp" /><p className="ghost-label">{ghost.routeLabel}</p><p className="ghost-artist">{ghost.artist}</p><p className="ghost-title">{ghost.title}</p></div>;
+  return <div className="routing-ghost-layer fixed inset-0 z-[9600] pointer-events-none" aria-hidden="true">{ghosts.map((ghost) => {
+    const viewportWidth = typeof window === "undefined" ? 1200 : window.innerWidth;
+    const minWidth = viewportWidth < 640 ? 240 : 320;
+    const maxWidth = Math.min(viewportWidth - 24, viewportWidth < 640 ? 360 : 640);
+    const sourceWeighted = ghost.from.width * 0.92;
+    const destinationWeighted = ghost.to.width * (ghost.zone === "now" ? 0.58 : 0.86);
+    const width = Math.min(maxWidth, Math.max(minWidth, sourceWeighted, destinationWeighted));
+    const height = Math.min(176, Math.max(104, ghost.from.height * 0.76, ghost.to.height * (ghost.zone === "now" ? 0.34 : 0.58)));
+    const fromLeft = Math.max(12, Math.min(viewportWidth - width - 12, ghost.from.left + ((ghost.from.width - width) / 2)));
+    const toLeft = Math.max(12, Math.min(viewportWidth - width - 12, ghost.to.left + ((ghost.to.width - width) / 2)));
+    const fromTop = ghost.from.top + ((ghost.from.height - height) / 2);
+    const toTop = ghost.to.top + ((ghost.to.height - height) / 2);
+    const tx = toLeft - fromLeft;
+    const ty = toTop - fromTop;
+    return <div key={ghost.id} className="routing-ghost" data-tone={ghost.tone} data-zone={ghost.zone} style={{ left: fromLeft, top: fromTop, width, minHeight: height, "--tx": `${tx}px`, "--ty": `${ty}px`, "--duration": `${ghost.duration}ms` } as CSSProperties}><div className="ghost-scan" /><div className="ghost-trail" /><div className="ghost-clamp" /><p className="ghost-label">{ghost.routeLabel}</p><p className="ghost-artist">{ghost.artist}</p><p className="ghost-title">{ghost.title}</p></div>;
   })}<style jsx>{`
     .routing-ghost-layer{overflow:visible}
-    .routing-ghost{position:fixed;overflow:hidden;border:1px solid currentColor;background:rgba(6,6,7,.88);padding:.75rem .85rem;box-shadow:0 0 38px currentColor, inset 0 0 24px rgba(255,255,255,.05);animation:ghost-route var(--duration) cubic-bezier(.16,1,.3,1) forwards;transform:translate3d(0,0,0);will-change:transform,opacity,filter;color:#ff2a2a}
+    .routing-ghost{position:fixed;overflow:hidden;border:2px solid currentColor;background:rgba(6,6,7,.92);padding:1rem 1.1rem;box-shadow:0 0 52px currentColor, inset 0 0 34px rgba(255,255,255,.07);animation:ghost-route var(--duration) cubic-bezier(.16,1,.3,1) forwards;transform:translate3d(0,0,0);will-change:transform,opacity,filter;color:#ff2a2a}
     .ghost-scan{position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent 0 5px,rgba(255,255,255,.07) 5px 6px);opacity:.38;mix-blend-mode:screen}
     .ghost-trail{position:absolute;left:0;right:0;top:50%;height:2px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.85),currentColor,transparent);animation:ghost-free-trail var(--duration) ease-out forwards}
     .ghost-clamp{position:absolute;inset:4px;border:1px solid transparent;opacity:0}
-    .ghost-label{position:relative;text-transform:uppercase;letter-spacing:.28em;font-size:10px;color:currentColor}
-    .ghost-artist{position:relative;margin-top:.35rem;font-weight:800;color:#fff;line-height:1.1}
-    .ghost-title{position:relative;margin-top:.2rem;font-size:12px;color:rgba(255,255,255,.74);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ghost-label{position:relative;text-transform:uppercase;letter-spacing:.32em;font-size:11px;font-weight:800;color:currentColor}
+    .ghost-artist{position:relative;margin-top:.45rem;font-size:clamp(1rem,2.3vw,1.55rem);font-weight:900;color:#fff;line-height:1.05;text-shadow:0 0 18px currentColor}
+    .ghost-title{position:relative;margin-top:.3rem;font-size:clamp(.82rem,1.7vw,1.05rem);font-weight:700;color:rgba(255,255,255,.82);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .routing-ghost[data-tone="cyan"]{color:#67e8f9;border-radius:.85rem;box-shadow:0 0 46px rgba(103,232,249,.42),inset 0 0 28px rgba(103,232,249,.08)}
     .routing-ghost[data-tone="cyan"] .ghost-trail{height:100%;top:0;background:radial-gradient(circle at 78% 50%,transparent 0 1.05rem,currentColor 1.11rem 1.18rem,transparent 1.28rem),conic-gradient(from 0deg at 78% 50%,transparent,currentColor,transparent 36%,rgba(103,232,249,.35),transparent 72%);animation:ghost-wheel-trail var(--duration) ease-out forwards}
     .routing-ghost[data-tone="amber"]{color:#ffaa00;border-style:dashed;box-shadow:0 0 32px rgba(255,170,0,.24),inset 0 0 18px rgba(255,170,0,.07);animation-name:ghost-route-pending}
@@ -662,8 +678,8 @@ function RoutingGhostLayer({ ghosts }: { ghosts: RoutingGhost[] }) {
     .routing-ghost[data-zone="next"] .ghost-clamp{opacity:.9;border-color:currentColor;animation:ghost-clamp-lock var(--duration) ease-out forwards}
     .routing-ghost[data-zone="now"]{color:#fff6d8;box-shadow:0 0 68px rgba(255,170,0,.55),0 0 32px rgba(255,255,255,.24)}
     .routing-ghost[data-zone="now"] .ghost-clamp{opacity:.95;border-color:rgba(255,255,255,.85);background:repeating-linear-gradient(90deg,rgba(255,170,0,.38) 0 3px,transparent 3px 10px) 50% 80%/72% 26px no-repeat;animation:ghost-monitor-lock var(--duration) ease-out forwards}
-    @keyframes ghost-route{0%{opacity:0;transform:translate3d(0,0,0) scale(.96);filter:brightness(1.45)}12%{opacity:.96}72%{opacity:.92}100%{opacity:0;transform:translate3d(var(--tx),var(--ty),0) scale(.90);filter:brightness(1)}}
-    @keyframes ghost-route-pending{0%{opacity:0;transform:translate3d(0,0,0) scale(.96);filter:brightness(1.2)}20%{opacity:.88}45%{opacity:.48}70%{opacity:.9}100%{opacity:0;transform:translate3d(var(--tx),var(--ty),0) scale(.9);filter:brightness(.82)}}
+    @keyframes ghost-route{0%{opacity:0;transform:translate3d(0,0,0) scale(.98);filter:brightness(1.7)}10%{opacity:.98}76%{opacity:.95}100%{opacity:0;transform:translate3d(var(--tx),var(--ty),0) scale(.94);filter:brightness(1)}}
+    @keyframes ghost-route-pending{0%{opacity:0;transform:translate3d(0,0,0) scale(.98);filter:brightness(1.35)}20%{opacity:.92}45%{opacity:.52}70%{opacity:.96}100%{opacity:0;transform:translate3d(var(--tx),var(--ty),0) scale(.94);filter:brightness(.82)}}
     @keyframes ghost-free-trail{0%{transform:translateX(-38%) scaleX(.3);opacity:.2}45%{opacity:1}100%{transform:translateX(48%) scaleX(1.05);opacity:0}}
     @keyframes ghost-wheel-trail{0%{opacity:0;transform:scale(.72) rotate(-32deg)}40%{opacity:.82}100%{opacity:0;transform:scale(1.18) rotate(130deg)}}
     @keyframes ghost-pending-trail{0%{background-position:-32px 0;opacity:.25}50%{opacity:.85}100%{background-position:36px 0;opacity:0}}
@@ -682,7 +698,7 @@ function TransmissionActivity({ items }: { items: QueueActivity[] }) {
 
 function SignalResidue({ tone, seed }: { tone: ActivityTone; seed: string }) {
   const color = tone === "gold" ? "#ffaa00" : tone === "cyan" ? "#67e8f9" : tone === "amber" ? "#ffaa00" : tone === "archive" ? "#b7b7b7" : tone === "danger" ? "#ff3b3b" : "#ff2a2a";
-  return <div className="signal-residue pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true"><div className="residue-aperture" style={{ color }} />{Array.from({ length: 14 }).map((_, index) => { const hash = stableHash(`${seed}:${index}:${tone}`); const dx = ((hash % 90) - 45); const dy = (((hash >> 5) % 70) - 35); return <span key={index} style={{ left: "50%", top: "50%", color, animationDelay: `${index * 34}ms`, "--dx": `${dx}px`, "--dy": `${dy}px` } as CSSProperties} />; })}<style jsx>{`.residue-aperture{position:absolute;left:50%;top:50%;width:3.5rem;height:2rem;border:1px solid currentColor;box-shadow:0 0 22px currentColor,inset 0 0 18px currentColor;transform:translate(-50%,-50%);animation:residue-aperture .72s ease-out forwards}.signal-residue span{position:absolute;width:3px;height:3px;background:currentColor;box-shadow:0 0 10px currentColor;animation:signal-residue-route .9s ease-out forwards}.signal-residue span:nth-child(3n){width:1px;height:10px}.signal-residue span:nth-child(4n){width:8px;height:1px}.signal-residue span:nth-child(5n){width:2px;height:2px;border:1px solid currentColor;background:transparent}@keyframes residue-aperture{0%{opacity:0;transform:translate(-50%,-50%) scale(.35)}35%{opacity:.9}100%{opacity:0;transform:translate(-50%,-50%) scale(1.35)}}@keyframes signal-residue-route{0%{opacity:0;transform:translate3d(0,0,0) scale(.5)}25%{opacity:.95}100%{opacity:0;transform:translate3d(var(--dx),var(--dy),0) scale(1)}}@media (prefers-reduced-motion: reduce){.residue-aperture,.signal-residue span{animation:none;opacity:.42}}`}</style></div>;
+  return <div className="signal-residue pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true"><div className="residue-aperture" style={{ color }} />{Array.from({ length: 14 }).map((_, index) => { const hash = stableHash(`${seed}:${index}:${tone}`); const dx = ((hash % 90) - 45); const dy = (((hash >> 5) % 70) - 35); return <span key={index} style={{ left: "50%", top: "50%", color, animationDelay: `${index * 34}ms`, "--dx": `${dx}px`, "--dy": `${dy}px` } as CSSProperties} />; })}<style jsx>{`.residue-aperture{position:absolute;inset:.35rem;border:2px solid currentColor;box-shadow:0 0 34px currentColor,inset 0 0 24px currentColor;animation:residue-aperture .86s ease-out forwards}.signal-residue span{position:absolute;width:3px;height:3px;background:currentColor;box-shadow:0 0 10px currentColor;animation:signal-residue-route .9s ease-out forwards}.signal-residue span:nth-child(3n){width:1px;height:10px}.signal-residue span:nth-child(4n){width:8px;height:1px}.signal-residue span:nth-child(5n){width:2px;height:2px;border:1px solid currentColor;background:transparent}@keyframes residue-aperture{0%{opacity:0;transform:scale(.94);filter:brightness(1.8)}32%{opacity:.92}100%{opacity:0;transform:scale(1.025);filter:brightness(1)}}@keyframes signal-residue-route{0%{opacity:0;transform:translate3d(0,0,0) scale(.5)}25%{opacity:.95}100%{opacity:0;transform:translate3d(var(--dx),var(--dy),0) scale(1)}}@media (prefers-reduced-motion: reduce){.residue-aperture,.signal-residue span{animation:none;opacity:.42}}`}</style></div>;
 }
 
 function TrackTitleLink({ track }: { track: QueuePublicTrack }) {

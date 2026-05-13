@@ -571,7 +571,7 @@ function ReceiverHudPortal({ snapshot, submissionsOpen, isBroadcastActive, pulse
       {pulse && <div className="receiver-hud-banner mt-2 border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-center text-[10px] font-bold uppercase tracking-[0.28em] text-[#ffaa00]">HOST BAND LOCKED · BROADCAST PROTOCOL ONLINE</div>}
     </section>
   );
-  return <><div className="receiver-hud-spacer" data-pulse={pulse ? "true" : undefined} aria-hidden="true" />{mounted && createPortal(hud, document.body)}<style jsx>{`.receiver-hud{top:calc(3.75rem + env(safe-area-inset-top));max-height:5.5rem;overflow:hidden}.receiver-hud-spacer{height:3.75rem}.receiver-hud-spacer[data-pulse="true"]{height:5.75rem}.receiver-hud-scan{background:linear-gradient(transparent 50%,rgba(255,255,255,.055) 50%);background-size:100% 6px;opacity:.12}.receiver-hud[data-live="true"]{border-color:rgba(255,170,0,.42);box-shadow:0 0 34px rgba(255,170,0,.14)}.receiver-hud[data-pulse="true"]{animation:receiver-hud-lock 1.2s ease-out}.receiver-hud-packet{animation:receiver-hud-packet 1.4s ease-in-out infinite}.receiver-hud-banner{animation:receiver-hud-banner .9s ease-out}@keyframes receiver-hud-lock{0%{filter:brightness(1)}28%{filter:brightness(1.6)}100%{filter:brightness(1)}}@keyframes receiver-hud-banner{0%{opacity:0;transform:translateY(-4px)}100%{opacity:1;transform:translateY(0)}}@keyframes receiver-hud-packet{0%,100%{opacity:.45;transform:scale(.85)}50%{opacity:1;transform:scale(1.18)}}@media (min-width: 900px){.receiver-hud{top:calc(4.5rem + env(safe-area-inset-top))}.receiver-hud-spacer{height:4rem}.receiver-hud-spacer[data-pulse="true"]{height:6rem}}@media (prefers-reduced-motion: reduce){.receiver-hud[data-pulse="true"],.receiver-hud-banner,.receiver-hud-packet{animation:none}}`}</style></>;
+  return <><div className="receiver-hud-spacer" data-pulse={pulse ? "true" : undefined} aria-hidden="true" />{mounted && createPortal(hud, document.body)}<style jsx>{`.receiver-hud{top:calc(10.75rem + env(safe-area-inset-top));max-height:5.5rem;overflow:hidden}.receiver-hud-spacer{height:3.75rem}.receiver-hud-spacer[data-pulse="true"]{height:5.75rem}.receiver-hud-scan{background:linear-gradient(transparent 50%,rgba(255,255,255,.055) 50%);background-size:100% 6px;opacity:.12}.receiver-hud[data-live="true"]{border-color:rgba(255,170,0,.42);box-shadow:0 0 34px rgba(255,170,0,.14)}.receiver-hud[data-pulse="true"]{animation:receiver-hud-lock 1.2s ease-out}.receiver-hud-packet{animation:receiver-hud-packet 1.4s ease-in-out infinite}.receiver-hud-banner{animation:receiver-hud-banner .9s ease-out}@keyframes receiver-hud-lock{0%{filter:brightness(1)}28%{filter:brightness(1.6)}100%{filter:brightness(1)}}@keyframes receiver-hud-banner{0%{opacity:0;transform:translateY(-4px)}100%{opacity:1;transform:translateY(0)}}@keyframes receiver-hud-packet{0%,100%{opacity:.45;transform:scale(.85)}50%{opacity:1;transform:scale(1.18)}}@media (min-width: 900px){.receiver-hud{top:calc(11.5rem + env(safe-area-inset-top))}.receiver-hud-spacer{height:4rem}.receiver-hud-spacer[data-pulse="true"]{height:6rem}}@media (prefers-reduced-motion: reduce){.receiver-hud[data-pulse="true"],.receiver-hud-banner,.receiver-hud-packet{animation:none}}`}</style></>;
 }
 
 function BroadcastStartOverlay() {
@@ -861,31 +861,32 @@ function submittedPublicTrack(snapshot: QueuePublicSnapshot | null, submitted: P
 function pluralizeSongs(count: number): string { return `${count} ${count === 1 ? "song" : "songs"}`; }
 function PersonalSignalStatusBar({ snapshot }: { snapshot: QueuePublicSnapshot | null }) {
   const status = snapshot?.submitterStatus ?? null;
-  if (!status || status.used === 0) return <section className="personal-signal-bar overflow-hidden border border-border bg-background/80 px-3 py-2 text-xs text-muted"><p className="truncate"><span className="font-bold uppercase tracking-[0.24em] text-accent">Your Signal Status</span><span className="mx-2 text-border">·</span>No songs submitted yet.<span className="mx-2 text-border">·</span>Submit a track to enter the free queue.</p><style jsx>{`.personal-signal-bar{margin-top:-.35rem}@media (max-width:640px){.personal-signal-bar{padding:.55rem .65rem}.personal-signal-bar p{white-space:normal}}`}</style></section>;
-  const submittedIds = new Set(status.submitted.map((track) => track.id));
-  const allSubmitted = status.submitted.map((track) => submittedPublicTrack(snapshot, track));
-  const nowPlaying = snapshot?.nowPlaying && submittedIds.has(snapshot.nowPlaying.id);
-  const upNext = snapshot?.upNext && submittedIds.has(snapshot.upNext.id);
-  const waiting = (snapshot?.queue ?? []).filter((track) => submittedIds.has(track.id));
-  const played = (snapshot?.completed ?? []).filter((track) => submittedIds.has(track.id));
-  const checkoutPending = allSubmitted.some((track) => "priorityUpgradeStatus" in track && track.priorityUpgradeStatus === "checkout_pending");
-  const priorityActive = allSubmitted.some((track) => "priorityUpgradeStatus" in track && (track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "manual"));
-  const paymentNotCompleted = allSubmitted.some((track) => "priorityUpgradeStatus" in track && (track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded"));
-  const closestQueueIndex = (snapshot?.queue ?? []).findIndex((track) => submittedIds.has(track.id));
-  const songsAway = closestQueueIndex >= 0 ? closestQueueIndex + 1 : null;
-  const waitMinutes = songsAway ? songsAway * 5 : null;
-  let parts: string[] = [`${pluralizeSongs(status.used)} submitted`];
-  if (nowPlaying) parts = ["Your track is playing now."];
-  else if (upNext) parts = ["Your track is coming up next."];
-  else if (checkoutPending) parts = ["Checkout started", "Skip is not active yet."];
-  else if (priorityActive) parts = ["Priority Signal active."];
-  else if (paymentNotCompleted) parts = ["Payment was not completed", "Song stays in the free queue if still active."];
-  else if (waiting.length === 0 && played.length > 0) parts = [status.used === 1 ? "Your track already played tonight." : `${pluralizeSongs(status.used)} submitted`, `${played.length} already played.`];
-  else {
-    parts.push(status.used === 1 && waiting.length > 0 ? "waiting in the free queue." : `${waiting.length} waiting`, `${played.length} already played.`);
-    if (songsAway && waitMinutes) parts.push(`Closest track: ${songsAway} ${songsAway === 1 ? "song" : "songs"} away`, `Estimated wait: about ${waitMinutes} min.`);
+  let main = "No songs submitted yet.";
+  let detail = "Submit a track to enter the free queue.";
+  if (status && status.used > 0) {
+    const submittedIds = new Set(status.submitted.map((track) => track.id));
+    const allSubmitted = status.submitted.map((track) => submittedPublicTrack(snapshot, track));
+    const nowPlaying = snapshot?.nowPlaying && submittedIds.has(snapshot.nowPlaying.id);
+    const upNext = snapshot?.upNext && submittedIds.has(snapshot.upNext.id);
+    const waiting = (snapshot?.queue ?? []).filter((track) => submittedIds.has(track.id));
+    const played = (snapshot?.completed ?? []).filter((track) => submittedIds.has(track.id));
+    const checkoutPending = allSubmitted.some((track) => "priorityUpgradeStatus" in track && track.priorityUpgradeStatus === "checkout_pending");
+    const priorityActive = allSubmitted.some((track) => "priorityUpgradeStatus" in track && (track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "manual"));
+    const paymentNotCompleted = allSubmitted.some((track) => "priorityUpgradeStatus" in track && (track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded"));
+    const closestQueueIndex = (snapshot?.queue ?? []).findIndex((track) => submittedIds.has(track.id));
+    const songsAway = closestQueueIndex >= 0 ? closestQueueIndex + 1 : null;
+    const waitMinutes = songsAway ? songsAway * 5 : null;
+    main = `${pluralizeSongs(status.used)} submitted${status.used === 1 && waiting.length > 0 ? " · waiting in the free queue." : ""}`;
+    detail = `${waiting.length} waiting · ${played.length} already played.`;
+    if (nowPlaying) { main = "Your track is playing now."; detail = "Personal receiver locked to your submitted track."; }
+    else if (upNext) { main = "Your track is coming up next."; detail = "One of your submitted tracks is Next In Line."; }
+    else if (checkoutPending) { main = "Checkout started."; detail = "Skip is not active yet."; }
+    else if (priorityActive) { main = "Priority Signal active."; detail = "One of your submitted tracks has confirmed Priority status."; }
+    else if (paymentNotCompleted) { main = "Payment was not completed."; detail = "Song stays in the free queue if still active."; }
+    else if (waiting.length === 0 && played.length > 0) { main = status.used === 1 ? "Your track already played tonight." : `${pluralizeSongs(status.used)} submitted · ${played.length} already played.`; detail = "Played songs remain visible in Recently Played while available."; }
+    else if (songsAway && waitMinutes) detail = `Closest track: ${songsAway} ${songsAway === 1 ? "song" : "songs"} away · Estimated wait: about ${waitMinutes} min.`;
   }
-  return <section className="personal-signal-bar overflow-hidden border border-accent/35 bg-background/85 px-3 py-2 text-xs text-muted shadow-[0_0_22px_rgba(255,0,0,0.08)]"><p className="flex flex-wrap items-center gap-x-2 gap-y-1 leading-relaxed"><span className="shrink-0 font-bold uppercase tracking-[0.24em] text-accent">Your Signal Status</span>{parts.map((part) => <span key={part} className="min-w-0"><span className="mr-2 text-border">·</span>{part}</span>)}</p><style jsx>{`.personal-signal-bar{margin-top:-.35rem}.personal-signal-bar span{max-width:100%}@media (max-width:640px){.personal-signal-bar{padding:.55rem .65rem}.personal-signal-bar p{display:block;white-space:normal}.personal-signal-bar span{letter-spacing:.02em}}`}</style></section>;
+  return <><div className="personal-signal-spacer" aria-hidden="true" /><section className="personal-signal-bar fixed left-0 right-0 z-[8995] overflow-hidden border-b border-accent/35 border-t border-border/70 bg-black/95 font-mono text-white shadow-[0_0_32px_rgba(255,0,0,0.16)] backdrop-blur-md" aria-label="Your Signal Status" role="status" aria-live="polite"><div className="personal-signal-scan pointer-events-none absolute inset-0" aria-hidden="true" /><div className="relative mx-auto flex min-h-[5rem] max-w-7xl flex-col justify-center px-3 py-3 sm:min-h-[6rem] sm:px-4"><p className="text-[10px] font-bold uppercase tracking-[0.34em] text-accent sm:text-xs">Your Signal Status</p><p className="mt-1 truncate text-sm font-bold text-foreground sm:text-lg">{main}</p><p className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted sm:text-sm">{detail}</p></div><style jsx>{`.personal-signal-bar{top:calc(5.5rem + env(safe-area-inset-top))}.personal-signal-spacer{height:5.25rem}.personal-signal-scan{background:linear-gradient(transparent 50%,rgba(255,255,255,.06) 50%);background-size:100% 6px;opacity:.14}@media (min-width:900px){.personal-signal-spacer{height:6rem}}@media (max-width:640px){.personal-signal-bar p{max-width:100%}.personal-signal-spacer{height:5rem}}`}</style></section></>;
 }
 function QueueMechanicsInfo() { return <details className="border border-accent/30 bg-accent/5 p-4 text-xs"><summary className="cursor-pointer uppercase tracking-[0.3em] text-accent">How does the queue work?</summary><ul className="mt-3 list-disc space-y-1 pl-4 leading-relaxed text-muted"><li>Submit Track sends your song into the free queue.</li><li>Priority Signal is a paid skip after payment clears.</li><li>Wheel Chosen means the host picked it from the 10K tap wheel.</li><li>Next In Line means coming up next.</li><li>Now Playing means playing now.</li></ul></details>; }
 

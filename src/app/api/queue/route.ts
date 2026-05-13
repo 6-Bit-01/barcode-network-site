@@ -178,7 +178,7 @@ async function submitTrackFromBody(body: Record<string, unknown>): Promise<NextR
       mimeType,
       sourceType: "upload",
       detectedDurationSeconds,
-      durationSource: detectedDurationSeconds ? "upload_metadata" : "file_metadata",
+      durationSource: detectedDurationSeconds ? "upload_metadata" : "estimated",
       note,
       submitterArtistName: artist,
       tiktokHandle,

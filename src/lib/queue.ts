@@ -3,6 +3,7 @@
 // ============================================================
 
 import { Redis } from "@upstash/redis";
+import { detectTrackDurationFromLink, parseIso8601DurationToSeconds, parseSpotifyTrackId, parseYouTubeVideoId as parseTrackDurationYouTubeVideoId } from "./track-duration";
 import {
   INTERNAL_BUFFER_DURATION_SECONDS,
   detectQueueSourceType,
@@ -650,10 +651,13 @@ function normalizeDurationSource(source: QueueDurationSource | string | undefine
   if (source === "browser-audio-metadata" || source === "upload_metadata") return "upload_metadata";
   if (source === "file-metadata" || source === "file_metadata") return "file_metadata";
   if (source === "provider-metadata" || source === "provider_metadata") return sourceType === "youtube" || sourceType === "soundcloud" || sourceType === "spotify" ? sourceType : "provider_metadata";
-  if (source === "internal-estimate" || source === "internal_estimate") return "internal_estimate";
+  if (source === "internal-estimate" || source === "internal_estimate" || source === "estimated") return source === "estimated" ? "estimated" : "internal_estimate";
+  if (source === "youtube_api" || source === "spotify_api" || source === "soundcloud_api" || source === "direct_metadata") return source;
   if (source === "youtube" || source === "soundcloud" || source === "spotify" || source === "unknown") return source;
   if (detected && sourceType === "upload") return "upload_metadata";
-  if (detected && (sourceType === "youtube" || sourceType === "soundcloud" || sourceType === "spotify")) return sourceType;
+  if (detected && sourceType === "youtube") return "youtube_api";
+  if (detected && sourceType === "spotify") return "spotify_api";
+  if (detected && sourceType === "soundcloud") return "soundcloud_api";
   return detected ? "provider_metadata" : "internal_estimate";
 }
 
@@ -775,21 +779,11 @@ function blankProvider(source: QueueDurationSource = "internal_estimate"): Provi
 }
 
 export function parseYouTubeVideoId(link: string): string | null {
-  try {
-    const url = new URL(link);
-    const host = url.hostname.replace(/^www\./, "").toLowerCase();
-    if (host === "youtu.be") return url.pathname.split("/").filter(Boolean)[0] ?? null;
-    if (host.includes("youtube.com")) return url.searchParams.get("v") || url.pathname.match(/\/shorts\/([^/?#]+)/)?.[1] || url.pathname.match(/\/embed\/([^/?#]+)/)?.[1] || null;
-    return null;
-  } catch {
-    return null;
-  }
+  return parseTrackDurationYouTubeVideoId(link);
 }
 
 export function parseYouTubeDuration(duration: string): number | null {
-  const match = duration.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
-  if (!match) return null;
-  return (Number(match[1] ?? 0) * 3600) + (Number(match[2] ?? 0) * 60) + Number(match[3] ?? 0);
+  return parseIso8601DurationToSeconds(duration);
 }
 
 async function lookupYouTubeMetadata(link: string): Promise<ProviderMetadata> {
@@ -804,7 +798,7 @@ async function lookupYouTubeMetadata(link: string): Promise<ProviderMetadata> {
   const duration = item?.contentDetails?.duration ? parseYouTubeDuration(item.contentDetails.duration) : null;
   const providerTitle = typeof item?.snippet?.title === "string" ? item.snippet.title : null;
   const channelTitle = typeof item?.snippet?.channelTitle === "string" ? item.snippet.channelTitle : null;
-  return { detectedArtistName: channelTitle, detectedSongTitle: providerTitle, providerTitle, detectedDurationSeconds: duration, durationSource: duration ? "youtube" : "internal_estimate", artworkUrl: id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null };
+  return { detectedArtistName: channelTitle, detectedSongTitle: providerTitle, providerTitle, detectedDurationSeconds: duration, durationSource: duration ? "youtube_api" : "internal_estimate", artworkUrl: id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null };
 }
 
 function spotifyOEmbedUrl(link: string): string {
@@ -825,8 +819,7 @@ async function lookupSpotifyMetadata(link: string): Promise<ProviderMetadata> {
   const fallback = () => lookupSpotifyOEmbed(link).catch(() => blankProvider("internal_estimate"));
   const clientId = process.env.SPOTIFY_CLIENT_ID;
   const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
-  const match = link.match(/spotify\.com\/track\/([a-zA-Z0-9]+)/) || link.match(/spotify:track:([a-zA-Z0-9]+)/);
-  const trackId = match?.[1];
+  const trackId = parseSpotifyTrackId(link);
   if (!trackId || !clientId || !clientSecret) return fallback();
   const tokenRes = await fetch("https://accounts.spotify.com/api/token", {
     method: "POST",
@@ -844,7 +837,7 @@ async function lookupSpotifyMetadata(link: string): Promise<ProviderMetadata> {
   const artist = Array.isArray(track.artists) ? track.artists.map((item: { name?: string }) => item.name).filter(Boolean).join(", ") : null;
   const title = typeof track.name === "string" ? track.name : null;
   const artworkUrl = Array.isArray(track.album?.images) ? track.album.images.find((image: { url?: string }) => typeof image.url === "string")?.url ?? null : null;
-  const metadata = { detectedArtistName: artist || null, detectedSongTitle: title, providerTitle: title, detectedDurationSeconds: seconds, durationSource: seconds ? "spotify" as const : "internal_estimate" as const, artworkUrl };
+  const metadata = { detectedArtistName: artist || null, detectedSongTitle: title, providerTitle: title, detectedDurationSeconds: seconds, durationSource: seconds ? "spotify_api" as const : "internal_estimate" as const, artworkUrl };
   return artworkUrl ? metadata : lookupSpotifyOEmbed(link, metadata).catch(() => metadata);
 }
 
@@ -868,16 +861,26 @@ async function lookupSoundCloudMetadata(link: string): Promise<ProviderMetadata>
   const title = typeof track.title === "string" ? track.title : null;
   const artist = typeof track.user?.username === "string" ? track.user.username : null;
   const artworkUrl = typeof track.artwork_url === "string" ? track.artwork_url.replace("-large.", "-t500x500.") : null;
-  const metadata = { detectedArtistName: artist, detectedSongTitle: title, providerTitle: title, detectedDurationSeconds: seconds, durationSource: seconds ? "soundcloud" as const : "internal_estimate" as const, artworkUrl };
+  const metadata = { detectedArtistName: artist, detectedSongTitle: title, providerTitle: title, detectedDurationSeconds: seconds, durationSource: seconds ? "soundcloud_api" as const : "internal_estimate" as const, artworkUrl };
   return artworkUrl ? metadata : lookupSoundCloudOEmbed(link, metadata).catch(() => metadata);
 }
 
 export async function detectProviderMetadata(sourceType: QueueSourceType, link: string): Promise<ProviderMetadata> {
   try {
-    if (sourceType === "youtube") return lookupYouTubeMetadata(link);
-    if (sourceType === "spotify") return lookupSpotifyMetadata(link);
-    if (sourceType === "soundcloud") return lookupSoundCloudMetadata(link);
-    return blankProvider("internal_estimate");
+    let metadata = blankProvider("internal_estimate");
+    if (sourceType === "youtube") metadata = await lookupYouTubeMetadata(link);
+    else if (sourceType === "spotify") metadata = await lookupSpotifyMetadata(link);
+    else if (sourceType === "soundcloud") metadata = await lookupSoundCloudMetadata(link);
+    else return metadata;
+
+    if (metadata.detectedDurationSeconds) return metadata;
+
+    const duration = await detectTrackDurationFromLink(link);
+    if (duration.durationSeconds && duration.durationIsEstimate === false) {
+      return { ...metadata, detectedDurationSeconds: duration.durationSeconds, durationSource: duration.durationSource };
+    }
+
+    return metadata;
   } catch (error) {
     console.warn("[queue] provider metadata lookup failed", error);
     return blankProvider("internal_estimate");
@@ -922,7 +925,7 @@ function parseProviderId(sourceType: QueueSourceType, link: string): string | nu
     return id ? `youtube:${id}` : null;
   }
   if (sourceType === "spotify") {
-    const id = link.match(/spotify\.com\/track\/([a-zA-Z0-9]+)/)?.[1] ?? link.match(/spotify:track:([a-zA-Z0-9]+)/)?.[1];
+    const id = parseSpotifyTrackId(link);
     return id ? `spotify:${id}` : null;
   }
   if (sourceType === "soundcloud") {
@@ -1052,7 +1055,7 @@ export async function createQueueTrack(input: {
     : providerMetadata.detectedDurationSeconds;
   const durationSource = detectedDurationSeconds
     ? input.durationSource ?? providerMetadata.durationSource ?? (sourceType === "upload" ? "upload_metadata" : "provider_metadata")
-    : "internal_estimate";
+    : "estimated";
 
   return normalizeEntry({
     id: generateQueueId(),

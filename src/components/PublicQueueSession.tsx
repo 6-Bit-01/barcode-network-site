@@ -443,6 +443,8 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
       <ReceiverHudPortal snapshot={snapshot} submissionsOpen={isOpen} isBroadcastActive={isBroadcastActive} pulse={broadcastStartPulse} mounted={mounted} />
 
+      <PersonalSignalStatusBar snapshot={snapshot} />
+
       <SessionPhasePanel snapshot={snapshot} submissionsOpen={isOpen} canSubmit={canSubmit} isBroadcastActive={isBroadcastActive} />
 
       <SubmissionActivity items={activity} />
@@ -460,10 +462,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
       {isFull && <p className="border border-danger/40 bg-danger/5 p-3 text-sm text-danger">This broadcast queue is full for new songs.</p>}
 
-      <div className="grid gap-3 lg:grid-cols-[0.8fr_1.2fr]">
-        <PersonalSignalStatusPanel snapshot={snapshot} cooldownRemaining={cooldownRemaining} />
-        <QueueMechanicsInfo />
-      </div>
+      <QueueMechanicsInfo />
 
       <div className="flex gap-2 border-b border-border">
         <button type="button" onClick={() => setView("active")} className={`px-4 py-3 text-xs uppercase tracking-widest ${view === "active" ? "border-b border-accent text-accent" : "text-muted"}`}>Active Queue</button>
@@ -860,9 +859,9 @@ function QueueStat({ label, value, helper, accent = "text-foreground", pulse = f
 type PublicTrackSummary = NonNullable<QueuePublicSnapshot["submitterStatus"]>["submitted"][number];
 function submittedPublicTrack(snapshot: QueuePublicSnapshot | null, submitted: PublicTrackSummary): QueuePublicTrack | PublicTrackSummary { const active = [snapshot?.nowPlaying, snapshot?.upNext, ...(snapshot?.queue ?? []), ...(snapshot?.completed ?? [])].filter(Boolean) as QueuePublicTrack[]; return active.find((track) => track.id === submitted.id) ?? submitted; }
 function pluralizeSongs(count: number): string { return `${count} ${count === 1 ? "song" : "songs"}`; }
-function PersonalSignalStatusPanel({ snapshot, cooldownRemaining }: { snapshot: QueuePublicSnapshot | null; cooldownRemaining: number }) {
+function PersonalSignalStatusBar({ snapshot }: { snapshot: QueuePublicSnapshot | null }) {
   const status = snapshot?.submitterStatus ?? null;
-  if (!status || status.used === 0) return <section className="border border-border bg-surface p-4 text-sm text-muted"><p className="text-xs font-bold uppercase tracking-[0.3em] text-accent">Your Signal Status</p><p className="mt-2 text-foreground">No songs submitted yet.</p><p className="mt-1 text-xs">Submit a track to enter the free queue.</p></section>;
+  if (!status || status.used === 0) return <section className="personal-signal-bar overflow-hidden border border-border bg-background/80 px-3 py-2 text-xs text-muted"><p className="truncate"><span className="font-bold uppercase tracking-[0.24em] text-accent">Your Signal Status</span><span className="mx-2 text-border">·</span>No songs submitted yet.<span className="mx-2 text-border">·</span>Submit a track to enter the free queue.</p><style jsx>{`.personal-signal-bar{margin-top:-.35rem}@media (max-width:640px){.personal-signal-bar{padding:.55rem .65rem}.personal-signal-bar p{white-space:normal}}`}</style></section>;
   const submittedIds = new Set(status.submitted.map((track) => track.id));
   const allSubmitted = status.submitted.map((track) => submittedPublicTrack(snapshot, track));
   const nowPlaying = snapshot?.nowPlaying && submittedIds.has(snapshot.nowPlaying.id);
@@ -873,16 +872,20 @@ function PersonalSignalStatusPanel({ snapshot, cooldownRemaining }: { snapshot: 
   const priorityActive = allSubmitted.some((track) => "priorityUpgradeStatus" in track && (track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "manual"));
   const paymentNotCompleted = allSubmitted.some((track) => "priorityUpgradeStatus" in track && (track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded"));
   const closestQueueIndex = (snapshot?.queue ?? []).findIndex((track) => submittedIds.has(track.id));
-  let headline = `${pluralizeSongs(status.used)} submitted`;
-  let detail = `${waiting.length} waiting · ${played.length} already played.`;
-  if (nowPlaying) { headline = "Your track is playing now."; detail = "The host has loaded one of your submitted songs."; }
-  else if (upNext) { headline = "Your track is coming up next."; detail = "One of your submitted songs is Next In Line."; }
-  else if (checkoutPending) { headline = "Checkout started. Skip is not active yet."; detail = "Priority Signal turns on only after payment clears."; }
-  else if (priorityActive) { headline = "Priority Signal active."; detail = "One of your submitted songs has confirmed Priority status."; }
-  else if (paymentNotCompleted) { headline = "Payment was not completed."; detail = "Song stays in the free queue if still active."; }
-  else if (status.used === 1 && waiting.length > 0) { headline = "1 song submitted · waiting in the free queue."; detail = "Watch the queue for Now Playing and Next In Line updates."; }
-  else if (waiting.length === 0 && played.length > 0) { headline = status.used === 1 ? "Your track already played tonight." : `${pluralizeSongs(status.used)} submitted · ${played.length} already played.`; detail = "Played songs remain visible in Recently Played while available."; }
-  return <section className="personal-signal-status border border-accent/40 bg-accent/5 p-4 text-sm text-muted"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.3em] text-accent">Your Signal Status</p><p className="mt-2 font-bold text-foreground">{headline}</p><p className="mt-1 text-xs leading-relaxed">{detail}</p></div><div className="grid grid-cols-3 gap-2 text-center text-[10px] uppercase tracking-widest sm:min-w-56"><span className="border border-border bg-background/45 p-2"><b className="block text-base text-foreground">{status.used}</b>Submitted</span><span className="border border-border bg-background/45 p-2"><b className="block text-base text-foreground">{waiting.length}</b>Waiting</span><span className="border border-border bg-background/45 p-2"><b className="block text-base text-foreground">{played.length}</b>Played</span></div></div>{closestQueueIndex >= 0 && !nowPlaying && !upNext && <p className="mt-2 text-[11px] text-cyan-200">Closest track: {closestQueueIndex + 1} {closestQueueIndex === 0 ? "song" : "songs"} down the displayed queue.</p>}{cooldownRemaining > 0 && <p className="mt-2 text-[11px] text-accent">Next song in {formatCooldown(cooldownRemaining)}.</p>}<style jsx>{`.personal-signal-status{box-shadow:0 0 26px rgba(255,0,0,.08)}@media (max-width: 640px){.personal-signal-status{padding:.85rem}.personal-signal-status span{padding:.45rem .3rem;letter-spacing:.08em}}`}</style></section>;
+  const songsAway = closestQueueIndex >= 0 ? closestQueueIndex + 1 : null;
+  const waitMinutes = songsAway ? songsAway * 5 : null;
+  let parts: string[] = [`${pluralizeSongs(status.used)} submitted`];
+  if (nowPlaying) parts = ["Your track is playing now."];
+  else if (upNext) parts = ["Your track is coming up next."];
+  else if (checkoutPending) parts = ["Checkout started", "Skip is not active yet."];
+  else if (priorityActive) parts = ["Priority Signal active."];
+  else if (paymentNotCompleted) parts = ["Payment was not completed", "Song stays in the free queue if still active."];
+  else if (waiting.length === 0 && played.length > 0) parts = [status.used === 1 ? "Your track already played tonight." : `${pluralizeSongs(status.used)} submitted`, `${played.length} already played.`];
+  else {
+    parts.push(status.used === 1 && waiting.length > 0 ? "waiting in the free queue." : `${waiting.length} waiting`, `${played.length} already played.`);
+    if (songsAway && waitMinutes) parts.push(`Closest track: ${songsAway} ${songsAway === 1 ? "song" : "songs"} away`, `Estimated wait: about ${waitMinutes} min.`);
+  }
+  return <section className="personal-signal-bar overflow-hidden border border-accent/35 bg-background/85 px-3 py-2 text-xs text-muted shadow-[0_0_22px_rgba(255,0,0,0.08)]"><p className="flex flex-wrap items-center gap-x-2 gap-y-1 leading-relaxed"><span className="shrink-0 font-bold uppercase tracking-[0.24em] text-accent">Your Signal Status</span>{parts.map((part) => <span key={part} className="min-w-0"><span className="mr-2 text-border">·</span>{part}</span>)}</p><style jsx>{`.personal-signal-bar{margin-top:-.35rem}.personal-signal-bar span{max-width:100%}@media (max-width:640px){.personal-signal-bar{padding:.55rem .65rem}.personal-signal-bar p{display:block;white-space:normal}.personal-signal-bar span{letter-spacing:.02em}}`}</style></section>;
 }
 function QueueMechanicsInfo() { return <details className="border border-accent/30 bg-accent/5 p-4 text-xs"><summary className="cursor-pointer uppercase tracking-[0.3em] text-accent">How does the queue work?</summary><ul className="mt-3 list-disc space-y-1 pl-4 leading-relaxed text-muted"><li>Submit Track sends your song into the free queue.</li><li>Priority Signal is a paid skip after payment clears.</li><li>Wheel Chosen means the host picked it from the 10K tap wheel.</li><li>Next In Line means coming up next.</li><li>Now Playing means playing now.</li></ul></details>; }
 
@@ -907,5 +910,4 @@ function PriorityUpgradeModal({ track, price, pending, message, onConfirm, onClo
   return <div className="fixed inset-0 z-[10050] grid place-items-center bg-black/80 p-4 backdrop-blur-sm"><div role="dialog" aria-modal="true" className="w-full max-w-md border border-[#ffaa00]/50 bg-background p-5 shadow-[0_0_70px_rgba(255,170,0,0.22)]"><p className="text-xs uppercase tracking-[0.35em] text-[#ffaa00]">{PRIORITY_SIGNAL_LABEL}</p><h2 className="mt-3 text-2xl font-bold text-foreground">Upgrade this track</h2><div className="mt-4 border border-border bg-surface p-3 text-sm"><p className="font-bold text-foreground">{track.submittedArtistName} — {track.submittedSongTitle}</p>{track.tiktokHandle && <p className="mt-1 text-xs text-muted">TikTok/social: {track.tiktokHandle}</p>}<p className="mt-1 text-xs text-muted">Source: {sourceTypeLabel(track)}</p><p className="mt-3 text-lg font-bold text-[#ffaa00]">{price}</p></div><div className="mt-4 border border-border bg-surface p-3 text-xs text-muted"><p>{PRIORITY_SIGNAL_EXPLANATION}</p><p>Priority Signal is a paid skip after payment clears.</p><p>Supports the BARCODE Radio broadcast.</p><p className="mt-2">Payment may take a moment to clear. Queue position may shift during checkout.</p></div>{message && <p className="mt-3 border border-accent/30 bg-accent/5 p-2 text-xs text-accent">{message}</p>}<div className="mt-5 flex flex-wrap justify-end gap-2"><button type="button" onClick={onClose} disabled={pending} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">Cancel</button><button type="button" onClick={onConfirm} disabled={pending} className="border border-[#ffaa00]/60 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background disabled:opacity-50">{pending ? "Opening checkout…" : "Continue to Payment"}</button></div></div></div>;
 }
 
-function formatCooldown(seconds: number): string { const minutes = Math.floor(seconds / 60).toString().padStart(2, "0"); const rest = Math.max(0, seconds % 60).toString().padStart(2, "0"); return `${minutes}:${rest}`; }
 function DiscordQueueCTA() { return <section className="border border-accent/40 bg-accent/5 p-5"><p className="text-xs uppercase tracking-[0.3em] text-accent">Discord Signal Alerts</p><p className="mt-2 text-sm text-muted">Join Discord for BARCODE Radio queue updates and future signal alerts.</p><a href={externalLinks.discord} target="_blank" rel="noreferrer" className="mt-4 inline-flex border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Join Discord</a></section>; }

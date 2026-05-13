@@ -621,7 +621,9 @@ function WaveformSweep({ offset = 0 }: { offset?: number }) {
 
 function WarpSequence({ state, data }: { state: TransmissionState; data: WarpData | null }) {
   const steps: TransmissionState[] = ["priority_requested", "signal", "received", "encoded", "converting", "temporal", "aligning", "confirmed"];
-  const activeIndex = Math.max(0, steps.indexOf(state));
+  const submissionProgressSteps: TransmissionState[] = steps.filter((step) => step !== "priority_requested");
+  const activeProgressIndex = Math.max(0, submissionProgressSteps.indexOf(state));
+  const isConfirmed = state === "confirmed";
   const isPriorityRequested = state === "priority_requested";
   const isSignal = state === "signal";
   const isArtifact = state === "received";
@@ -629,7 +631,6 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
   const isPacket = state === "converting";
   const isRoute = state === "temporal";
   const isTransfer = state === "aligning";
-  const isConfirmed = state === "confirmed";
   const motionClass = isPriorityRequested || isSignal ? "signal-lock" : isRoute || isTransfer ? "barcode-warp power-instability" : "barcode-warp";
   const packetClass = isPriorityRequested || isSignal || isArtifact || isDisassembling ? "packet-forming" : isPacket || isRoute ? "packet-charging" : isTransfer ? "packet-transfer" : "packet-landed";
   const artClass = isPriorityRequested || isSignal ? "art-source" : isArtifact ? "art-captured" : isDisassembling || isPacket ? "art-disassemble" : "art-compressed";
@@ -666,11 +667,16 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
         <div className={`relative w-full max-w-6xl overflow-hidden border bg-background/88 p-4 ${priorityTone} backdrop-blur-md sm:p-5`}>
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,0,0,0.14),transparent_34%)]" />
           <div className="relative z-10 space-y-4">
-            <div className="flex items-start justify-between gap-4">
-              <div><p className="text-xs uppercase tracking-[0.4em] text-accent">BARCODE Network Submission</p><h2 className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">{warpLabel(state)}</h2><p className="mt-1 text-xs text-muted">{warpDescription(state, data)}</p></div>
-              <div className={`hidden border px-3 py-2 text-xs uppercase tracking-widest sm:block ${isPriorityRequested ? "border-[#ffaa00]/50 bg-[#ffaa00]/5 text-[#ffaa00]" : "border-accent/40 bg-accent/5 text-accent"}`}>{isPriorityRequested ? "CHECKOUT STARTED" : "SUBMISSION READY"}</div>
+            <div className="warp-status-cluster">
+              <div className="flex items-start justify-between gap-4">
+                <div><p className="text-xs uppercase tracking-[0.4em] text-accent">BARCODE Network Submission</p><h2 className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">{warpLabel(state)}</h2><p className="mt-1 text-xs text-muted">{warpDescription(state, data)}</p></div>
+                <div className={`hidden border px-3 py-2 text-xs uppercase tracking-widest sm:block ${isPriorityRequested ? "border-[#ffaa00]/50 bg-[#ffaa00]/5 text-[#ffaa00]" : "border-accent/40 bg-accent/5 text-accent"}`}>{isPriorityRequested ? "CHECKOUT STARTED" : isConfirmed ? "TRANSMISSION RECEIVED" : "SUBMISSION READY"}</div>
+              </div>
+              <div className="mt-4 grid gap-1" style={{ gridTemplateColumns: `repeat(${submissionProgressSteps.length}, minmax(0, 1fr))` }}>
+                {submissionProgressSteps.map((step, index) => <span key={step} className={`h-1.5 ${index <= activeProgressIndex ? isPriorityRequested ? "bg-[#ffaa00] shadow-[0_0_14px_rgba(255,170,0,0.75)]" : "bg-accent shadow-[0_0_14px_rgba(255,0,0,0.75)]" : "bg-border"}`} />)}
+              </div>
+              {isConfirmed && <div className="mt-1 h-1.5 w-full bg-accent shadow-[0_0_18px_rgba(255,0,0,0.72)]" aria-label="Transmission received" />}
             </div>
-            <div className="grid grid-cols-7 gap-1">{steps.map((step, index) => <span key={step} className={`h-1.5 ${index <= activeIndex ? isPriorityRequested ? "bg-[#ffaa00] shadow-[0_0_14px_rgba(255,170,0,0.75)]" : "bg-accent shadow-[0_0_14px_rgba(255,0,0,0.75)]" : "bg-border"}`} />)}</div>
             <div className="grid gap-4 lg:grid-cols-[0.82fr_1.46fr_0.82fr]">
               <div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80">{fragments.slice(0, 4).map(([key, value]) => <p key={key} className={isDisassembling ? "fragment-pulse" : ""}><span className="text-muted">{key}:</span> {value}</p>)}<div className="mt-4 grid grid-cols-10 gap-1">{"10110011100101101100".split("").map((bit, index) => <span key={`${bit}-${index}`} className="binary-bit text-[9px] text-accent/70" style={{ animationDelay: `${index * 70}ms` }}>{bit}</span>)}</div></div>
               <div className="relative min-h-[22rem] overflow-hidden border border-accent/50 bg-black/45 p-4">

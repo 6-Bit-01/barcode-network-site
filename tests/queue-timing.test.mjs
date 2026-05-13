@@ -45,6 +45,28 @@ test("known three-minute track uses known runtime plus host buffer", () => {
   assert.equal(timing.getEstimatedTrackSlotSeconds(known), 300);
 });
 
+test("host talk buffer can be explicitly set to zero", () => {
+  const known = track("zero-buffer", { detectedDurationSeconds: 180, durationIsEstimate: false });
+  assert.equal(timing.getEstimatedTrackSlotSeconds(known, { hostTalkBufferSeconds: 0 }), 180);
+});
+
+test("runtime estimates respect an explicit zero host talk buffer", () => {
+  const tracks = [track("zero-buffer-one", { detectedDurationSeconds: 180 }), track("zero-buffer-two", { detectedDurationSeconds: 180 })];
+  const estimate = timing.estimateRuntimeForTracks(tracks, { hostTalkBufferSeconds: 0 });
+  assert.equal(estimate.trackSeconds, 360);
+  assert.equal(estimate.slotSeconds, 360);
+  assert.equal(estimate.hostBufferSeconds, 0);
+});
+
+test("observed average track runtime is not inflated by host buffer", () => {
+  const completed = [
+    track("played-one", { status: "played", completedAt: "2026-01-01T00:00:00.000Z", detectedDurationSeconds: 180 }),
+    track("played-two", { status: "played", completedAt: "2026-01-01T00:03:00.000Z", detectedDurationSeconds: 240 }),
+  ];
+  const snapshot = timing.buildQueueTimingSnapshot({ completed }, { sponsorBreakAlreadyRun: true });
+  assert.equal(snapshot.observedAverageTrackRuntimeSeconds, 210);
+});
+
 test("sponsor break is due after half of forty non-removed submissions have completed", () => {
   const completed = Array.from({ length: 20 }, (_, index) => track(`played-${index}`, { status: "played", completedAt: "2026-01-01T00:00:00.000Z" }));
   const queue = Array.from({ length: 20 }, (_, index) => track(`queued-${index}`));
@@ -70,6 +92,17 @@ test("three owed wheel spins add at least six minutes ceremony overhead", () => 
   assert.equal(estimate.wheelSpinsOwedIncluded, 3);
   assert.equal(estimate.wheelCeremonySeconds, 360);
   assert.ok(estimate.wheelUncertaintyNotes.length > 0);
+});
+
+test("sponsor break and wheel ceremony seconds can be explicitly set to zero", () => {
+  const completed = Array.from({ length: 20 }, (_, index) => track(`played-zero-${index}`, { status: "played", completedAt: "2026-01-01T00:00:00.000Z" }));
+  const queue = Array.from({ length: 20 }, (_, index) => track(`queued-zero-${index}`));
+  const sponsor = timing.estimateSponsorBreakPlacement({ completed, queue }, { sponsorBreakAlreadyRun: false, sponsorBreakSeconds: 0 });
+  const wheel = timing.estimateWheelCeremonySeconds(3, { wheelCeremonySeconds: 0 });
+  assert.equal(sponsor.sponsorBreakIncluded, true);
+  assert.equal(sponsor.sponsorBreakSeconds, 0);
+  assert.equal(wheel.wheelSpinsOwedIncluded, 3);
+  assert.equal(wheel.wheelCeremonySeconds, 0);
 });
 
 test("four-hour target reports pressure and five hours is only the warning ceiling", () => {

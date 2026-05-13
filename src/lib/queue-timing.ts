@@ -137,6 +137,12 @@ function safePositiveSeconds(value: unknown): number | null {
   return Math.round(numeric);
 }
 
+function safeNonNegativeSeconds(value: unknown): number | null {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) return null;
+  return Math.round(numeric);
+}
+
 function safeNonNegativeInteger(value: unknown): number {
   const numeric = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return 0;
@@ -146,9 +152,9 @@ function safeNonNegativeInteger(value: unknown): number {
 function normalizeOptions(options?: QueueTimingOptions): NormalizedQueueTimingOptions {
   return {
     unknownTrackSeconds: safePositiveSeconds(options?.unknownTrackSeconds) ?? DEFAULT_UNKNOWN_TRACK_SECONDS,
-    hostTalkBufferSeconds: safePositiveSeconds(options?.hostTalkBufferSeconds) ?? DEFAULT_HOST_TALK_BUFFER_SECONDS,
-    sponsorBreakSeconds: safePositiveSeconds(options?.sponsorBreakSeconds) ?? DEFAULT_SPONSOR_BREAK_SECONDS,
-    wheelCeremonySeconds: safePositiveSeconds(options?.wheelCeremonySeconds) ?? DEFAULT_WHEEL_CEREMONY_SECONDS,
+    hostTalkBufferSeconds: safeNonNegativeSeconds(options?.hostTalkBufferSeconds) ?? DEFAULT_HOST_TALK_BUFFER_SECONDS,
+    sponsorBreakSeconds: safeNonNegativeSeconds(options?.sponsorBreakSeconds) ?? DEFAULT_SPONSOR_BREAK_SECONDS,
+    wheelCeremonySeconds: safeNonNegativeSeconds(options?.wheelCeremonySeconds) ?? DEFAULT_WHEEL_CEREMONY_SECONDS,
     targetShowSeconds: safePositiveSeconds(options?.targetShowSeconds) ?? TARGET_SHOW_SECONDS,
     warningShowSeconds: safePositiveSeconds(options?.warningShowSeconds) ?? WARNING_SHOW_SECONDS,
     sponsorBreakAlreadyRun: typeof options?.sponsorBreakAlreadyRun === "boolean" ? options.sponsorBreakAlreadyRun : null,

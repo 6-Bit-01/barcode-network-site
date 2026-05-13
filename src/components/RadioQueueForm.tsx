@@ -621,10 +621,12 @@ function WaveformSweep({ offset = 0 }: { offset?: number }) {
 
 function WarpSequence({ state, data }: { state: TransmissionState; data: WarpData | null }) {
   const steps: TransmissionState[] = ["priority_requested", "signal", "received", "encoded", "converting", "temporal", "aligning", "confirmed"];
-  const activeIndex = Math.max(0, steps.indexOf(state));
-  const topProgressSteps = steps.slice(0, 6);
-  const isConfirmed = state === "confirmed";
-  const topProgressActiveIndex = isConfirmed ? topProgressSteps.length - 1 : Math.min(activeIndex, topProgressSteps.length - 1);
+  const submissionProgressSteps: TransmissionState[] = steps.filter((step) => step !== "priority_requested");
+  const finalProgressStep = submissionProgressSteps[submissionProgressSteps.length - 1];
+  const topProgressSteps = submissionProgressSteps.slice(0, -1);
+  const activeProgressIndex = submissionProgressSteps.indexOf(state);
+  const isConfirmed = state === finalProgressStep;
+  const topProgressActiveIndex = isConfirmed ? topProgressSteps.length - 1 : Math.min(activeProgressIndex, topProgressSteps.length - 1);
   const isPriorityRequested = state === "priority_requested";
   const isSignal = state === "signal";
   const isArtifact = state === "received";
@@ -673,7 +675,7 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
                 <div><p className="text-xs uppercase tracking-[0.4em] text-accent">BARCODE Network Submission</p><h2 className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">{warpLabel(state)}</h2><p className="mt-1 text-xs text-muted">{warpDescription(state, data)}</p></div>
                 <div className={`hidden border px-3 py-2 text-xs uppercase tracking-widest sm:block ${isPriorityRequested ? "border-[#ffaa00]/50 bg-[#ffaa00]/5 text-[#ffaa00]" : "border-accent/40 bg-accent/5 text-accent"}`}>{isPriorityRequested ? "CHECKOUT STARTED" : isConfirmed ? "TRANSMISSION RECEIVED" : "SUBMISSION READY"}</div>
               </div>
-              <div className="mt-4 grid grid-cols-6 gap-1">{topProgressSteps.map((step, index) => <span key={step} className={`h-1.5 ${index <= topProgressActiveIndex ? isPriorityRequested ? "bg-[#ffaa00] shadow-[0_0_14px_rgba(255,170,0,0.75)]" : "bg-accent shadow-[0_0_14px_rgba(255,0,0,0.75)]" : "bg-border"}`} />)}</div>
+              <div className="mt-4 grid gap-1" style={{ gridTemplateColumns: `repeat(${topProgressSteps.length}, minmax(0, 1fr))` }}>{topProgressSteps.map((step, index) => <span key={step} className={`h-1.5 ${index <= topProgressActiveIndex ? isPriorityRequested ? "bg-[#ffaa00] shadow-[0_0_14px_rgba(255,170,0,0.75)]" : "bg-accent shadow-[0_0_14px_rgba(255,0,0,0.75)]" : "bg-border"}`} />)}</div>
               {isConfirmed && <div className="confirmation-rail absolute inset-x-0 bottom-0 h-1.5 bg-accent shadow-[0_0_18px_rgba(255,0,0,0.72)]" aria-label="Transmission received" />}
             </div>
             <div className="grid gap-4 lg:grid-cols-[0.82fr_1.46fr_0.82fr]">

@@ -15,9 +15,9 @@ type IntakeStep = "track" | "routing";
 type RouteChoice = "free" | "priority";
 
 const UPLOAD_FALLBACK_MESSAGE = "Upload could not be completed. Please try again or submit a Spotify, SoundCloud, YouTube, or direct track link.";
-const PRIORITY_SIGNAL_LABEL = "Priority Signal Upgrade";
-const PRIORITY_CHECKOUT_UNAVAILABLE_MESSAGE = "Priority checkout could not be started. Your track entered Free Transmissions.";
-const PRIORITY_DEPTH_UNAVAILABLE_MESSAGE = "Priority Signal opens once the broadcast line has enough active transmissions to overtake.";
+const PRIORITY_SIGNAL_LABEL = "Priority Signal";
+const PRIORITY_CHECKOUT_UNAVAILABLE_MESSAGE = "Priority checkout could not be started. Your song stays in the free queue if still active.";
+const PRIORITY_DEPTH_UNAVAILABLE_MESSAGE = "Priority Signal opens when there are enough songs waiting.";
 const MIN_PRIORITY_ACTIVE_DEPTH = 2;
 function formatPrice(cents: number, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }
 
@@ -238,7 +238,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
     const queued = snapshot.queue.find((entry) => entry.id === trackId) ?? null;
     if (queued?.lane === "priority") return { track: queued, targetId: "priority-lane", laneLabel: "PRIORITY_SIGNAL" };
     if (queued?.lane === "wheel") return { track: queued, targetId: "wheel-lane", laneLabel: "WHEEL_CHOSEN" };
-    if (queued?.lane === "regular") return { track: queued, targetId: "free-transmissions-lane", laneLabel: "FREE_TRANSMISSIONS" };
+    if (queued?.lane === "regular") return { track: queued, targetId: "free-transmissions-lane", laneLabel: "FREE_QUEUE" };
     return { track: queued, targetId: "active-queue-panel", laneLabel: "ACTIVE_QUEUE" };
   }
 
@@ -290,8 +290,8 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
     if (readState === "checking") return "Checking track…";
     if (readState === "reading") return "Reading source…";
     if (readState === "detected" && detectedDuration) return `Duration detected: ${formatRuntime(detectedDuration)}`;
-    if (readState === "uploading") return uploadProgress === null ? "Uploading audio packet…" : `Uploading audio packet… ${uploadProgress}%`;
-    if (readState === "pending") return "Duration pending — queue will buffer this track internally.";
+    if (readState === "uploading") return uploadProgress === null ? "Uploading audio…" : `Uploading audio… ${uploadProgress}%`;
+    if (readState === "pending") return "Duration pending — you can still submit.";
     return "Paste a supported link or select an MP3/WAV to begin source checks.";
   }, [detectedDuration, readState, uploadProgress]);
 
@@ -370,13 +370,13 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (payload.code === "duplicate_transmission") {
-          throw new Error(payload.error || "Duplicate transmission detected. This track is already in the queue for this session.");
+          throw new Error(payload.error || "Duplicate song detected. This track is already in the queue for this session.");
         }
         if (typeof payload.cooldownRemainingSeconds === "number") {
           setCooldownRemaining(payload.cooldownRemainingSeconds);
           if (submitterToken) window.localStorage.setItem(`barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}`, String(Date.now() + payload.cooldownRemainingSeconds * 1000));
         }
-        throw new Error(payload.cooldownRemainingSeconds ? `Next transmission available in ${formatCooldown(payload.cooldownRemainingSeconds)}` : payload.error || "Submission failed");
+        throw new Error(payload.cooldownRemainingSeconds ? `Next submission available in ${formatCooldown(payload.cooldownRemainingSeconds)}` : payload.error || "Submission failed");
       }
       if (payload.track?.id) {
         const submitted = publicTrackFromApi(payload.track);
@@ -401,7 +401,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
             sessionDate: session?.showDate ?? "ACTIVE SESSION",
             queueStatus: status ? `${status.activeCount + 1}/${status.capacity}` : "SYNCING",
             submissionSlot: "CHECKOUT_PENDING",
-            lane: "FREE_TRANSMISSIONS / STRIPE_REQUIRED",
+            lane: "FREE QUEUE / PAYMENT REQUIRED",
             artworkUrl: submitted.sourceArtworkUrl ?? null,
           });
           const checkoutStarted = await startPriorityCheckout(submitted.id);
@@ -427,8 +427,8 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
           sessionTitle: session?.title ?? "BARCODE Radio",
           sessionDate: session?.showDate ?? "ACTIVE SESSION",
           queueStatus: status ? `${status.activeCount + 1}/${status.capacity}` : "SYNCING",
-          submissionSlot: status ? `#${Math.min(status.activeCount + 1, status.capacity)}` : "FREE_TRANSMISSIONS",
-          lane: submitted.lane === "priority" ? "PRIORITY_SIGNAL" : submitted.lane === "wheel" ? "WHEEL_CHOSEN" : "FREE_TRANSMISSIONS",
+          submissionSlot: status ? `#${Math.min(status.activeCount + 1, status.capacity)}` : "FREE_QUEUE",
+          lane: submitted.lane === "priority" ? "PRIORITY_SIGNAL" : submitted.lane === "wheel" ? "WHEEL_CHOSEN" : "FREE_QUEUE",
           artworkUrl: submitted.sourceArtworkUrl ?? null,
         };
         setWarpData(baseWarpData);
@@ -515,10 +515,10 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
       <div className="border border-border bg-surface p-3">
         <div className="mb-3 flex items-center justify-between gap-3 border-b border-border pb-2">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.35em] text-muted">{step === "track" ? "Step 1 / Track Signal" : "Step 2 / Final Routing"}</p>
-            <h3 className="mt-1 text-lg font-bold text-foreground">{step === "track" ? "Route the track source" : "Confirm routing details"}</h3>
+            <p className="text-[10px] uppercase tracking-[0.35em] text-muted">{step === "track" ? "Step 1 / Track" : "Step 2 / Submit"}</p>
+            <h3 className="mt-1 text-lg font-bold text-foreground">{step === "track" ? "Add your song" : "Pick free or Priority"}</h3>
           </div>
-          <p className="text-xs text-muted">{step === "track" ? "Signal data" : "Private admin info"}</p>
+          <p className="text-xs text-muted">{step === "track" ? "Song info" : "Private if needed"}</p>
         </div>
 
         {error && <div className="mb-2 border border-danger/40 bg-danger/5 p-2 text-xs text-danger">{error}</div>}
@@ -526,19 +526,19 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
         {step === "track" ? (
           <div className="space-y-3">
             <div className="grid gap-2.5 sm:grid-cols-2">
-              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Artist</span><input value={artist} onChange={(e) => setArtist(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
-              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Song title</span><input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Artist name</span><span className="block text-[11px] text-muted">What should 6 Bit call you?</span><input value={artist} onChange={(e) => setArtist(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Song title</span><span className="block text-[11px] text-muted">Track title.</span><input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
               <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">TikTok handle</span><input value={tiktokHandle} onChange={(e) => setTikTokHandle(e.target.value)} placeholder="@six.bit" className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
               <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Featured/collaborator artist(s)</span><input value={collaboratorNames} onChange={(e) => setCollaboratorNames(e.target.value)} placeholder="Optional" className="w-full bg-background border border-border px-3 py-2 text-sm" /></label>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
-              <button type="button" onClick={() => setMode("link")} className={`border p-2.5 text-left ${mode === "link" ? "border-accent bg-accent/10" : "border-border"}`}><span className="text-xs uppercase tracking-widest text-muted">Submit a link</span><p className="mt-1 text-xs text-muted">YouTube, SoundCloud, Spotify, or URL.</p></button>
-              <button type="button" onClick={() => setMode("upload")} className={`border p-2.5 text-left ${mode === "upload" ? "border-accent bg-accent/10" : "border-border"}`}><span className="text-xs uppercase tracking-widest text-muted">Upload MP3/WAV</span><p className="mt-1 text-xs text-muted">Audio files up to 100MB.</p></button>
+              <button type="button" onClick={() => setMode("link")} className={`border p-2.5 text-left ${mode === "link" ? "border-accent bg-accent/10" : "border-border"}`}><span className="text-xs uppercase tracking-widest text-muted">Track link</span><p className="mt-1 text-xs text-muted">Paste a link.</p></button>
+              <button type="button" onClick={() => setMode("upload")} className={`border p-2.5 text-left ${mode === "upload" ? "border-accent bg-accent/10" : "border-border"}`}><span className="text-xs uppercase tracking-widest text-muted">Upload MP3/WAV</span><p className="mt-1 text-xs text-muted">Or upload your file.</p></button>
             </div>
             {mode === "link" ? (
-              <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Track link</span><input type="url" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://soundcloud.com/..." className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+              <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Track link / upload</span><span className="block text-[11px] text-muted">Paste a link or upload your file.</span><input type="url" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://soundcloud.com/..." className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
             ) : (
-              <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">MP3/WAV file</span><input key={fileInputKey} type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,.mp3,.wav" onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+              <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Track link / upload</span><span className="block text-[11px] text-muted">Paste a link or upload your file.</span><input key={fileInputKey} type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,.mp3,.wav" onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
             )}
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               <button type="button" onClick={onCancel} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Collapse Intake</button>
@@ -555,22 +555,22 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
               <p><span className="text-muted">Source type:</span> {mode === "upload" ? "Upload" : "Link"}</p>
             </div>
             <div className="grid gap-2.5 sm:grid-cols-2">
-              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Contact email</span><input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="Optional, private" className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-[11px] text-muted">Private queue safety only.</span></label>
-              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Optional transmission note</span><textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} rows={2} placeholder="Optional host note. No private contact info." className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-[11px] text-muted">Queue control only; never public.</span></label>
+              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Contact email</span><input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="Optional, private" className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-[11px] text-muted">For queue/payment issues only.</span></label>
+              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Optional song note</span><textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} rows={2} placeholder="Optional host note. No private contact info." className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-[11px] text-muted">For the host only; never public.</span></label>
             </div>
             <div className="grid gap-3 text-xs sm:grid-cols-2">
-              <button type="button" onClick={() => setRouteChoice("free")} className={`border p-4 text-left transition-all ${selectedRoute === "free" ? "border-accent bg-accent/10 text-foreground" : "border-border bg-background/40 text-muted"}`}><span className="text-sm font-bold text-foreground">Free Transmission</span><span className="mt-2 block">Enters Free Transmissions.</span><span className="block">No payment required.</span><span className="mt-3 block text-muted">If you submit now, you’ll enter around position #{estimatedPosition} in Free Transmissions. Estimated wait may shift during the show.</span></button>
-              {priorityCheckoutAvailable ? <button type="button" onClick={() => setRouteChoice("priority")} className={`border p-4 text-left transition-all ${selectedRoute === "priority" ? "border-[#ffaa00] bg-[#ffaa00]/10 text-foreground" : "border-[#ffaa00]/40 bg-background/40 text-muted"}`}><span className="text-sm font-bold text-[#ffaa00]">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">Moves this track into the Priority Signal lane after payment confirmation.</span><span className="block">Priority Signals clear before Wheel Chosen and Free Transmissions.</span><span className="block">Funds BARCODE Network broadcast systems.</span><span className="mt-3 block text-[#ffaa00]">{formatPrice(priorityPriceCents, priorityCurrency)}</span><span className="mt-2 block text-muted">Priority Signal placement activates after payment confirmation. Queue position may shift during checkout.</span></button> : priorityPaymentsAvailable && <div className="border border-[#ffaa00]/30 bg-background/40 p-4 text-left text-muted"><span className="text-sm font-bold text-[#ffaa00]/70">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">{PRIORITY_DEPTH_UNAVAILABLE_MESSAGE}</span><span className="mt-3 block text-[#ffaa00]/70">{formatPrice(priorityPriceCents, priorityCurrency)}</span></div>}
+              <button type="button" onClick={() => setRouteChoice("free")} className={`border p-4 text-left transition-all ${selectedRoute === "free" ? "border-accent bg-accent/10 text-foreground" : "border-border bg-background/40 text-muted"}`}><span className="text-sm font-bold text-foreground">Free queue</span><span className="mt-2 block">Free queue submission.</span><span className="block">No payment required.</span><span className="mt-3 block text-muted">If you submit now, you’ll enter around position #{estimatedPosition} in the free queue. Estimated wait may shift during the show.</span></button>
+              {priorityCheckoutAvailable ? <button type="button" onClick={() => setRouteChoice("priority")} className={`border p-4 text-left transition-all ${selectedRoute === "priority" ? "border-[#ffaa00] bg-[#ffaa00]/10 text-foreground" : "border-[#ffaa00]/40 bg-background/40 text-muted"}`}><span className="text-sm font-bold text-[#ffaa00]">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">Paid skip. Moves your song closer to the front after payment clears.</span><span className="mt-3 block text-[#ffaa00]">{formatPrice(priorityPriceCents, priorityCurrency)}</span><span className="mt-2 block text-muted">Priority Signal activates after payment clears. Queue position may shift during checkout.</span></button> : priorityPaymentsAvailable && <div className="border border-[#ffaa00]/30 bg-background/40 p-4 text-left text-muted"><span className="text-sm font-bold text-[#ffaa00]/70">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">{PRIORITY_DEPTH_UNAVAILABLE_MESSAGE}</span><span className="mt-3 block text-[#ffaa00]/70">{formatPrice(priorityPriceCents, priorityCurrency)}</span></div>}
             </div>
             <div className="grid gap-2 text-xs sm:grid-cols-2">
-              {submitterStatus && <div className="border border-accent/40 bg-accent/5 p-2 text-muted"><p className="font-bold text-accent">Your transmissions: {submitterStatus.used} / {submitterStatus.limit}</p><p>Remaining: {submitterStatus.remaining}</p>{submitterStatus.cooldownRemainingSeconds > 0 && <p className="text-accent">Cooldown: {formatCooldown(submitterStatus.cooldownRemainingSeconds)}</p>}</div>}
-              {effectiveCooldown > 0 && <div className="border border-accent/40 bg-accent/5 p-2 text-accent">Next transmission available in {formatCooldown(effectiveCooldown)}</div>}
+              {submitterStatus && <div className="border border-accent/40 bg-accent/5 p-2 text-muted"><p className="font-bold text-accent">Your submissions: {submitterStatus.used} / {submitterStatus.limit}</p><p>Remaining: {submitterStatus.remaining}</p>{submitterStatus.cooldownRemainingSeconds > 0 && <p className="text-accent">Cooldown: {formatCooldown(submitterStatus.cooldownRemainingSeconds)}</p>}</div>}
+              {effectiveCooldown > 0 && <div className="border border-accent/40 bg-accent/5 p-2 text-accent">Next submission available in {formatCooldown(effectiveCooldown)}</div>}
               <div className="border border-border bg-background/40 p-2 text-muted">{checkCopy}</div>
-              {!priorityPaymentsAvailable && <div className="border border-border bg-background/40 p-2 text-muted">Priority Signal Upgrade is unavailable for this session. Free Transmission remains active.</div>}
+              {!priorityPaymentsAvailable && <div className="border border-border bg-background/40 p-2 text-muted">Priority Signal is unavailable for this session. Free queue submission remains active.</div>}
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               <button type="button" onClick={() => setStep("track")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Back</button>
-              <button type="submit" onClick={() => { finalSubmitIntent.current = true; }} disabled={submitting || readState === "uploading" || routingLockRemaining > 0 || effectiveCooldown > 0 || status?.isOpen === false || status?.isFull === true} className="border border-accent px-5 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{readState === "uploading" ? "Uploading audio packet…" : submitting ? "Submitting…" : routingLockRemaining > 0 ? `Routing lock: ${routingLockRemaining}` : effectiveCooldown > 0 ? `Next transmission available in ${formatCooldown(effectiveCooldown)}` : status?.isFull ? "Queue Full" : selectedRoute === "priority" ? "Submit & Continue to Payment" : "Enter Free Transmissions"}</button>
+              <button type="submit" onClick={() => { finalSubmitIntent.current = true; }} disabled={submitting || readState === "uploading" || routingLockRemaining > 0 || effectiveCooldown > 0 || status?.isOpen === false || status?.isFull === true} className="border border-accent px-5 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{readState === "uploading" ? "Uploading audio…" : submitting ? "Submitting…" : routingLockRemaining > 0 ? `Submit lock: ${routingLockRemaining}` : effectiveCooldown > 0 ? `Next submission available in ${formatCooldown(effectiveCooldown)}` : status?.isFull ? "Queue Full" : selectedRoute === "priority" ? "Submit & Continue to Payment" : "Submit Free"}</button>
             </div>
           </div>
         )}
@@ -593,20 +593,20 @@ function warpLabel(state: TransmissionState): string {
   if (state === "converting") return "DATA PACKET FORMED";
   if (state === "temporal") return "TEMPORAL ROUTE OPENED";
   if (state === "aligning") return "PACKET TRANSFER IN PROGRESS";
-  if (state === "confirmed") return "TRANSMISSION ACCEPTED";
+  if (state === "confirmed") return "SUBMISSION ACCEPTED";
   return "SIGNAL LOCKED";
 }
 
 function warpDescription(state: TransmissionState, data: WarpData | null): string {
-  if (state === "priority_requested") return "Opening secure checkout. Payment must confirm before this transmission enters Priority.";
-  if (state === "signal") return "Terminal lock stable. Intake origin is charging the carrier signal.";
-  if (state === "received") return "Source artwork is captured and promoted before conversion.";
-  if (state === "encoded") return "Waveform, metadata, and code fragments are tearing into routed components.";
-  if (state === "converting") return "Artwork, title, and artist data are compressing into a visible packet.";
-  if (state === "temporal") return "Destination route is open. Network background power is destabilizing.";
-  if (state === "aligning") return "Packet transfer is being pulled toward the resolved queue destination.";
-  if (state === "confirmed") return `ROUTED TO ${data?.lane ?? "FREE_TRANSMISSIONS"}. Queue insertion confirmed by the public backend snapshot.`;
-  return "BARCODE Network transmission in progress.";
+  if (state === "priority_requested") return "Checkout started. Skip is not active yet.";
+  if (state === "signal") return "Song details received. Preparing your submission.";
+  if (state === "received") return "Source artwork is ready.";
+  if (state === "encoded") return "Audio details are being prepared.";
+  if (state === "converting") return "Artwork, title, and artist are loading into your queue card.";
+  if (state === "temporal") return "Queue card is opening.";
+  if (state === "aligning") return "Moving your song into the queue.";
+  if (state === "confirmed") return `ROUTED TO ${data?.lane ?? "FREE_QUEUE"}. Your song is in the queue.`;
+  return "BARCODE submission in progress.";
 }
 
 function PacketArtwork({ data }: { data: WarpData | null }) {
@@ -640,8 +640,8 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
     ["TITLE", data?.title ?? "UNKNOWN TRACK"],
     ["TIKTOK", data?.tiktokHandle || "@pending"],
     ["SESSION", data?.sessionTitle ?? "BARCODE Radio"],
-    ["LANE", data?.lane ?? "FREE_TRANSMISSIONS"],
-    ["SLOT", data?.submissionSlot ?? "FREE_TRANSMISSIONS"],
+    ["LANE", data?.lane ?? "FREE_QUEUE"],
+    ["SLOT", data?.submissionSlot ?? "FREE_QUEUE"],
     ["PRESSURE", data?.queueStatus ?? "SYNCING"],
     ["SOURCE", data?.sourceType ?? "SOURCE"],
   ];
@@ -667,8 +667,8 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,0,0,0.14),transparent_34%)]" />
           <div className="relative z-10 space-y-4">
             <div className="flex items-start justify-between gap-4">
-              <div><p className="text-xs uppercase tracking-[0.4em] text-accent">BARCODE Network Transmission</p><h2 className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">{warpLabel(state)}</h2><p className="mt-1 text-xs text-muted">{warpDescription(state, data)}</p></div>
-              <div className={`hidden border px-3 py-2 text-xs uppercase tracking-widest sm:block ${isPriorityRequested ? "border-[#ffaa00]/50 bg-[#ffaa00]/5 text-[#ffaa00]" : "border-accent/40 bg-accent/5 text-accent"}`}>{isPriorityRequested ? "CHECKOUT RELAY" : "TRANSMISSION LOCKED"}</div>
+              <div><p className="text-xs uppercase tracking-[0.4em] text-accent">BARCODE Network Submission</p><h2 className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">{warpLabel(state)}</h2><p className="mt-1 text-xs text-muted">{warpDescription(state, data)}</p></div>
+              <div className={`hidden border px-3 py-2 text-xs uppercase tracking-widest sm:block ${isPriorityRequested ? "border-[#ffaa00]/50 bg-[#ffaa00]/5 text-[#ffaa00]" : "border-accent/40 bg-accent/5 text-accent"}`}>{isPriorityRequested ? "CHECKOUT STARTED" : "SUBMISSION READY"}</div>
             </div>
             <div className="grid grid-cols-7 gap-1">{steps.map((step, index) => <span key={step} className={`h-1.5 ${index <= activeIndex ? isPriorityRequested ? "bg-[#ffaa00] shadow-[0_0_14px_rgba(255,170,0,0.75)]" : "bg-accent shadow-[0_0_14px_rgba(255,0,0,0.75)]" : "bg-border"}`} />)}</div>
             <div className="grid gap-4 lg:grid-cols-[0.82fr_1.46fr_0.82fr]">
@@ -681,10 +681,10 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
                   <div className="relative aspect-square overflow-hidden"><PacketArtwork data={data} /><div className="glitch-slice slice-one" /><div className="glitch-slice slice-two" /><div className="pixel-grid" /><div className="absolute inset-0 bg-[linear-gradient(transparent_50%,rgba(255,0,0,0.18)_50%)] bg-[length:100%_6px]" /></div>
                   <div className="p-3"><p className="truncate text-sm font-bold text-foreground">{data?.artist ?? "Submitted artist"}</p><p className="truncate text-xs text-muted">{data?.title ?? "Submitted track"}</p></div>
                 </div>
-                <div className={`${packetClass} absolute left-[12%] top-1/2 z-30 w-28 -translate-y-1/2 border border-accent bg-background/92 p-2 shadow-[0_0_34px_rgba(255,0,0,0.62)]`}><div className="relative h-12 overflow-hidden border border-accent/30"><PacketArtwork data={data} /><div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(255,0,0,0.18),transparent)]" /></div><p className="mt-1 font-mono text-[9px] uppercase tracking-widest text-accent">signal packet</p></div>
+                <div className={`${packetClass} absolute left-[12%] top-1/2 z-30 w-28 -translate-y-1/2 border border-accent bg-background/92 p-2 shadow-[0_0_34px_rgba(255,0,0,0.62)]`}><div className="relative h-12 overflow-hidden border border-accent/30"><PacketArtwork data={data} /><div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(255,0,0,0.18),transparent)]" /></div><p className="mt-1 font-mono text-[9px] uppercase tracking-widest text-accent">song packet</p></div>
                 <div className="absolute bottom-4 left-4 right-4 grid grid-cols-16 items-end gap-1">{[18, 44, 28, 70, 34, 82, 30, 62, 46, 76, 32, 56, 40, 68, 24, 50].map((height, index) => <span key={index} className="wave-fragment bg-accent/70 shadow-[0_0_10px_rgba(255,0,0,0.45)]" style={{ height: `${height / 2}px`, animationDelay: `${index * 45}ms` }} />)}</div>
               </div>
-              <div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80">{fragments.slice(4).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}<div className={`${landingClass} mt-4 border border-accent/50 bg-background/80 p-3`}><p className="text-xs uppercase tracking-widest text-accent">Destination card</p><div className="mt-2 grid grid-cols-[3rem_1fr] gap-2"><div className="relative h-12 overflow-hidden border border-accent/30"><PacketArtwork data={data} /></div><div><p className="truncate text-sm font-bold text-foreground">{data?.artist ?? "Submitted artist"}</p><p className="truncate text-xs text-muted">{data?.title ?? "Submitted track"}</p></div></div><p className="mt-2 text-[10px] text-accent">{isConfirmed ? `ROUTED TO ${data?.lane ?? "FREE_TRANSMISSIONS"}` : isPriorityRequested ? "STRIPE CONFIRMATION REQUIRED" : "AWAITING LOCK"}</p></div></div>
+              <div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80">{fragments.slice(4).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}<div className={`${landingClass} mt-4 border border-accent/50 bg-background/80 p-3`}><p className="text-xs uppercase tracking-widest text-accent">Destination card</p><div className="mt-2 grid grid-cols-[3rem_1fr] gap-2"><div className="relative h-12 overflow-hidden border border-accent/30"><PacketArtwork data={data} /></div><div><p className="truncate text-sm font-bold text-foreground">{data?.artist ?? "Submitted artist"}</p><p className="truncate text-xs text-muted">{data?.title ?? "Submitted track"}</p></div></div><p className="mt-2 text-[10px] text-accent">{isConfirmed ? `ROUTED TO ${data?.lane ?? "FREE_QUEUE"}` : isPriorityRequested ? "PAYMENT REQUIRED" : "AWAITING LOCK"}</p></div></div>
             </div>
           </div>
         </div>

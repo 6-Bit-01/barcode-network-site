@@ -508,7 +508,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
       <div className="grid gap-2 border border-border bg-surface p-3 text-xs sm:grid-cols-4">
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Session</p><p className="truncate text-foreground">{session?.title ?? "BARCODE Radio"}</p></div>
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Queue</p><p className={status?.isOpen ? "text-accent" : "text-danger"}>{status?.isOpen ? "Open" : "Closed"}</p></div>
-        <div><p className="text-[10px] uppercase tracking-widest text-muted">Active Transmissions</p><p>{status ? `${status.activeCount}/${status.capacity}` : "—"}</p></div>
+        <div><p className="text-[10px] uppercase tracking-widest text-muted">Remaining</p><p>{status ? `${status.activeCount}/${status.capacity}` : "—"}</p></div>
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Pressure</p><p>{pressureLabel(status)}</p></div>
       </div>
 

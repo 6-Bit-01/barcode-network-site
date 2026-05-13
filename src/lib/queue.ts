@@ -40,7 +40,7 @@ const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 1000;
 const DEFAULT_PRIORITY_UPGRADE_CURRENCY = "usd";
 const PRE_SHOW_ROUTING_DELAY_MS = (20 * 60 + 15) * 1000;
 
-type QueueAdminAction = "pullNext" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "pausePriority" | "resumePriority" | "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
+type QueueAdminAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "pausePriority" | "resumePriority" | "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
 
 export interface PriorityUpgradeSettingsInput {
   enabled?: boolean;
@@ -322,6 +322,35 @@ function resolveNextInLine(session: QueueSession, excludeId?: string, force = fa
 
 function pullNextInLine(session: QueueSession, excludeId?: string, force = false): void {
   resolveNextInLine(session, excludeId, force);
+}
+
+
+function requestedLaneTop(session: QueueSession, lane: QueueNonPriorityLane, excludeId?: string): QueueEntry | null {
+  return sortActive(session.queue).find((entry) => {
+    if (entry.id === excludeId || entry.status !== "queued") return false;
+    const entryLane = entry.lane ?? "regular";
+    if (lane === "wheel") return entryLane === "wheel";
+    return entryLane === "regular";
+  }) ?? null;
+}
+
+function pullNextInLineFromLane(session: QueueSession, lane: QueueNonPriorityLane): boolean {
+  const current = session.nextInLineTrack ?? null;
+  if (session.loadedTrack && session.nextInLineTrack?.id === session.loadedTrack.id) return false;
+  if (isActivePriorityTrack(current)) return false;
+  if (laneTop(session, "priority", session.loadedTrackId ?? undefined)) return false;
+
+  const currentLane = current?.lane ?? "regular";
+  if (current && currentLane === lane) return false;
+
+  const candidate = requestedLaneTop(session, lane, session.loadedTrackId ?? undefined);
+  if (!candidate) return false;
+
+  if (current) moveNextInLineBackToQueue(session);
+  const next = session.queue.find((entry) => entry.id === candidate.id);
+  if (!next) return false;
+  stageNextInLineTrack(session, next);
+  return true;
 }
 
 function clearNextInLine(session: QueueSession): QueueEntry | null {
@@ -1958,6 +1987,14 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
     session.autoRoutingPaused = false;
     session.nextInLineHoldTrackId = null;
     pullNextInLine(session, undefined, true);
+    const nextStore = replaceSession(store, session);
+    await writeStore(nextStore);
+    return queueStateFromSession(session, nextStore);
+  }
+
+  if (action === "pullWheelChosen" || action === "pullFreeTransmission") {
+    const lane: QueueNonPriorityLane = action === "pullWheelChosen" ? "wheel" : "regular";
+    pullNextInLineFromLane(session, lane);
     const nextStore = replaceSession(store, session);
     await writeStore(nextStore);
     return queueStateFromSession(session, nextStore);

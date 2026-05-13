@@ -7,7 +7,7 @@ import { formatRuntime, getTrackRuntimeSeconds } from "@/lib/queue-types";
 import type { QueueEntry, QueueLane, QueueState } from "@/lib/queue-types";
 
 type Tab = "active" | "completed" | "removed";
-type AdminQueueAction = "pullNext" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "pausePriority" | "resumePriority";
+type AdminQueueAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "pausePriority" | "resumePriority";
 type SimulationSpeed = "slow" | "normal" | "fast";
 type SimulationAction = "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
 
@@ -143,7 +143,7 @@ export function AdminRadioQueueControl() {
     setState(next);
     return next;
   }
-  async function action(id: string, next: AdminQueueAction) { await post(next === "pullNext" || next === "startShow" || next === "addWheelSpinOwed" ? { action: next } : { id, action: next }); }
+  async function action(id: string, next: AdminQueueAction) { await post(next === "pullNext" || next === "pullWheelChosen" || next === "pullFreeTransmission" || next === "startShow" || next === "addWheelSpinOwed" ? { action: next } : { id, action: next }); }
   async function simulationAction(next: SimulationAction, label: string) {
     const updated = await post({ action: next });
     setSimulationMessage(updated ? label : "Simulation action failed. Confirm admin auth and active session.");
@@ -275,6 +275,11 @@ export function AdminRadioQueueControl() {
     return entry.lane === "priority" && !entry.priorityPausedAt && (entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual") && (entry.status === "queued" || entry.status === "next");
   }).length;
   const heldPriorityCount = (state?.queue ?? []).filter((entry) => isPaidPriorityTrack(entry) && Boolean(entry.priorityPausedAt)).length;
+  const nextInLineHasActivePriority = Boolean(nextInLine && nextInLine.lane === "priority" && !nextInLine.priorityPausedAt && (nextInLine.priorityUpgradeStatus === "paid" || nextInLine.priorityUpgradeStatus === "manual"));
+  const queuedActivePriorityExists = (state?.queue ?? []).some((entry) => entry.lane === "priority" && !entry.priorityPausedAt && (entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual") && entry.status === "queued");
+  const resolverOverrideBlocked = nextInLineHasActivePriority || queuedActivePriorityExists;
+  const canPullWheelChosen = !resolverOverrideBlocked && (state?.queue ?? []).some((entry) => entry.lane === "wheel" && entry.status === "queued");
+  const canPullFreeTransmission = !resolverOverrideBlocked && (state?.queue ?? []).some((entry) => (!entry.lane || entry.lane === "regular") && entry.status === "queued");
 
   return (
     <div className={`${playerPadding} space-y-6`}>
@@ -313,7 +318,7 @@ export function AdminRadioQueueControl() {
               <div className="border border-border bg-background/40 p-4"><p className="text-xs text-muted">Pressure</p><p>{state?.publicStatus?.pressure ?? "syncing"}</p></div>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              {canControlSession && <button onClick={() => action("", "pullNext")} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Pull Next Track</button>}{canControlSession && state?.session?.showStarted !== true && <button onClick={() => action("", "startShow")} className="border border-foreground/50 px-4 py-2 text-xs uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background">Start Broadcast</button>}{canControlSession && <button onClick={() => action("", "addWheelSpinOwed")} className="border border-cyan-300/60 px-4 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Add Owed Wheel Spin</button>}
+              {canControlSession && <button onClick={() => action("", "pullNext")} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Pull Next Track</button>}{canControlSession && <details className="group relative"><summary className="list-none cursor-pointer border border-border/80 px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-foreground/60 hover:text-foreground">Resolver Override ▾</summary><div className="absolute left-0 z-30 mt-2 w-64 space-y-2 border border-border bg-background p-3 shadow-xl"><p className="text-[10px] uppercase tracking-[0.2em] text-muted">Use for live manual correction. This does not count the current slot as played.</p><button type="button" onClick={() => action("", "pullWheelChosen")} disabled={!canPullWheelChosen} className="block w-full border border-cyan-300/60 px-3 py-2 text-left text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Wheel Chosen</button><button type="button" onClick={() => action("", "pullFreeTransmission")} disabled={!canPullFreeTransmission} className="block w-full border border-foreground/40 px-3 py-2 text-left text-xs uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Free Transmission</button>{resolverOverrideBlocked && <p className="text-[10px] uppercase tracking-[0.16em] text-[#ffaa00]">Blocked while active Priority owns the resolver.</p>}</div></details>}{canControlSession && state?.session?.showStarted !== true && <button onClick={() => action("", "startShow")} className="border border-foreground/50 px-4 py-2 text-xs uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background">Start Broadcast</button>}{canControlSession && <button onClick={() => action("", "addWheelSpinOwed")} className="border border-cyan-300/60 px-4 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Add Owed Wheel Spin</button>}
               {canControlSession && <button onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} border px-4 py-2 text-xs uppercase tracking-widest hover:text-background`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button>}
             </div>
           </div>

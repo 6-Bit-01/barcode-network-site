@@ -443,7 +443,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
       <ReceiverHudPortal snapshot={snapshot} submissionsOpen={isOpen} isBroadcastActive={isBroadcastActive} pulse={broadcastStartPulse} mounted={mounted} />
 
-      <PersonalSignalStatusBar snapshot={snapshot} />
+      <PersonalSignalStatusBar snapshot={snapshot} mounted={mounted} />
 
       <SessionPhasePanel snapshot={snapshot} submissionsOpen={isOpen} canSubmit={canSubmit} isBroadcastActive={isBroadcastActive} />
 
@@ -859,7 +859,7 @@ function QueueStat({ label, value, helper, accent = "text-foreground", pulse = f
 type PublicTrackSummary = NonNullable<QueuePublicSnapshot["submitterStatus"]>["submitted"][number];
 function submittedPublicTrack(snapshot: QueuePublicSnapshot | null, submitted: PublicTrackSummary): QueuePublicTrack | PublicTrackSummary { const active = [snapshot?.nowPlaying, snapshot?.upNext, ...(snapshot?.queue ?? []), ...(snapshot?.completed ?? [])].filter(Boolean) as QueuePublicTrack[]; return active.find((track) => track.id === submitted.id) ?? submitted; }
 function pluralizeSongs(count: number): string { return `${count} ${count === 1 ? "song" : "songs"}`; }
-function PersonalSignalStatusBar({ snapshot }: { snapshot: QueuePublicSnapshot | null }) {
+function PersonalSignalStatusBar({ snapshot, mounted }: { snapshot: QueuePublicSnapshot | null; mounted: boolean }) {
   const status = snapshot?.submitterStatus ?? null;
   let main = "No songs submitted yet.";
   let detail = "Submit a track to enter the free queue.";
@@ -881,12 +881,13 @@ function PersonalSignalStatusBar({ snapshot }: { snapshot: QueuePublicSnapshot |
     if (nowPlaying) { main = "Your track is playing now."; detail = "Personal receiver locked to your submitted track."; }
     else if (upNext) { main = "Your track is coming up next."; detail = "One of your submitted tracks is Next In Line."; }
     else if (checkoutPending) { main = "Checkout started."; detail = "Skip is not active yet."; }
-    else if (priorityActive) { main = "Priority Signal active."; detail = "One of your submitted tracks has confirmed Priority status."; }
+    else if (priorityActive) { main = "Priority Signal active."; detail = "Confirmed skip is active."; }
     else if (paymentNotCompleted) { main = "Payment was not completed."; detail = "Song stays in the free queue if still active."; }
     else if (waiting.length === 0 && played.length > 0) { main = status.used === 1 ? "Your track already played tonight." : `${pluralizeSongs(status.used)} submitted · ${played.length} already played.`; detail = "Played songs remain visible in Recently Played while available."; }
     else if (songsAway && waitMinutes) detail = `Closest track: ${songsAway} ${songsAway === 1 ? "song" : "songs"} away · Estimated wait: about ${waitMinutes} min.`;
   }
-  return <><div className="personal-signal-spacer" aria-hidden="true" /><section className="personal-signal-bar fixed left-0 right-0 z-[8995] overflow-hidden border-b border-accent/35 border-t border-border/70 bg-black/95 font-mono text-white shadow-[0_0_32px_rgba(255,0,0,0.16)] backdrop-blur-md" aria-label="Your Signal Status" role="status" aria-live="polite"><div className="personal-signal-scan pointer-events-none absolute inset-0" aria-hidden="true" /><div className="relative mx-auto flex min-h-[5rem] max-w-7xl flex-col justify-center px-3 py-3 sm:min-h-[6rem] sm:px-4"><p className="text-[10px] font-bold uppercase tracking-[0.34em] text-accent sm:text-xs">Your Signal Status</p><p className="mt-1 truncate text-sm font-bold text-foreground sm:text-lg">{main}</p><p className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted sm:text-sm">{detail}</p></div><style jsx>{`.personal-signal-bar{top:calc(5.5rem + env(safe-area-inset-top))}.personal-signal-spacer{height:5.25rem}.personal-signal-scan{background:linear-gradient(transparent 50%,rgba(255,255,255,.06) 50%);background-size:100% 6px;opacity:.14}@media (min-width:900px){.personal-signal-spacer{height:6rem}}@media (max-width:640px){.personal-signal-bar p{max-width:100%}.personal-signal-spacer{height:5rem}}`}</style></section></>;
+  const band = <section className="personal-signal-bar pointer-events-none fixed inset-x-0 z-[8995] w-screen overflow-hidden border-b border-accent/35 border-t border-border/70 bg-black/95 font-mono text-white backdrop-blur-md" aria-label="Your Signal Status" role="status" aria-live="polite"><div className="personal-signal-scan pointer-events-none absolute inset-0" aria-hidden="true" /><div className="personal-signal-line pointer-events-none absolute inset-x-0 bottom-0 h-px bg-accent/55" aria-hidden="true" /><div className="relative mx-auto flex min-h-[5rem] max-w-7xl flex-col justify-center px-3 py-3 sm:min-h-[6rem] sm:px-4"><p className="text-[10px] font-bold uppercase tracking-[0.34em] text-accent sm:text-xs">Your Signal Status</p><p className="mt-1 truncate text-sm font-bold text-foreground sm:text-lg">{main}</p><p className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted sm:text-sm">{detail}</p></div><style jsx>{`.personal-signal-bar{top:calc(5.5rem + env(safe-area-inset-top))}.personal-signal-spacer{height:5.25rem}.personal-signal-scan{background:linear-gradient(transparent 50%,rgba(255,255,255,.06) 50%);background-size:100% 6px;opacity:.14}@media (min-width:900px){.personal-signal-spacer{height:6rem}}@media (max-width:640px){.personal-signal-bar p{max-width:100%}.personal-signal-spacer{height:5rem}}`}</style></section>;
+  return <><div className="personal-signal-spacer" aria-hidden="true" />{mounted && createPortal(band, document.body)}</>;
 }
 function QueueMechanicsInfo() { return <details className="border border-accent/30 bg-accent/5 p-4 text-xs"><summary className="cursor-pointer uppercase tracking-[0.3em] text-accent">How does the queue work?</summary><ul className="mt-3 list-disc space-y-1 pl-4 leading-relaxed text-muted"><li>Submit Track sends your song into the free queue.</li><li>Priority Signal is a paid skip after payment clears.</li><li>Wheel Chosen means the host picked it from the 10K tap wheel.</li><li>Next In Line means coming up next.</li><li>Now Playing means playing now.</li></ul></details>; }
 

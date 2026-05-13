@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps, react/jsx-no-comment-textnodes, @next/next/no-img-element */
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { RadioQueueForm } from "@/components/RadioQueueForm";
@@ -63,6 +63,128 @@ function snapshotBroadcastActive(snapshot: QueuePublicSnapshot | null): boolean 
   return Boolean(snapshot?.nowPlaying || snapshot?.session.broadcastPhase === "broadcast_active" || snapshot?.session.showStarted);
 }
 
+
+type GhostRect = { left: number; top: number; width: number; height: number };
+type FlipTrackRect = { rect: DOMRect; zone: string; tone: ActivityTone; artist: string; title: string; routeLabel: string };
+type RoutingGhost = { id: string; trackId: string; artist: string; title: string; routeLabel: string; tone: ActivityTone; zone: string; from: GhostRect; to: GhostRect; duration: number };
+
+function trackFlipTone(track: QueuePublicTrack, zone: string): ActivityTone {
+  if (zone === "now") return "gold";
+  if (zone === "next") return trackTone(track);
+  if (zone === "completed") return "archive";
+  return trackTone(track);
+}
+
+function collectVisibleTrackRects(): Map<string, FlipTrackRect> {
+  const rects = new Map<string, FlipTrackRect>();
+  document.querySelectorAll<HTMLElement>("[data-track-card='true'][data-track-id]").forEach((node) => {
+    const trackId = node.dataset.trackId;
+    if (!trackId) return;
+    const rect = node.getBoundingClientRect();
+    const isVisible = rect.width > 0 && rect.height > 0 && rect.bottom >= 0 && rect.top <= window.innerHeight;
+    if (!isVisible) return;
+    const tone = (node.dataset.trackTone ?? "red") as ActivityTone;
+    rects.set(trackId, {
+      rect,
+      zone: node.dataset.trackZone ?? "queue",
+      tone,
+      artist: node.dataset.trackArtist ?? "BARCODE signal",
+      title: node.dataset.trackTitle ?? "Transmission packet",
+      routeLabel: node.dataset.trackLabel ?? node.dataset.trackZone ?? "Signal route",
+    });
+  });
+  return rects;
+}
+
+function rectToGhostRect(rect: DOMRect): GhostRect {
+  return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+}
+
+function useFlipTrackMovement(snapshotKey: string, emitGhost: (ghost: Omit<RoutingGhost, "id">) => void): () => void {
+  const previousRectsRef = useRef<Map<string, FlipTrackRect>>(new Map());
+  const primedRef = useRef(false);
+
+  const captureTrackRects = () => {
+    if (typeof window === "undefined") return;
+    const rects = collectVisibleTrackRects();
+    previousRectsRef.current = rects;
+    primedRef.current = rects.size > 0;
+  };
+
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const previousRects = previousRectsRef.current;
+    const currentRects = collectVisibleTrackRects();
+
+    if (!reducedMotion && primedRef.current) {
+      const currentNodes = new Map<string, HTMLElement>();
+      document.querySelectorAll<HTMLElement>("[data-track-card='true'][data-track-id]").forEach((node) => {
+        if (node.dataset.trackId) currentNodes.set(node.dataset.trackId, node);
+      });
+      currentRects.forEach((current, trackId) => {
+        const previous = previousRects.get(trackId);
+        const node = currentNodes.get(trackId);
+        if (!node) return;
+        const moved = previous && (Math.abs(previous.rect.left - current.rect.left) > 2 || Math.abs(previous.rect.top - current.rect.top) > 2);
+        node.dataset.routeTone = current.tone;
+        node.dataset.routeZone = current.zone;
+        if (moved) {
+          const dx = previous.rect.left - current.rect.left;
+          const dy = previous.rect.top - current.rect.top;
+          const sameZone = previous.zone === current.zone;
+          const distance = Math.hypot(dx, dy);
+          node.dataset.routeMotion = sameZone ? "reorder" : "transfer";
+          const routeDuration = current.zone === "now" ? 980 : current.zone === "next" ? 900 : 820;
+          if (!sameZone && distance > 2) {
+            emitGhost({
+              trackId,
+              artist: current.artist || previous.artist,
+              title: current.title || previous.title,
+              routeLabel: current.routeLabel,
+              tone: current.tone,
+              zone: current.zone,
+              from: rectToGhostRect(previous.rect),
+              to: rectToGhostRect(current.rect),
+              duration: routeDuration,
+            });
+            window.setTimeout(() => node.classList.add("route-arrival"), Math.max(180, routeDuration - 280));
+          }
+          node.style.transition = "none";
+          node.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
+          node.style.zIndex = "30";
+          node.classList.add("flip-routing");
+          window.requestAnimationFrame(() => {
+            node.style.transition = "transform 720ms cubic-bezier(.16,1,.3,1), filter 720ms ease, box-shadow 720ms ease";
+            node.style.transform = "translate3d(0, 0, 0)";
+          });
+          window.setTimeout(() => {
+            node.classList.remove("flip-routing", "route-arrival");
+            node.removeAttribute("data-route-motion");
+            node.style.transition = "";
+            node.style.transform = "";
+            node.style.zIndex = "";
+          }, sameZone ? 760 : routeDuration + 160);
+          return;
+        }
+        if (!previous) {
+          node.dataset.routeMotion = "landing";
+          node.classList.add("flip-landing", "route-arrival");
+          window.setTimeout(() => {
+            node.classList.remove("flip-landing", "route-arrival");
+            node.removeAttribute("data-route-motion");
+          }, 860);
+        }
+      });
+    }
+
+    previousRectsRef.current = currentRects;
+    primedRef.current = true;
+  }, [snapshotKey]);
+
+  return captureTrackRects;
+}
+
 function sourceTypeLabel(track: QueuePublicTrack): string {
   if (track.sourceType === "upload") return "Uploaded audio packet";
   if (track.sourceType === "spotify") return "Spotify";
@@ -89,7 +211,15 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const [activityToast, setActivityToast] = useState<QueueActivity | null>(null);
   const [residueMap, setResidueMap] = useState<ResidueMap>({});
   const [broadcastStartPulse, setBroadcastStartPulse] = useState(false);
+  const [routingGhosts, setRoutingGhosts] = useState<RoutingGhost[]>([]);
   const previousSnapshotRef = useRef<QueuePublicSnapshot | null>(null);
+  const snapshotMovementKey = useMemo(() => publicSnapshotMovementKey(snapshot), [snapshot]);
+  function emitRoutingGhost(ghost: Omit<RoutingGhost, "id">) {
+    const id = `${Date.now()}:${ghost.trackId}:${ghost.zone}`;
+    setRoutingGhosts((current) => [...current, { ...ghost, id }].slice(-5));
+    window.setTimeout(() => setRoutingGhosts((current) => current.filter((item) => item.id !== id)), ghost.duration + 180);
+  }
+  const captureTrackRects = useFlipTrackMovement(snapshotMovementKey, emitRoutingGhost);
 
   function triggerResidue(trackId: string | null | undefined, tone: ActivityTone) {
     if (!trackId) return;
@@ -179,6 +309,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     const res = await fetch(`/api/queue?${params.toString()}`, { cache: "no-store" });
     if (res.ok) {
       const next = await res.json() as QueuePublicSnapshot;
+      captureTrackRects();
       processSnapshotChanges(previousSnapshotRef.current, next);
       previousSnapshotRef.current = next;
       setSnapshot(next);
@@ -332,12 +463,75 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
       </div>
 
       {view === "active" ? <div id="active-queue-panel" className="space-y-3"><PublicLane title="Priority Signal" tracks={lanes.priority} lastSubmittedTrackId={lastSubmittedTrackId} collapsible domId="priority-lane" canPriorityUpgrade={() => false} canResumePriorityPayment={canResumePriorityPayment} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} /><PublicLane title="Wheel Chosen" subtitle="Tracks selected by the 10K tap wheel." tracks={lanes.wheel} lastSubmittedTrackId={lastSubmittedTrackId} collapsible domId="wheel-lane" canPriorityUpgrade={() => false} canResumePriorityPayment={canResumePriorityPayment} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} /><PublicLane title="Free Transmissions" tracks={lanes.regular} lastSubmittedTrackId={lastSubmittedTrackId} domId="free-transmissions-lane" canPriorityUpgrade={canShowPriorityUpgrade} canResumePriorityPayment={canResumePriorityPayment} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} /></div> : <PublicLane title="Recently Played" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} canPriorityUpgrade={() => false} canResumePriorityPayment={() => false} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} />}
-        <style jsx>{`.queue-live-system{border:1px solid transparent;padding:0;transition:border-color .5s ease,box-shadow .5s ease,filter .5s ease}.queue-live-system[data-live="true"]{border-color:rgba(255,170,0,.16);box-shadow:0 0 44px rgba(255,170,0,.06);padding:.35rem}.queue-live-system[data-pulse="true"]{animation:queue-broadcast-lock 1.55s ease-out}.queue-live-system[data-pulse="true"]::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(255,170,0,.32),rgba(255,255,255,.22),transparent);animation:broadcast-sweep 1.1s ease-out forwards}.broadcast-start-banner{animation:broadcast-banner-lock .9s ease-out}.queue-live-system[data-live="true"] :global(#now-playing-slot){box-shadow:0 0 48px rgba(255,170,0,.20)}.queue-live-system[data-live="true"] :global(#up-next-slot){box-shadow:0 0 34px rgba(255,0,0,.14)}@keyframes queue-broadcast-lock{0%{filter:brightness(1);transform:translateY(0)}26%{filter:brightness(1.55);transform:translateY(-2px)}100%{filter:brightness(1);transform:translateY(0)}}@keyframes broadcast-sweep{0%{transform:translateX(-120%);opacity:0}20%{opacity:1}100%{transform:translateX(120%);opacity:0}}@keyframes broadcast-banner-lock{0%{opacity:0;transform:scale(.98);filter:brightness(1.8)}100%{opacity:1;transform:scale(1);filter:brightness(1)}}@media (prefers-reduced-motion: reduce){.queue-live-system[data-pulse="true"],.queue-live-system[data-pulse="true"]::before,.broadcast-start-banner{animation:none}.queue-live-system[data-pulse="true"]::before{display:none}}`}</style>
+        <style jsx>{`
+          .queue-live-system{border:1px solid transparent;padding:0;transition:border-color .5s ease,box-shadow .5s ease,filter .5s ease}
+          .queue-live-system[data-live="true"]{border-color:rgba(255,170,0,.16);box-shadow:0 0 44px rgba(255,170,0,.06);padding:.35rem}
+          .queue-live-system[data-pulse="true"]{animation:queue-broadcast-lock 1.55s ease-out}
+          .queue-live-system[data-pulse="true"]::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(255,170,0,.32),rgba(255,255,255,.22),transparent);animation:broadcast-sweep 1.1s ease-out forwards}
+          .broadcast-start-banner{animation:broadcast-banner-lock .9s ease-out}
+          .queue-live-system[data-live="true"] :global(#now-playing-slot){box-shadow:0 0 48px rgba(255,170,0,.20)}
+          .queue-live-system[data-live="true"] :global(#up-next-slot){box-shadow:0 0 34px rgba(255,0,0,.14)}
+          :global([data-track-card="true"].flip-routing),:global([data-track-card="true"].flip-landing){will-change:transform,filter;filter:brightness(1.22) saturate(1.12)}
+          :global([data-track-card="true"].flip-landing){animation:route-card-slam .82s cubic-bezier(.16,1,.3,1)}
+          :global([data-track-card="true"].route-arrival){filter:brightness(1.42) saturate(1.18)}
+          :global([data-track-card="true"].flip-routing)::after,:global([data-track-card="true"].flip-landing)::after{content:"";position:absolute;inset:-4px;z-index:1;pointer-events:none;border:2px solid currentColor;opacity:.9;mix-blend-mode:screen;box-shadow:0 0 34px currentColor,inset 0 0 26px currentColor}
+          :global([data-track-card="true"].route-arrival)::after{animation:route-arrival-impact .58s ease-out forwards}
+          :global([data-track-card="true"].flip-routing[data-route-tone="red"]),:global([data-track-card="true"].flip-landing[data-route-tone="red"]){color:#ff2a2a;box-shadow:0 0 34px rgba(255,0,0,.28),inset 0 0 26px rgba(255,255,255,.055)}
+          :global([data-track-card="true"].flip-routing[data-route-tone="red"]::after),:global([data-track-card="true"].flip-landing[data-route-tone="red"]::after){background:linear-gradient(90deg,transparent 0 8%,rgba(255,255,255,.34) 18%,rgba(255,0,0,.42) 31%,transparent 46%),repeating-linear-gradient(0deg,transparent 0 5px,rgba(255,255,255,.055) 5px 6px);animation:route-free-ripple .58s ease-out forwards}
+          :global(.queue-track-card.flip-routing[data-route-tone="red"] .packet-trail),:global(.queue-track-card.flip-landing[data-route-tone="red"] .packet-trail){height:2px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.8),rgba(255,0,0,.7),transparent);animation:route-free-packet .62s ease-out forwards}
+          :global([data-track-card="true"].flip-routing[data-route-tone="cyan"]),:global([data-track-card="true"].flip-landing[data-route-tone="cyan"]){color:#67e8f9;box-shadow:0 0 42px rgba(103,232,249,.34),inset 0 0 30px rgba(103,232,249,.08)}
+          :global([data-track-card="true"].flip-routing[data-route-tone="cyan"]::after),:global([data-track-card="true"].flip-landing[data-route-tone="cyan"]::after){border-radius:999px;background:radial-gradient(circle at 82% 50%,transparent 0 1.05rem,rgba(103,232,249,.78) 1.12rem 1.18rem,transparent 1.28rem),conic-gradient(from 90deg at 82% 50%,transparent,rgba(103,232,249,.42),transparent 42%,rgba(103,232,249,.30),transparent 72%);animation:route-wheel-radar .86s ease-out forwards}
+          :global(.queue-track-card.flip-routing[data-route-tone="cyan"] .packet-trail),:global(.queue-track-card.flip-landing[data-route-tone="cyan"] .packet-trail){height:2px;background:radial-gradient(circle,rgba(103,232,249,.95) 0 2px,transparent 3px) 0 50%/18px 8px repeat-x;animation:route-wheel-packet .74s ease-out forwards}
+          :global(.queue-track-card.flip-routing[data-route-tone="cyan"] .mini-aperture),:global(.queue-track-card.flip-landing[data-route-tone="cyan"] .mini-aperture){border-radius:999px;transform:rotate(18deg);box-shadow:0 0 26px rgba(103,232,249,.30)}
+          :global([data-track-card="true"].flip-routing[data-route-tone="amber"]),:global([data-track-card="true"].flip-landing[data-route-tone="amber"]){color:#ffaa00;box-shadow:0 0 34px rgba(255,170,0,.24),inset 0 0 24px rgba(255,170,0,.06);filter:brightness(1.08) saturate(.98)}
+          :global([data-track-card="true"].flip-routing[data-route-tone="amber"]::after),:global([data-track-card="true"].flip-landing[data-route-tone="amber"]::after){border-style:dashed;background:repeating-linear-gradient(90deg,transparent 0 10px,rgba(255,170,0,.54) 10px 15px,transparent 15px 24px) 50% 50%/100% 2px no-repeat,linear-gradient(90deg,transparent,rgba(255,170,0,.09),transparent);animation:route-pending-handshake .95s steps(3,end) forwards}
+          :global(.queue-track-card.flip-routing[data-route-tone="amber"] .packet-trail),:global(.queue-track-card.flip-landing[data-route-tone="amber"] .packet-trail){height:2px;background:repeating-linear-gradient(90deg,rgba(255,170,0,.75) 0 6px,transparent 6px 12px);animation:route-pending-dots .82s steps(5,end) forwards}
+          :global([data-track-card="true"].flip-routing[data-route-tone="gold"]),:global([data-track-card="true"].flip-landing[data-route-tone="gold"]){color:#ffaa00;box-shadow:0 0 52px rgba(255,170,0,.42),inset 0 0 34px rgba(255,255,255,.07);filter:brightness(1.26) saturate(1.16)}
+          :global([data-track-card="true"].flip-routing[data-route-tone="gold"]::after),:global([data-track-card="true"].flip-landing[data-route-tone="gold"]::after){background:linear-gradient(135deg,transparent 0 36%,rgba(255,255,255,.42) 43%,rgba(255,170,0,.72) 48%,transparent 58%),radial-gradient(circle at 88% 16%,rgba(255,255,255,.46),transparent 18%);animation:route-priority-relay .78s cubic-bezier(.16,1,.3,1) forwards}
+          :global(.queue-track-card.flip-routing[data-route-tone="gold"] .packet-trail),:global(.queue-track-card.flip-landing[data-route-tone="gold"] .packet-trail){left:14%;right:10%;top:28%;height:2px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.95),rgba(255,170,0,.88),transparent);transform:rotate(-8deg);animation:route-priority-line .72s ease-out forwards}
+          :global([data-track-card="true"].flip-routing[data-route-tone="archive"]),:global([data-track-card="true"].flip-landing[data-route-tone="archive"]){color:#b7b7b7;box-shadow:0 0 30px rgba(183,183,183,.20);filter:saturate(.72) brightness(.96)}
+          :global([data-track-card="true"].flip-routing[data-route-tone="archive"]::after),:global([data-track-card="true"].flip-landing[data-route-tone="archive"]::after){border-style:double;background:radial-gradient(circle at 18% 32%,rgba(183,183,183,.28) 0 1px,transparent 2px),radial-gradient(circle at 62% 68%,rgba(183,183,183,.22) 0 1px,transparent 2px),repeating-linear-gradient(0deg,transparent 0 7px,rgba(183,183,183,.07) 7px 8px);animation:route-archive-dust .9s ease-out forwards}
+          :global([data-track-card="true"].flip-routing[data-route-tone="danger"]),:global([data-track-card="true"].flip-landing[data-route-tone="danger"]){color:#ff3b3b;box-shadow:0 0 42px rgba(255,0,0,.36),inset 0 0 28px rgba(255,0,0,.08);filter:saturate(.85) brightness(.98)}
+          :global([data-track-card="true"].flip-routing[data-route-tone="danger"]::after),:global([data-track-card="true"].flip-landing[data-route-tone="danger"]::after){background:linear-gradient(90deg,rgba(255,0,0,.52),transparent 34%),repeating-linear-gradient(90deg,transparent 0 12px,rgba(255,0,0,.26) 12px 14px,transparent 14px 22px);animation:route-danger-wipe .68s ease-out forwards}
+          :global(.queue-track-card.flip-routing[data-route-tone="danger"] .packet-trail),:global(.queue-track-card.flip-landing[data-route-tone="danger"] .packet-trail){height:8px;background:repeating-linear-gradient(90deg,rgba(255,0,0,.65) 0 8px,transparent 8px 14px);animation:route-danger-fragments .62s ease-out forwards}
+          :global([data-track-card="true"][data-route-motion="reorder"]){filter:brightness(1.06);box-shadow:0 0 14px currentColor}
+          :global([data-track-card="true"][data-route-motion="reorder"]::after){inset:auto .75rem .55rem auto;width:2.8rem;height:2px;border:0;background:currentColor;opacity:.72;animation:route-reorder-tick .5s ease-out forwards}
+          :global([data-track-card="true"][data-route-motion="landing"]::after){animation-duration:.82s}
+          :global([data-track-card="true"].flip-routing[data-route-zone="next"]),:global([data-track-card="true"].flip-landing[data-route-zone="next"]){box-shadow:0 0 32px currentColor,inset 0 0 28px rgba(255,255,255,.04)}
+          :global([data-track-card="true"].flip-routing[data-route-zone="next"]::after),:global([data-track-card="true"].flip-landing[data-route-zone="next"]::after){background:linear-gradient(90deg,currentColor 0 10px,transparent 10px calc(100% - 10px),currentColor calc(100% - 10px)),linear-gradient(0deg,currentColor 0 10px,transparent 10px calc(100% - 10px),currentColor calc(100% - 10px));animation:route-next-clamp .78s ease-out forwards}
+          :global([data-track-card="true"].flip-routing[data-route-zone="now"]),:global([data-track-card="true"].flip-landing[data-route-zone="now"]){color:#fff6d8;box-shadow:0 0 52px rgba(255,170,0,.34),0 0 24px rgba(255,255,255,.18);filter:brightness(1.34) saturate(1.2)}
+          :global([data-track-card="true"].flip-routing[data-route-zone="now"]::after),:global([data-track-card="true"].flip-landing[data-route-zone="now"]::after){border-color:rgba(255,255,255,.85);background:repeating-linear-gradient(90deg,rgba(255,170,0,.34) 0 3px,transparent 3px 10px) 50% 78%/70% 28px no-repeat,linear-gradient(180deg,rgba(255,255,255,.24),transparent 28%,rgba(255,170,0,.12));animation:route-now-monitor .9s ease-out forwards}
+          @keyframes queue-broadcast-lock{0%{filter:brightness(1);transform:translateY(0)}26%{filter:brightness(1.55);transform:translateY(-2px)}100%{filter:brightness(1);transform:translateY(0)}}
+          @keyframes broadcast-sweep{0%{transform:translateX(-120%);opacity:0}20%{opacity:1}100%{transform:translateX(120%);opacity:0}}
+          @keyframes broadcast-banner-lock{0%{opacity:0;transform:scale(.98);filter:brightness(1.8)}100%{opacity:1;transform:scale(1);filter:brightness(1)}}
+          @keyframes route-card-slam{0%{transform:scale(.975);filter:brightness(1.9)}42%{transform:scale(1.018);filter:brightness(1.45)}100%{transform:scale(1);filter:brightness(1)}}
+          @keyframes route-arrival-impact{0%{opacity:0;transform:scale(.965)}30%{opacity:.96;transform:scale(1)}100%{opacity:0;transform:scale(1.03)}}
+          @keyframes route-free-ripple{0%{opacity:0;transform:translateX(-9%)}35%{opacity:.72}100%{opacity:0;transform:translateX(9%)}}
+          @keyframes route-free-packet{0%{transform:translateX(-38%) scaleX(.28);opacity:.15}42%{opacity:.9}100%{transform:translateX(38%) scaleX(.62);opacity:0}}
+          @keyframes route-wheel-radar{0%{opacity:0;transform:scale(.72) rotate(-34deg)}45%{opacity:.86}100%{opacity:0;transform:scale(1.16) rotate(105deg)}}
+          @keyframes route-wheel-packet{0%{background-position:-28px 50%;opacity:.1}45%{opacity:.92}100%{background-position:42px 50%;opacity:0}}
+          @keyframes route-pending-handshake{0%,100%{opacity:.24;filter:brightness(.9)}33%{opacity:.82;filter:brightness(1.35)}66%{opacity:.42;filter:brightness(.78)}}
+          @keyframes route-pending-dots{0%{transform:translateX(-18px);opacity:.2}55%{opacity:.88}100%{transform:translateX(18px);opacity:0}}
+          @keyframes route-priority-relay{0%{opacity:0;transform:translateY(9px) scale(.985)}38%{opacity:.92}100%{opacity:0;transform:translateY(-8px) scale(1.025)}}
+          @keyframes route-priority-line{0%{transform:translateY(14px) rotate(-8deg) scaleX(.22);opacity:.2}55%{opacity:1}100%{transform:translateY(-10px) rotate(-8deg) scaleX(1);opacity:0}}
+          @keyframes route-archive-dust{0%{opacity:0;transform:scale(1.02)}35%{opacity:.52}100%{opacity:0;transform:scale(.985)}}
+          @keyframes route-danger-wipe{0%{opacity:0;transform:translateX(-35%);clip-path:inset(0 88% 0 0)}44%{opacity:.86;clip-path:inset(0 18% 0 0)}100%{opacity:0;transform:translateX(28%);clip-path:inset(0 0 0 70%)}}
+          @keyframes route-danger-fragments{0%{transform:translateX(-20px) scaleY(.4);opacity:.15}42%{opacity:.92}100%{transform:translateX(18px) scaleY(.12);opacity:0}}
+          @keyframes route-reorder-tick{0%{transform:translateX(-10px) scaleX(.3);opacity:.18}55%{opacity:.82}100%{transform:translateX(8px) scaleX(.55);opacity:0}}
+          @keyframes route-next-clamp{0%{opacity:0;clip-path:inset(48% 48% 48% 48%)}38%{opacity:.82;clip-path:inset(0 0 0 0)}100%{opacity:0;clip-path:inset(8% 8% 8% 8%)}}
+          @keyframes route-now-monitor{0%{opacity:0;transform:scale(.985);filter:brightness(1.7)}35%{opacity:.96}100%{opacity:0;transform:scale(1.02);filter:brightness(1)}}
+          @media (prefers-reduced-motion: reduce){
+            .queue-live-system[data-pulse="true"],.queue-live-system[data-pulse="true"]::before,.broadcast-start-banner,:global([data-track-card="true"].flip-routing),:global([data-track-card="true"].flip-landing),:global([data-track-card="true"].flip-routing)::after,:global([data-track-card="true"].flip-landing)::after,:global([data-track-card="true"].flip-routing .packet-trail),:global([data-track-card="true"].flip-landing .packet-trail){animation:none!important;transition:none!important}
+            .queue-live-system[data-pulse="true"]::before,:global([data-track-card="true"].flip-routing)::after,:global([data-track-card="true"].flip-landing)::after{display:none}
+          }
+        `}</style>
       </div>
 
       <DiscordQueueCTA />
 
       {mounted && activityToast && createPortal(<QueueUpdateToast item={activityToast} />, document.body)}
+
+      {mounted && routingGhosts.length > 0 && createPortal(<RoutingGhostLayer ghosts={routingGhosts} />, document.body)}
 
       {mounted && broadcastStartPulse && createPortal(<BroadcastStartOverlay />, document.body)}
 
@@ -392,6 +586,19 @@ function tiktokHref(handle?: string | null): string | null { const cleaned = (ha
 function TikTokLink({ handle }: { handle?: string | null }) { const href = tiktokHref(handle); if (!href || !handle) return null; return <a href={href} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">{handle.startsWith("@") ? handle : `@${handle}`}</a>; }
 function usefulDetected(track: QueuePublicTrack): string | null { const artist = track.detectedArtistName?.trim(); const title = track.detectedSongTitle?.trim() || track.providerTitle?.trim(); if (!artist && !title) return null; const submitted = `${track.submittedArtistName} ${track.submittedSongTitle}`.toLowerCase(); const detected = `${artist ?? ""} ${title ?? ""}`.trim(); return detected && !submitted.includes(detected.toLowerCase()) ? detected : null; }
 
+
+function publicSnapshotMovementKey(snapshot: QueuePublicSnapshot | null): string {
+  if (!snapshot) return "empty";
+  const encodeTrack = (track: QueuePublicTrack | null | undefined, zone: string) => track ? `${zone}:${track.id}:${track.lane}:${track.priorityUpgradeStatus ?? "none"}` : `${zone}:empty`;
+  return [
+    encodeTrack(snapshot.nowPlaying, "now"),
+    encodeTrack(snapshot.upNext, "next"),
+    ...snapshot.queue.map((track, index) => `${index}:${encodeTrack(track, "queue")}`),
+    ...snapshot.completed.map((track, index) => `done:${index}:${track.id}`),
+    `removed:${snapshot.session.removedCount ?? 0}`,
+  ].join("|");
+}
+
 function publicTrackStateMap(snapshot: QueuePublicSnapshot): Map<string, Pick<QueuePublicTrack, "lane" | "priorityUpgradeStatus">> {
   const map = new Map<string, Pick<QueuePublicTrack, "lane" | "priorityUpgradeStatus">>();
   for (const track of [snapshot.nowPlaying, snapshot.upNext, ...snapshot.queue, ...snapshot.completed]) {
@@ -432,13 +639,66 @@ function QueueUpdateToast({ item }: { item: QueueActivity }) {
   return <div className={`queue-toast fixed right-4 top-20 z-[9500] w-[min(24rem,calc(100vw-2rem))] border bg-background/95 p-3 shadow-[0_0_42px_rgba(255,0,0,0.22)] ${toneClass(item.tone)}`} role="status" aria-live="polite"><p className="text-[10px] uppercase tracking-[0.3em]">Queue Updated</p><p className="mt-1 text-sm font-bold text-foreground">{item.text}</p><p className="mt-1 text-xs text-muted">{item.detail}</p><style jsx>{`.queue-toast{animation:queue-toast-in .28s ease-out}@keyframes queue-toast-in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}@media (prefers-reduced-motion: reduce){.queue-toast{animation:none}}`}</style></div>;
 }
 
+
+function RoutingGhostLayer({ ghosts }: { ghosts: RoutingGhost[] }) {
+  return <div className="routing-ghost-layer fixed inset-0 z-[9600] pointer-events-none" aria-hidden="true">{ghosts.map((ghost) => {
+    const viewportWidth = typeof window === "undefined" ? 1200 : window.innerWidth;
+    const minWidth = viewportWidth < 640 ? 240 : 320;
+    const maxWidth = Math.min(viewportWidth - 24, viewportWidth < 640 ? 360 : 640);
+    const sourceWeighted = ghost.from.width * 0.92;
+    const destinationWeighted = ghost.to.width * (ghost.zone === "now" ? 0.58 : 0.86);
+    const width = Math.min(maxWidth, Math.max(minWidth, sourceWeighted, destinationWeighted));
+    const height = Math.min(176, Math.max(104, ghost.from.height * 0.76, ghost.to.height * (ghost.zone === "now" ? 0.34 : 0.58)));
+    const fromLeft = Math.max(12, Math.min(viewportWidth - width - 12, ghost.from.left + ((ghost.from.width - width) / 2)));
+    const toLeft = Math.max(12, Math.min(viewportWidth - width - 12, ghost.to.left + ((ghost.to.width - width) / 2)));
+    const fromTop = ghost.from.top + ((ghost.from.height - height) / 2);
+    const toTop = ghost.to.top + ((ghost.to.height - height) / 2);
+    const tx = toLeft - fromLeft;
+    const ty = toTop - fromTop;
+    return <div key={ghost.id} className="routing-ghost" data-tone={ghost.tone} data-zone={ghost.zone} style={{ left: fromLeft, top: fromTop, width, minHeight: height, "--tx": `${tx}px`, "--ty": `${ty}px`, "--duration": `${ghost.duration}ms` } as CSSProperties}><div className="ghost-scan" /><div className="ghost-trail" /><div className="ghost-clamp" /><p className="ghost-label">{ghost.routeLabel}</p><p className="ghost-artist">{ghost.artist}</p><p className="ghost-title">{ghost.title}</p></div>;
+  })}<style jsx>{`
+    .routing-ghost-layer{overflow:visible}
+    .routing-ghost{position:fixed;overflow:hidden;border:2px solid currentColor;background:rgba(6,6,7,.92);padding:1rem 1.1rem;box-shadow:0 0 52px currentColor, inset 0 0 34px rgba(255,255,255,.07);animation:ghost-route var(--duration) cubic-bezier(.16,1,.3,1) forwards;transform:translate3d(0,0,0);will-change:transform,opacity,filter;color:#ff2a2a}
+    .ghost-scan{position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent 0 5px,rgba(255,255,255,.07) 5px 6px);opacity:.38;mix-blend-mode:screen}
+    .ghost-trail{position:absolute;left:0;right:0;top:50%;height:2px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.85),currentColor,transparent);animation:ghost-free-trail var(--duration) ease-out forwards}
+    .ghost-clamp{position:absolute;inset:4px;border:1px solid transparent;opacity:0}
+    .ghost-label{position:relative;text-transform:uppercase;letter-spacing:.32em;font-size:11px;font-weight:800;color:currentColor}
+    .ghost-artist{position:relative;margin-top:.45rem;font-size:clamp(1rem,2.3vw,1.55rem);font-weight:900;color:#fff;line-height:1.05;text-shadow:0 0 18px currentColor}
+    .ghost-title{position:relative;margin-top:.3rem;font-size:clamp(.82rem,1.7vw,1.05rem);font-weight:700;color:rgba(255,255,255,.82);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .routing-ghost[data-tone="cyan"]{color:#67e8f9;border-radius:.85rem;box-shadow:0 0 46px rgba(103,232,249,.42),inset 0 0 28px rgba(103,232,249,.08)}
+    .routing-ghost[data-tone="cyan"] .ghost-trail{height:100%;top:0;background:radial-gradient(circle at 78% 50%,transparent 0 1.05rem,currentColor 1.11rem 1.18rem,transparent 1.28rem),conic-gradient(from 0deg at 78% 50%,transparent,currentColor,transparent 36%,rgba(103,232,249,.35),transparent 72%);animation:ghost-wheel-trail var(--duration) ease-out forwards}
+    .routing-ghost[data-tone="amber"]{color:#ffaa00;border-style:dashed;box-shadow:0 0 32px rgba(255,170,0,.24),inset 0 0 18px rgba(255,170,0,.07);animation-name:ghost-route-pending}
+    .routing-ghost[data-tone="amber"] .ghost-trail{background:repeating-linear-gradient(90deg,currentColor 0 7px,transparent 7px 14px);animation:ghost-pending-trail var(--duration) steps(6,end) forwards}
+    .routing-ghost[data-tone="gold"]{color:#ffaa00;box-shadow:0 0 54px rgba(255,170,0,.48),0 0 22px rgba(255,255,255,.18),inset 0 0 28px rgba(255,255,255,.08)}
+    .routing-ghost[data-tone="gold"] .ghost-trail{left:-12%;right:-12%;top:30%;height:3px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.96),currentColor,transparent);transform:rotate(-9deg);animation:ghost-priority-trail var(--duration) ease-out forwards}
+    .routing-ghost[data-tone="archive"]{color:#b7b7b7;box-shadow:0 0 24px rgba(183,183,183,.18);filter:saturate(.72)}
+    .routing-ghost[data-tone="archive"] .ghost-trail{height:100%;top:0;background:radial-gradient(circle at 22% 38%,currentColor 0 1px,transparent 2px),radial-gradient(circle at 68% 62%,currentColor 0 1px,transparent 2px),repeating-linear-gradient(0deg,transparent 0 7px,rgba(183,183,183,.10) 7px 8px);animation:ghost-archive-dust var(--duration) ease-out forwards}
+    .routing-ghost[data-tone="danger"]{color:#ff3b3b;box-shadow:0 0 42px rgba(255,0,0,.38),inset 0 0 24px rgba(255,0,0,.08);filter:saturate(.82)}
+    .routing-ghost[data-tone="danger"] .ghost-trail{height:100%;top:0;background:linear-gradient(90deg,rgba(255,0,0,.54),transparent 36%),repeating-linear-gradient(90deg,transparent 0 10px,rgba(255,0,0,.32) 10px 13px,transparent 13px 20px);animation:ghost-danger-break var(--duration) ease-out forwards}
+    .routing-ghost[data-zone="next"] .ghost-clamp{opacity:.9;border-color:currentColor;animation:ghost-clamp-lock var(--duration) ease-out forwards}
+    .routing-ghost[data-zone="now"]{color:#fff6d8;box-shadow:0 0 68px rgba(255,170,0,.55),0 0 32px rgba(255,255,255,.24)}
+    .routing-ghost[data-zone="now"] .ghost-clamp{opacity:.95;border-color:rgba(255,255,255,.85);background:repeating-linear-gradient(90deg,rgba(255,170,0,.38) 0 3px,transparent 3px 10px) 50% 80%/72% 26px no-repeat;animation:ghost-monitor-lock var(--duration) ease-out forwards}
+    @keyframes ghost-route{0%{opacity:0;transform:translate3d(0,0,0) scale(.98);filter:brightness(1.7)}10%{opacity:.98}76%{opacity:.95}100%{opacity:0;transform:translate3d(var(--tx),var(--ty),0) scale(.94);filter:brightness(1)}}
+    @keyframes ghost-route-pending{0%{opacity:0;transform:translate3d(0,0,0) scale(.98);filter:brightness(1.35)}20%{opacity:.92}45%{opacity:.52}70%{opacity:.96}100%{opacity:0;transform:translate3d(var(--tx),var(--ty),0) scale(.94);filter:brightness(.82)}}
+    @keyframes ghost-free-trail{0%{transform:translateX(-38%) scaleX(.3);opacity:.2}45%{opacity:1}100%{transform:translateX(48%) scaleX(1.05);opacity:0}}
+    @keyframes ghost-wheel-trail{0%{opacity:0;transform:scale(.72) rotate(-32deg)}40%{opacity:.82}100%{opacity:0;transform:scale(1.18) rotate(130deg)}}
+    @keyframes ghost-pending-trail{0%{background-position:-32px 0;opacity:.25}50%{opacity:.85}100%{background-position:36px 0;opacity:0}}
+    @keyframes ghost-priority-trail{0%{transform:translateY(18px) rotate(-9deg) scaleX(.18);opacity:.18}48%{opacity:1}100%{transform:translateY(-18px) rotate(-9deg) scaleX(1.1);opacity:0}}
+    @keyframes ghost-archive-dust{0%{opacity:0;transform:scale(1.04)}44%{opacity:.54}100%{opacity:0;transform:scale(.94)}}
+    @keyframes ghost-danger-break{0%{opacity:0;clip-path:inset(0 90% 0 0)}42%{opacity:.9;clip-path:inset(0 18% 0 0)}100%{opacity:0;clip-path:inset(0 0 0 72%)}}
+    @keyframes ghost-clamp-lock{0%{clip-path:inset(48% 48% 48% 48%)}48%{clip-path:inset(0)}100%{clip-path:inset(10%);opacity:0}}
+    @keyframes ghost-monitor-lock{0%{transform:scale(.96);filter:brightness(1.8)}44%{transform:scale(1);filter:brightness(1.35)}100%{transform:scale(1.03);opacity:0;filter:brightness(1)}}
+    @media (prefers-reduced-motion: reduce){.routing-ghost,.ghost-trail,.ghost-clamp{animation:none!important;display:none}}
+  `}</style></div>;
+}
+
 function TransmissionActivity({ items }: { items: QueueActivity[] }) {
   return <section className="activity-console relative overflow-hidden border border-border bg-surface p-4"><div className="activity-bus pointer-events-none absolute inset-x-0 top-10 h-px bg-accent/25" aria-hidden="true" /><div className="flex items-center justify-between gap-3"><p className="text-xs uppercase tracking-[0.3em] text-muted">Transmission Activity</p><span className="text-[10px] uppercase tracking-widest text-muted">Portal event log · Public snapshot</span></div>{items.length === 0 ? <p className="mt-3 text-xs text-muted">Queue changes detected during this visit will appear here as packet route events.</p> : <div className="mt-3 grid gap-2">{items.slice(0, 4).map((item) => <article key={item.id} className={`activity-item relative overflow-hidden border bg-background/45 p-3 ${toneClass(item.tone)}`}><span className="activity-node" aria-hidden="true" /><p className="text-sm font-bold text-foreground">{item.text}</p><p className="mt-1 text-xs text-muted">{item.detail}</p></article>)}</div>}<style jsx>{`.activity-console::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,0,0,.06),transparent);pointer-events:none}.activity-bus{box-shadow:0 0 16px rgba(255,0,0,.22)}.activity-item{animation:activity-land .55s ease-out}.activity-node{position:absolute;left:.7rem;top:50%;width:.4rem;height:.4rem;border:1px solid currentColor;background:currentColor;box-shadow:0 0 14px currentColor;transform:translateY(-50%)}.activity-item p{padding-left:1rem}@keyframes activity-land{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}@media (prefers-reduced-motion: reduce){.activity-item{animation:none}}`}</style></section>;
 }
 
 function SignalResidue({ tone, seed }: { tone: ActivityTone; seed: string }) {
   const color = tone === "gold" ? "#ffaa00" : tone === "cyan" ? "#67e8f9" : tone === "amber" ? "#ffaa00" : tone === "archive" ? "#b7b7b7" : tone === "danger" ? "#ff3b3b" : "#ff2a2a";
-  return <div className="signal-residue pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true"><div className="residue-aperture" style={{ color }} />{Array.from({ length: 14 }).map((_, index) => { const hash = stableHash(`${seed}:${index}:${tone}`); const dx = ((hash % 90) - 45); const dy = (((hash >> 5) % 70) - 35); return <span key={index} style={{ left: "50%", top: "50%", color, animationDelay: `${index * 34}ms`, "--dx": `${dx}px`, "--dy": `${dy}px` } as CSSProperties} />; })}<style jsx>{`.residue-aperture{position:absolute;left:50%;top:50%;width:3.5rem;height:2rem;border:1px solid currentColor;box-shadow:0 0 22px currentColor,inset 0 0 18px currentColor;transform:translate(-50%,-50%);animation:residue-aperture .72s ease-out forwards}.signal-residue span{position:absolute;width:3px;height:3px;background:currentColor;box-shadow:0 0 10px currentColor;animation:signal-residue-route .9s ease-out forwards}.signal-residue span:nth-child(3n){width:1px;height:10px}.signal-residue span:nth-child(4n){width:8px;height:1px}.signal-residue span:nth-child(5n){width:2px;height:2px;border:1px solid currentColor;background:transparent}@keyframes residue-aperture{0%{opacity:0;transform:translate(-50%,-50%) scale(.35)}35%{opacity:.9}100%{opacity:0;transform:translate(-50%,-50%) scale(1.35)}}@keyframes signal-residue-route{0%{opacity:0;transform:translate3d(0,0,0) scale(.5)}25%{opacity:.95}100%{opacity:0;transform:translate3d(var(--dx),var(--dy),0) scale(1)}}@media (prefers-reduced-motion: reduce){.residue-aperture,.signal-residue span{animation:none;opacity:.42}}`}</style></div>;
+  return <div className="signal-residue pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true"><div className="residue-aperture" style={{ color }} />{Array.from({ length: 14 }).map((_, index) => { const hash = stableHash(`${seed}:${index}:${tone}`); const dx = ((hash % 90) - 45); const dy = (((hash >> 5) % 70) - 35); return <span key={index} style={{ left: "50%", top: "50%", color, animationDelay: `${index * 34}ms`, "--dx": `${dx}px`, "--dy": `${dy}px` } as CSSProperties} />; })}<style jsx>{`.residue-aperture{position:absolute;inset:.35rem;border:2px solid currentColor;box-shadow:0 0 34px currentColor,inset 0 0 24px currentColor;animation:residue-aperture .86s ease-out forwards}.signal-residue span{position:absolute;width:3px;height:3px;background:currentColor;box-shadow:0 0 10px currentColor;animation:signal-residue-route .9s ease-out forwards}.signal-residue span:nth-child(3n){width:1px;height:10px}.signal-residue span:nth-child(4n){width:8px;height:1px}.signal-residue span:nth-child(5n){width:2px;height:2px;border:1px solid currentColor;background:transparent}@keyframes residue-aperture{0%{opacity:0;transform:scale(.94);filter:brightness(1.8)}32%{opacity:.92}100%{opacity:0;transform:scale(1.025);filter:brightness(1)}}@keyframes signal-residue-route{0%{opacity:0;transform:translate3d(0,0,0) scale(.5)}25%{opacity:.95}100%{opacity:0;transform:translate3d(var(--dx),var(--dy),0) scale(1)}}@media (prefers-reduced-motion: reduce){.residue-aperture,.signal-residue span{animation:none;opacity:.42}}`}</style></div>;
 }
 
 function TrackTitleLink({ track }: { track: QueuePublicTrack }) {
@@ -576,7 +836,7 @@ function NowPlaying({ title, track, compact = false, domId, lastSubmittedTrackId
   const isLanding = Boolean(track?.id && track.id === lastSubmittedTrackId);
   const isNowPlaying = title === "Now Playing";
   const tone = isNowPlaying ? "text-[#ffaa00]" : "text-accent";
-  return <div id={domId} data-track-id={track?.id} className={`broadcast-slot relative overflow-hidden border bg-surface p-4 transition-all ${isNowPlaying ? "broadcast-now border-[#ffaa00]/50 shadow-[0_0_34px_rgba(255,170,0,0.14)]" : "broadcast-next border-accent/40"} ${isLanding ? "packet-lock border-accent shadow-[0_0_44px_rgba(255,0,0,0.34)]" : ""} ${compact ? "" : "min-h-[15rem]"}`}><div className="slot-scan pointer-events-none absolute inset-0" />{track && residue && <SignalResidue tone={residue.tone} seed={`${track.id}:${residue.nonce}`} />}<p className={`relative text-xs uppercase tracking-[0.35em] ${tone}`}>{title}</p>{track ? <div className={`relative mt-3 grid gap-4 ${compact ? "grid-cols-[5.5rem_1fr]" : "sm:grid-cols-[12rem_1fr]"}`}><div className={`${compact ? "h-24" : "aspect-square max-h-56"} overflow-hidden border ${isNowPlaying ? "border-[#ffaa00]/45" : "border-accent/40"}`}><SourceArt track={track} /></div><div className="self-center"><h3 className={`${compact ? "text-xl" : "text-3xl"} font-bold text-foreground`}>{track.submittedArtistName}</h3><TrackTitleLink track={track} /><div className="mt-3 grid gap-1 text-xs text-muted"><TikTokLink handle={track.tiktokHandle} />{detected && <p>Detected signal: {detected}</p>}{!track.durationIsEstimate && <p>Runtime locked: {track.durationLabel}</p>}</div>{isNowPlaying && <div className="live-meter mt-4 grid grid-cols-12 items-end gap-1" aria-hidden="true">{[20, 46, 32, 70, 38, 82, 28, 56, 44, 76, 34, 62].map((height, index) => <span key={index} className="bg-[#ffaa00]/70" style={{ height: `${height / 3}px`, animationDelay: `${index * 55}ms` }} />)}</div>}</div></div> : <div className="relative mt-3 grid gap-4 sm:grid-cols-[8rem_1fr]"><div className="h-32 overflow-hidden border border-accent/30"><SourceArt track={null} /></div><p className="self-center text-sm text-muted">No transmission is in this slot yet.</p></div>}<style jsx>{`.slot-scan{background:linear-gradient(transparent 50%,rgba(255,255,255,.06) 50%);background-size:100% 6px;opacity:.12}.broadcast-now .slot-scan{animation:slot-scan 2.2s linear infinite}.broadcast-next{animation:next-slot-pulse 2.8s ease-in-out infinite}.packet-lock{animation:packet-card-lock 900ms ease-out}.live-meter span{animation:live-meter 900ms ease-in-out infinite}@keyframes slot-scan{from{background-position:0 0}to{background-position:0 42px}}@keyframes next-slot-pulse{0%,100%{box-shadow:0 0 0 rgba(255,0,0,0)}50%{box-shadow:0 0 22px rgba(255,0,0,.12)}}@keyframes packet-card-lock{0%{transform:translateY(4px);filter:brightness(1.5)}100%{transform:translateY(0);filter:brightness(1)}}@keyframes live-meter{0%,100%{transform:scaleY(.45);opacity:.45}50%{transform:scaleY(1);opacity:1}}@media (prefers-reduced-motion: reduce){.broadcast-now .slot-scan,.broadcast-next,.packet-lock,.live-meter span{animation:none}}`}</style></div>;
+  return <div id={domId} data-track-id={track?.id} data-track-card={track ? "true" : undefined} data-track-zone={isNowPlaying ? "now" : "next"} data-track-tone={track ? trackFlipTone(track, isNowPlaying ? "now" : "next") : undefined} data-track-artist={track?.submittedArtistName} data-track-title={track?.submittedSongTitle} data-track-label={isNowPlaying ? "Now Playing" : "Next In Line"} className={`broadcast-slot relative overflow-hidden border bg-surface p-4 transition-all ${isNowPlaying ? "broadcast-now border-[#ffaa00]/50 shadow-[0_0_34px_rgba(255,170,0,0.14)]" : "broadcast-next border-accent/40"} ${isLanding ? "packet-lock border-accent shadow-[0_0_44px_rgba(255,0,0,0.34)]" : ""} ${compact ? "" : "min-h-[15rem]"}`}><div className="slot-scan pointer-events-none absolute inset-0" />{track && residue && <SignalResidue tone={residue.tone} seed={`${track.id}:${residue.nonce}`} />}<p className={`relative text-xs uppercase tracking-[0.35em] ${tone}`}>{title}</p>{track ? <div className={`relative mt-3 grid gap-4 ${compact ? "grid-cols-[5.5rem_1fr]" : "sm:grid-cols-[12rem_1fr]"}`}><div className={`${compact ? "h-24" : "aspect-square max-h-56"} overflow-hidden border ${isNowPlaying ? "border-[#ffaa00]/45" : "border-accent/40"}`}><SourceArt track={track} /></div><div className="self-center"><h3 className={`${compact ? "text-xl" : "text-3xl"} font-bold text-foreground`}>{track.submittedArtistName}</h3><TrackTitleLink track={track} /><div className="mt-3 grid gap-1 text-xs text-muted"><TikTokLink handle={track.tiktokHandle} />{detected && <p>Detected signal: {detected}</p>}{!track.durationIsEstimate && <p>Runtime locked: {track.durationLabel}</p>}</div>{isNowPlaying && <div className="live-meter mt-4 grid grid-cols-12 items-end gap-1" aria-hidden="true">{[20, 46, 32, 70, 38, 82, 28, 56, 44, 76, 34, 62].map((height, index) => <span key={index} className="bg-[#ffaa00]/70" style={{ height: `${height / 3}px`, animationDelay: `${index * 55}ms` }} />)}</div>}</div></div> : <div className="relative mt-3 grid gap-4 sm:grid-cols-[8rem_1fr]"><div className="h-32 overflow-hidden border border-accent/30"><SourceArt track={null} /></div><p className="self-center text-sm text-muted">No transmission is in this slot yet.</p></div>}<style jsx>{`.slot-scan{background:linear-gradient(transparent 50%,rgba(255,255,255,.06) 50%);background-size:100% 6px;opacity:.12}.broadcast-now .slot-scan{animation:slot-scan 2.2s linear infinite}.broadcast-next{animation:next-slot-pulse 2.8s ease-in-out infinite}.packet-lock{animation:packet-card-lock 900ms ease-out}.live-meter span{animation:live-meter 900ms ease-in-out infinite}@keyframes slot-scan{from{background-position:0 0}to{background-position:0 42px}}@keyframes next-slot-pulse{0%,100%{box-shadow:0 0 0 rgba(255,0,0,0)}50%{box-shadow:0 0 22px rgba(255,0,0,.12)}}@keyframes packet-card-lock{0%{transform:translateY(4px);filter:brightness(1.5)}100%{transform:translateY(0);filter:brightness(1)}}@keyframes live-meter{0%,100%{transform:scaleY(.45);opacity:.45}50%{transform:scaleY(1);opacity:1}}@media (prefers-reduced-motion: reduce){.broadcast-now .slot-scan,.broadcast-next,.packet-lock,.live-meter span{animation:none}}`}</style></div>;
 }
 
 function QueueStatusPanel({ snapshot, canSubmit, isFull, onSubmit }: { snapshot: QueuePublicSnapshot | null; canSubmit: boolean; isFull: boolean; onSubmit: () => void }) {
@@ -605,7 +865,7 @@ function PublicLane({ title, tracks, subtitle, lastSubmittedTrackId, collapsible
   const collapsed = collapsible && tracks.length === 0;
   const id = domId ?? (title === "Free Transmissions" ? "free-transmissions-lane" : undefined);
   const isCompletedLane = title === "Recently Played" || title === "Completed Signal Log";
-  return <section id={id} className={`w-full border bg-surface transition-all ${lastSubmittedTrackId && tracks.some((track) => track.id === lastSubmittedTrackId) ? "border-accent shadow-[0_0_34px_rgba(255,0,0,0.22)]" : "border-border"} ${collapsed ? "p-3" : "p-5"}`}><div className="flex items-start justify-between gap-3"><div><h2 className="text-sm uppercase tracking-[0.25em] text-foreground">{title}</h2>{subtitle && !collapsed && <p className="mt-1 text-xs text-muted">{subtitle}</p>}</div><span className="text-xs text-muted">{tracks.length}</span></div>{collapsed ? <p className="mt-1 text-xs text-muted">No active signals in this lane.</p> : <div className="mt-4 space-y-3">{tracks.length === 0 ? <p className="border border-border/60 p-4 text-sm text-muted">No visible transmissions.</p> : tracks.map((track, index) => { const isLanding = track.id === lastSubmittedTrackId; const style = trackStatusStyle(track, isLanding, isCompletedLane); const sourceClass = track.sourceType === "upload" ? "source-upload" : track.sourceType === "other" ? "source-other" : "source-link"; const residue = residueMap[track.id]; return <article key={track.id} data-track-id={track.id} id={`track-card-${track.id}`} className={`queue-track-card grid gap-3 border bg-background/40 p-3 sm:grid-cols-[5rem_1fr_auto] sm:items-center ${style.card} ${sourceClass}`}>{residue && <SignalResidue tone={residue.tone} seed={`${track.id}:${residue.nonce}`} />}<div className="mini-aperture" aria-hidden="true"><span /><span /></div><div className="packet-trail" aria-hidden="true" /><div className="h-20 overflow-hidden border border-border/70"><SourceArt track={track} /></div><div><p className="text-xs text-muted">#{index + 1} · {track.sourceType.toUpperCase()}</p><p className="font-bold text-foreground">{track.submittedArtistName}</p>{track.publicSourceUrl ? <a href={track.publicSourceUrl} target="_blank" rel="noreferrer" className="text-sm text-foreground/85 underline-offset-2 hover:text-accent hover:underline">{track.submittedSongTitle}</a> : <p className="text-sm text-foreground/85">{track.submittedSongTitle}</p>}<div className="mt-2 text-xs text-muted"><TikTokLink handle={track.tiktokHandle} /></div>{style.stamp && <p className={`status-stamp mt-2 inline-flex border px-2 py-1 text-[10px] uppercase tracking-widest ${track.priorityUpgradeStatus === "checkout_pending" ? "border-[#ffaa00]/45 text-[#ffaa00]" : track.lane === "priority" || track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "manual" ? "border-[#ffaa00]/50 text-[#ffaa00]" : track.lane === "wheel" ? "border-cyan-200/45 text-cyan-200" : isCompletedLane ? "border-border text-muted" : "border-accent/35 text-accent"}`}>{style.stamp}</p>}{track.priorityUpgradeStatus === "requested" && <p className="mt-2 inline-flex border border-accent/30 px-2 py-1 text-[10px] uppercase tracking-widest text-accent">Priority checkout requested</p>}{(track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded") && <p className="mt-2 inline-flex border border-danger/40 px-2 py-1 text-[10px] uppercase tracking-widest text-danger">Track remains Free if still active</p>}</div><div className="space-y-2 sm:text-right"><p className="text-xs text-muted">{track.durationLabel}</p>{canResumePriorityPayment(track) && <button type="button" onClick={() => onPriorityPayment(track)} className="border border-[#ffaa00]/50 px-3 py-1.5 text-[10px] uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Resume Priority Payment</button>}{canPriorityUpgrade(track) && <button type="button" onClick={() => onPriorityUpgrade(track)} className="border border-[#ffaa00]/50 px-3 py-1.5 text-[10px] uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Upgrade to Priority Signal · {formatPrice(priorityPriceCents, priorityCurrency)}</button>}</div></article>; })}</div>}<style jsx>{`.queue-track-card{position:relative;overflow:hidden;transition:border-color .35s ease,box-shadow .35s ease,filter .35s ease}.queue-track-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;opacity:.75}.source-upload::before{background:linear-gradient(#fff,rgba(255,255,255,.2))}.source-link::before{background:linear-gradient(rgba(255,0,0,.8),rgba(255,0,0,.12))}.source-other::before{background:linear-gradient(rgba(255,255,255,.35),transparent)}.packet-lock{animation:packet-lock-in .95s ease-out;box-shadow:0 0 26px rgba(255,0,0,.20)}.payment-pending{animation:payment-pending-flicker 1.4s steps(2,end) infinite;box-shadow:0 0 20px rgba(255,170,0,.10)}.priority-lock{animation:priority-relay-lock 1.2s ease-out;box-shadow:0 0 24px rgba(255,170,0,.18)}.wheel-pulse{animation:wheel-signal-pulse 2.2s ease-in-out infinite;box-shadow:0 0 20px rgba(103,232,249,.12)}.completed-stamp{filter:saturate(.72)}.removed-stamp{filter:saturate(.65);box-shadow:0 0 18px rgba(255,0,0,.10)}.status-stamp{animation:status-stamp-in .42s ease-out}.mini-aperture{position:absolute;right:.75rem;top:.75rem;width:2.6rem;height:1.5rem;border:1px solid rgba(255,0,0,.32);box-shadow:0 0 18px rgba(255,0,0,.14),inset 0 0 12px rgba(255,255,255,.04);opacity:.72}.mini-aperture span{position:absolute;inset:24%;border:1px solid currentColor;color:rgba(255,0,0,.65);animation:mini-aperture-ring 1.4s ease-in-out infinite}.mini-aperture span:nth-child(2){inset:38%;animation-delay:.18s}.packet-trail{position:absolute;left:0;right:0;top:50%;height:1px;background:linear-gradient(90deg,transparent,rgba(255,0,0,.55),transparent);opacity:.45;animation:packet-trail-route 1.8s ease-in-out infinite}.payment-pending .mini-aperture{border-color:rgba(255,170,0,.48);box-shadow:0 0 20px rgba(255,170,0,.16)}.payment-pending .mini-aperture span,.payment-pending .packet-trail{color:rgba(255,170,0,.75);background:linear-gradient(90deg,transparent,rgba(255,170,0,.55),transparent)}.priority-lock .mini-aperture{border-color:rgba(255,170,0,.6);box-shadow:0 0 28px rgba(255,170,0,.24)}.priority-lock .mini-aperture span,.priority-lock .packet-trail{color:rgba(255,170,0,.85);background:linear-gradient(90deg,transparent,rgba(255,170,0,.68),transparent)}.wheel-pulse .mini-aperture{border-color:rgba(103,232,249,.6);box-shadow:0 0 24px rgba(103,232,249,.18)}.wheel-pulse .mini-aperture span,.wheel-pulse .packet-trail{color:rgba(103,232,249,.85);background:linear-gradient(90deg,transparent,rgba(103,232,249,.62),transparent)}.completed-stamp .mini-aperture{border-color:rgba(183,183,183,.35);box-shadow:0 0 18px rgba(183,183,183,.10)}.removed-stamp .mini-aperture{border-color:rgba(255,0,0,.55);transform:scaleX(.7);opacity:.45}@keyframes packet-lock-in{0%{transform:translateY(5px);filter:brightness(1.5)}100%{transform:translateY(0);filter:brightness(1)}}@keyframes payment-pending-flicker{0%,100%{border-color:rgba(255,170,0,.28)}50%{border-color:rgba(255,170,0,.65)}}@keyframes priority-relay-lock{0%{box-shadow:0 0 0 rgba(255,170,0,0);filter:brightness(1.6)}100%{box-shadow:0 0 24px rgba(255,170,0,.18);filter:brightness(1)}}@keyframes wheel-signal-pulse{0%,100%{border-color:rgba(103,232,249,.28)}50%{border-color:rgba(103,232,249,.72)}}@keyframes status-stamp-in{0%{transform:scale(.96);opacity:0}100%{transform:scale(1);opacity:1}}@keyframes mini-aperture-ring{0%,100%{transform:scale(.9);opacity:.35}50%{transform:scale(1.12);opacity:.9}}@keyframes packet-trail-route{0%,100%{transform:scaleX(.08);opacity:.12}50%{transform:scaleX(1);opacity:.62}}@media (prefers-reduced-motion: reduce){.packet-lock,.payment-pending,.priority-lock,.wheel-pulse,.status-stamp,.mini-aperture span,.packet-trail{animation:none}}`}</style></section>;
+  return <section id={id} className={`w-full border bg-surface transition-all ${lastSubmittedTrackId && tracks.some((track) => track.id === lastSubmittedTrackId) ? "border-accent shadow-[0_0_34px_rgba(255,0,0,0.22)]" : "border-border"} ${collapsed ? "p-3" : "p-5"}`}><div className="flex items-start justify-between gap-3"><div><h2 className="text-sm uppercase tracking-[0.25em] text-foreground">{title}</h2>{subtitle && !collapsed && <p className="mt-1 text-xs text-muted">{subtitle}</p>}</div><span className="text-xs text-muted">{tracks.length}</span></div>{collapsed ? <p className="mt-1 text-xs text-muted">No active signals in this lane.</p> : <div className="mt-4 space-y-3">{tracks.length === 0 ? <p className="border border-border/60 p-4 text-sm text-muted">No visible transmissions.</p> : tracks.map((track, index) => { const isLanding = track.id === lastSubmittedTrackId; const style = trackStatusStyle(track, isLanding, isCompletedLane); const sourceClass = track.sourceType === "upload" ? "source-upload" : track.sourceType === "other" ? "source-other" : "source-link"; const residue = residueMap[track.id]; return <article key={track.id} data-track-id={track.id} data-track-card="true" data-track-zone={isCompletedLane ? "completed" : title === "Priority Signal" ? "priority" : title === "Wheel Chosen" ? "wheel" : "free"} data-track-tone={trackFlipTone(track, isCompletedLane ? "completed" : title === "Priority Signal" ? "priority" : title === "Wheel Chosen" ? "wheel" : "free")} data-track-artist={track.submittedArtistName} data-track-title={track.submittedSongTitle} data-track-label={style.stamp ?? title} id={`track-card-${track.id}`} className={`queue-track-card grid gap-3 border bg-background/40 p-3 sm:grid-cols-[5rem_1fr_auto] sm:items-center ${style.card} ${sourceClass}`}>{residue && <SignalResidue tone={residue.tone} seed={`${track.id}:${residue.nonce}`} />}<div className="mini-aperture" aria-hidden="true"><span /><span /></div><div className="packet-trail" aria-hidden="true" /><div className="h-20 overflow-hidden border border-border/70"><SourceArt track={track} /></div><div><p className="text-xs text-muted">#{index + 1} · {track.sourceType.toUpperCase()}</p><p className="font-bold text-foreground">{track.submittedArtistName}</p>{track.publicSourceUrl ? <a href={track.publicSourceUrl} target="_blank" rel="noreferrer" className="text-sm text-foreground/85 underline-offset-2 hover:text-accent hover:underline">{track.submittedSongTitle}</a> : <p className="text-sm text-foreground/85">{track.submittedSongTitle}</p>}<div className="mt-2 text-xs text-muted"><TikTokLink handle={track.tiktokHandle} /></div>{style.stamp && <p className={`status-stamp mt-2 inline-flex border px-2 py-1 text-[10px] uppercase tracking-widest ${track.priorityUpgradeStatus === "checkout_pending" ? "border-[#ffaa00]/45 text-[#ffaa00]" : track.lane === "priority" || track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "manual" ? "border-[#ffaa00]/50 text-[#ffaa00]" : track.lane === "wheel" ? "border-cyan-200/45 text-cyan-200" : isCompletedLane ? "border-border text-muted" : "border-accent/35 text-accent"}`}>{style.stamp}</p>}{track.priorityUpgradeStatus === "requested" && <p className="mt-2 inline-flex border border-accent/30 px-2 py-1 text-[10px] uppercase tracking-widest text-accent">Priority checkout requested</p>}{(track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded") && <p className="mt-2 inline-flex border border-danger/40 px-2 py-1 text-[10px] uppercase tracking-widest text-danger">Track remains Free if still active</p>}</div><div className="space-y-2 sm:text-right"><p className="text-xs text-muted">{track.durationLabel}</p>{canResumePriorityPayment(track) && <button type="button" onClick={() => onPriorityPayment(track)} className="border border-[#ffaa00]/50 px-3 py-1.5 text-[10px] uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Resume Priority Payment</button>}{canPriorityUpgrade(track) && <button type="button" onClick={() => onPriorityUpgrade(track)} className="border border-[#ffaa00]/50 px-3 py-1.5 text-[10px] uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Upgrade to Priority Signal · {formatPrice(priorityPriceCents, priorityCurrency)}</button>}</div></article>; })}</div>}<style jsx>{`.queue-track-card{position:relative;overflow:hidden;transition:border-color .35s ease,box-shadow .35s ease,filter .35s ease}.queue-track-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;opacity:.75}.source-upload::before{background:linear-gradient(#fff,rgba(255,255,255,.2))}.source-link::before{background:linear-gradient(rgba(255,0,0,.8),rgba(255,0,0,.12))}.source-other::before{background:linear-gradient(rgba(255,255,255,.35),transparent)}.packet-lock{animation:packet-lock-in .95s ease-out;box-shadow:0 0 26px rgba(255,0,0,.20)}.payment-pending{animation:payment-pending-flicker 1.4s steps(2,end) infinite;box-shadow:0 0 20px rgba(255,170,0,.10)}.priority-lock{animation:priority-relay-lock 1.2s ease-out;box-shadow:0 0 24px rgba(255,170,0,.18)}.wheel-pulse{animation:wheel-signal-pulse 2.2s ease-in-out infinite;box-shadow:0 0 20px rgba(103,232,249,.12)}.completed-stamp{filter:saturate(.72)}.removed-stamp{filter:saturate(.65);box-shadow:0 0 18px rgba(255,0,0,.10)}.status-stamp{animation:status-stamp-in .42s ease-out}.mini-aperture{position:absolute;right:.75rem;top:.75rem;width:2.6rem;height:1.5rem;border:1px solid rgba(255,255,255,.16);box-shadow:0 0 10px rgba(255,255,255,.05),inset 0 0 10px rgba(255,255,255,.025);opacity:.28}.mini-aperture span{position:absolute;inset:24%;border:1px solid currentColor;color:rgba(255,255,255,.28);opacity:.55}.mini-aperture span:nth-child(2){inset:38%;animation-delay:.18s}.packet-trail{position:absolute;left:0;right:0;top:50%;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent);opacity:.12}.payment-pending .mini-aperture{border-color:rgba(255,170,0,.48);box-shadow:0 0 20px rgba(255,170,0,.16)}.payment-pending .mini-aperture span,.payment-pending .packet-trail{color:rgba(255,170,0,.75);background:linear-gradient(90deg,transparent,rgba(255,170,0,.55),transparent);animation:packet-trail-route 1.8s ease-in-out infinite}.payment-pending .mini-aperture span{animation:mini-aperture-ring 1.4s ease-in-out infinite}.priority-lock .mini-aperture{border-color:rgba(255,170,0,.6);box-shadow:0 0 28px rgba(255,170,0,.24)}.priority-lock .mini-aperture span,.priority-lock .packet-trail{color:rgba(255,170,0,.85);background:linear-gradient(90deg,transparent,rgba(255,170,0,.68),transparent);animation:packet-trail-route 1.8s ease-in-out infinite}.priority-lock .mini-aperture span{animation:mini-aperture-ring 1.4s ease-in-out infinite}.wheel-pulse .mini-aperture{border-color:rgba(103,232,249,.6);box-shadow:0 0 24px rgba(103,232,249,.18)}.wheel-pulse .mini-aperture span,.wheel-pulse .packet-trail{color:rgba(103,232,249,.85);background:linear-gradient(90deg,transparent,rgba(103,232,249,.62),transparent);animation:packet-trail-route 1.8s ease-in-out infinite}.wheel-pulse .mini-aperture span{animation:mini-aperture-ring 1.4s ease-in-out infinite}.completed-stamp .mini-aperture{border-color:rgba(183,183,183,.35);box-shadow:0 0 18px rgba(183,183,183,.10)}.removed-stamp .mini-aperture{border-color:rgba(255,0,0,.55);transform:scaleX(.7);opacity:.45}@keyframes packet-lock-in{0%{transform:translateY(5px);filter:brightness(1.5)}100%{transform:translateY(0);filter:brightness(1)}}@keyframes payment-pending-flicker{0%,100%{border-color:rgba(255,170,0,.28)}50%{border-color:rgba(255,170,0,.65)}}@keyframes priority-relay-lock{0%{box-shadow:0 0 0 rgba(255,170,0,0);filter:brightness(1.6)}100%{box-shadow:0 0 24px rgba(255,170,0,.18);filter:brightness(1)}}@keyframes wheel-signal-pulse{0%,100%{border-color:rgba(103,232,249,.28)}50%{border-color:rgba(103,232,249,.72)}}@keyframes status-stamp-in{0%{transform:scale(.96);opacity:0}100%{transform:scale(1);opacity:1}}@keyframes mini-aperture-ring{0%,100%{transform:scale(.9);opacity:.35}50%{transform:scale(1.12);opacity:.9}}@keyframes packet-trail-route{0%,100%{transform:scaleX(.08);opacity:.12}50%{transform:scaleX(1);opacity:.62}}@media (prefers-reduced-motion: reduce){.packet-lock,.payment-pending,.priority-lock,.wheel-pulse,.status-stamp,.mini-aperture span,.packet-trail{animation:none}}`}</style></section>;
 }
 
 function PriorityUpgradeModal({ track, price, pending, message, onConfirm, onClose }: { track: QueuePublicTrack; price: string; pending: boolean; message: string | null; onConfirm: () => void; onClose: () => void }) {

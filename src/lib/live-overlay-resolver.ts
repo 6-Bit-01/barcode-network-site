@@ -4,6 +4,33 @@ export type OverlayMode = "standby" | "now_playing" | "artist_card" | "wheel_rea
 export type WheelOverlayStatus = "ready" | "intro" | "active" | "complete";
 export type WheelCeremonyStatus = "idle" | "ready" | "reencrypting" | "spinning" | "result_pending" | "confirmed" | "cancelled" | "signal_lost";
 
+export const WHEEL_RIGHT_POINTER_ANGLE_DEGREES = 90;
+
+export function normalizeWheelAngle(degrees: number): number {
+  if (!Number.isFinite(degrees)) return 0;
+  return ((degrees % 360) + 360) % 360;
+}
+
+export function wheelSliceIndexAtPointer(entryCount: number, finalRotationDegrees: number, pointerAngleDegrees = WHEEL_RIGHT_POINTER_ANGLE_DEGREES): number {
+  const count = Math.max(1, Math.floor(entryCount));
+  const sliceSize = 360 / count;
+  // Winner selection is based only on slice geometry. Labels are visual only and must not affect this math.
+  // Boundary rule: each slice owns [startAngle, endAngle), so an exact boundary belongs to the next slice.
+  const pointerLocalAngle = normalizeWheelAngle(pointerAngleDegrees - normalizeWheelAngle(finalRotationDegrees));
+  return Math.min(count - 1, Math.floor(pointerLocalAngle / sliceSize));
+}
+
+export function wheelSliceCenterAngle(entryCount: number, index: number): number {
+  const count = Math.max(1, Math.floor(entryCount));
+  const safeIndex = Math.max(0, Math.min(count - 1, Math.floor(index)));
+  const sliceSize = 360 / count;
+  return safeIndex * sliceSize + sliceSize / 2;
+}
+
+export function wheelFinalRotationForSlice(entryCount: number, index: number, fullTurns = 4, pointerAngleDegrees = WHEEL_RIGHT_POINTER_ANGLE_DEGREES): number {
+  return (Math.max(0, Math.floor(fullTurns)) * 360) + pointerAngleDegrees - wheelSliceCenterAngle(entryCount, index);
+}
+
 export interface LiveOverlayTrackInput {
   id?: string;
   artist?: string;

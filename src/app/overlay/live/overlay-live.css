@@ -526,10 +526,10 @@ body > div:last-of-type {
   overflow: visible;
   color: #f8fdff;
   font-family: "Arial Black", Impact, "Franklin Gothic Heavy", system-ui, sans-serif;
-  font-size: clamp(0.68rem, calc(var(--wheel-name-size, 1.45vmin) * var(--wheel-label-scale, 1)), 4.35vmin);
+  font-size: clamp(0.68rem, var(--wheel-name-size, 1.45vmin), 5.95vmin);
   font-weight: 950;
   letter-spacing: var(--wheel-letter-spacing, 0.01em);
-  line-height: 0.86;
+  line-height: var(--wheel-label-line-height, 0.86);
   text-align: center;
   text-transform: uppercase;
   hyphens: auto;

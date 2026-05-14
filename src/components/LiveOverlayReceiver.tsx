@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
+import { wheelFinalRotationForSlice } from "@/lib/live-overlay-resolver";
 import type { LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
 
 type YTPlayer = {
@@ -192,28 +193,43 @@ function rememberWheelAudioArmed(armed: boolean): void {
   }
 }
 
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
 function wheelLabelMetrics(count: number) {
-  if (count <= 4) return { width: "35vmin", radius: 26.4, size: "4.65vmin", tracking: "0.001em", lines: 3 };
-  if (count <= 6) return { width: "31vmin", radius: 27.8, size: "3.88vmin", tracking: "0.001em", lines: 3 };
-  if (count <= 8) return { width: "27vmin", radius: 29.5, size: "3.12vmin", tracking: "0.002em", lines: 3 };
-  if (count <= 12) return { width: "22vmin", radius: 31.5, size: "2.28vmin", tracking: "0.002em", lines: 3 };
-  if (count <= 16) return { width: "17vmin", radius: 33.5, size: "1.55vmin", tracking: "0.002em", lines: 2 };
-  if (count <= 24) return { width: "13.2vmin", radius: 35.5, size: "1.12vmin", tracking: "0.001em", lines: 2 };
-  return { width: "10.8vmin", radius: 37, size: "0.88vmin", tracking: "0", lines: 2 };
+  if (count <= 4) return { width: 35, radius: 26.4, size: 4.65, tracking: "0.001em", lines: 3 };
+  if (count <= 6) return { width: 31, radius: 27.8, size: 3.88, tracking: "0.001em", lines: 3 };
+  if (count <= 8) return { width: 27, radius: 29.5, size: 3.12, tracking: "0.002em", lines: 3 };
+  if (count <= 12) return { width: 22, radius: 31.5, size: 2.28, tracking: "0.002em", lines: 3 };
+  if (count <= 16) return { width: 18.4, radius: 33.2, size: 1.72, tracking: "0.001em", lines: 2 };
+  if (count <= 24) return { width: 15.2, radius: 35.1, size: 1.28, tracking: "0", lines: 2 };
+  return { width: 12.4, radius: 36.7, size: 0.98, tracking: "0", lines: 2 };
 }
 
 function wheelLabelFit(value: string, count: number) {
   const cleaned = value.replace(/\s+/g, " ").trim();
   const length = cleaned.length;
   const words = cleaned.split(" ").filter(Boolean).length;
-  const generousSlice = count <= 8;
-  const lines = generousSlice && (words > 2 || length > 30) ? 3 : 2;
-  if (length > 72) return { scale: generousSlice ? "0.64" : "0.54", lines };
-  if (length > 58) return { scale: generousSlice ? "0.72" : "0.6", lines };
-  if (length > 44) return { scale: generousSlice ? "0.82" : "0.68", lines };
-  if (length > 32) return { scale: generousSlice ? "0.93" : "0.78", lines };
-  if (length > 24) return { scale: generousSlice ? "1.04" : "0.9", lines };
-  return { scale: generousSlice ? "1.08" : "1", lines: 2 };
+  const sliceDegrees = 360 / Math.max(1, count);
+  const base = wheelLabelMetrics(count);
+  const shortNameBoost = length <= 7 ? 1.32 : length <= 14 ? 1.18 : length <= 24 ? 1.06 : 1;
+  const lines = length <= 12 && words <= 2 ? 1 : length > 34 || words > 3 ? 3 : 2;
+  const radius = clampNumber(base.radius + (length > 34 ? 1.2 : length <= 10 ? -0.7 : 0), 24.8, 38.2);
+  const tangentWidth = 2 * radius * Math.sin((sliceDegrees * Math.PI) / 360);
+  const minWidth = count <= 8 ? 17 : count <= 16 ? 11 : count <= 24 ? 8 : 6.2;
+  const width = clampNumber(Math.min(base.width * shortNameBoost, tangentWidth * 0.98), minWidth, base.width * 1.22);
+  const maxLineLength = Math.max(4, Math.ceil(length / lines));
+  const fitSize = (width * (lines === 1 ? 1.72 : 1.58)) / Math.max(5, maxLineLength);
+  const size = clampNumber(Math.min(base.size * shortNameBoost, fitSize), count <= 16 ? 0.92 : 0.72, base.size * 1.28);
+  return {
+    width: `${width.toFixed(2)}vmin`,
+    radius,
+    size: `${size.toFixed(2)}vmin`,
+    lines,
+    tracking: length <= 12 ? "0.002em" : base.tracking,
+    lineHeight: lines === 1 ? "0.92" : lines === 2 ? "0.86" : "0.8",
+  };
 }
 
 function wheelLabelPosition(angle: number, radius: number) {
@@ -238,17 +254,16 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   const candidateCount = Math.max(1, candidates.length);
   const resultIndex = Math.max(0, candidates.findIndex((candidate) => candidate.id === result?.id));
   const sliceDegrees = 360 / candidateCount;
-  const resultCenterAngle = resultIndex * sliceDegrees + sliceDegrees / 2;
   const sliceColors = ["#67e8f9", "#0ea5e9", "#2563eb", "#7c3aed", "#c026d3", "#ff2b6d", "#ef4444", "#f97316", "#facc15", "#22c55e", "#e5e7eb", "#071426"];
   const sliceBackground = candidates.length > 0 ? `conic-gradient(from -90deg, ${candidates.map((_, index) => `${sliceColors[index % sliceColors.length]} ${index * sliceDegrees}deg ${(index + 1) * sliceDegrees}deg`).join(", ")})` : "radial-gradient(circle, #67e8f9, #0284c7)";
   const labelMetrics = wheelLabelMetrics(candidates.length);
   const wheelStyle = {
-    "--wheel-final-rotation": `${1530 - resultCenterAngle}deg`,
+    "--wheel-final-rotation": `${wheelFinalRotationForSlice(candidateCount, resultIndex)}deg`,
     "--wheel-spin-duration": `${Math.max(16, (ceremony?.spinDurationMs ?? 24000) / 1000)}s`,
     "--wheel-slice-count": candidateCount,
     "--wheel-slice-background": sliceBackground,
-    "--wheel-name-size": labelMetrics.size,
-    "--wheel-label-width": labelMetrics.width,
+    "--wheel-name-size": `${labelMetrics.size}vmin`,
+    "--wheel-label-width": `${labelMetrics.width}vmin`,
     "--wheel-label-radius": `${labelMetrics.radius}vmin`,
     "--wheel-letter-spacing": labelMetrics.tracking,
     "--wheel-label-lines": labelMetrics.lines,
@@ -350,14 +365,18 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
           {candidates.length === 0 ? <span className="live-overlay-wheel-empty">NO CANDIDATES</span> : candidates.map((candidate, index) => {
             const angle = index * sliceDegrees + sliceDegrees / 2;
             const label = candidate.artistName.replace(/\s+/g, " ").trim();
-            const position = wheelLabelPosition(angle, labelMetrics.radius);
             const labelFit = wheelLabelFit(label, candidateCount);
+            const position = wheelLabelPosition(angle, labelFit.radius);
+            // Wheel labels are visual only. Winner selection is based on slice geometry and the right-side pointer.
             const labelStyle = {
               "--wheel-label-x": position.x,
               "--wheel-label-y": position.y,
               "--wheel-label-rotation": position.rotation,
-              "--wheel-label-scale": labelFit.scale,
+              "--wheel-label-width": labelFit.width,
+              "--wheel-name-size": labelFit.size,
+              "--wheel-letter-spacing": labelFit.tracking,
               "--wheel-label-lines": labelFit.lines,
+              "--wheel-label-line-height": labelFit.lineHeight,
             } as CSSProperties;
             return (
               <span key={candidate.id} className="live-overlay-wheel-slice-label" style={labelStyle} title={`${candidate.artistName} — ${candidate.trackTitle}`}>

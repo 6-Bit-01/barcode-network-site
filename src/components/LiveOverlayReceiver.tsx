@@ -1,8 +1,26 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { ResolvedLiveOverlayScene } from "@/lib/live-overlay";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
+
+type YTPlayer = {
+  loadVideoById: (options: { videoId: string; startSeconds?: number }) => void;
+  cueVideoById: (options: { videoId: string; startSeconds?: number }) => void;
+  playVideo: () => void;
+  pauseVideo: () => void;
+  stopVideo: () => void;
+  seekTo: (seconds: number, allowSeekAhead: boolean) => void;
+  getCurrentTime: () => number;
+  mute: () => void;
+};
+
+declare global {
+  interface Window {
+    YT?: { Player: new (elementId: string, options: Record<string, unknown>) => YTPlayer };
+    onYouTubeIframeAPIReady?: () => void;
+  }
+}
 
 function fallbackScene(): ResolvedLiveOverlayScene {
   return {
@@ -43,6 +61,80 @@ function showTrack(scene: ResolvedLiveOverlayScene): boolean {
   return Boolean((scene.mode === "now_playing" || scene.mode === "artist_card") && scene.track);
 }
 
+function expectedYouTubeTime(sync: LiveOverlayYouTubeSync): number {
+  if (sync.playbackState !== "playing") return sync.currentTimeSeconds;
+  const elapsed = Math.max(0, (Date.now() - new Date(sync.updatedAt).getTime()) / 1000);
+  return sync.currentTimeSeconds + elapsed;
+}
+
+function ensureYouTubeApi(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (window.YT?.Player) return Promise.resolve();
+  return new Promise((resolve) => {
+    const previous = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      previous?.();
+      resolve();
+    };
+    if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+      const script = document.createElement("script");
+      script.src = "https://www.youtube.com/iframe_api";
+      document.head.appendChild(script);
+    }
+  });
+}
+
+function YouTubeOverlayPlayer({ sync }: { sync: LiveOverlayYouTubeSync }) {
+  const playerRef = useRef<YTPlayer | null>(null);
+  const readyRef = useRef(false);
+  const loadedVideoRef = useRef<string | null>(null);
+  const containerId = "live-overlay-youtube-player";
+
+  useEffect(() => {
+    let cancelled = false;
+    ensureYouTubeApi().then(() => {
+      if (cancelled || playerRef.current || !window.YT?.Player) return;
+      playerRef.current = new window.YT.Player(containerId, {
+        videoId: sync.videoId,
+        playerVars: { autoplay: 1, controls: 0, modestbranding: 1, playsinline: 1, rel: 0, mute: 1 },
+        events: {
+          onReady: () => {
+            readyRef.current = true;
+            playerRef.current?.mute();
+            playerRef.current?.loadVideoById({ videoId: sync.videoId, startSeconds: expectedYouTubeTime(sync) });
+            loadedVideoRef.current = sync.videoId;
+          },
+        },
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sync]);
+
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player || !readyRef.current) return;
+    const expected = expectedYouTubeTime(sync);
+    if (loadedVideoRef.current !== sync.videoId) {
+      player.loadVideoById({ videoId: sync.videoId, startSeconds: expected });
+      loadedVideoRef.current = sync.videoId;
+    } else {
+      const current = player.getCurrentTime();
+      if (Number.isFinite(current) && Math.abs(current - expected) > 1.75) player.seekTo(expected, true);
+    }
+    player.mute();
+    if (sync.playbackState === "playing") player.playVideo();
+    else if (sync.playbackState === "paused") player.pauseVideo();
+    else {
+      player.pauseVideo();
+      player.seekTo(sync.currentTimeSeconds, true);
+    }
+  }, [sync]);
+
+  return <div className="live-overlay-youtube-player" id={containerId} aria-label="Muted YouTube overlay player" />;
+}
+
 export function LiveOverlayReceiver() {
   const [scene, setScene] = useState<ResolvedLiveOverlayScene>(fallbackScene());
   const [connected, setConnected] = useState(false);
@@ -55,7 +147,7 @@ export function LiveOverlayReceiver() {
         if (!res.ok) throw new Error("Overlay state unavailable");
         const next = await res.json();
         if (!cancelled) {
-          setScene(next);
+          setScene(next.scene ?? next);
           setConnected(true);
         }
       } catch {
@@ -72,10 +164,11 @@ export function LiveOverlayReceiver() {
 
   const label = useMemo(() => modeLabel(scene.mode), [scene.mode]);
   const trackVisible = showTrack(scene);
+  const youtubeVisible = scene.mode === "now_playing" && scene.automatic && scene.youtube && scene.track;
 
   return (
     <div className="live-overlay-shell" aria-label="BARCODE Radio live overlay receiver">
-      <section className={`live-overlay-stage ${frameTone(scene.mode)}`}>
+      <section className={`live-overlay-stage ${frameTone(scene.mode)} ${youtubeVisible ? "live-overlay-stage--youtube" : ""}`}>
         <div className="live-overlay-noise" aria-hidden="true" />
         <div className="live-overlay-corners" aria-hidden="true" />
         <div className="live-overlay-header">
@@ -84,7 +177,16 @@ export function LiveOverlayReceiver() {
         </div>
 
         <main className="live-overlay-content">
-          {trackVisible && scene.track ? (
+          {youtubeVisible && scene.youtube && scene.track ? (
+            <div className="live-overlay-youtube-scene">
+              <YouTubeOverlayPlayer sync={scene.youtube} />
+              <div className="live-overlay-youtube-lower">
+                <p className="live-overlay-mode">{label}</p>
+                <h1>{scene.track.artistName}</h1>
+                <h2>{scene.track.trackTitle}</h2>
+              </div>
+            </div>
+          ) : trackVisible && scene.track ? (
             <div className="live-overlay-track-grid">
               <div className="live-overlay-art-frame">
                 {scene.artworkUrl ? <img src={scene.artworkUrl} alt="Current track artwork" className="live-overlay-art" /> : <div className="live-overlay-art-fallback"><span>BN</span></div>}

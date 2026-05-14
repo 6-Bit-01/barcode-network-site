@@ -15,6 +15,7 @@ export interface LiveOverlayTrackInput {
   sourceArtworkUrl?: string | null;
   link?: string | null;
   durationLabel?: string;
+  youtubeVideoId?: string | null;
 }
 
 export interface LiveOverlayStateInput {
@@ -46,11 +47,24 @@ export interface LiveOverlaySessionInput {
   sponsorBreakStatus?: SponsorBreakStatus;
 }
 
+export type LiveOverlayPlaybackState = "playing" | "paused" | "stopped";
+
+export interface LiveOverlayYouTubeSync {
+  provider: "youtube";
+  videoId: string;
+  trackId?: string;
+  playbackState: LiveOverlayPlaybackState;
+  currentTimeSeconds: number;
+  updatedAt: string;
+  muted: boolean;
+}
+
 export interface ResolveLiveOverlaySceneInput {
   overlayState?: LiveOverlayStateInput | null;
   currentSession?: LiveOverlaySessionInput | null;
   nowPlaying?: LiveOverlayTrackInput | null;
   upNext?: LiveOverlayTrackInput | null;
+  playerSync?: LiveOverlayYouTubeSync | null;
   wheelSpinsOwed?: number;
   sponsorBreakStatus?: SponsorBreakStatus;
   broadcastPhase?: string;
@@ -76,6 +90,7 @@ export interface ResolvedLiveOverlayScene {
   artworkUrl?: string | null;
   sourceUrl?: string | null;
   videoUrl?: string;
+  youtube?: LiveOverlayYouTubeSync;
   priority: number;
   automatic: boolean;
   overrideActive: boolean;
@@ -113,6 +128,15 @@ function displayArtist(track: LiveOverlayTrackInput): string {
 
 function displayTitle(track: LiveOverlayTrackInput): string {
   return cleanDisplay(track.detectedSongTitle) || cleanDisplay(track.submittedSongTitle) || cleanDisplay(track.title) || "Untitled transmission";
+}
+
+function youtubeSyncForTrack(track: LiveOverlayTrackInput, playerSync?: LiveOverlayYouTubeSync | null): LiveOverlayYouTubeSync | undefined {
+  if (track.sourceType !== "youtube") return undefined;
+  const safeLink = safeLiveOverlayUrl(track.link);
+  if (!safeLink || !track.youtubeVideoId) return undefined;
+  const videoId = track.youtubeVideoId;
+  const syncMatchesTrack = playerSync?.provider === "youtube" && playerSync.videoId === videoId && (!playerSync.trackId || !track.id || playerSync.trackId === track.id);
+  return syncMatchesTrack ? { ...playerSync, muted: true } : { provider: "youtube", videoId, trackId: track.id, playbackState: "playing", currentTimeSeconds: 0, updatedAt: new Date().toISOString(), muted: true };
 }
 
 function safeTrack(track: LiveOverlayTrackInput): { track: ResolvedLiveOverlayTrack; artworkUrl: string | null; sourceUrl: string | null } {
@@ -204,15 +228,17 @@ export function resolveLiveOverlayScene(input: ResolveLiveOverlaySceneInput): Re
 
   if (input.nowPlaying) {
     const safe = safeTrack(input.nowPlaying);
+    const youtube = youtubeSyncForTrack(input.nowPlaying, input.playerSync);
     return scene({
       mode: "now_playing",
-      reason: "Current track is loaded.",
+      reason: youtube ? "Current YouTube track is loaded." : "Current track is loaded.",
       title: "NOW PLAYING",
-      subtitle: "BARCODE RADIO LIVE",
+      subtitle: youtube ? "YOUTUBE SIGNAL" : "BARCODE RADIO LIVE",
       track: safe.track,
       artworkUrl: safe.artworkUrl,
       sourceUrl: safe.sourceUrl,
-      priority: 50,
+      youtube,
+      priority: youtube ? 60 : 50,
       automatic: true,
       overrideActive: false,
     }, overlayState, wheelSpinsOwed);

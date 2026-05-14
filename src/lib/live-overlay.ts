@@ -2,10 +2,11 @@ import { Redis } from "@upstash/redis";
 import { getRadioQueueState } from "./queue";
 import { getTrackArtworkUrl, getTrackDurationLabel } from "./queue-types";
 import { resolveLiveOverlayScene, safeLiveOverlayUrl } from "./live-overlay-resolver";
+import { parseYouTubeVideoId } from "./track-duration";
 import type { QueueEntry, QueueSourceType } from "./queue-types";
-import type { LiveOverlayStateInput, OverlayMode, ResolvedLiveOverlayScene, WheelOverlayStatus } from "./live-overlay-resolver";
+import type { LiveOverlayPlaybackState, LiveOverlayStateInput, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, WheelOverlayStatus } from "./live-overlay-resolver";
 
-export type { OverlayMode, ResolvedLiveOverlayScene, WheelOverlayStatus } from "./live-overlay-resolver";
+export type { LiveOverlayPlaybackState, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, WheelOverlayStatus } from "./live-overlay-resolver";
 
 export interface LiveOverlayState extends LiveOverlayStateInput {
   mode: OverlayMode;
@@ -32,7 +33,7 @@ export interface LiveOverlayState extends LiveOverlayStateInput {
 }
 
 export interface LiveOverlayPayload {
-  action?: "launchWheel" | "clearWheel" | "setSystemMessage" | "clearSystemMessage" | "launchVideoPlaceholder" | "clearVideoPlaceholder" | "clearAllOverrides";
+  action?: "launchWheel" | "clearWheel" | "setSystemMessage" | "clearSystemMessage" | "launchVideoPlaceholder" | "clearVideoPlaceholder" | "clearAllOverrides" | "updatePlayerSync" | "clearPlayerSync";
   mode?: OverlayMode;
   title?: unknown;
   subtitle?: unknown;
@@ -43,17 +44,21 @@ export interface LiveOverlayPayload {
   sourceUrl?: unknown;
   sponsorLabel?: unknown;
   videoUrl?: unknown;
+  sync?: unknown;
 }
 
 export interface LiveOverlayAdminSnapshot {
   overlayState: LiveOverlayState;
   scene: ResolvedLiveOverlayScene;
+  playerSync: LiveOverlayYouTubeSync | null;
 }
 
 const OVERLAY_STATE_KEY = "barcode:live-overlay:state";
+const PLAYER_SYNC_KEY = "barcode:live-overlay:player-sync";
 const MAX_TEXT_LENGTH = 180;
 
 let memoryOverlayState: LiveOverlayState = defaultLiveOverlayState();
+let memoryPlayerSync: LiveOverlayYouTubeSync | null = null;
 
 function getRedis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -109,6 +114,7 @@ function overlayTrackInput(entry: QueueEntry) {
     sourceArtworkUrl: getTrackArtworkUrl(entry),
     link: entry.link,
     durationLabel: getTrackDurationLabel(entry),
+    youtubeVideoId: entry.sourceType === "youtube" ? parseYouTubeVideoId(entry.link) : null,
   };
 }
 
@@ -124,6 +130,36 @@ function normalizeSourceType(value: unknown): LiveOverlayState["sourceType"] {
 
 function normalizeWheelStatus(value: unknown): WheelOverlayStatus {
   return value === "intro" || value === "active" || value === "complete" || value === "ready" ? value : "ready";
+}
+
+
+function normalizePlaybackState(value: unknown): LiveOverlayPlaybackState {
+  return value === "paused" || value === "stopped" || value === "playing" ? value : "stopped";
+}
+
+function normalizePlayerSync(input: unknown): LiveOverlayYouTubeSync | null {
+  const raw = input as Partial<LiveOverlayYouTubeSync> | null;
+  if (!raw || typeof raw !== "object" || raw.provider !== "youtube") return null;
+  const videoId = typeof raw.videoId === "string" && parseYouTubeVideoId(`https://www.youtube.com/watch?v=${raw.videoId}`) ? raw.videoId : null;
+  if (!videoId) return null;
+  const currentTimeSeconds = typeof raw.currentTimeSeconds === "number" && Number.isFinite(raw.currentTimeSeconds) ? Math.max(0, raw.currentTimeSeconds) : 0;
+  return {
+    provider: "youtube",
+    videoId,
+    trackId: cleanText(raw.trackId),
+    playbackState: normalizePlaybackState(raw.playbackState),
+    currentTimeSeconds,
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString(),
+    muted: true,
+  };
+}
+
+export function youtubeSyncFromTrack(entry: QueueEntry, playbackState: LiveOverlayPlaybackState = "playing", currentTimeSeconds = 0): LiveOverlayYouTubeSync | null {
+  if (entry.sourceType !== "youtube") return null;
+  const safeLink = safeLiveOverlayUrl(entry.link);
+  const videoId = safeLink ? parseYouTubeVideoId(safeLink) : null;
+  if (!videoId) return null;
+  return { provider: "youtube", videoId, trackId: entry.id, playbackState, currentTimeSeconds: Math.max(0, currentTimeSeconds), updatedAt: new Date().toISOString(), muted: true };
 }
 
 function normalizeState(input: unknown): LiveOverlayState {
@@ -162,6 +198,29 @@ async function writeLiveOverlayState(state: LiveOverlayState): Promise<LiveOverl
   return normalized;
 }
 
+export async function getLiveOverlayPlayerSync(): Promise<LiveOverlayYouTubeSync | null> {
+  const redis = getRedis();
+  if (!redis) return normalizePlayerSync(memoryPlayerSync);
+  const raw = await redis.get<LiveOverlayYouTubeSync | string>(PLAYER_SYNC_KEY);
+  if (!raw) return null;
+  try {
+    return normalizePlayerSync(typeof raw === "string" ? JSON.parse(raw) : raw);
+  } catch {
+    return null;
+  }
+}
+
+export async function setLiveOverlayPlayerSync(sync: LiveOverlayYouTubeSync | null): Promise<LiveOverlayYouTubeSync | null> {
+  const normalized = normalizePlayerSync(sync);
+  const redis = getRedis();
+  if (redis) {
+    if (normalized) await redis.set(PLAYER_SYNC_KEY, JSON.stringify(normalized));
+    else await redis.del(PLAYER_SYNC_KEY);
+  }
+  memoryPlayerSync = normalized;
+  return normalized;
+}
+
 export async function getStoredLiveOverlayState(): Promise<LiveOverlayState> {
   const redis = getRedis();
   if (!redis) return normalizeState(memoryOverlayState);
@@ -175,7 +234,7 @@ export async function getStoredLiveOverlayState(): Promise<LiveOverlayState> {
 }
 
 export async function getResolvedLiveOverlayScene(): Promise<ResolvedLiveOverlayScene> {
-  const [overlayState, queueState] = await Promise.all([getStoredLiveOverlayState(), getRadioQueueState()]);
+  const [overlayState, queueState, playerSync] = await Promise.all([getStoredLiveOverlayState(), getRadioQueueState(), getLiveOverlayPlayerSync()]);
   const session = queueState.session ?? null;
   return resolveLiveOverlayScene({
     overlayState,
@@ -190,6 +249,7 @@ export async function getResolvedLiveOverlayScene(): Promise<ResolvedLiveOverlay
     } : null,
     nowPlaying: queueState.nowPlaying ? overlayTrackInput(queueState.nowPlaying) : null,
     upNext: queueState.nextInLine ? overlayTrackInput(queueState.nextInLine) : null,
+    playerSync,
     wheelSpinsOwed: session?.wheelSpinsOwed ?? 0,
     sponsorBreakStatus: session?.sponsorBreakStatus,
     broadcastPhase: session?.broadcastPhase,
@@ -198,8 +258,8 @@ export async function getResolvedLiveOverlayScene(): Promise<ResolvedLiveOverlay
 }
 
 export async function getLiveOverlayAdminSnapshot(): Promise<LiveOverlayAdminSnapshot> {
-  const [overlayState, scene] = await Promise.all([getStoredLiveOverlayState(), getResolvedLiveOverlayScene()]);
-  return { overlayState, scene };
+  const [overlayState, scene, playerSync] = await Promise.all([getStoredLiveOverlayState(), getResolvedLiveOverlayScene(), getLiveOverlayPlayerSync()]);
+  return { overlayState, scene, playerSync };
 }
 
 export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<LiveOverlayAdminSnapshot> {
@@ -224,6 +284,12 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
     next = { ...current, mode: "standby", videoPlaceholderActive: false, videoUrl: undefined, updatedAt: now };
   } else if (payload.action === "clearAllOverrides") {
     next = { ...defaultLiveOverlayState(), updatedAt: now };
+  } else if (payload.action === "updatePlayerSync") {
+    await setLiveOverlayPlayerSync(normalizePlayerSync(payload.sync));
+    return getLiveOverlayAdminSnapshot();
+  } else if (payload.action === "clearPlayerSync") {
+    await setLiveOverlayPlayerSync(null);
+    return getLiveOverlayAdminSnapshot();
   }
 
   await writeLiveOverlayState(next);

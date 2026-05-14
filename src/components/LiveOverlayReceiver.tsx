@@ -66,15 +66,67 @@ function showTrack(scene: ResolvedLiveOverlayScene): boolean {
   return Boolean((scene.mode === "now_playing" || scene.mode === "artist_card") && scene.track);
 }
 
+const FALLBACK_WHEEL_AUDIO_FILES = [
+  "/audio/wheel/wheel-spin-01-creepy-circus-astronautflute.mp3",
+  "/audio/wheel/wheel-spin-02-dark-circus-top-sue.mp3",
+  "/audio/wheel/wheel-spin-03-comedy-circus-top-sue.mp3",
+  "/audio/wheel/wheel-spin-04-circus-fast-andorios.mp3",
+  "/audio/wheel/wheel-spin-05-carousel-circus-chakong.mp3",
+  "/audio/wheel/wheel-spin-06-circus-bear-studiokolomna.mp3",
+  "/audio/wheel/wheel-spin-07-upbeat-corporate-kornevmusic.mp3",
+  "/audio/wheel/wheel-spin-08-corporate-music-absolutesound.mp3",
+  "/audio/wheel/wheel-spin-09-corporate-music-2-absolutesound.mp3",
+  "/audio/wheel/wheel-spin-10-this-heavy-metal-mrclaps.mp3",
+  "/audio/wheel/wheel-spin-11-metal-dark-matter-alexgrohl.mp3",
+  "/audio/wheel/wheel-spin-12-burn-it-down-alexgrohl.mp3",
+  "/audio/wheel/wheel-spin-13-8bit-retro-the-mountain.mp3",
+  "/audio/wheel/wheel-spin-14-retro-swing-the-mountain.mp3",
+  "/audio/wheel/wheel-spin-15-retro-arcade-mondamusic.mp3",
+  "/audio/wheel/wheel-spin-16-synthwave-retro-80s-monume.mp3",
+  "/audio/wheel/wheel-spin-17-retro-game-arcade-moodmode.mp3",
+  "/audio/wheel/wheel-spin-18-retro-surf-rock-tunetank.mp3",
+];
+
+function safeWheelAudioPath(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const cleaned = value.trim();
+  if (!/^[a-zA-Z0-9._~!$&'()*+,;=:@/%-]+\.mp3(?:\?.*)?$/i.test(cleaned)) return null;
+  if (/^https?:\/\//i.test(cleaned) || cleaned.includes("..")) return null;
+  if (cleaned.startsWith("/") && !cleaned.startsWith("/audio/wheel/")) return null;
+  return cleaned.startsWith("/") ? cleaned : `/audio/wheel/${cleaned.replace(/^audio\/wheel\//, "")}`;
+}
+
+function normalizeWheelAudioManifest(input: unknown): string[] {
+  const rawFiles = Array.isArray(input) ? input : Array.isArray((input as { files?: unknown } | null)?.files) ? (input as { files: unknown[] }).files : [];
+  return Array.from(new Set(rawFiles.map(safeWheelAudioPath).filter((file): file is string => Boolean(file))));
+}
+
+async function loadWheelAudioFiles(): Promise<string[]> {
+  try {
+    const response = await fetch("/audio/wheel/manifest.json", { cache: "no-store" });
+    if (!response.ok) return FALLBACK_WHEEL_AUDIO_FILES;
+    const files = normalizeWheelAudioManifest(await response.json());
+    return files.length > 0 ? files : FALLBACK_WHEEL_AUDIO_FILES;
+  } catch {
+    return FALLBACK_WHEEL_AUDIO_FILES;
+  }
+}
+
+function stopWheelAudio(audio: HTMLAudioElement | null): void {
+  if (!audio) return;
+  audio.pause();
+  audio.currentTime = 0;
+}
+
 
 function wheelLabelMetrics(count: number) {
-  if (count <= 4) return { maxLength: 42, width: "58vmin", distance: "-4.8vmin", size: "4.3vmin", tracking: "0.04em", rail: "34vmin" };
-  if (count <= 6) return { maxLength: 36, width: "52vmin", distance: "-1.2vmin", size: "3.45vmin", tracking: "0.045em", rail: "31vmin" };
-  if (count <= 8) return { maxLength: 31, width: "47vmin", distance: "1.8vmin", size: "2.75vmin", tracking: "0.05em", rail: "28vmin" };
-  if (count <= 12) return { maxLength: 25, width: "40vmin", distance: "5.4vmin", size: "2.05vmin", tracking: "0.055em", rail: "24vmin" };
-  if (count <= 16) return { maxLength: 21, width: "35vmin", distance: "7.8vmin", size: "1.58vmin", tracking: "0.06em", rail: "21vmin" };
-  if (count <= 24) return { maxLength: 18, width: "30vmin", distance: "9.8vmin", size: "1.18vmin", tracking: "0.065em", rail: "18vmin" };
-  return { maxLength: 14, width: "24vmin", distance: "11.8vmin", size: "0.94vmin", tracking: "0.055em", rail: "14vmin" };
+  if (count <= 4) return { maxLength: 64, width: "38vmin", distance: "2.2vmin", size: "4.8vmin", tracking: "0.025em", rail: "34vmin" };
+  if (count <= 6) return { maxLength: 56, width: "34vmin", distance: "3.8vmin", size: "3.95vmin", tracking: "0.03em", rail: "31vmin" };
+  if (count <= 8) return { maxLength: 48, width: "30vmin", distance: "5.5vmin", size: "3.15vmin", tracking: "0.035em", rail: "28vmin" };
+  if (count <= 12) return { maxLength: 40, width: "26vmin", distance: "7.4vmin", size: "2.35vmin", tracking: "0.04em", rail: "24vmin" };
+  if (count <= 16) return { maxLength: 34, width: "22vmin", distance: "9.6vmin", size: "1.8vmin", tracking: "0.045em", rail: "21vmin" };
+  if (count <= 24) return { maxLength: 28, width: "18vmin", distance: "11.4vmin", size: "1.3vmin", tracking: "0.05em", rail: "18vmin" };
+  return { maxLength: 22, width: "15vmin", distance: "13vmin", size: "1vmin", tracking: "0.045em", rail: "14vmin" };
 }
 
 function shortWheelLabel(value: string, maxLength: number): string {
@@ -88,6 +140,7 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   const candidates = ceremony?.displayCandidates ?? [];
   const result = ceremony?.resultTrack;
   const spinning = ceremony?.status === "spinning";
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const candidateCount = Math.max(1, candidates.length);
   const resultIndex = Math.max(0, candidates.findIndex((candidate) => candidate.id === result?.id));
   const sliceDegrees = 360 / candidateCount;
@@ -97,7 +150,7 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   const labelMetrics = wheelLabelMetrics(candidates.length);
   const wheelStyle = {
     "--wheel-final-rotation": `${1440 - resultCenterAngle}deg`,
-    "--wheel-spin-duration": `${Math.max(5, (ceremony?.spinDurationMs ?? 6500) / 1000)}s`,
+    "--wheel-spin-duration": `${Math.max(16, (ceremony?.spinDurationMs ?? 24000) / 1000)}s`,
     "--wheel-slice-count": candidateCount,
     "--wheel-slice-background": sliceBackground,
     "--wheel-name-size": labelMetrics.size,
@@ -108,8 +161,39 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   } as CSSProperties;
   const labelMaxLength = labelMetrics.maxLength;
 
+  useEffect(() => {
+    const existingAudio = audioRef.current;
+    if (!spinning) {
+      stopWheelAudio(existingAudio);
+      audioRef.current = null;
+      return undefined;
+    }
+
+    let cancelled = false;
+    loadWheelAudioFiles().then((files) => {
+      if (cancelled || files.length === 0) return;
+      const audioPath = files[Math.floor(Math.random() * files.length)] ?? files[0];
+      if (!audioPath) return;
+      const audio = new Audio(audioPath);
+      audio.loop = true;
+      audio.preload = "auto";
+      audio.volume = 0.72;
+      audioRef.current = audio;
+      audio.play().catch(() => {
+        stopWheelAudio(audio);
+        if (audioRef.current === audio) audioRef.current = null;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      stopWheelAudio(audioRef.current);
+      audioRef.current = null;
+    };
+  }, [spinning, ceremony?.spinStartedAt, ceremony?.resultTrackId]);
+
   return (
-    <div className={`live-overlay-wheel-scene live-overlay-wheel-scene--${ceremony?.status ?? "idle"} ${spinning ? "live-overlay-wheel-scene--spinning" : ""}`}>
+    <div className={`live-overlay-wheel-scene live-overlay-wheel-scene--${ceremony?.status ?? "idle"} ${spinning ? "live-overlay-wheel-scene--spinning" : ""}`} data-wheel-seed={ceremony?.seed}>
       {ceremony?.status === "reencrypting" && <div className="live-overlay-wheel-glitch" aria-hidden="true">RE-ENCRYPTING SIGNAL</div>}
       <div className="live-overlay-wheel-heading" aria-live="polite">
         <p className="live-overlay-mode">{modeLabel(scene.mode)}</p>

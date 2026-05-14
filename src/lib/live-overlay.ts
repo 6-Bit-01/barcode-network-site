@@ -36,6 +36,7 @@ export interface LiveOverlayState extends LiveOverlayStateInput {
   wheelCeremonyResultSelectedAt?: string;
   wheelCeremonySeed?: string;
   wheelCeremonyJingleKey?: string;
+  wheelCeremonySpinDurationMs?: number;
   updatedAt: string;
 }
 
@@ -143,6 +144,15 @@ function randomSeed(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
+function randomSpinDurationMs(): number {
+  return 16_000 + Math.floor(Math.random() * 16_001);
+}
+
+function normalizeSpinDurationMs(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.max(16_000, Math.min(32_000, Math.round(value)));
+}
+
 function pickRandomCandidate(candidates: ResolvedWheelCeremonyTrack[], excludeId?: string): ResolvedWheelCeremonyTrack | null {
   const pool = excludeId && candidates.length > 1 ? candidates.filter((candidate) => candidate.id !== excludeId) : candidates;
   if (pool.length === 0) return null;
@@ -233,6 +243,7 @@ function normalizeState(input: unknown): LiveOverlayState {
     wheelCeremonyResultSelectedAt: typeof raw.wheelCeremonyResultSelectedAt === "string" ? raw.wheelCeremonyResultSelectedAt : undefined,
     wheelCeremonySeed: cleanText(raw.wheelCeremonySeed),
     wheelCeremonyJingleKey: cleanText(raw.wheelCeremonyJingleKey, "silent"),
+    wheelCeremonySpinDurationMs: normalizeSpinDurationMs(raw.wheelCeremonySpinDurationMs),
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString(),
   };
 }
@@ -333,12 +344,13 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelCeremonyResultSelectedAt: undefined,
       wheelCeremonySeed: randomSeed(),
       wheelCeremonyJingleKey: "silent",
+      wheelCeremonySpinDurationMs: undefined,
       updatedAt: now,
     };
   } else if (payload.action === "spinWheel" || payload.action === "reencryptWheel") {
     const currentStatus = normalizeWheelCeremonyStatus(current.wheelCeremonyStatus);
     if (payload.action === "spinWheel" && !isActiveCeremony(currentStatus)) throw new Error("Launch the wheel before spinning.");
-    if (payload.action === "reencryptWheel" && currentStatus !== "result_pending" && currentStatus !== "spinning") throw new Error("Re-encrypt is only available before confirming a pending result.");
+    if (payload.action === "reencryptWheel" && currentStatus !== "result_pending" && currentStatus !== "spinning" && currentStatus !== "reencrypting") throw new Error("Re-encrypt is only available before confirming a pending result.");
     const queueState = await getRadioQueueState();
     if ((queueState.session?.wheelSpinsOwed ?? 0) <= 0) throw new Error("No wheel spins are owed.");
     const candidates = getWheelCandidatesFromQueue(queueState.queue);
@@ -356,6 +368,7 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelCeremonyResultSelectedAt: now,
       wheelCeremonySeed: randomSeed(),
       wheelCeremonyJingleKey: "silent",
+      wheelCeremonySpinDurationMs: reencrypting ? current.wheelCeremonySpinDurationMs : randomSpinDurationMs(),
       artistName: selected.artistName,
       trackTitle: selected.trackTitle,
       updatedAt: now,
@@ -393,6 +406,7 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelCeremonyResultSelectedAt: undefined,
       wheelCeremonySeed: undefined,
       wheelCeremonyJingleKey: "silent",
+      wheelCeremonySpinDurationMs: undefined,
       artistName: undefined,
       trackTitle: undefined,
       updatedAt: now,

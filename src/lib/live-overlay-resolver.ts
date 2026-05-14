@@ -56,6 +56,7 @@ export interface LiveOverlayStateInput {
   wheelCeremonyResultSelectedAt?: string;
   wheelCeremonySeed?: string;
   wheelCeremonyJingleKey?: string;
+  wheelCeremonySpinDurationMs?: number;
   updatedAt?: string;
 }
 
@@ -148,7 +149,9 @@ export interface ResolvedLiveOverlayScene {
 
 const MAX_URL_LENGTH = 600;
 const BLOCKED_HOSTS = ["drive.google.com", "dropbox.com", "wetransfer.com", "bit.ly", "tinyurl.com", "t.co", "goo.gl", "private.blob.vercel-storage.com"];
-const WHEEL_SPIN_DURATION_MS = 6500;
+const DEFAULT_WHEEL_SPIN_DURATION_MS = 24000;
+const MIN_WHEEL_SPIN_DURATION_MS = 16000;
+const MAX_WHEEL_SPIN_DURATION_MS = 32000;
 const WHEEL_REENCRYPTING_MS = 2500;
 const WHEEL_CONFIRMED_RETURN_MS = 2200;
 const MAX_WHEEL_DISPLAY_CANDIDATES = 32;
@@ -222,6 +225,31 @@ function timeMs(value?: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function normalizeWheelSpinDurationMs(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_WHEEL_SPIN_DURATION_MS;
+  return Math.max(MIN_WHEEL_SPIN_DURATION_MS, Math.min(MAX_WHEEL_SPIN_DURATION_MS, Math.round(value)));
+}
+
+function seededHash(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function shuffledWheelCandidates(candidates: ResolvedWheelCeremonyTrack[], seed?: string): ResolvedWheelCeremonyTrack[] {
+  const shuffled = [...candidates];
+  let state = seededHash(seed || "barcode-wheel");
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    const swapIndex = state % (index + 1);
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
 function resolveWheelCeremony(input: ResolveLiveOverlaySceneInput, now: Date): ResolvedWheelCeremonyScene | null {
   const overlayState = input.overlayState ?? null;
   const storedStatus = normalizeWheelCeremonyStatus(overlayState?.wheelCeremonyStatus ?? (overlayState?.wheelOverlayActive ? "ready" : "idle"));
@@ -230,12 +258,12 @@ function resolveWheelCeremony(input: ResolveLiveOverlaySceneInput, now: Date): R
   const resultTrackId = cleanDisplay(overlayState?.wheelCeremonyResultTrackId);
   const resultTrack = candidates.find((candidate) => candidate.id === resultTrackId) ?? (resultTrackId ? { id: resultTrackId, artistName: cleanDisplay(overlayState?.artistName) || "Selected artist", trackTitle: cleanDisplay(overlayState?.trackTitle) || "Selected transmission" } : null);
   let status = storedStatus;
+  const spinDurationMs = normalizeWheelSpinDurationMs(overlayState?.wheelCeremonySpinDurationMs);
   if (storedStatus === "reencrypting" || storedStatus === "spinning") {
     const spinStartedMs = timeMs(overlayState?.wheelCeremonySpinStartedAt) ?? now.getTime();
     const elapsedMs = now.getTime() - spinStartedMs;
-    if (storedStatus === "reencrypting" && elapsedMs < WHEEL_REENCRYPTING_MS) status = "reencrypting";
-    else if (elapsedMs < WHEEL_SPIN_DURATION_MS) status = "spinning";
-    else status = "result_pending";
+    if (storedStatus === "reencrypting") status = elapsedMs < WHEEL_REENCRYPTING_MS ? "reencrypting" : "result_pending";
+    else status = elapsedMs < spinDurationMs ? "spinning" : "result_pending";
   }
   if (storedStatus === "confirmed") {
     const confirmedAtMs = timeMs(overlayState?.wheelCeremonyResultSelectedAt) ?? timeMs(overlayState?.updatedAt) ?? now.getTime();
@@ -245,7 +273,7 @@ function resolveWheelCeremony(input: ResolveLiveOverlaySceneInput, now: Date): R
     status,
     storedStatus,
     candidateCount: candidates.length,
-    displayCandidates: candidates.slice(0, MAX_WHEEL_DISPLAY_CANDIDATES),
+    displayCandidates: (storedStatus === "reencrypting" ? shuffledWheelCandidates(candidates, cleanDisplay(overlayState?.wheelCeremonySeed)) : candidates).slice(0, MAX_WHEEL_DISPLAY_CANDIDATES),
     hiddenCandidateCount: Math.max(0, candidates.length - MAX_WHEEL_DISPLAY_CANDIDATES),
     resultTrack,
     resultTrackId,
@@ -254,7 +282,7 @@ function resolveWheelCeremony(input: ResolveLiveOverlaySceneInput, now: Date): R
     resultSelectedAt: overlayState?.wheelCeremonyResultSelectedAt,
     seed: cleanDisplay(overlayState?.wheelCeremonySeed),
     jingleKey: cleanDisplay(overlayState?.wheelCeremonyJingleKey) || "silent",
-    spinDurationMs: WHEEL_SPIN_DURATION_MS,
+    spinDurationMs,
   };
 }
 

@@ -121,6 +121,14 @@ const FALLBACK_WHEEL_AUDIO_FILES = [
   "/audio/wheel/wheel-spin-18-retro-surf-rock-tunetank.mp3",
 ];
 
+const BINARY_CONFETTI = Array.from({ length: 44 }, (_, index) => ({
+  bit: index % 3 === 0 ? "0" : "1",
+  left: `${(index * 19) % 100}%`,
+  delay: `${(index % 11) * 0.17}s`,
+  drift: `${((index % 9) - 4) * 1.25}vmin`,
+  duration: `${2.4 + (index % 7) * 0.18}s`,
+}));
+
 function safeWheelAudioPath(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const cleaned = value.trim().replace(/\s/g, "%20");
@@ -185,19 +193,21 @@ function rememberWheelAudioArmed(armed: boolean): void {
 }
 
 function wheelLabelMetrics(count: number) {
-  if (count <= 4) return { maxLength: 64, width: "28vmin", radius: "36vmin", size: "4.25vmin", tracking: "0.005em" };
-  if (count <= 6) return { maxLength: 58, width: "25vmin", radius: "37vmin", size: "3.35vmin", tracking: "0.006em" };
-  if (count <= 8) return { maxLength: 52, width: "22vmin", radius: "38vmin", size: "2.65vmin", tracking: "0.008em" };
-  if (count <= 12) return { maxLength: 42, width: "18vmin", radius: "39vmin", size: "2.02vmin", tracking: "0.01em" };
-  if (count <= 16) return { maxLength: 34, width: "15.5vmin", radius: "39.6vmin", size: "1.52vmin", tracking: "0.01em" };
-  if (count <= 24) return { maxLength: 28, width: "12.8vmin", radius: "40vmin", size: "1.12vmin", tracking: "0.01em" };
-  return { maxLength: 22, width: "10.8vmin", radius: "40.4vmin", size: "0.88vmin", tracking: "0.006em" };
+  if (count <= 4) return { width: "34vmin", radius: "30vmin", size: "4vmin", tracking: "0.004em", lines: 3 };
+  if (count <= 6) return { width: "30vmin", radius: "31.5vmin", size: "3.25vmin", tracking: "0.005em", lines: 3 };
+  if (count <= 8) return { width: "26vmin", radius: "33vmin", size: "2.55vmin", tracking: "0.006em", lines: 3 };
+  if (count <= 12) return { width: "21vmin", radius: "35vmin", size: "1.95vmin", tracking: "0.008em", lines: 2 };
+  if (count <= 16) return { width: "17vmin", radius: "36.5vmin", size: "1.48vmin", tracking: "0.008em", lines: 2 };
+  if (count <= 24) return { width: "13.5vmin", radius: "38vmin", size: "1.1vmin", tracking: "0.008em", lines: 2 };
+  return { width: "11vmin", radius: "39vmin", size: "0.86vmin", tracking: "0.004em", lines: 2 };
 }
 
-function shortWheelLabel(value: string, maxLength: number): string {
-  const cleaned = value.replace(/\s+/g, " ").trim();
-  if (cleaned.length <= maxLength) return cleaned;
-  return `${cleaned.slice(0, Math.max(1, maxLength - 1)).trim()}…`;
+function wheelLabelScale(value: string): string {
+  const length = value.replace(/\s+/g, " ").trim().length;
+  if (length > 54) return "0.68";
+  if (length > 40) return "0.76";
+  if (length > 28) return "0.86";
+  return "1";
 }
 
 function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
@@ -207,6 +217,7 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   const spinning = ceremony?.status === "spinning";
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [audioArmed, setAudioArmed] = useState(() => readWheelAudioArmed());
+  const [audioNotice, setAudioNotice] = useState<string | null>(null);
   const [audioJustArmed, setAudioJustArmed] = useState(false);
   const candidateCount = Math.max(1, candidates.length);
   const resultIndex = Math.max(0, candidates.findIndex((candidate) => candidate.id === result?.id));
@@ -216,7 +227,7 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   const sliceBackground = candidates.length > 0 ? `conic-gradient(from -90deg, ${candidates.map((_, index) => `${sliceColors[index % sliceColors.length]} ${index * sliceDegrees}deg ${(index + 1) * sliceDegrees}deg`).join(", ")})` : "radial-gradient(circle, #67e8f9, #0284c7)";
   const labelMetrics = wheelLabelMetrics(candidates.length);
   const wheelStyle = {
-    "--wheel-final-rotation": `${1440 - resultCenterAngle}deg`,
+    "--wheel-final-rotation": `${1530 - resultCenterAngle}deg`,
     "--wheel-spin-duration": `${Math.max(16, (ceremony?.spinDurationMs ?? 24000) / 1000)}s`,
     "--wheel-slice-count": candidateCount,
     "--wheel-slice-background": sliceBackground,
@@ -224,9 +235,8 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
     "--wheel-label-width": labelMetrics.width,
     "--wheel-label-radius": labelMetrics.radius,
     "--wheel-letter-spacing": labelMetrics.tracking,
+    "--wheel-label-lines": labelMetrics.lines,
   } as CSSProperties;
-  const labelMaxLength = labelMetrics.maxLength;
-
   useEffect(() => {
     if (!audioJustArmed) return undefined;
     const timeout = window.setTimeout(() => setAudioJustArmed(false), 2200);
@@ -234,10 +244,16 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   }, [audioJustArmed]);
 
   useEffect(() => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio();
+      audioRef.current.preload = "auto";
+    }
+  }, []);
+
+  useEffect(() => {
     const existingAudio = audioRef.current;
     if (!spinning || !audioArmed) {
       stopWheelAudio(existingAudio);
-      audioRef.current = null;
       return undefined;
     }
 
@@ -245,51 +261,66 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
     loadWheelAudioFiles().then(async (files) => {
       const storedPath = safeWheelAudioPath(ceremony?.audioPath);
       const candidatePaths = [storedPath, ...shuffledAudioPaths(files)].filter((path, index, paths): path is string => Boolean(path) && paths.indexOf(path) === index);
+      const audio = audioRef.current ?? new Audio();
+      audioRef.current = audio;
+      audio.loop = true;
+      audio.preload = "auto";
+      audio.volume = 0.82;
       for (const audioPath of candidatePaths) {
         if (cancelled) return;
-        const audio = new Audio(audioPath);
-        audio.loop = true;
-        audio.preload = "auto";
-        audio.volume = 0.72;
-        audioRef.current = audio;
         try {
+          stopWheelAudio(audio);
+          audio.src = audioPath;
+          audio.load();
           await audio.play();
+          if (!cancelled) setAudioNotice(null);
           return;
         } catch (error) {
           stopWheelAudio(audio);
-          if (audioRef.current === audio) audioRef.current = null;
           if (audioPlayWasBlocked(error)) {
             setAudioArmed(false);
             rememberWheelAudioArmed(false);
+            setAudioNotice("AUDIO FAILED TO START");
             return;
           }
         }
       }
+      if (!cancelled) setAudioNotice("AUDIO FAILED TO START");
     });
 
     return () => {
       cancelled = true;
       stopWheelAudio(audioRef.current);
-      audioRef.current = null;
     };
   }, [audioArmed, spinning, ceremony?.audioPath, ceremony?.spinStartedAt, ceremony?.resultTrackId]);
 
   function enableWheelAudio() {
     const unlockPath = safeWheelAudioPath(ceremony?.audioPath) ?? FALLBACK_WHEEL_AUDIO_FILES[0];
     const unlockAudio = new Audio(unlockPath);
-    unlockAudio.muted = true;
-    unlockAudio.volume = 0;
-    unlockAudio.play().catch(() => undefined).finally(() => {
-      stopWheelAudio(unlockAudio);
+    unlockAudio.loop = false;
+    unlockAudio.muted = false;
+    unlockAudio.volume = 0.04;
+    unlockAudio.preload = "auto";
+    unlockAudio.load();
+    audioRef.current = unlockAudio;
+    unlockAudio.play().then(() => {
+      window.setTimeout(() => stopWheelAudio(unlockAudio), 280);
       setAudioArmed(true);
       setAudioJustArmed(true);
+      setAudioNotice(null);
       rememberWheelAudioArmed(true);
+    }).catch(() => {
+      stopWheelAudio(unlockAudio);
+      setAudioNotice("AUDIO FAILED TO START");
+      setAudioArmed(false);
+      rememberWheelAudioArmed(false);
     });
   }
 
   return (
     <div className={`live-overlay-wheel-scene live-overlay-wheel-scene--${ceremony?.status ?? "idle"} ${spinning ? "live-overlay-wheel-scene--spinning" : ""}`} data-wheel-seed={ceremony?.seed}>
-      {!audioArmed ? <button type="button" className="live-overlay-wheel-audio-arm" onClick={enableWheelAudio}>ENABLE WHEEL AUDIO</button> : audioJustArmed ? <div className="live-overlay-wheel-audio-armed" role="status">AUDIO ARMED</div> : null}
+      {!audioArmed ? <div className="live-overlay-wheel-audio-modal"><div><span>Required before first spin</span><strong>ENABLE WHEEL AUDIO</strong><button type="button" onClick={enableWheelAudio}>Arm Wheel Audio</button></div></div> : audioJustArmed ? <div className="live-overlay-wheel-audio-armed" role="status">AUDIO ARMED</div> : null}
+      {audioNotice && <div className="live-overlay-wheel-audio-notice" role="status">{audioNotice}</div>}
       {ceremony?.status === "reencrypting" && <div className="live-overlay-wheel-glitch" aria-hidden="true">RE-ENCRYPTING SIGNAL</div>}
       <div className="live-overlay-wheel-heading" aria-live="polite">
         <p className="live-overlay-mode">{modeLabel(scene.mode)}</p>
@@ -302,8 +333,8 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
           <div className="live-overlay-wheel-slices" aria-hidden="true" />
           {candidates.length === 0 ? <span className="live-overlay-wheel-empty">NO CANDIDATES</span> : candidates.map((candidate, index) => {
             const angle = index * sliceDegrees + sliceDegrees / 2;
-            const label = shortWheelLabel(candidate.artistName, labelMaxLength);
-            const labelStyle = { "--wheel-label-angle": `${angle}deg`, "--wheel-label-counter-angle": `${-angle}deg` } as CSSProperties;
+            const label = candidate.artistName.replace(/\s+/g, " ").trim();
+            const labelStyle = { "--wheel-label-angle": `${angle}deg`, "--wheel-label-text-flip": angle > 90 && angle < 270 ? "180deg" : "0deg", "--wheel-label-scale": wheelLabelScale(label) } as CSSProperties;
             return (
               <span key={candidate.id} className="live-overlay-wheel-slice-label" style={labelStyle} title={`${candidate.artistName} — ${candidate.trackTitle}`}>
                 <span>{label}</span>
@@ -313,6 +344,11 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
           <div className="live-overlay-wheel-core"><span>10K</span><small>TAP WHEEL</small></div>
         </div>
       </div>
+
+      {result && ceremony?.status === "result_pending" && <div className="live-overlay-wheel-result-reveal" aria-live="assertive">
+        <div className="live-overlay-binary-confetti" aria-hidden="true">{BINARY_CONFETTI.map((bit, index) => <span key={`${bit.bit}-${index}`} style={{ "--bit-left": bit.left, "--bit-delay": bit.delay, "--bit-drift": bit.drift, "--bit-duration": bit.duration } as CSSProperties}>{bit.bit}</span>)}</div>
+        <div className="live-overlay-wheel-result-card"><span>WHEEL WINNER</span><strong>{result.artistName}</strong><em>{result.trackTitle}</em><p>20 SECONDS TO CLAIM YOUR WINNINGS</p></div>
+      </div>}
 
       {(scene.message || result) && <div className="live-overlay-wheel-status">
         {result && (ceremony?.status === "result_pending" || ceremony?.status === "confirmed") ? <><span>{ceremony.status === "confirmed" ? "SIGNAL LOCKED" : "RESULT PENDING"}</span><strong>{result.artistName}</strong><em>{result.trackTitle}</em></> : <><span>{scene.title}</span>{scene.message && <strong>{scene.message}</strong>}</>}

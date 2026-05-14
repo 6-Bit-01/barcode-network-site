@@ -49,7 +49,7 @@ assert.equal(receiver.includes("live-overlay-wheel-roster"), false, "public whee
 assert.equal(receiver.includes(`!wheelVisible && <div className="live-overlay-footer"`), true, "public wheel ceremony hides the generic overlay footer");
 assert.equal(receiver.includes("live-overlay-wheel-slice-label"), true, "public wheel overlay renders candidate names as slice labels");
 assert.equal(receiver.includes("#7c3aed") && receiver.includes("#facc15") && receiver.includes("#22c55e"), true, "wheel slice palette includes expanded BARCODE colors");
-assert.equal(receiver.includes("wheelLabelMetrics") && receiver.includes("--wheel-label-width") && receiver.includes("--wheel-label-radius") && receiver.includes("--wheel-label-counter-angle"), true, "wheel artist labels use dynamic sizing variables");
+assert.equal(receiver.includes("wheelLabelMetrics") && receiver.includes("--wheel-label-width") && receiver.includes("--wheel-label-radius") && receiver.includes("--wheel-label-text-flip"), true, "wheel artist labels use dynamic sizing variables");
 assert.equal(receiver.includes("Re-encrypting Signal") || receiver.includes("RE-ENCRYPTING"), true, "receiver has re-encryption ceremony copy");
 assert.equal(overlayCss.includes("width: min(92.5vmin, 100%)"), true, "wheel is sized to dominate the square overlay");
 assert.equal(overlayCss.includes("live-wheel-reencrypt-sweep") && overlayCss.includes("live-wheel-pointer-pulse"), true, "wheel ceremony CSS includes re-encryption and pointer polish effects");

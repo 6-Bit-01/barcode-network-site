@@ -1,11 +1,13 @@
 import { Redis } from "@upstash/redis";
 import { getRadioQueueState } from "./queue";
 import { getTrackArtworkUrl, getTrackDurationLabel } from "./queue-types";
+import { resolveLiveOverlayScene, safeLiveOverlayUrl } from "./live-overlay-resolver";
 import type { QueueEntry, QueueSourceType } from "./queue-types";
+import type { LiveOverlayStateInput, OverlayMode, ResolvedLiveOverlayScene, WheelOverlayStatus } from "./live-overlay-resolver";
 
-export type OverlayMode = "standby" | "now_playing" | "artist_card" | "wheel_ready" | "sponsor" | "video_placeholder" | "system_message";
+export type { OverlayMode, ResolvedLiveOverlayScene, WheelOverlayStatus } from "./live-overlay-resolver";
 
-export interface LiveOverlayState {
+export interface LiveOverlayState extends LiveOverlayStateInput {
   mode: OverlayMode;
   title?: string;
   subtitle?: string;
@@ -19,10 +21,18 @@ export interface LiveOverlayState {
   durationLabel?: string;
   sponsorLabel?: string;
   videoUrl?: string;
+  systemMessageActive?: boolean;
+  systemMessageTitle?: string;
+  systemMessage?: string;
+  videoPlaceholderActive?: boolean;
+  wheelOverlayActive?: boolean;
+  wheelOverlayLaunchedAt?: string;
+  wheelOverlayStatus?: WheelOverlayStatus;
   updatedAt: string;
 }
 
 export interface LiveOverlayPayload {
+  action?: "launchWheel" | "clearWheel" | "setSystemMessage" | "clearSystemMessage" | "launchVideoPlaceholder" | "clearVideoPlaceholder" | "clearAllOverrides";
   mode?: OverlayMode;
   title?: unknown;
   subtitle?: unknown;
@@ -35,9 +45,13 @@ export interface LiveOverlayPayload {
   videoUrl?: unknown;
 }
 
+export interface LiveOverlayAdminSnapshot {
+  overlayState: LiveOverlayState;
+  scene: ResolvedLiveOverlayScene;
+}
+
 const OVERLAY_STATE_KEY = "barcode:live-overlay:state";
 const MAX_TEXT_LENGTH = 180;
-const MAX_URL_LENGTH = 600;
 
 let memoryOverlayState: LiveOverlayState = defaultLiveOverlayState();
 
@@ -52,10 +66,14 @@ export function defaultLiveOverlayState(): LiveOverlayState {
   return {
     mode: "standby",
     title: "BARCODE RADIO",
-    subtitle: "LIVE OVERLAY RECEIVER",
-    message: "Stand by for the next transmission.",
+    subtitle: "RECEIVER STANDBY",
+    message: "Standing by for the next transmission.",
     artworkUrl: null,
     sourceUrl: null,
+    systemMessageActive: false,
+    videoPlaceholderActive: false,
+    wheelOverlayActive: false,
+    wheelOverlayStatus: "ready",
     updatedAt: new Date().toISOString(),
   };
 }
@@ -66,33 +84,8 @@ function cleanText(value: unknown, fallback?: string): string | undefined {
   return cleaned || fallback;
 }
 
-function safeHttpUrl(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim().slice(0, MAX_URL_LENGTH);
-  if (!trimmed) return undefined;
-  try {
-    const parsed = new URL(trimmed);
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return undefined;
-    const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
-    const blockedHosts = ["drive.google.com", "dropbox.com", "wetransfer.com", "bit.ly", "tinyurl.com", "t.co", "goo.gl", "private.blob.vercel-storage.com"];
-    if (blockedHosts.some((blocked) => host === blocked || host.endsWith(`.${blocked}`))) return undefined;
-    return parsed.toString();
-  } catch {
-    return undefined;
-  }
-}
-
 function safeArtworkUrl(value: unknown): string | null {
-  return safeHttpUrl(value) ?? null;
-}
-
-function publicTrackUrl(entry: QueueEntry): string | null {
-  if ((entry.sourceType ?? "other") === "upload") return null;
-  return safeHttpUrl(entry.link) ?? null;
-}
-
-function publicTrackArtwork(entry: QueueEntry): string | null {
-  return safeArtworkUrl(getTrackArtworkUrl(entry));
+  return safeLiveOverlayUrl(value) ?? null;
 }
 
 function displayArtist(entry: QueueEntry): string {
@@ -103,26 +96,34 @@ function displayTitle(entry: QueueEntry): string {
   return entry.detectedSongTitle?.trim() || entry.submittedSongTitle?.trim() || entry.title;
 }
 
-function trackState(entry: QueueEntry): Partial<LiveOverlayState> {
+function overlayTrackInput(entry: QueueEntry) {
   return {
-    trackId: entry.id,
-    artistName: displayArtist(entry),
-    trackTitle: displayTitle(entry),
-    artworkUrl: publicTrackArtwork(entry),
-    sourceUrl: publicTrackUrl(entry),
-    sourceType: entry.sourceType ?? "unknown",
+    id: entry.id,
+    artist: displayArtist(entry),
+    title: displayTitle(entry),
+    submittedArtistName: entry.submittedArtistName,
+    submittedSongTitle: entry.submittedSongTitle,
+    detectedArtistName: entry.detectedArtistName,
+    detectedSongTitle: entry.detectedSongTitle,
+    sourceType: (entry.sourceType ?? "unknown") as QueueSourceType | "unknown",
+    sourceArtworkUrl: getTrackArtworkUrl(entry),
+    link: entry.link,
     durationLabel: getTrackDurationLabel(entry),
   };
 }
 
 function normalizeMode(value: unknown): OverlayMode {
-  const modes: OverlayMode[] = ["standby", "now_playing", "artist_card", "wheel_ready", "sponsor", "video_placeholder", "system_message"];
+  const modes: OverlayMode[] = ["standby", "now_playing", "artist_card", "wheel_ready", "sponsor", "video_placeholder", "system_message", "session_active"];
   return modes.includes(value as OverlayMode) ? value as OverlayMode : "standby";
 }
 
 function normalizeSourceType(value: unknown): LiveOverlayState["sourceType"] {
   const sources: LiveOverlayState["sourceType"][] = ["upload", "link", "youtube", "soundcloud", "spotify", "other", "unknown"];
   return sources.includes(value as LiveOverlayState["sourceType"]) ? value as LiveOverlayState["sourceType"] : "unknown";
+}
+
+function normalizeWheelStatus(value: unknown): WheelOverlayStatus {
+  return value === "intro" || value === "active" || value === "complete" || value === "ready" ? value : "ready";
 }
 
 function normalizeState(input: unknown): LiveOverlayState {
@@ -137,13 +138,28 @@ function normalizeState(input: unknown): LiveOverlayState {
     artistName: cleanText(raw.artistName),
     trackTitle: cleanText(raw.trackTitle),
     artworkUrl: safeArtworkUrl(raw.artworkUrl),
-    sourceUrl: safeHttpUrl(raw.sourceUrl) ?? null,
+    sourceUrl: safeLiveOverlayUrl(raw.sourceUrl) ?? null,
     sourceType: normalizeSourceType(raw.sourceType),
     durationLabel: cleanText(raw.durationLabel),
     sponsorLabel: cleanText(raw.sponsorLabel),
-    videoUrl: safeHttpUrl(raw.videoUrl),
+    videoUrl: safeLiveOverlayUrl(raw.videoUrl),
+    systemMessageActive: raw.systemMessageActive === true,
+    systemMessageTitle: cleanText(raw.systemMessageTitle),
+    systemMessage: cleanText(raw.systemMessage),
+    videoPlaceholderActive: raw.videoPlaceholderActive === true,
+    wheelOverlayActive: raw.wheelOverlayActive === true || raw.mode === "wheel_ready",
+    wheelOverlayLaunchedAt: typeof raw.wheelOverlayLaunchedAt === "string" ? raw.wheelOverlayLaunchedAt : undefined,
+    wheelOverlayStatus: normalizeWheelStatus(raw.wheelOverlayStatus),
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString(),
   };
+}
+
+async function writeLiveOverlayState(state: LiveOverlayState): Promise<LiveOverlayState> {
+  const normalized = normalizeState(state);
+  const redis = getRedis();
+  if (redis) await redis.set(OVERLAY_STATE_KEY, JSON.stringify(normalized));
+  memoryOverlayState = normalized;
+  return normalized;
 }
 
 export async function getStoredLiveOverlayState(): Promise<LiveOverlayState> {
@@ -158,81 +174,58 @@ export async function getStoredLiveOverlayState(): Promise<LiveOverlayState> {
   }
 }
 
-export async function getLiveOverlayState(): Promise<LiveOverlayState> {
-  const state = await getStoredLiveOverlayState();
-  if (state.mode !== "now_playing") return state;
-  const queueState = await getRadioQueueState();
-  if (!queueState.nowPlaying) {
-    return {
-      ...defaultLiveOverlayState(),
-      mode: "standby",
-      title: "BARCODE RADIO",
-      subtitle: "NO TRACK LOADED",
-      message: "Stand by for the next transmission.",
-      updatedAt: state.updatedAt,
-    };
-  }
-  return {
-    ...state,
-    title: "NOW PLAYING",
-    subtitle: "BARCODE RADIO LIVE",
-    message: state.message,
-    ...trackState(queueState.nowPlaying),
-  };
+export async function getResolvedLiveOverlayScene(): Promise<ResolvedLiveOverlayScene> {
+  const [overlayState, queueState] = await Promise.all([getStoredLiveOverlayState(), getRadioQueueState()]);
+  const session = queueState.session ?? null;
+  return resolveLiveOverlayScene({
+    overlayState,
+    currentSession: session ? {
+      sessionId: session.sessionId,
+      title: session.title,
+      status: session.status,
+      queueOpen: session.queueOpen,
+      broadcastPhase: session.broadcastPhase,
+      wheelSpinsOwed: session.wheelSpinsOwed ?? 0,
+      sponsorBreakStatus: session.sponsorBreakStatus,
+    } : null,
+    nowPlaying: queueState.nowPlaying ? overlayTrackInput(queueState.nowPlaying) : null,
+    upNext: queueState.nextInLine ? overlayTrackInput(queueState.nextInLine) : null,
+    wheelSpinsOwed: session?.wheelSpinsOwed ?? 0,
+    sponsorBreakStatus: session?.sponsorBreakStatus,
+    broadcastPhase: session?.broadcastPhase,
+    queueOpen: session?.queueOpen,
+  });
 }
 
-export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<LiveOverlayState> {
-  const mode = normalizeMode(payload.mode);
-  const now = new Date().toISOString();
-  let next: LiveOverlayState = {
-    mode,
-    title: cleanText(payload.title),
-    subtitle: cleanText(payload.subtitle),
-    message: cleanText(payload.message),
-    artistName: cleanText(payload.artistName),
-    trackTitle: cleanText(payload.trackTitle),
-    artworkUrl: safeArtworkUrl(payload.artworkUrl),
-    sourceUrl: safeHttpUrl(payload.sourceUrl) ?? null,
-    sponsorLabel: cleanText(payload.sponsorLabel),
-    videoUrl: safeHttpUrl(payload.videoUrl),
-    updatedAt: now,
-  };
+export async function getLiveOverlayAdminSnapshot(): Promise<LiveOverlayAdminSnapshot> {
+  const [overlayState, scene] = await Promise.all([getStoredLiveOverlayState(), getResolvedLiveOverlayScene()]);
+  return { overlayState, scene };
+}
 
-  if (mode === "standby") {
+export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<LiveOverlayAdminSnapshot> {
+  const current = await getStoredLiveOverlayState();
+  const now = new Date().toISOString();
+  let next: LiveOverlayState = { ...current, updatedAt: now };
+
+  if (payload.action === "launchWheel") {
+    const queueState = await getRadioQueueState();
+    const wheelSpinsOwed = queueState.session?.wheelSpinsOwed ?? 0;
+    if (wheelSpinsOwed <= 0) return getLiveOverlayAdminSnapshot();
+    next = { ...current, mode: "wheel_ready", wheelOverlayActive: true, wheelOverlayLaunchedAt: now, wheelOverlayStatus: "ready", updatedAt: now };
+  } else if (payload.action === "clearWheel") {
+    next = { ...current, mode: "standby", wheelOverlayActive: false, wheelOverlayLaunchedAt: undefined, wheelOverlayStatus: "ready", updatedAt: now };
+  } else if (payload.action === "setSystemMessage") {
+    next = { ...current, mode: "system_message", systemMessageActive: true, systemMessageTitle: cleanText(payload.title, "BARCODE SYSTEM MESSAGE"), systemMessage: cleanText(payload.message, "Stand by."), updatedAt: now };
+  } else if (payload.action === "clearSystemMessage") {
+    next = { ...current, mode: "standby", systemMessageActive: false, systemMessageTitle: undefined, systemMessage: undefined, updatedAt: now };
+  } else if (payload.action === "launchVideoPlaceholder") {
+    next = { ...current, mode: "video_placeholder", videoPlaceholderActive: true, title: cleanText(payload.title, "VIDEO RECEIVER READY"), message: cleanText(payload.message, "Video link pending. Playback is not enabled in this foundation scene."), videoUrl: safeLiveOverlayUrl(payload.videoUrl), updatedAt: now };
+  } else if (payload.action === "clearVideoPlaceholder") {
+    next = { ...current, mode: "standby", videoPlaceholderActive: false, videoUrl: undefined, updatedAt: now };
+  } else if (payload.action === "clearAllOverrides") {
     next = { ...defaultLiveOverlayState(), updatedAt: now };
   }
 
-  if (mode === "now_playing") {
-    const queueState = await getRadioQueueState();
-    next = queueState.nowPlaying
-      ? { ...next, title: "NOW PLAYING", subtitle: "BARCODE RADIO LIVE", ...trackState(queueState.nowPlaying) }
-      : { ...defaultLiveOverlayState(), mode: "standby", subtitle: "NO TRACK LOADED", updatedAt: now };
-  }
-
-  if (mode === "wheel_ready") {
-    next.title = next.title || "10K TAP WHEEL";
-    next.subtitle = next.subtitle || "READY";
-    next.message = next.message || "Awaiting host spin.";
-  }
-
-  if (mode === "sponsor") {
-    next.title = next.title || "SPONSOR BREAK";
-    next.message = next.message || "Transmission will resume shortly.";
-  }
-
-  if (mode === "system_message") {
-    next.title = next.title || "BARCODE SYSTEM MESSAGE";
-    next.message = next.message || "Stand by.";
-  }
-
-  if (mode === "video_placeholder") {
-    next.title = next.title || "VIDEO RECEIVER READY";
-    next.message = next.message || "Video link pending. Playback is not enabled in this foundation scene.";
-  }
-
-  const normalized = normalizeState(next);
-  const redis = getRedis();
-  if (redis) await redis.set(OVERLAY_STATE_KEY, JSON.stringify(normalized));
-  memoryOverlayState = normalized;
-  return normalized;
+  await writeLiveOverlayState(next);
+  return getLiveOverlayAdminSnapshot();
 }

@@ -966,3 +966,15 @@ test("priority can claim Next In Line after failed wheel removal hold", async ()
   assert.equal(state.nextInLine?.lane, "priority");
   assert.equal(state.session.wheelSpinsOwed, 1, "owed Wheel remains underneath Priority");
 });
+
+test("wheel ceremony eligibility helper excludes unsafe queue states", () => {
+  const base = { id: "base", artist: "Artist", title: "Track", link: "https://example.com/base", tier: "free", lane: "regular", amount: 0, stripeSessionId: null, status: "queued", createdAt: new Date().toISOString(), playedAt: null, priorityUpgradeStatus: "none" };
+  assert.equal(queue.isWheelEligibleTrack(base), true, "regular queued track with no priority upgrade is eligible");
+  assert.equal(queue.isWheelEligibleTrack({ ...base, id: "priority", lane: "priority", priorityUpgradeStatus: "paid" }), false, "paid priority is excluded");
+  assert.equal(queue.isWheelEligibleTrack({ ...base, id: "checkout", priorityUpgradeStatus: "checkout_pending" }), false, "checkout pending/payment processing is excluded");
+  assert.equal(queue.isWheelEligibleTrack({ ...base, id: "wheel", lane: "wheel" }), false, "already Wheel Chosen is excluded");
+  assert.equal(queue.isWheelEligibleTrack({ ...base, id: "playing", status: "playing" }), false, "playing/Now Playing is excluded");
+  assert.equal(queue.isWheelEligibleTrack({ ...base, id: "next", status: "next" }), false, "Next In Line is excluded");
+  assert.equal(queue.isWheelEligibleTrack({ ...base, id: "completed", status: "completed" }), false, "completed is excluded");
+  assert.equal(queue.isWheelEligibleTrack({ ...base, id: "removed", status: "removed" }), false, "removed is excluded");
+});

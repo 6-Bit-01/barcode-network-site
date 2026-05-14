@@ -559,6 +559,13 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     priorityUpgradePriceCents: normalizePriceCents(session.priorityUpgradePriceCents),
     priorityUpgradeCurrency: normalizeCurrency(session.priorityUpgradeCurrency),
     priorityUpgradePaymentsEnabled: normalizePaidPriorityEnabled(session),
+    sponsorBreakSeconds: session.sponsorBreakSeconds ?? 630,
+    sponsorBreakMode: session.sponsorBreakMode ?? "mid_show",
+    sponsorBreakStatus: session.sponsorBreakStatus ?? "not_due",
+    sponsorBreakStartedAt: session.sponsorBreakStartedAt ?? null,
+    sponsorBreakCompletedAt: session.sponsorBreakCompletedAt ?? null,
+    sponsorBreakCompletedAfterPlayableCount: session.sponsorBreakCompletedAfterPlayableCount ?? null,
+    sponsorBreakManualNote: session.sponsorBreakManualNote ?? null,
   };
 }
 
@@ -1285,7 +1292,10 @@ export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
     sourceType: normalized.sourceType ?? "other",
     lane: normalized.lane ?? "regular",
     durationLabel: getTrackDurationLabel(normalized),
+    detectedDurationSeconds: normalized.detectedDurationSeconds ?? null,
+    estimatedDurationSeconds: normalized.estimatedDurationSeconds,
     durationIsEstimate: normalized.durationIsEstimate ?? true,
+    durationSource: normalized.durationSource,
     sourceArtworkUrl: publicArtworkUrlForTrack(normalized),
     publicSourceUrl: publicSourceUrlForTrack(normalized),
     tiktokHandle: normalized.tiktokHandle ?? null,
@@ -1318,7 +1328,7 @@ function publicSubmitterStatus(session: QueueSession, identity?: { submitterToke
     limit,
     remaining: Math.max(0, limit - matching.length),
     cooldownRemainingSeconds,
-    submitted: matching.slice(0, limit).map(toPublicQueueTrack).map(({ id, submittedArtistName, submittedSongTitle, sourceType, lane, durationLabel }) => ({ id, submittedArtistName, submittedSongTitle, sourceType, lane, durationLabel })),
+    submitted: matching.slice(0, limit).map(toPublicQueueTrack).map(({ id, submittedArtistName, submittedSongTitle, sourceType, lane, durationLabel, detectedDurationSeconds, estimatedDurationSeconds, durationIsEstimate, durationSource, priorityUpgradeStatus }) => ({ id, submittedArtistName, submittedSongTitle, sourceType, lane, durationLabel, detectedDurationSeconds, estimatedDurationSeconds, durationIsEstimate, durationSource, priorityUpgradeStatus })),
   };
 }
 
@@ -1586,6 +1596,27 @@ export async function updatePriorityUpgradeSettings(input: PriorityUpgradeSettin
     priorityUpgradeCurrency: normalizeCurrency(input.currency ?? session.priorityUpgradeCurrency),
     priorityUpgradePaymentsEnabled: priorityPaidEnabled,
     updatedAt: new Date().toISOString(),
+  });
+  const nextStore = replaceSession(store, next);
+  await writeStore(nextStore);
+  return queueStateFromSession(next, nextStore);
+}
+
+
+export async function updateSponsorBreakState(action: "start" | "complete" | "skip" | "reset"): Promise<QueueState> {
+  const store = await readStore();
+  const session = getSession(store);
+  if (session.status === "archived") return queueStateFromSession(session, store);
+  const now = new Date().toISOString();
+  const completedPlayable = session.completed.length;
+  const next = normalizeSession({
+    ...session,
+    sponsorBreakStatus: action === "start" ? "running" : action === "complete" ? "completed" : action === "skip" ? "skipped" : "not_due",
+    sponsorBreakStartedAt: action === "start" ? now : action === "reset" ? null : session.sponsorBreakStartedAt ?? null,
+    sponsorBreakCompletedAt: action === "complete" || action === "skip" ? now : action === "reset" ? null : session.sponsorBreakCompletedAt ?? null,
+    sponsorBreakCompletedAfterPlayableCount: action === "complete" || action === "skip" ? completedPlayable : action === "reset" ? null : session.sponsorBreakCompletedAfterPlayableCount ?? null,
+    sponsorBreakManualNote: action === "start" ? "Sponsor break started by admin." : action === "complete" ? "Sponsor break completed by admin." : action === "skip" ? "Sponsor break skipped by admin." : null,
+    updatedAt: now,
   });
   const nextStore = replaceSession(store, next);
   await writeStore(nextStore);

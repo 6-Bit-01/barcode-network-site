@@ -162,7 +162,10 @@ export interface QueuePublicTrack {
   sourceType: QueueSourceType;
   lane: QueueLane;
   durationLabel: string;
+  detectedDurationSeconds?: number | null;
+  estimatedDurationSeconds?: number;
   durationIsEstimate: boolean;
+  durationSource?: QueueDurationSource;
   sourceArtworkUrl?: string | null;
   publicSourceUrl?: string | null;
   tiktokHandle?: string | null;
@@ -175,11 +178,11 @@ export interface QueuePublicSubmitterStatus {
   limit: number;
   remaining: number;
   cooldownRemainingSeconds: number;
-  submitted: Pick<QueuePublicTrack, "id" | "submittedArtistName" | "submittedSongTitle" | "sourceType" | "lane" | "durationLabel">[];
+  submitted: Pick<QueuePublicTrack, "id" | "submittedArtistName" | "submittedSongTitle" | "sourceType" | "lane" | "durationLabel" | "detectedDurationSeconds" | "estimatedDurationSeconds" | "durationIsEstimate" | "durationSource" | "priorityUpgradeStatus">[];
 }
 
 export interface QueuePublicSnapshot {
-  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "removedCount" | "submissionCooldownSeconds" | "queueOpen" | "showStarted" | "preShowEndsAt" | "broadcastPhase" | "nextInLineTrackId" | "loadedTrackId" | "wheelSpinsOwed" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled">;
+  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "removedCount" | "submissionCooldownSeconds" | "queueOpen" | "showStarted" | "preShowEndsAt" | "broadcastPhase" | "nextInLineTrackId" | "loadedTrackId" | "wheelSpinsOwed" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled" | "sponsorBreakSeconds" | "sponsorBreakMode" | "sponsorBreakStatus" | "sponsorBreakStartedAt" | "sponsorBreakCompletedAt" | "sponsorBreakCompletedAfterPlayableCount" | "sponsorBreakManualNote">;
   status: QueuePublicStatus;
   queue: QueuePublicTrack[];
   completed: QueuePublicTrack[];

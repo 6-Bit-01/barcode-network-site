@@ -4,6 +4,7 @@
 import { upload } from "@vercel/blob/client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { buildQueueTimingDisplay, priorityDisplayFromImpact, queueTimingInputFromPublicSnapshot } from "@/lib/queue-timing-display";
 import { formatRuntime } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
 
@@ -81,7 +82,7 @@ function readAudioDuration(file: File): Promise<number | null> {
   });
 }
 
-function publicTrackFromApi(track: { id: string; submittedArtistName?: string; submittedSongTitle?: string; artist?: string; title?: string; sourceType?: QueuePublicTrack["sourceType"]; lane?: QueuePublicTrack["lane"]; detectedArtistName?: string | null; detectedSongTitle?: string | null; detectedDurationSeconds?: number | null; durationLabel?: string; durationIsEstimate?: boolean; sourceArtworkUrl?: string | null; publicSourceUrl?: string | null; tiktokHandle?: string | null; priorityUpgradeRequested?: boolean; priorityUpgradeStatus?: QueuePublicTrack["priorityUpgradeStatus"] }): QueuePublicTrack {
+function publicTrackFromApi(track: { id: string; submittedArtistName?: string; submittedSongTitle?: string; artist?: string; title?: string; sourceType?: QueuePublicTrack["sourceType"]; lane?: QueuePublicTrack["lane"]; detectedArtistName?: string | null; detectedSongTitle?: string | null; detectedDurationSeconds?: number | null; estimatedDurationSeconds?: number; durationLabel?: string; durationIsEstimate?: boolean; durationSource?: QueuePublicTrack["durationSource"]; sourceArtworkUrl?: string | null; publicSourceUrl?: string | null; tiktokHandle?: string | null; priorityUpgradeRequested?: boolean; priorityUpgradeStatus?: QueuePublicTrack["priorityUpgradeStatus"] }): QueuePublicTrack {
   return {
     id: track.id,
     submittedArtistName: track.submittedArtistName ?? track.artist ?? "Submitted artist",
@@ -91,10 +92,13 @@ function publicTrackFromApi(track: { id: string; submittedArtistName?: string; s
     sourceType: track.sourceType ?? "other",
     lane: track.lane ?? "regular",
     durationLabel: track.durationLabel ?? (track.durationIsEstimate === false && track.detectedDurationSeconds ? formatRuntime(track.detectedDurationSeconds) : "est. 5:00"),
-    durationIsEstimate: track.durationIsEstimate ?? true,
     sourceArtworkUrl: track.sourceArtworkUrl ?? null,
     publicSourceUrl: track.publicSourceUrl ?? null,
     tiktokHandle: track.tiktokHandle ?? null,
+    detectedDurationSeconds: track.detectedDurationSeconds ?? null,
+    estimatedDurationSeconds: track.estimatedDurationSeconds,
+    durationIsEstimate: track.durationIsEstimate ?? true,
+    durationSource: track.durationSource,
     priorityUpgradeRequested: track.priorityUpgradeRequested === true,
     priorityUpgradeStatus: track.priorityUpgradeStatus ?? "none",
   };
@@ -300,6 +304,9 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
   const priorityPaymentsAvailable = session?.priorityUpgradesEnabled === true && session?.priorityUpgradePaymentsEnabled === true && priorityPriceCents > 0;
   const priorityDepthAvailable = (status?.activeCount ?? 0) >= MIN_PRIORITY_ACTIVE_DEPTH;
   const priorityCheckoutAvailable = priorityPaymentsAvailable && status?.isOpen === true && priorityDepthAvailable;
+  const timingSnapshot = useMemo<QueuePublicSnapshot | null>(() => session && status ? { session, status, queue: publicQueue, completed: [], nowPlaying, upNext, submitterStatus } : null, [session, status, publicQueue, nowPlaying, upNext, submitterStatus]);
+  const timingSummary = useMemo(() => buildQueueTimingDisplay(queueTimingInputFromPublicSnapshot(timingSnapshot), { priorityEligible: priorityCheckoutAvailable }), [timingSnapshot, priorityCheckoutAvailable]);
+  const submitPriorityImpact = priorityCheckoutAvailable ? priorityDisplayFromImpact(timingSummary.priorityImpactEstimate) : null;
   const selectedRoute: RouteChoice = priorityCheckoutAvailable ? routeChoice : "free";
 
   function clearTrackDraftFields() {
@@ -559,8 +566,8 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
               <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Optional song note</span><textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} rows={2} placeholder="Optional host note. No private contact info." className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-[11px] text-muted">For the host only; never public.</span></label>
             </div>
             <div className="grid gap-3 text-xs sm:grid-cols-2">
-              <button type="button" onClick={() => setRouteChoice("free")} className={`border p-4 text-left transition-all ${selectedRoute === "free" ? "border-accent bg-accent/10 text-foreground" : "border-border bg-background/40 text-muted"}`}><span className="text-sm font-bold text-foreground">Free queue</span><span className="mt-2 block">Free queue submission.</span><span className="block">No payment required.</span><span className="mt-3 block text-muted">If you submit now, you’ll enter around position #{estimatedPosition} in the free queue. Estimated wait may shift during the show.</span></button>
-              {priorityCheckoutAvailable ? <button type="button" onClick={() => setRouteChoice("priority")} className={`border p-4 text-left transition-all ${selectedRoute === "priority" ? "border-[#ffaa00] bg-[#ffaa00]/10 text-foreground" : "border-[#ffaa00]/40 bg-background/40 text-muted"}`}><span className="text-sm font-bold text-[#ffaa00]">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">Paid skip. Moves your song closer to the front after payment clears.</span><span className="mt-3 block text-[#ffaa00]">{formatPrice(priorityPriceCents, priorityCurrency)}</span><span className="mt-2 block text-muted">Priority Signal activates after payment clears. Queue position may shift during checkout.</span></button> : priorityPaymentsAvailable && <div className="border border-[#ffaa00]/30 bg-background/40 p-4 text-left text-muted"><span className="text-sm font-bold text-[#ffaa00]/70">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">{PRIORITY_DEPTH_UNAVAILABLE_MESSAGE}</span><span className="mt-3 block text-[#ffaa00]/70">{formatPrice(priorityPriceCents, priorityCurrency)}</span></div>}
+              <button type="button" onClick={() => setRouteChoice("free")} className={`border p-4 text-left transition-all ${selectedRoute === "free" ? "border-accent bg-accent/10 text-foreground" : "border-border bg-background/40 text-muted"}`}><span className="text-sm font-bold text-foreground">Free queue</span><span className="mt-2 block">Free queue submission.</span><span className="block">No payment required.</span><span className="mt-3 block text-muted">{timingSummary.submitNowFreeEstimate ? `If you submit now: ${timingSummary.submitNowFreeEstimate.songsAhead} ${timingSummary.submitNowFreeEstimate.songsAhead === 1 ? "song" : "songs"} ahead · ${timingSummary.submitNowFreeEstimate.label}.` : `If you submit now, you’ll enter around position #${estimatedPosition} in the free queue. Estimated wait may shift during the show.`}</span></button>
+              {priorityCheckoutAvailable ? <button type="button" onClick={() => setRouteChoice("priority")} className={`border p-4 text-left transition-all ${selectedRoute === "priority" ? "border-[#ffaa00] bg-[#ffaa00]/10 text-foreground" : "border-[#ffaa00]/40 bg-background/40 text-muted"}`}><span className="text-sm font-bold text-[#ffaa00]">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">Paid skip. Moves your song closer to the front after payment clears.</span><span className="mt-3 block text-[#ffaa00]">{formatPrice(priorityPriceCents, priorityCurrency)}</span>{submitPriorityImpact && <div className="mt-3 grid grid-cols-2 gap-2 border border-[#ffaa00]/25 bg-[#ffaa00]/5 p-2"><div><span className="block text-[10px] uppercase tracking-widest text-muted">Free queue</span><span className="font-bold text-foreground">{submitPriorityImpact.freeLabel}</span></div><div><span className="block text-[10px] uppercase tracking-widest text-muted">Priority Signal</span><span className="font-bold text-[#ffaa00]">{submitPriorityImpact.priorityLabel}</span></div></div>}<span className="mt-2 block text-muted">Priority moves your track closer to the front after payment clears. It does not interrupt the song currently playing.</span></button> : priorityPaymentsAvailable && <div className="border border-[#ffaa00]/30 bg-background/40 p-4 text-left text-muted"><span className="text-sm font-bold text-[#ffaa00]/70">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">{PRIORITY_DEPTH_UNAVAILABLE_MESSAGE}</span><span className="mt-3 block text-[#ffaa00]/70">{formatPrice(priorityPriceCents, priorityCurrency)}</span></div>}
             </div>
             <div className="grid gap-2 text-xs sm:grid-cols-2">
               {submitterStatus && <div className="border border-accent/40 bg-accent/5 p-2 text-muted"><p className="font-bold text-accent">Your submissions: {submitterStatus.used} / {submitterStatus.limit}</p><p>Remaining: {submitterStatus.remaining}</p>{submitterStatus.cooldownRemainingSeconds > 0 && <p className="text-accent">Cooldown: {formatCooldown(submitterStatus.cooldownRemainingSeconds)}</p>}</div>}

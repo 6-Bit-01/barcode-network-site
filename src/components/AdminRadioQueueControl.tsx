@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { buildQueueTimingDisplay, formatHoursMinutes, queueTimingInputFromAdminState, sponsorStatusLabel } from "@/lib/queue-timing-display";
 import { formatRuntime, getTrackRuntimeSeconds } from "@/lib/queue-types";
 import type { QueueEntry, QueueLane, QueueState } from "@/lib/queue-types";
 
@@ -201,6 +202,10 @@ export function AdminRadioQueueControl() {
     setMinimized(false);
     await action(entry.id, "load");
   }
+  async function updateSponsorBreakState(sponsorAction: "start" | "complete" | "skip" | "reset") {
+    await post({ action: "updateSponsorBreakState", sponsorAction });
+  }
+
   async function markWheelWinner() {
     if (!wheelSelection) return;
     await action(wheelSelection, "wheel");
@@ -280,6 +285,7 @@ export function AdminRadioQueueControl() {
   const resolverOverrideBlocked = nextInLineHasActivePriority || queuedActivePriorityExists;
   const canPullWheelChosen = !resolverOverrideBlocked && (state?.queue ?? []).some((entry) => entry.lane === "wheel" && entry.status === "queued");
   const canPullFreeTransmission = !resolverOverrideBlocked && (state?.queue ?? []).some((entry) => (!entry.lane || entry.lane === "regular") && entry.status === "queued");
+  const timingSummary = buildQueueTimingDisplay(queueTimingInputFromAdminState(state));
 
   return (
     <div className={`${playerPadding} space-y-6`}>
@@ -311,6 +317,7 @@ export function AdminRadioQueueControl() {
               {canControlSession && <button onClick={() => setEndConfirmOpen(true)} className="border border-danger/60 px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Broadcast</button>}
             </div>
             {canControlSession && sessionOptionsOpen && <section className="space-y-3 border border-border bg-background/40 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-xs uppercase tracking-[0.3em] text-accent">Session Options</p><h3 className="mt-1 text-lg font-bold text-foreground">Session Options</h3><p className="mt-1 text-xs text-muted">Only the verified Stripe webhook marks a track paid or moves it into Priority Signal.</p></div><div className="border border-border bg-surface p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Submission Delay</p><p className="mt-1 font-bold text-foreground">{sessionCooldownSeconds === 0 ? "Disabled" : `${sessionCooldownSeconds}s`}</p></div><div className="border border-border bg-surface p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Display price</p><p className="mt-1 font-bold text-foreground">{formatPrice(priorityPriceCents, priorityCurrency)}</p></div></div><div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(10rem,0.35fr)]"><label className="space-y-2 block md:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Submission Delay</span><input type="number" min={0} max={3600} value={sessionCooldownSeconds} onChange={(event) => setSessionCooldownSeconds(Math.max(0, Math.min(3600, Number(event.target.value))))} className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-xs text-muted">Delay between accepted submissions from the same source. Set to 0 to disable during testing.</span></label><label className="flex items-center justify-between gap-3 border border-border bg-surface p-3 text-sm"><span><span className="block font-bold text-foreground">Paid upgrades {priorityEnabled ? "enabled" : "disabled"}</span><span className="text-xs text-muted">Controls Stripe checkout availability for this session.</span></span><input type="checkbox" checked={priorityEnabled} onChange={(event) => setPriorityEnabled(event.target.checked)} /></label><label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Price</span><input type="number" min={0} value={priorityPriceCents} onChange={(event) => setPriorityPriceCents(Math.max(0, Number(event.target.value)))} className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-xs text-muted">Enter cents. Example: 1000 = $10.00.</span></label></div>{prioritySaveError && <p className="border border-danger/40 bg-danger/10 p-2 text-sm text-danger">{prioritySaveError}</p>}{priorityMessage && <p className="border border-accent/50 bg-accent/10 p-2 text-sm font-bold text-accent">{priorityMessage}</p>}<div className="flex flex-wrap gap-2"><button type="button" onClick={savePrioritySettings} disabled={prioritySaving} className="border border-accent bg-accent/10 px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{prioritySaving ? "Saving…" : "Save Settings"}</button><button type="button" onClick={() => setSessionOptionsOpen(false)} disabled={prioritySaving} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">Close</button></div></section>}
+            <AdminRuntimeDiagnostics timingSummary={timingSummary} canControl={canControlSession} onSponsorAction={updateSponsorBreakState} />
             <div className="grid gap-3 sm:grid-cols-4">
               <div className="border border-border bg-background/40 p-4"><p className="text-xs text-muted">Queue</p><p className={state?.publicStatus?.isOpen ? "text-accent" : "text-danger"}>{state?.publicStatus?.isOpen ? "Open" : "Closed"}</p></div>
               <div className="border border-border bg-background/40 p-4"><p className="text-xs text-muted">Active count</p><p>{state?.publicStatus?.activeCount ?? "—"}</p></div>
@@ -428,6 +435,35 @@ function AdminTrackMetadata({ entry }: { entry: QueueEntry }) {
         {entry.fileName && <p className="mt-1 text-muted">File: {entry.fileName}</p>}
       </div>
     </div>
+  );
+}
+
+function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction }: { timingSummary: ReturnType<typeof buildQueueTimingDisplay>; canControl: boolean; onSponsorAction: (action: "start" | "complete" | "skip" | "reset") => void }) {
+  const sponsor = timingSummary.sponsorBreakSummary;
+  const wheel = timingSummary.wheelTimingSummary;
+  return (
+    <section className="space-y-3 border border-accent/30 bg-background/40 p-4 text-xs">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="uppercase tracking-[0.28em] text-accent">Runtime Diagnostics</p>
+          <p className="mt-1 text-sm text-muted">Projection updates from the live queue snapshot and stored durations.</p>
+        </div>
+        {canControl && <div className="flex flex-wrap gap-2"><button type="button" onClick={() => onSponsorAction("start")} className="border border-[#ffaa00]/50 px-3 py-1.5 uppercase tracking-widest text-[#ffaa00]">Mark Sponsor Break Started</button><button type="button" onClick={() => onSponsorAction("complete")} className="border border-accent/50 px-3 py-1.5 uppercase tracking-widest text-accent">Mark Sponsor Break Complete</button><button type="button" onClick={() => onSponsorAction("skip")} className="border border-danger/50 px-3 py-1.5 uppercase tracking-widest text-danger">Skip Sponsor Break Tonight</button><button type="button" onClick={() => onSponsorAction("reset")} className="border border-border px-3 py-1.5 uppercase tracking-widest text-muted">Reset Sponsor Break State</button></div>}
+      </div>
+      <div className="grid gap-3 md:grid-cols-4">
+        <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Projected Show Time</p><p className="mt-1 text-lg font-bold text-foreground">{timingSummary.showRuntimeSummary.projectedLabel}</p></div>
+        <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Target</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.targetLabel}</p></div>
+        <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Target Status</p><p className="mt-1 font-bold text-accent">{timingSummary.showRuntimeSummary.targetStatusLabel}</p></div>
+        <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Line Fit</p><p className="mt-1 font-bold text-foreground">{timingSummary.lineFitCopy}</p></div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-4">
+        <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Sponsor Break</p><p className="mt-1 font-bold text-foreground">{sponsor.statusLabel}</p><p className="mt-1 text-muted">Due after {sponsor.dueAfterTracks ?? "—"} playable tracks · {sponsor.durationLabel} duration</p></div>
+        <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Wheel Timing</p><p className="mt-1 font-bold text-foreground">{wheel.owed} wheel spins owed</p><p className="mt-1 text-muted">{wheel.overheadLabel} ceremony overhead included</p></div>
+        <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Unknown Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.unknownDurationCount}</p><p className="mt-1 text-muted">Tracks using est. 5:00</p></div>
+        <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Known Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.knownDurationCount}</p><p className="mt-1 text-muted">Detected/provider/upload durations</p></div>
+      </div>
+      <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Current Runtime Notes</p><p className="mt-1 text-muted">Sponsor: {sponsorStatusLabel(sponsor.status)} · Wheel overhead: {formatHoursMinutes(wheel.overheadSeconds)} · {timingSummary.showRuntimeSummary.notes[0] ?? "No projection warnings."}</p></div>
+    </section>
   );
 }
 

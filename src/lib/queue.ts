@@ -149,6 +149,7 @@ function defaultSession(options: { title?: string; showDate?: string; descriptio
     nextNonPriorityLane: "wheel",
     showStarted: false,
     preShowEndsAt: null,
+    broadcastStartedAt: null,
     wheelSpinsOwed: 0,
     nextInLineTrack: null,
     nextInLineTrackId: null,
@@ -383,6 +384,7 @@ function setLoadedTrack(session: QueueSession, entry: QueueEntry, previousLane?:
   session.loadedTrackWasNextInLine = wasNextInLine;
   session.loadedTrackFallbackForLane = entry.stagedAsFallbackForLane ?? null;
   if (session.showStarted !== true) session.showStarted = true;
+  if (!session.broadcastStartedAt) session.broadcastStartedAt = loaded.playedAt ?? new Date().toISOString();
   session.queue = session.queue.filter((track) => track.id !== loaded.id);
   if (session.nextInLineTrack?.id === loaded.id) clearNextInLine(session);
   return loaded;
@@ -551,6 +553,7 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     nextNonPriorityLane: session.nextNonPriorityLane ?? "wheel",
     showStarted: session.showStarted === true,
     preShowEndsAt: session.preShowEndsAt ?? null,
+    broadcastStartedAt: session.broadcastStartedAt ?? null,
     wheelSpinsOwed: normalizeWheelSpinsOwed(session.wheelSpinsOwed),
     broadcastPhase: broadcastPhaseForSession(session),
     priorityUpgradesEnabled: normalizePaidPriorityEnabled(session),
@@ -689,6 +692,7 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     nextNonPriorityLane: raw.nextNonPriorityLane === "regular" ? "regular" : "wheel",
     showStarted: raw.showStarted === true,
     preShowEndsAt: typeof raw.preShowEndsAt === "string" && raw.preShowEndsAt ? raw.preShowEndsAt : null,
+    broadcastStartedAt: typeof raw.broadcastStartedAt === "string" && raw.broadcastStartedAt ? raw.broadcastStartedAt : null,
     wheelSpinsOwed: normalizeWheelSpinsOwed(raw.wheelSpinsOwed),
     nextInLineTrack: raw.nextInLineTrack ? normalizeEntry(raw.nextInLineTrack) : null,
     nextInLineTrackId: raw.nextInLineTrack?.id ?? raw.nextInLineTrackId ?? null,
@@ -2081,7 +2085,9 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
       session.nextInLineHoldTrackId = null;
       const current = clearLoadedTrack(session);
       if (current) {
-        session.completed.unshift({ ...current, status: "played", playedAt: current.playedAt ?? new Date().toISOString(), completedAt: new Date().toISOString() });
+        const now = new Date().toISOString();
+        if (!session.broadcastStartedAt) session.broadcastStartedAt = current.playedAt ?? now;
+        session.completed.unshift({ ...current, status: "played", playedAt: current.playedAt ?? now, completedAt: now });
         advanceNonPriorityLaneAfter(session, current.lane);
       }
     }
@@ -2115,7 +2121,9 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
     if (action === "finish") {
       const current = clearNextInLine(session);
       if (current) {
-        session.completed.unshift({ ...current, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
+        const now = new Date().toISOString();
+        if (!session.broadcastStartedAt) session.broadcastStartedAt = current.playedAt ?? now;
+        session.completed.unshift({ ...current, status: "played", playedAt: current.playedAt ?? now, completedAt: now });
         advanceNonPriorityLaneAfter(session, current.lane);
       }
       pullNextInLine(session);

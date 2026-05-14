@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AdminLiveOverlayControl } from "@/components/AdminLiveOverlayControl";
-import { buildQueueTimingDisplay, formatHoursMinutes, queueTimingInputFromAdminState, sponsorStatusLabel } from "@/lib/queue-timing-display";
+import { buildQueueTimingDisplay, formatHoursMinutes, queueTimingInputFromAdminState } from "@/lib/queue-timing-display";
 import { parseYouTubeVideoId } from "@/lib/track-duration";
 import { formatRuntime, getTrackRuntimeSeconds } from "@/lib/queue-types";
 import type { QueueEntry, QueueLane, QueueState } from "@/lib/queue-types";
@@ -549,12 +549,12 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction }:
         <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Line Fit</p><p className="mt-1 font-bold text-foreground">{timingSummary.lineFitCopy}</p></div>
       </div>
       <div className="grid gap-3 md:grid-cols-4">
-        <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Sponsor Break</p><p className="mt-1 font-bold text-foreground">{sponsor.statusLabel}</p><p className="mt-1 text-muted">Due after {sponsor.dueAfterTracks ?? "—"} playable tracks · {sponsor.durationLabel} duration</p></div>
+        <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Commercial Break</p><p className="mt-1 font-bold text-foreground">{sponsor.diagnosticLabel}</p><p className="mt-1 text-muted">{sponsor.durationLabel} duration · {sponsor.minElapsedLabel} minimum · midpoint {sponsor.completedPlayableCount}/{sponsor.totalPlayableNonRemovedCount ?? "—"} playable</p></div>
         <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Wheel Timing</p><p className="mt-1 font-bold text-foreground">{wheel.owed} wheel spins owed</p><p className="mt-1 text-muted">{wheel.overheadLabel} ceremony overhead included</p></div>
         <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Unknown Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.unknownDurationCount}</p><p className="mt-1 text-muted">Tracks using est. 5:00</p></div>
         <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Known Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.knownDurationCount}</p><p className="mt-1 text-muted">Detected/provider/upload durations</p></div>
       </div>
-      <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Current Runtime Notes</p><p className="mt-1 text-muted">Sponsor: {sponsorStatusLabel(sponsor.status)} · Wheel overhead: {formatHoursMinutes(wheel.overheadSeconds)} · {timingSummary.showRuntimeSummary.notes[0] ?? "No projection warnings."}</p></div>
+      <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Current Runtime Notes</p><p className="mt-1 text-muted">Commercial: {sponsor.diagnosticLabel} · Wheel overhead: {formatHoursMinutes(wheel.overheadSeconds)} · {timingSummary.showRuntimeSummary.notes[0] ?? "No projection warnings."}</p></div>
     </section>
   );
 }

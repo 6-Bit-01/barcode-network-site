@@ -1,7 +1,7 @@
 import { Redis } from "@upstash/redis";
 import { getRadioQueueState, isWheelEligibleTrack, updateRadioTrack } from "./queue";
 import { getTrackArtworkUrl, getTrackDurationLabel } from "./queue-types";
-import { resolveLiveOverlayScene, safeLiveOverlayUrl } from "./live-overlay-resolver";
+import { buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateIds, resolveLiveOverlayScene, safeLiveOverlayUrl, wheelFinalRotationForSegment } from "./live-overlay-resolver";
 import { parseYouTubeVideoId } from "./track-duration";
 import type { QueueEntry, QueueSourceType } from "./queue-types";
 import type { LiveOverlayPlaybackState, LiveOverlayStateInput, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
@@ -33,14 +33,27 @@ export interface LiveOverlayState extends LiveOverlayStateInput {
   wheelCeremonyStartedAt?: string;
   wheelCeremonySpinStartedAt?: string;
   wheelCeremonyResultTrackId?: string;
+  wheelCeremonyChosenTrackId?: string;
   wheelCeremonyResultSelectedAt?: string;
   wheelCeremonySeed?: string;
+  wheelCeremonyPreviousSeed?: string;
+  wheelCeremonyCandidateOrder?: string[];
+  wheelCeremonyPreviousCandidateOrder?: string[];
+  wheelCeremonyReencryptNonce?: string;
+  wheelCeremonyReencryptCycleId?: string;
+  wheelCeremonyFinalRotationDeg?: number;
+  wheelCeremonyLandingAngleDeg?: number;
+  wheelCeremonyWinningSegmentId?: string;
+  wheelCeremonyWinningSegmentIndex?: number;
   wheelCeremonyJingleKey?: string;
+  wheelCeremonySpinDurationMs?: number;
+  wheelCeremonyAudioPath?: string;
   updatedAt: string;
 }
 
 export interface LiveOverlayPayload {
-  action?: "launchWheel" | "spinWheel" | "reencryptWheel" | "confirmWheel" | "cancelWheel" | "clearWheel" | "setSystemMessage" | "clearSystemMessage" | "launchVideoPlaceholder" | "clearVideoPlaceholder" | "clearAllOverrides" | "updatePlayerSync" | "clearPlayerSync";
+  action?: "launchWheel" | "spinWheel" | "reencryptWheel" | "confirmWheel" | "wheelWinnerNotHere" | "cancelWheel" | "clearWheel" | "setSystemMessage" | "clearSystemMessage" | "launchVideoPlaceholder" | "clearVideoPlaceholder" | "clearAllOverrides" | "updatePlayerSync" | "clearPlayerSync";
+  selectedTrackId?: unknown;
   mode?: OverlayMode;
   title?: unknown;
   subtitle?: unknown;
@@ -64,6 +77,40 @@ export interface LiveOverlayAdminSnapshot {
 const OVERLAY_STATE_KEY = "barcode:live-overlay:state";
 const PLAYER_SYNC_KEY = "barcode:live-overlay:player-sync";
 const MAX_TEXT_LENGTH = 180;
+const WHEEL_AUDIO_FILES = [
+  "/audio/wheel/142.mp3",
+  "/audio/wheel/77.mp3",
+  "/audio/wheel/150.mp3",
+  "/audio/wheel/49.mp3",
+  "/audio/wheel/103.mp3",
+  "/audio/wheel/56.mp3",
+  "/audio/wheel/58.mp3",
+  "/audio/wheel/84.mp3",
+  "/audio/wheel/147.mp3",
+  "/audio/wheel/102.mp3",
+  "/audio/wheel/92.mp3",
+  "/audio/wheel/76.mp3",
+  "/audio/wheel/111.mp3",
+  "/audio/wheel/74.mp3",
+  "/audio/wheel/139.mp3",
+  "/audio/wheel/110.mp3",
+  "/audio/wheel/126.mp3",
+  "/audio/wheel/148.mp3",
+  "/audio/wheel/162.mp3",
+  "/audio/wheel/104.mp3",
+  "/audio/wheel/32%20(1).mp3",
+  "/audio/wheel/140.mp3",
+  "/audio/wheel/81.mp3",
+  "/audio/wheel/75.mp3",
+  "/audio/wheel/129.mp3",
+  "/audio/wheel/78.mp3",
+  "/audio/wheel/36.mp3",
+  "/audio/wheel/154.mp3",
+  "/audio/wheel/24.mp3",
+  "/audio/wheel/41.mp3",
+  "/audio/wheel/130.mp3",
+  "/audio/wheel/70.mp3",
+];
 
 let memoryOverlayState: LiveOverlayState = defaultLiveOverlayState();
 let memoryPlayerSync: LiveOverlayYouTubeSync | null = null;
@@ -130,17 +177,87 @@ function overlayTrackInput(entry: QueueEntry) {
 
 
 function wheelCandidateFromEntry(entry: QueueEntry): ResolvedWheelCeremonyTrack {
-  return { id: entry.id, artistName: displayArtist(entry), trackTitle: displayTitle(entry) };
+  return { id: entry.id, artistName: displayArtist(entry), trackTitle: displayTitle(entry), trackIds: [entry.id], trackCount: 1 };
 }
 
-function getWheelCandidatesFromQueue(queue: QueueEntry[]): ResolvedWheelCeremonyTrack[] {
-  return queue.filter(isWheelEligibleTrack).map(wheelCandidateFromEntry);
+function normalizePersonIdentity(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
+}
+
+function hashWheelIdentity(value: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function submitterIdentityKeys(entry: QueueEntry): string[] {
+  const identityEntry = entry as QueueEntry & { submitterId?: string | null; accountId?: string | null };
+  const normalizedHandle = (entry.normalizedTikTokHandle ?? entry.tiktokHandle)?.trim().toLowerCase().replace(/^@/, "").replace(/[^a-z0-9_.]+/g, "");
+  const normalizedEmail = entry.contactEmail?.trim().toLowerCase();
+  const normalizedName = normalizePersonIdentity(entry.submitterArtistName ?? entry.submittedArtistName ?? entry.artist);
+  const keys = [
+    entry.submitterToken ? `token:${entry.submitterToken.trim()}` : null,
+    identityEntry.submitterId ? `submitter:${identityEntry.submitterId.trim()}` : null,
+    identityEntry.accountId ? `account:${identityEntry.accountId.trim()}` : null,
+    normalizedHandle ? `handle:${normalizedHandle}` : null,
+    normalizedEmail ? `email:${normalizedEmail}` : null,
+    normalizedName ? `artist:${normalizedName}` : null,
+  ].filter((key): key is string => Boolean(key));
+  return keys.length > 0 ? keys : [`track:${entry.id}`];
+}
+
+export function getWheelCandidatesFromQueue(queue: QueueEntry[]): ResolvedWheelCeremonyTrack[] {
+  const groups: ResolvedWheelCeremonyTrack[] = [];
+  const groupByKey = new Map<string, ResolvedWheelCeremonyTrack>();
+
+  for (const entry of queue.filter(isWheelEligibleTrack)) {
+    const track = wheelCandidateFromEntry(entry);
+    const keys = submitterIdentityKeys(entry);
+    const existing = keys.map((key) => groupByKey.get(key)).find((group): group is ResolvedWheelCeremonyTrack => Boolean(group));
+    if (existing) {
+      existing.tracks = [...(existing.tracks ?? []), track];
+      existing.trackIds = [...(existing.trackIds ?? []), entry.id];
+      existing.trackCount = existing.trackIds.length;
+      existing.trackTitle = `${existing.trackCount} eligible tracks`;
+      keys.forEach((key) => groupByKey.set(key, existing));
+      continue;
+    }
+
+    const group: ResolvedWheelCeremonyTrack = {
+      id: `person:${hashWheelIdentity(keys.join("|"))}`,
+      artistName: displayArtist(entry),
+      trackTitle: displayTitle(entry),
+      trackIds: [entry.id],
+      trackCount: 1,
+      tracks: [track],
+    };
+    groups.push(group);
+    keys.forEach((key) => groupByKey.set(key, group));
+  }
+
+  return groups.map((group) => ({ ...group, trackTitle: (group.trackCount ?? 1) > 1 ? `${group.trackCount} eligible tracks` : group.trackTitle }));
 }
 
 function randomSeed(): string {
   const cryptoApi = globalThis.crypto;
   if (cryptoApi?.randomUUID) return cryptoApi.randomUUID();
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function randomSpinDurationMs(): number {
+  return 16_000 + Math.floor(Math.random() * 16_001);
+}
+
+function randomWheelAudioPath(): string {
+  return WHEEL_AUDIO_FILES[Math.floor(Math.random() * WHEEL_AUDIO_FILES.length)] ?? WHEEL_AUDIO_FILES[0];
+}
+
+function normalizeSpinDurationMs(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.max(16_000, Math.min(32_000, Math.round(value)));
 }
 
 function pickRandomCandidate(candidates: ResolvedWheelCeremonyTrack[], excludeId?: string): ResolvedWheelCeremonyTrack | null {
@@ -150,9 +267,22 @@ function pickRandomCandidate(candidates: ResolvedWheelCeremonyTrack[], excludeId
   return pool[Math.max(0, Math.min(pool.length - 1, index))] ?? null;
 }
 
-function isActiveCeremony(status?: WheelCeremonyStatus): boolean {
-  return status === "ready" || status === "reencrypting" || status === "spinning" || status === "result_pending";
+function effectiveWheelCeremonyStatus(state: LiveOverlayState, nowMs: number): WheelCeremonyStatus {
+  const status = normalizeWheelCeremonyStatus(state.wheelCeremonyStatus);
+  if (status !== "reencrypting" && status !== "spinning") return status;
+  const startedMs = typeof state.wheelCeremonySpinStartedAt === "string" ? new Date(state.wheelCeremonySpinStartedAt).getTime() : nowMs;
+  if (!Number.isFinite(startedMs)) return status;
+  const elapsedMs = nowMs - startedMs;
+  if (status === "reencrypting") return elapsedMs >= 2200 ? "ready" : "reencrypting";
+  return elapsedMs >= (normalizeSpinDurationMs(state.wheelCeremonySpinDurationMs) ?? 24_000) ? "result_pending" : "spinning";
 }
+
+function findTrackInWinnerGroup(group: ResolvedWheelCeremonyTrack, selectedTrackId?: string): ResolvedWheelCeremonyTrack | null {
+  const tracks = group.tracks ?? [];
+  if (selectedTrackId) return tracks.find((track) => track.id === selectedTrackId) ?? null;
+  return tracks.length === 1 ? tracks[0] ?? null : null;
+}
+
 
 function normalizeMode(value: unknown): OverlayMode {
   const modes: OverlayMode[] = ["standby", "now_playing", "artist_card", "wheel_ready", "wheel_reencrypting", "wheel_spinning", "wheel_result", "wheel_confirmed", "sponsor", "video_placeholder", "system_message", "session_active"];
@@ -169,7 +299,7 @@ function normalizeWheelStatus(value: unknown): WheelOverlayStatus {
 }
 
 function normalizeWheelCeremonyStatus(value: unknown): WheelCeremonyStatus {
-  return value === "ready" || value === "reencrypting" || value === "spinning" || value === "result_pending" || value === "confirmed" || value === "cancelled" || value === "idle" ? value : "idle";
+  return value === "ready" || value === "reencrypting" || value === "spinning" || value === "result_pending" || value === "confirmed" || value === "cancelled" || value === "signal_lost" || value === "idle" ? value : "idle";
 }
 
 
@@ -230,9 +360,21 @@ function normalizeState(input: unknown): LiveOverlayState {
     wheelCeremonyStartedAt: typeof raw.wheelCeremonyStartedAt === "string" ? raw.wheelCeremonyStartedAt : undefined,
     wheelCeremonySpinStartedAt: typeof raw.wheelCeremonySpinStartedAt === "string" ? raw.wheelCeremonySpinStartedAt : undefined,
     wheelCeremonyResultTrackId: cleanText(raw.wheelCeremonyResultTrackId),
+    wheelCeremonyChosenTrackId: cleanText(raw.wheelCeremonyChosenTrackId),
     wheelCeremonyResultSelectedAt: typeof raw.wheelCeremonyResultSelectedAt === "string" ? raw.wheelCeremonyResultSelectedAt : undefined,
     wheelCeremonySeed: cleanText(raw.wheelCeremonySeed),
+    wheelCeremonyPreviousSeed: cleanText(raw.wheelCeremonyPreviousSeed),
+    wheelCeremonyCandidateOrder: Array.isArray(raw.wheelCeremonyCandidateOrder) ? raw.wheelCeremonyCandidateOrder.map((entry) => cleanText(entry)).filter((entry): entry is string => Boolean(entry)) : undefined,
+    wheelCeremonyPreviousCandidateOrder: Array.isArray(raw.wheelCeremonyPreviousCandidateOrder) ? raw.wheelCeremonyPreviousCandidateOrder.map((entry) => cleanText(entry)).filter((entry): entry is string => Boolean(entry)) : undefined,
+    wheelCeremonyReencryptNonce: cleanText(raw.wheelCeremonyReencryptNonce),
+    wheelCeremonyReencryptCycleId: cleanText(raw.wheelCeremonyReencryptCycleId),
+    wheelCeremonyFinalRotationDeg: typeof raw.wheelCeremonyFinalRotationDeg === "number" && Number.isFinite(raw.wheelCeremonyFinalRotationDeg) ? raw.wheelCeremonyFinalRotationDeg : undefined,
+    wheelCeremonyLandingAngleDeg: typeof raw.wheelCeremonyLandingAngleDeg === "number" && Number.isFinite(raw.wheelCeremonyLandingAngleDeg) ? raw.wheelCeremonyLandingAngleDeg : undefined,
+    wheelCeremonyWinningSegmentId: cleanText(raw.wheelCeremonyWinningSegmentId),
+    wheelCeremonyWinningSegmentIndex: typeof raw.wheelCeremonyWinningSegmentIndex === "number" && Number.isFinite(raw.wheelCeremonyWinningSegmentIndex) ? Math.floor(raw.wheelCeremonyWinningSegmentIndex) : undefined,
     wheelCeremonyJingleKey: cleanText(raw.wheelCeremonyJingleKey, "silent"),
+    wheelCeremonySpinDurationMs: normalizeSpinDurationMs(raw.wheelCeremonySpinDurationMs),
+    wheelCeremonyAudioPath: cleanText(raw.wheelCeremonyAudioPath),
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString(),
   };
 }
@@ -319,6 +461,8 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
   if (payload.action === "launchWheel") {
     const queueState = await getRadioQueueState();
     const wheelSpinsOwed = queueState.session?.wheelSpinsOwed ?? 0;
+    const candidates = getWheelCandidatesFromQueue(queueState.queue);
+    const launchSeed = randomSeed();
     if (wheelSpinsOwed <= 0) throw new Error("No wheel spins are owed.");
     next = {
       ...current,
@@ -330,21 +474,41 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelCeremonyStartedAt: now,
       wheelCeremonySpinStartedAt: undefined,
       wheelCeremonyResultTrackId: undefined,
+      wheelCeremonyChosenTrackId: undefined,
       wheelCeremonyResultSelectedAt: undefined,
-      wheelCeremonySeed: randomSeed(),
+      wheelCeremonySeed: launchSeed,
+      wheelCeremonyPreviousSeed: undefined,
+      wheelCeremonyCandidateOrder: orderedWheelCandidateIds(candidates, undefined, launchSeed),
+      wheelCeremonyPreviousCandidateOrder: undefined,
+      wheelCeremonyReencryptNonce: undefined,
+      wheelCeremonyReencryptCycleId: undefined,
+      wheelCeremonyFinalRotationDeg: undefined,
+      wheelCeremonyLandingAngleDeg: undefined,
+      wheelCeremonyWinningSegmentId: undefined,
+      wheelCeremonyWinningSegmentIndex: undefined,
       wheelCeremonyJingleKey: "silent",
+      wheelCeremonySpinDurationMs: undefined,
+      wheelCeremonyAudioPath: undefined,
       updatedAt: now,
     };
   } else if (payload.action === "spinWheel" || payload.action === "reencryptWheel") {
-    const currentStatus = normalizeWheelCeremonyStatus(current.wheelCeremonyStatus);
-    if (payload.action === "spinWheel" && !isActiveCeremony(currentStatus)) throw new Error("Launch the wheel before spinning.");
-    if (payload.action === "reencryptWheel" && currentStatus !== "result_pending" && currentStatus !== "spinning") throw new Error("Re-encrypt is only available before confirming a pending result.");
+    const currentStatus = effectiveWheelCeremonyStatus(current, new Date(now).getTime());
+    if (payload.action === "spinWheel" && currentStatus !== "ready" && currentStatus !== "signal_lost") throw new Error("Launch the wheel before spinning.");
+    if (payload.action === "reencryptWheel" && ((currentStatus !== "ready" && currentStatus !== "reencrypting") || current.wheelCeremonyResultTrackId)) throw new Error("Re-encryption is only available before the wheel spin.");
     const queueState = await getRadioQueueState();
     if ((queueState.session?.wheelSpinsOwed ?? 0) <= 0) throw new Error("No wheel spins are owed.");
     const candidates = getWheelCandidatesFromQueue(queueState.queue);
-    const selected = pickRandomCandidate(candidates, payload.action === "reencryptWheel" ? current.wheelCeremonyResultTrackId : undefined);
-    if (!selected) throw new Error("No eligible Wheel Chosen candidates are available.");
+    if (candidates.length === 0) throw new Error("No eligible Wheel Chosen candidates are available.");
     const reencrypting = payload.action === "reencryptWheel";
+    const nonce = reencrypting ? randomSeed() : undefined;
+    const previousOrder = orderedWheelCandidateIds(candidates, current.wheelCeremonyCandidateOrder, current.wheelCeremonySeed);
+    const candidateOrder = reencrypting ? derangedWheelCandidateOrder(candidates, previousOrder, nonce) : previousOrder;
+    const orderedCandidates = candidateOrder.map((candidateId) => candidates.find((candidate) => candidate.id === candidateId)).filter((candidate): candidate is ResolvedWheelCeremonyTrack => Boolean(candidate));
+    const selected = reencrypting ? null : pickRandomCandidate(orderedCandidates);
+    const wheelSegments = buildWheelSegments(orderedCandidates.map((candidate) => ({ id: candidate.id, label: candidate.artistName, weight: candidate.weight })));
+    const selectedSegment = selected ? wheelSegments.find((segment) => segment.candidateId === selected.id) : undefined;
+    const finalRotationDeg = selectedSegment ? wheelFinalRotationForSegment(selectedSegment) : undefined;
+    if (!reencrypting && (!selected || !selectedSegment || typeof finalRotationDeg !== "number")) throw new Error("No eligible Wheel Chosen candidates are available.");
     next = {
       ...current,
       mode: reencrypting ? "wheel_reencrypting" : "wheel_spinning",
@@ -352,30 +516,85 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelOverlayStatus: "active",
       wheelCeremonyStatus: reencrypting ? "reencrypting" : "spinning",
       wheelCeremonySpinStartedAt: now,
-      wheelCeremonyResultTrackId: selected.id,
+      wheelCeremonyResultTrackId: selected?.id,
+      wheelCeremonyChosenTrackId: undefined,
+      wheelCeremonyResultSelectedAt: selected ? now : undefined,
+      wheelCeremonySeed: randomSeed(),
+      wheelCeremonyPreviousSeed: reencrypting ? current.wheelCeremonySeed : undefined,
+      wheelCeremonyCandidateOrder: candidateOrder,
+      wheelCeremonyPreviousCandidateOrder: reencrypting ? previousOrder : undefined,
+      wheelCeremonyReencryptNonce: nonce,
+      wheelCeremonyReencryptCycleId: nonce,
+      wheelCeremonyFinalRotationDeg: reencrypting ? undefined : finalRotationDeg,
+      wheelCeremonyLandingAngleDeg: reencrypting ? undefined : selectedSegment?.centerAngle,
+      wheelCeremonyWinningSegmentId: reencrypting ? undefined : selectedSegment?.id,
+      wheelCeremonyWinningSegmentIndex: reencrypting ? undefined : selectedSegment?.index,
+      wheelCeremonyJingleKey: "silent",
+      wheelCeremonySpinDurationMs: reencrypting ? undefined : randomSpinDurationMs(),
+      wheelCeremonyAudioPath: reencrypting ? undefined : randomWheelAudioPath(),
+      artistName: selected?.artistName,
+      trackTitle: selected?.trackTitle,
+      updatedAt: now,
+    };
+  } else if (payload.action === "wheelWinnerNotHere") {
+    const resultTrackId = cleanText(current.wheelCeremonyResultTrackId);
+    if (!resultTrackId) throw new Error("No wheel result is ready to remove.");
+    const currentStatus = effectiveWheelCeremonyStatus(current, new Date(now).getTime());
+    if (currentStatus !== "result_pending") throw new Error("Winner Not Here is only available for a pending wheel result.");
+    const queueState = await getRadioQueueState();
+    const selected = getWheelCandidatesFromQueue(queueState.queue).find((candidate) => candidate.id === resultTrackId);
+    if (!selected) throw new Error("The selected wheel result is no longer removable from the active queue.");
+    const trackIdsToRemove = selected.trackIds?.length ? selected.trackIds : [resultTrackId];
+    for (const trackId of trackIdsToRemove) await updateRadioTrack(trackId, "remove");
+    next = {
+      ...current,
+      mode: "wheel_ready",
+      wheelOverlayActive: true,
+      wheelOverlayStatus: "ready",
+      wheelCeremonyStatus: "ready",
+      wheelCeremonySpinStartedAt: undefined,
+      wheelCeremonyResultTrackId: undefined,
+      wheelCeremonyChosenTrackId: undefined,
       wheelCeremonyResultSelectedAt: now,
       wheelCeremonySeed: randomSeed(),
+      wheelCeremonyPreviousSeed: undefined,
+      wheelCeremonyCandidateOrder: undefined,
+      wheelCeremonyPreviousCandidateOrder: undefined,
+      wheelCeremonyReencryptNonce: undefined,
+      wheelCeremonyReencryptCycleId: undefined,
+      wheelCeremonyFinalRotationDeg: undefined,
+      wheelCeremonyLandingAngleDeg: undefined,
+      wheelCeremonyWinningSegmentId: undefined,
+      wheelCeremonyWinningSegmentIndex: undefined,
       wheelCeremonyJingleKey: "silent",
-      artistName: selected.artistName,
-      trackTitle: selected.trackTitle,
+      wheelCeremonySpinDurationMs: undefined,
+      wheelCeremonyAudioPath: undefined,
+      artistName: undefined,
+      trackTitle: undefined,
       updatedAt: now,
     };
   } else if (payload.action === "confirmWheel") {
+    const currentStatus = effectiveWheelCeremonyStatus(current, new Date(now).getTime());
+    if (currentStatus !== "result_pending") throw new Error("Wheel result is not ready to confirm yet.");
     const resultTrackId = cleanText(current.wheelCeremonyResultTrackId);
     if (!resultTrackId) throw new Error("No wheel result is ready to confirm.");
     const queueState = await getRadioQueueState();
     const candidates = getWheelCandidatesFromQueue(queueState.queue);
-    const selected = candidates.find((candidate) => candidate.id === resultTrackId);
-    if (!selected) throw new Error("The selected wheel result is no longer eligible. Reroll or cancel the ceremony.");
-    await updateRadioTrack(resultTrackId, "wheel");
+    const winnerGroup = candidates.find((candidate) => candidate.id === resultTrackId);
+    if (!winnerGroup) throw new Error("The selected wheel result is no longer eligible. Reroll or cancel the ceremony.");
+    const selectedTrackId = cleanText(payload.selectedTrackId) ?? cleanText(current.wheelCeremonyChosenTrackId);
+    const selected = findTrackInWinnerGroup(winnerGroup, selectedTrackId);
+    if (!selected) throw new Error("Choose one eligible track from the winning artist before confirming Wheel Chosen.");
+    await updateRadioTrack(selected.id, "wheel");
     next = {
       ...current,
       mode: "wheel_confirmed",
       wheelOverlayActive: true,
       wheelOverlayStatus: "complete",
       wheelCeremonyStatus: "confirmed",
+      wheelCeremonyChosenTrackId: selected.id,
       wheelCeremonyResultSelectedAt: now,
-      artistName: selected.artistName,
+      artistName: winnerGroup.artistName,
       trackTitle: selected.trackTitle,
       updatedAt: now,
     };
@@ -390,9 +609,21 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelCeremonyStartedAt: undefined,
       wheelCeremonySpinStartedAt: undefined,
       wheelCeremonyResultTrackId: undefined,
+      wheelCeremonyChosenTrackId: undefined,
       wheelCeremonyResultSelectedAt: undefined,
       wheelCeremonySeed: undefined,
+      wheelCeremonyPreviousSeed: undefined,
+      wheelCeremonyCandidateOrder: undefined,
+      wheelCeremonyPreviousCandidateOrder: undefined,
+      wheelCeremonyReencryptNonce: undefined,
+      wheelCeremonyReencryptCycleId: undefined,
+      wheelCeremonyFinalRotationDeg: undefined,
+      wheelCeremonyLandingAngleDeg: undefined,
+      wheelCeremonyWinningSegmentId: undefined,
+      wheelCeremonyWinningSegmentIndex: undefined,
       wheelCeremonyJingleKey: "silent",
+      wheelCeremonySpinDurationMs: undefined,
+      wheelCeremonyAudioPath: undefined,
       artistName: undefined,
       trackTitle: undefined,
       updatedAt: now,

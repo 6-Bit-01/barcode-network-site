@@ -2,7 +2,105 @@ import type { QueueSourceType, SponsorBreakStatus } from "./queue-types";
 
 export type OverlayMode = "standby" | "now_playing" | "artist_card" | "wheel_ready" | "wheel_reencrypting" | "wheel_spinning" | "wheel_result" | "wheel_confirmed" | "sponsor" | "video_placeholder" | "system_message" | "session_active";
 export type WheelOverlayStatus = "ready" | "intro" | "active" | "complete";
-export type WheelCeremonyStatus = "idle" | "ready" | "reencrypting" | "spinning" | "result_pending" | "confirmed" | "cancelled";
+export type WheelCeremonyStatus = "idle" | "ready" | "reencrypting" | "spinning" | "result_pending" | "confirmed" | "cancelled" | "signal_lost";
+
+export const WHEEL_RIGHT_POINTER_ANGLE_DEGREES = 90;
+
+export interface WheelSegmentInput {
+  id: string;
+  label: string;
+  weight?: number;
+}
+
+export interface WheelSegment {
+  id: string;
+  candidateId: string;
+  displayLabel: string;
+  startAngle: number;
+  endAngle: number;
+  centerAngle: number;
+  angleSize: number;
+  weight: number;
+  index: number;
+}
+
+export function normalizeWheelAngle(degrees: number): number {
+  if (!Number.isFinite(degrees)) return 0;
+  return ((degrees % 360) + 360) % 360;
+}
+
+function normalizeWheelWeight(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 1;
+}
+
+export function buildWheelSegments(entries: WheelSegmentInput[]): WheelSegment[] {
+  const safeEntries = entries.length > 0 ? entries : [{ id: "empty", label: "NO CANDIDATES", weight: 1 }];
+  const weights = safeEntries.map((entry) => normalizeWheelWeight(entry.weight));
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0) || 1;
+  let cursor = 0;
+
+  return safeEntries.map((entry, index) => {
+    const weight = weights[index] ?? 1;
+    const startAngle = cursor;
+    const angleSize = index === safeEntries.length - 1 ? 360 - startAngle : 360 * weight / totalWeight;
+    const endAngle = index === safeEntries.length - 1 ? 360 : startAngle + angleSize;
+    cursor = endAngle;
+    return {
+      id: `segment:${entry.id}`,
+      candidateId: entry.id,
+      displayLabel: entry.label,
+      startAngle,
+      endAngle,
+      centerAngle: startAngle + angleSize / 2,
+      angleSize,
+      weight,
+      index,
+    };
+  });
+}
+
+export function wheelPointerLocalAngle(finalRotationDegrees: number, pointerAngleDegrees = WHEEL_RIGHT_POINTER_ANGLE_DEGREES): number {
+  return normalizeWheelAngle(pointerAngleDegrees - normalizeWheelAngle(finalRotationDegrees));
+}
+
+export function wheelSegmentAtPointer(segments: WheelSegment[], finalRotationDegrees: number, pointerAngleDegrees = WHEEL_RIGHT_POINTER_ANGLE_DEGREES): WheelSegment {
+  const safeSegments = segments.length > 0 ? segments : buildWheelSegments([]);
+  // Wheel labels are visual only. Winner selection is based exclusively on segment geometry under the right-side pointer.
+  // Boundary rule: each segment owns [startAngle, endAngle), so an exact boundary belongs to the next clockwise segment.
+  const pointerLocalAngle = wheelPointerLocalAngle(finalRotationDegrees, pointerAngleDegrees);
+  return safeSegments.find((segment, index) => pointerLocalAngle >= segment.startAngle && (pointerLocalAngle < segment.endAngle || index === safeSegments.length - 1 && pointerLocalAngle < 360)) ?? safeSegments[0];
+}
+
+export function wheelSliceIndexAtPointer(entryCount: number, finalRotationDegrees: number, pointerAngleDegrees = WHEEL_RIGHT_POINTER_ANGLE_DEGREES): number {
+  const count = Math.max(1, Math.floor(entryCount));
+  const segments = buildWheelSegments(Array.from({ length: count }, (_, index) => ({ id: `slice-${index}`, label: `Slice ${index + 1}` })));
+  return wheelSegmentAtPointer(segments, finalRotationDegrees, pointerAngleDegrees).index;
+}
+
+export function wheelSliceCenterAngle(entryCount: number, index: number): number {
+  const count = Math.max(1, Math.floor(entryCount));
+  const safeIndex = Math.max(0, Math.min(count - 1, Math.floor(index)));
+  return buildWheelSegments(Array.from({ length: count }, (_, segmentIndex) => ({ id: `slice-${segmentIndex}`, label: `Slice ${segmentIndex + 1}` })))[safeIndex]?.centerAngle ?? 0;
+}
+
+export function wheelFinalRotationForSegment(segment: WheelSegment, fullTurns = 4, pointerAngleDegrees = WHEEL_RIGHT_POINTER_ANGLE_DEGREES): number {
+  return (Math.max(0, Math.floor(fullTurns)) * 360) + pointerAngleDegrees - segment.centerAngle;
+}
+
+export function wheelFinalRotationForSlice(entryCount: number, index: number, fullTurns = 4, pointerAngleDegrees = WHEEL_RIGHT_POINTER_ANGLE_DEGREES): number {
+  const count = Math.max(1, Math.floor(entryCount));
+  const safeIndex = Math.max(0, Math.min(count - 1, Math.floor(index)));
+  const segment = buildWheelSegments(Array.from({ length: count }, (_, segmentIndex) => ({ id: `slice-${segmentIndex}`, label: `Slice ${segmentIndex + 1}` })))[safeIndex];
+  return wheelFinalRotationForSegment(segment ?? buildWheelSegments([])[0], fullTurns, pointerAngleDegrees);
+}
+
+export function wheelUprightLabelRotationDegrees(angle: number): number {
+  let rotation = normalizeWheelAngle(angle) - 90;
+  if (rotation > 180) rotation -= 360;
+  if (rotation > 90) rotation -= 180;
+  if (rotation < -90) rotation += 180;
+  return rotation;
+}
 
 export interface LiveOverlayTrackInput {
   id?: string;
@@ -29,6 +127,10 @@ export interface LiveOverlayWheelCandidateInput {
   submittedSongTitle?: string;
   detectedArtistName?: string | null;
   detectedSongTitle?: string | null;
+  trackIds?: string[];
+  trackCount?: number;
+  tracks?: ResolvedWheelCeremonyTrack[];
+  weight?: number;
 }
 
 export interface LiveOverlayStateInput {
@@ -53,9 +155,21 @@ export interface LiveOverlayStateInput {
   wheelCeremonyStartedAt?: string;
   wheelCeremonySpinStartedAt?: string;
   wheelCeremonyResultTrackId?: string;
+  wheelCeremonyChosenTrackId?: string;
   wheelCeremonyResultSelectedAt?: string;
   wheelCeremonySeed?: string;
+  wheelCeremonyPreviousSeed?: string;
+  wheelCeremonyCandidateOrder?: string[];
+  wheelCeremonyPreviousCandidateOrder?: string[];
+  wheelCeremonyReencryptNonce?: string;
+  wheelCeremonyReencryptCycleId?: string;
+  wheelCeremonyFinalRotationDeg?: number;
+  wheelCeremonyLandingAngleDeg?: number;
+  wheelCeremonyWinningSegmentId?: string;
+  wheelCeremonyWinningSegmentIndex?: number;
   wheelCeremonyJingleKey?: string;
+  wheelCeremonySpinDurationMs?: number;
+  wheelCeremonyAudioPath?: string;
   updatedAt?: string;
 }
 
@@ -107,6 +221,10 @@ export interface ResolvedWheelCeremonyTrack {
   id: string;
   artistName: string;
   trackTitle: string;
+  trackIds?: string[];
+  trackCount?: number;
+  tracks?: ResolvedWheelCeremonyTrack[];
+  weight?: number;
 }
 
 export interface ResolvedWheelCeremonyScene {
@@ -117,12 +235,23 @@ export interface ResolvedWheelCeremonyScene {
   hiddenCandidateCount: number;
   resultTrack?: ResolvedWheelCeremonyTrack | null;
   resultTrackId?: string;
+  chosenTrackId?: string;
   startedAt?: string;
   spinStartedAt?: string;
   resultSelectedAt?: string;
   seed?: string;
+  previousSeed?: string;
+  candidateOrder?: string[];
+  previousCandidateOrder?: string[];
+  reencryptNonce?: string;
+  reencryptCycleId?: string;
+  finalRotationDeg?: number;
+  landingAngleDeg?: number;
+  winningSegmentId?: string;
+  winningSegmentIndex?: number;
   jingleKey?: string;
   spinDurationMs: number;
+  audioPath?: string;
 }
 
 export interface ResolvedLiveOverlayScene {
@@ -148,9 +277,13 @@ export interface ResolvedLiveOverlayScene {
 
 const MAX_URL_LENGTH = 600;
 const BLOCKED_HOSTS = ["drive.google.com", "dropbox.com", "wetransfer.com", "bit.ly", "tinyurl.com", "t.co", "goo.gl", "private.blob.vercel-storage.com"];
-const WHEEL_SPIN_DURATION_MS = 6500;
-const WHEEL_REENCRYPTING_MS = 2500;
+const DEFAULT_WHEEL_SPIN_DURATION_MS = 24000;
+const MIN_WHEEL_SPIN_DURATION_MS = 16000;
+const MAX_WHEEL_SPIN_DURATION_MS = 32000;
+const WHEEL_REENCRYPTING_MS = 2200;
+const WHEEL_REENCRYPT_REMAP_MS = 750;
 const WHEEL_CONFIRMED_RETURN_MS = 2200;
+const WHEEL_SIGNAL_LOST_MS = 3500;
 const MAX_WHEEL_DISPLAY_CANDIDATES = 32;
 
 export function safeLiveOverlayUrl(value: unknown): string | undefined {
@@ -209,11 +342,24 @@ function safeTrack(track: LiveOverlayTrackInput): { track: ResolvedLiveOverlayTr
 function safeWheelCandidate(candidate: LiveOverlayWheelCandidateInput): ResolvedWheelCeremonyTrack | null {
   const id = cleanDisplay(candidate.id);
   if (!id) return null;
-  return { id, artistName: displayArtist(candidate), trackTitle: displayTitle(candidate) };
+  const tracks = Array.isArray(candidate.tracks)
+    ? candidate.tracks.map((track) => ({ id: cleanDisplay(track.id) ?? "", artistName: cleanDisplay(track.artistName) || displayArtist(candidate), trackTitle: cleanDisplay(track.trackTitle) || "Untitled transmission" })).filter((track) => Boolean(track.id))
+    : undefined;
+  const trackIds = Array.isArray(candidate.trackIds) ? candidate.trackIds.map(cleanDisplay).filter((trackId): trackId is string => Boolean(trackId)) : tracks?.map((track) => track.id);
+  const trackCount = Math.max(1, Math.floor(candidate.trackCount ?? trackIds?.length ?? tracks?.length ?? 1));
+  return {
+    id,
+    artistName: displayArtist(candidate),
+    trackTitle: trackCount > 1 ? `${trackCount} eligible tracks` : displayTitle(candidate),
+    trackIds,
+    trackCount,
+    tracks,
+    weight: normalizeWheelWeight(candidate.weight),
+  };
 }
 
 function normalizeWheelCeremonyStatus(value: unknown): WheelCeremonyStatus {
-  return value === "ready" || value === "reencrypting" || value === "spinning" || value === "result_pending" || value === "confirmed" || value === "cancelled" || value === "idle" ? value : "idle";
+  return value === "ready" || value === "reencrypting" || value === "spinning" || value === "result_pending" || value === "confirmed" || value === "cancelled" || value === "signal_lost" || value === "idle" ? value : "idle";
 }
 
 function timeMs(value?: string): number | null {
@@ -222,39 +368,150 @@ function timeMs(value?: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function normalizeWheelSpinDurationMs(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_WHEEL_SPIN_DURATION_MS;
+  return Math.max(MIN_WHEEL_SPIN_DURATION_MS, Math.min(MAX_WHEEL_SPIN_DURATION_MS, Math.round(value)));
+}
+
+function seededHash(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function shuffledWheelCandidates(candidates: ResolvedWheelCeremonyTrack[], seed?: string): ResolvedWheelCeremonyTrack[] {
+  const shuffled = [...candidates];
+  let state = seededHash(seed || "barcode-wheel");
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    const swapIndex = state % (index + 1);
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
+function cleanStringList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const cleaned = value.map(cleanDisplay).filter((entry): entry is string => Boolean(entry));
+  return cleaned.length > 0 ? [...new Set(cleaned)] : undefined;
+}
+
+function cleanNumber(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return value;
+}
+
+function cleanInteger(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.floor(value);
+}
+
+export function orderedWheelCandidateIds(candidates: Pick<ResolvedWheelCeremonyTrack, "id">[], order?: string[], seed?: string): string[] {
+  const candidateIds = candidates.map((candidate) => candidate.id).filter(Boolean);
+  const candidateIdSet = new Set(candidateIds);
+  const ordered = (order ?? []).filter((candidateId) => candidateIdSet.has(candidateId));
+  const missing = candidateIds.filter((candidateId) => !ordered.includes(candidateId));
+  if (ordered.length > 0) return [...ordered, ...missing];
+  return shuffledWheelCandidates(candidates as ResolvedWheelCeremonyTrack[], seed).map((candidate) => candidate.id);
+}
+
+function orderWheelCandidates(candidates: ResolvedWheelCeremonyTrack[], order?: string[], seed?: string): ResolvedWheelCeremonyTrack[] {
+  const byId = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+  return orderedWheelCandidateIds(candidates, order, seed).map((candidateId) => byId.get(candidateId)).filter((candidate): candidate is ResolvedWheelCeremonyTrack => Boolean(candidate));
+}
+
+function rotateWheelOrder(order: string[], amount: number): string[] {
+  if (order.length === 0) return order;
+  const safeAmount = ((amount % order.length) + order.length) % order.length;
+  return [...order.slice(safeAmount), ...order.slice(0, safeAmount)];
+}
+
+export function derangedWheelCandidateOrder(candidates: Pick<ResolvedWheelCeremonyTrack, "id">[], previousOrder?: string[], seed?: string): string[] {
+  const baseline = orderedWheelCandidateIds(candidates, previousOrder, seed);
+  if (baseline.length <= 1) return baseline;
+  if (baseline.length === 2) return [baseline[1], baseline[0]];
+
+  const shuffled = [...baseline];
+  let state = seededHash(seed || `barcode-wheel-derange:${baseline.join("|")}`);
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    const swapIndex = state % (index + 1);
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+
+  for (let rotation = 0; rotation < shuffled.length; rotation += 1) {
+    const rotated = rotateWheelOrder(shuffled, rotation);
+    if (rotated.every((candidateId, index) => candidateId !== baseline[index])) return rotated;
+  }
+
+  const fallbackShift = (seededHash(`${seed ?? "fallback"}:${baseline.join("|")}`) % (baseline.length - 1)) + 1;
+  return rotateWheelOrder(baseline, fallbackShift);
+}
+
 function resolveWheelCeremony(input: ResolveLiveOverlaySceneInput, now: Date): ResolvedWheelCeremonyScene | null {
   const overlayState = input.overlayState ?? null;
   const storedStatus = normalizeWheelCeremonyStatus(overlayState?.wheelCeremonyStatus ?? (overlayState?.wheelOverlayActive ? "ready" : "idle"));
   if (storedStatus === "idle" || storedStatus === "cancelled") return null;
   const candidates = (input.wheelCandidates ?? []).map(safeWheelCandidate).filter((candidate): candidate is ResolvedWheelCeremonyTrack => Boolean(candidate));
   const resultTrackId = cleanDisplay(overlayState?.wheelCeremonyResultTrackId);
-  const resultTrack = candidates.find((candidate) => candidate.id === resultTrackId) ?? (resultTrackId ? { id: resultTrackId, artistName: cleanDisplay(overlayState?.artistName) || "Selected artist", trackTitle: cleanDisplay(overlayState?.trackTitle) || "Selected transmission" } : null);
+  const chosenTrackId = cleanDisplay(overlayState?.wheelCeremonyChosenTrackId);
+  const rawResultTrack = candidates.find((candidate) => candidate.id === resultTrackId) ?? (resultTrackId ? { id: resultTrackId, artistName: cleanDisplay(overlayState?.artistName) || "Selected artist", trackTitle: cleanDisplay(overlayState?.trackTitle) || "Selected transmission" } : null);
+  const chosenTrackTitle = chosenTrackId ? rawResultTrack?.tracks?.find((track) => track.id === chosenTrackId)?.trackTitle ?? cleanDisplay(overlayState?.trackTitle) : undefined;
+  const resultTrack = rawResultTrack && chosenTrackTitle ? { ...rawResultTrack, trackTitle: chosenTrackTitle } : rawResultTrack;
   let status = storedStatus;
+  const spinDurationMs = normalizeWheelSpinDurationMs(overlayState?.wheelCeremonySpinDurationMs);
+  let reencryptElapsedMs = 0;
   if (storedStatus === "reencrypting" || storedStatus === "spinning") {
     const spinStartedMs = timeMs(overlayState?.wheelCeremonySpinStartedAt) ?? now.getTime();
     const elapsedMs = now.getTime() - spinStartedMs;
-    if (storedStatus === "reencrypting" && elapsedMs < WHEEL_REENCRYPTING_MS) status = "reencrypting";
-    else if (elapsedMs < WHEEL_SPIN_DURATION_MS) status = "spinning";
-    else status = "result_pending";
+    if (storedStatus === "reencrypting") {
+      reencryptElapsedMs = elapsedMs;
+      status = elapsedMs < WHEEL_REENCRYPTING_MS ? "reencrypting" : "ready";
+    } else status = elapsedMs < spinDurationMs ? "spinning" : "result_pending";
+  }
+  if (storedStatus === "signal_lost") {
+    const signalLostAtMs = timeMs(overlayState?.wheelCeremonyResultSelectedAt) ?? timeMs(overlayState?.updatedAt) ?? now.getTime();
+    status = now.getTime() - signalLostAtMs < WHEEL_SIGNAL_LOST_MS ? "signal_lost" : "ready";
   }
   if (storedStatus === "confirmed") {
     const confirmedAtMs = timeMs(overlayState?.wheelCeremonyResultSelectedAt) ?? timeMs(overlayState?.updatedAt) ?? now.getTime();
     if (now.getTime() - confirmedAtMs > WHEEL_CONFIRMED_RETURN_MS) return null;
   }
+  const currentSeed = cleanDisplay(overlayState?.wheelCeremonySeed);
+  const previousSeed = cleanDisplay(overlayState?.wheelCeremonyPreviousSeed);
+  const currentOrder = cleanStringList(overlayState?.wheelCeremonyCandidateOrder);
+  const previousOrder = cleanStringList(overlayState?.wheelCeremonyPreviousCandidateOrder);
+  const usePreviousMapping = storedStatus === "reencrypting" && status === "reencrypting" && reencryptElapsedMs < WHEEL_REENCRYPT_REMAP_MS;
+  const displaySeed = usePreviousMapping ? previousSeed ?? currentSeed : currentSeed;
+  const displayOrder = usePreviousMapping ? previousOrder ?? currentOrder : currentOrder;
   return {
     status,
     storedStatus,
     candidateCount: candidates.length,
-    displayCandidates: candidates.slice(0, MAX_WHEEL_DISPLAY_CANDIDATES),
+    displayCandidates: orderWheelCandidates(candidates, displayOrder, displaySeed).slice(0, MAX_WHEEL_DISPLAY_CANDIDATES),
     hiddenCandidateCount: Math.max(0, candidates.length - MAX_WHEEL_DISPLAY_CANDIDATES),
     resultTrack,
     resultTrackId,
+    chosenTrackId,
     startedAt: overlayState?.wheelCeremonyStartedAt ?? overlayState?.wheelOverlayLaunchedAt,
     spinStartedAt: overlayState?.wheelCeremonySpinStartedAt,
     resultSelectedAt: overlayState?.wheelCeremonyResultSelectedAt,
-    seed: cleanDisplay(overlayState?.wheelCeremonySeed),
+    seed: currentSeed,
+    previousSeed,
+    candidateOrder: currentOrder,
+    previousCandidateOrder: previousOrder,
+    reencryptNonce: cleanDisplay(overlayState?.wheelCeremonyReencryptNonce) ?? cleanDisplay(overlayState?.wheelCeremonyReencryptCycleId),
+    reencryptCycleId: cleanDisplay(overlayState?.wheelCeremonyReencryptCycleId),
+    finalRotationDeg: cleanNumber(overlayState?.wheelCeremonyFinalRotationDeg),
+    landingAngleDeg: cleanNumber(overlayState?.wheelCeremonyLandingAngleDeg),
+    winningSegmentId: cleanDisplay(overlayState?.wheelCeremonyWinningSegmentId),
+    winningSegmentIndex: cleanInteger(overlayState?.wheelCeremonyWinningSegmentIndex),
     jingleKey: cleanDisplay(overlayState?.wheelCeremonyJingleKey) || "silent",
-    spinDurationMs: WHEEL_SPIN_DURATION_MS,
+    spinDurationMs,
+    audioPath: cleanDisplay(overlayState?.wheelCeremonyAudioPath),
   };
 }
 
@@ -283,10 +540,10 @@ export function resolveLiveOverlayScene(input: ResolveLiveOverlaySceneInput): Re
     const mode: OverlayMode = wheelCeremony.status === "reencrypting" ? "wheel_reencrypting" : wheelCeremony.status === "spinning" ? "wheel_spinning" : wheelCeremony.status === "result_pending" ? "wheel_result" : wheelCeremony.status === "confirmed" ? "wheel_confirmed" : "wheel_ready";
     return scene({
       mode,
-      reason: wheelCeremony.status === "ready" ? "Wheel ceremony was launched by the host." : wheelCeremony.status === "reencrypting" ? "Wheel result is being re-encrypted before host confirmation." : wheelCeremony.status === "spinning" ? "Wheel spin is running under host control." : wheelCeremony.status === "confirmed" ? "Wheel result was confirmed through the queue admin path." : "Wheel result is waiting for host confirmation.",
+      reason: wheelCeremony.status === "ready" ? "Wheel ceremony was launched by the host." : wheelCeremony.status === "reencrypting" ? "Wheel candidates are being re-encrypted before the spin." : wheelCeremony.status === "signal_lost" ? "Wheel winner was removed because the signal was not present." : wheelCeremony.status === "spinning" ? "Wheel spin is running under host control." : wheelCeremony.status === "confirmed" ? "Wheel result was confirmed through the queue admin path." : "Wheel result is waiting for host confirmation.",
       title: wheelCeremony.status === "confirmed" ? "WHEEL CHOSEN" : "10K TAP WHEEL",
-      subtitle: wheelCeremony.status === "ready" ? "READY" : wheelCeremony.status === "reencrypting" ? "RE-ENCRYPTING SIGNAL" : wheelCeremony.status === "spinning" ? "SPINNING" : wheelCeremony.status === "confirmed" ? "LOCKED IN" : "RESULT PENDING",
-      message: wheelCeremony.status === "ready" ? `Candidates: ${wheelCeremony.candidateCount}. Awaiting host spin.` : wheelCeremony.status === "reencrypting" ? "Signal scramble in progress." : wheelCeremony.status === "spinning" ? "Result incoming." : result ? `${result.artistName} — ${result.trackTitle}` : "Awaiting host confirmation.",
+      subtitle: wheelCeremony.status === "ready" ? "READY" : wheelCeremony.status === "reencrypting" ? "RE-ENCRYPTING SIGNAL" : wheelCeremony.status === "signal_lost" ? "SIGNAL LOST" : wheelCeremony.status === "spinning" ? "SPINNING" : wheelCeremony.status === "confirmed" ? "LOCKED IN" : "RESULT PENDING",
+      message: wheelCeremony.status === "ready" ? `Candidates: ${wheelCeremony.candidateCount}. Awaiting host spin.` : wheelCeremony.status === "reencrypting" ? "Signal scramble in progress." : wheelCeremony.status === "signal_lost" ? "WINNER NOT PRESENT — WHEEL STILL OWED" : wheelCeremony.status === "spinning" ? "Result incoming." : result ? `${result.artistName} — ${result.trackTitle}` : "Awaiting host confirmation.",
       wheelCeremony,
       priority: 100,
       automatic: false,

@@ -63,3 +63,45 @@ test("track duration labels distinguish detected and estimated fallback", () => 
   assert.equal(display.publicTrackDurationLabel(track("known", { detectedDurationSeconds: 222, durationIsEstimate: false })), "3:42");
   assert.equal(display.publicTrackDurationLabel(track("fallback", { detectedDurationSeconds: null, estimatedDurationSeconds: 300, durationIsEstimate: true })), "est. 5:00");
 });
+
+test("public projected show time is rough and uses About wording", () => {
+  assert.equal(display.publicProjectedShowTimeLabel(3 * 3600 + 45 * 60, "comfortable"), "About 3h 45m");
+  assert.equal(display.publicProjectedShowTimeLabel(5 * 3600 + 10, "warning_ceiling"), "About 5h+");
+});
+
+test("public line fit copy stays decision-focused", () => {
+  assert.equal(display.lineFitCopy("comfortable"), "Looks playable tonight.");
+  assert.equal(display.lineFitCopy("tight"), "Line is getting tight tonight.");
+  assert.equal(display.lineFitCopy("over_target"), "This may run late.");
+  assert.equal(display.lineFitCopy("warning_ceiling"), "Some late submissions may not fit tonight.");
+});
+
+test("public projected show time hides unknown values without fake updating copy", () => {
+  assert.equal(display.publicProjectedShowTimeLabel(null), null);
+  assert.equal(display.publicProjectedShowTimeLabel(0), null);
+  assert.notEqual(display.publicProjectedShowTimeLabel(3 * 3600), "Updating live");
+});
+
+test("admin summary keeps projected time and 4h/5h target copy", () => {
+  const queue = Array.from({ length: 45 }, (_, index) => track(`known-${index}`, { detectedDurationSeconds: 180, durationIsEstimate: false }));
+  const summary = display.buildQueueTimingDisplay({ queue, session: { sponsorBreakStatus: "completed" } });
+  assert.equal(summary.showRuntimeSummary.projectedLabel, "3h 45m projected");
+  assert.equal(summary.showRuntimeSummary.publicProjectedLabel, "About 3h 45m");
+  assert.equal(summary.showRuntimeSummary.targetLabel, "4h goal · 5h warning ceiling");
+  assert.equal(summary.showRuntimeSummary.publicTargetLabel, "4h goal");
+});
+
+test("estimated wait remains separate from projected show time", () => {
+  const queue = [track("ahead", { detectedDurationSeconds: 180, durationIsEstimate: false }), track("later", { detectedDurationSeconds: 180, durationIsEstimate: false })];
+  const summary = display.buildQueueTimingDisplay({ queue, session: { sponsorBreakStatus: "completed" } });
+  assert.equal(summary.submitNowFreeEstimate.label, "About 5–15 min");
+  assert.equal(summary.showRuntimeSummary.publicProjectedLabel, "About 10m");
+});
+
+test("Personal Signal Status does not include global projected show time copy", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "src/components/PublicQueueSession.tsx"), "utf8");
+  const start = source.indexOf("function PersonalSignalStatusBar");
+  const end = source.indexOf("function estimateExistingTrackForDisplay", start);
+  const block = source.slice(start, end);
+  assert.ok(!block.includes("Projected Show Time"));
+});

@@ -38,7 +38,9 @@ export interface QueueTimingDisplaySummary {
   personalClosestTrackEstimate: ExistingTrackTimingEstimate | null;
   showRuntimeSummary: {
     projectedLabel: string;
+    publicProjectedLabel: string | null;
     targetLabel: string;
+    publicTargetLabel: string;
     targetStatus: QueueTimingTargetStatus;
     targetStatusLabel: string;
     notes: string[];
@@ -137,7 +139,9 @@ export function buildQueueTimingDisplay(input: QueueTimingInput, options: { prio
     personalClosestTrackEstimate: options.personalTrackId ? estimateExistingTrackTiming(input, options.personalTrackId) : null,
     showRuntimeSummary: {
       projectedLabel: `${formatHoursMinutes(snapshot.projectedTotalShowSeconds)} projected`,
+      publicProjectedLabel: publicProjectedShowTimeLabel(snapshot.projectedTotalShowSeconds, snapshot.targetStatus),
       targetLabel: "4h goal · 5h warning ceiling",
+      publicTargetLabel: "4h goal",
       targetStatus: snapshot.targetStatus,
       targetStatusLabel: targetStatusLabel(snapshot.targetStatus),
       notes: snapshot.notes,
@@ -204,6 +208,12 @@ function noteKeysFor(sponsorIncluded: boolean, wheelIncluded: boolean): PublicTi
   if (sponsorIncluded) notes.push("sponsor");
   if (wheelIncluded) notes.push("wheel");
   return notes;
+}
+
+export function publicProjectedShowTimeLabel(seconds: number | null | undefined, status: QueueTimingTargetStatus = "unknown"): string | null {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) return null;
+  if (status === "warning_ceiling" || seconds >= 5 * 60 * 60) return "About 5h+";
+  return `About ${formatHoursMinutes(seconds)}`;
 }
 
 export function lineFitCopy(status: QueueTimingTargetStatus): string {

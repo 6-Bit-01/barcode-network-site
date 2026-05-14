@@ -44,6 +44,7 @@ function modeLabel(mode: ResolvedLiveOverlayScene["mode"]): string {
   if (mode === "now_playing") return "NOW PLAYING";
   if (mode === "artist_card") return "ARTIST CARD";
   if (mode === "wheel_ready") return "WHEEL READY";
+  if (mode === "wheel_reencrypting") return "RE-ENCRYPTING";
   if (mode === "wheel_spinning") return "WHEEL SPINNING";
   if (mode === "wheel_result") return "WHEEL RESULT";
   if (mode === "wheel_confirmed") return "WHEEL CHOSEN";
@@ -55,7 +56,7 @@ function modeLabel(mode: ResolvedLiveOverlayScene["mode"]): string {
 }
 
 function frameTone(mode: ResolvedLiveOverlayScene["mode"]): string {
-  if (mode === "wheel_ready" || mode === "wheel_spinning" || mode === "wheel_result" || mode === "wheel_confirmed") return "live-overlay-stage--wheel";
+  if (mode === "wheel_ready" || mode === "wheel_reencrypting" || mode === "wheel_spinning" || mode === "wheel_result" || mode === "wheel_confirmed") return "live-overlay-stage--wheel";
   if (mode === "sponsor" || mode === "system_message") return "live-overlay-stage--message";
   if (mode === "video_placeholder") return "live-overlay-stage--video";
   return "";
@@ -65,6 +66,14 @@ function showTrack(scene: ResolvedLiveOverlayScene): boolean {
   return Boolean((scene.mode === "now_playing" || scene.mode === "artist_card") && scene.track);
 }
 
+
+function wheelLabelMetrics(count: number) {
+  if (count <= 4) return { maxLength: 30, width: "44vmin", distance: "3.4vmin", size: "2.85vmin" };
+  if (count <= 8) return { maxLength: 24, width: "38vmin", distance: "5.6vmin", size: "2.2vmin" };
+  if (count <= 14) return { maxLength: 20, width: "32vmin", distance: "8.2vmin", size: "1.55vmin" };
+  if (count <= 24) return { maxLength: 16, width: "27vmin", distance: "10.3vmin", size: "1.08vmin" };
+  return { maxLength: 12, width: "21vmin", distance: "12.7vmin", size: "0.82vmin" };
+}
 
 function shortWheelLabel(value: string, maxLength: number): string {
   const cleaned = value.replace(/\s+/g, " ").trim();
@@ -81,19 +90,23 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   const resultIndex = Math.max(0, candidates.findIndex((candidate) => candidate.id === result?.id));
   const sliceDegrees = 360 / candidateCount;
   const resultCenterAngle = resultIndex * sliceDegrees + sliceDegrees / 2;
-  const sliceColors = ["#67e8f9", "#0284c7", "#e0fbff", "#0ea5e9"];
+  const sliceColors = ["#67e8f9", "#0ea5e9", "#2563eb", "#7c3aed", "#c026d3", "#ff2b6d", "#ef4444", "#f97316", "#facc15", "#22c55e", "#e5e7eb", "#071426"];
   const sliceBackground = candidates.length > 0 ? `conic-gradient(from -90deg, ${candidates.map((_, index) => `${sliceColors[index % sliceColors.length]} ${index * sliceDegrees}deg ${(index + 1) * sliceDegrees}deg`).join(", ")})` : "radial-gradient(circle, #67e8f9, #0284c7)";
+  const labelMetrics = wheelLabelMetrics(candidates.length);
   const wheelStyle = {
     "--wheel-final-rotation": `${1440 - resultCenterAngle}deg`,
     "--wheel-spin-duration": `${Math.max(5, (ceremony?.spinDurationMs ?? 6500) / 1000)}s`,
     "--wheel-slice-count": candidateCount,
     "--wheel-slice-background": sliceBackground,
-    "--wheel-name-size": candidates.length > 10 ? "1.04vmin" : candidates.length > 6 ? "1.28vmin" : "1.58vmin",
+    "--wheel-name-size": labelMetrics.size,
+    "--wheel-label-width": labelMetrics.width,
+    "--wheel-label-distance": labelMetrics.distance,
   } as CSSProperties;
-  const labelMaxLength = candidates.length > 10 ? 12 : candidates.length > 6 ? 15 : 20;
+  const labelMaxLength = labelMetrics.maxLength;
 
   return (
-    <div className={`live-overlay-wheel-scene ${spinning ? "live-overlay-wheel-scene--spinning" : ""}`}>
+    <div className={`live-overlay-wheel-scene live-overlay-wheel-scene--${ceremony?.status ?? "idle"} ${spinning ? "live-overlay-wheel-scene--spinning" : ""}`}>
+      {ceremony?.status === "reencrypting" && <div className="live-overlay-wheel-glitch" aria-hidden="true">RE-ENCRYPTING SIGNAL</div>}
       <div className="live-overlay-wheel-heading" aria-live="polite">
         <p className="live-overlay-mode">{modeLabel(scene.mode)}</p>
         <h1>{scene.subtitle || scene.title}</h1>

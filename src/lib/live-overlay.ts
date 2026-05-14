@@ -40,7 +40,7 @@ export interface LiveOverlayState extends LiveOverlayStateInput {
 }
 
 export interface LiveOverlayPayload {
-  action?: "launchWheel" | "spinWheel" | "confirmWheel" | "cancelWheel" | "clearWheel" | "setSystemMessage" | "clearSystemMessage" | "launchVideoPlaceholder" | "clearVideoPlaceholder" | "clearAllOverrides" | "updatePlayerSync" | "clearPlayerSync";
+  action?: "launchWheel" | "spinWheel" | "reencryptWheel" | "confirmWheel" | "cancelWheel" | "clearWheel" | "setSystemMessage" | "clearSystemMessage" | "launchVideoPlaceholder" | "clearVideoPlaceholder" | "clearAllOverrides" | "updatePlayerSync" | "clearPlayerSync";
   mode?: OverlayMode;
   title?: unknown;
   subtitle?: unknown;
@@ -143,18 +143,19 @@ function randomSeed(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
-function pickRandomCandidate(candidates: ResolvedWheelCeremonyTrack[]): ResolvedWheelCeremonyTrack | null {
-  if (candidates.length === 0) return null;
-  const index = Math.floor(Math.random() * candidates.length);
-  return candidates[Math.max(0, Math.min(candidates.length - 1, index))] ?? null;
+function pickRandomCandidate(candidates: ResolvedWheelCeremonyTrack[], excludeId?: string): ResolvedWheelCeremonyTrack | null {
+  const pool = excludeId && candidates.length > 1 ? candidates.filter((candidate) => candidate.id !== excludeId) : candidates;
+  if (pool.length === 0) return null;
+  const index = Math.floor(Math.random() * pool.length);
+  return pool[Math.max(0, Math.min(pool.length - 1, index))] ?? null;
 }
 
 function isActiveCeremony(status?: WheelCeremonyStatus): boolean {
-  return status === "ready" || status === "spinning" || status === "result_pending";
+  return status === "ready" || status === "reencrypting" || status === "spinning" || status === "result_pending";
 }
 
 function normalizeMode(value: unknown): OverlayMode {
-  const modes: OverlayMode[] = ["standby", "now_playing", "artist_card", "wheel_ready", "wheel_spinning", "wheel_result", "wheel_confirmed", "sponsor", "video_placeholder", "system_message", "session_active"];
+  const modes: OverlayMode[] = ["standby", "now_playing", "artist_card", "wheel_ready", "wheel_reencrypting", "wheel_spinning", "wheel_result", "wheel_confirmed", "sponsor", "video_placeholder", "system_message", "session_active"];
   return modes.includes(value as OverlayMode) ? value as OverlayMode : "standby";
 }
 
@@ -168,7 +169,7 @@ function normalizeWheelStatus(value: unknown): WheelOverlayStatus {
 }
 
 function normalizeWheelCeremonyStatus(value: unknown): WheelCeremonyStatus {
-  return value === "ready" || value === "spinning" || value === "result_pending" || value === "confirmed" || value === "cancelled" || value === "idle" ? value : "idle";
+  return value === "ready" || value === "reencrypting" || value === "spinning" || value === "result_pending" || value === "confirmed" || value === "cancelled" || value === "idle" ? value : "idle";
 }
 
 
@@ -222,7 +223,7 @@ function normalizeState(input: unknown): LiveOverlayState {
     systemMessageTitle: cleanText(raw.systemMessageTitle),
     systemMessage: cleanText(raw.systemMessage),
     videoPlaceholderActive: raw.videoPlaceholderActive === true,
-    wheelOverlayActive: raw.wheelOverlayActive === true || raw.mode === "wheel_ready" || raw.mode === "wheel_spinning" || raw.mode === "wheel_result" || raw.mode === "wheel_confirmed",
+    wheelOverlayActive: raw.wheelOverlayActive === true || raw.mode === "wheel_ready" || raw.mode === "wheel_reencrypting" || raw.mode === "wheel_spinning" || raw.mode === "wheel_result" || raw.mode === "wheel_confirmed",
     wheelOverlayLaunchedAt: typeof raw.wheelOverlayLaunchedAt === "string" ? raw.wheelOverlayLaunchedAt : undefined,
     wheelOverlayStatus: normalizeWheelStatus(raw.wheelOverlayStatus),
     wheelCeremonyStatus: normalizeWheelCeremonyStatus(raw.wheelCeremonyStatus ?? (raw.wheelOverlayActive ? "ready" : "idle")),
@@ -334,20 +335,22 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelCeremonyJingleKey: "silent",
       updatedAt: now,
     };
-  } else if (payload.action === "spinWheel") {
+  } else if (payload.action === "spinWheel" || payload.action === "reencryptWheel") {
     const currentStatus = normalizeWheelCeremonyStatus(current.wheelCeremonyStatus);
-    if (!isActiveCeremony(currentStatus)) throw new Error("Launch the wheel before spinning.");
+    if (payload.action === "spinWheel" && !isActiveCeremony(currentStatus)) throw new Error("Launch the wheel before spinning.");
+    if (payload.action === "reencryptWheel" && currentStatus !== "result_pending" && currentStatus !== "spinning") throw new Error("Re-encrypt is only available before confirming a pending result.");
     const queueState = await getRadioQueueState();
     if ((queueState.session?.wheelSpinsOwed ?? 0) <= 0) throw new Error("No wheel spins are owed.");
     const candidates = getWheelCandidatesFromQueue(queueState.queue);
-    const selected = pickRandomCandidate(candidates);
+    const selected = pickRandomCandidate(candidates, payload.action === "reencryptWheel" ? current.wheelCeremonyResultTrackId : undefined);
     if (!selected) throw new Error("No eligible Wheel Chosen candidates are available.");
+    const reencrypting = payload.action === "reencryptWheel";
     next = {
       ...current,
-      mode: "wheel_spinning",
+      mode: reencrypting ? "wheel_reencrypting" : "wheel_spinning",
       wheelOverlayActive: true,
       wheelOverlayStatus: "active",
-      wheelCeremonyStatus: "spinning",
+      wheelCeremonyStatus: reencrypting ? "reencrypting" : "spinning",
       wheelCeremonySpinStartedAt: now,
       wheelCeremonyResultTrackId: selected.id,
       wheelCeremonyResultSelectedAt: now,

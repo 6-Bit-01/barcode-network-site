@@ -33,6 +33,7 @@ Module._extensions[".ts"] = function loadTypeScript(module, filename) {
 
 const require = createRequire(import.meta.url);
 const queue = require("../src/lib/queue.ts");
+const overlay = require("../src/lib/live-overlay.ts");
 
 let trackSequence = 0;
 async function freshOpenSession(label, options = {}) {
@@ -977,4 +978,49 @@ test("wheel ceremony eligibility helper excludes unsafe queue states", () => {
   assert.equal(queue.isWheelEligibleTrack({ ...base, id: "next", status: "next" }), false, "Next In Line is excluded");
   assert.equal(queue.isWheelEligibleTrack({ ...base, id: "completed", status: "completed" }), false, "completed is excluded");
   assert.equal(queue.isWheelEligibleTrack({ ...base, id: "removed", status: "removed" }), false, "removed is excluded");
+});
+
+
+test("wheel re-encrypt rerolls visually without consuming owed spin or marking Wheel Chosen", async () => {
+  await freshOpenSession("wheel reencrypt", { showStarted: true });
+  const first = await addTrack("Reencrypt One");
+  const second = await addTrack("Reencrypt Two");
+  await queue.updateRadioTrack("", "addWheelSpinOwed");
+
+  await overlay.setLiveOverlayState({ action: "launchWheel" });
+  await overlay.setLiveOverlayState({ action: "spinWheel" });
+  const pending = await overlay.getLiveOverlayAdminSnapshot();
+  const firstResult = pending.overlayState.wheelCeremonyResultTrackId;
+  assert.ok(firstResult === first.id || firstResult === second.id, "spin stores a pending eligible result");
+
+  const afterSpin = await queue.getRadioQueueState();
+  assert.equal(afterSpin.session.wheelSpinsOwed, 1, "visual spin does not consume the owed wheel");
+  assert.equal(afterSpin.queue.some((entry) => entry.lane === "wheel"), false, "visual spin does not mark Wheel Chosen");
+
+  await overlay.setLiveOverlayState({ action: "reencryptWheel" });
+  const reencrypted = await overlay.getLiveOverlayAdminSnapshot();
+  assert.equal(reencrypted.overlayState.wheelCeremonyStatus, "reencrypting", "re-encrypt enters ceremony effect state");
+  assert.ok(reencrypted.overlayState.wheelCeremonyResultTrackId === first.id || reencrypted.overlayState.wheelCeremonyResultTrackId === second.id, "re-encrypt stores a pending eligible result");
+
+  const afterReencrypt = await queue.getRadioQueueState();
+  assert.equal(afterReencrypt.session.wheelSpinsOwed, 1, "re-encrypt does not consume the owed wheel");
+  assert.equal(afterReencrypt.queue.some((entry) => entry.lane === "wheel"), false, "re-encrypt does not mark Wheel Chosen");
+});
+
+test("wheel ceremony spin and stale confirm errors do not mutate queue", async () => {
+  await freshOpenSession("wheel ceremony errors", { showStarted: true });
+  await queue.updateRadioTrack("", "addWheelSpinOwed");
+  await overlay.setLiveOverlayState({ action: "launchWheel" });
+  await assert.rejects(() => overlay.setLiveOverlayState({ action: "spinWheel" }), /No eligible Wheel Chosen candidates/);
+  let state = await queue.getRadioQueueState();
+  assert.equal(state.session.wheelSpinsOwed, 1, "failed spin keeps owed wheel");
+  assert.equal(state.queue.some((entry) => entry.lane === "wheel"), false, "failed spin does not mark Wheel Chosen");
+
+  const stale = await addTrack("Stale Ceremony Result");
+  await overlay.setLiveOverlayState({ action: "spinWheel" });
+  await queue.updateRadioTrack(stale.id, "remove");
+  await assert.rejects(() => overlay.setLiveOverlayState({ action: "confirmWheel" }), /no longer eligible/);
+  state = await queue.getRadioQueueState();
+  assert.equal(state.session.wheelSpinsOwed, 1, "stale confirm keeps owed wheel");
+  assert.equal(state.queue.some((entry) => entry.lane === "wheel"), false, "stale confirm does not mark Wheel Chosen");
 });

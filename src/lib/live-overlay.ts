@@ -36,6 +36,8 @@ export interface LiveOverlayState extends LiveOverlayStateInput {
   wheelCeremonyChosenTrackId?: string;
   wheelCeremonyResultSelectedAt?: string;
   wheelCeremonySeed?: string;
+  wheelCeremonyPreviousSeed?: string;
+  wheelCeremonyReencryptCycleId?: string;
   wheelCeremonyJingleKey?: string;
   wheelCeremonySpinDurationMs?: number;
   wheelCeremonyAudioPath?: string;
@@ -185,16 +187,22 @@ function hashWheelIdentity(value: string): string {
 }
 
 function submitterIdentityKeys(entry: QueueEntry): string[] {
+  const identityEntry = entry as QueueEntry & { submitterId?: string | null; accountId?: string | null };
+  const normalizedHandle = (entry.normalizedTikTokHandle ?? entry.tiktokHandle)?.trim().toLowerCase().replace(/^@/, "").replace(/[^a-z0-9_.]+/g, "");
+  const normalizedEmail = entry.contactEmail?.trim().toLowerCase();
+  const normalizedName = normalizePersonIdentity(entry.submitterArtistName ?? entry.submittedArtistName ?? entry.artist);
   const keys = [
     entry.submitterToken ? `token:${entry.submitterToken.trim()}` : null,
-    entry.normalizedTikTokHandle ? `handle:${entry.normalizedTikTokHandle.trim().toLowerCase().replace(/^@/, "")}` : null,
-    entry.contactEmail ? `email:${entry.contactEmail.trim().toLowerCase()}` : null,
-    normalizePersonIdentity(entry.submitterArtistName ?? entry.submittedArtistName ?? entry.artist) ? `artist:${normalizePersonIdentity(entry.submitterArtistName ?? entry.submittedArtistName ?? entry.artist)}` : null,
+    identityEntry.submitterId ? `submitter:${identityEntry.submitterId.trim()}` : null,
+    identityEntry.accountId ? `account:${identityEntry.accountId.trim()}` : null,
+    normalizedHandle ? `handle:${normalizedHandle}` : null,
+    normalizedEmail ? `email:${normalizedEmail}` : null,
+    normalizedName ? `artist:${normalizedName}` : null,
   ].filter((key): key is string => Boolean(key));
   return keys.length > 0 ? keys : [`track:${entry.id}`];
 }
 
-function getWheelCandidatesFromQueue(queue: QueueEntry[]): ResolvedWheelCeremonyTrack[] {
+export function getWheelCandidatesFromQueue(queue: QueueEntry[]): ResolvedWheelCeremonyTrack[] {
   const groups: ResolvedWheelCeremonyTrack[] = [];
   const groupByKey = new Map<string, ResolvedWheelCeremonyTrack>();
 
@@ -258,7 +266,7 @@ function effectiveWheelCeremonyStatus(state: LiveOverlayState, nowMs: number): W
   const startedMs = typeof state.wheelCeremonySpinStartedAt === "string" ? new Date(state.wheelCeremonySpinStartedAt).getTime() : nowMs;
   if (!Number.isFinite(startedMs)) return status;
   const elapsedMs = nowMs - startedMs;
-  if (status === "reencrypting") return elapsedMs >= 1600 ? "ready" : "reencrypting";
+  if (status === "reencrypting") return elapsedMs >= 1850 ? "ready" : "reencrypting";
   return elapsedMs >= (normalizeSpinDurationMs(state.wheelCeremonySpinDurationMs) ?? 24_000) ? "result_pending" : "spinning";
 }
 
@@ -348,6 +356,8 @@ function normalizeState(input: unknown): LiveOverlayState {
     wheelCeremonyChosenTrackId: cleanText(raw.wheelCeremonyChosenTrackId),
     wheelCeremonyResultSelectedAt: typeof raw.wheelCeremonyResultSelectedAt === "string" ? raw.wheelCeremonyResultSelectedAt : undefined,
     wheelCeremonySeed: cleanText(raw.wheelCeremonySeed),
+    wheelCeremonyPreviousSeed: cleanText(raw.wheelCeremonyPreviousSeed),
+    wheelCeremonyReencryptCycleId: cleanText(raw.wheelCeremonyReencryptCycleId),
     wheelCeremonyJingleKey: cleanText(raw.wheelCeremonyJingleKey, "silent"),
     wheelCeremonySpinDurationMs: normalizeSpinDurationMs(raw.wheelCeremonySpinDurationMs),
     wheelCeremonyAudioPath: cleanText(raw.wheelCeremonyAudioPath),
@@ -451,6 +461,8 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelCeremonyChosenTrackId: undefined,
       wheelCeremonyResultSelectedAt: undefined,
       wheelCeremonySeed: randomSeed(),
+      wheelCeremonyPreviousSeed: undefined,
+      wheelCeremonyReencryptCycleId: undefined,
       wheelCeremonyJingleKey: "silent",
       wheelCeremonySpinDurationMs: undefined,
       wheelCeremonyAudioPath: undefined,
@@ -478,6 +490,8 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelCeremonyChosenTrackId: undefined,
       wheelCeremonyResultSelectedAt: selected ? now : undefined,
       wheelCeremonySeed: randomSeed(),
+      wheelCeremonyPreviousSeed: reencrypting ? current.wheelCeremonySeed : undefined,
+      wheelCeremonyReencryptCycleId: reencrypting ? randomSeed() : undefined,
       wheelCeremonyJingleKey: "silent",
       wheelCeremonySpinDurationMs: reencrypting ? undefined : randomSpinDurationMs(),
       wheelCeremonyAudioPath: reencrypting ? undefined : randomWheelAudioPath(),
@@ -506,6 +520,8 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelCeremonyChosenTrackId: undefined,
       wheelCeremonyResultSelectedAt: now,
       wheelCeremonySeed: randomSeed(),
+      wheelCeremonyPreviousSeed: undefined,
+      wheelCeremonyReencryptCycleId: undefined,
       wheelCeremonyJingleKey: "silent",
       wheelCeremonySpinDurationMs: undefined,
       wheelCeremonyAudioPath: undefined,
@@ -552,6 +568,8 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelCeremonyChosenTrackId: undefined,
       wheelCeremonyResultSelectedAt: undefined,
       wheelCeremonySeed: undefined,
+      wheelCeremonyPreviousSeed: undefined,
+      wheelCeremonyReencryptCycleId: undefined,
       wheelCeremonyJingleKey: "silent",
       wheelCeremonySpinDurationMs: undefined,
       wheelCeremonyAudioPath: undefined,

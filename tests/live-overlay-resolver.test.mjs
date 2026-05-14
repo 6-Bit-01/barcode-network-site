@@ -76,6 +76,12 @@ assert.equal(receiver.includes("#7c3aed") && receiver.includes("#facc15") && rec
 assert.equal(receiver.includes("wheelLabelMetrics") && receiver.includes("wheelLabelFit") && receiver.includes("--wheel-name-size") && receiver.includes("--wheel-label-width") && receiver.includes("--wheel-label-x") && receiver.includes("--wheel-label-rotation"), true, "wheel artist labels use per-name dynamic sizing and slice-body placement variables");
 assert.equal(receiver.includes("Winner selection is based on slice geometry") && receiver.includes("wheelFinalRotationForSegment") && receiver.includes("live-overlay-wheel-winning-segment"), true, "wheel receiver documents labels as visual-only, lands stored winners with segment geometry, and renders a segment highlight");
 assert.equal(receiver.includes("Re-encrypting Signal") || receiver.includes("RE-ENCRYPTING"), true, "receiver has re-encryption ceremony copy");
+assert.equal(receiver.includes("data-wheel-animation-key") && receiver.includes("reencryptCycleId") && receiver.includes("key={animationKey}"), true, "receiver keys re-encryption cycles so CSS animation remounts and replays every time");
+assert.equal(liveOverlayController.includes("wheelCeremonyPreviousSeed") && liveOverlayController.includes("wheelCeremonyReencryptCycleId") && liveOverlayController.includes("payload.action === \"reencryptWheel\""), true, "wheel controller persists previous seed plus a fresh re-encryption cycle id on each re-encrypt click");
+const submitterIdentitySource = liveOverlayController.slice(liveOverlayController.indexOf("function submitterIdentityKeys"), liveOverlayController.indexOf("export function getWheelCandidatesFromQueue"));
+assert.equal(submitterIdentitySource.includes("submitterToken") && submitterIdentitySource.includes("submitterId") && submitterIdentitySource.includes("accountId") && submitterIdentitySource.includes("normalizedTikTokHandle") && submitterIdentitySource.includes("contactEmail"), true, "wheel controller groups by stable submitter identity before falling back to name");
+assert.equal(submitterIdentitySource.includes("submittedSongTitle"), false, "submitter identity grouping does not use song titles as grouping keys");
+assert.equal(liveOverlayController.includes("queue.filter(isWheelEligibleTrack)") && liveOverlayController.includes("trackCount") && liveOverlayController.includes("tracks: [track]"), true, "wheel grouping starts from eligible regular tracks and preserves one grouped person entry with track choices");
 assert.equal(overlayCss.includes("width: min(92.5vmin, 100%)"), true, "wheel is sized to dominate the square overlay");
 assert.equal(overlayCss.includes("live-wheel-reencrypt-sweep") && overlayCss.includes("live-wheel-reencrypt-brew") && overlayCss.includes("live-wheel-pointer-pulse"), true, "wheel ceremony CSS includes brewing re-encryption and pointer polish effects");
 assert.equal(overlayCss.includes("\"Arial Black\"") && overlayCss.includes("live-overlay-wheel::before") && overlayCss.includes("radial-gradient(ellipse at center"), true, "wheel CSS includes BARCODE-style typography, rim detailing, and integrated label glow");
@@ -105,13 +111,33 @@ const pendingResult = resolveLiveOverlayScene({ currentSession: { ...session, wh
 assert.equal(pendingResult.mode, "wheel_result", "spinning ceremony becomes result pending after spin duration");
 assert.equal(pendingResult.wheelCeremony?.status, "result_pending", "computed ceremony status waits for host confirmation");
 
-const reencrypting = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "reencrypting", wheelOverlayActive: true, wheelCeremonySpinStartedAt: "2026-05-14T00:00:00.000Z", wheelCeremonySeed: "shuffle-a" }, wheelCandidates: eligibleCandidates, now: new Date("2026-05-14T00:00:01.000Z") });
+const timingCandidates = [
+  { id: "alpha", submittedArtistName: "Alpha", submittedSongTitle: "One" },
+  { id: "bravo", submittedArtistName: "Bravo", submittedSongTitle: "Two" },
+  { id: "charlie", submittedArtistName: "Charlie", submittedSongTitle: "Three" },
+];
+const previousSeedReady = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "ready", wheelOverlayActive: true, wheelCeremonySeed: "prev" }, wheelCandidates: timingCandidates, now: new Date("2026-05-14T00:00:00.000Z") });
+const currentSeedReady = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "ready", wheelOverlayActive: true, wheelCeremonySeed: "new" }, wheelCandidates: timingCandidates, now: new Date("2026-05-14T00:00:00.000Z") });
+assert.notDeepEqual(previousSeedReady.wheelCeremony?.displayCandidates.map((candidate) => candidate.id), currentSeedReady.wheelCeremony?.displayCandidates.map((candidate) => candidate.id), "test seeds produce visibly different wheel mappings");
+
+const reencrypting = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "reencrypting", wheelOverlayActive: true, wheelCeremonySpinStartedAt: "2026-05-14T00:00:00.000Z", wheelCeremonySeed: "new", wheelCeremonyPreviousSeed: "prev", wheelCeremonyReencryptCycleId: "cycle-1" }, wheelCandidates: timingCandidates, now: new Date("2026-05-14T00:00:00.300Z") });
 assert.equal(reencrypting.mode, "wheel_reencrypting", "re-encrypting ceremony shows re-encryption scene first");
 assert.equal(reencrypting.subtitle, "RE-ENCRYPTING SIGNAL", "re-encrypting scene uses BARCODE-controlled copy");
+assert.equal(reencrypting.wheelCeremony?.reencryptCycleId, "cycle-1", "first re-encrypt exposes animation cycle id to the overlay");
+assert.deepEqual(reencrypting.wheelCeremony?.displayCandidates.map((candidate) => candidate.id), previousSeedReady.wheelCeremony?.displayCandidates.map((candidate) => candidate.id), "early re-encrypt keeps the previous clean mapping visible before the obscured remap point");
 
-const reencryptedReady = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "reencrypting", wheelOverlayActive: true, wheelCeremonySpinStartedAt: "2026-05-14T00:00:00.000Z", wheelCeremonySeed: "shuffle-a" }, wheelCandidates: eligibleCandidates, now: new Date("2026-05-14T00:00:02.000Z") });
+const secondReencrypting = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "reencrypting", wheelOverlayActive: true, wheelCeremonySpinStartedAt: "2026-05-14T00:00:10.000Z", wheelCeremonySeed: "prev", wheelCeremonyPreviousSeed: "new", wheelCeremonyReencryptCycleId: "cycle-2" }, wheelCandidates: timingCandidates, now: new Date("2026-05-14T00:00:10.300Z") });
+assert.equal(secondReencrypting.wheelCeremony?.reencryptCycleId, "cycle-2", "second re-encrypt exposes a different cycle id so animation can replay");
+assert.notEqual(secondReencrypting.wheelCeremony?.reencryptCycleId, reencrypting.wheelCeremony?.reencryptCycleId, "successive re-encrypt cycles are distinguishable by the receiver");
+
+const remappedDuringGlitch = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "reencrypting", wheelOverlayActive: true, wheelCeremonySpinStartedAt: "2026-05-14T00:00:00.000Z", wheelCeremonySeed: "new", wheelCeremonyPreviousSeed: "prev", wheelCeremonyReencryptCycleId: "cycle-1" }, wheelCandidates: timingCandidates, now: new Date("2026-05-14T00:00:01.000Z") });
+assert.equal(remappedDuringGlitch.mode, "wheel_reencrypting", "re-encrypt remains visually glitching after the remap point");
+assert.deepEqual(remappedDuringGlitch.wheelCeremony?.displayCandidates.map((candidate) => candidate.id), currentSeedReady.wheelCeremony?.displayCandidates.map((candidate) => candidate.id), "re-encrypt switches to the new mapping while the glitch state is still active");
+
+const reencryptedReady = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "reencrypting", wheelOverlayActive: true, wheelCeremonySpinStartedAt: "2026-05-14T00:00:00.000Z", wheelCeremonySeed: "new", wheelCeremonyPreviousSeed: "prev", wheelCeremonyReencryptCycleId: "cycle-1" }, wheelCandidates: timingCandidates, now: new Date("2026-05-14T00:00:02.000Z") });
 assert.equal(reencryptedReady.mode, "wheel_ready", "re-encrypting ceremony returns to ready without selecting a winner");
 assert.equal(reencryptedReady.wheelCeremony?.resultTrackId, undefined, "re-encrypting does not produce a final winner");
+assert.deepEqual(reencryptedReady.wheelCeremony?.displayCandidates.map((candidate) => candidate.id), currentSeedReady.wheelCeremony?.displayCandidates.map((candidate) => candidate.id), "ready state resolves with the remapped names after the glitch clears");
 
 const signalLost = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "signal_lost", wheelOverlayActive: true, wheelCeremonyResultSelectedAt: "2026-05-14T00:00:00.000Z" }, wheelCandidates: eligibleCandidates, now: new Date("2026-05-14T00:00:01.000Z") });
 assert.equal(signalLost.mode, "wheel_ready", "legacy winner-not-here recovery stays in the wheel-ready scene");

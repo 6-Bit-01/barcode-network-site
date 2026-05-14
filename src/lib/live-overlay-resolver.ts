@@ -150,6 +150,8 @@ export interface LiveOverlayStateInput {
   wheelCeremonyChosenTrackId?: string;
   wheelCeremonyResultSelectedAt?: string;
   wheelCeremonySeed?: string;
+  wheelCeremonyPreviousSeed?: string;
+  wheelCeremonyReencryptCycleId?: string;
   wheelCeremonyJingleKey?: string;
   wheelCeremonySpinDurationMs?: number;
   wheelCeremonyAudioPath?: string;
@@ -223,6 +225,8 @@ export interface ResolvedWheelCeremonyScene {
   spinStartedAt?: string;
   resultSelectedAt?: string;
   seed?: string;
+  previousSeed?: string;
+  reencryptCycleId?: string;
   jingleKey?: string;
   spinDurationMs: number;
   audioPath?: string;
@@ -254,7 +258,8 @@ const BLOCKED_HOSTS = ["drive.google.com", "dropbox.com", "wetransfer.com", "bit
 const DEFAULT_WHEEL_SPIN_DURATION_MS = 24000;
 const MIN_WHEEL_SPIN_DURATION_MS = 16000;
 const MAX_WHEEL_SPIN_DURATION_MS = 32000;
-const WHEEL_REENCRYPTING_MS = 1600;
+const WHEEL_REENCRYPTING_MS = 1850;
+const WHEEL_REENCRYPT_REMAP_MS = 750;
 const WHEEL_CONFIRMED_RETURN_MS = 2200;
 const WHEEL_SIGNAL_LOST_MS = 3500;
 const MAX_WHEEL_DISPLAY_CANDIDATES = 32;
@@ -378,11 +383,14 @@ function resolveWheelCeremony(input: ResolveLiveOverlaySceneInput, now: Date): R
   const resultTrack = rawResultTrack && chosenTrackTitle ? { ...rawResultTrack, trackTitle: chosenTrackTitle } : rawResultTrack;
   let status = storedStatus;
   const spinDurationMs = normalizeWheelSpinDurationMs(overlayState?.wheelCeremonySpinDurationMs);
+  let reencryptElapsedMs = 0;
   if (storedStatus === "reencrypting" || storedStatus === "spinning") {
     const spinStartedMs = timeMs(overlayState?.wheelCeremonySpinStartedAt) ?? now.getTime();
     const elapsedMs = now.getTime() - spinStartedMs;
-    if (storedStatus === "reencrypting") status = elapsedMs < WHEEL_REENCRYPTING_MS ? "reencrypting" : "ready";
-    else status = elapsedMs < spinDurationMs ? "spinning" : "result_pending";
+    if (storedStatus === "reencrypting") {
+      reencryptElapsedMs = elapsedMs;
+      status = elapsedMs < WHEEL_REENCRYPTING_MS ? "reencrypting" : "ready";
+    } else status = elapsedMs < spinDurationMs ? "spinning" : "result_pending";
   }
   if (storedStatus === "signal_lost") {
     const signalLostAtMs = timeMs(overlayState?.wheelCeremonyResultSelectedAt) ?? timeMs(overlayState?.updatedAt) ?? now.getTime();
@@ -392,11 +400,14 @@ function resolveWheelCeremony(input: ResolveLiveOverlaySceneInput, now: Date): R
     const confirmedAtMs = timeMs(overlayState?.wheelCeremonyResultSelectedAt) ?? timeMs(overlayState?.updatedAt) ?? now.getTime();
     if (now.getTime() - confirmedAtMs > WHEEL_CONFIRMED_RETURN_MS) return null;
   }
+  const currentSeed = cleanDisplay(overlayState?.wheelCeremonySeed);
+  const previousSeed = cleanDisplay(overlayState?.wheelCeremonyPreviousSeed);
+  const displaySeed = storedStatus === "reencrypting" && status === "reencrypting" && reencryptElapsedMs < WHEEL_REENCRYPT_REMAP_MS ? previousSeed ?? currentSeed : currentSeed;
   return {
     status,
     storedStatus,
     candidateCount: candidates.length,
-    displayCandidates: shuffledWheelCandidates(candidates, cleanDisplay(overlayState?.wheelCeremonySeed)).slice(0, MAX_WHEEL_DISPLAY_CANDIDATES),
+    displayCandidates: shuffledWheelCandidates(candidates, displaySeed).slice(0, MAX_WHEEL_DISPLAY_CANDIDATES),
     hiddenCandidateCount: Math.max(0, candidates.length - MAX_WHEEL_DISPLAY_CANDIDATES),
     resultTrack,
     resultTrackId,
@@ -404,7 +415,9 @@ function resolveWheelCeremony(input: ResolveLiveOverlaySceneInput, now: Date): R
     startedAt: overlayState?.wheelCeremonyStartedAt ?? overlayState?.wheelOverlayLaunchedAt,
     spinStartedAt: overlayState?.wheelCeremonySpinStartedAt,
     resultSelectedAt: overlayState?.wheelCeremonyResultSelectedAt,
-    seed: cleanDisplay(overlayState?.wheelCeremonySeed),
+    seed: currentSeed,
+    previousSeed,
+    reencryptCycleId: cleanDisplay(overlayState?.wheelCeremonyReencryptCycleId),
     jingleKey: cleanDisplay(overlayState?.wheelCeremonyJingleKey) || "silent",
     spinDurationMs,
     audioPath: cleanDisplay(overlayState?.wheelCeremonyAudioPath),

@@ -303,7 +303,7 @@ body > div:last-of-type {
 .live-overlay-youtube-lower h1 {
   font-size: clamp(1.5rem, 4.8vmin, 4rem);
   font-weight: 900;
-  line-height: 0.96;
+  line-height: 0.9;
 }
 
 .live-overlay-youtube-lower h2 {
@@ -491,10 +491,10 @@ body > div:last-of-type {
   left: 50%;
   display: grid;
   width: var(--wheel-label-width, 24vmin);
-  min-height: calc(var(--wheel-name-size, 1.45vmin) * var(--wheel-label-lines, 2) * 1.05);
+  min-height: calc(var(--wheel-name-size, 1.45vmin) * var(--wheel-label-lines, 2) * 1.08);
   place-items: center;
   pointer-events: none;
-  transform: rotate(var(--wheel-label-angle)) translateY(calc(0vmin - var(--wheel-label-radius, 38vmin))) translate(-50%, -50%);
+  transform: rotate(var(--wheel-label-angle)) translateY(calc(0vmin - var(--wheel-label-radius, 32vmin))) translate(-50%, -50%);
   transform-origin: center;
 }
 
@@ -511,21 +511,20 @@ body > div:last-of-type {
 .live-overlay-wheel-slice-label > span {
   position: relative;
   z-index: 1;
-  display: -webkit-box;
+  display: block;
   width: 100%;
-  max-height: calc(var(--wheel-name-size, 1.45vmin) * var(--wheel-label-lines, 2) * 1.08);
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: var(--wheel-label-lines, 2);
+  max-height: none;
+  overflow: visible;
   color: #f8fdff;
   font-family: "Arial Black", Impact, "Franklin Gothic Heavy", system-ui, sans-serif;
   font-size: clamp(0.68rem, calc(var(--wheel-name-size, 1.45vmin) * var(--wheel-label-scale, 1)), 4.1vmin);
   font-weight: 950;
   letter-spacing: var(--wheel-letter-spacing, 0.01em);
-  line-height: 0.96;
+  line-height: 0.9;
   text-align: center;
   text-transform: uppercase;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
   white-space: normal;
   transform: rotate(var(--wheel-label-text-flip, 0deg));
   text-shadow:
@@ -638,60 +637,7 @@ body > div:last-of-type {
 }
 
 
-.live-overlay-wheel-audio-modal {
-  position: absolute;
-  inset: 0;
-  z-index: 14;
-  display: grid;
-  place-items: center;
-  background: radial-gradient(circle, rgba(2, 6, 23, 0.34), rgba(2, 6, 23, 0.72));
-}
-
-.live-overlay-wheel-audio-modal > div {
-  display: grid;
-  gap: 1vmin;
-  min-width: min(58vmin, 88%);
-  border: 0.2vmin solid rgba(103, 232, 249, 0.78);
-  background: rgba(2, 6, 23, 0.92);
-  padding: 2.2vmin;
-  text-align: center;
-  box-shadow: 0 0 5vmin rgba(103, 232, 249, 0.28), inset 0 0 2.5vmin rgba(103, 232, 249, 0.1);
-}
-
-.live-overlay-wheel-audio-modal span,
-.live-overlay-wheel-audio-notice,
-.live-overlay-wheel-audio-armed {
-  color: #a5f3fc;
-  font-family: var(--font-geist-mono), "IBM Plex Mono", "Share Tech Mono", monospace;
-  font-size: clamp(0.58rem, 1.15vmin, 0.82rem);
-  font-weight: 950;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.live-overlay-wheel-audio-modal strong {
-  color: #fff;
-  font-family: "Arial Black", Impact, "Franklin Gothic Heavy", system-ui, sans-serif;
-  font-size: clamp(1.5rem, 4vmin, 3.4rem);
-  line-height: 0.95;
-  text-transform: uppercase;
-  text-shadow: 0 0 1.4vmin rgba(103, 232, 249, 0.42);
-}
-
-.live-overlay-wheel-audio-modal button {
-  justify-self: center;
-  border: 1px solid rgba(103, 232, 249, 0.92);
-  background: #67e8f9;
-  color: #020617;
-  cursor: pointer;
-  font-family: var(--font-geist-mono), monospace;
-  font-size: clamp(0.72rem, 1.35vmin, 1rem);
-  font-weight: 950;
-  letter-spacing: 0.16em;
-  padding: 0.9vmin 1.35vmin;
-  text-transform: uppercase;
-}
-
+.live-overlay-wheel-audio-arm,
 .live-overlay-wheel-audio-notice,
 .live-overlay-wheel-audio-armed {
   position: absolute;
@@ -700,8 +646,24 @@ body > div:last-of-type {
   z-index: 12;
   border: 1px solid rgba(103, 232, 249, 0.58);
   background: rgba(2, 6, 23, 0.76);
+  color: #a5f3fc;
+  font-family: var(--font-geist-mono), "IBM Plex Mono", "Share Tech Mono", monospace;
+  font-size: clamp(0.58rem, 1.1vmin, 0.82rem);
+  font-weight: 950;
+  letter-spacing: 0.14em;
   padding: 0.72vmin 0.95vmin;
+  text-transform: uppercase;
   box-shadow: 0 0 2vmin rgba(103, 232, 249, 0.2);
+}
+
+.live-overlay-wheel-audio-arm {
+  cursor: pointer;
+}
+
+.live-overlay-wheel-audio-arm:hover,
+.live-overlay-wheel-audio-arm:focus-visible {
+  background: rgba(8, 47, 73, 0.86);
+  outline: 0.16vmin solid rgba(255, 255, 255, 0.72);
 }
 
 .live-overlay-wheel-audio-notice {
@@ -733,7 +695,8 @@ body > div:last-of-type {
   max-width: 84vmin;
   margin-top: 0.3vmin;
   letter-spacing: 0.06em;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
   white-space: normal;
 }
 
@@ -745,7 +708,8 @@ body > div:last-of-type {
   font-weight: 950;
   line-height: 0.92;
   text-transform: uppercase;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
   white-space: normal;
   text-shadow: 0.12vmin 0 rgba(103, 232, 249, 0.55), -0.08vmin 0 rgba(255, 43, 109, 0.36);
 }
@@ -790,7 +754,8 @@ body > div:last-of-type {
   font-family: "Arial Black", Impact, "Franklin Gothic Heavy", system-ui, sans-serif;
   font-size: clamp(2.1rem, 7vmin, 6.2rem);
   line-height: 0.92;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
   text-transform: uppercase;
   text-shadow: 0.18vmin 0.18vmin 0 rgba(2, 6, 23, 0.95), 0 0 2.2vmin rgba(103, 232, 249, 0.58);
 }
@@ -800,7 +765,8 @@ body > div:last-of-type {
   font-size: clamp(0.9rem, 2.4vmin, 1.8rem);
   font-style: normal;
   font-weight: 850;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .live-overlay-binary-confetti {

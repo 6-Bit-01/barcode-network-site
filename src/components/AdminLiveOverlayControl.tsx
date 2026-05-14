@@ -4,17 +4,6 @@
 import { useEffect, useState } from "react";
 import type { LiveOverlayAdminSnapshot } from "@/lib/live-overlay";
 
-const WHEEL_AUDIO_ARMED_STORAGE_KEY = "barcode-wheel-audio-armed";
-
-function readWheelAudioArmed(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return window.localStorage.getItem(WHEEL_AUDIO_ARMED_STORAGE_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
 function sceneLabel(mode?: string): string {
   return mode ? mode.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()) : "Syncing";
 }
@@ -24,7 +13,6 @@ export function AdminLiveOverlayControl() {
   const [systemTitle, setSystemTitle] = useState("");
   const [systemMessage, setSystemMessage] = useState("");
   const [status, setStatus] = useState<string | null>(null);
-  const [overlayAudioArmed, setOverlayAudioArmed] = useState(() => readWheelAudioArmed());
 
   async function load() {
     const res = await fetch("/api/admin/overlay/live", { cache: "no-store" });
@@ -37,10 +25,7 @@ export function AdminLiveOverlayControl() {
 
   useEffect(() => {
     load();
-    const interval = window.setInterval(() => {
-      load();
-      setOverlayAudioArmed(readWheelAudioArmed());
-    }, 5_000);
+    const interval = window.setInterval(load, 5_000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -68,7 +53,7 @@ export function AdminLiveOverlayControl() {
   const result = ceremony?.resultTrack;
   const canLaunch = wheelOwed > 0 && !wheelActive;
   const wheelReadyForAction = ceremony?.status === "ready" || ceremony?.status === "signal_lost";
-  const canSpin = wheelOwed > 0 && wheelReadyForAction && candidates.length > 0 && overlayAudioArmed;
+  const canSpin = wheelOwed > 0 && wheelReadyForAction && candidates.length > 0;
   const canReencrypt = wheelOwed > 0 && wheelReadyForAction && candidates.length > 0 && !ceremony?.resultTrackId;
   const systemActive = snapshot?.overlayState.systemMessageActive === true;
   const wheelAttention = wheelOwed > 0 || wheelActive;
@@ -96,11 +81,10 @@ export function AdminLiveOverlayControl() {
             <h3 className="mt-1 text-lg font-bold text-foreground">{wheelActive ? sceneLabel(ceremony?.status) : wheelOwed > 0 ? "Wheel Spin Waiting" : "No Wheel Spin Waiting"}</h3>
             <p className="mt-1 text-sm text-muted">{wheelOwed} wheel spin{wheelOwed === 1 ? "" : "s"} owed.</p>
             {!wheelActive && wheelOwed > 0 && <p className="mt-1 text-sm text-muted">Launch when you are ready to show the wheel on air. Launch does not choose a winner, consume spins, or change queue state.</p>}
-            {wheelReadyForAction && <p className="mt-1 text-sm text-muted">Candidates: {ceremony?.candidateCount ?? 0}. Spin Wheel chooses the winner. Re-encrypt Signal reshuffles the wheel before the spin.</p>}
+            {wheelReadyForAction && <p className="mt-1 text-sm text-muted">Candidates: {ceremony?.candidateCount ?? 0}. Spin Wheel chooses the winner. Re-encrypt Signal reshuffles/remaps the wheel before the spin without touching the queue.</p>}
             {ceremony?.status === "reencrypting" && <p className="mt-1 text-sm text-cyan-100">Re-encrypting candidates before the spin…</p>}
             {ceremony?.status === "spinning" && <p className="mt-1 text-sm text-cyan-100">Result incoming…</p>}
             {ceremony?.status === "signal_lost" && <p className="mt-1 text-sm text-cyan-100">SIGNAL LOST — winner not present. Wheel still owed; spin again when ready.</p>}
-            {wheelReadyForAction && !overlayAudioArmed && <p className="mt-2 border border-[#ffaa00]/50 bg-[#ffaa00]/10 p-2 text-sm text-[#ffaa00]">Overlay audio must be enabled before first spin. Open the overlay and click ENABLE WHEEL AUDIO.</p>}
             {ceremony?.status === "result_pending" && result && <p className="mt-1 text-sm text-cyan-100">Winner: <span className="font-bold text-foreground">{result.artistName} — {result.trackTitle}</span></p>}
             {ceremony?.status === "confirmed" && result && <p className="mt-1 text-sm text-cyan-100">Confirmed: {result.artistName} — {result.trackTitle}. Overlay will return to automatic mode.</p>}
             {wheelActive && candidates.length === 0 && <p className="mt-2 border border-danger/40 bg-danger/10 p-2 text-sm text-danger">No eligible Free/Regular queued tracks are available for Wheel Chosen.</p>}
@@ -114,7 +98,7 @@ export function AdminLiveOverlayControl() {
             {wheelActive && ceremony?.status !== "spinning" && ceremony?.status !== "reencrypting" && <button type="button" onClick={() => post({ action: "cancelWheel" }, "Wheel ceremony cancelled; returning to auto.")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Cancel / Return to Auto</button>}
           </div>
         </div>
-        {wheelReadyForAction && <p className="text-xs uppercase tracking-widest text-muted">Cancel / Return to Auto closes wheel mode without choosing a winner or fulfilling the owed wheel.</p>}
+        {wheelReadyForAction && <p className="text-xs uppercase tracking-widest text-muted">Cancel / Return to Auto closes wheel mode without choosing a winner, fulfilling the owed wheel, or changing queue order.</p>}
         {ceremony?.status === "result_pending" && <p className="text-xs uppercase tracking-widest text-muted">Confirm chooses this track. Winner Not Here removes this artist and keeps the wheel owed. Cancel exits wheel mode without choosing a winner.</p>}
         {wheelActive && candidates.length > 0 && <div className="grid gap-2 text-xs text-muted md:grid-cols-2 lg:grid-cols-3">{candidates.slice(0, 6).map((candidate) => <p key={candidate.id} className="border border-cyan-300/20 bg-background/40 p-2"><span className="text-cyan-100">{candidate.artistName}</span> — {candidate.trackTitle}</p>)}{candidates.length > 6 && <p className="border border-cyan-300/20 bg-background/40 p-2 text-cyan-100">+ {candidates.length - 6} more eligible signals</p>}</div>}
       </section>

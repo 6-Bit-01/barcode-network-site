@@ -193,20 +193,21 @@ function rememberWheelAudioArmed(armed: boolean): void {
 }
 
 function wheelLabelMetrics(count: number) {
-  if (count <= 4) return { width: "34vmin", radius: "30vmin", size: "4vmin", tracking: "0.004em", lines: 3 };
-  if (count <= 6) return { width: "30vmin", radius: "31.5vmin", size: "3.25vmin", tracking: "0.005em", lines: 3 };
-  if (count <= 8) return { width: "26vmin", radius: "33vmin", size: "2.55vmin", tracking: "0.006em", lines: 3 };
-  if (count <= 12) return { width: "21vmin", radius: "35vmin", size: "1.95vmin", tracking: "0.008em", lines: 2 };
-  if (count <= 16) return { width: "17vmin", radius: "36.5vmin", size: "1.48vmin", tracking: "0.008em", lines: 2 };
-  if (count <= 24) return { width: "13.5vmin", radius: "38vmin", size: "1.1vmin", tracking: "0.008em", lines: 2 };
-  return { width: "11vmin", radius: "39vmin", size: "0.86vmin", tracking: "0.004em", lines: 2 };
+  if (count <= 4) return { width: "36vmin", radius: "28.5vmin", size: "4.1vmin", tracking: "0.002em", lines: 3 };
+  if (count <= 6) return { width: "31vmin", radius: "30vmin", size: "3.3vmin", tracking: "0.003em", lines: 3 };
+  if (count <= 8) return { width: "27vmin", radius: "31.8vmin", size: "2.62vmin", tracking: "0.004em", lines: 3 };
+  if (count <= 12) return { width: "22vmin", radius: "33.7vmin", size: "1.98vmin", tracking: "0.005em", lines: 3 };
+  if (count <= 16) return { width: "18vmin", radius: "35.2vmin", size: "1.5vmin", tracking: "0.006em", lines: 2 };
+  if (count <= 24) return { width: "14vmin", radius: "36.8vmin", size: "1.1vmin", tracking: "0.006em", lines: 2 };
+  return { width: "11.4vmin", radius: "38vmin", size: "0.86vmin", tracking: "0.003em", lines: 2 };
 }
 
 function wheelLabelScale(value: string): string {
   const length = value.replace(/\s+/g, " ").trim().length;
-  if (length > 54) return "0.68";
-  if (length > 40) return "0.76";
-  if (length > 28) return "0.86";
+  if (length > 60) return "0.58";
+  if (length > 48) return "0.66";
+  if (length > 36) return "0.76";
+  if (length > 26) return "0.88";
   return "1";
 }
 
@@ -319,7 +320,7 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
 
   return (
     <div className={`live-overlay-wheel-scene live-overlay-wheel-scene--${ceremony?.status ?? "idle"} ${spinning ? "live-overlay-wheel-scene--spinning" : ""}`} data-wheel-seed={ceremony?.seed}>
-      {!audioArmed ? <div className="live-overlay-wheel-audio-modal"><div><span>Required before first spin</span><strong>ENABLE WHEEL AUDIO</strong><button type="button" onClick={enableWheelAudio}>Arm Wheel Audio</button></div></div> : audioJustArmed ? <div className="live-overlay-wheel-audio-armed" role="status">AUDIO ARMED</div> : null}
+      {!audioArmed ? <button type="button" className="live-overlay-wheel-audio-arm" onClick={enableWheelAudio}>ENABLE WHEEL AUDIO</button> : audioJustArmed ? <div className="live-overlay-wheel-audio-armed" role="status">AUDIO ARMED</div> : null}
       {audioNotice && <div className="live-overlay-wheel-audio-notice" role="status">{audioNotice}</div>}
       {ceremony?.status === "reencrypting" && <div className="live-overlay-wheel-glitch" aria-hidden="true">RE-ENCRYPTING SIGNAL</div>}
       <div className="live-overlay-wheel-heading" aria-live="polite">

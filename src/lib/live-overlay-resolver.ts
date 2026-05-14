@@ -57,6 +57,7 @@ export interface LiveOverlayStateInput {
   wheelCeremonySeed?: string;
   wheelCeremonyJingleKey?: string;
   wheelCeremonySpinDurationMs?: number;
+  wheelCeremonyAudioPath?: string;
   updatedAt?: string;
 }
 
@@ -124,6 +125,7 @@ export interface ResolvedWheelCeremonyScene {
   seed?: string;
   jingleKey?: string;
   spinDurationMs: number;
+  audioPath?: string;
 }
 
 export interface ResolvedLiveOverlayScene {
@@ -283,6 +285,7 @@ function resolveWheelCeremony(input: ResolveLiveOverlaySceneInput, now: Date): R
     seed: cleanDisplay(overlayState?.wheelCeremonySeed),
     jingleKey: cleanDisplay(overlayState?.wheelCeremonyJingleKey) || "silent",
     spinDurationMs,
+    audioPath: cleanDisplay(overlayState?.wheelCeremonyAudioPath),
   };
 }
 

@@ -66,7 +66,41 @@ function showTrack(scene: ResolvedLiveOverlayScene): boolean {
   return Boolean((scene.mode === "now_playing" || scene.mode === "artist_card") && scene.track);
 }
 
+const WHEEL_AUDIO_ARMED_STORAGE_KEY = "barcode-wheel-audio-armed";
+
 const FALLBACK_WHEEL_AUDIO_FILES = [
+  "/audio/wheel/142.mp3",
+  "/audio/wheel/77.mp3",
+  "/audio/wheel/150.mp3",
+  "/audio/wheel/49.mp3",
+  "/audio/wheel/103.mp3",
+  "/audio/wheel/56.mp3",
+  "/audio/wheel/58.mp3",
+  "/audio/wheel/84.mp3",
+  "/audio/wheel/147.mp3",
+  "/audio/wheel/102.mp3",
+  "/audio/wheel/92.mp3",
+  "/audio/wheel/76.mp3",
+  "/audio/wheel/111.mp3",
+  "/audio/wheel/74.mp3",
+  "/audio/wheel/139.mp3",
+  "/audio/wheel/110.mp3",
+  "/audio/wheel/126.mp3",
+  "/audio/wheel/148.mp3",
+  "/audio/wheel/162.mp3",
+  "/audio/wheel/104.mp3",
+  "/audio/wheel/32%20(1).mp3",
+  "/audio/wheel/140.mp3",
+  "/audio/wheel/81.mp3",
+  "/audio/wheel/75.mp3",
+  "/audio/wheel/129.mp3",
+  "/audio/wheel/78.mp3",
+  "/audio/wheel/36.mp3",
+  "/audio/wheel/154.mp3",
+  "/audio/wheel/24.mp3",
+  "/audio/wheel/41.mp3",
+  "/audio/wheel/130.mp3",
+  "/audio/wheel/70.mp3",
   "/audio/wheel/wheel-spin-01-creepy-circus-astronautflute.mp3",
   "/audio/wheel/wheel-spin-02-dark-circus-top-sue.mp3",
   "/audio/wheel/wheel-spin-03-comedy-circus-top-sue.mp3",
@@ -89,7 +123,7 @@ const FALLBACK_WHEEL_AUDIO_FILES = [
 
 function safeWheelAudioPath(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const cleaned = value.trim();
+  const cleaned = value.trim().replace(/\s/g, "%20");
   if (!/^[a-zA-Z0-9._~!$&'()*+,;=:@/%-]+\.mp3(?:\?.*)?$/i.test(cleaned)) return null;
   if (/^https?:\/\//i.test(cleaned) || cleaned.includes("..")) return null;
   if (cleaned.startsWith("/") && !cleaned.startsWith("/audio/wheel/")) return null;
@@ -112,21 +146,52 @@ async function loadWheelAudioFiles(): Promise<string[]> {
   }
 }
 
+function shuffledAudioPaths(paths: string[]): string[] {
+  const shuffled = [...paths];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
+function audioPlayWasBlocked(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "NotAllowedError";
+}
+
 function stopWheelAudio(audio: HTMLAudioElement | null): void {
   if (!audio) return;
   audio.pause();
   audio.currentTime = 0;
 }
 
+function readWheelAudioArmed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(WHEEL_AUDIO_ARMED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function rememberWheelAudioArmed(armed: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (armed) window.localStorage.setItem(WHEEL_AUDIO_ARMED_STORAGE_KEY, "true");
+    else window.localStorage.removeItem(WHEEL_AUDIO_ARMED_STORAGE_KEY);
+  } catch {
+    // localStorage can be unavailable in private or embedded preview contexts.
+  }
+}
 
 function wheelLabelMetrics(count: number) {
-  if (count <= 4) return { maxLength: 64, width: "38vmin", distance: "2.2vmin", size: "4.8vmin", tracking: "0.025em", rail: "34vmin" };
-  if (count <= 6) return { maxLength: 56, width: "34vmin", distance: "3.8vmin", size: "3.95vmin", tracking: "0.03em", rail: "31vmin" };
-  if (count <= 8) return { maxLength: 48, width: "30vmin", distance: "5.5vmin", size: "3.15vmin", tracking: "0.035em", rail: "28vmin" };
-  if (count <= 12) return { maxLength: 40, width: "26vmin", distance: "7.4vmin", size: "2.35vmin", tracking: "0.04em", rail: "24vmin" };
-  if (count <= 16) return { maxLength: 34, width: "22vmin", distance: "9.6vmin", size: "1.8vmin", tracking: "0.045em", rail: "21vmin" };
-  if (count <= 24) return { maxLength: 28, width: "18vmin", distance: "11.4vmin", size: "1.3vmin", tracking: "0.05em", rail: "18vmin" };
-  return { maxLength: 22, width: "15vmin", distance: "13vmin", size: "1vmin", tracking: "0.045em", rail: "14vmin" };
+  if (count <= 4) return { maxLength: 64, width: "30vmin", radius: "34vmin", size: "4.6vmin", tracking: "0.01em" };
+  if (count <= 6) return { maxLength: 56, width: "27vmin", radius: "35vmin", size: "3.75vmin", tracking: "0.012em" };
+  if (count <= 8) return { maxLength: 48, width: "24vmin", radius: "36vmin", size: "2.95vmin", tracking: "0.014em" };
+  if (count <= 12) return { maxLength: 40, width: "20vmin", radius: "36.8vmin", size: "2.18vmin", tracking: "0.016em" };
+  if (count <= 16) return { maxLength: 34, width: "17vmin", radius: "37.5vmin", size: "1.66vmin", tracking: "0.018em" };
+  if (count <= 24) return { maxLength: 28, width: "14vmin", radius: "38.2vmin", size: "1.18vmin", tracking: "0.02em" };
+  return { maxLength: 22, width: "11.5vmin", radius: "39vmin", size: "0.92vmin", tracking: "0.015em" };
 }
 
 function shortWheelLabel(value: string, maxLength: number): string {
@@ -141,6 +206,8 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   const result = ceremony?.resultTrack;
   const spinning = ceremony?.status === "spinning";
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [audioArmed, setAudioArmed] = useState(() => readWheelAudioArmed());
+  const [audioJustArmed, setAudioJustArmed] = useState(false);
   const candidateCount = Math.max(1, candidates.length);
   const resultIndex = Math.max(0, candidates.findIndex((candidate) => candidate.id === result?.id));
   const sliceDegrees = 360 / candidateCount;
@@ -155,34 +222,49 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
     "--wheel-slice-background": sliceBackground,
     "--wheel-name-size": labelMetrics.size,
     "--wheel-label-width": labelMetrics.width,
-    "--wheel-label-distance": labelMetrics.distance,
+    "--wheel-label-radius": labelMetrics.radius,
     "--wheel-letter-spacing": labelMetrics.tracking,
-    "--wheel-rail-length": labelMetrics.rail,
   } as CSSProperties;
   const labelMaxLength = labelMetrics.maxLength;
 
   useEffect(() => {
+    if (!audioJustArmed) return undefined;
+    const timeout = window.setTimeout(() => setAudioJustArmed(false), 2200);
+    return () => window.clearTimeout(timeout);
+  }, [audioJustArmed]);
+
+  useEffect(() => {
     const existingAudio = audioRef.current;
-    if (!spinning) {
+    if (!spinning || !audioArmed) {
       stopWheelAudio(existingAudio);
       audioRef.current = null;
       return undefined;
     }
 
     let cancelled = false;
-    loadWheelAudioFiles().then((files) => {
-      if (cancelled || files.length === 0) return;
-      const audioPath = files[Math.floor(Math.random() * files.length)] ?? files[0];
-      if (!audioPath) return;
-      const audio = new Audio(audioPath);
-      audio.loop = true;
-      audio.preload = "auto";
-      audio.volume = 0.72;
-      audioRef.current = audio;
-      audio.play().catch(() => {
-        stopWheelAudio(audio);
-        if (audioRef.current === audio) audioRef.current = null;
-      });
+    loadWheelAudioFiles().then(async (files) => {
+      const storedPath = safeWheelAudioPath(ceremony?.audioPath);
+      const candidatePaths = [storedPath, ...shuffledAudioPaths(files)].filter((path, index, paths): path is string => Boolean(path) && paths.indexOf(path) === index);
+      for (const audioPath of candidatePaths) {
+        if (cancelled) return;
+        const audio = new Audio(audioPath);
+        audio.loop = true;
+        audio.preload = "auto";
+        audio.volume = 0.72;
+        audioRef.current = audio;
+        try {
+          await audio.play();
+          return;
+        } catch (error) {
+          stopWheelAudio(audio);
+          if (audioRef.current === audio) audioRef.current = null;
+          if (audioPlayWasBlocked(error)) {
+            setAudioArmed(false);
+            rememberWheelAudioArmed(false);
+            return;
+          }
+        }
+      }
     });
 
     return () => {
@@ -190,10 +272,24 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
       stopWheelAudio(audioRef.current);
       audioRef.current = null;
     };
-  }, [spinning, ceremony?.spinStartedAt, ceremony?.resultTrackId]);
+  }, [audioArmed, spinning, ceremony?.audioPath, ceremony?.spinStartedAt, ceremony?.resultTrackId]);
+
+  function enableWheelAudio() {
+    const unlockPath = safeWheelAudioPath(ceremony?.audioPath) ?? FALLBACK_WHEEL_AUDIO_FILES[0];
+    const unlockAudio = new Audio(unlockPath);
+    unlockAudio.muted = true;
+    unlockAudio.volume = 0;
+    unlockAudio.play().catch(() => undefined).finally(() => {
+      stopWheelAudio(unlockAudio);
+      setAudioArmed(true);
+      setAudioJustArmed(true);
+      rememberWheelAudioArmed(true);
+    });
+  }
 
   return (
     <div className={`live-overlay-wheel-scene live-overlay-wheel-scene--${ceremony?.status ?? "idle"} ${spinning ? "live-overlay-wheel-scene--spinning" : ""}`} data-wheel-seed={ceremony?.seed}>
+      {!audioArmed ? <button type="button" className="live-overlay-wheel-audio-arm" onClick={enableWheelAudio}>ENABLE WHEEL AUDIO</button> : audioJustArmed ? <div className="live-overlay-wheel-audio-armed" role="status">AUDIO ARMED</div> : null}
       {ceremony?.status === "reencrypting" && <div className="live-overlay-wheel-glitch" aria-hidden="true">RE-ENCRYPTING SIGNAL</div>}
       <div className="live-overlay-wheel-heading" aria-live="polite">
         <p className="live-overlay-mode">{modeLabel(scene.mode)}</p>
@@ -207,7 +303,7 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
           {candidates.length === 0 ? <span className="live-overlay-wheel-empty">NO CANDIDATES</span> : candidates.map((candidate, index) => {
             const angle = index * sliceDegrees + sliceDegrees / 2;
             const label = shortWheelLabel(candidate.artistName, labelMaxLength);
-            const labelStyle = { "--wheel-label-angle": `${angle}deg` } as CSSProperties;
+            const labelStyle = { "--wheel-label-angle": `${angle}deg`, "--wheel-label-counter-angle": `${-angle}deg` } as CSSProperties;
             return (
               <span key={candidate.id} className="live-overlay-wheel-slice-label" style={labelStyle} title={`${candidate.artistName} — ${candidate.trackTitle}`}>
                 <span>{label}</span>

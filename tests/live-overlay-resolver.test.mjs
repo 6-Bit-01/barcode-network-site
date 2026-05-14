@@ -49,11 +49,11 @@ assert.equal(receiver.includes("live-overlay-wheel-roster"), false, "public whee
 assert.equal(receiver.includes(`!wheelVisible && <div className="live-overlay-footer"`), true, "public wheel ceremony hides the generic overlay footer");
 assert.equal(receiver.includes("live-overlay-wheel-slice-label"), true, "public wheel overlay renders candidate names as slice labels");
 assert.equal(receiver.includes("#7c3aed") && receiver.includes("#facc15") && receiver.includes("#22c55e"), true, "wheel slice palette includes expanded BARCODE colors");
-assert.equal(receiver.includes("wheelLabelMetrics") && receiver.includes("--wheel-label-width") && receiver.includes("--wheel-label-distance") && receiver.includes("--wheel-rail-length"), true, "wheel artist labels use dynamic sizing variables");
+assert.equal(receiver.includes("wheelLabelMetrics") && receiver.includes("--wheel-label-width") && receiver.includes("--wheel-label-radius") && receiver.includes("--wheel-label-counter-angle"), true, "wheel artist labels use dynamic sizing variables");
 assert.equal(receiver.includes("Re-encrypting Signal") || receiver.includes("RE-ENCRYPTING"), true, "receiver has re-encryption ceremony copy");
 assert.equal(overlayCss.includes("width: min(92.5vmin, 100%)"), true, "wheel is sized to dominate the square overlay");
 assert.equal(overlayCss.includes("live-wheel-reencrypt-sweep") && overlayCss.includes("live-wheel-pointer-pulse"), true, "wheel ceremony CSS includes re-encryption and pointer polish effects");
-assert.equal(overlayCss.includes("IBM Plex Mono") && overlayCss.includes("live-overlay-wheel::before") && overlayCss.includes("live-overlay-wheel-slice-label::before"), true, "wheel CSS includes BARCODE-style typography, rim detailing, and label rails");
+assert.equal(overlayCss.includes("\"Arial Black\"") && overlayCss.includes("live-overlay-wheel::before") && overlayCss.includes("radial-gradient(ellipse at center"), true, "wheel CSS includes BARCODE-style typography, rim detailing, and integrated label glow");
 
 const eligibleCandidates = [
   { id: "free-1", submittedArtistName: "Free Artist", submittedSongTitle: "Free Track" },
@@ -72,7 +72,7 @@ const spinning = resolveLiveOverlayScene({ currentSession: { ...session, wheelSp
 assert.equal(spinning.mode, "wheel_spinning", "spin scene stays spinning during the visual spin window");
 assert.equal(spinning.wheelCeremony?.resultTrack?.id, "free-2", "server-selected result is stored while visual spin runs");
 
-const pendingResult = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "spinning", wheelOverlayActive: true, wheelCeremonySpinStartedAt: "2026-05-14T00:00:00.000Z", wheelCeremonyResultTrackId: "free-2", wheelCeremonyResultSelectedAt: "2026-05-14T00:00:00.000Z" }, wheelCandidates: eligibleCandidates, now: new Date("2026-05-14T00:00:08.000Z") });
+const pendingResult = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "spinning", wheelOverlayActive: true, wheelCeremonySpinStartedAt: "2026-05-14T00:00:00.000Z", wheelCeremonyResultTrackId: "free-2", wheelCeremonyResultSelectedAt: "2026-05-14T00:00:00.000Z" }, wheelCandidates: eligibleCandidates, now: new Date("2026-05-14T00:00:25.000Z") });
 assert.equal(pendingResult.mode, "wheel_result", "spinning ceremony becomes result pending after spin duration");
 assert.equal(pendingResult.wheelCeremony?.status, "result_pending", "computed ceremony status waits for host confirmation");
 

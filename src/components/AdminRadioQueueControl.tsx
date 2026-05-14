@@ -3,7 +3,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { AdminLiveOverlayControl } from "@/components/AdminLiveOverlayControl";
 import { buildQueueTimingDisplay, formatHoursMinutes, queueTimingInputFromAdminState, sponsorStatusLabel } from "@/lib/queue-timing-display";
+import { parseYouTubeVideoId } from "@/lib/track-duration";
 import { formatRuntime, getTrackRuntimeSeconds } from "@/lib/queue-types";
 import type { QueueEntry, QueueLane, QueueState } from "@/lib/queue-types";
 
@@ -60,13 +62,23 @@ function detectedLabel(entry: QueueEntry): string | null {
   if (!entry.detectedArtistName && !entry.detectedSongTitle && !entry.providerTitle) return null;
   return `${entry.detectedArtistName || "Unknown artist"} — ${entry.detectedSongTitle || entry.providerTitle || "Unknown title"}`;
 }
+async function publishOverlayYouTubeSync(entry: QueueEntry, playbackState: "playing" | "paused" | "stopped", currentTimeSeconds = 0) {
+  if (entry.sourceType !== "youtube") return;
+  const videoId = parseYouTubeVideoId(entry.link);
+  if (!videoId) return;
+  await fetch("/api/admin/overlay/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "updatePlayerSync", sync: { provider: "youtube", videoId, trackId: entry.id, playbackState, currentTimeSeconds, updatedAt: new Date().toISOString(), muted: true } }) });
+}
+async function clearOverlayPlayerSync() {
+  await fetch("/api/admin/overlay/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "clearPlayerSync" }) });
+}
+
 function embedUrl(entry: QueueEntry): string | null {
   const url = openUrl(entry);
   if (!url) return null;
   try {
     const parsed = new URL(url);
     if (entry.sourceType === "youtube") {
-      const id = parsed.hostname.includes("youtu.be") ? parsed.pathname.slice(1) : parsed.searchParams.get("v");
+      const id = parseYouTubeVideoId(url);
       return id ? `https://www.youtube.com/embed/${id}` : null;
     }
     if (entry.sourceType === "spotify") return `https://open.spotify.com/embed${parsed.pathname}`;
@@ -184,7 +196,10 @@ export function AdminRadioQueueControl() {
   }
   async function playerAction(id: string, next: AdminQueueAction) {
     await action(id, next);
-    if (next === "finish" || next === "remove" || next === "moveBack" || next === "pausePriority") setPlayer(null);
+    if (next === "finish" || next === "remove" || next === "moveBack" || next === "pausePriority") {
+      if (player?.sourceType === "youtube") await clearOverlayPlayerSync();
+      setPlayer(null);
+    }
   }
 
   async function endCurrentSession() {
@@ -201,6 +216,8 @@ export function AdminRadioQueueControl() {
     setPlayer(entry);
     setMinimized(false);
     await action(entry.id, "load");
+    if (entry.sourceType === "youtube") await publishOverlayYouTubeSync(entry, "playing", 0);
+    else await clearOverlayPlayerSync();
   }
   async function updateSponsorBreakState(sponsorAction: "start" | "complete" | "skip" | "reset") {
     await post({ action: "updateSponsorBreakState", sponsorAction });
@@ -318,6 +335,7 @@ export function AdminRadioQueueControl() {
             </div>
             {canControlSession && sessionOptionsOpen && <section className="space-y-3 border border-border bg-background/40 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-xs uppercase tracking-[0.3em] text-accent">Session Options</p><h3 className="mt-1 text-lg font-bold text-foreground">Session Options</h3><p className="mt-1 text-xs text-muted">Only the verified Stripe webhook marks a track paid or moves it into Priority Signal.</p></div><div className="border border-border bg-surface p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Submission Delay</p><p className="mt-1 font-bold text-foreground">{sessionCooldownSeconds === 0 ? "Disabled" : `${sessionCooldownSeconds}s`}</p></div><div className="border border-border bg-surface p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Display price</p><p className="mt-1 font-bold text-foreground">{formatPrice(priorityPriceCents, priorityCurrency)}</p></div></div><div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(10rem,0.35fr)]"><label className="space-y-2 block md:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Submission Delay</span><input type="number" min={0} max={3600} value={sessionCooldownSeconds} onChange={(event) => setSessionCooldownSeconds(Math.max(0, Math.min(3600, Number(event.target.value))))} className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-xs text-muted">Delay between accepted submissions from the same source. Set to 0 to disable during testing.</span></label><label className="flex items-center justify-between gap-3 border border-border bg-surface p-3 text-sm"><span><span className="block font-bold text-foreground">Paid upgrades {priorityEnabled ? "enabled" : "disabled"}</span><span className="text-xs text-muted">Controls Stripe checkout availability for this session.</span></span><input type="checkbox" checked={priorityEnabled} onChange={(event) => setPriorityEnabled(event.target.checked)} /></label><label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Price</span><input type="number" min={0} value={priorityPriceCents} onChange={(event) => setPriorityPriceCents(Math.max(0, Number(event.target.value)))} className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-xs text-muted">Enter cents. Example: 1000 = $10.00.</span></label></div>{prioritySaveError && <p className="border border-danger/40 bg-danger/10 p-2 text-sm text-danger">{prioritySaveError}</p>}{priorityMessage && <p className="border border-accent/50 bg-accent/10 p-2 text-sm font-bold text-accent">{priorityMessage}</p>}<div className="flex flex-wrap gap-2"><button type="button" onClick={savePrioritySettings} disabled={prioritySaving} className="border border-accent bg-accent/10 px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{prioritySaving ? "Saving…" : "Save Settings"}</button><button type="button" onClick={() => setSessionOptionsOpen(false)} disabled={prioritySaving} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">Close</button></div></section>}
             <AdminRuntimeDiagnostics timingSummary={timingSummary} canControl={canControlSession} onSponsorAction={updateSponsorBreakState} />
+            {canControlSession && <AdminLiveOverlayControl />}
             <div className="grid gap-3 sm:grid-cols-4">
               <div className="border border-border bg-background/40 p-4"><p className="text-xs text-muted">Queue</p><p className={state?.publicStatus?.isOpen ? "text-accent" : "text-danger"}>{state?.publicStatus?.isOpen ? "Open" : "Closed"}</p></div>
               <div className="border border-border bg-background/40 p-4"><p className="text-xs text-muted">Active count</p><p>{state?.publicStatus?.activeCount ?? "—"}</p></div>
@@ -380,6 +398,79 @@ function WheelWinnerSelector({ tracks, search, selection, readOnly, onSearch, on
   return <section className="border border-border bg-surface p-4 space-y-3"><div><p className="text-xs uppercase tracking-[0.3em] text-muted">Wheel Spin Winner Selector</p><p className="text-sm text-muted mt-2">Search active Regular Queue tracks only. Marking a winner moves the selected track into Wheel Winners without duplicating it.</p></div><div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]"><input value={search} onChange={(event) => onSearch(event.target.value)} disabled={readOnly} placeholder="Search artist, title, or link" className="w-full border border-border bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50" /><select value={selection} onChange={(event) => onSelection(event.target.value)} disabled={readOnly || tracks.length === 0} className="w-full border border-border bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"><option value="">{tracks.length === 0 ? "No active regular tracks found" : "Select a Regular Queue track"}</option>{tracks.map((entry) => <option key={entry.id} value={entry.id}>{submittedArtist(entry)} — {submittedTitle(entry)}</option>)}</select><button onClick={onMark} disabled={readOnly || !selection} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent disabled:cursor-not-allowed disabled:opacity-40">Mark Wheel Winner</button></div></section>;
 }
 
+
+type AdminYTPlayer = {
+  loadVideoById: (options: { videoId: string; startSeconds?: number }) => void;
+  cueVideoById: (options: { videoId: string; startSeconds?: number }) => void;
+  playVideo: () => void;
+  pauseVideo: () => void;
+  stopVideo: () => void;
+  seekTo: (seconds: number, allowSeekAhead: boolean) => void;
+  getCurrentTime: () => number;
+  mute: () => void;
+};
+
+declare global {
+  interface Window {
+    YT?: { Player: new (elementId: string, options: Record<string, unknown>) => AdminYTPlayer };
+    onYouTubeIframeAPIReady?: () => void;
+  }
+}
+
+function ensureAdminYouTubeApi(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (window.YT?.Player) return Promise.resolve();
+  return new Promise((resolve) => {
+    const previous = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      previous?.();
+      resolve();
+    };
+    if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+      const script = document.createElement("script");
+      script.src = "https://www.youtube.com/iframe_api";
+      document.head.appendChild(script);
+    }
+  });
+}
+
+function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
+  const playerRef = useRef<AdminYTPlayer | null>(null);
+  const playbackStateRef = useRef<"playing" | "paused" | "stopped">("stopped");
+  const videoId = parseYouTubeVideoId(entry.link);
+  const containerId = `admin-youtube-player-${entry.id}`;
+
+  useEffect(() => {
+    if (!videoId) return;
+    let cancelled = false;
+    ensureAdminYouTubeApi().then(() => {
+      if (cancelled || playerRef.current || !window.YT?.Player) return;
+      playerRef.current = new window.YT.Player(containerId, {
+        videoId,
+        playerVars: { autoplay: 0, controls: 1, modestbranding: 1, playsinline: 1, rel: 0 },
+        events: {
+          onStateChange: (event: { data: number }) => {
+            const next = event.data === 1 ? "playing" : event.data === 2 ? "paused" : event.data === 0 ? "stopped" : null;
+            if (!next) return;
+            playbackStateRef.current = next;
+            publishOverlayYouTubeSync(entry, next, playerRef.current?.getCurrentTime() ?? 0);
+          },
+        },
+      });
+    });
+    const interval = window.setInterval(() => {
+      if (playbackStateRef.current === "playing") publishOverlayYouTubeSync(entry, "playing", playerRef.current?.getCurrentTime() ?? 0);
+    }, 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [containerId, entry, videoId]);
+
+  if (!videoId) return <div className="border border-border p-6 text-sm text-muted">No playable YouTube video ID found. Use Open Link.</div>;
+  return <div id={containerId} className="h-56 w-full border border-border" />;
+}
+
 function PlayerDock({ player, minimized, setMinimized, readOnly, onAction, onCopy }: { player: QueueEntry; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; onAction: (id: string, action: AdminQueueAction) => void; onCopy: () => void }) {
   const embedded = embedUrl(player);
   return (
@@ -401,8 +492,9 @@ function PlayerDock({ player, minimized, setMinimized, readOnly, onAction, onCop
         <div className={`${minimized ? "h-0 overflow-hidden opacity-0" : "mt-4 opacity-100"} grid w-full items-end gap-4 xl:grid-cols-[minmax(0,1fr)_auto]`} aria-hidden={minimized}>
           <div className="min-h-20 w-full min-w-0">
             {player.sourceType === "upload" && player.fileUrl && <audio src={adminAudioUrl(player)} controls className="w-full" />}
-            {player.sourceType !== "upload" && embedded && <iframe title="Queue preview" src={embedded} className="h-56 w-full border border-border" allow="clipboard-write; encrypted-media; picture-in-picture" />}
-            {player.sourceType !== "upload" && !embedded && <div className="border border-border p-6 text-sm text-muted">No embeddable preview available for this source. Use Open Link or Copy Link.</div>}
+            {player.sourceType === "youtube" && <AdminYouTubePlayer entry={player} />}
+            {player.sourceType !== "upload" && player.sourceType !== "youtube" && embedded && <iframe title="Queue preview" src={embedded} className="h-56 w-full border border-border" allow="clipboard-write; encrypted-media; picture-in-picture" />}
+            {player.sourceType !== "upload" && player.sourceType !== "youtube" && !embedded && <div className="border border-border p-6 text-sm text-muted">No embeddable preview available for this source. Use Open Link or Copy Link.</div>}
           </div>
           <div className="flex flex-wrap gap-2">
             <a href={openUrl(player)} target="_blank" rel="noreferrer" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent">Open Link</a>

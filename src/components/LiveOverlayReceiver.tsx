@@ -68,11 +68,13 @@ function showTrack(scene: ResolvedLiveOverlayScene): boolean {
 
 
 function wheelLabelMetrics(count: number) {
-  if (count <= 4) return { maxLength: 30, width: "44vmin", distance: "3.4vmin", size: "2.85vmin" };
-  if (count <= 8) return { maxLength: 24, width: "38vmin", distance: "5.6vmin", size: "2.2vmin" };
-  if (count <= 14) return { maxLength: 20, width: "32vmin", distance: "8.2vmin", size: "1.55vmin" };
-  if (count <= 24) return { maxLength: 16, width: "27vmin", distance: "10.3vmin", size: "1.08vmin" };
-  return { maxLength: 12, width: "21vmin", distance: "12.7vmin", size: "0.82vmin" };
+  if (count <= 4) return { maxLength: 42, width: "58vmin", distance: "-4.8vmin", size: "4.3vmin", tracking: "0.04em", rail: "34vmin" };
+  if (count <= 6) return { maxLength: 36, width: "52vmin", distance: "-1.2vmin", size: "3.45vmin", tracking: "0.045em", rail: "31vmin" };
+  if (count <= 8) return { maxLength: 31, width: "47vmin", distance: "1.8vmin", size: "2.75vmin", tracking: "0.05em", rail: "28vmin" };
+  if (count <= 12) return { maxLength: 25, width: "40vmin", distance: "5.4vmin", size: "2.05vmin", tracking: "0.055em", rail: "24vmin" };
+  if (count <= 16) return { maxLength: 21, width: "35vmin", distance: "7.8vmin", size: "1.58vmin", tracking: "0.06em", rail: "21vmin" };
+  if (count <= 24) return { maxLength: 18, width: "30vmin", distance: "9.8vmin", size: "1.18vmin", tracking: "0.065em", rail: "18vmin" };
+  return { maxLength: 14, width: "24vmin", distance: "11.8vmin", size: "0.94vmin", tracking: "0.055em", rail: "14vmin" };
 }
 
 function shortWheelLabel(value: string, maxLength: number): string {
@@ -101,6 +103,8 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
     "--wheel-name-size": labelMetrics.size,
     "--wheel-label-width": labelMetrics.width,
     "--wheel-label-distance": labelMetrics.distance,
+    "--wheel-letter-spacing": labelMetrics.tracking,
+    "--wheel-rail-length": labelMetrics.rail,
   } as CSSProperties;
   const labelMaxLength = labelMetrics.maxLength;
 

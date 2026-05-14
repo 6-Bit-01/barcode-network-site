@@ -41,7 +41,14 @@ const adminPanel = readFileSync("src/components/AdminLiveOverlayControl.tsx", "u
 assert.equal(adminPanel.includes("Show Now Playing"), false, "admin panel does not expose normal manual scene picker");
 assert.equal(adminPanel.includes("Temporary System Message") && adminPanel.indexOf("Temporary System Message") > adminPanel.indexOf("<details"), true, "temporary system message is inside collapsed emergency details");
 
-console.log("live overlay resolver tests passed");
+const receiver = readFileSync("src/components/LiveOverlayReceiver.tsx", "utf8");
+const overlayCss = readFileSync("src/app/overlay/live/overlay-live.css", "utf8");
+assert.equal(receiver.includes("Click to spin"), false, "public wheel overlay does not include stock click-to-spin text");
+assert.equal(receiver.includes("ctrl+enter"), false, "public wheel overlay does not include stock keyboard shortcut text");
+assert.equal(receiver.includes("live-overlay-wheel-roster"), false, "public wheel overlay does not render the previous bottom roster/control clutter");
+assert.equal(receiver.includes(`!wheelVisible && <div className="live-overlay-footer"`), true, "public wheel ceremony hides the generic overlay footer");
+assert.equal(receiver.includes("live-overlay-wheel-slice-label"), true, "public wheel overlay renders candidate names as slice labels");
+assert.equal(overlayCss.includes("width: min(91.5vmin, 100%)"), true, "wheel is sized to dominate the square overlay");
 
 const eligibleCandidates = [
   { id: "free-1", submittedArtistName: "Free Artist", submittedSongTitle: "Free Track" },
@@ -72,3 +79,5 @@ assert.equal(confirmedExpired.mode, "now_playing", "confirmed scene automaticall
 
 const cancelled = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "cancelled", wheelOverlayActive: false }, wheelCandidates: eligibleCandidates, nowPlaying: spotifyTrack });
 assert.equal(cancelled.mode, "now_playing", "cancelled wheel returns to automatic overlay mode without a wheel scene");
+
+console.log("live overlay resolver tests passed");

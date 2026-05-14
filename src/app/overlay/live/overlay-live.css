@@ -312,169 +312,221 @@ body > div:last-of-type {
   font-size: clamp(0.85rem, 2.35vmin, 1.9rem);
 }
 
-.live-overlay-wheel-scene {
-  position: relative;
-  display: grid;
-  width: 88vmin;
-  grid-template-columns: minmax(0, 0.9fr) minmax(34vmin, 1.1fr);
-  gap: 4vmin;
-  align-items: center;
+
+.live-overlay-stage--wheel-ceremony .live-overlay-header {
+  left: 3.6vmin;
+  right: 3.6vmin;
+  top: 2.7vmin;
+  z-index: 8;
+  color: rgba(255, 255, 255, 0.66);
 }
 
-.live-overlay-wheel-copy h1 {
+.live-overlay-stage--wheel-ceremony .live-overlay-content {
+  padding: 0;
+}
+
+.live-overlay-stage--wheel-ceremony .live-overlay-corners::before,
+.live-overlay-stage--wheel-ceremony .live-overlay-corners::after {
+  opacity: 0.48;
+}
+
+.live-overlay-wheel-scene {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.live-overlay-wheel-heading {
+  position: absolute;
+  top: 7.2vmin;
+  left: 7vmin;
+  z-index: 7;
+  max-width: 38vmin;
+  border-left: 0.45vmin solid #67e8f9;
+  background: linear-gradient(90deg, rgba(2, 6, 23, 0.86), rgba(2, 6, 23, 0.2), transparent);
+  padding: 1.4vmin 1.8vmin;
+  text-shadow: 0 0 1.6vmin rgba(0, 0, 0, 0.95);
+}
+
+.live-overlay-wheel-heading .live-overlay-mode {
+  margin: 0 0 0.7vmin;
+  font-size: clamp(0.56rem, 1.25vmin, 0.82rem);
+}
+
+.live-overlay-wheel-heading h1 {
   margin: 0;
   color: #fff;
-  font-size: clamp(2rem, 7.6vmin, 6rem);
+  font-size: clamp(1.1rem, 3.4vmin, 2.7rem);
   font-weight: 950;
-  line-height: 0.9;
-  text-transform: uppercase;
-  text-shadow: 0.16rem 0 #22d3ee, -0.12rem 0 rgba(255,255,255,0.28);
-}
-
-.live-overlay-wheel-copy h2 {
-  margin: 1.4vmin 0 0;
-  color: #a5f3fc;
-  font-size: clamp(1rem, 3.8vmin, 2.8rem);
-  letter-spacing: 0.18em;
+  line-height: 0.88;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .live-overlay-wheel-wrap {
-  position: relative;
+  position: absolute;
+  inset: 4.9vmin;
   display: grid;
-  aspect-ratio: 1 / 1;
   place-items: center;
 }
 
 .live-overlay-wheel-pointer {
   position: absolute;
-  top: 0.5vmin;
-  z-index: 3;
+  top: -0.15vmin;
+  z-index: 9;
   width: 0;
   height: 0;
-  border-right: 2.2vmin solid transparent;
-  border-left: 2.2vmin solid transparent;
-  border-top: 5vmin solid #fff;
-  filter: drop-shadow(0 0 1.2vmin rgba(34, 211, 238, 0.9));
+  border-right: 3.1vmin solid transparent;
+  border-left: 3.1vmin solid transparent;
+  border-top: 7.2vmin solid #fff;
+  filter: drop-shadow(0 0 1.5vmin rgba(34, 211, 238, 0.95)) drop-shadow(0 0 0.4vmin rgba(0, 0, 0, 0.9));
 }
 
 .live-overlay-wheel {
   position: relative;
   display: grid;
-  width: min(43vmin, 100%);
+  width: min(91.5vmin, 100%);
   aspect-ratio: 1 / 1;
   place-items: center;
-  border: 0.6vmin solid rgba(165, 243, 252, 0.95);
+  border: 0.75vmin solid rgba(219, 252, 255, 0.96);
   border-radius: 999px;
+  background: #03131a;
+  box-shadow:
+    inset 0 0 0 0.25vmin rgba(2, 6, 23, 0.9),
+    inset 0 0 8vmin rgba(0, 0, 0, 0.66),
+    0 0 7vmin rgba(34, 211, 238, 0.42);
+}
+
+.live-overlay-wheel-slices {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
   background:
-    radial-gradient(circle at center, #02151b 0 24%, transparent 25%),
-    conic-gradient(from 0deg, rgba(34, 211, 238, 0.92), rgba(2, 132, 199, 0.5), rgba(255,255,255,0.88), rgba(34, 211, 238, 0.92));
-  box-shadow: inset 0 0 4vmin rgba(0, 0, 0, 0.72), 0 0 4vmin rgba(34, 211, 238, 0.35);
+    radial-gradient(circle at center, transparent 0 19%, rgba(2, 6, 23, 0.18) 19.5% 100%),
+    var(--wheel-slice-background);
+  overflow: hidden;
+}
+
+.live-overlay-wheel-slices::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  border-radius: inherit;
+  background:
+    radial-gradient(circle, transparent 0 58%, rgba(2, 6, 23, 0.18) 78%, rgba(2, 6, 23, 0.4) 100%);
 }
 
 .live-overlay-wheel-scene--spinning .live-overlay-wheel {
   animation: live-wheel-spin var(--wheel-spin-duration, 6.5s) cubic-bezier(0.11, 0.78, 0.18, 1) both;
 }
 
-.live-overlay-wheel-name {
+.live-overlay-wheel-slice-label {
   position: absolute;
-  display: inline-block;
-  max-width: 15vmin;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  width: 50%;
+  height: 0;
+  transform: rotate(calc(var(--wheel-label-angle) - 90deg));
+  transform-origin: 0 0;
+}
+
+.live-overlay-wheel-slice-label > span {
+  position: absolute;
+  right: 10.4vmin;
+  display: block;
+  width: 28vmin;
   overflow: hidden;
-  color: #001015;
-  font-size: clamp(0.55rem, 1.35vmin, 0.9rem);
-  font-weight: 900;
-  letter-spacing: 0.08em;
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.23);
+  padding: 0.45vmin 0.8vmin;
+  color: #03131a;
+  font-size: clamp(0.6rem, var(--wheel-name-size, 1.28vmin), 1.58rem);
+  font-weight: 950;
+  letter-spacing: 0.07em;
+  line-height: 1;
   text-align: center;
   text-overflow: ellipsis;
+  text-shadow: 0 0 0.5vmin rgba(255, 255, 255, 0.55);
   text-transform: uppercase;
   white-space: nowrap;
-  transform-origin: 50% 21vmin;
+  transform: translateY(-50%);
 }
 
 .live-overlay-wheel-core {
   position: absolute;
+  z-index: 5;
   display: grid;
-  width: 16vmin;
+  width: 20vmin;
   aspect-ratio: 1 / 1;
   place-items: center;
-  border: 0.35vmin solid rgba(255,255,255,0.85);
+  border: 0.45vmin solid rgba(255,255,255,0.9);
   border-radius: 999px;
-  background: #020617;
+  background: radial-gradient(circle, #082f49 0 24%, #020617 72%);
   color: #67e8f9;
   text-align: center;
-  box-shadow: 0 0 2vmin rgba(0,0,0,0.7);
+  box-shadow: 0 0 3.5vmin rgba(0,0,0,0.85), inset 0 0 2.5vmin rgba(103, 232, 249, 0.2);
 }
 
 .live-overlay-wheel-core span {
-  font-size: clamp(1.5rem, 5vmin, 3.4rem);
+  font-size: clamp(1.9rem, 6.3vmin, 4.5rem);
   font-weight: 950;
-  line-height: 0.8;
+  line-height: 0.75;
 }
 
 .live-overlay-wheel-core small {
-  color: rgba(255,255,255,0.74);
-  font-size: clamp(0.48rem, 1.2vmin, 0.75rem);
-  letter-spacing: 0.16em;
+  color: rgba(255,255,255,0.78);
+  font-size: clamp(0.5rem, 1.35vmin, 0.9rem);
+  letter-spacing: 0.18em;
 }
 
 .live-overlay-wheel-empty {
+  z-index: 3;
   color: #020617;
-  font-size: clamp(0.8rem, 2vmin, 1.2rem);
-  font-weight: 900;
-  letter-spacing: 0.14em;
-}
-
-.live-overlay-wheel-roster {
-  position: absolute;
-  right: 2vmin;
-  bottom: -5vmin;
-  left: 2vmin;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.8vmin;
-}
-
-.live-overlay-wheel-roster span {
-  border: 1px solid rgba(103, 232, 249, 0.35);
-  background: rgba(2, 6, 23, 0.68);
-  padding: 0.6vmin 0.9vmin;
-  color: rgba(255,255,255,0.78);
-  font-size: clamp(0.52rem, 1.25vmin, 0.82rem);
+  font-size: clamp(0.9rem, 2.2vmin, 1.4rem);
+  font-weight: 950;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
-.live-overlay-wheel-result {
+.live-overlay-wheel-status {
   position: absolute;
-  right: 1vmin;
-  bottom: 4vmin;
-  left: 1vmin;
-  z-index: 4;
-  border: 0.35vmin solid rgba(103, 232, 249, 0.9);
-  background: rgba(2, 6, 23, 0.92);
-  padding: 2vmin;
+  right: 8vmin;
+  bottom: 7vmin;
+  left: 8vmin;
+  z-index: 7;
+  display: grid;
+  justify-items: center;
+  border: 0.35vmin solid rgba(103, 232, 249, 0.82);
+  background: rgba(2, 6, 23, 0.87);
+  padding: 1.4vmin 2vmin;
   text-align: center;
-  box-shadow: 0 0 4vmin rgba(34, 211, 238, 0.32);
+  box-shadow: 0 0 4vmin rgba(34, 211, 238, 0.26);
 }
 
-.live-overlay-wheel-result span,
-.live-overlay-wheel-result em {
+.live-overlay-wheel-status span,
+.live-overlay-wheel-status em {
   display: block;
   color: #a5f3fc;
-  font-size: clamp(0.65rem, 1.5vmin, 1rem);
+  font-size: clamp(0.6rem, 1.45vmin, 0.95rem);
   font-style: normal;
   letter-spacing: 0.24em;
   text-transform: uppercase;
 }
 
-.live-overlay-wheel-result strong {
+.live-overlay-wheel-status strong {
   display: block;
-  margin: 0.5vmin 0;
+  max-width: 78vmin;
+  overflow: hidden;
   color: #fff;
-  font-size: clamp(1.4rem, 4.5vmin, 3.4rem);
-  line-height: 0.92;
+  font-size: clamp(1rem, 3.2vmin, 2.7rem);
+  font-weight: 950;
+  line-height: 0.95;
+  text-overflow: ellipsis;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 @keyframes live-wheel-spin {
@@ -484,20 +536,22 @@ body > div:last-of-type {
 }
 
 @media (max-aspect-ratio: 4 / 5) {
-  .live-overlay-wheel-scene {
-    width: 82vmin;
-    grid-template-columns: 1fr;
-    gap: 2vmin;
-    text-align: center;
-  }
-
   .live-overlay-wheel-wrap {
-    width: 48vmin;
-    justify-self: center;
+    inset: 5.8vmin;
   }
 
-  .live-overlay-wheel-roster {
-    position: static;
-    margin-top: 1vmin;
+  .live-overlay-wheel {
+    width: min(90vmin, 100%);
+  }
+
+  .live-overlay-wheel-slice-label > span {
+    right: 9.4vmin;
+    width: 26vmin;
+  }
+
+  .live-overlay-wheel-status {
+    right: 6vmin;
+    bottom: 6vmin;
+    left: 6vmin;
   }
 }

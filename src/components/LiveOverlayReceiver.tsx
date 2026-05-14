@@ -66,37 +66,60 @@ function showTrack(scene: ResolvedLiveOverlayScene): boolean {
 }
 
 
+function shortWheelLabel(value: string, maxLength: number): string {
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  if (cleaned.length <= maxLength) return cleaned;
+  return `${cleaned.slice(0, Math.max(1, maxLength - 1)).trim()}…`;
+}
+
 function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   const ceremony = scene.wheelCeremony;
   const candidates = ceremony?.displayCandidates ?? [];
   const result = ceremony?.resultTrack;
   const spinning = ceremony?.status === "spinning";
-  const wheelStyle = { "--wheel-final-rotation": `${1080 + Math.max(0, candidates.findIndex((candidate) => candidate.id === result?.id)) * 31}deg`, "--wheel-spin-duration": `${Math.max(5, (ceremony?.spinDurationMs ?? 6500) / 1000)}s` } as CSSProperties;
+  const candidateCount = Math.max(1, candidates.length);
+  const resultIndex = Math.max(0, candidates.findIndex((candidate) => candidate.id === result?.id));
+  const sliceDegrees = 360 / candidateCount;
+  const resultCenterAngle = resultIndex * sliceDegrees + sliceDegrees / 2;
+  const sliceColors = ["#67e8f9", "#0284c7", "#e0fbff", "#0ea5e9"];
+  const sliceBackground = candidates.length > 0 ? `conic-gradient(from -90deg, ${candidates.map((_, index) => `${sliceColors[index % sliceColors.length]} ${index * sliceDegrees}deg ${(index + 1) * sliceDegrees}deg`).join(", ")})` : "radial-gradient(circle, #67e8f9, #0284c7)";
+  const wheelStyle = {
+    "--wheel-final-rotation": `${1440 - resultCenterAngle}deg`,
+    "--wheel-spin-duration": `${Math.max(5, (ceremony?.spinDurationMs ?? 6500) / 1000)}s`,
+    "--wheel-slice-count": candidateCount,
+    "--wheel-slice-background": sliceBackground,
+    "--wheel-name-size": candidates.length > 10 ? "1.04vmin" : candidates.length > 6 ? "1.28vmin" : "1.58vmin",
+  } as CSSProperties;
+  const labelMaxLength = candidates.length > 10 ? 12 : candidates.length > 6 ? 15 : 20;
 
   return (
     <div className={`live-overlay-wheel-scene ${spinning ? "live-overlay-wheel-scene--spinning" : ""}`}>
-      <div className="live-overlay-wheel-copy">
+      <div className="live-overlay-wheel-heading" aria-live="polite">
         <p className="live-overlay-mode">{modeLabel(scene.mode)}</p>
-        <h1>{scene.title}</h1>
-        {scene.subtitle && <h2>{scene.subtitle}</h2>}
-        <p className="live-overlay-message">{scene.message}</p>
+        <h1>{scene.subtitle || scene.title}</h1>
       </div>
+
       <div className="live-overlay-wheel-wrap">
         <div className="live-overlay-wheel-pointer" aria-hidden="true" />
         <div className="live-overlay-wheel" style={wheelStyle}>
-          {candidates.length === 0 ? <span className="live-overlay-wheel-empty">NO CANDIDATES</span> : candidates.map((candidate, index) => (
-            <span key={candidate.id} className="live-overlay-wheel-name" style={{ transform: `rotate(${(360 / candidates.length) * index}deg) translateY(-21vmin)` }}>
-              {candidate.artistName}
-            </span>
-          ))}
+          <div className="live-overlay-wheel-slices" aria-hidden="true" />
+          {candidates.length === 0 ? <span className="live-overlay-wheel-empty">NO CANDIDATES</span> : candidates.map((candidate, index) => {
+            const angle = index * sliceDegrees + sliceDegrees / 2;
+            const label = shortWheelLabel(candidate.artistName, labelMaxLength);
+            const labelStyle = { "--wheel-label-angle": `${angle}deg` } as CSSProperties;
+            return (
+              <span key={candidate.id} className="live-overlay-wheel-slice-label" style={labelStyle} title={`${candidate.artistName} — ${candidate.trackTitle}`}>
+                <span>{label}</span>
+              </span>
+            );
+          })}
           <div className="live-overlay-wheel-core"><span>10K</span><small>TAP WHEEL</small></div>
         </div>
       </div>
-      <div className="live-overlay-wheel-roster">
-        {candidates.slice(0, 5).map((candidate) => <span key={candidate.id}>{candidate.artistName} — {candidate.trackTitle}</span>)}
-        {(ceremony?.hiddenCandidateCount ?? 0) > 0 && <span>+ {ceremony?.hiddenCandidateCount} more signals</span>}
-      </div>
-      {result && (ceremony?.status === "result_pending" || ceremony?.status === "confirmed") && <div className="live-overlay-wheel-result"><span>{ceremony.status === "confirmed" ? "LOCKED" : "RESULT"}</span><strong>{result.artistName}</strong><em>{result.trackTitle}</em></div>}
+
+      {(scene.message || result) && <div className="live-overlay-wheel-status">
+        {result && (ceremony?.status === "result_pending" || ceremony?.status === "confirmed") ? <><span>{ceremony.status === "confirmed" ? "SIGNAL LOCKED" : "RESULT PENDING"}</span><strong>{result.artistName}</strong><em>{result.trackTitle}</em></> : <><span>{scene.title}</span>{scene.message && <strong>{scene.message}</strong>}</>}
+      </div>}
     </div>
   );
 }
@@ -209,7 +232,7 @@ export function LiveOverlayReceiver() {
 
   return (
     <div className="live-overlay-shell" aria-label="BARCODE Radio live overlay receiver">
-      <section className={`live-overlay-stage ${frameTone(scene.mode)} ${youtubeVisible ? "live-overlay-stage--youtube" : ""}`}>
+      <section className={`live-overlay-stage ${frameTone(scene.mode)} ${youtubeVisible ? "live-overlay-stage--youtube" : ""} ${wheelVisible ? "live-overlay-stage--wheel-ceremony" : ""}`}>
         <div className="live-overlay-noise" aria-hidden="true" />
         <div className="live-overlay-corners" aria-hidden="true" />
         <div className="live-overlay-header">
@@ -256,10 +279,10 @@ export function LiveOverlayReceiver() {
           )}
         </main>
 
-        <div className="live-overlay-footer">
+        {!wheelVisible && <div className="live-overlay-footer">
           <span>{scene.automatic ? "AUTO LIVE SOURCE" : "OVERRIDE LIVE SOURCE"} / 1:1</span>
           <span>{new Date(scene.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-        </div>
+        </div>}
       </section>
     </div>
   );

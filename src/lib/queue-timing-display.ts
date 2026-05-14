@@ -1,5 +1,6 @@
 import {
   DEFAULT_SPONSOR_BREAK_SECONDS,
+  DEFAULT_SPONSOR_BREAK_MIN_ELAPSED_SECONDS,
   estimateExistingTrackTiming,
   estimateNewSubmissionTiming,
   estimatePriorityImpact,
@@ -50,8 +51,12 @@ export interface QueueTimingDisplaySummary {
   sponsorBreakSummary: {
     status: string;
     statusLabel: string;
+    diagnosticLabel: string;
     dueAfterTracks: number | null;
     durationLabel: string;
+    minElapsedLabel: string;
+    completedPlayableCount: number;
+    totalPlayableNonRemovedCount: number | null;
     included: boolean;
   };
   wheelTimingSummary: {
@@ -118,6 +123,7 @@ function sessionTimingFields(session: QueuePublicSnapshot["session"] | QueueSess
     sponsorBreakSeconds: session.sponsorBreakSeconds,
     sponsorBreakMode: session.sponsorBreakMode,
     sponsorBreakStatus: session.sponsorBreakStatus,
+    broadcastStartedAt: session.broadcastStartedAt,
     sponsorBreakStartedAt: session.sponsorBreakStartedAt,
     sponsorBreakCompletedAt: session.sponsorBreakCompletedAt,
     sponsorBreakCompletedAfterPlayableCount: session.sponsorBreakCompletedAfterPlayableCount,
@@ -151,8 +157,12 @@ export function buildQueueTimingDisplay(input: QueueTimingInput, options: { prio
     sponsorBreakSummary: {
       status: snapshot.sponsorBreakStatus,
       statusLabel: sponsorStatusLabel(snapshot.sponsorBreakStatus),
+      diagnosticLabel: sponsorDiagnosticLabel(snapshot.sponsorBreak),
       dueAfterTracks: snapshot.sponsorBreak.sponsorBreakThreshold,
       durationLabel: formatHoursMinutes(snapshot.sponsorBreak.sponsorBreakSeconds || DEFAULT_SPONSOR_BREAK_SECONDS),
+      minElapsedLabel: formatHoursMinutes(snapshot.sponsorBreak.sponsorBreakMinElapsedSeconds || DEFAULT_SPONSOR_BREAK_MIN_ELAPSED_SECONDS),
+      completedPlayableCount: snapshot.sponsorBreak.completedPlayableCount,
+      totalPlayableNonRemovedCount: snapshot.sponsorBreak.totalPlayableNonRemovedCount,
       included: snapshot.sponsorBreakSecondsIncluded > 0,
     },
     wheelTimingSummary: {
@@ -230,6 +240,18 @@ export function targetStatusLabel(status: QueueTimingTargetStatus): string {
   if (status === "over_target") return "Over target";
   if (status === "warning_ceiling") return "Warning ceiling";
   return "Unknown";
+}
+
+export function sponsorDiagnosticLabel(sponsor: { sponsorBreakStatus?: string | null; midpointReached?: boolean | null; minElapsedGateReached?: boolean | null; secondsUntilMinElapsedGate?: number | null; sponsorBreakIncluded?: boolean | null; broadcastStartedAt?: string | null }): string {
+  if (sponsor.sponsorBreakStatus === "completed") return "Completed";
+  if (sponsor.sponsorBreakStatus === "skipped") return "Skipped";
+  if (sponsor.sponsorBreakStatus === "running") return "Running";
+  if (sponsor.sponsorBreakIncluded || (sponsor.midpointReached === true && sponsor.minElapsedGateReached === true)) return "Due now";
+  if (!sponsor.broadcastStartedAt || sponsor.minElapsedGateReached === null) return "Waiting for playback start";
+  if (sponsor.midpointReached === true && sponsor.minElapsedGateReached === false) return "Midpoint reached · waiting for 2h mark";
+  if (sponsor.midpointReached === false && sponsor.minElapsedGateReached === true) return "2h mark reached · waiting for midpoint";
+  const remaining = typeof sponsor.secondsUntilMinElapsedGate === "number" ? ` · ${formatHoursMinutes(sponsor.secondsUntilMinElapsedGate)} until 2h mark` : "";
+  return `Not eligible yet${remaining}`;
 }
 
 export function sponsorStatusLabel(status?: string | null): string {

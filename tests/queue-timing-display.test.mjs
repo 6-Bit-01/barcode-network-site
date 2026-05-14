@@ -32,7 +32,7 @@ test("range formatting keeps rough about labels and widens low confidence", () =
 test("sponsor included and completed public notes reflect current projection", () => {
   const completed = Array.from({ length: 20 }, (_, index) => track(`done-${index}`, { status: "completed" }));
   const queue = Array.from({ length: 20 }, (_, index) => track(`queued-${index}`));
-  const withSponsor = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "not_due" } });
+  const withSponsor = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "not_due", broadcastStartedAt: "2026-01-01T00:00:00.000Z" } });
   assert.ok(withSponsor.publicNotes.includes("Estimate includes the mid-show sponsor break."));
   const completedSponsor = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "completed", sponsorBreakCompletedAt: "2026-01-01T00:00:00.000Z" } });
   const skippedSponsor = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "skipped", sponsorBreakCompletedAt: "2026-01-01T00:00:00.000Z" } });
@@ -109,4 +109,23 @@ test("Personal Signal Status does not include global projected show time copy", 
   const end = source.indexOf("function estimateExistingTrackForDisplay", start);
   const block = source.slice(start, end);
   assert.ok(!block.includes("Projected Show Time"));
+});
+
+
+test("admin sponsor diagnostics explain gate states compactly", () => {
+  assert.match(display.sponsorDiagnosticLabel({ sponsorBreakStatus: "not_due", broadcastStartedAt: "2026-01-01T00:00:00.000Z", midpointReached: false, minElapsedGateReached: false, secondsUntilMinElapsedGate: 24 * 60 }), /Not eligible yet/);
+  assert.equal(display.sponsorDiagnosticLabel({ sponsorBreakStatus: "not_due", broadcastStartedAt: "2026-01-01T00:00:00.000Z", midpointReached: true, minElapsedGateReached: false }), "Midpoint reached · waiting for 2h mark");
+  assert.equal(display.sponsorDiagnosticLabel({ sponsorBreakStatus: "not_due", broadcastStartedAt: "2026-01-01T00:00:00.000Z", midpointReached: false, minElapsedGateReached: true }), "2h mark reached · waiting for midpoint");
+  assert.equal(display.sponsorDiagnosticLabel({ sponsorBreakStatus: "due", broadcastStartedAt: "2026-01-01T00:00:00.000Z", midpointReached: true, minElapsedGateReached: true, sponsorBreakIncluded: true }), "Due now");
+  assert.equal(display.sponsorDiagnosticLabel({ sponsorBreakStatus: "completed" }), "Completed");
+  assert.equal(display.sponsorDiagnosticLabel({ sponsorBreakStatus: "skipped" }), "Skipped");
+});
+
+test("public sponsor note appears only when the gated break is included", () => {
+  const completed = Array.from({ length: 20 }, (_, index) => track(`public-done-${index}`, { status: "completed" }));
+  const queue = [track("public-queued-target", { detectedDurationSeconds: 60 })];
+  const early = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "not_due", broadcastStartedAt: new Date(Date.now() - 90 * 60 * 1000).toISOString() } });
+  const included = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "not_due", broadcastStartedAt: "2026-01-01T00:00:00.000Z" } });
+  assert.ok(!early.publicNotes.includes("Estimate includes the mid-show sponsor break."));
+  assert.ok(included.publicNotes.includes("Estimate includes the mid-show sponsor break."));
 });

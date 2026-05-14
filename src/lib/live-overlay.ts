@@ -1,7 +1,7 @@
 import { Redis } from "@upstash/redis";
 import { getRadioQueueState, isWheelEligibleTrack, updateRadioTrack } from "./queue";
 import { getTrackArtworkUrl, getTrackDurationLabel } from "./queue-types";
-import { derangedWheelCandidateOrder, orderedWheelCandidateIds, resolveLiveOverlayScene, safeLiveOverlayUrl } from "./live-overlay-resolver";
+import { buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateIds, resolveLiveOverlayScene, safeLiveOverlayUrl, wheelFinalRotationForSegment } from "./live-overlay-resolver";
 import { parseYouTubeVideoId } from "./track-duration";
 import type { QueueEntry, QueueSourceType } from "./queue-types";
 import type { LiveOverlayPlaybackState, LiveOverlayStateInput, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
@@ -41,6 +41,10 @@ export interface LiveOverlayState extends LiveOverlayStateInput {
   wheelCeremonyPreviousCandidateOrder?: string[];
   wheelCeremonyReencryptNonce?: string;
   wheelCeremonyReencryptCycleId?: string;
+  wheelCeremonyFinalRotationDeg?: number;
+  wheelCeremonyLandingAngleDeg?: number;
+  wheelCeremonyWinningSegmentId?: string;
+  wheelCeremonyWinningSegmentIndex?: number;
   wheelCeremonyJingleKey?: string;
   wheelCeremonySpinDurationMs?: number;
   wheelCeremonyAudioPath?: string;
@@ -364,6 +368,10 @@ function normalizeState(input: unknown): LiveOverlayState {
     wheelCeremonyPreviousCandidateOrder: Array.isArray(raw.wheelCeremonyPreviousCandidateOrder) ? raw.wheelCeremonyPreviousCandidateOrder.map((entry) => cleanText(entry)).filter((entry): entry is string => Boolean(entry)) : undefined,
     wheelCeremonyReencryptNonce: cleanText(raw.wheelCeremonyReencryptNonce),
     wheelCeremonyReencryptCycleId: cleanText(raw.wheelCeremonyReencryptCycleId),
+    wheelCeremonyFinalRotationDeg: typeof raw.wheelCeremonyFinalRotationDeg === "number" && Number.isFinite(raw.wheelCeremonyFinalRotationDeg) ? raw.wheelCeremonyFinalRotationDeg : undefined,
+    wheelCeremonyLandingAngleDeg: typeof raw.wheelCeremonyLandingAngleDeg === "number" && Number.isFinite(raw.wheelCeremonyLandingAngleDeg) ? raw.wheelCeremonyLandingAngleDeg : undefined,
+    wheelCeremonyWinningSegmentId: cleanText(raw.wheelCeremonyWinningSegmentId),
+    wheelCeremonyWinningSegmentIndex: typeof raw.wheelCeremonyWinningSegmentIndex === "number" && Number.isFinite(raw.wheelCeremonyWinningSegmentIndex) ? Math.floor(raw.wheelCeremonyWinningSegmentIndex) : undefined,
     wheelCeremonyJingleKey: cleanText(raw.wheelCeremonyJingleKey, "silent"),
     wheelCeremonySpinDurationMs: normalizeSpinDurationMs(raw.wheelCeremonySpinDurationMs),
     wheelCeremonyAudioPath: cleanText(raw.wheelCeremonyAudioPath),
@@ -474,6 +482,10 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelCeremonyPreviousCandidateOrder: undefined,
       wheelCeremonyReencryptNonce: undefined,
       wheelCeremonyReencryptCycleId: undefined,
+      wheelCeremonyFinalRotationDeg: undefined,
+      wheelCeremonyLandingAngleDeg: undefined,
+      wheelCeremonyWinningSegmentId: undefined,
+      wheelCeremonyWinningSegmentIndex: undefined,
       wheelCeremonyJingleKey: "silent",
       wheelCeremonySpinDurationMs: undefined,
       wheelCeremonyAudioPath: undefined,
@@ -491,8 +503,12 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
     const nonce = reencrypting ? randomSeed() : undefined;
     const previousOrder = orderedWheelCandidateIds(candidates, current.wheelCeremonyCandidateOrder, current.wheelCeremonySeed);
     const candidateOrder = reencrypting ? derangedWheelCandidateOrder(candidates, previousOrder, nonce) : previousOrder;
-    const selected = reencrypting ? null : pickRandomCandidate(candidates);
-    if (!reencrypting && !selected) throw new Error("No eligible Wheel Chosen candidates are available.");
+    const orderedCandidates = candidateOrder.map((candidateId) => candidates.find((candidate) => candidate.id === candidateId)).filter((candidate): candidate is ResolvedWheelCeremonyTrack => Boolean(candidate));
+    const selected = reencrypting ? null : pickRandomCandidate(orderedCandidates);
+    const wheelSegments = buildWheelSegments(orderedCandidates.map((candidate) => ({ id: candidate.id, label: candidate.artistName, weight: candidate.weight })));
+    const selectedSegment = selected ? wheelSegments.find((segment) => segment.candidateId === selected.id) : undefined;
+    const finalRotationDeg = selectedSegment ? wheelFinalRotationForSegment(selectedSegment) : undefined;
+    if (!reencrypting && (!selected || !selectedSegment || typeof finalRotationDeg !== "number")) throw new Error("No eligible Wheel Chosen candidates are available.");
     next = {
       ...current,
       mode: reencrypting ? "wheel_reencrypting" : "wheel_spinning",
@@ -509,6 +525,10 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelCeremonyPreviousCandidateOrder: reencrypting ? previousOrder : undefined,
       wheelCeremonyReencryptNonce: nonce,
       wheelCeremonyReencryptCycleId: nonce,
+      wheelCeremonyFinalRotationDeg: reencrypting ? undefined : finalRotationDeg,
+      wheelCeremonyLandingAngleDeg: reencrypting ? undefined : selectedSegment?.centerAngle,
+      wheelCeremonyWinningSegmentId: reencrypting ? undefined : selectedSegment?.id,
+      wheelCeremonyWinningSegmentIndex: reencrypting ? undefined : selectedSegment?.index,
       wheelCeremonyJingleKey: "silent",
       wheelCeremonySpinDurationMs: reencrypting ? undefined : randomSpinDurationMs(),
       wheelCeremonyAudioPath: reencrypting ? undefined : randomWheelAudioPath(),
@@ -542,6 +562,10 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelCeremonyPreviousCandidateOrder: undefined,
       wheelCeremonyReencryptNonce: undefined,
       wheelCeremonyReencryptCycleId: undefined,
+      wheelCeremonyFinalRotationDeg: undefined,
+      wheelCeremonyLandingAngleDeg: undefined,
+      wheelCeremonyWinningSegmentId: undefined,
+      wheelCeremonyWinningSegmentIndex: undefined,
       wheelCeremonyJingleKey: "silent",
       wheelCeremonySpinDurationMs: undefined,
       wheelCeremonyAudioPath: undefined,
@@ -593,6 +617,10 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelCeremonyPreviousCandidateOrder: undefined,
       wheelCeremonyReencryptNonce: undefined,
       wheelCeremonyReencryptCycleId: undefined,
+      wheelCeremonyFinalRotationDeg: undefined,
+      wheelCeremonyLandingAngleDeg: undefined,
+      wheelCeremonyWinningSegmentId: undefined,
+      wheelCeremonyWinningSegmentIndex: undefined,
       wheelCeremonyJingleKey: "silent",
       wheelCeremonySpinDurationMs: undefined,
       wheelCeremonyAudioPath: undefined,

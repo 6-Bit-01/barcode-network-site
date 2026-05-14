@@ -94,6 +94,14 @@ export function wheelFinalRotationForSlice(entryCount: number, index: number, fu
   return wheelFinalRotationForSegment(segment ?? buildWheelSegments([])[0], fullTurns, pointerAngleDegrees);
 }
 
+export function wheelUprightLabelRotationDegrees(angle: number): number {
+  let rotation = normalizeWheelAngle(angle) - 90;
+  if (rotation > 180) rotation -= 360;
+  if (rotation > 90) rotation -= 180;
+  if (rotation < -90) rotation += 180;
+  return rotation;
+}
+
 export interface LiveOverlayTrackInput {
   id?: string;
   artist?: string;
@@ -155,6 +163,10 @@ export interface LiveOverlayStateInput {
   wheelCeremonyPreviousCandidateOrder?: string[];
   wheelCeremonyReencryptNonce?: string;
   wheelCeremonyReencryptCycleId?: string;
+  wheelCeremonyFinalRotationDeg?: number;
+  wheelCeremonyLandingAngleDeg?: number;
+  wheelCeremonyWinningSegmentId?: string;
+  wheelCeremonyWinningSegmentIndex?: number;
   wheelCeremonyJingleKey?: string;
   wheelCeremonySpinDurationMs?: number;
   wheelCeremonyAudioPath?: string;
@@ -233,6 +245,10 @@ export interface ResolvedWheelCeremonyScene {
   previousCandidateOrder?: string[];
   reencryptNonce?: string;
   reencryptCycleId?: string;
+  finalRotationDeg?: number;
+  landingAngleDeg?: number;
+  winningSegmentId?: string;
+  winningSegmentIndex?: number;
   jingleKey?: string;
   spinDurationMs: number;
   audioPath?: string;
@@ -383,6 +399,16 @@ function cleanStringList(value: unknown): string[] | undefined {
   return cleaned.length > 0 ? [...new Set(cleaned)] : undefined;
 }
 
+function cleanNumber(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return value;
+}
+
+function cleanInteger(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.floor(value);
+}
+
 export function orderedWheelCandidateIds(candidates: Pick<ResolvedWheelCeremonyTrack, "id">[], order?: string[], seed?: string): string[] {
   const candidateIds = candidates.map((candidate) => candidate.id).filter(Boolean);
   const candidateIdSet = new Set(candidateIds);
@@ -479,6 +505,10 @@ function resolveWheelCeremony(input: ResolveLiveOverlaySceneInput, now: Date): R
     previousCandidateOrder: previousOrder,
     reencryptNonce: cleanDisplay(overlayState?.wheelCeremonyReencryptNonce) ?? cleanDisplay(overlayState?.wheelCeremonyReencryptCycleId),
     reencryptCycleId: cleanDisplay(overlayState?.wheelCeremonyReencryptCycleId),
+    finalRotationDeg: cleanNumber(overlayState?.wheelCeremonyFinalRotationDeg),
+    landingAngleDeg: cleanNumber(overlayState?.wheelCeremonyLandingAngleDeg),
+    winningSegmentId: cleanDisplay(overlayState?.wheelCeremonyWinningSegmentId),
+    winningSegmentIndex: cleanInteger(overlayState?.wheelCeremonyWinningSegmentIndex),
     jingleKey: cleanDisplay(overlayState?.wheelCeremonyJingleKey) || "silent",
     spinDurationMs,
     audioPath: cleanDisplay(overlayState?.wheelCeremonyAudioPath),

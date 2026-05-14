@@ -470,6 +470,11 @@ body > div:last-of-type {
   animation: live-wheel-spin var(--wheel-spin-duration, 24s) cubic-bezier(0.11, 0.78, 0.18, 1) both;
 }
 
+.live-overlay-wheel-scene--result_pending .live-overlay-wheel,
+.live-overlay-wheel-scene--confirmed .live-overlay-wheel {
+  transform: rotate(var(--wheel-final-rotation, 1260deg));
+}
+
 
 .live-overlay-wheel-scene--ready .live-overlay-wheel-slices {
   animation: live-wheel-ready-shimmer 5.4s ease-in-out infinite;

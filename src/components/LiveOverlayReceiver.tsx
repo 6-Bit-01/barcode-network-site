@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { buildWheelSegments, wheelFinalRotationForSegment } from "@/lib/live-overlay-resolver";
+import { buildWheelSegments, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
 import type { LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
 
 type YTPlayer = {
@@ -236,9 +236,7 @@ function wheelLabelPosition(angle: number, radius: number) {
   const radians = (angle * Math.PI) / 180;
   const x = Math.sin(radians) * radius;
   const y = Math.cos(radians) * -radius;
-  let rotation = angle - 90;
-  if (rotation > 90 && rotation < 270) rotation += 180;
-  if (rotation > 180) rotation -= 360;
+  const rotation = wheelUprightLabelRotationDegrees(angle);
   return { x: `${x.toFixed(3)}vmin`, y: `${y.toFixed(3)}vmin`, rotation: `${rotation.toFixed(3)}deg` };
 }
 
@@ -262,8 +260,9 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   const sliceBackground = candidates.length > 0 ? `conic-gradient(from 0deg, ${wheelSegments.map((segment, index) => `${sliceColors[index % sliceColors.length]} ${segment.startAngle}deg ${segment.endAngle}deg`).join(", ")})` : "radial-gradient(circle, #67e8f9, #0284c7)";
   const labelMetrics = wheelLabelMetrics(candidates.length);
   const animationKey = reencryptVisualActive ? reencryptNonce ?? ceremony?.seed ?? "reencrypting" : ceremony?.seed ?? ceremony?.status ?? "wheel";
+  const finalRotationDeg = typeof ceremony?.finalRotationDeg === "number" ? ceremony.finalRotationDeg : wheelFinalRotationForSegment(resultSegment);
   const wheelStyle = {
-    "--wheel-final-rotation": `${wheelFinalRotationForSegment(resultSegment)}deg`,
+    "--wheel-final-rotation": `${finalRotationDeg}deg`,
     "--wheel-spin-duration": `${Math.max(16, (ceremony?.spinDurationMs ?? 24000) / 1000)}s`,
     "--wheel-slice-count": candidateCount,
     "--wheel-slice-background": sliceBackground,

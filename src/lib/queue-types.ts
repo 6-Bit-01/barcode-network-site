@@ -12,6 +12,8 @@ export type QueueSessionStatus = "prepared" | "open" | "closed" | "archived";
 export type QueueBroadcastPhase = "warmup" | "submission_window" | "broadcast_active" | "ended";
 export type PriorityUpgradeStatus = "none" | "requested" | "manual" | "checkout_pending" | "paid" | "paid_needs_attention" | "failed" | "refunded";
 export type PriorityUpgradeSource = "admin" | "public_placeholder" | "future_payment" | "stripe";
+export type SponsorBreakMode = "mid_show";
+export type SponsorBreakStatus = "not_due" | "due" | "running" | "completed" | "skipped";
 
 export interface QueueEntry {
   id: string;
@@ -120,6 +122,13 @@ export interface QueueSessionSummary {
   priorityUpgradePriceCents: number;
   priorityUpgradeCurrency: string;
   priorityUpgradePaymentsEnabled: boolean;
+  sponsorBreakSeconds?: number;
+  sponsorBreakMode?: SponsorBreakMode;
+  sponsorBreakStatus?: SponsorBreakStatus;
+  sponsorBreakStartedAt?: string | null;
+  sponsorBreakCompletedAt?: string | null;
+  sponsorBreakCompletedAfterPlayableCount?: number | null;
+  sponsorBreakManualNote?: string | null;
 }
 
 export interface QueueSession extends QueueSessionSummary {

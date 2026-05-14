@@ -18,5 +18,9 @@ export async function GET() {
 export async function POST(req: Request) {
   if (!(await assertAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
-  return NextResponse.json(await setLiveOverlayState(body), { headers: { "Cache-Control": "no-store" } });
+  try {
+    return NextResponse.json(await setLiveOverlayState(body), { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Overlay update failed." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  }
 }

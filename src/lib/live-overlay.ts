@@ -1,12 +1,12 @@
 import { Redis } from "@upstash/redis";
-import { getRadioQueueState } from "./queue";
+import { getRadioQueueState, isWheelEligibleTrack, updateRadioTrack } from "./queue";
 import { getTrackArtworkUrl, getTrackDurationLabel } from "./queue-types";
 import { resolveLiveOverlayScene, safeLiveOverlayUrl } from "./live-overlay-resolver";
 import { parseYouTubeVideoId } from "./track-duration";
 import type { QueueEntry, QueueSourceType } from "./queue-types";
-import type { LiveOverlayPlaybackState, LiveOverlayStateInput, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, WheelOverlayStatus } from "./live-overlay-resolver";
+import type { LiveOverlayPlaybackState, LiveOverlayStateInput, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
 
-export type { LiveOverlayPlaybackState, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, WheelOverlayStatus } from "./live-overlay-resolver";
+export type { LiveOverlayPlaybackState, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
 
 export interface LiveOverlayState extends LiveOverlayStateInput {
   mode: OverlayMode;
@@ -29,11 +29,18 @@ export interface LiveOverlayState extends LiveOverlayStateInput {
   wheelOverlayActive?: boolean;
   wheelOverlayLaunchedAt?: string;
   wheelOverlayStatus?: WheelOverlayStatus;
+  wheelCeremonyStatus?: WheelCeremonyStatus;
+  wheelCeremonyStartedAt?: string;
+  wheelCeremonySpinStartedAt?: string;
+  wheelCeremonyResultTrackId?: string;
+  wheelCeremonyResultSelectedAt?: string;
+  wheelCeremonySeed?: string;
+  wheelCeremonyJingleKey?: string;
   updatedAt: string;
 }
 
 export interface LiveOverlayPayload {
-  action?: "launchWheel" | "clearWheel" | "setSystemMessage" | "clearSystemMessage" | "launchVideoPlaceholder" | "clearVideoPlaceholder" | "clearAllOverrides" | "updatePlayerSync" | "clearPlayerSync";
+  action?: "launchWheel" | "spinWheel" | "reencryptWheel" | "confirmWheel" | "cancelWheel" | "clearWheel" | "setSystemMessage" | "clearSystemMessage" | "launchVideoPlaceholder" | "clearVideoPlaceholder" | "clearAllOverrides" | "updatePlayerSync" | "clearPlayerSync";
   mode?: OverlayMode;
   title?: unknown;
   subtitle?: unknown;
@@ -51,6 +58,7 @@ export interface LiveOverlayAdminSnapshot {
   overlayState: LiveOverlayState;
   scene: ResolvedLiveOverlayScene;
   playerSync: LiveOverlayYouTubeSync | null;
+  wheelCandidates: ResolvedWheelCeremonyTrack[];
 }
 
 const OVERLAY_STATE_KEY = "barcode:live-overlay:state";
@@ -79,6 +87,8 @@ export function defaultLiveOverlayState(): LiveOverlayState {
     videoPlaceholderActive: false,
     wheelOverlayActive: false,
     wheelOverlayStatus: "ready",
+    wheelCeremonyStatus: "idle",
+    wheelCeremonyJingleKey: "silent",
     updatedAt: new Date().toISOString(),
   };
 }
@@ -118,8 +128,34 @@ function overlayTrackInput(entry: QueueEntry) {
   };
 }
 
+
+function wheelCandidateFromEntry(entry: QueueEntry): ResolvedWheelCeremonyTrack {
+  return { id: entry.id, artistName: displayArtist(entry), trackTitle: displayTitle(entry) };
+}
+
+function getWheelCandidatesFromQueue(queue: QueueEntry[]): ResolvedWheelCeremonyTrack[] {
+  return queue.filter(isWheelEligibleTrack).map(wheelCandidateFromEntry);
+}
+
+function randomSeed(): string {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi?.randomUUID) return cryptoApi.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function pickRandomCandidate(candidates: ResolvedWheelCeremonyTrack[], excludeId?: string): ResolvedWheelCeremonyTrack | null {
+  const pool = excludeId && candidates.length > 1 ? candidates.filter((candidate) => candidate.id !== excludeId) : candidates;
+  if (pool.length === 0) return null;
+  const index = Math.floor(Math.random() * pool.length);
+  return pool[Math.max(0, Math.min(pool.length - 1, index))] ?? null;
+}
+
+function isActiveCeremony(status?: WheelCeremonyStatus): boolean {
+  return status === "ready" || status === "reencrypting" || status === "spinning" || status === "result_pending";
+}
+
 function normalizeMode(value: unknown): OverlayMode {
-  const modes: OverlayMode[] = ["standby", "now_playing", "artist_card", "wheel_ready", "sponsor", "video_placeholder", "system_message", "session_active"];
+  const modes: OverlayMode[] = ["standby", "now_playing", "artist_card", "wheel_ready", "wheel_reencrypting", "wheel_spinning", "wheel_result", "wheel_confirmed", "sponsor", "video_placeholder", "system_message", "session_active"];
   return modes.includes(value as OverlayMode) ? value as OverlayMode : "standby";
 }
 
@@ -130,6 +166,10 @@ function normalizeSourceType(value: unknown): LiveOverlayState["sourceType"] {
 
 function normalizeWheelStatus(value: unknown): WheelOverlayStatus {
   return value === "intro" || value === "active" || value === "complete" || value === "ready" ? value : "ready";
+}
+
+function normalizeWheelCeremonyStatus(value: unknown): WheelCeremonyStatus {
+  return value === "ready" || value === "reencrypting" || value === "spinning" || value === "result_pending" || value === "confirmed" || value === "cancelled" || value === "idle" ? value : "idle";
 }
 
 
@@ -183,9 +223,16 @@ function normalizeState(input: unknown): LiveOverlayState {
     systemMessageTitle: cleanText(raw.systemMessageTitle),
     systemMessage: cleanText(raw.systemMessage),
     videoPlaceholderActive: raw.videoPlaceholderActive === true,
-    wheelOverlayActive: raw.wheelOverlayActive === true || raw.mode === "wheel_ready",
+    wheelOverlayActive: raw.wheelOverlayActive === true || raw.mode === "wheel_ready" || raw.mode === "wheel_reencrypting" || raw.mode === "wheel_spinning" || raw.mode === "wheel_result" || raw.mode === "wheel_confirmed",
     wheelOverlayLaunchedAt: typeof raw.wheelOverlayLaunchedAt === "string" ? raw.wheelOverlayLaunchedAt : undefined,
     wheelOverlayStatus: normalizeWheelStatus(raw.wheelOverlayStatus),
+    wheelCeremonyStatus: normalizeWheelCeremonyStatus(raw.wheelCeremonyStatus ?? (raw.wheelOverlayActive ? "ready" : "idle")),
+    wheelCeremonyStartedAt: typeof raw.wheelCeremonyStartedAt === "string" ? raw.wheelCeremonyStartedAt : undefined,
+    wheelCeremonySpinStartedAt: typeof raw.wheelCeremonySpinStartedAt === "string" ? raw.wheelCeremonySpinStartedAt : undefined,
+    wheelCeremonyResultTrackId: cleanText(raw.wheelCeremonyResultTrackId),
+    wheelCeremonyResultSelectedAt: typeof raw.wheelCeremonyResultSelectedAt === "string" ? raw.wheelCeremonyResultSelectedAt : undefined,
+    wheelCeremonySeed: cleanText(raw.wheelCeremonySeed),
+    wheelCeremonyJingleKey: cleanText(raw.wheelCeremonyJingleKey, "silent"),
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString(),
   };
 }
@@ -235,6 +282,7 @@ export async function getStoredLiveOverlayState(): Promise<LiveOverlayState> {
 
 export async function getResolvedLiveOverlayScene(): Promise<ResolvedLiveOverlayScene> {
   const [overlayState, queueState, playerSync] = await Promise.all([getStoredLiveOverlayState(), getRadioQueueState(), getLiveOverlayPlayerSync()]);
+  const wheelCandidates = getWheelCandidatesFromQueue(queueState.queue);
   const session = queueState.session ?? null;
   return resolveLiveOverlayScene({
     overlayState,
@@ -250,6 +298,7 @@ export async function getResolvedLiveOverlayScene(): Promise<ResolvedLiveOverlay
     nowPlaying: queueState.nowPlaying ? overlayTrackInput(queueState.nowPlaying) : null,
     upNext: queueState.nextInLine ? overlayTrackInput(queueState.nextInLine) : null,
     playerSync,
+    wheelCandidates,
     wheelSpinsOwed: session?.wheelSpinsOwed ?? 0,
     sponsorBreakStatus: session?.sponsorBreakStatus,
     broadcastPhase: session?.broadcastPhase,
@@ -258,8 +307,8 @@ export async function getResolvedLiveOverlayScene(): Promise<ResolvedLiveOverlay
 }
 
 export async function getLiveOverlayAdminSnapshot(): Promise<LiveOverlayAdminSnapshot> {
-  const [overlayState, scene, playerSync] = await Promise.all([getStoredLiveOverlayState(), getResolvedLiveOverlayScene(), getLiveOverlayPlayerSync()]);
-  return { overlayState, scene, playerSync };
+  const [overlayState, scene, playerSync, queueState] = await Promise.all([getStoredLiveOverlayState(), getResolvedLiveOverlayScene(), getLiveOverlayPlayerSync(), getRadioQueueState()]);
+  return { overlayState, scene, playerSync, wheelCandidates: getWheelCandidatesFromQueue(queueState.queue) };
 }
 
 export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<LiveOverlayAdminSnapshot> {
@@ -270,10 +319,84 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
   if (payload.action === "launchWheel") {
     const queueState = await getRadioQueueState();
     const wheelSpinsOwed = queueState.session?.wheelSpinsOwed ?? 0;
-    if (wheelSpinsOwed <= 0) return getLiveOverlayAdminSnapshot();
-    next = { ...current, mode: "wheel_ready", wheelOverlayActive: true, wheelOverlayLaunchedAt: now, wheelOverlayStatus: "ready", updatedAt: now };
-  } else if (payload.action === "clearWheel") {
-    next = { ...current, mode: "standby", wheelOverlayActive: false, wheelOverlayLaunchedAt: undefined, wheelOverlayStatus: "ready", updatedAt: now };
+    if (wheelSpinsOwed <= 0) throw new Error("No wheel spins are owed.");
+    next = {
+      ...current,
+      mode: "wheel_ready",
+      wheelOverlayActive: true,
+      wheelOverlayLaunchedAt: now,
+      wheelOverlayStatus: "ready",
+      wheelCeremonyStatus: "ready",
+      wheelCeremonyStartedAt: now,
+      wheelCeremonySpinStartedAt: undefined,
+      wheelCeremonyResultTrackId: undefined,
+      wheelCeremonyResultSelectedAt: undefined,
+      wheelCeremonySeed: randomSeed(),
+      wheelCeremonyJingleKey: "silent",
+      updatedAt: now,
+    };
+  } else if (payload.action === "spinWheel" || payload.action === "reencryptWheel") {
+    const currentStatus = normalizeWheelCeremonyStatus(current.wheelCeremonyStatus);
+    if (payload.action === "spinWheel" && !isActiveCeremony(currentStatus)) throw new Error("Launch the wheel before spinning.");
+    if (payload.action === "reencryptWheel" && currentStatus !== "result_pending" && currentStatus !== "spinning") throw new Error("Re-encrypt is only available before confirming a pending result.");
+    const queueState = await getRadioQueueState();
+    if ((queueState.session?.wheelSpinsOwed ?? 0) <= 0) throw new Error("No wheel spins are owed.");
+    const candidates = getWheelCandidatesFromQueue(queueState.queue);
+    const selected = pickRandomCandidate(candidates, payload.action === "reencryptWheel" ? current.wheelCeremonyResultTrackId : undefined);
+    if (!selected) throw new Error("No eligible Wheel Chosen candidates are available.");
+    const reencrypting = payload.action === "reencryptWheel";
+    next = {
+      ...current,
+      mode: reencrypting ? "wheel_reencrypting" : "wheel_spinning",
+      wheelOverlayActive: true,
+      wheelOverlayStatus: "active",
+      wheelCeremonyStatus: reencrypting ? "reencrypting" : "spinning",
+      wheelCeremonySpinStartedAt: now,
+      wheelCeremonyResultTrackId: selected.id,
+      wheelCeremonyResultSelectedAt: now,
+      wheelCeremonySeed: randomSeed(),
+      wheelCeremonyJingleKey: "silent",
+      artistName: selected.artistName,
+      trackTitle: selected.trackTitle,
+      updatedAt: now,
+    };
+  } else if (payload.action === "confirmWheel") {
+    const resultTrackId = cleanText(current.wheelCeremonyResultTrackId);
+    if (!resultTrackId) throw new Error("No wheel result is ready to confirm.");
+    const queueState = await getRadioQueueState();
+    const candidates = getWheelCandidatesFromQueue(queueState.queue);
+    const selected = candidates.find((candidate) => candidate.id === resultTrackId);
+    if (!selected) throw new Error("The selected wheel result is no longer eligible. Reroll or cancel the ceremony.");
+    await updateRadioTrack(resultTrackId, "wheel");
+    next = {
+      ...current,
+      mode: "wheel_confirmed",
+      wheelOverlayActive: true,
+      wheelOverlayStatus: "complete",
+      wheelCeremonyStatus: "confirmed",
+      wheelCeremonyResultSelectedAt: now,
+      artistName: selected.artistName,
+      trackTitle: selected.trackTitle,
+      updatedAt: now,
+    };
+  } else if (payload.action === "cancelWheel" || payload.action === "clearWheel") {
+    next = {
+      ...current,
+      mode: "standby",
+      wheelOverlayActive: false,
+      wheelOverlayLaunchedAt: undefined,
+      wheelOverlayStatus: "ready",
+      wheelCeremonyStatus: payload.action === "cancelWheel" ? "cancelled" : "idle",
+      wheelCeremonyStartedAt: undefined,
+      wheelCeremonySpinStartedAt: undefined,
+      wheelCeremonyResultTrackId: undefined,
+      wheelCeremonyResultSelectedAt: undefined,
+      wheelCeremonySeed: undefined,
+      wheelCeremonyJingleKey: "silent",
+      artistName: undefined,
+      trackTitle: undefined,
+      updatedAt: now,
+    };
   } else if (payload.action === "setSystemMessage") {
     next = { ...current, mode: "system_message", systemMessageActive: true, systemMessageTitle: cleanText(payload.title, "BARCODE SYSTEM MESSAGE"), systemMessage: cleanText(payload.message, "Stand by."), updatedAt: now };
   } else if (payload.action === "clearSystemMessage") {

@@ -194,7 +194,7 @@ function isActivePriorityTrack(entry: QueueEntry | null | undefined): boolean {
   return entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual";
 }
 
-function isWheelEligibleTrack(entry: QueueEntry | null | undefined): boolean {
+export function isWheelEligibleTrack(entry: QueueEntry | null | undefined): boolean {
   if (!entry) return false;
   return (!entry.lane || entry.lane === "regular") && entry.status === "queued" && (entry.priorityUpgradeStatus ?? "none") === "none" && !entry.priorityPausedAt;
 }

@@ -37,7 +37,8 @@ export function AdminLiveOverlayControl() {
       body: JSON.stringify(body),
     });
     if (!res.ok) {
-      setStatus("Overlay update failed.");
+      const errorBody = await res.json().catch(() => ({}));
+      setStatus(typeof errorBody.error === "string" ? errorBody.error : "Overlay update failed.");
       return;
     }
     setSnapshot(await res.json());
@@ -47,6 +48,11 @@ export function AdminLiveOverlayControl() {
   const scene = snapshot?.scene;
   const wheelOwed = scene?.wheelSpinsOwed ?? 0;
   const wheelActive = scene?.wheelOverlayActive === true;
+  const ceremony = scene?.wheelCeremony;
+  const candidates = snapshot?.wheelCandidates ?? [];
+  const result = ceremony?.resultTrack;
+  const canLaunch = wheelOwed > 0 && !wheelActive;
+  const canSpin = wheelOwed > 0 && ceremony?.status === "ready" && candidates.length > 0;
   const systemActive = snapshot?.overlayState.systemMessageActive === true;
   const wheelAttention = wheelOwed > 0 || wheelActive;
 
@@ -67,17 +73,29 @@ export function AdminLiveOverlayControl() {
       </div>
 
       <section className={wheelAttention ? "space-y-3 border border-cyan-300/50 bg-cyan-300/10 p-4" : "space-y-3 border border-border bg-surface p-4 opacity-80"}>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-cyan-200">Wheel</p>
-            <h3 className="mt-1 text-lg font-bold text-foreground">{wheelOwed} wheel spin{wheelOwed === 1 ? "" : "s"} owed.</h3>
-            {wheelAttention && <p className="mt-1 text-sm text-muted">Launch when ready to show the wheel on air. This visual trigger does not choose a winner, consume spins, or change queue state.</p>}
+            <h3 className="mt-1 text-lg font-bold text-foreground">{wheelActive ? sceneLabel(ceremony?.status) : wheelOwed > 0 ? "Wheel Spin Waiting" : "No Wheel Spin Waiting"}</h3>
+            <p className="mt-1 text-sm text-muted">{wheelOwed} wheel spin{wheelOwed === 1 ? "" : "s"} owed.</p>
+            {!wheelActive && wheelOwed > 0 && <p className="mt-1 text-sm text-muted">Launch when you are ready to show the wheel on air. Launch does not choose a winner, consume spins, or change queue state.</p>}
+            {ceremony?.status === "ready" && <p className="mt-1 text-sm text-muted">Candidates: {ceremony.candidateCount}. Awaiting host spin.</p>}
+            {ceremony?.status === "reencrypting" && <p className="mt-1 text-sm text-cyan-100">Re-encrypting signal before the next reveal…</p>}
+            {ceremony?.status === "spinning" && <p className="mt-1 text-sm text-cyan-100">Result incoming…</p>}
+            {ceremony?.status === "result_pending" && result && <p className="mt-1 text-sm text-cyan-100">Winner: <span className="font-bold text-foreground">{result.artistName} — {result.trackTitle}</span></p>}
+            {ceremony?.status === "confirmed" && result && <p className="mt-1 text-sm text-cyan-100">Confirmed: {result.artistName} — {result.trackTitle}. Overlay will return to automatic mode.</p>}
+            {wheelActive && candidates.length === 0 && <p className="mt-2 border border-danger/40 bg-danger/10 p-2 text-sm text-danger">No eligible Free/Regular queued tracks are available for Wheel Chosen.</p>}
           </div>
           <div className="flex flex-wrap gap-2">
-            {wheelOwed > 0 && !wheelActive && <button type="button" onClick={() => post({ action: "launchWheel" }, "Wheel overlay launched.")} className="border border-cyan-300 px-4 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Launch Wheel Overlay</button>}
-            {wheelActive && <button type="button" onClick={() => post({ action: "clearWheel" }, "Wheel overlay cleared; returning to auto.")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Clear Wheel Overlay / Return to Auto</button>}
+            {canLaunch && <button type="button" onClick={() => post({ action: "launchWheel" }, "Wheel ceremony launched.")} className="border border-cyan-300 px-4 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Launch Wheel</button>}
+            {ceremony?.status === "ready" && <button type="button" onClick={() => post({ action: "spinWheel" }, "Wheel spin started.")} disabled={!canSpin} className="border border-cyan-300 bg-cyan-300 px-4 py-2 text-xs uppercase tracking-widest text-background disabled:cursor-not-allowed disabled:opacity-40">Spin Wheel</button>}
+            {ceremony?.status === "result_pending" && <button type="button" onClick={() => post({ action: "confirmWheel" }, "Wheel Chosen confirmed through queue admin.")} className="border border-cyan-300 bg-cyan-300 px-4 py-2 text-xs uppercase tracking-widest text-background">Confirm Wheel Chosen</button>}
+            {ceremony?.status === "result_pending" && <button type="button" onClick={() => post({ action: "reencryptWheel" }, "Signal re-encryption started.")} disabled={candidates.length === 0} className="border border-cyan-300/70 px-4 py-2 text-xs uppercase tracking-widest text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40">Re-encrypt Signal</button>}
+            {wheelActive && <button type="button" onClick={() => post({ action: "cancelWheel" }, "Wheel ceremony cancelled; returning to auto.")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Cancel / Return to Auto</button>}
           </div>
         </div>
+        {ceremony?.status === "result_pending" && <p className="text-xs uppercase tracking-widest text-muted">Scramble and spin again before confirmation.</p>}
+        {wheelActive && candidates.length > 0 && <div className="grid gap-2 text-xs text-muted md:grid-cols-2 lg:grid-cols-3">{candidates.slice(0, 6).map((candidate) => <p key={candidate.id} className="border border-cyan-300/20 bg-background/40 p-2"><span className="text-cyan-100">{candidate.artistName}</span> — {candidate.trackTitle}</p>)}{candidates.length > 6 && <p className="border border-cyan-300/20 bg-background/40 p-2 text-cyan-100">+ {candidates.length - 6} more eligible signals</p>}</div>}
       </section>
 
       <details className="border border-border bg-background/40 p-4">

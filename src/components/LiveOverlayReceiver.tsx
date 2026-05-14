@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import type { LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
 
 type YTPlayer = {
@@ -42,7 +43,11 @@ function fallbackScene(): ResolvedLiveOverlayScene {
 function modeLabel(mode: ResolvedLiveOverlayScene["mode"]): string {
   if (mode === "now_playing") return "NOW PLAYING";
   if (mode === "artist_card") return "ARTIST CARD";
-  if (mode === "wheel_ready") return "WHEEL SIGNAL";
+  if (mode === "wheel_ready") return "WHEEL READY";
+  if (mode === "wheel_reencrypting") return "RE-ENCRYPTING";
+  if (mode === "wheel_spinning") return "WHEEL SPINNING";
+  if (mode === "wheel_result") return "WHEEL RESULT";
+  if (mode === "wheel_confirmed") return "WHEEL CHOSEN";
   if (mode === "video_placeholder") return "VIDEO LINK";
   if (mode === "system_message") return "SYSTEM";
   if (mode === "session_active") return "LIVE INTAKE";
@@ -51,7 +56,7 @@ function modeLabel(mode: ResolvedLiveOverlayScene["mode"]): string {
 }
 
 function frameTone(mode: ResolvedLiveOverlayScene["mode"]): string {
-  if (mode === "wheel_ready") return "live-overlay-stage--wheel";
+  if (mode === "wheel_ready" || mode === "wheel_reencrypting" || mode === "wheel_spinning" || mode === "wheel_result" || mode === "wheel_confirmed") return "live-overlay-stage--wheel";
   if (mode === "sponsor" || mode === "system_message") return "live-overlay-stage--message";
   if (mode === "video_placeholder") return "live-overlay-stage--video";
   return "";
@@ -59,6 +64,81 @@ function frameTone(mode: ResolvedLiveOverlayScene["mode"]): string {
 
 function showTrack(scene: ResolvedLiveOverlayScene): boolean {
   return Boolean((scene.mode === "now_playing" || scene.mode === "artist_card") && scene.track);
+}
+
+
+function wheelLabelMetrics(count: number) {
+  if (count <= 4) return { maxLength: 42, width: "58vmin", distance: "-4.8vmin", size: "4.3vmin", tracking: "0.04em", rail: "34vmin" };
+  if (count <= 6) return { maxLength: 36, width: "52vmin", distance: "-1.2vmin", size: "3.45vmin", tracking: "0.045em", rail: "31vmin" };
+  if (count <= 8) return { maxLength: 31, width: "47vmin", distance: "1.8vmin", size: "2.75vmin", tracking: "0.05em", rail: "28vmin" };
+  if (count <= 12) return { maxLength: 25, width: "40vmin", distance: "5.4vmin", size: "2.05vmin", tracking: "0.055em", rail: "24vmin" };
+  if (count <= 16) return { maxLength: 21, width: "35vmin", distance: "7.8vmin", size: "1.58vmin", tracking: "0.06em", rail: "21vmin" };
+  if (count <= 24) return { maxLength: 18, width: "30vmin", distance: "9.8vmin", size: "1.18vmin", tracking: "0.065em", rail: "18vmin" };
+  return { maxLength: 14, width: "24vmin", distance: "11.8vmin", size: "0.94vmin", tracking: "0.055em", rail: "14vmin" };
+}
+
+function shortWheelLabel(value: string, maxLength: number): string {
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  if (cleaned.length <= maxLength) return cleaned;
+  return `${cleaned.slice(0, Math.max(1, maxLength - 1)).trim()}…`;
+}
+
+function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
+  const ceremony = scene.wheelCeremony;
+  const candidates = ceremony?.displayCandidates ?? [];
+  const result = ceremony?.resultTrack;
+  const spinning = ceremony?.status === "spinning";
+  const candidateCount = Math.max(1, candidates.length);
+  const resultIndex = Math.max(0, candidates.findIndex((candidate) => candidate.id === result?.id));
+  const sliceDegrees = 360 / candidateCount;
+  const resultCenterAngle = resultIndex * sliceDegrees + sliceDegrees / 2;
+  const sliceColors = ["#67e8f9", "#0ea5e9", "#2563eb", "#7c3aed", "#c026d3", "#ff2b6d", "#ef4444", "#f97316", "#facc15", "#22c55e", "#e5e7eb", "#071426"];
+  const sliceBackground = candidates.length > 0 ? `conic-gradient(from -90deg, ${candidates.map((_, index) => `${sliceColors[index % sliceColors.length]} ${index * sliceDegrees}deg ${(index + 1) * sliceDegrees}deg`).join(", ")})` : "radial-gradient(circle, #67e8f9, #0284c7)";
+  const labelMetrics = wheelLabelMetrics(candidates.length);
+  const wheelStyle = {
+    "--wheel-final-rotation": `${1440 - resultCenterAngle}deg`,
+    "--wheel-spin-duration": `${Math.max(5, (ceremony?.spinDurationMs ?? 6500) / 1000)}s`,
+    "--wheel-slice-count": candidateCount,
+    "--wheel-slice-background": sliceBackground,
+    "--wheel-name-size": labelMetrics.size,
+    "--wheel-label-width": labelMetrics.width,
+    "--wheel-label-distance": labelMetrics.distance,
+    "--wheel-letter-spacing": labelMetrics.tracking,
+    "--wheel-rail-length": labelMetrics.rail,
+  } as CSSProperties;
+  const labelMaxLength = labelMetrics.maxLength;
+
+  return (
+    <div className={`live-overlay-wheel-scene live-overlay-wheel-scene--${ceremony?.status ?? "idle"} ${spinning ? "live-overlay-wheel-scene--spinning" : ""}`}>
+      {ceremony?.status === "reencrypting" && <div className="live-overlay-wheel-glitch" aria-hidden="true">RE-ENCRYPTING SIGNAL</div>}
+      <div className="live-overlay-wheel-heading" aria-live="polite">
+        <p className="live-overlay-mode">{modeLabel(scene.mode)}</p>
+        <h1>{scene.subtitle || scene.title}</h1>
+      </div>
+
+      <div className="live-overlay-wheel-wrap">
+        <div className="live-overlay-wheel-pointer" aria-hidden="true" />
+        <div className="live-overlay-wheel" style={wheelStyle}>
+          <div className="live-overlay-wheel-slices" aria-hidden="true" />
+          {candidates.length === 0 ? <span className="live-overlay-wheel-empty">NO CANDIDATES</span> : candidates.map((candidate, index) => {
+            const angle = index * sliceDegrees + sliceDegrees / 2;
+            const label = shortWheelLabel(candidate.artistName, labelMaxLength);
+            const labelStyle = { "--wheel-label-angle": `${angle}deg` } as CSSProperties;
+            return (
+              <span key={candidate.id} className="live-overlay-wheel-slice-label" style={labelStyle} title={`${candidate.artistName} — ${candidate.trackTitle}`}>
+                <span>{label}</span>
+              </span>
+            );
+          })}
+          <div className="live-overlay-wheel-core"><span>10K</span><small>TAP WHEEL</small></div>
+        </div>
+      </div>
+
+      {(scene.message || result) && <div className="live-overlay-wheel-status">
+        {result && (ceremony?.status === "result_pending" || ceremony?.status === "confirmed") ? <><span>{ceremony.status === "confirmed" ? "SIGNAL LOCKED" : "RESULT PENDING"}</span><strong>{result.artistName}</strong><em>{result.trackTitle}</em></> : <><span>{scene.title}</span>{scene.message && <strong>{scene.message}</strong>}</>}
+      </div>}
+    </div>
+  );
 }
 
 function expectedYouTubeTime(sync: LiveOverlayYouTubeSync): number {
@@ -165,10 +245,11 @@ export function LiveOverlayReceiver() {
   const label = useMemo(() => modeLabel(scene.mode), [scene.mode]);
   const trackVisible = showTrack(scene);
   const youtubeVisible = scene.mode === "now_playing" && scene.automatic && scene.youtube && scene.track;
+  const wheelVisible = Boolean(scene.wheelCeremony);
 
   return (
     <div className="live-overlay-shell" aria-label="BARCODE Radio live overlay receiver">
-      <section className={`live-overlay-stage ${frameTone(scene.mode)} ${youtubeVisible ? "live-overlay-stage--youtube" : ""}`}>
+      <section className={`live-overlay-stage ${frameTone(scene.mode)} ${youtubeVisible ? "live-overlay-stage--youtube" : ""} ${wheelVisible ? "live-overlay-stage--wheel-ceremony" : ""}`}>
         <div className="live-overlay-noise" aria-hidden="true" />
         <div className="live-overlay-corners" aria-hidden="true" />
         <div className="live-overlay-header">
@@ -177,7 +258,9 @@ export function LiveOverlayReceiver() {
         </div>
 
         <main className="live-overlay-content">
-          {youtubeVisible && scene.youtube && scene.track ? (
+          {wheelVisible ? (
+            <WheelCeremonyOverlay scene={scene} />
+          ) : youtubeVisible && scene.youtube && scene.track ? (
             <div className="live-overlay-youtube-scene">
               <YouTubeOverlayPlayer sync={scene.youtube} />
               <div className="live-overlay-youtube-lower">
@@ -213,10 +296,10 @@ export function LiveOverlayReceiver() {
           )}
         </main>
 
-        <div className="live-overlay-footer">
+        {!wheelVisible && <div className="live-overlay-footer">
           <span>{scene.automatic ? "AUTO LIVE SOURCE" : "OVERRIDE LIVE SOURCE"} / 1:1</span>
           <span>{new Date(scene.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-        </div>
+        </div>}
       </section>
     </div>
   );

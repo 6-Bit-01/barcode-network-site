@@ -53,6 +53,7 @@ export function AdminLiveOverlayControl() {
   const result = ceremony?.resultTrack;
   const canLaunch = wheelOwed > 0 && !wheelActive;
   const canSpin = wheelOwed > 0 && ceremony?.status === "ready" && candidates.length > 0;
+  const canReencrypt = canSpin && !ceremony?.resultTrackId;
   const systemActive = snapshot?.overlayState.systemMessageActive === true;
   const wheelAttention = wheelOwed > 0 || wheelActive;
 
@@ -80,8 +81,9 @@ export function AdminLiveOverlayControl() {
             <p className="mt-1 text-sm text-muted">{wheelOwed} wheel spin{wheelOwed === 1 ? "" : "s"} owed.</p>
             {!wheelActive && wheelOwed > 0 && <p className="mt-1 text-sm text-muted">Launch when you are ready to show the wheel on air. Launch does not choose a winner, consume spins, or change queue state.</p>}
             {ceremony?.status === "ready" && <p className="mt-1 text-sm text-muted">Candidates: {ceremony.candidateCount}. Awaiting host spin.</p>}
-            {ceremony?.status === "reencrypting" && <p className="mt-1 text-sm text-cyan-100">Re-encrypting signal before the next reveal…</p>}
+            {ceremony?.status === "reencrypting" && <p className="mt-1 text-sm text-cyan-100">Re-encrypting candidates before the spin…</p>}
             {ceremony?.status === "spinning" && <p className="mt-1 text-sm text-cyan-100">Result incoming…</p>}
+            {ceremony?.status === "signal_lost" && <p className="mt-1 text-sm text-cyan-100">SIGNAL LOST — winner not present. Wheel still owed; spin again when ready.</p>}
             {ceremony?.status === "result_pending" && result && <p className="mt-1 text-sm text-cyan-100">Winner: <span className="font-bold text-foreground">{result.artistName} — {result.trackTitle}</span></p>}
             {ceremony?.status === "confirmed" && result && <p className="mt-1 text-sm text-cyan-100">Confirmed: {result.artistName} — {result.trackTitle}. Overlay will return to automatic mode.</p>}
             {wheelActive && candidates.length === 0 && <p className="mt-2 border border-danger/40 bg-danger/10 p-2 text-sm text-danger">No eligible Free/Regular queued tracks are available for Wheel Chosen.</p>}
@@ -89,12 +91,13 @@ export function AdminLiveOverlayControl() {
           <div className="flex flex-wrap gap-2">
             {canLaunch && <button type="button" onClick={() => post({ action: "launchWheel" }, "Wheel ceremony launched.")} className="border border-cyan-300 px-4 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Launch Wheel</button>}
             {ceremony?.status === "ready" && <button type="button" onClick={() => post({ action: "spinWheel" }, "Wheel spin started.")} disabled={!canSpin} className="border border-cyan-300 bg-cyan-300 px-4 py-2 text-xs uppercase tracking-widest text-background disabled:cursor-not-allowed disabled:opacity-40">Spin Wheel</button>}
+            {ceremony?.status === "ready" && <button type="button" onClick={() => post({ action: "reencryptWheel" }, "Signal re-encryption started.")} disabled={!canReencrypt} className="border border-cyan-300/70 px-4 py-2 text-xs uppercase tracking-widest text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40">Re-encrypt Signal</button>}
             {ceremony?.status === "result_pending" && <button type="button" onClick={() => post({ action: "confirmWheel" }, "Wheel Chosen confirmed through queue admin.")} className="border border-cyan-300 bg-cyan-300 px-4 py-2 text-xs uppercase tracking-widest text-background">Confirm Wheel Chosen</button>}
-            {ceremony?.status === "result_pending" && <button type="button" onClick={() => post({ action: "reencryptWheel" }, "Signal re-encryption started.")} disabled={candidates.length === 0} className="border border-cyan-300/70 px-4 py-2 text-xs uppercase tracking-widest text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40">Re-encrypt Signal</button>}
-            {wheelActive && <button type="button" onClick={() => post({ action: "cancelWheel" }, "Wheel ceremony cancelled; returning to auto.")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Cancel / Return to Auto</button>}
+            {ceremony?.status === "result_pending" && <button type="button" onClick={() => post({ action: "wheelWinnerNotHere" }, "Winner removed; wheel still owed. Spin again.")} className="border border-danger/70 px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background">Winner Not Here</button>}
+            {wheelActive && ceremony?.status !== "spinning" && ceremony?.status !== "reencrypting" && <button type="button" onClick={() => post({ action: "cancelWheel" }, "Wheel ceremony cancelled; returning to auto.")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Cancel / Return to Auto</button>}
           </div>
         </div>
-        {ceremony?.status === "result_pending" && <p className="text-xs uppercase tracking-widest text-muted">Scramble and spin again before confirmation.</p>}
+        {ceremony?.status === "result_pending" && <p className="text-xs uppercase tracking-widest text-muted">Confirm the winner, remove an absent winner without fulfilling the owed wheel, or cancel back to automatic.</p>}
         {wheelActive && candidates.length > 0 && <div className="grid gap-2 text-xs text-muted md:grid-cols-2 lg:grid-cols-3">{candidates.slice(0, 6).map((candidate) => <p key={candidate.id} className="border border-cyan-300/20 bg-background/40 p-2"><span className="text-cyan-100">{candidate.artistName}</span> — {candidate.trackTitle}</p>)}{candidates.length > 6 && <p className="border border-cyan-300/20 bg-background/40 p-2 text-cyan-100">+ {candidates.length - 6} more eligible signals</p>}</div>}
       </section>
 

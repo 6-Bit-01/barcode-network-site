@@ -185,13 +185,13 @@ function rememberWheelAudioArmed(armed: boolean): void {
 }
 
 function wheelLabelMetrics(count: number) {
-  if (count <= 4) return { maxLength: 64, width: "30vmin", radius: "34vmin", size: "4.6vmin", tracking: "0.01em" };
-  if (count <= 6) return { maxLength: 56, width: "27vmin", radius: "35vmin", size: "3.75vmin", tracking: "0.012em" };
-  if (count <= 8) return { maxLength: 48, width: "24vmin", radius: "36vmin", size: "2.95vmin", tracking: "0.014em" };
-  if (count <= 12) return { maxLength: 40, width: "20vmin", radius: "36.8vmin", size: "2.18vmin", tracking: "0.016em" };
-  if (count <= 16) return { maxLength: 34, width: "17vmin", radius: "37.5vmin", size: "1.66vmin", tracking: "0.018em" };
-  if (count <= 24) return { maxLength: 28, width: "14vmin", radius: "38.2vmin", size: "1.18vmin", tracking: "0.02em" };
-  return { maxLength: 22, width: "11.5vmin", radius: "39vmin", size: "0.92vmin", tracking: "0.015em" };
+  if (count <= 4) return { maxLength: 64, width: "28vmin", radius: "36vmin", size: "4.25vmin", tracking: "0.005em" };
+  if (count <= 6) return { maxLength: 58, width: "25vmin", radius: "37vmin", size: "3.35vmin", tracking: "0.006em" };
+  if (count <= 8) return { maxLength: 52, width: "22vmin", radius: "38vmin", size: "2.65vmin", tracking: "0.008em" };
+  if (count <= 12) return { maxLength: 42, width: "18vmin", radius: "39vmin", size: "2.02vmin", tracking: "0.01em" };
+  if (count <= 16) return { maxLength: 34, width: "15.5vmin", radius: "39.6vmin", size: "1.52vmin", tracking: "0.01em" };
+  if (count <= 24) return { maxLength: 28, width: "12.8vmin", radius: "40vmin", size: "1.12vmin", tracking: "0.01em" };
+  return { maxLength: 22, width: "10.8vmin", radius: "40.4vmin", size: "0.88vmin", tracking: "0.006em" };
 }
 
 function shortWheelLabel(value: string, maxLength: number): string {

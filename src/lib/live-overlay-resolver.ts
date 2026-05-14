@@ -2,7 +2,7 @@ import type { QueueSourceType, SponsorBreakStatus } from "./queue-types";
 
 export type OverlayMode = "standby" | "now_playing" | "artist_card" | "wheel_ready" | "wheel_reencrypting" | "wheel_spinning" | "wheel_result" | "wheel_confirmed" | "sponsor" | "video_placeholder" | "system_message" | "session_active";
 export type WheelOverlayStatus = "ready" | "intro" | "active" | "complete";
-export type WheelCeremonyStatus = "idle" | "ready" | "reencrypting" | "spinning" | "result_pending" | "confirmed" | "cancelled";
+export type WheelCeremonyStatus = "idle" | "ready" | "reencrypting" | "spinning" | "result_pending" | "confirmed" | "cancelled" | "signal_lost";
 
 export interface LiveOverlayTrackInput {
   id?: string;
@@ -156,6 +156,7 @@ const MIN_WHEEL_SPIN_DURATION_MS = 16000;
 const MAX_WHEEL_SPIN_DURATION_MS = 32000;
 const WHEEL_REENCRYPTING_MS = 2500;
 const WHEEL_CONFIRMED_RETURN_MS = 2200;
+const WHEEL_SIGNAL_LOST_MS = 3500;
 const MAX_WHEEL_DISPLAY_CANDIDATES = 32;
 
 export function safeLiveOverlayUrl(value: unknown): string | undefined {
@@ -218,7 +219,7 @@ function safeWheelCandidate(candidate: LiveOverlayWheelCandidateInput): Resolved
 }
 
 function normalizeWheelCeremonyStatus(value: unknown): WheelCeremonyStatus {
-  return value === "ready" || value === "reencrypting" || value === "spinning" || value === "result_pending" || value === "confirmed" || value === "cancelled" || value === "idle" ? value : "idle";
+  return value === "ready" || value === "reencrypting" || value === "spinning" || value === "result_pending" || value === "confirmed" || value === "cancelled" || value === "signal_lost" || value === "idle" ? value : "idle";
 }
 
 function timeMs(value?: string): number | null {
@@ -264,8 +265,12 @@ function resolveWheelCeremony(input: ResolveLiveOverlaySceneInput, now: Date): R
   if (storedStatus === "reencrypting" || storedStatus === "spinning") {
     const spinStartedMs = timeMs(overlayState?.wheelCeremonySpinStartedAt) ?? now.getTime();
     const elapsedMs = now.getTime() - spinStartedMs;
-    if (storedStatus === "reencrypting") status = elapsedMs < WHEEL_REENCRYPTING_MS ? "reencrypting" : "result_pending";
+    if (storedStatus === "reencrypting") status = elapsedMs < WHEEL_REENCRYPTING_MS ? "reencrypting" : "ready";
     else status = elapsedMs < spinDurationMs ? "spinning" : "result_pending";
+  }
+  if (storedStatus === "signal_lost") {
+    const signalLostAtMs = timeMs(overlayState?.wheelCeremonyResultSelectedAt) ?? timeMs(overlayState?.updatedAt) ?? now.getTime();
+    status = now.getTime() - signalLostAtMs < WHEEL_SIGNAL_LOST_MS ? "signal_lost" : "ready";
   }
   if (storedStatus === "confirmed") {
     const confirmedAtMs = timeMs(overlayState?.wheelCeremonyResultSelectedAt) ?? timeMs(overlayState?.updatedAt) ?? now.getTime();
@@ -314,10 +319,10 @@ export function resolveLiveOverlayScene(input: ResolveLiveOverlaySceneInput): Re
     const mode: OverlayMode = wheelCeremony.status === "reencrypting" ? "wheel_reencrypting" : wheelCeremony.status === "spinning" ? "wheel_spinning" : wheelCeremony.status === "result_pending" ? "wheel_result" : wheelCeremony.status === "confirmed" ? "wheel_confirmed" : "wheel_ready";
     return scene({
       mode,
-      reason: wheelCeremony.status === "ready" ? "Wheel ceremony was launched by the host." : wheelCeremony.status === "reencrypting" ? "Wheel result is being re-encrypted before host confirmation." : wheelCeremony.status === "spinning" ? "Wheel spin is running under host control." : wheelCeremony.status === "confirmed" ? "Wheel result was confirmed through the queue admin path." : "Wheel result is waiting for host confirmation.",
+      reason: wheelCeremony.status === "ready" ? "Wheel ceremony was launched by the host." : wheelCeremony.status === "reencrypting" ? "Wheel candidates are being re-encrypted before the spin." : wheelCeremony.status === "signal_lost" ? "Wheel winner was removed because the signal was not present." : wheelCeremony.status === "spinning" ? "Wheel spin is running under host control." : wheelCeremony.status === "confirmed" ? "Wheel result was confirmed through the queue admin path." : "Wheel result is waiting for host confirmation.",
       title: wheelCeremony.status === "confirmed" ? "WHEEL CHOSEN" : "10K TAP WHEEL",
-      subtitle: wheelCeremony.status === "ready" ? "READY" : wheelCeremony.status === "reencrypting" ? "RE-ENCRYPTING SIGNAL" : wheelCeremony.status === "spinning" ? "SPINNING" : wheelCeremony.status === "confirmed" ? "LOCKED IN" : "RESULT PENDING",
-      message: wheelCeremony.status === "ready" ? `Candidates: ${wheelCeremony.candidateCount}. Awaiting host spin.` : wheelCeremony.status === "reencrypting" ? "Signal scramble in progress." : wheelCeremony.status === "spinning" ? "Result incoming." : result ? `${result.artistName} — ${result.trackTitle}` : "Awaiting host confirmation.",
+      subtitle: wheelCeremony.status === "ready" ? "READY" : wheelCeremony.status === "reencrypting" ? "RE-ENCRYPTING SIGNAL" : wheelCeremony.status === "signal_lost" ? "SIGNAL LOST" : wheelCeremony.status === "spinning" ? "SPINNING" : wheelCeremony.status === "confirmed" ? "LOCKED IN" : "RESULT PENDING",
+      message: wheelCeremony.status === "ready" ? `Candidates: ${wheelCeremony.candidateCount}. Awaiting host spin.` : wheelCeremony.status === "reencrypting" ? "Signal scramble in progress." : wheelCeremony.status === "signal_lost" ? "WINNER NOT PRESENT — WHEEL STILL OWED" : wheelCeremony.status === "spinning" ? "Result incoming." : result ? `${result.artistName} — ${result.trackTitle}` : "Awaiting host confirmation.",
       wheelCeremony,
       priority: 100,
       automatic: false,

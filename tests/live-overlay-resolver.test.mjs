@@ -38,8 +38,11 @@ assert.equal(unsafe.sourceUrl, null, "unsafe link is not exposed");
 assert.equal(unsafe.artworkUrl, null, "private blob artwork is not exposed");
 
 const adminPanel = readFileSync("src/components/AdminLiveOverlayControl.tsx", "utf8");
+const liveOverlayController = readFileSync("src/lib/live-overlay.ts", "utf8");
 assert.equal(adminPanel.includes("Show Now Playing"), false, "admin panel does not expose normal manual scene picker");
 assert.equal(adminPanel.includes("Temporary System Message") && adminPanel.indexOf("Temporary System Message") > adminPanel.indexOf("<details"), true, "temporary system message is inside collapsed emergency details");
+assert.equal(adminPanel.includes("selectedWheelTrackId") && adminPanel.includes("Choose winning track") && adminPanel.includes("selectedTrackId"), true, "admin panel provides a grouped winner track picker before confirming Wheel Chosen");
+assert.equal(liveOverlayController.includes("submitterIdentityKeys") && liveOverlayController.includes("trackCount") && liveOverlayController.includes("findTrackInWinnerGroup"), true, "wheel controller groups candidates by submitter identity and resolves grouped winners to a selected track");
 
 const receiver = readFileSync("src/components/LiveOverlayReceiver.tsx", "utf8");
 const overlayCss = readFileSync("src/app/overlay/live/overlay-live.css", "utf8");
@@ -49,10 +52,10 @@ assert.equal(receiver.includes("live-overlay-wheel-roster"), false, "public whee
 assert.equal(receiver.includes(`!wheelVisible && <div className="live-overlay-footer"`), true, "public wheel ceremony hides the generic overlay footer");
 assert.equal(receiver.includes("live-overlay-wheel-slice-label"), true, "public wheel overlay renders candidate names as slice labels");
 assert.equal(receiver.includes("#7c3aed") && receiver.includes("#facc15") && receiver.includes("#22c55e"), true, "wheel slice palette includes expanded BARCODE colors");
-assert.equal(receiver.includes("wheelLabelMetrics") && receiver.includes("--wheel-label-width") && receiver.includes("--wheel-label-x") && receiver.includes("--wheel-label-rotation"), true, "wheel artist labels use dynamic sizing and slice-body placement variables");
+assert.equal(receiver.includes("wheelLabelMetrics") && receiver.includes("wheelLabelFit") && receiver.includes("--wheel-label-width") && receiver.includes("--wheel-label-x") && receiver.includes("--wheel-label-rotation"), true, "wheel artist labels use per-name dynamic sizing and slice-body placement variables");
 assert.equal(receiver.includes("Re-encrypting Signal") || receiver.includes("RE-ENCRYPTING"), true, "receiver has re-encryption ceremony copy");
 assert.equal(overlayCss.includes("width: min(92.5vmin, 100%)"), true, "wheel is sized to dominate the square overlay");
-assert.equal(overlayCss.includes("live-wheel-reencrypt-sweep") && overlayCss.includes("live-wheel-pointer-pulse"), true, "wheel ceremony CSS includes re-encryption and pointer polish effects");
+assert.equal(overlayCss.includes("live-wheel-reencrypt-sweep") && overlayCss.includes("live-wheel-reencrypt-brew") && overlayCss.includes("live-wheel-pointer-pulse"), true, "wheel ceremony CSS includes brewing re-encryption and pointer polish effects");
 assert.equal(overlayCss.includes("\"Arial Black\"") && overlayCss.includes("live-overlay-wheel::before") && overlayCss.includes("radial-gradient(ellipse at center"), true, "wheel CSS includes BARCODE-style typography, rim detailing, and integrated label glow");
 
 const eligibleCandidates = [
@@ -68,6 +71,10 @@ assert.equal(launched.mode, "wheel_ready", "launched wheel resolves to ready sce
 assert.equal(launched.wheelCeremony?.candidateCount, 2, "ready scene exposes safe eligible candidate count");
 assert.equal(launched.automatic, false, "launched wheel is host-controlled visual state");
 
+const groupedCandidate = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "ready", wheelOverlayActive: true, wheelCeremonySeed: "grouped-a" }, wheelCandidates: [{ id: "person:melanie", artistName: "Melanie", trackTitle: "3 eligible tracks", trackIds: ["m1", "m2", "m3"], trackCount: 3, tracks: [{ id: "m1", artistName: "Melanie", trackTitle: "First" }, { id: "m2", artistName: "Melanie", trackTitle: "Second" }, { id: "m3", artistName: "Melanie", trackTitle: "Third" }] }], nowPlaying: spotifyTrack });
+assert.equal(groupedCandidate.wheelCeremony?.candidateCount, 1, "grouped person appears once on the wheel");
+assert.equal(groupedCandidate.wheelCeremony?.displayCandidates[0]?.trackCount, 3, "grouped wheel entry preserves eligible track count");
+
 const spinning = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "spinning", wheelOverlayActive: true, wheelCeremonySpinStartedAt: "2026-05-14T00:00:00.000Z", wheelCeremonyResultTrackId: "free-2", wheelCeremonyResultSelectedAt: "2026-05-14T00:00:00.000Z" }, wheelCandidates: eligibleCandidates, now: new Date("2026-05-14T00:00:03.000Z") });
 assert.equal(spinning.mode, "wheel_spinning", "spin scene stays spinning during the visual spin window");
 assert.equal(spinning.wheelCeremony?.resultTrack?.id, "free-2", "server-selected result is stored while visual spin runs");
@@ -80,7 +87,7 @@ const reencrypting = resolveLiveOverlayScene({ currentSession: { ...session, whe
 assert.equal(reencrypting.mode, "wheel_reencrypting", "re-encrypting ceremony shows re-encryption scene first");
 assert.equal(reencrypting.subtitle, "RE-ENCRYPTING SIGNAL", "re-encrypting scene uses BARCODE-controlled copy");
 
-const reencryptedReady = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "reencrypting", wheelOverlayActive: true, wheelCeremonySpinStartedAt: "2026-05-14T00:00:00.000Z", wheelCeremonySeed: "shuffle-a" }, wheelCandidates: eligibleCandidates, now: new Date("2026-05-14T00:00:08.000Z") });
+const reencryptedReady = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "reencrypting", wheelOverlayActive: true, wheelCeremonySpinStartedAt: "2026-05-14T00:00:00.000Z", wheelCeremonySeed: "shuffle-a" }, wheelCandidates: eligibleCandidates, now: new Date("2026-05-14T00:00:02.000Z") });
 assert.equal(reencryptedReady.mode, "wheel_ready", "re-encrypting ceremony returns to ready without selecting a winner");
 assert.equal(reencryptedReady.wheelCeremony?.resultTrackId, undefined, "re-encrypting does not produce a final winner");
 

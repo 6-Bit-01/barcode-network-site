@@ -33,6 +33,7 @@ export interface LiveOverlayState extends LiveOverlayStateInput {
   wheelCeremonyStartedAt?: string;
   wheelCeremonySpinStartedAt?: string;
   wheelCeremonyResultTrackId?: string;
+  wheelCeremonyChosenTrackId?: string;
   wheelCeremonyResultSelectedAt?: string;
   wheelCeremonySeed?: string;
   wheelCeremonyJingleKey?: string;
@@ -43,6 +44,7 @@ export interface LiveOverlayState extends LiveOverlayStateInput {
 
 export interface LiveOverlayPayload {
   action?: "launchWheel" | "spinWheel" | "reencryptWheel" | "confirmWheel" | "wheelWinnerNotHere" | "cancelWheel" | "clearWheel" | "setSystemMessage" | "clearSystemMessage" | "launchVideoPlaceholder" | "clearVideoPlaceholder" | "clearAllOverrides" | "updatePlayerSync" | "clearPlayerSync";
+  selectedTrackId?: unknown;
   mode?: OverlayMode;
   title?: unknown;
   subtitle?: unknown;
@@ -166,11 +168,62 @@ function overlayTrackInput(entry: QueueEntry) {
 
 
 function wheelCandidateFromEntry(entry: QueueEntry): ResolvedWheelCeremonyTrack {
-  return { id: entry.id, artistName: displayArtist(entry), trackTitle: displayTitle(entry) };
+  return { id: entry.id, artistName: displayArtist(entry), trackTitle: displayTitle(entry), trackIds: [entry.id], trackCount: 1 };
+}
+
+function normalizePersonIdentity(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
+}
+
+function hashWheelIdentity(value: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function submitterIdentityKeys(entry: QueueEntry): string[] {
+  const keys = [
+    entry.submitterToken ? `token:${entry.submitterToken.trim()}` : null,
+    entry.normalizedTikTokHandle ? `handle:${entry.normalizedTikTokHandle.trim().toLowerCase().replace(/^@/, "")}` : null,
+    entry.contactEmail ? `email:${entry.contactEmail.trim().toLowerCase()}` : null,
+    normalizePersonIdentity(entry.submitterArtistName ?? entry.submittedArtistName ?? entry.artist) ? `artist:${normalizePersonIdentity(entry.submitterArtistName ?? entry.submittedArtistName ?? entry.artist)}` : null,
+  ].filter((key): key is string => Boolean(key));
+  return keys.length > 0 ? keys : [`track:${entry.id}`];
 }
 
 function getWheelCandidatesFromQueue(queue: QueueEntry[]): ResolvedWheelCeremonyTrack[] {
-  return queue.filter(isWheelEligibleTrack).map(wheelCandidateFromEntry);
+  const groups: ResolvedWheelCeremonyTrack[] = [];
+  const groupByKey = new Map<string, ResolvedWheelCeremonyTrack>();
+
+  for (const entry of queue.filter(isWheelEligibleTrack)) {
+    const track = wheelCandidateFromEntry(entry);
+    const keys = submitterIdentityKeys(entry);
+    const existing = keys.map((key) => groupByKey.get(key)).find((group): group is ResolvedWheelCeremonyTrack => Boolean(group));
+    if (existing) {
+      existing.tracks = [...(existing.tracks ?? []), track];
+      existing.trackIds = [...(existing.trackIds ?? []), entry.id];
+      existing.trackCount = existing.trackIds.length;
+      existing.trackTitle = `${existing.trackCount} eligible tracks`;
+      keys.forEach((key) => groupByKey.set(key, existing));
+      continue;
+    }
+
+    const group: ResolvedWheelCeremonyTrack = {
+      id: `person:${hashWheelIdentity(keys.join("|"))}`,
+      artistName: displayArtist(entry),
+      trackTitle: displayTitle(entry),
+      trackIds: [entry.id],
+      trackCount: 1,
+      tracks: [track],
+    };
+    groups.push(group);
+    keys.forEach((key) => groupByKey.set(key, group));
+  }
+
+  return groups.map((group) => ({ ...group, trackTitle: (group.trackCount ?? 1) > 1 ? `${group.trackCount} eligible tracks` : group.trackTitle }));
 }
 
 function randomSeed(): string {
@@ -197,6 +250,22 @@ function pickRandomCandidate(candidates: ResolvedWheelCeremonyTrack[], excludeId
   if (pool.length === 0) return null;
   const index = Math.floor(Math.random() * pool.length);
   return pool[Math.max(0, Math.min(pool.length - 1, index))] ?? null;
+}
+
+function effectiveWheelCeremonyStatus(state: LiveOverlayState, nowMs: number): WheelCeremonyStatus {
+  const status = normalizeWheelCeremonyStatus(state.wheelCeremonyStatus);
+  if (status !== "reencrypting" && status !== "spinning") return status;
+  const startedMs = typeof state.wheelCeremonySpinStartedAt === "string" ? new Date(state.wheelCeremonySpinStartedAt).getTime() : nowMs;
+  if (!Number.isFinite(startedMs)) return status;
+  const elapsedMs = nowMs - startedMs;
+  if (status === "reencrypting") return elapsedMs >= 1600 ? "ready" : "reencrypting";
+  return elapsedMs >= (normalizeSpinDurationMs(state.wheelCeremonySpinDurationMs) ?? 24_000) ? "result_pending" : "spinning";
+}
+
+function findTrackInWinnerGroup(group: ResolvedWheelCeremonyTrack, selectedTrackId?: string): ResolvedWheelCeremonyTrack | null {
+  const tracks = group.tracks ?? [];
+  if (selectedTrackId) return tracks.find((track) => track.id === selectedTrackId) ?? null;
+  return tracks.length === 1 ? tracks[0] ?? null : null;
 }
 
 
@@ -276,6 +345,7 @@ function normalizeState(input: unknown): LiveOverlayState {
     wheelCeremonyStartedAt: typeof raw.wheelCeremonyStartedAt === "string" ? raw.wheelCeremonyStartedAt : undefined,
     wheelCeremonySpinStartedAt: typeof raw.wheelCeremonySpinStartedAt === "string" ? raw.wheelCeremonySpinStartedAt : undefined,
     wheelCeremonyResultTrackId: cleanText(raw.wheelCeremonyResultTrackId),
+    wheelCeremonyChosenTrackId: cleanText(raw.wheelCeremonyChosenTrackId),
     wheelCeremonyResultSelectedAt: typeof raw.wheelCeremonyResultSelectedAt === "string" ? raw.wheelCeremonyResultSelectedAt : undefined,
     wheelCeremonySeed: cleanText(raw.wheelCeremonySeed),
     wheelCeremonyJingleKey: cleanText(raw.wheelCeremonyJingleKey, "silent"),
@@ -378,6 +448,7 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelCeremonyStartedAt: now,
       wheelCeremonySpinStartedAt: undefined,
       wheelCeremonyResultTrackId: undefined,
+      wheelCeremonyChosenTrackId: undefined,
       wheelCeremonyResultSelectedAt: undefined,
       wheelCeremonySeed: randomSeed(),
       wheelCeremonyJingleKey: "silent",
@@ -386,7 +457,7 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       updatedAt: now,
     };
   } else if (payload.action === "spinWheel" || payload.action === "reencryptWheel") {
-    const currentStatus = normalizeWheelCeremonyStatus(current.wheelCeremonyStatus);
+    const currentStatus = effectiveWheelCeremonyStatus(current, new Date(now).getTime());
     if (payload.action === "spinWheel" && currentStatus !== "ready" && currentStatus !== "signal_lost") throw new Error("Launch the wheel before spinning.");
     if (payload.action === "reencryptWheel" && (currentStatus !== "ready" || current.wheelCeremonyResultTrackId)) throw new Error("Re-encryption is only available before the wheel spin.");
     const queueState = await getRadioQueueState();
@@ -404,6 +475,7 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelCeremonyStatus: reencrypting ? "reencrypting" : "spinning",
       wheelCeremonySpinStartedAt: now,
       wheelCeremonyResultTrackId: selected?.id,
+      wheelCeremonyChosenTrackId: undefined,
       wheelCeremonyResultSelectedAt: selected ? now : undefined,
       wheelCeremonySeed: randomSeed(),
       wheelCeremonyJingleKey: "silent",
@@ -416,12 +488,13 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
   } else if (payload.action === "wheelWinnerNotHere") {
     const resultTrackId = cleanText(current.wheelCeremonyResultTrackId);
     if (!resultTrackId) throw new Error("No wheel result is ready to remove.");
-    const currentStatus = normalizeWheelCeremonyStatus(current.wheelCeremonyStatus);
+    const currentStatus = effectiveWheelCeremonyStatus(current, new Date(now).getTime());
     if (currentStatus !== "result_pending") throw new Error("Winner Not Here is only available for a pending wheel result.");
     const queueState = await getRadioQueueState();
     const selected = getWheelCandidatesFromQueue(queueState.queue).find((candidate) => candidate.id === resultTrackId);
     if (!selected) throw new Error("The selected wheel result is no longer removable from the active queue.");
-    await updateRadioTrack(resultTrackId, "remove");
+    const trackIdsToRemove = selected.trackIds?.length ? selected.trackIds : [resultTrackId];
+    for (const trackId of trackIdsToRemove) await updateRadioTrack(trackId, "remove");
     next = {
       ...current,
       mode: "wheel_ready",
@@ -430,6 +503,7 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelCeremonyStatus: "ready",
       wheelCeremonySpinStartedAt: undefined,
       wheelCeremonyResultTrackId: undefined,
+      wheelCeremonyChosenTrackId: undefined,
       wheelCeremonyResultSelectedAt: now,
       wheelCeremonySeed: randomSeed(),
       wheelCeremonyJingleKey: "silent",
@@ -440,21 +514,27 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       updatedAt: now,
     };
   } else if (payload.action === "confirmWheel") {
+    const currentStatus = effectiveWheelCeremonyStatus(current, new Date(now).getTime());
+    if (currentStatus !== "result_pending") throw new Error("Wheel result is not ready to confirm yet.");
     const resultTrackId = cleanText(current.wheelCeremonyResultTrackId);
     if (!resultTrackId) throw new Error("No wheel result is ready to confirm.");
     const queueState = await getRadioQueueState();
     const candidates = getWheelCandidatesFromQueue(queueState.queue);
-    const selected = candidates.find((candidate) => candidate.id === resultTrackId);
-    if (!selected) throw new Error("The selected wheel result is no longer eligible. Reroll or cancel the ceremony.");
-    await updateRadioTrack(resultTrackId, "wheel");
+    const winnerGroup = candidates.find((candidate) => candidate.id === resultTrackId);
+    if (!winnerGroup) throw new Error("The selected wheel result is no longer eligible. Reroll or cancel the ceremony.");
+    const selectedTrackId = cleanText(payload.selectedTrackId) ?? cleanText(current.wheelCeremonyChosenTrackId);
+    const selected = findTrackInWinnerGroup(winnerGroup, selectedTrackId);
+    if (!selected) throw new Error("Choose one eligible track from the winning artist before confirming Wheel Chosen.");
+    await updateRadioTrack(selected.id, "wheel");
     next = {
       ...current,
       mode: "wheel_confirmed",
       wheelOverlayActive: true,
       wheelOverlayStatus: "complete",
       wheelCeremonyStatus: "confirmed",
+      wheelCeremonyChosenTrackId: selected.id,
       wheelCeremonyResultSelectedAt: now,
-      artistName: selected.artistName,
+      artistName: winnerGroup.artistName,
       trackTitle: selected.trackTitle,
       updatedAt: now,
     };
@@ -469,6 +549,7 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       wheelCeremonyStartedAt: undefined,
       wheelCeremonySpinStartedAt: undefined,
       wheelCeremonyResultTrackId: undefined,
+      wheelCeremonyChosenTrackId: undefined,
       wheelCeremonyResultSelectedAt: undefined,
       wheelCeremonySeed: undefined,
       wheelCeremonyJingleKey: "silent",

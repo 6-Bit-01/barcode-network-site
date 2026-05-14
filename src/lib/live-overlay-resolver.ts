@@ -151,6 +151,9 @@ export interface LiveOverlayStateInput {
   wheelCeremonyResultSelectedAt?: string;
   wheelCeremonySeed?: string;
   wheelCeremonyPreviousSeed?: string;
+  wheelCeremonyCandidateOrder?: string[];
+  wheelCeremonyPreviousCandidateOrder?: string[];
+  wheelCeremonyReencryptNonce?: string;
   wheelCeremonyReencryptCycleId?: string;
   wheelCeremonyJingleKey?: string;
   wheelCeremonySpinDurationMs?: number;
@@ -226,6 +229,9 @@ export interface ResolvedWheelCeremonyScene {
   resultSelectedAt?: string;
   seed?: string;
   previousSeed?: string;
+  candidateOrder?: string[];
+  previousCandidateOrder?: string[];
+  reencryptNonce?: string;
   reencryptCycleId?: string;
   jingleKey?: string;
   spinDurationMs: number;
@@ -258,7 +264,7 @@ const BLOCKED_HOSTS = ["drive.google.com", "dropbox.com", "wetransfer.com", "bit
 const DEFAULT_WHEEL_SPIN_DURATION_MS = 24000;
 const MIN_WHEEL_SPIN_DURATION_MS = 16000;
 const MAX_WHEEL_SPIN_DURATION_MS = 32000;
-const WHEEL_REENCRYPTING_MS = 1850;
+const WHEEL_REENCRYPTING_MS = 2200;
 const WHEEL_REENCRYPT_REMAP_MS = 750;
 const WHEEL_CONFIRMED_RETURN_MS = 2200;
 const WHEEL_SIGNAL_LOST_MS = 3500;
@@ -371,6 +377,54 @@ function shuffledWheelCandidates(candidates: ResolvedWheelCeremonyTrack[], seed?
   return shuffled;
 }
 
+function cleanStringList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const cleaned = value.map(cleanDisplay).filter((entry): entry is string => Boolean(entry));
+  return cleaned.length > 0 ? [...new Set(cleaned)] : undefined;
+}
+
+export function orderedWheelCandidateIds(candidates: Pick<ResolvedWheelCeremonyTrack, "id">[], order?: string[], seed?: string): string[] {
+  const candidateIds = candidates.map((candidate) => candidate.id).filter(Boolean);
+  const candidateIdSet = new Set(candidateIds);
+  const ordered = (order ?? []).filter((candidateId) => candidateIdSet.has(candidateId));
+  const missing = candidateIds.filter((candidateId) => !ordered.includes(candidateId));
+  if (ordered.length > 0) return [...ordered, ...missing];
+  return shuffledWheelCandidates(candidates as ResolvedWheelCeremonyTrack[], seed).map((candidate) => candidate.id);
+}
+
+function orderWheelCandidates(candidates: ResolvedWheelCeremonyTrack[], order?: string[], seed?: string): ResolvedWheelCeremonyTrack[] {
+  const byId = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+  return orderedWheelCandidateIds(candidates, order, seed).map((candidateId) => byId.get(candidateId)).filter((candidate): candidate is ResolvedWheelCeremonyTrack => Boolean(candidate));
+}
+
+function rotateWheelOrder(order: string[], amount: number): string[] {
+  if (order.length === 0) return order;
+  const safeAmount = ((amount % order.length) + order.length) % order.length;
+  return [...order.slice(safeAmount), ...order.slice(0, safeAmount)];
+}
+
+export function derangedWheelCandidateOrder(candidates: Pick<ResolvedWheelCeremonyTrack, "id">[], previousOrder?: string[], seed?: string): string[] {
+  const baseline = orderedWheelCandidateIds(candidates, previousOrder, seed);
+  if (baseline.length <= 1) return baseline;
+  if (baseline.length === 2) return [baseline[1], baseline[0]];
+
+  const shuffled = [...baseline];
+  let state = seededHash(seed || `barcode-wheel-derange:${baseline.join("|")}`);
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    const swapIndex = state % (index + 1);
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+
+  for (let rotation = 0; rotation < shuffled.length; rotation += 1) {
+    const rotated = rotateWheelOrder(shuffled, rotation);
+    if (rotated.every((candidateId, index) => candidateId !== baseline[index])) return rotated;
+  }
+
+  const fallbackShift = (seededHash(`${seed ?? "fallback"}:${baseline.join("|")}`) % (baseline.length - 1)) + 1;
+  return rotateWheelOrder(baseline, fallbackShift);
+}
+
 function resolveWheelCeremony(input: ResolveLiveOverlaySceneInput, now: Date): ResolvedWheelCeremonyScene | null {
   const overlayState = input.overlayState ?? null;
   const storedStatus = normalizeWheelCeremonyStatus(overlayState?.wheelCeremonyStatus ?? (overlayState?.wheelOverlayActive ? "ready" : "idle"));
@@ -402,12 +456,16 @@ function resolveWheelCeremony(input: ResolveLiveOverlaySceneInput, now: Date): R
   }
   const currentSeed = cleanDisplay(overlayState?.wheelCeremonySeed);
   const previousSeed = cleanDisplay(overlayState?.wheelCeremonyPreviousSeed);
-  const displaySeed = storedStatus === "reencrypting" && status === "reencrypting" && reencryptElapsedMs < WHEEL_REENCRYPT_REMAP_MS ? previousSeed ?? currentSeed : currentSeed;
+  const currentOrder = cleanStringList(overlayState?.wheelCeremonyCandidateOrder);
+  const previousOrder = cleanStringList(overlayState?.wheelCeremonyPreviousCandidateOrder);
+  const usePreviousMapping = storedStatus === "reencrypting" && status === "reencrypting" && reencryptElapsedMs < WHEEL_REENCRYPT_REMAP_MS;
+  const displaySeed = usePreviousMapping ? previousSeed ?? currentSeed : currentSeed;
+  const displayOrder = usePreviousMapping ? previousOrder ?? currentOrder : currentOrder;
   return {
     status,
     storedStatus,
     candidateCount: candidates.length,
-    displayCandidates: shuffledWheelCandidates(candidates, displaySeed).slice(0, MAX_WHEEL_DISPLAY_CANDIDATES),
+    displayCandidates: orderWheelCandidates(candidates, displayOrder, displaySeed).slice(0, MAX_WHEEL_DISPLAY_CANDIDATES),
     hiddenCandidateCount: Math.max(0, candidates.length - MAX_WHEEL_DISPLAY_CANDIDATES),
     resultTrack,
     resultTrackId,
@@ -417,6 +475,9 @@ function resolveWheelCeremony(input: ResolveLiveOverlaySceneInput, now: Date): R
     resultSelectedAt: overlayState?.wheelCeremonyResultSelectedAt,
     seed: currentSeed,
     previousSeed,
+    candidateOrder: currentOrder,
+    previousCandidateOrder: previousOrder,
+    reencryptNonce: cleanDisplay(overlayState?.wheelCeremonyReencryptNonce) ?? cleanDisplay(overlayState?.wheelCeremonyReencryptCycleId),
     reencryptCycleId: cleanDisplay(overlayState?.wheelCeremonyReencryptCycleId),
     jingleKey: cleanDisplay(overlayState?.wheelCeremonyJingleKey) || "silent",
     spinDurationMs,

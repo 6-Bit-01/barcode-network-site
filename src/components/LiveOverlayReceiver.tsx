@@ -246,6 +246,10 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   const ceremony = scene.wheelCeremony;
   const candidates = ceremony?.displayCandidates ?? [];
   const result = ceremony?.resultTrack;
+  const reencryptNonce = ceremony?.reencryptNonce ?? ceremony?.reencryptCycleId;
+  const [visibleReencryptNonce, setVisibleReencryptNonce] = useState<string | null>(null);
+  const lastSeenReencryptNonceRef = useRef<string | undefined>(undefined);
+  const reencryptVisualActive = ceremony?.status === "reencrypting" || Boolean(reencryptNonce && visibleReencryptNonce === reencryptNonce);
   const spinning = ceremony?.status === "spinning";
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [audioArmed, setAudioArmed] = useState(() => readWheelAudioArmed());
@@ -257,7 +261,7 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   const sliceColors = ["#67e8f9", "#0ea5e9", "#2563eb", "#7c3aed", "#c026d3", "#ff2b6d", "#ef4444", "#f97316", "#facc15", "#22c55e", "#e5e7eb", "#071426"];
   const sliceBackground = candidates.length > 0 ? `conic-gradient(from 0deg, ${wheelSegments.map((segment, index) => `${sliceColors[index % sliceColors.length]} ${segment.startAngle}deg ${segment.endAngle}deg`).join(", ")})` : "radial-gradient(circle, #67e8f9, #0284c7)";
   const labelMetrics = wheelLabelMetrics(candidates.length);
-  const animationKey = ceremony?.status === "reencrypting" ? ceremony.reencryptCycleId ?? ceremony.seed ?? "reencrypting" : ceremony?.seed ?? ceremony?.status ?? "wheel";
+  const animationKey = reencryptVisualActive ? reencryptNonce ?? ceremony?.seed ?? "reencrypting" : ceremony?.seed ?? ceremony?.status ?? "wheel";
   const wheelStyle = {
     "--wheel-final-rotation": `${wheelFinalRotationForSegment(resultSegment)}deg`,
     "--wheel-spin-duration": `${Math.max(16, (ceremony?.spinDurationMs ?? 24000) / 1000)}s`,
@@ -271,6 +275,17 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
     "--wheel-winning-start": `${resultSegment.startAngle}deg`,
     "--wheel-winning-end": `${resultSegment.endAngle}deg`,
   } as CSSProperties;
+
+  useEffect(() => {
+    if (!reencryptNonce || lastSeenReencryptNonceRef.current === reencryptNonce) return undefined;
+    lastSeenReencryptNonceRef.current = reencryptNonce;
+    setVisibleReencryptNonce(reencryptNonce);
+    const timeout = window.setTimeout(() => {
+      setVisibleReencryptNonce((current) => current === reencryptNonce ? null : current);
+    }, 2200);
+    return () => window.clearTimeout(timeout);
+  }, [reencryptNonce]);
+
   useEffect(() => {
     if (!audioJustArmed) return undefined;
     const timeout = window.setTimeout(() => setAudioJustArmed(false), 2200);
@@ -352,10 +367,10 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   }
 
   return (
-    <div key={animationKey} className={`live-overlay-wheel-scene live-overlay-wheel-scene--${ceremony?.status ?? "idle"} ${spinning ? "live-overlay-wheel-scene--spinning" : ""}`} data-wheel-seed={ceremony?.seed} data-wheel-animation-key={animationKey}>
+    <div className={`live-overlay-wheel-scene live-overlay-wheel-scene--${ceremony?.status ?? "idle"} ${reencryptVisualActive ? "live-overlay-wheel-scene--reencrypting" : ""} ${spinning ? "live-overlay-wheel-scene--spinning" : ""}`} data-wheel-seed={ceremony?.seed} data-wheel-animation-key={animationKey}>
       {!audioArmed ? <button type="button" className="live-overlay-wheel-audio-arm" onClick={enableWheelAudio}>ENABLE OPTIONAL WHEEL AUDIO</button> : audioJustArmed ? <div className="live-overlay-wheel-audio-armed" role="status">OPTIONAL AUDIO ARMED</div> : null}
       {audioNotice && <div className="live-overlay-wheel-audio-notice" role="status">{audioNotice}</div>}
-      {ceremony?.status === "reencrypting" && <div className="live-overlay-wheel-glitch" aria-hidden="true">RE-ENCRYPTING SIGNAL</div>}
+      {reencryptVisualActive && <div key={`glitch-${animationKey}`} className="live-overlay-wheel-glitch-stack" aria-hidden="true"><div className="live-overlay-wheel-static" /><div className="live-overlay-wheel-glitch">RE-ENCRYPTING SIGNAL</div><div className="live-overlay-wheel-corrupt-labels">010010 // SIGNAL MUTATING // 101101</div></div>}
       <div className="live-overlay-wheel-heading" aria-live="polite">
         <p className="live-overlay-mode">{modeLabel(scene.mode)}</p>
         <h1>{scene.subtitle || scene.title}</h1>

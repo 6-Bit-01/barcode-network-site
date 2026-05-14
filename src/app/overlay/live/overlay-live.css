@@ -480,7 +480,10 @@ body > div:last-of-type {
 }
 
 .live-overlay-wheel-scene--reencrypting .live-overlay-wheel-slice-label > span {
-  animation: live-wheel-label-scramble 0.32s steps(2, end) infinite;
+  color: transparent;
+  text-shadow: 0 0 0.8vmin rgba(255,255,255,0.9), 0.5vmin 0 rgba(255,43,109,0.7), -0.5vmin 0 rgba(103,232,249,0.7);
+  filter: blur(0.35vmin) contrast(1.8);
+  animation: live-wheel-label-scramble 0.24s steps(2, end) infinite;
 }
 
 .live-overlay-wheel-scene--reencrypting .live-overlay-wheel-slice-label:nth-of-type(2n) > span {
@@ -633,11 +636,12 @@ body > div:last-of-type {
 }
 
 .live-overlay-wheel-scene--reencrypting .live-overlay-wheel {
-  animation: live-wheel-reencrypt-brew 1.85s ease-in-out both;
+  animation: live-wheel-reencrypt-brew 2.2s ease-in-out both;
 }
 
 .live-overlay-wheel-scene--reencrypting .live-overlay-wheel-slices {
-  filter: blur(0.48vmin) saturate(0.62) contrast(1.46);
+  filter: blur(0.9vmin) saturate(0.45) contrast(1.9);
+  opacity: 0.72;
 }
 
 .live-overlay-wheel-scene--reencrypting .live-overlay-wheel::before {
@@ -671,11 +675,53 @@ body > div:last-of-type {
   animation: live-wheel-reencrypt-sweep 0.42s steps(3, end) infinite;
 }
 
+.live-overlay-wheel-glitch-stack {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  pointer-events: none;
+  overflow: hidden;
+  animation: live-wheel-glitch-stack-pop 2.2s steps(2, end) both;
+}
+
+.live-overlay-wheel-static {
+  position: absolute;
+  inset: -8%;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 43, 109, 0.44), transparent 16%),
+    radial-gradient(circle at 82% 68%, rgba(103, 232, 249, 0.5), transparent 20%),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.22) 0 0.18vmin, transparent 0.2vmin 0.62vmin),
+    repeating-linear-gradient(0deg, rgba(15,23,42,0) 0 0.7vmin, rgba(255,255,255,0.16) 0.74vmin 0.96vmin);
+  mix-blend-mode: screen;
+  opacity: 0.82;
+  filter: blur(0.22vmin) contrast(1.6);
+  animation: live-wheel-static-surge 0.2s steps(2, end) infinite;
+}
+
+.live-overlay-wheel-corrupt-labels {
+  position: absolute;
+  left: 50%;
+  bottom: 17%;
+  z-index: 12;
+  border: 0.18vmin solid rgba(255, 43, 109, 0.7);
+  background: rgba(2, 6, 23, 0.82);
+  color: #f0f9ff;
+  font-family: var(--font-geist-mono), "IBM Plex Mono", monospace;
+  font-size: clamp(0.64rem, 1.8vmin, 1.2rem);
+  font-weight: 950;
+  letter-spacing: 0.2em;
+  padding: 0.7vmin 1.1vmin;
+  text-transform: uppercase;
+  transform: translateX(-50%);
+  text-shadow: 0.3vmin 0 #ff2b6d, -0.3vmin 0 #67e8f9;
+  animation: live-wheel-corrupt-labels 0.28s steps(2, end) infinite;
+}
+
 .live-overlay-wheel-glitch {
   position: absolute;
   top: 45%;
   left: 50%;
-  z-index: 10;
+  z-index: 12;
   border: 0.28vmin solid rgba(255, 255, 255, 0.82);
   background: rgba(2, 6, 23, 0.9);
   padding: 1vmin 1.6vmin;
@@ -863,9 +909,10 @@ body > div:last-of-type {
 
 @keyframes live-wheel-reencrypt-brew {
   0% { filter: blur(0) hue-rotate(0deg) saturate(1); transform: scale(1) rotate(0deg); }
-  18% { filter: blur(0.3vmin) hue-rotate(95deg) saturate(0.58) contrast(1.5); transform: scale(1.018) rotate(-0.55deg); }
-  42% { filter: blur(0.62vmin) hue-rotate(-130deg) saturate(1.7) contrast(0.82); transform: scale(0.986) rotate(0.7deg); }
-  70% { filter: blur(0.38vmin) hue-rotate(180deg) saturate(0.86) contrast(1.62); transform: scale(1.01) rotate(-0.28deg); }
+  12% { filter: blur(1.1vmin) hue-rotate(95deg) saturate(0.45) contrast(1.9); transform: scale(1.035) rotate(-1.1deg) translateX(-0.6vmin); }
+  36% { filter: blur(1.55vmin) hue-rotate(-130deg) saturate(2.2) contrast(0.72); transform: scale(0.97) rotate(1.4deg) translateX(0.7vmin); }
+  58% { filter: blur(1.25vmin) hue-rotate(180deg) saturate(0.62) contrast(2.1); transform: scale(1.026) rotate(-0.8deg) translateY(-0.5vmin); }
+  78% { filter: blur(0.55vmin) hue-rotate(-45deg) saturate(1.4) contrast(1.5); transform: scale(1.008) rotate(0.3deg); }
   100% { filter: blur(0) hue-rotate(0deg) saturate(1); transform: scale(1) rotate(0deg); }
 }
 
@@ -921,6 +968,25 @@ body > div:last-of-type {
   0%, 100% { clip-path: inset(0 0 0 0); transform: translate(-50%, -50%) skewX(0deg); }
   35% { clip-path: inset(10% 0 18% 0); transform: translate(-49%, -51%) skewX(-6deg); }
   70% { clip-path: inset(18% 0 8% 0); transform: translate(-51%, -49%) skewX(5deg); }
+}
+
+
+@keyframes live-wheel-glitch-stack-pop {
+  0% { opacity: 0; filter: brightness(2.4); }
+  4% { opacity: 1; filter: brightness(1.7); }
+  72% { opacity: 0.96; filter: brightness(1.35); }
+  100% { opacity: 0; filter: brightness(1); }
+}
+
+@keyframes live-wheel-static-surge {
+  0%, 100% { transform: translate3d(-1.2vmin, 0, 0) skewX(-2deg); opacity: 0.62; }
+  50% { transform: translate3d(1.4vmin, -0.8vmin, 0) skewX(3deg); opacity: 0.92; }
+}
+
+@keyframes live-wheel-corrupt-labels {
+  0%, 100% { clip-path: inset(0 0 0 0); transform: translateX(-50%) skewX(0deg); }
+  35% { clip-path: inset(22% 0 18% 0); transform: translateX(calc(-50% - 0.8vmin)) skewX(-8deg); }
+  70% { clip-path: inset(8% 0 34% 0); transform: translateX(calc(-50% + 0.7vmin)) skewX(7deg); }
 }
 
 @keyframes live-wheel-result-pop {

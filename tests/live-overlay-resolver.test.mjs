@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { resolveLiveOverlayScene, WHEEL_RIGHT_POINTER_ANGLE_DEGREES, wheelFinalRotationForSlice, wheelSliceIndexAtPointer } from "../src/lib/live-overlay-resolver.ts";
+import { buildWheelSegments, resolveLiveOverlayScene, WHEEL_RIGHT_POINTER_ANGLE_DEGREES, wheelFinalRotationForSegment, wheelFinalRotationForSlice, wheelSegmentAtPointer, wheelSliceIndexAtPointer } from "../src/lib/live-overlay-resolver.ts";
 
 const session = { sessionId: "s1", status: "open", queueOpen: true, wheelSpinsOwed: 0, sponsorBreakStatus: "not_due", broadcastPhase: "broadcast_active" };
 const youtubeTrack = { id: "yt1", submittedArtistName: "Artist Name", submittedSongTitle: "Video Track", sourceType: "youtube", sourceArtworkUrl: "https://img.youtube.com/vi/abcdefghijk/hqdefault.jpg", link: "https://youtube.com/watch?v=abcdefghijk", durationLabel: "3:30", youtubeVideoId: "abcdefghijk" };
@@ -19,6 +19,13 @@ assert.equal(wheelSliceIndexAtPointer(13, finalRotationForPointerLocalAngle(201.
 assert.equal(wheelSliceIndexAtPointer(8, finalRotationForPointerLocalAngle(45.001) + 360 * 9), 1, "final rotation wrapping past multiple turns still normalizes to the correct slice");
 assert.equal(wheelSliceIndexAtPointer(4, 0, WHEEL_RIGHT_POINTER_ANGLE_DEGREES), 1, "right-side pointer uses 3 o'clock selector rather than top selector");
 assert.equal(wheelSliceIndexAtPointer(8, wheelFinalRotationForSlice(8, 6)), 6, "final rotation helper lands the stored winner slice under the right pointer");
+const weightedSegments = buildWheelSegments([{ id: "small-a", label: "Small A", weight: 1 }, { id: "large", label: "Large", weight: 2 }, { id: "small-b", label: "Small B", weight: 1 }]);
+assert.deepEqual(weightedSegments.map((segment) => [segment.startAngle, segment.endAngle]), [[0, 90], [90, 270], [270, 360]], "weighted segments expose variable section boundaries");
+assert.equal(wheelSegmentAtPointer(weightedSegments, finalRotationForPointerLocalAngle(180)).candidateId, "large", "weighted hit test resolves inside larger segment");
+assert.equal(wheelSegmentAtPointer(weightedSegments, finalRotationForPointerLocalAngle(90)).candidateId, "large", "exact boundary belongs to next clockwise segment");
+assert.equal(wheelSegmentAtPointer(weightedSegments, wheelFinalRotationForSegment(weightedSegments[2])).candidateId, "small-b", "weighted final rotation helper lands the stored segment under the right pointer");
+const relabeledWeightedSegments = buildWheelSegments([{ id: "small-a", label: "Tiny", weight: 1 }, { id: "large", label: "Very Long Label That Wraps", weight: 2 }, { id: "small-b", label: "Six", weight: 1 }]);
+assert.equal(wheelSegmentAtPointer(relabeledWeightedSegments, finalRotationForPointerLocalAngle(180)).candidateId, "large", "label text changes do not affect segment geometry winner result");
 
 assert.equal(resolveLiveOverlayScene({}).mode, "standby", "no session resolves to standby");
 assert.equal(resolveLiveOverlayScene({ currentSession: session }).mode, "session_active", "open session with no track resolves to intake/session scene");
@@ -67,7 +74,7 @@ assert.equal(receiver.includes(`!wheelVisible && <div className="live-overlay-fo
 assert.equal(receiver.includes("live-overlay-wheel-slice-label"), true, "public wheel overlay renders candidate names as slice labels");
 assert.equal(receiver.includes("#7c3aed") && receiver.includes("#facc15") && receiver.includes("#22c55e"), true, "wheel slice palette includes expanded BARCODE colors");
 assert.equal(receiver.includes("wheelLabelMetrics") && receiver.includes("wheelLabelFit") && receiver.includes("--wheel-name-size") && receiver.includes("--wheel-label-width") && receiver.includes("--wheel-label-x") && receiver.includes("--wheel-label-rotation"), true, "wheel artist labels use per-name dynamic sizing and slice-body placement variables");
-assert.equal(receiver.includes("Winner selection is based on slice geometry") && receiver.includes("wheelFinalRotationForSlice"), true, "wheel receiver documents labels as visual-only and lands stored winners with slice geometry");
+assert.equal(receiver.includes("Winner selection is based on slice geometry") && receiver.includes("wheelFinalRotationForSegment") && receiver.includes("live-overlay-wheel-winning-segment"), true, "wheel receiver documents labels as visual-only, lands stored winners with segment geometry, and renders a segment highlight");
 assert.equal(receiver.includes("Re-encrypting Signal") || receiver.includes("RE-ENCRYPTING"), true, "receiver has re-encryption ceremony copy");
 assert.equal(overlayCss.includes("width: min(92.5vmin, 100%)"), true, "wheel is sized to dominate the square overlay");
 assert.equal(overlayCss.includes("live-wheel-reencrypt-sweep") && overlayCss.includes("live-wheel-reencrypt-brew") && overlayCss.includes("live-wheel-pointer-pulse"), true, "wheel ceremony CSS includes brewing re-encryption and pointer polish effects");

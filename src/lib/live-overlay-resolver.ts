@@ -6,29 +6,92 @@ export type WheelCeremonyStatus = "idle" | "ready" | "reencrypting" | "spinning"
 
 export const WHEEL_RIGHT_POINTER_ANGLE_DEGREES = 90;
 
+export interface WheelSegmentInput {
+  id: string;
+  label: string;
+  weight?: number;
+}
+
+export interface WheelSegment {
+  id: string;
+  candidateId: string;
+  displayLabel: string;
+  startAngle: number;
+  endAngle: number;
+  centerAngle: number;
+  angleSize: number;
+  weight: number;
+  index: number;
+}
+
 export function normalizeWheelAngle(degrees: number): number {
   if (!Number.isFinite(degrees)) return 0;
   return ((degrees % 360) + 360) % 360;
 }
 
+function normalizeWheelWeight(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 1;
+}
+
+export function buildWheelSegments(entries: WheelSegmentInput[]): WheelSegment[] {
+  const safeEntries = entries.length > 0 ? entries : [{ id: "empty", label: "NO CANDIDATES", weight: 1 }];
+  const weights = safeEntries.map((entry) => normalizeWheelWeight(entry.weight));
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0) || 1;
+  let cursor = 0;
+
+  return safeEntries.map((entry, index) => {
+    const weight = weights[index] ?? 1;
+    const startAngle = cursor;
+    const angleSize = index === safeEntries.length - 1 ? 360 - startAngle : 360 * weight / totalWeight;
+    const endAngle = index === safeEntries.length - 1 ? 360 : startAngle + angleSize;
+    cursor = endAngle;
+    return {
+      id: `segment:${entry.id}`,
+      candidateId: entry.id,
+      displayLabel: entry.label,
+      startAngle,
+      endAngle,
+      centerAngle: startAngle + angleSize / 2,
+      angleSize,
+      weight,
+      index,
+    };
+  });
+}
+
+export function wheelPointerLocalAngle(finalRotationDegrees: number, pointerAngleDegrees = WHEEL_RIGHT_POINTER_ANGLE_DEGREES): number {
+  return normalizeWheelAngle(pointerAngleDegrees - normalizeWheelAngle(finalRotationDegrees));
+}
+
+export function wheelSegmentAtPointer(segments: WheelSegment[], finalRotationDegrees: number, pointerAngleDegrees = WHEEL_RIGHT_POINTER_ANGLE_DEGREES): WheelSegment {
+  const safeSegments = segments.length > 0 ? segments : buildWheelSegments([]);
+  // Wheel labels are visual only. Winner selection is based exclusively on segment geometry under the right-side pointer.
+  // Boundary rule: each segment owns [startAngle, endAngle), so an exact boundary belongs to the next clockwise segment.
+  const pointerLocalAngle = wheelPointerLocalAngle(finalRotationDegrees, pointerAngleDegrees);
+  return safeSegments.find((segment, index) => pointerLocalAngle >= segment.startAngle && (pointerLocalAngle < segment.endAngle || index === safeSegments.length - 1 && pointerLocalAngle < 360)) ?? safeSegments[0];
+}
+
 export function wheelSliceIndexAtPointer(entryCount: number, finalRotationDegrees: number, pointerAngleDegrees = WHEEL_RIGHT_POINTER_ANGLE_DEGREES): number {
   const count = Math.max(1, Math.floor(entryCount));
-  const sliceSize = 360 / count;
-  // Winner selection is based only on slice geometry. Labels are visual only and must not affect this math.
-  // Boundary rule: each slice owns [startAngle, endAngle), so an exact boundary belongs to the next slice.
-  const pointerLocalAngle = normalizeWheelAngle(pointerAngleDegrees - normalizeWheelAngle(finalRotationDegrees));
-  return Math.min(count - 1, Math.floor(pointerLocalAngle / sliceSize));
+  const segments = buildWheelSegments(Array.from({ length: count }, (_, index) => ({ id: `slice-${index}`, label: `Slice ${index + 1}` })));
+  return wheelSegmentAtPointer(segments, finalRotationDegrees, pointerAngleDegrees).index;
 }
 
 export function wheelSliceCenterAngle(entryCount: number, index: number): number {
   const count = Math.max(1, Math.floor(entryCount));
   const safeIndex = Math.max(0, Math.min(count - 1, Math.floor(index)));
-  const sliceSize = 360 / count;
-  return safeIndex * sliceSize + sliceSize / 2;
+  return buildWheelSegments(Array.from({ length: count }, (_, segmentIndex) => ({ id: `slice-${segmentIndex}`, label: `Slice ${segmentIndex + 1}` })))[safeIndex]?.centerAngle ?? 0;
+}
+
+export function wheelFinalRotationForSegment(segment: WheelSegment, fullTurns = 4, pointerAngleDegrees = WHEEL_RIGHT_POINTER_ANGLE_DEGREES): number {
+  return (Math.max(0, Math.floor(fullTurns)) * 360) + pointerAngleDegrees - segment.centerAngle;
 }
 
 export function wheelFinalRotationForSlice(entryCount: number, index: number, fullTurns = 4, pointerAngleDegrees = WHEEL_RIGHT_POINTER_ANGLE_DEGREES): number {
-  return (Math.max(0, Math.floor(fullTurns)) * 360) + pointerAngleDegrees - wheelSliceCenterAngle(entryCount, index);
+  const count = Math.max(1, Math.floor(entryCount));
+  const safeIndex = Math.max(0, Math.min(count - 1, Math.floor(index)));
+  const segment = buildWheelSegments(Array.from({ length: count }, (_, segmentIndex) => ({ id: `slice-${segmentIndex}`, label: `Slice ${segmentIndex + 1}` })))[safeIndex];
+  return wheelFinalRotationForSegment(segment ?? buildWheelSegments([])[0], fullTurns, pointerAngleDegrees);
 }
 
 export interface LiveOverlayTrackInput {
@@ -59,6 +122,7 @@ export interface LiveOverlayWheelCandidateInput {
   trackIds?: string[];
   trackCount?: number;
   tracks?: ResolvedWheelCeremonyTrack[];
+  weight?: number;
 }
 
 export interface LiveOverlayStateInput {
@@ -143,6 +207,7 @@ export interface ResolvedWheelCeremonyTrack {
   trackIds?: string[];
   trackCount?: number;
   tracks?: ResolvedWheelCeremonyTrack[];
+  weight?: number;
 }
 
 export interface ResolvedWheelCeremonyScene {
@@ -262,6 +327,7 @@ function safeWheelCandidate(candidate: LiveOverlayWheelCandidateInput): Resolved
     trackIds,
     trackCount,
     tracks,
+    weight: normalizeWheelWeight(candidate.weight),
   };
 }
 

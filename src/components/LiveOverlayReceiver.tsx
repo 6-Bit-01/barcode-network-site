@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { wheelFinalRotationForSlice } from "@/lib/live-overlay-resolver";
+import { buildWheelSegments, wheelFinalRotationForSegment } from "@/lib/live-overlay-resolver";
 import type { LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
 
 type YTPlayer = {
@@ -207,11 +207,11 @@ function wheelLabelMetrics(count: number) {
   return { width: 12.4, radius: 36.7, size: 0.98, tracking: "0", lines: 2 };
 }
 
-function wheelLabelFit(value: string, count: number) {
+function wheelLabelFit(value: string, count: number, segmentAngle: number) {
   const cleaned = value.replace(/\s+/g, " ").trim();
   const length = cleaned.length;
   const words = cleaned.split(" ").filter(Boolean).length;
-  const sliceDegrees = 360 / Math.max(1, count);
+  const sliceDegrees = Math.max(1, segmentAngle);
   const base = wheelLabelMetrics(count);
   const shortNameBoost = length <= 7 ? 1.32 : length <= 14 ? 1.18 : length <= 24 ? 1.06 : 1;
   const lines = length <= 12 && words <= 2 ? 1 : length > 34 || words > 3 ? 3 : 2;
@@ -252,13 +252,13 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   const [audioNotice, setAudioNotice] = useState<string | null>(null);
   const [audioJustArmed, setAudioJustArmed] = useState(false);
   const candidateCount = Math.max(1, candidates.length);
-  const resultIndex = Math.max(0, candidates.findIndex((candidate) => candidate.id === result?.id));
-  const sliceDegrees = 360 / candidateCount;
+  const wheelSegments = buildWheelSegments(candidates.map((candidate) => ({ id: candidate.id, label: candidate.artistName, weight: candidate.weight })));
+  const resultSegment = wheelSegments.find((segment) => segment.candidateId === result?.id) ?? wheelSegments[0];
   const sliceColors = ["#67e8f9", "#0ea5e9", "#2563eb", "#7c3aed", "#c026d3", "#ff2b6d", "#ef4444", "#f97316", "#facc15", "#22c55e", "#e5e7eb", "#071426"];
-  const sliceBackground = candidates.length > 0 ? `conic-gradient(from -90deg, ${candidates.map((_, index) => `${sliceColors[index % sliceColors.length]} ${index * sliceDegrees}deg ${(index + 1) * sliceDegrees}deg`).join(", ")})` : "radial-gradient(circle, #67e8f9, #0284c7)";
+  const sliceBackground = candidates.length > 0 ? `conic-gradient(from 0deg, ${wheelSegments.map((segment, index) => `${sliceColors[index % sliceColors.length]} ${segment.startAngle}deg ${segment.endAngle}deg`).join(", ")})` : "radial-gradient(circle, #67e8f9, #0284c7)";
   const labelMetrics = wheelLabelMetrics(candidates.length);
   const wheelStyle = {
-    "--wheel-final-rotation": `${wheelFinalRotationForSlice(candidateCount, resultIndex)}deg`,
+    "--wheel-final-rotation": `${wheelFinalRotationForSegment(resultSegment)}deg`,
     "--wheel-spin-duration": `${Math.max(16, (ceremony?.spinDurationMs ?? 24000) / 1000)}s`,
     "--wheel-slice-count": candidateCount,
     "--wheel-slice-background": sliceBackground,
@@ -267,6 +267,8 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
     "--wheel-label-radius": `${labelMetrics.radius}vmin`,
     "--wheel-letter-spacing": labelMetrics.tracking,
     "--wheel-label-lines": labelMetrics.lines,
+    "--wheel-winning-start": `${resultSegment.startAngle}deg`,
+    "--wheel-winning-end": `${resultSegment.endAngle}deg`,
   } as CSSProperties;
   useEffect(() => {
     if (!audioJustArmed) return undefined;
@@ -362,10 +364,12 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
         <div className="live-overlay-wheel-pointer" aria-hidden="true" />
         <div className="live-overlay-wheel" style={wheelStyle}>
           <div className="live-overlay-wheel-slices" aria-hidden="true" />
+          {result && (ceremony?.status === "result_pending" || ceremony?.status === "confirmed") && <div className="live-overlay-wheel-winning-segment" aria-hidden="true" />}
           {candidates.length === 0 ? <span className="live-overlay-wheel-empty">NO CANDIDATES</span> : candidates.map((candidate, index) => {
-            const angle = index * sliceDegrees + sliceDegrees / 2;
+            const segment = wheelSegments[index] ?? resultSegment;
+            const angle = segment.centerAngle;
             const label = candidate.artistName.replace(/\s+/g, " ").trim();
-            const labelFit = wheelLabelFit(label, candidateCount);
+            const labelFit = wheelLabelFit(label, candidateCount, segment.angleSize);
             const position = wheelLabelPosition(angle, labelFit.radius);
             // Wheel labels are visual only. Winner selection is based on slice geometry and the right-side pointer.
             const labelStyle = {

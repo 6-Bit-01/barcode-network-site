@@ -387,8 +387,8 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
     };
   } else if (payload.action === "spinWheel" || payload.action === "reencryptWheel") {
     const currentStatus = normalizeWheelCeremonyStatus(current.wheelCeremonyStatus);
-    if (payload.action === "spinWheel" && (currentStatus !== "ready" && currentStatus !== "signal_lost" && currentStatus !== "reencrypting")) throw new Error("Launch the wheel before spinning.");
-    if (payload.action === "reencryptWheel" && ((currentStatus !== "ready" && currentStatus !== "reencrypting" && currentStatus !== "signal_lost") || current.wheelCeremonyResultTrackId)) throw new Error("Re-encryption is only available before the wheel spin.");
+    if (payload.action === "spinWheel" && currentStatus !== "ready" && currentStatus !== "signal_lost") throw new Error("Launch the wheel before spinning.");
+    if (payload.action === "reencryptWheel" && (currentStatus !== "ready" || current.wheelCeremonyResultTrackId)) throw new Error("Re-encryption is only available before the wheel spin.");
     const queueState = await getRadioQueueState();
     if ((queueState.session?.wheelSpinsOwed ?? 0) <= 0) throw new Error("No wheel spins are owed.");
     const candidates = getWheelCandidatesFromQueue(queueState.queue);
@@ -427,7 +427,7 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
       mode: "wheel_ready",
       wheelOverlayActive: true,
       wheelOverlayStatus: "ready",
-      wheelCeremonyStatus: "signal_lost",
+      wheelCeremonyStatus: "ready",
       wheelCeremonySpinStartedAt: undefined,
       wheelCeremonyResultTrackId: undefined,
       wheelCeremonyResultSelectedAt: now,

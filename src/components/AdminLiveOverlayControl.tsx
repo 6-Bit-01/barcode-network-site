@@ -52,7 +52,7 @@ export function AdminLiveOverlayControl() {
   const candidates = snapshot?.wheelCandidates ?? [];
   const result = ceremony?.resultTrack;
   const canLaunch = wheelOwed > 0 && !wheelActive;
-  const wheelReadyForAction = ceremony?.status === "ready" || ceremony?.status === "signal_lost";
+  const wheelReadyForAction = ceremony?.status === "ready";
   const canSpin = wheelOwed > 0 && wheelReadyForAction && candidates.length > 0;
   const canReencrypt = wheelOwed > 0 && wheelReadyForAction && candidates.length > 0 && !ceremony?.resultTrackId;
   const systemActive = snapshot?.overlayState.systemMessageActive === true;

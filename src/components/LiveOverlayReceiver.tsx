@@ -193,22 +193,34 @@ function rememberWheelAudioArmed(armed: boolean): void {
 }
 
 function wheelLabelMetrics(count: number) {
-  if (count <= 4) return { width: "36vmin", radius: "28.5vmin", size: "4.1vmin", tracking: "0.002em", lines: 3 };
-  if (count <= 6) return { width: "31vmin", radius: "30vmin", size: "3.3vmin", tracking: "0.003em", lines: 3 };
-  if (count <= 8) return { width: "27vmin", radius: "31.8vmin", size: "2.62vmin", tracking: "0.004em", lines: 3 };
-  if (count <= 12) return { width: "22vmin", radius: "33.7vmin", size: "1.98vmin", tracking: "0.005em", lines: 3 };
-  if (count <= 16) return { width: "18vmin", radius: "35.2vmin", size: "1.5vmin", tracking: "0.006em", lines: 2 };
-  if (count <= 24) return { width: "14vmin", radius: "36.8vmin", size: "1.1vmin", tracking: "0.006em", lines: 2 };
-  return { width: "11.4vmin", radius: "38vmin", size: "0.86vmin", tracking: "0.003em", lines: 2 };
+  if (count <= 4) return { width: "34vmin", radius: 26.4, size: "4.35vmin", tracking: "0.001em", lines: 3 };
+  if (count <= 6) return { width: "30vmin", radius: 27.8, size: "3.55vmin", tracking: "0.001em", lines: 3 };
+  if (count <= 8) return { width: "26vmin", radius: 29.5, size: "2.85vmin", tracking: "0.002em", lines: 3 };
+  if (count <= 12) return { width: "21vmin", radius: 31.5, size: "2.08vmin", tracking: "0.002em", lines: 3 };
+  if (count <= 16) return { width: "17vmin", radius: 33.5, size: "1.55vmin", tracking: "0.002em", lines: 2 };
+  if (count <= 24) return { width: "13.2vmin", radius: 35.5, size: "1.12vmin", tracking: "0.001em", lines: 2 };
+  return { width: "10.8vmin", radius: 37, size: "0.88vmin", tracking: "0", lines: 2 };
 }
 
-function wheelLabelScale(value: string): string {
+function wheelLabelScale(value: string, count: number): string {
   const length = value.replace(/\s+/g, " ").trim().length;
-  if (length > 60) return "0.58";
-  if (length > 48) return "0.66";
-  if (length > 36) return "0.76";
-  if (length > 26) return "0.88";
+  const generousSlice = count <= 8;
+  if (length > 72) return generousSlice ? "0.62" : "0.54";
+  if (length > 58) return generousSlice ? "0.7" : "0.6";
+  if (length > 44) return generousSlice ? "0.78" : "0.68";
+  if (length > 32) return generousSlice ? "0.88" : "0.78";
+  if (length > 24) return generousSlice ? "0.96" : "0.88";
   return "1";
+}
+
+function wheelLabelPosition(angle: number, radius: number) {
+  const radians = (angle * Math.PI) / 180;
+  const x = Math.sin(radians) * radius;
+  const y = Math.cos(radians) * -radius;
+  let rotation = angle - 90;
+  if (rotation > 90 && rotation < 270) rotation += 180;
+  if (rotation > 180) rotation -= 360;
+  return { x: `${x.toFixed(3)}vmin`, y: `${y.toFixed(3)}vmin`, rotation: `${rotation.toFixed(3)}deg` };
 }
 
 function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
@@ -234,7 +246,7 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
     "--wheel-slice-background": sliceBackground,
     "--wheel-name-size": labelMetrics.size,
     "--wheel-label-width": labelMetrics.width,
-    "--wheel-label-radius": labelMetrics.radius,
+    "--wheel-label-radius": `${labelMetrics.radius}vmin`,
     "--wheel-letter-spacing": labelMetrics.tracking,
     "--wheel-label-lines": labelMetrics.lines,
   } as CSSProperties;
@@ -281,12 +293,12 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
           if (audioPlayWasBlocked(error)) {
             setAudioArmed(false);
             rememberWheelAudioArmed(false);
-            setAudioNotice("AUDIO FAILED TO START");
+            setAudioNotice("AUDIO UNAVAILABLE — SPIN CONTINUES");
             return;
           }
         }
       }
-      if (!cancelled) setAudioNotice("AUDIO FAILED TO START");
+      if (!cancelled) setAudioNotice("AUDIO UNAVAILABLE — SPIN CONTINUES");
     });
 
     return () => {
@@ -312,7 +324,7 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
       rememberWheelAudioArmed(true);
     }).catch(() => {
       stopWheelAudio(unlockAudio);
-      setAudioNotice("AUDIO FAILED TO START");
+      setAudioNotice("AUDIO UNAVAILABLE — SPIN CONTINUES");
       setAudioArmed(false);
       rememberWheelAudioArmed(false);
     });
@@ -320,7 +332,7 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
 
   return (
     <div className={`live-overlay-wheel-scene live-overlay-wheel-scene--${ceremony?.status ?? "idle"} ${spinning ? "live-overlay-wheel-scene--spinning" : ""}`} data-wheel-seed={ceremony?.seed}>
-      {!audioArmed ? <button type="button" className="live-overlay-wheel-audio-arm" onClick={enableWheelAudio}>ENABLE WHEEL AUDIO</button> : audioJustArmed ? <div className="live-overlay-wheel-audio-armed" role="status">AUDIO ARMED</div> : null}
+      {!audioArmed ? <button type="button" className="live-overlay-wheel-audio-arm" onClick={enableWheelAudio}>ENABLE OPTIONAL WHEEL AUDIO</button> : audioJustArmed ? <div className="live-overlay-wheel-audio-armed" role="status">OPTIONAL AUDIO ARMED</div> : null}
       {audioNotice && <div className="live-overlay-wheel-audio-notice" role="status">{audioNotice}</div>}
       {ceremony?.status === "reencrypting" && <div className="live-overlay-wheel-glitch" aria-hidden="true">RE-ENCRYPTING SIGNAL</div>}
       <div className="live-overlay-wheel-heading" aria-live="polite">
@@ -335,7 +347,13 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
           {candidates.length === 0 ? <span className="live-overlay-wheel-empty">NO CANDIDATES</span> : candidates.map((candidate, index) => {
             const angle = index * sliceDegrees + sliceDegrees / 2;
             const label = candidate.artistName.replace(/\s+/g, " ").trim();
-            const labelStyle = { "--wheel-label-angle": `${angle}deg`, "--wheel-label-text-flip": angle > 90 && angle < 270 ? "180deg" : "0deg", "--wheel-label-scale": wheelLabelScale(label) } as CSSProperties;
+            const position = wheelLabelPosition(angle, labelMetrics.radius);
+            const labelStyle = {
+              "--wheel-label-x": position.x,
+              "--wheel-label-y": position.y,
+              "--wheel-label-rotation": position.rotation,
+              "--wheel-label-scale": wheelLabelScale(label, candidateCount),
+            } as CSSProperties;
             return (
               <span key={candidate.id} className="live-overlay-wheel-slice-label" style={labelStyle} title={`${candidate.artistName} — ${candidate.trackTitle}`}>
                 <span>{label}</span>

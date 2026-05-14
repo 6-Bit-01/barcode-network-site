@@ -494,18 +494,18 @@ body > div:last-of-type {
   min-height: calc(var(--wheel-name-size, 1.45vmin) * var(--wheel-label-lines, 2) * 1.08);
   place-items: center;
   pointer-events: none;
-  transform: rotate(var(--wheel-label-angle)) translateY(calc(0vmin - var(--wheel-label-radius, 32vmin))) translate(-50%, -50%);
+  transform: translate(calc(-50% + var(--wheel-label-x, 0vmin)), calc(-50% + var(--wheel-label-y, -32vmin))) rotate(var(--wheel-label-rotation, 0deg));
   transform-origin: center;
 }
 
 .live-overlay-wheel-slice-label::before {
   position: absolute;
-  inset: 10% 4%;
+  inset: 2% -3%;
   content: "";
   border-radius: 999px;
-  background: radial-gradient(ellipse at center, rgba(2, 6, 23, 0.16), transparent 72%);
-  filter: blur(0.22vmin);
-  opacity: 0.34;
+  background: radial-gradient(ellipse at center, rgba(2, 6, 23, 0.24), transparent 74%);
+  filter: blur(0.2vmin);
+  opacity: 0.42;
 }
 
 .live-overlay-wheel-slice-label > span {
@@ -517,21 +517,22 @@ body > div:last-of-type {
   overflow: visible;
   color: #f8fdff;
   font-family: "Arial Black", Impact, "Franklin Gothic Heavy", system-ui, sans-serif;
-  font-size: clamp(0.68rem, calc(var(--wheel-name-size, 1.45vmin) * var(--wheel-label-scale, 1)), 4.1vmin);
+  font-size: clamp(0.68rem, calc(var(--wheel-name-size, 1.45vmin) * var(--wheel-label-scale, 1)), 4.35vmin);
   font-weight: 950;
   letter-spacing: var(--wheel-letter-spacing, 0.01em);
-  line-height: 0.9;
+  line-height: 0.86;
   text-align: center;
   text-transform: uppercase;
-  overflow-wrap: break-word;
+  hyphens: auto;
+  overflow-wrap: anywhere;
   word-break: normal;
   white-space: normal;
-  transform: rotate(var(--wheel-label-text-flip, 0deg));
   text-shadow:
-    0.14vmin 0.14vmin 0 rgba(2, 6, 23, 0.96),
-    -0.1vmin -0.08vmin 0 rgba(2, 6, 23, 0.9),
-    0 0 0.65vmin rgba(2, 6, 23, 0.95),
-    0 0 1.25vmin rgba(255, 255, 255, 0.42);
+    0.16vmin 0.16vmin 0 rgba(2, 6, 23, 0.98),
+    -0.12vmin -0.1vmin 0 rgba(2, 6, 23, 0.92),
+    0.08vmin -0.12vmin 0 rgba(2, 6, 23, 0.88),
+    0 0 0.72vmin rgba(2, 6, 23, 0.98),
+    0 0 1.18vmin rgba(255, 255, 255, 0.36);
 }
 
 .live-overlay-wheel-core {

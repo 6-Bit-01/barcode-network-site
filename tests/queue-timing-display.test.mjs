@@ -35,7 +35,9 @@ test("sponsor included and completed public notes reflect current projection", (
   const withSponsor = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "not_due" } });
   assert.ok(withSponsor.publicNotes.includes("Estimate includes the mid-show sponsor break."));
   const completedSponsor = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "completed", sponsorBreakCompletedAt: "2026-01-01T00:00:00.000Z" } });
+  const skippedSponsor = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "skipped", sponsorBreakCompletedAt: "2026-01-01T00:00:00.000Z" } });
   assert.ok(!completedSponsor.publicNotes.includes("Estimate includes the mid-show sponsor break."));
+  assert.ok(!skippedSponsor.publicNotes.includes("Estimate includes the mid-show sponsor break."));
 });
 
 test("wheel overhead public note appears when owed spins add time", () => {
@@ -64,9 +66,12 @@ test("track duration labels distinguish detected and estimated fallback", () => 
   assert.equal(display.publicTrackDurationLabel(track("fallback", { detectedDurationSeconds: null, estimatedDurationSeconds: 300, durationIsEstimate: true })), "est. 5:00");
 });
 
-test("public projected show time is rough and uses About wording", () => {
-  assert.equal(display.publicProjectedShowTimeLabel(3 * 3600 + 45 * 60, "comfortable"), "About 3h 45m");
+test("public projected show time is rough and uses About wording without clock or seconds formatting", () => {
+  const label = display.publicProjectedShowTimeLabel(3 * 3600 + 45 * 60, "comfortable");
+  assert.equal(label, "About 3h 45m");
   assert.equal(display.publicProjectedShowTimeLabel(5 * 3600 + 10, "warning_ceiling"), "About 5h+");
+  assert.ok(!label.includes(":"));
+  assert.ok(!/\b(am|pm|seconds?|secs?)\b/i.test(label));
 });
 
 test("public line fit copy stays decision-focused", () => {

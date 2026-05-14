@@ -133,3 +133,107 @@ test("existing track timing classifies now playing, up next, queued, played, rem
   assert.equal(timing.estimateExistingTrackTiming(input, "removed").state, "removed");
   assert.equal(timing.estimateExistingTrackTiming(input, "missing").state, "missing");
 });
+
+test("known 3:20 track slot is 1:00 pre plus runtime plus 1:00 post", () => {
+  const known = track("known-320", { detectedDurationSeconds: 200, durationIsEstimate: false });
+  const estimate = timing.estimateRuntimeForTracks([known]);
+  assert.equal(timing.DEFAULT_PRE_TRACK_TALK_SECONDS, 60);
+  assert.equal(timing.DEFAULT_POST_TRACK_TALK_SECONDS, 60);
+  assert.equal(timing.DEFAULT_HOST_TALK_BUFFER_SECONDS, 120);
+  assert.equal(timing.getEstimatedTrackSlotSeconds(known), 320);
+  assert.equal(estimate.preTrackTalkSeconds, 60);
+  assert.equal(estimate.postTrackTalkSeconds, 60);
+});
+
+test("unknown track slot is 1:00 pre plus 5:00 fallback plus 1:00 post", () => {
+  const estimate = timing.estimateRuntimeForTracks([track("unknown-700")]);
+  assert.equal(timing.getEstimatedTrackSlotSeconds(track("unknown-700")), 420);
+  assert.equal(estimate.preTrackTalkSeconds, 60);
+  assert.equal(estimate.postTrackTalkSeconds, 60);
+  assert.equal(estimate.slotSeconds, 420);
+});
+
+test("multiple tracks include pre and post talk for each track", () => {
+  const estimate = timing.estimateRuntimeForTracks([
+    track("multi-one", { detectedDurationSeconds: 200 }),
+    track("multi-two", { detectedDurationSeconds: 180 }),
+    track("multi-three", { detectedDurationSeconds: 120 }),
+  ]);
+  assert.equal(estimate.trackSeconds, 500);
+  assert.equal(estimate.preTrackTalkSeconds, 180);
+  assert.equal(estimate.postTrackTalkSeconds, 180);
+  assert.equal(estimate.slotSeconds, 860);
+});
+
+test("completed sponsor break is not included again", () => {
+  const completed = Array.from({ length: 20 }, (_, index) => track(`played-completed-sponsor-${index}`, { status: "played", completedAt: "2026-01-01T00:00:00.000Z" }));
+  const queue = Array.from({ length: 20 }, (_, index) => track(`queued-completed-sponsor-${index}`));
+  const estimate = timing.estimateSponsorBreakPlacement({ completed, queue, session: { sponsorBreakStatus: "completed", sponsorBreakCompletedAt: "2026-01-01T02:00:00.000Z" } });
+  assert.equal(estimate.sponsorBreakStatus, "completed");
+  assert.equal(estimate.sponsorBreakIncluded, false);
+  assert.equal(estimate.sponsorBreakSecondsIncluded, 0);
+});
+
+test("wheel overhead does not add extra song durations", () => {
+  const queue = [track("wheel-runtime", { detectedDurationSeconds: 180 })];
+  const snapshot = timing.buildQueueTimingSnapshot({ queue, wheelSpinsOwed: 3 }, { sponsorBreakAlreadyRun: true });
+  assert.equal(snapshot.wheelCeremonySecondsIncluded, 360);
+  assert.equal(snapshot.projectedRemainingShowSeconds, 180 + 120 + 360);
+});
+
+test("existing queued track receives songsAhead and timing from prior timeline segments", () => {
+  const estimate = timing.estimateExistingTrackTiming({ queue: [track("ahead", { detectedDurationSeconds: 200 }), track("target", { detectedDurationSeconds: 180 })], session: { sponsorBreakStatus: "completed" } }, "target");
+  assert.equal(estimate.state, "queued");
+  assert.equal(estimate.songsAhead, 1);
+  assert.equal(estimate.estimatedSecondsUntilPlay, 320);
+  assert.ok(estimate.timelineSegmentsIncluded.some((segment) => segment.trackId === "ahead"));
+});
+
+test("now playing estimate is zero and playing now", () => {
+  const estimate = timing.estimateExistingTrackTiming({ nowPlaying: track("live", { status: "playing" }) }, "live");
+  assert.equal(estimate.state, "now_playing");
+  assert.equal(estimate.estimatedSecondsUntilPlay, 0);
+  assert.equal(estimate.estimatedRangeSeconds.label, "Now");
+});
+
+test("completed track estimate returns played state", () => {
+  const estimate = timing.estimateExistingTrackTiming({ completed: [track("done", { status: "played", completedAt: "2026-01-01T00:00:00.000Z" })] }, "done");
+  assert.equal(estimate.found, true);
+  assert.equal(estimate.state, "played");
+});
+
+test("priority comparison is closer than free when eligible", () => {
+  const input = { nowPlaying: track("live", { status: "playing", detectedDurationSeconds: 180 }), queue: [track("ahead-one", { detectedDurationSeconds: 300 }), track("target", { detectedDurationSeconds: 180 })], session: { sponsorBreakStatus: "completed" } };
+  const estimate = timing.estimatePriorityImpact(input, input.queue[1]);
+  assert.equal(estimate.priorityEligible, true);
+  assert.ok(estimate.priorityEstimate.estimatedSecondsUntilPlay < estimate.freeEstimate.estimatedSecondsUntilPlay);
+  assert.ok(estimate.estimatedSecondsSaved > 0);
+});
+
+test("checkout pending Payment Processing is not treated as active Priority", () => {
+  const pending = track("pending", { lane: "priority", priorityUpgradeStatus: "checkout_pending", detectedDurationSeconds: 180 });
+  const estimate = timing.estimatePriorityImpact({ queue: [pending] }, pending);
+  assert.equal(estimate.priorityEligible, false);
+  assert.equal(estimate.ineligibleReason, "payment_processing_not_priority");
+});
+
+test("active Priority ahead is not skipped by new Priority simulation", () => {
+  const activePriority = track("paid-ahead", { lane: "priority", priorityUpgradeStatus: "paid", detectedDurationSeconds: 240 });
+  const estimate = timing.estimatePriorityImpact({ nextInLine: activePriority, queue: [track("regular-ahead", { detectedDurationSeconds: 300 })], session: { sponsorBreakStatus: "completed" } });
+  assert.equal(estimate.priorityEligible, true);
+  assert.equal(estimate.priorityEstimate.songsAhead, 1);
+  assert.equal(estimate.priorityEstimate.estimatedSecondsUntilPlay, 360);
+});
+
+test("target status becomes tight before exceeding four-hour target", () => {
+  const tracks = Array.from({ length: 41 }, (_, index) => track(`tight-window-${index}`, { detectedDurationSeconds: 200 }));
+  const snapshot = timing.buildQueueTimingSnapshot({ queue: tracks }, { sponsorBreakAlreadyRun: true });
+  assert.equal(snapshot.targetStatus, "tight");
+});
+
+test("range formatting widens low-confidence ranges", () => {
+  const medium = timing.buildProjectionRangeSeconds(20 * 60, "medium");
+  const low = timing.buildProjectionRangeSeconds(20 * 60, "low");
+  assert.ok(low.min < medium.min);
+  assert.ok(low.max > medium.max);
+});

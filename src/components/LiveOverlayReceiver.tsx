@@ -178,6 +178,29 @@ function stopWheelAudio(audio: HTMLAudioElement | null): void {
   audio.currentTime = 0;
 }
 
+async function unlockAudioElement(audio: HTMLAudioElement): Promise<boolean> {
+  try {
+    const originalVolume = audio.volume;
+    const originalMuted = audio.muted;
+    audio.muted = true;
+    audio.volume = 0.0001;
+    await audio.play();
+    audio.pause();
+    audio.currentTime = 0;
+    audio.muted = originalMuted;
+    audio.volume = originalVolume;
+    return true;
+  } catch {
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+    } catch {
+      // ignore
+    }
+    return false;
+  }
+}
+
 function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -275,7 +298,7 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   const spinEndsAtMs = spinStartedAtMs ? spinStartedAtMs + WHEEL_SPIN_START_DELAY_MS + spinDurationMs : null;
   const revealKey = `${ceremony?.resultTrackId ?? "none"}:${ceremony?.status ?? "none"}`;
   const showResultPending = ceremony?.status === "result_pending" && resultRevealReadyKey === revealKey;
-  const spinShouldStillAnimate = ceremony?.status === "spinning" || (ceremony?.status === "result_pending" && !showResultPending);
+  const spinShouldStillAnimate = ceremony?.status === "spinning";
   const visualWheelRotationDeg = status === "result_pending" || status === "confirmed" || status === "spinning" ? finalRotationDeg : 0;
 
   useEffect(() => {
@@ -312,6 +335,24 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
       reencryptAudioRef.current.volume = 0.9;
     }
   }, []);
+
+  function playOneShot(audioRefObj: { current: HTMLAudioElement | null }, path: string, volume: number, failureNotice?: string) {
+    const audio = audioRefObj.current ?? new Audio(path);
+    audioRefObj.current = audio;
+    audio.src = path;
+    audio.loop = false;
+    audio.preload = "auto";
+    audio.volume = volume;
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+      void audio.play().catch(() => {
+        if (failureNotice) setAudioNotice(failureNotice);
+      });
+    } catch {
+      if (failureNotice) setAudioNotice(failureNotice);
+    }
+  }
 
   useEffect(() => {
     if (audioFadeFrameRef.current !== null) {
@@ -398,15 +439,7 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
     const cheerKey = `${ceremony?.resultTrackId ?? "none"}:${ceremony?.status ?? "none"}`;
     if (lastCheerKeyRef.current === cheerKey) return undefined;
     lastCheerKeyRef.current = cheerKey;
-    const cheer = cheerAudioRef.current;
-    if (!cheer) return undefined;
-    try {
-      cheer.pause();
-      cheer.currentTime = 0;
-      void cheer.play().catch(() => undefined);
-    } catch {
-      // non-blocking winner SFX
-    }
+    playOneShot(cheerAudioRef, WHEEL_WINNER_CHEER_AUDIO_PATH, 0.9, "CHEER SFX UNAVAILABLE");
     return undefined;
   }, [showResultPending, spinShouldStillAnimate, ceremony?.status, ceremony?.resultTrackId]);
 
@@ -415,15 +448,7 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
     if (ceremony?.status !== "reencrypting" || !nonce) return;
     if (lastReencryptKeyRef.current === nonce) return;
     lastReencryptKeyRef.current = nonce;
-    const sfx = reencryptAudioRef.current;
-    if (!sfx) return;
-    try {
-      sfx.pause();
-      sfx.currentTime = 0;
-      void sfx.play().catch(() => undefined);
-    } catch {
-      // non-blocking re-encrypt SFX
-    }
+    playOneShot(reencryptAudioRef, WHEEL_REENCRYPT_AUDIO_PATH, 0.9, "RE-ENCRYPT SFX UNAVAILABLE");
   }, [ceremony?.status, ceremony?.reencryptNonce, ceremony?.reencryptCycleId]);
 
   useEffect(() => {
@@ -439,30 +464,35 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
     }, waitMs);
   }, [ceremony?.status, spinEndsAtMs, ceremony?.resultTrackId, revealKey]);
 
-  function enableWheelAudio() {
+  async function enableWheelAudio() {
     const unlockPath = safeWheelAudioPath(ceremony?.audioPath) ?? FALLBACK_WHEEL_AUDIO_FILES[0];
-    const unlockAudio = new Audio(unlockPath);
-    unlockAudio.loop = false;
-    unlockAudio.muted = false;
-    unlockAudio.volume = 0.04;
-    unlockAudio.preload = "auto";
-    unlockAudio.load();
-    audioRef.current = unlockAudio;
-    unlockAudio.play().then(() => {
-      window.setTimeout(() => stopWheelAudio(unlockAudio), 280);
-      setAudioArmed(true);
-      setAudioJustArmed(true);
+    const spinAudio = new Audio(unlockPath);
+    const cheerAudio = new Audio(WHEEL_WINNER_CHEER_AUDIO_PATH);
+    const encryptAudio = new Audio(WHEEL_REENCRYPT_AUDIO_PATH);
+    audioRef.current = spinAudio;
+    cheerAudioRef.current = cheerAudio;
+    reencryptAudioRef.current = encryptAudio;
+    const [spinUnlocked, cheerUnlocked, encryptUnlocked] = await Promise.all([
+      unlockAudioElement(spinAudio),
+      unlockAudioElement(cheerAudio),
+      unlockAudioElement(encryptAudio),
+    ]);
+    setAudioArmed(spinUnlocked);
+    setAudioJustArmed(spinUnlocked);
+    if (!spinUnlocked) {
+      setAudioNotice("AUDIO COULD NOT BE ENABLED — CLICK AGAIN");
+      return;
+    }
+    if (!cheerUnlocked || !encryptUnlocked) {
+      setAudioNotice("SOME WHEEL SFX MAY BE BLOCKED");
+    } else {
       setAudioNotice(null);
-    }).catch(() => {
-      stopWheelAudio(unlockAudio);
-      setAudioNotice("AUDIO UNAVAILABLE — SPIN CONTINUES");
-      setAudioArmed(false);
-    });
+    }
   }
 
   return (
     <div className={`live-overlay-wheel-scene live-overlay-wheel-scene--${ceremony?.status ?? "idle"} ${reencryptVisualActive ? "live-overlay-wheel-scene--reencrypting" : ""} ${spinShouldStillAnimate ? "live-overlay-wheel-scene--spinning live-overlay-wheel-scene--spin-armed" : ""}`} data-wheel-seed={ceremony?.seed} data-wheel-animation-key={animationKey}>
-      {!audioArmed ? <div className="live-overlay-wheel-audio-modal" role="dialog" aria-modal="true" aria-label="Enable wheel audio"><div className="live-overlay-wheel-audio-modal-card"><p>ENABLE WHEEL AUDIO</p><span>Required before wheel sounds can play.</span><button type="button" className="live-overlay-wheel-audio-arm" onClick={enableWheelAudio}>ENABLE WHEEL AUDIO</button>{audioNotice && <em>{audioNotice.includes("UNAVAILABLE") ? "AUDIO COULD NOT BE ENABLED — CLICK AGAIN" : audioNotice}</em>}</div></div> : audioJustArmed ? <div className="live-overlay-wheel-audio-armed" role="status">AUDIO ARMED</div> : null}
+      {!audioArmed ? <div className="live-overlay-wheel-audio-modal" role="dialog" aria-modal="true" aria-label="Enable wheel audio"><div className="live-overlay-wheel-audio-modal-card"><p>ENABLE WHEEL AUDIO</p><span>Required for wheel music and winner sounds.</span><span>Click once before the show.</span><button type="button" className="live-overlay-wheel-audio-arm" onClick={() => { void enableWheelAudio(); }}>ENABLE AUDIO</button>{audioNotice && <em>{audioNotice}</em>}</div></div> : audioJustArmed ? <div className="live-overlay-wheel-audio-armed" role="status">AUDIO ARMED</div> : null}
       {audioNotice && <div className="live-overlay-wheel-audio-notice" role="status">{audioNotice}</div>}
       {reencryptVisualActive && <div key={`glitch-${animationKey}`} className="live-overlay-wheel-glitch-stack" aria-hidden="true"><div className="live-overlay-wheel-static" /><div className="live-overlay-wheel-glitch">RE-ENCRYPTING SIGNAL</div><div className="live-overlay-wheel-corrupt-labels">010010 // SIGNAL MUTATING // 101101</div></div>}
       <div className="live-overlay-wheel-heading" aria-live="polite">

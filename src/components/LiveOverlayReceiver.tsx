@@ -67,9 +67,9 @@ function showTrack(scene: ResolvedLiveOverlayScene): boolean {
   return Boolean((scene.mode === "now_playing" || scene.mode === "artist_card") && scene.track);
 }
 
-const WHEEL_AUDIO_ARMED_STORAGE_KEY = "barcode-wheel-audio-armed";
 const WHEEL_SPIN_START_DELAY_MS = 850;
 const WHEEL_AUDIO_FADE_OUT_MS = 10_000;
+const WHEEL_WINNER_CHEER_AUDIO_PATH = "/audio/wheel/WheelCheer.mp3";
 
 const FALLBACK_WHEEL_AUDIO_FILES = [
   "/audio/wheel/142.mp3",
@@ -176,25 +176,6 @@ function stopWheelAudio(audio: HTMLAudioElement | null): void {
   audio.currentTime = 0;
 }
 
-function readWheelAudioArmed(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return window.localStorage.getItem(WHEEL_AUDIO_ARMED_STORAGE_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-function rememberWheelAudioArmed(armed: boolean): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (armed) window.localStorage.setItem(WHEEL_AUDIO_ARMED_STORAGE_KEY, "true");
-    else window.localStorage.removeItem(WHEEL_AUDIO_ARMED_STORAGE_KEY);
-  } catch {
-    // localStorage can be unavailable in private or embedded preview contexts.
-  }
-}
-
 function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -234,12 +215,12 @@ function wheelLabelFit(value: string, count: number, segmentAngle: number) {
   };
 }
 
-function wheelLabelPosition(angle: number, radius: number) {
+function wheelLabelPosition(angle: number, radius: number, wheelRotationDeg: number) {
   const radians = (angle * Math.PI) / 180;
   const x = Math.sin(radians) * radius;
   const y = Math.cos(radians) * -radius;
-  const normalizedAngle = ((angle % 360) + 360) % 360;
-  const inRightSelectorZone = normalizedAngle >= 60 && normalizedAngle <= 120;
+  const finalVisualAngle = (((angle + wheelRotationDeg) % 360) + 360) % 360;
+  const inRightSelectorZone = finalVisualAngle >= 60 && finalVisualAngle <= 120;
   const rotation = inRightSelectorZone ? 0 : wheelUprightLabelRotationDegrees(angle);
   return { x: `${x.toFixed(3)}vmin`, y: `${y.toFixed(3)}vmin`, rotation: `${rotation.toFixed(3)}deg` };
 }
@@ -254,8 +235,9 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   const reencryptVisualActive = ceremony?.status === "reencrypting" || Boolean(reencryptNonce && visibleReencryptNonce === reencryptNonce);
   const spinning = ceremony?.status === "spinning";
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const cheerAudioRef = useRef<HTMLAudioElement | null>(null);
   const audioFadeFrameRef = useRef<number | null>(null);
-  const [audioArmed, setAudioArmed] = useState(() => readWheelAudioArmed());
+  const [audioArmed, setAudioArmed] = useState(false);
   const [audioNotice, setAudioNotice] = useState<string | null>(null);
   const [audioJustArmed, setAudioJustArmed] = useState(false);
   const candidateCount = Math.max(1, candidates.length);
@@ -280,6 +262,8 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
     "--wheel-winning-start": `${resultSegment.startAngle}deg`,
     "--wheel-winning-end": `${resultSegment.endAngle}deg`,
   } as CSSProperties;
+  const status = ceremony?.status ?? "idle";
+  const visualWheelRotationDeg = status === "result_pending" || status === "confirmed" || status === "spinning" ? finalRotationDeg : 0;
 
   useEffect(() => {
     if (!reencryptNonce || lastSeenReencryptNonceRef.current === reencryptNonce) return undefined;
@@ -302,6 +286,12 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
       audioRef.current = new Audio();
       audioRef.current.preload = "auto";
     }
+    if (!cheerAudioRef.current) {
+      cheerAudioRef.current = new Audio(WHEEL_WINNER_CHEER_AUDIO_PATH);
+      cheerAudioRef.current.preload = "auto";
+      cheerAudioRef.current.loop = false;
+      cheerAudioRef.current.volume = 0.85;
+    }
   }, []);
 
   useEffect(() => {
@@ -310,8 +300,11 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
       audioFadeFrameRef.current = null;
     }
     const existingAudio = audioRef.current;
-    if (!spinning || !audioArmed) {
+    if (!audioArmed) {
       stopWheelAudio(existingAudio);
+      return undefined;
+    }
+    if (!spinning) {
       return undefined;
     }
 
@@ -337,7 +330,6 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
           stopWheelAudio(audio);
           if (audioPlayWasBlocked(error)) {
             setAudioArmed(false);
-            rememberWheelAudioArmed(false);
             setAudioNotice("AUDIO UNAVAILABLE — SPIN CONTINUES");
             return;
           }
@@ -353,7 +345,7 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
 
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || spinning || ceremony?.status === "reencrypting") return undefined;
+    if (!audio || spinning || ceremony?.status !== "result_pending") return undefined;
     if (audio.paused || audio.currentTime <= 0) return undefined;
     const startVolume = audio.volume;
     if (startVolume <= 0.001) {
@@ -382,6 +374,20 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
     };
   }, [ceremony?.status, spinning]);
 
+  useEffect(() => {
+    if (ceremony?.status !== "result_pending") return undefined;
+    const cheer = cheerAudioRef.current;
+    if (!cheer) return undefined;
+    try {
+      cheer.pause();
+      cheer.currentTime = 0;
+      void cheer.play().catch(() => undefined);
+    } catch {
+      // non-blocking winner SFX
+    }
+    return undefined;
+  }, [ceremony?.status, ceremony?.resultTrackId]);
+
   function enableWheelAudio() {
     const unlockPath = safeWheelAudioPath(ceremony?.audioPath) ?? FALLBACK_WHEEL_AUDIO_FILES[0];
     const unlockAudio = new Audio(unlockPath);
@@ -396,12 +402,10 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
       setAudioArmed(true);
       setAudioJustArmed(true);
       setAudioNotice(null);
-      rememberWheelAudioArmed(true);
     }).catch(() => {
       stopWheelAudio(unlockAudio);
       setAudioNotice("AUDIO UNAVAILABLE — SPIN CONTINUES");
       setAudioArmed(false);
-      rememberWheelAudioArmed(false);
     });
   }
 
@@ -425,7 +429,7 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
             const angle = segment.centerAngle;
             const label = candidate.artistName.replace(/\s+/g, " ").trim();
             const labelFit = wheelLabelFit(label, candidateCount, segment.angleSize);
-            const position = wheelLabelPosition(angle, labelFit.radius);
+            const position = wheelLabelPosition(angle, labelFit.radius, visualWheelRotationDeg);
             // Wheel labels are visual only. Winner selection is based on slice geometry and the right-side pointer.
             const labelStyle = {
               "--wheel-label-x": position.x,

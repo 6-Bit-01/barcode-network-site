@@ -761,6 +761,51 @@ body > div:last-of-type {
   box-shadow: 0 0 2vmin rgba(103, 232, 249, 0.2);
 }
 
+.live-overlay-wheel-audio-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: rgba(2, 6, 23, 0.66);
+  backdrop-filter: blur(0.4vmin);
+}
+
+.live-overlay-wheel-audio-modal-card {
+  width: min(76vmin, 92vw);
+  border: 0.2vmin solid rgba(103, 232, 249, 0.62);
+  background: linear-gradient(180deg, rgba(2, 6, 23, 0.96), rgba(8, 47, 73, 0.92));
+  padding: 3vmin;
+  text-align: center;
+  box-shadow: 0 0 4vmin rgba(34, 211, 238, 0.32), inset 0 0 2vmin rgba(103, 232, 249, 0.18);
+}
+
+.live-overlay-wheel-audio-modal-card p {
+  margin: 0;
+  color: #f8fdff;
+  font-size: clamp(1rem, 3vmin, 2rem);
+  font-weight: 950;
+  letter-spacing: 0.12em;
+}
+
+.live-overlay-wheel-audio-modal-card span {
+  display: block;
+  margin-top: 1.1vmin;
+  color: #a5f3fc;
+  font-size: clamp(0.7rem, 1.5vmin, 1rem);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.live-overlay-wheel-audio-modal-card em {
+  display: block;
+  margin-top: 1.2vmin;
+  color: #fda4af;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
 .live-overlay-wheel-audio-arm {
   cursor: pointer;
 }

@@ -531,12 +531,56 @@ export function LiveOverlayReceiver() {
     const cheer = new Audio(WHEEL_WINNER_CHEER_AUDIO_PATH);
     const enc = new Audio(WHEEL_REENCRYPT_AUDIO_PATH);
     spinAudioRef.current = spin; cheerAudioRef.current = cheer; encryptAudioRef.current = enc;
-    const testPlay = async (a: HTMLAudioElement) => { a.volume = 0.08; await a.play(); await new Promise((r) => window.setTimeout(r, 160)); a.pause(); a.currentTime = 0; };
-    try {
-      await testPlay(spin); await testPlay(cheer); await testPlay(enc);
-      setAudioArmed(true); setAudioJustArmed(true); setAudioNotice(null);
+    const testPlay = async (a: HTMLAudioElement) => {
+      try {
+        a.volume = 0.08;
+        await a.play();
+        await new Promise((r) => window.setTimeout(r, 160));
+        a.pause();
+        a.currentTime = 0;
+        return true;
+      } catch {
+        try {
+          a.pause();
+          a.currentTime = 0;
+        } catch {
+          // ignore
+        }
+        return false;
+      }
+    };
+
+    const [spinOk, cheerOk, encOk] = await Promise.all([testPlay(spin), testPlay(cheer), testPlay(enc)]);
+
+    // Arm overlay when any audible unlock succeeds. Only fail modal when every attempt fails.
+    if (spinOk || cheerOk || encOk) {
+      setAudioArmed(true);
+      setAudioJustArmed(true);
       window.setTimeout(() => setAudioJustArmed(false), 2200);
-    } catch { setAudioNotice("AUDIO COULD NOT BE ENABLED — CLICK AGAIN"); }
+
+      if (spinOk && cheerOk && encOk) {
+        setAudioNotice(null);
+        return;
+      }
+
+      try {
+        const [cheerHead, encHead] = await Promise.all([
+          fetch(WHEEL_WINNER_CHEER_AUDIO_PATH, { method: "HEAD", cache: "no-store" }),
+          fetch(WHEEL_REENCRYPT_AUDIO_PATH, { method: "HEAD", cache: "no-store" }),
+        ]);
+        if (!cheerHead.ok || !encHead.ok) {
+          setAudioNotice("WHEEL SFX FILE NOT FOUND");
+        } else {
+          setAudioNotice("SOME WHEEL SFX MAY BE BLOCKED");
+        }
+      } catch {
+        setAudioNotice("SOME WHEEL SFX MAY BE BLOCKED");
+      }
+      return;
+    }
+
+    setAudioArmed(false);
+    setAudioNotice("AUDIO COULD NOT BE ENABLED — CLICK AGAIN");
   }
 
   async function playSpinMusic(path?: string) { const a = spinAudioRef.current; if (!a || !audioArmed) return; a.loop = true; a.volume = 0.82; const p = safeWheelAudioPath(path) ?? a.src ?? "/audio/wheel/142.mp3"; if (!a.src || !a.src.endsWith(p)) a.src = p; try { await a.play(); } catch {} }

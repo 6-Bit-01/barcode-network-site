@@ -189,29 +189,6 @@ async function decodeAudioBuffer(context: AudioContext, path: string): Promise<A
   }
 }
 
-async function unlockAudioElement(audio: HTMLAudioElement): Promise<boolean> {
-  try {
-    const originalVolume = audio.volume;
-    const originalMuted = audio.muted;
-    audio.muted = true;
-    audio.volume = 0.0001;
-    await audio.play();
-    audio.pause();
-    audio.currentTime = 0;
-    audio.muted = originalMuted;
-    audio.volume = originalVolume;
-    return true;
-  } catch {
-    try {
-      audio.pause();
-      audio.currentTime = 0;
-    } catch {
-      // ignore
-    }
-    return false;
-  }
-}
-
 function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -350,11 +327,15 @@ function WheelCeremonyOverlay({ scene, audioArmed, audioNotice, audioJustArmed, 
   }, [ceremony?.status, ceremony?.reencryptNonce, ceremony?.reencryptCycleId]);
 
   useEffect(() => {
-    if (ceremony?.status !== "spinning") { window.setTimeout(() => setFrozenRotationDeg(null), 0); return; }
+    if (ceremony?.status !== "spinning") return;
+    const clearTimer = window.setTimeout(() => setFrozenRotationDeg(null), 0);
     const freezeTimer = window.setTimeout(() => {
       setFrozenRotationDeg(finalRotationDeg);
     }, Math.max(0, (spinEndsAtMs ?? Date.now()) - Date.now()));
-    return () => window.clearTimeout(freezeTimer);
+    return () => {
+      window.clearTimeout(clearTimer);
+      window.clearTimeout(freezeTimer);
+    };
   }, [ceremony?.status, spinEndsAtMs, finalRotationDeg]);
 
   useEffect(() => {
@@ -587,7 +568,7 @@ export function LiveOverlayReceiver() {
   function playOneShotBuffer(buffer: AudioBuffer | null, volume: number) {
     const ctx = audioContextRef.current;
     if (!ctx || !buffer || !audioArmed) return;
-    try {
+    const play = () => {
       const source = ctx.createBufferSource();
       const gain = ctx.createGain();
       gain.gain.value = volume;
@@ -595,9 +576,12 @@ export function LiveOverlayReceiver() {
       source.connect(gain);
       gain.connect(ctx.destination);
       source.start(0);
-    } catch {
-      setAudioNotice("WHEEL SFX PLAYBACK LOCKED");
+    };
+    if (ctx.state === "suspended") {
+      void ctx.resume().then(play).catch(() => setAudioNotice("WHEEL SFX PLAYBACK LOCKED"));
+      return;
     }
+    try { play(); } catch { setAudioNotice("WHEEL SFX PLAYBACK LOCKED"); }
   }
 
   return (

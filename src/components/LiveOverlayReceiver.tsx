@@ -75,7 +75,7 @@ const WHEEL_RESULT_REVEAL_DELAY_MS = 700;
 const WHEEL_SPIN_VOLUME = 0.82;
 const WHEEL_CHEER_VOLUME = 0.665;
 const WHEEL_ENCRYPT_VOLUME = 0.9;
-const WHEEL_SELECTOR_ZONE_LABEL_ROTATION_DEG = -90;
+const WHEEL_SELECTOR_ZONE_LABEL_ROTATION_DEG = 0;
 
 const FALLBACK_WHEEL_AUDIO_FILES = [
   "/audio/wheel/142.mp3",
@@ -199,13 +199,13 @@ function clampNumber(value: number, min: number, max: number): number {
 }
 
 function wheelLabelMetrics(count: number) {
-  if (count <= 4) return { width: 35, radius: 26.4, size: 4.65, tracking: "0.001em", lines: 3 };
-  if (count <= 6) return { width: 31, radius: 27.8, size: 3.88, tracking: "0.001em", lines: 3 };
-  if (count <= 8) return { width: 27, radius: 29.5, size: 3.12, tracking: "0.002em", lines: 3 };
-  if (count <= 12) return { width: 22, radius: 31.5, size: 2.28, tracking: "0.002em", lines: 3 };
-  if (count <= 16) return { width: 18.4, radius: 33.2, size: 1.72, tracking: "0.001em", lines: 2 };
-  if (count <= 24) return { width: 15.2, radius: 35.1, size: 1.28, tracking: "0", lines: 2 };
-  return { width: 12.4, radius: 36.7, size: 0.98, tracking: "0", lines: 2 };
+  if (count <= 4) return { width: 35, radius: 26.4, size: 8.2, tracking: "0.001em", lines: 3 };
+  if (count <= 6) return { width: 31, radius: 27.8, size: 6.9, tracking: "0.001em", lines: 3 };
+  if (count <= 8) return { width: 27, radius: 29.5, size: 5.6, tracking: "0.002em", lines: 3 };
+  if (count <= 12) return { width: 22, radius: 31.5, size: 4.1, tracking: "0.002em", lines: 3 };
+  if (count <= 16) return { width: 18.4, radius: 33.2, size: 3.1, tracking: "0.001em", lines: 2 };
+  if (count <= 24) return { width: 15.2, radius: 35.1, size: 2.3, tracking: "0", lines: 2 };
+  return { width: 12.4, radius: 36.7, size: 1.76, tracking: "0", lines: 2 };
 }
 
 function wheelLabelFit(value: string, count: number, segmentAngle: number) {
@@ -222,7 +222,7 @@ function wheelLabelFit(value: string, count: number, segmentAngle: number) {
   const width = clampNumber(Math.min(base.width * shortNameBoost, tangentWidth * 0.98), minWidth, base.width * 1.22);
   const maxLineLength = Math.max(4, Math.ceil(length / lines));
   const fitSize = (width * (lines === 1 ? 1.72 : 1.58)) / Math.max(5, maxLineLength);
-  const size = clampNumber(Math.min(base.size * shortNameBoost, fitSize), count <= 16 ? 0.92 : 0.72, base.size * 1.28);
+  const size = clampNumber(Math.min(base.size * shortNameBoost, fitSize), count <= 16 ? 1.55 : 1.2, base.size * 1.42);
   return {
     width: `${width.toFixed(2)}vmin`,
     radius,

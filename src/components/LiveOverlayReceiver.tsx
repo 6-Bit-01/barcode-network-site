@@ -72,6 +72,10 @@ const WHEEL_AUDIO_FADE_OUT_MS = 10_000;
 const WHEEL_WINNER_CHEER_AUDIO_PATH = "/audio/wheel/WheelCheer.mp3";
 const WHEEL_REENCRYPT_AUDIO_PATH = "/audio/wheel/WheelEncrypt.mp3";
 const WHEEL_RESULT_REVEAL_DELAY_MS = 700;
+const WHEEL_SPIN_VOLUME = 0.82;
+const WHEEL_CHEER_VOLUME = 0.665;
+const WHEEL_ENCRYPT_VOLUME = 0.9;
+const WHEEL_SELECTOR_ZONE_LABEL_ROTATION_DEG = -90;
 
 const FALLBACK_WHEEL_AUDIO_FILES = [
   "/audio/wheel/142.mp3",
@@ -235,7 +239,7 @@ function wheelLabelPosition(angle: number, radius: number, wheelRotationDeg: num
   const y = Math.cos(radians) * -radius;
   const finalVisualAngle = (((angle + wheelRotationDeg) % 360) + 360) % 360;
   const inRightSelectorZone = finalVisualAngle >= 60 && finalVisualAngle <= 120;
-  const rotation = inRightSelectorZone ? 0 : wheelUprightLabelRotationDegrees(angle);
+  const rotation = inRightSelectorZone ? WHEEL_SELECTOR_ZONE_LABEL_ROTATION_DEG : wheelUprightLabelRotationDegrees(angle);
   return { x: `${x.toFixed(3)}vmin`, y: `${y.toFixed(3)}vmin`, rotation: `${rotation.toFixed(3)}deg` };
 }
 
@@ -595,8 +599,8 @@ export function LiveOverlayReceiver() {
     setAudioNotice("AUDIO COULD NOT BE ENABLED — CLICK AGAIN");
   }
 
-  async function playSpinMusic(path?: string) { const a = spinAudioRef.current; if (!a || !audioArmed) return; a.loop = true; a.volume = 0.82; const p = safeWheelAudioPath(path) ?? a.src ?? "/audio/wheel/142.mp3"; if (!a.src || !a.src.endsWith(p)) a.src = p; try { await a.play(); } catch {} }
-  function fadeSpinMusic() { const a = spinAudioRef.current; if (!a) return; const sv = a.volume || 0.82; const st = performance.now(); const tick = (n: number) => { const pr = Math.max(0, Math.min(1, (n - st) / WHEEL_AUDIO_FADE_OUT_MS)); a.volume = sv * (1 - pr); if (pr >= 1) { stopWheelAudio(a); a.volume = sv; spinFadeFrameRef.current = null; return; } spinFadeFrameRef.current = window.requestAnimationFrame(tick); }; if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = window.requestAnimationFrame(tick); }
+  async function playSpinMusic(path?: string) { const a = spinAudioRef.current; if (!a || !audioArmed) return; a.loop = true; a.volume = WHEEL_SPIN_VOLUME; const p = safeWheelAudioPath(path) ?? a.src ?? "/audio/wheel/142.mp3"; if (!a.src || !a.src.endsWith(p)) a.src = p; try { await a.play(); } catch {} }
+  function fadeSpinMusic() { const a = spinAudioRef.current; if (!a) return; const sv = a.volume || WHEEL_SPIN_VOLUME; const st = performance.now(); const tick = (n: number) => { const pr = Math.max(0, Math.min(1, (n - st) / WHEEL_AUDIO_FADE_OUT_MS)); a.volume = sv * (1 - pr); if (pr >= 1) { stopWheelAudio(a); a.volume = sv; spinFadeFrameRef.current = null; return; } spinFadeFrameRef.current = window.requestAnimationFrame(tick); }; if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = window.requestAnimationFrame(tick); }
   function playSfxBuffer(bufferRef: React.MutableRefObject<AudioBuffer | null>, volume: number) {
     const context = sfxContextRef.current;
     const buffer = bufferRef.current;
@@ -636,7 +640,7 @@ export function LiveOverlayReceiver() {
 
         <main className="live-overlay-content">
           {wheelVisible ? (
-            <WheelCeremonyOverlay scene={scene} audioArmed={audioArmed} audioNotice={audioNotice} audioJustArmed={audioJustArmed} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={() => playSfxBuffer(cheerBufferRef, 0.95)} playEncryptSfx={() => playSfxBuffer(encryptBufferRef, 0.9)} />
+            <WheelCeremonyOverlay scene={scene} audioArmed={audioArmed} audioNotice={audioNotice} audioJustArmed={audioJustArmed} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={() => playSfxBuffer(cheerBufferRef, WHEEL_CHEER_VOLUME)} playEncryptSfx={() => playSfxBuffer(encryptBufferRef, WHEEL_ENCRYPT_VOLUME)} />
           ) : youtubeVisible && scene.youtube && scene.track ? (
             <div className="live-overlay-youtube-scene">
               <YouTubeOverlayPlayer sync={scene.youtube} />

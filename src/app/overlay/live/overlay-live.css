@@ -466,8 +466,9 @@ body > div:last-of-type {
   box-shadow: inset 0 0 2.8vmin rgba(2, 6, 23, 0.32), 0 0 2.2vmin rgba(255, 255, 255, 0.1);
 }
 
-.live-overlay-wheel-scene--spinning .live-overlay-wheel {
+.live-overlay-wheel-scene--spinning.live-overlay-wheel-scene--spin-armed .live-overlay-wheel {
   animation: live-wheel-spin var(--wheel-spin-duration, 24s) cubic-bezier(0.11, 0.78, 0.18, 1) both;
+  animation-delay: var(--wheel-spin-delay, 0.85s);
 }
 
 .live-overlay-wheel-scene--result_pending .live-overlay-wheel,

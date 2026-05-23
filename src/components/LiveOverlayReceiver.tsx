@@ -68,6 +68,8 @@ function showTrack(scene: ResolvedLiveOverlayScene): boolean {
 }
 
 const WHEEL_AUDIO_ARMED_STORAGE_KEY = "barcode-wheel-audio-armed";
+const WHEEL_SPIN_START_DELAY_MS = 850;
+const WHEEL_AUDIO_FADE_OUT_MS = 10_000;
 
 const FALLBACK_WHEEL_AUDIO_FILES = [
   "/audio/wheel/142.mp3",
@@ -236,7 +238,9 @@ function wheelLabelPosition(angle: number, radius: number) {
   const radians = (angle * Math.PI) / 180;
   const x = Math.sin(radians) * radius;
   const y = Math.cos(radians) * -radius;
-  const rotation = wheelUprightLabelRotationDegrees(angle);
+  const normalizedAngle = ((angle % 360) + 360) % 360;
+  const inRightSelectorZone = normalizedAngle >= 60 && normalizedAngle <= 120;
+  const rotation = inRightSelectorZone ? 0 : wheelUprightLabelRotationDegrees(angle);
   return { x: `${x.toFixed(3)}vmin`, y: `${y.toFixed(3)}vmin`, rotation: `${rotation.toFixed(3)}deg` };
 }
 
@@ -250,6 +254,7 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   const reencryptVisualActive = ceremony?.status === "reencrypting" || Boolean(reencryptNonce && visibleReencryptNonce === reencryptNonce);
   const spinning = ceremony?.status === "spinning";
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioFadeFrameRef = useRef<number | null>(null);
   const [audioArmed, setAudioArmed] = useState(() => readWheelAudioArmed());
   const [audioNotice, setAudioNotice] = useState<string | null>(null);
   const [audioJustArmed, setAudioJustArmed] = useState(false);
@@ -264,6 +269,7 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   const wheelStyle = {
     "--wheel-final-rotation": `${finalRotationDeg}deg`,
     "--wheel-spin-duration": `${Math.max(16, (ceremony?.spinDurationMs ?? 24000) / 1000)}s`,
+    "--wheel-spin-delay": `${WHEEL_SPIN_START_DELAY_MS / 1000}s`,
     "--wheel-slice-count": candidateCount,
     "--wheel-slice-background": sliceBackground,
     "--wheel-name-size": `${labelMetrics.size}vmin`,
@@ -299,6 +305,10 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   }, []);
 
   useEffect(() => {
+    if (audioFadeFrameRef.current !== null) {
+      window.cancelAnimationFrame(audioFadeFrameRef.current);
+      audioFadeFrameRef.current = null;
+    }
     const existingAudio = audioRef.current;
     if (!spinning || !audioArmed) {
       stopWheelAudio(existingAudio);
@@ -338,9 +348,39 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
 
     return () => {
       cancelled = true;
-      stopWheelAudio(audioRef.current);
     };
   }, [audioArmed, spinning, ceremony?.audioPath, ceremony?.spinStartedAt, ceremony?.resultTrackId]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || spinning || ceremony?.status === "reencrypting") return undefined;
+    if (audio.paused || audio.currentTime <= 0) return undefined;
+    const startVolume = audio.volume;
+    if (startVolume <= 0.001) {
+      stopWheelAudio(audio);
+      return undefined;
+    }
+    const startedAt = performance.now();
+    const fade = (now: number) => {
+      const elapsed = now - startedAt;
+      const progress = Math.max(0, Math.min(1, elapsed / WHEEL_AUDIO_FADE_OUT_MS));
+      audio.volume = startVolume * (1 - progress);
+      if (progress >= 1) {
+        stopWheelAudio(audio);
+        audio.volume = startVolume;
+        audioFadeFrameRef.current = null;
+        return;
+      }
+      audioFadeFrameRef.current = window.requestAnimationFrame(fade);
+    };
+    audioFadeFrameRef.current = window.requestAnimationFrame(fade);
+    return () => {
+      if (audioFadeFrameRef.current !== null) {
+        window.cancelAnimationFrame(audioFadeFrameRef.current);
+        audioFadeFrameRef.current = null;
+      }
+    };
+  }, [ceremony?.status, spinning]);
 
   function enableWheelAudio() {
     const unlockPath = safeWheelAudioPath(ceremony?.audioPath) ?? FALLBACK_WHEEL_AUDIO_FILES[0];
@@ -366,7 +406,7 @@ function WheelCeremonyOverlay({ scene }: { scene: ResolvedLiveOverlayScene }) {
   }
 
   return (
-    <div className={`live-overlay-wheel-scene live-overlay-wheel-scene--${ceremony?.status ?? "idle"} ${reencryptVisualActive ? "live-overlay-wheel-scene--reencrypting" : ""} ${spinning ? "live-overlay-wheel-scene--spinning" : ""}`} data-wheel-seed={ceremony?.seed} data-wheel-animation-key={animationKey}>
+    <div className={`live-overlay-wheel-scene live-overlay-wheel-scene--${ceremony?.status ?? "idle"} ${reencryptVisualActive ? "live-overlay-wheel-scene--reencrypting" : ""} ${spinning ? "live-overlay-wheel-scene--spinning live-overlay-wheel-scene--spin-armed" : ""}`} data-wheel-seed={ceremony?.seed} data-wheel-animation-key={animationKey}>
       {!audioArmed ? <button type="button" className="live-overlay-wheel-audio-arm" onClick={enableWheelAudio}>ENABLE OPTIONAL WHEEL AUDIO</button> : audioJustArmed ? <div className="live-overlay-wheel-audio-armed" role="status">OPTIONAL AUDIO ARMED</div> : null}
       {audioNotice && <div className="live-overlay-wheel-audio-notice" role="status">{audioNotice}</div>}
       {reencryptVisualActive && <div key={`glitch-${animationKey}`} className="live-overlay-wheel-glitch-stack" aria-hidden="true"><div className="live-overlay-wheel-static" /><div className="live-overlay-wheel-glitch">RE-ENCRYPTING SIGNAL</div><div className="live-overlay-wheel-corrupt-labels">010010 // SIGNAL MUTATING // 101101</div></div>}

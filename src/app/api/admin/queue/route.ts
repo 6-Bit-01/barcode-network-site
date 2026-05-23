@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
+import { resetWheelCeremonyStateForNewSession } from "@/lib/live-overlay";
 import { archiveCurrentQueueSession, getRadioQueueState, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateRadioTrack, updateSponsorBreakState, updateSubmissionCooldownSettings } from "@/lib/queue";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +33,7 @@ export async function POST(req: Request) {
     const safePriorityPriceCents = Number.isFinite(priorityPriceCents) ? Math.max(0, Math.round(priorityPriceCents)) : undefined;
     const priorityPaidRequested = body.priorityUpgradesEnabled === true || body.priorityUpgradePaymentsEnabled === true;
     const priorityPaidEnabled = priorityPaidRequested && (safePriorityPriceCents ?? 0) > 0;
-    return NextResponse.json(await startNewQueueSession({
+    const state = await startNewQueueSession({
       title: typeof body.title === "string" ? body.title : undefined,
       showDate: typeof body.showDate === "string" ? body.showDate : undefined,
       description: typeof body.description === "string" ? body.description : undefined,
@@ -46,7 +47,9 @@ export async function POST(req: Request) {
       priorityUpgradePriceCents: safePriorityPriceCents,
       priorityUpgradeCurrency: typeof body.priorityUpgradeCurrency === "string" ? body.priorityUpgradeCurrency : undefined,
       priorityUpgradePaymentsEnabled: priorityPaidEnabled,
-    }));
+    });
+    await resetWheelCeremonyStateForNewSession();
+    return NextResponse.json(state);
   }
   if (body.action === "updateSubmissionCooldownSettings") {
     const submissionCooldownSeconds = Number(body.submissionCooldownSeconds);

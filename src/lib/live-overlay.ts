@@ -649,3 +649,38 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
   await writeLiveOverlayState(next);
   return getLiveOverlayAdminSnapshot();
 }
+
+export async function resetWheelCeremonyStateForNewSession(): Promise<void> {
+  const current = await getStoredLiveOverlayState();
+  const now = new Date().toISOString();
+  const next: LiveOverlayState = {
+    ...current,
+    mode: "standby",
+    wheelOverlayActive: false,
+    wheelOverlayLaunchedAt: undefined,
+    wheelOverlayStatus: "ready",
+    wheelCeremonyStatus: "idle",
+    wheelCeremonyStartedAt: undefined,
+    wheelCeremonySpinStartedAt: undefined,
+    wheelCeremonyResultTrackId: undefined,
+    wheelCeremonyChosenTrackId: undefined,
+    wheelCeremonyResultSelectedAt: undefined,
+    wheelCeremonySeed: undefined,
+    wheelCeremonyPreviousSeed: undefined,
+    wheelCeremonyCandidateOrder: undefined,
+    wheelCeremonyPreviousCandidateOrder: undefined,
+    wheelCeremonyReencryptNonce: undefined,
+    wheelCeremonyReencryptCycleId: undefined,
+    wheelCeremonyFinalRotationDeg: undefined,
+    wheelCeremonyLandingAngleDeg: undefined,
+    wheelCeremonyWinningSegmentId: undefined,
+    wheelCeremonyWinningSegmentIndex: undefined,
+    wheelCeremonyJingleKey: "silent",
+    wheelCeremonySpinDurationMs: undefined,
+    wheelCeremonyAudioPath: undefined,
+    artistName: undefined,
+    trackTitle: undefined,
+    updatedAt: now,
+  };
+  await writeLiveOverlayState(next);
+}

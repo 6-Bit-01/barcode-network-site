@@ -178,6 +178,17 @@ function stopWheelAudio(audio: HTMLAudioElement | null): void {
   audio.currentTime = 0;
 }
 
+async function decodeAudioBuffer(context: AudioContext, path: string): Promise<AudioBuffer | null> {
+  try {
+    const response = await fetch(path, { cache: "no-store" });
+    if (!response.ok) return null;
+    const bytes = await response.arrayBuffer();
+    return await context.decodeAudioData(bytes.slice(0));
+  } catch {
+    return null;
+  }
+}
+
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -502,8 +513,9 @@ export function LiveOverlayReceiver() {
   const [audioNotice, setAudioNotice] = useState<string | null>(null);
   const [audioJustArmed, setAudioJustArmed] = useState(false);
   const spinAudioRef = useRef<HTMLAudioElement | null>(null);
-  const cheerAudioRef = useRef<HTMLAudioElement | null>(null);
-  const encryptAudioRef = useRef<HTMLAudioElement | null>(null);
+  const sfxContextRef = useRef<AudioContext | null>(null);
+  const cheerBufferRef = useRef<AudioBuffer | null>(null);
+  const encryptBufferRef = useRef<AudioBuffer | null>(null);
   const spinFadeFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -536,14 +548,8 @@ export function LiveOverlayReceiver() {
 
   async function enableOverlayAudio() {
     const spin = new Audio("/audio/wheel/142.mp3");
-    const cheer = new Audio(WHEEL_WINNER_CHEER_AUDIO_PATH);
-    const encrypt = new Audio(WHEEL_REENCRYPT_AUDIO_PATH);
     spinAudioRef.current = spin;
-    cheerAudioRef.current = cheer;
-    encryptAudioRef.current = encrypt;
     spin.preload = "auto";
-    cheer.preload = "auto";
-    encrypt.preload = "auto";
     const testPlay = async (a: HTMLAudioElement) => {
       try {
         a.volume = 0.08;
@@ -563,13 +569,25 @@ export function LiveOverlayReceiver() {
       }
     };
 
-    const [spinOk, cheerOk, encryptOk] = await Promise.all([testPlay(spin), testPlay(cheer), testPlay(encrypt)]);
+    const spinOk = await testPlay(spin);
 
     if (spinOk) {
+      if (!sfxContextRef.current) sfxContextRef.current = new AudioContext();
+      try {
+        await sfxContextRef.current.resume();
+      } catch {
+        // non-blocking
+      }
+      const [cheerBuffer, encryptBuffer] = await Promise.all([
+        decodeAudioBuffer(sfxContextRef.current, WHEEL_WINNER_CHEER_AUDIO_PATH),
+        decodeAudioBuffer(sfxContextRef.current, WHEEL_REENCRYPT_AUDIO_PATH),
+      ]);
+      cheerBufferRef.current = cheerBuffer;
+      encryptBufferRef.current = encryptBuffer;
       setAudioArmed(true);
       setAudioJustArmed(true);
       window.setTimeout(() => setAudioJustArmed(false), 2200);
-      setAudioNotice(!cheerOk || !encryptOk ? "WHEEL SFX MAY BE BLOCKED" : null);
+      setAudioNotice(!cheerBuffer || !encryptBuffer ? "WHEEL SFX UNAVAILABLE" : null);
       return;
     }
 
@@ -579,13 +597,31 @@ export function LiveOverlayReceiver() {
 
   async function playSpinMusic(path?: string) { const a = spinAudioRef.current; if (!a || !audioArmed) return; a.loop = true; a.volume = 0.82; const p = safeWheelAudioPath(path) ?? a.src ?? "/audio/wheel/142.mp3"; if (!a.src || !a.src.endsWith(p)) a.src = p; try { await a.play(); } catch {} }
   function fadeSpinMusic() { const a = spinAudioRef.current; if (!a) return; const sv = a.volume || 0.82; const st = performance.now(); const tick = (n: number) => { const pr = Math.max(0, Math.min(1, (n - st) / WHEEL_AUDIO_FADE_OUT_MS)); a.volume = sv * (1 - pr); if (pr >= 1) { stopWheelAudio(a); a.volume = sv; spinFadeFrameRef.current = null; return; } spinFadeFrameRef.current = window.requestAnimationFrame(tick); }; if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = window.requestAnimationFrame(tick); }
-  function playSfxFromRef(ref: React.MutableRefObject<HTMLAudioElement | null>, volume: number) {
-    const audio = ref.current;
-    if (!audio || !audioArmed) return;
-    audio.pause();
-    audio.currentTime = 0;
-    audio.volume = volume;
-    void audio.play().catch(() => setAudioNotice("WHEEL SFX PLAYBACK BLOCKED"));
+  function playSfxBuffer(bufferRef: React.MutableRefObject<AudioBuffer | null>, volume: number) {
+    const context = sfxContextRef.current;
+    const buffer = bufferRef.current;
+    if (!context || !buffer || !audioArmed) {
+      setAudioNotice("WHEEL SFX UNAVAILABLE");
+      return;
+    }
+    const run = () => {
+      const source = context.createBufferSource();
+      const gain = context.createGain();
+      gain.gain.value = volume;
+      source.buffer = buffer;
+      source.connect(gain);
+      gain.connect(context.destination);
+      source.start(0);
+    };
+    if (context.state === "suspended") {
+      void context.resume().then(run).catch(() => setAudioNotice("WHEEL SFX UNAVAILABLE"));
+      return;
+    }
+    try {
+      run();
+    } catch {
+      setAudioNotice("WHEEL SFX UNAVAILABLE");
+    }
   }
 
   return (
@@ -600,7 +636,7 @@ export function LiveOverlayReceiver() {
 
         <main className="live-overlay-content">
           {wheelVisible ? (
-            <WheelCeremonyOverlay scene={scene} audioArmed={audioArmed} audioNotice={audioNotice} audioJustArmed={audioJustArmed} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={() => playSfxFromRef(cheerAudioRef, 0.95)} playEncryptSfx={() => playSfxFromRef(encryptAudioRef, 0.9)} />
+            <WheelCeremonyOverlay scene={scene} audioArmed={audioArmed} audioNotice={audioNotice} audioJustArmed={audioJustArmed} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={() => playSfxBuffer(cheerBufferRef, 0.95)} playEncryptSfx={() => playSfxBuffer(encryptBufferRef, 0.9)} />
           ) : youtubeVisible && scene.youtube && scene.track ? (
             <div className="live-overlay-youtube-scene">
               <YouTubeOverlayPlayer sync={scene.youtube} />

@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { buildWheelSegments, wheelFinalRotationForSegment } from "@/lib/live-overlay-resolver";
+import { buildWheelSegments, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
 import type { LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
 
 type YTPlayer = {
@@ -75,7 +75,9 @@ const WHEEL_RESULT_REVEAL_DELAY_MS = 700;
 const WHEEL_SPIN_VOLUME = 0.82;
 const WHEEL_CHEER_VOLUME = 0.665;
 const WHEEL_ENCRYPT_VOLUME = 0.9;
-const WHEEL_LABEL_ROTATION_DEG = 0;
+const WHEEL_SELECTOR_ZONE_LABEL_ROTATION_DEG = 0;
+const WHEEL_SELECTOR_ZONE_MIN_ANGLE_DEG = 60;
+const WHEEL_SELECTOR_ZONE_MAX_ANGLE_DEG = 120;
 
 const FALLBACK_WHEEL_AUDIO_FILES = [
   "/audio/wheel/142.mp3",
@@ -233,11 +235,18 @@ function wheelLabelFit(value: string, count: number, segmentAngle: number) {
   };
 }
 
-function wheelLabelPosition(angle: number, radius: number) {
+function normalizeAngleDegrees(angle: number): number {
+  return ((angle % 360) + 360) % 360;
+}
+
+function wheelLabelPosition(angle: number, radius: number, wheelRotationDeg: number) {
   const radians = (angle * Math.PI) / 180;
   const x = Math.sin(radians) * radius;
   const y = Math.cos(radians) * -radius;
-  return { x: `${x.toFixed(3)}vmin`, y: `${y.toFixed(3)}vmin`, rotation: `${WHEEL_LABEL_ROTATION_DEG.toFixed(3)}deg` };
+  const finalVisualAngle = normalizeAngleDegrees(angle + wheelRotationDeg);
+  const inRightSelectorZone = finalVisualAngle >= WHEEL_SELECTOR_ZONE_MIN_ANGLE_DEG && finalVisualAngle <= WHEEL_SELECTOR_ZONE_MAX_ANGLE_DEG;
+  const rotation = inRightSelectorZone ? WHEEL_SELECTOR_ZONE_LABEL_ROTATION_DEG : wheelUprightLabelRotationDegrees(angle);
+  return { x: `${x.toFixed(3)}vmin`, y: `${y.toFixed(3)}vmin`, rotation: `${rotation.toFixed(3)}deg` };
 }
 
 function WheelCeremonyOverlay({ scene, audioArmed, audioNotice, audioJustArmed, playSpinMusic, fadeSpinMusic, playCheerSfx, playEncryptSfx }: { scene: ResolvedLiveOverlayScene; audioArmed: boolean; audioNotice: string | null; audioJustArmed: boolean; playSpinMusic: (path?: string) => Promise<void>; fadeSpinMusic: () => void; playCheerSfx: () => void; playEncryptSfx: () => void }) {
@@ -397,7 +406,7 @@ function WheelCeremonyOverlay({ scene, audioArmed, audioNotice, audioJustArmed, 
             const angle = segment.centerAngle;
             const label = candidate.artistName.replace(/\s+/g, " ").trim();
             const labelFit = wheelLabelFit(label, candidateCount, segment.angleSize);
-            const position = wheelLabelPosition(angle, labelFit.radius);
+            const position = wheelLabelPosition(angle, labelFit.radius, displayRotationDeg);
             // Wheel labels are visual only. Winner selection is based on slice geometry and the right-side pointer.
             const labelStyle = {
               "--wheel-label-x": position.x,

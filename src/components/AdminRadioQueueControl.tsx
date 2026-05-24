@@ -333,7 +333,7 @@ export function AdminRadioQueueControl() {
         {isArchivedReview && hasSession && <div className="border border-danger/40 bg-danger/10 p-3 text-xs uppercase tracking-widest text-danger">ARCHIVED / READ ONLY — viewing {state?.session?.title ?? "finished session"}. Queue review actions are locked for this finished session.</div>}
       </section>
 
-      {canControlSession && <section className="fixed left-4 right-4 top-[calc(3.5rem+env(safe-area-inset-top))] z-40 space-y-3 border border-border bg-background/95 p-4 text-xs shadow-2xl backdrop-blur">
+      {canControlSession && <section className="fixed left-4 right-4 top-[calc(3.5rem+env(safe-area-inset-top))] z-[8500] space-y-3 border border-border bg-background/95 p-4 text-xs shadow-2xl backdrop-blur">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <p className="truncate uppercase tracking-widest text-muted">{state?.session?.title} · {state?.session?.showDate}</p>
@@ -427,7 +427,7 @@ export function AdminRadioQueueControl() {
 
       {mounted && loadedPlayer && createPortal(<PlayerDock player={loadedPlayer} minimized={minimized} setMinimized={setMinimized} readOnly={readOnly} onAction={playerAction} onCopy={() => copy(loadedPlayer)} />, document.body)}
 
-      {canControlSession && <aside className={`hidden xl:block fixed right-4 top-[calc(12.75rem+env(safe-area-inset-top))] ${railBottomOffsetClass} w-[22rem] z-30 border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3`}>
+      {canControlSession && <aside className={`hidden xl:block fixed right-4 top-[calc(12rem+env(safe-area-inset-top))] ${railBottomOffsetClass} w-[22rem] z-[8400] border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3`}>
         <section className="border border-border bg-surface p-3 space-y-2">
           <div className="flex items-center justify-between">
             <p className="text-xs uppercase tracking-[0.3em] text-muted">Next In Line Rail</p>

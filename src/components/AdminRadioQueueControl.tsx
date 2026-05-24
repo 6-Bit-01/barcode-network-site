@@ -275,7 +275,7 @@ export function AdminRadioQueueControl() {
   const isArchivedReview = Boolean(state?.session?.status === "archived" || readOnly);
   const nextInLine = state?.nextInLine ?? null;
   const loadedPlayer = state?.nowPlaying ?? player;
-  const playerPadding = loadedPlayer ? (minimized ? "pb-40" : "pb-[30rem]") : "pb-20";
+  const playerPadding = loadedPlayer ? (minimized ? "pb-32" : "pb-[20rem]") : "pb-16";
   const isExplicitReview = Boolean(initialSessionIdFromUrl());
   const showQueueReview = hasCurrentSession || isExplicitReview;
   const phaseLabel = state?.session?.broadcastPhase === "ended" ? "Ended / Disconnecting" : state?.session?.broadcastPhase === "broadcast_active" ? "Broadcast Active" : state?.session?.broadcastPhase === "submission_window" ? "Submission Window" : "Warmup";
@@ -288,16 +288,16 @@ export function AdminRadioQueueControl() {
   const timingSummary = buildQueueTimingDisplay(queueTimingInputFromAdminState(state));
   const paymentProcessingCount = (state?.queue ?? []).filter((entry) => ["checkout_pending", "requested", "paid_needs_attention"].includes(entry.priorityUpgradeStatus ?? "none")).length;
 
-  const railBottomOffsetClass = loadedPlayer ? (minimized ? "bottom-32" : "bottom-[20rem]") : "bottom-6";
-  const topOverlayPaddingClass = topBarMinimized ? "pt-[5rem] md:pt-[5.5rem]" : "pt-[6.25rem] md:pt-[6.75rem]";
+  const railBottomOffsetClass = loadedPlayer ? (minimized ? "bottom-24" : "bottom-[12.5rem]") : "bottom-5";
+  const topOverlayPaddingClass = topBarMinimized ? "pt-[4.5rem] md:pt-[4.75rem]" : "pt-[7.25rem] md:pt-[7.5rem]";
 
   return (
-    <div className={`${playerPadding} ${topOverlayPaddingClass} space-y-3 xl:pr-[26rem]`}>
-      <section className="border border-border bg-surface p-2">
+    <div className={`${playerPadding} ${topOverlayPaddingClass} space-y-2 xl:pr-[26rem]`}>
+      <section className="border border-border bg-surface p-1.5">
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "session" ? null : "session")} className="min-h-10 border border-border px-3 py-2 text-sm uppercase tracking-widest text-muted">{activeUtilityPanel === "session" ? "Hide Session Setup" : "Session Setup"}</button>
-          <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "visuals" ? null : "visuals")} className="min-h-10 border border-border px-3 py-2 text-sm uppercase tracking-widest text-muted">{activeUtilityPanel === "visuals" ? "Hide Show Visuals" : "Show Visuals"}</button>
-          <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "overlay" ? null : "overlay")} className="min-h-10 border border-border px-3 py-2 text-sm uppercase tracking-widest text-muted">{activeUtilityPanel === "overlay" ? "Hide Live Overlay" : "Live Overlay"}</button>
+          <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "session" ? null : "session")} className="min-h-9 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">{activeUtilityPanel === "session" ? "Hide Session Setup" : "Session Setup"}</button>
+          <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "visuals" ? null : "visuals")} className="min-h-9 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">{activeUtilityPanel === "visuals" ? "Hide Show Visuals" : "Show Visuals"}</button>
+          <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "overlay" ? null : "overlay")} className="min-h-9 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">{activeUtilityPanel === "overlay" ? "Hide Live Overlay" : "Live Overlay"}</button>
         </div>
       </section>
 
@@ -309,10 +309,10 @@ export function AdminRadioQueueControl() {
 
       {isArchivedReview && hasSession && <div className="border border-danger/40 bg-danger/10 p-3 text-xs uppercase tracking-widest text-danger">ARCHIVED / READ ONLY — viewing {state?.session?.title ?? "finished session"}. Queue review actions are locked for this finished session.</div>}
 
-      {mounted && canControlSession && createPortal(<section className="fixed left-4 right-4 top-[calc(3.5rem+env(safe-area-inset-top))] z-[8500] space-y-2 border border-border bg-background/95 p-3.5 text-sm shadow-2xl backdrop-blur">
+      {mounted && canControlSession && createPortal(<section className="fixed left-4 right-4 top-[calc(3.5rem+env(safe-area-inset-top))] z-[8500] space-y-1.5 border border-border bg-background/95 p-2.5 text-sm shadow-2xl backdrop-blur">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
-            <p className="truncate uppercase tracking-widest text-muted">{state?.session?.title} · {state?.session?.showDate}</p>
+            <p className="truncate text-[11px] uppercase tracking-[0.2em] text-muted">{state?.session?.title} · {state?.session?.showDate}</p>
           </div>
           <button type="button" onClick={() => setTopBarMinimized((value) => !value)} className="min-h-10 border border-border px-3 py-2 uppercase tracking-widest text-muted">{topBarMinimized ? "Expand" : "Minimize"}</button>
         </div>
@@ -322,20 +322,20 @@ export function AdminRadioQueueControl() {
           <span className="border border-cyan-300/40 px-2 py-1 uppercase tracking-widest text-cyan-200">Wheel: {state?.session?.wheelSpinsOwed ?? 0}</span>
           {nextInLine && <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Next: {submittedArtist(nextInLine)} — {submittedTitle(nextInLine)}</span>}
         </div> : <>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-          <div><p className="uppercase tracking-widest text-muted">Show Phase</p><p className="mt-1 font-bold text-foreground">{phaseLabel}</p></div>
-          <div><p className="uppercase tracking-widest text-muted">Submissions</p><p className={`mt-1 font-bold ${state?.publicStatus?.isOpen ? "text-accent" : "text-danger"}`}>{state?.publicStatus?.isOpen ? "Open" : "Closed"}</p></div>
-          <div><p className="uppercase tracking-widest text-muted">Next Owed</p><p className="mt-1 font-bold text-foreground">{state?.nextNonPriorityLane === "regular" ? "Free" : "Wheel"}</p></div>
-          <div><p className="uppercase tracking-widest text-muted">Wheel Spins Unlocked</p><p className="mt-1 font-bold text-cyan-200">{state?.session?.wheelSpinsOwed ?? 0}</p></div>
-          <div><p className="uppercase tracking-widest text-muted">Runtime</p><p className="mt-1 font-bold text-foreground">{formatRuntime(runtime)}</p></div>
-          <div><p className="uppercase tracking-widest text-muted">Pressure</p><p className="mt-1 font-bold text-foreground">{state?.publicStatus?.pressure ?? "syncing"}</p></div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <div><p className="text-[10px] uppercase tracking-widest text-muted">Show Phase</p><p className="mt-1 font-bold text-foreground">{phaseLabel}</p></div>
+          <div><p className="text-[10px] uppercase tracking-widest text-muted">Submissions</p><p className={`mt-1 font-bold ${state?.publicStatus?.isOpen ? "text-accent" : "text-danger"}`}>{state?.publicStatus?.isOpen ? "Open" : "Closed"}</p></div>
+          <div><p className="text-[10px] uppercase tracking-widest text-muted">Next Owed</p><p className="mt-1 font-bold text-foreground">{state?.nextNonPriorityLane === "regular" ? "Free" : "Wheel"}</p></div>
+          <div><p className="text-[10px] uppercase tracking-widest text-muted">Wheel Spins Unlocked</p><p className="mt-1 font-bold text-cyan-200">{state?.session?.wheelSpinsOwed ?? 0}</p></div>
+          <div><p className="text-[10px] uppercase tracking-widest text-muted">Runtime</p><p className="mt-1 font-bold text-foreground">{formatRuntime(runtime)}</p></div>
+          <div><p className="text-[10px] uppercase tracking-widest text-muted">Pressure</p><p className="mt-1 font-bold text-foreground">{state?.publicStatus?.pressure ?? "syncing"}</p></div>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} min-h-10 border px-3 py-2 uppercase tracking-widest hover:text-background`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button>
           {state?.session?.showStarted !== true && <button onClick={() => action("", "startShow")} className="min-h-10 border border-foreground/50 px-3 py-2 uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background">Start Broadcast</button>}
           <button onClick={() => action("", "addWheelSpinOwed")} className="min-h-10 border border-cyan-300/60 px-3 py-2 uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Add Wheel Spin</button>
           <details className="group relative"><summary className="list-none cursor-pointer min-h-10 border border-border/80 px-3 py-2 uppercase tracking-widest text-muted hover:border-foreground/60 hover:text-foreground">Resolver Override ▾</summary><div className="absolute left-0 z-30 mt-2 w-64 space-y-2 border border-border bg-background p-3 shadow-xl"><p className="text-[10px] uppercase tracking-[0.2em] text-muted">Use for live manual correction. This does not count the current slot as played.</p><button type="button" onClick={() => action("", "pullWheelChosen")} disabled={!canPullWheelChosen} className="block w-full min-h-10 border border-cyan-300/60 px-3 py-2 text-left uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Wheel Chosen</button><button type="button" onClick={() => action("", "pullFreeTransmission")} disabled={!canPullFreeTransmission} className="block w-full min-h-10 border border-foreground/40 px-3 py-2 text-left uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Free Transmission</button>{resolverOverrideBlocked && <p className="text-[10px] uppercase tracking-[0.16em] text-[#ffaa00]">Blocked while active Priority owns the resolver.</p>}</div></details>
-          <button onClick={() => setEndConfirmOpen(true)} className="ml-auto min-h-10 border border-danger/60 px-3 py-2 uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Broadcast</button>
+          <button onClick={() => setEndConfirmOpen(true)} className="ml-auto min-h-10 border border-danger/60 px-3 py-2 text-sm uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Broadcast</button>
         </div>
         <div className="flex flex-wrap gap-2">
           {paymentProcessingCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 uppercase tracking-widest text-[#ffaa00]">Payment Processing: {paymentProcessingCount}</span>}
@@ -350,7 +350,7 @@ export function AdminRadioQueueControl() {
 
 
 
-      {canControlSession && <details className="border border-[#ffaa00]/40 bg-[#ffaa00]/5 p-4">
+      {canControlSession && <details className="border border-[#ffaa00]/40 bg-[#ffaa00]/5 p-3">
         <summary className="cursor-pointer text-xs uppercase tracking-[0.32em] text-[#ffaa00]">Testing / Simulation Mode</summary>
         <div className="mt-4 space-y-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><p className="text-sm text-muted">Creates fake SIM tracks for testing. Keep disabled during live broadcasts.</p><div className="border border-[#ffaa00]/40 bg-background/60 p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Status</p><p className={simulationRunning ? "font-bold text-[#ffaa00]" : "font-bold text-muted"}>{simulationRunning ? "Running" : "Stopped"}</p></div></div><div className="flex flex-wrap items-end gap-3"><label className="space-y-1 text-xs uppercase tracking-widest text-muted"><span>Simulation speed</span><select value={simulationSpeed} onChange={(event) => updateSimulationSpeed(event.target.value as SimulationSpeed)} className="block border border-border bg-background px-3 py-2 text-sm normal-case tracking-normal text-foreground">{(Object.keys(SIMULATION_SPEEDS) as SimulationSpeed[]).map((speed) => <option key={speed} value={speed}>{SIMULATION_SPEEDS[speed].label}</option>)}</select></label><button type="button" onClick={startSimulation} disabled={simulationRunning} className="border border-[#ffaa00] px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00] disabled:cursor-not-allowed disabled:opacity-40">Start Simulation</button><button type="button" onClick={stopSimulation} disabled={!simulationRunning} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:cursor-not-allowed disabled:opacity-40">Stop Simulation</button><button type="button" onClick={() => simulationAction("addSimulationFreeTrack", "Added one Free SIM submission.")} className="border border-accent/50 px-4 py-2 text-xs uppercase tracking-widest text-accent">Add Free Test Submission Now</button><button type="button" onClick={() => simulationAction("addSimulationPaidPriority", "Sent one paid Priority SIM skip.")} className="border border-[#ffaa00]/60 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00]">Send Paid Priority Skip Now</button><button type="button" onClick={() => simulationAction("addSimulationCheckoutPending", "Sent one checkout-pending SIM track.")} className="border border-[#ffaa00]/40 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00]">Send Checkout Pending Test Now</button><button type="button" onClick={() => simulationAction("addSimulationPaymentFailed", "Sent one failed-payment SIM track.")} className="border border-danger/50 px-4 py-2 text-xs uppercase tracking-widest text-danger">Send Failed Payment Test Now</button><button type="button" onClick={() => simulationAction("addSimulationHeldPriority", "Sent one held paid Priority SIM track.")} className="border border-[#ffaa00]/60 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00]">Send Held Priority Test Now</button><button type="button" onClick={() => simulationAction("clearSimulationTracks", "Cleared SIM/test tracks only.")} className="border border-danger px-4 py-2 text-xs uppercase tracking-widest text-danger">Clear Simulation Tracks</button></div>{simulationMessage && <p className="border border-[#ffaa00]/30 bg-background/40 p-2 text-sm text-[#ffaa00]">{simulationMessage}</p>}</div>
       </details>}
@@ -395,7 +395,7 @@ export function AdminRadioQueueControl() {
 
       {mounted && loadedPlayer && createPortal(<PlayerDock player={loadedPlayer} minimized={minimized} setMinimized={setMinimized} readOnly={readOnly} onAction={playerAction} onCopy={() => copy(loadedPlayer)} />, document.body)}
 
-      {mounted && canControlSession && createPortal(<aside className={`hidden xl:block fixed right-4 top-[calc(11rem+env(safe-area-inset-top))] ${railBottomOffsetClass} max-h-[calc(100dvh-12rem)] w-[24rem] z-[8400] border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3`}>
+      {mounted && canControlSession && createPortal(<aside className={`hidden xl:block fixed right-4 top-[calc(9.5rem+env(safe-area-inset-top))] ${railBottomOffsetClass} max-h-[calc(100dvh-11rem)] w-[24rem] z-[8400] border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3`}>
         <section className="border border-border bg-surface p-3 space-y-2">
           <div className="flex items-center justify-between">
             <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Rail</p>
@@ -493,7 +493,7 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
     };
   }, [containerId, entry, videoId]);
 
-  if (!videoId) return <div className="border border-border p-6 text-sm text-muted">No playable YouTube video ID found. Use Open Link.</div>;
+  if (!videoId) return <div className="border border-border p-3 text-sm text-muted">No playable YouTube video ID found. Use Open Link.</div>;
   return <div id={containerId} className="h-56 w-full border border-border" />;
 }
 
@@ -515,12 +515,12 @@ function PlayerDock({ player, minimized, setMinimized, readOnly, onAction, onCop
             <button type="button" onClick={onCopy} className="border border-border px-3 py-2 text-xs text-muted">Copy Link</button>
           </div>
         </div>
-        <div className={`${minimized ? "h-0 overflow-hidden opacity-0" : "mt-4 opacity-100"} grid w-full items-end gap-4 xl:grid-cols-[minmax(0,1fr)_auto]`} aria-hidden={minimized}>
-          <div className="min-h-20 w-full min-w-0">
+        <div className={`${minimized ? "h-0 overflow-hidden opacity-0" : "mt-3 opacity-100"} grid w-full items-end gap-3 xl:grid-cols-[minmax(0,1fr)_auto]`} aria-hidden={minimized}>
+          <div className="w-full min-w-0">
             {player.sourceType === "upload" && player.fileUrl && <audio src={adminAudioUrl(player)} controls className="w-full" />}
             {player.sourceType === "youtube" && <AdminYouTubePlayer entry={player} />}
             {player.sourceType !== "upload" && player.sourceType !== "youtube" && embedded && <iframe title="Queue preview" src={embedded} className="h-56 w-full border border-border" allow="clipboard-write; encrypted-media; picture-in-picture" />}
-            {player.sourceType !== "upload" && player.sourceType !== "youtube" && !embedded && <div className="border border-border p-6 text-sm text-muted">No embeddable preview available for this source. Use Open Link or Copy Link.</div>}
+            {player.sourceType !== "upload" && player.sourceType !== "youtube" && !embedded && <div className="border border-border p-2 text-sm text-muted">No embeddable preview for this source. Use Open Link or Copy Link.</div>}
           </div>
           <div className="flex flex-wrap gap-2">
             <a href={openUrl(player)} target="_blank" rel="noreferrer" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent">Open Link</a>
@@ -569,18 +569,18 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction }:
         {canControl && <div className="flex flex-wrap gap-2"><button type="button" onClick={() => onSponsorAction("start")} className="border border-[#ffaa00]/50 px-3 py-1.5 uppercase tracking-widest text-[#ffaa00]">Mark Sponsor Break Started</button><button type="button" onClick={() => onSponsorAction("complete")} className="border border-accent/50 px-3 py-1.5 uppercase tracking-widest text-accent">Mark Sponsor Break Complete</button><button type="button" onClick={() => onSponsorAction("skip")} className="border border-danger/50 px-3 py-1.5 uppercase tracking-widest text-danger">Skip Sponsor Break Tonight</button><button type="button" onClick={() => onSponsorAction("reset")} className="border border-border px-3 py-1.5 uppercase tracking-widest text-muted">Reset Sponsor Break State</button></div>}
       </div>
       <div className="grid gap-3 md:grid-cols-4">
-        <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Projected Show Time</p><p className="mt-1 text-lg font-bold text-foreground">{timingSummary.showRuntimeSummary.projectedLabel}</p></div>
-        <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Target</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.targetLabel}</p></div>
-        <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Target Status</p><p className="mt-1 font-bold text-accent">{timingSummary.showRuntimeSummary.targetStatusLabel}</p></div>
-        <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Line Fit</p><p className="mt-1 font-bold text-foreground">{timingSummary.lineFitCopy}</p></div>
+        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Projected Show Time</p><p className="mt-1 text-lg font-bold text-foreground">{timingSummary.showRuntimeSummary.projectedLabel}</p></div>
+        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Target</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.targetLabel}</p></div>
+        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Target Status</p><p className="mt-1 font-bold text-accent">{timingSummary.showRuntimeSummary.targetStatusLabel}</p></div>
+        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Line Fit</p><p className="mt-1 font-bold text-foreground">{timingSummary.lineFitCopy}</p></div>
       </div>
       <div className="grid gap-3 md:grid-cols-4">
-        <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Commercial Break</p><p className="mt-1 font-bold text-foreground">{sponsor.diagnosticLabel}</p><p className="mt-1 text-muted">{sponsor.durationLabel} duration · {sponsor.minElapsedLabel} minimum · midpoint {sponsor.completedPlayableCount}/{sponsor.totalPlayableNonRemovedCount ?? "—"} playable</p></div>
-        <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Wheel Timing</p><p className="mt-1 font-bold text-foreground">{wheel.owed} wheel spins owed</p><p className="mt-1 text-muted">{wheel.overheadLabel} ceremony overhead included</p></div>
-        <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Unknown Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.unknownDurationCount}</p><p className="mt-1 text-muted">Tracks using est. 5:00</p></div>
-        <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Known Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.knownDurationCount}</p><p className="mt-1 text-muted">Detected/provider/upload durations</p></div>
+        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Commercial Break</p><p className="mt-1 font-bold text-foreground">{sponsor.diagnosticLabel}</p><p className="mt-1 text-muted">{sponsor.durationLabel} duration · {sponsor.minElapsedLabel} minimum · midpoint {sponsor.completedPlayableCount}/{sponsor.totalPlayableNonRemovedCount ?? "—"} playable</p></div>
+        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Wheel Timing</p><p className="mt-1 font-bold text-foreground">{wheel.owed} wheel spins owed</p><p className="mt-1 text-muted">{wheel.overheadLabel} ceremony overhead included</p></div>
+        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Unknown Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.unknownDurationCount}</p><p className="mt-1 text-muted">Tracks using est. 5:00</p></div>
+        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Known Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.knownDurationCount}</p><p className="mt-1 text-muted">Detected/provider/upload durations</p></div>
       </div>
-      <div className="border border-border bg-surface p-3"><p className="uppercase tracking-widest text-muted">Current Runtime Notes</p><p className="mt-1 text-muted">Commercial: {sponsor.diagnosticLabel} · Wheel overhead: {formatHoursMinutes(wheel.overheadSeconds)} · {timingSummary.showRuntimeSummary.notes[0] ?? "No projection warnings."}</p></div>
+      <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Current Runtime Notes</p><p className="mt-1 text-muted">Commercial: {sponsor.diagnosticLabel} · Wheel overhead: {formatHoursMinutes(wheel.overheadSeconds)} · {timingSummary.showRuntimeSummary.notes[0] ?? "No projection warnings."}</p></div>
     </section>
   );
 }
@@ -589,18 +589,18 @@ function Lane({ title, tracks, onAction, onPlayer, onCopy, mode, readOnly }: { t
   const sectionClass = title.includes("Priority") ? "border-[#ffaa00]/50 bg-[#ffaa00]/5" : title.includes("Wheel") ? "border-cyan-300/50 bg-cyan-300/5" : title.includes("Regular") ? "border-border bg-surface" : "border-border bg-surface";
   const titleClass = title.includes("Priority") ? "text-[#ffaa00]" : title.includes("Wheel") ? "text-cyan-200" : "text-foreground";
   return (
-    <section className={`border p-4 ${sectionClass}`}>
-      <div className="mb-4 flex items-center justify-between">
+    <section className={`border p-3 ${sectionClass}`}>
+      <div className="mb-2 flex items-center justify-between">
         <h2 className={`text-sm uppercase tracking-[0.25em] ${titleClass}`}>{title}</h2>
         <span className="text-xs text-muted">{tracks.length}</span>
       </div>
-      <div className="space-y-3">
+      <div className="space-y-2">
         {tracks.length === 0 ? (
-          <p className="border border-border/60 p-4 text-sm text-muted">No tracks in this lane.</p>
+          <p className="border border-border/60 p-3 text-sm text-muted">No tracks in this lane.</p>
         ) : (
           tracks.map((entry) => (
-            <article key={`${title}-${entry.id}`} className={`space-y-3 p-4 ${queueTrackVisual(entry).cardClass}`}>
-              <div className="space-y-3">
+            <article key={`${title}-${entry.id}`} className={`space-y-2 p-3 ${queueTrackVisual(entry).cardClass}`}>
+              <div className="space-y-2">
                 <div>
                   <p className="font-bold">{submittedArtist(entry)} — {submittedTitle(entry)}</p>
                   <p className="text-xs text-muted">{sourceLabel(entry)} · {durationLabel(entry)}</p>

@@ -533,8 +533,8 @@ body > div:last-of-type {
   line-height: var(--wheel-label-line-height, 0.86);
   text-align: center;
   text-transform: uppercase;
-  hyphens: auto;
-  overflow-wrap: anywhere;
+  hyphens: none;
+  overflow-wrap: normal;
   word-break: normal;
   white-space: normal;
   text-shadow:

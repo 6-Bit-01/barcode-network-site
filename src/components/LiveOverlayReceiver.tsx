@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { buildWheelSegments, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
+import { buildWheelSegments, wheelFinalRotationForSegment } from "@/lib/live-overlay-resolver";
 import type { LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
 
 type YTPlayer = {
@@ -75,7 +75,7 @@ const WHEEL_RESULT_REVEAL_DELAY_MS = 700;
 const WHEEL_SPIN_VOLUME = 0.82;
 const WHEEL_CHEER_VOLUME = 0.665;
 const WHEEL_ENCRYPT_VOLUME = 0.9;
-const WHEEL_SELECTOR_ZONE_LABEL_ROTATION_DEG = 0;
+const WHEEL_LABEL_ROTATION_DEG = 0;
 
 const FALLBACK_WHEEL_AUDIO_FILES = [
   "/audio/wheel/142.mp3",
@@ -233,14 +233,11 @@ function wheelLabelFit(value: string, count: number, segmentAngle: number) {
   };
 }
 
-function wheelLabelPosition(angle: number, radius: number, wheelRotationDeg: number) {
+function wheelLabelPosition(angle: number, radius: number) {
   const radians = (angle * Math.PI) / 180;
   const x = Math.sin(radians) * radius;
   const y = Math.cos(radians) * -radius;
-  const finalVisualAngle = (((angle + wheelRotationDeg) % 360) + 360) % 360;
-  const inRightSelectorZone = finalVisualAngle >= 60 && finalVisualAngle <= 120;
-  const rotation = inRightSelectorZone ? WHEEL_SELECTOR_ZONE_LABEL_ROTATION_DEG : wheelUprightLabelRotationDegrees(angle);
-  return { x: `${x.toFixed(3)}vmin`, y: `${y.toFixed(3)}vmin`, rotation: `${rotation.toFixed(3)}deg` };
+  return { x: `${x.toFixed(3)}vmin`, y: `${y.toFixed(3)}vmin`, rotation: `${WHEEL_LABEL_ROTATION_DEG.toFixed(3)}deg` };
 }
 
 function WheelCeremonyOverlay({ scene, audioArmed, audioNotice, audioJustArmed, playSpinMusic, fadeSpinMusic, playCheerSfx, playEncryptSfx }: { scene: ResolvedLiveOverlayScene; audioArmed: boolean; audioNotice: string | null; audioJustArmed: boolean; playSpinMusic: (path?: string) => Promise<void>; fadeSpinMusic: () => void; playCheerSfx: () => void; playEncryptSfx: () => void }) {
@@ -281,7 +278,6 @@ function WheelCeremonyOverlay({ scene, audioArmed, audioNotice, audioJustArmed, 
     "--wheel-winning-start": `${resultSegment.startAngle}deg`,
     "--wheel-winning-end": `${resultSegment.endAngle}deg`,
   } as CSSProperties;
-  const status = ceremony?.status ?? "idle";
   const spinDurationMs = Math.max(16_000, ceremony?.spinDurationMs ?? 24_000);
   const spinStartedAtMs = ceremony?.spinStartedAt ? new Date(ceremony.spinStartedAt).getTime() : null;
   const spinEndsAtMs = spinStartedAtMs ? spinStartedAtMs + WHEEL_SPIN_START_DELAY_MS + spinDurationMs : null;
@@ -289,7 +285,6 @@ function WheelCeremonyOverlay({ scene, audioArmed, audioNotice, audioJustArmed, 
   const showResultPending = ceremony?.status === "result_pending" && resultRevealReadyKey === revealKey;
   const spinShouldStillAnimate = ceremony?.status === "spinning" && !wheelFrozen;
   const displayRotationDeg = wheelRotationDeg;
-  const visualWheelRotationDeg = status === "result_pending" || status === "confirmed" || status === "spinning" ? displayRotationDeg : 0;
 
   useEffect(() => {
     if (!reencryptNonce || lastSeenReencryptNonceRef.current === reencryptNonce) return undefined;
@@ -402,7 +397,7 @@ function WheelCeremonyOverlay({ scene, audioArmed, audioNotice, audioJustArmed, 
             const angle = segment.centerAngle;
             const label = candidate.artistName.replace(/\s+/g, " ").trim();
             const labelFit = wheelLabelFit(label, candidateCount, segment.angleSize);
-            const position = wheelLabelPosition(angle, labelFit.radius, visualWheelRotationDeg);
+            const position = wheelLabelPosition(angle, labelFit.radius);
             // Wheel labels are visual only. Winner selection is based on slice geometry and the right-side pointer.
             const labelStyle = {
               "--wheel-label-x": position.x,

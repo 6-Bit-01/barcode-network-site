@@ -72,6 +72,12 @@ const WHEEL_AUDIO_FADE_OUT_MS = 10_000;
 const WHEEL_WINNER_CHEER_AUDIO_PATH = "/audio/wheel/WheelCheer.mp3";
 const WHEEL_REENCRYPT_AUDIO_PATH = "/audio/wheel/WheelEncrypt.mp3";
 const WHEEL_RESULT_REVEAL_DELAY_MS = 700;
+const WHEEL_SPIN_VOLUME = 0.82;
+const WHEEL_CHEER_VOLUME = 0.665;
+const WHEEL_ENCRYPT_VOLUME = 0.9;
+const WHEEL_SELECTOR_LABEL_SCREEN_UPRIGHT_OFFSET_DEG = 0;
+const WHEEL_SELECTOR_ZONE_MIN_ANGLE_DEG = 210;
+const WHEEL_SELECTOR_ZONE_MAX_ANGLE_DEG = 330;
 
 const FALLBACK_WHEEL_AUDIO_FILES = [
   "/audio/wheel/142.mp3",
@@ -195,13 +201,13 @@ function clampNumber(value: number, min: number, max: number): number {
 }
 
 function wheelLabelMetrics(count: number) {
-  if (count <= 4) return { width: 35, radius: 26.4, size: 4.65, tracking: "0.001em", lines: 3 };
-  if (count <= 6) return { width: 31, radius: 27.8, size: 3.88, tracking: "0.001em", lines: 3 };
-  if (count <= 8) return { width: 27, radius: 29.5, size: 3.12, tracking: "0.002em", lines: 3 };
-  if (count <= 12) return { width: 22, radius: 31.5, size: 2.28, tracking: "0.002em", lines: 3 };
-  if (count <= 16) return { width: 18.4, radius: 33.2, size: 1.72, tracking: "0.001em", lines: 2 };
-  if (count <= 24) return { width: 15.2, radius: 35.1, size: 1.28, tracking: "0", lines: 2 };
-  return { width: 12.4, radius: 36.7, size: 0.98, tracking: "0", lines: 2 };
+  if (count <= 4) return { width: 35, radius: 26.4, size: 8.2, tracking: "0.001em", lines: 3 };
+  if (count <= 6) return { width: 31, radius: 27.8, size: 6.9, tracking: "0.001em", lines: 3 };
+  if (count <= 8) return { width: 27, radius: 29.5, size: 5.6, tracking: "0.002em", lines: 3 };
+  if (count <= 12) return { width: 22, radius: 31.5, size: 4.1, tracking: "0.002em", lines: 3 };
+  if (count <= 16) return { width: 18.4, radius: 33.2, size: 3.1, tracking: "0.001em", lines: 2 };
+  if (count <= 24) return { width: 15.2, radius: 35.1, size: 2.3, tracking: "0", lines: 2 };
+  return { width: 12.4, radius: 36.7, size: 1.76, tracking: "0", lines: 2 };
 }
 
 function wheelLabelFit(value: string, count: number, segmentAngle: number) {
@@ -218,7 +224,7 @@ function wheelLabelFit(value: string, count: number, segmentAngle: number) {
   const width = clampNumber(Math.min(base.width * shortNameBoost, tangentWidth * 0.98), minWidth, base.width * 1.22);
   const maxLineLength = Math.max(4, Math.ceil(length / lines));
   const fitSize = (width * (lines === 1 ? 1.72 : 1.58)) / Math.max(5, maxLineLength);
-  const size = clampNumber(Math.min(base.size * shortNameBoost, fitSize), count <= 16 ? 0.92 : 0.72, base.size * 1.28);
+  const size = clampNumber(Math.min(base.size * shortNameBoost, fitSize), count <= 16 ? 1.55 : 1.2, base.size * 1.42);
   return {
     width: `${width.toFixed(2)}vmin`,
     radius,
@@ -229,13 +235,23 @@ function wheelLabelFit(value: string, count: number, segmentAngle: number) {
   };
 }
 
+function normalizeAngleDegrees(angle: number): number {
+  return ((angle % 360) + 360) % 360;
+}
+
 function wheelLabelPosition(angle: number, radius: number, wheelRotationDeg: number) {
   const radians = (angle * Math.PI) / 180;
   const x = Math.sin(radians) * radius;
   const y = Math.cos(radians) * -radius;
-  const finalVisualAngle = (((angle + wheelRotationDeg) % 360) + 360) % 360;
-  const inRightSelectorZone = finalVisualAngle >= 60 && finalVisualAngle <= 120;
-  const rotation = inRightSelectorZone ? 0 : wheelUprightLabelRotationDegrees(angle);
+  const finalVisualPositionAngle = normalizeAngleDegrees(angle + wheelRotationDeg);
+  const inRightSelectorZone = finalVisualPositionAngle >= WHEEL_SELECTOR_ZONE_MIN_ANGLE_DEG && finalVisualPositionAngle <= WHEEL_SELECTOR_ZONE_MAX_ANGLE_DEG;
+  const baseLabelRotation = wheelUprightLabelRotationDegrees(angle);
+  const finalScreenRotation = normalizeAngleDegrees(wheelRotationDeg + baseLabelRotation);
+  const wouldRenderUpsideDown = finalScreenRotation > 90 && finalScreenRotation < 270;
+  const readableNonSelectorRotation = wouldRenderUpsideDown ? baseLabelRotation + 180 : baseLabelRotation;
+  const rotation = inRightSelectorZone
+    ? (-wheelRotationDeg) + WHEEL_SELECTOR_LABEL_SCREEN_UPRIGHT_OFFSET_DEG
+    : readableNonSelectorRotation;
   return { x: `${x.toFixed(3)}vmin`, y: `${y.toFixed(3)}vmin`, rotation: `${rotation.toFixed(3)}deg` };
 }
 
@@ -277,7 +293,6 @@ function WheelCeremonyOverlay({ scene, audioArmed, audioNotice, audioJustArmed, 
     "--wheel-winning-start": `${resultSegment.startAngle}deg`,
     "--wheel-winning-end": `${resultSegment.endAngle}deg`,
   } as CSSProperties;
-  const status = ceremony?.status ?? "idle";
   const spinDurationMs = Math.max(16_000, ceremony?.spinDurationMs ?? 24_000);
   const spinStartedAtMs = ceremony?.spinStartedAt ? new Date(ceremony.spinStartedAt).getTime() : null;
   const spinEndsAtMs = spinStartedAtMs ? spinStartedAtMs + WHEEL_SPIN_START_DELAY_MS + spinDurationMs : null;
@@ -285,7 +300,6 @@ function WheelCeremonyOverlay({ scene, audioArmed, audioNotice, audioJustArmed, 
   const showResultPending = ceremony?.status === "result_pending" && resultRevealReadyKey === revealKey;
   const spinShouldStillAnimate = ceremony?.status === "spinning" && !wheelFrozen;
   const displayRotationDeg = wheelRotationDeg;
-  const visualWheelRotationDeg = status === "result_pending" || status === "confirmed" || status === "spinning" ? displayRotationDeg : 0;
 
   useEffect(() => {
     if (!reencryptNonce || lastSeenReencryptNonceRef.current === reencryptNonce) return undefined;
@@ -398,7 +412,7 @@ function WheelCeremonyOverlay({ scene, audioArmed, audioNotice, audioJustArmed, 
             const angle = segment.centerAngle;
             const label = candidate.artistName.replace(/\s+/g, " ").trim();
             const labelFit = wheelLabelFit(label, candidateCount, segment.angleSize);
-            const position = wheelLabelPosition(angle, labelFit.radius, visualWheelRotationDeg);
+            const position = wheelLabelPosition(angle, labelFit.radius, displayRotationDeg);
             // Wheel labels are visual only. Winner selection is based on slice geometry and the right-side pointer.
             const labelStyle = {
               "--wheel-label-x": position.x,
@@ -595,8 +609,8 @@ export function LiveOverlayReceiver() {
     setAudioNotice("AUDIO COULD NOT BE ENABLED — CLICK AGAIN");
   }
 
-  async function playSpinMusic(path?: string) { const a = spinAudioRef.current; if (!a || !audioArmed) return; a.loop = true; a.volume = 0.82; const p = safeWheelAudioPath(path) ?? a.src ?? "/audio/wheel/142.mp3"; if (!a.src || !a.src.endsWith(p)) a.src = p; try { await a.play(); } catch {} }
-  function fadeSpinMusic() { const a = spinAudioRef.current; if (!a) return; const sv = a.volume || 0.82; const st = performance.now(); const tick = (n: number) => { const pr = Math.max(0, Math.min(1, (n - st) / WHEEL_AUDIO_FADE_OUT_MS)); a.volume = sv * (1 - pr); if (pr >= 1) { stopWheelAudio(a); a.volume = sv; spinFadeFrameRef.current = null; return; } spinFadeFrameRef.current = window.requestAnimationFrame(tick); }; if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = window.requestAnimationFrame(tick); }
+  async function playSpinMusic(path?: string) { const a = spinAudioRef.current; if (!a || !audioArmed) return; a.loop = true; a.volume = WHEEL_SPIN_VOLUME; const p = safeWheelAudioPath(path) ?? a.src ?? "/audio/wheel/142.mp3"; if (!a.src || !a.src.endsWith(p)) a.src = p; try { await a.play(); } catch {} }
+  function fadeSpinMusic() { const a = spinAudioRef.current; if (!a) return; const sv = a.volume || WHEEL_SPIN_VOLUME; const st = performance.now(); const tick = (n: number) => { const pr = Math.max(0, Math.min(1, (n - st) / WHEEL_AUDIO_FADE_OUT_MS)); a.volume = sv * (1 - pr); if (pr >= 1) { stopWheelAudio(a); a.volume = sv; spinFadeFrameRef.current = null; return; } spinFadeFrameRef.current = window.requestAnimationFrame(tick); }; if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = window.requestAnimationFrame(tick); }
   function playSfxBuffer(bufferRef: React.MutableRefObject<AudioBuffer | null>, volume: number) {
     const context = sfxContextRef.current;
     const buffer = bufferRef.current;
@@ -636,7 +650,7 @@ export function LiveOverlayReceiver() {
 
         <main className="live-overlay-content">
           {wheelVisible ? (
-            <WheelCeremonyOverlay scene={scene} audioArmed={audioArmed} audioNotice={audioNotice} audioJustArmed={audioJustArmed} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={() => playSfxBuffer(cheerBufferRef, 0.95)} playEncryptSfx={() => playSfxBuffer(encryptBufferRef, 0.9)} />
+            <WheelCeremonyOverlay scene={scene} audioArmed={audioArmed} audioNotice={audioNotice} audioJustArmed={audioJustArmed} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={() => playSfxBuffer(cheerBufferRef, WHEEL_CHEER_VOLUME)} playEncryptSfx={() => playSfxBuffer(encryptBufferRef, WHEEL_ENCRYPT_VOLUME)} />
           ) : youtubeVisible && scene.youtube && scene.track ? (
             <div className="live-overlay-youtube-scene">
               <YouTubeOverlayPlayer sync={scene.youtube} />

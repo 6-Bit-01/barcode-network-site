@@ -75,7 +75,7 @@ const WHEEL_RESULT_REVEAL_DELAY_MS = 700;
 const WHEEL_SPIN_VOLUME = 0.82;
 const WHEEL_CHEER_VOLUME = 0.665;
 const WHEEL_ENCRYPT_VOLUME = 0.9;
-const WHEEL_SELECTOR_ZONE_LABEL_ROTATION_DEG = 0;
+const WHEEL_SELECTOR_LABEL_SCREEN_UPRIGHT_OFFSET_DEG = 0;
 const WHEEL_SELECTOR_ZONE_MIN_ANGLE_DEG = 30;
 const WHEEL_SELECTOR_ZONE_MAX_ANGLE_DEG = 150;
 
@@ -245,7 +245,9 @@ function wheelLabelPosition(angle: number, radius: number, wheelRotationDeg: num
   const y = Math.cos(radians) * -radius;
   const finalVisualAngle = normalizeAngleDegrees(angle + wheelRotationDeg);
   const inRightSelectorZone = finalVisualAngle >= WHEEL_SELECTOR_ZONE_MIN_ANGLE_DEG && finalVisualAngle <= WHEEL_SELECTOR_ZONE_MAX_ANGLE_DEG;
-  const rotation = inRightSelectorZone ? WHEEL_SELECTOR_ZONE_LABEL_ROTATION_DEG : wheelUprightLabelRotationDegrees(angle);
+  const rotation = inRightSelectorZone
+    ? normalizeAngleDegrees((-finalVisualAngle) + WHEEL_SELECTOR_LABEL_SCREEN_UPRIGHT_OFFSET_DEG)
+    : wheelUprightLabelRotationDegrees(angle);
   return { x: `${x.toFixed(3)}vmin`, y: `${y.toFixed(3)}vmin`, rotation: `${rotation.toFixed(3)}deg` };
 }
 

@@ -288,7 +288,7 @@ export function AdminRadioQueueControl() {
   const timingSummary = buildQueueTimingDisplay(queueTimingInputFromAdminState(state));
   const paymentProcessingCount = (state?.queue ?? []).filter((entry) => ["checkout_pending", "requested", "paid_needs_attention"].includes(entry.priorityUpgradeStatus ?? "none")).length;
 
-  const railBottomOffsetClass = loadedPlayer ? (minimized ? "bottom-40" : "bottom-[24rem]") : "bottom-6";
+  const railBottomOffsetClass = loadedPlayer ? (minimized ? "bottom-32" : "bottom-[20rem]") : "bottom-6";
   const topOverlayPaddingClass = topBarMinimized ? "pt-[5rem] md:pt-[5.5rem]" : "pt-[6.25rem] md:pt-[6.75rem]";
 
   return (
@@ -363,11 +363,11 @@ export function AdminRadioQueueControl() {
         </section>
       ) : <>
         <div className="flex gap-2 border-b border-border">
-          {(["active", "completed", "removed"] as Tab[]).map((key) => <button key={key} onClick={() => setTab(key)} className={`px-4 py-3 text-xs uppercase tracking-widest ${tab === key ? "text-accent border-b border-accent" : "text-muted"}`}>{key === "active" ? "Active Queue" : key === "completed" ? "Completed Tracks" : "Removed"}</button>)}
+          {(["active", "completed", "removed"] as Tab[]).map((key) => <button key={key} onClick={() => setTab(key)} className={`px-4 py-3 text-xs uppercase tracking-widest ${tab === key ? "text-accent border-b border-accent" : "text-muted"}`}>{key === "active" ? "Active Queue" : key === "completed" ? "Spotlight" : key === "removed" ? "Completed Tracks" : "Removed"}</button>)}
         </div>
 
         {tab === "active" && <div className="grid gap-5">
-          <div className="grid gap-5 xl:grid-cols-2"><Lane title="Priority Signal" tracks={lanes.priority} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Wheel Winners" tracks={lanes.wheel} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Regular Queue" tracks={lanes.regular} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Spotlight List" tracks={lanes.spotlight} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="spotlight" readOnly={readOnly} /></div>
+          <div className="space-y-5"><Lane title="Priority Signal" tracks={lanes.priority} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Wheel Winners" tracks={lanes.wheel} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Regular Queue" tracks={lanes.regular} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /></div>
           <aside className="xl:hidden space-y-3">
             <section className="border border-border bg-surface p-3 space-y-2">
               <div className="flex items-center justify-between">
@@ -389,13 +389,13 @@ export function AdminRadioQueueControl() {
             </section>
           </aside>
         </div>}
-        {tab === "completed" && <Lane title="Completed Tracks" tracks={state?.history ?? []} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="completed" readOnly={readOnly} />}
-        {tab === "removed" && <Lane title="Removed" tracks={state?.removed ?? []} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="removed" readOnly={readOnly} />}
+        {tab === "completed" && <Lane title="Spotlight List" tracks={lanes.spotlight} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="spotlight" readOnly={readOnly} />}
+        {tab === "removed" && <Lane title="Completed Tracks" tracks={state?.history ?? []} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="completed" readOnly={readOnly} />}
       </>}
 
       {mounted && loadedPlayer && createPortal(<PlayerDock player={loadedPlayer} minimized={minimized} setMinimized={setMinimized} readOnly={readOnly} onAction={playerAction} onCopy={() => copy(loadedPlayer)} />, document.body)}
 
-      {mounted && canControlSession && createPortal(<aside className={`hidden xl:block fixed right-4 top-[calc(11rem+env(safe-area-inset-top))] ${railBottomOffsetClass} w-[24rem] z-[8400] border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3`}>
+      {mounted && canControlSession && createPortal(<aside className={`hidden xl:block fixed right-4 top-[calc(11rem+env(safe-area-inset-top))] ${railBottomOffsetClass} max-h-[calc(100dvh-12rem)] w-[24rem] z-[8400] border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3`}>
         <section className="border border-border bg-surface p-3 space-y-2">
           <div className="flex items-center justify-between">
             <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Rail</p>

@@ -1892,6 +1892,9 @@ function addSimulationTrack(session: QueueSession, action: QueueAdminAction): bo
     return true;
   }
 
+  const simulationCreationAllowed = session.status === "open" && session.queueOpen;
+  if (!simulationCreationAllowed) return false;
+
   const now = new Date().toISOString();
   if (action === "addSimulationFreeTrack") {
     session.queue.push(simulationTrackBase(session));

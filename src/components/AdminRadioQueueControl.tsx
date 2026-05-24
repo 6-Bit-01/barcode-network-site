@@ -113,6 +113,8 @@ export function AdminRadioQueueControl() {
   const [simulationRunning, setSimulationRunning] = useState(false);
   const [simulationSpeed, setSimulationSpeed] = useState<SimulationSpeed>("normal");
   const [simulationMessage, setSimulationMessage] = useState<string | null>(null);
+  const [sessionSetupOpen, setSessionSetupOpen] = useState(false);
+  const [showVisualsOpen, setShowVisualsOpen] = useState(false);
   const simulationTimerRef = useRef<number | null>(null);
   const simulationRunningRef = useRef(false);
   const simulationSpeedRef = useRef<SimulationSpeed>("normal");
@@ -287,20 +289,20 @@ export function AdminRadioQueueControl() {
   const timingSummary = buildQueueTimingDisplay(queueTimingInputFromAdminState(state));
   const paymentProcessingCount = (state?.queue ?? []).filter((entry) => ["checkout_pending", "requested", "paid_needs_attention"].includes(entry.priorityUpgradeStatus ?? "none")).length;
 
-  const railBottomOffsetClass = loadedPlayer ? (minimized ? "bottom-40" : "bottom-[31rem]") : "bottom-8";
-  const topOverlayPaddingClass = topBarMinimized ? "pt-[6.5rem] md:pt-[7rem]" : "pt-[8.5rem] md:pt-[9.25rem]";
+  const railBottomOffsetClass = loadedPlayer ? (minimized ? "bottom-40" : "bottom-[24rem]") : "bottom-6";
+  const topOverlayPaddingClass = topBarMinimized ? "pt-[5.75rem] md:pt-[6.25rem]" : "pt-[7.5rem] md:pt-[8rem]";
 
   return (
     <div className={`${playerPadding} ${topOverlayPaddingClass} space-y-3 xl:pr-[26rem]`}>
-      <section className="border border-accent/40 bg-surface p-5 space-y-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <section className="border border-accent/40 bg-surface p-3 space-y-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.4em] text-accent">Current Broadcast Session</p>
+            <p className="text-xs uppercase tracking-[0.4em] text-accent">Session Setup</p>
             {hasCurrentSession ? (
               <>
-                <h2 className="text-2xl font-bold text-foreground mt-2">{state?.session?.title}</h2>
+                <h2 className="text-xl font-bold text-foreground mt-2">{state?.session?.title}</h2>
                 <p className="text-xs text-muted">{state?.session?.showDate} · {state?.session?.status}</p>
-                {state?.session?.description && <p className="text-xs text-muted mt-2 max-w-2xl">{state.session.description}</p>}
+                
               </>
             ) : (
               <>
@@ -310,7 +312,8 @@ export function AdminRadioQueueControl() {
             )}
           </div>
         </div>
-        {hasCurrentSession ? (
+          {hasCurrentSession && <button type="button" onClick={() => setSessionSetupOpen((value) => !value)} className="min-h-10 border border-border px-3 py-2 text-sm uppercase tracking-widest text-muted">{sessionSetupOpen ? "Collapse Setup" : "Expand Setup"}</button>}
+        {hasCurrentSession && sessionSetupOpen ? (
           <div className="space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap gap-2">
@@ -319,7 +322,7 @@ export function AdminRadioQueueControl() {
               </div>
             </div>
             {canControlSession && sessionOptionsOpen && <section className="space-y-3 border border-border bg-background/40 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-xs uppercase tracking-[0.3em] text-accent">Session Options</p><h3 className="mt-1 text-lg font-bold text-foreground">Session Options</h3><p className="mt-1 text-xs text-muted">Only the verified Stripe webhook marks a track paid or moves it into Priority Signal.</p></div><div className="border border-border bg-surface p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Submission Delay</p><p className="mt-1 font-bold text-foreground">{sessionCooldownSeconds === 0 ? "Disabled" : `${sessionCooldownSeconds}s`}</p></div><div className="border border-border bg-surface p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Display price</p><p className="mt-1 font-bold text-foreground">{formatPrice(priorityPriceCents, priorityCurrency)}</p></div></div><div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(10rem,0.35fr)]"><label className="space-y-2 block md:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Submission Delay</span><input type="number" min={0} max={3600} value={sessionCooldownSeconds} onChange={(event) => setSessionCooldownSeconds(Math.max(0, Math.min(3600, Number(event.target.value))))} className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-xs text-muted">Delay between accepted submissions from the same source. Set to 0 to disable during testing.</span></label><label className="flex items-center justify-between gap-3 border border-border bg-surface p-3 text-sm"><span><span className="block font-bold text-foreground">Paid upgrades {priorityEnabled ? "enabled" : "disabled"}</span><span className="text-xs text-muted">Controls Stripe checkout availability for this session.</span></span><input type="checkbox" checked={priorityEnabled} onChange={(event) => setPriorityEnabled(event.target.checked)} /></label><label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Price</span><input type="number" min={0} value={priorityPriceCents} onChange={(event) => setPriorityPriceCents(Math.max(0, Number(event.target.value)))} className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-xs text-muted">Enter cents. Example: 1000 = $10.00.</span></label></div>{prioritySaveError && <p className="border border-danger/40 bg-danger/10 p-2 text-sm text-danger">{prioritySaveError}</p>}{priorityMessage && <p className="border border-accent/50 bg-accent/10 p-2 text-sm font-bold text-accent">{priorityMessage}</p>}<div className="flex flex-wrap gap-2"><button type="button" onClick={savePrioritySettings} disabled={prioritySaving} className="border border-accent bg-accent/10 px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{prioritySaving ? "Saving…" : "Save Settings"}</button><button type="button" onClick={() => setSessionOptionsOpen(false)} disabled={prioritySaving} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">Close</button></div></section>}
-            <div className="border border-border bg-background/30 p-3 text-xs"><p className="uppercase tracking-widest text-muted">Active Queue Count</p><p className="mt-1 font-bold text-foreground">{state?.publicStatus?.activeCount ?? "—"}</p></div>
+            <div className="border border-border bg-background/30 p-2 text-xs"><p className="uppercase tracking-widest text-muted">Active Queue Count</p><p className="mt-1 font-bold text-foreground">{state?.publicStatus?.activeCount ?? "—"}</p></div>
           </div>
         ) : (
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
@@ -370,10 +373,7 @@ export function AdminRadioQueueControl() {
 
 
 
-      {canControlSession && <section className="border border-border/80 bg-surface/70 p-4">
-          <p className="text-xs uppercase tracking-[0.32em] text-muted">Show Visuals</p>
-          <div className="mt-3 space-y-4"><AdminRuntimeDiagnostics timingSummary={timingSummary} canControl={canControlSession} onSponsorAction={updateSponsorBreakState} /><AdminLiveOverlayControl /></div>
-      </section>}
+      {canControlSession && <section className="border border-border/80 bg-surface/70 p-3 space-y-2"><div className="flex items-center justify-between"><p className="text-xs uppercase tracking-[0.32em] text-muted">Show Visuals</p><button type="button" onClick={() => setShowVisualsOpen((value) => !value)} className="min-h-10 border border-border px-3 py-2 text-sm uppercase tracking-widest text-muted">{showVisualsOpen ? "Collapse" : "Expand"}</button></div>{showVisualsOpen && <div className="space-y-3"><AdminRuntimeDiagnostics timingSummary={timingSummary} canControl={canControlSession} onSponsorAction={updateSponsorBreakState} /><AdminLiveOverlayControl /></div>}</section>}
 
       {canControlSession && <details className="border border-[#ffaa00]/40 bg-[#ffaa00]/5 p-4">
         <summary className="cursor-pointer text-xs uppercase tracking-[0.32em] text-[#ffaa00]">Testing / Simulation Mode</summary>
@@ -396,7 +396,7 @@ export function AdminRadioQueueControl() {
           <aside className="xl:hidden space-y-3">
             <section className="border border-border bg-surface p-3 space-y-2">
               <div className="flex items-center justify-between">
-                <p className="text-xs uppercase tracking-[0.3em] text-muted">Next In Line Rail</p>
+                <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Rail</p>
                 <button type="button" onClick={() => setRailMinimized((value) => !value)} className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">{railMinimized ? "Expand" : "Minimize"}</button>
               </div>
               {railMinimized ? <div className="space-y-2">
@@ -405,8 +405,8 @@ export function AdminRadioQueueControl() {
               </div> : <>
             <NextInLineBox entry={nextInLine} playerOccupied={Boolean(loadedPlayer)} readOnly={readOnly} onAction={action} onPlayer={loadPlayer} onCopy={copy} />
             <section className="border border-border bg-surface p-3 space-y-2">
-              <p className="text-xs uppercase tracking-[0.3em] text-muted">Next In Line Actions</p>
-              {!nextInLine && <button onClick={() => action("", "pullNext")} className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Pull Next Track</button>}
+              <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Actions</p>
+              {!nextInLine && <><p className="text-sm text-muted">No Next In Line — Pull Next Track when ready.</p><button onClick={() => action("", "pullNext")} className="min-h-10 border border-accent px-3 py-2 text-sm uppercase tracking-widest text-accent">Pull Next Track</button></>}
               <div className="flex flex-wrap gap-2"><span className="border border-cyan-300/30 bg-cyan-300/5 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Wheel Spins Unlocked: {state?.session?.wheelSpinsOwed ?? 0}</span><span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Next Owed: {state?.nextNonPriorityLane === "regular" ? "Free" : "Wheel"}</span></div>
               <div className="flex flex-wrap gap-2">{paymentProcessingCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Payment Processing: {paymentProcessingCount}</span>}{heldPriorityCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Held Priority: {heldPriorityCount}</span>}{resolverOverrideBlocked && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Resolver Override Blocked</span>}{!nextInLine && <span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">No Next In Line</span>}</div>
             </section>
@@ -420,10 +420,10 @@ export function AdminRadioQueueControl() {
 
       {mounted && loadedPlayer && createPortal(<PlayerDock player={loadedPlayer} minimized={minimized} setMinimized={setMinimized} readOnly={readOnly} onAction={playerAction} onCopy={() => copy(loadedPlayer)} />, document.body)}
 
-      {mounted && canControlSession && createPortal(<aside className={`hidden xl:block fixed right-4 top-[calc(12rem+env(safe-area-inset-top))] ${railBottomOffsetClass} w-[24rem] z-[8400] border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3`}>
+      {mounted && canControlSession && createPortal(<aside className={`hidden xl:block fixed right-4 top-[calc(11rem+env(safe-area-inset-top))] ${railBottomOffsetClass} w-[24rem] z-[8400] border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3`}>
         <section className="border border-border bg-surface p-3 space-y-2">
           <div className="flex items-center justify-between">
-            <p className="text-xs uppercase tracking-[0.3em] text-muted">Next In Line Rail</p>
+            <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Rail</p>
             <button type="button" onClick={() => setRailMinimized((value) => !value)} className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">{railMinimized ? "Expand" : "Minimize"}</button>
           </div>
           {railMinimized ? <div className="space-y-2">
@@ -432,8 +432,8 @@ export function AdminRadioQueueControl() {
           </div> : <>
             <NextInLineBox entry={nextInLine} playerOccupied={Boolean(loadedPlayer)} readOnly={readOnly} onAction={action} onPlayer={loadPlayer} onCopy={copy} />
             <section className="border border-border bg-surface p-3 space-y-2">
-              <p className="text-xs uppercase tracking-[0.3em] text-muted">Next In Line Actions</p>
-              {!nextInLine && <button onClick={() => action("", "pullNext")} className="min-h-10 border border-accent px-3 py-2 text-sm uppercase tracking-widest text-accent">Pull Next Track</button>}
+              <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Actions</p>
+              {!nextInLine && <><p className="text-sm text-muted">No Next In Line — Pull Next Track when ready.</p><button onClick={() => action("", "pullNext")} className="min-h-10 border border-accent px-3 py-2 text-sm uppercase tracking-widest text-accent">Pull Next Track</button></>}
               <div className="flex flex-wrap gap-2"><span className="border border-cyan-300/30 bg-cyan-300/5 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Wheel Spins Unlocked: {state?.session?.wheelSpinsOwed ?? 0}</span><span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Next Owed: {state?.nextNonPriorityLane === "regular" ? "Free" : "Wheel"}</span></div>
               <div className="flex flex-wrap gap-2">{paymentProcessingCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Payment Processing: {paymentProcessingCount}</span>}{heldPriorityCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Held Priority: {heldPriorityCount}</span>}{resolverOverrideBlocked && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Resolver Override Blocked</span>}{!nextInLine && <span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">No Next In Line</span>}</div>
             </section>

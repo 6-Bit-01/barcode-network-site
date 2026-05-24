@@ -15,7 +15,7 @@ export default function AdminQueuePage() {
           <p className="text-sm text-muted mt-3">Live-show lane control, moderation actions, runtime estimates, and source preview player.</p>
         </div>
       </section>
-      <section className="mx-auto max-w-7xl px-4 sm:px-6 py-6">
+      <section className="w-full max-w-none px-4 sm:px-6 py-5">
         <AdminRadioQueueControl />
       </section>
     </main>

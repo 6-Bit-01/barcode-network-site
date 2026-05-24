@@ -288,9 +288,10 @@ export function AdminRadioQueueControl() {
   const paymentProcessingCount = (state?.queue ?? []).filter((entry) => ["checkout_pending", "requested", "paid_needs_attention"].includes(entry.priorityUpgradeStatus ?? "none")).length;
 
   const railBottomOffsetClass = loadedPlayer ? (minimized ? "bottom-40" : "bottom-[31rem]") : "bottom-8";
+  const topOverlayPaddingClass = topBarMinimized ? "pt-[6.5rem] md:pt-[7rem]" : "pt-[8.5rem] md:pt-[9.25rem]";
 
   return (
-    <div className={`${playerPadding} space-y-4 xl:pr-[24rem] pt-[9.5rem] md:pt-[11rem]`}>
+    <div className={`${playerPadding} ${topOverlayPaddingClass} space-y-3 xl:pr-[26rem]`}>
       <section className="border border-accent/40 bg-surface p-5 space-y-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -328,12 +329,12 @@ export function AdminRadioQueueControl() {
         {isArchivedReview && hasSession && <div className="border border-danger/40 bg-danger/10 p-3 text-xs uppercase tracking-widest text-danger">ARCHIVED / READ ONLY — viewing {state?.session?.title ?? "finished session"}. Queue review actions are locked for this finished session.</div>}
       </section>
 
-      {mounted && canControlSession && createPortal(<section className="fixed left-4 right-4 top-[calc(3.5rem+env(safe-area-inset-top))] z-[8500] space-y-3 border border-border bg-background/95 p-4 text-xs shadow-2xl backdrop-blur">
+      {mounted && canControlSession && createPortal(<section className="fixed left-4 right-4 top-[calc(3.5rem+env(safe-area-inset-top))] z-[8500] space-y-2 border border-border bg-background/95 p-3.5 text-sm shadow-2xl backdrop-blur">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <p className="truncate uppercase tracking-widest text-muted">{state?.session?.title} · {state?.session?.showDate}</p>
           </div>
-          <button type="button" onClick={() => setTopBarMinimized((value) => !value)} className="border border-border px-2 py-1 uppercase tracking-widest text-muted">{topBarMinimized ? "Expand" : "Minimize"}</button>
+          <button type="button" onClick={() => setTopBarMinimized((value) => !value)} className="min-h-10 border border-border px-3 py-2 uppercase tracking-widest text-muted">{topBarMinimized ? "Expand" : "Minimize"}</button>
         </div>
         {topBarMinimized ? <div className="flex flex-wrap items-center gap-2">
           <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Phase: {phaseLabel}</span>
@@ -350,11 +351,11 @@ export function AdminRadioQueueControl() {
           <div><p className="uppercase tracking-widest text-muted">Pressure</p><p className="mt-1 font-bold text-foreground">{state?.publicStatus?.pressure ?? "syncing"}</p></div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} border px-3 py-2 uppercase tracking-widest hover:text-background`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button>
-          {state?.session?.showStarted !== true && <button onClick={() => action("", "startShow")} className="border border-foreground/50 px-3 py-2 uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background">Start Broadcast</button>}
-          <button onClick={() => action("", "addWheelSpinOwed")} className="border border-cyan-300/60 px-3 py-2 uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Add Wheel Spin</button>
-          <details className="group relative"><summary className="list-none cursor-pointer border border-border/80 px-3 py-2 uppercase tracking-widest text-muted hover:border-foreground/60 hover:text-foreground">Resolver Override ▾</summary><div className="absolute left-0 z-30 mt-2 w-64 space-y-2 border border-border bg-background p-3 shadow-xl"><p className="text-[10px] uppercase tracking-[0.2em] text-muted">Use for live manual correction. This does not count the current slot as played.</p><button type="button" onClick={() => action("", "pullWheelChosen")} disabled={!canPullWheelChosen} className="block w-full border border-cyan-300/60 px-3 py-2 text-left uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Wheel Chosen</button><button type="button" onClick={() => action("", "pullFreeTransmission")} disabled={!canPullFreeTransmission} className="block w-full border border-foreground/40 px-3 py-2 text-left uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Free Transmission</button>{resolverOverrideBlocked && <p className="text-[10px] uppercase tracking-[0.16em] text-[#ffaa00]">Blocked while active Priority owns the resolver.</p>}</div></details>
-          <button onClick={() => setEndConfirmOpen(true)} className="ml-auto border border-danger/60 px-3 py-2 uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Broadcast</button>
+          <button onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} min-h-10 border px-3 py-2 uppercase tracking-widest hover:text-background`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button>
+          {state?.session?.showStarted !== true && <button onClick={() => action("", "startShow")} className="min-h-10 border border-foreground/50 px-3 py-2 uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background">Start Broadcast</button>}
+          <button onClick={() => action("", "addWheelSpinOwed")} className="min-h-10 border border-cyan-300/60 px-3 py-2 uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Add Wheel Spin</button>
+          <details className="group relative"><summary className="list-none cursor-pointer min-h-10 border border-border/80 px-3 py-2 uppercase tracking-widest text-muted hover:border-foreground/60 hover:text-foreground">Resolver Override ▾</summary><div className="absolute left-0 z-30 mt-2 w-64 space-y-2 border border-border bg-background p-3 shadow-xl"><p className="text-[10px] uppercase tracking-[0.2em] text-muted">Use for live manual correction. This does not count the current slot as played.</p><button type="button" onClick={() => action("", "pullWheelChosen")} disabled={!canPullWheelChosen} className="block w-full min-h-10 border border-cyan-300/60 px-3 py-2 text-left uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Wheel Chosen</button><button type="button" onClick={() => action("", "pullFreeTransmission")} disabled={!canPullFreeTransmission} className="block w-full min-h-10 border border-foreground/40 px-3 py-2 text-left uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Free Transmission</button>{resolverOverrideBlocked && <p className="text-[10px] uppercase tracking-[0.16em] text-[#ffaa00]">Blocked while active Priority owns the resolver.</p>}</div></details>
+          <button onClick={() => setEndConfirmOpen(true)} className="ml-auto min-h-10 border border-danger/60 px-3 py-2 uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Broadcast</button>
         </div>
         <div className="flex flex-wrap gap-2">
           {paymentProcessingCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 uppercase tracking-widest text-[#ffaa00]">Payment Processing: {paymentProcessingCount}</span>}
@@ -419,7 +420,7 @@ export function AdminRadioQueueControl() {
 
       {mounted && loadedPlayer && createPortal(<PlayerDock player={loadedPlayer} minimized={minimized} setMinimized={setMinimized} readOnly={readOnly} onAction={playerAction} onCopy={() => copy(loadedPlayer)} />, document.body)}
 
-      {mounted && canControlSession && createPortal(<aside className={`hidden xl:block fixed right-4 top-[calc(12rem+env(safe-area-inset-top))] ${railBottomOffsetClass} w-[22rem] z-[8400] border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3`}>
+      {mounted && canControlSession && createPortal(<aside className={`hidden xl:block fixed right-4 top-[calc(12rem+env(safe-area-inset-top))] ${railBottomOffsetClass} w-[24rem] z-[8400] border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3`}>
         <section className="border border-border bg-surface p-3 space-y-2">
           <div className="flex items-center justify-between">
             <p className="text-xs uppercase tracking-[0.3em] text-muted">Next In Line Rail</p>
@@ -432,7 +433,7 @@ export function AdminRadioQueueControl() {
             <NextInLineBox entry={nextInLine} playerOccupied={Boolean(loadedPlayer)} readOnly={readOnly} onAction={action} onPlayer={loadPlayer} onCopy={copy} />
             <section className="border border-border bg-surface p-3 space-y-2">
               <p className="text-xs uppercase tracking-[0.3em] text-muted">Next In Line Actions</p>
-              {!nextInLine && <button onClick={() => action("", "pullNext")} className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Pull Next Track</button>}
+              {!nextInLine && <button onClick={() => action("", "pullNext")} className="min-h-10 border border-accent px-3 py-2 text-sm uppercase tracking-widest text-accent">Pull Next Track</button>}
               <div className="flex flex-wrap gap-2"><span className="border border-cyan-300/30 bg-cyan-300/5 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Wheel Spins Unlocked: {state?.session?.wheelSpinsOwed ?? 0}</span><span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Next Owed: {state?.nextNonPriorityLane === "regular" ? "Free" : "Wheel"}</span></div>
               <div className="flex flex-wrap gap-2">{paymentProcessingCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Payment Processing: {paymentProcessingCount}</span>}{heldPriorityCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Held Priority: {heldPriorityCount}</span>}{resolverOverrideBlocked && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Resolver Override Blocked</span>}{!nextInLine && <span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">No Next In Line</span>}</div>
             </section>

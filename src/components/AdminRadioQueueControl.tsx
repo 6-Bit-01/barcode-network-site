@@ -328,52 +328,34 @@ export function AdminRadioQueueControl() {
         {isArchivedReview && hasSession && <div className="border border-danger/40 bg-danger/10 p-3 text-xs uppercase tracking-widest text-danger">ARCHIVED / READ ONLY — viewing {state?.session?.title ?? "finished session"}. Queue review actions are locked for this finished session.</div>}
       </section>
 
-      {canControlSession && <section className="sticky top-2 z-20 space-y-2 border border-border bg-background/95 p-3 text-xs backdrop-blur">
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+      {canControlSession && <section className="space-y-3 border border-border bg-surface p-4 text-xs">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
           <div><p className="uppercase tracking-widest text-muted">Show Phase</p><p className="mt-1 font-bold text-foreground">{phaseLabel}</p></div>
           <div><p className="uppercase tracking-widest text-muted">Submissions</p><p className={`mt-1 font-bold ${state?.publicStatus?.isOpen ? "text-accent" : "text-danger"}`}>{state?.publicStatus?.isOpen ? "Open" : "Closed"}</p></div>
-          <div><p className="uppercase tracking-widest text-muted">Player</p><p className="mt-1 font-bold text-foreground">{loadedPlayer ? "Occupied" : "Clear"}</p></div>
           <div><p className="uppercase tracking-widest text-muted">Next Owed</p><p className="mt-1 font-bold text-foreground">{state?.nextNonPriorityLane === "regular" ? "Free" : "Wheel"}</p></div>
-          <div><p className="uppercase tracking-widest text-muted">Wheel Spins</p><p className="mt-1 font-bold text-cyan-200">{state?.session?.wheelSpinsOwed ?? 0}</p></div>
+          <div><p className="uppercase tracking-widest text-muted">Wheel Spins Unlocked</p><p className="mt-1 font-bold text-cyan-200">{state?.session?.wheelSpinsOwed ?? 0}</p></div>
           <div><p className="uppercase tracking-widest text-muted">Runtime</p><p className="mt-1 font-bold text-foreground">{formatRuntime(runtime)}</p></div>
           <div><p className="uppercase tracking-widest text-muted">Pressure</p><p className="mt-1 font-bold text-foreground">{state?.publicStatus?.pressure ?? "syncing"}</p></div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} border px-3 py-2 uppercase tracking-widest hover:text-background`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button>
+          {state?.session?.showStarted !== true && <button onClick={() => action("", "startShow")} className="border border-foreground/50 px-3 py-2 uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background">Start Broadcast</button>}
+          <button onClick={() => action("", "pullNext")} className="border border-accent px-3 py-2 uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Pull Next Track</button>
+          <button onClick={() => action("", "addWheelSpinOwed")} className="border border-cyan-300/60 px-3 py-2 uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Add Wheel Spin</button>
+          <details className="group relative"><summary className="list-none cursor-pointer border border-border/80 px-3 py-2 uppercase tracking-widest text-muted hover:border-foreground/60 hover:text-foreground">Resolver Override ▾</summary><div className="absolute left-0 z-30 mt-2 w-64 space-y-2 border border-border bg-background p-3 shadow-xl"><p className="text-[10px] uppercase tracking-[0.2em] text-muted">Use for live manual correction. This does not count the current slot as played.</p><button type="button" onClick={() => action("", "pullWheelChosen")} disabled={!canPullWheelChosen} className="block w-full border border-cyan-300/60 px-3 py-2 text-left uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Wheel Chosen</button><button type="button" onClick={() => action("", "pullFreeTransmission")} disabled={!canPullFreeTransmission} className="block w-full border border-foreground/40 px-3 py-2 text-left uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Free Transmission</button>{resolverOverrideBlocked && <p className="text-[10px] uppercase tracking-[0.16em] text-[#ffaa00]">Blocked while active Priority owns the resolver.</p>}</div></details>
+          <button onClick={() => setEndConfirmOpen(true)} className="ml-auto border border-danger/60 px-3 py-2 uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Broadcast</button>
         </div>
         <div className="flex flex-wrap gap-2">
           {(state?.queue ?? []).filter((entry) => ["checkout_pending", "requested", "paid_needs_attention"].includes(entry.priorityUpgradeStatus ?? "none")).length > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 uppercase tracking-widest text-[#ffaa00]">Payment Processing: {(state?.queue ?? []).filter((entry) => ["checkout_pending", "requested", "paid_needs_attention"].includes(entry.priorityUpgradeStatus ?? "none")).length}</span>}
           {heldPriorityCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 uppercase tracking-widest text-[#ffaa00]">Held Priority: {heldPriorityCount}</span>}
           {!nextInLine && <span className="border border-border bg-surface px-2 py-1 uppercase tracking-widest text-muted">No Next In Line</span>}
-          {loadedPlayer && <span className="border border-foreground/40 bg-surface px-2 py-1 uppercase tracking-widest text-foreground">Player Occupied</span>}
+          {resolverOverrideBlocked && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 uppercase tracking-widest text-[#ffaa00]">Resolver Override Blocked</span>}
         </div>
       </section>}
 
       {mounted && endConfirmOpen && createPortal(<div className="fixed inset-0 z-[100000] grid place-items-center bg-black/80 p-4 backdrop-blur-sm"><div role="dialog" aria-modal="true" aria-labelledby="end-session-confirm-title" className="w-full max-w-md border border-danger/50 bg-background p-5 shadow-[0_0_70px_rgba(255,0,0,0.24)]"><p className="text-xs uppercase tracking-[0.35em] text-danger">End Broadcast</p><h2 id="end-session-confirm-title" className="mt-3 text-2xl font-bold text-foreground">End this broadcast?</h2><p className="mt-2 text-sm text-muted">This will stop routing, close submissions, and move the broadcast session to the archive.</p><div className="mt-5 flex flex-wrap justify-end gap-2"><a href="/admin/queue" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Return to Queue Dashboard</a><button type="button" onClick={() => setEndConfirmOpen(false)} disabled={endingSession} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">No, Cancel</button><button type="button" onClick={endCurrentSession} disabled={endingSession} className="border border-danger px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background disabled:opacity-50">{endingSession ? "Ending…" : "Yes, End Broadcast"}</button></div></div></div>, document.body)}
 
 
-
-      {canControlSession && <section className="grid gap-4 xl:grid-cols-3">
-        <section className="border border-border bg-surface p-4 space-y-3 xl:col-span-2">
-          <p className="text-xs uppercase tracking-[0.32em] text-accent">Show Actions</p>
-          <div className="flex flex-wrap gap-2">
-            <button onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} border px-4 py-2 text-xs uppercase tracking-widest hover:text-background`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button>
-            {state?.session?.showStarted !== true && <button onClick={() => action("", "startShow")} className="border border-foreground/50 px-4 py-2 text-xs uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background">Start Broadcast</button>}
-            <button onClick={() => action("", "pullNext")} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Pull Next Track</button>
-            <button onClick={() => action("", "addWheelSpinOwed")} className="border border-cyan-300/60 px-4 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Add Wheel Spin</button>
-            <details className="group relative"><summary className="list-none cursor-pointer border border-border/80 px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-foreground/60 hover:text-foreground">Resolver Override ▾</summary><div className="absolute left-0 z-30 mt-2 w-64 space-y-2 border border-border bg-background p-3 shadow-xl"><p className="text-[10px] uppercase tracking-[0.2em] text-muted">Use for live manual correction. This does not count the current slot as played.</p><button type="button" onClick={() => action("", "pullWheelChosen")} disabled={!canPullWheelChosen} className="block w-full border border-cyan-300/60 px-3 py-2 text-left text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Wheel Chosen</button><button type="button" onClick={() => action("", "pullFreeTransmission")} disabled={!canPullFreeTransmission} className="block w-full border border-foreground/40 px-3 py-2 text-left text-xs uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Free Transmission</button>{resolverOverrideBlocked && <p className="text-[10px] uppercase tracking-[0.16em] text-[#ffaa00]">Blocked while active Priority owns the resolver.</p>}</div></details>
-          </div>
-          <div className="pt-2 border-t border-danger/30">
-            <button onClick={() => setEndConfirmOpen(true)} className="border border-danger/60 px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Broadcast</button>
-          </div>
-        </section>
-
-        <section className="border border-cyan-300/40 bg-cyan-300/5 p-4 space-y-2">
-          <p className="text-xs uppercase tracking-[0.32em] text-cyan-200">Wheel Control</p>
-          <p className="text-sm text-muted">Use the live overlay controls to Launch, Spin, Re-encrypt, and Confirm winners.</p>
-          <div className="grid grid-cols-1 gap-2 text-xs">
-            <div className="border border-cyan-300/30 bg-background/40 p-2"><p className="uppercase tracking-widest text-muted">Wheel Spins Unlocked</p><p className="mt-1 font-bold text-cyan-200">{state?.session?.wheelSpinsOwed ?? 0}</p></div>
-            <div className="border border-cyan-300/30 bg-background/40 p-2"><p className="uppercase tracking-widest text-muted">Next Owed Lane</p><p className="mt-1 font-bold text-foreground">{state?.nextNonPriorityLane === "regular" ? "Free" : "Wheel"}</p></div>
-          </div>
-        </section>
-      </section>}
 
       {canControlSession && <section className="border border-border/80 bg-surface/70 p-4">
           <p className="text-xs uppercase tracking-[0.32em] text-muted">Show Visuals</p>
@@ -396,10 +378,18 @@ export function AdminRadioQueueControl() {
           {(["active", "completed", "removed"] as Tab[]).map((key) => <button key={key} onClick={() => setTab(key)} className={`px-4 py-3 text-xs uppercase tracking-widest ${tab === key ? "text-accent border-b border-accent" : "text-muted"}`}>{key === "active" ? "Active Queue" : key === "completed" ? "Completed Tracks" : "Removed"}</button>)}
         </div>
 
-        {tab === "active" && <>
-          <NextInLineBox entry={nextInLine} playerOccupied={Boolean(loadedPlayer)} readOnly={readOnly} onAction={action} onPlayer={loadPlayer} onCopy={copy} />
+        {tab === "active" && <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
           <div className="grid gap-5 xl:grid-cols-2"><Lane title="Priority Signal" tracks={lanes.priority} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Wheel Winners" tracks={lanes.wheel} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Regular Queue" tracks={lanes.regular} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Spotlight List" tracks={lanes.spotlight} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="spotlight" readOnly={readOnly} /></div>
-        </>}
+          <aside className="xl:sticky xl:top-24 xl:self-start space-y-3">
+            <NextInLineBox entry={nextInLine} playerOccupied={Boolean(loadedPlayer)} readOnly={readOnly} onAction={action} onPlayer={loadPlayer} onCopy={copy} />
+            <section className="border border-border bg-surface p-3 space-y-2">
+              <p className="text-xs uppercase tracking-[0.3em] text-muted">Quick Show Actions</p>
+              <div className="flex flex-wrap gap-2"><button onClick={() => action("", "pullNext")} className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Pull Next Track</button><button onClick={() => action("", "addWheelSpinOwed")} className="border border-cyan-300/60 px-3 py-2 text-xs uppercase tracking-widest text-cyan-200">Add Wheel Spin</button></div>
+              <div className="flex flex-wrap gap-2"><span className="border border-cyan-300/30 bg-cyan-300/5 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Wheel Spins Unlocked: {state?.session?.wheelSpinsOwed ?? 0}</span><span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Next Owed: {state?.nextNonPriorityLane === "regular" ? "Free" : "Wheel"}</span></div>
+              <div className="flex flex-wrap gap-2">{(state?.queue ?? []).filter((entry) => ["checkout_pending", "requested", "paid_needs_attention"].includes(entry.priorityUpgradeStatus ?? "none")).length > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Payment Processing: {(state?.queue ?? []).filter((entry) => ["checkout_pending", "requested", "paid_needs_attention"].includes(entry.priorityUpgradeStatus ?? "none")).length}</span>}{heldPriorityCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Held Priority: {heldPriorityCount}</span>}{resolverOverrideBlocked && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Resolver Override Blocked</span>}{!nextInLine && <span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">No Next In Line</span>}</div>
+            </section>
+          </aside>
+        </div>}
         {tab === "completed" && <Lane title="Completed Tracks" tracks={state?.history ?? []} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="completed" readOnly={readOnly} />}
         {tab === "removed" && <Lane title="Removed" tracks={state?.removed ?? []} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="removed" readOnly={readOnly} />}
       </>}
@@ -412,7 +402,7 @@ export function AdminRadioQueueControl() {
 
 function NextInLineBox({ entry, playerOccupied, readOnly, onAction, onPlayer, onCopy }: { entry: QueueEntry | null; playerOccupied: boolean; readOnly: boolean; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void }) {
   const visual = entry ? queueTrackVisual(entry) : null;
-  return <section className={`p-5 space-y-4 ${visual?.sectionClass ?? "border border-accent/60 bg-accent/5"}`}><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Next in Line</p>{!entry ? <p className="mt-3 text-lg text-muted">No active transmissions waiting.</p> : <><div className="mt-3"><LaneStatusBadge entry={entry} /></div><h2 className="mt-3 text-2xl font-bold text-foreground">{submittedArtist(entry)} — {submittedTitle(entry)}</h2><p className="text-sm text-muted mt-1">Lane: {LANE_LABELS[entryLane(entry)]} · Source: {sourceLabel(entry)} · Duration: {durationLabel(entry)}</p>{detectedLabel(entry) && <p className="text-xs text-muted mt-1">Detected / Provider: {detectedLabel(entry)}</p>}</>}</div>{entry && <TrackActions entry={entry} mode="next" playerOccupied={playerOccupied} readOnly={readOnly} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} />}</section>;
+  return <section className={`p-5 space-y-4 ${visual?.sectionClass ?? "border border-accent/60 bg-accent/5"}`}><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Next in Line</p>{!entry ? <p className="mt-3 text-lg text-muted">No Next In Line — Pull Next Track when ready.</p> : <><div className="mt-3"><LaneStatusBadge entry={entry} /></div><h2 className="mt-3 text-2xl font-bold text-foreground">{submittedArtist(entry)} — {submittedTitle(entry)}</h2><p className="text-sm text-muted mt-1">Lane: {LANE_LABELS[entryLane(entry)]} · Source: {sourceLabel(entry)} · Duration: {durationLabel(entry)}</p>{detectedLabel(entry) && <p className="text-xs text-muted mt-1">Detected / Provider: {detectedLabel(entry)}</p>}</>}</div>{entry && <TrackActions entry={entry} mode="next" playerOccupied={playerOccupied} readOnly={readOnly} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} />}</section>;
 }
 
 type AdminYTPlayer = {

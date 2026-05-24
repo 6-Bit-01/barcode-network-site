@@ -243,11 +243,15 @@ function wheelLabelPosition(angle: number, radius: number, wheelRotationDeg: num
   const radians = (angle * Math.PI) / 180;
   const x = Math.sin(radians) * radius;
   const y = Math.cos(radians) * -radius;
-  const finalVisualAngle = normalizeAngleDegrees(angle + wheelRotationDeg);
-  const inRightSelectorZone = finalVisualAngle >= WHEEL_SELECTOR_ZONE_MIN_ANGLE_DEG && finalVisualAngle <= WHEEL_SELECTOR_ZONE_MAX_ANGLE_DEG;
+  const finalVisualPositionAngle = normalizeAngleDegrees(angle + wheelRotationDeg);
+  const inRightSelectorZone = finalVisualPositionAngle >= WHEEL_SELECTOR_ZONE_MIN_ANGLE_DEG && finalVisualPositionAngle <= WHEEL_SELECTOR_ZONE_MAX_ANGLE_DEG;
+  const baseLabelRotation = wheelUprightLabelRotationDegrees(angle);
+  const finalScreenRotation = normalizeAngleDegrees(wheelRotationDeg + baseLabelRotation);
+  const wouldRenderUpsideDown = finalScreenRotation > 90 && finalScreenRotation < 270;
+  const readableNonSelectorRotation = wouldRenderUpsideDown ? baseLabelRotation + 180 : baseLabelRotation;
   const rotation = inRightSelectorZone
-    ? normalizeAngleDegrees((-finalVisualAngle) + WHEEL_SELECTOR_LABEL_SCREEN_UPRIGHT_OFFSET_DEG)
-    : wheelUprightLabelRotationDegrees(angle);
+    ? (-wheelRotationDeg) + WHEEL_SELECTOR_LABEL_SCREEN_UPRIGHT_OFFSET_DEG
+    : readableNonSelectorRotation;
   return { x: `${x.toFixed(3)}vmin`, y: `${y.toFixed(3)}vmin`, rotation: `${rotation.toFixed(3)}deg` };
 }
 

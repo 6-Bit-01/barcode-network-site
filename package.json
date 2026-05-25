@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:queue": "node --test tests/queue-playback.test.mjs",
+    "check": "npx tsc --noEmit && npm run lint && npm run test:queue"
   },
   "dependencies": {
     "@upstash/ratelimit": "^2.0.8",

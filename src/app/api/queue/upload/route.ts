@@ -8,6 +8,7 @@ export const runtime = "nodejs";
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 const AUDIO_MIME_TYPES = ["audio/mpeg", "audio/mp3", "audio/wav", "audio/wave", "audio/x-wav"];
 const UPLOAD_PREFIX = "barcode-radio-queue/";
+const SESSION_SYNC_MESSAGE = "This session has changed. Re-enter the current BARCODE Radio queue and submit again.";
 
 type ClientPayload = {
   sessionId?: string;
@@ -26,6 +27,11 @@ function parseClientPayload(value: string | null | undefined): ClientPayload {
   }
 }
 
+export function assertCurrentUploadSession(payloadSessionId: string | undefined, activeSessionId: string): void {
+  if (!payloadSessionId?.trim()) throw new Error(SESSION_SYNC_MESSAGE);
+  if (payloadSessionId !== activeSessionId) throw new Error(SESSION_SYNC_MESSAGE);
+}
+
 export async function POST(request: Request): Promise<NextResponse> {
   const body = (await request.json()) as HandleUploadBody;
 
@@ -37,7 +43,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         const payload = parseClientPayload(clientPayload);
         const snapshot = await getPublicQueueSnapshot();
 
-        if (payload.sessionId && payload.sessionId !== snapshot.session.sessionId) throw new Error("This broadcast queue is closed.");
+        assertCurrentUploadSession(payload.sessionId, snapshot.session.sessionId);
         if (!snapshot.status.isOpen) throw new Error("This broadcast queue is closed.");
         if (snapshot.status.isFull || snapshot.status.activeCount >= snapshot.status.capacity) throw new Error("This broadcast queue is full for new transmissions.");
         if (!pathname.startsWith(UPLOAD_PREFIX)) throw new Error("Invalid upload path.");

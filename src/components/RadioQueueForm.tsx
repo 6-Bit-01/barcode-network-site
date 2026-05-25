@@ -19,6 +19,8 @@ const UPLOAD_FALLBACK_MESSAGE = "Upload could not be completed. Please try again
 const PRIORITY_SIGNAL_LABEL = "Priority Signal";
 const PRIORITY_CHECKOUT_UNAVAILABLE_MESSAGE = "Priority checkout could not be started. Your song stays in the free queue if still active.";
 const PRIORITY_DEPTH_UNAVAILABLE_MESSAGE = "Priority Signal opens when there are enough songs waiting.";
+const SESSION_SYNC_REQUIRED_MESSAGE = "Session sync required. Refresh the queue and try again.";
+const SESSION_CHANGED_MESSAGE = "This session has changed. Re-enter the current BARCODE Radio queue and submit again.";
 const MIN_PRIORITY_ACTIVE_DEPTH = 2;
 function formatPrice(cents: number, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }
 
@@ -134,6 +136,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
   const [transmissionState, setTransmissionState] = useState<TransmissionState>("idle");
   const [warpData, setWarpData] = useState<WarpData | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  const [acceptedReceipt, setAcceptedReceipt] = useState<{ artist: string; title: string; sessionTitle: string; sessionDate: string; trackCode: string } | null>(null);
 
   async function loadStatus() {
     const params = new URLSearchParams();
@@ -349,8 +352,14 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
     }
     finalSubmitIntent.current = false;
     setError(null);
+    setAcceptedReceipt(null);
     setSubmitting(true);
     try {
+      const refreshedBeforeSubmit = await loadStatus();
+      const latestSessionId = refreshedBeforeSubmit?.session?.sessionId ?? session?.sessionId ?? sessionId;
+      if (!latestSessionId) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
+      const visibleSessionId = session?.sessionId ?? sessionId;
+      if (visibleSessionId && latestSessionId !== visibleSessionId) throw new Error(SESSION_CHANGED_MESSAGE);
       const body: Record<string, string | number> = {
         mode,
         artist: artist.trim(),
@@ -360,7 +369,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
         contactEmail: contactEmail.trim(),
         submitterToken,
       };
-      if (sessionId) body.sessionId = sessionId;
+      body.sessionId = latestSessionId;
       if (note.trim()) body.note = note.trim();
       if (detectedDuration) body.detectedDurationSeconds = detectedDuration;
       if (mode === "upload") {
@@ -387,6 +396,13 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
       }
       if (payload.track?.id) {
         const submitted = publicTrackFromApi(payload.track);
+        setAcceptedReceipt({
+          artist: artist.trim(),
+          title: title.trim(),
+          sessionTitle: refreshedBeforeSubmit?.session?.title ?? session?.title ?? "BARCODE Radio",
+          sessionDate: refreshedBeforeSubmit?.session?.showDate ?? session?.showDate ?? "ACTIVE SESSION",
+          trackCode: submitted.id.slice(0, 8).toUpperCase(),
+        });
         window.localStorage.setItem("barcode-radio-submit-artist", artist.trim());
         window.localStorage.setItem("barcode-radio-submit-tiktok", tiktokHandle.trim());
         window.localStorage.setItem("barcode-radio-submit-email", contactEmail.trim());
@@ -478,7 +494,6 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
       setStep("track");
     } catch (err) {
       setTransmissionState("idle");
-      clearTrackDraftFields();
       setStep("track");
       setError(err instanceof Error ? err.message : "Submission failed");
     } finally {
@@ -512,6 +527,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
 
   return (
     <form onSubmit={submit} className="space-y-3">
+      {acceptedReceipt && <div className="border border-accent bg-accent/10 p-3 text-xs text-foreground"><p className="font-bold text-accent">Submission accepted</p><p>{acceptedReceipt.artist} — {acceptedReceipt.title}</p><p>{acceptedReceipt.sessionTitle} · {acceptedReceipt.sessionDate}</p><p>Confirmation: {acceptedReceipt.trackCode}</p></div>}
       <div className="grid gap-2 border border-border bg-surface p-3 text-xs sm:grid-cols-4">
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Session</p><p className="truncate text-foreground">{session?.title ?? "BARCODE Radio"}</p></div>
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Queue</p><p className={status?.isOpen ? "text-accent" : "text-danger"}>{status?.isOpen ? "Open" : "Closed"}</p></div>

@@ -13,7 +13,13 @@ const projectRoot = path.resolve(import.meta.dirname, "..");
 const originalResolveFilename = Module._resolveFilename;
 
 Module._resolveFilename = function resolveFilename(request, parent, isMain, options) {
-  if (request.startsWith("@/")) return path.join(projectRoot, "src", request.slice(2));
+  if (request.startsWith("@/")) {
+    const resolved = path.join(projectRoot, "src", request.slice(2));
+    if (fs.existsSync(resolved)) return resolved;
+    if (fs.existsSync(`${resolved}.ts`)) return `${resolved}.ts`;
+    if (fs.existsSync(`${resolved}.tsx`)) return `${resolved}.tsx`;
+    return resolved;
+  }
   return originalResolveFilename.call(this, request, parent, isMain, options);
 };
 
@@ -1274,4 +1280,86 @@ test("wheel ceremony spin and stale confirm errors do not mutate queue", async (
   state = await queue.getRadioQueueState();
   assert.equal(state.session.wheelSpinsOwed, 1, "stale confirm keeps owed wheel");
   assert.equal(state.queue.some((entry) => entry.lane === "wheel"), false, "stale confirm does not mark Wheel Chosen");
+});
+
+const queueApi = require("../src/app/api/queue/route.ts");
+const uploadApi = require("../src/app/api/queue/upload/route.ts");
+
+function jsonOf(response) {
+  return response.json();
+}
+
+test("public POST rejects missing sessionId", async () => {
+  const sessionId = await freshOpenSession("session required");
+  const response = await queueApi.submitTrackFromBody({
+    mode: "link",
+    artist: "Session Artist",
+    title: "Session Track",
+    tiktokHandle: "@sessionartist",
+    link: "https://example.com/session-required",
+  });
+  const payload = await jsonOf(response);
+  assert.equal(response.status, 409);
+  assert.equal(payload.code, "session_sync_required");
+  assert.equal(payload.error, "Session sync required. Refresh the queue and try again.");
+  assert.ok(sessionId);
+});
+
+test("public POST rejects stale sessionId", async () => {
+  const sessionId = await freshOpenSession("stale session");
+  await freshOpenSession("new active session");
+  const response = await queueApi.submitTrackFromBody({
+    sessionId,
+    mode: "link",
+    artist: "Stale Artist",
+    title: "Stale Track",
+    tiktokHandle: "@staleartist",
+    link: "https://example.com/stale-track",
+  });
+  const payload = await jsonOf(response);
+  assert.equal(response.status, 409);
+  assert.equal(payload.code, "stale_session");
+});
+
+test("public POST accepts current active sessionId", async () => {
+  const sessionId = await freshOpenSession("current session");
+  const response = await queueApi.submitTrackFromBody({
+    sessionId,
+    mode: "link",
+    artist: "Current Artist",
+    title: "Current Track",
+    tiktokHandle: "@currentartist",
+    link: "https://example.com/current-track",
+  });
+  const payload = await jsonOf(response);
+  assert.equal(response.status, 201);
+  assert.ok(payload.track?.id);
+});
+
+test("public POST remains rejected while submissions are closed", async () => {
+  const sessionId = await freshOpenSession("closed submit");
+  await queue.setQueueOpen(false);
+  const response = await queueApi.submitTrackFromBody({
+    sessionId,
+    mode: "link",
+    artist: "Closed Artist",
+    title: "Closed Track",
+    tiktokHandle: "@closedartist",
+    link: "https://example.com/closed-track",
+  });
+  const payload = await jsonOf(response);
+  assert.equal(response.status, 409);
+  assert.equal(payload.error, "This broadcast queue is closed.");
+});
+
+test("upload session guard rejects missing sessionId", async () => {
+  assert.throws(() => uploadApi.assertCurrentUploadSession(undefined, "active_session"), /This session has changed/);
+});
+
+test("upload session guard rejects stale sessionId", async () => {
+  assert.throws(() => uploadApi.assertCurrentUploadSession("old_session", "active_session"), /This session has changed/);
+});
+
+test("upload token guard remains rejected while submissions are closed", async () => {
+  assert.throws(() => uploadApi.assertUploadSessionOpen(false, false, 0, 50), /This broadcast queue is closed/);
 });

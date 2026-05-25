@@ -11,7 +11,9 @@ const TOKEN_TTL = 60 * 60 * 24; // 24 hours in seconds
 // --------------- HMAC helpers (Web Crypto) ---------------
 
 async function getKey(): Promise<CryptoKey> {
-  const secret = process.env.JWT_SECRET || process.env.QUEUE_API_KEY || "dev-fallback-secret";
+  const isProduction = process.env.NODE_ENV === "production";
+  const secret = process.env.JWT_SECRET || process.env.QUEUE_API_KEY || (!isProduction ? "dev-fallback-secret" : "");
+  if (!secret) throw new Error("Admin auth is not configured.");
   const enc = new TextEncoder();
   return crypto.subtle.importKey(
     "raw",
@@ -79,6 +81,10 @@ export async function verifyAdminToken(token: string): Promise<boolean> {
 }
 
 export function getAdminPassword(): string {
+  if (process.env.NODE_ENV === "production") {
+    if (!process.env.ADMIN_PASSWORD) throw new Error("Admin auth is not configured.");
+    return process.env.ADMIN_PASSWORD;
+  }
   return process.env.ADMIN_PASSWORD || "barcode2026";
 }
 

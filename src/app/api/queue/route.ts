@@ -12,6 +12,7 @@ const UPLOAD_FALLBACK_MESSAGE = "Upload could not be completed. Please try again
 const DUPLICATE_TRANSMISSION_MESSAGE = "Duplicate transmission detected. This track is already in the queue for this session.";
 const BLOB_HOST_SUFFIX = ".private.blob.vercel-storage.com";
 const UPLOAD_PREFIX = "/barcode-radio-queue/";
+const SESSION_SYNC_MESSAGE = "This session has changed. Re-enter the current BARCODE Radio queue and submit again.";
 
 function validateUploadedBlobUrl(value: unknown): string {
   if (typeof value !== "string" || !value.trim()) throw new Error("Uploaded audio file is missing.");
@@ -134,7 +135,7 @@ export async function POST(req: Request) {
   }
 }
 
-async function submitTrackFromBody(body: Record<string, unknown>): Promise<NextResponse> {
+export async function submitTrackFromBody(body: Record<string, unknown>): Promise<NextResponse> {
   const artist = cleanBodyText(body.artist);
   const title = cleanBodyText(body.title);
   const mode = cleanBodyText(body.mode);
@@ -147,9 +148,8 @@ async function submitTrackFromBody(body: Record<string, unknown>): Promise<NextR
   const sessionId = cleanBodyText(body.sessionId);
   const active = await getPublicQueueSnapshot();
 
-  if (sessionId && active.session.sessionId !== sessionId) {
-    return NextResponse.json({ error: "This broadcast queue is closed." }, { status: 409 });
-  }
+  if (!sessionId) return NextResponse.json({ error: "Session sync required. Refresh the queue and try again.", code: "session_sync_required" }, { status: 409 });
+  if (active.session.sessionId !== sessionId) return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "stale_session" }, { status: 409 });
   if (!active.status.isOpen) {
     return NextResponse.json({ error: "This broadcast queue is closed." }, { status: 409 });
   }

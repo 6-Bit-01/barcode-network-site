@@ -402,7 +402,7 @@ export function AdminRadioQueueControl() {
 
       {mounted && loadedPlayer && createPortal(<PlayerDock player={loadedPlayer} minimized={minimized} setMinimized={setMinimized} readOnly={readOnly} onAction={playerAction} onCopy={() => copy(loadedPlayer)} />, document.body)}
 
-      {mounted && canControlSession && createPortal(<aside className={`hidden xl:block fixed right-4 top-[calc(9.5rem+env(safe-area-inset-top))] ${railBottomOffsetClass} max-h-[calc(100dvh-11rem)] w-[24rem] z-[8400] border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3`}>
+      {mounted && canControlSession && createPortal(<aside className={`hidden xl:block fixed right-4 top-[calc(10.25rem+env(safe-area-inset-top))] ${railBottomOffsetClass} max-h-[calc(100dvh-11rem)] w-[24rem] z-[8400] border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3`}>
         <section className="border border-border bg-surface p-3 space-y-2">
           <div className="flex items-center justify-between">
             <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Rail</p>

@@ -293,6 +293,11 @@ export function AdminRadioQueueControl() {
   const canPullFreeTransmission = !resolverOverrideBlocked && (state?.queue ?? []).some((entry) => (!entry.lane || entry.lane === "regular") && entry.status === "queued");
   const timingSummary = buildQueueTimingDisplay(queueTimingInputFromAdminState(state));
   const paymentProcessingCount = (state?.queue ?? []).filter((entry) => ["checkout_pending", "requested", "paid_needs_attention"].includes(entry.priorityUpgradeStatus ?? "none")).length;
+  const wheelSpinsUnlocked = state?.session?.wheelSpinsOwed ?? 0;
+  const isNextOwedWheel = state?.nextNonPriorityLane === "wheel";
+  const wheelOverlayReady = wheelSpinsUnlocked > 0 || isNextOwedWheel;
+  const wheelOverlayStatusLabel = wheelSpinsUnlocked > 0 ? "Wheel spin ready" : "Next owed: Wheel";
+  const openOverlayPanel = () => setActiveUtilityPanel("overlay");
 
   const railBottomOffsetClass = loadedPlayer ? (minimized ? "bottom-24" : "bottom-[12.5rem]") : "bottom-5";
   const topOverlayPaddingClass = topBarMinimized ? "pt-[4.5rem] md:pt-[4.75rem]" : "pt-[7.25rem] md:pt-[7.5rem]";
@@ -303,7 +308,13 @@ export function AdminRadioQueueControl() {
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "session" ? null : "session")} className="min-h-9 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">{activeUtilityPanel === "session" ? "Hide Session Setup" : "Session Setup"}</button>
           <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "visuals" ? null : "visuals")} className="min-h-9 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">{activeUtilityPanel === "visuals" ? "Hide Show Visuals" : "Show Visuals"}</button>
-          <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "overlay" ? null : "overlay")} className="min-h-9 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">{activeUtilityPanel === "overlay" ? "Hide Live Overlay" : "Live Overlay"}</button>
+          <button
+            type="button"
+            onClick={() => setActiveUtilityPanel((value) => value === "overlay" ? null : "overlay")}
+            className={`min-h-9 border px-3 py-1.5 text-xs uppercase tracking-widest ${wheelOverlayReady ? "animate-pulse border-cyan-300/70 bg-cyan-300/10 text-cyan-200" : "border-border text-muted"}`}
+          >
+            {activeUtilityPanel === "overlay" ? "Hide Live Overlay" : wheelOverlayReady ? "Live Overlay — Wheel Ready" : "Live Overlay"}
+          </button>
         </div>
       </section>
 
@@ -389,6 +400,10 @@ export function AdminRadioQueueControl() {
               <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Actions</p>
               {!nextInLine && <><p className="text-sm text-muted">No Next In Line — Pull Next Track when ready.</p><button onClick={() => action("", "pullNext")} className="min-h-10 border border-accent px-3 py-2 text-sm uppercase tracking-widest text-accent">Pull Next Track</button></>}
               <div className="flex flex-wrap gap-2"><span className="border border-cyan-300/30 bg-cyan-300/5 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Wheel Spins Unlocked: {state?.session?.wheelSpinsOwed ?? 0}</span><span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Next Owed: {state?.nextNonPriorityLane === "regular" ? "Free" : "Wheel"}</span></div>
+              {wheelOverlayReady && <div className="space-y-2 border border-cyan-300/50 bg-cyan-300/10 p-2.5 animate-pulse">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-cyan-100">{wheelOverlayStatusLabel}</p>
+                <button type="button" onClick={openOverlayPanel} className="min-h-10 w-full border border-cyan-300/70 bg-cyan-300/10 px-3 py-2 text-xs uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">Open Wheel Overlay</button>
+              </div>}
               <div className="flex flex-wrap gap-2">{paymentProcessingCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Payment Processing: {paymentProcessingCount}</span>}{heldPriorityCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Held Priority: {heldPriorityCount}</span>}{resolverOverrideBlocked && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Resolver Override Blocked</span>}{!nextInLine && <span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">No Next In Line</span>}</div>
             </section>
               </>}
@@ -417,6 +432,10 @@ export function AdminRadioQueueControl() {
               <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Actions</p>
               {!nextInLine && <><p className="text-sm text-muted">No Next In Line — Pull Next Track when ready.</p><button onClick={() => action("", "pullNext")} className="min-h-10 border border-accent px-3 py-2 text-sm uppercase tracking-widest text-accent">Pull Next Track</button></>}
               <div className="flex flex-wrap gap-2"><span className="border border-cyan-300/30 bg-cyan-300/5 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Wheel Spins Unlocked: {state?.session?.wheelSpinsOwed ?? 0}</span><span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Next Owed: {state?.nextNonPriorityLane === "regular" ? "Free" : "Wheel"}</span></div>
+              {wheelOverlayReady && <div className="space-y-2 border border-cyan-300/50 bg-cyan-300/10 p-2.5 animate-pulse">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-cyan-100">{wheelOverlayStatusLabel}</p>
+                <button type="button" onClick={openOverlayPanel} className="min-h-10 w-full border border-cyan-300/70 bg-cyan-300/10 px-3 py-2 text-xs uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">Open Wheel Overlay</button>
+              </div>}
               <div className="flex flex-wrap gap-2">{paymentProcessingCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Payment Processing: {paymentProcessingCount}</span>}{heldPriorityCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Held Priority: {heldPriorityCount}</span>}{resolverOverrideBlocked && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Resolver Override Blocked</span>}{!nextInLine && <span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">No Next In Line</span>}</div>
             </section>
           </>}

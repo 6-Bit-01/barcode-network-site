@@ -110,6 +110,15 @@ function removedTrack(state, id) {
   return state.removed.find((entry) => entry.id === id) ?? null;
 }
 
+function countTrackOccurrences(state, id) {
+  const queueCount = state.queue.filter((entry) => entry.id === id).length;
+  const nextCount = state.nextInLine?.id === id ? 1 : 0;
+  const nowPlayingCount = state.nowPlaying?.id === id ? 1 : 0;
+  const historyCount = state.history.filter((entry) => entry.id === id).length;
+  const removedCount = state.removed.filter((entry) => entry.id === id).length;
+  return { queueCount, nextCount, nowPlayingCount, historyCount, removedCount, total: queueCount + nextCount + nowPlayingCount + historyCount + removedCount };
+}
+
 test("new active session begins in warmup before submissions open", async () => {
   await queue.setQueueOpen(false);
   await queue.startNewQueueSession({ title: `warmup start ${Date.now()} ${trackSequence}` });
@@ -438,6 +447,78 @@ test("paid priority interrupts free already in Next In Line and restores that fr
   state = await queue.updateRadioTrack(priority.id, "finish");
   assert.equal(state.nextNonPriorityLane, owedBeforePriority, "finishing priority must not advance the non-priority pointer");
   assert.equal(state.nextInLine?.id, free.id, "the same interrupted free track should return as Next In Line");
+});
+
+test("finished loaded priority cannot reappear in active slots", async () => {
+  const sessionId = await freshOpenSession("finished priority uniqueness");
+  const free = await addTrack("Priority Uniqueness Free");
+  const priority = await addTrack("Priority Uniqueness Priority");
+  let state = await payPriority(priority, sessionId);
+  const owedBeforeFinish = state.nextNonPriorityLane;
+
+  state = await queue.updateRadioTrack(priority.id, "load");
+  assert.equal(state.nowPlaying?.id, priority.id);
+  assert.equal(countTrackOccurrences(state, priority.id).total, 1, "loaded priority should exist once");
+
+  state = await queue.updateRadioTrack(priority.id, "finish");
+  const finished = countTrackOccurrences(state, priority.id);
+  assert.equal(finished.historyCount, 1, "finished priority should appear once in history");
+  assert.equal(finished.queueCount, 0);
+  assert.equal(finished.nextCount, 0);
+  assert.equal(finished.nowPlayingCount, 0);
+  assert.equal(finished.removedCount, 0);
+  assert.equal(state.nextInLine?.id, free.id, "next legal track should stage after priority finish");
+  assert.equal(state.nextNonPriorityLane, owedBeforeFinish, "finishing priority must not change non-priority pointer");
+});
+
+test("finishing two priorities cannot duplicate either track", async () => {
+  const sessionId = await freshOpenSession("double priority uniqueness");
+  const free = await addTrack("Double Priority Free");
+  const p1 = await addTrack("Double Priority One");
+  const p2 = await addTrack("Double Priority Two");
+  let state = await payPriority(p1, sessionId);
+  state = await payPriority(p2, sessionId);
+
+  state = await queue.updateRadioTrack(state.nextInLine.id, "load");
+  state = await queue.updateRadioTrack(state.nowPlaying.id, "finish");
+  state = await queue.updateRadioTrack(state.nextInLine.id, "load");
+  state = await queue.updateRadioTrack(state.nowPlaying.id, "finish");
+
+  const p1Counts = countTrackOccurrences(state, p1.id);
+  const p2Counts = countTrackOccurrences(state, p2.id);
+  assert.equal(p1Counts.historyCount, 1);
+  assert.equal(p2Counts.historyCount, 1);
+  assert.equal(p1Counts.total, 1, "priority one should exist only as completed");
+  assert.equal(p2Counts.total, 1, "priority two should exist only as completed");
+  assert.equal(state.nextInLine?.id, free.id, "non-priority track should be next after priority stack finishes");
+});
+
+test("pause and resume priority does not duplicate track across active slots", async () => {
+  const sessionId = await freshOpenSession("pause resume uniqueness");
+  await addTrack("Pause Resume Free");
+  const priority = await addTrack("Pause Resume Priority");
+  let state = await payPriority(priority, sessionId);
+  assert.equal(state.nextInLine?.id, priority.id);
+
+  state = await queue.updateRadioTrack(priority.id, "pausePriority");
+  let counts = countTrackOccurrences(state, priority.id);
+  assert.equal(counts.total, 1, "paused priority should exist once");
+  assert.equal(counts.queueCount, 1, "paused priority should return to queue");
+  assert.equal(counts.nextCount, 0);
+  assert.equal(counts.nowPlayingCount, 0);
+
+  state = await queue.updateRadioTrack(priority.id, "resumePriority");
+  counts = countTrackOccurrences(state, priority.id);
+  assert.equal(counts.total, 1, "resumed priority should exist once");
+  assert.equal(counts.nowPlayingCount, 0);
+  assert.equal(counts.historyCount, 0);
+  assert.equal(counts.removedCount, 0);
+  if (state.nextInLine?.id === priority.id) {
+    assert.equal(counts.nextCount, 1);
+    assert.equal(counts.queueCount, 0, "priority in Next In Line must not also remain queued");
+  } else {
+    assert.equal(counts.queueCount, 1, "if not staged yet, resumed priority should remain queued once");
+  }
 });
 
 test("random wheel lane track is not marked as interrupted unless priority displaced it from Next In Line", async () => {

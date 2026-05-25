@@ -12,7 +12,8 @@ export default async function QueueSessionPage({ params }: { params: Promise<{ s
   const { sessionId } = await params;
   const snapshot = await getPublicQueueSnapshot();
   const activeSessionId = snapshot.session.sessionId;
-  if (!snapshot.status.isOpen) {
+  const hasCurrentActiveSession = snapshot.session.status !== "archived" && snapshot.session.broadcastPhase !== "ended";
+  if (!hasCurrentActiveSession) {
     return (
       <main className="pt-14 min-h-screen">
         <section className="border-b border-border noise-bg">

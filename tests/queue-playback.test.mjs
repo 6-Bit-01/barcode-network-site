@@ -1336,10 +1336,30 @@ test("public POST accepts current active sessionId", async () => {
   assert.ok(payload.track?.id);
 });
 
+test("public POST remains rejected while submissions are closed", async () => {
+  const sessionId = await freshOpenSession("closed submit");
+  await queue.setQueueOpen(false);
+  const response = await queueApi.submitTrackFromBody({
+    sessionId,
+    mode: "link",
+    artist: "Closed Artist",
+    title: "Closed Track",
+    tiktokHandle: "@closedartist",
+    link: "https://example.com/closed-track",
+  });
+  const payload = await jsonOf(response);
+  assert.equal(response.status, 409);
+  assert.equal(payload.error, "This broadcast queue is closed.");
+});
+
 test("upload session guard rejects missing sessionId", async () => {
   assert.throws(() => uploadApi.assertCurrentUploadSession(undefined, "active_session"), /This session has changed/);
 });
 
 test("upload session guard rejects stale sessionId", async () => {
   assert.throws(() => uploadApi.assertCurrentUploadSession("old_session", "active_session"), /This session has changed/);
+});
+
+test("upload token guard remains rejected while submissions are closed", async () => {
+  assert.throws(() => uploadApi.assertUploadSessionOpen(false, false, 0, 50), /This broadcast queue is closed/);
 });

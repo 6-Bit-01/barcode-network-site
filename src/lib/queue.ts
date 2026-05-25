@@ -223,6 +223,9 @@ function sortActive(entries: QueueEntry[]): QueueEntry[] {
 function laneTop(session: Pick<QueueSession, "queue">, lane: QueueLane, excludeId?: string): QueueEntry | null {
   return sortActive(session.queue).find((entry) => entry.id !== excludeId && entry.status === "queued" && (entry.lane ?? "regular") === lane && (lane !== "priority" || isActivePriorityTrack(entry))) ?? null;
 }
+function wasPrioritySignal(entry: QueueEntry): boolean {
+  return (entry.lane ?? "regular") === "priority" || entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual";
+}
 
 
 function getDisplacedNonPriorityNext(session: Pick<QueueSession, "queue">, blockedId?: string): QueueEntry | null {
@@ -242,7 +245,10 @@ function chooseNextWaitingCandidate(session: QueueSession, excludeId?: string): 
   const displacedNonPriorityNext = getDisplacedNonPriorityNext(session, blockedId);
   if (displacedNonPriorityNext) return { entry: displacedNonPriorityNext, fallbackForLane: displacedNonPriorityNext.stagedAsFallbackForLane ?? null };
 
-  const preferredLane: QueueNonPriorityLane = session.nextNonPriorityLane === "regular" ? "regular" : "wheel";
+  const loadedNonPriorityLane = session.loadedTrack && (session.loadedTrack.lane ?? "regular") !== "priority"
+    ? (session.loadedTrack.lane === "wheel" ? "wheel" : "regular")
+    : null;
+  const preferredLane: QueueNonPriorityLane = loadedNonPriorityLane ? nextLaneAfterFinish(loadedNonPriorityLane) : (session.nextNonPriorityLane === "regular" ? "regular" : "wheel");
   const preferred = laneTop(session, preferredLane, blockedId);
   if (preferred) return { entry: preferred, fallbackForLane: null };
 
@@ -1892,6 +1898,9 @@ function addSimulationTrack(session: QueueSession, action: QueueAdminAction): bo
     return true;
   }
 
+  const simulationCreationAllowed = session.status === "open" && session.queueOpen;
+  if (!simulationCreationAllowed) return false;
+
   const now = new Date().toISOString();
   if (action === "addSimulationFreeTrack") {
     session.queue.push(simulationTrackBase(session));
@@ -2055,8 +2064,16 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
     const lane: QueueLane = action === "restorePriority" ? "priority" : "regular";
     const completedIndex = session.completed.findIndex((entry) => entry.id === id);
     const removedIndex = session.removed.findIndex((entry) => entry.id === id);
-    const source = completedIndex >= 0 ? session.completed.splice(completedIndex, 1)[0] : removedIndex >= 0 ? session.removed.splice(removedIndex, 1)[0] : null;
-    if (source) session.queue.push(restoreEntry(source, lane));
+    const source = completedIndex >= 0 ? session.completed[completedIndex] : removedIndex >= 0 ? session.removed[removedIndex] : null;
+    if (source) {
+      if (action === "restorePriority" && !wasPrioritySignal(source)) {
+        await writeStore(replaceSession(store, session));
+        return getRadioQueueState();
+      }
+      if (completedIndex >= 0) session.completed.splice(completedIndex, 1);
+      else if (removedIndex >= 0) session.removed.splice(removedIndex, 1);
+      session.queue.push(restoreEntry(source, lane));
+    }
     await writeStore(replaceSession(store, session));
     return getRadioQueueState();
   }

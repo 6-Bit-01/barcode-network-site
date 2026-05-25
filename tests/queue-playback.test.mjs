@@ -827,6 +827,64 @@ test("simulation tracks include visible sequence numbers without lane status tit
   assert.match(sim.note ?? "", /\[QUEUE SIMULATION TRACK\]/);
 });
 
+test("simulation free is blocked while submissions are closed", async () => {
+  await queue.setQueueOpen(false);
+  await queue.startNewQueueSession({ title: `sim free blocked ${Date.now()} ${trackSequence}` });
+  const before = await queue.getRadioQueueState();
+
+  const state = await queue.updateRadioTrack("", "addSimulationFreeTrack");
+
+  assert.equal(state.queue.some((entry) => entry.isTestTrack), false, "closed submissions must block simulation free creation");
+  assert.equal(state.nextInLine?.id ?? null, before.nextInLine?.id ?? null, "Next In Line must remain unchanged");
+});
+
+test("simulation paid priority is blocked while submissions are closed", async () => {
+  await queue.setQueueOpen(false);
+  await queue.startNewQueueSession({ title: `sim paid blocked ${Date.now()} ${trackSequence}` });
+  const before = await queue.getRadioQueueState();
+
+  const state = await queue.updateRadioTrack("", "addSimulationPaidPriority");
+
+  assert.equal(state.queue.some((entry) => entry.isTestTrack), false, "closed submissions must block simulation paid priority creation");
+  assert.equal(state.nextInLine?.id ?? null, before.nextInLine?.id ?? null, "Next In Line must remain unchanged");
+});
+
+test("simulation checkout/failed/held creation actions are blocked while submissions are closed", async () => {
+  await queue.setQueueOpen(false);
+  await queue.startNewQueueSession({ title: `sim variants blocked ${Date.now()} ${trackSequence}` });
+  const before = await queue.getRadioQueueState();
+  let state = await queue.updateRadioTrack("", "addSimulationCheckoutPending");
+  state = await queue.updateRadioTrack("", "addSimulationPaymentFailed");
+  state = await queue.updateRadioTrack("", "addSimulationHeldPriority");
+
+  assert.equal(state.queue.some((entry) => entry.isTestTrack), false, "closed submissions must block all simulation creation variants");
+  assert.equal(state.nextInLine?.id ?? null, before.nextInLine?.id ?? null, "Next In Line must remain unchanged");
+  assert.equal(state.nextNonPriorityLane, before.nextNonPriorityLane, "resolver pointer must remain unchanged");
+});
+
+test("clear simulation tracks still works while submissions are closed", async () => {
+  await freshOpenSession("sim clear while closed");
+  let state = await queue.updateRadioTrack("", "addSimulationFreeTrack");
+  assert.ok(state.queue.some((entry) => entry.isTestTrack) || state.nextInLine?.isTestTrack, "open submissions should allow simulation creation");
+  await queue.setQueueOpen(false);
+
+  state = await queue.updateRadioTrack("", "clearSimulationTracks");
+
+  assert.equal(state.session.queueOpen, false);
+  assert.equal(state.queue.some((entry) => entry.isTestTrack), false, "clear should remove simulated queue entries while closed");
+  assert.equal(state.history.some((entry) => entry.isTestTrack), false, "clear should remove simulated history entries while closed");
+  assert.equal(state.removed.some((entry) => entry.isTestTrack), false, "clear should remove simulated removed entries while closed");
+});
+
+test("simulation creation works when submissions are open", async () => {
+  await freshOpenSession("sim creation open", { showStarted: false });
+
+  const state = await queue.updateRadioTrack("", "addSimulationFreeTrack");
+
+  assert.equal(state.session.queueOpen, true);
+  assert.ok(state.queue.some((entry) => entry.isTestTrack), "open submissions should allow simulation creation");
+});
+
 test("removing lower queued free and wheel tracks does not advance or rebuild hidden alternation", async () => {
   await freshOpenSession("low queued removal");
   const firstWheel = await addTrack("Low Removal First Wheel");
@@ -966,6 +1024,31 @@ test("priority can claim Next In Line after failed wheel removal hold", async ()
   assert.equal(state.nextInLine?.id, priority.id, "active Priority should still claim Next In Line during failed-wheel hold");
   assert.equal(state.nextInLine?.lane, "priority");
   assert.equal(state.session.wheelSpinsOwed, 1, "owed Wheel remains underneath Priority");
+});
+
+test("loaded wheel does not stage a second wheel ahead of free and load/remove/undo do not consume wheel turn", async () => {
+  await freshOpenSession("loaded wheel/free alternation");
+  const wheelOne = await addTrack("Alternation Wheel One");
+  const wheelTwo = await addTrack("Alternation Wheel Two");
+  const freeOne = await addTrack("Alternation Free One");
+  await addTrack("Alternation Free Two");
+
+  let state = await queue.updateRadioTrack(wheelOne.id, "wheel");
+  state = await queue.updateRadioTrack(wheelTwo.id, "wheel");
+  assert.equal(state.nextInLine?.id, wheelOne.id, "first wheel should stage first");
+  const owedBeforeLoad = state.nextNonPriorityLane;
+
+  state = await queue.updateRadioTrack(wheelOne.id, "load");
+  assert.equal(state.nowPlaying?.id, wheelOne.id, "wheel one should load into PlayerDock");
+  assert.equal(state.nextNonPriorityLane, owedBeforeLoad, "loading must not consume lane pointer");
+  assert.equal(state.nextInLine?.lane, "regular", "after loading wheel one, next should avoid wheel-wheel stacking when free exists");
+  assert.equal(state.nextInLine?.id, freeOne.id, "free should stage ahead of second wheel");
+
+  const owedBeforeRemove = state.nextNonPriorityLane;
+  state = await queue.updateRadioTrack(freeOne.id, "remove");
+  assert.equal(state.nextNonPriorityLane, owedBeforeRemove, "remove must not consume the owed lane");
+  state = await queue.updateRadioTrack(freeOne.id, "restoreRegular");
+  assert.equal(state.nextNonPriorityLane, owedBeforeRemove, "undo restore must not consume the owed lane");
 });
 
 test("wheel ceremony eligibility helper excludes unsafe queue states", () => {

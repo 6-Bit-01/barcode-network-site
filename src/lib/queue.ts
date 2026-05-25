@@ -242,7 +242,10 @@ function chooseNextWaitingCandidate(session: QueueSession, excludeId?: string): 
   const displacedNonPriorityNext = getDisplacedNonPriorityNext(session, blockedId);
   if (displacedNonPriorityNext) return { entry: displacedNonPriorityNext, fallbackForLane: displacedNonPriorityNext.stagedAsFallbackForLane ?? null };
 
-  const preferredLane: QueueNonPriorityLane = session.nextNonPriorityLane === "regular" ? "regular" : "wheel";
+  const loadedNonPriorityLane = session.loadedTrack && (session.loadedTrack.lane ?? "regular") !== "priority"
+    ? (session.loadedTrack.lane === "wheel" ? "wheel" : "regular")
+    : null;
+  const preferredLane: QueueNonPriorityLane = loadedNonPriorityLane ? nextLaneAfterFinish(loadedNonPriorityLane) : (session.nextNonPriorityLane === "regular" ? "regular" : "wheel");
   const preferred = laneTop(session, preferredLane, blockedId);
   if (preferred) return { entry: preferred, fallbackForLane: null };
 

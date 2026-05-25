@@ -582,6 +582,43 @@ test("finish, remove, and load actions preserve or advance the non-priority poin
   assert.equal(state.nextNonPriorityLane, owedBeforeLoad, "loading a track does not advance nextNonPriorityLane");
 });
 
+test("loaded finish clears nowPlaying and does not resurrect finished track", async () => {
+  await freshOpenSession("loaded finish clears now playing");
+  const first = await addTrack("Loaded Finish First");
+  const second = await addTrack("Loaded Finish Second");
+
+  let state = await queue.updateRadioTrack("", "pullNext");
+  assert.equal(state.nextInLine?.id, first.id);
+  state = await queue.updateRadioTrack(first.id, "load");
+  assert.equal(state.nowPlaying?.id, first.id);
+  state = await queue.updateRadioTrack(first.id, "finish");
+
+  const counts = countTrackOccurrences(state, first.id);
+  assert.equal(state.nowPlaying, null, "finish should clear nowPlaying");
+  assert.equal(counts.historyCount, 1, "finished track should appear once in history");
+  assert.equal(counts.queueCount, 0);
+  assert.equal(counts.nextCount, 0);
+  assert.equal(state.nextInLine?.id, second.id, "next legal track should stage");
+});
+
+test("undo load then reload then finish completes without resurrection", async () => {
+  await freshOpenSession("undo reload finish");
+  const first = await addTrack("Undo Reload First");
+  await addTrack("Undo Reload Second");
+  let state = await queue.updateRadioTrack("", "pullNext");
+  state = await queue.updateRadioTrack(first.id, "load");
+  state = await queue.updateRadioTrack(first.id, "moveBack");
+  assert.equal(state.nowPlaying, null);
+  assert.equal(state.nextInLine?.id, first.id, "undo load should restore first as next");
+
+  state = await queue.updateRadioTrack(first.id, "load");
+  state = await queue.updateRadioTrack(first.id, "finish");
+  const counts = countTrackOccurrences(state, first.id);
+  assert.equal(state.nowPlaying, null);
+  assert.equal(counts.historyCount, 1);
+  assert.equal(counts.total, 1, "track should exist only once after finish");
+});
+
 test("undo load for regular clears the player and returns the track without counting it", async () => {
   await freshOpenSession("undo regular");
   const regular = await addTrack("Regular Undo");
@@ -1105,6 +1142,56 @@ test("priority can claim Next In Line after failed wheel removal hold", async ()
   assert.equal(state.nextInLine?.id, priority.id, "active Priority should still claim Next In Line during failed-wheel hold");
   assert.equal(state.nextInLine?.lane, "priority");
   assert.equal(state.session.wheelSpinsOwed, 1, "owed Wheel remains underneath Priority");
+});
+
+test("removed regular track cannot be restored to priority", async () => {
+  await freshOpenSession("restore priority guard removed regular");
+  const regular = await addTrack("Removed Regular");
+  let state = await queue.updateRadioTrack("", "pullNext");
+  state = await queue.updateRadioTrack(regular.id, "remove");
+  assert.ok(removedTrack(state, regular.id));
+
+  state = await queue.updateRadioTrack(regular.id, "restorePriority");
+  assert.ok(removedTrack(state, regular.id), "invalid restorePriority should no-op and keep removed entry");
+  assert.equal(queuedTrack(state, regular.id), null);
+});
+
+test("removed paid priority track can be restored to priority", async () => {
+  const sessionId = await freshOpenSession("restore priority removed paid");
+  const priority = await addTrack("Removed Paid Priority");
+  let state = await payPriority(priority, sessionId);
+  state = await queue.updateRadioTrack(priority.id, "remove");
+  assert.ok(removedTrack(state, priority.id));
+
+  state = await queue.updateRadioTrack(priority.id, "restorePriority");
+  const restored = queuedTrack(state, priority.id) ?? state.nextInLine;
+  assert.equal(restored?.id, priority.id);
+  assert.equal(restored?.lane, "priority");
+});
+
+test("completed regular track cannot be restored to priority", async () => {
+  await freshOpenSession("restore priority guard completed regular");
+  const regular = await addTrack("Completed Regular");
+  let state = await queue.updateRadioTrack("", "pullNext");
+  state = await queue.updateRadioTrack(regular.id, "finish");
+  assert.ok(completedTrack(state, regular.id));
+
+  state = await queue.updateRadioTrack(regular.id, "restorePriority");
+  assert.ok(completedTrack(state, regular.id), "invalid restorePriority should no-op and keep completed entry");
+  assert.equal(queuedTrack(state, regular.id), null);
+});
+
+test("completed manual priority track can be restored to priority", async () => {
+  await freshOpenSession("restore priority completed manual");
+  const priority = await addTrack("Completed Manual Priority");
+  let state = await queue.updateRadioTrack(priority.id, "priority");
+  state = await queue.updateRadioTrack(priority.id, "finish");
+  assert.ok(completedTrack(state, priority.id));
+
+  state = await queue.updateRadioTrack(priority.id, "restorePriority");
+  const restored = queuedTrack(state, priority.id) ?? state.nextInLine;
+  assert.equal(restored?.id, priority.id);
+  assert.equal(restored?.lane, "priority");
 });
 
 test("loaded wheel does not stage a second wheel ahead of free and load/remove/undo do not consume wheel turn", async () => {

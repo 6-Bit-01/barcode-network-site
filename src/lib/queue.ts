@@ -223,6 +223,9 @@ function sortActive(entries: QueueEntry[]): QueueEntry[] {
 function laneTop(session: Pick<QueueSession, "queue">, lane: QueueLane, excludeId?: string): QueueEntry | null {
   return sortActive(session.queue).find((entry) => entry.id !== excludeId && entry.status === "queued" && (entry.lane ?? "regular") === lane && (lane !== "priority" || isActivePriorityTrack(entry))) ?? null;
 }
+function wasPrioritySignal(entry: QueueEntry): boolean {
+  return (entry.lane ?? "regular") === "priority" || entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual";
+}
 
 
 function getDisplacedNonPriorityNext(session: Pick<QueueSession, "queue">, blockedId?: string): QueueEntry | null {
@@ -2061,8 +2064,16 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
     const lane: QueueLane = action === "restorePriority" ? "priority" : "regular";
     const completedIndex = session.completed.findIndex((entry) => entry.id === id);
     const removedIndex = session.removed.findIndex((entry) => entry.id === id);
-    const source = completedIndex >= 0 ? session.completed.splice(completedIndex, 1)[0] : removedIndex >= 0 ? session.removed.splice(removedIndex, 1)[0] : null;
-    if (source) session.queue.push(restoreEntry(source, lane));
+    const source = completedIndex >= 0 ? session.completed[completedIndex] : removedIndex >= 0 ? session.removed[removedIndex] : null;
+    if (source) {
+      if (action === "restorePriority" && !wasPrioritySignal(source)) {
+        await writeStore(replaceSession(store, session));
+        return getRadioQueueState();
+      }
+      if (completedIndex >= 0) session.completed.splice(completedIndex, 1);
+      else if (removedIndex >= 0) session.removed.splice(removedIndex, 1);
+      session.queue.push(restoreEntry(source, lane));
+    }
     await writeStore(replaceSession(store, session));
     return getRadioQueueState();
   }

@@ -12,6 +12,7 @@ type Mode = "link" | "upload";
 type ReadState = "idle" | "checking" | "reading" | "detected" | "pending" | "uploading";
 type TransmissionState = "idle" | "priority_requested" | "signal" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed";
 type SubmitPhase = "resolved" | "complete";
+type AcceptedReceipt = { artist: string; title: string; sessionTitle: string; sessionDate: string; trackCode: string };
 type IntakeStep = "track" | "routing";
 type RouteChoice = "free" | "priority";
 
@@ -106,7 +107,7 @@ function publicTrackFromApi(track: { id: string; submittedArtistName?: string; s
   };
 }
 
-export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId?: string; onSubmitted?: (trackId?: string, phase?: SubmitPhase, targetId?: string) => void; onCancel?: () => void } = {}) {
+export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedReceipt }: { sessionId?: string; onSubmitted?: (trackId?: string, phase?: SubmitPhase, targetId?: string) => void; onCancel?: () => void; onAcceptedReceipt?: (receipt: AcceptedReceipt) => void } = {}) {
   const [status, setStatus] = useState<QueuePublicStatus | null>(null);
   const [publicQueue, setPublicQueue] = useState<QueuePublicTrack[]>([]);
   const [nowPlaying, setNowPlaying] = useState<QueuePublicTrack | null>(null);
@@ -136,7 +137,6 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
   const [transmissionState, setTransmissionState] = useState<TransmissionState>("idle");
   const [warpData, setWarpData] = useState<WarpData | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
-  const [acceptedReceipt, setAcceptedReceipt] = useState<{ artist: string; title: string; sessionTitle: string; sessionDate: string; trackCode: string } | null>(null);
 
   async function loadStatus() {
     const params = new URLSearchParams();
@@ -352,7 +352,6 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
     }
     finalSubmitIntent.current = false;
     setError(null);
-    setAcceptedReceipt(null);
     setSubmitting(true);
     try {
       const refreshedBeforeSubmit = await loadStatus();
@@ -396,13 +395,14 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
       }
       if (payload.track?.id) {
         const submitted = publicTrackFromApi(payload.track);
-        setAcceptedReceipt({
+        const receipt = {
           artist: artist.trim(),
           title: title.trim(),
           sessionTitle: refreshedBeforeSubmit?.session?.title ?? session?.title ?? "BARCODE Radio",
           sessionDate: refreshedBeforeSubmit?.session?.showDate ?? session?.showDate ?? "ACTIVE SESSION",
           trackCode: submitted.id.slice(0, 8).toUpperCase(),
-        });
+        };
+        onAcceptedReceipt?.(receipt);
         window.localStorage.setItem("barcode-radio-submit-artist", artist.trim());
         window.localStorage.setItem("barcode-radio-submit-tiktok", tiktokHandle.trim());
         window.localStorage.setItem("barcode-radio-submit-email", contactEmail.trim());
@@ -527,7 +527,6 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel }: { sessionId
 
   return (
     <form onSubmit={submit} className="space-y-3">
-      {acceptedReceipt && <div className="border border-accent bg-accent/10 p-3 text-xs text-foreground"><p className="font-bold text-accent">Submission accepted</p><p>{acceptedReceipt.artist} — {acceptedReceipt.title}</p><p>{acceptedReceipt.sessionTitle} · {acceptedReceipt.sessionDate}</p><p>Confirmation: {acceptedReceipt.trackCode}</p></div>}
       <div className="grid gap-2 border border-border bg-surface p-3 text-xs sm:grid-cols-4">
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Session</p><p className="truncate text-foreground">{session?.title ?? "BARCODE Radio"}</p></div>
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Queue</p><p className={status?.isOpen ? "text-accent" : "text-danger"}>{status?.isOpen ? "Open" : "Closed"}</p></div>

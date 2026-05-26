@@ -18,7 +18,7 @@ export default function MerchPage() {
     <div className="pt-14">
       {/* Hero */}
       <section className="border-b border-border noise-bg">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16 sm:py-24">
+        <div className="mx-auto max-w-7xl px-4 pb-14 pt-12 sm:px-6 sm:pb-16 sm:pt-14">
           <PageHero
             label={merchPage.hero.label}
             heading={merchPage.hero.heading}

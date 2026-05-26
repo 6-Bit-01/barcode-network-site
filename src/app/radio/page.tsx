@@ -22,7 +22,7 @@ export default function RadioPage() {
     <div className="pt-14">
       {/* Hero — Submit buttons FIRST, zero friction */}
       <section className="border-b border-border noise-bg">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16 sm:py-24">
+        <div className="mx-auto max-w-7xl px-4 pb-14 pt-12 sm:px-6 sm:pb-16 sm:pt-14">
           <RadioHero
             label={radioPage.hero.label}
             heading1={radioPage.hero.heading1}

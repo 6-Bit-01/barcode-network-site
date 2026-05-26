@@ -44,7 +44,7 @@ export function AdminShowManagement() {
   const [title, setTitle] = useState(`BARCODE Radio — ${todayDate()}`);
   const [description, setDescription] = useState(defaultDescription(todayDate()));
   const [trackLimitPerArtist, setTrackLimitPerArtist] = useState(3);
-  const [queueCapacity, setQueueCapacity] = useState(50);
+  const [queueCapacity, setQueueCapacity] = useState(44);
   const [submissionCooldownSeconds, setSubmissionCooldownSeconds] = useState(300);
   const [priorityUpgradesEnabled, setPriorityUpgradesEnabled] = useState(true);
   const [priorityUpgradePriceCents, setPriorityUpgradePriceCents] = useState(1000);
@@ -100,7 +100,7 @@ export function AdminShowManagement() {
   const session = state?.session;
   const readOnly = Boolean(state?.readOnly || session?.status === "archived");
   const currentSession = session && state?.isCurrentSession && !readOnly ? session : null;
-  const pastSessions = (state?.sessions ?? []).filter((item) => item.sessionId !== currentSession?.sessionId);
+  const archiveCount = (state?.sessions ?? []).filter((item) => item.status === "archived").length;
   const startLocked = Boolean(currentSession);
   const queueIsOpen = Boolean(currentSession?.queueOpen);
 
@@ -110,7 +110,7 @@ export function AdminShowManagement() {
       <CurrentSession session={currentSession} onPost={post} onEnd={() => setEndConfirmOpen(true)} />
       <SessionData session={currentSession} />
       {endConfirmOpen && createPortal(<EndSessionConfirm ending={endingSession} onCancel={() => setEndConfirmOpen(false)} onConfirm={endSession} />, document.body)}
-      <ArchivedShows sessions={pastSessions} />
+      <ArchivePanel archiveCount={archiveCount} />
     </div>
   );
 }
@@ -179,7 +179,7 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
         <p className="text-xs uppercase tracking-[0.35em] text-muted">// Current Session</p>
         <h2 className="mt-2 text-xl font-bold text-foreground">No session in progress.</h2>
         <p className="mt-1 text-sm text-muted">Start a new session or select an archived session below.</p>
-        <a href="#archived-shows" className="mt-4 inline-flex border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Archived Shows</a>
+        <a href="/admin/show-management/archive" className="mt-4 inline-flex border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Open Queue Archive</a>
       </section>
     );
   }
@@ -280,6 +280,7 @@ function SessionData({ session }: { session: QueueSessionSummary | null | undefi
   return <section className="border border-border bg-surface p-6 space-y-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-xs uppercase tracking-[0.35em] text-muted">// Session Data / Submission Export</p><p className="text-sm text-muted mt-2">Admin-only submitter/contact data for this session. Private contact fields are not exposed publicly.</p></div><div className="flex flex-wrap gap-2"><button onClick={viewList} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">View Submitter List</button><a href={exportHref(session.sessionId)} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Download CSV</a></div></div>{open && <div className="overflow-x-auto border border-border bg-background/40"><table className="min-w-full text-left text-xs"><thead className="text-muted"><tr><th className="p-2">Submitter</th><th className="p-2">Display Artist</th><th className="p-2">Song</th><th className="p-2">TikTok</th><th className="p-2">Email/contact</th><th className="p-2">Status</th><th className="p-2">Lane</th></tr></thead><tbody>{loading ? <tr><td colSpan={7} className="p-3 text-muted">Loading submitter list…</td></tr> : rows.length === 0 ? <tr><td colSpan={7} className="p-3 text-muted">No submissions found for this session.</td></tr> : rows.map((row, index) => <tr key={`${row.sessionId}-${row.sourceLink}-${index}`} className="border-t border-border/60"><td className="p-2">{row.submitterArtistName}</td><td className="p-2">{row.submittedArtistName}</td><td className="p-2">{row.submittedSongTitle}</td><td className="p-2">{row.tiktokHandle || "—"}</td><td className="p-2">{row.contactEmail || "—"}</td><td className="p-2">{row.status}</td><td className="p-2">{row.lane}{row.spotlight ? " · spotlight" : ""}</td></tr>)}</tbody></table></div>}</section>;
 }
 
-function ArchivedShows({ sessions }: { sessions: QueueSessionSummary[] }) {
-  return <section id="archived-shows" className="border border-border bg-surface p-5 space-y-4"><div><p className="text-xs uppercase tracking-[0.35em] text-muted">// Archived Shows</p><p className="text-sm text-muted mt-2">Past sessions stay closed. Review finished-session reports and export session-scoped data here.</p></div><div className="grid gap-3">{sessions.length === 0 ? <p className="border border-border/60 p-4 text-sm text-muted">No archived or past shows saved yet.</p> : sessions.map((session) => <article key={session.sessionId} className="border border-border bg-background/40 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><p className="font-bold text-foreground">{session.title}</p><p className="text-xs text-muted">{session.showDate} · {session.status} · active {session.activeCount}/{session.queueCapacity} · completed {session.completedCount} · removed {session.removedCount}</p><p className="text-xs text-muted">Active runtime {formatRuntime(session.estimatedActiveRuntimeSeconds)} · completed runtime {formatRuntime(session.completedRuntimeSeconds)}</p></div><div className="flex flex-wrap gap-2"><a href={`/admin/show-management/session/${encodeURIComponent(session.sessionId)}`} className="border border-accent/60 px-3 py-1.5 text-xs text-accent">View Finished Session</a><a href={`/admin/queue?sessionId=${encodeURIComponent(session.sessionId)}`} className="border border-border px-3 py-1.5 text-xs text-muted">Review Queue</a><a href={exportHref(session.sessionId)} className="border border-border px-3 py-1.5 text-xs text-muted">Download CSV</a></div></div></article>)}</div></section>;
+
+function ArchivePanel({ archiveCount }: { archiveCount: number }) {
+  return <section className="border border-border bg-surface p-5 space-y-3"><p className="text-xs uppercase tracking-[0.35em] text-muted">// Queue Archive</p><p className="text-sm text-muted">Archived sessions are managed from a dedicated page to keep Show Management focused on live operations.</p><div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-foreground">Archived sessions: <span className="font-bold">{archiveCount}</span></p><a href="/admin/show-management/archive" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Queue Archive</a></div></section>;
 }

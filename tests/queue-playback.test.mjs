@@ -928,6 +928,28 @@ test("ending broadcast is separate from closing submissions", async () => {
   assert.equal(state.streamStatus, "offline");
 });
 
+
+
+test("new sessions default queue capacity to 44", async () => {
+  await queue.setQueueOpen(false);
+  const state = await queue.startNewQueueSession({ title: `default capacity ${Date.now()} ${trackSequence}` });
+  assert.equal(state.session.queueCapacity, 44);
+});
+
+test("clear archive removes archived sessions and preserves active session", async () => {
+  const activeSessionId = await freshOpenSession("clear archive preserve active");
+  await queue.archiveCurrentQueueSession();
+  await queue.startNewQueueSession({ title: `active after archive ${Date.now()} ${trackSequence}` });
+
+  const before = await queue.getRadioQueueState();
+  assert.ok(before.sessions.some((session) => session.status === "archived"));
+
+  const after = await queue.clearArchivedQueueSessions();
+  assert.equal(after.session.sessionId !== activeSessionId, true);
+  assert.equal(after.sessions.some((session) => session.status === "archived"), false);
+  assert.ok(after.sessions.some((session) => session.sessionId === after.session.sessionId));
+});
+
 test("admin phase display uses showStarted language instead of opening state", () => {
   const source = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
 

@@ -178,16 +178,14 @@ export function PublicQueueGateway() {
   return (
     <div className={`space-y-6 ${hasActiveSession ? "pb-24" : ""}`}>
       {hasActiveSession ? <section className="border border-accent/60 bg-accent/10 p-5 shadow-[0_0_34px_rgba(255,0,0,0.12)]">
-        <p className="text-xs uppercase tracking-[0.35em] text-muted">Queue Status</p>
-        <p className="mt-2 text-xs uppercase tracking-[0.35em] text-accent">BARCODE Radio Queue</p>
+        <p className="text-xs uppercase tracking-[0.35em] text-accent">BARCODE Radio Queue</p>
         <h1 className="mt-2 text-2xl font-bold text-foreground">Current queue is online</h1>
-        <p className="mt-2 text-sm text-muted">{snapshot?.status.isOpen ? "Submissions are open. Open the current queue to send your track." : "Submissions are closed, but you can still view the current queue."}</p>
-        <p className="mt-2 text-xs text-muted">See the current queue, submit a track when submissions are open, and check your song status.</p>
+        <p className="mt-2 text-sm text-muted">{snapshot?.status.isOpen ? "Submissions are open. Open the queue to submit your track." : "Submissions are closed, but you can still view the queue."}</p>
         <div className="mt-4 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.18em]">
-          <span className="border border-accent/60 bg-accent/15 px-2 py-1 text-accent">Current Queue Online</span>
           <span className={`${snapshot?.status.isOpen ? "border-accent/60 text-accent" : "border-border text-muted"} border px-2 py-1`}>Submissions: {snapshot?.status.isOpen ? "Open" : "Closed"}</span>
+          <span className={`${isBroadcastActive(snapshot) ? "border-[#ffaa00]/55 text-[#ffaa00]" : "border-border text-muted"} border px-2 py-1`}>Broadcast: {isBroadcastActive(snapshot) ? "Active" : "Standby"}</span>
         </div>
-        <a href={queueHref ?? "#"} onClick={(event) => queueHref && activeSessionId && beginNavigation(event, queueHref, activeSessionId)} aria-busy={Boolean(pendingNavigation)} className="nav-corridor-link mt-4 inline-flex w-full items-center justify-center border border-accent bg-accent px-4 py-3 text-xs font-bold uppercase tracking-[0.22em] text-white transition hover:bg-red-700 hover:text-white">OPEN CURRENT QUEUE</a>
+        <a href={queueHref ?? "#"} onClick={(event) => queueHref && activeSessionId && beginNavigation(event, queueHref, activeSessionId)} aria-busy={Boolean(pendingNavigation)} className="nav-corridor-link mt-4 inline-flex w-full cursor-pointer items-center justify-center border border-accent bg-accent px-4 py-3 text-xs font-bold uppercase tracking-[0.22em] text-white transition hover:bg-red-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">OPEN CURRENT QUEUE</a>
       </section> : <section className="border border-border bg-surface p-5">
         <p className="text-xs uppercase tracking-[0.35em] text-muted">Queue Status</p>
         <p className="mt-2 text-xs uppercase tracking-[0.35em] text-muted">BARCODE Radio Queue</p>
@@ -238,10 +236,10 @@ export function PublicQueueGateway() {
       {hasActiveSession && queueHref && activeSessionId && <section className="fixed inset-x-0 bottom-0 z-40 border-t border-accent/40 bg-background/95 px-3 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-5xl items-center gap-2 sm:gap-3">
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[10px] uppercase tracking-[0.2em] text-accent">Current Queue Online</p>
+            <p className="truncate text-[10px] uppercase tracking-[0.2em] text-accent">BARCODE Radio Queue</p>
             <p className="text-[11px] text-muted">Submissions: {snapshot?.status.isOpen ? "Open" : "Closed"}</p>
           </div>
-          <a href={queueHref} onClick={(event) => beginNavigation(event, queueHref, activeSessionId)} aria-busy={Boolean(pendingNavigation)} className="nav-corridor-link inline-flex shrink-0 items-center justify-center border border-accent bg-accent px-3 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-white transition hover:bg-red-700">OPEN CURRENT QUEUE</a>
+          <a href={queueHref} onClick={(event) => beginNavigation(event, queueHref, activeSessionId)} aria-busy={Boolean(pendingNavigation)} className="nav-corridor-link inline-flex shrink-0 cursor-pointer items-center justify-center border border-accent bg-accent px-3 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">OPEN CURRENT QUEUE</a>
         </div>
       </section>}
       {mounted && pendingNavigation && createPortal(<AsciiSessionPortalIntro label={pendingNavigation.label} detail={pendingNavigation.detail} mode={pendingNavigation.mode} seed={pendingNavigation.href} href={pendingNavigation.href} onSkip={() => { window.location.assign(pendingNavigation.href); }} />, document.body)}

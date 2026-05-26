@@ -96,6 +96,8 @@ export function AdminRadioQueueControl() {
   const [state, setState] = useState<QueueState | null>(null);
   const [tab, setTab] = useState<Tab>("active");
   const [loadingPlayerId, setLoadingPlayerId] = useState<string | null>(null);
+  const [clearingPlayerId, setClearingPlayerId] = useState<string | null>(null);
+  const [playerActionPending, setPlayerActionPending] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [topBarMinimized, setTopBarMinimized] = useState(false);
   const [railMinimized, setRailMinimized] = useState(false);
@@ -212,18 +214,33 @@ export function AdminRadioQueueControl() {
     setSimulationSpeed(next);
   }
   async function playerAction(id: string, next: AdminQueueAction) {
-    if (next === "finish" || next === "remove" || next === "moveBack" || next === "pausePriority") setLoadingPlayerId(null);
-    const updated = await action(id, next);
-    if (next === "finish" || next === "remove" || next === "moveBack" || next === "pausePriority") {
-      if (state?.nowPlaying?.id === id && state.nowPlaying.sourceType === "youtube") await clearOverlayPlayerSync();
-      if (!updated?.nowPlaying || updated.nowPlaying.id !== id) setLoadingPlayerId(null);
+    if (playerActionPending) return;
+    const isClearingAction = next === "finish" || next === "remove" || next === "moveBack" || next === "pausePriority";
+    if (isClearingAction) {
+      setLoadingPlayerId(null);
+      setClearingPlayerId(id);
     }
+    setPlayerActionPending(true);
+    const updated = await action(id, next);
+    if (isClearingAction) {
+      const clearingTarget = state?.nowPlaying?.id === id ? state.nowPlaying : null;
+      if (clearingTarget?.sourceType === "youtube") await clearOverlayPlayerSync();
+      if (!updated?.nowPlaying || updated.nowPlaying.id !== id) {
+        setLoadingPlayerId(null);
+        setClearingPlayerId(null);
+      }
+    }
+    setPlayerActionPending(false);
   }
   useEffect(() => {
     if (!loadingPlayerId) return;
     if (state?.nowPlaying?.id === loadingPlayerId) setLoadingPlayerId(null);
     if (!state?.nowPlaying && loadingPlayerId) setLoadingPlayerId(null);
   }, [loadingPlayerId, state?.nowPlaying]);
+  useEffect(() => {
+    if (!clearingPlayerId) return;
+    if (!state?.nowPlaying || state.nowPlaying.id !== clearingPlayerId) setClearingPlayerId(null);
+  }, [clearingPlayerId, state?.nowPlaying]);
 
   async function endCurrentSession() {
     setEndingSession(true);
@@ -235,17 +252,21 @@ export function AdminRadioQueueControl() {
   async function toggleOpen(isOpen: boolean) { await post({ action: "setOpen", isOpen }); }
   async function copy(entry: QueueEntry) { await navigator.clipboard.writeText(openUrl(entry)); }
   async function loadPlayer(entry: QueueEntry) {
-    if (state?.nowPlaying && state.nowPlaying.id !== entry.id) return;
+    if (playerActionPending) return;
+    setPlayerActionPending(true);
     setLoadingPlayerId(entry.id);
+    setClearingPlayerId(null);
     setMinimized(false);
     const updated = await action(entry.id, "load");
     if (updated?.nowPlaying?.id === entry.id) {
       setLoadingPlayerId(null);
       if (entry.sourceType === "youtube") await publishOverlayYouTubeSync(entry, "playing", 0);
       else await clearOverlayPlayerSync();
+      setPlayerActionPending(false);
       return;
     }
     setLoadingPlayerId(null);
+    setPlayerActionPending(false);
   }
   async function updateSponsorBreakState(sponsorAction: "start" | "complete" | "skip" | "reset") {
     await post({ action: "updateSponsorBreakState", sponsorAction });
@@ -302,8 +323,10 @@ export function AdminRadioQueueControl() {
   const canControlSession = hasCurrentSession;
   const isArchivedReview = Boolean(state?.session?.status === "archived" || readOnly);
   const nextInLine = state?.nextInLine ?? null;
-  const loadedPlayer = state?.nowPlaying ?? null;
-  const pendingPlayerLoad = Boolean(loadingPlayerId && !loadedPlayer);
+  const confirmedPlayer = state?.nowPlaying ?? null;
+  const hasClearingTransition = Boolean(clearingPlayerId);
+  const pendingPlayerLoad = Boolean(loadingPlayerId && (!confirmedPlayer || confirmedPlayer.id !== loadingPlayerId));
+  const loadedPlayer = hasClearingTransition ? null : pendingPlayerLoad ? (confirmedPlayer?.id === loadingPlayerId ? confirmedPlayer : null) : confirmedPlayer;
   const playerPadding = loadedPlayer ? (minimized ? "pb-32" : "pb-[20rem]") : "pb-16";
   const isExplicitReview = Boolean(initialSessionIdFromUrl());
   const showQueueReview = hasCurrentSession || isExplicitReview;
@@ -446,8 +469,9 @@ export function AdminRadioQueueControl() {
         {tab === "spotlight" && <Lane title="Spotlight List" tracks={lanes.spotlight} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="spotlight" readOnly={readOnly} />}
       </>}
 
-      {mounted && loadedPlayer && createPortal(<PlayerDock player={loadedPlayer} minimized={minimized} setMinimized={setMinimized} readOnly={readOnly} onAction={playerAction} onCopy={() => copy(loadedPlayer)} />, document.body)}
+      {mounted && loadedPlayer && createPortal(<PlayerDock key={loadedPlayer.id} player={loadedPlayer} minimized={minimized} setMinimized={setMinimized} readOnly={readOnly} actionPending={playerActionPending} onAction={playerAction} onCopy={() => copy(loadedPlayer)} />, document.body)}
       {mounted && !loadedPlayer && pendingPlayerLoad && createPortal(<section className="fixed bottom-5 left-4 right-4 z-[8600] border border-border bg-background/95 px-4 py-3 text-xs uppercase tracking-widest text-muted shadow-2xl backdrop-blur md:left-8 md:right-8 lg:left-auto lg:right-6 lg:w-[24rem]">Loading Player…</section>, document.body)}
+      {mounted && !loadedPlayer && hasClearingTransition && !pendingPlayerLoad && createPortal(<section className="fixed bottom-5 left-4 right-4 z-[8600] border border-border bg-background/95 px-4 py-3 text-xs uppercase tracking-widest text-muted shadow-2xl backdrop-blur md:left-8 md:right-8 lg:left-auto lg:right-6 lg:w-[24rem]">Updating Player…</section>, document.body)}
 
       {mounted && canControlSession && createPortal(<aside className={`hidden xl:block fixed right-4 top-[calc(10.25rem+env(safe-area-inset-top))] ${railBottomOffsetClass} max-h-[calc(100dvh-11rem)] w-[24rem] z-[8400] border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3`}>
         <section className="border border-border bg-surface p-3 space-y-2">
@@ -492,18 +516,18 @@ type AdminYTPlayer = {
   seekTo: (seconds: number, allowSeekAhead: boolean) => void;
   getCurrentTime: () => number;
   mute: () => void;
+  destroy?: () => void;
 };
 
 declare global {
   interface Window {
-    YT?: { Player: new (elementId: string, options: Record<string, unknown>) => AdminYTPlayer };
     onYouTubeIframeAPIReady?: () => void;
   }
 }
 
 function ensureAdminYouTubeApi(): Promise<void> {
   if (typeof window === "undefined") return Promise.resolve();
-  if (window.YT?.Player) return Promise.resolve();
+  if ((window as Window & { YT?: { Player: new (elementId: string, options: Record<string, unknown>) => AdminYTPlayer } }).YT?.Player) return Promise.resolve();
   return new Promise((resolve) => {
     const previous = window.onYouTubeIframeAPIReady;
     window.onYouTubeIframeAPIReady = () => {
@@ -528,8 +552,9 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
     if (!videoId) return;
     let cancelled = false;
     ensureAdminYouTubeApi().then(() => {
-      if (cancelled || playerRef.current || !window.YT?.Player) return;
-      playerRef.current = new window.YT.Player(containerId, {
+      const yt = (window as Window & { YT?: { Player: new (elementId: string, options: Record<string, unknown>) => AdminYTPlayer } }).YT;
+      if (cancelled || playerRef.current || !yt?.Player) return;
+      playerRef.current = new yt.Player(containerId, {
         videoId,
         playerVars: { autoplay: 0, controls: 1, modestbranding: 1, playsinline: 1, rel: 0 },
         events: {
@@ -548,6 +573,8 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      if (playerRef.current?.destroy) playerRef.current.destroy();
+      playerRef.current = null;
     };
   }, [containerId, entry, videoId]);
 
@@ -555,7 +582,7 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
   return <div id={containerId} className="h-56 w-full border border-border" />;
 }
 
-function PlayerDock({ player, minimized, setMinimized, readOnly, onAction, onCopy }: { player: QueueEntry; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; onAction: (id: string, action: AdminQueueAction) => void; onCopy: () => void }) {
+function PlayerDock({ player, minimized, setMinimized, readOnly, actionPending, onAction, onCopy }: { player: QueueEntry; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; actionPending: boolean; onAction: (id: string, action: AdminQueueAction) => void; onCopy: () => void }) {
   const embedded = embedUrl(player);
   return (
     <div className={`fixed inset-x-0 bottom-0 z-[9999] w-screen border-t bg-background/95 p-3 shadow-[0_-20px_60px_rgba(0,0,0,0.45)] backdrop-blur ${queueTrackVisual(player).sectionClass}`}>
@@ -575,15 +602,15 @@ function PlayerDock({ player, minimized, setMinimized, readOnly, onAction, onCop
         </div>
         <div className={`${minimized ? "h-0 overflow-hidden opacity-0" : "mt-3 opacity-100"} grid w-full items-end gap-3 xl:grid-cols-[minmax(0,1fr)_auto]`} aria-hidden={minimized}>
           <div className="w-full min-w-0">
-            {player.sourceType === "upload" && player.fileUrl && <audio src={adminAudioUrl(player)} controls className="w-full" />}
-            {player.sourceType === "youtube" && <AdminYouTubePlayer entry={player} />}
-            {player.sourceType !== "upload" && player.sourceType !== "youtube" && embedded && <iframe title="Queue preview" src={embedded} className="h-56 w-full border border-border" allow="clipboard-write; encrypted-media; picture-in-picture" />}
+            {player.sourceType === "upload" && player.fileUrl && <audio key={`${player.id}-${adminAudioUrl(player)}`} src={adminAudioUrl(player)} controls className="w-full" />}
+            {player.sourceType === "youtube" && <AdminYouTubePlayer key={player.id} entry={player} />}
+            {player.sourceType !== "upload" && player.sourceType !== "youtube" && embedded && <iframe key={`${player.id}-${embedded}`} title="Queue preview" src={embedded} className="h-56 w-full border border-border" allow="clipboard-write; encrypted-media; picture-in-picture" />}
             {player.sourceType !== "upload" && player.sourceType !== "youtube" && !embedded && <div className="border border-border p-2 text-sm text-muted">No embeddable preview for this source. Use Open Link or Copy Link.</div>}
           </div>
           <div className="flex flex-wrap gap-2">
             <a href={openUrl(player)} target="_blank" rel="noreferrer" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent">Open Link</a>
             <button type="button" onClick={onCopy} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Copy Link</button>
-            {!readOnly && <><button type="button" onClick={() => onAction(player.id, "finish")} className="border border-accent bg-accent px-4 py-2 text-xs uppercase tracking-widest text-background">Finish Track</button><button type="button" onClick={() => onAction(player.id, "remove")} className="border border-danger/40 px-4 py-2 text-xs uppercase tracking-widest text-danger">Remove Track</button><button type="button" onClick={() => onAction(player.id, "moveBack")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Undo Load</button>{canPausePriority(player) && <button type="button" onClick={() => onAction(player.id, "pausePriority")} className="border border-[#ffaa00]/50 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00]">Pause Priority</button>}<button type="button" onClick={() => onAction(player.id, "spotlight")} className="border border-foreground/40 px-4 py-2 text-xs uppercase tracking-widest text-foreground">Spotlight</button></>}
+            {!readOnly && <><button type="button" disabled={actionPending} onClick={() => onAction(player.id, "finish")} className="border border-accent bg-accent px-4 py-2 text-xs uppercase tracking-widest text-background disabled:opacity-50">Finish Track</button><button type="button" disabled={actionPending} onClick={() => onAction(player.id, "remove")} className="border border-danger/40 px-4 py-2 text-xs uppercase tracking-widest text-danger disabled:opacity-50">Remove Track</button><button type="button" disabled={actionPending} onClick={() => onAction(player.id, "moveBack")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">Undo Load</button>{canPausePriority(player) && <button type="button" disabled={actionPending} onClick={() => onAction(player.id, "pausePriority")} className="border border-[#ffaa00]/50 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00] disabled:opacity-50">Pause Priority</button>}<button type="button" disabled={actionPending} onClick={() => onAction(player.id, "spotlight")} className="border border-foreground/40 px-4 py-2 text-xs uppercase tracking-widest text-foreground disabled:opacity-50">Spotlight</button></>}
           </div>
         </div>
       </div>

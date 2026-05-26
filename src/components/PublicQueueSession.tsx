@@ -459,7 +459,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
   const liveShowHref = streamUrl || externalLinks.tiktokLive;
   const showWatchLiveLink = siteShowMode === "broadcast_live" && Boolean(liveShowHref);
-  const contentOffsetClass = publicHudMinimized ? "pt-[3.5rem] sm:pt-[3.75rem]" : "pt-[6.25rem] sm:pt-[6.75rem]";
+  const contentOffsetClass = publicHudMinimized ? "pt-[2.25rem] sm:pt-[2.75rem]" : "pt-[4.25rem] sm:pt-[4.75rem]";
 
   if (isEnded) {
     return <div className="space-y-6"><ReceiverHudPortal snapshot={snapshot} submissionsOpen={false} isBroadcastActive={false} pulse={false} mounted={mounted} minimized={false} onToggleMinimized={() => {}} canSubmit={false} submitLabel="Submissions Closed" onSubmit={() => {}} /><PersonalSignalStatusBar snapshot={snapshot} mounted={mounted} timingSummary={timingSummary} minimized={false} onToggleMinimized={() => {}} canSubmit={false} submitLabel="Submissions Closed" onSubmit={() => {}} /><div className={contentOffsetClass}><SessionPhasePanel snapshot={snapshot} submissionsOpen={false} canSubmit={false} isBroadcastActive={false} /><section className="border border-border bg-surface p-6 space-y-4"><p className="text-xs uppercase tracking-[0.35em] text-danger">SESSION ENDED</p><h2 className="text-3xl font-bold text-foreground">{snapshot?.session.title ?? "BARCODE Radio"}</h2><p className="text-sm text-muted">This song window has collapsed. Temporal alignment for this broadcast has expired. Review the completed signal log below.</p><div className="grid gap-3 sm:grid-cols-3 text-sm"><div className="border border-border p-3"><p className="text-xs text-muted">Show date</p><p>{snapshot?.session.showDate ?? "—"}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed tracks</p><p>{snapshot?.session.completedCount ?? snapshot?.completed.length ?? 0}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed runtime</p><p>{snapshot ? formatRuntime(completedRuntime) : "—"}</p></div></div></section><PublicLane title="Completed Signal Log" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} viewerSubmittedTrackIds={viewerSubmittedTrackIds} canPriorityUpgrade={() => false} canResumePriorityPayment={() => false} priorityPriceCents={0} priorityCurrency="usd" onPriorityUpgrade={() => {}} onPriorityPayment={() => {}} /></div></div>;
@@ -471,8 +471,13 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
       <PersonalSignalStatusBar snapshot={snapshot} mounted={mounted} timingSummary={timingSummary} minimized={publicHudMinimized} onToggleMinimized={() => setPublicHudMinimized((current) => !current)} canSubmit={canSubmitFromHud} submitLabel={hudSubmitLabel} onSubmit={openIntakeCorridor} />
       <div className={`space-y-6 ${contentOffsetClass}`}>
+        <section className="border-b border-border/70 pb-4">
+          <p className="text-xs uppercase tracking-[0.35em] text-muted">{"//"} BARCODE RADIO</p>
+          <h1 className="mt-3 text-3xl font-bold tracking-tight text-foreground sm:text-4xl"><span className="text-accent text-glow">Broadcast</span> Queue</h1>
+          <p className="mt-2 text-sm text-muted">Current BARCODE Radio session monitor.</p>
+        </section>
         {showWatchLiveLink && (
-        <div className="mb-1 flex justify-start">
+        <div className="-mt-2 mb-1 flex justify-start">
           <a
             href={liveShowHref}
             target="_blank"

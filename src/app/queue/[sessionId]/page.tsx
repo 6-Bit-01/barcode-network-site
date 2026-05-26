@@ -34,13 +34,7 @@ export default async function QueueSessionPage({ params }: { params: Promise<{ s
   if (sessionId !== activeSessionId) redirect(`/queue/${activeSessionId}`);
   return (
     <main className="pt-14 min-h-screen">
-      <section className="border-b border-border noise-bg">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-12">
-          <p className="text-xs uppercase tracking-[0.5em] text-muted mb-4">// BARCODE RADIO</p>
-          <h1 className="text-4xl font-bold tracking-tight text-foreground"><span className="text-accent text-glow">Broadcast</span> Queue</h1>
-        </div>
-      </section>
-      <section className="mx-auto max-w-6xl px-4 sm:px-6 py-8">
+      <section className="mx-auto max-w-6xl px-4 pb-8 pt-0 sm:px-6">
         <PublicQueueSession sessionId={sessionId} />
       </section>
     </main>

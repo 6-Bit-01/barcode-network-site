@@ -294,9 +294,16 @@ export function AdminRadioQueueControl() {
   const timingSummary = buildQueueTimingDisplay(queueTimingInputFromAdminState(state));
   const paymentProcessingCount = (state?.queue ?? []).filter((entry) => ["checkout_pending", "requested", "paid_needs_attention"].includes(entry.priorityUpgradeStatus ?? "none")).length;
   const wheelSpinsUnlocked = state?.session?.wheelSpinsOwed ?? 0;
-  const isNextOwedWheel = state?.nextNonPriorityLane === "wheel";
-  const wheelOverlayReady = wheelSpinsUnlocked > 0 || isNextOwedWheel;
-  const wheelOverlayStatusLabel = wheelSpinsUnlocked > 0 ? "Wheel spin ready" : "Next owed: Wheel";
+  const wheelOverlayReady = wheelSpinsUnlocked > 0;
+  const wheelOverlayStatusLabel = "Wheel spin ready";
+  const activeTrackIds = new Set<string>();
+  if (state?.nowPlaying?.id) activeTrackIds.add(state.nowPlaying.id);
+  if (nextInLine?.id) activeTrackIds.add(nextInLine.id);
+  for (const entry of state?.queue ?? []) {
+    if (entry.status === "queued") activeTrackIds.add(entry.id);
+  }
+  const activeTrackCount = activeTrackIds.size;
+  const totalReceivedCount = activeTrackCount + (state?.history?.length ?? 0) + (state?.removed?.length ?? 0);
   const openOverlayPanel = () => setActiveUtilityPanel("overlay");
 
   const railBottomOffsetClass = loadedPlayer ? (minimized ? "bottom-24" : "bottom-[12.5rem]") : "bottom-5";
@@ -334,18 +341,16 @@ export function AdminRadioQueueControl() {
           <button type="button" onClick={() => setTopBarMinimized((value) => !value)} className="min-h-10 border border-border px-3 py-2 uppercase tracking-widest text-muted">{topBarMinimized ? "Expand" : "Minimize"}</button>
         </div>
         {topBarMinimized ? <div className="flex flex-wrap items-center gap-2">
-          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Phase: {phaseLabel}</span>
           <span className={`border px-2 py-1 uppercase tracking-widest ${state?.publicStatus?.isOpen ? "border-accent/50 text-accent" : "border-danger/50 text-danger"}`}>Submissions: {state?.publicStatus?.isOpen ? "Open" : "Closed"}</span>
-          <span className="border border-cyan-300/40 px-2 py-1 uppercase tracking-widest text-cyan-200">Wheel: {state?.session?.wheelSpinsOwed ?? 0}</span>
+          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Active / Total: {activeTrackCount} / {totalReceivedCount}</span>
+          {wheelSpinsUnlocked > 0 && <span className="border border-cyan-300/40 px-2 py-1 uppercase tracking-widest text-cyan-200">Wheel Spins: {wheelSpinsUnlocked}</span>}
           {nextInLine && <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Next: {submittedArtist(nextInLine)} — {submittedTitle(nextInLine)}</span>}
         </div> : <>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <div><p className="text-[10px] uppercase tracking-widest text-muted">Show Phase</p><p className="mt-1 font-bold text-foreground">{phaseLabel}</p></div>
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Submissions</p><p className={`mt-1 font-bold ${state?.publicStatus?.isOpen ? "text-accent" : "text-danger"}`}>{state?.publicStatus?.isOpen ? "Open" : "Closed"}</p></div>
-          <div><p className="text-[10px] uppercase tracking-widest text-muted">Next Owed</p><p className="mt-1 font-bold text-foreground">{state?.nextNonPriorityLane === "regular" ? "Free" : "Wheel"}</p></div>
-          <div><p className="text-[10px] uppercase tracking-widest text-muted">Wheel Spins Unlocked</p><p className="mt-1 font-bold text-cyan-200">{state?.session?.wheelSpinsOwed ?? 0}</p></div>
+          <div><p className="text-[10px] uppercase tracking-widest text-muted">Active / Total</p><p className="mt-1 font-bold text-foreground">{activeTrackCount} / {totalReceivedCount}</p></div>
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Runtime</p><p className="mt-1 font-bold text-foreground">{formatRuntime(runtime)}</p></div>
-          <div><p className="text-[10px] uppercase tracking-widest text-muted">Pressure</p><p className="mt-1 font-bold text-foreground">{state?.publicStatus?.pressure ?? "syncing"}</p></div>
+          {wheelSpinsUnlocked > 0 && <div><p className="text-[10px] uppercase tracking-widest text-muted">Wheel Spins Unlocked</p><p className="mt-1 font-bold text-cyan-200">{wheelSpinsUnlocked}</p></div>}
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} min-h-10 border px-3 py-2 uppercase tracking-widest hover:text-background`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button>
@@ -355,6 +360,7 @@ export function AdminRadioQueueControl() {
           <button onClick={() => setEndConfirmOpen(true)} className="ml-auto min-h-10 border border-danger/60 px-3 py-2 text-sm uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Broadcast</button>
         </div>
         <div className="flex flex-wrap gap-2">
+          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Phase: {phaseLabel}</span>
           {paymentProcessingCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 uppercase tracking-widest text-[#ffaa00]">Payment Processing: {paymentProcessingCount}</span>}
           {heldPriorityCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 uppercase tracking-widest text-[#ffaa00]">Held Priority: {heldPriorityCount}</span>}
           {!nextInLine && <span className="border border-border bg-surface px-2 py-1 uppercase tracking-widest text-muted">No Next In Line</span>}

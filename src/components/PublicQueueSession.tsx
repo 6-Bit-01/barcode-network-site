@@ -15,6 +15,7 @@ type QueueView = "active" | "recent";
 type ActivityTone = "red" | "amber" | "gold" | "cyan" | "archive" | "danger";
 type QueueActivity = { id: string; text: string; detail: string; tone: ActivityTone; createdAt: number };
 type ResidueMap = Record<string, { tone: ActivityTone; nonce: number }>;
+type PublicSubmissionReceipt = { artist: string; title: string; sessionTitle: string; sessionDate: string; trackCode: string };
 
 const PRIORITY_SIGNAL_LABEL = "Priority Signal";
 const MIN_PRIORITY_ACTIVE_DEPTH = 2;
@@ -215,6 +216,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const [wheelUnlockPulse, setWheelUnlockPulse] = useState(false);
   const [routingGhosts, setRoutingGhosts] = useState<RoutingGhost[]>([]);
   const [publicHudMinimized, setPublicHudMinimized] = useState(false);
+  const [acceptedReceipt, setAcceptedReceipt] = useState<PublicSubmissionReceipt | null>(null);
   const previousSnapshotRef = useRef<QueuePublicSnapshot | null>(null);
   const snapshotMovementKey = useMemo(() => publicSnapshotMovementKey(snapshot), [snapshot]);
   function emitRoutingGhost(ghost: Omit<RoutingGhost, "id">) {
@@ -222,6 +224,12 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     setRoutingGhosts((current) => [...current, { ...ghost, id }].slice(-5));
     window.setTimeout(() => setRoutingGhosts((current) => current.filter((item) => item.id !== id)), ghost.duration + 180);
   }
+  useEffect(() => {
+    if (!acceptedReceipt) return;
+    const timer = window.setTimeout(() => setAcceptedReceipt(null), 18000);
+    return () => window.clearTimeout(timer);
+  }, [acceptedReceipt]);
+
   const captureTrackRects = useFlipTrackMovement(snapshotMovementKey, emitRoutingGhost);
 
   function triggerResidue(trackId: string | null | undefined, tone: ActivityTone) {
@@ -454,6 +462,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   return (
     <div className="space-y-6">
       {checkoutNotice && <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/5 p-3 text-sm text-[#ffaa00]">{checkoutNotice}</div>}
+      {acceptedReceipt && <div className="relative z-20 border border-accent/80 bg-accent/15 p-3 text-sm text-foreground shadow-[0_0_30px_rgba(255,0,0,0.18)]"><div className="flex items-start justify-between gap-3"><div><p className="font-bold uppercase tracking-[0.18em] text-accent">Submission accepted</p><p className="mt-1">{acceptedReceipt.artist} — {acceptedReceipt.title}</p><p className="text-xs text-muted">{acceptedReceipt.sessionTitle} · {acceptedReceipt.sessionDate}</p><p className="text-xs">Confirmation: {acceptedReceipt.trackCode}</p></div><button type="button" onClick={() => setAcceptedReceipt(null)} className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Close</button></div></div>}
 
       <ReceiverHudPortal snapshot={snapshot} submissionsOpen={isOpen} isBroadcastActive={isBroadcastActive} pulse={broadcastStartPulse} mounted={mounted} minimized={publicHudMinimized} onToggleMinimized={() => setPublicHudMinimized((current) => !current)} canSubmit={canSubmitFromHud} submitLabel={hudSubmitLabel} onSubmit={openIntakeCorridor} />
 
@@ -561,7 +570,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
       {mounted && priorityModalTrack && createPortal(<PriorityUpgradeModal track={priorityModalTrack} price={formatPrice(priorityPriceCents, priorityCurrency)} priorityImpact={priorityDisplayFromImpact(estimatePriorityImpactForTrack(timingSummary, priorityModalTrack))} isOwnTrack={viewerSubmittedTrackIds.has(priorityModalTrack.id)} pending={priorityRequestPending} message={priorityRequestMessage} onConfirm={() => beginPriorityCheckout(priorityModalTrack)} onClose={() => setPriorityModalTrack(null)} />, document.body)}
 
-      {mounted && submitOpen && createPortal(<div className="fixed inset-0 z-[10000] grid place-items-center overscroll-contain bg-black/75 p-2 backdrop-blur-md"><div className="flex max-h-[calc(100dvh-1rem)] w-full max-w-[920px] flex-col overflow-hidden border border-accent/50 bg-background/95 p-3 shadow-[0_0_70px_rgba(255,0,0,0.22)]"><div className="mb-2 flex shrink-0 items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.35em] text-accent">Submission Intake</p><p className="mt-0.5 text-[11px] text-muted">Send your song into the free queue.</p></div><button type="button" onClick={() => { setSubmitOpen(false); setIntakeScrollLocked(false); }} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">Collapse Intake</button></div><div className="overflow-y-auto pr-1"><RadioQueueForm sessionId={sessionId} onCancel={() => { setSubmitOpen(false); setIntakeScrollLocked(false); }} onSubmitted={(trackId, phase, targetId) => { setLastSubmittedTrackId(trackId ?? null); setSubmitterToken(window.localStorage.getItem("barcode-radio-submitter-token") ?? ""); setView("active"); if (phase === "resolved") { setIntakeScrollLocked(false); load(); window.setTimeout(() => document.getElementById(targetId ?? "active-queue-panel")?.scrollIntoView({ behavior: "smooth", block: "center" }), 250); } if (phase === "complete") { setSubmitOpen(false); setIntakeScrollLocked(false); load(); } }} /></div></div></div>, document.body)}
+      {mounted && submitOpen && createPortal(<div className="fixed inset-0 z-[10000] grid place-items-center overscroll-contain bg-black/75 p-2 backdrop-blur-md"><div className="flex max-h-[calc(100dvh-1rem)] w-full max-w-[920px] flex-col overflow-hidden border border-accent/50 bg-background/95 p-3 shadow-[0_0_70px_rgba(255,0,0,0.22)]"><div className="mb-2 flex shrink-0 items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.35em] text-accent">Submission Intake</p><p className="mt-0.5 text-[11px] text-muted">Send your song into the free queue.</p></div><button type="button" onClick={() => { setSubmitOpen(false); setIntakeScrollLocked(false); }} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">Collapse Intake</button></div><div className="overflow-y-auto pr-1"><RadioQueueForm sessionId={sessionId} onCancel={() => { setSubmitOpen(false); setIntakeScrollLocked(false); }} onAcceptedReceipt={(receipt) => setAcceptedReceipt(receipt)} onSubmitted={(trackId, phase, targetId) => { setLastSubmittedTrackId(trackId ?? null); setSubmitterToken(window.localStorage.getItem("barcode-radio-submitter-token") ?? ""); setView("active"); if (phase === "resolved") { setIntakeScrollLocked(false); load(); window.setTimeout(() => document.getElementById(targetId ?? "active-queue-panel")?.scrollIntoView({ behavior: "smooth", block: "center" }), 250); } if (phase === "complete") { setSubmitOpen(false); setIntakeScrollLocked(false); load(); } }} /></div></div></div>, document.body)}
     </div>
   );
 }

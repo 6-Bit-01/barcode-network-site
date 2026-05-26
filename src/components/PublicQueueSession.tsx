@@ -459,10 +459,10 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
   const liveShowHref = streamUrl || externalLinks.tiktokLive;
   const showWatchLiveLink = siteShowMode === "broadcast_live" && Boolean(liveShowHref);
-  const hudSpacerClass = `${publicHudMinimized ? "h-[7.5rem] sm:h-[8rem]" : "h-[12.5rem] sm:h-[13.25rem]"} ${broadcastStartPulse ? "md:h-[14rem]" : ""}`;
+  const contentOffsetClass = publicHudMinimized ? "pt-[3.5rem] sm:pt-[3.75rem]" : "pt-[6.25rem] sm:pt-[6.75rem]";
 
   if (isEnded) {
-    return <div className="space-y-6"><ReceiverHudPortal snapshot={snapshot} submissionsOpen={false} isBroadcastActive={false} pulse={false} mounted={mounted} minimized={false} onToggleMinimized={() => {}} canSubmit={false} submitLabel="Submissions Closed" onSubmit={() => {}} /><PersonalSignalStatusBar snapshot={snapshot} mounted={mounted} timingSummary={timingSummary} minimized={false} onToggleMinimized={() => {}} canSubmit={false} submitLabel="Submissions Closed" onSubmit={() => {}} /><div className="hud-stack-spacer h-[12.5rem] sm:h-[13.25rem]" aria-hidden="true" /><SessionPhasePanel snapshot={snapshot} submissionsOpen={false} canSubmit={false} isBroadcastActive={false} /><section className="border border-border bg-surface p-6 space-y-4"><p className="text-xs uppercase tracking-[0.35em] text-danger">SESSION ENDED</p><h2 className="text-3xl font-bold text-foreground">{snapshot?.session.title ?? "BARCODE Radio"}</h2><p className="text-sm text-muted">This song window has collapsed. Temporal alignment for this broadcast has expired. Review the completed signal log below.</p><div className="grid gap-3 sm:grid-cols-3 text-sm"><div className="border border-border p-3"><p className="text-xs text-muted">Show date</p><p>{snapshot?.session.showDate ?? "—"}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed tracks</p><p>{snapshot?.session.completedCount ?? snapshot?.completed.length ?? 0}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed runtime</p><p>{snapshot ? formatRuntime(completedRuntime) : "—"}</p></div></div></section><PublicLane title="Completed Signal Log" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} viewerSubmittedTrackIds={viewerSubmittedTrackIds} canPriorityUpgrade={() => false} canResumePriorityPayment={() => false} priorityPriceCents={0} priorityCurrency="usd" onPriorityUpgrade={() => {}} onPriorityPayment={() => {}} /></div>;
+    return <div className="space-y-6"><ReceiverHudPortal snapshot={snapshot} submissionsOpen={false} isBroadcastActive={false} pulse={false} mounted={mounted} minimized={false} onToggleMinimized={() => {}} canSubmit={false} submitLabel="Submissions Closed" onSubmit={() => {}} /><PersonalSignalStatusBar snapshot={snapshot} mounted={mounted} timingSummary={timingSummary} minimized={false} onToggleMinimized={() => {}} canSubmit={false} submitLabel="Submissions Closed" onSubmit={() => {}} /><div className={contentOffsetClass}><SessionPhasePanel snapshot={snapshot} submissionsOpen={false} canSubmit={false} isBroadcastActive={false} /><section className="border border-border bg-surface p-6 space-y-4"><p className="text-xs uppercase tracking-[0.35em] text-danger">SESSION ENDED</p><h2 className="text-3xl font-bold text-foreground">{snapshot?.session.title ?? "BARCODE Radio"}</h2><p className="text-sm text-muted">This song window has collapsed. Temporal alignment for this broadcast has expired. Review the completed signal log below.</p><div className="grid gap-3 sm:grid-cols-3 text-sm"><div className="border border-border p-3"><p className="text-xs text-muted">Show date</p><p>{snapshot?.session.showDate ?? "—"}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed tracks</p><p>{snapshot?.session.completedCount ?? snapshot?.completed.length ?? 0}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed runtime</p><p>{snapshot ? formatRuntime(completedRuntime) : "—"}</p></div></div></section><PublicLane title="Completed Signal Log" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} viewerSubmittedTrackIds={viewerSubmittedTrackIds} canPriorityUpgrade={() => false} canResumePriorityPayment={() => false} priorityPriceCents={0} priorityCurrency="usd" onPriorityUpgrade={() => {}} onPriorityPayment={() => {}} /></div></div>;
   }
 
   return (
@@ -470,10 +470,9 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
       <ReceiverHudPortal snapshot={snapshot} submissionsOpen={isOpen} isBroadcastActive={isBroadcastActive} pulse={broadcastStartPulse} mounted={mounted} minimized={publicHudMinimized} onToggleMinimized={() => setPublicHudMinimized((current) => !current)} canSubmit={canSubmitFromHud} submitLabel={hudSubmitLabel} onSubmit={openIntakeCorridor} />
 
       <PersonalSignalStatusBar snapshot={snapshot} mounted={mounted} timingSummary={timingSummary} minimized={publicHudMinimized} onToggleMinimized={() => setPublicHudMinimized((current) => !current)} canSubmit={canSubmitFromHud} submitLabel={hudSubmitLabel} onSubmit={openIntakeCorridor} />
-      <div className={`hud-stack-spacer transition-[height] duration-200 ${hudSpacerClass}`} aria-hidden="true" />
-
-      {showWatchLiveLink && (
-        <div className="flex justify-start">
+      <div className={`space-y-6 ${contentOffsetClass}`}>
+        {showWatchLiveLink && (
+        <div className="mb-1 flex justify-start">
           <a
             href={liveShowHref}
             target="_blank"
@@ -485,14 +484,14 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
           </a>
         </div>
       )}
-      {checkoutNotice && <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/5 p-3 text-sm text-[#ffaa00]">{checkoutNotice}</div>}
-      {acceptedReceipt && <div className="relative z-20 border border-accent/80 bg-accent/15 p-3 text-sm text-foreground shadow-[0_0_30px_rgba(255,0,0,0.18)]"><div className="flex items-start justify-between gap-3"><div><p className="font-bold uppercase tracking-[0.18em] text-accent">Submission accepted</p><p className="mt-1">{acceptedReceipt.artist} — {acceptedReceipt.title}</p><p className="text-xs text-muted">{acceptedReceipt.sessionTitle} · {acceptedReceipt.sessionDate}</p><p className="text-xs">Confirmation: {acceptedReceipt.trackCode}</p></div><button type="button" onClick={() => setAcceptedReceipt(null)} className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Close</button></div></div>}
+        {checkoutNotice && <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/5 p-3 text-sm text-[#ffaa00]">{checkoutNotice}</div>}
+        {acceptedReceipt && <div className="relative z-20 border border-accent/80 bg-accent/15 p-3 text-sm text-foreground shadow-[0_0_30px_rgba(255,0,0,0.18)]"><div className="flex items-start justify-between gap-3"><div><p className="font-bold uppercase tracking-[0.18em] text-accent">Submission accepted</p><p className="mt-1">{acceptedReceipt.artist} — {acceptedReceipt.title}</p><p className="text-xs text-muted">{acceptedReceipt.sessionTitle} · {acceptedReceipt.sessionDate}</p><p className="text-xs">Confirmation: {acceptedReceipt.trackCode}</p></div><button type="button" onClick={() => setAcceptedReceipt(null)} className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Close</button></div></div>}
 
-      <SessionPhasePanel snapshot={snapshot} submissionsOpen={isOpen} canSubmit={canSubmit} isBroadcastActive={isBroadcastActive} />
+        <SessionPhasePanel snapshot={snapshot} submissionsOpen={isOpen} canSubmit={canSubmit} isBroadcastActive={isBroadcastActive} />
 
-      <SubmissionActivity items={activity} />
+        <SubmissionActivity items={activity} />
 
-      <div data-live={isBroadcastActive ? "true" : "false"} data-pulse={broadcastStartPulse ? "true" : undefined} className="queue-live-system relative space-y-6 overflow-hidden">
+        <div data-live={isBroadcastActive ? "true" : "false"} data-pulse={broadcastStartPulse ? "true" : undefined} className="queue-live-system relative space-y-6 overflow-hidden">
         {broadcastStartPulse && <div className="broadcast-start-banner border border-[#ffaa00]/55 bg-[#ffaa00]/10 p-3 text-center shadow-[0_0_46px_rgba(255,170,0,0.18)]" role="status" aria-live="polite"><p className="text-xs uppercase tracking-[0.38em] text-[#ffaa00]">HOST BAND LOCKED</p><p className="mt-1 text-sm font-bold uppercase tracking-[0.24em] text-foreground">BROADCAST PROTOCOL ONLINE</p></div>}
 
       <section className="space-y-4">
@@ -579,6 +578,8 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
       </div>
 
       <DiscordQueueCTA />
+
+      </div>
 
       {mounted && activityToast && createPortal(<QueueUpdateToast item={activityToast} />, document.body)}
 

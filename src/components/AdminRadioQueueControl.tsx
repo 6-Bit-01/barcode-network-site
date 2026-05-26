@@ -118,16 +118,30 @@ export function AdminRadioQueueControl() {
   const simulationTimerRef = useRef<number | null>(null);
   const simulationRunningRef = useRef(false);
   const simulationSpeedRef = useRef<SimulationSpeed>("normal");
+  const requestSeqRef = useRef(0);
+  const latestAppliedSeqRef = useRef(0);
 
-  async function load(sessionId?: string) {
+  function beginRequest(): number {
+    requestSeqRef.current += 1;
+    return requestSeqRef.current;
+  }
+
+  function applyStateIfFresh(next: QueueState, seq: number): void {
+    if (seq < latestAppliedSeqRef.current) return;
+    latestAppliedSeqRef.current = seq;
+    setState(next);
+  }
+
+  async function load(sessionId?: string, seq = beginRequest()) {
     const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
     const res = await fetch(`/api/admin/queue${suffix}`, { cache: "no-store" });
     if (!res.ok) {
+      if (seq < latestAppliedSeqRef.current) return;
       setError(res.status === 401 ? "Admin authentication required. Log in at /admin first." : "Queue control unavailable.");
       return;
     }
     setError(null);
-    setState(await res.json());
+    applyStateIfFresh(await res.json(), seq);
   }
 
   useEffect(() => {
@@ -152,10 +166,11 @@ export function AdminRadioQueueControl() {
   }, []);
 
   async function post(body: Record<string, unknown>): Promise<QueueState | null> {
+    const seq = beginRequest();
     const res = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!res.ok) return null;
     const next = await res.json();
-    setState(next);
+    applyStateIfFresh(next, seq);
     return next;
   }
   async function action(id: string, next: AdminQueueAction): Promise<QueueState | null> { return post(next === "pullNext" || next === "pullWheelChosen" || next === "pullFreeTransmission" || next === "startShow" || next === "addWheelSpinOwed" ? { action: next } : { id, action: next }); }
@@ -219,7 +234,7 @@ export function AdminRadioQueueControl() {
   async function copy(entry: QueueEntry) { await navigator.clipboard.writeText(openUrl(entry)); }
   async function loadPlayer(entry: QueueEntry) {
     if (state?.nowPlaying && state.nowPlaying.id !== entry.id) return;
-    setPlayer(entry);
+    if (!state?.nowPlaying || state.nowPlaying.id !== entry.id) setPlayer(entry);
     setMinimized(false);
     await action(entry.id, "load");
     if (entry.sourceType === "youtube") await publishOverlayYouTubeSync(entry, "playing", 0);

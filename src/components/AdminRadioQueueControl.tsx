@@ -341,12 +341,14 @@ export function AdminRadioQueueControl() {
           <button type="button" onClick={() => setTopBarMinimized((value) => !value)} className="min-h-10 border border-border px-3 py-2 uppercase tracking-widest text-muted">{topBarMinimized ? "Expand" : "Minimize"}</button>
         </div>
         {topBarMinimized ? <div className="flex flex-wrap items-center gap-2">
+          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Phase: {phaseLabel}</span>
           <span className={`border px-2 py-1 uppercase tracking-widest ${state?.publicStatus?.isOpen ? "border-accent/50 text-accent" : "border-danger/50 text-danger"}`}>Submissions: {state?.publicStatus?.isOpen ? "Open" : "Closed"}</span>
           <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Active / Total: {activeTrackCount} / {totalReceivedCount}</span>
           {wheelSpinsUnlocked > 0 && <span className="border border-cyan-300/40 px-2 py-1 uppercase tracking-widest text-cyan-200">Wheel Spins: {wheelSpinsUnlocked}</span>}
           {nextInLine && <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Next: {submittedArtist(nextInLine)} — {submittedTitle(nextInLine)}</span>}
         </div> : <>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <div><p className="text-[10px] uppercase tracking-widest text-muted">Show Phase</p><p className="mt-1 font-bold text-foreground">{phaseLabel}</p></div>
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Submissions</p><p className={`mt-1 font-bold ${state?.publicStatus?.isOpen ? "text-accent" : "text-danger"}`}>{state?.publicStatus?.isOpen ? "Open" : "Closed"}</p></div>
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Active / Total</p><p className="mt-1 font-bold text-foreground">{activeTrackCount} / {totalReceivedCount}</p></div>
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Runtime</p><p className="mt-1 font-bold text-foreground">{formatRuntime(runtime)}</p></div>

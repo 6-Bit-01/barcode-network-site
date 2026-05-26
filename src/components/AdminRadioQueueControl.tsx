@@ -95,7 +95,7 @@ function initialSessionIdFromUrl(): string | undefined {
 export function AdminRadioQueueControl() {
   const [state, setState] = useState<QueueState | null>(null);
   const [tab, setTab] = useState<Tab>("active");
-  const [player, setPlayer] = useState<QueueEntry | null>(null);
+  const [loadingPlayerId, setLoadingPlayerId] = useState<string | null>(null);
   const [minimized, setMinimized] = useState(false);
   const [topBarMinimized, setTopBarMinimized] = useState(false);
   const [railMinimized, setRailMinimized] = useState(false);
@@ -212,16 +212,18 @@ export function AdminRadioQueueControl() {
     setSimulationSpeed(next);
   }
   async function playerAction(id: string, next: AdminQueueAction) {
+    if (next === "finish" || next === "remove" || next === "moveBack" || next === "pausePriority") setLoadingPlayerId(null);
     const updated = await action(id, next);
     if (next === "finish" || next === "remove" || next === "moveBack" || next === "pausePriority") {
-      if (player?.sourceType === "youtube") await clearOverlayPlayerSync();
-      if (!updated?.nowPlaying || updated.nowPlaying.id !== id) setPlayer(null);
+      if (state?.nowPlaying?.id === id && state.nowPlaying.sourceType === "youtube") await clearOverlayPlayerSync();
+      if (!updated?.nowPlaying || updated.nowPlaying.id !== id) setLoadingPlayerId(null);
     }
   }
   useEffect(() => {
-    if (!player) return;
-    if (!state?.nowPlaying || state.nowPlaying.id !== player.id) setPlayer(null);
-  }, [player, state?.nowPlaying]);
+    if (!loadingPlayerId) return;
+    if (state?.nowPlaying?.id === loadingPlayerId) setLoadingPlayerId(null);
+    if (!state?.nowPlaying && loadingPlayerId) setLoadingPlayerId(null);
+  }, [loadingPlayerId, state?.nowPlaying]);
 
   async function endCurrentSession() {
     setEndingSession(true);
@@ -234,11 +236,16 @@ export function AdminRadioQueueControl() {
   async function copy(entry: QueueEntry) { await navigator.clipboard.writeText(openUrl(entry)); }
   async function loadPlayer(entry: QueueEntry) {
     if (state?.nowPlaying && state.nowPlaying.id !== entry.id) return;
-    if (!state?.nowPlaying || state.nowPlaying.id !== entry.id) setPlayer(entry);
+    setLoadingPlayerId(entry.id);
     setMinimized(false);
-    await action(entry.id, "load");
-    if (entry.sourceType === "youtube") await publishOverlayYouTubeSync(entry, "playing", 0);
-    else await clearOverlayPlayerSync();
+    const updated = await action(entry.id, "load");
+    if (updated?.nowPlaying?.id === entry.id) {
+      setLoadingPlayerId(null);
+      if (entry.sourceType === "youtube") await publishOverlayYouTubeSync(entry, "playing", 0);
+      else await clearOverlayPlayerSync();
+      return;
+    }
+    setLoadingPlayerId(null);
   }
   async function updateSponsorBreakState(sponsorAction: "start" | "complete" | "skip" | "reset") {
     await post({ action: "updateSponsorBreakState", sponsorAction });
@@ -295,7 +302,8 @@ export function AdminRadioQueueControl() {
   const canControlSession = hasCurrentSession;
   const isArchivedReview = Boolean(state?.session?.status === "archived" || readOnly);
   const nextInLine = state?.nextInLine ?? null;
-  const loadedPlayer = state?.nowPlaying ?? player;
+  const loadedPlayer = state?.nowPlaying ?? null;
+  const pendingPlayerLoad = Boolean(loadingPlayerId && !loadedPlayer);
   const playerPadding = loadedPlayer ? (minimized ? "pb-32" : "pb-[20rem]") : "pb-16";
   const isExplicitReview = Boolean(initialSessionIdFromUrl());
   const showQueueReview = hasCurrentSession || isExplicitReview;
@@ -439,6 +447,7 @@ export function AdminRadioQueueControl() {
       </>}
 
       {mounted && loadedPlayer && createPortal(<PlayerDock player={loadedPlayer} minimized={minimized} setMinimized={setMinimized} readOnly={readOnly} onAction={playerAction} onCopy={() => copy(loadedPlayer)} />, document.body)}
+      {mounted && !loadedPlayer && pendingPlayerLoad && createPortal(<section className="fixed bottom-5 left-4 right-4 z-[8600] border border-border bg-background/95 px-4 py-3 text-xs uppercase tracking-widest text-muted shadow-2xl backdrop-blur md:left-8 md:right-8 lg:left-auto lg:right-6 lg:w-[24rem]">Loading Player…</section>, document.body)}
 
       {mounted && canControlSession && createPortal(<aside className={`hidden xl:block fixed right-4 top-[calc(10.25rem+env(safe-area-inset-top))] ${railBottomOffsetClass} max-h-[calc(100dvh-11rem)] w-[24rem] z-[8400] border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3`}>
         <section className="border border-border bg-surface p-3 space-y-2">

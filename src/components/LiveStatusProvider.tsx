@@ -1,6 +1,9 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import type { QueueBroadcastPhase, QueuePublicSnapshot } from "@/lib/queue-types";
+
+type SiteShowMode = "offline" | "intake_open" | "broadcast_live";
 
 interface LiveStatusContextType {
   isLive: boolean;
@@ -12,6 +15,12 @@ interface LiveStatusContextType {
   manualOverride: boolean;
   lastError: string | null;
   persisted: boolean | null;
+  hasActiveQueueSession: boolean;
+  queueSessionId: string | null;
+  queueHref: string | null;
+  queueSubmissionsOpen: boolean;
+  queueBroadcastPhase: QueueBroadcastPhase | null;
+  siteShowMode: SiteShowMode;
 }
 
 const LiveStatusContext = createContext<LiveStatusContextType>({
@@ -24,6 +33,12 @@ const LiveStatusContext = createContext<LiveStatusContextType>({
   manualOverride: false,
   lastError: null,
   persisted: null,
+  hasActiveQueueSession: false,
+  queueSessionId: null,
+  queueHref: null,
+  queueSubmissionsOpen: false,
+  queueBroadcastPhase: null,
+  siteShowMode: "offline",
 });
 
 export function useLiveStatus() {
@@ -38,9 +53,12 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
   const [persisted, setPersisted] = useState<boolean | null>(null);
+  const [queueSnapshot, setQueueSnapshot] = useState<QueuePublicSnapshot | null>(null);
 
-  // Poll the server for live status
   const fetchStatus = useCallback(async () => {
+    let adminError: string | null = null;
+    let queueError: string | null = null;
+
     try {
       const res = await fetch("/api/admin/live", { cache: "no-store", credentials: "include" });
       if (res.ok) {
@@ -49,14 +67,28 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
         setIsScheduled(data.isScheduled);
         setStreamUrlState(data.streamUrl);
         setManualOverride(data.manualOverride);
-        setLastError(null);
+      } else {
+        adminError = "Failed to fetch live status";
       }
     } catch {
-      setLastError("Failed to fetch live status");
+      adminError = "Failed to fetch live status";
     }
+
+    try {
+      const queueRes = await fetch("/api/queue", { cache: "no-store" });
+      if (queueRes.ok) {
+        const queueData = (await queueRes.json()) as QueuePublicSnapshot;
+        setQueueSnapshot(queueData);
+      } else {
+        queueError = "Failed to fetch queue status";
+      }
+    } catch {
+      queueError = "Failed to fetch queue status";
+    }
+
+    setLastError(adminError ?? queueError);
   }, []);
 
-  // Check admin auth on mount
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -70,12 +102,14 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 15_000); // Poll every 15s
-    return () => clearInterval(interval);
+    const initialFetchTimer = setTimeout(fetchStatus, 0);
+    const interval = setInterval(fetchStatus, 15_000);
+    return () => {
+      clearTimeout(initialFetchTimer);
+      clearInterval(interval);
+    };
   }, [fetchStatus]);
 
-  // Admin toggle — persists to Redis via API
   const toggleLive = useCallback(async () => {
     try {
       const toggleRes = await fetch("/api/admin/live", {
@@ -90,23 +124,12 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (typeof toggleBody?.persisted === "boolean") setPersisted(toggleBody.persisted);
-      const res = await fetch("/api/admin/live", { cache: "no-store", credentials: "include" });
-      if (!res.ok) {
-        setLastError(`Toggle failed (${res.status})`);
-        return;
-      }
-      const data = await res.json();
-      setIsLive(data.isLive);
-      setIsScheduled(data.isScheduled);
-      setStreamUrlState(data.streamUrl);
-      setManualOverride(data.manualOverride);
-      setLastError(null);
+      await fetchStatus();
     } catch {
       setLastError("Toggle failed");
     }
-  }, []);
+  }, [fetchStatus]);
 
-  // Admin stream URL update — persists to Redis via API
   const setStreamUrl = useCallback(async (url: string) => {
     try {
       const res = await fetch("/api/admin/live", {
@@ -129,6 +152,17 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
     }
   }, [fetchStatus]);
 
+  const queueSession = queueSnapshot?.session;
+  const hasActiveQueueSession = Boolean(queueSession && queueSession.status !== "archived" && queueSession.broadcastPhase !== "ended");
+  const queueSessionId = hasActiveQueueSession ? queueSession?.sessionId ?? null : null;
+  const queueHref = queueSessionId ? `/queue/${queueSessionId}` : null;
+  const queueSubmissionsOpen = Boolean(hasActiveQueueSession && queueSnapshot?.status?.isOpen);
+  const queueBroadcastPhase = hasActiveQueueSession ? queueSession?.broadcastPhase ?? null : null;
+
+  let siteShowMode: SiteShowMode = "offline";
+  if (queueSubmissionsOpen) siteShowMode = "intake_open";
+  if (queueBroadcastPhase === "broadcast_active" || isLive) siteShowMode = "broadcast_live";
+
   return (
     <LiveStatusContext.Provider value={{
       isLive,
@@ -140,6 +174,12 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
       manualOverride,
       lastError,
       persisted,
+      hasActiveQueueSession,
+      queueSessionId,
+      queueHref,
+      queueSubmissionsOpen,
+      queueBroadcastPhase,
+      siteShowMode,
     }}>
       {children}
     </LiveStatusContext.Provider>

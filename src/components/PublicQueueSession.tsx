@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { RadioQueueForm } from "@/components/RadioQueueForm";
+import { useLiveStatus } from "@/components/LiveStatusProvider";
 import { externalLinks } from "@/content";
 import { estimateExistingTrackTiming, estimatePriorityImpact } from "@/lib/queue-timing";
 import { formatRuntime } from "@/lib/queue-types";
@@ -197,6 +198,7 @@ function sourceTypeLabel(track: QueuePublicTrack): string {
 
 export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const [snapshot, setSnapshot] = useState<QueuePublicSnapshot | null>(null);
+  const { siteShowMode, streamUrl } = useLiveStatus();
   const [submitOpen, setSubmitOpen] = useState(false);
   const [intakeScrollLocked, setIntakeScrollLocked] = useState(false);
   const [lastSubmittedTrackId, setLastSubmittedTrackId] = useState<string | null>(null);
@@ -455,6 +457,9 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     await beginPriorityCheckout(track);
   }
 
+  const liveShowHref = streamUrl || externalLinks.tiktokLive;
+  const showWatchLiveLink = siteShowMode === "broadcast_live" && Boolean(liveShowHref);
+
   if (isEnded) {
     return <div className="space-y-6"><ReceiverHudPortal snapshot={snapshot} submissionsOpen={false} isBroadcastActive={false} pulse={false} mounted={mounted} minimized={false} onToggleMinimized={() => {}} canSubmit={false} submitLabel="Submissions Closed" onSubmit={() => {}} /><SessionPhasePanel snapshot={snapshot} submissionsOpen={false} canSubmit={false} isBroadcastActive={false} /><section className="border border-border bg-surface p-6 space-y-4"><p className="text-xs uppercase tracking-[0.35em] text-danger">SESSION ENDED</p><h2 className="text-3xl font-bold text-foreground">{snapshot?.session.title ?? "BARCODE Radio"}</h2><p className="text-sm text-muted">This song window has collapsed. Temporal alignment for this broadcast has expired. Review the completed signal log below.</p><div className="grid gap-3 sm:grid-cols-3 text-sm"><div className="border border-border p-3"><p className="text-xs text-muted">Show date</p><p>{snapshot?.session.showDate ?? "—"}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed tracks</p><p>{snapshot?.session.completedCount ?? snapshot?.completed.length ?? 0}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed runtime</p><p>{snapshot ? formatRuntime(completedRuntime) : "—"}</p></div></div></section><PublicLane title="Completed Signal Log" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} viewerSubmittedTrackIds={viewerSubmittedTrackIds} canPriorityUpgrade={() => false} canResumePriorityPayment={() => false} priorityPriceCents={0} priorityCurrency="usd" onPriorityUpgrade={() => {}} onPriorityPayment={() => {}} /></div>;
   }
@@ -463,6 +468,19 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     <div className="space-y-6">
       {checkoutNotice && <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/5 p-3 text-sm text-[#ffaa00]">{checkoutNotice}</div>}
       {acceptedReceipt && <div className="relative z-20 border border-accent/80 bg-accent/15 p-3 text-sm text-foreground shadow-[0_0_30px_rgba(255,0,0,0.18)]"><div className="flex items-start justify-between gap-3"><div><p className="font-bold uppercase tracking-[0.18em] text-accent">Submission accepted</p><p className="mt-1">{acceptedReceipt.artist} — {acceptedReceipt.title}</p><p className="text-xs text-muted">{acceptedReceipt.sessionTitle} · {acceptedReceipt.sessionDate}</p><p className="text-xs">Confirmation: {acceptedReceipt.trackCode}</p></div><button type="button" onClick={() => setAcceptedReceipt(null)} className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Close</button></div></div>}
+      {showWatchLiveLink && (
+        <div className="flex justify-start">
+          <a
+            href={liveShowHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 border border-[#ffaa00]/45 bg-[#ffaa00]/10 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-[#ffaa00] hover:bg-[#ffaa00]/20 transition-colors"
+          >
+            <span aria-hidden="true">📺</span>
+            <span>Watch Live</span>
+          </a>
+        </div>
+      )}
 
       <ReceiverHudPortal snapshot={snapshot} submissionsOpen={isOpen} isBroadcastActive={isBroadcastActive} pulse={broadcastStartPulse} mounted={mounted} minimized={publicHudMinimized} onToggleMinimized={() => setPublicHudMinimized((current) => !current)} canSubmit={canSubmitFromHud} submitLabel={hudSubmitLabel} onSubmit={openIntakeCorridor} />
 

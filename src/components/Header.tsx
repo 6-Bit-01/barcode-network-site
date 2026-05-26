@@ -20,13 +20,16 @@ const navItems = [
 
 export function Header() {
   const pathname = usePathname();
-  const { isLive } = useLiveStatus();
+  const { siteShowMode, queueHref, streamUrl } = useLiveStatus();
+
+  const liveHref = queueHref ?? (siteShowMode === "broadcast_live" ? streamUrl || "/radio" : null);
+  const liveLabel = siteShowMode === "broadcast_live" ? "BARCODE RADIO LIVE" : siteShowMode === "intake_open" ? "SUBMISSIONS OPEN" : null;
+  const isExternalLiveHref = Boolean(liveHref && liveHref.startsWith("http"));
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm">
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
         <div className="flex h-14 items-center justify-between">
-          {/* Logo / Brand */}
           <Link href="/" className="flex items-center gap-3 group">
             <Image
               src={siteConfig.logo}
@@ -48,7 +51,6 @@ export function Header() {
             </div>
           </Link>
 
-          {/* Navigation */}
           <nav className="hidden md:flex items-center gap-1">
             {navItems.map((item) => {
               const isActive = pathname === item.href;
@@ -68,20 +70,19 @@ export function Header() {
             })}
           </nav>
 
-          {/* Live Status + Mobile Menu */}
           <div className="flex items-center gap-4">
-            {/* LIVE NOW indicator */}
-            {isLive && (
-              <Link
-                href="/radio"
+            {liveHref && liveLabel && (
+              <a
+                href={liveHref}
+                target={isExternalLiveHref ? "_blank" : undefined}
+                rel={isExternalLiveHref ? "noopener noreferrer" : undefined}
                 className="flex items-center gap-2 px-3 py-1 border border-danger rounded text-sm uppercase tracking-wider text-danger live-indicator hover:bg-danger/10 transition-colors"
               >
                 <span className="w-2 h-2 rounded-full bg-danger" />
-                WE ARE LIVE
-              </Link>
+                {liveLabel}
+              </a>
             )}
 
-            {/* Mobile hamburger */}
             <MobileMenu pathname={pathname} />
           </div>
         </div>

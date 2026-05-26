@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/set-state-in-effect, react/jsx-no-comment-textnodes */
+/* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -178,7 +178,8 @@ export function PublicQueueGateway() {
   return (
     <div className={`space-y-6 ${hasActiveSession ? "pb-24" : ""}`}>
       {hasActiveSession ? <section className="border border-accent/60 bg-accent/10 p-5 shadow-[0_0_34px_rgba(255,0,0,0.12)]">
-        <p className="text-xs uppercase tracking-[0.35em] text-accent">BARCODE Radio Queue</p>
+        <p className="text-xs uppercase tracking-[0.35em] text-muted">Queue Status</p>
+        <p className="mt-2 text-xs uppercase tracking-[0.35em] text-accent">BARCODE Radio Queue</p>
         <h1 className="mt-2 text-2xl font-bold text-foreground">Current queue is online</h1>
         <p className="mt-2 text-sm text-muted">{snapshot?.status.isOpen ? "Submissions are open. Open the current queue to send your track." : "Submissions are closed, but you can still view the current queue."}</p>
         <p className="mt-2 text-xs text-muted">See the current queue, submit a track when submissions are open, and check your song status.</p>
@@ -188,12 +189,15 @@ export function PublicQueueGateway() {
         </div>
         <a href={queueHref ?? "#"} onClick={(event) => queueHref && activeSessionId && beginNavigation(event, queueHref, activeSessionId)} aria-busy={Boolean(pendingNavigation)} className="nav-corridor-link mt-4 inline-flex w-full items-center justify-center border border-accent bg-accent px-4 py-3 text-xs font-bold uppercase tracking-[0.22em] text-white transition hover:bg-red-700 hover:text-white">OPEN CURRENT QUEUE</a>
       </section> : <section className="border border-border bg-surface p-5">
-        <p className="text-xs uppercase tracking-[0.35em] text-muted">BARCODE Radio Queue</p>
+        <p className="text-xs uppercase tracking-[0.35em] text-muted">Queue Status</p>
+        <p className="mt-2 text-xs uppercase tracking-[0.35em] text-muted">BARCODE Radio Queue</p>
         <h1 className="mt-2 text-2xl font-bold text-foreground">Current queue is offline</h1>
         <p className="mt-3 text-sm text-muted">No active BARCODE Radio queue is available right now.</p>
       </section>}
-      <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
-      <section data-phase={phase} data-pressure={pressure} data-transition={transitionPulse ?? undefined} className={`queue-machine relative overflow-hidden border bg-surface p-5 ${copy.border} ${copy.glow}`}>
+      <section className="border border-border bg-surface p-5 space-y-5">
+      <section>
+        <p className="text-xs uppercase tracking-[0.35em] text-muted">Broadcast State</p>
+      <section data-phase={phase} data-pressure={pressure} data-transition={transitionPulse ?? undefined} className={`queue-machine mt-3 relative overflow-hidden border bg-surface p-5 ${copy.border} ${copy.glow}`}>
         <div className="gateway-scanlines pointer-events-none absolute inset-0" />
         <div className="route-field pointer-events-none absolute inset-0">{Array.from({ length: routePulses }).map((_, index) => <span key={index} style={{ top: `${28 + index * (44 / Math.max(1, routePulses - 1))}%`, animationDelay: `${index * 140}ms` }} />)}</div>
         <div className="relative space-y-5">
@@ -220,16 +224,17 @@ export function PublicQueueGateway() {
           </div>
         </div>
       </section>
+      </section>
       <section className="border border-border bg-surface p-5 space-y-4">
-        <p className="text-xs uppercase tracking-[0.35em] text-muted">// Session Access</p>
+        <p className="text-xs uppercase tracking-[0.35em] text-muted">Session Access</p>
         <p className="text-sm text-muted">Public counts help you see what is playing, coming up, and still waiting.</p>
         {snapshot?.nowPlaying && <BroadcastSlot label="Now Playing" track={snapshot.nowPlaying} tone="text-[#ffaa00]" />}
         {snapshot?.upNext && <BroadcastSlot label="Next In Line" track={snapshot.upNext} tone="text-accent" />}
         {snapshot?.status.isFull && <p className="border border-danger/40 bg-danger/5 p-3 text-sm text-danger">Queue is full for new songs.</p>}
-        {hasActiveSession ? <div className="space-y-3"><a href={queueHref ?? "#"} onClick={(event) => queueHref && activeSessionId && beginNavigation(event, queueHref, activeSessionId)} aria-busy={Boolean(pendingNavigation)} className="nav-corridor-link inline-flex w-full items-center justify-center border border-accent bg-accent px-4 py-3 text-xs font-bold uppercase tracking-[0.22em] text-white transition hover:bg-red-700 hover:text-white">{pendingNavigation ? pendingNavigation.label : "OPEN CURRENT QUEUE"}</a><p className="text-xs text-muted">{snapshot?.status.isOpen ? "Submissions are open. Open the current queue to send your track." : "Submissions are closed, but you can still view the current queue."}</p><div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.18em]"><span className="border border-accent/45 px-2 py-1 text-accent">Session: Online</span><span className={`${snapshot?.status.isOpen ? "border-accent/45 text-accent" : "border-border text-muted"} border px-2 py-1`}>Submissions: {snapshot?.status.isOpen ? "Open" : "Closed"}</span><span className={`${isBroadcastActive(snapshot) ? "border-[#ffaa00]/45 text-[#ffaa00]" : "border-border text-muted"} border px-2 py-1`}>Broadcast: {isBroadcastActive(snapshot) ? "Active" : "Standby"}</span></div></div> : <div className="space-y-3"><button type="button" disabled className="inline-flex w-full cursor-not-allowed items-center justify-center border border-border px-4 py-3 text-xs uppercase tracking-widest text-muted opacity-60">Current Queue Offline</button><p className="text-xs text-muted">No active BARCODE Radio queue is available right now.</p><div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.18em]"><span className="border border-border px-2 py-1 text-muted">Session: Offline</span><span className="border border-border px-2 py-1 text-muted">Submissions: Closed</span><span className="border border-border px-2 py-1 text-muted">Broadcast: Standby</span></div></div>}
+        <p className="text-xs text-muted">Use the OPEN CURRENT QUEUE button above to access the active session monitor and submission flow.</p>
         <div className="border border-border bg-background/40 p-4"><p className="text-xs uppercase tracking-[0.25em] text-muted">Discord Signal Alerts</p><p className="mt-2 text-sm text-muted">Join Discord for queue updates and BARCODE Radio signal alerts.</p><a href={externalLinks.discord} target="_blank" rel="noreferrer" className="mt-3 inline-flex border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Join Discord</a></div>
       </section>
-      </div>
+      </section>
       {hasActiveSession && queueHref && activeSessionId && <section className="fixed inset-x-0 bottom-0 z-40 border-t border-accent/40 bg-background/95 px-3 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-5xl items-center gap-2 sm:gap-3">
           <div className="min-w-0 flex-1">

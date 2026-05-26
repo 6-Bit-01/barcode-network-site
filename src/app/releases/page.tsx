@@ -22,7 +22,7 @@ export default function ReleasesPage() {
     <div className="pt-14">
       {/* Header */}
       <section className="border-b border-border noise-bg">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16 sm:py-24">
+        <div className="mx-auto max-w-7xl px-4 pb-14 pt-12 sm:px-6 sm:pb-16 sm:pt-14">
           <PageHero
             label={releasesPage.hero.label}
             heading={releasesPage.hero.heading}
@@ -147,7 +147,7 @@ export default function ReleasesPage() {
           </div>
 
           <p className="text-xs text-muted/50 mt-8 uppercase tracking-wider font-mono">
-            // {releases.length} TRANSMISSIONS INDEXED
+            {"//"} {releases.length} TRANSMISSIONS INDEXED
           </p>
         </div>
       </section>

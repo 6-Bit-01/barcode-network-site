@@ -1165,6 +1165,15 @@ export async function submitRadioTrack(input: Parameters<typeof createQueueTrack
   return track;
 }
 
+export async function isTrackPersistedInSessionQueue(trackId: string, sessionId?: string): Promise<boolean> {
+  const state = await getRadioQueueState(sessionId);
+  if (state.queue.some((entry) => entry.id === trackId)) return true;
+  if (state.nextInLine?.id === trackId) return true;
+  if (state.loadedTrack?.id === trackId) return true;
+  if (state.nowPlaying?.id === trackId) return true;
+  return false;
+}
+
 
 function wheelEligibleArtistsForSession(session: QueueSession): QueueWheelArtistOption[] {
   const byArtist = new Map<string, QueueWheelArtistOption>();

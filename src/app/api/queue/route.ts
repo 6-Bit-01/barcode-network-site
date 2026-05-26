@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { detectQueueSourceType } from "@/lib/queue-types";
-import { getPublicQueueSnapshot, getRadioQueueState, normalizeQueueSourceKey, requestPriorityUpgradePlaceholder, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
+import { getPublicQueueSnapshot, getRadioQueueState, isTrackPersistedInSessionQueue, normalizeQueueSourceKey, requestPriorityUpgradePlaceholder, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
 import type { QueueEntry } from "@/lib/queue-types";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +13,7 @@ const DUPLICATE_TRANSMISSION_MESSAGE = "Duplicate transmission detected. This tr
 const BLOB_HOST_SUFFIX = ".private.blob.vercel-storage.com";
 const UPLOAD_PREFIX = "/barcode-radio-queue/";
 const SESSION_SYNC_MESSAGE = "This session has changed. Re-enter the current BARCODE Radio queue and submit again.";
+const QUEUE_ACCEPTANCE_UNCONFIRMED_MESSAGE = "Submission could not be confirmed in the queue. Please try again.";
 
 function validateUploadedBlobUrl(value: unknown): string {
   if (typeof value !== "string" || !value.trim()) throw new Error("Uploaded audio file is missing.");
@@ -186,6 +187,9 @@ export async function submitTrackFromBody(body: Record<string, unknown>): Promis
       contactEmail,
       submitterToken,
     });
+    if (!(await isTrackPersistedInSessionQueue(track.id, active.session.sessionId))) {
+      return NextResponse.json({ error: QUEUE_ACCEPTANCE_UNCONFIRMED_MESSAGE, code: "queue_acceptance_unconfirmed" }, { status: 500 });
+    }
     return acceptedResponse(toPublicQueueTrack(track), active.session.submissionCooldownSeconds);
   }
 
@@ -196,5 +200,8 @@ export async function submitTrackFromBody(body: Record<string, unknown>): Promis
 
   const sourceType = detectQueueSourceType(link);
   const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, contactEmail, submitterToken });
+  if (!(await isTrackPersistedInSessionQueue(track.id, active.session.sessionId))) {
+    return NextResponse.json({ error: QUEUE_ACCEPTANCE_UNCONFIRMED_MESSAGE, code: "queue_acceptance_unconfirmed" }, { status: 500 });
+  }
   return acceptedResponse(toPublicQueueTrack(track), active.session.submissionCooldownSeconds);
 }

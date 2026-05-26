@@ -1240,28 +1240,40 @@ test("wheel ceremony eligibility helper excludes unsafe queue states", () => {
 
 test("wheel re-encrypt rerolls visually without consuming owed spin or marking Wheel Chosen", async () => {
   await freshOpenSession("wheel reencrypt", { showStarted: true });
-  const first = await addTrack("Reencrypt One");
-  const second = await addTrack("Reencrypt Two");
+  await addTrack("Reencrypt One");
+  await addTrack("Reencrypt Two");
   await queue.updateRadioTrack("", "addWheelSpinOwed");
 
   await overlay.setLiveOverlayState({ action: "launchWheel" });
-  await overlay.setLiveOverlayState({ action: "spinWheel" });
-  const pending = await overlay.getLiveOverlayAdminSnapshot();
-  const firstResult = pending.overlayState.wheelCeremonyResultTrackId;
-  assert.ok(firstResult === first.id || firstResult === second.id, "spin stores a pending eligible result");
-
-  const afterSpin = await queue.getRadioQueueState();
-  assert.equal(afterSpin.session.wheelSpinsOwed, 1, "visual spin does not consume the owed wheel");
-  assert.equal(afterSpin.queue.some((entry) => entry.lane === "wheel"), false, "visual spin does not mark Wheel Chosen");
+  const launched = await overlay.getLiveOverlayAdminSnapshot();
+  const launchOrder = launched.overlayState.wheelCeremonyCandidateOrder ?? [];
+  assert.ok(launchOrder.length > 0, "launch stores a candidate order before spin");
 
   await overlay.setLiveOverlayState({ action: "reencryptWheel" });
   const reencrypted = await overlay.getLiveOverlayAdminSnapshot();
   assert.equal(reencrypted.overlayState.wheelCeremonyStatus, "reencrypting", "re-encrypt enters ceremony effect state");
-  assert.ok(reencrypted.overlayState.wheelCeremonyResultTrackId === first.id || reencrypted.overlayState.wheelCeremonyResultTrackId === second.id, "re-encrypt stores a pending eligible result");
+  assert.equal(reencrypted.overlayState.wheelCeremonyResultTrackId, undefined, "re-encrypt remains visual-only and does not preselect a result");
+  const candidateOrder = reencrypted.overlayState.wheelCeremonyCandidateOrder ?? [];
+  assert.equal(candidateOrder.length, (reencrypted.wheelCandidates ?? []).length, "re-encrypt keeps candidate ordering aligned with active candidates");
+  assert.equal(new Set(candidateOrder).size, candidateOrder.length, "re-encrypt candidate order contains unique candidate ids");
+  assert.ok(candidateOrder.every((candidateId) => (reencrypted.wheelCandidates ?? []).some((candidate) => candidate.id === candidateId)), "re-encrypt order only references eligible wheel candidates");
+  assert.notDeepEqual(candidateOrder, launchOrder, "re-encrypt rerolls candidate order while keeping eligible candidates");
 
   const afterReencrypt = await queue.getRadioQueueState();
   assert.equal(afterReencrypt.session.wheelSpinsOwed, 1, "re-encrypt does not consume the owed wheel");
   assert.equal(afterReencrypt.queue.some((entry) => entry.lane === "wheel"), false, "re-encrypt does not mark Wheel Chosen");
+
+  const reencryptReadyAt = new Date(new Date(reencrypted.overlayState.wheelCeremonySpinStartedAt).getTime() + 2300);
+  await withFakeNow(reencryptReadyAt, async () => {
+    await overlay.setLiveOverlayState({ action: "spinWheel" });
+  });
+  const pending = await overlay.getLiveOverlayAdminSnapshot();
+  const pendingCandidateIds = (pending.wheelCandidates ?? []).map((candidate) => candidate.id);
+  assert.ok(pendingCandidateIds.includes(pending.overlayState.wheelCeremonyResultTrackId), "spin after re-encrypt stores a pending eligible wheel candidate result");
+
+  const afterSpin = await queue.getRadioQueueState();
+  assert.equal(afterSpin.session.wheelSpinsOwed, 1, "visual spin does not consume the owed wheel");
+  assert.equal(afterSpin.queue.some((entry) => entry.lane === "wheel"), false, "visual spin does not mark Wheel Chosen");
 });
 
 test("wheel ceremony spin and stale confirm errors do not mutate queue", async () => {
@@ -1273,10 +1285,21 @@ test("wheel ceremony spin and stale confirm errors do not mutate queue", async (
   assert.equal(state.session.wheelSpinsOwed, 1, "failed spin keeps owed wheel");
   assert.equal(state.queue.some((entry) => entry.lane === "wheel"), false, "failed spin does not mark Wheel Chosen");
 
-  const stale = await addTrack("Stale Ceremony Result");
+  await addTrack("Stale Ceremony Result A", { artist: "Stale Artist" });
+  await addTrack("Stale Ceremony Result B", { artist: "Stale Artist" });
   await overlay.setLiveOverlayState({ action: "spinWheel" });
-  await queue.updateRadioTrack(stale.id, "remove");
-  await assert.rejects(() => overlay.setLiveOverlayState({ action: "confirmWheel" }), /no longer eligible/);
+  const pendingSnapshot = await overlay.getLiveOverlayAdminSnapshot();
+  const winnerCandidate = (pendingSnapshot.wheelCandidates ?? []).find((candidate) => candidate.id === pendingSnapshot.overlayState.wheelCeremonyResultTrackId);
+  assert.ok(winnerCandidate, "spin stores a result candidate that exists in active wheel candidates");
+  const winnerTrackIds = winnerCandidate?.trackIds?.length ? winnerCandidate.trackIds : (winnerCandidate?.tracks ?? []).map((track) => track.id);
+  assert.ok(winnerTrackIds?.length, "winning candidate exposes at least one represented queued track");
+  for (const trackId of winnerTrackIds) await queue.updateRadioTrack(trackId, "remove");
+  const spinStartedAt = pendingSnapshot.overlayState.wheelCeremonySpinStartedAt;
+  const spinDurationMs = pendingSnapshot.overlayState.wheelCeremonySpinDurationMs ?? 24_000;
+  const confirmNow = new Date(new Date(spinStartedAt).getTime() + spinDurationMs + 50);
+  await withFakeNow(confirmNow, async () => {
+    await assert.rejects(() => overlay.setLiveOverlayState({ action: "confirmWheel", selectedTrackId: winnerTrackIds[0] }), /no longer eligible/);
+  });
   state = await queue.getRadioQueueState();
   assert.equal(state.session.wheelSpinsOwed, 1, "stale confirm keeps owed wheel");
   assert.equal(state.queue.some((entry) => entry.lane === "wheel"), false, "stale confirm does not mark Wheel Chosen");

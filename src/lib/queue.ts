@@ -32,7 +32,7 @@ import type {
 
 const STATE_KEY = "radioQueue:v2:sessions";
 const LEGACY_STATE_KEY = "radioQueue:v1:state";
-const DEFAULT_QUEUE_CAPACITY = 50;
+const DEFAULT_QUEUE_CAPACITY = 44;
 const DEFAULT_SUBMISSION_COOLDOWN_SECONDS = 5 * 60;
 const MAX_SUBMISSION_COOLDOWN_SECONDS = 60 * 60;
 const DEFAULT_PRIORITY_UPGRADE_LABEL = "Priority Signal Upgrade";
@@ -1698,6 +1698,19 @@ export async function archiveCurrentQueueSession(): Promise<QueueState> {
   return queueStateFromSession(session, archivedStore, session.sessionId);
 }
 
+
+export async function clearArchivedQueueSessions(): Promise<QueueState> {
+  const store = await readStore();
+  const sessions = store.sessions.filter((session) => session.status !== "archived");
+  const fallback = sessions[0] ?? defaultSession();
+  const activeExists = sessions.some((session) => session.sessionId === store.activeSessionId);
+  const nextStore: QueueStore = {
+    activeSessionId: activeExists ? store.activeSessionId : fallback.sessionId,
+    sessions: sessions.length > 0 ? sessions : [fallback],
+  };
+  await writeStore(nextStore);
+  return queueStateFromSession(getSession(nextStore), nextStore);
+}
 export async function activateQueueSession(sessionId: string): Promise<QueueState> {
   const store = await readStore();
   const target = store.sessions.find((session) => session.sessionId === sessionId);

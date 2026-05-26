@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
 import { resetWheelCeremonyStateForNewSession } from "@/lib/live-overlay";
-import { archiveCurrentQueueSession, getRadioQueueState, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateRadioTrack, updateSponsorBreakState, updateSubmissionCooldownSettings } from "@/lib/queue";
+import { archiveCurrentQueueSession, clearArchivedQueueSessions, getRadioQueueState, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateRadioTrack, updateSponsorBreakState, updateSubmissionCooldownSettings } from "@/lib/queue";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +71,12 @@ export async function POST(req: Request) {
   }
   if (body.action === "updateSponsorBreakState" && ["start", "complete", "skip", "reset"].includes(body.sponsorAction)) return NextResponse.json(await updateSponsorBreakState(body.sponsorAction));
   if (body.action === "archiveSession") return NextResponse.json(await archiveCurrentQueueSession());
+  if (body.action === "clearArchive") {
+    if (body.confirmation !== "Delete the archive") {
+      return NextResponse.json({ error: "Confirmation text must exactly match: Delete the archive" }, { status: 400 });
+    }
+    return NextResponse.json(await clearArchivedQueueSessions());
+  }
   if (body.action === "activateSession" && typeof body.sessionId === "string") return NextResponse.json(await activateQueueSession(body.sessionId));
   if (body.action === "viewSession" && typeof body.sessionId === "string") return NextResponse.json(await getRadioQueueState(body.sessionId));
   if (["pullNext", "pullWheelChosen", "pullFreeTransmission", "startShow", "addWheelSpinOwed", "addSimulationFreeTrack", "addSimulationPaidPriority", "addSimulationCheckoutPending", "addSimulationPaymentFailed", "addSimulationHeldPriority", "clearSimulationTracks"].includes(body.action)) return NextResponse.json(await updateRadioTrack("", body.action));

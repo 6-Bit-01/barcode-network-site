@@ -22,6 +22,7 @@ const PRIORITY_CHECKOUT_UNAVAILABLE_MESSAGE = "Priority checkout could not be st
 const PRIORITY_DEPTH_UNAVAILABLE_MESSAGE = "Priority Signal opens when there are enough songs waiting.";
 const SESSION_SYNC_REQUIRED_MESSAGE = "Session sync required. Refresh the queue and try again.";
 const SESSION_CHANGED_MESSAGE = "This session has changed. Re-enter the current BARCODE Radio queue and submit again.";
+const QUEUE_CONFIRMATION_FAILED_MESSAGE = "Submission could not be confirmed in the queue. Your info was kept. Please try again or contact the host.";
 const MIN_PRIORITY_ACTIVE_DEPTH = 2;
 function formatPrice(cents: number, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }
 
@@ -325,6 +326,19 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
     setRouteChoice("free");
   }
 
+  async function waitForTrackConfirmation(trackId: string): Promise<QueuePublicSnapshot | null> {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const snapshot = await loadStatus();
+      const foundInQueue = snapshot?.queue.some((entry) => entry.id === trackId);
+      const foundInNowPlaying = snapshot?.nowPlaying?.id === trackId;
+      const foundInUpNext = snapshot?.upNext?.id === trackId;
+      const foundInCompleted = snapshot?.completed.some((entry) => entry.id === trackId);
+      if (foundInQueue || foundInNowPlaying || foundInUpNext || foundInCompleted) return snapshot;
+      if (attempt < 4) await wait(500);
+    }
+    return null;
+  }
+
   async function startPriorityCheckout(trackId: string): Promise<boolean> {
     const checkoutSessionId = sessionId ?? session?.sessionId;
     if (!checkoutSessionId) return false;
@@ -395,6 +409,11 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
       }
       if (payload.track?.id) {
         const submitted = publicTrackFromApi(payload.track);
+        const confirmedSnapshot = await waitForTrackConfirmation(submitted.id);
+        if (!confirmedSnapshot) {
+          await loadStatus();
+          throw new Error(`${QUEUE_CONFIRMATION_FAILED_MESSAGE} Reference: ${submitted.id.slice(0, 8).toUpperCase()}`);
+        }
         const receipt = {
           artist: artist.trim(),
           title: title.trim(),
@@ -458,8 +477,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
         setTransmissionState("signal");
         setPublicQueue((current) => [submitted, ...current.filter((entry) => entry.id !== submitted.id)]);
         await wait(1000);
-        const refreshed = await loadStatus();
-        let resolved = findSubmittedTrack(refreshed, submitted.id);
+        let resolved = findSubmittedTrack(confirmedSnapshot, submitted.id);
         if (resolved.targetId === "up-next-slot" && preSubmit.upNextWasEmpty) {
           resolved = { ...resolved, targetId: preSubmit.nowPlayingWasEmpty && preSubmit.activeCount === 0 ? "broadcast-queue-top" : "up-next-slot", laneLabel: "UP_NEXT" };
         }
@@ -469,8 +487,8 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
           durationLabel: resolvedTrack.durationLabel,
           lane: resolved.laneLabel,
           artworkUrl: resolvedTrack.sourceArtworkUrl ?? baseWarpData.artworkUrl,
-          queueStatus: refreshed ? `${refreshed.status.activeCount}/${refreshed.status.capacity}` : baseWarpData.queueStatus,
-          submissionSlot: resolvedTrack.id === refreshed?.upNext?.id ? "UP_NEXT" : baseWarpData.submissionSlot,
+          queueStatus: confirmedSnapshot ? `${confirmedSnapshot.status.activeCount}/${confirmedSnapshot.status.capacity}` : baseWarpData.queueStatus,
+          submissionSlot: resolvedTrack.id === confirmedSnapshot?.upNext?.id ? "UP_NEXT" : baseWarpData.submissionSlot,
         });
         onSubmitted?.(submitted.id, "resolved", resolved.targetId);
         setTransmissionState("received");
@@ -560,7 +578,10 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
             {mode === "link" ? (
               <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Track link / upload</span><span className="block text-[11px] text-muted">Paste a link or upload your file.</span><input type="url" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://soundcloud.com/..." className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
             ) : (
-              <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Track link / upload</span><span className="block text-[11px] text-muted">Paste a link or upload your file.</span><input key={fileInputKey} type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,.mp3,.wav" onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+              <>
+                <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Track link / upload</span><span className="block text-[11px] text-muted">Paste a link or upload your file.</span><input key={fileInputKey} type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,.mp3,.wav" onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)} className="w-full bg-background border border-border px-3 py-2 text-sm" required={!file} /></label>
+                {file && <div className="border border-border bg-background/40 p-2 text-xs text-muted"><p>Selected file: {file.name}</p><p>Size: {(file.size / (1024 * 1024)).toFixed(2)} MB</p><p>Duration: {detectedDuration ? formatRuntime(detectedDuration) : "pending"}</p><button type="button" onClick={() => { setFile(null); setDetectedDuration(null); setUploadProgress(null); setReadState("idle"); setFileInputKey((value) => value + 1); }} className="mt-2 border border-border px-2 py-1 text-[11px] uppercase tracking-widest hover:border-accent hover:text-accent">Remove file</button></div>}
+              </>
             )}
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               <button type="button" onClick={onCancel} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Collapse Intake</button>

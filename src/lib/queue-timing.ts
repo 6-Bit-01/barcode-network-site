@@ -1,8 +1,8 @@
 import type { PriorityUpgradeStatus, QueueEntry, QueueLane, QueuePublicTrack, QueueTrackStatus } from "./queue-types";
 
 export const DEFAULT_UNKNOWN_TRACK_SECONDS = 300;
-export const DEFAULT_PRE_TRACK_TALK_SECONDS = 60;
-export const DEFAULT_POST_TRACK_TALK_SECONDS = 60;
+export const DEFAULT_PRE_TRACK_TALK_SECONDS = 30;
+export const DEFAULT_POST_TRACK_TALK_SECONDS = 30;
 export const DEFAULT_HOST_TALK_BUFFER_SECONDS = DEFAULT_PRE_TRACK_TALK_SECONDS + DEFAULT_POST_TRACK_TALK_SECONDS;
 export const DEFAULT_SPONSOR_BREAK_SECONDS = 630;
 export const DEFAULT_SPONSOR_BREAK_MIN_ELAPSED_SECONDS = 7200;
@@ -61,6 +61,8 @@ export interface QueueTimingInput {
     sponsorBreakCompletedAt?: string | null;
     sponsorBreakCompletedAfterPlayableCount?: number | null;
     sponsorBreakManualNote?: string | null;
+    showStarted?: boolean | null;
+    broadcastPhase?: "warmup" | "submission_window" | "broadcast_active" | "ended" | null;
   } | null;
   completedRuntimeSeconds?: number | null;
   wheelSpinsOwed?: number | null;
@@ -118,6 +120,7 @@ export interface SponsorBreakEstimate {
   sponsorBreakAlreadyCompleted: boolean;
   sponsorBreakShouldBeIncludedBeforeTargetTrack: boolean;
   sponsorBreakSecondsIncluded: number;
+  sponsorBreakSecondsRemaining: number | null;
   sponsorBreakNotes: string[];
 }
 
@@ -389,6 +392,14 @@ function validIsoString(value: unknown): string | null {
   return Number.isFinite(time) ? value : null;
 }
 
+function secondsRemainingFrom(startedAt: string | null | undefined, totalSeconds: number, now = new Date()): number | null {
+  const started = validIsoString(startedAt);
+  if (!started) return null;
+  const elapsed = secondsSince(started, now);
+  if (elapsed === null) return null;
+  return Math.max(0, totalSeconds - elapsed);
+}
+
 function deriveBroadcastStartedAt(input: QueueTimingInput): string | null {
   const explicit = validIsoString(input.session?.broadcastStartedAt);
   if (explicit) return explicit;
@@ -443,11 +454,12 @@ export function estimateSponsorBreakPlacement(input: QueueTimingInput, options?:
 
   let sponsorBreakStatus: SponsorBreakStatus = explicitStatus ?? "unknown";
   let sponsorBreakIncluded = false;
+  const runningRemainingSeconds = explicitStatus === "running" ? secondsRemainingFrom(input.session?.sponsorBreakStartedAt, normalized.sponsorBreakSeconds, options?.now) : null;
   if (explicitStatus === "completed" || explicitStatus === "skipped") {
     sponsorBreakIncluded = false;
   } else if (explicitStatus === "running") {
     sponsorBreakIncluded = true;
-    sponsorBreakNotes.push("Sponsor break is marked running; full stored break duration is included conservatively.");
+    sponsorBreakNotes.push("Sponsor break is marked running; remaining break duration is included.");
   } else if (commercialBreakEligible) {
     sponsorBreakStatus = "due";
     sponsorBreakIncluded = true;
@@ -458,7 +470,9 @@ export function estimateSponsorBreakPlacement(input: QueueTimingInput, options?:
   }
 
   const sponsorBreakAlreadyCompleted = sponsorBreakStatus === "completed" || sponsorBreakStatus === "skipped";
-  const sponsorBreakSecondsIncluded = sponsorBreakIncluded && !sponsorBreakAlreadyCompleted ? normalized.sponsorBreakSeconds : 0;
+  const sponsorBreakSecondsIncluded = sponsorBreakIncluded && !sponsorBreakAlreadyCompleted
+    ? (explicitStatus === "running" ? (runningRemainingSeconds ?? normalized.sponsorBreakSeconds) : normalized.sponsorBreakSeconds)
+    : 0;
   if (sponsorBreakStatus === "due") sponsorBreakNotes.push("Sponsor midpoint and 2-hour broadcast gate have both been reached; include until completed or skipped.");
   if (midpointReached === true && minElapsedGateReached === false) sponsorBreakNotes.push("Sponsor midpoint is reached; waiting for the 2-hour broadcast mark.");
   if (midpointReached === false && minElapsedGateReached === true) sponsorBreakNotes.push("2-hour broadcast mark is reached; waiting for the sponsor midpoint.");
@@ -486,6 +500,7 @@ export function estimateSponsorBreakPlacement(input: QueueTimingInput, options?:
     sponsorBreakAlreadyCompleted,
     sponsorBreakShouldBeIncludedBeforeTargetTrack: sponsorBreakIncluded,
     sponsorBreakSecondsIncluded,
+    sponsorBreakSecondsRemaining: explicitStatus === "running" ? runningRemainingSeconds : null,
     sponsorBreakNotes,
   };
 }
@@ -581,13 +596,16 @@ export function buildQueueTimingSnapshot(input: QueueTimingInput, options?: Queu
   const completedRuntimeSeconds = safePositiveSeconds(input.completedRuntimeSeconds) ?? safePositiveSeconds(input.session?.completedRuntimeSeconds) ?? null;
   const completedEstimatedRuntime = completedRuntimeSeconds ?? estimateRuntimeForTracks(input.completed ?? [], normalized).slotSeconds;
   const projectedRemainingShowSeconds = sumSegments(timeline.segments);
-  const projectedTotalShowSeconds = completedEstimatedRuntime + projectedRemainingShowSeconds;
+  const liveElapsedSeconds = timeline.sponsorBreak.broadcastElapsedSeconds;
+  const projectedTotalShowSeconds = typeof liveElapsedSeconds === "number" && liveElapsedSeconds > 0
+    ? liveElapsedSeconds + projectedRemainingShowSeconds
+    : completedEstimatedRuntime + projectedRemainingShowSeconds;
   const completedPlayableCount = countCompletedPlayable(input);
   const observedAverageSlotSeconds = completedRuntimeSeconds && completedPlayableCount > 0 ? Math.round(completedRuntimeSeconds / completedPlayableCount) : null;
   const completedTrackRuntime = estimateRuntimeForTracks(input.completed ?? [], { ...normalized, preTrackTalkSeconds: 0, postTrackTalkSeconds: 0 }).trackSeconds;
   const observedAverageTrackRuntimeSeconds = completedTrackRuntime > 0 && completedPlayableCount > 0 ? Math.round(completedTrackRuntime / completedPlayableCount) : null;
   const notes = [...timeline.notes];
-  if (completedRuntimeSeconds === null) notes.push("Completed runtime seconds were not provided, so completed tracks use the same estimate rules as queued tracks.");
+  if (completedRuntimeSeconds === null) notes.push("Completed runtime seconds were not provided, so completed tracks use estimate rules unless live elapsed playback time is available.");
   if (countRemoved(input) === null) notes.push("Removed track detail/count was not provided; removed/dropout diagnostics may be incomplete.");
 
   return {

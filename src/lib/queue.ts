@@ -628,6 +628,24 @@ function applyPreShowTimer(session: QueueSession, now = new Date()): boolean {
   return false;
 }
 
+function applyCommercialBreakTimer(session: QueueSession, now = new Date()): boolean {
+  if (session.status === "archived") return false;
+  if (session.sponsorBreakStatus !== "running") return false;
+  if (!session.sponsorBreakStartedAt) return false;
+  const startedAt = Date.parse(session.sponsorBreakStartedAt);
+  if (!Number.isFinite(startedAt)) return false;
+  const breakSeconds = session.sponsorBreakSeconds ?? 630;
+  const completedAtMs = startedAt + breakSeconds * 1000;
+  if (now.getTime() < completedAtMs) return false;
+  const completedAtIso = new Date(completedAtMs).toISOString();
+  session.sponsorBreakStatus = "completed";
+  session.sponsorBreakCompletedAt = session.sponsorBreakCompletedAt ?? completedAtIso;
+  session.sponsorBreakCompletedAfterPlayableCount = session.sponsorBreakCompletedAfterPlayableCount ?? session.completed.length;
+  session.sponsorBreakManualNote = "Commercial break auto-completed after 10m 30s.";
+  session.updatedAt = now.toISOString();
+  return true;
+}
+
 function normalizeWheelSpinsOwed(value: unknown): number {
   const numeric = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
@@ -1256,6 +1274,7 @@ export async function getRadioQueueState(sessionId?: string): Promise<QueueState
   const session = getSession(store, sessionId);
   if (session.status !== "archived") {
     applyPreShowTimer(session);
+    applyCommercialBreakTimer(session);
     pullNextInLine(session);
     await writeStore(replaceSession(store, session));
     return queueStateFromSession(session, replaceSession(store, session), sessionId ?? store.activeSessionId);
@@ -1660,13 +1679,16 @@ export async function updateSponsorBreakState(action: "start" | "complete" | "sk
   if (session.status === "archived") return queueStateFromSession(session, store);
   const now = new Date().toISOString();
   const completedPlayable = session.completed.length;
+  if (action === "start" && (session.sponsorBreakStatus === "running" || session.sponsorBreakStatus === "completed" || session.sponsorBreakStatus === "skipped")) {
+    return queueStateFromSession(session, store);
+  }
   const next = normalizeSession({
     ...session,
     sponsorBreakStatus: action === "start" ? "running" : action === "complete" ? "completed" : action === "skip" ? "skipped" : "not_due",
     sponsorBreakStartedAt: action === "start" ? now : action === "reset" ? null : session.sponsorBreakStartedAt ?? null,
     sponsorBreakCompletedAt: action === "complete" || action === "skip" ? now : action === "reset" ? null : session.sponsorBreakCompletedAt ?? null,
     sponsorBreakCompletedAfterPlayableCount: action === "complete" || action === "skip" ? completedPlayable : action === "reset" ? null : session.sponsorBreakCompletedAfterPlayableCount ?? null,
-    sponsorBreakManualNote: action === "start" ? "Sponsor break started by admin." : action === "complete" ? "Sponsor break completed by admin." : action === "skip" ? "Sponsor break skipped by admin." : null,
+    sponsorBreakManualNote: action === "start" ? "Commercial break started by admin." : action === "complete" ? "Commercial break completed by admin." : action === "skip" ? "Commercial break skipped by admin." : null,
     updatedAt: now,
   });
   const nextStore = replaceSession(store, next);
@@ -2050,7 +2072,9 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
   applyPreShowTimer(session);
 
   if (action === "startShow") {
+    const now = new Date().toISOString();
     session.showStarted = true;
+    if (!session.broadcastStartedAt) session.broadcastStartedAt = now;
     pullNextInLine(session, undefined, true);
     const nextStore = replaceSession(store, session);
     await writeStore(nextStore);

@@ -914,6 +914,36 @@ test("start broadcast manually overrides a future pre-show timer", async () => {
   assert.equal(state.nextInLine?.id, free.id);
 });
 
+test("running commercial break auto-completes after 10m30s", async () => {
+  await freshOpenSession("commercial timer auto-complete");
+  let state = await queue.updateSponsorBreakState("start");
+  assert.equal(state.session.sponsorBreakStatus, "running");
+  assert.ok(state.session.sponsorBreakStartedAt);
+  const beforeDone = await withFakeNow(new Date(new Date(state.session.sponsorBreakStartedAt).getTime() + 10 * 60 * 1000), () => queue.getRadioQueueState());
+  assert.equal(beforeDone.session.sponsorBreakStatus, "running");
+  const afterDone = await withFakeNow(new Date(new Date(state.session.sponsorBreakStartedAt).getTime() + 10 * 60 * 1000 + 31 * 1000), () => queue.getRadioQueueState());
+  assert.equal(afterDone.session.sponsorBreakStatus, "completed");
+  assert.ok(afterDone.session.sponsorBreakCompletedAt);
+});
+
+test("commercial start is idempotent when already running/completed/skipped", async () => {
+  await freshOpenSession("commercial idempotent start");
+  let state = await queue.updateSponsorBreakState("start");
+  const firstStartedAt = state.session.sponsorBreakStartedAt;
+  state = await queue.updateSponsorBreakState("start");
+  assert.equal(state.session.sponsorBreakStatus, "running");
+  assert.equal(state.session.sponsorBreakStartedAt, firstStartedAt);
+  state = await queue.updateSponsorBreakState("complete");
+  const completedAt = state.session.sponsorBreakCompletedAt;
+  state = await queue.updateSponsorBreakState("start");
+  assert.equal(state.session.sponsorBreakStatus, "completed");
+  assert.equal(state.session.sponsorBreakCompletedAt, completedAt);
+  await queue.updateSponsorBreakState("reset");
+  await queue.updateSponsorBreakState("skip");
+  state = await queue.updateSponsorBreakState("start");
+  assert.equal(state.session.sponsorBreakStatus, "skipped");
+});
+
 test("ending broadcast is separate from closing submissions", async () => {
   await freshOpenSession("end broadcast separate");
   let state = await queue.getRadioQueueState();

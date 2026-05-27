@@ -33,16 +33,16 @@ test("sponsor included and completed public notes reflect current projection", (
   const completed = Array.from({ length: 20 }, (_, index) => track(`done-${index}`, { status: "completed" }));
   const queue = Array.from({ length: 20 }, (_, index) => track(`queued-${index}`));
   const withSponsor = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "not_due", broadcastStartedAt: "2026-01-01T00:00:00.000Z" } });
-  assert.ok(withSponsor.publicNotes.includes("Estimate includes the mid-show sponsor break."));
+  assert.ok(withSponsor.publicNotes.includes("Wheel spins or the commercial break may add time."));
   const completedSponsor = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "completed", sponsorBreakCompletedAt: "2026-01-01T00:00:00.000Z" } });
   const skippedSponsor = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "skipped", sponsorBreakCompletedAt: "2026-01-01T00:00:00.000Z" } });
-  assert.ok(!completedSponsor.publicNotes.includes("Estimate includes the mid-show sponsor break."));
-  assert.ok(!skippedSponsor.publicNotes.includes("Estimate includes the mid-show sponsor break."));
+  assert.ok(!completedSponsor.publicNotes.includes("Wheel spins or the commercial break may add time."));
+  assert.ok(!skippedSponsor.publicNotes.includes("Wheel spins or the commercial break may add time."));
 });
 
 test("wheel overhead public note appears when owed spins add time", () => {
   const summary = display.buildQueueTimingDisplay({ queue: [track("a")], wheelSpinsOwed: 2, session: { sponsorBreakStatus: "completed", wheelSpinsOwed: 2 } });
-  assert.ok(summary.publicNotes.includes("Wheel spins waiting may add time."));
+  assert.ok(summary.publicNotes.includes("Wheel spins may add time."));
 });
 
 test("priority display appears only when eligible and payment processing stays ineligible", () => {
@@ -57,7 +57,7 @@ test("priority display appears only when eligible and payment processing stays i
 test("one song away unknown track includes talk buffer in about 5-15 minute range", () => {
   const estimate = timing.estimateExistingTrackTiming({ queue: [track("ahead"), track("target")], session: { sponsorBreakStatus: "completed" } }, "target");
   const shown = display.displayEstimate(estimate);
-  assert.equal(estimate.estimatedSecondsUntilPlay, 420);
+  assert.equal(estimate.estimatedSecondsUntilPlay, 360);
   assert.match(shown.label, /About 5–15 min/);
 });
 
@@ -90,8 +90,8 @@ test("public projected show time hides unknown values without fake updating copy
 test("admin summary keeps projected time and 4h/5h target copy", () => {
   const queue = Array.from({ length: 45 }, (_, index) => track(`known-${index}`, { detectedDurationSeconds: 180, durationIsEstimate: false }));
   const summary = display.buildQueueTimingDisplay({ queue, session: { sponsorBreakStatus: "completed" } });
-  assert.equal(summary.showRuntimeSummary.projectedLabel, "3h 45m projected");
-  assert.equal(summary.showRuntimeSummary.publicProjectedLabel, "About 3h 45m");
+  assert.equal(summary.showRuntimeSummary.projectedLabel, "3h projected");
+  assert.equal(summary.showRuntimeSummary.publicProjectedLabel, "About 3h");
   assert.equal(summary.showRuntimeSummary.targetLabel, "4h goal · 5h warning ceiling");
   assert.equal(summary.showRuntimeSummary.publicTargetLabel, "4h goal");
 });
@@ -100,7 +100,7 @@ test("estimated wait remains separate from projected show time", () => {
   const queue = [track("ahead", { detectedDurationSeconds: 180, durationIsEstimate: false }), track("later", { detectedDurationSeconds: 180, durationIsEstimate: false })];
   const summary = display.buildQueueTimingDisplay({ queue, session: { sponsorBreakStatus: "completed" } });
   assert.equal(summary.submitNowFreeEstimate.label, "About 5–15 min");
-  assert.equal(summary.showRuntimeSummary.publicProjectedLabel, "About 10m");
+  assert.equal(summary.showRuntimeSummary.publicProjectedLabel, "About 8m");
 });
 
 test("Personal Signal Status does not include global projected show time copy", () => {
@@ -119,6 +119,42 @@ test("admin sponsor diagnostics explain gate states compactly", () => {
   assert.equal(display.sponsorDiagnosticLabel({ sponsorBreakStatus: "due", broadcastStartedAt: "2026-01-01T00:00:00.000Z", midpointReached: true, minElapsedGateReached: true, sponsorBreakIncluded: true }), "Due now");
   assert.equal(display.sponsorDiagnosticLabel({ sponsorBreakStatus: "completed" }), "Completed");
   assert.equal(display.sponsorDiagnosticLabel({ sponsorBreakStatus: "skipped" }), "Skipped");
+  assert.equal(display.sponsorDiagnosticLabel({ sponsorBreakStatus: "running", sponsorBreakSecondsRemaining: 8 * 60 + 42 }), "Running · 9m remaining");
+});
+
+test("commercial dueNow is separate from included-in-projection and maps compact labels", () => {
+  const queue44 = Array.from({ length: 43 }, (_, i) => track(`q-${i}`));
+  const justStarted = display.buildQueueTimingDisplay({
+    completed: [track("done-0", { status: "played" })],
+    queue: queue44,
+    session: { sponsorBreakStatus: "not_due", broadcastStartedAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(), showStarted: true, broadcastPhase: "broadcast_active" },
+  });
+  assert.equal(justStarted.sponsorBreakSummary.dueNow, false);
+  assert.notEqual(justStarted.sponsorBreakSummary.compactLabel, "Due");
+
+  const waiting2h = display.buildQueueTimingDisplay({
+    completed: Array.from({ length: 22 }, (_, i) => track(`m-${i}`, { status: "played" })),
+    queue: Array.from({ length: 22 }, (_, i) => track(`m-q-${i}`)),
+    session: { sponsorBreakStatus: "not_due", broadcastStartedAt: new Date(Date.now() - 90 * 60 * 1000).toISOString(), showStarted: true, broadcastPhase: "broadcast_active" },
+  });
+  assert.equal(waiting2h.sponsorBreakSummary.dueNow, false);
+  assert.equal(waiting2h.sponsorBreakSummary.compactLabel, "Waiting 2h");
+
+  const waitingMidpoint = display.buildQueueTimingDisplay({
+    completed: Array.from({ length: 10 }, (_, i) => track(`g-${i}`, { status: "played" })),
+    queue: Array.from({ length: 34 }, (_, i) => track(`g-q-${i}`)),
+    session: { sponsorBreakStatus: "not_due", broadcastStartedAt: new Date(Date.now() - 140 * 60 * 1000).toISOString(), showStarted: true, broadcastPhase: "broadcast_active" },
+  });
+  assert.equal(waitingMidpoint.sponsorBreakSummary.dueNow, false);
+  assert.equal(waitingMidpoint.sponsorBreakSummary.compactLabel, "Waiting midpoint");
+
+  const due = display.buildQueueTimingDisplay({
+    completed: Array.from({ length: 22 }, (_, i) => track(`d-${i}`, { status: "played" })),
+    queue: Array.from({ length: 22 }, (_, i) => track(`d-q-${i}`)),
+    session: { sponsorBreakStatus: "due", broadcastStartedAt: new Date(Date.now() - 140 * 60 * 1000).toISOString(), showStarted: true, broadcastPhase: "broadcast_active" },
+  });
+  assert.equal(due.sponsorBreakSummary.dueNow, true);
+  assert.equal(due.sponsorBreakSummary.compactLabel, "Due");
 });
 
 test("public sponsor note appears only when the gated break is included", () => {
@@ -126,6 +162,101 @@ test("public sponsor note appears only when the gated break is included", () => 
   const queue = [track("public-queued-target", { detectedDurationSeconds: 60 })];
   const early = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "not_due", broadcastStartedAt: new Date(Date.now() - 90 * 60 * 1000).toISOString() } });
   const included = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "not_due", broadcastStartedAt: "2026-01-01T00:00:00.000Z" } });
-  assert.ok(!early.publicNotes.includes("Estimate includes the mid-show sponsor break."));
-  assert.ok(included.publicNotes.includes("Estimate includes the mid-show sponsor break."));
+  assert.ok(!early.publicNotes.includes("Wheel spins or the commercial break may add time."));
+  assert.ok(included.publicNotes.includes("Wheel spins or the commercial break may add time."));
+});
+
+test("pressure summary rises from comfortable to critical based on projected runtime", () => {
+  const low = display.buildQueueTimingDisplay({ queue: Array.from({ length: 14 }, (_, index) => track(`short-${index}`, { detectedDurationSeconds: 120, durationIsEstimate: false })), session: { sponsorBreakStatus: "completed" } });
+  const high = display.buildQueueTimingDisplay({ queue: Array.from({ length: 44 }, (_, index) => track(`long-${index}`, { detectedDurationSeconds: 300, durationIsEstimate: false })), session: { sponsorBreakStatus: "not_due", broadcastStartedAt: "2026-01-01T00:00:00.000Z" } });
+  const critical = display.buildQueueTimingDisplay({ queue: Array.from({ length: 60 }, (_, index) => track(`xlong-${index}`, { detectedDurationSeconds: 360, durationIsEstimate: false })), session: { sponsorBreakStatus: "not_due", broadcastStartedAt: "2026-01-01T00:00:00.000Z" } });
+  assert.ok(["low", "medium"].includes(low.pressureSummary.level));
+  assert.ok(["high", "critical"].includes(high.pressureSummary.level));
+  assert.equal(critical.pressureSummary.level, "critical");
+});
+
+test("30 unknown tracks stay pre-show until broadcast starts", () => {
+  const queue = Array.from({ length: 30 }, (_, index) => track(`u30-${index}`));
+  const pre = display.buildQueueTimingDisplay({ queue, session: { showStarted: false, broadcastPhase: "submission_window", sponsorBreakStatus: "not_due" } });
+  assert.equal(pre.pressureSummary.mode, "pre_show");
+  assert.equal(pre.pressureSummary.isLive, false);
+  assert.equal(pre.pressureSummary.recommendation, "Pressure activates when broadcast starts.");
+  assert.notEqual(pre.pressureSummary.label, "HIGH");
+  const live = display.buildQueueTimingDisplay({ queue, session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", sponsorBreakStatus: "not_due" } });
+  assert.equal(live.pressureSummary.mode, "live");
+  assert.equal(live.pressureSummary.isLive, true);
+  assert.ok(["low", "medium", "high", "critical"].includes(live.pressureSummary.level));
+});
+
+test("44 unknown tracks can warn live but remain pre-show before broadcast", () => {
+  const queue = Array.from({ length: 44 }, (_, index) => track(`u44-${index}`));
+  const pre = display.buildQueueTimingDisplay({ queue, session: { showStarted: false, broadcastPhase: "submission_window", sponsorBreakStatus: "not_due" } });
+  assert.equal(pre.pressureSummary.mode, "pre_show");
+  const live = display.buildQueueTimingDisplay({ queue, session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", sponsorBreakStatus: "not_due" } });
+  assert.equal(live.pressureSummary.mode, "live");
+  assert.ok(["high", "critical"].includes(live.pressureSummary.level));
+  assert.ok(live.pressureSummary.factors.some((factor) => factor.toLowerCase().includes("projected runtime")));
+});
+
+test("44 unknown pre-show projection is calibrated near 4h30-4h45 range", () => {
+  const queue = Array.from({ length: 44 }, (_, index) => track(`cal-${index}`));
+  const summary = display.buildQueueTimingDisplay({ queue, session: { sponsorBreakStatus: "not_due", showStarted: false, broadcastPhase: "submission_window" } });
+  assert.match(summary.showRuntimeSummary.publicProjectedLabel ?? "", /^About 4h (2[0-9]|3[0-9]|4[0-5])m$/);
+});
+
+test("live projection reacts to elapsed time and fast progress", () => {
+  const initial = display.buildQueueTimingDisplay({
+    queue: Array.from({ length: 44 }, (_, index) => track(`live-initial-${index}`)),
+    session: { sponsorBreakStatus: "not_due", showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: new Date(Date.now() - 2 * 60 * 1000).toISOString() },
+  });
+  const fastProgress = display.buildQueueTimingDisplay({
+    completed: Array.from({ length: 23 }, (_, index) => track(`fast-done-${index}`, { status: "played" })),
+    queue: Array.from({ length: 21 }, (_, index) => track(`fast-rem-${index}`)),
+    session: { sponsorBreakStatus: "not_due", showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: new Date(Date.now() - 8 * 60 * 1000).toISOString() },
+  });
+  const slowProgress = display.buildQueueTimingDisplay({
+    completed: Array.from({ length: 10 }, (_, index) => track(`slow-done-${index}`, { status: "played" })),
+    queue: Array.from({ length: 34 }, (_, index) => track(`slow-rem-${index}`)),
+    session: { sponsorBreakStatus: "not_due", showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: new Date(Date.now() - 90 * 60 * 1000).toISOString() },
+  });
+  assert.ok(fastProgress.pressureSummary.score < initial.pressureSummary.score);
+  assert.ok(slowProgress.pressureSummary.score > fastProgress.pressureSummary.score);
+});
+
+test("live pressure eases when tracks are removed and rises with slow pace", () => {
+  const queue44 = Array.from({ length: 44 }, (_, index) => track(`base-${index}`));
+  const liveBase = display.buildQueueTimingDisplay({ queue: queue44, session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", sponsorBreakStatus: "not_due" } });
+  const liveReduced = display.buildQueueTimingDisplay({ queue: queue44.slice(0, 32), removed: queue44.slice(32).map((t) => ({ ...t, status: "removed" })), session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", sponsorBreakStatus: "not_due", removedCount: 12 } });
+  assert.ok(liveReduced.pressureSummary.score <= liveBase.pressureSummary.score);
+  const completed = Array.from({ length: 8 }, (_, index) => track(`done-${index}`, { status: "completed", detectedDurationSeconds: 180, durationIsEstimate: false }));
+  const slow = display.buildQueueTimingDisplay({ completed, queue: Array.from({ length: 20 }, (_, index) => track(`slow-${index}`)), session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", completedRuntimeSeconds: 8 * 180, sponsorBreakStatus: "not_due" } });
+  assert.ok(slow.pressureSummary.factors.some((factor) => factor.toLowerCase().includes("slower")));
+});
+
+test("wheel owed overhead raises pressure and clearing owed overhead lowers it", () => {
+  const queue = Array.from({ length: 20 }, (_, index) => track(`wheel-${index}`));
+  const withOwed = display.buildQueueTimingDisplay({ queue, wheelSpinsOwed: 2, session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", sponsorBreakStatus: "not_due", wheelSpinsOwed: 2 } });
+  const cleared = display.buildQueueTimingDisplay({ queue, wheelSpinsOwed: 0, session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", sponsorBreakStatus: "not_due", wheelSpinsOwed: 0 } });
+  assert.ok(withOwed.wheelTimingSummary.overheadSeconds > 0);
+  assert.equal(cleared.wheelTimingSummary.overheadSeconds, 0);
+  assert.ok(withOwed.pressureSummary.score >= cleared.pressureSummary.score);
+});
+
+test("admin top bar renders pressure chip from timingSummary", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
+  assert.ok(source.includes("TopBarPressureChip pressure={topPressure} minimized"));
+  assert.ok(source.includes("TopBarPressureChip pressure={topPressure}"));
+  assert.ok(source.includes("Projected Runtime"));
+  assert.ok(source.includes("Projected: {projectedRuntimeLabel}"));
+  assert.ok(source.includes("TopBarCommercialChip summary={timingSummary.sponsorBreakSummary}"));
+  assert.ok(source.includes("Active / Capacity"));
+  assert.ok(!source.includes("Active / Total"));
+  assert.ok(!source.includes(">Runtime<"));
+  assert.ok(source.includes("Hide Diagnostics"));
+  assert.ok(source.includes("\"Diagnostics\""));
+  assert.ok(!source.includes("Show Visuals"));
+  assert.ok(!source.includes("Mark Commercial Break Complete"));
+  assert.ok(source.includes("Commercial Break Running"));
+  assert.ok(source.includes("Commercial Break Done"));
+  assert.ok(source.includes("disabled={sponsorStartDisabled}"));
 });

@@ -236,10 +236,7 @@ export function AdminRadioQueueControl() {
     if (isClearingAction) {
       const clearingTarget = state?.nowPlaying?.id === id ? state.nowPlaying : null;
       if (clearingTarget?.sourceType === "youtube") await clearOverlayPlayerSync();
-      if (!updated?.nowPlaying || updated.nowPlaying.id !== id) {
-        setLoadingPlayerId(null);
-        setClearingPlayerId(null);
-      }
+      if (!updated) setLoadingPlayerId(null);
     }
     setPlayerActionPending(false);
   }
@@ -270,13 +267,12 @@ export function AdminRadioQueueControl() {
     setMinimized(false);
     const updated = await action(entry.id, "load");
     if (updated?.nowPlaying?.id === entry.id) {
-      setLoadingPlayerId(null);
       if (entry.sourceType === "youtube") await publishOverlayYouTubeSync(entry, "playing", 0);
       else await clearOverlayPlayerSync();
       setPlayerActionPending(false);
       return;
     }
-    setLoadingPlayerId(null);
+    if (!updated) setLoadingPlayerId(null);
     setPlayerActionPending(false);
   }
   async function updateSponsorBreakState(sponsorAction: "start" | "complete" | "skip" | "reset") {

@@ -119,6 +119,7 @@ test("admin sponsor diagnostics explain gate states compactly", () => {
   assert.equal(display.sponsorDiagnosticLabel({ sponsorBreakStatus: "due", broadcastStartedAt: "2026-01-01T00:00:00.000Z", midpointReached: true, minElapsedGateReached: true, sponsorBreakIncluded: true }), "Due now");
   assert.equal(display.sponsorDiagnosticLabel({ sponsorBreakStatus: "completed" }), "Completed");
   assert.equal(display.sponsorDiagnosticLabel({ sponsorBreakStatus: "skipped" }), "Skipped");
+  assert.equal(display.sponsorDiagnosticLabel({ sponsorBreakStatus: "running", sponsorBreakSecondsRemaining: 8 * 60 + 42 }), "Running · 9m remaining");
 });
 
 test("public sponsor note appears only when the gated break is included", () => {
@@ -185,4 +186,8 @@ test("admin top bar renders pressure chip from timingSummary", () => {
   const source = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
   assert.ok(source.includes("TopBarPressureChip pressure={topPressure} minimized"));
   assert.ok(source.includes("TopBarPressureChip pressure={topPressure}"));
+  assert.ok(source.includes("Hide Diagnostics"));
+  assert.ok(source.includes("\"Diagnostics\""));
+  assert.ok(!source.includes("Show Visuals"));
+  assert.ok(!source.includes("Mark Commercial Break Complete"));
 });

@@ -179,6 +179,14 @@ test("completed sponsor break is not included again", () => {
   assert.equal(estimate.sponsorBreakSecondsIncluded, 0);
 });
 
+test("running commercial includes remaining time, not full duration", () => {
+  const now = new Date("2026-01-01T03:00:00.000Z");
+  const startedAt = new Date(now.getTime() - 4 * 60 * 1000).toISOString();
+  const estimate = timing.estimateSponsorBreakPlacement({ session: { sponsorBreakStatus: "running", sponsorBreakStartedAt: startedAt, sponsorBreakSeconds: 630 } }, { now });
+  assert.equal(estimate.sponsorBreakStatus, "running");
+  assert.ok(estimate.sponsorBreakSecondsIncluded <= 390 && estimate.sponsorBreakSecondsIncluded >= 389);
+});
+
 test("wheel overhead does not add extra song durations", () => {
   const queue = [track("wheel-runtime", { detectedDurationSeconds: 180 })];
   const snapshot = timing.buildQueueTimingSnapshot({ queue, wheelSpinsOwed: 3 }, { sponsorBreakAlreadyRun: true });

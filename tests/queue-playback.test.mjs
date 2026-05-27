@@ -914,6 +914,18 @@ test("start broadcast manually overrides a future pre-show timer", async () => {
   assert.equal(state.nextInLine?.id, free.id);
 });
 
+test("running commercial break auto-completes after 10m30s", async () => {
+  await freshOpenSession("commercial timer auto-complete");
+  let state = await queue.updateSponsorBreakState("start");
+  assert.equal(state.session.sponsorBreakStatus, "running");
+  assert.ok(state.session.sponsorBreakStartedAt);
+  const beforeDone = await withFakeNow(new Date(new Date(state.session.sponsorBreakStartedAt).getTime() + 10 * 60 * 1000), () => queue.getRadioQueueState());
+  assert.equal(beforeDone.session.sponsorBreakStatus, "running");
+  const afterDone = await withFakeNow(new Date(new Date(state.session.sponsorBreakStartedAt).getTime() + 10 * 60 * 1000 + 31 * 1000), () => queue.getRadioQueueState());
+  assert.equal(afterDone.session.sponsorBreakStatus, "completed");
+  assert.ok(afterDone.session.sponsorBreakCompletedAt);
+});
+
 test("ending broadcast is separate from closing submissions", async () => {
   await freshOpenSession("end broadcast separate");
   let state = await queue.getRadioQueueState();

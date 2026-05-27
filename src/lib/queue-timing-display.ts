@@ -256,10 +256,10 @@ export function targetStatusLabel(status: QueueTimingTargetStatus): string {
   return "Unknown";
 }
 
-export function sponsorDiagnosticLabel(sponsor: { sponsorBreakStatus?: string | null; midpointReached?: boolean | null; minElapsedGateReached?: boolean | null; secondsUntilMinElapsedGate?: number | null; sponsorBreakIncluded?: boolean | null; broadcastStartedAt?: string | null }): string {
+export function sponsorDiagnosticLabel(sponsor: { sponsorBreakStatus?: string | null; midpointReached?: boolean | null; minElapsedGateReached?: boolean | null; secondsUntilMinElapsedGate?: number | null; sponsorBreakIncluded?: boolean | null; broadcastStartedAt?: string | null; sponsorBreakSecondsRemaining?: number | null }): string {
   if (sponsor.sponsorBreakStatus === "completed") return "Completed";
   if (sponsor.sponsorBreakStatus === "skipped") return "Skipped";
-  if (sponsor.sponsorBreakStatus === "running") return "Running";
+  if (sponsor.sponsorBreakStatus === "running") return `Running${typeof sponsor.sponsorBreakSecondsRemaining === "number" ? ` · ${formatHoursMinutes(sponsor.sponsorBreakSecondsRemaining)} remaining` : ""}`;
   if (sponsor.sponsorBreakIncluded || (sponsor.midpointReached === true && sponsor.minElapsedGateReached === true)) return "Due now";
   if (!sponsor.broadcastStartedAt || sponsor.minElapsedGateReached === null) return "Waiting for playback start";
   if (sponsor.midpointReached === true && sponsor.minElapsedGateReached === false) return "Midpoint reached · waiting for 2h mark";

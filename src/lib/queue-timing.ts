@@ -120,6 +120,7 @@ export interface SponsorBreakEstimate {
   sponsorBreakAlreadyCompleted: boolean;
   sponsorBreakShouldBeIncludedBeforeTargetTrack: boolean;
   sponsorBreakSecondsIncluded: number;
+  sponsorBreakSecondsRemaining: number | null;
   sponsorBreakNotes: string[];
 }
 
@@ -391,6 +392,14 @@ function validIsoString(value: unknown): string | null {
   return Number.isFinite(time) ? value : null;
 }
 
+function secondsRemainingFrom(startedAt: string | null | undefined, totalSeconds: number, now = new Date()): number | null {
+  const started = validIsoString(startedAt);
+  if (!started) return null;
+  const elapsed = secondsSince(started, now);
+  if (elapsed === null) return null;
+  return Math.max(0, totalSeconds - elapsed);
+}
+
 function deriveBroadcastStartedAt(input: QueueTimingInput): string | null {
   const explicit = validIsoString(input.session?.broadcastStartedAt);
   if (explicit) return explicit;
@@ -445,11 +454,12 @@ export function estimateSponsorBreakPlacement(input: QueueTimingInput, options?:
 
   let sponsorBreakStatus: SponsorBreakStatus = explicitStatus ?? "unknown";
   let sponsorBreakIncluded = false;
+  const runningRemainingSeconds = explicitStatus === "running" ? secondsRemainingFrom(input.session?.sponsorBreakStartedAt, normalized.sponsorBreakSeconds, options?.now) : null;
   if (explicitStatus === "completed" || explicitStatus === "skipped") {
     sponsorBreakIncluded = false;
   } else if (explicitStatus === "running") {
     sponsorBreakIncluded = true;
-    sponsorBreakNotes.push("Sponsor break is marked running; full stored break duration is included conservatively.");
+    sponsorBreakNotes.push("Sponsor break is marked running; remaining break duration is included.");
   } else if (commercialBreakEligible) {
     sponsorBreakStatus = "due";
     sponsorBreakIncluded = true;
@@ -460,7 +470,9 @@ export function estimateSponsorBreakPlacement(input: QueueTimingInput, options?:
   }
 
   const sponsorBreakAlreadyCompleted = sponsorBreakStatus === "completed" || sponsorBreakStatus === "skipped";
-  const sponsorBreakSecondsIncluded = sponsorBreakIncluded && !sponsorBreakAlreadyCompleted ? normalized.sponsorBreakSeconds : 0;
+  const sponsorBreakSecondsIncluded = sponsorBreakIncluded && !sponsorBreakAlreadyCompleted
+    ? (explicitStatus === "running" ? (runningRemainingSeconds ?? normalized.sponsorBreakSeconds) : normalized.sponsorBreakSeconds)
+    : 0;
   if (sponsorBreakStatus === "due") sponsorBreakNotes.push("Sponsor midpoint and 2-hour broadcast gate have both been reached; include until completed or skipped.");
   if (midpointReached === true && minElapsedGateReached === false) sponsorBreakNotes.push("Sponsor midpoint is reached; waiting for the 2-hour broadcast mark.");
   if (midpointReached === false && minElapsedGateReached === true) sponsorBreakNotes.push("2-hour broadcast mark is reached; waiting for the sponsor midpoint.");
@@ -488,6 +500,7 @@ export function estimateSponsorBreakPlacement(input: QueueTimingInput, options?:
     sponsorBreakAlreadyCompleted,
     sponsorBreakShouldBeIncludedBeforeTargetTrack: sponsorBreakIncluded,
     sponsorBreakSecondsIncluded,
+    sponsorBreakSecondsRemaining: explicitStatus === "running" ? runningRemainingSeconds : null,
     sponsorBreakNotes,
   };
 }

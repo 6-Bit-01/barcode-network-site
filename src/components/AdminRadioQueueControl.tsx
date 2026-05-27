@@ -368,7 +368,7 @@ export function AdminRadioQueueControl() {
       <section className="border border-border bg-surface p-1.5">
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "session" ? null : "session")} className="min-h-9 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">{activeUtilityPanel === "session" ? "Hide Session Setup" : "Session Setup"}</button>
-          <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "visuals" ? null : "visuals")} className="min-h-9 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">{activeUtilityPanel === "visuals" ? "Hide Show Visuals" : "Show Visuals"}</button>
+          <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "visuals" ? null : "visuals")} className="min-h-9 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">{activeUtilityPanel === "visuals" ? "Hide Diagnostics" : "Diagnostics"}</button>
           <button
             type="button"
             onClick={() => setActiveUtilityPanel((value) => value === "overlay" ? null : "overlay")}
@@ -679,7 +679,7 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction }:
           <p className="uppercase tracking-[0.28em] text-accent">Runtime Diagnostics</p>
           <p className="mt-1 text-sm text-muted">{pressure.mode === "live" ? "Live pressure from broadcast timing + queue state." : pressure.mode === "ended" ? "Broadcast has ended." : "Pre-show projection from queue state. Pressure activates when broadcast starts."}</p>
         </div>
-        {canControl && <div className="flex flex-wrap gap-2"><button type="button" onClick={() => onSponsorAction("start")} className="border border-[#ffaa00]/50 px-3 py-1.5 uppercase tracking-widest text-[#ffaa00]">Mark Commercial Break Started</button><button type="button" onClick={() => onSponsorAction("complete")} className="border border-accent/50 px-3 py-1.5 uppercase tracking-widest text-accent">Mark Commercial Break Complete</button><button type="button" onClick={() => onSponsorAction("reset")} className="border border-border px-3 py-1.5 uppercase tracking-widest text-muted">Reset Commercial Break State</button></div>}
+        {canControl && <div className="flex flex-wrap gap-2"><button type="button" onClick={() => onSponsorAction("start")} className="border border-[#ffaa00]/50 px-3 py-1.5 uppercase tracking-widest text-[#ffaa00]">Mark Commercial Break Started</button><button type="button" onClick={() => onSponsorAction("reset")} className="border border-border px-3 py-1.5 uppercase tracking-widest text-muted">Reset Commercial Break State</button></div>}
       </div>
       <div className="grid gap-3 md:grid-cols-4">
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Projected Show Time</p><p className="mt-1 text-lg font-bold text-foreground">{timingSummary.showRuntimeSummary.projectedLabel}</p></div>

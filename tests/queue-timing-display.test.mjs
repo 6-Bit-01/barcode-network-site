@@ -138,3 +138,36 @@ test("pressure summary rises from comfortable to critical based on projected run
   assert.ok(["high", "critical"].includes(high.pressureSummary.level));
   assert.equal(critical.pressureSummary.level, "critical");
 });
+
+test("30 unknown tracks stay pre-show until broadcast starts", () => {
+  const queue = Array.from({ length: 30 }, (_, index) => track(`u30-${index}`));
+  const pre = display.buildQueueTimingDisplay({ queue, session: { showStarted: false, broadcastPhase: "submission_window", sponsorBreakStatus: "not_due" } });
+  assert.equal(pre.pressureSummary.mode, "pre_show");
+  assert.equal(pre.pressureSummary.isLive, false);
+  assert.equal(pre.pressureSummary.recommendation, "Pressure activates when broadcast starts.");
+  assert.notEqual(pre.pressureSummary.label, "HIGH");
+  const live = display.buildQueueTimingDisplay({ queue, session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", sponsorBreakStatus: "not_due" } });
+  assert.equal(live.pressureSummary.mode, "live");
+  assert.equal(live.pressureSummary.isLive, true);
+  assert.ok(["low", "medium", "high"].includes(live.pressureSummary.level));
+});
+
+test("44 unknown tracks can warn live but remain pre-show before broadcast", () => {
+  const queue = Array.from({ length: 44 }, (_, index) => track(`u44-${index}`));
+  const pre = display.buildQueueTimingDisplay({ queue, session: { showStarted: false, broadcastPhase: "submission_window", sponsorBreakStatus: "not_due" } });
+  assert.equal(pre.pressureSummary.mode, "pre_show");
+  const live = display.buildQueueTimingDisplay({ queue, session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", sponsorBreakStatus: "not_due" } });
+  assert.equal(live.pressureSummary.mode, "live");
+  assert.ok(["high", "critical"].includes(live.pressureSummary.level));
+  assert.ok(live.pressureSummary.factors.some((factor) => factor.toLowerCase().includes("projected runtime")));
+});
+
+test("live pressure eases when tracks are removed and rises with slow pace", () => {
+  const queue44 = Array.from({ length: 44 }, (_, index) => track(`base-${index}`));
+  const liveBase = display.buildQueueTimingDisplay({ queue: queue44, session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", sponsorBreakStatus: "not_due" } });
+  const liveReduced = display.buildQueueTimingDisplay({ queue: queue44.slice(0, 32), removed: queue44.slice(32).map((t) => ({ ...t, status: "removed" })), session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", sponsorBreakStatus: "not_due", removedCount: 12 } });
+  assert.ok(liveReduced.pressureSummary.score <= liveBase.pressureSummary.score);
+  const completed = Array.from({ length: 8 }, (_, index) => track(`done-${index}`, { status: "completed", detectedDurationSeconds: 180, durationIsEstimate: false }));
+  const slow = display.buildQueueTimingDisplay({ completed, queue: Array.from({ length: 20 }, (_, index) => track(`slow-${index}`)), session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", completedRuntimeSeconds: 8 * 180, sponsorBreakStatus: "not_due" } });
+  assert.ok(slow.pressureSummary.factors.some((factor) => factor.toLowerCase().includes("slower")));
+});

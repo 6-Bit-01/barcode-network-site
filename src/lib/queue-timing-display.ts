@@ -72,6 +72,8 @@ export interface QueueTimingDisplaySummary {
     description: string;
     recommendation: string;
     factors: string[];
+    mode: "pre_show" | "live" | "ended" | "unknown";
+    isLive: boolean;
   };
   lineFitStatus: QueueTimingTargetStatus;
   lineFitCopy: string;
@@ -136,6 +138,8 @@ function sessionTimingFields(session: QueuePublicSnapshot["session"] | QueueSess
     sponsorBreakCompletedAt: session.sponsorBreakCompletedAt,
     sponsorBreakCompletedAfterPlayableCount: session.sponsorBreakCompletedAfterPlayableCount,
     sponsorBreakManualNote: session.sponsorBreakManualNote,
+    showStarted: session.showStarted,
+    broadcastPhase: session.broadcastPhase,
   };
 }
 
@@ -145,7 +149,7 @@ export function buildQueueTimingDisplay(input: QueueTimingInput, options: { prio
   const priorityImpact = options.priorityEligible === false ? null : estimatePriorityImpact(input);
   const priorityEstimate = priorityImpact?.priorityEligible ? displayEstimate(priorityImpact.priorityEstimate as NewSubmissionTimingEstimate | ExistingTrackTimingEstimate) : null;
   const publicNotes = publicNotesFor(free.sponsorBreakIncluded, free.wheelCeremonySecondsIncluded > 0);
-  const pressureSummary = buildPressureSummary(snapshot);
+  const pressureSummary = buildPressureSummary(snapshot, input.session ?? null);
 
   return {
     submitNowFreeEstimate: displayEstimate(free),
@@ -272,7 +276,30 @@ export function sponsorStatusLabel(status?: string | null): string {
   return "Not due";
 }
 
-function buildPressureSummary(snapshot: ReturnType<typeof buildQueueTimingSnapshot>) {
+function buildPressureSummary(snapshot: ReturnType<typeof buildQueueTimingSnapshot>, session: QueueTimingInput["session"] | null) {
+  const hasBroadcastStart = Boolean(snapshot.sponsorBreak.broadcastStartedAt);
+  const isEnded = session?.broadcastPhase === "ended";
+  const showStarted = session?.showStarted === true;
+  const mode: "pre_show" | "live" | "ended" | "unknown" = isEnded ? "ended" : (hasBroadcastStart || showStarted) ? "live" : "pre_show";
+
+  if (mode !== "live") {
+    const preScore = Math.max(10, Math.min(70, Math.round((snapshot.projectedTotalShowSeconds / snapshot.targetShowSeconds) * 45)));
+    const preFactors: string[] = [];
+    if (snapshot.projectedTotalShowSeconds > snapshot.targetShowSeconds) preFactors.push("Projected runtime is over the 4h target.");
+    if (snapshot.unknownDurationCount > 0) preFactors.push(`${snapshot.unknownDurationCount} tracks still use unknown 5:00 runtime estimates.`);
+    if (snapshot.wheelCeremony.wheelSpinsOwedIncluded > 0) preFactors.push(`Wheel spins owed add ${formatHoursMinutes(snapshot.wheelCeremonySecondsIncluded)} ceremony overhead.`);
+    return {
+      score: preScore,
+      level: "low" as const,
+      label: mode === "ended" ? "ENDED" : "PRE-SHOW",
+      description: mode === "ended" ? "Broadcast is ended/archived." : "Pre-show projection only. Live pressure is inactive.",
+      recommendation: mode === "ended" ? "Broadcast is ended." : "Pressure activates when broadcast starts.",
+      factors: preFactors,
+      mode,
+      isLive: false,
+    };
+  }
+
   const factors: string[] = [];
   const projected = snapshot.projectedTotalShowSeconds;
   const projectedRatio = projected / snapshot.targetShowSeconds;
@@ -332,7 +359,7 @@ function buildPressureSummary(snapshot: ReturnType<typeof buildQueueTimingSnapsh
       : level === "medium"
         ? "Watch pacing and pending overhead."
         : "Projection is currently manageable.";
-  return { score, level, label, description, recommendation, factors };
+  return { score, level, label, description, recommendation, factors, mode: "live" as const, isLive: true };
 }
 
 export function formatHoursMinutes(seconds: number): string {

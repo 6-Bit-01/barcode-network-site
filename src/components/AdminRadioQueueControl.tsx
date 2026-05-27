@@ -653,12 +653,13 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction }:
   const wheel = timingSummary.wheelTimingSummary;
   const pressure = timingSummary.pressureSummary;
   const needleDeg = -90 + (pressure.score / 100) * 180;
+  const pressureHeading = pressure.mode === "live" ? "Live Pressure" : pressure.mode === "ended" ? "Ended" : "Pre-show Projection";
   return (
     <section className="space-y-3 border border-accent/30 bg-background/40 p-4 text-xs">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="uppercase tracking-[0.28em] text-accent">Runtime Diagnostics</p>
-          <p className="mt-1 text-sm text-muted">Projection updates from the live queue snapshot and stored durations.</p>
+          <p className="mt-1 text-sm text-muted">{pressure.mode === "live" ? "Live pressure from broadcast timing + queue state." : pressure.mode === "ended" ? "Broadcast has ended." : "Pre-show projection from queue state. Pressure activates when broadcast starts."}</p>
         </div>
         {canControl && <div className="flex flex-wrap gap-2"><button type="button" onClick={() => onSponsorAction("start")} className="border border-[#ffaa00]/50 px-3 py-1.5 uppercase tracking-widest text-[#ffaa00]">Mark Commercial Break Started</button><button type="button" onClick={() => onSponsorAction("complete")} className="border border-accent/50 px-3 py-1.5 uppercase tracking-widest text-accent">Mark Commercial Break Complete</button><button type="button" onClick={() => onSponsorAction("reset")} className="border border-border px-3 py-1.5 uppercase tracking-widest text-muted">Reset Commercial Break State</button></div>}
       </div>
@@ -670,7 +671,7 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction }:
       </div>
       <div className="grid gap-3 md:grid-cols-[1.1fr_2fr]">
         <div className="border border-border bg-surface p-3">
-          <p className="text-[10px] uppercase tracking-widest text-muted">Pressure Gauge</p>
+          <p className="text-[10px] uppercase tracking-widest text-muted">{pressureHeading}</p>
           <div className="mt-2">
             <svg viewBox="0 0 220 140" className="w-full max-w-[14rem]" role="img" aria-label={`Runtime pressure ${pressure.label} ${pressure.score} out of 100`}>
               <path d="M20 120 A90 90 0 0 1 200 120" fill="none" stroke="#2e2e2e" strokeWidth="14" />

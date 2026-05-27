@@ -61,6 +61,8 @@ export interface QueueTimingInput {
     sponsorBreakCompletedAt?: string | null;
     sponsorBreakCompletedAfterPlayableCount?: number | null;
     sponsorBreakManualNote?: string | null;
+    showStarted?: boolean | null;
+    broadcastPhase?: "warmup" | "submission_window" | "broadcast_active" | "ended" | null;
   } | null;
   completedRuntimeSeconds?: number | null;
   wheelSpinsOwed?: number | null;

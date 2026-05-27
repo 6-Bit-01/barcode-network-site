@@ -120,30 +120,35 @@ export function AdminRadioQueueControl() {
   const simulationTimerRef = useRef<number | null>(null);
   const simulationRunningRef = useRef(false);
   const simulationSpeedRef = useRef<SimulationSpeed>("normal");
-  const requestSeqRef = useRef(0);
-  const latestAppliedSeqRef = useRef(0);
+  const mutationEpochRef = useRef(0);
+  const mutationInFlightRef = useRef(0);
+  const latestAppliedMutationEpochRef = useRef(0);
 
-  function beginRequest(): number {
-    requestSeqRef.current += 1;
-    return requestSeqRef.current;
-  }
-
-  function applyStateIfFresh(next: QueueState, seq: number): void {
-    if (seq < latestAppliedSeqRef.current) return;
-    latestAppliedSeqRef.current = seq;
+  function applyMutationState(next: QueueState, epoch: number): void {
+    if (epoch < latestAppliedMutationEpochRef.current) return;
+    latestAppliedMutationEpochRef.current = epoch;
     setState(next);
   }
 
-  async function load(sessionId?: string, seq = beginRequest()) {
+  function applyPollingStateIfFresh(next: QueueState, requestEpoch: number): void {
+    if (mutationInFlightRef.current > 0) return;
+    if (requestEpoch !== mutationEpochRef.current) return;
+    if (requestEpoch < latestAppliedMutationEpochRef.current) return;
+    setState(next);
+  }
+
+  async function load(sessionId?: string) {
+    const requestEpoch = mutationEpochRef.current;
     const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
     const res = await fetch(`/api/admin/queue${suffix}`, { cache: "no-store" });
     if (!res.ok) {
-      if (seq < latestAppliedSeqRef.current) return;
+      if (mutationInFlightRef.current > 0) return;
+      if (requestEpoch !== mutationEpochRef.current) return;
       setError(res.status === 401 ? "Admin authentication required. Log in at /admin first." : "Queue control unavailable.");
       return;
     }
     setError(null);
-    applyStateIfFresh(await res.json(), seq);
+    applyPollingStateIfFresh(await res.json(), requestEpoch);
   }
 
   useEffect(() => {
@@ -168,12 +173,18 @@ export function AdminRadioQueueControl() {
   }, []);
 
   async function post(body: Record<string, unknown>): Promise<QueueState | null> {
-    const seq = beginRequest();
+    mutationEpochRef.current += 1;
+    const epoch = mutationEpochRef.current;
+    mutationInFlightRef.current += 1;
     const res = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!res.ok) return null;
-    const next = await res.json();
-    applyStateIfFresh(next, seq);
-    return next;
+    try {
+      if (!res.ok) return null;
+      const next = await res.json();
+      applyMutationState(next, epoch);
+      return next;
+    } finally {
+      mutationInFlightRef.current = Math.max(0, mutationInFlightRef.current - 1);
+    }
   }
   async function action(id: string, next: AdminQueueAction): Promise<QueueState | null> { return post(next === "pullNext" || next === "pullWheelChosen" || next === "pullFreeTransmission" || next === "startShow" || next === "addWheelSpinOwed" ? { action: next } : { id, action: next }); }
   async function simulationAction(next: SimulationAction, label: string) {

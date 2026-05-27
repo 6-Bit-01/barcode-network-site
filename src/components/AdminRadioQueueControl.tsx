@@ -531,14 +531,7 @@ function TopBarPressureChip({ pressure, minimized = false }: { pressure: ReturnT
 }
 
 function TopBarCommercialChip({ summary, minimized = false }: { summary: ReturnType<typeof buildQueueTimingDisplay>["sponsorBreakSummary"]; minimized?: boolean }) {
-  const compact = summary.status === "completed" ? "Done"
-    : summary.status === "skipped" ? "Skipped"
-      : summary.status === "due" ? "Due"
-        : summary.status === "running" ? summary.diagnosticLabel.replace("Running · ", "Running ").replace(" remaining", "")
-          : summary.diagnosticLabel === "Waiting for playback start" ? "Pre-show"
-            : summary.diagnosticLabel === "Midpoint reached · waiting for 2h mark" ? "Waiting 2h"
-              : summary.diagnosticLabel === "2h mark reached · waiting for midpoint" ? "Waiting midpoint"
-                : "Pre-show";
+  const compact = summary.compactLabel;
   const tone = compact === "Due" || compact.startsWith("Running")
     ? "border-[#ffaa00]/60 text-[#ffaa00]"
     : compact === "Done"

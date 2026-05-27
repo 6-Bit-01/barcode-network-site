@@ -122,6 +122,41 @@ test("admin sponsor diagnostics explain gate states compactly", () => {
   assert.equal(display.sponsorDiagnosticLabel({ sponsorBreakStatus: "running", sponsorBreakSecondsRemaining: 8 * 60 + 42 }), "Running · 9m remaining");
 });
 
+test("commercial dueNow is separate from included-in-projection and maps compact labels", () => {
+  const queue44 = Array.from({ length: 43 }, (_, i) => track(`q-${i}`));
+  const justStarted = display.buildQueueTimingDisplay({
+    completed: [track("done-0", { status: "played" })],
+    queue: queue44,
+    session: { sponsorBreakStatus: "not_due", broadcastStartedAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(), showStarted: true, broadcastPhase: "broadcast_active" },
+  });
+  assert.equal(justStarted.sponsorBreakSummary.dueNow, false);
+  assert.notEqual(justStarted.sponsorBreakSummary.compactLabel, "Due");
+
+  const waiting2h = display.buildQueueTimingDisplay({
+    completed: Array.from({ length: 22 }, (_, i) => track(`m-${i}`, { status: "played" })),
+    queue: Array.from({ length: 22 }, (_, i) => track(`m-q-${i}`)),
+    session: { sponsorBreakStatus: "not_due", broadcastStartedAt: new Date(Date.now() - 90 * 60 * 1000).toISOString(), showStarted: true, broadcastPhase: "broadcast_active" },
+  });
+  assert.equal(waiting2h.sponsorBreakSummary.dueNow, false);
+  assert.equal(waiting2h.sponsorBreakSummary.compactLabel, "Waiting 2h");
+
+  const waitingMidpoint = display.buildQueueTimingDisplay({
+    completed: Array.from({ length: 10 }, (_, i) => track(`g-${i}`, { status: "played" })),
+    queue: Array.from({ length: 34 }, (_, i) => track(`g-q-${i}`)),
+    session: { sponsorBreakStatus: "not_due", broadcastStartedAt: new Date(Date.now() - 140 * 60 * 1000).toISOString(), showStarted: true, broadcastPhase: "broadcast_active" },
+  });
+  assert.equal(waitingMidpoint.sponsorBreakSummary.dueNow, false);
+  assert.equal(waitingMidpoint.sponsorBreakSummary.compactLabel, "Waiting midpoint");
+
+  const due = display.buildQueueTimingDisplay({
+    completed: Array.from({ length: 22 }, (_, i) => track(`d-${i}`, { status: "played" })),
+    queue: Array.from({ length: 22 }, (_, i) => track(`d-q-${i}`)),
+    session: { sponsorBreakStatus: "due", broadcastStartedAt: new Date(Date.now() - 140 * 60 * 1000).toISOString(), showStarted: true, broadcastPhase: "broadcast_active" },
+  });
+  assert.equal(due.sponsorBreakSummary.dueNow, true);
+  assert.equal(due.sponsorBreakSummary.compactLabel, "Due");
+});
+
 test("public sponsor note appears only when the gated break is included", () => {
   const completed = Array.from({ length: 20 }, (_, index) => track(`public-done-${index}`, { status: "completed" }));
   const queue = [track("public-queued-target", { detectedDurationSeconds: 60 })];

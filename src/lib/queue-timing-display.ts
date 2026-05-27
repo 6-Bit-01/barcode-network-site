@@ -58,6 +58,11 @@ export interface QueueTimingDisplaySummary {
     completedPlayableCount: number;
     totalPlayableNonRemovedCount: number | null;
     included: boolean;
+    dueNow: boolean;
+    includedInProjection: boolean;
+    midpointReached: boolean | null;
+    twoHourGateReached: boolean | null;
+    compactLabel: string;
   };
   wheelTimingSummary: {
     owed: number;
@@ -177,6 +182,11 @@ export function buildQueueTimingDisplay(input: QueueTimingInput, options: { prio
       completedPlayableCount: snapshot.sponsorBreak.completedPlayableCount,
       totalPlayableNonRemovedCount: snapshot.sponsorBreak.totalPlayableNonRemovedCount,
       included: snapshot.sponsorBreakSecondsIncluded > 0,
+      dueNow: isSponsorDueNowNow(snapshot.sponsorBreak),
+      includedInProjection: snapshot.sponsorBreakSecondsIncluded > 0,
+      midpointReached: currentMidpointReached(snapshot.sponsorBreak),
+      twoHourGateReached: currentTwoHourGateReached(snapshot.sponsorBreak),
+      compactLabel: sponsorCompactLabel(snapshot.sponsorBreak),
     },
     wheelTimingSummary: {
       owed: snapshot.wheelCeremony.wheelSpinsOwedIncluded,
@@ -273,6 +283,34 @@ export function sponsorStatusLabel(status?: string | null): string {
   if (status === "running") return "Running";
   if (status === "completed") return "Completed";
   if (status === "skipped") return "Skipped";
+  return "Not due";
+}
+
+function currentMidpointReached(sponsor: { sponsorBreakThreshold?: number | null; completedPlayableCount?: number | null }): boolean | null {
+  if (typeof sponsor.sponsorBreakThreshold !== "number") return null;
+  return (sponsor.completedPlayableCount ?? 0) >= sponsor.sponsorBreakThreshold;
+}
+
+function currentTwoHourGateReached(sponsor: { broadcastElapsedSeconds?: number | null; sponsorBreakMinElapsedSeconds?: number | null }): boolean | null {
+  if (typeof sponsor.broadcastElapsedSeconds !== "number") return null;
+  return sponsor.broadcastElapsedSeconds >= (sponsor.sponsorBreakMinElapsedSeconds ?? DEFAULT_SPONSOR_BREAK_MIN_ELAPSED_SECONDS);
+}
+
+function isSponsorDueNowNow(sponsor: { sponsorBreakStatus?: string | null; sponsorBreakThreshold?: number | null; completedPlayableCount?: number | null; broadcastElapsedSeconds?: number | null; sponsorBreakMinElapsedSeconds?: number | null }): boolean {
+  if (sponsor.sponsorBreakStatus === "completed" || sponsor.sponsorBreakStatus === "skipped" || sponsor.sponsorBreakStatus === "running") return false;
+  return currentMidpointReached(sponsor) === true && currentTwoHourGateReached(sponsor) === true;
+}
+
+function sponsorCompactLabel(sponsor: { sponsorBreakStatus?: string | null; sponsorBreakThreshold?: number | null; completedPlayableCount?: number | null; broadcastElapsedSeconds?: number | null; sponsorBreakMinElapsedSeconds?: number | null; broadcastStartedAt?: string | null; sponsorBreakSecondsRemaining?: number | null }): string {
+  if (sponsor.sponsorBreakStatus === "completed") return "Done";
+  if (sponsor.sponsorBreakStatus === "skipped") return "Skipped";
+  if (sponsor.sponsorBreakStatus === "running") return `Running ${formatHoursMinutes(sponsor.sponsorBreakSecondsRemaining ?? 0)}`;
+  const midpointReached = currentMidpointReached(sponsor);
+  const twoHourGateReached = currentTwoHourGateReached(sponsor);
+  if (!sponsor.broadcastStartedAt || twoHourGateReached === null) return "Pre-show";
+  if (midpointReached === true && twoHourGateReached === false) return "Waiting 2h";
+  if (midpointReached === false && twoHourGateReached === true) return "Waiting midpoint";
+  if (isSponsorDueNowNow(sponsor)) return "Due";
   return "Not due";
 }
 

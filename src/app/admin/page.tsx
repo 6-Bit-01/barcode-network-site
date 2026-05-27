@@ -6,7 +6,7 @@ import { useState, useEffect } from "react";
 
 type BNLStatusValue = "ONLINE" | "OFFLINE";
 type BNLModeValue = "STANDBY" | "OBSERVATION" | "ACTIVE_LIAISON" | "SIGNAL_DEGRADATION" | "RESTRICTED";
-type BNLSourceValue = "bot" | "startup" | "relay" | "heartbeat" | "showday" | "showtest" | "admin" | "reset" | "unknown";
+type BNLSourceValue = "bot" | "startup" | "relay" | "heartbeat" | "showday" | "showtest" | "admin" | "reset" | "forcePull" | "unknown";
 
 interface BNLAdminState {
   status: BNLStatusValue;
@@ -42,6 +42,7 @@ const SOURCE_LABELS: Record<BNLSourceValue, string> = {
   showtest: "Test command",
   admin: "Manual admin update",
   reset: "Admin reset",
+  forcePull: "Immediate check-in",
   unknown: "Unknown source",
 };
 
@@ -241,7 +242,6 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
     <p><strong>History refresh:</strong> Relay metadata/history refresh automatically and can also be refreshed manually with <em>Refresh BNL Status</em>.</p>
   </div>
   <p className="text-xs text-muted">Last immediate check-in request: {forcePullRequestedAt || "never"}.</p>
-  <p className="text-xs text-muted">This requests a bot-side check-in and does not itself generate a new relay message. If BNL has not posted new status data yet, the public relay may remain unchanged.</p>
   {relayActionError && <p className="text-xs text-danger">Immediate check-in request failed: {relayActionError}</p>}
   {relayActionNote && <p className="text-xs text-muted">{relayActionNote}</p>}
   <div><p className="text-xs text-muted mb-2">Kill switches are stored for future bot consumption.</p>

@@ -93,7 +93,7 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
   }, [ceremony?.status, result]);
   useEffect(() => {
     if (!focusWheelTick || !wheelSectionRef.current) return;
-    wheelSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    wheelSectionRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [focusWheelTick]);
 
   return (
@@ -112,7 +112,7 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
         <div className="border border-border bg-surface p-3 md:col-span-2"><p className="text-xs uppercase tracking-widest text-muted">Reason</p><p className="mt-1 text-muted">{scene?.reason ?? "Reading live show state."}</p></div>
       </div>
 
-      <section ref={wheelSectionRef} className={wheelAttention ? "space-y-3 border-2 border-cyan-300/70 bg-cyan-300/15 p-4 shadow-[0_0_30px_rgba(103,232,249,0.2)]" : "space-y-3 border border-border bg-surface p-4 opacity-80"}>
+      <section ref={wheelSectionRef} className={wheelAttention ? "scroll-mt-32 space-y-3 border-2 border-cyan-300/70 bg-cyan-300/15 p-4 shadow-[0_0_30px_rgba(103,232,249,0.2)]" : "scroll-mt-32 space-y-3 border border-border bg-surface p-4 opacity-80"}>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-cyan-200">Wheel</p>

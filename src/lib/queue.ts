@@ -296,11 +296,21 @@ function preserveDisplacedNonPriorityNext(session: QueueSession, entry: QueueEnt
 }
 
 function resolveNextInLine(session: QueueSession, excludeId?: string, force = false): void {
+  normalizeTrackUniqueness(session);
+  const blockedIds = new Set([
+    ...session.completed.map((entry) => entry.id),
+    ...session.removed.map((entry) => entry.id),
+  ]);
   let current = session.nextInLineTrack ?? null;
+  if (current && blockedIds.has(current.id)) {
+    clearNextInLine(session);
+    current = null;
+  }
   if (session.autoRoutingPaused && !force) {
     if (current) return;
     const priority = laneTop(session, "priority", excludeId ?? session.nextInLineHoldTrackId ?? session.loadedTrackId ?? undefined);
     if (!priority) return;
+    if (blockedIds.has(priority.id) || session.loadedTrack?.id === priority.id) return;
     stageNextInLineTrack(session, priority);
     return;
   }
@@ -314,6 +324,7 @@ function resolveNextInLine(session: QueueSession, excludeId?: string, force = fa
 
   const priority = laneTop(session, "priority", excludeId ?? session.nextInLineHoldTrackId ?? session.loadedTrackId ?? undefined);
   if (priority) {
+    if (blockedIds.has(priority.id) || session.loadedTrack?.id === priority.id) return;
     if (current) {
       preserveDisplacedNonPriorityNext(session, current);
       clearNextInLine(session);
@@ -325,6 +336,10 @@ function resolveNextInLine(session: QueueSession, excludeId?: string, force = fa
   if (current) return;
   const next = chooseNextWaitingCandidate(session, excludeId);
   if (!next) return;
+  if (blockedIds.has(next.entry.id) || session.loadedTrack?.id === next.entry.id) {
+    session.queue = session.queue.filter((entry) => entry.id !== next.entry.id);
+    return;
+  }
   stageNextInLineTrack(session, next.entry, next.fallbackForLane);
 }
 
@@ -379,6 +394,23 @@ function clearLoadedTrack(session: QueueSession): QueueEntry | null {
   session.loadedTrackWasNextInLine = false;
   session.loadedTrackFallbackForLane = null;
   return current;
+}
+
+function removeTrackFromActiveLocations(session: QueueSession, trackId: string): void {
+  session.queue = session.queue.filter((entry) => entry.id !== trackId);
+  if (session.nextInLineTrack?.id === trackId) clearNextInLine(session);
+  if (session.loadedTrack?.id === trackId) clearLoadedTrack(session);
+}
+
+function normalizeTrackUniqueness(session: QueueSession): void {
+  const blockedIds = new Set([
+    ...session.completed.map((entry) => entry.id),
+    ...session.removed.map((entry) => entry.id),
+  ]);
+  if (blockedIds.size === 0) return;
+  session.queue = session.queue.filter((entry) => !blockedIds.has(entry.id));
+  if (session.nextInLineTrack && blockedIds.has(session.nextInLineTrack.id)) clearNextInLine(session);
+  if (session.loadedTrack && blockedIds.has(session.loadedTrack.id)) clearLoadedTrack(session);
 }
 
 function setLoadedTrack(session: QueueSession, entry: QueueEntry, previousLane?: QueueLane | null, previousIndex?: number | null, wasNextInLine = false): QueueEntry {
@@ -2124,6 +2156,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
       session.nextInLineHoldTrackId = null;
       const current = clearLoadedTrack(session);
       if (current) {
+        removeTrackFromActiveLocations(session, current.id);
         const now = new Date().toISOString();
         if (!session.broadcastStartedAt) session.broadcastStartedAt = current.playedAt ?? now;
         session.completed.unshift({ ...current, status: "played", playedAt: current.playedAt ?? now, completedAt: now });
@@ -2134,6 +2167,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
       session.nextInLineHoldTrackId = null;
       const current = clearLoadedTrack(session);
       if (current) {
+        removeTrackFromActiveLocations(session, current.id);
         session.removed.unshift({ ...current, status: "removed", removedAt: new Date().toISOString() });
       }
     }
@@ -2160,6 +2194,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
     if (action === "finish") {
       const current = clearNextInLine(session);
       if (current) {
+        removeTrackFromActiveLocations(session, current.id);
         const now = new Date().toISOString();
         if (!session.broadcastStartedAt) session.broadcastStartedAt = current.playedAt ?? now;
         session.completed.unshift({ ...current, status: "played", playedAt: current.playedAt ?? now, completedAt: now });
@@ -2170,6 +2205,7 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
     if (action === "remove") {
       const current = clearNextInLine(session);
       if (current) {
+        removeTrackFromActiveLocations(session, current.id);
         session.removed.unshift({ ...current, status: "removed", removedAt: new Date().toISOString() });
         if ((current.lane ?? "regular") === "wheel") {
           session.wheelSpinsOwed = normalizeWheelSpinsOwed(session.wheelSpinsOwed) + 1;
@@ -2205,11 +2241,13 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
   }
   if (action === "finish") {
     session.queue.splice(index, 1);
+    removeTrackFromActiveLocations(session, active.id);
     session.completed.unshift({ ...active, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
     advanceNonPriorityLaneAfter(session, active.lane);
   }
   if (action === "remove") {
     session.queue.splice(index, 1);
+    removeTrackFromActiveLocations(session, active.id);
     session.removed.unshift({ ...active, status: "removed", removedAt: new Date().toISOString() });
   }
   pullNextInLine(session);

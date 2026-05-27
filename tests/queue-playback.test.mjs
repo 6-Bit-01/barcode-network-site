@@ -1172,6 +1172,66 @@ test("priority can claim Next In Line after failed wheel removal hold", async ()
   assert.equal(state.session.wheelSpinsOwed, 1, "owed Wheel remains underneath Priority");
 });
 
+test("finish loaded track cannot reappear in Next In Line after refresh", async () => {
+  await freshOpenSession("finish loaded no resurrect");
+  const first = await addTrack("Finish Loaded First");
+  await addTrack("Finish Loaded Second");
+  let state = await queue.updateRadioTrack("", "pullNext");
+  state = await queue.updateRadioTrack(state.nextInLine.id, "load");
+  state = await queue.updateRadioTrack(first.id, "finish");
+  const counts = countTrackOccurrences(state, first.id);
+  assert.equal(counts.total, 1);
+  assert.equal(counts.historyCount, 1);
+  assert.notEqual(state.nextInLine?.id, first.id);
+  state = await queue.getRadioQueueState();
+  assert.notEqual(state.nextInLine?.id, first.id);
+});
+
+test("finish next in line directly cannot resurrect", async () => {
+  await freshOpenSession("finish next no resurrect");
+  const track = await addTrack("Finish Next Track");
+  let state = await queue.updateRadioTrack("", "pullNext");
+  assert.equal(state.nextInLine?.id, track.id);
+  state = await queue.updateRadioTrack(track.id, "finish");
+  const counts = countTrackOccurrences(state, track.id);
+  assert.equal(counts.historyCount, 1);
+  assert.equal(counts.queueCount, 0);
+  assert.equal(counts.nextCount, 0);
+  assert.equal(counts.nowPlayingCount, 0);
+  state = await queue.getRadioQueueState();
+  assert.equal(countTrackOccurrences(state, track.id).total, 1);
+});
+
+test("remove loaded and next track cannot resurrect", async () => {
+  await freshOpenSession("remove no resurrect");
+  const loadedTrack = await addTrack("Remove Loaded");
+  const nextTrack = await addTrack("Remove Next");
+  let state = await queue.updateRadioTrack("", "pullNext");
+  state = await queue.updateRadioTrack(state.nextInLine.id, "load");
+  state = await queue.updateRadioTrack(loadedTrack.id, "remove");
+  assert.equal(countTrackOccurrences(state, loadedTrack.id).removedCount, 1);
+  state = await queue.updateRadioTrack(nextTrack.id, "remove");
+  assert.equal(countTrackOccurrences(state, nextTrack.id).removedCount, 1);
+  state = await queue.getRadioQueueState();
+  assert.equal(countTrackOccurrences(state, loadedTrack.id).total, 1);
+  assert.equal(countTrackOccurrences(state, nextTrack.id).total, 1);
+});
+
+test("track uniqueness invariant holds across load finish remove and moveBack", async () => {
+  await freshOpenSession("uniqueness invariant");
+  const free = await addTrack("Unique Free");
+  const wheel = await addTrack("Unique Wheel");
+  let state = await queue.updateRadioTrack(wheel.id, "wheel");
+  state = await queue.updateRadioTrack("", "pullNext");
+  state = await queue.updateRadioTrack(state.nextInLine.id, "load");
+  state = await queue.updateRadioTrack(free.id, "moveBack");
+  assert.equal(countTrackOccurrences(state, free.id).total, 1);
+  state = await queue.updateRadioTrack(wheel.id, "load");
+  state = await queue.updateRadioTrack(wheel.id, "finish");
+  assert.equal(countTrackOccurrences(state, wheel.id).total, 1);
+  assert.equal(countTrackOccurrences(state, wheel.id).historyCount, 1);
+});
+
 test("removed regular track cannot be restored to priority", async () => {
   await freshOpenSession("restore priority guard removed regular");
   const regular = await addTrack("Removed Regular");

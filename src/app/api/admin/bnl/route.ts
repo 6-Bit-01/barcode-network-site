@@ -261,7 +261,12 @@ export async function POST(req: Request) {
         console.warn('[admin/bnl] forcePull requested without redis persistence; request timestamp may not be visible across serverless instances');
       }
 
-      const webhookDelivery = await notifyForcePull(now);
+      const webhookDeliveryResult = await notifyForcePull(now);
+      const webhookDelivery = {
+        ...webhookDeliveryResult,
+        persisted: Boolean(redis),
+        forcePullRequestedAt: now,
+      };
 
       console.info('[admin/bnl] forcePull requested at', now, { webhookDelivered: webhookDelivery.delivered, webhookStatus: webhookDelivery.status ?? null });
       if (!webhookDelivery.delivered) {

@@ -41,7 +41,7 @@ const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 1000;
 const DEFAULT_PRIORITY_UPGRADE_CURRENCY = "usd";
 const PRE_SHOW_ROUTING_DELAY_MS = (20 * 60 + 15) * 1000;
 
-type QueueAdminAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "pausePriority" | "resumePriority" | "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
+type QueueAdminAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "resolvePaidPriority" | "pausePriority" | "resumePriority" | "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
 
 export interface PriorityUpgradeSettingsInput {
   enabled?: boolean;
@@ -1864,6 +1864,34 @@ function applyPriorityUpgradeAdminCorrection(session: QueueSession, id: string, 
   return false;
 }
 
+function resolvePaidPriorityTrack(session: QueueSession, id: string): boolean {
+  const queueIndex = session.queue.findIndex((entry) => entry.id === id);
+  if (queueIndex < 0) return false;
+  const track = session.queue[queueIndex];
+  if (track.priorityUpgradeStatus !== "paid_needs_attention" || track.status !== "queued") return false;
+  if ((track.lane ?? "regular") !== "regular" && (track.lane ?? "regular") !== "wheel") return false;
+  const now = new Date().toISOString();
+  session.queue[queueIndex] = normalizeEntry({
+    ...track,
+    lane: "priority",
+    tier: "fastlane",
+    priorityUpgradeRequested: true,
+    priorityUpgradeStatus: "paid",
+    priorityUpgradeSource: track.priorityUpgradeSource ?? "stripe",
+    priorityUpgradeAt: track.priorityUpgradeAt ?? now,
+    priorityUpgradeRequestedAt: track.priorityUpgradeRequestedAt ?? now,
+    priorityUpgradePaidAt: track.priorityUpgradePaidAt ?? now,
+    priorityPausedAt: null,
+    priorityResumedAt: null,
+    priorityQueueOrderAt: track.priorityQueueOrderAt ?? track.priorityUpgradePaidAt ?? now,
+    displacedFromNextInLineAt: null,
+    stagedAsFallbackForLane: null,
+  });
+  session.queue = sortActive(session.queue);
+  resolveNextInLine(session, undefined, true);
+  return true;
+}
+
 function restoreEntry(entry: QueueEntry, lane: QueueLane): QueueEntry {
   return normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : "free", status: "queued", createdAt: new Date().toISOString(), playedAt: null, completedAt: null, removedAt: null, restoredAt: new Date().toISOString(), displacedFromNextInLineAt: null, ...priorityUpgradeMetadata(entry, lane) });
 }
@@ -2113,6 +2141,15 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
       await writeStore(nextStore);
       return queueStateFromSession(session, nextStore);
     }
+  }
+
+  if (action === "resolvePaidPriority") {
+    if (resolvePaidPriorityTrack(session, id)) {
+      const nextStore = replaceSession(store, session);
+      await writeStore(nextStore);
+      return queueStateFromSession(session, nextStore);
+    }
+    return queueStateFromSession(session, store);
   }
 
   if (action === "pullNext") {

@@ -1349,6 +1349,74 @@ test("wheel ceremony eligibility helper excludes unsafe queue states", () => {
   assert.equal(queue.isWheelEligibleTrack({ ...base, id: "removed", status: "removed" }), false, "removed is excluded");
 });
 
+test("requestPriorityCheckout accepts eligible regular and wheel tracks and rejects paid or paid-needs-attention", async () => {
+  const sessionId = await freshOpenSession("priority checkout eligibility", { showStarted: false });
+  await queue.updatePriorityUpgradeSettings({ enabled: true, paymentsEnabled: true, priceCents: 1000, currency: "usd" });
+  const regular = await addTrack("Checkout Eligible Regular");
+  const wheel = await addTrack("Checkout Eligible Wheel");
+  await queue.updateRadioTrack(wheel.id, "wheel");
+  await queue.updateRadioTrack(wheel.id, "moveBack");
+
+  const regularRequest = await queue.requestPriorityCheckout(regular.id, sessionId);
+  const wheelRequest = await queue.requestPriorityCheckout(wheel.id, sessionId);
+  assert.equal(regularRequest.track.id, regular.id);
+  assert.equal(wheelRequest.track.id, wheel.id);
+
+  await payPriority(regular, sessionId);
+  await assert.rejects(() => queue.requestPriorityCheckout(regular.id, sessionId), /not available/);
+
+  await queue.markPriorityUpgradePaidFromStripe(wheel.id, sessionId, {
+    paymentId: `pi_attention_${Date.now()}`,
+    amountCents: 1000,
+    currency: "usd",
+    paidAt: new Date().toISOString(),
+  });
+  await assert.rejects(() => queue.requestPriorityCheckout(wheel.id, sessionId), /not available/);
+});
+
+test("markPriorityUpgradeCheckoutPending preserves existing track data", async () => {
+  const sessionId = await freshOpenSession("priority checkout pending metadata", { showStarted: false });
+  const track = await addTrack("Checkout Pending Metadata");
+  const before = await queue.getRadioQueueState();
+  const existing = queuedTrack(before, track.id);
+  await queue.markPriorityUpgradeCheckoutPending(track.id, sessionId, {
+    provider: "stripe",
+    checkoutSessionId: "cs_test_123",
+    checkoutUrl: "https://example.com/checkout",
+    checkoutCreatedAt: new Date().toISOString(),
+    checkoutExpiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+  });
+  const after = await queue.getRadioQueueState();
+  const updated = queuedTrack(after, track.id);
+  assert.equal(updated?.artist, existing?.artist);
+  assert.equal(updated?.title, existing?.title);
+  assert.equal(updated?.priorityUpgradeStatus, "checkout_pending");
+  assert.equal(updated?.priorityUpgradeCheckoutSessionId, "cs_test_123");
+});
+
+test("resolvePaidPriority promotes safe queued paid_needs_attention without duplicating or clearing payment metadata", async () => {
+  const sessionId = await freshOpenSession("resolve paid priority");
+  const track = await addTrack("Resolve Paid Needs Attention");
+  let state = await queue.updateRadioTrack("", "pullNext");
+  assert.equal(state.nextInLine?.id, track.id);
+  await queue.markPriorityUpgradePaidFromStripe(track.id, sessionId, {
+    paymentId: "pi_resolve_paid_attention",
+    amountCents: 1500,
+    currency: "usd",
+    paidAt: new Date().toISOString(),
+  });
+  state = await queue.getRadioQueueState();
+  const beforeResolve = state.nextInLine?.id === track.id ? state.nextInLine : queuedTrack(state, track.id);
+  assert.equal(beforeResolve?.priorityUpgradeStatus, "paid_needs_attention");
+  state = await queue.updateRadioTrack(track.id, "moveBack");
+  state = await queue.updateRadioTrack(track.id, "resolvePaidPriority");
+  const resolved = queuedTrack(state, track.id) ?? state.nextInLine;
+  assert.equal(resolved?.priorityUpgradeStatus, "paid");
+  assert.equal(resolved?.lane, "priority");
+  assert.equal(resolved?.priorityUpgradePaymentId, "pi_resolve_paid_attention");
+  assert.equal(countTrackOccurrences(state, track.id).total, 1);
+});
+
 
 test("wheel re-encrypt rerolls visually without consuming owed spin or marking Wheel Chosen", async () => {
   await freshOpenSession("wheel reencrypt", { showStarted: true });

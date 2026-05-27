@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 type BNLStatusValue = "ONLINE" | "OFFLINE";
 type BNLModeValue = "STANDBY" | "OBSERVATION" | "ACTIVE_LIAISON" | "SIGNAL_DEGRADATION" | "RESTRICTED";
-type BNLSourceValue = "bot" | "startup" | "relay" | "heartbeat" | "showday" | "showtest" | "admin" | "reset" | "unknown";
+type BNLSourceValue = "bot" | "startup" | "relay" | "heartbeat" | "showday" | "showtest" | "admin" | "reset" | "forcePull" | "unknown";
 
 type BNLFlags = {
   websiteRelayEnabled: boolean;
@@ -52,7 +52,7 @@ async function isAuthenticated(req: Request): Promise<boolean> {
 
 function sanitizeHistory(value: unknown): typeof memoryHistory {
   if (!Array.isArray(value)) return [];
-  const allowedSources = new Set<BNLSourceValue>(["bot", "startup", "relay", "heartbeat", "showday", "showtest", "admin", "reset", "unknown"]);
+  const allowedSources = new Set<BNLSourceValue>(["bot", "startup", "relay", "heartbeat", "showday", "showtest", "admin", "reset", "forcePull", "unknown"]);
   const normalized: typeof memoryHistory = [];
   for (const item of value) {
     if (!item || typeof item !== "object") continue;
@@ -261,7 +261,12 @@ export async function POST(req: Request) {
         console.warn('[admin/bnl] forcePull requested without redis persistence; request timestamp may not be visible across serverless instances');
       }
 
-      const webhookDelivery = await notifyForcePull(now);
+      const webhookDeliveryResult = await notifyForcePull(now);
+      const webhookDelivery = {
+        ...webhookDeliveryResult,
+        persisted: Boolean(redis),
+        forcePullRequestedAt: now,
+      };
 
       console.info('[admin/bnl] forcePull requested at', now, { webhookDelivered: webhookDelivery.delivered, webhookStatus: webhookDelivery.status ?? null });
       if (!webhookDelivery.delivered) {

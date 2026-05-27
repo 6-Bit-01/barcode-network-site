@@ -6,7 +6,7 @@ import { useState, useEffect } from "react";
 
 type BNLStatusValue = "ONLINE" | "OFFLINE";
 type BNLModeValue = "STANDBY" | "OBSERVATION" | "ACTIVE_LIAISON" | "SIGNAL_DEGRADATION" | "RESTRICTED";
-type BNLSourceValue = "bot" | "startup" | "relay" | "heartbeat" | "showday" | "showtest" | "admin" | "reset" | "unknown";
+type BNLSourceValue = "bot" | "startup" | "relay" | "heartbeat" | "showday" | "showtest" | "admin" | "reset" | "forcePull" | "unknown";
 
 interface BNLAdminState {
   status: BNLStatusValue;
@@ -42,6 +42,7 @@ const SOURCE_LABELS: Record<BNLSourceValue, string> = {
   showtest: "Test command",
   admin: "Manual admin update",
   reset: "Admin reset",
+  forcePull: "Immediate check-in",
   unknown: "Unknown source",
 };
 
@@ -132,6 +133,26 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
     }
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (cancelled) return;
+      try {
+        await loadBnl();
+      } catch (error) {
+        console.error("[admin] failed to refresh BNL state:", error);
+      }
+    };
+    void load();
+    const interval = window.setInterval(() => {
+      void load();
+    }, 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, []);
+
   const updateRelay = async (action: 'updateStatus' | 'resetStandby') => {
     await fetch('/api/admin/bnl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action === 'resetStandby' ? { action } : { action, ...relayForm }) });
     await loadBnl();
@@ -154,18 +175,24 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
       const res = await fetch('/api/admin/bnl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'forcePull' }) });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const reason = typeof payload?.error === 'string' ? payload.error : `Request failed (${res.status})`;
+        const reasonParts = [
+          typeof payload?.error === "string" ? payload.error : `Request failed (${res.status})`,
+          payload?.webhookDelivery?.reason ? `reason: ${payload.webhookDelivery.reason}` : null,
+          typeof payload?.webhookDelivery?.status === "number" ? `status: ${payload.webhookDelivery.status}` : null,
+        ].filter(Boolean);
+        const reason = reasonParts.join(" | ");
         throw new Error(reason);
       }
       if (typeof payload?.note === "string") setRelayActionNote(payload.note);
       if (payload?.webhookDelivery && payload.webhookDelivery.delivered === false) {
         console.warn("[admin] forcePull webhook delivery warning:", payload.webhookDelivery);
       }
-      await loadBnl();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to request immediate check-in';
       console.error('[admin] forcePull request failed:', error);
       setRelayActionError(message);
+    } finally {
+      await loadBnl();
     }
   };
 
@@ -179,7 +206,7 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
 
   <div className="grid grid-cols-1 md:grid-cols-2 gap-8"><div className="border border-border bg-surface p-6"><h2 className="text-[10px] uppercase tracking-[0.5em] text-muted mb-6">BARCODE Radio — Live Status</h2><button onClick={toggleLive} className="w-full px-4 py-3 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all font-bold">{isLive ? 'GO OFFLINE':'GO LIVE'}</button><div className="text-xs text-muted/50 mt-3"><p>// Scheduled: {isScheduled ? 'YES' : 'NO'}</p><p>// Override: {manualOverride ? 'ACTIVE' : 'NONE'}</p><p>// Persistence: {persisted === null ? 'UNKNOWN' : persisted ? 'REDIS' : 'IN-MEMORY'}</p>{lastError && <p className='text-danger'>{lastError}</p>}</div></div><div className="border border-border bg-surface p-6"><h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted mb-6">Stream URL</h2><input type="url" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /><button onClick={() => setStreamUrl(urlInput)} className="mt-4 w-full px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all">Update Stream URL</button></div></div>
 
-  <div className="border border-border bg-surface p-6 space-y-5"><div><h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted">BNL-01 Relay Control</h2><p className="text-xs text-muted/70 mt-2">Admin controls for relay state, safety flags, and operator history.</p></div>
+  <div className="border border-border bg-surface p-6 space-y-5"><div><h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted">BNL-01 Relay Control</h2><p className="text-xs text-muted/70 mt-2">Admin controls for relay state, safety flags, and operator history. State refreshes automatically every 15 seconds.</p></div>
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-muted"><p>BNL status API reachable: <span className="text-foreground">{bnlApiReachable ? 'yes':'no'}</span></p><p>Last seen age: <span className="text-foreground">{lastSeenAge}</span></p><p>Redis persistence: <span className="text-foreground">{bnl.persisted ? 'enabled':'in-memory fallback'}</span></p><p>Current mode: <span className="text-foreground">{bnl.mode}</span></p></div>
   <div className="space-y-3">
     <div className="text-sm border border-border p-4 bg-background/40">
@@ -206,13 +233,15 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
   </div>
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><select value={relayForm.status} onChange={(e)=>setRelayForm({...relayForm,status:e.target.value as BNLStatusValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>ONLINE</option><option>OFFLINE</option></select><select value={relayForm.mode} onChange={(e)=>setRelayForm({...relayForm,mode:e.target.value as BNLModeValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>STANDBY</option><option>OBSERVATION</option><option>ACTIVE_LIAISON</option><option>SIGNAL_DEGRADATION</option><option>RESTRICTED</option></select></div>
   <textarea value={relayForm.message} maxLength={600} onChange={(e)=>setRelayForm({...relayForm,message:e.target.value.slice(0,600)})} className="w-full bg-background border border-border px-3 py-2.5 text-sm" />
-  <div className="flex flex-wrap gap-3"><button onClick={()=>updateRelay('updateStatus')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all">Update BNL Relay</button><button onClick={()=>updateRelay('resetStandby')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all">Reset BNL Relay to Standby</button><button onClick={requestForcePull} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all">Request Immediate BNL Check-in</button></div>
+  <div className="flex flex-wrap gap-3"><button onClick={()=>updateRelay('updateStatus')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all">Update BNL Relay</button><button onClick={()=>updateRelay('resetStandby')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all">Reset BNL Relay to Standby</button><button onClick={requestForcePull} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all">Request Immediate BNL Check-in</button><button onClick={loadBnl} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all">Refresh BNL Status</button></div>
   <div className="text-xs text-muted space-y-1">
     <p><strong>Update BNL Relay:</strong> Publishes the status, mode, and message entered above to the public website relay immediately.</p>
     <p><strong>Reset BNL Relay to Standby:</strong> Sets relay back to monitoring/standby messaging and marks source as admin reset.</p>
+    <p><strong>Request Immediate BNL Check-in:</strong> Sends a forcePull request to the bot/VPS endpoint so it can generate and push a fresh relay update.</p>
+    <p><strong>If webhook delivery fails:</strong> The request timestamp is still recorded on this site, but the bot endpoint did not receive the check-in request.</p>
+    <p><strong>History refresh:</strong> Relay metadata/history refresh automatically and can also be refreshed manually with <em>Refresh BNL Status</em>.</p>
   </div>
   <p className="text-xs text-muted">Last immediate check-in request: {forcePullRequestedAt || "never"}.</p>
-  <p className="text-xs text-muted">This requests a bot-side check-in and does not itself generate a new relay message. If BNL has not posted new status data yet, the public relay may remain unchanged.</p>
   {relayActionError && <p className="text-xs text-danger">Immediate check-in request failed: {relayActionError}</p>}
   {relayActionNote && <p className="text-xs text-muted">{relayActionNote}</p>}
   <div><p className="text-xs text-muted mb-2">Kill switches are stored for future bot consumption.</p>

@@ -689,6 +689,14 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction }:
   const pressure = timingSummary.pressureSummary;
   const needleDeg = -90 + (pressure.score / 100) * 180;
   const pressureHeading = pressure.mode === "live" ? "Live Pressure" : pressure.mode === "ended" ? "Ended" : "Pre-show Projection";
+  const sponsorStartDisabled = sponsor.status === "running" || sponsor.status === "completed" || sponsor.status === "skipped";
+  const sponsorStartLabel = sponsor.status === "running"
+    ? `Commercial Break Running${sponsor.diagnosticLabel.includes("remaining") ? ` · ${sponsor.diagnosticLabel.split("·")[1]?.trim().replace("remaining", "").trim()}` : ""}`
+    : sponsor.status === "completed"
+      ? "Commercial Break Done"
+      : sponsor.status === "skipped"
+        ? "Commercial Break Skipped"
+        : "Mark Commercial Break Started";
   return (
     <section className="space-y-3 border border-accent/30 bg-background/40 p-4 text-xs">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -696,7 +704,7 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction }:
           <p className="uppercase tracking-[0.28em] text-accent">Runtime Diagnostics</p>
           <p className="mt-1 text-sm text-muted">{pressure.mode === "live" ? "Live pressure from broadcast timing + queue state." : pressure.mode === "ended" ? "Broadcast has ended." : "Pre-show projection from queue state. Pressure activates when broadcast starts."}</p>
         </div>
-        {canControl && <div className="flex flex-wrap gap-2"><button type="button" onClick={() => onSponsorAction("start")} className="border border-[#ffaa00]/50 px-3 py-1.5 uppercase tracking-widest text-[#ffaa00]">Mark Commercial Break Started</button><button type="button" onClick={() => onSponsorAction("reset")} className="border border-border px-3 py-1.5 uppercase tracking-widest text-muted">Reset Commercial Break State</button></div>}
+        {canControl && <div className="flex flex-wrap gap-2"><button type="button" disabled={sponsorStartDisabled} onClick={() => !sponsorStartDisabled && onSponsorAction("start")} className={`px-3 py-1.5 uppercase tracking-widest ${sponsorStartDisabled ? "cursor-not-allowed border border-border text-muted opacity-70" : "border border-[#ffaa00]/50 text-[#ffaa00]"}`}>{sponsorStartLabel}</button><button type="button" onClick={() => onSponsorAction("reset")} className="border border-border px-3 py-1.5 uppercase tracking-widest text-muted">Reset Commercial Break State</button></div>}
       </div>
       <div className="grid gap-3 md:grid-cols-4">
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Projected Show Time</p><p className="mt-1 text-lg font-bold text-foreground">{timingSummary.showRuntimeSummary.projectedLabel}</p></div>

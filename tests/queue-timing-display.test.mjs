@@ -256,4 +256,7 @@ test("admin top bar renders pressure chip from timingSummary", () => {
   assert.ok(source.includes("\"Diagnostics\""));
   assert.ok(!source.includes("Show Visuals"));
   assert.ok(!source.includes("Mark Commercial Break Complete"));
+  assert.ok(source.includes("Commercial Break Running"));
+  assert.ok(source.includes("Commercial Break Done"));
+  assert.ok(source.includes("disabled={sponsorStartDisabled}"));
 });

@@ -1679,6 +1679,9 @@ export async function updateSponsorBreakState(action: "start" | "complete" | "sk
   if (session.status === "archived") return queueStateFromSession(session, store);
   const now = new Date().toISOString();
   const completedPlayable = session.completed.length;
+  if (action === "start" && (session.sponsorBreakStatus === "running" || session.sponsorBreakStatus === "completed" || session.sponsorBreakStatus === "skipped")) {
+    return queueStateFromSession(session, store);
+  }
   const next = normalizeSession({
     ...session,
     sponsorBreakStatus: action === "start" ? "running" : action === "complete" ? "completed" : action === "skip" ? "skipped" : "not_due",

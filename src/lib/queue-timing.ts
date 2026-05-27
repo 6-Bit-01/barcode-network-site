@@ -309,6 +309,10 @@ function knownRuntime(track: QueueTimingTrack | null | undefined): number | null
   return safePositiveSeconds(track?.detectedDurationSeconds) ?? safePositiveSeconds(track?.estimatedDurationSeconds);
 }
 
+function hasKnownDetectedDuration(track: QueueTimingTrack | null | undefined): boolean {
+  return safePositiveSeconds(track?.detectedDurationSeconds) !== null && track?.durationIsEstimate !== true;
+}
+
 export function getEstimatedTrackRuntimeSeconds(track?: QueueTimingTrack | null, options?: QueueTimingOptions): number {
   const normalized = normalizeOptions(options);
   return knownRuntime(track) ?? normalized.unknownTrackSeconds;
@@ -323,13 +327,14 @@ export function estimateRuntimeForTracks(tracks: readonly (QueueTimingTrack | nu
   const normalized = normalizeOptions(options);
   return tracks.reduce<QueueRuntimeEstimate>((estimate, track) => {
     if (!track || isRemovedTrack(track)) return estimate;
-    const knownSeconds = knownRuntime(track);
-    const trackSeconds = knownSeconds ?? normalized.unknownTrackSeconds;
+    const runtimeSeconds = knownRuntime(track);
+    const isKnownDuration = hasKnownDetectedDuration(track);
+    const trackSeconds = runtimeSeconds ?? normalized.unknownTrackSeconds;
     return {
       trackSeconds: estimate.trackSeconds + trackSeconds,
       slotSeconds: estimate.slotSeconds + trackSeconds + normalized.preTrackTalkSeconds + normalized.postTrackTalkSeconds,
-      knownDurationCount: estimate.knownDurationCount + (knownSeconds ? 1 : 0),
-      unknownDurationCount: estimate.unknownDurationCount + (knownSeconds ? 0 : 1),
+      knownDurationCount: estimate.knownDurationCount + (isKnownDuration ? 1 : 0),
+      unknownDurationCount: estimate.unknownDurationCount + (isKnownDuration ? 0 : 1),
       preTrackTalkSeconds: estimate.preTrackTalkSeconds + normalized.preTrackTalkSeconds,
       postTrackTalkSeconds: estimate.postTrackTalkSeconds + normalized.postTrackTalkSeconds,
       hostBufferSeconds: estimate.hostBufferSeconds + normalized.preTrackTalkSeconds + normalized.postTrackTalkSeconds,
@@ -340,8 +345,8 @@ export function estimateRuntimeForTracks(tracks: readonly (QueueTimingTrack | nu
 function segmentsForTrack(track: QueueTimingTrack, options: NormalizedQueueTimingOptions, nowPlaying = false): ProjectedShowSegment[] {
   const trackId = track.id;
   const runtime = getEstimatedTrackRuntimeSeconds(track, options);
-  const source = track.durationSource ?? (knownRuntime(track) ? "stored_duration" : "estimated");
-  const isEstimate = !knownRuntime(track) || track.durationIsEstimate === true;
+  const source = track.durationSource ?? (hasKnownDetectedDuration(track) ? "stored_duration" : "estimated");
+  const isEstimate = !hasKnownDetectedDuration(track);
   if (nowPlaying && !options.includeHostBufferForNowPlaying) {
     return [{ type: "now_playing_remaining", trackId, label: "Now playing remaining runtime", seconds: runtime, durationSource: source, isEstimate, notes: ["Exact elapsed playback time is unavailable, so stored full duration is used conservatively."] }];
   }

@@ -170,6 +170,16 @@ test("multiple tracks include pre and post talk for each track", () => {
   assert.equal(estimate.slotSeconds, 680);
 });
 
+test("known and estimated duration counts remain distinct even when fallback seconds are stored", () => {
+  const estimate = timing.estimateRuntimeForTracks([
+    track("detected", { detectedDurationSeconds: 180, estimatedDurationSeconds: 180, durationIsEstimate: false }),
+    track("fallback", { estimatedDurationSeconds: 300, detectedDurationSeconds: null, durationIsEstimate: true, durationSource: "internal_estimate" }),
+  ]);
+  assert.equal(estimate.knownDurationCount, 1);
+  assert.equal(estimate.unknownDurationCount, 1);
+  assert.equal(estimate.trackSeconds, 480);
+});
+
 test("completed sponsor break is not included again", () => {
   const completed = Array.from({ length: 20 }, (_, index) => track(`played-completed-sponsor-${index}`, { status: "played", completedAt: "2026-01-01T00:00:00.000Z" }));
   const queue = Array.from({ length: 20 }, (_, index) => track(`queued-completed-sponsor-${index}`));

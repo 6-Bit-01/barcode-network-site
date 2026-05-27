@@ -1498,3 +1498,41 @@ test("upload session guard rejects stale sessionId", async () => {
 test("upload token guard remains rejected while submissions are closed", async () => {
   assert.throws(() => uploadApi.assertUploadSessionOpen(false, false, 0, 50), /This broadcast queue is closed/);
 });
+
+test("upload submission with valid detected duration stores known runtime metadata", async () => {
+  const track = await queue.createQueueTrack({
+    artist: "Upload Artist",
+    title: "Upload Known",
+    tiktokHandle: "@uploadknown",
+    sourceType: "upload",
+    fileUrl: "https://files.example.com/upload-known.mp3",
+    fileName: "Upload Artist - Upload Known.mp3",
+    fileSize: 12345,
+    mimeType: "audio/mpeg",
+    detectedDurationSeconds: 222.4,
+    durationSource: "upload_metadata",
+  });
+
+  assert.equal(track.detectedDurationSeconds, 222);
+  assert.equal(track.estimatedDurationSeconds, 222);
+  assert.equal(track.durationIsEstimate, false);
+  assert.equal(track.durationSource, "upload_metadata");
+});
+
+test("upload submission without detected duration stays internal estimate and not detected", async () => {
+  const track = await queue.createQueueTrack({
+    artist: "Upload Artist",
+    title: "Upload Unknown",
+    tiktokHandle: "@uploadunknown",
+    sourceType: "upload",
+    fileUrl: "https://files.example.com/upload-unknown.mp3",
+    fileName: "Upload Artist - Upload Unknown.mp3",
+    fileSize: 99999,
+    mimeType: "audio/mpeg",
+  });
+
+  assert.equal(track.detectedDurationSeconds, null);
+  assert.equal(track.estimatedDurationSeconds, 300);
+  assert.equal(track.durationIsEstimate, true);
+  assert.equal(track.durationSource, "internal_estimate");
+});

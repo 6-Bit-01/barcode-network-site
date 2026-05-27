@@ -1129,7 +1129,7 @@ export async function createQueueTrack(input: {
     : providerMetadata.detectedDurationSeconds;
   const durationSource = detectedDurationSeconds
     ? input.durationSource ?? providerMetadata.durationSource ?? (sourceType === "upload" ? "upload_metadata" : "provider_metadata")
-    : "estimated";
+    : "internal_estimate";
 
   return normalizeEntry({
     id: generateQueueId(),

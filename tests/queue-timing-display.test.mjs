@@ -33,16 +33,16 @@ test("sponsor included and completed public notes reflect current projection", (
   const completed = Array.from({ length: 20 }, (_, index) => track(`done-${index}`, { status: "completed" }));
   const queue = Array.from({ length: 20 }, (_, index) => track(`queued-${index}`));
   const withSponsor = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "not_due", broadcastStartedAt: "2026-01-01T00:00:00.000Z" } });
-  assert.ok(withSponsor.publicNotes.includes("Estimate includes the mid-show sponsor break."));
+  assert.ok(withSponsor.publicNotes.includes("Wheel spins or the commercial break may add time."));
   const completedSponsor = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "completed", sponsorBreakCompletedAt: "2026-01-01T00:00:00.000Z" } });
   const skippedSponsor = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "skipped", sponsorBreakCompletedAt: "2026-01-01T00:00:00.000Z" } });
-  assert.ok(!completedSponsor.publicNotes.includes("Estimate includes the mid-show sponsor break."));
-  assert.ok(!skippedSponsor.publicNotes.includes("Estimate includes the mid-show sponsor break."));
+  assert.ok(!completedSponsor.publicNotes.includes("Wheel spins or the commercial break may add time."));
+  assert.ok(!skippedSponsor.publicNotes.includes("Wheel spins or the commercial break may add time."));
 });
 
 test("wheel overhead public note appears when owed spins add time", () => {
   const summary = display.buildQueueTimingDisplay({ queue: [track("a")], wheelSpinsOwed: 2, session: { sponsorBreakStatus: "completed", wheelSpinsOwed: 2 } });
-  assert.ok(summary.publicNotes.includes("Wheel spins waiting may add time."));
+  assert.ok(summary.publicNotes.includes("Wheel spins may add time."));
 });
 
 test("priority display appears only when eligible and payment processing stays ineligible", () => {
@@ -126,6 +126,15 @@ test("public sponsor note appears only when the gated break is included", () => 
   const queue = [track("public-queued-target", { detectedDurationSeconds: 60 })];
   const early = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "not_due", broadcastStartedAt: new Date(Date.now() - 90 * 60 * 1000).toISOString() } });
   const included = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "not_due", broadcastStartedAt: "2026-01-01T00:00:00.000Z" } });
-  assert.ok(!early.publicNotes.includes("Estimate includes the mid-show sponsor break."));
-  assert.ok(included.publicNotes.includes("Estimate includes the mid-show sponsor break."));
+  assert.ok(!early.publicNotes.includes("Wheel spins or the commercial break may add time."));
+  assert.ok(included.publicNotes.includes("Wheel spins or the commercial break may add time."));
+});
+
+test("pressure summary rises from comfortable to critical based on projected runtime", () => {
+  const low = display.buildQueueTimingDisplay({ queue: Array.from({ length: 14 }, (_, index) => track(`short-${index}`, { detectedDurationSeconds: 120, durationIsEstimate: false })), session: { sponsorBreakStatus: "completed" } });
+  const high = display.buildQueueTimingDisplay({ queue: Array.from({ length: 44 }, (_, index) => track(`long-${index}`, { detectedDurationSeconds: 300, durationIsEstimate: false })), session: { sponsorBreakStatus: "not_due", broadcastStartedAt: "2026-01-01T00:00:00.000Z" } });
+  const critical = display.buildQueueTimingDisplay({ queue: Array.from({ length: 60 }, (_, index) => track(`xlong-${index}`, { detectedDurationSeconds: 360, durationIsEstimate: false })), session: { sponsorBreakStatus: "not_due", broadcastStartedAt: "2026-01-01T00:00:00.000Z" } });
+  assert.ok(["low", "medium"].includes(low.pressureSummary.level));
+  assert.ok(["high", "critical"].includes(high.pressureSummary.level));
+  assert.equal(critical.pressureSummary.level, "critical");
 });

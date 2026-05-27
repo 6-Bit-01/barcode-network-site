@@ -651,6 +651,8 @@ function AdminTrackMetadata({ entry }: { entry: QueueEntry }) {
 function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction }: { timingSummary: ReturnType<typeof buildQueueTimingDisplay>; canControl: boolean; onSponsorAction: (action: "start" | "complete" | "skip" | "reset") => void }) {
   const sponsor = timingSummary.sponsorBreakSummary;
   const wheel = timingSummary.wheelTimingSummary;
+  const pressure = timingSummary.pressureSummary;
+  const needleDeg = -90 + (pressure.score / 100) * 180;
   return (
     <section className="space-y-3 border border-accent/30 bg-background/40 p-4 text-xs">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -658,13 +660,33 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction }:
           <p className="uppercase tracking-[0.28em] text-accent">Runtime Diagnostics</p>
           <p className="mt-1 text-sm text-muted">Projection updates from the live queue snapshot and stored durations.</p>
         </div>
-        {canControl && <div className="flex flex-wrap gap-2"><button type="button" onClick={() => onSponsorAction("start")} className="border border-[#ffaa00]/50 px-3 py-1.5 uppercase tracking-widest text-[#ffaa00]">Mark Sponsor Break Started</button><button type="button" onClick={() => onSponsorAction("complete")} className="border border-accent/50 px-3 py-1.5 uppercase tracking-widest text-accent">Mark Sponsor Break Complete</button><button type="button" onClick={() => onSponsorAction("skip")} className="border border-danger/50 px-3 py-1.5 uppercase tracking-widest text-danger">Skip Sponsor Break Tonight</button><button type="button" onClick={() => onSponsorAction("reset")} className="border border-border px-3 py-1.5 uppercase tracking-widest text-muted">Reset Sponsor Break State</button></div>}
+        {canControl && <div className="flex flex-wrap gap-2"><button type="button" onClick={() => onSponsorAction("start")} className="border border-[#ffaa00]/50 px-3 py-1.5 uppercase tracking-widest text-[#ffaa00]">Mark Commercial Break Started</button><button type="button" onClick={() => onSponsorAction("complete")} className="border border-accent/50 px-3 py-1.5 uppercase tracking-widest text-accent">Mark Commercial Break Complete</button><button type="button" onClick={() => onSponsorAction("reset")} className="border border-border px-3 py-1.5 uppercase tracking-widest text-muted">Reset Commercial Break State</button></div>}
       </div>
       <div className="grid gap-3 md:grid-cols-4">
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Projected Show Time</p><p className="mt-1 text-lg font-bold text-foreground">{timingSummary.showRuntimeSummary.projectedLabel}</p></div>
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Target</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.targetLabel}</p></div>
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Target Status</p><p className="mt-1 font-bold text-accent">{timingSummary.showRuntimeSummary.targetStatusLabel}</p></div>
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Line Fit</p><p className="mt-1 font-bold text-foreground">{timingSummary.lineFitCopy}</p></div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-[1.1fr_2fr]">
+        <div className="border border-border bg-surface p-3">
+          <p className="text-[10px] uppercase tracking-widest text-muted">Pressure Gauge</p>
+          <div className="mt-2">
+            <svg viewBox="0 0 220 140" className="w-full max-w-[14rem]" role="img" aria-label={`Runtime pressure ${pressure.label} ${pressure.score} out of 100`}>
+              <path d="M20 120 A90 90 0 0 1 200 120" fill="none" stroke="#2e2e2e" strokeWidth="14" />
+              <path d="M20 120 A90 90 0 0 1 74 42" fill="none" stroke="#3ddc97" strokeWidth="14" />
+              <path d="M74 42 A90 90 0 0 1 126 33" fill="none" stroke="#f6c744" strokeWidth="14" />
+              <path d="M126 33 A90 90 0 0 1 168 53" fill="none" stroke="#ff9f43" strokeWidth="14" />
+              <path d="M168 53 A90 90 0 0 1 200 120" fill="none" stroke="#ff4d4f" strokeWidth="14" />
+              <line x1="110" y1="120" x2="110" y2="44" stroke="#fafafa" strokeWidth="3" transform={`rotate(${needleDeg} 110 120)`} />
+              <circle cx="110" cy="120" r="6" fill="#fafafa" />
+              <text x="20" y="136" fill="#9ca3af" fontSize="10">LOW</text><text x="74" y="20" fill="#9ca3af" fontSize="10">MED</text><text x="132" y="20" fill="#9ca3af" fontSize="10">HIGH</text><text x="182" y="136" fill="#9ca3af" fontSize="10">CRIT</text>
+            </svg>
+          </div>
+          <p className="mt-1 font-bold text-foreground">{pressure.label} · {pressure.score}/100</p>
+          <p className="mt-1 text-muted">{pressure.recommendation}</p>
+        </div>
+        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Pressure Factors</p><p className="mt-1 font-bold text-foreground">{pressure.description}</p><ul className="mt-2 list-disc space-y-1 pl-5 text-muted">{pressure.factors.map((factor) => <li key={factor}>{factor}</li>)}</ul></div>
       </div>
       <div className="grid gap-3 md:grid-cols-4">
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Commercial Break</p><p className="mt-1 font-bold text-foreground">{sponsor.diagnosticLabel}</p><p className="mt-1 text-muted">{sponsor.durationLabel} duration · {sponsor.minElapsedLabel} minimum · midpoint {sponsor.completedPlayableCount}/{sponsor.totalPlayableNonRemovedCount ?? "—"} playable</p></div>

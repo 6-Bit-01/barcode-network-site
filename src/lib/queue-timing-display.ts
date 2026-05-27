@@ -65,6 +65,14 @@ export interface QueueTimingDisplaySummary {
     overheadLabel: string;
     included: boolean;
   };
+  pressureSummary: {
+    score: number;
+    level: "low" | "medium" | "high" | "critical";
+    label: string;
+    description: string;
+    recommendation: string;
+    factors: string[];
+  };
   lineFitStatus: QueueTimingTargetStatus;
   lineFitCopy: string;
   publicNotes: string[];
@@ -137,6 +145,7 @@ export function buildQueueTimingDisplay(input: QueueTimingInput, options: { prio
   const priorityImpact = options.priorityEligible === false ? null : estimatePriorityImpact(input);
   const priorityEstimate = priorityImpact?.priorityEligible ? displayEstimate(priorityImpact.priorityEstimate as NewSubmissionTimingEstimate | ExistingTrackTimingEstimate) : null;
   const publicNotes = publicNotesFor(free.sponsorBreakIncluded, free.wheelCeremonySecondsIncluded > 0);
+  const pressureSummary = buildPressureSummary(snapshot);
 
   return {
     submitNowFreeEstimate: displayEstimate(free),
@@ -171,6 +180,7 @@ export function buildQueueTimingDisplay(input: QueueTimingInput, options: { prio
       overheadLabel: formatHoursMinutes(snapshot.wheelCeremonySecondsIncluded),
       included: snapshot.wheelCeremonySecondsIncluded > 0,
     },
+    pressureSummary,
     lineFitStatus: snapshot.targetStatus,
     lineFitCopy: lineFitCopy(snapshot.targetStatus),
     publicNotes,
@@ -208,8 +218,8 @@ export function publicRangeLabel(label: string): string {
 
 export function publicNotesFor(sponsorIncluded: boolean, wheelIncluded: boolean): string[] {
   const notes: string[] = [];
-  if (sponsorIncluded) notes.push("Estimate includes the mid-show sponsor break.");
-  if (wheelIncluded) notes.push("Wheel spins waiting may add time.");
+  if (sponsorIncluded) notes.push("Wheel spins or the commercial break may add time.");
+  if (wheelIncluded && !sponsorIncluded) notes.push("Wheel spins may add time.");
   return notes;
 }
 
@@ -260,6 +270,69 @@ export function sponsorStatusLabel(status?: string | null): string {
   if (status === "completed") return "Completed";
   if (status === "skipped") return "Skipped";
   return "Not due";
+}
+
+function buildPressureSummary(snapshot: ReturnType<typeof buildQueueTimingSnapshot>) {
+  const factors: string[] = [];
+  const projected = snapshot.projectedTotalShowSeconds;
+  const projectedRatio = projected / snapshot.targetShowSeconds;
+  let score = Math.round(Math.max(0, Math.min(100, projectedRatio * 55)));
+  if (projected >= snapshot.warningShowSeconds) {
+    score = Math.max(score, 92);
+    factors.push("Projected runtime is at/over the 5h warning ceiling.");
+  } else if (projected > snapshot.targetShowSeconds) {
+    score += 18;
+    factors.push("Projected runtime is over the 4h target.");
+  } else if (projected < snapshot.targetShowSeconds * 0.82) {
+    score -= 10;
+    factors.push("Projected runtime is comfortably under the 4h target.");
+  }
+  const unknownPenalty = Math.min(12, snapshot.unknownDurationCount * 2);
+  if (unknownPenalty > 0) factors.push(`${snapshot.unknownDurationCount} tracks still use unknown 5:00 runtime estimates.`);
+  score += unknownPenalty;
+  if (snapshot.wheelCeremony.wheelSpinsOwedIncluded > 0) {
+    score += Math.min(12, snapshot.wheelCeremony.wheelSpinsOwedIncluded * 3);
+    factors.push(`Wheel spins owed add ${formatHoursMinutes(snapshot.wheelCeremonySecondsIncluded)} ceremony overhead.`);
+  }
+  if (!snapshot.sponsorBreak.sponsorBreakAlreadyCompleted) {
+    score += snapshot.sponsorBreak.sponsorBreakIncluded ? 8 : 4;
+    factors.push("Commercial break is still owed/running and remains in the projection.");
+  } else {
+    score -= 4;
+  }
+  if (snapshot.completedPlayableCount >= 4 && snapshot.completedRuntimeSeconds && snapshot.sponsorBreak.broadcastElapsedSeconds) {
+    const expectedElapsed = snapshot.completedRuntimeSeconds + (snapshot.sponsorBreak.sponsorBreakStatus === "running" ? snapshot.sponsorBreak.sponsorBreakSecondsIncluded : 0);
+    const drift = snapshot.sponsorBreak.broadcastElapsedSeconds - expectedElapsed;
+    if (drift > 20 * 60) {
+      score += 14;
+      factors.push("Pace is slower than expected from completed tracks; transitions may be stretching.");
+    } else if (drift < -10 * 60) {
+      score -= 6;
+      factors.push("Pace is ahead of projected slot timing so far.");
+    }
+  }
+  if (snapshot.removedCount && snapshot.removedCount > 0) {
+    score -= Math.min(10, snapshot.removedCount);
+    factors.push("Removed/no-show tracks reduced active runtime load.");
+  }
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  const level: "low" | "medium" | "high" | "critical" = score >= 85 ? "critical" : score >= 65 ? "high" : score >= 40 ? "medium" : "low";
+  const label = level === "critical" ? "CRITICAL" : level === "high" ? "HIGH" : level === "medium" ? "MEDIUM" : "LOW";
+  const recommendation = snapshot.sponsorBreak.sponsorBreakStatus === "due"
+    ? "Commercial break due. Run it now, then keep transitions tight."
+    : level === "critical"
+      ? "Keep transitions tight and remove absent artists quickly."
+      : level === "high"
+        ? "Keep transitions tight."
+        : "You are on pace.";
+  const description = level === "critical"
+    ? "Show is near/over the warning ceiling."
+    : level === "high"
+      ? "Show is likely to run past target."
+      : level === "medium"
+        ? "Watch pacing and pending overhead."
+        : "Projection is currently manageable.";
+  return { score, level, label, description, recommendation, factors };
 }
 
 export function formatHoursMinutes(seconds: number): string {

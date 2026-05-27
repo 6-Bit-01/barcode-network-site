@@ -117,6 +117,7 @@ export function AdminRadioQueueControl() {
   const [simulationSpeed, setSimulationSpeed] = useState<SimulationSpeed>("normal");
   const [simulationMessage, setSimulationMessage] = useState<string | null>(null);
   const [activeUtilityPanel, setActiveUtilityPanel] = useState<"session" | "visuals" | "overlay" | null>(null);
+  const [overlayWheelFocusTick, setOverlayWheelFocusTick] = useState(0);
   const simulationTimerRef = useRef<number | null>(null);
   const simulationRunningRef = useRef(false);
   const simulationSpeedRef = useRef<SimulationSpeed>("normal");
@@ -359,7 +360,10 @@ export function AdminRadioQueueControl() {
   const projectedRuntimeLabel = timingSummary.showRuntimeSummary.publicProjectedLabel ?? timingSummary.showRuntimeSummary.projectedLabel ?? "—";
   const capacityCount = state?.publicStatus?.capacity ?? state?.session?.queueCapacity ?? null;
   const activeCapacityLabel = capacityCount ? `${activeTrackCount} / ${capacityCount}` : `${activeTrackCount}`;
-  const openOverlayPanel = () => setActiveUtilityPanel("overlay");
+  const openWheelPanel = () => {
+    setActiveUtilityPanel("overlay");
+    setOverlayWheelFocusTick((value) => value + 1);
+  };
 
   const railBottomOffsetClass = loadedPlayer ? (minimized ? "bottom-24" : "bottom-[12.5rem]") : "bottom-5";
   const topOverlayPaddingClass = topBarMinimized ? "pt-[4.5rem] md:pt-[4.75rem]" : "pt-[7.25rem] md:pt-[7.5rem]";
@@ -373,9 +377,9 @@ export function AdminRadioQueueControl() {
           <button
             type="button"
             onClick={() => setActiveUtilityPanel((value) => value === "overlay" ? null : "overlay")}
-            className={`min-h-9 border px-3 py-1.5 text-xs uppercase tracking-widest ${wheelOverlayReady ? "animate-pulse border-cyan-300/70 bg-cyan-300/10 text-cyan-200" : "border-border text-muted"}`}
+            className={`min-h-9 border px-3 py-1.5 text-xs uppercase tracking-widest ${wheelOverlayReady ? "border-cyan-300 bg-cyan-300/25 text-cyan-100 shadow-[0_0_20px_rgba(103,232,249,0.22)]" : "border-border text-muted"}`}
           >
-            {activeUtilityPanel === "overlay" ? "Hide Live Overlay" : wheelOverlayReady ? "Live Overlay — Wheel Ready" : "Live Overlay"}
+            {activeUtilityPanel === "overlay" ? "Hide Live Overlay" : wheelOverlayReady ? "Live Overlay — Wheel Owed" : "Live Overlay"}
           </button>
         </div>
       </section>
@@ -384,7 +388,7 @@ export function AdminRadioQueueControl() {
 
       {activeUtilityPanel === "visuals" && canControlSession && <section className="border border-border/80 bg-surface/70 p-3"><AdminRuntimeDiagnostics timingSummary={timingSummary} canControl={canControlSession} onSponsorAction={updateSponsorBreakState} /></section>}
 
-      {activeUtilityPanel === "overlay" && canControlSession && <section className="border border-border/80 bg-surface/70 p-3"><AdminLiveOverlayControl /></section>}
+      {activeUtilityPanel === "overlay" && canControlSession && <section className="border border-border/80 bg-surface/70 p-3"><AdminLiveOverlayControl focusWheelTick={overlayWheelFocusTick} /></section>}
 
       {isArchivedReview && hasSession && <div className="border border-danger/40 bg-danger/10 p-3 text-xs uppercase tracking-widest text-danger">ARCHIVED / READ ONLY — viewing {state?.session?.title ?? "finished session"}. Queue review actions are locked for this finished session.</div>}
 
@@ -402,7 +406,10 @@ export function AdminRadioQueueControl() {
           <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Projected: {projectedRuntimeLabel}</span>
           <TopBarCommercialChip summary={timingSummary.sponsorBreakSummary} />
           <TopBarPressureChip pressure={topPressure} minimized />
-          {wheelSpinsUnlocked > 0 && <span className="border border-cyan-300/40 px-2 py-1 uppercase tracking-widest text-cyan-200">Wheel Spins: {wheelSpinsUnlocked}</span>}
+          {wheelSpinsUnlocked > 0 && <>
+            <span className="border border-cyan-300/50 bg-cyan-300/10 px-2 py-1 uppercase tracking-widest text-cyan-200">Wheel: {wheelSpinsUnlocked} owed</span>
+            <button type="button" onClick={openWheelPanel} className="min-h-9 border border-cyan-300/70 bg-cyan-300/15 px-2.5 py-1 uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">Open Wheel</button>
+          </>}
           {nextInLine && <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Next: {submittedArtist(nextInLine)} — {submittedTitle(nextInLine)}</span>}
         </div> : <>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -412,7 +419,7 @@ export function AdminRadioQueueControl() {
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Projected Runtime</p><p className="mt-1 font-bold text-foreground">{projectedRuntimeLabel}</p></div>
           <TopBarCommercialChip summary={timingSummary.sponsorBreakSummary} />
           <TopBarPressureChip pressure={topPressure} />
-          {wheelSpinsUnlocked > 0 && <div><p className="text-[10px] uppercase tracking-widest text-muted">Wheel Spins Unlocked</p><p className="mt-1 font-bold text-cyan-200">{wheelSpinsUnlocked}</p></div>}
+          {wheelSpinsUnlocked > 0 && <div className="space-y-1"><p className="text-[10px] uppercase tracking-widest text-muted">Wheel</p><p className="font-bold text-cyan-200">{wheelSpinsUnlocked} owed</p><button type="button" onClick={openWheelPanel} className="min-h-9 border border-cyan-300/70 bg-cyan-300/15 px-3 py-1 text-[10px] uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">Open Wheel Panel</button></div>}
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} min-h-10 border px-3 py-2 uppercase tracking-widest hover:text-background`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button>
@@ -470,7 +477,7 @@ export function AdminRadioQueueControl() {
               <div className="flex flex-wrap gap-2"><span className="border border-cyan-300/30 bg-cyan-300/5 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Wheel Spins Unlocked: {state?.session?.wheelSpinsOwed ?? 0}</span><span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Next Owed: {state?.nextNonPriorityLane === "regular" ? "Free" : "Wheel"}</span></div>
               {wheelOverlayReady && <div className="space-y-2 border border-cyan-300/50 bg-cyan-300/10 p-2.5 animate-pulse">
                 <p className="text-[10px] uppercase tracking-[0.2em] text-cyan-100">{wheelOverlayStatusLabel}</p>
-                <button type="button" onClick={openOverlayPanel} className="min-h-10 w-full border border-cyan-300/70 bg-cyan-300/10 px-3 py-2 text-xs uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">Open Wheel Overlay</button>
+                <button type="button" onClick={openWheelPanel} className="min-h-10 w-full border border-cyan-300/70 bg-cyan-300/10 px-3 py-2 text-xs uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">Open Wheel Panel</button>
               </div>}
               <div className="flex flex-wrap gap-2">{paymentProcessingCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Payment Processing: {paymentProcessingCount}</span>}{heldPriorityCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Held Priority: {heldPriorityCount}</span>}{resolverOverrideBlocked && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Resolver Override Blocked</span>}{!nextInLine && <span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">No Next In Line</span>}</div>
             </section>
@@ -504,7 +511,7 @@ export function AdminRadioQueueControl() {
               <div className="flex flex-wrap gap-2"><span className="border border-cyan-300/30 bg-cyan-300/5 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Wheel Spins Unlocked: {state?.session?.wheelSpinsOwed ?? 0}</span><span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Next Owed: {state?.nextNonPriorityLane === "regular" ? "Free" : "Wheel"}</span></div>
               {wheelOverlayReady && <div className="space-y-2 border border-cyan-300/50 bg-cyan-300/10 p-2.5 animate-pulse">
                 <p className="text-[10px] uppercase tracking-[0.2em] text-cyan-100">{wheelOverlayStatusLabel}</p>
-                <button type="button" onClick={openOverlayPanel} className="min-h-10 w-full border border-cyan-300/70 bg-cyan-300/10 px-3 py-2 text-xs uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">Open Wheel Overlay</button>
+                <button type="button" onClick={openWheelPanel} className="min-h-10 w-full border border-cyan-300/70 bg-cyan-300/10 px-3 py-2 text-xs uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">Open Wheel Panel</button>
               </div>}
               <div className="flex flex-wrap gap-2">{paymentProcessingCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Payment Processing: {paymentProcessingCount}</span>}{heldPriorityCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Held Priority: {heldPriorityCount}</span>}{resolverOverrideBlocked && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Resolver Override Blocked</span>}{!nextInLine && <span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">No Next In Line</span>}</div>
             </section>

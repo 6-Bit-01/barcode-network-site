@@ -1,19 +1,20 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { LiveOverlayAdminSnapshot } from "@/lib/live-overlay";
 
 function sceneLabel(mode?: string): string {
   return mode ? mode.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()) : "Syncing";
 }
 
-export function AdminLiveOverlayControl() {
+export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick?: number }) {
   const [snapshot, setSnapshot] = useState<LiveOverlayAdminSnapshot | null>(null);
   const [systemTitle, setSystemTitle] = useState("");
   const [systemMessage, setSystemMessage] = useState("");
   const [selectedWheelTrackId, setSelectedWheelTrackId] = useState("");
   const [status, setStatus] = useState<string | null>(null);
+  const wheelSectionRef = useRef<HTMLElement | null>(null);
 
   async function load() {
     const res = await fetch("/api/admin/overlay/live", { cache: "no-store" });
@@ -61,6 +62,23 @@ export function AdminLiveOverlayControl() {
   const canReencrypt = wheelOwed > 0 && wheelReadyForAction && candidates.length > 0 && !ceremony?.resultTrackId;
   const systemActive = snapshot?.overlayState.systemMessageActive === true;
   const wheelAttention = wheelOwed > 0 || wheelActive;
+  const wheelNextAction = ceremony?.status === "reencrypting"
+    ? "Re-encrypting candidates…"
+    : ceremony?.status === "spinning"
+      ? "Spinning: result incoming."
+      : ceremony?.status === "result_pending" && resultNeedsTrackChoice
+        ? "Multiple tracks found: choose winning track, then confirm."
+        : ceremony?.status === "result_pending"
+          ? "Result pending: confirm winner or mark winner not here."
+          : ceremony?.status === "confirmed"
+            ? "Confirmed: Wheel Chosen is set."
+            : ceremony?.status === "signal_lost"
+              ? "Signal lost: winner not present; spin still owed."
+              : wheelReadyForAction
+                ? "Wheel launched: spin when ready."
+                : canLaunch
+                  ? "Wheel spin owed: launch the wheel when ready."
+                  : "No wheel spin owed.";
 
   useEffect(() => {
     if (ceremony?.status !== "result_pending" || !result) {
@@ -73,6 +91,10 @@ export function AdminLiveOverlayControl() {
     }
     setSelectedWheelTrackId((current) => result.tracks?.some((track) => track.id === current) ? current : "");
   }, [ceremony?.status, result]);
+  useEffect(() => {
+    if (!focusWheelTick || !wheelSectionRef.current) return;
+    wheelSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [focusWheelTick]);
 
   return (
     <section className="space-y-4 border border-accent/40 bg-background/50 p-5">
@@ -90,12 +112,13 @@ export function AdminLiveOverlayControl() {
         <div className="border border-border bg-surface p-3 md:col-span-2"><p className="text-xs uppercase tracking-widest text-muted">Reason</p><p className="mt-1 text-muted">{scene?.reason ?? "Reading live show state."}</p></div>
       </div>
 
-      <section className={wheelAttention ? "space-y-3 border border-cyan-300/50 bg-cyan-300/10 p-4" : "space-y-3 border border-border bg-surface p-4 opacity-80"}>
+      <section ref={wheelSectionRef} className={wheelAttention ? "space-y-3 border-2 border-cyan-300/70 bg-cyan-300/15 p-4 shadow-[0_0_30px_rgba(103,232,249,0.2)]" : "space-y-3 border border-border bg-surface p-4 opacity-80"}>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-cyan-200">Wheel</p>
             <h3 className="mt-1 text-lg font-bold text-foreground">{wheelActive ? sceneLabel(ceremony?.status) : wheelOwed > 0 ? "Wheel Spin Waiting" : "No Wheel Spin Waiting"}</h3>
             <p className="mt-1 text-sm text-muted">{wheelOwed} wheel spin{wheelOwed === 1 ? "" : "s"} owed.</p>
+            <p className="mt-2 border border-cyan-300/40 bg-background/40 p-2 text-sm text-cyan-100"><span className="font-bold uppercase tracking-widest">Next Action:</span> {wheelNextAction}</p>
             {!wheelActive && wheelOwed > 0 && <p className="mt-1 text-sm text-muted">Launch when you are ready to show the wheel on air. Launch does not choose a winner, consume spins, or change queue state.</p>}
             {wheelReadyForAction && <p className="mt-1 text-sm text-muted">Candidates: {ceremony?.candidateCount ?? 0}. Spin Wheel chooses the winner. Re-encrypt Signal reshuffles/remaps the wheel before the spin without touching the queue.</p>}
             {ceremony?.status === "reencrypting" && <p className="mt-1 text-sm text-cyan-100">Re-encrypting candidates before the spin…</p>}

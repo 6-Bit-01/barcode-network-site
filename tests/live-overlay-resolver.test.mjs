@@ -66,10 +66,17 @@ assert.equal(unsafe.sourceUrl, null, "unsafe link is not exposed");
 assert.equal(unsafe.artworkUrl, null, "private blob artwork is not exposed");
 
 const adminPanel = readFileSync("src/components/AdminLiveOverlayControl.tsx", "utf8");
+const adminQueueControl = readFileSync("src/components/AdminRadioQueueControl.tsx", "utf8");
 const liveOverlayController = readFileSync("src/lib/live-overlay.ts", "utf8");
 assert.equal(adminPanel.includes("Show Now Playing"), false, "admin panel does not expose normal manual scene picker");
 assert.equal(adminPanel.includes("Temporary System Message") && adminPanel.indexOf("Temporary System Message") > adminPanel.indexOf("<details"), true, "temporary system message is inside collapsed emergency details");
 assert.equal(adminPanel.includes("selectedWheelTrackId") && adminPanel.includes("Choose winning track") && adminPanel.includes("selectedTrackId"), true, "admin panel provides a grouped winner track picker before confirming Wheel Chosen");
+assert.equal(adminQueueControl.includes("Open Wheel Panel") || adminQueueControl.includes("Open Wheel"), true, "top bar and wheel CTA expose an Open Wheel action when spins are owed");
+assert.equal(adminQueueControl.includes("Live Overlay — Wheel Owed"), true, "live overlay utility copy clearly signals owed wheel state");
+assert.equal(adminPanel.includes("Next Action:"), true, "wheel section includes a next action summary for hosts");
+assert.equal(adminQueueControl.includes("top-bar Spin Wheel"), false, "top bar does not include dangerous Spin Wheel action");
+assert.equal(adminQueueControl.includes("top-bar Confirm Wheel"), false, "top bar does not include dangerous Confirm Wheel action");
+assert.equal(adminQueueControl.includes("top-bar Winner Not Here"), false, "top bar does not include dangerous Winner Not Here action");
 assert.equal(liveOverlayController.includes("submitterIdentityKeys") && liveOverlayController.includes("trackCount") && liveOverlayController.includes("findTrackInWinnerGroup"), true, "wheel controller groups candidates by submitter identity and resolves grouped winners to a selected track");
 
 const receiver = readFileSync("src/components/LiveOverlayReceiver.tsx", "utf8");

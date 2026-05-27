@@ -1,8 +1,8 @@
 import type { PriorityUpgradeStatus, QueueEntry, QueueLane, QueuePublicTrack, QueueTrackStatus } from "./queue-types";
 
 export const DEFAULT_UNKNOWN_TRACK_SECONDS = 300;
-export const DEFAULT_PRE_TRACK_TALK_SECONDS = 60;
-export const DEFAULT_POST_TRACK_TALK_SECONDS = 60;
+export const DEFAULT_PRE_TRACK_TALK_SECONDS = 30;
+export const DEFAULT_POST_TRACK_TALK_SECONDS = 30;
 export const DEFAULT_HOST_TALK_BUFFER_SECONDS = DEFAULT_PRE_TRACK_TALK_SECONDS + DEFAULT_POST_TRACK_TALK_SECONDS;
 export const DEFAULT_SPONSOR_BREAK_SECONDS = 630;
 export const DEFAULT_SPONSOR_BREAK_MIN_ELAPSED_SECONDS = 7200;
@@ -596,13 +596,16 @@ export function buildQueueTimingSnapshot(input: QueueTimingInput, options?: Queu
   const completedRuntimeSeconds = safePositiveSeconds(input.completedRuntimeSeconds) ?? safePositiveSeconds(input.session?.completedRuntimeSeconds) ?? null;
   const completedEstimatedRuntime = completedRuntimeSeconds ?? estimateRuntimeForTracks(input.completed ?? [], normalized).slotSeconds;
   const projectedRemainingShowSeconds = sumSegments(timeline.segments);
-  const projectedTotalShowSeconds = completedEstimatedRuntime + projectedRemainingShowSeconds;
+  const liveElapsedSeconds = timeline.sponsorBreak.broadcastElapsedSeconds;
+  const projectedTotalShowSeconds = typeof liveElapsedSeconds === "number" && liveElapsedSeconds > 0
+    ? liveElapsedSeconds + projectedRemainingShowSeconds
+    : completedEstimatedRuntime + projectedRemainingShowSeconds;
   const completedPlayableCount = countCompletedPlayable(input);
   const observedAverageSlotSeconds = completedRuntimeSeconds && completedPlayableCount > 0 ? Math.round(completedRuntimeSeconds / completedPlayableCount) : null;
   const completedTrackRuntime = estimateRuntimeForTracks(input.completed ?? [], { ...normalized, preTrackTalkSeconds: 0, postTrackTalkSeconds: 0 }).trackSeconds;
   const observedAverageTrackRuntimeSeconds = completedTrackRuntime > 0 && completedPlayableCount > 0 ? Math.round(completedTrackRuntime / completedPlayableCount) : null;
   const notes = [...timeline.notes];
-  if (completedRuntimeSeconds === null) notes.push("Completed runtime seconds were not provided, so completed tracks use the same estimate rules as queued tracks.");
+  if (completedRuntimeSeconds === null) notes.push("Completed runtime seconds were not provided, so completed tracks use estimate rules unless live elapsed playback time is available.");
   if (countRemoved(input) === null) notes.push("Removed track detail/count was not provided; removed/dropout diagnostics may be incomplete.");
 
   return {

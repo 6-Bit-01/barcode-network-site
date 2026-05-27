@@ -2069,7 +2069,9 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
   applyPreShowTimer(session);
 
   if (action === "startShow") {
+    const now = new Date().toISOString();
     session.showStarted = true;
+    if (!session.broadcastStartedAt) session.broadcastStartedAt = now;
     pullNextInLine(session, undefined, true);
     const nextStore = replaceSession(store, session);
     await writeStore(nextStore);

@@ -345,6 +345,7 @@ export function AdminRadioQueueControl() {
   const canPullWheelChosen = !resolverOverrideBlocked && (state?.queue ?? []).some((entry) => entry.lane === "wheel" && entry.status === "queued");
   const canPullFreeTransmission = !resolverOverrideBlocked && (state?.queue ?? []).some((entry) => (!entry.lane || entry.lane === "regular") && entry.status === "queued");
   const timingSummary = buildQueueTimingDisplay(queueTimingInputFromAdminState(state));
+  const topPressure = timingSummary.pressureSummary;
   const paymentProcessingCount = (state?.queue ?? []).filter((entry) => ["checkout_pending", "requested", "paid_needs_attention"].includes(entry.priorityUpgradeStatus ?? "none")).length;
   const wheelSpinsUnlocked = state?.session?.wheelSpinsOwed ?? 0;
   const wheelOverlayReady = wheelSpinsUnlocked > 0;
@@ -397,6 +398,7 @@ export function AdminRadioQueueControl() {
           <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Phase: {phaseLabel}</span>
           <span className={`border px-2 py-1 uppercase tracking-widest ${state?.publicStatus?.isOpen ? "border-accent/50 text-accent" : "border-danger/50 text-danger"}`}>Submissions: {state?.publicStatus?.isOpen ? "Open" : "Closed"}</span>
           <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Active / Total: {activeTrackCount} / {totalReceivedCount}</span>
+          <TopBarPressureChip pressure={topPressure} minimized />
           {wheelSpinsUnlocked > 0 && <span className="border border-cyan-300/40 px-2 py-1 uppercase tracking-widest text-cyan-200">Wheel Spins: {wheelSpinsUnlocked}</span>}
           {nextInLine && <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Next: {submittedArtist(nextInLine)} — {submittedTitle(nextInLine)}</span>}
         </div> : <>
@@ -405,6 +407,7 @@ export function AdminRadioQueueControl() {
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Submissions</p><p className={`mt-1 font-bold ${state?.publicStatus?.isOpen ? "text-accent" : "text-danger"}`}>{state?.publicStatus?.isOpen ? "Open" : "Closed"}</p></div>
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Active / Total</p><p className="mt-1 font-bold text-foreground">{activeTrackCount} / {totalReceivedCount}</p></div>
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Runtime</p><p className="mt-1 font-bold text-foreground">{formatRuntime(runtime)}</p></div>
+          <TopBarPressureChip pressure={topPressure} />
           {wheelSpinsUnlocked > 0 && <div><p className="text-[10px] uppercase tracking-widest text-muted">Wheel Spins Unlocked</p><p className="mt-1 font-bold text-cyan-200">{wheelSpinsUnlocked}</p></div>}
         </div>
         <div className="flex flex-wrap gap-2">
@@ -506,6 +509,21 @@ export function AdminRadioQueueControl() {
       </aside>, document.body)}
     </div>
   );
+}
+
+function TopBarPressureChip({ pressure, minimized = false }: { pressure: ReturnType<typeof buildQueueTimingDisplay>["pressureSummary"]; minimized?: boolean }) {
+  const label = pressure.mode === "pre_show" ? "PRE-SHOW" : pressure.mode === "ended" ? "ENDED" : pressure.label;
+  const tone = pressure.mode === "ended" || pressure.mode === "pre_show"
+    ? "border-border text-muted"
+    : pressure.level === "critical"
+      ? "border-danger/60 text-danger"
+      : pressure.level === "high"
+        ? "border-[#ff9f43]/70 text-[#ff9f43]"
+        : pressure.level === "medium"
+          ? "border-[#f6c744]/60 text-[#f6c744]"
+          : "border-[#3ddc97]/60 text-[#3ddc97]";
+  if (minimized) return <span className={`border px-2 py-1 uppercase tracking-widest ${tone}`}>Pressure: {label}{pressure.mode === "live" ? ` ${pressure.score}/100` : ""}</span>;
+  return <div><p className="text-[10px] uppercase tracking-widest text-muted">Pressure</p><p className={`mt-1 inline-flex border px-2 py-1 font-bold uppercase tracking-widest ${tone}`}>{label}{pressure.mode === "live" ? ` ${pressure.score}/100` : ""}</p></div>;
 }
 
 

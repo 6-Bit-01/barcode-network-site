@@ -171,3 +171,18 @@ test("live pressure eases when tracks are removed and rises with slow pace", () 
   const slow = display.buildQueueTimingDisplay({ completed, queue: Array.from({ length: 20 }, (_, index) => track(`slow-${index}`)), session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", completedRuntimeSeconds: 8 * 180, sponsorBreakStatus: "not_due" } });
   assert.ok(slow.pressureSummary.factors.some((factor) => factor.toLowerCase().includes("slower")));
 });
+
+test("wheel owed overhead raises pressure and clearing owed overhead lowers it", () => {
+  const queue = Array.from({ length: 20 }, (_, index) => track(`wheel-${index}`));
+  const withOwed = display.buildQueueTimingDisplay({ queue, wheelSpinsOwed: 2, session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", sponsorBreakStatus: "not_due", wheelSpinsOwed: 2 } });
+  const cleared = display.buildQueueTimingDisplay({ queue, wheelSpinsOwed: 0, session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", sponsorBreakStatus: "not_due", wheelSpinsOwed: 0 } });
+  assert.ok(withOwed.wheelTimingSummary.overheadSeconds > 0);
+  assert.equal(cleared.wheelTimingSummary.overheadSeconds, 0);
+  assert.ok(withOwed.pressureSummary.score >= cleared.pressureSummary.score);
+});
+
+test("admin top bar renders pressure chip from timingSummary", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
+  assert.ok(source.includes("TopBarPressureChip pressure={topPressure} minimized"));
+  assert.ok(source.includes("TopBarPressureChip pressure={topPressure}"));
+});

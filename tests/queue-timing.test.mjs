@@ -186,6 +186,15 @@ test("wheel overhead does not add extra song durations", () => {
   assert.equal(snapshot.projectedRemainingShowSeconds, 180 + 120 + 360);
 });
 
+test("restored owed wheel spin re-adds ceremony overhead without extra track duplication", () => {
+  const queue = [track("wheel-track", { lane: "wheel", detectedDurationSeconds: 180 })];
+  const resolved = timing.buildQueueTimingSnapshot({ queue, wheelSpinsOwed: 0, session: { wheelSpinsOwed: 0, sponsorBreakStatus: "completed" } });
+  const restored = timing.buildQueueTimingSnapshot({ queue, wheelSpinsOwed: 1, session: { wheelSpinsOwed: 1, sponsorBreakStatus: "completed" } });
+  assert.equal(resolved.wheelCeremonySecondsIncluded, 0);
+  assert.equal(restored.wheelCeremonySecondsIncluded, timing.DEFAULT_WHEEL_CEREMONY_SECONDS);
+  assert.equal(restored.projectedRemainingShowSeconds - resolved.projectedRemainingShowSeconds, timing.DEFAULT_WHEEL_CEREMONY_SECONDS);
+});
+
 test("existing queued track receives songsAhead and timing from prior timeline segments", () => {
   const estimate = timing.estimateExistingTrackTiming({ queue: [track("ahead", { detectedDurationSeconds: 200 }), track("target", { detectedDurationSeconds: 180 })], session: { sponsorBreakStatus: "completed" } }, "target");
   assert.equal(estimate.state, "queued");

@@ -322,7 +322,6 @@ export function AdminRadioQueueControl() {
   }, [state]);
 
   if (error) return <div className="border border-danger/40 bg-danger/5 p-6 text-danger">{error}</div>;
-  const runtime = state?.publicStatus?.estimatedRuntimeSeconds ?? 0;
   const readOnly = state?.readOnly ?? false;
   const hasSession = Boolean(state?.session);
   const hasCurrentSession = Boolean(state?.session && state.isCurrentSession && state.session.status !== "archived" && !readOnly);
@@ -357,7 +356,9 @@ export function AdminRadioQueueControl() {
     if (entry.status === "queued") activeTrackIds.add(entry.id);
   }
   const activeTrackCount = activeTrackIds.size;
-  const totalReceivedCount = activeTrackCount + (state?.history?.length ?? 0) + (state?.removed?.length ?? 0);
+  const projectedRuntimeLabel = timingSummary.showRuntimeSummary.publicProjectedLabel ?? timingSummary.showRuntimeSummary.projectedLabel ?? "—";
+  const capacityCount = state?.publicStatus?.capacity ?? state?.session?.queueCapacity ?? null;
+  const activeCapacityLabel = capacityCount ? `${activeTrackCount} / ${capacityCount}` : `${activeTrackCount}`;
   const openOverlayPanel = () => setActiveUtilityPanel("overlay");
 
   const railBottomOffsetClass = loadedPlayer ? (minimized ? "bottom-24" : "bottom-[12.5rem]") : "bottom-5";
@@ -397,7 +398,9 @@ export function AdminRadioQueueControl() {
         {topBarMinimized ? <div className="flex flex-wrap items-center gap-2">
           <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Phase: {phaseLabel}</span>
           <span className={`border px-2 py-1 uppercase tracking-widest ${state?.publicStatus?.isOpen ? "border-accent/50 text-accent" : "border-danger/50 text-danger"}`}>Submissions: {state?.publicStatus?.isOpen ? "Open" : "Closed"}</span>
-          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Active / Total: {activeTrackCount} / {totalReceivedCount}</span>
+          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Active / Capacity: {activeCapacityLabel}</span>
+          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Projected: {projectedRuntimeLabel}</span>
+          <TopBarCommercialChip summary={timingSummary.sponsorBreakSummary} />
           <TopBarPressureChip pressure={topPressure} minimized />
           {wheelSpinsUnlocked > 0 && <span className="border border-cyan-300/40 px-2 py-1 uppercase tracking-widest text-cyan-200">Wheel Spins: {wheelSpinsUnlocked}</span>}
           {nextInLine && <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Next: {submittedArtist(nextInLine)} — {submittedTitle(nextInLine)}</span>}
@@ -405,8 +408,9 @@ export function AdminRadioQueueControl() {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Show Phase</p><p className="mt-1 font-bold text-foreground">{phaseLabel}</p></div>
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Submissions</p><p className={`mt-1 font-bold ${state?.publicStatus?.isOpen ? "text-accent" : "text-danger"}`}>{state?.publicStatus?.isOpen ? "Open" : "Closed"}</p></div>
-          <div><p className="text-[10px] uppercase tracking-widest text-muted">Active / Total</p><p className="mt-1 font-bold text-foreground">{activeTrackCount} / {totalReceivedCount}</p></div>
-          <div><p className="text-[10px] uppercase tracking-widest text-muted">Runtime</p><p className="mt-1 font-bold text-foreground">{formatRuntime(runtime)}</p></div>
+          <div><p className="text-[10px] uppercase tracking-widest text-muted">Active / Capacity</p><p className="mt-1 font-bold text-foreground">{activeCapacityLabel}</p></div>
+          <div><p className="text-[10px] uppercase tracking-widest text-muted">Projected Runtime</p><p className="mt-1 font-bold text-foreground">{projectedRuntimeLabel}</p></div>
+          <TopBarCommercialChip summary={timingSummary.sponsorBreakSummary} />
           <TopBarPressureChip pressure={topPressure} />
           {wheelSpinsUnlocked > 0 && <div><p className="text-[10px] uppercase tracking-widest text-muted">Wheel Spins Unlocked</p><p className="mt-1 font-bold text-cyan-200">{wheelSpinsUnlocked}</p></div>}
         </div>
@@ -524,6 +528,26 @@ function TopBarPressureChip({ pressure, minimized = false }: { pressure: ReturnT
           : "border-[#3ddc97]/60 text-[#3ddc97]";
   if (minimized) return <span className={`border px-2 py-1 uppercase tracking-widest ${tone}`}>Pressure: {label}{pressure.mode === "live" ? ` ${pressure.score}/100` : ""}</span>;
   return <div><p className="text-[10px] uppercase tracking-widest text-muted">Pressure</p><p className={`mt-1 inline-flex border px-2 py-1 font-bold uppercase tracking-widest ${tone}`}>{label}{pressure.mode === "live" ? ` ${pressure.score}/100` : ""}</p></div>;
+}
+
+function TopBarCommercialChip({ summary, minimized = false }: { summary: ReturnType<typeof buildQueueTimingDisplay>["sponsorBreakSummary"]; minimized?: boolean }) {
+  const compact = summary.status === "completed" ? "Done"
+    : summary.status === "skipped" ? "Skipped"
+      : summary.status === "due" ? "Due"
+        : summary.status === "running" ? summary.diagnosticLabel.replace("Running · ", "Running ").replace(" remaining", "")
+          : summary.diagnosticLabel === "Waiting for playback start" ? "Pre-show"
+            : summary.diagnosticLabel === "Midpoint reached · waiting for 2h mark" ? "Waiting 2h"
+              : summary.diagnosticLabel === "2h mark reached · waiting for midpoint" ? "Waiting midpoint"
+                : "Pre-show";
+  const tone = compact === "Due" || compact.startsWith("Running")
+    ? "border-[#ffaa00]/60 text-[#ffaa00]"
+    : compact === "Done"
+      ? "border-[#3ddc97]/60 text-[#3ddc97]"
+      : compact === "Skipped"
+        ? "border-danger/50 text-danger"
+        : "border-border text-muted";
+  if (minimized) return <span className={`border px-2 py-1 uppercase tracking-widest ${tone}`}>Commercial: {compact}</span>;
+  return <div><p className="text-[10px] uppercase tracking-widest text-muted">Commercial</p><p className={`mt-1 inline-flex border px-2 py-1 font-bold uppercase tracking-widest ${tone}`}>{compact}</p></div>;
 }
 
 

@@ -186,6 +186,12 @@ test("admin top bar renders pressure chip from timingSummary", () => {
   const source = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
   assert.ok(source.includes("TopBarPressureChip pressure={topPressure} minimized"));
   assert.ok(source.includes("TopBarPressureChip pressure={topPressure}"));
+  assert.ok(source.includes("Projected Runtime"));
+  assert.ok(source.includes("Projected: {projectedRuntimeLabel}"));
+  assert.ok(source.includes("TopBarCommercialChip summary={timingSummary.sponsorBreakSummary}"));
+  assert.ok(source.includes("Active / Capacity"));
+  assert.ok(!source.includes("Active / Total"));
+  assert.ok(!source.includes(">Runtime<"));
   assert.ok(source.includes("Hide Diagnostics"));
   assert.ok(source.includes("\"Diagnostics\""));
   assert.ok(!source.includes("Show Visuals"));

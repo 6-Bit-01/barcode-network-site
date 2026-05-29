@@ -9,6 +9,7 @@ import {
   DOSSIER_WORKFLOW_ACTIONS,
   type DossierCandidate,
   type DossierDraft,
+  type DossierDuplicateGroup,
 } from "@/lib/dossier-workflow";
 import {
   DOSSIER_ECOSYSTEM_LANE_OPTIONS,
@@ -19,6 +20,7 @@ import {
 type WorkflowPayload = {
   candidates: DossierCandidate[];
   drafts: DossierDraft[];
+  duplicateGroups: DossierDuplicateGroup[];
   workflow: {
     status: string;
     storage: string;
@@ -275,6 +277,10 @@ export default function AdminDossiersPage() {
   const [draftForm, setDraftForm] = useState<DraftForm>(emptyDraftForm);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [mergePrimaryByGroup, setMergePrimaryByGroup] = useState<Record<string, string>>({});
+  const [mergeIncludedByGroup, setMergeIncludedByGroup] = useState<Record<string, string[]>>({});
+  const [mergeDraftByGroup, setMergeDraftByGroup] = useState<Record<string, boolean>>({});
+  const [mergeNoteByGroup, setMergeNoteByGroup] = useState<Record<string, string>>({});
 
   async function loadWorkflow() {
     try {
@@ -324,6 +330,10 @@ export default function AdminDossiersPage() {
     [payload?.candidates],
   );
   const drafts = useMemo(() => payload?.drafts ?? [], [payload?.drafts]);
+  const duplicateGroups = useMemo(
+    () => payload?.duplicateGroups ?? [],
+    [payload?.duplicateGroups],
+  );
   const boundaries = payload?.workflow.boundaries ?? [];
   const scoringPolicy =
     payload?.workflow.scoringPolicy ?? DOSSIER_CANDIDATE_SCORING_POLICY;
@@ -369,6 +379,10 @@ export default function AdminDossiersPage() {
         error?: string;
         message?: string;
         missingFields?: string[];
+        merge?: {
+          masterCandidate: DossierCandidate;
+          masterDraft?: DossierDraft;
+        };
       };
       if (!response.ok) {
         const missing = data.missingFields?.length
@@ -561,6 +575,51 @@ export default function AdminDossiersPage() {
     }
   }
 
+  async function mergeDuplicateGroup(group: DossierDuplicateGroup) {
+    const primaryCandidateId =
+      mergePrimaryByGroup[group.id] ??
+      group.suggestedMasterCandidateId ??
+      group.candidateIds[0];
+    const sourceCandidateIds =
+      mergeIncludedByGroup[group.id]?.length
+        ? mergeIncludedByGroup[group.id]
+        : group.candidateIds;
+    try {
+      const data = await postWorkflow({
+        action: "mergeCandidates",
+        input: {
+          primaryCandidateId,
+          sourceCandidateIds,
+          sourceDraftIds: group.draftIds,
+          createMasterDraft: Boolean(mergeDraftByGroup[group.id]),
+          mergeNote: mergeNoteByGroup[group.id] ?? "",
+        },
+      });
+      const masterCandidate = data.merge?.masterCandidate ?? data.candidate;
+      const masterDraft = data.merge?.masterDraft ?? data.draft;
+      if (masterCandidate) setSelectedCandidateId(masterCandidate.id);
+      if (masterDraft) {
+        setSelectedDraftId(masterDraft.id);
+        setDraftForm(draftFormFromDraft(masterDraft));
+      }
+      setNotice(
+        masterDraft
+          ? `Merged candidates into ${masterCandidate?.name ?? "master candidate"} and created/updated a master draft. Nothing published.`
+          : `Merged candidates into ${masterCandidate?.name ?? "master candidate"}. Source records were preserved.`,
+      );
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Failed to merge duplicate candidates.");
+    }
+  }
+
+  function toggleMergeCandidate(group: DossierDuplicateGroup, candidateId: string) {
+    const current = mergeIncludedByGroup[group.id] ?? group.candidateIds;
+    const next = current.includes(candidateId)
+      ? current.filter((id) => id !== candidateId)
+      : [...current, candidateId];
+    setMergeIncludedByGroup({ ...mergeIncludedByGroup, [group.id]: next });
+  }
+
   if (loading) {
     return (
       <MinimalDossierAdminState
@@ -646,6 +705,172 @@ export default function AdminDossiersPage() {
             </p>
           </div>
         </div>
+
+        <section className="border border-border bg-surface p-6 space-y-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.5em] text-muted mb-3">
+                Possible Duplicates / Merge
+              </p>
+              <h2 className="text-2xl font-bold text-foreground">
+                Possible Duplicates / Merge
+              </h2>
+              <div className="text-sm text-muted mt-2 space-y-1">
+                <p>Merge is manual. Nothing auto-merges.</p>
+                <p>Source candidates are preserved and marked merged.</p>
+                <p>Source drafts are preserved and marked superseded.</p>
+                <p>Merged drafts do not publish.</p>
+                <p>BNL merge writing comes later; this PR uses deterministic field combining only.</p>
+                <p>
+                  BNL may later recommend candidates from R&amp;D, Discord-safe
+                  context, queue recurrence, and the website read model. Multiple
+                  sources may point at the same subject, so BNL should attach
+                  evidence to existing candidates or merge candidates rather
+                  than create duplicates. This page prepares for that path but
+                  does not invoke BNL.
+                </p>
+              </div>
+            </div>
+            <p className="text-xs uppercase tracking-widest text-muted">
+              {duplicateGroups.length} duplicate groups
+            </p>
+          </div>
+
+          {duplicateGroups.length === 0 ? (
+            <p className="border border-border/70 bg-background/30 p-4 text-sm text-muted">
+              No workflow-internal duplicate groups detected. Published database
+              duplicate checks still run during manual candidate intake.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {duplicateGroups.map((group) => {
+                const groupCandidates = group.candidateIds
+                  .map((candidateId) =>
+                    candidates.find((candidate) => candidate.id === candidateId),
+                  )
+                  .filter((candidate): candidate is DossierCandidate => Boolean(candidate));
+                const included = mergeIncludedByGroup[group.id] ?? group.candidateIds;
+                const primary =
+                  mergePrimaryByGroup[group.id] ??
+                  group.suggestedMasterCandidateId ??
+                  group.candidateIds[0];
+                const createMasterDraft = Boolean(mergeDraftByGroup[group.id]);
+                return (
+                  <article key={group.id} className="border border-border/70 bg-background/20 p-4 space-y-4">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <h3 className="text-lg font-bold text-foreground">
+                          {group.names.join(" / ") || group.normalizedName}
+                        </h3>
+                        <p className="text-xs uppercase tracking-widest text-muted">
+                          normalized: {group.normalizedName} / risk: {group.risk} /
+                          candidates: {group.candidateIds.length} / drafts: {group.draftIds.length}
+                        </p>
+                        <p className="text-sm text-muted mt-1">{group.reason}</p>
+                        {group.existingPublishedDossierMatch ? (
+                          <p className="text-xs text-accent mt-1">
+                            Existing published dossier match: {group.existingPublishedDossierMatch.id} / {group.existingPublishedDossierMatch.name} ({group.existingPublishedDossierMatch.confidence})
+                          </p>
+                        ) : null}
+                      </div>
+                      <button
+                        disabled={saving || included.length < 2}
+                        onClick={() => mergeDuplicateGroup(group)}
+                        className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                      >
+                        {createMasterDraft
+                          ? "Create Master Draft from Merge"
+                          : "Merge into Master Candidate"}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                      {groupCandidates.map((candidate) => {
+                        const linkedDraft = drafts.find((draft) => draft.candidateId === candidate.id);
+                        return (
+                          <div key={candidate.id} className="border border-border bg-surface p-3 text-sm text-muted space-y-2">
+                            <div className="flex flex-wrap items-center gap-3 text-xs uppercase tracking-widest">
+                              <label className="flex items-center gap-2">
+                                <input
+                                  type="radio"
+                                  name={`primary-${group.id}`}
+                                  checked={primary === candidate.id}
+                                  onChange={() =>
+                                    setMergePrimaryByGroup({
+                                      ...mergePrimaryByGroup,
+                                      [group.id]: candidate.id,
+                                    })
+                                  }
+                                />
+                                Master
+                              </label>
+                              <label className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={included.includes(candidate.id)}
+                                  onChange={() => toggleMergeCandidate(group, candidate.id)}
+                                />
+                                Include
+                              </label>
+                            </div>
+                            <p className="text-foreground font-bold">{candidate.name}</p>
+                            <p>Status/source: {candidate.status} / {candidate.source}</p>
+                            <p>Reason: {candidate.reason || "—"}</p>
+                            <p>Why now: {candidate.whyNow || "—"}</p>
+                            <p>Evidence summary: {candidate.evidenceSummary || "—"}</p>
+                            <div><span className="text-foreground">Known facts:</span> {listOrEmpty(candidate.knownFacts, "None recorded")}</div>
+                            <div><span className="text-foreground">Missing info:</span> {listOrEmpty(candidate.missingInfo, "None recorded")}</div>
+                            <p>
+                              Recommended taxonomy: {candidate.recommendedCategory ?? "—"} / {candidate.recommendedKind ?? "—"} / {candidate.recommendedEcosystemLane ?? "—"} / {candidate.recommendedIdentityAuthority ?? "—"}
+                            </p>
+                            <p>Recommended tags: {(candidate.recommendedTags ?? []).join(", ") || "—"}</p>
+                            <p>Linked draft status: {linkedDraft?.status ?? "No linked draft"}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs uppercase tracking-widest text-muted">
+                      <label className="flex items-center gap-2 border border-border bg-surface p-3">
+                        <input
+                          type="radio"
+                          checked={!createMasterDraft}
+                          onChange={() =>
+                            setMergeDraftByGroup({ ...mergeDraftByGroup, [group.id]: false })
+                          }
+                        />
+                        Merge candidates only
+                      </label>
+                      <label className="flex items-center gap-2 border border-border bg-surface p-3">
+                        <input
+                          type="radio"
+                          checked={createMasterDraft}
+                          onChange={() =>
+                            setMergeDraftByGroup({ ...mergeDraftByGroup, [group.id]: true })
+                          }
+                        />
+                        Merge candidates and create/update master draft
+                      </label>
+                      <label className="md:col-span-2 space-y-2">
+                        <span>Merge note</span>
+                        <textarea
+                          value={mergeNoteByGroup[group.id] ?? ""}
+                          onChange={(event) =>
+                            setMergeNoteByGroup({
+                              ...mergeNoteByGroup,
+                              [group.id]: event.target.value,
+                            })
+                          }
+                          className={`${textInputClass()} min-h-20`}
+                        />
+                      </label>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
 
         <section className="border border-border bg-surface p-6 space-y-5">
           <div>

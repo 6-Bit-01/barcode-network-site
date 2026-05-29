@@ -60,7 +60,8 @@ export type DossierCandidateStatus =
   | "needs_revision"
   | "approved"
   | "denied"
-  | "needs_more_evidence";
+  | "needs_more_evidence"
+  | "merged";
 
 export type DossierDraftStatus =
   | "draft"
@@ -68,7 +69,8 @@ export type DossierDraftStatus =
   | "owner_changes_requested"
   | "owner_approved"
   | "denied"
-  | "published";
+  | "published"
+  | "superseded";
 
 export type DossierCategory =
   | "Entity"
@@ -120,6 +122,10 @@ export type DossierCandidate = {
   missingInfo?: string[];
   doNotSay?: string[];
   publicSafetyNotes?: string[];
+  mergedIntoCandidateId?: string;
+  mergedAt?: string;
+  mergeNote?: string;
+  mergeSourceCandidateIds?: string[];
   status: DossierCandidateStatus;
   createdAt: string;
   updatedAt: string;
@@ -148,6 +154,10 @@ export type DossierDraft = {
     links?: DossierWorkflowLink[];
     files?: [];
   };
+  mergedIntoDraftId?: string;
+  mergedAt?: string;
+  mergeNote?: string;
+  mergeSourceDraftIds?: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -182,6 +192,30 @@ export type CreateManualDossierCandidateInput = {
   primaryLink?: DossierDraft["fields"]["primaryLink"];
 };
 
+export type DossierDuplicateGroup = {
+  id: string;
+  normalizedName: string;
+  candidateIds: string[];
+  draftIds: string[];
+  names: string[];
+  risk: "low" | "medium" | "high";
+  reason: string;
+  suggestedMasterCandidateId?: string;
+  existingPublishedDossierMatch?: {
+    id: string;
+    name: string;
+    confidence: "low" | "medium" | "high";
+  } | null;
+};
+
+export type MergeDossierCandidatesInput = {
+  primaryCandidateId: string;
+  sourceCandidateIds: string[];
+  sourceDraftIds?: string[];
+  createMasterDraft?: boolean;
+  mergeNote?: string;
+};
+
 export type DossierWorkflowAction =
   | "createManualCandidate"
   | "selectCandidate"
@@ -197,7 +231,10 @@ export type DossierWorkflowAction =
   | "ownerDenyDraft"
   | "publishDraft"
   | "denyCandidate"
-  | "markNeedsMoreEvidence";
+  | "markNeedsMoreEvidence"
+  | "detectDuplicateCandidates"
+  | "mergeCandidates"
+  | "createMasterDraftFromMerge";
 
 export type DossierSourceBoundary = {
   source: DossierCandidateSource;
@@ -222,6 +259,9 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "publishDraft",
   "denyCandidate",
   "markNeedsMoreEvidence",
+  "detectDuplicateCandidates",
+  "mergeCandidates",
+  "createMasterDraftFromMerge",
 ];
 
 export const DOSSIER_CANDIDATE_SCORING_POLICY = {

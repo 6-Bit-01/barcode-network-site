@@ -6,8 +6,10 @@ import {
   type DossierCandidate,
   type DossierCandidateStatus,
   type DossierDraft,
+  type DossierDuplicateGroup,
   type DossierDuplicateRisk,
   type DossierWorkflowLink,
+  type MergeDossierCandidatesInput,
 } from "@/lib/dossier-workflow";
 
 export type DossierWorkflowState = {
@@ -164,6 +166,48 @@ function hasNearNameMatch(candidateName: string, entryName: string): boolean {
     normalizedCandidate.includes(normalizedEntry) ||
     normalizedEntry.includes(normalizedCandidate)
   );
+}
+
+
+function uniqueStrings(...groups: Array<string[] | undefined>): string[] {
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const group of groups) {
+    for (const item of group ?? []) {
+      const trimmed = item.trim();
+      const key = trimmed.toLowerCase();
+      if (!trimmed || seen.has(key)) continue;
+      seen.add(key);
+      output.push(trimmed);
+    }
+  }
+  return output;
+}
+
+function combineTextValues(values: Array<string | undefined>, limit = 4): string {
+  return uniqueStrings(values.filter((value): value is string => Boolean(value))).slice(0, limit).join("\n\n");
+}
+
+function riskRank(risk: DossierDuplicateRisk): number {
+  return { none: 0, low: 1, medium: 2, high: 3 }[risk] ?? 0;
+}
+
+function confidenceRank(confidence: "low" | "medium" | "high"): number {
+  return { low: 1, medium: 2, high: 3 }[confidence];
+}
+
+function activeDraftForCandidate(drafts: DossierDraft[], candidateId: string): DossierDraft | undefined {
+  return drafts.find(
+    (draft) =>
+      draft.candidateId === candidateId &&
+      draft.status !== "denied" &&
+      draft.status !== "published" &&
+      draft.status !== "superseded",
+  );
+}
+
+function preferredValue<T>(...values: Array<T | undefined>): T | undefined {
+  return values.find((value) => value !== undefined && value !== null && value !== "");
 }
 
 function findExistingDossierMatch(name: string): {
@@ -621,6 +665,355 @@ export async function getDossierCandidate(
     currentState.candidates.find((candidate) => candidate.id === candidateId) ??
     null
   );
+}
+
+
+export function buildDossierDuplicateGroups(
+  state: DossierWorkflowState,
+): DossierDuplicateGroup[] {
+  const draftsByCandidate = new Map<string, DossierDraft[]>();
+  for (const draft of state.drafts) {
+    const list = draftsByCandidate.get(draft.candidateId) ?? [];
+    list.push(draft);
+    draftsByCandidate.set(draft.candidateId, list);
+  }
+
+  const eligible = state.candidates.filter((candidate) => {
+    if (!candidate.name?.trim()) return false;
+    if (candidate.status === "merged") return false;
+    if (candidate.status === "denied") {
+      return (draftsByCandidate.get(candidate.id) ?? []).some(
+        (draft) => draft.status !== "denied" && draft.status !== "published",
+      );
+    }
+    return true;
+  });
+
+  const candidateIdsByGroupKey = new Map<string, Set<string>>();
+  const groupRiskByKey = new Map<string, DossierDuplicateGroup["risk"]>();
+  const groupReasonByKey = new Map<string, string>();
+
+  function addPair(
+    key: string,
+    a: DossierCandidate,
+    b: DossierCandidate,
+    risk: DossierDuplicateGroup["risk"],
+    reason: string,
+  ) {
+    const ids = candidateIdsByGroupKey.get(key) ?? new Set<string>();
+    ids.add(a.id);
+    ids.add(b.id);
+    candidateIdsByGroupKey.set(key, ids);
+    const currentRisk = groupRiskByKey.get(key) ?? "low";
+    groupRiskByKey.set(key, riskRank(risk) > riskRank(currentRisk) ? risk : currentRisk);
+    if (!groupReasonByKey.has(key)) groupReasonByKey.set(key, reason);
+  }
+
+  for (let i = 0; i < eligible.length; i += 1) {
+    for (let j = i + 1; j < eligible.length; j += 1) {
+      const a = eligible[i];
+      const b = eligible[j];
+      const normalizedA = normalizeName(a.name);
+      const normalizedB = normalizeName(b.name);
+      const compactA = compactName(a.name);
+      const compactB = compactName(b.name);
+      if (!normalizedA || !normalizedB) continue;
+      if (normalizedA === normalizedB) {
+        addPair(normalizedA, a, b, "high", "Exact normalized candidate name match inside workflow store.");
+        continue;
+      }
+      if (compactA && compactA === compactB) {
+        addPair(compactA, a, b, "high", "Compact candidate names match after removing punctuation and spaces.");
+        continue;
+      }
+      if (
+        normalizedA.length >= 4 &&
+        normalizedB.length >= 4 &&
+        (normalizedA.includes(normalizedB) || normalizedB.includes(normalizedA))
+      ) {
+        const key = compactA.length <= compactB.length ? compactA : compactB;
+        addPair(key, a, b, "medium", "Candidate names appear to contain or closely overlap each other.");
+      }
+    }
+  }
+
+  return [...candidateIdsByGroupKey.entries()]
+    .map(([key, ids]) => {
+      const groupCandidates = [...ids]
+        .map((id) => eligible.find((candidate) => candidate.id === id))
+        .filter((candidate): candidate is DossierCandidate => Boolean(candidate))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+      const draftIds = groupCandidates
+        .flatMap((candidate) => draftsByCandidate.get(candidate.id) ?? [])
+        .map((draft) => draft.id)
+        .sort();
+      const existingPublishedDossierMatch = groupCandidates
+        .map((candidate) => candidate.existingDossierMatch)
+        .filter((match): match is NonNullable<DossierCandidate["existingDossierMatch"]> => Boolean(match))
+        .sort((a, b) => confidenceRank(b.confidence) - confidenceRank(a.confidence) || a.id.localeCompare(b.id))[0] ?? null;
+      return {
+        id: `workflow-duplicate-${key}`,
+        normalizedName: key,
+        candidateIds: groupCandidates.map((candidate) => candidate.id),
+        draftIds,
+        names: uniqueStrings(groupCandidates.map((candidate) => candidate.name)).sort((a, b) => a.localeCompare(b)),
+        risk: groupRiskByKey.get(key) ?? "low",
+        reason: groupReasonByKey.get(key) ?? "Possible workflow duplicate candidate names.",
+        suggestedMasterCandidateId: groupCandidates[0]?.id,
+        existingPublishedDossierMatch,
+      } satisfies DossierDuplicateGroup;
+    })
+    .filter((group) => group.candidateIds.length > 1)
+    .sort((a, b) => riskRank(b.risk) - riskRank(a.risk) || a.normalizedName.localeCompare(b.normalizedName))
+    .slice(0, 25);
+}
+
+function mergeEvidenceItems(
+  candidates: DossierCandidate[],
+): NonNullable<DossierCandidate["evidenceItems"]> {
+  const seen = new Set<string>();
+  const output: NonNullable<DossierCandidate["evidenceItems"]> = [];
+  for (const item of candidates.flatMap((candidate) => candidate.evidenceItems ?? [])) {
+    const key = `${item.id || ""}|${item.summary.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(item);
+  }
+  return output.slice(0, 20);
+}
+
+function strongestTier(candidates: DossierCandidate[]): DossierCandidate["tier"] {
+  const order: DossierCandidate["tier"][] = ["draft_ready", "review_candidate", "weak_candidate"];
+  return order.find((tier) => candidates.some((candidate) => candidate.tier === tier)) ?? "review_candidate";
+}
+
+function buildMasterDraftFields(
+  masterCandidate: DossierCandidate,
+  primaryDraft: DossierDraft | undefined,
+  sourceDrafts: DossierDraft[],
+): DossierDraft["fields"] {
+  const otherDraftFields = sourceDrafts.map((draft) => draft.fields);
+  return normalizeDraftFields({
+    name: preferredValue(primaryDraft?.fields.name, masterCandidate.name, ...otherDraftFields.map((fields) => fields.name)) ?? masterCandidate.name,
+    category: preferredValue(primaryDraft?.fields.category, masterCandidate.recommendedCategory, ...otherDraftFields.map((fields) => fields.category)),
+    kind: preferredValue(primaryDraft?.fields.kind, masterCandidate.recommendedKind, ...otherDraftFields.map((fields) => fields.kind)),
+    ecosystemLane: preferredValue(primaryDraft?.fields.ecosystemLane, masterCandidate.recommendedEcosystemLane, ...otherDraftFields.map((fields) => fields.ecosystemLane)),
+    identityAuthority: preferredValue(primaryDraft?.fields.identityAuthority, masterCandidate.recommendedIdentityAuthority, ...otherDraftFields.map((fields) => fields.identityAuthority)),
+    status: preferredValue(primaryDraft?.fields.status, masterCandidate.recommendedStatus, ...otherDraftFields.map((fields) => fields.status), "PENDING"),
+    clearance: preferredValue(primaryDraft?.fields.clearance, masterCandidate.recommendedClearance, ...otherDraftFields.map((fields) => fields.clearance), "PUBLIC"),
+    role: preferredValue(primaryDraft?.fields.role, ...otherDraftFields.map((fields) => fields.role)),
+    origin: preferredValue(primaryDraft?.fields.origin, masterCandidate.recommendedOrigin, ...otherDraftFields.map((fields) => fields.origin), "UNVERIFIED"),
+    summary: preferredValue(primaryDraft?.fields.summary, masterCandidate.evidenceSummary, ...otherDraftFields.map((fields) => fields.summary)),
+    notes: combineTextValues([
+      primaryDraft?.fields.notes,
+      masterCandidate.reason,
+      masterCandidate.whyNow,
+      ...otherDraftFields.map((fields) => fields.notes),
+    ], 8),
+    tags: uniqueStrings(primaryDraft?.fields.tags, masterCandidate.recommendedTags, ...otherDraftFields.map((fields) => fields.tags)),
+    proposedTags: uniqueStrings(primaryDraft?.fields.proposedTags, masterCandidate.proposedTags, ...otherDraftFields.map((fields) => fields.proposedTags)),
+    primaryLink: preferredValue(primaryDraft?.fields.primaryLink, masterCandidate.primaryLink, ...otherDraftFields.map((fields) => fields.primaryLink)),
+    links: [
+      ...(primaryDraft?.fields.links ?? []),
+      ...otherDraftFields.flatMap((fields) => fields.links ?? []),
+    ],
+    files: [],
+  });
+}
+
+export class DossierMergeError extends Error {
+  status: number;
+  code: string;
+
+  constructor(message: string, status: number, code: string) {
+    super(message);
+    this.name = "DossierMergeError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+export async function mergeDossierCandidates(input: MergeDossierCandidatesInput): Promise<{
+  masterCandidate: DossierCandidate;
+  masterDraft?: DossierDraft;
+  mergedCandidateIds: string[];
+  supersededDraftIds: string[];
+} | null> {
+  const now = new Date().toISOString();
+  const primaryCandidateId = input.primaryCandidateId?.trim();
+  const requestedSourceIds = uniqueStrings(input.sourceCandidateIds, [primaryCandidateId]);
+  const requestedDraftIds = new Set(uniqueStrings(input.sourceDraftIds));
+
+  if (!primaryCandidateId) {
+    throw new DossierMergeError("primaryCandidateId is required", 400, "missing_primary_candidate");
+  }
+  if (requestedSourceIds.length < 2) {
+    throw new DossierMergeError("At least two source candidates are required for merge", 400, "too_few_source_candidates");
+  }
+
+  let result: {
+    masterCandidate: DossierCandidate;
+    masterDraft?: DossierDraft;
+    mergedCandidateIds: string[];
+    supersededDraftIds: string[];
+  } | null = null;
+
+  await updateDossierWorkflowState((currentState) => {
+    const candidatesById = new Map(currentState.candidates.map((candidate) => [candidate.id, candidate]));
+    const primary = candidatesById.get(primaryCandidateId);
+    if (!primary) throw new DossierMergeError("Primary candidate not found", 404, "primary_candidate_not_found");
+    if (primary.status === "denied") {
+      throw new DossierMergeError("Cannot merge into a denied primary candidate", 400, "primary_candidate_denied");
+    }
+    const missingSourceId = requestedSourceIds.find((id) => !candidatesById.has(id));
+    if (missingSourceId) {
+      throw new DossierMergeError(`Source candidate not found: ${missingSourceId}`, 404, "source_candidate_not_found");
+    }
+
+    const sources = requestedSourceIds.map((id) => candidatesById.get(id)).filter((candidate): candidate is DossierCandidate => Boolean(candidate));
+    const primaryFirstSources = [primary, ...sources.filter((candidate) => candidate.id !== primary.id)];
+    const nonPrimaryIds = primaryFirstSources.filter((candidate) => candidate.id !== primary.id).map((candidate) => candidate.id);
+    const evidenceItems = mergeEvidenceItems(primaryFirstSources);
+    const highestDuplicateRisk = primaryFirstSources.map((candidate) => candidate.duplicateRisk ?? "none").sort((a, b) => riskRank(b) - riskRank(a))[0] ?? "none";
+    const existingDossierMatch = primaryFirstSources
+      .map((candidate) => candidate.existingDossierMatch)
+      .filter((match): match is NonNullable<DossierCandidate["existingDossierMatch"]> => Boolean(match))
+      .sort((a, b) => confidenceRank(b.confidence) - confidenceRank(a.confidence) || a.id.localeCompare(b.id))[0] ?? null;
+    const score = Math.min(100, Math.max(...primaryFirstSources.map((candidate) => candidate.score ?? 0)));
+    const masterCandidate: DossierCandidate = {
+      ...primary,
+      candidateType: primary.candidateType !== "unknown" ? primary.candidateType : (primaryFirstSources.find((candidate) => candidate.candidateType !== "unknown")?.candidateType ?? primary.candidateType),
+      source: primary.source ?? "combined",
+      tier: strongestTier(primaryFirstSources),
+      score,
+      reason: combineTextValues(primaryFirstSources.map((candidate) => candidate.reason), 6),
+      whyNow: combineTextValues(primaryFirstSources.map((candidate) => candidate.whyNow), 6),
+      evidenceSummary: combineTextValues(primaryFirstSources.map((candidate) => candidate.evidenceSummary), 6),
+      evidenceItems,
+      evidenceCount: evidenceItems.length,
+      knownFacts: uniqueStrings(...primaryFirstSources.map((candidate) => candidate.knownFacts)),
+      duplicateRisk: highestDuplicateRisk,
+      existingDossierMatch,
+      recommendedCategory: preferredValue(primary.recommendedCategory, ...primaryFirstSources.slice(1).map((candidate) => candidate.recommendedCategory)),
+      recommendedKind: preferredValue(primary.recommendedKind, ...primaryFirstSources.slice(1).map((candidate) => candidate.recommendedKind)),
+      recommendedEcosystemLane: preferredValue(primary.recommendedEcosystemLane, ...primaryFirstSources.slice(1).map((candidate) => candidate.recommendedEcosystemLane)),
+      recommendedIdentityAuthority: preferredValue(primary.recommendedIdentityAuthority, ...primaryFirstSources.slice(1).map((candidate) => candidate.recommendedIdentityAuthority)),
+      recommendedStatus: preferredValue(primary.recommendedStatus, ...primaryFirstSources.slice(1).map((candidate) => candidate.recommendedStatus)),
+      recommendedClearance: preferredValue(primary.recommendedClearance, ...primaryFirstSources.slice(1).map((candidate) => candidate.recommendedClearance)),
+      recommendedOrigin: preferredValue(primary.recommendedOrigin, ...primaryFirstSources.slice(1).map((candidate) => candidate.recommendedOrigin)),
+      recommendedTags: uniqueStrings(...primaryFirstSources.map((candidate) => candidate.recommendedTags)),
+      proposedTags: uniqueStrings(...primaryFirstSources.map((candidate) => candidate.proposedTags)),
+      primaryLink: primary.primaryLink ?? primaryFirstSources.find((candidate) => candidate.primaryLink?.publicSafe !== false)?.primaryLink,
+      missingInfo: uniqueStrings(...primaryFirstSources.map((candidate) => candidate.missingInfo)),
+      doNotSay: uniqueStrings(...primaryFirstSources.map((candidate) => candidate.doNotSay)),
+      publicSafetyNotes: uniqueStrings(...primaryFirstSources.map((candidate) => candidate.publicSafetyNotes)),
+      status: primary.status === "draft_ready" || primary.status === "draft_requested" ? "draft_ready" : "needs_review",
+      mergeNote: input.mergeNote?.trim() || undefined,
+      mergeSourceCandidateIds: requestedSourceIds,
+      updatedAt: now,
+    };
+
+    let masterDraft: DossierDraft | undefined;
+    const supersededDraftIds: string[] = [];
+    let drafts = currentState.drafts;
+
+    if (input.createMasterDraft) {
+      const sourceDrafts = currentState.drafts.filter(
+        (draft) =>
+          requestedSourceIds.includes(draft.candidateId) || requestedDraftIds.has(draft.id),
+      );
+      const primaryDraft = activeDraftForCandidate(currentState.drafts, primary.id);
+      const nonPrimaryDrafts = sourceDrafts.filter(
+        (draft) => draft.id !== primaryDraft?.id && draft.candidateId !== primary.id && draft.status !== "published",
+      );
+      const sourceDraftIds = uniqueStrings(sourceDrafts.map((draft) => draft.id));
+
+      if (primaryDraft) {
+        masterDraft = {
+          ...primaryDraft,
+          status: primaryDraft.status === "published" ? "draft" : primaryDraft.status,
+          fields: buildMasterDraftFields(masterCandidate, primaryDraft, sourceDrafts.filter((draft) => draft.id !== primaryDraft.id)),
+          mergeNote: input.mergeNote?.trim() || undefined,
+          mergeSourceDraftIds: sourceDraftIds,
+          updatedAt: now,
+        };
+        drafts = currentState.drafts.map((draft) => {
+          if (draft.id === primaryDraft.id) return masterDraft as DossierDraft;
+          if (nonPrimaryDrafts.some((sourceDraft) => sourceDraft.id === draft.id)) {
+            supersededDraftIds.push(draft.id);
+            return {
+              ...draft,
+              status: "superseded" as const,
+              mergedIntoDraftId: primaryDraft.id,
+              mergedAt: now,
+              mergeNote: input.mergeNote?.trim() || undefined,
+              mergeSourceDraftIds: sourceDraftIds,
+              updatedAt: now,
+            };
+          }
+          return draft;
+        });
+      } else {
+        masterDraft = {
+          id: createDraftId(),
+          candidateId: primary.id,
+          status: "draft",
+          fields: buildMasterDraftFields(masterCandidate, undefined, sourceDrafts),
+          mergeNote: input.mergeNote?.trim() || undefined,
+          mergeSourceDraftIds: sourceDraftIds,
+          createdAt: now,
+          updatedAt: now,
+        };
+        drafts = [masterDraft, ...currentState.drafts.map((draft) => {
+          if (nonPrimaryDrafts.some((sourceDraft) => sourceDraft.id === draft.id)) {
+            supersededDraftIds.push(draft.id);
+            return {
+              ...draft,
+              status: "superseded" as const,
+              mergedIntoDraftId: masterDraft?.id,
+              mergedAt: now,
+              mergeNote: input.mergeNote?.trim() || undefined,
+              mergeSourceDraftIds: sourceDraftIds,
+              updatedAt: now,
+            };
+          }
+          return draft;
+        })];
+      }
+    }
+
+    const candidates = currentState.candidates.map((candidate) => {
+      if (candidate.id === primary.id) return masterCandidate;
+      if (nonPrimaryIds.includes(candidate.id)) {
+        return {
+          ...candidate,
+          status: "merged" as const,
+          mergedIntoCandidateId: primary.id,
+          mergedAt: now,
+          mergeNote: input.mergeNote?.trim() || undefined,
+          mergeSourceCandidateIds: requestedSourceIds,
+          updatedAt: now,
+        };
+      }
+      return candidate;
+    });
+
+    result = {
+      masterCandidate,
+      masterDraft,
+      mergedCandidateIds: nonPrimaryIds,
+      supersededDraftIds,
+    };
+
+    return {
+      ...currentState,
+      candidates,
+      drafts,
+      updatedAt: now,
+    };
+  });
+
+  return result;
 }
 
 export function getDossierWorkflowStorageMode(): "redis" | "memory_fallback" {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { databasePage, radioPage, siteConfig } from "@/content";
 import type { PublicDossierAuthority, PublicDossierKind, PublicDossierLifecycle } from "@/content";
+import { getDatabaseAggregateStats } from "@/lib/database-stats";
 import { getRadioQueueState, toPublicQueueTrack } from "@/lib/queue";
 import type { QueueEntry, QueueLane, QueuePublicTrack, QueueSourceType } from "@/lib/queue-types";
 
@@ -313,15 +314,6 @@ type BnlPublicDossier = {
   };
 };
 
-type PublicDossierRegistry = {
-  source: "databasePage.entries";
-  publicCount: number;
-  kinds: Partial<Record<PublicDossierKind, number>>;
-  lifecycleCounts: Partial<Record<PublicDossierLifecycle, number>>;
-  authority: PublicDossierAuthority;
-  autoPromotion: false;
-  queueDerivedProfiles: false;
-};
 
 const PUBLIC_DOSSIER_BOUNDARIES = [
   "not Discord identity",
@@ -332,12 +324,18 @@ const PUBLIC_DOSSIER_BOUNDARIES = [
 
 const DOSSIER_RULES = [
   "Existing public dossiers are website-published public context.",
+  "Full database aggregate counts are public-safe count summaries, not dossier details.",
+  "Restricted records may be counted in aggregate but not exposed by name, ID, summary, tags, link, origin, or role.",
+  "publicCount is the number of public-clearance database dossiers exposed to BNL.",
+  "totalCount is the number of records in the full website database source of truth.",
   "Public dossiers are not private profiles.",
   "Public dossiers are not Discord identity mappings.",
   "Public dossiers are not payment/customer/account records.",
   "Public dossiers are not automatic broadcast memory.",
-  "Queue-derived artists are not public dossiers unless manually promoted through a future approved workflow.",
+  "Queue-derived artists are not dossier records unless manually promoted through a future approved workflow.",
   "Research classifier dossier seeds are not public dossiers until a future approved site workflow publishes them.",
+  "BNL may cite aggregate counts, but may not claim access to restricted records.",
+  "BNL may say restricted records exist by count, but not identify them.",
 ];
 
 function lifecycleForStatus(status: PublicDossierStatus): PublicDossierLifecycle {
@@ -392,10 +390,38 @@ function normalizePublicDossier(entry: PublicDatabaseEntry): BnlPublicDossier {
   };
 }
 
-function buildDossierRegistry(publicEntries: BnlPublicDossier[]): PublicDossierRegistry {
+function buildDossierRegistry(allEntries: DatabaseEntry[], publicEntries: BnlPublicDossier[]) {
+  const stats = getDatabaseAggregateStats(allEntries);
+
   return {
     source: "databasePage.entries",
+    sourceOfTruth: "src/content.ts:databasePage.entries",
+    statsHelper: "src/lib/database-stats.ts:getDatabaseAggregateStats",
+    countScope: "full_database_aggregates",
+    publicItemScope: "public_clearance_only",
+    totalCount: stats.totalCount,
     publicCount: publicEntries.length,
+    restrictedCount: stats.restrictedCount,
+    activeCount: stats.activeCount,
+    pendingCount: stats.pendingCount,
+    categoryCount: stats.categoryCount,
+    statusCounts: stats.statusCounts,
+    clearanceCounts: stats.clearanceCounts,
+    categoryCounts: stats.categoryCounts,
+    restrictedDetailsExposed: false,
+    scope: {
+      aggregateCounts: "full_database",
+      publicItems: "public_clearance_only",
+      restrictedDetails: "not_exposed",
+    },
+    rules: {
+      aggregateCounts: "Full database aggregate counts are public-safe count summaries.",
+      restrictedRecords: "Restricted records are counted but not exposed by name, ID, summary, tags, link, origin, or role.",
+      publicCount: "Number of public-clearance database dossiers exposed to BNL.",
+      totalCount: "Number of records in the full website database source of truth.",
+      queueDerivedProfiles: "Queue-derived artists are not dossier records unless manually promoted through a future approved workflow.",
+      citationBoundary: "BNL may cite aggregate counts and say restricted records exist by count, but may not identify restricted records.",
+    },
     kinds: publicEntries.reduce<Partial<Record<PublicDossierKind, number>>>((counts, entry) => {
       counts[entry.kind] = (counts[entry.kind] ?? 0) + 1;
       return counts;
@@ -404,17 +430,18 @@ function buildDossierRegistry(publicEntries: BnlPublicDossier[]): PublicDossierR
       counts[entry.lifecycle] = (counts[entry.lifecycle] ?? 0) + 1;
       return counts;
     }, {}),
-    authority: "website_public_database",
+    authority: "website_public_database" as PublicDossierAuthority,
     autoPromotion: false,
     queueDerivedProfiles: false,
   };
 }
 
 function publicDossiers() {
-  const publicEntries = databasePage.entries
+  const databaseEntries = databasePage.entries;
+  const publicEntries = databaseEntries
     .filter((entry) => entry.clearance === "PUBLIC")
     .map((entry) => normalizePublicDossier(entry));
-  const registry = buildDossierRegistry(publicEntries);
+  const registry = buildDossierRegistry(databaseEntries, publicEntries);
 
   if (publicEntries.length === 0) {
     return {

@@ -12,6 +12,21 @@ const MAX_TRACKS_PER_ARTIST = 5;
 
 type BnlReadModelTrackStatus = "queued" | "completed" | "nowPlaying" | "upNext";
 
+type BnlTrackContextRole = "runtime" | "recap_candidate";
+
+type BnlTrackContext = {
+  source: "queue_public_snapshot";
+  visibility: "public";
+  contextRole: BnlTrackContextRole;
+  status: BnlReadModelTrackStatus;
+  memoryDefault: "do_not_store" | "recap_candidate_only";
+  profileDefault: "not_profile";
+  identityDefault: "not_discord_identity";
+  recapDefault: "not_until_completed" | "recap_candidate";
+};
+
+type BnlArtistTrackStatusCounts = Record<BnlReadModelTrackStatus, number>;
+
 type BnlReadModelArtist = {
   name: string;
   normalizedName: string;
@@ -25,6 +40,16 @@ type BnlReadModelArtist = {
     publicSourceUrl?: string | null;
   }>;
   source: "queue_public_snapshot";
+  trackStatusCounts: BnlArtistTrackStatusCounts;
+  bnlContext: {
+    source: "queue_public_snapshot";
+    visibility: "public";
+    surfaceType: "queue_derived_artist_surface";
+    profileStatus: "not_profile";
+    identityStatus: "not_discord_or_account_identity";
+    memoryDefault: "do_not_store";
+    dossierDefault: "not_seed_without_operator_reason";
+  };
 };
 
 type BnlQueueTrack = Pick<
@@ -46,9 +71,25 @@ type BnlQueueTrack = Pick<
   | "tiktokHandle"
   | "priorityUpgradeRequested"
   | "priorityUpgradeStatus"
->;
+> & {
+  bnlContext: BnlTrackContext;
+};
 
-function publicTrack(track: QueuePublicTrack | null | undefined): BnlQueueTrack | null {
+function bnlTrackContext(status: BnlReadModelTrackStatus): BnlTrackContext {
+  const completed = status === "completed";
+  return {
+    source: "queue_public_snapshot",
+    visibility: "public",
+    contextRole: completed ? "recap_candidate" : "runtime",
+    status,
+    memoryDefault: completed ? "recap_candidate_only" : "do_not_store",
+    profileDefault: "not_profile",
+    identityDefault: "not_discord_identity",
+    recapDefault: completed ? "recap_candidate" : "not_until_completed",
+  };
+}
+
+function publicTrack(track: QueuePublicTrack | null | undefined, status: BnlReadModelTrackStatus): BnlQueueTrack | null {
   if (!track) return null;
   return {
     id: track.id,
@@ -68,11 +109,15 @@ function publicTrack(track: QueuePublicTrack | null | undefined): BnlQueueTrack 
     tiktokHandle: track.tiktokHandle ?? null,
     priorityUpgradeRequested: track.priorityUpgradeRequested === true,
     priorityUpgradeStatus: track.priorityUpgradeStatus ?? "none",
+    bnlContext: bnlTrackContext(status),
   };
 }
 
 function isRealQueueEntry(entry: QueueEntry | null | undefined): entry is QueueEntry {
-  return Boolean(entry && entry.isTestTrack !== true);
+  if (!entry || entry.isTestTrack === true) return false;
+  if (entry.note?.includes("[QUEUE SIMULATION TRACK]") === true) return false;
+  if (entry.artist.startsWith("SIM ") || entry.title.startsWith("SIM ")) return false;
+  return true;
 }
 
 function pressureFor(activeCount: number, capacity: number): "low" | "medium" | "high" | "max" {
@@ -128,10 +173,10 @@ async function readPublicLiveQueueForBnl() {
         capacity,
         pressure: pressureFor(activeCount, capacity),
       },
-      nowPlaying: publicTrack(nowPlaying),
-      upNext: publicTrack(upNext),
-      queue: publicQueueTracks.map(publicTrack).filter((track): track is BnlQueueTrack => Boolean(track)),
-      completed: publicCompletedTracks.map(publicTrack).filter((track): track is BnlQueueTrack => Boolean(track)),
+      nowPlaying: publicTrack(nowPlaying, "nowPlaying"),
+      upNext: publicTrack(upNext, "upNext"),
+      queue: publicQueueTracks.map((track) => publicTrack(track, "queued")).filter((track): track is BnlQueueTrack => Boolean(track)),
+      completed: publicCompletedTracks.map((track) => publicTrack(track, "completed")).filter((track): track is BnlQueueTrack => Boolean(track)),
     },
     artists: artistsFromTracks(nowPlaying, upNext, publicQueueTracks, publicCompletedTracks),
   };
@@ -182,6 +227,21 @@ function addArtistTrack(artists: Map<string, BnlReadModelArtist>, track: QueuePu
     tiktokHandle: track.tiktokHandle ?? null,
     tracks: [],
     source: "queue_public_snapshot",
+    trackStatusCounts: {
+      queued: 0,
+      completed: 0,
+      nowPlaying: 0,
+      upNext: 0,
+    },
+    bnlContext: {
+      source: "queue_public_snapshot",
+      visibility: "public",
+      surfaceType: "queue_derived_artist_surface",
+      profileStatus: "not_profile",
+      identityStatus: "not_discord_or_account_identity",
+      memoryDefault: "do_not_store",
+      dossierDefault: "not_seed_without_operator_reason",
+    },
   };
 
   if (!artist.tiktokHandle && track.tiktokHandle) artist.tiktokHandle = track.tiktokHandle;
@@ -195,6 +255,7 @@ function addArtistTrack(artists: Map<string, BnlReadModelArtist>, track: QueuePu
       publicSourceUrl: track.publicSourceUrl ?? null,
     });
   }
+  artist.trackStatusCounts[status] += 1;
 
   artists.set(normalizedName, artist);
 }
@@ -227,19 +288,43 @@ function publicDossiers() {
       tags: entry.tags,
       link: entry.link || null,
       source: "public_database_dossier",
+      bnlContext: {
+        source: "public_database_dossier",
+        visibility: "public",
+        dossierStatus: "existing_public_dossier",
+        memoryDefault: "site_context_not_broadcast_memory",
+        seedDefault: "not_seed_already_public_dossier",
+        identityDefault: "public_site_entity_not_discord_identity",
+      },
     }));
 
   if (publicEntries.length === 0) {
     return {
       implemented: false,
       public: [],
-      note: "Public dossier runtime is not implemented yet.",
+      items: [],
+      sourceAuthority: "public_database_entries_only",
+      rules: [
+        "Existing public dossiers are website-published public context.",
+        "They are not private profiles.",
+        "They are not Discord identity mappings.",
+        "They are not automatic broadcast memory.",
+      ],
+      note: "No public-clearance database dossier summaries are currently included.",
     };
   }
 
   return {
     implemented: true,
     public: publicEntries,
+    items: publicEntries,
+    sourceAuthority: "public_database_entries_only",
+    rules: [
+      "Existing public dossiers are website-published public context.",
+      "They are not private profiles.",
+      "They are not Discord identity mappings.",
+      "They are not automatic broadcast memory.",
+    ],
     note: "Only public-clearance database dossier summaries are included.",
   };
 }
@@ -277,6 +362,80 @@ const sourceContext = [
   },
 ];
 
+type OperatorLaneItem = {
+  id: string;
+  label: string;
+  source: "queue_public_snapshot" | "public_database_dossier" | "read_model_boundary";
+  kind: string;
+  trackId?: string;
+  status?: BnlReadModelTrackStatus;
+  value?: string | number | boolean | null;
+  reason: string;
+};
+
+function trackLaneItem(track: BnlQueueTrack, status: BnlReadModelTrackStatus, lane: "temporaryRuntimeContext" | "recapCandidates" | "publicSafeCopyCandidates"): OperatorLaneItem {
+  const title = track.detectedSongTitle || track.submittedSongTitle || track.providerTitle || "Untitled track";
+  const artist = track.detectedArtistName || track.submittedArtistName || "Unknown artist";
+  return {
+    id: `${lane}:${track.id}:${status}`,
+    label: `${artist} — ${title}`,
+    source: "queue_public_snapshot",
+    kind: "track",
+    trackId: track.id,
+    status,
+    reason: lane === "recapCandidates" ? "Completed public queue track; possible recap item only." : "Public queue track; temporary runtime/site context only.",
+  };
+}
+
+function buildOperatorLanes(queue: Awaited<ReturnType<typeof readPublicLiveQueueForBnl>>["queue"], dossiers: ReturnType<typeof publicDossiers>) {
+  const temporaryRuntimeContext: OperatorLaneItem[] = [
+    { id: "queue:open", label: "Queue open/closed", source: "queue_public_snapshot", kind: "queue_status", value: queue.session.queueOpen, reason: "Public queue runtime status." },
+    { id: "session:status", label: "Session status", source: "queue_public_snapshot", kind: "session_status", value: queue.session.status, reason: "Public session runtime status." },
+    { id: "session:broadcastPhase", label: "Broadcast phase", source: "queue_public_snapshot", kind: "broadcast_phase", value: queue.session.broadcastPhase, reason: "Public broadcast phase runtime status." },
+    { id: "queue:activeCount", label: "Active queue count", source: "queue_public_snapshot", kind: "queue_count", value: queue.session.activeCount, reason: "Public count of active queue tracks." },
+    { id: "priority:enabled", label: "Priority Signal enabled", source: "queue_public_snapshot", kind: "priority_signal_status", value: queue.session.priorityUpgradesEnabled, reason: "Public feature availability label only, not a payment fact." },
+    { id: "priority:label", label: "Priority Signal label", source: "queue_public_snapshot", kind: "priority_signal_label", value: queue.session.priorityUpgradeLabel, reason: "Public queue label only." },
+    { id: "wheel:spinsOwed", label: "Wheel spins owed", source: "queue_public_snapshot", kind: "wheel_status", value: queue.session.wheelSpinsOwed, reason: "Public queue runtime status." },
+  ];
+
+  if (queue.nowPlaying) temporaryRuntimeContext.push(trackLaneItem(queue.nowPlaying, "nowPlaying", "temporaryRuntimeContext"));
+  if (queue.upNext) temporaryRuntimeContext.push(trackLaneItem(queue.upNext, "upNext", "temporaryRuntimeContext"));
+  temporaryRuntimeContext.push(...queue.queue.map((track) => trackLaneItem(track, "queued", "temporaryRuntimeContext")));
+
+  const recapCandidates = queue.completed.map((track) => trackLaneItem(track, "completed", "recapCandidates"));
+  const publicSafeCopyCandidates: OperatorLaneItem[] = [
+    { id: "copy:queue:open", label: "Queue open/closed", source: "queue_public_snapshot", kind: "queue_status", value: queue.session.queueOpen, reason: "High-level public queue copy is safe to reference." },
+  ];
+  if (queue.nowPlaying) publicSafeCopyCandidates.push(trackLaneItem(queue.nowPlaying, "nowPlaying", "publicSafeCopyCandidates"));
+  if (queue.upNext) publicSafeCopyCandidates.push(trackLaneItem(queue.upNext, "upNext", "publicSafeCopyCandidates"));
+  publicSafeCopyCandidates.push(...queue.completed.map((track) => trackLaneItem(track, "completed", "publicSafeCopyCandidates")));
+  publicSafeCopyCandidates.push(...dossiers.public.map((dossier) => ({
+    id: `copy:dossier:${dossier.id}`,
+    label: dossier.name,
+    source: "public_database_dossier" as const,
+    kind: "public_dossier_summary",
+    reason: "Published public dossier summary is public site context, not private memory.",
+  })));
+
+  return {
+    temporaryRuntimeContext,
+    recapCandidates,
+    broadcastMemoryCandidates: [] as OperatorLaneItem[],
+    dossierSeedCandidates: [] as OperatorLaneItem[],
+    publicSafeCopyCandidates,
+    doNotStore: [
+      "queue artist surface is not a permanent profile",
+      "queue track presence is not broadcast memory",
+      "TikTok handle is not Discord identity",
+      "Priority Signal status is not payment fact",
+      "public dossier summary is not private dossier seed",
+      "website read model is public temporary context",
+      "simulation/test tracks are excluded",
+      "no private payment/contact/upload/admin data",
+    ],
+  };
+}
+
 const rules = {
   allowedUse: [
     "public-safe BNL context",
@@ -285,6 +444,12 @@ const rules = {
     "queue/session awareness",
     "artist/track awareness from public queue snapshot",
     "simulation/test tracks are excluded from this read model",
+    "operatorLanes are hints, not actions",
+    "broadcastMemoryCandidates are drafts only",
+    "recapCandidates are possible recap items only",
+    "dossierSeedCandidates are possible seeds only",
+    "temporaryRuntimeContext should not be stored",
+    "BNL must not treat this endpoint as private access",
   ],
   disallowedUse: [
     "private user identity",
@@ -301,9 +466,10 @@ const rules = {
     "treating admin simulation data as live/public context",
   ],
   sourceAuthority: {
-    queue: "public runtime snapshot with read-model-only simulation/test filtering",
-    artists: "derived from read-model-filtered public queue fields",
-    dossiers: "public dossier runtime only if implemented",
+    queue: "public runtime snapshot with simulation/test filtering",
+    artists: "queue-derived public artist surface, not profiles",
+    dossiers: "public dossier/database entries only if clearance is PUBLIC",
+    operatorLanes: "deterministic public-safe lane hints, not automatic actions",
     sourceContext: "static public site context",
     simulationData: "BNL must treat this read model as live/public context only, not admin simulation data",
   },
@@ -311,11 +477,13 @@ const rules = {
 
 export async function GET() {
   const liveQueue = await readPublicLiveQueueForBnl();
+  const dossiers = publicDossiers();
 
   return NextResponse.json(
     {
       ok: true,
       version: 1,
+      schemaRevision: "1.1",
       generatedAt: new Date().toISOString(),
       scope: "bnl_public_read_model",
       source: "barcode-network-site",
@@ -324,7 +492,8 @@ export async function GET() {
         sourceContext,
         queue: liveQueue.queue,
         artists: liveQueue.artists,
-        dossiers: publicDossiers(),
+        dossiers,
+        operatorLanes: buildOperatorLanes(liveQueue.queue, dossiers),
         rules,
       },
     },

@@ -41,6 +41,7 @@ const require = createRequire(import.meta.url);
 const queue = require("../src/lib/queue.ts");
 const { databasePage } = require("../src/content.ts");
 const { getDatabaseAggregateStats } = require("../src/lib/database-stats.ts");
+const { isBnlReadModelDossierVisible, isPublicDatabasePageVisible } = require("../src/lib/database-visibility.ts");
 const readModel = require("../src/app/api/bnl/read-model/route.ts");
 
 const forbiddenKeys = [
@@ -59,6 +60,8 @@ const forbiddenKeys = [
   "discordId",
   "privateSeed",
   "internalNote",
+  "privateNotes",
+  "adminOnly",
 ];
 
 let sequence = 0;
@@ -115,8 +118,16 @@ function findForbiddenKeys(value, pathName = "$", found = []) {
   return found;
 }
 
-function publicDatabaseEntries() {
+function publicClearanceEntries() {
   return databasePage.entries.filter((entry) => entry.clearance === "PUBLIC");
+}
+
+function publicPageVisibleEntries() {
+  return databasePage.entries.filter(isPublicDatabasePageVisible);
+}
+
+function bnlVisibleDossierEntries() {
+  return databasePage.entries.filter(isBnlReadModelDossierVisible);
 }
 
 function countBy(entries, key) {
@@ -128,7 +139,7 @@ function countBy(entries, key) {
 
 function findForbiddenStringValues(value, pathName = "$", found = []) {
   if (typeof value === "string") {
-    if (/contactEmail|submitterToken|stripeSessionId|priorityUpgradePaymentId|priorityUpgradeCheckoutUrl|fileUrl|fileName|fileSize|mimeType|suspiciousFlags|adminNote|discordUserId|discordId|privateSeed|r&d|internalNote/i.test(value)) {
+    if (/contactEmail|submitterToken|stripeSessionId|priorityUpgradePaymentId|priorityUpgradeCheckoutUrl|fileUrl|fileName|fileSize|mimeType|suspiciousFlags|adminNote|discordUserId|discordId|privateSeed|r&d|internalNote|privateNotes|adminOnly/i.test(value)) {
       found.push(`${pathName}: ${value}`);
     }
     return found;
@@ -197,42 +208,58 @@ test("BNL read model preserves v1 compatibility and adds semantic sections", asy
   assert.equal(artist.trackStatusCounts.queued + artist.trackStatusCounts.upNext + artist.trackStatusCounts.nowPlaying, 1);
 
   assert.ok(model.sections.dossiers.public.length > 0, "expected public database dossiers in fixture content");
-  assert.equal(model.sections.dossiers.public[0].bnlContext.dossierStatus, "existing_public_dossier");
+  assert.equal(model.sections.dossiers.public[0].bnlContext.dossierStatus, "existing_public_page_dossier");
   assert.equal(model.sections.dossiers.items.length, model.sections.dossiers.public.length);
 });
 
-test("BNL read model exposes dynamic full database aggregate registry metadata", async () => {
+test("BNL read model exposes dynamic full database aggregate registry metadata and visibility counts", async () => {
   await freshReadModelSession();
 
   const model = await modelJson();
   const registry = model.sections.dossiers.registry;
-  const publicEntries = publicDatabaseEntries();
   const entries = databasePage.entries;
+  const siteVisibleEntries = publicPageVisibleEntries();
+  const bnlEntries = bnlVisibleDossierEntries();
+  const publicClearance = publicClearanceEntries();
 
   assert.ok(registry);
   assert.equal(registry.source, "databasePage.entries");
   assert.equal(registry.sourceOfTruth, "src/content.ts:databasePage.entries");
   assert.equal(registry.statsHelper, "src/lib/database-stats.ts:getDatabaseAggregateStats");
+  assert.equal(registry.visibilityHelper, "src/lib/database-visibility.ts");
   assert.equal(registry.countScope, "full_database_aggregates");
-  assert.equal(registry.publicItemScope, "public_clearance_only");
+  assert.equal(registry.publicItemScope, "public_database_page_visible");
   assert.equal(registry.totalCount, entries.length);
+  assert.equal(registry.siteVisibleCount, siteVisibleEntries.length);
+  assert.equal(registry.bnlExposedDetailCount, bnlEntries.length);
+  assert.equal(registry.publicCount, bnlEntries.length);
+  assert.equal(registry.publicClearanceCount, publicClearance.length);
+  assert.equal(registry.internalClearanceCount, entries.filter((entry) => entry.clearance === "INTERNAL").length);
+  assert.equal(registry.restrictedClearanceCount, entries.filter((entry) => entry.clearance === "RESTRICTED").length);
+  assert.equal(registry.aggregateOnlyCount, 0);
+  assert.equal(registry.hiddenFromBnlCount, 0);
   assert.equal(registry.activeCount, entries.filter((entry) => entry.status === "ACTIVE").length);
   assert.equal(registry.pendingCount, entries.filter((entry) => entry.status === "PENDING").length);
   assert.equal(registry.restrictedCount, entries.filter((entry) => entry.clearance === "RESTRICTED").length);
-  assert.equal(registry.publicCount, publicEntries.length);
   assert.equal(registry.categoryCount, new Set(entries.map((entry) => entry.category)).size);
   assert.deepEqual(registry.statusCounts, countBy(entries, "status"));
   assert.deepEqual(registry.clearanceCounts, countBy(entries, "clearance"));
   assert.deepEqual(registry.categoryCounts, countBy(entries, "category"));
-  assert.equal(registry.publicCount, model.sections.dossiers.public.length);
-  assert.equal(registry.publicCount, model.sections.dossiers.items.length);
+  assert.equal(registry.bnlExposedDetailCount, model.sections.dossiers.public.length);
+  assert.equal(registry.bnlExposedDetailCount, model.sections.dossiers.items.length);
+  assert.equal(model.sections.dossiers.publicClearanceOnly.length, registry.publicClearanceCount);
   assert.equal(registry.restrictedDetailsExposed, false);
+  assert.equal(registry.restrictedSummariesExposed, entries.some((entry) => entry.clearance === "RESTRICTED" && isBnlReadModelDossierVisible(entry)));
+  assert.equal(registry.clearanceMeaning, "public_lore_label");
   assert.deepEqual(registry.scope, {
     aggregateCounts: "full_database",
-    publicItems: "public_clearance_only",
-    restrictedDetails: "not_exposed",
+    publicItems: "public_database_page_visible",
+    public: "compatibility_alias_for_public_database_page_visible",
+    publicClearanceOnly: "clearance_label_public_only",
+    restrictedDetails: "summary_only_no_hidden_details",
   });
   assert.ok(registry.rules.aggregateCounts.includes("count summaries"));
+  assert.ok(registry.rules.clearance.includes("classification label"));
   assert.ok(registry.kinds);
   assert.ok(registry.lifecycleCounts);
   assert.equal(registry.autoPromotion, false);
@@ -270,48 +297,61 @@ test("database page and read model route use the shared aggregate stats helper w
   assert.doesNotMatch(routeSource, /categoryCount:\s*\d+/);
 });
 
-test("BNL read model normalizes public dossiers with safe structured fields", async () => {
+test("BNL read model normalizes public-page-visible dossiers with safe structured fields", async () => {
   await freshReadModelSession();
 
   const model = await modelJson();
+  const bnlVisibleIds = new Set(bnlVisibleDossierEntries().map((entry) => entry.id));
+
+  assert.equal(model.sections.dossiers.items.length, model.sections.dossiers.registry.bnlExposedDetailCount);
+  assert.equal(model.sections.dossiers.public.length, model.sections.dossiers.registry.bnlExposedDetailCount);
 
   for (const dossier of model.sections.dossiers.public) {
-    for (const field of ["id", "name", "kind", "lifecycle", "authority", "bnlContext", "category", "status", "role", "summary", "tags", "link", "source"]) {
+    for (const field of ["id", "name", "kind", "lifecycle", "authority", "bnlContext", "category", "status", "role", "summary", "tags", "link", "source", "clearance", "publicPageVisibility", "bnlReadModelExposure", "clearanceMeaning", "visibilityBoundary"]) {
       assert.ok(Object.hasOwn(dossier, field), `public dossier should expose ${field}`);
     }
+    assert.equal(bnlVisibleIds.has(dossier.id), true, `${dossier.id} should be BNL-visible via public page semantics`);
     assert.ok(Array.isArray(dossier.knownBoundaries));
     assert.ok(Array.isArray(dossier.publicFacts));
     assert.ok(Array.isArray(dossier.relatedPublicIds));
-    assert.equal(dossier.bnlContext.visibility, "public");
+    assert.equal(dossier.publicPageVisibility, "listed_publicly");
+    assert.equal(dossier.bnlReadModelExposure, "public_summary");
+    assert.equal(dossier.clearanceMeaning, "public_lore_label");
+    assert.equal(dossier.visibilityBoundary, "same_summary_fields_as_public_database_page");
+    assert.equal(dossier.bnlContext.visibility, "public_page_visible");
+    assert.equal(dossier.bnlContext.clearanceMeaning, "public_lore_label");
+    assert.equal(dossier.bnlContext.hiddenDetailsDefault, "do_not_infer");
     assert.equal(dossier.bnlContext.seedDefault, "not_seed_already_public_dossier");
   }
 });
 
-test("BNL read model keeps restricted dossier details out of public dossier arrays", async () => {
+test("BNL read model exposes restricted/internal only as public-page-safe summaries", async () => {
   await freshReadModelSession();
 
   const model = await modelJson();
-  const publicIds = new Set(publicDatabaseEntries().map((entry) => entry.id));
-  const publicDossierJson = JSON.stringify({
+  const dossierJson = JSON.stringify({
     public: model.sections.dossiers.public,
     items: model.sections.dossiers.items,
   });
+  const restrictedDossiers = model.sections.dossiers.items.filter((dossier) => dossier.clearance === "RESTRICTED");
+  const internalDossiers = model.sections.dossiers.items.filter((dossier) => dossier.clearance === "INTERNAL");
 
   assert.equal(model.sections.dossiers.registry.restrictedDetailsExposed, false);
-  for (const dossier of [...model.sections.dossiers.public, ...model.sections.dossiers.items]) {
-    assert.equal(publicIds.has(dossier.id), true, `${dossier.id} should be public-clearance only`);
+  assert.equal(model.sections.dossiers.registry.restrictedSummariesExposed, restrictedDossiers.length > 0);
+  assert.ok(restrictedDossiers.length > 0, "fixture should include restricted public-page-visible summaries");
+  assert.ok(internalDossiers.length > 0, "fixture should include internal public-page-visible summaries");
+
+  for (const dossier of [...restrictedDossiers, ...internalDossiers]) {
+    assert.equal(dossier.publicPageVisibility, "listed_publicly");
+    assert.equal(dossier.bnlReadModelExposure, "public_summary");
+    assert.equal(dossier.clearanceMeaning, "public_lore_label");
+    assert.equal(dossier.visibilityBoundary, "same_summary_fields_as_public_database_page");
+    assert.ok(dossier.knownBoundaries.includes("do not infer hidden restricted/internal details"));
+    assert.equal(dossier.bnlContext.hiddenDetailsDefault, "do_not_infer");
   }
 
-  const publicEntryJson = JSON.stringify(publicDatabaseEntries());
-  for (const entry of databasePage.entries.filter((item) => item.clearance !== "PUBLIC")) {
-    assert.equal(publicDossierJson.includes(entry.id), false, `${entry.id} should not be exposed`);
-    if (!publicEntryJson.includes(entry.name)) {
-      assert.equal(publicDossierJson.includes(entry.name), false, `${entry.name} should not be exposed`);
-    }
-    assert.equal(publicDossierJson.includes(entry.summary), false, `${entry.id} summary should not be exposed`);
-    if (entry.link && !publicEntryJson.includes(entry.link)) {
-      assert.equal(publicDossierJson.includes(entry.link), false, `${entry.id} link should not be exposed`);
-    }
+  for (const field of forbiddenKeys) {
+    assert.equal(dossierJson.includes(field), false, `${field} should not appear in public dossier summaries`);
   }
 });
 
@@ -372,7 +412,10 @@ test("BNL read model keeps normal queue items out of broadcast memory candidates
   assert.equal(lanes.broadcastMemoryCandidates.some((item) => item.trackId === completed.id), false);
   assert.equal(lanes.broadcastMemoryCandidates.length, 0);
   assert.equal(lanes.dossierSeedCandidates.length, 0);
-  assert.equal(lanes.publicSafeCopyCandidates.some((item) => item.source === "public_database_dossier" && item.dossierId), true);
+  const dossierCopyCandidates = lanes.publicSafeCopyCandidates.filter((item) => item.source === "public_database_dossier" && item.dossierId);
+  assert.equal(dossierCopyCandidates.length, model.sections.dossiers.registry.bnlExposedDetailCount);
+  assert.equal(dossierCopyCandidates.some((item) => model.sections.dossiers.items.find((dossier) => dossier.id === item.dossierId)?.clearance === "RESTRICTED"), true);
+  assert.equal(dossierCopyCandidates.every((item) => item.reason.includes("not private memory or a seed")), true);
   assert.equal(model.sections.dossiers.public.some((dossier) => JSON.stringify(dossier).includes("Memory Queue Artist")), false);
   assert.equal(model.sections.artists.some((entry) => entry.normalizedName === "memory-queue-artist"), true);
 

@@ -1,7 +1,23 @@
 import { NextResponse } from "next/server";
 import { databasePage, radioPage, siteConfig } from "@/content";
-import type { PublicDossierAuthority, PublicDossierKind, PublicDossierLifecycle } from "@/content";
+import type {
+  BnlReadModelExposure,
+  ClearanceMeaning,
+  PublicDossierAuthority,
+  PublicDossierKind,
+  PublicDossierLifecycle,
+  PublicPageVisibility,
+} from "@/content";
 import { getDatabaseAggregateStats } from "@/lib/database-stats";
+import {
+  getBnlReadModelExposure,
+  getClearanceMeaning,
+  getPublicPageVisibility,
+  isBnlAggregateOnly,
+  isBnlReadModelDossierVisible,
+  isHiddenFromBnl,
+  isPublicDatabasePageVisible,
+} from "@/lib/database-visibility";
 import { getRadioQueueState, toPublicQueueTrack } from "@/lib/queue";
 import type { QueueEntry, QueueLane, QueuePublicTrack, QueueSourceType } from "@/lib/queue-types";
 
@@ -285,6 +301,9 @@ type PublicDatabaseEntry = DatabaseEntry & {
   publicFacts?: string[];
   knownBoundaries?: string[];
   relatedPublicIds?: string[];
+  publicPageVisibility?: PublicPageVisibility;
+  bnlReadModelExposure?: BnlReadModelExposure;
+  clearanceMeaning?: ClearanceMeaning;
 };
 
 type BnlPublicDossier = {
@@ -296,6 +315,11 @@ type BnlPublicDossier = {
   lifecycle: PublicDossierLifecycle;
   role: string;
   origin: DatabaseEntry["origin"];
+  clearance: DatabaseEntry["clearance"];
+  publicPageVisibility: PublicPageVisibility;
+  bnlReadModelExposure: BnlReadModelExposure;
+  clearanceMeaning: ClearanceMeaning;
+  visibilityBoundary: "same_summary_fields_as_public_database_page";
   authority: PublicDossierAuthority;
   summary: string;
   tags: string[];
@@ -306,8 +330,10 @@ type BnlPublicDossier = {
   source: "public_database_dossier";
   bnlContext: {
     source: "public_database_dossier";
-    visibility: "public";
-    dossierStatus: "existing_public_dossier";
+    visibility: "public_page_visible";
+    dossierStatus: "existing_public_page_dossier";
+    clearanceMeaning: ClearanceMeaning;
+    hiddenDetailsDefault: "do_not_infer";
     memoryDefault: "site_context_not_broadcast_memory";
     seedDefault: "not_seed_already_public_dossier";
     identityDefault: "public_site_entity_not_discord_identity";
@@ -320,22 +346,25 @@ const PUBLIC_DOSSIER_BOUNDARIES = [
   "not payment profile",
   "not private account",
   "not automatic broadcast memory",
+  "same summary fields as public database page",
+  "do not infer hidden restricted/internal details",
 ];
 
 const DOSSIER_RULES = [
-  "Existing public dossiers are website-published public context.",
-  "Full database aggregate counts are public-safe count summaries, not dossier details.",
-  "Restricted records may be counted in aggregate but not exposed by name, ID, summary, tags, link, origin, or role.",
-  "publicCount is the number of public-clearance database dossiers exposed to BNL.",
-  "totalCount is the number of records in the full website database source of truth.",
-  "Public dossiers are not private profiles.",
-  "Public dossiers are not Discord identity mappings.",
-  "Public dossiers are not payment/customer/account records.",
-  "Public dossiers are not automatic broadcast memory.",
-  "Queue-derived artists are not dossier records unless manually promoted through a future approved workflow.",
+  "Existing public-page-visible dossiers are website-published public context.",
+  "Clearance is a public-facing classification label unless a record explicitly says otherwise.",
+  "Public database page visibility means BNL may summarize the same public-safe fields shown by the website.",
+  "RESTRICTED means restricted-classified in universe, not private user data by default.",
+  "BNL must not infer hidden details from RESTRICTED or INTERNAL clearance labels.",
+  "BNL must not claim private access to dossiers, systems, admin tools, Discord identity, or payment data.",
+  "BNL must not expose admin notes, Discord IDs, payment/customer data, contact fields, upload fields, or private fields.",
+  "Full database aggregate counts are public-safe count summaries.",
+  "publicCount is a compatibility alias for BNL-visible public-page-safe dossier summaries, not PUBLIC-clearance-only records.",
+  "publicClearanceOnly contains records whose clearance label is PUBLIC.",
+  "Public-page-visible dossiers are not automatic broadcast memory.",
+  "Public-page-visible dossiers are not automatic dossier seeds.",
+  "Queue-derived artists are still not dossier records unless manually promoted through a future approved workflow.",
   "Research classifier dossier seeds are not public dossiers until a future approved site workflow publishes them.",
-  "BNL may cite aggregate counts, but may not claim access to restricted records.",
-  "BNL may say restricted records exist by count, but not identify them.",
 ];
 
 function lifecycleForStatus(status: PublicDossierStatus): PublicDossierLifecycle {
@@ -371,6 +400,11 @@ function normalizePublicDossier(entry: PublicDatabaseEntry): BnlPublicDossier {
     lifecycle: entry.lifecycle ?? lifecycleForStatus(entry.status as PublicDossierStatus),
     role: entry.role,
     origin: entry.origin,
+    clearance: entry.clearance,
+    publicPageVisibility: getPublicPageVisibility(entry),
+    bnlReadModelExposure: getBnlReadModelExposure(entry),
+    clearanceMeaning: getClearanceMeaning(entry),
+    visibilityBoundary: "same_summary_fields_as_public_database_page",
     authority: entry.authority ?? "website_public_database",
     summary: entry.summary,
     tags: [...entry.tags],
@@ -381,8 +415,10 @@ function normalizePublicDossier(entry: PublicDatabaseEntry): BnlPublicDossier {
     source: "public_database_dossier",
     bnlContext: {
       source: "public_database_dossier",
-      visibility: "public",
-      dossierStatus: "existing_public_dossier",
+      visibility: "public_page_visible",
+      dossierStatus: "existing_public_page_dossier",
+      clearanceMeaning: getClearanceMeaning(entry),
+      hiddenDetailsDefault: "do_not_infer",
       memoryDefault: "site_context_not_broadcast_memory",
       seedDefault: "not_seed_already_public_dossier",
       identityDefault: "public_site_entity_not_discord_identity",
@@ -390,17 +426,46 @@ function normalizePublicDossier(entry: PublicDatabaseEntry): BnlPublicDossier {
   };
 }
 
-function buildDossierRegistry(allEntries: DatabaseEntry[], publicEntries: BnlPublicDossier[]) {
+function countVisibleByLifecycle(entries: BnlPublicDossier[]) {
+  return entries.reduce<Partial<Record<PublicDossierLifecycle, number>>>((counts, entry) => {
+    counts[entry.lifecycle] = (counts[entry.lifecycle] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
+function countVisibleByKind(entries: BnlPublicDossier[]) {
+  return entries.reduce<Partial<Record<PublicDossierKind, number>>>((counts, entry) => {
+    counts[entry.kind] = (counts[entry.kind] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
+function buildDossierRegistry(allEntries: DatabaseEntry[], bnlVisibleEntries: BnlPublicDossier[]) {
   const stats = getDatabaseAggregateStats(allEntries);
+  const siteVisibleEntries = allEntries.filter(isPublicDatabasePageVisible);
+  const aggregateOnlyCount = allEntries.filter(isBnlAggregateOnly).length;
+  const hiddenFromBnlCount = allEntries.filter(isHiddenFromBnl).length;
+  const publicClearanceCount = allEntries.filter((entry) => entry.clearance === "PUBLIC").length;
+  const internalClearanceCount = allEntries.filter((entry) => entry.clearance === "INTERNAL").length;
+  const restrictedClearanceCount = allEntries.filter((entry) => entry.clearance === "RESTRICTED").length;
+  const restrictedSummariesExposed = bnlVisibleEntries.some((entry) => entry.clearance === "RESTRICTED");
 
   return {
     source: "databasePage.entries",
     sourceOfTruth: "src/content.ts:databasePage.entries",
     statsHelper: "src/lib/database-stats.ts:getDatabaseAggregateStats",
+    visibilityHelper: "src/lib/database-visibility.ts",
     countScope: "full_database_aggregates",
-    publicItemScope: "public_clearance_only",
+    publicItemScope: "public_database_page_visible",
     totalCount: stats.totalCount,
-    publicCount: publicEntries.length,
+    siteVisibleCount: siteVisibleEntries.length,
+    bnlExposedDetailCount: bnlVisibleEntries.length,
+    publicCount: bnlVisibleEntries.length,
+    publicClearanceCount,
+    internalClearanceCount,
+    restrictedClearanceCount,
+    aggregateOnlyCount,
+    hiddenFromBnlCount,
     restrictedCount: stats.restrictedCount,
     activeCount: stats.activeCount,
     pendingCount: stats.pendingCount,
@@ -409,27 +474,28 @@ function buildDossierRegistry(allEntries: DatabaseEntry[], publicEntries: BnlPub
     clearanceCounts: stats.clearanceCounts,
     categoryCounts: stats.categoryCounts,
     restrictedDetailsExposed: false,
+    restrictedSummariesExposed,
+    clearanceMeaning: "public_lore_label" as ClearanceMeaning,
     scope: {
       aggregateCounts: "full_database",
-      publicItems: "public_clearance_only",
-      restrictedDetails: "not_exposed",
+      publicItems: "public_database_page_visible",
+      public: "compatibility_alias_for_public_database_page_visible",
+      publicClearanceOnly: "clearance_label_public_only",
+      restrictedDetails: "summary_only_no_hidden_details",
     },
     rules: {
       aggregateCounts: "Full database aggregate counts are public-safe count summaries.",
-      restrictedRecords: "Restricted records are counted but not exposed by name, ID, summary, tags, link, origin, or role.",
-      publicCount: "Number of public-clearance database dossiers exposed to BNL.",
+      clearance: "Clearance is a public-facing classification label unless a record explicitly says otherwise.",
+      publicPageVisibility: "If a dossier is listed on the public database page, BNL may summarize the same public-safe fields.",
+      restrictedRecords: "Restricted-classified public-page dossiers may expose only the same summary fields as the public database page; hidden details remain unexposed.",
+      publicCount: "Compatibility count for BNL-visible public-page-safe dossier summaries.",
+      publicClearanceCount: "Number of records whose clearance label is PUBLIC.",
       totalCount: "Number of records in the full website database source of truth.",
       queueDerivedProfiles: "Queue-derived artists are not dossier records unless manually promoted through a future approved workflow.",
-      citationBoundary: "BNL may cite aggregate counts and say restricted records exist by count, but may not identify restricted records.",
+      citationBoundary: "BNL may cite public-page-safe summaries and aggregate counts, but must not claim private access or infer hidden details.",
     },
-    kinds: publicEntries.reduce<Partial<Record<PublicDossierKind, number>>>((counts, entry) => {
-      counts[entry.kind] = (counts[entry.kind] ?? 0) + 1;
-      return counts;
-    }, {}),
-    lifecycleCounts: publicEntries.reduce<Partial<Record<PublicDossierLifecycle, number>>>((counts, entry) => {
-      counts[entry.lifecycle] = (counts[entry.lifecycle] ?? 0) + 1;
-      return counts;
-    }, {}),
+    kinds: countVisibleByKind(bnlVisibleEntries),
+    lifecycleCounts: countVisibleByLifecycle(bnlVisibleEntries),
     authority: "website_public_database" as PublicDossierAuthority,
     autoPromotion: false,
     queueDerivedProfiles: false,
@@ -438,31 +504,37 @@ function buildDossierRegistry(allEntries: DatabaseEntry[], publicEntries: BnlPub
 
 function publicDossiers() {
   const databaseEntries = databasePage.entries;
-  const publicEntries = databaseEntries
-    .filter((entry) => entry.clearance === "PUBLIC")
+  const publicPageVisibleEntries = databaseEntries.filter(isPublicDatabasePageVisible);
+  const bnlVisibleEntries = publicPageVisibleEntries
+    .filter(isBnlReadModelDossierVisible)
     .map((entry) => normalizePublicDossier(entry));
-  const registry = buildDossierRegistry(databaseEntries, publicEntries);
+  const publicClearanceOnly = bnlVisibleEntries.filter((entry) => entry.clearance === "PUBLIC");
+  const registry = buildDossierRegistry(databaseEntries, bnlVisibleEntries);
 
-  if (publicEntries.length === 0) {
+  if (bnlVisibleEntries.length === 0) {
     return {
       implemented: false,
       public: [],
       items: [],
+      publicPageVisible: [],
+      publicClearanceOnly: [],
       registry,
-      sourceAuthority: "public_database_entries_only",
+      sourceAuthority: "public_database_page_visible_entries_only",
       rules: DOSSIER_RULES,
-      note: "No public-clearance database dossier summaries are currently included.",
+      note: "No public-page-visible database dossier summaries are currently included.",
     };
   }
 
   return {
     implemented: true,
-    public: publicEntries,
-    items: publicEntries,
+    public: bnlVisibleEntries,
+    items: bnlVisibleEntries,
+    publicPageVisible: bnlVisibleEntries,
+    publicClearanceOnly,
     registry,
-    sourceAuthority: "public_database_entries_only",
+    sourceAuthority: "public_database_page_visible_entries_only",
     rules: DOSSIER_RULES,
-    note: "Only public-clearance database dossier summaries are included.",
+    note: "Public/read-model dossier summaries include the same public-safe fields visible on the public database page; clearance labels are preserved as lore classification labels unless explicitly overridden.",
   };
 }
 
@@ -554,7 +626,7 @@ function buildOperatorLanes(queue: Awaited<ReturnType<typeof readPublicLiveQueue
     kind: "public_dossier_summary",
     dossierId: dossier.id,
     value: dossier.kind,
-    reason: "Published public dossier summary is public site context, not private memory.",
+    reason: "Public-page-visible dossier summary is safe site context with clearance label preserved; not private memory or a seed.",
   })));
 
   return {
@@ -590,6 +662,11 @@ const rules = {
     "dossierSeedCandidates are possible seeds only",
     "temporaryRuntimeContext should not be stored",
     "BNL must not treat this endpoint as private access",
+    "clearance labels are public-facing classification labels unless a dossier explicitly says otherwise",
+    "public database page visibility permits only the same public-safe summary fields",
+    "RESTRICTED means restricted-classified in universe, not private user data by default",
+    "public-page-visible dossiers are not automatically broadcast memory or dossier seeds",
+    "queue-derived artists are still not dossier records",
   ],
   disallowedUse: [
     "private user identity",
@@ -602,13 +679,16 @@ const rules = {
     "account profiles",
     "Discord identity merging",
     "automatic canon creation",
+    "claiming private access to restricted/internal dossier details",
+    "inferring hidden details from restricted/internal clearance labels",
+    "exposing admin notes, Discord IDs, payment/customer data, contact fields, upload fields, or private fields",
     "claiming public dossiers exist when not implemented",
     "treating admin simulation data as live/public context",
   ],
   sourceAuthority: {
     queue: "public runtime snapshot with simulation/test filtering",
     artists: "queue-derived public artist surface, not profiles",
-    dossiers: "public dossier/database entries only if clearance is PUBLIC",
+    dossiers: "public-page-visible database dossier summaries with clearance labels preserved; hidden/private details are not exposed",
     operatorLanes: "deterministic public-safe lane hints, not automatic actions",
     sourceContext: "static public site context",
     simulationData: "BNL must treat this read model as live/public context only, not admin simulation data",

@@ -232,9 +232,10 @@ test("admin dossier dashboard is traffic control instead of an all-in-one workbe
     "Quick Candidate Intake",
     "Candidate Queue",
     "Drafts in Progress",
-    "Owner Review Queue",
+    "Owner Review",
     "Possible Duplicates",
-    "Merged / Superseded Records",
+    "Closed / Merged Candidates",
+    "Closed / Superseded Drafts",
     "System Boundaries",
     "Create Manual Candidate",
     "Review Candidate",
@@ -315,6 +316,8 @@ test("dedicated draft editor route contains focused editing workflow and future 
   ]) {
     assert.match(page, new RegExp(label));
   }
+  assert.match(page, /useParams/);
+  assert.match(page, /routeParam\(params\?\.draftId\)/);
   assert.match(page, /action: "saveDraft"/);
   assert.match(page, /action: "submitDraftForOwnerReview"/);
   assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
@@ -339,6 +342,8 @@ test("dedicated candidate review route contains focused evidence and action work
   ]) {
     assert.match(page, new RegExp(label));
   }
+  assert.match(page, /useParams/);
+  assert.match(page, /routeParam\(params\?\.candidateId\)/);
   assert.match(page, /action: "createDraftFromCandidate"/);
   assert.match(page, /action, candidateId/);
   assert.match(page, /target="_blank"/);
@@ -353,7 +358,8 @@ test("dedicated duplicate merge route contains focused manual merge workflow", (
   const page = source(routePath);
   for (const label of [
     "Merge Review",
-    "Merge is manual",
+    "Merge is a lead/owner review action",
+    "Nothing auto-merges",
     "Source candidates are preserved",
     "Source drafts are preserved",
     "Merge candidates only",
@@ -361,13 +367,47 @@ test("dedicated duplicate merge route contains focused manual merge workflow", (
     "Pre-merge summary",
     "Master candidate:",
     "Included candidates:",
-    "This will not publish anything.",
+    "No public database record will be created.",
+    "No tags will be created.",
+    "BNL will not be invoked.",
   ]) {
     assert.match(page, new RegExp(label));
   }
+  assert.match(page, /useParams/);
+  assert.match(page, /routeParam\(params\?\.groupId\)/);
   assert.match(page, /action: "mergeCandidates"/);
   assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
   assert.doesNotMatch(page, /publishDraft/);
+});
+
+test("dashboard uses actual workflow ids and state-aware lane filtering", () => {
+  const page = source("src/app/admin/dossiers/page.tsx");
+  assert.match(page, /href=\{`\/admin\/dossiers\/candidates\/\$\{candidate\.id\}`\}/);
+  assert.match(page, /href=\{`\/admin\/dossiers\/drafts\/\$\{draft\.id\}`\}/);
+  assert.match(page, /href=\{`\/admin\/dossiers\/duplicates\/\$\{group\.id\}`\}/);
+  assert.match(page, /activeCandidateStatuses/);
+  assert.match(page, /activeCandidates = candidates\.filter/);
+  assert.match(page, /candidate\.status === "denied" \|\| candidate\.status === "merged"/);
+  assert.match(page, /activeDraftStatuses/);
+  assert.match(page, /closedDraftStatuses/);
+  assert.match(page, /Closed \/ Merged Candidates/);
+  assert.match(page, /Closed \/ Superseded Drafts/);
+  assert.match(page, /disabled=\{saving \|\| !canCreateDraft\}/);
+  assert.match(page, /disabled=\{saving \|\| !canUpdateCandidate\}/);
+  assert.match(page, /Open Draft/);
+  assert.match(page, /Superseded by/);
+});
+
+test("owner review page is a placeholder lane without publishing", () => {
+  const routePath = "src/app/admin/dossiers/owner-review/page.tsx";
+  assert.equal(fs.existsSync(path.join(projectRoot, routePath)), true);
+  const page = source(routePath);
+  assert.match(page, /Owner Review Queue/);
+  assert.match(page, /Owner approval will require owner gate\/secret in a later PR/);
+  assert.match(page, /Owner approval still will not publish until publishing exists/);
+  assert.match(page, /Open Draft Editor/);
+  assert.doesNotMatch(page, /publishDraft/);
+  assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
 });
 
 test("dossier workflow types include manual input and scoring policy contracts", () => {
@@ -1194,7 +1234,8 @@ test("admin dossiers dashboard links duplicate groups to dedicated merge review"
   assert.match(page, /\/admin\/dossiers\/duplicates\//);
   assert.doesNotMatch(page, /Merge into Master Candidate/);
   assert.doesNotMatch(page, /Create Master Draft from Merge/);
-  assert.match(mergePage, /Merge is manual/);
+  assert.match(mergePage, /Merge is a lead\/owner review action/);
+  assert.match(mergePage, /Nothing auto-merges/);
   assert.match(mergePage, /Source candidates are preserved/);
   assert.match(mergePage, /Source drafts are preserved/);
   assert.match(mergePage, /BNL merge writing comes later/);

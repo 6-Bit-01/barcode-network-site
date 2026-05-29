@@ -12,13 +12,18 @@ import {
   type DossierCandidate,
   type DossierCandidateStatus,
   type DossierDraft,
+  type DossierDuplicateGroup,
   type DossierWorkflowAction,
+  type MergeDossierCandidatesInput,
 } from "@/lib/dossier-workflow";
 import {
+  buildDossierDuplicateGroups,
   createDraftFromCandidate,
   createManualDossierCandidate,
+  DossierMergeError,
   getDossierWorkflowState,
   getDossierWorkflowStorageMode,
+  mergeDossierCandidates,
   saveDossierDraft,
   submitDraftForOwnerReview,
   updateDossierCandidateStatus,
@@ -31,6 +36,7 @@ export const dynamic = "force-dynamic";
 type DossierWorkflowResponse = {
   candidates: DossierCandidate[];
   drafts: DossierDraft[];
+  duplicateGroups: DossierDuplicateGroup[];
   workflow: {
     version: 1;
     storage: "redis" | "memory_fallback";
@@ -76,6 +82,8 @@ const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "submitDraftForOwnerReview",
   "denyCandidate",
   "markNeedsMoreEvidence",
+  "detectDuplicateCandidates",
+  "mergeCandidates",
 ]);
 
 async function isAuthenticated(req: Request): Promise<boolean> {
@@ -104,6 +112,15 @@ function draftIdFromBody(body: Record<string, unknown>): string {
   return typeof body.draftId === "string" ? body.draftId.trim() : "";
 }
 
+function mergeInputFromBody(body: Record<string, unknown>): MergeDossierCandidatesInput | null {
+  const value = body.input ?? body;
+  if (!value || typeof value !== "object") return null;
+  const input = value as MergeDossierCandidatesInput;
+  if (typeof input.primaryCandidateId !== "string") return null;
+  if (!Array.isArray(input.sourceCandidateIds)) return null;
+  return input;
+}
+
 function draftFieldsFromBody(body: Record<string, unknown>): DossierDraft["fields"] | null {
   const fields = body.fields ?? body.draftFields;
   if (!fields || typeof fields !== "object") return null;
@@ -121,6 +138,7 @@ async function workflowPayload(state?: DossierWorkflowState): Promise<DossierWor
   return {
     candidates: workflowState.candidates,
     drafts: workflowState.drafts,
+    duplicateGroups: buildDossierDuplicateGroups(workflowState),
     ownerReviewQueue: {
       waitingCount: waitingForOwnerReview.length,
       draftCount: workflowState.drafts.length,
@@ -147,6 +165,9 @@ async function workflowPayload(state?: DossierWorkflowState): Promise<DossierWor
         "This endpoint does not invoke BNL, write memory, merge Discord identity, or use payment/customer identity.",
         "Queue frequency is evidence only, not identity.",
         "Owner approval will require an owner secret in a future PR and still will not publish until a publishing workflow exists.",
+        "Workflow duplicate detection compares candidate records to each other; published database duplicate detection remains separate.",
+        "BNL may later attach evidence to existing candidates or recommend merges from R&D, Discord-safe context, queue recurrence, and the website read model, but this endpoint does not invoke BNL.",
+        "Merge actions are manual only: source candidates and drafts are preserved as merged/superseded audit records and master drafts remain unpublished drafts.",
       ],
       ownerGate: {
         status: "placeholder_only",
@@ -196,6 +217,39 @@ export async function POST(req: Request) {
       message: "Dossier drafting, approval, and publishing mutations remain intentionally disabled in this PR.",
       boundaries: (await workflowPayload()).workflow.boundaries,
     }, { status: 501 });
+  }
+
+  if (action === "detectDuplicateCandidates") {
+    const payload = await workflowPayload();
+    return NextResponse.json({ ok: true, action, ...payload });
+  }
+
+  if (action === "mergeCandidates") {
+    const input = mergeInputFromBody(body);
+    if (!input) {
+      return NextResponse.json({ error: "Valid merge input is required" }, { status: 400 });
+    }
+
+    try {
+      const merge = await mergeDossierCandidates(input);
+      if (!merge) {
+        return NextResponse.json({ error: "Merge did not update workflow state" }, { status: 400 });
+      }
+      const payload = await workflowPayload();
+      return NextResponse.json({
+        ok: true,
+        action,
+        merge,
+        candidate: merge.masterCandidate,
+        draft: merge.masterDraft,
+        ...payload,
+      });
+    } catch (error) {
+      if (error instanceof DossierMergeError) {
+        return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+      }
+      throw error;
+    }
   }
 
   if (action === "createManualCandidate") {

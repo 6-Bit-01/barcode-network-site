@@ -15,10 +15,14 @@ import {
   type DossierWorkflowAction,
 } from "@/lib/dossier-workflow";
 import {
+  createDraftFromCandidate,
   createManualDossierCandidate,
   getDossierWorkflowState,
   getDossierWorkflowStorageMode,
+  saveDossierDraft,
+  submitDraftForOwnerReview,
   updateDossierCandidateStatus,
+  validateDossierDraftFieldsForOwnerReview,
   type DossierWorkflowState,
 } from "@/lib/dossier-workflow-store";
 
@@ -41,6 +45,17 @@ type DossierWorkflowResponse = {
     scoringPolicy: typeof DOSSIER_CANDIDATE_SCORING_POLICY;
     candidateSourceBoundaries: typeof DOSSIER_SOURCE_BOUNDARIES;
     boundaries: string[];
+    ownerGate: {
+      status: "placeholder_only";
+      requiresOwnerSecretFuture: true;
+      approvalPublishes: false;
+      message: string;
+    };
+  };
+  ownerReviewQueue: {
+    waitingCount: number;
+    draftCount: number;
+    candidateCount: number;
   };
   authoringGuide: {
     version: typeof dossierAuthoringGuide.version;
@@ -56,6 +71,9 @@ type DossierWorkflowResponse = {
 
 const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "createManualCandidate",
+  "createDraftFromCandidate",
+  "saveDraft",
+  "submitDraftForOwnerReview",
   "denyCandidate",
   "markNeedsMoreEvidence",
 ]);
@@ -82,13 +100,32 @@ function candidateIdFromBody(body: Record<string, unknown>): string {
   return typeof body.candidateId === "string" ? body.candidateId.trim() : "";
 }
 
+function draftIdFromBody(body: Record<string, unknown>): string {
+  return typeof body.draftId === "string" ? body.draftId.trim() : "";
+}
+
+function draftFieldsFromBody(body: Record<string, unknown>): DossierDraft["fields"] | null {
+  const fields = body.fields ?? body.draftFields;
+  if (!fields || typeof fields !== "object") return null;
+  const draftFields = fields as DossierDraft["fields"];
+  if (typeof draftFields.name !== "string") return null;
+  return draftFields;
+}
+
 async function workflowPayload(state?: DossierWorkflowState): Promise<DossierWorkflowResponse> {
   const tagRegistry = buildDossierTagRegistry(databasePage.entries);
   const workflowState = state ?? await getDossierWorkflowState();
 
+  const waitingForOwnerReview = workflowState.drafts.filter((draft) => draft.status === "ready_for_owner_review");
+
   return {
     candidates: workflowState.candidates,
     drafts: workflowState.drafts,
+    ownerReviewQueue: {
+      waitingCount: waitingForOwnerReview.length,
+      draftCount: workflowState.drafts.length,
+      candidateCount: workflowState.candidates.length,
+    },
     workflow: {
       version: 1,
       storage: getDossierWorkflowStorageMode(),
@@ -109,7 +146,14 @@ async function workflowPayload(state?: DossierWorkflowState): Promise<DossierWor
         "This endpoint does not publish, create public records, or mutate src/content.ts.",
         "This endpoint does not invoke BNL, write memory, merge Discord identity, or use payment/customer identity.",
         "Queue frequency is evidence only, not identity.",
+        "Owner approval will require an owner secret in a future PR and still will not publish until a publishing workflow exists.",
       ],
+      ownerGate: {
+        status: "placeholder_only",
+        requiresOwnerSecretFuture: true,
+        approvalPublishes: false,
+        message: "Owner approval is separate from editor save/submit and remains disabled until a future owner-secret gate PR.",
+      },
     },
     authoringGuide: {
       version: dossierAuthoringGuide.version,
@@ -163,6 +207,71 @@ export async function POST(req: Request) {
     const candidate = await createManualDossierCandidate(input);
     const payload = await workflowPayload();
     return NextResponse.json({ ok: true, action, candidate, ...payload });
+  }
+
+  if (action === "createDraftFromCandidate") {
+    const candidateId = candidateIdFromBody(body);
+    if (!candidateId) {
+      return NextResponse.json({ error: "candidateId is required" }, { status: 400 });
+    }
+
+    const draft = await createDraftFromCandidate(candidateId);
+    if (!draft) {
+      return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
+    }
+
+    const payload = await workflowPayload();
+    return NextResponse.json({ ok: true, action, draft, ...payload });
+  }
+
+  if (action === "saveDraft") {
+    const draftId = draftIdFromBody(body);
+    if (!draftId) {
+      return NextResponse.json({ error: "draftId is required" }, { status: 400 });
+    }
+
+    const fields = draftFieldsFromBody(body);
+    if (!fields) {
+      return NextResponse.json({ error: "Valid draft fields are required" }, { status: 400 });
+    }
+
+    const draft = await saveDossierDraft(draftId, fields);
+    if (!draft) {
+      return NextResponse.json({ error: "Draft not found or not editable" }, { status: 404 });
+    }
+
+    const payload = await workflowPayload();
+    return NextResponse.json({ ok: true, action, draft, ...payload });
+  }
+
+  if (action === "submitDraftForOwnerReview") {
+    const draftId = draftIdFromBody(body);
+    if (!draftId) {
+      return NextResponse.json({ error: "draftId is required" }, { status: 400 });
+    }
+
+    const currentState = await getDossierWorkflowState();
+    const currentDraft = currentState.drafts.find((draft) => draft.id === draftId);
+    if (!currentDraft) {
+      return NextResponse.json({ error: "Draft not found" }, { status: 404 });
+    }
+
+    const missingFields = validateDossierDraftFieldsForOwnerReview(currentDraft.fields);
+    if (missingFields.length > 0) {
+      return NextResponse.json({
+        error: "Draft is missing required fields for owner review",
+        code: "invalid_draft_fields",
+        missingFields,
+      }, { status: 400 });
+    }
+
+    const draft = await submitDraftForOwnerReview(draftId);
+    if (!draft) {
+      return NextResponse.json({ error: "Draft not found" }, { status: 404 });
+    }
+
+    const payload = await workflowPayload();
+    return NextResponse.json({ ok: true, action, draft, ...payload });
   }
 
   const candidateId = candidateIdFromBody(body);

@@ -55,8 +55,9 @@ export type DossierCandidateStatus =
 
 export type DossierDraftStatus =
   | "draft"
-  | "revision_requested"
-  | "approved"
+  | "ready_for_owner_review"
+  | "owner_changes_requested"
+  | "owner_approved"
   | "denied"
   | "published";
 
@@ -153,9 +154,16 @@ export type DossierWorkflowAction =
   | "createManualCandidate"
   | "selectCandidate"
   | "requestDraft"
+  | "createDraftFromCandidate"
+  | "saveDraft"
   | "saveDraftEdit"
+  | "submitDraftForOwnerReview"
   | "requestRevision"
   | "approveDraft"
+  | "ownerApproveDraft"
+  | "ownerRequestChanges"
+  | "ownerDenyDraft"
+  | "publishDraft"
   | "denyCandidate"
   | "markNeedsMoreEvidence";
 
@@ -170,9 +178,16 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "createManualCandidate",
   "selectCandidate",
   "requestDraft",
+  "createDraftFromCandidate",
+  "saveDraft",
   "saveDraftEdit",
+  "submitDraftForOwnerReview",
   "requestRevision",
   "approveDraft",
+  "ownerApproveDraft",
+  "ownerRequestChanges",
+  "ownerDenyDraft",
+  "publishDraft",
   "denyCandidate",
   "markNeedsMoreEvidence",
 ];

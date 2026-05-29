@@ -116,10 +116,10 @@ test("admin panel includes Dossier Control Center link", () => {
 
 test("admin dossier page gates workflow behind successful API payload and includes manual intake UI", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
-  for (const label of ["Dossier Control Center", "Manual Candidate Intake", "Candidate Queue", "Candidate Evidence", "Candidate Gate / Scoring", "Draft Readiness / Missing Info", "Draft Workspace", "Review Actions", "Focused BNL Assistant", "System Boundaries"]) {
+  for (const label of ["Dossier Control Center", "Manual Candidate Intake", "Candidate Queue", "Candidate Evidence", "Candidate Gate / Scoring", "Draft Readiness / Missing Info", "Draft Workspace", "Review Actions", "Owner Review Queue", "Focused BNL Assistant", "System Boundaries"]) {
     assert.match(page, new RegExp(label));
   }
-  for (const label of ["Known facts", "Missing info", "Do Not Say", "Public safety notes", "Deny", "Needs More Evidence", "Focused BNL Assistant", "Disabled placeholder only"]) {
+  for (const label of ["Known facts", "Missing info", "Do Not Say", "Public safety notes", "Deny", "Needs More Evidence", "Create Draft", "Save Draft", "Submit for Owner Review", "Manual draft only", "does not publish", "Focused BNL Assistant", "Disabled placeholder only"]) {
     assert.match(page, new RegExp(label));
   }
   assert.match(page, /\/api\/admin\/dossiers/);
@@ -131,7 +131,8 @@ test("admin dossier page gates workflow behind successful API payload and includ
   assert.match(page, /Duplicate Risk/);
   assert.match(page, /loose intake \/ strict publishing/i);
   assert.match(page, /Try Again: Too Long/);
-  assert.match(page, /Rewrite Summary Only/);
+  assert.match(page, /Owner Approve Draft/);
+  assert.match(page, /BNL generation comes later/);
 
   assert.doesNotMatch(page, /fetch\(\"\/api\/bnl/);
   assert.match(page, /if \(loading\)/);
@@ -196,6 +197,9 @@ test("authenticated GET returns workflow store, metadata, authoring guide, tag r
   assert.equal(payload.workflow.storageKey, "barcode:dossier-workflow:v1");
   assert.equal(payload.workflow.revision, 0);
   assert.ok(payload.workflow.allowedActions.includes("requestDraft"));
+  assert.ok(payload.workflow.allowedActions.includes("createDraftFromCandidate"));
+  assert.ok(payload.workflow.allowedActions.includes("saveDraft"));
+  assert.ok(payload.workflow.allowedActions.includes("submitDraftForOwnerReview"));
   assert.equal(payload.workflow.scoringPolicy.gate, "Loose intake, strict drafting/publishing.");
   assert.equal(payload.workflow.scoringPolicy.thresholds.draftReadyMin, 70);
   assert.ok(payload.workflow.candidateSourceBoundaries.some((entry) => entry.source === "queue_frequency"));
@@ -203,6 +207,11 @@ test("authenticated GET returns workflow store, metadata, authoring guide, tag r
   assert.ok(payload.authoringGuide.fieldCount > 0);
   assert.ok(payload.tagRegistry.totalUniqueTags > 0);
   assert.equal(payload.tagRegistry.creationPolicy.newTagsAllowed, "proposal_only");
+  assert.equal(payload.ownerReviewQueue.waitingCount, 0);
+  assert.equal(payload.ownerReviewQueue.draftCount, 0);
+  assert.equal(payload.ownerReviewQueue.candidateCount, 0);
+  assert.equal(payload.workflow.ownerGate.requiresOwnerSecretFuture, true);
+  assert.equal(payload.workflow.ownerGate.approvalPublishes, false);
 });
 
 test("authenticated POST creates and persists a manual candidate without publishing", async () => {
@@ -318,13 +327,113 @@ test("markNeedsMoreEvidence updates status", async () => {
 
 test("future actions stay placeholder-only and missing candidates return 404", async () => {
   await resetWorkflowStore();
-  const draftResponse = await authedPost({ action: "requestDraft", candidateId: "candidate-test" });
-  assert.equal(draftResponse.status, 501);
-  const draftPayload = await draftResponse.json();
-  assert.equal(draftPayload.code, "not_implemented_yet");
+  for (const action of ["requestDraft", "requestRevision", "ownerApproveDraft", "ownerRequestChanges", "ownerDenyDraft", "publishDraft"]) {
+    const response = await authedPost({ action, candidateId: "candidate-test", draftId: "draft-test" });
+    assert.equal(response.status, 501, `${action} should stay placeholder-only`);
+    const payload = await response.json();
+    assert.equal(payload.code, "not_implemented_yet");
+  }
 
   const missingResponse = await authedPost({ action: "denyCandidate", candidateId: "missing" });
   assert.equal(missingResponse.status, 404);
+});
+
+
+
+test("createDraftFromCandidate creates one workflow draft from candidate recommendations", async () => {
+  await resetWorkflowStore();
+  const createCandidatePayload = await (await authedPost({ action: "createManualCandidate", input: manualCandidateInput })).json();
+
+  const response = await authedPost({ action: "createDraftFromCandidate", candidateId: createCandidatePayload.candidate.id });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  const draft = payload.draft;
+
+  assert.ok(draft.id);
+  assert.equal(draft.candidateId, createCandidatePayload.candidate.id);
+  assert.equal(draft.status, "draft");
+  assert.equal(draft.fields.name, manualCandidateInput.name);
+  assert.equal(draft.fields.category, manualCandidateInput.recommendedCategory);
+  assert.equal(draft.fields.status, manualCandidateInput.recommendedStatus);
+  assert.equal(draft.fields.clearance, manualCandidateInput.recommendedClearance);
+  assert.equal(draft.fields.origin, manualCandidateInput.recommendedOrigin);
+  assert.deepEqual(draft.fields.tags, manualCandidateInput.recommendedTags);
+  assert.deepEqual(draft.fields.proposedTags, manualCandidateInput.proposedTags);
+  assert.equal(draft.fields.primaryLink.url, manualCandidateInput.primaryLink.url);
+  assert.equal(payload.candidates[0].id, createCandidatePayload.candidate.id);
+  assert.notEqual(payload.candidates[0].status, "published");
+  assert.equal(payload.drafts.length, 1);
+});
+
+test("createDraftFromCandidate returns existing active draft without duplicating", async () => {
+  await resetWorkflowStore();
+  const createCandidatePayload = await (await authedPost({ action: "createManualCandidate", input: manualCandidateInput })).json();
+  const firstPayload = await (await authedPost({ action: "createDraftFromCandidate", candidateId: createCandidatePayload.candidate.id })).json();
+  const secondResponse = await authedPost({ action: "createDraftFromCandidate", candidateId: createCandidatePayload.candidate.id });
+  assert.equal(secondResponse.status, 200);
+  const secondPayload = await secondResponse.json();
+  assert.equal(secondPayload.draft.id, firstPayload.draft.id);
+  assert.equal(secondPayload.drafts.length, 1);
+});
+
+test("saveDraft updates draft fields, persists through GET, and does not mutate public content", async () => {
+  await resetWorkflowStore();
+  const databaseEntriesBefore = JSON.stringify(databasePage.entries);
+  const readModelBefore = await (await readModel.GET()).json();
+  const readModelNamesBefore = readModelBefore.sections.dossiers.items.map((entry) => entry.name).join("|");
+  const createCandidatePayload = await (await authedPost({ action: "createManualCandidate", input: manualCandidateInput })).json();
+  const createDraftPayload = await (await authedPost({ action: "createDraftFromCandidate", candidateId: createCandidatePayload.candidate.id })).json();
+
+  const fields = {
+    ...createDraftPayload.draft.fields,
+    name: "Manual Candidate Alpha Draft",
+    role: "Public artist profile",
+    summary: "A saved public-safe manual draft summary.",
+    notes: "Operator edited notes.",
+    tags: ["artist", "radio", "saved-draft"],
+  };
+  const saveResponse = await authedPost({ action: "saveDraft", draftId: createDraftPayload.draft.id, fields });
+  assert.equal(saveResponse.status, 200);
+  const savePayload = await saveResponse.json();
+  assert.equal(savePayload.draft.fields.name, "Manual Candidate Alpha Draft");
+  assert.equal(savePayload.draft.fields.role, "Public artist profile");
+  assert.deepEqual(savePayload.draft.fields.tags, ["artist", "radio", "saved-draft"]);
+
+  const getPayload = await (await authedGet()).json();
+  assert.equal(getPayload.drafts[0].fields.summary, "A saved public-safe manual draft summary.");
+  assert.equal(JSON.stringify(databasePage.entries), databaseEntriesBefore);
+  const readModelAfter = await (await readModel.GET()).json();
+  assert.equal(readModelAfter.sections.dossiers.items.map((entry) => entry.name).join("|"), readModelNamesBefore);
+  assert.equal(readModelAfter.sections.dossiers.items.some((entry) => entry.name === "Manual Candidate Alpha Draft"), false);
+});
+
+test("submitDraftForOwnerReview validates required fields and updates owner queue", async () => {
+  await resetWorkflowStore();
+  const createCandidatePayload = await (await authedPost({ action: "createManualCandidate", input: manualCandidateInput })).json();
+  const createDraftPayload = await (await authedPost({ action: "createDraftFromCandidate", candidateId: createCandidatePayload.candidate.id })).json();
+
+  const invalidResponse = await authedPost({ action: "submitDraftForOwnerReview", draftId: createDraftPayload.draft.id });
+  assert.equal(invalidResponse.status, 400);
+  const invalidPayload = await invalidResponse.json();
+  assert.equal(invalidPayload.code, "invalid_draft_fields");
+  assert.ok(invalidPayload.missingFields.includes("role"));
+
+  const fields = {
+    ...createDraftPayload.draft.fields,
+    role: "Public artist profile",
+    summary: "A complete enough manual draft summary for owner review.",
+    tags: ["artist", "radio"],
+  };
+  await authedPost({ action: "saveDraft", draftId: createDraftPayload.draft.id, fields });
+  const submitResponse = await authedPost({ action: "submitDraftForOwnerReview", draftId: createDraftPayload.draft.id });
+  assert.equal(submitResponse.status, 200);
+  const submitPayload = await submitResponse.json();
+  assert.equal(submitPayload.draft.status, "ready_for_owner_review");
+  assert.equal(submitPayload.ownerReviewQueue.waitingCount, 1);
+
+  const getPayload = await (await authedGet()).json();
+  assert.equal(getPayload.ownerReviewQueue.waitingCount, 1);
+  assert.equal(getPayload.drafts[0].status, "ready_for_owner_review");
 });
 
 test("manual candidate workflow does not publish to database, read model dossiers, or tag registry", async () => {

@@ -20,6 +20,12 @@ type WorkflowPayload = {
     updatedAt?: string;
     boundaries: string[];
     scoringPolicy?: typeof DOSSIER_CANDIDATE_SCORING_POLICY;
+    ownerGate?: { message: string; requiresOwnerSecretFuture: boolean; approvalPublishes: boolean };
+  };
+  ownerReviewQueue?: {
+    waitingCount: number;
+    draftCount: number;
+    candidateCount: number;
   };
   authoringGuide?: {
     version: string;
@@ -28,6 +34,23 @@ type WorkflowPayload = {
     totalUniqueTags: number;
     totalTagAssignments: number;
   };
+};
+
+type DraftForm = {
+  name: string;
+  category: string;
+  status: string;
+  clearance: string;
+  role: string;
+  origin: string;
+  summary: string;
+  notes: string;
+  tags: string;
+  proposedTags: string;
+  primaryLinkLabel: string;
+  primaryLinkUrl: string;
+  primaryLinkType: string;
+  selectedBy: "operator" | "subject" | "legacy";
 };
 
 type ManualCandidateForm = {
@@ -50,6 +73,23 @@ type ManualCandidateForm = {
   primaryLinkUrl: string;
   primaryLinkType: string;
   selectedBy: "operator" | "subject";
+};
+
+const emptyDraftForm: DraftForm = {
+  name: "",
+  category: "",
+  status: "",
+  clearance: "",
+  role: "",
+  origin: "",
+  summary: "",
+  notes: "",
+  tags: "",
+  proposedTags: "",
+  primaryLinkLabel: "",
+  primaryLinkUrl: "",
+  primaryLinkType: "website",
+  selectedBy: "operator",
 };
 
 const emptyManualCandidateForm: ManualCandidateForm = {
@@ -89,8 +129,9 @@ const reviewActions = [
   "Try Again: Wrong Tags",
   "Rewrite Summary Only",
   "Rewrite Notes Only",
-  "Approve Draft",
-  "Edit Draft",
+  "Owner Approve Draft",
+  "Owner Request Changes",
+  "Owner Deny Draft",
 ];
 
 const focusedAssistantPrompts = [
@@ -127,12 +168,34 @@ function textInputClass() {
   return "w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground";
 }
 
+function draftFormFromDraft(draft: DossierDraft | null): DraftForm {
+  if (!draft) return emptyDraftForm;
+  return {
+    name: draft.fields.name ?? "",
+    category: draft.fields.category ?? "",
+    status: draft.fields.status ?? "",
+    clearance: draft.fields.clearance ?? "",
+    role: draft.fields.role ?? "",
+    origin: draft.fields.origin ?? "",
+    summary: draft.fields.summary ?? "",
+    notes: draft.fields.notes ?? "",
+    tags: (draft.fields.tags ?? []).join("\n"),
+    proposedTags: (draft.fields.proposedTags ?? []).join("\n"),
+    primaryLinkLabel: draft.fields.primaryLink?.label ?? "",
+    primaryLinkUrl: draft.fields.primaryLink?.url ?? "",
+    primaryLinkType: draft.fields.primaryLink?.type ?? "website",
+    selectedBy: draft.fields.primaryLink?.selectedBy ?? "operator",
+  };
+}
+
 export default function AdminDossiersPage() {
   const [payload, setPayload] = useState<WorkflowPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<ManualCandidateForm>(emptyManualCandidateForm);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
+  const [draftForm, setDraftForm] = useState<DraftForm>(emptyDraftForm);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -145,6 +208,11 @@ export default function AdminDossiersPage() {
       const data = (await response.json()) as WorkflowPayload;
       setPayload(data);
       setSelectedCandidateId((current) => current && data.candidates.some((candidate) => candidate.id === current) ? current : data.candidates[0]?.id ?? null);
+      setSelectedDraftId((current) => {
+        const nextDraft = current && data.drafts.some((draft) => draft.id === current) ? data.drafts.find((draft) => draft.id === current) ?? null : data.drafts[0] ?? null;
+        setDraftForm(draftFormFromDraft(nextDraft));
+        return nextDraft?.id ?? null;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load dossier workflow.");
     } finally {
@@ -160,10 +228,13 @@ export default function AdminDossiersPage() {
   }, []);
 
   const candidates = useMemo(() => payload?.candidates ?? [], [payload?.candidates]);
-  const drafts = payload?.drafts ?? [];
+  const drafts = useMemo(() => payload?.drafts ?? [], [payload?.drafts]);
   const boundaries = payload?.workflow.boundaries ?? [];
   const scoringPolicy = payload?.workflow.scoringPolicy ?? DOSSIER_CANDIDATE_SCORING_POLICY;
   const selectedCandidate = useMemo(() => candidates.find((candidate) => candidate.id === selectedCandidateId) ?? candidates[0] ?? null, [candidates, selectedCandidateId]);
+  const selectedDraft = useMemo(() => drafts.find((draft) => draft.id === selectedDraftId) ?? drafts.find((draft) => draft.candidateId === selectedCandidate?.id) ?? drafts[0] ?? null, [drafts, selectedCandidate?.id, selectedDraftId]);
+  const selectedDraftCandidate = selectedDraft ? candidates.find((candidate) => candidate.id === selectedDraft.candidateId) ?? null : null;
+  const ownerReviewDrafts = drafts.filter((draft) => draft.status === "ready_for_owner_review");
   const selectedEvidence = selectedCandidate?.evidenceItems ?? [];
 
   async function postWorkflow(body: Record<string, unknown>) {
@@ -175,15 +246,26 @@ export default function AdminDossiersPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await response.json().catch(() => ({})) as Partial<WorkflowPayload> & { candidate?: DossierCandidate; error?: string; message?: string };
-      if (!response.ok) throw new Error(data.error ?? data.message ?? `Workflow API returned ${response.status}.`);
+      const data = await response.json().catch(() => ({})) as Partial<WorkflowPayload> & { candidate?: DossierCandidate; draft?: DossierDraft; error?: string; message?: string; missingFields?: string[] };
+      if (!response.ok) {
+        const missing = data.missingFields?.length ? ` Missing fields: ${data.missingFields.join(", ")}.` : "";
+        throw new Error(`${data.error ?? data.message ?? `Workflow API returned ${response.status}.`}${missing}`);
+      }
       if (data.candidates && data.drafts && data.workflow) setPayload(data as WorkflowPayload);
       if (data.candidate) setSelectedCandidateId(data.candidate.id);
+      if (data.draft) {
+        setSelectedDraftId(data.draft.id);
+        setSelectedCandidateId(data.draft.candidateId);
+        setDraftForm(draftFormFromDraft(data.draft));
+      }
       return data;
     } finally {
       setSaving(false);
     }
   }
+
+
+
 
   async function submitManualCandidate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -220,6 +302,69 @@ export default function AdminDossiersPage() {
       setNotice(`Manual candidate created: ${data.candidate?.name ?? "candidate"}. No public dossier or tag was created.`);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Failed to create manual candidate.");
+    }
+  }
+
+
+
+  async function createOrOpenDraft(candidateId: string) {
+    const existingDraft = drafts.find((draft) => draft.candidateId === candidateId && draft.status !== "denied" && draft.status !== "published");
+    if (existingDraft) {
+      setSelectedCandidateId(candidateId);
+      setSelectedDraftId(existingDraft.id);
+      setDraftForm(draftFormFromDraft(existingDraft));
+      setNotice(`Opened existing draft for ${existingDraft.fields.name || "candidate"}.`);
+      return;
+    }
+
+    try {
+      const data = await postWorkflow({ action: "createDraftFromCandidate", candidateId });
+      setNotice(`Draft created: ${data.draft?.fields.name ?? "draft"}. Saving this draft does not publish anything.`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Failed to create draft.");
+    }
+  }
+
+  function draftFieldsFromForm(): DossierDraft["fields"] {
+    return {
+      name: draftForm.name,
+      category: draftForm.category ? draftForm.category as DossierDraft["fields"]["category"] : undefined,
+      status: draftForm.status ? draftForm.status as DossierDraft["fields"]["status"] : undefined,
+      clearance: draftForm.clearance ? draftForm.clearance as DossierDraft["fields"]["clearance"] : undefined,
+      role: draftForm.role,
+      origin: draftForm.origin ? draftForm.origin as DossierDraft["fields"]["origin"] : undefined,
+      summary: draftForm.summary,
+      notes: draftForm.notes,
+      tags: lines(draftForm.tags),
+      proposedTags: lines(draftForm.proposedTags),
+      primaryLink: draftForm.primaryLinkUrl.trim() ? {
+        label: draftForm.primaryLinkLabel.trim() || "Featured link",
+        url: draftForm.primaryLinkUrl.trim(),
+        type: draftForm.primaryLinkType.trim() || "website",
+        selectedBy: draftForm.selectedBy,
+        publicSafe: true,
+      } : undefined,
+      files: [],
+    };
+  }
+
+  async function saveSelectedDraft() {
+    if (!selectedDraft) return;
+    try {
+      const data = await postWorkflow({ action: "saveDraft", draftId: selectedDraft.id, fields: draftFieldsFromForm() });
+      setNotice(`Draft saved: ${data.draft?.fields.name ?? "draft"}. Saving this draft does not publish anything.`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Failed to save draft.");
+    }
+  }
+
+  async function submitSelectedDraftForOwnerReview() {
+    if (!selectedDraft) return;
+    try {
+      const data = await postWorkflow({ action: "submitDraftForOwnerReview", draftId: selectedDraft.id });
+      setNotice(`Draft submitted for owner review: ${data.draft?.fields.name ?? "draft"}. Submitting for owner review does not publish anything.`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Failed to submit draft for owner review.");
     }
   }
 
@@ -346,7 +491,7 @@ export default function AdminDossiersPage() {
                     <td className="px-3 py-3">{candidate.duplicateRisk ?? "unknown"}</td>
                     <td className="px-3 py-3">{candidate.status}</td>
                     <td className="px-3 py-3">{candidate.updatedAt}</td>
-                    <td className="px-3 py-3"><div className="flex flex-wrap gap-2"><button disabled={saving} onClick={() => updateCandidateStatus(candidate.id, "denyCandidate")} className="border border-border px-2 py-1 text-muted hover:border-accent hover:text-accent disabled:opacity-50">Deny</button><button disabled={saving} onClick={() => updateCandidateStatus(candidate.id, "markNeedsMoreEvidence")} className="border border-border px-2 py-1 text-muted hover:border-accent hover:text-accent disabled:opacity-50">Needs More Evidence</button><button disabled className="border border-border px-2 py-1 text-muted opacity-50">Draft placeholder</button></div></td>
+                    <td className="px-3 py-3"><div className="flex flex-wrap gap-2"><button disabled={saving} onClick={() => updateCandidateStatus(candidate.id, "denyCandidate")} className="border border-border px-2 py-1 text-muted hover:border-accent hover:text-accent disabled:opacity-50">Deny</button><button disabled={saving} onClick={() => updateCandidateStatus(candidate.id, "markNeedsMoreEvidence")} className="border border-border px-2 py-1 text-muted hover:border-accent hover:text-accent disabled:opacity-50">Needs More Evidence</button><button disabled={saving} onClick={() => createOrOpenDraft(candidate.id)} className="border border-accent px-2 py-1 text-accent hover:bg-accent hover:text-background disabled:opacity-50">{drafts.some((draft) => draft.candidateId === candidate.id && draft.status !== "denied" && draft.status !== "published") ? "Open Draft" : "Create Draft"}</button></div></td>
                   </tr>
                 ))}
               </tbody>
@@ -417,20 +562,56 @@ export default function AdminDossiersPage() {
             <div>
               <p className="text-xs uppercase tracking-[0.5em] text-muted mb-3">Draft Workspace</p>
               <h2 className="text-2xl font-bold text-foreground">Draft Workspace</h2>
-              <p className="text-sm text-muted mt-2">No draft selected. BNL drafting stays placeholder-only in this PR.</p>
+              <p className="text-sm text-muted mt-2">Manual draft only — BNL generation comes later. Saving this draft does not publish anything. Submitting for owner review does not publish anything.</p>
             </div>
-            <div className="border border-border bg-background/30 p-4 text-sm text-muted">
-              <p className="text-xs uppercase tracking-widest text-accent mb-2">Selected Candidate</p>
-              <p>{selectedCandidate ? `${selectedCandidate.name} is selected for review only. Draft actions are disabled.` : "No selected candidate."}</p>
-            </div>
-            <p className="text-xs text-muted">Draft records are workflow records only. Approved drafts do not become website entries until a future operator-controlled site update.</p>
+            {!selectedDraft ? (
+              <div className="border border-border bg-background/30 p-4 text-sm text-muted">
+                <p className="text-xs uppercase tracking-widest text-accent mb-2">No Draft Selected</p>
+                <p>{selectedCandidate ? `${selectedCandidate.name} is selected. Use Create Draft in the Candidate Queue to start a manual workflow draft.` : "No selected candidate."}</p>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <div className="border border-border bg-background/30 p-4 text-xs text-muted space-y-2">
+                  <p className="uppercase tracking-widest text-accent">Selected Draft</p>
+                  <p><span className="text-foreground">Draft:</span> {selectedDraft.fields.name || selectedDraft.id}</p>
+                  <p><span className="text-foreground">Status:</span> {selectedDraft.status}</p>
+                  <p><span className="text-foreground">Linked candidate:</span> {selectedDraftCandidate ? `${selectedDraftCandidate.name} (${selectedDraftCandidate.id})` : selectedDraft.candidateId}</p>
+                  <p>Owner approval will require owner secret in a future PR. Owner approval is separate from editor save/submit and still will not publish until publishing workflow exists.</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs uppercase tracking-widest text-muted">
+                  <label className="space-y-2"><span>Name</span><input value={draftForm.name} onChange={(event) => setDraftForm({ ...draftForm, name: event.target.value })} className={textInputClass()} /></label>
+                  <label className="space-y-2"><span>Role</span><input value={draftForm.role} onChange={(event) => setDraftForm({ ...draftForm, role: event.target.value })} className={textInputClass()} /></label>
+                  <label className="space-y-2"><span>Category</span><select value={draftForm.category} onChange={(event) => setDraftForm({ ...draftForm, category: event.target.value })} className={textInputClass()}>{categoryOptions.map((option) => <option key={option} value={option}>{option || "Select category"}</option>)}</select></label>
+                  <label className="space-y-2"><span>Status</span><select value={draftForm.status} onChange={(event) => setDraftForm({ ...draftForm, status: event.target.value })} className={textInputClass()}>{statusOptions.map((option) => <option key={option} value={option}>{option || "Select status"}</option>)}</select></label>
+                  <label className="space-y-2"><span>Clearance</span><select value={draftForm.clearance} onChange={(event) => setDraftForm({ ...draftForm, clearance: event.target.value })} className={textInputClass()}>{clearanceOptions.map((option) => <option key={option} value={option}>{option || "Select clearance"}</option>)}</select></label>
+                  <label className="space-y-2"><span>Origin</span><select value={draftForm.origin} onChange={(event) => setDraftForm({ ...draftForm, origin: event.target.value })} className={textInputClass()}>{originOptions.map((option) => <option key={option} value={option}>{option || "Select origin"}</option>)}</select></label>
+                  <label className="md:col-span-2 space-y-2"><span>Summary</span><textarea value={draftForm.summary} onChange={(event) => setDraftForm({ ...draftForm, summary: event.target.value })} className={`${textInputClass()} min-h-28`} /></label>
+                  <label className="md:col-span-2 space-y-2"><span>Notes</span><textarea value={draftForm.notes} onChange={(event) => setDraftForm({ ...draftForm, notes: event.target.value })} className={`${textInputClass()} min-h-28`} /></label>
+                  <label className="space-y-2"><span>Tags, one per line</span><textarea value={draftForm.tags} onChange={(event) => setDraftForm({ ...draftForm, tags: event.target.value })} className={`${textInputClass()} min-h-28`} /></label>
+                  <label className="space-y-2"><span>Proposed tags, one per line</span><textarea value={draftForm.proposedTags} onChange={(event) => setDraftForm({ ...draftForm, proposedTags: event.target.value })} className={`${textInputClass()} min-h-28`} /></label>
+                  <label className="space-y-2"><span>Primary link label</span><input value={draftForm.primaryLinkLabel} onChange={(event) => setDraftForm({ ...draftForm, primaryLinkLabel: event.target.value })} className={textInputClass()} /></label>
+                  <label className="space-y-2"><span>Primary link URL</span><input value={draftForm.primaryLinkUrl} onChange={(event) => setDraftForm({ ...draftForm, primaryLinkUrl: event.target.value })} className={textInputClass()} /></label>
+                  <label className="space-y-2"><span>Primary link type</span><input value={draftForm.primaryLinkType} onChange={(event) => setDraftForm({ ...draftForm, primaryLinkType: event.target.value })} className={textInputClass()} /></label>
+                  <label className="space-y-2"><span>selectedBy</span><select value={draftForm.selectedBy} onChange={(event) => setDraftForm({ ...draftForm, selectedBy: event.target.value as DraftForm["selectedBy"] })} className={textInputClass()}><option value="operator">operator</option><option value="subject">subject</option><option value="legacy">legacy</option></select></label>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-muted">
+                  <div className="border border-border bg-background/30 p-3"><p className="uppercase tracking-widest text-accent mb-2">Known facts display from candidate</p>{listOrEmpty(selectedDraftCandidate?.knownFacts, "No known facts recorded on linked candidate.")}</div>
+                  <div className="border border-border bg-background/30 p-3"><p className="uppercase tracking-widest text-accent mb-2">Do-not-say display from candidate</p>{listOrEmpty(selectedDraftCandidate?.doNotSay, "No do-not-say notes recorded on linked candidate.")}</div>
+                  <div className="border border-border bg-background/30 p-3"><p className="uppercase tracking-widest text-accent mb-2">Public safety notes display from candidate</p>{listOrEmpty(selectedDraftCandidate?.publicSafetyNotes, "No public-safety notes recorded on linked candidate.")}</div>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <button type="button" disabled={saving} onClick={saveSelectedDraft} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Save Draft</button>
+                  <button type="button" disabled={saving} onClick={submitSelectedDraftForOwnerReview} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">Submit for Owner Review</button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="lg:col-span-2 border border-border bg-surface p-6 space-y-5">
             <div>
               <p className="text-xs uppercase tracking-[0.5em] text-muted mb-3">Review Actions</p>
               <h2 className="text-2xl font-bold text-foreground">Review Actions</h2>
-              <p className="text-sm text-muted mt-2">Deny and Needs More Evidence are enabled from the Candidate Queue. Draft actions remain not_implemented_yet.</p>
+              <p className="text-sm text-muted mt-2">Owner approval actions are disabled placeholders. Owner approval will require owner secret in a future PR and will not publish until publishing exists.</p>
             </div>
             <div className="grid grid-cols-1 gap-3">
               {reviewActions.map((label) => (
@@ -444,6 +625,38 @@ export default function AdminDossiersPage() {
               <p>{DOSSIER_WORKFLOW_ACTIONS.join(", ")}</p>
               <p>Current drafts loaded: {drafts.length}. Mutations do not publish or mutate real dossier content.</p>
             </div>
+          </div>
+        </section>
+
+        <section className="border border-border bg-surface p-6 space-y-5">
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.5em] text-muted mb-3">Owner Review Queue</p>
+              <h2 className="text-2xl font-bold text-foreground">Owner Review Queue</h2>
+              <p className="text-sm text-muted mt-2">Drafts waiting for owner review appear here. Owner approval is separate from editor save/submit and remains placeholder-only.</p>
+            </div>
+            <p className="text-xs uppercase tracking-widest text-muted">{payload.ownerReviewQueue?.waitingCount ?? ownerReviewDrafts.length} waiting / {payload.ownerReviewQueue?.draftCount ?? drafts.length} drafts / {payload.ownerReviewQueue?.candidateCount ?? candidates.length} candidates</p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 text-xs text-muted">
+            {ownerReviewDrafts.length === 0 ? (
+              <p className="border border-border bg-background/30 p-4">No drafts are ready_for_owner_review yet.</p>
+            ) : ownerReviewDrafts.map((draft) => {
+              const candidate = candidates.find((item) => item.id === draft.candidateId);
+              return (
+                <div key={draft.id} className="border border-border bg-background/30 p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div>
+                    <p className="text-foreground">{draft.fields.name || draft.id}</p>
+                    <p>Linked candidate: {candidate ? `${candidate.name} (${candidate.id})` : draft.candidateId}</p>
+                    <p>Updated: {draft.updatedAt}</p>
+                    <p>Status: {draft.status}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => { setSelectedDraftId(draft.id); setSelectedCandidateId(draft.candidateId); setDraftForm(draftFormFromDraft(draft)); }} className="border border-accent px-3 py-2 uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open</button>
+                    <button type="button" disabled className="border border-border px-3 py-2 uppercase tracking-widest text-muted opacity-60">Owner Approve — placeholder</button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </section>
 

@@ -36,6 +36,7 @@ Module._extensions[".ts"] = function loadTypeScript(module, filename) {
 const require = createRequire(import.meta.url);
 const auth = require("../src/lib/auth.ts");
 const route = require("../src/app/api/admin/dossiers/route.ts");
+const workflow = require("../src/lib/dossier-workflow.ts");
 
 function source(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
@@ -55,13 +56,21 @@ test("admin panel includes Dossier Control Center link", () => {
 
 test("admin dossier page gates workflow shell behind successful API payload", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
-  for (const label of ["Dossier Control Center", "Candidate Queue", "Draft Workspace", "Review Actions", "System Boundaries"]) {
+  for (const label of ["Dossier Control Center", "Candidate Queue", "Candidate Evidence", "Candidate Gate / Scoring", "Draft Readiness / Missing Info", "Draft Workspace", "Review Actions", "Focused BNL Assistant", "System Boundaries"]) {
     assert.match(page, new RegExp(label));
   }
   assert.match(page, /\/api\/admin\/dossiers/);
   assert.match(page, /No candidates yet/);
   assert.match(page, /No draft selected/);
   assert.match(page, /Candidate intake wiring comes in a later PR/);
+  assert.match(page, /Why Now/);
+  assert.match(page, /Duplicate Risk/);
+  assert.match(page, /Missing Info/);
+  assert.match(page, /Do Not Say/);
+  assert.match(page, /loose intake \/ strict publishing/i);
+  assert.match(page, /Try Again: Too Long/);
+  assert.match(page, /Try Again: Too Vague/);
+  assert.match(page, /Rewrite Summary Only/);
 
   assert.doesNotMatch(page, /payload\?\.candidates \?\? \[\]/);
   assert.doesNotMatch(page, /payload\?\.workflow\.boundaries \?\? \[/);
@@ -88,6 +97,21 @@ test("admin dossier page has minimal loading and auth-required states", () => {
   assert.match(page, /MinimalDossierAdminState/);
 });
 
+test("dossier workflow types include candidate evidence and scoring policy contracts", () => {
+  const workflowSource = source("src/lib/dossier-workflow.ts");
+  assert.match(workflowSource, /export type DossierCandidateEvidenceType/);
+  assert.match(workflowSource, /export type DossierCandidateEvidence/);
+  assert.match(workflowSource, /candidateType: DossierCandidateType/);
+  assert.match(workflowSource, /tier: DossierCandidateTier/);
+  assert.match(workflowSource, /score: number/);
+  assert.match(workflowSource, /whyNow: string/);
+  assert.match(workflowSource, /duplicateRisk\?: DossierDuplicateRisk/);
+  assert.match(workflowSource, /missingInfo\?: string\[\]/);
+  assert.match(workflowSource, /doNotSay\?: string\[\]/);
+  assert.equal(workflow.DOSSIER_CANDIDATE_SCORING_POLICY.gate, "Loose intake, strict drafting/publishing.");
+  assert.equal(workflow.DOSSIER_CANDIDATE_SCORING_POLICY.thresholds.reviewCandidateMin, 50);
+});
+
 test("admin dossier API uses admin auth and returns empty workflow arrays", async () => {
   const unauthorized = await route.GET(new Request("https://example.test/api/admin/dossiers"));
   assert.equal(unauthorized.status, 401);
@@ -102,6 +126,8 @@ test("admin dossier API uses admin auth and returns empty workflow arrays", asyn
   assert.equal(payload.workflow.version, 1);
   assert.equal(payload.workflow.status, "foundation_only");
   assert.ok(payload.workflow.allowedActions.includes("requestDraft"));
+  assert.equal(payload.workflow.scoringPolicy.gate, "Loose intake, strict drafting/publishing.");
+  assert.equal(payload.workflow.scoringPolicy.thresholds.draftReadyMin, 70);
   assert.ok(payload.workflow.candidateSourceBoundaries.some((entry) => entry.source === "queue_frequency"));
 });
 

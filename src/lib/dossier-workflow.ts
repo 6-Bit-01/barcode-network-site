@@ -6,6 +6,42 @@ export type DossierCandidateSource =
   | "website_read_model"
   | "combined";
 
+export type DossierCandidateType =
+  | "artist"
+  | "community_member"
+  | "entity"
+  | "production"
+  | "interface"
+  | "sponsor"
+  | "story_arc"
+  | "unknown";
+
+export type DossierCandidateTier = "weak_candidate" | "review_candidate" | "draft_ready";
+
+export type DossierDuplicateRisk = "none" | "low" | "medium" | "high";
+
+export type DossierCandidateEvidenceType =
+  | "manual_nomination"
+  | "rd_conversation"
+  | "queue_recurrence"
+  | "completed_play"
+  | "priority_moment"
+  | "discord_context"
+  | "website_context"
+  | "public_show_moment"
+  | "operator_note";
+
+export type DossierCandidateEvidence = {
+  id: string;
+  type: DossierCandidateEvidenceType;
+  label: string;
+  summary: string;
+  count?: number;
+  firstSeenAt?: string;
+  lastSeenAt?: string;
+  publicSafe: boolean;
+};
+
 export type DossierCandidateStatus =
   | "suggested"
   | "needs_review"
@@ -24,14 +60,35 @@ export type DossierDraftStatus =
   | "denied"
   | "published";
 
+export type DossierCategory = "Entity" | "Personnel" | "Sponsor" | "Interface" | "Production";
+export type DossierPublicStatus = "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN";
+export type DossierClearance = "PUBLIC" | "INTERNAL" | "RESTRICTED";
+export type DossierOrigin = "KNOWN" | "UNKNOWN" | "UNVERIFIED" | "WITHHELD";
+
 export type DossierCandidate = {
   id: string;
   name: string;
+  candidateType: DossierCandidateType;
   source: DossierCandidateSource;
+  tier: DossierCandidateTier;
+  score: number;
+  whyNow: string;
   reason: string;
+  firstSeenAt?: string;
+  lastSeenAt?: string;
   evidenceSummary: string;
+  evidenceItems?: DossierCandidateEvidence[];
   evidenceCount?: number;
   confidence?: "low" | "medium" | "high";
+  duplicateRisk?: DossierDuplicateRisk;
+  existingDossierMatch?: { id: string; name: string; confidence: "low" | "medium" | "high" } | null;
+  recommendedCategory?: DossierCategory;
+  recommendedClearance?: DossierClearance;
+  recommendedTags?: string[];
+  proposedTags?: string[];
+  missingInfo?: string[];
+  doNotSay?: string[];
+  publicSafetyNotes?: string[];
   status: DossierCandidateStatus;
   createdAt: string;
   updatedAt: string;
@@ -44,11 +101,11 @@ export type DossierDraft = {
   fields: {
     id?: string;
     name: string;
-    category?: "Entity" | "Personnel" | "Sponsor" | "Interface" | "Production";
-    status?: "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN";
-    clearance?: "PUBLIC" | "INTERNAL" | "RESTRICTED";
+    category?: DossierCategory;
+    status?: DossierPublicStatus;
+    clearance?: DossierClearance;
     role?: string;
-    origin?: "KNOWN" | "UNKNOWN" | "UNVERIFIED" | "WITHHELD";
+    origin?: DossierOrigin;
     summary?: string;
     notes?: string;
     tags?: string[];
@@ -96,6 +153,28 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "denyCandidate",
   "markNeedsMoreEvidence",
 ];
+
+export const DOSSIER_CANDIDATE_SCORING_POLICY = {
+  tiers: {
+    weak_candidate: "Possible future dossier; not draft-ready.",
+    review_candidate: "Enough evidence for operator review.",
+    draft_ready: "Enough public/operator-approved context to request a draft.",
+  },
+  thresholds: {
+    weakCandidateMin: 30,
+    reviewCandidateMin: 50,
+    draftReadyMin: 70,
+  },
+  signals: {
+    queueRecurrence: "Repeated appearances across separate sessions can support candidacy.",
+    rdConversation: "R&D discussion can support candidacy but is not public copy by itself.",
+    discordContext: "Discord context is internal evidence and must be public-safe before use.",
+    manualNomination: "Operator nomination can create a review candidate but still needs facts.",
+    duplicatePenalty: "Likely duplicate dossiers should be merged or rejected before drafting.",
+    privacyPenalty: "Private, payment, or identity-sensitive evidence blocks drafting.",
+  },
+  gate: "Loose intake, strict drafting/publishing.",
+} as const;
 
 export const DOSSIER_SOURCE_BOUNDARIES: DossierSourceBoundary[] = [
   {
@@ -146,4 +225,5 @@ export const DOSSIER_WORKFLOW_RULES = [
   "No candidate source creates a dossier automatically.",
   "Drafting requires operator selection.",
   "Proposed tags are proposal-only until an operator or site content update creates them.",
+  "Loose intake, strict drafting/publishing: candidates can enter review early, but drafting and publishing require evidence, duplicate checks, and public-safety review.",
 ] as const;

@@ -4,6 +4,7 @@ import { databasePage } from "@/content";
 import { dossierAuthoringGuide } from "@/lib/dossier-authoring-guide";
 import { buildDossierTagRegistry } from "@/lib/dossier-tags";
 import {
+  DOSSIER_CANDIDATE_SCORING_POLICY,
   DOSSIER_SOURCE_BOUNDARIES,
   DOSSIER_WORKFLOW_ACTIONS,
   DOSSIER_WORKFLOW_RULES,
@@ -23,6 +24,7 @@ type DossierWorkflowResponse = {
     status: "foundation_only";
     allowedActions: DossierWorkflowAction[];
     rules: typeof DOSSIER_WORKFLOW_RULES;
+    scoringPolicy: typeof DOSSIER_CANDIDATE_SCORING_POLICY;
     candidateSourceBoundaries: typeof DOSSIER_SOURCE_BOUNDARIES;
     boundaries: string[];
   };
@@ -58,6 +60,7 @@ function workflowPayload(): DossierWorkflowResponse {
       status: "foundation_only",
       allowedActions: DOSSIER_WORKFLOW_ACTIONS,
       rules: DOSSIER_WORKFLOW_RULES,
+      scoringPolicy: DOSSIER_CANDIDATE_SCORING_POLICY,
       candidateSourceBoundaries: DOSSIER_SOURCE_BOUNDARIES,
       boundaries: [
         "BNL may recommend and draft only after operator selection.",

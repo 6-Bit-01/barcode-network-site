@@ -1003,6 +1003,38 @@ test("simulation tracks include visible sequence numbers without lane status tit
   assert.match(sim.note ?? "", /\[QUEUE SIMULATION TRACK\]/);
 });
 
+test("BNL read model excludes simulation tracks from queue and artists", async () => {
+  await freshOpenSession("bnl read model sim exclusion", { showStarted: false });
+  const real = await submitTrack("BNL Real", { artist: "BNL Real Artist" });
+  let simState = await queue.updateRadioTrack("", "addSimulationPaidPriority");
+  const simUpNext = simState.nextInLine;
+  assert.ok(simUpNext?.isTestTrack, "simulation priority track should exist in underlying up-next state");
+  simState = await queue.updateRadioTrack("", "addSimulationFreeTrack");
+  const simQueued = simState.queue.find((entry) => entry.isTestTrack);
+  assert.ok(simQueued, "simulation free track should exist in underlying queue state");
+
+  const publicSnapshot = await queue.getPublicQueueSnapshot();
+  assert.ok(publicSnapshot.upNext?.id === simUpNext.id || publicSnapshot.queue.some((track) => track.id === simQueued.id), "existing public queue snapshot behavior is preserved for simulation tracks");
+
+  const readModelRoute = require("../src/app/api/bnl/read-model/route.ts");
+  const response = await readModelRoute.GET();
+  const data = await response.json();
+
+  assert.equal(data.ok, true);
+  const queueTrackIds = data.sections.queue.queue.map((track) => track.id);
+  assert.ok(queueTrackIds.includes(real.id), "real queue track should remain in the BNL read model");
+  assert.equal(queueTrackIds.includes(simQueued.id), false, "simulation queue track must not enter the BNL read model");
+  assert.notEqual(data.sections.queue.upNext?.id ?? null, simUpNext.id, "simulation track must not be exposed as up next");
+  assert.notEqual(data.sections.queue.nowPlaying?.id ?? null, simUpNext.id, "simulation track must not be exposed as now playing");
+  assert.equal(data.sections.queue.completed.some((track) => track.id === simQueued.id || track.id === simUpNext.id), false, "simulation track must not enter completed history");
+
+  const artistNames = data.sections.artists.map((artist) => artist.name);
+  assert.ok(artistNames.includes("BNL Real Artist"), "real artist should remain in derived artist surface");
+  assert.equal(artistNames.some((name) => /^SIM /i.test(name)), false, "simulation artist must not enter derived artist surface");
+  assert.ok(data.sections.rules.allowedUse.includes("simulation/test tracks are excluded from this read model"));
+  assert.equal(data.sections.rules.sourceAuthority.simulationData, "BNL must treat this read model as live/public context only, not admin simulation data");
+});
+
 test("simulation free is blocked while submissions are closed", async () => {
   await queue.setQueueOpen(false);
   await queue.startNewQueueSession({ title: `sim free blocked ${Date.now()} ${trackSequence}` });

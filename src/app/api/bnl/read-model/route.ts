@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { databasePage, radioPage, siteConfig } from "@/content";
-import { getPublicQueueSnapshot } from "@/lib/queue";
-import type { QueueLane, QueuePublicSnapshot, QueuePublicTrack, QueueSourceType } from "@/lib/queue-types";
+import { getRadioQueueState, toPublicQueueTrack } from "@/lib/queue";
+import type { QueueEntry, QueueLane, QueuePublicTrack, QueueSourceType } from "@/lib/queue-types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -71,33 +71,69 @@ function publicTrack(track: QueuePublicTrack | null | undefined): BnlQueueTrack 
   };
 }
 
-function compactQueue(snapshot: QueuePublicSnapshot) {
+function isRealQueueEntry(entry: QueueEntry | null | undefined): entry is QueueEntry {
+  return Boolean(entry && entry.isTestTrack !== true);
+}
+
+function pressureFor(activeCount: number, capacity: number): "low" | "medium" | "high" | "max" {
+  if (capacity <= 0) return "low";
+  const load = activeCount / capacity;
+  if (load >= 1) return "max";
+  if (load >= 0.75) return "high";
+  if (load >= 0.4) return "medium";
+  return "low";
+}
+
+async function readPublicLiveQueueForBnl() {
+  const state = await getRadioQueueState();
+  const realQueueEntries = state.queue.filter(isRealQueueEntry);
+  const realCompletedEntries = state.history.filter(isRealQueueEntry).slice(0, 10);
+  const realRemovedCount = (state.removed ?? []).filter(isRealQueueEntry).length;
+  const realNowPlaying = isRealQueueEntry(state.nowPlaying) ? state.nowPlaying : null;
+  const realUpNext = isRealQueueEntry(state.nextInLine) ? state.nextInLine : null;
+  const activeIds = new Set<string>();
+  for (const entry of realQueueEntries) {
+    if (entry.status === "queued" || entry.status === "playing") activeIds.add(entry.id);
+  }
+  if (realNowPlaying) activeIds.add(realNowPlaying.id);
+  if (realUpNext) activeIds.add(realUpNext.id);
+
+  const capacity = state.publicStatus?.capacity ?? state.session?.queueCapacity ?? 0;
+  const activeCount = activeIds.size;
+  const publicQueueTracks = realQueueEntries.map(toPublicQueueTrack);
+  const publicCompletedTracks = realCompletedEntries.map(toPublicQueueTrack);
+  const nowPlaying = realNowPlaying ? toPublicQueueTrack(realNowPlaying) : null;
+  const upNext = realUpNext ? toPublicQueueTrack(realUpNext) : null;
+
   return {
-    available: true,
-    session: {
-      sessionId: snapshot.session.sessionId,
-      title: snapshot.session.title,
-      showDate: snapshot.session.showDate,
-      status: snapshot.session.status,
-      queueOpen: snapshot.session.queueOpen,
-      broadcastPhase: snapshot.session.broadcastPhase ?? null,
-      activeCount: snapshot.session.activeCount,
-      completedCount: snapshot.session.completedCount,
-      removedCount: snapshot.session.removedCount,
-      wheelSpinsOwed: snapshot.session.wheelSpinsOwed ?? 0,
-      priorityUpgradesEnabled: snapshot.session.priorityUpgradesEnabled,
-      priorityUpgradeLabel: snapshot.session.priorityUpgradeLabel,
+    queue: {
+      available: true,
+      session: {
+        sessionId: state.session?.sessionId ?? "",
+        title: state.session?.title ?? "",
+        showDate: state.session?.showDate ?? "",
+        status: state.session?.status ?? "prepared",
+        queueOpen: state.session?.queueOpen === true,
+        broadcastPhase: state.session?.broadcastPhase ?? null,
+        activeCount,
+        completedCount: publicCompletedTracks.length,
+        removedCount: realRemovedCount,
+        wheelSpinsOwed: state.session?.wheelSpinsOwed ?? 0,
+        priorityUpgradesEnabled: state.session?.priorityUpgradesEnabled === true,
+        priorityUpgradeLabel: state.session?.priorityUpgradeLabel ?? "Priority Signal",
+      },
+      status: {
+        isOpen: state.publicStatus?.isOpen ?? state.session?.queueOpen === true,
+        activeCount,
+        capacity,
+        pressure: pressureFor(activeCount, capacity),
+      },
+      nowPlaying: publicTrack(nowPlaying),
+      upNext: publicTrack(upNext),
+      queue: publicQueueTracks.map(publicTrack).filter((track): track is BnlQueueTrack => Boolean(track)),
+      completed: publicCompletedTracks.map(publicTrack).filter((track): track is BnlQueueTrack => Boolean(track)),
     },
-    status: {
-      isOpen: snapshot.status.isOpen,
-      activeCount: snapshot.status.activeCount,
-      capacity: snapshot.status.capacity,
-      pressure: snapshot.status.pressure,
-    },
-    nowPlaying: publicTrack(snapshot.nowPlaying),
-    upNext: publicTrack(snapshot.upNext),
-    queue: snapshot.queue.map(publicTrack).filter((track): track is BnlQueueTrack => Boolean(track)),
-    completed: snapshot.completed.map(publicTrack).filter((track): track is BnlQueueTrack => Boolean(track)),
+    artists: artistsFromTracks(nowPlaying, upNext, publicQueueTracks, publicCompletedTracks),
   };
 }
 
@@ -150,12 +186,17 @@ function addArtistTrack(artists: Map<string, BnlReadModelArtist>, track: QueuePu
   artists.set(normalizedName, artist);
 }
 
-function artistsFromQueue(snapshot: QueuePublicSnapshot): BnlReadModelArtist[] {
+function artistsFromTracks(
+  nowPlaying: QueuePublicTrack | null,
+  upNext: QueuePublicTrack | null,
+  queue: QueuePublicTrack[],
+  completed: QueuePublicTrack[],
+): BnlReadModelArtist[] {
   const artists = new Map<string, BnlReadModelArtist>();
-  addArtistTrack(artists, snapshot.nowPlaying, "nowPlaying");
-  addArtistTrack(artists, snapshot.upNext, "upNext");
-  for (const track of snapshot.queue) addArtistTrack(artists, track, "queued");
-  for (const track of snapshot.completed) addArtistTrack(artists, track, "completed");
+  addArtistTrack(artists, nowPlaying, "nowPlaying");
+  addArtistTrack(artists, upNext, "upNext");
+  for (const track of queue) addArtistTrack(artists, track, "queued");
+  for (const track of completed) addArtistTrack(artists, track, "completed");
   return [...artists.values()].slice(0, MAX_ARTISTS);
 }
 
@@ -230,6 +271,7 @@ const rules = {
     "public replies when relevant",
     "queue/session awareness",
     "artist/track awareness from public queue snapshot",
+    "simulation/test tracks are excluded from this read model",
   ],
   disallowedUse: [
     "private user identity",
@@ -243,17 +285,19 @@ const rules = {
     "Discord identity merging",
     "automatic canon creation",
     "claiming public dossiers exist when not implemented",
+    "treating admin simulation data as live/public context",
   ],
   sourceAuthority: {
-    queue: "public runtime snapshot",
-    artists: "derived from public queue snapshot",
+    queue: "public runtime snapshot with read-model-only simulation/test filtering",
+    artists: "derived from read-model-filtered public queue fields",
     dossiers: "public dossier runtime only if implemented",
     sourceContext: "static public site context",
+    simulationData: "BNL must treat this read model as live/public context only, not admin simulation data",
   },
 };
 
 export async function GET() {
-  const queueSnapshot = await getPublicQueueSnapshot();
+  const liveQueue = await readPublicLiveQueueForBnl();
 
   return NextResponse.json(
     {
@@ -265,8 +309,8 @@ export async function GET() {
       publicOnly: true,
       sections: {
         sourceContext,
-        queue: compactQueue(queueSnapshot),
-        artists: artistsFromQueue(queueSnapshot),
+        queue: liveQueue.queue,
+        artists: liveQueue.artists,
         dossiers: publicDossiers(),
         rules,
       },

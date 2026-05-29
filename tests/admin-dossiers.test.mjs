@@ -275,9 +275,12 @@ test("admin dossier page gates workflow behind successful API payload and includ
   assert.match(page, /loose intake \/ strict publishing/i);
   assert.match(page, /Try Again: Too Long/);
   assert.match(page, /Owner Approve Draft/);
-  assert.match(page, /kind: draftForm\.kind/);
-  assert.match(page, /ecosystemLane: draftForm\.ecosystemLane/);
-  assert.match(page, /identityAuthority: draftForm\.identityAuthority/);
+  assert.match(page, /kind: draftForm\.kind \|\| undefined/);
+  assert.match(page, /ecosystemLane: draftForm\.ecosystemLane \|\| undefined/);
+  assert.match(
+    page,
+    /identityAuthority: draftForm\.identityAuthority \|\| undefined/,
+  );
   assert.match(page, /BNL generation comes later/);
   assert.match(
     page,
@@ -757,6 +760,18 @@ test("saveDraft updates draft fields, persists through GET, and does not mutate 
   assert.equal(
     getPayload.drafts[0].fields.summary,
     "A saved public-safe manual draft summary.",
+  );
+  assert.equal(
+    getPayload.drafts[0].fields.kind,
+    manualCandidateInput.recommendedKind,
+  );
+  assert.equal(
+    getPayload.drafts[0].fields.ecosystemLane,
+    manualCandidateInput.recommendedEcosystemLane,
+  );
+  assert.equal(
+    getPayload.drafts[0].fields.identityAuthority,
+    manualCandidateInput.recommendedIdentityAuthority,
   );
   assert.equal(JSON.stringify(databasePage.entries), databaseEntriesBefore);
   const readModelAfter = await (await readModel.GET()).json();

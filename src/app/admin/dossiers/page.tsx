@@ -48,9 +48,9 @@ type WorkflowPayload = {
 type DraftForm = {
   name: string;
   category: string;
-  kind: string;
-  ecosystemLane: string;
-  identityAuthority: string;
+  kind: DossierDraft["fields"]["kind"] | "";
+  ecosystemLane: DossierDraft["fields"]["ecosystemLane"] | "";
+  identityAuthority: DossierDraft["fields"]["identityAuthority"] | "";
   status: string;
   clearance: string;
   role: string;
@@ -478,15 +478,9 @@ export default function AdminDossiersPage() {
       category: draftForm.category
         ? (draftForm.category as DossierDraft["fields"]["category"])
         : undefined,
-      kind: draftForm.kind
-        ? (draftForm.kind as DossierDraft["fields"]["kind"])
-        : undefined,
-      ecosystemLane: draftForm.ecosystemLane
-        ? (draftForm.ecosystemLane as DossierDraft["fields"]["ecosystemLane"])
-        : undefined,
-      identityAuthority: draftForm.identityAuthority
-        ? (draftForm.identityAuthority as DossierDraft["fields"]["identityAuthority"])
-        : undefined,
+      kind: draftForm.kind || undefined,
+      ecosystemLane: draftForm.ecosystemLane || undefined,
+      identityAuthority: draftForm.identityAuthority || undefined,
       status: draftForm.status
         ? (draftForm.status as DossierDraft["fields"]["status"])
         : undefined,
@@ -1388,7 +1382,10 @@ export default function AdminDossiersPage() {
                     <select
                       value={draftForm.kind}
                       onChange={(event) =>
-                        setDraftForm({ ...draftForm, kind: event.target.value })
+                        setDraftForm({
+                          ...draftForm,
+                          kind: event.target.value as DraftForm["kind"],
+                        })
                       }
                       className={textInputClass()}
                     >
@@ -1406,7 +1403,8 @@ export default function AdminDossiersPage() {
                       onChange={(event) =>
                         setDraftForm({
                           ...draftForm,
-                          ecosystemLane: event.target.value,
+                          ecosystemLane: event.target
+                            .value as DraftForm["ecosystemLane"],
                         })
                       }
                       className={textInputClass()}
@@ -1425,7 +1423,8 @@ export default function AdminDossiersPage() {
                       onChange={(event) =>
                         setDraftForm({
                           ...draftForm,
-                          identityAuthority: event.target.value,
+                          identityAuthority: event.target
+                            .value as DraftForm["identityAuthority"],
                         })
                       }
                       className={textInputClass()}

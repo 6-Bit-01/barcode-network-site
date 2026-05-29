@@ -236,19 +236,19 @@ test("admin dossier dashboard is traffic control instead of an all-in-one workbe
     "BNL will generate full dossier fields, not starter notes",
     "BNL will ask only for missing decisions",
     "Manual editing remains available",
-    "Candidate Queue",
-    "Drafts in Progress",
+    "Manual fields are fallback only",
+    "Active Subject Files",
+    "Drafts Being Worked",
     "Owner Review",
-    "Possible Duplicates",
+    "Duplicate Warnings",
     "Closed / Merged Candidates",
     "Closed / Superseded Drafts",
     "System Boundaries",
     "Create Manual Candidate",
-    "Review Candidate",
+    "Open Subject File",
     "Create Draft",
-    "Open Draft",
-    "Open Draft Editor",
-    "Review Merge",
+    "Open Workbench / Draft",
+    "View Duplicate Warning",
     "No BNL invocation",
     "No publishing",
     "No automatic tag creation",
@@ -305,12 +305,16 @@ test("dedicated draft editor route contains focused editing workflow and future 
   assert.equal(fs.existsSync(path.join(projectRoot, routePath)), true);
   const page = source(routePath);
   for (const label of [
-    "Draft Editor",
+    "BNL Dossier Workbench",
     "Candidate Source Packet",
-    "Candidate Context",
-    "Editable Dossier Draft",
+    "Suggested Dossier Draft",
+    "BNL Instructions / Revision Request",
+    "Generate Draft coming soon",
+    "Revise Draft coming soon",
+    "Advanced Manual Fields",
+    "fallback/advanced editing",
     "Save Draft",
-    "Submit for Owner Review",
+    "Submit to Owner Review",
     "category",
     "kind",
     "ecosystemLane",
@@ -319,9 +323,9 @@ test("dedicated draft editor route contains focused editing workflow and future 
     "Submitting for owner review does not publish.",
     "BNL generation comes later",
     "Exact character limits will be enforced in a later PR.",
-    "Draft submitted for owner review.",
+    "Draft submitted to Owner Review.",
     "This draft is now in the Owner Review lane.",
-    "Back to Dossier Control Center",
+    "Back to Dossier Dashboard",
   ]) {
     assert.match(page, new RegExp(label));
   }
@@ -341,11 +345,17 @@ test("dedicated candidate review route contains focused evidence and action work
   assert.equal(fs.existsSync(path.join(projectRoot, routePath)), true);
   const page = source(routePath);
   for (const label of [
-    "Candidate Review",
-    "Create Draft",
-    "Open Draft",
-    "Deny",
-    "Needs More Evidence",
+    "Subject File",
+    "Add Info / Correction",
+    "Add Link",
+    "Add Missing Info",
+    "Add Public Safety Note",
+    "Add Do-Not-Say Note",
+    "Additional Info Added After Submission",
+    "Admin Addendum",
+    "Create / Open Workbench Draft",
+    "Open Workbench Draft",
+        "Mark Needs Info",
     "Evidence summary",
     "Evidence items",
     "Public safety notes",
@@ -357,6 +367,7 @@ test("dedicated candidate review route contains focused evidence and action work
   assert.match(page, /useParams/);
   assert.match(page, /routeParam\(params\?\.candidateId\)/);
   assert.match(page, /action: "createDraftFromCandidate"/);
+  assert.doesNotMatch(page, />Deny<|>Deny<\/button>/);
   assert.match(page, /action, candidateId/);
   assert.match(page, /target="_blank"/);
   assert.match(page, /rel="noopener noreferrer"/);
@@ -370,7 +381,10 @@ test("dedicated duplicate merge route contains focused manual merge workflow", (
   const page = source(routePath);
   for (const label of [
     "Merge Review",
-    "Merge is a lead/owner review action",
+    "Merge is owner/lead cleanup",
+    "This combines subject files/source packets",
+    "Owner/Lead Merge Controls",
+    "high-risk admin preview",
     "Nothing auto-merges",
     "Source candidates are preserved",
     "Source drafts are preserved",
@@ -411,9 +425,15 @@ test("dashboard uses actual workflow ids and state-aware lane filtering", () => 
   assert.match(page, /Closed \/ Merged Candidates/);
   assert.match(page, /Closed \/ Superseded Drafts/);
   assert.match(page, /disabled=\{saving \|\| !canCreateDraft\}/);
-  assert.match(page, /disabled=\{saving \|\| !canUpdateCandidate\}/);
-  assert.match(page, /Open Draft/);
+  assert.match(page, /Mark Needs Info/);
+  assert.match(page, /Recommend Dismissal/);
+  assert.match(page, /Open Workbench \/ Draft/);
   assert.match(page, /Superseded by/);
+  assert.match(page, /Active Subject Files/);
+  assert.match(page, /Duplicate Warnings/);
+  assert.match(page, /View Duplicate Warning/);
+  assert.match(page, /Recommend Dismissal/);
+  assert.doesNotMatch(page, />Deny<|>Deny<\/button>/);
   assert.match(page, /"approved"/);
   assert.match(page, /"owner_approved"/);
   assert.match(page, /mergedIntoCandidateId/);
@@ -435,6 +455,7 @@ test("dashboard frames manual intake as fallback and future BNL-led workbench", 
     "BNL will generate full dossier fields, not starter notes",
     "BNL will ask only for missing decisions",
     "Manual editing remains available",
+    "Manual fields are fallback only",
     "Admin selects or creates a candidate",
     "Owner opens the submitted draft",
     "Future source packet",
@@ -448,10 +469,14 @@ test("owner review page is a placeholder lane without publishing", () => {
   const routePath = "src/app/admin/dossiers/owner-review/page.tsx";
   assert.equal(fs.existsSync(path.join(projectRoot, routePath)), true);
   const page = source(routePath);
-  assert.match(page, /Owner Review Queue/);
+  assert.match(page, /Owner Final Review Queue/);
+  assert.match(page, /Owner final review is separate from admin drafting/);
+  assert.match(page, /Owner will be able to use BNL assistance plus manual editing/);
+  assert.match(page, /Owner can approve, send back, request more info, or deny/);
   assert.match(page, /Owner approval will require owner gate\/secret in a later PR/);
+  assert.match(page, /Additional Info Added After Submission \/ Admin Addendum/);
   assert.match(page, /Owner approval still will not publish until publishing exists/);
-  assert.match(page, /Open Draft Editor/);
+  assert.match(page, /View Submitted Draft/);
   assert.doesNotMatch(page, /publishDraft/);
   assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
 });
@@ -1275,12 +1300,13 @@ test("mergeCandidates does not mutate public database, public read model, tag re
 test("admin dossiers dashboard links duplicate groups to dedicated merge review", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
   const mergePage = source("src/app/admin/dossiers/duplicates/[groupId]/page.tsx");
-  assert.match(page, /Possible Duplicates/);
-  assert.match(page, /Review Merge/);
+  assert.match(page, /Duplicate Warnings/);
+  assert.match(page, /View Duplicate Warning/);
   assert.match(page, /\/admin\/dossiers\/duplicates\//);
   assert.doesNotMatch(page, /Merge into Master Candidate/);
   assert.doesNotMatch(page, /Create Master Draft from Merge/);
-  assert.match(mergePage, /Merge is a lead\/owner review action/);
+  assert.match(mergePage, /Merge is owner\/lead cleanup/);
+  assert.match(mergePage, /This combines subject files\/source packets/);
   assert.match(mergePage, /Nothing auto-merges/);
   assert.match(mergePage, /Source candidates are preserved/);
   assert.match(mergePage, /Source drafts are preserved/);

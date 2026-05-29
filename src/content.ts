@@ -313,6 +313,58 @@ export type ClearanceMeaning =
   | "access_control"
   | "mixed";
 
+export type DossierLinkType =
+  | "official"
+  | "artist"
+  | "music"
+  | "social"
+  | "website"
+  | "community"
+  | "submission"
+  | "portfolio"
+  | "other";
+
+export type DossierLink = {
+  label: string;
+  url: string;
+  type: DossierLinkType;
+  selectedBy?: "subject" | "operator" | "legacy";
+  publicSafe?: boolean;
+};
+
+export type DatabaseFile = {
+  name: string;
+  url: string;
+  type: "download" | "audio" | "video" | "image";
+};
+
+export type DatabaseEntry = {
+  id: string;
+  name: string;
+  image: string;
+  category: "Entity" | "Personnel" | "Sponsor" | "Interface" | "Production";
+  status: "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN";
+  clearance: "PUBLIC" | "INTERNAL" | "RESTRICTED";
+  role: string;
+  origin: "KNOWN" | "UNKNOWN" | "UNVERIFIED" | "WITHHELD";
+  summary: string;
+  tags: string[];
+  notes: string;
+  link: string;
+  primaryLink?: DossierLink;
+  links?: DossierLink[];
+  files: DatabaseFile[];
+  kind?: PublicDossierKind;
+  lifecycle?: PublicDossierLifecycle;
+  authority?: PublicDossierAuthority;
+  publicFacts?: string[];
+  knownBoundaries?: string[];
+  relatedPublicIds?: string[];
+  publicPageVisibility?: PublicPageVisibility;
+  bnlReadModelExposure?: BnlReadModelExposure;
+  clearanceMeaning?: ClearanceMeaning;
+};
+
 // Designation prefixes:
 //   EN-### = Entity | PE-### = Personnel | SP-### = Sponsor | IF-### = Interface | PD-### = Production
 // Categories: Entity | Personnel | Sponsor | Interface | Production
@@ -659,7 +711,7 @@ export const databasePage = {
       link: "",
       files: [] as { name: string; url: string; type: "download" | "audio" | "video" | "image" }[],
     },
-  ],
+  ] satisfies DatabaseEntry[],
 
   terminalQuery: [
     "INITIALIZING DOSSIER INDEX",

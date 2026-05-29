@@ -41,6 +41,7 @@ const require = createRequire(import.meta.url);
 const queue = require("../src/lib/queue.ts");
 const { databasePage } = require("../src/content.ts");
 const { getDatabaseAggregateStats } = require("../src/lib/database-stats.ts");
+const { getDossierPrimaryLink, getDossierPublicLinks, legacyDossierLink } = require("../src/lib/dossier-links.ts");
 const { isBnlReadModelDossierVisible, isPublicDatabasePageVisible } = require("../src/lib/database-visibility.ts");
 const readModel = require("../src/app/api/bnl/read-model/route.ts");
 
@@ -175,7 +176,7 @@ test("BNL read model preserves v1 compatibility and adds semantic sections", asy
 
   assert.equal(model.ok, true);
   assert.equal(model.version, 1);
-  assert.equal(model.schemaRevision, "1.1");
+  assert.equal(model.schemaRevision, "1.2");
   assert.equal(model.publicOnly, true);
   assert.ok(model.sections.sourceContext);
   assert.ok(model.sections.queue);
@@ -353,6 +354,115 @@ test("BNL read model exposes restricted/internal only as public-page-safe summar
   for (const field of forbiddenKeys) {
     assert.equal(dossierJson.includes(field), false, `${field} should not appear in public dossier summaries`);
   }
+});
+
+
+test("BNL read model exposes the dossier authoring guide with current page structure", async () => {
+  await freshReadModelSession();
+  const model = await modelJson();
+  const guide = model.sections.dossiers.authoringGuide;
+
+  assert.ok(guide, "authoring guide should exist under sections.dossiers");
+  assert.ok(Array.isArray(guide.pageStructure));
+  assert.ok(guide.fieldGuide);
+  assert.ok(guide.toneGuide);
+  assert.ok(guide.lengthGuide);
+  assert.ok(Array.isArray(guide.draftingRules));
+
+  const pageStructure = guide.pageStructure.join("\n");
+  for (const phrase of ["Hero", "DOSSIER", "Dossier Record", "Intelligence Brief", "Attached Files", "Terminal Readout"]) {
+    assert.match(pageStructure, new RegExp(phrase, "i"));
+  }
+});
+
+test("dossier authoring guide matches sections rendered by the dossier page", () => {
+  const dossierPageSource = fs.readFileSync(path.join(projectRoot, "src/app/database/[slug]/page.tsx"), "utf8");
+  const authoringGuideSource = fs.readFileSync(path.join(projectRoot, "src/lib/dossier-authoring-guide.ts"), "utf8");
+
+  for (const phrase of ["// DOSSIER", "Dossier Record", "Intelligence Brief", "Attached Files", "DOSSIER QUERY"]) {
+    assert.ok(dossierPageSource.includes(phrase), `${phrase} should be rendered by the dossier page`);
+  }
+  for (const phrase of ["Hero", "Dossier Record", "Intelligence Brief", "Attached Files", "Terminal Readout"]) {
+    assert.ok(authoringGuideSource.includes(phrase), `${phrase} should be documented in the guide`);
+  }
+});
+
+test("featured dossier link helpers preserve legacy links and prefer public primary links", () => {
+  const legacyEntry = { link: "https://discord.gg/4tHazmD528" };
+  const legacy = legacyDossierLink(legacyEntry.link);
+  assert.equal(legacy.url, "https://discord.gg/4tHazmD528");
+  assert.equal(legacy.selectedBy, "legacy");
+  assert.equal(legacy.publicSafe, true);
+
+  const entry = {
+    link: "https://legacy.example.test/path",
+    primaryLink: { label: "Chosen Signal", url: "https://primary.example.test", type: "official", selectedBy: "subject", publicSafe: true },
+    links: [
+      { label: "Private Draft", url: "https://private.example.test", type: "other", selectedBy: "operator", publicSafe: false },
+      { label: "Public Backup", url: "https://backup.example.test", type: "website", selectedBy: "operator", publicSafe: true },
+    ],
+  };
+
+  const primary = getDossierPrimaryLink(entry);
+  assert.equal(primary.label, "Chosen Signal");
+  assert.equal(primary.url, "https://primary.example.test/");
+  assert.equal(primary.type, "official");
+  assert.equal(primary.selectedBy, "subject");
+
+  const links = getDossierPublicLinks(entry);
+  assert.deepEqual(links.map((link) => link.label), ["Chosen Signal", "Public Backup", "legacy.example.test"]);
+  assert.equal(JSON.stringify(links).includes("Private Draft"), false);
+});
+
+test("normalized dossiers expose safe primaryLink/links while preserving legacy link", async () => {
+  await freshReadModelSession();
+  const model = await modelJson();
+  const legacySource = databasePage.entries.find((entry) => entry.link);
+  assert.ok(legacySource, "fixture should include at least one legacy link");
+
+  const dossier = model.sections.dossiers.items.find((item) => item.id === legacySource.id);
+  assert.ok(dossier, "legacy-linked public dossier should appear in the read model");
+  assert.equal(dossier.link, legacySource.link);
+  assert.ok(dossier.primaryLink);
+  assert.equal(dossier.primaryLink.url, legacySource.link);
+  assert.equal(dossier.primaryLink.selectedBy, "legacy");
+  assert.equal(dossier.primaryLink.publicSafe, true);
+  assert.ok(Array.isArray(dossier.links));
+  assert.ok(dossier.links.some((link) => link.url === legacySource.link && link.publicSafe === true));
+});
+
+test("dossier page link rendering uses featured link helper and remains safe without links", () => {
+  const dossierPageSource = fs.readFileSync(path.join(projectRoot, "src/app/database/[slug]/page.tsx"), "utf8");
+  const noLinkEntry = databasePage.entries.find((entry) => !entry.link && !entry.primaryLink && (!entry.links || entry.links.length === 0));
+
+  assert.ok(noLinkEntry, "fixture should include entries without links");
+  assert.match(dossierPageSource, /getDossierPrimaryLink\(entry\)/);
+  assert.match(dossierPageSource, /primaryLink &&/);
+  assert.match(dossierPageSource, /href=\{primaryLink\.url\}/);
+  assert.match(dossierPageSource, /\{primaryLink\.label\}/);
+});
+
+test("BNL dossier style profile is dynamically derived from current entries", async () => {
+  await freshReadModelSession();
+  const model = await modelJson();
+  const styleProfile = model.sections.dossiers.styleProfile;
+  const entries = databasePage.entries;
+  const wordCounts = entries.map((entry) => (entry.summary.trim().match(/\S+/g) ?? []).length);
+  const average = Math.round(wordCounts.reduce((sum, count) => sum + count, 0) / wordCounts.length);
+  const routeSource = fs.readFileSync(path.join(projectRoot, "src/app/api/bnl/read-model/route.ts"), "utf8");
+
+  assert.equal(styleProfile.entryCount, entries.length);
+  assert.equal(styleProfile.summaryWordCount.min, Math.min(...wordCounts));
+  assert.equal(styleProfile.summaryWordCount.max, Math.max(...wordCounts));
+  assert.equal(styleProfile.summaryWordCount.average, average);
+  assert.equal(styleProfile.notesPresenceCount, entries.filter((entry) => entry.notes.trim().length > 0).length);
+  for (const section of ["Dossier Record", "Intelligence Brief", "Attached Files", "Terminal Readout"]) {
+    assert.ok(styleProfile.commonSections.includes(section));
+  }
+  for (const field of ["id", "name", "category", "status", "clearance", "role", "origin", "summary", "tags", "notes", "link", "files"]) {
+    assert.ok(styleProfile.commonFields.includes(field));
+  }
+  assert.doesNotMatch(routeSource, /entryCount:\s*\d+/);
 });
 
 test("BNL read model labels now playing and up next as runtime context", async () => {

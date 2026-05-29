@@ -1,6 +1,4 @@
-import type { databasePage } from "@/content";
-
-export type DatabaseEntry = (typeof databasePage.entries)[number];
+import type { DatabaseEntry } from "@/content";
 
 function countBy<TEntry, TValue extends string>(
   entries: TEntry[],

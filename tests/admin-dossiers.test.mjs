@@ -275,6 +275,9 @@ test("admin dossier page gates workflow behind successful API payload and includ
   assert.match(page, /loose intake \/ strict publishing/i);
   assert.match(page, /Try Again: Too Long/);
   assert.match(page, /Owner Approve Draft/);
+  assert.match(page, /kind: draftForm\.kind/);
+  assert.match(page, /ecosystemLane: draftForm\.ecosystemLane/);
+  assert.match(page, /identityAuthority: draftForm\.identityAuthority/);
   assert.match(page, /BNL generation comes later/);
   assert.match(
     page,

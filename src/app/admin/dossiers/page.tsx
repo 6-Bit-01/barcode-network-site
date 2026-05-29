@@ -478,6 +478,15 @@ export default function AdminDossiersPage() {
       category: draftForm.category
         ? (draftForm.category as DossierDraft["fields"]["category"])
         : undefined,
+      kind: draftForm.kind
+        ? (draftForm.kind as DossierDraft["fields"]["kind"])
+        : undefined,
+      ecosystemLane: draftForm.ecosystemLane
+        ? (draftForm.ecosystemLane as DossierDraft["fields"]["ecosystemLane"])
+        : undefined,
+      identityAuthority: draftForm.identityAuthority
+        ? (draftForm.identityAuthority as DossierDraft["fields"]["identityAuthority"])
+        : undefined,
       status: draftForm.status
         ? (draftForm.status as DossierDraft["fields"]["status"])
         : undefined,

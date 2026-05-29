@@ -1006,6 +1006,7 @@ test("simulation tracks include visible sequence numbers without lane status tit
 test("BNL read model excludes simulation tracks from queue and artists", async () => {
   await freshOpenSession("bnl read model sim exclusion", { showStarted: false });
   const real = await submitTrack("BNL Real", { artist: "BNL Real Artist" });
+  const nonLatin = await submitTrack("BNL Non Latin", { artist: "東京ビート" });
   let simState = await queue.updateRadioTrack("", "addSimulationPaidPriority");
   const simUpNext = simState.nextInLine;
   assert.ok(simUpNext?.isTestTrack, "simulation priority track should exist in underlying up-next state");
@@ -1023,6 +1024,7 @@ test("BNL read model excludes simulation tracks from queue and artists", async (
   assert.equal(data.ok, true);
   const queueTrackIds = data.sections.queue.queue.map((track) => track.id);
   assert.ok(queueTrackIds.includes(real.id), "real queue track should remain in the BNL read model");
+  assert.ok(queueTrackIds.includes(nonLatin.id), "non-Latin artist track should remain in the BNL read model queue");
   assert.equal(queueTrackIds.includes(simQueued.id), false, "simulation queue track must not enter the BNL read model");
   assert.notEqual(data.sections.queue.upNext?.id ?? null, simUpNext.id, "simulation track must not be exposed as up next");
   assert.notEqual(data.sections.queue.nowPlaying?.id ?? null, simUpNext.id, "simulation track must not be exposed as now playing");
@@ -1030,6 +1032,10 @@ test("BNL read model excludes simulation tracks from queue and artists", async (
 
   const artistNames = data.sections.artists.map((artist) => artist.name);
   assert.ok(artistNames.includes("BNL Real Artist"), "real artist should remain in derived artist surface");
+  const nonLatinArtist = data.sections.artists.find((artist) => artist.name === "東京ビート");
+  assert.ok(nonLatinArtist, "non-Latin artist display name should remain in derived artist surface");
+  assert.equal(typeof nonLatinArtist.normalizedName, "string");
+  assert.notEqual(nonLatinArtist.normalizedName, "", "non-Latin artist normalizedName should not be empty");
   assert.equal(artistNames.some((name) => /^SIM /i.test(name)), false, "simulation artist must not enter derived artist surface");
   assert.ok(data.sections.rules.allowedUse.includes("simulation/test tracks are excluded from this read model"));
   assert.equal(data.sections.rules.sourceAuthority.simulationData, "BNL must treat this read model as live/public context only, not admin simulation data");

@@ -137,14 +137,27 @@ async function readPublicLiveQueueForBnl() {
   };
 }
 
+function stableArtistKeyFallback(name: string): string {
+  let hash = 0;
+  for (const char of name) {
+    hash = (hash * 31 + char.codePointAt(0)!) >>> 0;
+  }
+  return `artist-${hash.toString(36)}`;
+}
+
 function normalizeArtistName(name: string): string {
-  return name
-    .trim()
-    .toLowerCase()
+  const trimmed = name.trim();
+  if (!trimmed) return "";
+
+  const normalized = trimmed
+    .normalize("NFKC")
+    .toLocaleLowerCase()
     .replace(/['’]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
+
+  return normalized || stableArtistKeyFallback(trimmed);
 }
 
 function artistNameForTrack(track: QueuePublicTrack): string {

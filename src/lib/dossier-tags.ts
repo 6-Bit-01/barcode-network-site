@@ -52,96 +52,167 @@ type DossierTagRegistry = {
   creationPolicy: DossierTagCreationPolicy;
 };
 
-const DOSSIER_TAG_METADATA = {
+export const DOSSIER_TAG_METADATA = {
   ai: {
     category: "technology",
     aliases: ["artificial intelligence", "machine intelligence"],
-    description: "Connected to artificial intelligence, autonomous systems, or AI-assisted BARCODE operations.",
+    description:
+      "Connected to artificial intelligence, autonomous systems, or AI-assisted BARCODE operations.",
   },
   architecture: {
     category: "system",
     aliases: ["system design", "infrastructure design"],
-    description: "Connected to structure, system design, or technical architecture.",
+    description:
+      "Connected to structure, system design, or technical architecture.",
   },
   artist: {
     category: "identity",
     aliases: ["performer", "music artist"],
-    description: "Identifies an artist, performer, or creative subject surfaced as a dossier role.",
+    description:
+      "Identifies an artist, performer, or creative subject surfaced as a dossier role.",
   },
   automation: {
     category: "function",
     aliases: ["automated", "workflow"],
-    description: "Connected to automated workflows, routing, or operational processing.",
+    description:
+      "Connected to automated workflows, routing, or operational processing.",
+  },
+  anomaly: {
+    category: "identity",
+    aliases: ["entity anomaly", "radio anomaly"],
+    description:
+      "Identifies anomaly/entity traits such as BARCODE Radio-created anomalous records.",
   },
   broadcast: {
     category: "broadcast",
     aliases: ["live", "livestream", "on-air"],
-    description: "Connected to BARCODE Radio, live programming, or broadcast behavior.",
+    description:
+      "Connected to BARCODE Radio, live programming, or broadcast behavior.",
+  },
+  collaborator: {
+    category: "creative",
+    aliases: ["feature", "featured artist"],
+    description:
+      "Identifies creative collaborators or featured participants connected to BARCODE work.",
+  },
+  community: {
+    category: "community",
+    aliases: ["barcode community", "network community"],
+    description:
+      "Identifies community participation or community-owned context.",
+  },
+  core: {
+    category: "identity",
+    aliases: ["core team", "barcode core"],
+    description:
+      "Identifies BARCODE core-team records without implying nature or biology.",
   },
   engineer: {
     category: "role",
     aliases: ["technical engineer", "systems engineer"],
-    description: "Identifies engineering, technical maintenance, or build responsibility.",
+    description:
+      "Identifies engineering, technical maintenance, or build responsibility.",
   },
   executive: {
     category: "role",
     aliases: ["leadership", "director"],
-    description: "Identifies executive, leadership, or organizational authority.",
+    description:
+      "Identifies executive, leadership, or organizational authority.",
   },
   handler: {
     category: "role",
     aliases: ["operator", "control"],
-    description: "Identifies handler, control, or operational stewardship roles.",
+    description:
+      "Identifies handler, control, or operational stewardship roles.",
   },
   host: {
     category: "role",
     aliases: ["presenter", "emcee"],
     description: "Identifies an on-air host or primary presentation role.",
   },
+  human: {
+    category: "identity",
+    aliases: ["person", "human nature"],
+    description:
+      "Nature/identity trait tag only; does not determine category, lane, or identity authority.",
+  },
+  hybrid: {
+    category: "identity",
+    aliases: ["mixed nature", "hybrid nature"],
+    description:
+      "Nature/identity trait tag only; does not determine category, lane, or identity authority.",
+  },
   manager: {
     category: "role",
     aliases: ["management", "supervisor"],
-    description: "Identifies management, oversight, or coordination responsibility.",
+    description:
+      "Identifies management, oversight, or coordination responsibility.",
+  },
+  member: {
+    category: "community",
+    aliases: ["regular", "community member"],
+    description:
+      "Identifies recurring or active BARCODE Network community members.",
   },
   mod: {
     category: "community",
     aliases: ["moderation", "moderator"],
-    description: "Connected to community moderation, safety, or participant stewardship.",
+    description:
+      "Connected to community moderation, safety, or participant stewardship.",
+  },
+  operator: {
+    category: "role",
+    aliases: ["network operator", "approved operator"],
+    description:
+      "Identifies BARCODE Network operator/staff role traits without merging operators with community mods.",
   },
   producer: {
     category: "creative",
     aliases: ["production", "program producer"],
-    description: "Connected to production, programming, or creative assembly work.",
+    description:
+      "Connected to production, programming, or creative assembly work.",
   },
   radio: {
     category: "broadcast",
     aliases: ["radio program", "radio show"],
-    description: "Connected specifically to radio programming or the BARCODE Radio format.",
+    description:
+      "Connected specifically to radio programming or the BARCODE Radio format.",
   },
   sponsor: {
     category: "relationship",
     aliases: ["partner", "supporter"],
-    description: "Identifies sponsor, partner, or support relationship context.",
+    description:
+      "Identifies sponsor, partner, or support relationship context.",
   },
   stagehand: {
     category: "role",
     aliases: ["crew", "production hand"],
-    description: "Identifies support crew, stage, or behind-the-scenes production work.",
+    description:
+      "Identifies support crew, stage, or behind-the-scenes production work.",
   },
   systems: {
     category: "system",
     aliases: ["infrastructure", "backend", "network"],
-    description: "Connected to technical systems, infrastructure, or operational mechanisms.",
+    description:
+      "Connected to technical systems, infrastructure, or operational mechanisms.",
   },
   tech: {
     category: "technology",
     aliases: ["technology", "technical"],
-    description: "Connected to technical platforms, tools, or technology-facing operations.",
+    description:
+      "Connected to technical platforms, tools, or technology-facing operations.",
+  },
+  "unknown-nature": {
+    category: "identity",
+    aliases: ["unknown nature", "unverified nature"],
+    description:
+      "Nature/identity trait tag for intentionally unknown subject nature; not an organizing field.",
   },
   virus: {
     category: "system",
     aliases: ["malware", "infection"],
-    description: "Connected to virus-class, infection, or anomalous system behavior.",
+    description:
+      "Connected to virus-class, infection, or anomalous system behavior.",
   },
   writer: {
     category: "creative",
@@ -158,6 +229,7 @@ export const DOSSIER_TAG_RULES = [
   "Do not create tags for one-off wording differences, synonyms of existing tags, temporary queue appearances, private identities, or payment/customer data.",
   "Queue-derived artists do not automatically create dossier tags or dossier records.",
   "Tags should support search and organization, not decorative lore.",
+  "AI, human, hybrid, and unknown-nature are nature/identity tags only and must not decide category, ecosystem lane, or identity authority.",
 ] as const;
 
 export const DOSSIER_TAG_CREATION_POLICY: DossierTagCreationPolicy = {
@@ -208,17 +280,24 @@ function fallbackDescription(tag: string) {
 export function resolveDossierTagCanonical(tagOrAlias: string) {
   const normalized = normalizeTag(tagOrAlias);
   if (!normalized) return null;
-  if (DOSSIER_TAG_METADATA[normalized as keyof typeof DOSSIER_TAG_METADATA]) return normalized;
+  if (DOSSIER_TAG_METADATA[normalized as keyof typeof DOSSIER_TAG_METADATA])
+    return normalized;
 
   for (const [canonical, metadata] of Object.entries(DOSSIER_TAG_METADATA)) {
-    if (metadata.aliases?.some((alias) => normalizeTag(alias) === normalized)) return canonical;
+    if (metadata.aliases?.some((alias) => normalizeTag(alias) === normalized))
+      return canonical;
   }
 
   return null;
 }
 
-export function buildDossierTagRegistry(entries: DatabaseEntry[]): DossierTagRegistry {
-  const tagRecords = new Map<string, { tag: string; usageCount: number; usedByIds: Set<string> }>();
+export function buildDossierTagRegistry(
+  entries: DatabaseEntry[],
+): DossierTagRegistry {
+  const tagRecords = new Map<
+    string,
+    { tag: string; usageCount: number; usedByIds: Set<string> }
+  >();
   let totalTagAssignments = 0;
 
   for (const entry of entries) {
@@ -244,32 +323,41 @@ export function buildDossierTagRegistry(entries: DatabaseEntry[]): DossierTagReg
   const categories = emptyCategories();
   const aliases: Record<string, string> = {};
   const usageCounts: Record<string, number> = {};
-  const items = Array.from(tagRecords.entries())
-    .map(([normalized, record]) => {
-      const metadata = DOSSIER_TAG_METADATA[normalized as keyof typeof DOSSIER_TAG_METADATA];
+  const registryKeys = new Set([
+    ...Object.keys(DOSSIER_TAG_METADATA),
+    ...tagRecords.keys(),
+  ]);
+  const items = Array.from(registryKeys)
+    .map((normalized) => {
+      const record = tagRecords.get(normalized);
+      const metadata =
+        DOSSIER_TAG_METADATA[normalized as keyof typeof DOSSIER_TAG_METADATA];
+      const tag = record?.tag ?? normalized;
       const category = metadata?.category ?? "other";
       const tagAliases = metadata?.aliases ?? [];
+      const usageCount = record?.usageCount ?? 0;
       const item: DossierTagRegistryItem = {
-        tag: record.tag,
-        canonical: record.tag,
+        tag,
+        canonical: tag,
         category,
-        usageCount: record.usageCount,
-        usedByIds: Array.from(record.usedByIds).sort(),
+        usageCount,
+        usedByIds: record ? Array.from(record.usedByIds).sort() : [],
         aliases: tagAliases,
-        description: metadata?.description ?? fallbackDescription(record.tag),
-        source: metadata ? "database_entries" : "inferred",
+        description: metadata?.description ?? fallbackDescription(tag),
+        source: record ? "database_entries" : "manual_registry",
         status: "active",
       };
 
-      usageCounts[record.tag] = record.usageCount;
-      categories[category].push(record.tag);
-      for (const alias of tagAliases) aliases[alias] = record.tag;
+      usageCounts[tag] = usageCount;
+      categories[category].push(tag);
+      for (const alias of tagAliases) aliases[alias] = tag;
 
       return item;
     })
     .sort((a, b) => a.tag.localeCompare(b.tag));
 
-  for (const tags of Object.values(categories)) tags.sort((a, b) => a.localeCompare(b));
+  for (const tags of Object.values(categories))
+    tags.sort((a, b) => a.localeCompare(b));
 
   return {
     source: "databasePage.entries",
@@ -278,7 +366,9 @@ export function buildDossierTagRegistry(entries: DatabaseEntry[]): DossierTagReg
     items,
     usageCounts,
     categories,
-    aliases: Object.fromEntries(Object.entries(aliases).sort(([a], [b]) => a.localeCompare(b))),
+    aliases: Object.fromEntries(
+      Object.entries(aliases).sort(([a], [b]) => a.localeCompare(b)),
+    ),
     rules: [...DOSSIER_TAG_RULES],
     creationPolicy: DOSSIER_TAG_CREATION_POLICY,
   };

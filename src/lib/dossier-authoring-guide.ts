@@ -12,18 +12,32 @@ export const dossierAuthoringGuide = {
   fieldGuide: {
     id: "Stable dossier designation using the current prefix pattern, such as EN-###, PE-###, SP-###, IF-###, or PD-###.",
     name: "Public display name for the person, entity, production, interface, sponsor, or anomaly.",
-    category: "One of the existing database categories: Entity, Personnel, Sponsor, Interface, or Production.",
-    status: "Current public lifecycle label: ACTIVE, INACTIVE, ARCHIVED, PENDING, or UNKNOWN.",
-    clearance: "Public-facing lore classification label: PUBLIC, INTERNAL, or RESTRICTED. Do not imply private data access.",
+    category:
+      "Pick the structural record type first: Entity, Personnel, Sponsor, Interface, or Production.",
+    kind: "Pick the dossier form after category, using the taxonomy guide; keep legacy values compatible and use expanded values such as core_entity, network_operator, network_staff, moderator, or radio_entity where appropriate.",
+    ecosystemLane:
+      "Pick where the subject sits in the BARCODE ecosystem, such as core_team, network_operator, community_mod, infrastructure, production, or unknown.",
+    identityAuthority:
+      "Pick who controls or owns the identity: barcode_controlled, community_owned, external_system, sponsor_controlled, or mixed_or_unclear. This is about authority/control, not AI/human nature.",
+    status:
+      "Current public lifecycle label: ACTIVE, INACTIVE, ARCHIVED, PENDING, or UNKNOWN.",
+    clearance:
+      "Public-facing lore classification label: PUBLIC, INTERNAL, or RESTRICTED. Do not imply private data access.",
     role: "Short operational role line displayed below the hero and inside the Dossier Record grid.",
-    origin: "Known-source confidence label: KNOWN, UNKNOWN, UNVERIFIED, or WITHHELD.",
-    summary: "Primary Intelligence Brief paragraph using public-page-safe facts and controlled BARCODE Network language.",
-    notes: "Optional contextual note, usually operational or status-oriented, not a second full summary.",
-    tags: "Short searchable labels used by the database table and dossier record. Use sections.dossiers.tagRegistry, reuse existing tags first, and treat any new tag as a proposal until an operator/site content update creates it.",
+    origin:
+      "Known-source confidence label: KNOWN, UNKNOWN, UNVERIFIED, or WITHHELD.",
+    summary:
+      "Primary Intelligence Brief paragraph using public-page-safe facts and controlled BARCODE Network language.",
+    notes:
+      "Optional contextual note, usually operational or status-oriented, not a second full summary.",
+    tags: "Short searchable labels used by the database table and dossier record. Pick category, kind, ecosystem lane, and identity authority before tags. Use sections.dossiers.tagRegistry, reuse existing tags first, and treat AI/human/hybrid/unknown-nature as nature traits only, not primary organization.",
     link: "Legacy single public URL; keep compatible while preferring primaryLink/links for new chosen links.",
-    primaryLink: "Optional chosen/featured public-safe link with label, URL, type, and selectedBy metadata.",
-    links: "Optional public-safe link list for official, artist, music, social, website, community, submission, portfolio, or other destinations.",
-    files: "Optional attached public media/download records rendered as audio, video, image, or download files.",
+    primaryLink:
+      "Optional chosen/featured public-safe link with label, URL, type, and selectedBy metadata.",
+    links:
+      "Optional public-safe link list for official, artist, music, social, website, community, submission, portfolio, or other destinations.",
+    files:
+      "Optional attached public media/download records rendered as audio, video, image, or download files.",
   },
   toneGuide: {
     voice: "controlled BARCODE Network dossier language",
@@ -44,12 +58,17 @@ export const dossierAuthoringGuide = {
   },
   lengthGuide: {
     role: "short phrase, usually 2-8 words",
-    summary: "usually 1 compact paragraph, roughly 25-80 words depending importance",
-    notes: "optional, usually 1-2 sentences, operational/contextual, not a second full summary",
+    summary:
+      "usually 1 compact paragraph, roughly 25-80 words depending importance",
+    notes:
+      "optional, usually 1-2 sentences, operational/contextual, not a second full summary",
     tags: "usually 3-6 short labels; prefer existing registry tags over synonyms",
   },
   draftingRules: [
     "Use existing page structure.",
+    "Classify in order: category, kind, ecosystem lane, identity authority, then tags.",
+    "Do not use AI, human, hybrid, or unknown nature as the primary organization; those are tags/traits only.",
+    "Separate BARCODE-controlled characters/entities such as Sheila or Cliff from community-owned mods and helpers.",
     "Match current dossier tone and length.",
     "Use public-page-safe facts only.",
     "Preserve clearance/status/origin uncertainty.",

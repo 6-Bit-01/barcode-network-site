@@ -177,7 +177,7 @@ test("BNL read model preserves v1 compatibility and adds semantic sections", asy
 
   assert.equal(model.ok, true);
   assert.equal(model.version, 1);
-  assert.equal(model.schemaRevision, "1.3");
+  assert.equal(model.schemaRevision, "1.4");
   assert.equal(model.publicOnly, true);
   assert.ok(model.sections.sourceContext);
   assert.ok(model.sections.queue);
@@ -212,6 +212,9 @@ test("BNL read model preserves v1 compatibility and adds semantic sections", asy
   assert.ok(model.sections.dossiers.public.length > 0, "expected public database dossiers in fixture content");
   assert.equal(model.sections.dossiers.public[0].bnlContext.dossierStatus, "existing_public_page_dossier");
   assert.equal(model.sections.dossiers.items.length, model.sections.dossiers.public.length);
+  assert.ok(model.sections.dossiers.items.every((entry) => Object.hasOwn(entry, "ecosystemLane")));
+  assert.ok(model.sections.dossiers.items.every((entry) => Object.hasOwn(entry, "identityAuthority")));
+  assert.ok(model.sections.dossiers.taxonomyGuide);
 });
 
 test("BNL read model exposes dynamic full database aggregate registry metadata and visibility counts", async () => {
@@ -390,6 +393,34 @@ test("dossier authoring guide matches sections rendered by the dossier page", ()
 
 
 
+
+test("BNL read model exposes dossier taxonomy guide and annotated taxonomy fields", async () => {
+  await freshReadModelSession();
+  const model = await modelJson();
+  const guide = model.sections.dossiers.taxonomyGuide;
+
+  assert.equal(model.version, 1);
+  assert.ok(guide, "taxonomy guide should exist under sections.dossiers");
+  const guideText = JSON.stringify(guide).toLowerCase();
+  assert.ok(guideText.includes("ai, human, hybrid, and unknown nature are tags/traits, not the organizing structure"));
+  assert.ok(guideText.includes("do not classify community-owned mods as barcode-created characters"));
+  assert.ok(guideText.includes("identity authority describes who controls/owns the identity"));
+
+  const byName = Object.fromEntries(model.sections.dossiers.items.map((entry) => [entry.name, entry]));
+  assert.equal(byName["6 Bit"].kind, "core_entity");
+  assert.equal(byName["6 Bit"].ecosystemLane, "core_team");
+  assert.equal(byName["6 Bit"].identityAuthority, "barcode_controlled");
+  assert.equal(byName.Sheila.kind, "network_operator");
+  assert.equal(byName.Sheila.ecosystemLane, "network_operator");
+  assert.equal(byName.Sheila.identityAuthority, "barcode_controlled");
+  assert.equal(byName.Cliff.kind, "network_staff");
+  assert.equal(byName.Cliff.ecosystemLane, "network_staff");
+  assert.equal(byName.Cliff.identityAuthority, "barcode_controlled");
+  assert.equal(byName["Mr. Nice Guy Productions"].identityAuthority, "community_owned");
+  assert.equal(byName["Mind Fanatic"].identityAuthority, "community_owned");
+  assert.equal(byName["Studio Rats"].ecosystemLane, "radio_entity");
+});
+
 test("BNL read model exposes a dynamic dossier tag registry", async () => {
   await freshReadModelSession();
   const model = await modelJson();
@@ -403,7 +434,7 @@ test("BNL read model exposes a dynamic dossier tag registry", async () => {
     assert.ok(Object.hasOwn(registry, key), `tag registry should expose ${key}`);
   }
   assert.equal(registry.source, "databasePage.entries");
-  assert.equal(registry.totalUniqueTags, normalizedUniqueTags.length);
+  assert.ok(registry.totalUniqueTags >= normalizedUniqueTags.length);
   assert.equal(registry.totalTagAssignments, sourceTags.length);
   assert.deepEqual(registry, expectedRegistry);
 
@@ -462,7 +493,19 @@ test("dossier tag aliases resolve to canonical tags without creating duplicate r
 
   assert.ok(aliasCount > 0, "registry should expose aliases");
   assert.equal(registry.aliases.live, "broadcast");
+  assert.equal(registry.aliases["network operator"], "operator");
+  assert.equal(registry.aliases["core team"], "core");
+  assert.equal(registry.aliases.feature, "collaborator");
+  assert.equal(registry.aliases.regular, "member");
+  assert.equal(registry.aliases["entity anomaly"], "anomaly");
+  assert.equal(registry.aliases["unknown nature"], "unknown-nature");
   assert.equal(resolveDossierTagCanonical("live"), "broadcast");
+  assert.equal(resolveDossierTagCanonical("network operator"), "operator");
+  assert.equal(resolveDossierTagCanonical("core team"), "core");
+  assert.equal(resolveDossierTagCanonical("feature"), "collaborator");
+  assert.equal(resolveDossierTagCanonical("regular"), "member");
+  assert.equal(resolveDossierTagCanonical("radio anomaly"), "anomaly");
+  assert.equal(resolveDossierTagCanonical("unverified nature"), "unknown-nature");
   assert.equal(registry.items.filter((item) => item.tag === "broadcast").length, 1);
   assert.equal(registry.items.some((item) => item.tag === "live"), false);
 });

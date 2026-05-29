@@ -47,48 +47,79 @@ function emptyWorkflowState(): DossierWorkflowState {
 
 function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean);
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
-
-function normalizeWorkflowLink(value: unknown): DossierWorkflowLink | undefined {
+function normalizeWorkflowLink(
+  value: unknown,
+): DossierWorkflowLink | undefined {
   if (!value || typeof value !== "object") return undefined;
   const input = value as Partial<DossierWorkflowLink>;
   if (typeof input.url !== "string" || !input.url.trim()) return undefined;
   return {
-    label: typeof input.label === "string" && input.label.trim() ? input.label.trim() : "Featured link",
+    label:
+      typeof input.label === "string" && input.label.trim()
+        ? input.label.trim()
+        : "Featured link",
     url: input.url.trim(),
-    type: typeof input.type === "string" && input.type.trim() ? input.type.trim() : "website",
-    selectedBy: input.selectedBy === "subject" || input.selectedBy === "legacy" ? input.selectedBy : "operator",
+    type:
+      typeof input.type === "string" && input.type.trim()
+        ? input.type.trim()
+        : "website",
+    selectedBy:
+      input.selectedBy === "subject" || input.selectedBy === "legacy"
+        ? input.selectedBy
+        : "operator",
     publicSafe: input.publicSafe !== false,
   };
 }
 
-function normalizeDraftFields(fields: DossierDraft["fields"]): DossierDraft["fields"] {
+function normalizeDraftFields(
+  fields: DossierDraft["fields"],
+): DossierDraft["fields"] {
   const primaryLink = normalizeWorkflowLink(fields.primaryLink);
   return {
-    id: typeof fields.id === "string" && fields.id.trim() ? fields.id.trim() : undefined,
+    id:
+      typeof fields.id === "string" && fields.id.trim()
+        ? fields.id.trim()
+        : undefined,
     name: typeof fields.name === "string" ? fields.name.trim() : "",
     category: fields.category,
+    kind: fields.kind,
+    ecosystemLane: fields.ecosystemLane,
+    identityAuthority: fields.identityAuthority,
     status: fields.status,
     clearance: fields.clearance,
     role: typeof fields.role === "string" ? fields.role.trim() : undefined,
     origin: fields.origin,
-    summary: typeof fields.summary === "string" ? fields.summary.trim() : undefined,
+    summary:
+      typeof fields.summary === "string" ? fields.summary.trim() : undefined,
     notes: typeof fields.notes === "string" ? fields.notes.trim() : undefined,
     tags: normalizeStringArray(fields.tags),
     proposedTags: normalizeStringArray(fields.proposedTags),
     primaryLink,
-    links: Array.isArray(fields.links) ? fields.links.map(normalizeWorkflowLink).filter((link): link is DossierWorkflowLink => Boolean(link)) : undefined,
+    links: Array.isArray(fields.links)
+      ? fields.links
+          .map(normalizeWorkflowLink)
+          .filter((link): link is DossierWorkflowLink => Boolean(link))
+      : undefined,
     files: [],
   };
 }
 
-export function validateDossierDraftFieldsForOwnerReview(fields: DossierDraft["fields"]): string[] {
+export function validateDossierDraftFieldsForOwnerReview(
+  fields: DossierDraft["fields"],
+): string[] {
   const normalized = normalizeDraftFields(fields);
   const missing: string[] = [];
   if (!normalized.name) missing.push("name");
   if (!normalized.category) missing.push("category");
+  if (!normalized.kind) missing.push("kind");
+  if (!normalized.ecosystemLane) missing.push("ecosystemLane");
+  if (!normalized.identityAuthority) missing.push("identityAuthority");
   if (!normalized.status) missing.push("status");
   if (!normalized.clearance) missing.push("clearance");
   if (!normalized.origin) missing.push("origin");
@@ -122,16 +153,26 @@ function hasNearNameMatch(candidateName: string, entryName: string): boolean {
   const compactEntry = compactName(entryName);
 
   if (!normalizedCandidate || !normalizedEntry) return false;
-  if (normalizedCandidate === normalizedEntry || compactCandidate === compactEntry) return true;
-  if (normalizedCandidate.length < 4 || normalizedEntry.length < 4) return false;
-  return normalizedCandidate.includes(normalizedEntry) || normalizedEntry.includes(normalizedCandidate);
+  if (
+    normalizedCandidate === normalizedEntry ||
+    compactCandidate === compactEntry
+  )
+    return true;
+  if (normalizedCandidate.length < 4 || normalizedEntry.length < 4)
+    return false;
+  return (
+    normalizedCandidate.includes(normalizedEntry) ||
+    normalizedEntry.includes(normalizedCandidate)
+  );
 }
 
 function findExistingDossierMatch(name: string): {
   risk: DossierDuplicateRisk;
   match: DossierCandidate["existingDossierMatch"];
 } {
-  const exact = databasePage.entries.find((entry: DatabaseEntry) => normalizeName(entry.name) === normalizeName(name));
+  const exact = databasePage.entries.find(
+    (entry: DatabaseEntry) => normalizeName(entry.name) === normalizeName(name),
+  );
   if (exact) {
     return {
       risk: "high",
@@ -139,7 +180,9 @@ function findExistingDossierMatch(name: string): {
     };
   }
 
-  const near = databasePage.entries.find((entry: DatabaseEntry) => hasNearNameMatch(name, entry.name));
+  const near = databasePage.entries.find((entry: DatabaseEntry) =>
+    hasNearNameMatch(name, entry.name),
+  );
   if (near) {
     return {
       risk: "medium",
@@ -155,10 +198,19 @@ function sanitizeWorkflowState(value: unknown): DossierWorkflowState {
   const candidateState = value as Partial<DossierWorkflowState>;
   return {
     version: 1,
-    revision: typeof candidateState.revision === "number" && Number.isFinite(candidateState.revision) ? Math.max(0, Math.floor(candidateState.revision)) : 0,
-    candidates: Array.isArray(candidateState.candidates) ? candidateState.candidates : [],
+    revision:
+      typeof candidateState.revision === "number" &&
+      Number.isFinite(candidateState.revision)
+        ? Math.max(0, Math.floor(candidateState.revision))
+        : 0,
+    candidates: Array.isArray(candidateState.candidates)
+      ? candidateState.candidates
+      : [],
     drafts: Array.isArray(candidateState.drafts) ? candidateState.drafts : [],
-    updatedAt: typeof candidateState.updatedAt === "string" ? candidateState.updatedAt : new Date().toISOString(),
+    updatedAt:
+      typeof candidateState.updatedAt === "string"
+        ? candidateState.updatedAt
+        : new Date().toISOString(),
   };
 }
 
@@ -178,13 +230,21 @@ export async function getDossierWorkflowState(): Promise<DossierWorkflowState> {
   const redis = getRedis();
   if (!redis) return memoryState;
 
-  const state = sanitizeWorkflowState(await redis.get<unknown>(DOSSIER_WORKFLOW_STORAGE_KEY));
+  const state = sanitizeWorkflowState(
+    await redis.get<unknown>(DOSSIER_WORKFLOW_STORAGE_KEY),
+  );
   memoryState = state;
   return state;
 }
 
-export async function saveDossierWorkflowState(state: DossierWorkflowState): Promise<void> {
-  const nextState = sanitizeWorkflowState({ ...state, version: 1, updatedAt: state.updatedAt || new Date().toISOString() });
+export async function saveDossierWorkflowState(
+  state: DossierWorkflowState,
+): Promise<void> {
+  const nextState = sanitizeWorkflowState({
+    ...state,
+    version: 1,
+    updatedAt: state.updatedAt || new Date().toISOString(),
+  });
   memoryState = nextState;
 
   const redis = getRedis();
@@ -205,7 +265,10 @@ async function acquireRedisLock(redis: Redis): Promise<string> {
   const token = createLockToken();
 
   for (let attempt = 0; attempt < MAX_UPDATE_ATTEMPTS; attempt += 1) {
-    const acquired = await redis.set(DOSSIER_WORKFLOW_LOCK_KEY, token, { nx: true, ex: LOCK_TTL_SECONDS });
+    const acquired = await redis.set(DOSSIER_WORKFLOW_LOCK_KEY, token, {
+      nx: true,
+      ex: LOCK_TTL_SECONDS,
+    });
     if (acquired === "OK") return token;
     await delay(LOCK_RETRY_DELAY_MS * (attempt + 1));
   }
@@ -260,11 +323,15 @@ export async function updateDossierWorkflowState(
   for (let attempt = 0; attempt < MAX_UPDATE_ATTEMPTS; attempt += 1) {
     const lockToken = await acquireRedisLock(redis);
     try {
-      const currentState = sanitizeWorkflowState(await redis.get<unknown>(DOSSIER_WORKFLOW_STORAGE_KEY));
+      const currentState = sanitizeWorkflowState(
+        await redis.get<unknown>(DOSSIER_WORKFLOW_STORAGE_KEY),
+      );
       const updaterResult = updater(currentState);
       if (updaterResult === currentState) return currentState;
       const updatedState = sanitizeWorkflowState(updaterResult);
-      const latestState = sanitizeWorkflowState(await redis.get<unknown>(DOSSIER_WORKFLOW_STORAGE_KEY));
+      const latestState = sanitizeWorkflowState(
+        await redis.get<unknown>(DOSSIER_WORKFLOW_STORAGE_KEY),
+      );
 
       if (latestState.revision !== currentState.revision) {
         await delay(LOCK_RETRY_DELAY_MS * (attempt + 1));
@@ -285,10 +352,14 @@ export async function updateDossierWorkflowState(
     }
   }
 
-  throw new Error("Unable to update dossier workflow state after revision conflicts");
+  throw new Error(
+    "Unable to update dossier workflow state after revision conflicts",
+  );
 }
 
-export async function createManualDossierCandidate(input: CreateManualDossierCandidateInput): Promise<DossierCandidate> {
+export async function createManualDossierCandidate(
+  input: CreateManualDossierCandidateInput,
+): Promise<DossierCandidate> {
   const now = new Date().toISOString();
   const name = input.name.trim();
   const reason = input.reason.trim();
@@ -324,29 +395,39 @@ export async function createManualDossierCandidate(input: CreateManualDossierCan
     name,
     candidateType: input.candidateType ?? "unknown",
     source: "manual",
-    tier: duplicate.risk === "high" && scored.tier === "draft_ready" ? "review_candidate" : scored.tier,
+    tier:
+      duplicate.risk === "high" && scored.tier === "draft_ready"
+        ? "review_candidate"
+        : scored.tier,
     score: scored.score,
     whyNow: input.whyNow?.trim() ?? "",
     reason,
     firstSeenAt: now,
     lastSeenAt: now,
     evidenceSummary: input.evidenceSummary?.trim() ?? "",
-    evidenceItems: input.evidenceSummary?.trim() ? [{
-      id: createEvidenceId(),
-      type: "manual_nomination",
-      label: "Manual operator intake",
-      summary: input.evidenceSummary.trim(),
-      count: 1,
-      firstSeenAt: now,
-      lastSeenAt: now,
-      publicSafe: input.primaryLink?.publicSafe !== false,
-    }] : [],
+    evidenceItems: input.evidenceSummary?.trim()
+      ? [
+          {
+            id: createEvidenceId(),
+            type: "manual_nomination",
+            label: "Manual operator intake",
+            summary: input.evidenceSummary.trim(),
+            count: 1,
+            firstSeenAt: now,
+            lastSeenAt: now,
+            publicSafe: input.primaryLink?.publicSafe !== false,
+          },
+        ]
+      : [],
     evidenceCount: input.evidenceSummary?.trim() ? 1 : 0,
     knownFacts,
     confidence: scored.confidence,
     duplicateRisk: duplicate.risk,
     existingDossierMatch: duplicate.match,
     recommendedCategory: input.recommendedCategory,
+    recommendedKind: input.recommendedKind,
+    recommendedEcosystemLane: input.recommendedEcosystemLane,
+    recommendedIdentityAuthority: input.recommendedIdentityAuthority,
     recommendedStatus: input.recommendedStatus,
     recommendedClearance: input.recommendedClearance,
     recommendedOrigin: input.recommendedOrigin,
@@ -370,7 +451,10 @@ export async function createManualDossierCandidate(input: CreateManualDossierCan
   return candidate;
 }
 
-export async function updateDossierCandidateStatus(candidateId: string, status: DossierCandidateStatus): Promise<DossierCandidate | null> {
+export async function updateDossierCandidateStatus(
+  candidateId: string,
+  status: DossierCandidateStatus,
+): Promise<DossierCandidate | null> {
   const now = new Date().toISOString();
   let updatedCandidate: DossierCandidate | null = null;
 
@@ -393,25 +477,40 @@ export async function updateDossierCandidateStatus(candidateId: string, status: 
   return updatedCandidate;
 }
 
-export async function createDraftFromCandidate(candidateId: string): Promise<DossierDraft | null> {
+export async function createDraftFromCandidate(
+  candidateId: string,
+): Promise<DossierDraft | null> {
   const now = new Date().toISOString();
   let draft: DossierDraft | null = null;
 
   await updateDossierWorkflowState((currentState) => {
-    const candidate = currentState.candidates.find((item) => item.id === candidateId);
+    const candidate = currentState.candidates.find(
+      (item) => item.id === candidateId,
+    );
     if (!candidate) return currentState;
 
-    const existingDraft = currentState.drafts.find((item) => item.candidateId === candidateId && item.status !== "denied" && item.status !== "published");
+    const existingDraft = currentState.drafts.find(
+      (item) =>
+        item.candidateId === candidateId &&
+        item.status !== "denied" &&
+        item.status !== "published",
+    );
     if (existingDraft) {
       draft = existingDraft;
       return currentState;
     }
 
     const starterNotes = [
-      candidate.evidenceSummary ? `Starter evidence note: ${candidate.evidenceSummary}` : "",
-      ...(candidate.publicSafetyNotes ?? []).map((note) => `Public safety: ${note}`),
+      candidate.evidenceSummary
+        ? `Starter evidence note: ${candidate.evidenceSummary}`
+        : "",
+      ...(candidate.publicSafetyNotes ?? []).map(
+        (note) => `Public safety: ${note}`,
+      ),
       ...(candidate.missingInfo ?? []).map((note) => `Missing info: ${note}`),
-    ].filter(Boolean).join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     draft = {
       id: createDraftId(),
@@ -420,10 +519,15 @@ export async function createDraftFromCandidate(candidateId: string): Promise<Dos
       fields: normalizeDraftFields({
         name: candidate.name,
         category: candidate.recommendedCategory,
+        kind: candidate.recommendedKind,
+        ecosystemLane: candidate.recommendedEcosystemLane,
+        identityAuthority: candidate.recommendedIdentityAuthority,
         status: candidate.recommendedStatus ?? "PENDING",
         clearance: candidate.recommendedClearance ?? "PUBLIC",
         origin: candidate.recommendedOrigin ?? "UNVERIFIED",
-        summary: candidate.evidenceSummary ? `Starter note only: ${candidate.evidenceSummary}` : "",
+        summary: candidate.evidenceSummary
+          ? `Starter note only: ${candidate.evidenceSummary}`
+          : "",
         notes: starterNotes,
         tags: candidate.recommendedTags ?? [],
         proposedTags: candidate.proposedTags ?? [],
@@ -444,7 +548,10 @@ export async function createDraftFromCandidate(candidateId: string): Promise<Dos
   return draft;
 }
 
-export async function saveDossierDraft(draftId: string, fields: DossierDraft["fields"]): Promise<DossierDraft | null> {
+export async function saveDossierDraft(
+  draftId: string,
+  fields: DossierDraft["fields"],
+): Promise<DossierDraft | null> {
   const now = new Date().toISOString();
   let updatedDraft: DossierDraft | null = null;
 
@@ -475,14 +582,17 @@ export async function saveDossierDraft(draftId: string, fields: DossierDraft["fi
   return updatedDraft;
 }
 
-export async function submitDraftForOwnerReview(draftId: string): Promise<DossierDraft | null> {
+export async function submitDraftForOwnerReview(
+  draftId: string,
+): Promise<DossierDraft | null> {
   const now = new Date().toISOString();
   let updatedDraft: DossierDraft | null = null;
 
   await updateDossierWorkflowState((currentState) => {
     const drafts = currentState.drafts.map((draft) => {
       if (draft.id !== draftId) return draft;
-      if (validateDossierDraftFieldsForOwnerReview(draft.fields).length > 0) return draft;
+      if (validateDossierDraftFieldsForOwnerReview(draft.fields).length > 0)
+        return draft;
       updatedDraft = {
         ...draft,
         status: "ready_for_owner_review",
@@ -503,9 +613,14 @@ export async function submitDraftForOwnerReview(draftId: string): Promise<Dossie
   return updatedDraft;
 }
 
-export async function getDossierCandidate(candidateId: string): Promise<DossierCandidate | null> {
+export async function getDossierCandidate(
+  candidateId: string,
+): Promise<DossierCandidate | null> {
   const currentState = await getDossierWorkflowState();
-  return currentState.candidates.find((candidate) => candidate.id === candidateId) ?? null;
+  return (
+    currentState.candidates.find((candidate) => candidate.id === candidateId) ??
+    null
+  );
 }
 
 export function getDossierWorkflowStorageMode(): "redis" | "memory_fallback" {

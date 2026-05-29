@@ -42,6 +42,7 @@ const queue = require("../src/lib/queue.ts");
 const { databasePage } = require("../src/content.ts");
 const { getDatabaseAggregateStats } = require("../src/lib/database-stats.ts");
 const { getDossierPrimaryLink, getDossierPublicLinks, legacyDossierLink } = require("../src/lib/dossier-links.ts");
+const { buildDossierTagRegistry, resolveDossierTagCanonical } = require("../src/lib/dossier-tags.ts");
 const { isBnlReadModelDossierVisible, isPublicDatabasePageVisible } = require("../src/lib/database-visibility.ts");
 const readModel = require("../src/app/api/bnl/read-model/route.ts");
 
@@ -176,7 +177,7 @@ test("BNL read model preserves v1 compatibility and adds semantic sections", asy
 
   assert.equal(model.ok, true);
   assert.equal(model.version, 1);
-  assert.equal(model.schemaRevision, "1.2");
+  assert.equal(model.schemaRevision, "1.3");
   assert.equal(model.publicOnly, true);
   assert.ok(model.sections.sourceContext);
   assert.ok(model.sections.queue);
@@ -387,6 +388,85 @@ test("dossier authoring guide matches sections rendered by the dossier page", ()
   }
 });
 
+
+
+test("BNL read model exposes a dynamic dossier tag registry", async () => {
+  await freshReadModelSession();
+  const model = await modelJson();
+  const registry = model.sections.dossiers.tagRegistry;
+  const sourceTags = databasePage.entries.flatMap((entry) => entry.tags);
+  const normalizedUniqueTags = [...new Set(sourceTags.map((tag) => tag.toLowerCase()))];
+  const expectedRegistry = buildDossierTagRegistry(databasePage.entries);
+
+  assert.ok(registry, "tag registry should exist under sections.dossiers");
+  for (const key of ["items", "usageCounts", "categories", "aliases", "rules", "creationPolicy"]) {
+    assert.ok(Object.hasOwn(registry, key), `tag registry should expose ${key}`);
+  }
+  assert.equal(registry.source, "databasePage.entries");
+  assert.equal(registry.totalUniqueTags, normalizedUniqueTags.length);
+  assert.equal(registry.totalTagAssignments, sourceTags.length);
+  assert.deepEqual(registry, expectedRegistry);
+
+  for (const tag of normalizedUniqueTags) {
+    const sourceEntries = databasePage.entries.filter((entry) => entry.tags.some((entryTag) => entryTag.toLowerCase() === tag));
+    const item = registry.items.find((entry) => entry.tag.toLowerCase() === tag);
+    assert.ok(item, `${tag} should appear in registry items`);
+    assert.equal(item.usageCount, sourceEntries.reduce((count, entry) => count + entry.tags.filter((entryTag) => entryTag.toLowerCase() === tag).length, 0));
+    assert.deepEqual(item.usedByIds, sourceEntries.map((entry) => entry.id).sort());
+    assert.equal(registry.usageCounts[item.tag], item.usageCount);
+  }
+});
+
+test("dossier tag registry preserves raw entry tags and leaves database UI tag behavior freeform", async () => {
+  await freshReadModelSession();
+  const beforeTags = databasePage.entries.map((entry) => ({ id: entry.id, tags: [...entry.tags] }));
+  const model = await modelJson();
+  const afterTags = databasePage.entries.map((entry) => ({ id: entry.id, tags: [...entry.tags] }));
+  const databaseTableSource = fs.readFileSync(path.join(projectRoot, "src/components/DatabaseTable.tsx"), "utf8");
+  const dossierPageSource = fs.readFileSync(path.join(projectRoot, "src/app/database/[slug]/page.tsx"), "utf8");
+
+  assert.deepEqual(afterTags, beforeTags);
+  for (const entry of databasePage.entries) {
+    assert.ok(Array.isArray(entry.tags));
+    assert.ok(entry.tags.every((tag) => typeof tag === "string"));
+  }
+  assert.ok(model.sections.dossiers.items.every((entry) => Array.isArray(entry.tags) && entry.tags.every((tag) => typeof tag === "string")));
+  assert.match(databaseTableSource, /entry\.tags\.some\(\(t\) => t\.toLowerCase\(\)\.includes\(q\)\)/);
+  assert.match(databaseTableSource, /entry\.tags\.slice\(0, 3\)\.map/);
+  assert.match(dossierPageSource, /entry\.tags\.map/);
+});
+
+test("dossier tag creation policy keeps new tags proposal-only", async () => {
+  await freshReadModelSession();
+  const model = await modelJson();
+  const { creationPolicy, rules } = model.sections.dossiers.tagRegistry;
+  const policyText = JSON.stringify(creationPolicy).toLowerCase();
+  const rulesText = rules.join(" ").toLowerCase();
+
+  assert.equal(creationPolicy.defaultAction, "reuse_existing_tag_first");
+  assert.equal(creationPolicy.newTagsAllowed, "proposal_only");
+  assert.equal(creationPolicy.creationRequires, "operator_or_site_content_update");
+  for (const phrase of ["synonyms of existing tags", "temporary queue appearances", "payment/customer data", "private identities"]) {
+    assert.ok(policyText.includes(phrase), `${phrase} should be rejected by policy`);
+  }
+  for (const phrase of ["synonyms", "temporary queue", "payment/customer data", "private identities"]) {
+    assert.ok(rulesText.includes(phrase), `${phrase} should be included in rules`);
+  }
+});
+
+test("dossier tag aliases resolve to canonical tags without creating duplicate registry items", async () => {
+  await freshReadModelSession();
+  const model = await modelJson();
+  const registry = model.sections.dossiers.tagRegistry;
+  const aliasCount = Object.keys(registry.aliases).length;
+
+  assert.ok(aliasCount > 0, "registry should expose aliases");
+  assert.equal(registry.aliases.live, "broadcast");
+  assert.equal(resolveDossierTagCanonical("live"), "broadcast");
+  assert.equal(registry.items.filter((item) => item.tag === "broadcast").length, 1);
+  assert.equal(registry.items.some((item) => item.tag === "live"), false);
+});
+
 test("featured dossier link helpers preserve legacy links and prefer public primary links", () => {
   const legacyEntry = { link: "https://discord.gg/4tHazmD528" };
   const legacy = legacyDossierLink(legacyEntry.link);
@@ -456,6 +536,13 @@ test("BNL dossier style profile is dynamically derived from current entries", as
   assert.equal(styleProfile.summaryWordCount.max, Math.max(...wordCounts));
   assert.equal(styleProfile.summaryWordCount.average, average);
   assert.equal(styleProfile.notesPresenceCount, entries.filter((entry) => entry.notes.trim().length > 0).length);
+  const sourceTags = entries.flatMap((entry) => entry.tags);
+  const expectedAverageTags = Math.round((sourceTags.length / entries.length) * 100) / 100;
+  assert.equal(styleProfile.tagProfile.totalUniqueTags, model.sections.dossiers.tagRegistry.totalUniqueTags);
+  assert.equal(styleProfile.tagProfile.averageTagsPerDossier, expectedAverageTags);
+  assert.ok(styleProfile.tagProfile.mostUsedTags.length <= 10);
+  assert.ok(styleProfile.tagProfile.singleUseTags.length <= 10);
+  assert.deepEqual(styleProfile.tagProfile.singleUseTags, model.sections.dossiers.tagRegistry.items.filter((item) => item.usageCount === 1).map((item) => item.tag).sort((a, b) => a.localeCompare(b)).slice(0, 10));
   for (const section of ["Dossier Record", "Intelligence Brief", "Attached Files", "Terminal Readout"]) {
     assert.ok(styleProfile.commonSections.includes(section));
   }

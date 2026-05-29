@@ -1,6 +1,7 @@
 import { databasePage } from "@/content";
 import { PageHero } from "@/components/LiveEffects";
 import { DatabaseTable } from "@/components/DatabaseTable";
+import { getDatabaseAggregateStats } from "@/lib/database-stats";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -16,15 +17,12 @@ export const metadata: Metadata = {
 
 const databaseEntries = databasePage.entries;
 
-const activeCount = databaseEntries.filter((e) => e.status === "ACTIVE").length;
-const pendingCount = databaseEntries.filter((e) => e.status === "PENDING").length;
-const restrictedCount = databaseEntries.filter((e) => e.clearance === "RESTRICTED").length;
-const categoryCount = new Set(databaseEntries.map((e) => e.category)).size;
+const databaseStats = getDatabaseAggregateStats(databaseEntries);
 const databaseTerminalQuery = [
-  `INDEXED ${databaseEntries.length} TOTAL DOSSIERS`,
-  `STATUS FILTER: ${activeCount} ACTIVE / ${pendingCount} PENDING`,
-  `CLEARANCE WATCH: ${restrictedCount} RESTRICTED RECORDS`,
-  `CATEGORY GROUPS ONLINE: ${categoryCount}`,
+  `INDEXED ${databaseStats.totalCount} TOTAL DOSSIERS`,
+  `STATUS FILTER: ${databaseStats.activeCount} ACTIVE / ${databaseStats.pendingCount} PENDING`,
+  `CLEARANCE WATCH: ${databaseStats.restrictedCount} RESTRICTED RECORDS`,
+  `CATEGORY GROUPS ONLINE: ${databaseStats.categoryCount}`,
 ];
 
 export default function DatabasePage() {
@@ -45,22 +43,22 @@ export default function DatabasePage() {
       <section className="border-b border-border bg-surface">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-4">
           <div className="flex flex-wrap gap-6">
-            <StatItem label="Total Dossiers" value={databaseEntries.length.toString()} />
+            <StatItem label="Total Dossiers" value={databaseStats.totalCount.toString()} />
             <StatItem
               label="Active"
-              value={databaseEntries.filter((e) => e.status === "ACTIVE").length.toString()}
+              value={databaseStats.activeCount.toString()}
             />
             <StatItem
               label="Pending"
-              value={databaseEntries.filter((e) => e.status === "PENDING").length.toString()}
+              value={databaseStats.pendingCount.toString()}
             />
             <StatItem
               label="Categories"
-              value={[...new Set(databaseEntries.map((e) => e.category))].length.toString()}
+              value={databaseStats.categoryCount.toString()}
             />
             <StatItem
               label="Restricted"
-              value={databaseEntries.filter((e) => e.clearance === "RESTRICTED").length.toString()}
+              value={databaseStats.restrictedCount.toString()}
             />
           </div>
         </div>
@@ -85,7 +83,7 @@ export default function DatabasePage() {
                 <p key={i}>&gt; {line}</p>
               ))}
               <p className="text-accent mt-3">
-                &gt; {databaseEntries.filter((e) => e.status === "ACTIVE").length} RECORDS FOUND
+                &gt; {databaseStats.activeCount} RECORDS FOUND
                 <span className="cursor-blink">_</span>
               </p>
             </div>

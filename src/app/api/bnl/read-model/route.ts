@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { databasePage, radioPage, siteConfig } from "@/content";
+import type { PublicDossierAuthority, PublicDossierKind, PublicDossierLifecycle } from "@/content";
 import { getRadioQueueState, toPublicQueueTrack } from "@/lib/queue";
 import type { QueueEntry, QueueLane, QueuePublicTrack, QueueSourceType } from "@/lib/queue-types";
 
@@ -274,42 +275,155 @@ function artistsFromTracks(
   return [...artists.values()].slice(0, MAX_ARTISTS);
 }
 
+type DatabaseEntry = (typeof databasePage.entries)[number];
+type PublicDossierStatus = "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN";
+type PublicDatabaseEntry = DatabaseEntry & {
+  kind?: PublicDossierKind;
+  lifecycle?: PublicDossierLifecycle;
+  authority?: PublicDossierAuthority;
+  publicFacts?: string[];
+  knownBoundaries?: string[];
+  relatedPublicIds?: string[];
+};
+
+type BnlPublicDossier = {
+  id: string;
+  name: string;
+  kind: PublicDossierKind;
+  category: DatabaseEntry["category"];
+  status: PublicDossierStatus;
+  lifecycle: PublicDossierLifecycle;
+  role: string;
+  origin: DatabaseEntry["origin"];
+  authority: PublicDossierAuthority;
+  summary: string;
+  tags: string[];
+  link: string | null;
+  publicFacts: string[];
+  knownBoundaries: string[];
+  relatedPublicIds: string[];
+  source: "public_database_dossier";
+  bnlContext: {
+    source: "public_database_dossier";
+    visibility: "public";
+    dossierStatus: "existing_public_dossier";
+    memoryDefault: "site_context_not_broadcast_memory";
+    seedDefault: "not_seed_already_public_dossier";
+    identityDefault: "public_site_entity_not_discord_identity";
+  };
+};
+
+type PublicDossierRegistry = {
+  source: "databasePage.entries";
+  publicCount: number;
+  kinds: Partial<Record<PublicDossierKind, number>>;
+  lifecycleCounts: Partial<Record<PublicDossierLifecycle, number>>;
+  authority: PublicDossierAuthority;
+  autoPromotion: false;
+  queueDerivedProfiles: false;
+};
+
+const PUBLIC_DOSSIER_BOUNDARIES = [
+  "not Discord identity",
+  "not payment profile",
+  "not private account",
+  "not automatic broadcast memory",
+];
+
+const DOSSIER_RULES = [
+  "Existing public dossiers are website-published public context.",
+  "Public dossiers are not private profiles.",
+  "Public dossiers are not Discord identity mappings.",
+  "Public dossiers are not payment/customer/account records.",
+  "Public dossiers are not automatic broadcast memory.",
+  "Queue-derived artists are not public dossiers unless manually promoted through a future approved workflow.",
+  "Research classifier dossier seeds are not public dossiers until a future approved site workflow publishes them.",
+];
+
+function lifecycleForStatus(status: PublicDossierStatus): PublicDossierLifecycle {
+  if (status === "ACTIVE") return "active";
+  if (status === "INACTIVE") return "inactive";
+  if (status === "ARCHIVED") return "archived";
+  if (status === "PENDING") return "planned";
+  return "unknown";
+}
+
+function inferPublicDossierKind(entry: DatabaseEntry): PublicDossierKind {
+  const name = entry.name.toLocaleLowerCase();
+  const category = entry.category.toLocaleLowerCase();
+
+  if (name === "barcode radio") return "program";
+  if (name === "discord community") return "interface";
+  if (name === "auxchord" || name === "tiktok live") return "platform";
+  if (name.includes("bnl-01")) return "system";
+  if (category === "production") return "program";
+  if (category === "interface") return "interface";
+  if (category === "sponsor") return "sponsor_character";
+  if ((entry.status as PublicDossierStatus) === "ARCHIVED") return "archive_record";
+  return "entity";
+}
+
+function normalizePublicDossier(entry: PublicDatabaseEntry): BnlPublicDossier {
+  return {
+    id: entry.id,
+    name: entry.name,
+    kind: entry.kind ?? inferPublicDossierKind(entry),
+    category: entry.category,
+    status: entry.status as PublicDossierStatus,
+    lifecycle: entry.lifecycle ?? lifecycleForStatus(entry.status as PublicDossierStatus),
+    role: entry.role,
+    origin: entry.origin,
+    authority: entry.authority ?? "website_public_database",
+    summary: entry.summary,
+    tags: [...entry.tags],
+    link: entry.link || null,
+    publicFacts: entry.publicFacts ?? [],
+    knownBoundaries: entry.knownBoundaries ?? [...PUBLIC_DOSSIER_BOUNDARIES],
+    relatedPublicIds: entry.relatedPublicIds ?? [],
+    source: "public_database_dossier",
+    bnlContext: {
+      source: "public_database_dossier",
+      visibility: "public",
+      dossierStatus: "existing_public_dossier",
+      memoryDefault: "site_context_not_broadcast_memory",
+      seedDefault: "not_seed_already_public_dossier",
+      identityDefault: "public_site_entity_not_discord_identity",
+    },
+  };
+}
+
+function buildDossierRegistry(publicEntries: BnlPublicDossier[]): PublicDossierRegistry {
+  return {
+    source: "databasePage.entries",
+    publicCount: publicEntries.length,
+    kinds: publicEntries.reduce<Partial<Record<PublicDossierKind, number>>>((counts, entry) => {
+      counts[entry.kind] = (counts[entry.kind] ?? 0) + 1;
+      return counts;
+    }, {}),
+    lifecycleCounts: publicEntries.reduce<Partial<Record<PublicDossierLifecycle, number>>>((counts, entry) => {
+      counts[entry.lifecycle] = (counts[entry.lifecycle] ?? 0) + 1;
+      return counts;
+    }, {}),
+    authority: "website_public_database",
+    autoPromotion: false,
+    queueDerivedProfiles: false,
+  };
+}
+
 function publicDossiers() {
   const publicEntries = databasePage.entries
     .filter((entry) => entry.clearance === "PUBLIC")
-    .map((entry) => ({
-      id: entry.id,
-      name: entry.name,
-      category: entry.category,
-      status: entry.status,
-      role: entry.role,
-      origin: entry.origin,
-      summary: entry.summary,
-      tags: entry.tags,
-      link: entry.link || null,
-      source: "public_database_dossier",
-      bnlContext: {
-        source: "public_database_dossier",
-        visibility: "public",
-        dossierStatus: "existing_public_dossier",
-        memoryDefault: "site_context_not_broadcast_memory",
-        seedDefault: "not_seed_already_public_dossier",
-        identityDefault: "public_site_entity_not_discord_identity",
-      },
-    }));
+    .map((entry) => normalizePublicDossier(entry));
+  const registry = buildDossierRegistry(publicEntries);
 
   if (publicEntries.length === 0) {
     return {
       implemented: false,
       public: [],
       items: [],
+      registry,
       sourceAuthority: "public_database_entries_only",
-      rules: [
-        "Existing public dossiers are website-published public context.",
-        "They are not private profiles.",
-        "They are not Discord identity mappings.",
-        "They are not automatic broadcast memory.",
-      ],
+      rules: DOSSIER_RULES,
       note: "No public-clearance database dossier summaries are currently included.",
     };
   }
@@ -318,13 +432,9 @@ function publicDossiers() {
     implemented: true,
     public: publicEntries,
     items: publicEntries,
+    registry,
     sourceAuthority: "public_database_entries_only",
-    rules: [
-      "Existing public dossiers are website-published public context.",
-      "They are not private profiles.",
-      "They are not Discord identity mappings.",
-      "They are not automatic broadcast memory.",
-    ],
+    rules: DOSSIER_RULES,
     note: "Only public-clearance database dossier summaries are included.",
   };
 }
@@ -348,7 +458,7 @@ const sourceContext = [
   {
     id: "broadcast_memory",
     title: "Broadcast Memory",
-    summary: "Broadcast memory is public-facing continuity about what the Network has already surfaced through broadcasts, site copy, queue state, and public records. It is not raw Discord data, private notes, or hidden R&D process material.",
+    summary: "Broadcast memory is public-facing continuity about what the Network has already surfaced through broadcasts, site copy, queue state, and public records. It is not raw Discord data, private notes, or hidden research process material.",
   },
   {
     id: "priority_signal",
@@ -368,6 +478,7 @@ type OperatorLaneItem = {
   source: "queue_public_snapshot" | "public_database_dossier" | "read_model_boundary";
   kind: string;
   trackId?: string;
+  dossierId?: string;
   status?: BnlReadModelTrackStatus;
   value?: string | number | boolean | null;
   reason: string;
@@ -414,6 +525,8 @@ function buildOperatorLanes(queue: Awaited<ReturnType<typeof readPublicLiveQueue
     label: dossier.name,
     source: "public_database_dossier" as const,
     kind: "public_dossier_summary",
+    dossierId: dossier.id,
+    value: dossier.kind,
     reason: "Published public dossier summary is public site context, not private memory.",
   })));
 
@@ -439,7 +552,7 @@ function buildOperatorLanes(queue: Awaited<ReturnType<typeof readPublicLiveQueue
 const rules = {
   allowedUse: [
     "public-safe BNL context",
-    "R&D reference",
+    "research/reference use",
     "public replies when relevant",
     "queue/session awareness",
     "artist/track awareness from public queue snapshot",

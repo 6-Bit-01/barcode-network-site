@@ -265,6 +265,40 @@ export const terminalPage = {
 
 // ----- DATABASE PAGE -----
 
+export type PublicDossierKind =
+  | "program"
+  | "interface"
+  | "platform"
+  | "system"
+  | "entity"
+  | "artist"
+  | "sponsor_character"
+  | "story_arc"
+  | "technical_component"
+  | "archive_record";
+
+export type PublicDossierLifecycle =
+  | "active"
+  | "inactive"
+  | "archived"
+  | "planned"
+  | "unknown";
+
+export type PublicDossierAuthority =
+  | "website_public_database"
+  | "broadcast_memory_confirmed"
+  | "manual_public_entry"
+  | "legacy_static_content";
+
+export type PublicDossierRegistryFields = {
+  kind?: PublicDossierKind;
+  lifecycle?: PublicDossierLifecycle;
+  authority?: PublicDossierAuthority;
+  publicFacts?: string[];
+  knownBoundaries?: string[];
+  relatedPublicIds?: string[];
+};
+
 // Designation prefixes:
 //   EN-### = Entity | PE-### = Personnel | SP-### = Sponsor | IF-### = Interface | PD-### = Production
 // Categories: Entity | Personnel | Sponsor | Interface | Production

@@ -1,6 +1,7 @@
 import { databasePage } from "@/content";
 import { PageHero, SectionDot } from "@/components/LiveEffects";
 import { getEntryImage } from "@/lib/placeholder";
+import { getDossierPrimaryLink } from "@/lib/dossier-links";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -85,6 +86,7 @@ export default async function EntityPage({
 
   if (!entry) notFound();
   const terminalLead = buildTerminalLead(entry);
+  const primaryLink = getDossierPrimaryLink(entry);
 
   return (
     <div className="pt-14">
@@ -185,18 +187,19 @@ export default async function EntityPage({
                     ))}
                   </div>
                 </div>
-                {entry.link && (
+                {primaryLink && (
                   <div className="flex items-center justify-between border-b border-border/50 pb-2">
                     <span className="text-xs uppercase tracking-[0.3em] text-muted">
                       Link
                     </span>
                     <a
-                      href={entry.link}
+                      href={primaryLink.url}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-sm text-accent hover:text-accent-dim transition-colors truncate max-w-[60%] text-right"
                     >
-                      {entry.link.replace(/^https?:\/\/(www\.)?/, "").split("/")[0]} →
+                      {primaryLink.label}
+                      <span className="text-muted/50"> · {primaryLink.type}</span> →
                     </a>
                   </div>
                 )}
@@ -332,8 +335,8 @@ export default async function EntityPage({
             <div className="space-y-1 text-sm text-foreground/60">
               <p>{terminalLead}</p>
               <p>&gt; RECORD FOUND: {entry.name}</p>
-              <p>&gt; STATUS: {entry.status} // CLEARANCE: {entry.clearance}</p>
-              <p>&gt; CATEGORY: {entry.category} // ORIGIN: {entry.origin}</p>
+              <p>&gt; STATUS: {entry.status}{" // "}CLEARANCE: {entry.clearance}</p>
+              <p>&gt; CATEGORY: {entry.category}{" // "}ORIGIN: {entry.origin}</p>
               <p className="text-accent mt-3">
                 &gt; DOSSIER LOADED<span className="cursor-blink">_</span>
               </p>

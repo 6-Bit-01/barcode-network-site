@@ -1,6 +1,6 @@
-import type { BnlReadModelExposure, ClearanceMeaning, PublicPageVisibility, databasePage } from "@/content";
+import type { BnlReadModelExposure, ClearanceMeaning, DatabaseEntry, PublicPageVisibility } from "@/content";
 
-export type DatabaseVisibilityEntry = (typeof databasePage.entries)[number] & {
+export type DatabaseVisibilityEntry = DatabaseEntry & {
   publicPageVisibility?: PublicPageVisibility;
   bnlReadModelExposure?: BnlReadModelExposure;
   clearanceMeaning?: ClearanceMeaning;

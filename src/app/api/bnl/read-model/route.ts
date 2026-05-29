@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { databasePage, radioPage, siteConfig } from "@/content";
+import { dossierAuthoringGuide } from "@/lib/dossier-authoring-guide";
 import type {
   BnlReadModelExposure,
+  DatabaseEntry,
+  DossierLink,
   ClearanceMeaning,
   PublicDossierAuthority,
   PublicDossierKind,
@@ -9,6 +12,7 @@ import type {
   PublicPageVisibility,
 } from "@/content";
 import { getDatabaseAggregateStats } from "@/lib/database-stats";
+import { getDossierPrimaryLink, getDossierPublicLinks } from "@/lib/dossier-links";
 import {
   getBnlReadModelExposure,
   getClearanceMeaning,
@@ -292,19 +296,8 @@ function artistsFromTracks(
   return [...artists.values()].slice(0, MAX_ARTISTS);
 }
 
-type DatabaseEntry = (typeof databasePage.entries)[number];
 type PublicDossierStatus = "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN";
-type PublicDatabaseEntry = DatabaseEntry & {
-  kind?: PublicDossierKind;
-  lifecycle?: PublicDossierLifecycle;
-  authority?: PublicDossierAuthority;
-  publicFacts?: string[];
-  knownBoundaries?: string[];
-  relatedPublicIds?: string[];
-  publicPageVisibility?: PublicPageVisibility;
-  bnlReadModelExposure?: BnlReadModelExposure;
-  clearanceMeaning?: ClearanceMeaning;
-};
+type PublicDatabaseEntry = DatabaseEntry;
 
 type BnlPublicDossier = {
   id: string;
@@ -324,6 +317,8 @@ type BnlPublicDossier = {
   summary: string;
   tags: string[];
   link: string | null;
+  primaryLink: DossierLink | null;
+  links: DossierLink[];
   publicFacts: string[];
   knownBoundaries: string[];
   relatedPublicIds: string[];
@@ -409,6 +404,8 @@ function normalizePublicDossier(entry: PublicDatabaseEntry): BnlPublicDossier {
     summary: entry.summary,
     tags: [...entry.tags],
     link: entry.link || null,
+    primaryLink: getDossierPrimaryLink(entry),
+    links: getDossierPublicLinks(entry),
     publicFacts: entry.publicFacts ?? [],
     knownBoundaries: entry.knownBoundaries ?? [...PUBLIC_DOSSIER_BOUNDARIES],
     relatedPublicIds: entry.relatedPublicIds ?? [],
@@ -502,6 +499,50 @@ function buildDossierRegistry(allEntries: DatabaseEntry[], bnlVisibleEntries: Bn
   };
 }
 
+function countWords(value: string) {
+  const words = value.trim().match(/\S+/g);
+  return words?.length ?? 0;
+}
+
+function buildDossierStyleProfile(entries: DatabaseEntry[]) {
+  const summaryCounts = entries.map((entry) => countWords(entry.summary));
+  const totalSummaryWords = summaryCounts.reduce((sum, count) => sum + count, 0);
+
+  return {
+    entryCount: entries.length,
+    summaryWordCount: {
+      min: summaryCounts.length > 0 ? Math.min(...summaryCounts) : 0,
+      max: summaryCounts.length > 0 ? Math.max(...summaryCounts) : 0,
+      average: summaryCounts.length > 0 ? Math.round(totalSummaryWords / summaryCounts.length) : 0,
+    },
+    notesPresenceCount: entries.filter((entry) => entry.notes.trim().length > 0).length,
+    commonSections: [
+      "Hero / dossier ID",
+      "Portrait/card",
+      "Dossier Record",
+      "Intelligence Brief",
+      "Attached Files",
+      "Terminal Readout",
+    ],
+    commonFields: [
+      "id",
+      "name",
+      "category",
+      "status",
+      "clearance",
+      "role",
+      "origin",
+      "summary",
+      "tags",
+      "notes",
+      "link",
+      "primaryLink",
+      "links",
+      "files",
+    ],
+  };
+}
+
 function publicDossiers() {
   const databaseEntries = databasePage.entries;
   const publicPageVisibleEntries = databaseEntries.filter(isPublicDatabasePageVisible);
@@ -519,6 +560,8 @@ function publicDossiers() {
       publicPageVisible: [],
       publicClearanceOnly: [],
       registry,
+      authoringGuide: dossierAuthoringGuide,
+      styleProfile: buildDossierStyleProfile(databaseEntries),
       sourceAuthority: "public_database_page_visible_entries_only",
       rules: DOSSIER_RULES,
       note: "No public-page-visible database dossier summaries are currently included.",
@@ -532,6 +575,8 @@ function publicDossiers() {
     publicPageVisible: bnlVisibleEntries,
     publicClearanceOnly,
     registry,
+    authoringGuide: dossierAuthoringGuide,
+    styleProfile: buildDossierStyleProfile(databaseEntries),
     sourceAuthority: "public_database_page_visible_entries_only",
     rules: DOSSIER_RULES,
     note: "Public/read-model dossier summaries include the same public-safe fields visible on the public database page; clearance labels are preserved as lore classification labels unless explicitly overridden.",
@@ -703,7 +748,7 @@ export async function GET() {
     {
       ok: true,
       version: 1,
-      schemaRevision: "1.1",
+      schemaRevision: "1.2",
       generatedAt: new Date().toISOString(),
       scope: "bnl_public_read_model",
       source: "barcode-network-site",

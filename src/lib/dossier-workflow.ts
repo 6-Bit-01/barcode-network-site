@@ -1,3 +1,9 @@
+import type {
+  DossierEcosystemLane,
+  DossierIdentityAuthority,
+  PublicDossierKind,
+} from "@/content";
+
 export type DossierCandidateSource =
   | "manual"
   | "rd_conversation"
@@ -16,7 +22,10 @@ export type DossierCandidateType =
   | "story_arc"
   | "unknown";
 
-export type DossierCandidateTier = "weak_candidate" | "review_candidate" | "draft_ready";
+export type DossierCandidateTier =
+  | "weak_candidate"
+  | "review_candidate"
+  | "draft_ready";
 
 export type DossierDuplicateRisk = "none" | "low" | "medium" | "high";
 
@@ -61,8 +70,18 @@ export type DossierDraftStatus =
   | "denied"
   | "published";
 
-export type DossierCategory = "Entity" | "Personnel" | "Sponsor" | "Interface" | "Production";
-export type DossierPublicStatus = "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN";
+export type DossierCategory =
+  | "Entity"
+  | "Personnel"
+  | "Sponsor"
+  | "Interface"
+  | "Production";
+export type DossierPublicStatus =
+  | "ACTIVE"
+  | "INACTIVE"
+  | "ARCHIVED"
+  | "PENDING"
+  | "UNKNOWN";
 export type DossierClearance = "PUBLIC" | "INTERNAL" | "RESTRICTED";
 export type DossierOrigin = "KNOWN" | "UNKNOWN" | "UNVERIFIED" | "WITHHELD";
 
@@ -83,8 +102,15 @@ export type DossierCandidate = {
   knownFacts?: string[];
   confidence?: "low" | "medium" | "high";
   duplicateRisk?: DossierDuplicateRisk;
-  existingDossierMatch?: { id: string; name: string; confidence: "low" | "medium" | "high" } | null;
+  existingDossierMatch?: {
+    id: string;
+    name: string;
+    confidence: "low" | "medium" | "high";
+  } | null;
   recommendedCategory?: DossierCategory;
+  recommendedKind?: PublicDossierKind;
+  recommendedEcosystemLane?: DossierEcosystemLane;
+  recommendedIdentityAuthority?: DossierIdentityAuthority;
   recommendedStatus?: DossierPublicStatus;
   recommendedClearance?: DossierClearance;
   recommendedOrigin?: DossierOrigin;
@@ -107,6 +133,9 @@ export type DossierDraft = {
     id?: string;
     name: string;
     category?: DossierCategory;
+    kind?: PublicDossierKind;
+    ecosystemLane?: DossierEcosystemLane;
+    identityAuthority?: DossierIdentityAuthority;
     status?: DossierPublicStatus;
     clearance?: DossierClearance;
     role?: string;
@@ -142,6 +171,9 @@ export type CreateManualDossierCandidateInput = {
   doNotSay?: string[];
   publicSafetyNotes?: string[];
   recommendedCategory?: DossierDraft["fields"]["category"];
+  recommendedKind?: DossierDraft["fields"]["kind"];
+  recommendedEcosystemLane?: DossierDraft["fields"]["ecosystemLane"];
+  recommendedIdentityAuthority?: DossierDraft["fields"]["identityAuthority"];
   recommendedStatus?: DossierDraft["fields"]["status"];
   recommendedClearance?: DossierDraft["fields"]["clearance"];
   recommendedOrigin?: DossierDraft["fields"]["origin"];
@@ -204,17 +236,24 @@ export const DOSSIER_CANDIDATE_SCORING_POLICY = {
     draftReadyMin: 70,
   },
   signals: {
-    queueRecurrence: "Repeated appearances across separate sessions can support candidacy.",
-    rdConversation: "R&D discussion can support candidacy but is not public copy by itself.",
-    discordContext: "Discord context is internal evidence and must be public-safe before use.",
-    manualNomination: "Operator nomination can create a review candidate but still needs facts.",
-    duplicatePenalty: "Likely duplicate dossiers should be merged or rejected before drafting.",
-    privacyPenalty: "Private, payment, or identity-sensitive evidence blocks drafting.",
+    queueRecurrence:
+      "Repeated appearances across separate sessions can support candidacy.",
+    rdConversation:
+      "R&D discussion can support candidacy but is not public copy by itself.",
+    discordContext:
+      "Discord context is internal evidence and must be public-safe before use.",
+    manualNomination:
+      "Operator nomination can create a review candidate but still needs facts.",
+    duplicatePenalty:
+      "Likely duplicate dossiers should be merged or rejected before drafting.",
+    privacyPenalty:
+      "Private, payment, or identity-sensitive evidence blocks drafting.",
   },
   gate: "Loose intake, strict drafting/publishing.",
 } as const;
 
-const IDENTITY_SENSITIVE_PATTERN = /\b(discord|email|payment|stripe|customer|account|phone|address|legal name|real name|ip address|private|dm|direct message)\b/i;
+const IDENTITY_SENSITIVE_PATTERN =
+  /\b(discord|email|payment|stripe|customer|account|phone|address|legal name|real name|ip address|private|dm|direct message)\b/i;
 
 function hasText(value: string | undefined): boolean {
   return Boolean(value?.trim());
@@ -225,22 +264,40 @@ function hasItems(value: string[] | undefined): boolean {
 }
 
 function tierForScore(score: number): DossierCandidateTier {
-  if (score >= DOSSIER_CANDIDATE_SCORING_POLICY.thresholds.draftReadyMin) return "draft_ready";
-  if (score >= DOSSIER_CANDIDATE_SCORING_POLICY.thresholds.reviewCandidateMin) return "review_candidate";
+  if (score >= DOSSIER_CANDIDATE_SCORING_POLICY.thresholds.draftReadyMin)
+    return "draft_ready";
+  if (score >= DOSSIER_CANDIDATE_SCORING_POLICY.thresholds.reviewCandidateMin)
+    return "review_candidate";
   return "weak_candidate";
 }
 
-export function scoreManualDossierCandidate(input: CreateManualDossierCandidateInput): {
+export function scoreManualDossierCandidate(
+  input: CreateManualDossierCandidateInput,
+): {
   score: number;
   tier: DossierCandidateTier;
   confidence: "low" | "medium" | "high";
   publicSafetyNotes: string[];
   missingInfo: string[];
 } {
-  let score: number = DOSSIER_CANDIDATE_SCORING_POLICY.thresholds.weakCandidateMin;
-  const publicSafetyNotes = [...(input.publicSafetyNotes ?? []).map((item) => item.trim()).filter(Boolean)];
-  const missingInfo = [...(input.missingInfo ?? []).map((item) => item.trim()).filter(Boolean)];
-  const combinedText = [input.name, input.reason, input.whyNow, input.evidenceSummary, ...(input.knownFacts ?? []), ...(input.doNotSay ?? [])].join(" ");
+  let score: number =
+    DOSSIER_CANDIDATE_SCORING_POLICY.thresholds.weakCandidateMin;
+  const publicSafetyNotes = [
+    ...(input.publicSafetyNotes ?? [])
+      .map((item) => item.trim())
+      .filter(Boolean),
+  ];
+  const missingInfo = [
+    ...(input.missingInfo ?? []).map((item) => item.trim()).filter(Boolean),
+  ];
+  const combinedText = [
+    input.name,
+    input.reason,
+    input.whyNow,
+    input.evidenceSummary,
+    ...(input.knownFacts ?? []),
+    ...(input.doNotSay ?? []),
+  ].join(" ");
 
   if (hasText(input.reason)) score += 8;
   else score -= 12;
@@ -258,31 +315,48 @@ export function scoreManualDossierCandidate(input: CreateManualDossierCandidateI
     missingInfo.push("Add operator-approved known facts before drafting.");
   }
 
-  const recommendedFieldCount = [input.recommendedCategory, input.recommendedStatus, input.recommendedClearance, input.recommendedOrigin].filter(Boolean).length;
+  const recommendedFieldCount = [
+    input.recommendedCategory,
+    input.recommendedKind,
+    input.recommendedEcosystemLane,
+    input.recommendedIdentityAuthority,
+    input.recommendedStatus,
+    input.recommendedClearance,
+    input.recommendedOrigin,
+  ].filter(Boolean).length;
   score += recommendedFieldCount * 3;
 
-  if (input.primaryLink?.url && input.primaryLink.publicSafe !== false) score += 5;
+  if (input.primaryLink?.url && input.primaryLink.publicSafe !== false)
+    score += 5;
   if (hasItems(input.recommendedTags)) score += 5;
 
   if (!hasItems(publicSafetyNotes)) {
     score -= 5;
-    publicSafetyNotes.push("Public-safety review required before any draft or publication step.");
+    publicSafetyNotes.push(
+      "Public-safety review required before any draft or publication step.",
+    );
   }
 
   if (IDENTITY_SENSITIVE_PATTERN.test(combinedText)) {
     score -= 15;
-    publicSafetyNotes.push("Possible private, payment, account, or identity-sensitive wording detected; review and remove before drafting.");
+    publicSafetyNotes.push(
+      "Possible private, payment, account, or identity-sensitive wording detected; review and remove before drafting.",
+    );
   }
 
   score = Math.max(0, Math.min(100, score));
-  const tier = hasText(input.reason) && hasText(input.whyNow) && hasText(input.evidenceSummary)
-    ? tierForScore(score)
-    : "weak_candidate";
-  const confidence = score >= DOSSIER_CANDIDATE_SCORING_POLICY.thresholds.draftReadyMin
-    ? "high"
-    : score >= DOSSIER_CANDIDATE_SCORING_POLICY.thresholds.reviewCandidateMin
-      ? "medium"
-      : "low";
+  const tier =
+    hasText(input.reason) &&
+    hasText(input.whyNow) &&
+    hasText(input.evidenceSummary)
+      ? tierForScore(score)
+      : "weak_candidate";
+  const confidence =
+    score >= DOSSIER_CANDIDATE_SCORING_POLICY.thresholds.draftReadyMin
+      ? "high"
+      : score >= DOSSIER_CANDIDATE_SCORING_POLICY.thresholds.reviewCandidateMin
+        ? "medium"
+        : "low";
 
   return { score, tier, confidence, publicSafetyNotes, missingInfo };
 }
@@ -291,38 +365,50 @@ export const DOSSIER_SOURCE_BOUNDARIES: DossierSourceBoundary[] = [
   {
     source: "manual",
     label: "Manual operator intake",
-    boundary: "Operator-entered candidate notes are workflow records only, not published dossiers.",
-    allowedUse: "May create a candidate for review before BNL drafting is requested.",
+    boundary:
+      "Operator-entered candidate notes are workflow records only, not published dossiers.",
+    allowedUse:
+      "May create a candidate for review before BNL drafting is requested.",
   },
   {
     source: "rd_conversation",
     label: "R&D conversation",
-    boundary: "Internal operator discussion evidence is not public automatically.",
-    allowedUse: "May produce a candidate only; public copy still requires operator review.",
+    boundary:
+      "Internal operator discussion evidence is not public automatically.",
+    allowedUse:
+      "May produce a candidate only; public copy still requires operator review.",
   },
   {
     source: "queue_frequency",
     label: "Queue frequency",
-    boundary: "Repeated artist or song appearance across sessions is evidence only, not account identity.",
-    allowedUse: "May support candidate priority but never auto-promotes a queue participant into a dossier.",
+    boundary:
+      "Repeated artist or song appearance across sessions is evidence only, not account identity.",
+    allowedUse:
+      "May support candidate priority but never auto-promotes a queue participant into a dossier.",
   },
   {
     source: "discord_context",
     label: "Discord context",
-    boundary: "Internal or community context must not expose private user data and is not payment identity.",
-    allowedUse: "May inform bounded evidence summaries for operator-selected candidates.",
+    boundary:
+      "Internal or community context must not expose private user data and is not payment identity.",
+    allowedUse:
+      "May inform bounded evidence summaries for operator-selected candidates.",
   },
   {
     source: "website_read_model",
     label: "Website read model",
-    boundary: "Public site state may include existing public-page dossiers and tags only.",
-    allowedUse: "May help compare candidates against existing public database records.",
+    boundary:
+      "Public site state may include existing public-page dossiers and tags only.",
+    allowedUse:
+      "May help compare candidates against existing public database records.",
   },
   {
     source: "combined",
     label: "Combined signals",
-    boundary: "Multiple source signals still do not create dossiers automatically.",
-    allowedUse: "May raise review priority when each evidence summary remains bounded and safe.",
+    boundary:
+      "Multiple source signals still do not create dossiers automatically.",
+    allowedUse:
+      "May raise review priority when each evidence summary remains bounded and safe.",
   },
 ];
 
@@ -336,5 +422,7 @@ export const DOSSIER_WORKFLOW_RULES = [
   "No candidate source creates a dossier automatically.",
   "Drafting requires operator selection.",
   "Proposed tags are proposal-only until an operator or site content update creates them.",
+  "AI/human/unknown nature tags do not organize dossiers; category, kind, ecosystem lane, and identity authority come first.",
+  "Sheila/Cliff-style Network characters are BARCODE-controlled records, while mods are community-owned identities.",
   "Loose intake, strict drafting/publishing: candidates can enter review early, but drafting and publishing require evidence, duplicate checks, and public-safety review.",
 ] as const;

@@ -2,18 +2,24 @@ import { NextResponse } from "next/server";
 import { databasePage, radioPage, siteConfig } from "@/content";
 import { dossierAuthoringGuide } from "@/lib/dossier-authoring-guide";
 import { buildDossierTagRegistry } from "@/lib/dossier-tags";
+import { DOSSIER_TAXONOMY_GUIDE } from "@/lib/dossier-taxonomy";
 import type {
   BnlReadModelExposure,
   DatabaseEntry,
   DossierLink,
   ClearanceMeaning,
+  DossierEcosystemLane,
+  DossierIdentityAuthority,
   PublicDossierAuthority,
   PublicDossierKind,
   PublicDossierLifecycle,
   PublicPageVisibility,
 } from "@/content";
 import { getDatabaseAggregateStats } from "@/lib/database-stats";
-import { getDossierPrimaryLink, getDossierPublicLinks } from "@/lib/dossier-links";
+import {
+  getDossierPrimaryLink,
+  getDossierPublicLinks,
+} from "@/lib/dossier-links";
 import {
   getBnlReadModelExposure,
   getClearanceMeaning,
@@ -24,7 +30,12 @@ import {
   isPublicDatabasePageVisible,
 } from "@/lib/database-visibility";
 import { getRadioQueueState, toPublicQueueTrack } from "@/lib/queue";
-import type { QueueEntry, QueueLane, QueuePublicTrack, QueueSourceType } from "@/lib/queue-types";
+import type {
+  QueueEntry,
+  QueueLane,
+  QueuePublicTrack,
+  QueueSourceType,
+} from "@/lib/queue-types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -112,7 +123,10 @@ function bnlTrackContext(status: BnlReadModelTrackStatus): BnlTrackContext {
   };
 }
 
-function publicTrack(track: QueuePublicTrack | null | undefined, status: BnlReadModelTrackStatus): BnlQueueTrack | null {
+function publicTrack(
+  track: QueuePublicTrack | null | undefined,
+  status: BnlReadModelTrackStatus,
+): BnlQueueTrack | null {
   if (!track) return null;
   return {
     id: track.id,
@@ -136,14 +150,20 @@ function publicTrack(track: QueuePublicTrack | null | undefined, status: BnlRead
   };
 }
 
-function isRealQueueEntry(entry: QueueEntry | null | undefined): entry is QueueEntry {
+function isRealQueueEntry(
+  entry: QueueEntry | null | undefined,
+): entry is QueueEntry {
   if (!entry || entry.isTestTrack === true) return false;
   if (entry.note?.includes("[QUEUE SIMULATION TRACK]") === true) return false;
-  if (entry.artist.startsWith("SIM ") || entry.title.startsWith("SIM ")) return false;
+  if (entry.artist.startsWith("SIM ") || entry.title.startsWith("SIM "))
+    return false;
   return true;
 }
 
-function pressureFor(activeCount: number, capacity: number): "low" | "medium" | "high" | "max" {
+function pressureFor(
+  activeCount: number,
+  capacity: number,
+): "low" | "medium" | "high" | "max" {
   if (capacity <= 0) return "low";
   const load = activeCount / capacity;
   if (load >= 1) return "max";
@@ -155,18 +175,28 @@ function pressureFor(activeCount: number, capacity: number): "low" | "medium" | 
 async function readPublicLiveQueueForBnl() {
   const state = await getRadioQueueState();
   const realQueueEntries = state.queue.filter(isRealQueueEntry);
-  const realCompletedEntries = state.history.filter(isRealQueueEntry).slice(0, 10);
-  const realRemovedCount = (state.removed ?? []).filter(isRealQueueEntry).length;
-  const realNowPlaying = isRealQueueEntry(state.nowPlaying) ? state.nowPlaying : null;
-  const realUpNext = isRealQueueEntry(state.nextInLine) ? state.nextInLine : null;
+  const realCompletedEntries = state.history
+    .filter(isRealQueueEntry)
+    .slice(0, 10);
+  const realRemovedCount = (state.removed ?? []).filter(
+    isRealQueueEntry,
+  ).length;
+  const realNowPlaying = isRealQueueEntry(state.nowPlaying)
+    ? state.nowPlaying
+    : null;
+  const realUpNext = isRealQueueEntry(state.nextInLine)
+    ? state.nextInLine
+    : null;
   const activeIds = new Set<string>();
   for (const entry of realQueueEntries) {
-    if (entry.status === "queued" || entry.status === "playing") activeIds.add(entry.id);
+    if (entry.status === "queued" || entry.status === "playing")
+      activeIds.add(entry.id);
   }
   if (realNowPlaying) activeIds.add(realNowPlaying.id);
   if (realUpNext) activeIds.add(realUpNext.id);
 
-  const capacity = state.publicStatus?.capacity ?? state.session?.queueCapacity ?? 0;
+  const capacity =
+    state.publicStatus?.capacity ?? state.session?.queueCapacity ?? 0;
   const activeCount = activeIds.size;
   const publicQueueTracks = realQueueEntries.map(toPublicQueueTrack);
   const publicCompletedTracks = realCompletedEntries.map(toPublicQueueTrack);
@@ -187,8 +217,10 @@ async function readPublicLiveQueueForBnl() {
         completedCount: publicCompletedTracks.length,
         removedCount: realRemovedCount,
         wheelSpinsOwed: state.session?.wheelSpinsOwed ?? 0,
-        priorityUpgradesEnabled: state.session?.priorityUpgradesEnabled === true,
-        priorityUpgradeLabel: state.session?.priorityUpgradeLabel ?? "Priority Signal",
+        priorityUpgradesEnabled:
+          state.session?.priorityUpgradesEnabled === true,
+        priorityUpgradeLabel:
+          state.session?.priorityUpgradeLabel ?? "Priority Signal",
       },
       status: {
         isOpen: state.publicStatus?.isOpen ?? state.session?.queueOpen === true,
@@ -198,10 +230,19 @@ async function readPublicLiveQueueForBnl() {
       },
       nowPlaying: publicTrack(nowPlaying, "nowPlaying"),
       upNext: publicTrack(upNext, "upNext"),
-      queue: publicQueueTracks.map((track) => publicTrack(track, "queued")).filter((track): track is BnlQueueTrack => Boolean(track)),
-      completed: publicCompletedTracks.map((track) => publicTrack(track, "completed")).filter((track): track is BnlQueueTrack => Boolean(track)),
+      queue: publicQueueTracks
+        .map((track) => publicTrack(track, "queued"))
+        .filter((track): track is BnlQueueTrack => Boolean(track)),
+      completed: publicCompletedTracks
+        .map((track) => publicTrack(track, "completed"))
+        .filter((track): track is BnlQueueTrack => Boolean(track)),
     },
-    artists: artistsFromTracks(nowPlaying, upNext, publicQueueTracks, publicCompletedTracks),
+    artists: artistsFromTracks(
+      nowPlaying,
+      upNext,
+      publicQueueTracks,
+      publicCompletedTracks,
+    ),
   };
 }
 
@@ -233,10 +274,19 @@ function artistNameForTrack(track: QueuePublicTrack): string {
 }
 
 function titleForTrack(track: QueuePublicTrack): string {
-  return (track.detectedSongTitle || track.submittedSongTitle || track.providerTitle || "Untitled track").trim();
+  return (
+    track.detectedSongTitle ||
+    track.submittedSongTitle ||
+    track.providerTitle ||
+    "Untitled track"
+  ).trim();
 }
 
-function addArtistTrack(artists: Map<string, BnlReadModelArtist>, track: QueuePublicTrack | null | undefined, status: BnlReadModelTrackStatus) {
+function addArtistTrack(
+  artists: Map<string, BnlReadModelArtist>,
+  track: QueuePublicTrack | null | undefined,
+  status: BnlReadModelTrackStatus,
+) {
   if (!track) return;
   const name = artistNameForTrack(track);
   if (!name) return;
@@ -267,8 +317,12 @@ function addArtistTrack(artists: Map<string, BnlReadModelArtist>, track: QueuePu
     },
   };
 
-  if (!artist.tiktokHandle && track.tiktokHandle) artist.tiktokHandle = track.tiktokHandle;
-  if (!artist.tracks.some((artistTrack) => artistTrack.trackId === track.id) && artist.tracks.length < MAX_TRACKS_PER_ARTIST) {
+  if (!artist.tiktokHandle && track.tiktokHandle)
+    artist.tiktokHandle = track.tiktokHandle;
+  if (
+    !artist.tracks.some((artistTrack) => artistTrack.trackId === track.id) &&
+    artist.tracks.length < MAX_TRACKS_PER_ARTIST
+  ) {
     artist.tracks.push({
       trackId: track.id,
       title: titleForTrack(track),
@@ -297,7 +351,12 @@ function artistsFromTracks(
   return [...artists.values()].slice(0, MAX_ARTISTS);
 }
 
-type PublicDossierStatus = "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN";
+type PublicDossierStatus =
+  | "ACTIVE"
+  | "INACTIVE"
+  | "ARCHIVED"
+  | "PENDING"
+  | "UNKNOWN";
 type PublicDatabaseEntry = DatabaseEntry;
 
 type BnlPublicDossier = {
@@ -305,6 +364,8 @@ type BnlPublicDossier = {
   name: string;
   kind: PublicDossierKind;
   category: DatabaseEntry["category"];
+  ecosystemLane?: DossierEcosystemLane;
+  identityAuthority?: DossierIdentityAuthority;
   status: PublicDossierStatus;
   lifecycle: PublicDossierLifecycle;
   role: string;
@@ -336,7 +397,6 @@ type BnlPublicDossier = {
   };
 };
 
-
 const PUBLIC_DOSSIER_BOUNDARIES = [
   "not Discord identity",
   "not payment profile",
@@ -361,9 +421,14 @@ const DOSSIER_RULES = [
   "Public-page-visible dossiers are not automatic dossier seeds.",
   "Queue-derived artists are still not dossier records unless manually promoted through a future approved workflow.",
   "Research classifier dossier seeds are not public dossiers until a future approved site workflow publishes them.",
+  "BNL should classify dossiers in order: category, kind, ecosystem lane, identity authority, then tags.",
+  "AI, human, hybrid, and unknown nature are tags/traits, not primary dossier organization.",
+  "Sheila/Cliff-style BARCODE-controlled characters are not community-owned mods.",
 ];
 
-function lifecycleForStatus(status: PublicDossierStatus): PublicDossierLifecycle {
+function lifecycleForStatus(
+  status: PublicDossierStatus,
+): PublicDossierLifecycle {
   if (status === "ACTIVE") return "active";
   if (status === "INACTIVE") return "inactive";
   if (status === "ARCHIVED") return "archived";
@@ -382,7 +447,8 @@ function inferPublicDossierKind(entry: DatabaseEntry): PublicDossierKind {
   if (category === "production") return "program";
   if (category === "interface") return "interface";
   if (category === "sponsor") return "sponsor_character";
-  if ((entry.status as PublicDossierStatus) === "ARCHIVED") return "archive_record";
+  if ((entry.status as PublicDossierStatus) === "ARCHIVED")
+    return "archive_record";
   return "entity";
 }
 
@@ -392,8 +458,12 @@ function normalizePublicDossier(entry: PublicDatabaseEntry): BnlPublicDossier {
     name: entry.name,
     kind: entry.kind ?? inferPublicDossierKind(entry),
     category: entry.category,
+    ecosystemLane: entry.ecosystemLane,
+    identityAuthority: entry.identityAuthority,
     status: entry.status as PublicDossierStatus,
-    lifecycle: entry.lifecycle ?? lifecycleForStatus(entry.status as PublicDossierStatus),
+    lifecycle:
+      entry.lifecycle ??
+      lifecycleForStatus(entry.status as PublicDossierStatus),
     role: entry.role,
     origin: entry.origin,
     clearance: entry.clearance,
@@ -425,28 +495,45 @@ function normalizePublicDossier(entry: PublicDatabaseEntry): BnlPublicDossier {
 }
 
 function countVisibleByLifecycle(entries: BnlPublicDossier[]) {
-  return entries.reduce<Partial<Record<PublicDossierLifecycle, number>>>((counts, entry) => {
-    counts[entry.lifecycle] = (counts[entry.lifecycle] ?? 0) + 1;
-    return counts;
-  }, {});
+  return entries.reduce<Partial<Record<PublicDossierLifecycle, number>>>(
+    (counts, entry) => {
+      counts[entry.lifecycle] = (counts[entry.lifecycle] ?? 0) + 1;
+      return counts;
+    },
+    {},
+  );
 }
 
 function countVisibleByKind(entries: BnlPublicDossier[]) {
-  return entries.reduce<Partial<Record<PublicDossierKind, number>>>((counts, entry) => {
-    counts[entry.kind] = (counts[entry.kind] ?? 0) + 1;
-    return counts;
-  }, {});
+  return entries.reduce<Partial<Record<PublicDossierKind, number>>>(
+    (counts, entry) => {
+      counts[entry.kind] = (counts[entry.kind] ?? 0) + 1;
+      return counts;
+    },
+    {},
+  );
 }
 
-function buildDossierRegistry(allEntries: DatabaseEntry[], bnlVisibleEntries: BnlPublicDossier[]) {
+function buildDossierRegistry(
+  allEntries: DatabaseEntry[],
+  bnlVisibleEntries: BnlPublicDossier[],
+) {
   const stats = getDatabaseAggregateStats(allEntries);
   const siteVisibleEntries = allEntries.filter(isPublicDatabasePageVisible);
   const aggregateOnlyCount = allEntries.filter(isBnlAggregateOnly).length;
   const hiddenFromBnlCount = allEntries.filter(isHiddenFromBnl).length;
-  const publicClearanceCount = allEntries.filter((entry) => entry.clearance === "PUBLIC").length;
-  const internalClearanceCount = allEntries.filter((entry) => entry.clearance === "INTERNAL").length;
-  const restrictedClearanceCount = allEntries.filter((entry) => entry.clearance === "RESTRICTED").length;
-  const restrictedSummariesExposed = bnlVisibleEntries.some((entry) => entry.clearance === "RESTRICTED");
+  const publicClearanceCount = allEntries.filter(
+    (entry) => entry.clearance === "PUBLIC",
+  ).length;
+  const internalClearanceCount = allEntries.filter(
+    (entry) => entry.clearance === "INTERNAL",
+  ).length;
+  const restrictedClearanceCount = allEntries.filter(
+    (entry) => entry.clearance === "RESTRICTED",
+  ).length;
+  const restrictedSummariesExposed = bnlVisibleEntries.some(
+    (entry) => entry.clearance === "RESTRICTED",
+  );
 
   return {
     source: "databasePage.entries",
@@ -482,17 +569,41 @@ function buildDossierRegistry(allEntries: DatabaseEntry[], bnlVisibleEntries: Bn
       restrictedDetails: "summary_only_no_hidden_details",
     },
     rules: {
-      aggregateCounts: "Full database aggregate counts are public-safe count summaries.",
-      clearance: "Clearance is a public-facing classification label unless a record explicitly says otherwise.",
-      publicPageVisibility: "If a dossier is listed on the public database page, BNL may summarize the same public-safe fields.",
-      restrictedRecords: "Restricted-classified public-page dossiers may expose only the same summary fields as the public database page; hidden details remain unexposed.",
-      publicCount: "Compatibility count for BNL-visible public-page-safe dossier summaries.",
-      publicClearanceCount: "Number of records whose clearance label is PUBLIC.",
-      totalCount: "Number of records in the full website database source of truth.",
-      queueDerivedProfiles: "Queue-derived artists are not dossier records unless manually promoted through a future approved workflow.",
-      citationBoundary: "BNL may cite public-page-safe summaries and aggregate counts, but must not claim private access or infer hidden details.",
+      aggregateCounts:
+        "Full database aggregate counts are public-safe count summaries.",
+      clearance:
+        "Clearance is a public-facing classification label unless a record explicitly says otherwise.",
+      publicPageVisibility:
+        "If a dossier is listed on the public database page, BNL may summarize the same public-safe fields.",
+      restrictedRecords:
+        "Restricted-classified public-page dossiers may expose only the same summary fields as the public database page; hidden details remain unexposed.",
+      publicCount:
+        "Compatibility count for BNL-visible public-page-safe dossier summaries.",
+      publicClearanceCount:
+        "Number of records whose clearance label is PUBLIC.",
+      totalCount:
+        "Number of records in the full website database source of truth.",
+      queueDerivedProfiles:
+        "Queue-derived artists are not dossier records unless manually promoted through a future approved workflow.",
+      citationBoundary:
+        "BNL may cite public-page-safe summaries and aggregate counts, but must not claim private access or infer hidden details.",
     },
     kinds: countVisibleByKind(bnlVisibleEntries),
+    ecosystemLaneCounts: bnlVisibleEntries.reduce<
+      Partial<Record<DossierEcosystemLane, number>>
+    >((counts, entry) => {
+      if (entry.ecosystemLane)
+        counts[entry.ecosystemLane] = (counts[entry.ecosystemLane] ?? 0) + 1;
+      return counts;
+    }, {}),
+    identityAuthorityCounts: bnlVisibleEntries.reduce<
+      Partial<Record<DossierIdentityAuthority, number>>
+    >((counts, entry) => {
+      if (entry.identityAuthority)
+        counts[entry.identityAuthority] =
+          (counts[entry.identityAuthority] ?? 0) + 1;
+      return counts;
+    }, {}),
     lifecycleCounts: countVisibleByLifecycle(bnlVisibleEntries),
     authority: "website_public_database" as PublicDossierAuthority,
     autoPromotion: false,
@@ -505,9 +616,15 @@ function countWords(value: string) {
   return words?.length ?? 0;
 }
 
-function buildDossierStyleProfile(entries: DatabaseEntry[], tagRegistry: ReturnType<typeof buildDossierTagRegistry>) {
+function buildDossierStyleProfile(
+  entries: DatabaseEntry[],
+  tagRegistry: ReturnType<typeof buildDossierTagRegistry>,
+) {
   const summaryCounts = entries.map((entry) => countWords(entry.summary));
-  const totalSummaryWords = summaryCounts.reduce((sum, count) => sum + count, 0);
+  const totalSummaryWords = summaryCounts.reduce(
+    (sum, count) => sum + count,
+    0,
+  );
   const mostUsedTags = [...tagRegistry.items]
     .sort((a, b) => b.usageCount - a.usageCount || a.tag.localeCompare(b.tag))
     .slice(0, 10)
@@ -523,12 +640,21 @@ function buildDossierStyleProfile(entries: DatabaseEntry[], tagRegistry: ReturnT
     summaryWordCount: {
       min: summaryCounts.length > 0 ? Math.min(...summaryCounts) : 0,
       max: summaryCounts.length > 0 ? Math.max(...summaryCounts) : 0,
-      average: summaryCounts.length > 0 ? Math.round(totalSummaryWords / summaryCounts.length) : 0,
+      average:
+        summaryCounts.length > 0
+          ? Math.round(totalSummaryWords / summaryCounts.length)
+          : 0,
     },
-    notesPresenceCount: entries.filter((entry) => entry.notes.trim().length > 0).length,
+    notesPresenceCount: entries.filter((entry) => entry.notes.trim().length > 0)
+      .length,
     tagProfile: {
       totalUniqueTags: tagRegistry.totalUniqueTags,
-      averageTagsPerDossier: entries.length > 0 ? Math.round((tagRegistry.totalTagAssignments / entries.length) * 100) / 100 : 0,
+      averageTagsPerDossier:
+        entries.length > 0
+          ? Math.round(
+              (tagRegistry.totalTagAssignments / entries.length) * 100,
+            ) / 100
+          : 0,
       mostUsedTags,
       singleUseTags,
     },
@@ -561,11 +687,15 @@ function buildDossierStyleProfile(entries: DatabaseEntry[], tagRegistry: ReturnT
 
 function publicDossiers() {
   const databaseEntries = databasePage.entries;
-  const publicPageVisibleEntries = databaseEntries.filter(isPublicDatabasePageVisible);
+  const publicPageVisibleEntries = databaseEntries.filter(
+    isPublicDatabasePageVisible,
+  );
   const bnlVisibleEntries = publicPageVisibleEntries
     .filter(isBnlReadModelDossierVisible)
     .map((entry) => normalizePublicDossier(entry));
-  const publicClearanceOnly = bnlVisibleEntries.filter((entry) => entry.clearance === "PUBLIC");
+  const publicClearanceOnly = bnlVisibleEntries.filter(
+    (entry) => entry.clearance === "PUBLIC",
+  );
   const registry = buildDossierRegistry(databaseEntries, bnlVisibleEntries);
   const tagRegistry = buildDossierTagRegistry(databaseEntries);
   const styleProfile = buildDossierStyleProfile(databaseEntries, tagRegistry);
@@ -579,6 +709,7 @@ function publicDossiers() {
       publicClearanceOnly: [],
       registry,
       authoringGuide: dossierAuthoringGuide,
+      taxonomyGuide: DOSSIER_TAXONOMY_GUIDE,
       styleProfile,
       tagRegistry,
       sourceAuthority: "public_database_page_visible_entries_only",
@@ -595,6 +726,7 @@ function publicDossiers() {
     publicClearanceOnly,
     registry,
     authoringGuide: dossierAuthoringGuide,
+    taxonomyGuide: DOSSIER_TAXONOMY_GUIDE,
     styleProfile,
     tagRegistry,
     sourceAuthority: "public_database_page_visible_entries_only",
@@ -617,29 +749,36 @@ const sourceContext = [
   {
     id: "bnl_01",
     title: "BNL-01",
-    summary: "BNL-01 is the BARCODE Network liaison/bot surface for public-safe context and community-facing continuity. This read model does not grant BNL private system control or admin access.",
+    summary:
+      "BNL-01 is the BARCODE Network liaison/bot surface for public-safe context and community-facing continuity. This read model does not grant BNL private system control or admin access.",
   },
   {
     id: "broadcast_memory",
     title: "Broadcast Memory",
-    summary: "Broadcast memory is public-facing continuity about what the Network has already surfaced through broadcasts, site copy, queue state, and public records. It is not raw Discord data, private notes, or hidden research process material.",
+    summary:
+      "Broadcast memory is public-facing continuity about what the Network has already surfaced through broadcasts, site copy, queue state, and public records. It is not raw Discord data, private notes, or hidden research process material.",
   },
   {
     id: "priority_signal",
     title: "Priority Signal",
-    summary: "Priority Signal is the public queue upgrade concept shown on the BARCODE Radio queue surface when enabled. This endpoint only exposes public-safe priority labels/statuses, never Stripe secrets, checkout records, or payment facts.",
+    summary:
+      "Priority Signal is the public queue upgrade concept shown on the BARCODE Radio queue surface when enabled. This endpoint only exposes public-safe priority labels/statuses, never Stripe secrets, checkout records, or payment facts.",
   },
   {
     id: "boundaries",
     title: "Public Read Boundary",
-    summary: "This source context is not user accounts, payment records, private queue notes, Discord identity mapping, hidden dossiers, private upload access, or private admin state.",
+    summary:
+      "This source context is not user accounts, payment records, private queue notes, Discord identity mapping, hidden dossiers, private upload access, or private admin state.",
   },
 ];
 
 type OperatorLaneItem = {
   id: string;
   label: string;
-  source: "queue_public_snapshot" | "public_database_dossier" | "read_model_boundary";
+  source:
+    | "queue_public_snapshot"
+    | "public_database_dossier"
+    | "read_model_boundary";
   kind: string;
   trackId?: string;
   dossierId?: string;
@@ -648,9 +787,21 @@ type OperatorLaneItem = {
   reason: string;
 };
 
-function trackLaneItem(track: BnlQueueTrack, status: BnlReadModelTrackStatus, lane: "temporaryRuntimeContext" | "recapCandidates" | "publicSafeCopyCandidates"): OperatorLaneItem {
-  const title = track.detectedSongTitle || track.submittedSongTitle || track.providerTitle || "Untitled track";
-  const artist = track.detectedArtistName || track.submittedArtistName || "Unknown artist";
+function trackLaneItem(
+  track: BnlQueueTrack,
+  status: BnlReadModelTrackStatus,
+  lane:
+    | "temporaryRuntimeContext"
+    | "recapCandidates"
+    | "publicSafeCopyCandidates",
+): OperatorLaneItem {
+  const title =
+    track.detectedSongTitle ||
+    track.submittedSongTitle ||
+    track.providerTitle ||
+    "Untitled track";
+  const artist =
+    track.detectedArtistName || track.submittedArtistName || "Unknown artist";
   return {
     id: `${lane}:${track.id}:${status}`,
     label: `${artist} — ${title}`,
@@ -658,41 +809,128 @@ function trackLaneItem(track: BnlQueueTrack, status: BnlReadModelTrackStatus, la
     kind: "track",
     trackId: track.id,
     status,
-    reason: lane === "recapCandidates" ? "Completed public queue track; possible recap item only." : "Public queue track; temporary runtime/site context only.",
+    reason:
+      lane === "recapCandidates"
+        ? "Completed public queue track; possible recap item only."
+        : "Public queue track; temporary runtime/site context only.",
   };
 }
 
-function buildOperatorLanes(queue: Awaited<ReturnType<typeof readPublicLiveQueueForBnl>>["queue"], dossiers: ReturnType<typeof publicDossiers>) {
+function buildOperatorLanes(
+  queue: Awaited<ReturnType<typeof readPublicLiveQueueForBnl>>["queue"],
+  dossiers: ReturnType<typeof publicDossiers>,
+) {
   const temporaryRuntimeContext: OperatorLaneItem[] = [
-    { id: "queue:open", label: "Queue open/closed", source: "queue_public_snapshot", kind: "queue_status", value: queue.session.queueOpen, reason: "Public queue runtime status." },
-    { id: "session:status", label: "Session status", source: "queue_public_snapshot", kind: "session_status", value: queue.session.status, reason: "Public session runtime status." },
-    { id: "session:broadcastPhase", label: "Broadcast phase", source: "queue_public_snapshot", kind: "broadcast_phase", value: queue.session.broadcastPhase, reason: "Public broadcast phase runtime status." },
-    { id: "queue:activeCount", label: "Active queue count", source: "queue_public_snapshot", kind: "queue_count", value: queue.session.activeCount, reason: "Public count of active queue tracks." },
-    { id: "priority:enabled", label: "Priority Signal enabled", source: "queue_public_snapshot", kind: "priority_signal_status", value: queue.session.priorityUpgradesEnabled, reason: "Public feature availability label only, not a payment fact." },
-    { id: "priority:label", label: "Priority Signal label", source: "queue_public_snapshot", kind: "priority_signal_label", value: queue.session.priorityUpgradeLabel, reason: "Public queue label only." },
-    { id: "wheel:spinsOwed", label: "Wheel spins owed", source: "queue_public_snapshot", kind: "wheel_status", value: queue.session.wheelSpinsOwed, reason: "Public queue runtime status." },
+    {
+      id: "queue:open",
+      label: "Queue open/closed",
+      source: "queue_public_snapshot",
+      kind: "queue_status",
+      value: queue.session.queueOpen,
+      reason: "Public queue runtime status.",
+    },
+    {
+      id: "session:status",
+      label: "Session status",
+      source: "queue_public_snapshot",
+      kind: "session_status",
+      value: queue.session.status,
+      reason: "Public session runtime status.",
+    },
+    {
+      id: "session:broadcastPhase",
+      label: "Broadcast phase",
+      source: "queue_public_snapshot",
+      kind: "broadcast_phase",
+      value: queue.session.broadcastPhase,
+      reason: "Public broadcast phase runtime status.",
+    },
+    {
+      id: "queue:activeCount",
+      label: "Active queue count",
+      source: "queue_public_snapshot",
+      kind: "queue_count",
+      value: queue.session.activeCount,
+      reason: "Public count of active queue tracks.",
+    },
+    {
+      id: "priority:enabled",
+      label: "Priority Signal enabled",
+      source: "queue_public_snapshot",
+      kind: "priority_signal_status",
+      value: queue.session.priorityUpgradesEnabled,
+      reason: "Public feature availability label only, not a payment fact.",
+    },
+    {
+      id: "priority:label",
+      label: "Priority Signal label",
+      source: "queue_public_snapshot",
+      kind: "priority_signal_label",
+      value: queue.session.priorityUpgradeLabel,
+      reason: "Public queue label only.",
+    },
+    {
+      id: "wheel:spinsOwed",
+      label: "Wheel spins owed",
+      source: "queue_public_snapshot",
+      kind: "wheel_status",
+      value: queue.session.wheelSpinsOwed,
+      reason: "Public queue runtime status.",
+    },
   ];
 
-  if (queue.nowPlaying) temporaryRuntimeContext.push(trackLaneItem(queue.nowPlaying, "nowPlaying", "temporaryRuntimeContext"));
-  if (queue.upNext) temporaryRuntimeContext.push(trackLaneItem(queue.upNext, "upNext", "temporaryRuntimeContext"));
-  temporaryRuntimeContext.push(...queue.queue.map((track) => trackLaneItem(track, "queued", "temporaryRuntimeContext")));
+  if (queue.nowPlaying)
+    temporaryRuntimeContext.push(
+      trackLaneItem(queue.nowPlaying, "nowPlaying", "temporaryRuntimeContext"),
+    );
+  if (queue.upNext)
+    temporaryRuntimeContext.push(
+      trackLaneItem(queue.upNext, "upNext", "temporaryRuntimeContext"),
+    );
+  temporaryRuntimeContext.push(
+    ...queue.queue.map((track) =>
+      trackLaneItem(track, "queued", "temporaryRuntimeContext"),
+    ),
+  );
 
-  const recapCandidates = queue.completed.map((track) => trackLaneItem(track, "completed", "recapCandidates"));
+  const recapCandidates = queue.completed.map((track) =>
+    trackLaneItem(track, "completed", "recapCandidates"),
+  );
   const publicSafeCopyCandidates: OperatorLaneItem[] = [
-    { id: "copy:queue:open", label: "Queue open/closed", source: "queue_public_snapshot", kind: "queue_status", value: queue.session.queueOpen, reason: "High-level public queue copy is safe to reference." },
+    {
+      id: "copy:queue:open",
+      label: "Queue open/closed",
+      source: "queue_public_snapshot",
+      kind: "queue_status",
+      value: queue.session.queueOpen,
+      reason: "High-level public queue copy is safe to reference.",
+    },
   ];
-  if (queue.nowPlaying) publicSafeCopyCandidates.push(trackLaneItem(queue.nowPlaying, "nowPlaying", "publicSafeCopyCandidates"));
-  if (queue.upNext) publicSafeCopyCandidates.push(trackLaneItem(queue.upNext, "upNext", "publicSafeCopyCandidates"));
-  publicSafeCopyCandidates.push(...queue.completed.map((track) => trackLaneItem(track, "completed", "publicSafeCopyCandidates")));
-  publicSafeCopyCandidates.push(...dossiers.public.map((dossier) => ({
-    id: `copy:dossier:${dossier.id}`,
-    label: dossier.name,
-    source: "public_database_dossier" as const,
-    kind: "public_dossier_summary",
-    dossierId: dossier.id,
-    value: dossier.kind,
-    reason: "Public-page-visible dossier summary is safe site context with clearance label preserved; not private memory or a seed.",
-  })));
+  if (queue.nowPlaying)
+    publicSafeCopyCandidates.push(
+      trackLaneItem(queue.nowPlaying, "nowPlaying", "publicSafeCopyCandidates"),
+    );
+  if (queue.upNext)
+    publicSafeCopyCandidates.push(
+      trackLaneItem(queue.upNext, "upNext", "publicSafeCopyCandidates"),
+    );
+  publicSafeCopyCandidates.push(
+    ...queue.completed.map((track) =>
+      trackLaneItem(track, "completed", "publicSafeCopyCandidates"),
+    ),
+  );
+  publicSafeCopyCandidates.push(
+    ...dossiers.public.map((dossier) => ({
+      id: `copy:dossier:${dossier.id}`,
+      label: dossier.name,
+      source: "public_database_dossier" as const,
+      kind: "public_dossier_summary",
+      dossierId: dossier.id,
+      value: dossier.kind,
+      reason:
+        "Public-page-visible dossier summary is safe site context with clearance label preserved; not private memory or a seed.",
+    })),
+  );
 
   return {
     temporaryRuntimeContext,
@@ -753,10 +991,13 @@ const rules = {
   sourceAuthority: {
     queue: "public runtime snapshot with simulation/test filtering",
     artists: "queue-derived public artist surface, not profiles",
-    dossiers: "public-page-visible database dossier summaries with clearance labels preserved; hidden/private details are not exposed",
-    operatorLanes: "deterministic public-safe lane hints, not automatic actions",
+    dossiers:
+      "public-page-visible database dossier summaries with clearance labels preserved; hidden/private details are not exposed",
+    operatorLanes:
+      "deterministic public-safe lane hints, not automatic actions",
     sourceContext: "static public site context",
-    simulationData: "BNL must treat this read model as live/public context only, not admin simulation data",
+    simulationData:
+      "BNL must treat this read model as live/public context only, not admin simulation data",
   },
 };
 
@@ -768,7 +1009,7 @@ export async function GET() {
     {
       ok: true,
       version: 1,
-      schemaRevision: "1.3",
+      schemaRevision: "1.4",
       generatedAt: new Date().toISOString(),
       scope: "bnl_public_read_model",
       source: "barcode-network-site",

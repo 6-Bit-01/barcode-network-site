@@ -19,7 +19,7 @@ export const dossierAuthoringGuide = {
     origin: "Known-source confidence label: KNOWN, UNKNOWN, UNVERIFIED, or WITHHELD.",
     summary: "Primary Intelligence Brief paragraph using public-page-safe facts and controlled BARCODE Network language.",
     notes: "Optional contextual note, usually operational or status-oriented, not a second full summary.",
-    tags: "Short searchable labels used by the database table and dossier record.",
+    tags: "Short searchable labels used by the database table and dossier record. Use sections.dossiers.tagRegistry, reuse existing tags first, and treat any new tag as a proposal until an operator/site content update creates it.",
     link: "Legacy single public URL; keep compatible while preferring primaryLink/links for new chosen links.",
     primaryLink: "Optional chosen/featured public-safe link with label, URL, type, and selectedBy metadata.",
     links: "Optional public-safe link list for official, artist, music, social, website, community, submission, portfolio, or other destinations.",
@@ -46,7 +46,7 @@ export const dossierAuthoringGuide = {
     role: "short phrase, usually 2-8 words",
     summary: "usually 1 compact paragraph, roughly 25-80 words depending importance",
     notes: "optional, usually 1-2 sentences, operational/contextual, not a second full summary",
-    tags: "3-6 short labels",
+    tags: "usually 3-6 short labels; prefer existing registry tags over synonyms",
   },
   draftingRules: [
     "Use existing page structure.",
@@ -56,5 +56,7 @@ export const dossierAuthoringGuide = {
     "Do not invent hidden restricted details.",
     "Do not treat Discord identity or payment identity as dossier identity.",
     "Do not auto-promote queue artists into dossiers.",
+    "Use the dossier tag registry before drafting tags, reuse existing canonical tags first, and propose new tags only when clearly justified.",
+    "Do not present a proposed tag as an existing/created tag until it is added to site content or the registry.",
   ],
 } as const;

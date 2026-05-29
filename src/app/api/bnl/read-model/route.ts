@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { databasePage, radioPage, siteConfig } from "@/content";
 import { dossierAuthoringGuide } from "@/lib/dossier-authoring-guide";
+import { buildDossierTagRegistry } from "@/lib/dossier-tags";
 import type {
   BnlReadModelExposure,
   DatabaseEntry,
@@ -504,9 +505,18 @@ function countWords(value: string) {
   return words?.length ?? 0;
 }
 
-function buildDossierStyleProfile(entries: DatabaseEntry[]) {
+function buildDossierStyleProfile(entries: DatabaseEntry[], tagRegistry: ReturnType<typeof buildDossierTagRegistry>) {
   const summaryCounts = entries.map((entry) => countWords(entry.summary));
   const totalSummaryWords = summaryCounts.reduce((sum, count) => sum + count, 0);
+  const mostUsedTags = [...tagRegistry.items]
+    .sort((a, b) => b.usageCount - a.usageCount || a.tag.localeCompare(b.tag))
+    .slice(0, 10)
+    .map((item) => ({ tag: item.tag, usageCount: item.usageCount }));
+  const singleUseTags = tagRegistry.items
+    .filter((item) => item.usageCount === 1)
+    .map((item) => item.tag)
+    .sort((a, b) => a.localeCompare(b))
+    .slice(0, 10);
 
   return {
     entryCount: entries.length,
@@ -516,6 +526,12 @@ function buildDossierStyleProfile(entries: DatabaseEntry[]) {
       average: summaryCounts.length > 0 ? Math.round(totalSummaryWords / summaryCounts.length) : 0,
     },
     notesPresenceCount: entries.filter((entry) => entry.notes.trim().length > 0).length,
+    tagProfile: {
+      totalUniqueTags: tagRegistry.totalUniqueTags,
+      averageTagsPerDossier: entries.length > 0 ? Math.round((tagRegistry.totalTagAssignments / entries.length) * 100) / 100 : 0,
+      mostUsedTags,
+      singleUseTags,
+    },
     commonSections: [
       "Hero / dossier ID",
       "Portrait/card",
@@ -551,6 +567,8 @@ function publicDossiers() {
     .map((entry) => normalizePublicDossier(entry));
   const publicClearanceOnly = bnlVisibleEntries.filter((entry) => entry.clearance === "PUBLIC");
   const registry = buildDossierRegistry(databaseEntries, bnlVisibleEntries);
+  const tagRegistry = buildDossierTagRegistry(databaseEntries);
+  const styleProfile = buildDossierStyleProfile(databaseEntries, tagRegistry);
 
   if (bnlVisibleEntries.length === 0) {
     return {
@@ -561,7 +579,8 @@ function publicDossiers() {
       publicClearanceOnly: [],
       registry,
       authoringGuide: dossierAuthoringGuide,
-      styleProfile: buildDossierStyleProfile(databaseEntries),
+      styleProfile,
+      tagRegistry,
       sourceAuthority: "public_database_page_visible_entries_only",
       rules: DOSSIER_RULES,
       note: "No public-page-visible database dossier summaries are currently included.",
@@ -576,7 +595,8 @@ function publicDossiers() {
     publicClearanceOnly,
     registry,
     authoringGuide: dossierAuthoringGuide,
-    styleProfile: buildDossierStyleProfile(databaseEntries),
+    styleProfile,
+    tagRegistry,
     sourceAuthority: "public_database_page_visible_entries_only",
     rules: DOSSIER_RULES,
     note: "Public/read-model dossier summaries include the same public-safe fields visible on the public database page; clearance labels are preserved as lore classification labels unless explicitly overridden.",
@@ -748,7 +768,7 @@ export async function GET() {
     {
       ok: true,
       version: 1,
-      schemaRevision: "1.2",
+      schemaRevision: "1.3",
       generatedAt: new Date().toISOString(),
       scope: "bnl_public_read_model",
       source: "barcode-network-site",

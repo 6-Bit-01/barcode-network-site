@@ -299,6 +299,20 @@ export type PublicDossierRegistryFields = {
   relatedPublicIds?: string[];
 };
 
+export type PublicPageVisibility =
+  | "listed_publicly"
+  | "hidden_from_public_page";
+
+export type BnlReadModelExposure =
+  | "public_summary"
+  | "aggregate_only"
+  | "hidden";
+
+export type ClearanceMeaning =
+  | "public_lore_label"
+  | "access_control"
+  | "mixed";
+
 // Designation prefixes:
 //   EN-### = Entity | PE-### = Personnel | SP-### = Sponsor | IF-### = Interface | PD-### = Production
 // Categories: Entity | Personnel | Sponsor | Interface | Production

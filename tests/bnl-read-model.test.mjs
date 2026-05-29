@@ -39,6 +39,7 @@ Module._extensions[".ts"] = function loadTypeScript(module, filename) {
 
 const require = createRequire(import.meta.url);
 const queue = require("../src/lib/queue.ts");
+const { databasePage } = require("../src/content.ts");
 const readModel = require("../src/app/api/bnl/read-model/route.ts");
 
 const forbiddenKeys = [
@@ -53,6 +54,10 @@ const forbiddenKeys = [
   "mimeType",
   "suspiciousFlags",
   "adminNote",
+  "discordUserId",
+  "discordId",
+  "privateSeed",
+  "internalNote",
 ];
 
 let sequence = 0;
@@ -105,6 +110,28 @@ function findForbiddenKeys(value, pathName = "$", found = []) {
   for (const [key, child] of Object.entries(value)) {
     if (forbiddenKeys.includes(key)) found.push(`${pathName}.${key}`);
     findForbiddenKeys(child, `${pathName}.${key}`, found);
+  }
+  return found;
+}
+
+function publicDatabaseEntries() {
+  return databasePage.entries.filter((entry) => entry.clearance === "PUBLIC");
+}
+
+function findForbiddenStringValues(value, pathName = "$", found = []) {
+  if (typeof value === "string") {
+    if (/contactEmail|submitterToken|stripeSessionId|priorityUpgradePaymentId|priorityUpgradeCheckoutUrl|fileUrl|fileName|fileSize|mimeType|suspiciousFlags|adminNote|discordUserId|discordId|privateSeed|r&d|internalNote/i.test(value)) {
+      found.push(`${pathName}: ${value}`);
+    }
+    return found;
+  }
+  if (!value || typeof value !== "object") return found;
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => findForbiddenStringValues(item, `${pathName}[${index}]`, found));
+    return found;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    findForbiddenStringValues(child, `${pathName}.${key}`, found);
   }
   return found;
 }
@@ -166,6 +193,42 @@ test("BNL read model preserves v1 compatibility and adds semantic sections", asy
   assert.equal(model.sections.dossiers.items.length, model.sections.dossiers.public.length);
 });
 
+test("BNL read model exposes public dossier registry metadata", async () => {
+  await freshReadModelSession();
+
+  const model = await modelJson();
+  const registry = model.sections.dossiers.registry;
+  const publicEntries = publicDatabaseEntries();
+
+  assert.ok(registry);
+  assert.equal(registry.source, "databasePage.entries");
+  assert.equal(registry.publicCount, publicEntries.length);
+  assert.equal(registry.publicCount, model.sections.dossiers.public.length);
+  assert.ok(registry.kinds);
+  assert.ok(registry.lifecycleCounts);
+  assert.equal(registry.autoPromotion, false);
+  assert.equal(registry.queueDerivedProfiles, false);
+  assert.equal(model.sections.dossiers.public.some((entry) => entry.kind === "program"), true);
+  assert.equal(model.sections.dossiers.public.some((entry) => entry.kind === "interface" || entry.kind === "platform"), true);
+});
+
+test("BNL read model normalizes public dossiers with safe structured fields", async () => {
+  await freshReadModelSession();
+
+  const model = await modelJson();
+
+  for (const dossier of model.sections.dossiers.public) {
+    for (const field of ["id", "name", "kind", "lifecycle", "authority", "bnlContext", "category", "status", "role", "summary", "tags", "link", "source"]) {
+      assert.ok(Object.hasOwn(dossier, field), `public dossier should expose ${field}`);
+    }
+    assert.ok(Array.isArray(dossier.knownBoundaries));
+    assert.ok(Array.isArray(dossier.publicFacts));
+    assert.ok(Array.isArray(dossier.relatedPublicIds));
+    assert.equal(dossier.bnlContext.visibility, "public");
+    assert.equal(dossier.bnlContext.seedDefault, "not_seed_already_public_dossier");
+  }
+});
+
 test("BNL read model labels now playing and up next as runtime context", async () => {
   await freshReadModelSession();
   const nowPlaying = await addTrack("Now Playing", { artist: "Now Artist" });
@@ -205,6 +268,7 @@ test("BNL read model excludes private queue/payment/upload keys", async () => {
 
   const model = await modelJson();
   assert.deepEqual(findForbiddenKeys(model), []);
+  assert.deepEqual(findForbiddenStringValues(model), []);
 });
 
 test("BNL read model keeps normal queue items out of broadcast memory candidates", async () => {
@@ -220,6 +284,11 @@ test("BNL read model keeps normal queue items out of broadcast memory candidates
   assert.ok(lanes.recapCandidates.some((item) => item.trackId === completed.id));
   assert.equal(lanes.broadcastMemoryCandidates.some((item) => item.trackId === queued.id), false);
   assert.equal(lanes.broadcastMemoryCandidates.some((item) => item.trackId === completed.id), false);
+  assert.equal(lanes.broadcastMemoryCandidates.length, 0);
+  assert.equal(lanes.dossierSeedCandidates.length, 0);
+  assert.equal(lanes.publicSafeCopyCandidates.some((item) => item.source === "public_database_dossier" && item.dossierId), true);
+  assert.equal(model.sections.dossiers.public.some((dossier) => JSON.stringify(dossier).includes("Memory Queue Artist")), false);
+  assert.equal(model.sections.artists.some((entry) => entry.normalizedName === "memory-queue-artist"), true);
 
   const artist = model.sections.artists.find((entry) => entry.normalizedName === "memory-queue-artist");
   assert.equal(artist.bnlContext.profileStatus, "not_profile");

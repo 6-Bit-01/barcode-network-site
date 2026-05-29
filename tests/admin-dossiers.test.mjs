@@ -225,77 +225,49 @@ test("admin panel includes Dossier Control Center link", () => {
   assert.match(adminPage, /href="\/admin\/dossiers"/);
 });
 
-test("admin dossier page gates workflow behind successful API payload and includes manual intake UI", () => {
+test("admin dossier dashboard is traffic control instead of an all-in-one workbench", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
   for (const label of [
     "Dossier Control Center",
-    "Manual Candidate Intake",
+    "Quick Candidate Intake",
     "Candidate Queue",
-    "Candidate Evidence",
-    "Candidate Gate / Scoring",
-    "Draft Readiness / Missing Info",
-    "Draft Workspace",
-    "Review Actions",
+    "Drafts in Progress",
     "Owner Review Queue",
-    "Focused BNL Assistant",
+    "Possible Duplicates",
+    "Merged / Superseded Records",
     "System Boundaries",
-  ]) {
-    assert.match(page, new RegExp(label));
-  }
-  for (const label of [
-    "Known facts",
-    "Missing info",
-    "Do Not Say",
-    "Public safety notes",
-    "Recommended kind",
-    "Recommended ecosystem lane",
-    "Recommended identity authority",
-    "Kind",
-    "Ecosystem lane",
-    "Identity authority",
-    "Deny",
-    "Needs More Evidence",
+    "Create Manual Candidate",
+    "Review Candidate",
     "Create Draft",
-    "Save Draft",
-    "Submit for Owner Review",
-    "Manual draft only",
-    "does not publish",
-    "Focused BNL Assistant",
-    "Disabled placeholder only",
+    "Open Draft",
+    "Open Draft Editor",
+    "Review Merge",
+    "No BNL invocation",
+    "No publishing",
+    "No automatic tag creation",
+    "No public database mutation",
   ]) {
     assert.match(page, new RegExp(label));
   }
-  assert.match(page, /\/api\/admin\/dossiers/);
-  assert.match(page, /Create Manual Candidate/);
-  assert.match(page, /Featured\/primary link label/);
-  assert.match(page, /selectedBy/);
-  assert.match(page, /No selected candidate/);
-  assert.match(page, /Why Now/);
-  assert.match(page, /Duplicate Risk/);
-  assert.match(page, /loose intake \/ strict publishing/i);
-  assert.match(page, /Try Again: Too Long/);
-  assert.match(page, /Owner Approve Draft/);
-  assert.match(page, /kind: draftForm\.kind \|\| undefined/);
-  assert.match(page, /ecosystemLane: draftForm\.ecosystemLane \|\| undefined/);
-  assert.match(
-    page,
-    /identityAuthority: draftForm\.identityAuthority \|\| undefined/,
-  );
-  assert.match(page, /BNL generation comes later/);
-  assert.match(
-    page,
-    /AI\/human\/unknown are tags, not the organizing structure/,
-  );
-  assert.match(
-    page,
-    /Identity authority separates BARCODE-controlled characters from community-owned identities/,
-  );
-  assert.match(
-    page,
-    /Sheila\/Cliff-style Network characters are not the same as community mods/,
-  );
 
-  assert.doesNotMatch(page, /fetch\(\"\/api\/bnl/);
+  for (const route of [
+    "/admin/dossiers/candidates/",
+    "/admin/dossiers/drafts/",
+    "/admin/dossiers/duplicates/",
+  ]) {
+    assert.match(page, new RegExp(route));
+  }
+
+  assert.doesNotMatch(page, /Draft Workspace/);
+  assert.doesNotMatch(page, /Candidate Evidence/);
+  assert.doesNotMatch(page, /Candidate Gate \/ Scoring/);
+  assert.doesNotMatch(page, /Focused BNL Assistant/);
+  assert.doesNotMatch(page, /Merge candidates and create\/update master draft/);
+  assert.doesNotMatch(page, /Save Draft/);
+  assert.doesNotMatch(page, /Submit for Owner Review/);
+  assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
+  assert.match(page, /target="_blank"/);
+  assert.match(page, /rel="noopener noreferrer"/);
   assert.match(page, /if \(loading\)/);
   assert.match(page, /if \(error \|\| !payload\)/);
 
@@ -318,6 +290,84 @@ test("admin dossier page has minimal loading and auth-required states", () => {
   assert.match(page, /Admin authentication required/);
   assert.match(page, /Back to Admin/);
   assert.match(page, /MinimalDossierAdminState/);
+});
+
+
+test("dedicated draft editor route contains focused editing workflow and future BNL boundary", () => {
+  const routePath = "src/app/admin/dossiers/drafts/[draftId]/page.tsx";
+  assert.equal(fs.existsSync(path.join(projectRoot, routePath)), true);
+  const page = source(routePath);
+  for (const label of [
+    "Draft Editor",
+    "Candidate Source Packet",
+    "Candidate Context",
+    "Editable Dossier Draft",
+    "Save Draft",
+    "Submit for Owner Review",
+    "category",
+    "kind",
+    "ecosystemLane",
+    "identityAuthority",
+    "Saving does not publish.",
+    "Submitting for owner review does not publish.",
+    "BNL generation comes later",
+    "Exact character limits will be enforced in a later PR.",
+  ]) {
+    assert.match(page, new RegExp(label));
+  }
+  assert.match(page, /action: "saveDraft"/);
+  assert.match(page, /action: "submitDraftForOwnerReview"/);
+  assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
+  assert.doesNotMatch(page, /publishDraft/);
+});
+
+test("dedicated candidate review route contains focused evidence and action workflow", () => {
+  const routePath = "src/app/admin/dossiers/candidates/[candidateId]/page.tsx";
+  assert.equal(fs.existsSync(path.join(projectRoot, routePath)), true);
+  const page = source(routePath);
+  for (const label of [
+    "Candidate Review",
+    "Create Draft",
+    "Open Draft",
+    "Deny",
+    "Needs More Evidence",
+    "Evidence summary",
+    "Evidence items",
+    "Public safety notes",
+    "Do-not-say",
+    "Recommended taxonomy",
+  ]) {
+    assert.match(page, new RegExp(label));
+  }
+  assert.match(page, /action: "createDraftFromCandidate"/);
+  assert.match(page, /action, candidateId/);
+  assert.match(page, /target="_blank"/);
+  assert.match(page, /rel="noopener noreferrer"/);
+  assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
+  assert.doesNotMatch(page, /publishDraft/);
+});
+
+test("dedicated duplicate merge route contains focused manual merge workflow", () => {
+  const routePath = "src/app/admin/dossiers/duplicates/[groupId]/page.tsx";
+  assert.equal(fs.existsSync(path.join(projectRoot, routePath)), true);
+  const page = source(routePath);
+  for (const label of [
+    "Merge Review",
+    "Merge is manual",
+    "Source candidates are preserved",
+    "Source drafts are preserved",
+    "Merge candidates only",
+    "Merge candidates and create/update master draft",
+    "Pre-merge summary",
+    "Master candidate:",
+    "Included candidates:",
+    "This will not publish anything.",
+  ]) {
+    assert.match(page, new RegExp(label));
+  }
+  assert.match(page, /action: "mergeCandidates"/);
+  assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
+  assert.doesNotMatch(page, /publishDraft/);
 });
 
 test("dossier workflow types include manual input and scoring policy contracts", () => {
@@ -1136,13 +1186,16 @@ test("mergeCandidates does not mutate public database, public read model, tag re
   assert.equal(readModelAfter.sections.dossiers.items.some((entry) => entry.name === "Workflow Merge Only"), false);
 });
 
-test("admin dossiers page includes duplicate merge workflow copy and controls", () => {
+test("admin dossiers dashboard links duplicate groups to dedicated merge review", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
-  assert.match(page, /Possible Duplicates \/ Merge/);
-  assert.match(page, /Merge into Master Candidate/);
-  assert.match(page, /Create Master Draft from Merge/);
-  assert.match(page, /Merge is manual/);
-  assert.match(page, /Source candidates are preserved/);
-  assert.match(page, /Source drafts are preserved/);
-  assert.match(page, /BNL merge writing comes later/);
+  const mergePage = source("src/app/admin/dossiers/duplicates/[groupId]/page.tsx");
+  assert.match(page, /Possible Duplicates/);
+  assert.match(page, /Review Merge/);
+  assert.match(page, /\/admin\/dossiers\/duplicates\//);
+  assert.doesNotMatch(page, /Merge into Master Candidate/);
+  assert.doesNotMatch(page, /Create Master Draft from Merge/);
+  assert.match(mergePage, /Merge is manual/);
+  assert.match(mergePage, /Source candidates are preserved/);
+  assert.match(mergePage, /Source drafts are preserved/);
+  assert.match(mergePage, /BNL merge writing comes later/);
 });

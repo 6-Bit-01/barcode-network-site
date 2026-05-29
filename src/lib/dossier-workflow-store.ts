@@ -11,14 +11,21 @@ import {
 
 export type DossierWorkflowState = {
   version: 1;
+  revision: number;
   candidates: DossierCandidate[];
   drafts: DossierDraft[];
   updatedAt: string;
 };
 
 export const DOSSIER_WORKFLOW_STORAGE_KEY = "barcode:dossier-workflow:v1";
+export const DOSSIER_WORKFLOW_LOCK_KEY = "barcode:dossier-workflow:v1:lock";
+
+const MAX_UPDATE_ATTEMPTS = 5;
+const LOCK_TTL_SECONDS = 5;
+const LOCK_RETRY_DELAY_MS = 25;
 
 let memoryState: DossierWorkflowState = emptyWorkflowState();
+let memoryWriteQueue: Promise<void> = Promise.resolve();
 
 function getRedis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -30,6 +37,7 @@ function getRedis(): Redis | null {
 function emptyWorkflowState(): DossierWorkflowState {
   return {
     version: 1,
+    revision: 0,
     candidates: [],
     drafts: [],
     updatedAt: new Date(0).toISOString(),
@@ -98,6 +106,7 @@ function sanitizeWorkflowState(value: unknown): DossierWorkflowState {
   const candidateState = value as Partial<DossierWorkflowState>;
   return {
     version: 1,
+    revision: typeof candidateState.revision === "number" && Number.isFinite(candidateState.revision) ? Math.max(0, Math.floor(candidateState.revision)) : 0,
     candidates: Array.isArray(candidateState.candidates) ? candidateState.candidates : [],
     drafts: Array.isArray(candidateState.drafts) ? candidateState.drafts : [],
     updatedAt: typeof candidateState.updatedAt === "string" ? candidateState.updatedAt : new Date().toISOString(),
@@ -129,6 +138,101 @@ export async function saveDossierWorkflowState(state: DossierWorkflowState): Pro
   if (redis) {
     await redis.set(DOSSIER_WORKFLOW_STORAGE_KEY, nextState);
   }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function createLockToken(): string {
+  return `dossier_lock_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+async function acquireRedisLock(redis: Redis): Promise<string> {
+  const token = createLockToken();
+
+  for (let attempt = 0; attempt < MAX_UPDATE_ATTEMPTS; attempt += 1) {
+    const acquired = await redis.set(DOSSIER_WORKFLOW_LOCK_KEY, token, { nx: true, ex: LOCK_TTL_SECONDS });
+    if (acquired === "OK") return token;
+    await delay(LOCK_RETRY_DELAY_MS * (attempt + 1));
+  }
+
+  throw new Error("Unable to acquire dossier workflow write lock");
+}
+
+async function releaseRedisLock(redis: Redis, token: string): Promise<void> {
+  const currentToken = await redis.get<string>(DOSSIER_WORKFLOW_LOCK_KEY);
+  if (currentToken === token) {
+    await redis.del(DOSSIER_WORKFLOW_LOCK_KEY);
+  }
+}
+
+async function withMemoryWriteLock<T>(operation: () => Promise<T>): Promise<T> {
+  const priorOperation = memoryWriteQueue;
+  let releaseLock: () => void = () => undefined;
+  memoryWriteQueue = new Promise<void>((resolve) => {
+    releaseLock = resolve;
+  });
+
+  await priorOperation;
+  try {
+    return await operation();
+  } finally {
+    releaseLock();
+  }
+}
+
+export async function updateDossierWorkflowState(
+  updater: (state: DossierWorkflowState) => DossierWorkflowState,
+): Promise<DossierWorkflowState> {
+  const redis = getRedis();
+
+  if (!redis) {
+    return withMemoryWriteLock(async () => {
+      const currentState = sanitizeWorkflowState(memoryState);
+      const updaterResult = updater(currentState);
+      if (updaterResult === currentState) return currentState;
+      const updatedState = sanitizeWorkflowState(updaterResult);
+      const nextState = sanitizeWorkflowState({
+        ...updatedState,
+        version: 1,
+        revision: currentState.revision + 1,
+        updatedAt: updatedState.updatedAt || new Date().toISOString(),
+      });
+      memoryState = nextState;
+      return nextState;
+    });
+  }
+
+  for (let attempt = 0; attempt < MAX_UPDATE_ATTEMPTS; attempt += 1) {
+    const lockToken = await acquireRedisLock(redis);
+    try {
+      const currentState = sanitizeWorkflowState(await redis.get<unknown>(DOSSIER_WORKFLOW_STORAGE_KEY));
+      const updaterResult = updater(currentState);
+      if (updaterResult === currentState) return currentState;
+      const updatedState = sanitizeWorkflowState(updaterResult);
+      const latestState = sanitizeWorkflowState(await redis.get<unknown>(DOSSIER_WORKFLOW_STORAGE_KEY));
+
+      if (latestState.revision !== currentState.revision) {
+        await delay(LOCK_RETRY_DELAY_MS * (attempt + 1));
+        continue;
+      }
+
+      const nextState = sanitizeWorkflowState({
+        ...updatedState,
+        version: 1,
+        revision: currentState.revision + 1,
+        updatedAt: updatedState.updatedAt || new Date().toISOString(),
+      });
+      await redis.set(DOSSIER_WORKFLOW_STORAGE_KEY, nextState);
+      memoryState = nextState;
+      return nextState;
+    } finally {
+      await releaseRedisLock(redis, lockToken);
+    }
+  }
+
+  throw new Error("Unable to update dossier workflow state after revision conflicts");
 }
 
 export async function createManualDossierCandidate(input: CreateManualDossierCandidateInput): Promise<DossierCandidate> {
@@ -204,32 +308,33 @@ export async function createManualDossierCandidate(input: CreateManualDossierCan
     updatedAt: now,
   };
 
-  const currentState = await getDossierWorkflowState();
-  await saveDossierWorkflowState({
+  await updateDossierWorkflowState((currentState) => ({
     ...currentState,
     candidates: [candidate, ...currentState.candidates],
     updatedAt: now,
-  });
+  }));
 
   return candidate;
 }
 
 export async function updateDossierCandidateStatus(candidateId: string, status: DossierCandidateStatus): Promise<DossierCandidate | null> {
-  const currentState = await getDossierWorkflowState();
   const now = new Date().toISOString();
   let updatedCandidate: DossierCandidate | null = null;
-  const candidates = currentState.candidates.map((candidate) => {
-    if (candidate.id !== candidateId) return candidate;
-    updatedCandidate = { ...candidate, status, updatedAt: now };
-    return updatedCandidate;
-  });
 
-  if (!updatedCandidate) return null;
+  await updateDossierWorkflowState((currentState) => {
+    const candidates = currentState.candidates.map((candidate) => {
+      if (candidate.id !== candidateId) return candidate;
+      updatedCandidate = { ...candidate, status, updatedAt: now };
+      return updatedCandidate;
+    });
 
-  await saveDossierWorkflowState({
-    ...currentState,
-    candidates,
-    updatedAt: now,
+    if (!updatedCandidate) return currentState;
+
+    return {
+      ...currentState,
+      candidates,
+      updatedAt: now,
+    };
   });
 
   return updatedCandidate;

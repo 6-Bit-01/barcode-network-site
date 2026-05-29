@@ -33,6 +33,7 @@ type DossierWorkflowResponse = {
     storageKey: "barcode:dossier-workflow:v1";
     status: "candidate_store_enabled";
     updatedAt: string;
+    revision: number;
     candidateCount: number;
     draftCount: number;
     allowedActions: DossierWorkflowAction[];
@@ -94,6 +95,7 @@ async function workflowPayload(state?: DossierWorkflowState): Promise<DossierWor
       storageKey: "barcode:dossier-workflow:v1",
       status: "candidate_store_enabled",
       updatedAt: workflowState.updatedAt,
+      revision: workflowState.revision,
       candidateCount: workflowState.candidates.length,
       draftCount: workflowState.drafts.length,
       allowedActions: DOSSIER_WORKFLOW_ACTIONS,

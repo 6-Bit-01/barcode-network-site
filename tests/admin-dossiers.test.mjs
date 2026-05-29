@@ -58,6 +58,7 @@ async function adminCookie() {
 async function resetWorkflowStore() {
   await store.saveDossierWorkflowState({
     version: 1,
+    revision: 0,
     candidates: [],
     drafts: [],
     updatedAt: new Date(0).toISOString(),
@@ -159,6 +160,14 @@ test("dossier workflow types include manual input and scoring policy contracts",
   assert.match(workflowSource, /knownFacts\?: string\[\]/);
   assert.match(workflowSource, /recommendedOrigin\?: DossierOrigin/);
   assert.match(workflowSource, /primaryLink\?: DossierWorkflowLink/);
+
+  const storeSource = source("src/lib/dossier-workflow-store.ts");
+  assert.match(storeSource, /revision: number/);
+  assert.match(storeSource, /DOSSIER_WORKFLOW_LOCK_KEY/);
+  assert.match(storeSource, /MAX_UPDATE_ATTEMPTS/);
+  assert.match(storeSource, /memoryWriteQueue/);
+  assert.match(storeSource, /updateDossierWorkflowState/);
+
   assert.equal(workflow.DOSSIER_CANDIDATE_SCORING_POLICY.gate, "Loose intake, strict drafting/publishing.");
   assert.equal(workflow.DOSSIER_CANDIDATE_SCORING_POLICY.thresholds.reviewCandidateMin, 50);
 });
@@ -185,6 +194,7 @@ test("authenticated GET returns workflow store, metadata, authoring guide, tag r
   assert.equal(payload.workflow.status, "candidate_store_enabled");
   assert.equal(payload.workflow.storage, "memory_fallback");
   assert.equal(payload.workflow.storageKey, "barcode:dossier-workflow:v1");
+  assert.equal(payload.workflow.revision, 0);
   assert.ok(payload.workflow.allowedActions.includes("requestDraft"));
   assert.equal(payload.workflow.scoringPolicy.gate, "Loose intake, strict drafting/publishing.");
   assert.equal(payload.workflow.scoringPolicy.thresholds.draftReadyMin, 70);
@@ -229,6 +239,61 @@ test("authenticated POST creates and persists a manual candidate without publish
 
   assert.equal(JSON.stringify(databasePage.entries), databaseEntriesBefore);
   assert.equal(databasePage.entries.flatMap((entry) => entry.tags).length, tagCountBefore);
+});
+
+test("concurrent manual candidate creation preserves both candidates and increments revision", async () => {
+  await resetWorkflowStore();
+
+  const [firstResponse, secondResponse] = await Promise.all([
+    authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Concurrent Candidate One" } }),
+    authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Concurrent Candidate Two" } }),
+  ]);
+
+  assert.equal(firstResponse.status, 200);
+  assert.equal(secondResponse.status, 200);
+
+  const payload = await (await authedGet()).json();
+  const names = payload.candidates.map((candidate) => candidate.name).sort();
+  assert.deepEqual(names, ["Concurrent Candidate One", "Concurrent Candidate Two"]);
+  assert.equal(payload.workflow.revision, 2);
+});
+
+test("concurrent status updates preserve unrelated candidates", async () => {
+  await resetWorkflowStore();
+
+  const firstCreate = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Concurrent Status One" } })).json();
+  const secondCreate = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Concurrent Status Two" } })).json();
+
+  const [denyResponse, needsEvidenceResponse] = await Promise.all([
+    authedPost({ action: "denyCandidate", candidateId: firstCreate.candidate.id }),
+    authedPost({ action: "markNeedsMoreEvidence", candidateId: secondCreate.candidate.id }),
+  ]);
+
+  assert.equal(denyResponse.status, 200);
+  assert.equal(needsEvidenceResponse.status, 200);
+
+  const payload = await (await authedGet()).json();
+  const firstCandidate = payload.candidates.find((candidate) => candidate.id === firstCreate.candidate.id);
+  const secondCandidate = payload.candidates.find((candidate) => candidate.id === secondCreate.candidate.id);
+  assert.equal(payload.candidates.length, 2);
+  assert.equal(firstCandidate.status, "denied");
+  assert.equal(secondCandidate.status, "needs_more_evidence");
+  assert.equal(payload.workflow.revision, 4);
+});
+
+test("workflow revision increments on candidate writes but not missing-candidate no-ops", async () => {
+  await resetWorkflowStore();
+  assert.equal((await store.getDossierWorkflowState()).revision, 0);
+
+  const createPayload = await (await authedPost({ action: "createManualCandidate", input: manualCandidateInput })).json();
+  assert.equal((await store.getDossierWorkflowState()).revision, 1);
+
+  await authedPost({ action: "denyCandidate", candidateId: createPayload.candidate.id });
+  assert.equal((await store.getDossierWorkflowState()).revision, 2);
+
+  const missingResponse = await authedPost({ action: "denyCandidate", candidateId: "missing" });
+  assert.equal(missingResponse.status, 404);
+  assert.equal((await store.getDossierWorkflowState()).revision, 2);
 });
 
 test("denyCandidate updates status and keeps the candidate record", async () => {

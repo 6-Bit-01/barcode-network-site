@@ -230,6 +230,12 @@ test("admin dossier dashboard is traffic control instead of an all-in-one workbe
   for (const label of [
     "Dossier Control Center",
     "Quick Candidate Intake",
+    "Manual fallback / quick seed",
+    "BNL Dossier Workbench — Coming Next",
+    "Prompt-based dossier drafting comes next",
+    "BNL will generate full dossier fields, not starter notes",
+    "BNL will ask only for missing decisions",
+    "Manual editing remains available",
     "Candidate Queue",
     "Drafts in Progress",
     "Owner Review",
@@ -313,6 +319,9 @@ test("dedicated draft editor route contains focused editing workflow and future 
     "Submitting for owner review does not publish.",
     "BNL generation comes later",
     "Exact character limits will be enforced in a later PR.",
+    "Draft submitted for owner review.",
+    "This draft is now in the Owner Review lane.",
+    "Back to Dossier Control Center",
   ]) {
     assert.match(page, new RegExp(label));
   }
@@ -320,6 +329,9 @@ test("dedicated draft editor route contains focused editing workflow and future 
   assert.match(page, /routeParam\(params\?\.draftId\)/);
   assert.match(page, /action: "saveDraft"/);
   assert.match(page, /action: "submitDraftForOwnerReview"/);
+  assert.match(page, /setSubmitted\(true\)/);
+  assert.match(page, /nonEditableDraftStatuses/);
+  assert.match(page, /draft\.status === "ready_for_owner_review"/);
   assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
   assert.doesNotMatch(page, /publishDraft/);
 });
@@ -370,12 +382,18 @@ test("dedicated duplicate merge route contains focused manual merge workflow", (
     "No public database record will be created.",
     "No tags will be created.",
     "BNL will not be invoked.",
+    "Merge result",
+    "Merged source candidates",
+    "Superseded source drafts",
+    "Open master draft",
   ]) {
     assert.match(page, new RegExp(label));
   }
   assert.match(page, /useParams/);
   assert.match(page, /routeParam\(params\?\.groupId\)/);
   assert.match(page, /action: "mergeCandidates"/);
+  assert.match(page, /disabled=\{saving \|\| !canMerge\}/);
+  assert.match(page, /includedCandidateIds\.includes\(primaryCandidate\.id\)/);
   assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
   assert.doesNotMatch(page, /publishDraft/);
 });
@@ -396,6 +414,34 @@ test("dashboard uses actual workflow ids and state-aware lane filtering", () => 
   assert.match(page, /disabled=\{saving \|\| !canUpdateCandidate\}/);
   assert.match(page, /Open Draft/);
   assert.match(page, /Superseded by/);
+  assert.match(page, /"approved"/);
+  assert.match(page, /"owner_approved"/);
+  assert.match(page, /mergedIntoCandidateId/);
+  assert.match(page, /mergedAt/);
+  assert.match(page, /mergedIntoDraftId/);
+  assert.match(page, /No normal active action buttons/);
+  assert.match(page, /Reference-only; no normal active edit button/);
+});
+
+test("dashboard frames manual intake as fallback and future BNL-led workbench", () => {
+  const page = source("src/app/admin/dossiers/page.tsx");
+  for (const label of [
+    "Manual fallback / quick seed",
+    "Use this when BNL has not suggested a candidate yet",
+    "Main BNL-led workbench comes later",
+    "BNL Dossier Workbench — Coming Next",
+    "Prompt-based dossier drafting comes next",
+    "Admin will be able to ask BNL to build or revise a dossier from approved source packets",
+    "BNL will generate full dossier fields, not starter notes",
+    "BNL will ask only for missing decisions",
+    "Manual editing remains available",
+    "Admin selects or creates a candidate",
+    "Owner opens the submitted draft",
+    "Future source packet",
+  ]) {
+    assert.match(page, new RegExp(label));
+  }
+  assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
 });
 
 test("owner review page is a placeholder lane without publishing", () => {

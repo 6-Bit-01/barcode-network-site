@@ -64,6 +64,7 @@ const activeCandidateStatuses = new Set<DossierCandidate["status"]>([
   "draft_ready",
   "needs_revision",
   "needs_more_evidence",
+  "approved",
 ]);
 const activeDraftStatuses = new Set<DossierDraft["status"]>([
   "draft",
@@ -72,6 +73,7 @@ const activeDraftStatuses = new Set<DossierDraft["status"]>([
 const closedDraftStatuses = new Set<DossierDraft["status"]>([
   "denied",
   "superseded",
+  "owner_approved",
   "published",
 ]);
 
@@ -294,8 +296,8 @@ export default function DossierControlCenterPage() {
           <div className="border border-border bg-surface p-4"><p className="uppercase tracking-[0.35em] text-accent mb-2">Workflow API</p><p>{payload.workflow.status} / {payload.workflow.storage}</p></div>
         </div>
 
-        <DashboardCard eyebrow="Quick intake" title="Quick Candidate Intake" aside={<StatusPill>compact form</StatusPill>}>
-          <p className="text-sm text-muted">Create workflow-only candidates. Advanced evidence, taxonomy, and safety review happens on the Candidate Review page. This does not publish, invoke BNL, create tags, or mutate the public database.</p>
+        <DashboardCard eyebrow="Manual fallback" title="Quick Candidate Intake" aside={<StatusPill>Manual fallback / quick seed</StatusPill>}>
+          <p className="text-sm text-muted">Manual fallback / quick seed. Use this when BNL has not suggested a candidate yet or when an operator needs to seed one directly. Main BNL-led workbench comes later. This does not publish, invoke BNL, create tags, or mutate the public database.</p>
           <form onSubmit={submitManualCandidate} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3 text-xs uppercase tracking-widest text-muted">
             <label className="space-y-2 xl:col-span-2"><span>Name</span><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={textInputClass()} /></label>
             <label className="space-y-2"><span>Type</span><select value={form.candidateType} onChange={(event) => setForm({ ...form, candidateType: event.target.value as DossierCandidate["candidateType"] })} className={textInputClass()}>{candidateTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
@@ -305,6 +307,24 @@ export default function DossierControlCenterPage() {
             <label className="space-y-2 xl:col-span-3"><span>Evidence summary</span><textarea value={form.evidenceSummary} onChange={(event) => setForm({ ...form, evidenceSummary: event.target.value })} className={`${textInputClass()} min-h-20`} /></label>
             <div className="xl:col-span-6"><button type="submit" disabled={saving} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Create Manual Candidate</button></div>
           </form>
+        </DashboardCard>
+
+        <DashboardCard eyebrow="Coming next" title="BNL Dossier Workbench — Coming Next" aside={<StatusPill>future BNL-led flow</StatusPill>}>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-sm text-muted">
+            <div className="border border-border/70 bg-background/20 p-4 space-y-2">
+              <p className="font-bold text-foreground">Prompt-based dossier drafting comes next.</p>
+              <p>Admin will be able to ask BNL to build or revise a dossier from approved source packets.</p>
+              <p>BNL will generate full dossier fields, not starter notes.</p>
+              <p>BNL will ask only for missing decisions.</p>
+              <p>Manual editing remains available.</p>
+            </div>
+            <div className="border border-border/70 bg-background/20 p-4 space-y-2">
+              <p className="font-bold text-foreground">Intended future BNL-led workflow</p>
+              <p>Admin selects or creates a candidate, gives BNL a loose instruction, BNL gathers the approved source packet, drafts complete dossier fields, admin asks for revisions or edits manually, then submits to Owner Review.</p>
+              <p>Owner opens the submitted draft, can prompt BNL for final changes, edit manually, approve, send back, deny, or request more info. Approval still does not publish until publishing workflow exists.</p>
+            </div>
+          </div>
+          <p className="text-xs text-muted">Future source packet: website read model, dossier taxonomy guide, authoring guide, tag registry, selected candidate facts, queue/public show context, R&amp;D/operator-approved notes, Discord-safe/mod-approved context, duplicate/merge history, and existing dossier style profile. Future output includes name, category, kind, ecosystemLane, identityAuthority, status, clearance, origin, role, summary, notes, tags, proposedTags if needed, primary link if known/public-safe, evidence/caveat notes, public safety notes, and missing info questions. BNL must not invent facts, must preserve tone/style, must keep community-owned identities separate from BARCODE-controlled characters, and must treat AI/human/unknown as tags/traits.</p>
         </DashboardCard>
 
         <DashboardCard eyebrow="Lane 1" title="Candidate Queue" aside={<StatusPill>{activeCandidates.length} active records</StatusPill>}>
@@ -352,8 +372,8 @@ export default function DossierControlCenterPage() {
         <details className="border border-border bg-surface p-5">
           <summary className="cursor-pointer text-xl font-bold text-foreground">Closed / Merged Candidates and Closed / Superseded Drafts History</summary>
           <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-muted">
-            <div className="border border-border/70 bg-background/20 p-4"><p className="text-xs uppercase tracking-widest text-accent mb-2">Closed / Merged Candidates</p><p>{closedCandidates.length} closed candidate records.</p>{closedCandidates.slice(0, 8).map((candidate) => <p key={candidate.id}>{candidate.status === "merged" ? "Merged into" : "Closed"}: {candidate.status === "merged" && candidate.mergedIntoCandidateId ? <Link className="text-accent hover:underline" href={`/admin/dossiers/candidates/${candidate.mergedIntoCandidateId}`}>{candidateName(candidate.mergedIntoCandidateId, candidates)}</Link> : candidate.name}</p>)}</div>
-            <div className="border border-border/70 bg-background/20 p-4"><p className="text-xs uppercase tracking-widest text-accent mb-2">Closed / Superseded Drafts</p><p>{closedDrafts.length} closed draft records.</p>{closedDrafts.slice(0, 8).map((draft) => <p key={draft.id}>{draft.status === "superseded" ? "Superseded by" : draft.status}: {draft.status === "superseded" && draft.mergedIntoDraftId ? <Link className="text-accent hover:underline" href={`/admin/dossiers/drafts/${draft.mergedIntoDraftId}`}>{draftName(draft.mergedIntoDraftId, drafts)}</Link> : draft.fields.name}</p>)}</div>
+            <div className="border border-border/70 bg-background/20 p-4"><p className="text-xs uppercase tracking-widest text-accent mb-2">Closed / Merged Candidates</p><p>{closedCandidates.length} closed candidate records.</p>{closedCandidates.slice(0, 8).map((candidate) => <article key={candidate.id} className="mt-3 border-t border-border/60 pt-3"><p className="text-foreground font-semibold">{candidate.name}</p><p>Status: {candidate.status}</p>{candidate.status === "merged" && <p>mergedIntoCandidateId: {candidate.mergedIntoCandidateId ?? "—"}</p>}{candidate.status === "merged" && <p>Master candidate: {candidate.mergedIntoCandidateId ? <Link className="text-accent hover:underline" href={`/admin/dossiers/candidates/${candidate.mergedIntoCandidateId}`}>{candidateName(candidate.mergedIntoCandidateId, candidates)}</Link> : "—"}</p>}{candidate.status === "merged" && <p>mergedAt: {formatDate(candidate.mergedAt)}</p>}<p className="text-xs uppercase tracking-widest text-muted">No normal active action buttons</p></article>)}</div>
+            <div className="border border-border/70 bg-background/20 p-4"><p className="text-xs uppercase tracking-widest text-accent mb-2">Closed / Superseded Drafts</p><p>{closedDrafts.length} closed draft records.</p>{closedDrafts.slice(0, 8).map((draft) => <article key={draft.id} className="mt-3 border-t border-border/60 pt-3"><p className="text-foreground font-semibold">{draft.fields.name}</p><p>Status: {draft.status}</p>{draft.status === "superseded" && <p>mergedIntoDraftId: {draft.mergedIntoDraftId ?? "—"}</p>}{draft.status === "superseded" && <p>Superseded by master draft: {draft.mergedIntoDraftId ? <Link className="text-accent hover:underline" href={`/admin/dossiers/drafts/${draft.mergedIntoDraftId}`}>{draftName(draft.mergedIntoDraftId, drafts)}</Link> : "—"}</p>}<p className="text-xs uppercase tracking-widest text-muted">Reference-only; no normal active edit button</p></article>)}</div>
             <div className="border border-border/70 bg-background/20 p-4"><p className="text-xs uppercase tracking-widest text-accent mb-2">Resolved duplicate groups</p><p>{resolvedDuplicateGroups.length} group(s) no longer have at least two active, non-merged candidates.</p></div>
           </div>
         </details>

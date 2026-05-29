@@ -53,7 +53,7 @@ test("admin panel includes Dossier Control Center link", () => {
   assert.match(adminPage, /href="\/admin\/dossiers"/);
 });
 
-test("admin dossier page includes workflow shell sections", () => {
+test("admin dossier page gates workflow shell behind successful API payload", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
   for (const label of ["Dossier Control Center", "Candidate Queue", "Draft Workspace", "Review Actions", "System Boundaries"]) {
     assert.match(page, new RegExp(label));
@@ -62,6 +62,30 @@ test("admin dossier page includes workflow shell sections", () => {
   assert.match(page, /No candidates yet/);
   assert.match(page, /No draft selected/);
   assert.match(page, /Candidate intake wiring comes in a later PR/);
+
+  assert.doesNotMatch(page, /payload\?\.candidates \?\? \[\]/);
+  assert.doesNotMatch(page, /payload\?\.workflow\.boundaries \?\? \[/);
+  assert.match(page, /if \(loading\)/);
+  assert.match(page, /if \(error \|\| !payload\)/);
+  assert.match(page, /const candidates = payload\.candidates/);
+  assert.match(page, /const boundaries = payload\.workflow\.boundaries/);
+
+  const loadingGate = page.indexOf("if (loading)");
+  const authGate = page.indexOf("if (error || !payload)");
+  const payloadRead = page.indexOf("const candidates = payload.candidates");
+  const fullShell = page.indexOf('aria-label="Dossier Control Center"');
+
+  assert.ok(loadingGate > -1 && loadingGate < fullShell, "loading state must return before the full shell");
+  assert.ok(authGate > loadingGate && authGate < fullShell, "auth/error state must return before the full shell");
+  assert.ok(payloadRead > authGate && payloadRead < fullShell, "full shell must use an authenticated payload");
+});
+
+test("admin dossier page has minimal loading and auth-required states", () => {
+  const page = source("src/app/admin/dossiers/page.tsx");
+  assert.match(page, /Checking admin access\.\.\./);
+  assert.match(page, /Admin authentication required/);
+  assert.match(page, /Back to Admin/);
+  assert.match(page, /MinimalDossierAdminState/);
 });
 
 test("admin dossier API uses admin auth and returns empty workflow arrays", async () => {

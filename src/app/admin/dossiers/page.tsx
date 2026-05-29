@@ -35,6 +35,19 @@ const operatorOptions = {
   tagMode: ["Reuse existing tags", "Allow proposed tags"],
 };
 
+function MinimalDossierAdminState({ title, message }: { title: string; message: string }) {
+  return (
+    <main className="pt-14 min-h-screen flex items-center justify-center px-4">
+      <section className="w-full max-w-md border border-border bg-surface p-8">
+        <p className="text-xs uppercase tracking-[0.5em] text-muted mb-5">// ADMIN ACCESS CHECK</p>
+        <h1 className="text-2xl font-bold text-foreground">{title}</h1>
+        <p className="text-sm text-muted mt-3">{message}</p>
+        <Link href="/admin" className="mt-6 inline-flex border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background transition-all">Back to Admin</Link>
+      </section>
+    </main>
+  );
+}
+
 export default function AdminDossiersPage() {
   const [payload, setPayload] = useState<WorkflowPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -67,15 +80,17 @@ export default function AdminDossiersPage() {
     };
   }, []);
 
-  const candidates = payload?.candidates ?? [];
-  const drafts = payload?.drafts ?? [];
-  const boundaries = payload?.workflow.boundaries ?? [
-    "BNL recommends and drafts only.",
-    "Admin approves and publishes through future controlled site updates.",
-    "No automatic dossier creation or automatic tag creation.",
-    "No Discord identity merging, payment/customer identity, or queue-to-dossier promotion.",
-    "Queue frequency is evidence, not identity.",
-  ];
+  if (loading) {
+    return <MinimalDossierAdminState title="Checking admin access..." message="Verifying operator credentials before loading the dossier workflow." />;
+  }
+
+  if (error || !payload) {
+    return <MinimalDossierAdminState title="Admin authentication required" message={error ?? "Sign in from the admin panel before opening this operator workflow."} />;
+  }
+
+  const candidates = payload.candidates;
+  const drafts = payload.drafts;
+  const boundaries = payload.workflow.boundaries;
 
   return (
     <main className="pt-14 min-h-screen">
@@ -97,15 +112,15 @@ export default function AdminDossiersPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 text-xs text-muted">
           <div className="border border-border bg-surface p-4">
             <p className="uppercase tracking-[0.35em] text-accent mb-2">Workflow API</p>
-            <p>{loading ? "Loading /api/admin/dossiers..." : error ? error : "Foundation contract loaded."}</p>
+            <p>Foundation contract loaded.</p>
           </div>
           <div className="border border-border bg-surface p-4">
             <p className="uppercase tracking-[0.35em] text-accent mb-2">Authoring Guide</p>
-            <p>Version: {payload?.authoringGuide?.version ?? "pending auth"}</p>
+            <p>Version: {payload.authoringGuide?.version ?? "unknown"}</p>
           </div>
           <div className="border border-border bg-surface p-4">
             <p className="uppercase tracking-[0.35em] text-accent mb-2">Tag Registry</p>
-            <p>{payload?.tagRegistry ? `${payload.tagRegistry.totalUniqueTags} tags / ${payload.tagRegistry.totalTagAssignments} assignments` : "Loaded after admin API access."}</p>
+            <p>{payload.tagRegistry ? `${payload.tagRegistry.totalUniqueTags} tags / ${payload.tagRegistry.totalTagAssignments} assignments` : "No tag registry summary returned."}</p>
           </div>
         </div>
 

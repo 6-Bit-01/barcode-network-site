@@ -5,6 +5,9 @@ import path from "node:path";
 import test from "node:test";
 import ts from "typescript";
 
+delete process.env.UPSTASH_REDIS_REST_URL;
+delete process.env.UPSTASH_REDIS_REST_TOKEN;
+
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const originalResolveFilename = Module._resolveFilename;
 
@@ -20,8 +23,8 @@ Module._resolveFilename = function resolveFilename(request, parent, isMain, opti
 };
 
 Module._extensions[".ts"] = function loadTypeScript(module, filename) {
-  const source = fs.readFileSync(filename, "utf8");
-  const { outputText } = ts.transpileModule(source, {
+  const sourceText = fs.readFileSync(filename, "utf8");
+  const { outputText } = ts.transpileModule(sourceText, {
     compilerOptions: {
       esModuleInterop: true,
       jsx: ts.JsxEmit.ReactJSX,
@@ -33,10 +36,15 @@ Module._extensions[".ts"] = function loadTypeScript(module, filename) {
   module._compile(outputText, filename);
 };
 
+Module._extensions[".tsx"] = Module._extensions[".ts"];
+
 const require = createRequire(import.meta.url);
 const auth = require("../src/lib/auth.ts");
 const route = require("../src/app/api/admin/dossiers/route.ts");
 const workflow = require("../src/lib/dossier-workflow.ts");
+const store = require("../src/lib/dossier-workflow-store.ts");
+const { databasePage } = require("../src/content.ts");
+const readModel = require("../src/app/api/bnl/read-model/route.ts");
 
 function source(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
@@ -47,6 +55,57 @@ async function adminCookie() {
   return `${auth.COOKIE_NAME}=${token}`;
 }
 
+async function resetWorkflowStore() {
+  await store.saveDossierWorkflowState({
+    version: 1,
+    candidates: [],
+    drafts: [],
+    updatedAt: new Date(0).toISOString(),
+  });
+}
+
+async function authedGet() {
+  return route.GET(new Request("https://example.test/api/admin/dossiers", {
+    headers: { cookie: await adminCookie() },
+  }));
+}
+
+async function authedPost(body) {
+  return route.POST(new Request("https://example.test/api/admin/dossiers", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: await adminCookie(),
+    },
+    body: JSON.stringify(body),
+  }));
+}
+
+const manualCandidateInput = {
+  name: "Manual Candidate Alpha",
+  candidateType: "artist",
+  reason: "Operator wants a controlled dossier review record.",
+  whyNow: "The artist has enough public context to inspect manually.",
+  evidenceSummary: "Operator-entered public-safe evidence summary.",
+  knownFacts: ["Appeared in public show context", "Has an operator-approved link"],
+  missingInfo: ["Confirm preferred public role"],
+  doNotSay: ["Do not imply private Discord identity"],
+  publicSafetyNotes: ["Use public facts only"],
+  recommendedCategory: "Personnel",
+  recommendedStatus: "PENDING",
+  recommendedClearance: "PUBLIC",
+  recommendedOrigin: "UNVERIFIED",
+  recommendedTags: ["artist", "radio"],
+  proposedTags: ["manual-review"],
+  primaryLink: {
+    label: "Official link",
+    url: "https://example.test/manual-alpha",
+    type: "website",
+    selectedBy: "operator",
+    publicSafe: true,
+  },
+};
+
 test("admin panel includes Dossier Control Center link", () => {
   const adminPage = source("src/app/admin/page.tsx");
   assert.match(adminPage, /Dossier Control Center/);
@@ -54,39 +113,34 @@ test("admin panel includes Dossier Control Center link", () => {
   assert.match(adminPage, /href="\/admin\/dossiers"/);
 });
 
-test("admin dossier page gates workflow shell behind successful API payload", () => {
+test("admin dossier page gates workflow behind successful API payload and includes manual intake UI", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
-  for (const label of ["Dossier Control Center", "Candidate Queue", "Candidate Evidence", "Candidate Gate / Scoring", "Draft Readiness / Missing Info", "Draft Workspace", "Review Actions", "Focused BNL Assistant", "System Boundaries"]) {
+  for (const label of ["Dossier Control Center", "Manual Candidate Intake", "Candidate Queue", "Candidate Evidence", "Candidate Gate / Scoring", "Draft Readiness / Missing Info", "Draft Workspace", "Review Actions", "Focused BNL Assistant", "System Boundaries"]) {
+    assert.match(page, new RegExp(label));
+  }
+  for (const label of ["Known facts", "Missing info", "Do Not Say", "Public safety notes", "Deny", "Needs More Evidence", "Focused BNL Assistant", "Disabled placeholder only"]) {
     assert.match(page, new RegExp(label));
   }
   assert.match(page, /\/api\/admin\/dossiers/);
-  assert.match(page, /No candidates yet/);
-  assert.match(page, /No draft selected/);
-  assert.match(page, /Candidate intake wiring comes in a later PR/);
+  assert.match(page, /Create Manual Candidate/);
+  assert.match(page, /Featured\/primary link label/);
+  assert.match(page, /selectedBy/);
+  assert.match(page, /No selected candidate/);
   assert.match(page, /Why Now/);
   assert.match(page, /Duplicate Risk/);
-  assert.match(page, /Missing Info/);
-  assert.match(page, /Do Not Say/);
   assert.match(page, /loose intake \/ strict publishing/i);
   assert.match(page, /Try Again: Too Long/);
-  assert.match(page, /Try Again: Too Vague/);
   assert.match(page, /Rewrite Summary Only/);
 
-  assert.doesNotMatch(page, /payload\?\.candidates \?\? \[\]/);
-  assert.doesNotMatch(page, /payload\?\.workflow\.boundaries \?\? \[/);
+  assert.doesNotMatch(page, /fetch\(\"\/api\/bnl/);
   assert.match(page, /if \(loading\)/);
   assert.match(page, /if \(error \|\| !payload\)/);
-  assert.match(page, /const candidates = payload\.candidates/);
-  assert.match(page, /const boundaries = payload\.workflow\.boundaries/);
 
   const loadingGate = page.indexOf("if (loading)");
   const authGate = page.indexOf("if (error || !payload)");
-  const payloadRead = page.indexOf("const candidates = payload.candidates");
   const fullShell = page.indexOf('aria-label="Dossier Control Center"');
-
   assert.ok(loadingGate > -1 && loadingGate < fullShell, "loading state must return before the full shell");
   assert.ok(authGate > loadingGate && authGate < fullShell, "auth/error state must return before the full shell");
-  assert.ok(payloadRead > authGate && payloadRead < fullShell, "full shell must use an authenticated payload");
 });
 
 test("admin dossier page has minimal loading and auth-required states", () => {
@@ -97,54 +151,150 @@ test("admin dossier page has minimal loading and auth-required states", () => {
   assert.match(page, /MinimalDossierAdminState/);
 });
 
-test("dossier workflow types include candidate evidence and scoring policy contracts", () => {
+test("dossier workflow types include manual input and scoring policy contracts", () => {
   const workflowSource = source("src/lib/dossier-workflow.ts");
   assert.match(workflowSource, /export type DossierCandidateEvidenceType/);
-  assert.match(workflowSource, /export type DossierCandidateEvidence/);
-  assert.match(workflowSource, /candidateType: DossierCandidateType/);
-  assert.match(workflowSource, /tier: DossierCandidateTier/);
-  assert.match(workflowSource, /score: number/);
-  assert.match(workflowSource, /whyNow: string/);
-  assert.match(workflowSource, /duplicateRisk\?: DossierDuplicateRisk/);
-  assert.match(workflowSource, /missingInfo\?: string\[\]/);
-  assert.match(workflowSource, /doNotSay\?: string\[\]/);
+  assert.match(workflowSource, /export type CreateManualDossierCandidateInput/);
+  assert.match(workflowSource, /export function scoreManualDossierCandidate/);
+  assert.match(workflowSource, /knownFacts\?: string\[\]/);
+  assert.match(workflowSource, /recommendedOrigin\?: DossierOrigin/);
+  assert.match(workflowSource, /primaryLink\?: DossierWorkflowLink/);
   assert.equal(workflow.DOSSIER_CANDIDATE_SCORING_POLICY.gate, "Loose intake, strict drafting/publishing.");
   assert.equal(workflow.DOSSIER_CANDIDATE_SCORING_POLICY.thresholds.reviewCandidateMin, 50);
 });
 
-test("admin dossier API uses admin auth and returns empty workflow arrays", async () => {
-  const unauthorized = await route.GET(new Request("https://example.test/api/admin/dossiers"));
-  assert.equal(unauthorized.status, 401);
+test("admin dossier API requires auth for GET and POST", async () => {
+  const unauthorizedGet = await route.GET(new Request("https://example.test/api/admin/dossiers"));
+  assert.equal(unauthorizedGet.status, 401);
 
-  const response = await route.GET(new Request("https://example.test/api/admin/dossiers", {
-    headers: { cookie: await adminCookie() },
+  const unauthorizedPost = await route.POST(new Request("https://example.test/api/admin/dossiers", {
+    method: "POST",
+    body: JSON.stringify({ action: "createManualCandidate", input: manualCandidateInput }),
   }));
+  assert.equal(unauthorizedPost.status, 401);
+});
+
+test("authenticated GET returns workflow store, metadata, authoring guide, tag registry, and scoring policy summaries", async () => {
+  await resetWorkflowStore();
+  const response = await authedGet();
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.deepEqual(payload.candidates, []);
   assert.deepEqual(payload.drafts, []);
   assert.equal(payload.workflow.version, 1);
-  assert.equal(payload.workflow.status, "foundation_only");
+  assert.equal(payload.workflow.status, "candidate_store_enabled");
+  assert.equal(payload.workflow.storage, "memory_fallback");
+  assert.equal(payload.workflow.storageKey, "barcode:dossier-workflow:v1");
   assert.ok(payload.workflow.allowedActions.includes("requestDraft"));
   assert.equal(payload.workflow.scoringPolicy.gate, "Loose intake, strict drafting/publishing.");
   assert.equal(payload.workflow.scoringPolicy.thresholds.draftReadyMin, 70);
   assert.ok(payload.workflow.candidateSourceBoundaries.some((entry) => entry.source === "queue_frequency"));
+  assert.equal(payload.authoringGuide.version, "1.0");
+  assert.ok(payload.authoringGuide.fieldCount > 0);
+  assert.ok(payload.tagRegistry.totalUniqueTags > 0);
+  assert.equal(payload.tagRegistry.creationPolicy.newTagsAllowed, "proposal_only");
 });
 
-test("admin dossier mutations are placeholder-only and do not publish", async () => {
-  const contentBefore = source("src/content.ts");
-  const response = await route.POST(new Request("https://example.test/api/admin/dossiers", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      cookie: await adminCookie(),
-    },
-    body: JSON.stringify({ action: "approveDraft", candidateId: "candidate-test" }),
-  }));
+test("authenticated POST creates and persists a manual candidate without publishing", async () => {
+  await resetWorkflowStore();
+  const databaseEntriesBefore = JSON.stringify(databasePage.entries);
+  const tagCountBefore = databasePage.entries.flatMap((entry) => entry.tags).length;
 
-  assert.equal(response.status, 501);
+  const createResponse = await authedPost({ action: "createManualCandidate", input: manualCandidateInput });
+  assert.equal(createResponse.status, 200);
+  const createPayload = await createResponse.json();
+  const candidate = createPayload.candidate;
+
+  assert.ok(candidate.id);
+  assert.equal(candidate.name, manualCandidateInput.name);
+  assert.equal(candidate.source, "manual");
+  assert.match(candidate.status, /^(needs_review|suggested)$/);
+  assert.ok(["review_candidate", "draft_ready"].includes(candidate.tier));
+  assert.equal(typeof candidate.score, "number");
+  assert.equal(candidate.whyNow, manualCandidateInput.whyNow);
+  assert.equal(candidate.evidenceSummary, manualCandidateInput.evidenceSummary);
+  assert.equal(candidate.knownFacts.length, 2);
+  assert.equal(candidate.missingInfo.includes("Confirm preferred public role"), true);
+  assert.equal(candidate.doNotSay[0], "Do not imply private Discord identity");
+  assert.equal(candidate.publicSafetyNotes[0], "Use public facts only");
+  assert.ok(candidate.createdAt);
+  assert.ok(candidate.updatedAt);
+  assert.equal(candidate.primaryLink.url, manualCandidateInput.primaryLink.url);
+
+  const getResponse = await authedGet();
+  const getPayload = await getResponse.json();
+  assert.equal(getPayload.candidates.length, 1);
+  assert.equal(getPayload.candidates[0].id, candidate.id);
+  assert.equal(getPayload.drafts.length, 0);
+
+  assert.equal(JSON.stringify(databasePage.entries), databaseEntriesBefore);
+  assert.equal(databasePage.entries.flatMap((entry) => entry.tags).length, tagCountBefore);
+});
+
+test("denyCandidate updates status and keeps the candidate record", async () => {
+  await resetWorkflowStore();
+  const createPayload = await (await authedPost({ action: "createManualCandidate", input: manualCandidateInput })).json();
+  const denyResponse = await authedPost({ action: "denyCandidate", candidateId: createPayload.candidate.id });
+  assert.equal(denyResponse.status, 200);
+  const denyPayload = await denyResponse.json();
+  assert.equal(denyPayload.candidate.status, "denied");
+  assert.equal(denyPayload.candidates.length, 1);
+  assert.equal(denyPayload.candidates[0].id, createPayload.candidate.id);
+});
+
+test("markNeedsMoreEvidence updates status", async () => {
+  await resetWorkflowStore();
+  const createPayload = await (await authedPost({ action: "createManualCandidate", input: manualCandidateInput })).json();
+  const updateResponse = await authedPost({ action: "markNeedsMoreEvidence", candidateId: createPayload.candidate.id });
+  assert.equal(updateResponse.status, 200);
+  const updatePayload = await updateResponse.json();
+  assert.equal(updatePayload.candidate.status, "needs_more_evidence");
+});
+
+test("future actions stay placeholder-only and missing candidates return 404", async () => {
+  await resetWorkflowStore();
+  const draftResponse = await authedPost({ action: "requestDraft", candidateId: "candidate-test" });
+  assert.equal(draftResponse.status, 501);
+  const draftPayload = await draftResponse.json();
+  assert.equal(draftPayload.code, "not_implemented_yet");
+
+  const missingResponse = await authedPost({ action: "denyCandidate", candidateId: "missing" });
+  assert.equal(missingResponse.status, 404);
+});
+
+test("manual candidate workflow does not publish to database, read model dossiers, or tag registry", async () => {
+  await resetWorkflowStore();
+  const publicDossierIdsBefore = databasePage.entries.map((entry) => entry.id).join("|");
+  const tagNamesBefore = new Set(databasePage.entries.flatMap((entry) => entry.tags));
+  const readModelBefore = await (await readModel.GET()).json();
+  const publicReadModelNamesBefore = readModelBefore.sections.dossiers.items.map((entry) => entry.name).join("|");
+
+  const createPayload = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Workflow Only Candidate Zed" } })).json();
+  await authedPost({ action: "denyCandidate", candidateId: createPayload.candidate.id });
+
+  assert.equal(databasePage.entries.map((entry) => entry.id).join("|"), publicDossierIdsBefore);
+  assert.deepEqual(new Set(databasePage.entries.flatMap((entry) => entry.tags)), tagNamesBefore);
+
+  const readModelAfter = await (await readModel.GET()).json();
+  assert.equal(readModelAfter.sections.dossiers.items.map((entry) => entry.name).join("|"), publicReadModelNamesBefore);
+  assert.equal(readModelAfter.sections.dossiers.items.some((entry) => entry.name === "Workflow Only Candidate Zed"), false);
+});
+
+test("duplicate awareness marks candidates matching existing database entries", async () => {
+  await resetWorkflowStore();
+  const response = await authedPost({
+    action: "createManualCandidate",
+    input: {
+      ...manualCandidateInput,
+      name: databasePage.entries[0].name,
+      reason: "Operator wants to verify duplicate handling.",
+    },
+  });
+  assert.equal(response.status, 200);
   const payload = await response.json();
-  assert.equal(payload.code, "not_implemented_yet");
-  assert.match(payload.message, /intentionally disabled/);
-  assert.equal(source("src/content.ts"), contentBefore);
+  assert.equal(payload.candidate.duplicateRisk, "high");
+  assert.equal(payload.candidate.existingDossierMatch.id, databasePage.entries[0].id);
+  assert.equal(payload.candidate.existingDossierMatch.name, databasePage.entries[0].name);
+  assert.ok(payload.candidate.missingInfo.some((item) => /Duplicate review required/.test(item)));
+  assert.ok(payload.candidate.publicSafetyNotes.some((item) => /Duplicate review required/.test(item)));
 });

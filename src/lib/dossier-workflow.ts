@@ -79,13 +79,17 @@ export type DossierCandidate = {
   evidenceSummary: string;
   evidenceItems?: DossierCandidateEvidence[];
   evidenceCount?: number;
+  knownFacts?: string[];
   confidence?: "low" | "medium" | "high";
   duplicateRisk?: DossierDuplicateRisk;
   existingDossierMatch?: { id: string; name: string; confidence: "low" | "medium" | "high" } | null;
   recommendedCategory?: DossierCategory;
+  recommendedStatus?: DossierPublicStatus;
   recommendedClearance?: DossierClearance;
+  recommendedOrigin?: DossierOrigin;
   recommendedTags?: string[];
   proposedTags?: string[];
+  primaryLink?: DossierWorkflowLink;
   missingInfo?: string[];
   doNotSay?: string[];
   publicSafetyNotes?: string[];
@@ -124,6 +128,25 @@ export type DossierWorkflowLink = {
   type: string;
   selectedBy?: "subject" | "operator" | "legacy";
   publicSafe?: boolean;
+};
+
+export type CreateManualDossierCandidateInput = {
+  name: string;
+  candidateType?: DossierCandidate["candidateType"];
+  reason: string;
+  whyNow?: string;
+  evidenceSummary?: string;
+  knownFacts?: string[];
+  missingInfo?: string[];
+  doNotSay?: string[];
+  publicSafetyNotes?: string[];
+  recommendedCategory?: DossierDraft["fields"]["category"];
+  recommendedStatus?: DossierDraft["fields"]["status"];
+  recommendedClearance?: DossierDraft["fields"]["clearance"];
+  recommendedOrigin?: DossierDraft["fields"]["origin"];
+  recommendedTags?: string[];
+  proposedTags?: string[];
+  primaryLink?: DossierDraft["fields"]["primaryLink"];
 };
 
 export type DossierWorkflowAction =
@@ -175,6 +198,79 @@ export const DOSSIER_CANDIDATE_SCORING_POLICY = {
   },
   gate: "Loose intake, strict drafting/publishing.",
 } as const;
+
+const IDENTITY_SENSITIVE_PATTERN = /\b(discord|email|payment|stripe|customer|account|phone|address|legal name|real name|ip address|private|dm|direct message)\b/i;
+
+function hasText(value: string | undefined): boolean {
+  return Boolean(value?.trim());
+}
+
+function hasItems(value: string[] | undefined): boolean {
+  return Boolean(value?.some((item) => item.trim()));
+}
+
+function tierForScore(score: number): DossierCandidateTier {
+  if (score >= DOSSIER_CANDIDATE_SCORING_POLICY.thresholds.draftReadyMin) return "draft_ready";
+  if (score >= DOSSIER_CANDIDATE_SCORING_POLICY.thresholds.reviewCandidateMin) return "review_candidate";
+  return "weak_candidate";
+}
+
+export function scoreManualDossierCandidate(input: CreateManualDossierCandidateInput): {
+  score: number;
+  tier: DossierCandidateTier;
+  confidence: "low" | "medium" | "high";
+  publicSafetyNotes: string[];
+  missingInfo: string[];
+} {
+  let score: number = DOSSIER_CANDIDATE_SCORING_POLICY.thresholds.weakCandidateMin;
+  const publicSafetyNotes = [...(input.publicSafetyNotes ?? []).map((item) => item.trim()).filter(Boolean)];
+  const missingInfo = [...(input.missingInfo ?? []).map((item) => item.trim()).filter(Boolean)];
+  const combinedText = [input.name, input.reason, input.whyNow, input.evidenceSummary, ...(input.knownFacts ?? []), ...(input.doNotSay ?? [])].join(" ");
+
+  if (hasText(input.reason)) score += 8;
+  else score -= 12;
+
+  if (hasText(input.whyNow)) score += 8;
+  if (hasText(input.evidenceSummary)) score += 10;
+  else {
+    score -= 8;
+    missingInfo.push("Add a public-safe evidence summary before drafting.");
+  }
+
+  if (hasItems(input.knownFacts)) score += 10;
+  else {
+    score -= 6;
+    missingInfo.push("Add operator-approved known facts before drafting.");
+  }
+
+  const recommendedFieldCount = [input.recommendedCategory, input.recommendedStatus, input.recommendedClearance, input.recommendedOrigin].filter(Boolean).length;
+  score += recommendedFieldCount * 3;
+
+  if (input.primaryLink?.url && input.primaryLink.publicSafe !== false) score += 5;
+  if (hasItems(input.recommendedTags)) score += 5;
+
+  if (!hasItems(publicSafetyNotes)) {
+    score -= 5;
+    publicSafetyNotes.push("Public-safety review required before any draft or publication step.");
+  }
+
+  if (IDENTITY_SENSITIVE_PATTERN.test(combinedText)) {
+    score -= 15;
+    publicSafetyNotes.push("Possible private, payment, account, or identity-sensitive wording detected; review and remove before drafting.");
+  }
+
+  score = Math.max(0, Math.min(100, score));
+  const tier = hasText(input.reason) && hasText(input.whyNow) && hasText(input.evidenceSummary)
+    ? tierForScore(score)
+    : "weak_candidate";
+  const confidence = score >= DOSSIER_CANDIDATE_SCORING_POLICY.thresholds.draftReadyMin
+    ? "high"
+    : score >= DOSSIER_CANDIDATE_SCORING_POLICY.thresholds.reviewCandidateMin
+      ? "medium"
+      : "low";
+
+  return { score, tier, confidence, publicSafetyNotes, missingInfo };
+}
 
 export const DOSSIER_SOURCE_BOUNDARIES: DossierSourceBoundary[] = [
   {

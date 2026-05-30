@@ -7,6 +7,11 @@ import {
   type CreateManualDossierCandidateInput,
   type DossierCandidate,
   type DossierCandidateStatus,
+  type DossierIdentityLink,
+  type DossierIdentityLinkSource,
+  type DossierIdentityLinkStatus,
+  type DossierIdentityLinkType,
+  type DossierIdentityLinkVisibility,
   type DossierDraft,
   type DossierDuplicateGroup,
   type DossierRecommendation,
@@ -276,6 +281,9 @@ function sanitizeWorkflowState(value: unknown): DossierWorkflowState {
           sourceFileNotes: Array.isArray(candidate.sourceFileNotes)
             ? candidate.sourceFileNotes
             : [],
+          identityLinks: Array.isArray(candidate.identityLinks)
+            ? candidate.identityLinks
+            : [],
         }))
       : [],
     drafts: Array.isArray(candidateState.drafts) ? candidateState.drafts : [],
@@ -303,6 +311,10 @@ function createRecommendationId(): string {
 
 function createSourceFileNoteId(): string {
   return `source_file_note_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createIdentityLinkId(): string {
+  return `identity_link_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function createDraftId(): string {
@@ -465,6 +477,7 @@ const SOURCE_NOTE_SOURCES: DossierSourceFileNoteSource[] = [
 const RECOMMENDATION_TYPES: DossierRecommendationType[] = [
   "new_subject",
   "modify_existing_dossier",
+  "identity_link",
 ];
 const RECOMMENDATION_SOURCE_LANES: DossierRecommendationSourceLane[] = [
   "public_discord",
@@ -477,6 +490,65 @@ const RECOMMENDATION_SOURCE_LANES: DossierRecommendationSourceLane[] = [
   "owner_manual",
   "unknown",
 ];
+
+
+const IDENTITY_LINK_TYPES: DossierIdentityLinkType[] = [
+  "alias",
+  "artist_name",
+  "discord_handle",
+  "operator_name",
+  "public_persona",
+  "previous_name",
+  "alternate_spelling",
+  "related_label",
+  "unknown",
+];
+const IDENTITY_LINK_VISIBILITIES: DossierIdentityLinkVisibility[] = [
+  "internal_only",
+  "public_safe",
+];
+const IDENTITY_LINK_SOURCES: DossierIdentityLinkSource[] = [
+  "owner_confirmed",
+  "admin_manual",
+  "mod_manual",
+  "bnl_recommendation",
+  "rd_context",
+  "broadcast_memory",
+  "website_dossier",
+  "unknown",
+];
+const ACTIVE_IDENTITY_LINK_STATUSES = new Set<DossierIdentityLinkStatus>([
+  "proposed",
+  "confirmed",
+]);
+
+export type CreateDossierIdentityLinkInput = {
+  candidateId: string;
+  label: string;
+  type?: DossierIdentityLinkType;
+  visibility?: DossierIdentityLinkVisibility;
+  source?: DossierIdentityLinkSource;
+  confidence?: "low" | "medium" | "high" | "confirmed";
+  useForMatching?: boolean;
+  useInPublicDossier?: boolean;
+  note?: string;
+  createdBy?: string;
+};
+
+export type UpdateDossierIdentityLinkInput = Partial<
+  Omit<CreateDossierIdentityLinkInput, "candidateId">
+> & {
+  candidateId: string;
+  identityLinkId: string;
+};
+
+export type ReviewDossierIdentityLinkInput = {
+  candidateId: string;
+  identityLinkId: string;
+  reviewedBy?: string;
+  useForMatching?: boolean;
+  useInPublicDossier?: boolean;
+};
 
 const TERMINAL_RECOMMENDATION_STATUSES = new Set<DossierRecommendationStatus>([
   "attached_to_source_file",
@@ -705,6 +777,297 @@ export class DossierWorkflowInputError extends Error {
     this.code = code;
     this.details = details;
   }
+}
+
+
+function normalizeIdentityLinkInput(
+  input: CreateDossierIdentityLinkInput,
+): Omit<
+  DossierIdentityLink,
+  "id" | "normalizedLabel" | "status" | "createdAt" | "updatedAt"
+> | null {
+  const candidateId = boundedText(input.candidateId, 200);
+  const label = boundedText(input.label, 120);
+  if (!candidateId || !label) return null;
+  const type = IDENTITY_LINK_TYPES.includes(input.type ?? "alias")
+    ? (input.type ?? "alias")
+    : "alias";
+  const visibility = IDENTITY_LINK_VISIBILITIES.includes(
+    input.visibility ?? "internal_only",
+  )
+    ? (input.visibility ?? "internal_only")
+    : "internal_only";
+  const source = IDENTITY_LINK_SOURCES.includes(input.source ?? "admin_manual")
+    ? (input.source ?? "admin_manual")
+    : "admin_manual";
+  const confidence = ["low", "medium", "high", "confirmed"].includes(
+    input.confidence ?? "",
+  )
+    ? input.confidence
+    : undefined;
+  return {
+    candidateId,
+    label,
+    type,
+    visibility,
+    source,
+    confidence,
+    useForMatching: input.useForMatching === true,
+    useInPublicDossier: input.useInPublicDossier === true,
+    note: boundedText(input.note, 1000) || undefined,
+    createdBy: boundedText(input.createdBy, 200) || undefined,
+  };
+}
+
+function assertNoDuplicateActiveIdentityLink(input: {
+  candidate: DossierCandidate;
+  normalizedLabel: string;
+  exceptIdentityLinkId?: string;
+}) {
+  const duplicate = (input.candidate.identityLinks ?? []).find(
+    (identityLink) =>
+      identityLink.id !== input.exceptIdentityLinkId &&
+      ACTIVE_IDENTITY_LINK_STATUSES.has(identityLink.status) &&
+      identityLink.normalizedLabel === input.normalizedLabel,
+  );
+  if (!duplicate) return;
+  throw new DossierWorkflowInputError(
+    "An active identity link with this label already exists on this BNL Source File",
+    400,
+    "duplicate_identity_link",
+    { identityLinkId: duplicate.id },
+  );
+}
+
+export async function addDossierIdentityLink(
+  input: CreateDossierIdentityLinkInput,
+): Promise<DossierIdentityLink> {
+  const normalized = normalizeIdentityLinkInput(input);
+  if (!normalized) {
+    throw new DossierWorkflowInputError(
+      "Identity link requires candidateId and a non-empty label",
+      400,
+      "invalid_identity_link",
+    );
+  }
+
+  const now = new Date().toISOString();
+  const identityLink: DossierIdentityLink = {
+    id: createIdentityLinkId(),
+    ...normalized,
+    normalizedLabel: normalizeName(normalized.label),
+    status: "proposed",
+    useForMatching: false,
+    useInPublicDossier: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+  let saved: DossierIdentityLink | null = null;
+
+  await updateDossierWorkflowState((currentState) => {
+    let found = false;
+    const candidates = currentState.candidates.map((candidate) => {
+      if (candidate.id !== identityLink.candidateId) return candidate;
+      found = true;
+      assertNoDuplicateActiveIdentityLink({
+        candidate,
+        normalizedLabel: identityLink.normalizedLabel,
+      });
+      saved = identityLink;
+      return {
+        ...candidate,
+        identityLinks: [identityLink, ...(candidate.identityLinks ?? [])],
+        updatedAt: now,
+      };
+    });
+    if (!found) {
+      throw new DossierWorkflowInputError(
+        "Candidate not found",
+        404,
+        "candidate_not_found",
+      );
+    }
+    return { ...currentState, candidates, updatedAt: now };
+  });
+
+  return saved ?? identityLink;
+}
+
+export async function updateDossierIdentityLink(
+  input: UpdateDossierIdentityLinkInput,
+): Promise<DossierIdentityLink> {
+  const now = new Date().toISOString();
+  const candidateId = boundedText(input.candidateId, 200);
+  const identityLinkId = boundedText(input.identityLinkId, 200);
+  if (!candidateId || !identityLinkId) {
+    throw new DossierWorkflowInputError(
+      "Identity link update requires candidateId and identityLinkId",
+      400,
+      "invalid_identity_link",
+    );
+  }
+  let updatedLink: DossierIdentityLink | null = null;
+
+  await updateDossierWorkflowState((currentState) => {
+    let foundCandidate = false;
+    let foundLink = false;
+    const candidates = currentState.candidates.map((candidate) => {
+      if (candidate.id !== candidateId) return candidate;
+      foundCandidate = true;
+      const currentLinks = candidate.identityLinks ?? [];
+      const identityLinks = currentLinks.map((identityLink) => {
+        if (identityLink.id !== identityLinkId) return identityLink;
+        foundLink = true;
+        const label =
+          typeof input.label === "string"
+            ? boundedText(input.label, 120)
+            : identityLink.label;
+        if (!label) {
+          throw new DossierWorkflowInputError(
+            "Identity link label cannot be empty",
+            400,
+            "invalid_identity_link",
+          );
+        }
+        const normalizedLabel = normalizeName(label);
+        assertNoDuplicateActiveIdentityLink({
+          candidate,
+          normalizedLabel,
+          exceptIdentityLinkId: identityLink.id,
+        });
+        updatedLink = {
+          ...identityLink,
+          label,
+          normalizedLabel,
+          type:
+            input.type && IDENTITY_LINK_TYPES.includes(input.type)
+              ? input.type
+              : identityLink.type,
+          visibility:
+            input.visibility &&
+            IDENTITY_LINK_VISIBILITIES.includes(input.visibility)
+              ? input.visibility
+              : identityLink.visibility,
+          source:
+            input.source && IDENTITY_LINK_SOURCES.includes(input.source)
+              ? input.source
+              : identityLink.source,
+          confidence: ["low", "medium", "high", "confirmed"].includes(
+            input.confidence ?? "",
+          )
+            ? input.confidence
+            : identityLink.confidence,
+          useForMatching:
+            identityLink.status === "confirmed"
+              ? input.useForMatching === true
+              : false,
+          useInPublicDossier: input.useInPublicDossier === true,
+          note:
+            typeof input.note === "string"
+              ? boundedText(input.note, 1000) || undefined
+              : identityLink.note,
+          updatedAt: now,
+        };
+        return updatedLink;
+      });
+      return { ...candidate, identityLinks, updatedAt: foundLink ? now : candidate.updatedAt };
+    });
+    if (!foundCandidate) {
+      throw new DossierWorkflowInputError(
+        "Candidate not found",
+        404,
+        "candidate_not_found",
+      );
+    }
+    if (!foundLink) {
+      throw new DossierWorkflowInputError(
+        "Identity link not found",
+        404,
+        "identity_link_not_found",
+      );
+    }
+    return { ...currentState, candidates, updatedAt: now };
+  });
+
+  return updatedLink!;
+}
+
+async function setDossierIdentityLinkStatus(
+  input: ReviewDossierIdentityLinkInput,
+  status: Exclude<DossierIdentityLinkStatus, "proposed">,
+): Promise<DossierIdentityLink> {
+  const now = new Date().toISOString();
+  const candidateId = boundedText(input.candidateId, 200);
+  const identityLinkId = boundedText(input.identityLinkId, 200);
+  let updatedLink: DossierIdentityLink | null = null;
+
+  await updateDossierWorkflowState((currentState) => {
+    let foundCandidate = false;
+    let foundLink = false;
+    const candidates = currentState.candidates.map((candidate) => {
+      if (candidate.id !== candidateId) return candidate;
+      foundCandidate = true;
+      const identityLinks = (candidate.identityLinks ?? []).map((identityLink) => {
+        if (identityLink.id !== identityLinkId) return identityLink;
+        foundLink = true;
+        updatedLink = {
+          ...identityLink,
+          status,
+          confidence: status === "confirmed" ? "confirmed" : identityLink.confidence,
+          useForMatching: status === "confirmed" && input.useForMatching === true,
+          useInPublicDossier:
+            status === "confirmed" && input.useInPublicDossier === true,
+          confirmedBy:
+            status === "confirmed"
+              ? boundedText(input.reviewedBy, 200) || identityLink.confirmedBy
+              : identityLink.confirmedBy,
+          confirmedAt: status === "confirmed" ? now : identityLink.confirmedAt,
+          updatedAt: now,
+        };
+        if (status !== "confirmed") {
+          updatedLink.useForMatching = false;
+          updatedLink.useInPublicDossier = false;
+        }
+        return updatedLink;
+      });
+      return { ...candidate, identityLinks, updatedAt: foundLink ? now : candidate.updatedAt };
+    });
+    if (!foundCandidate) {
+      throw new DossierWorkflowInputError(
+        "Candidate not found",
+        404,
+        "candidate_not_found",
+      );
+    }
+    if (!foundLink) {
+      throw new DossierWorkflowInputError(
+        "Identity link not found",
+        404,
+        "identity_link_not_found",
+      );
+    }
+    return { ...currentState, candidates, updatedAt: now };
+  });
+
+  return updatedLink!;
+}
+
+export function confirmDossierIdentityLink(
+  input: ReviewDossierIdentityLinkInput,
+): Promise<DossierIdentityLink> {
+  return setDossierIdentityLinkStatus(input, "confirmed");
+}
+
+export function rejectDossierIdentityLink(
+  input: ReviewDossierIdentityLinkInput,
+): Promise<DossierIdentityLink> {
+  return setDossierIdentityLinkStatus(input, "rejected");
+}
+
+export function retireDossierIdentityLink(
+  input: ReviewDossierIdentityLinkInput,
+): Promise<DossierIdentityLink> {
+  return setDossierIdentityLinkStatus(input, "retired");
 }
 
 export async function addDossierSourceFileNote(
@@ -994,6 +1357,7 @@ export async function convertRecommendationToCandidate(
       doNotSay: recommendation.doNotSay ?? [],
       publicSafetyNotes: recommendation.publicSafetyNotes ?? [],
       sourceFileNotes: [{ ...note, candidateId: "" }],
+      identityLinks: [],
       status: "needs_review",
       createdAt: now,
       updatedAt: now,

@@ -1594,6 +1594,7 @@ test("workflow state defaults recommendations and source notes for older stores"
   const payload = await (await authedGet()).json();
   assert.deepEqual(payload.recommendations, []);
   assert.deepEqual(payload.candidates[0].sourceFileNotes, []);
+  assert.deepEqual(payload.candidates[0].identityLinks, []);
 });
 
 test("source file notes persist without mutating draft fields or public read model", async () => {
@@ -1660,6 +1661,215 @@ test("source file notes persist without mutating draft fields or public read mod
   );
 });
 
+
+
+test("identity links default, persist safely, and never publish", async () => {
+  await resetWorkflowStore();
+  const created = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Deadite Ash" },
+    })
+  ).json();
+  const draft = await (
+    await authedPost({
+      action: "createDraftFromCandidate",
+      candidateId: created.candidate.id,
+    })
+  ).json();
+  const draftFields = JSON.stringify(draft.draft.fields);
+
+  const addResponse = await authedPost({
+    action: "addDossierIdentityLink",
+    candidateId: created.candidate.id,
+    input: {
+      label: "  ShadowsPit  ",
+      type: "discord_handle",
+      visibility: "internal_only",
+      source: "owner_confirmed",
+      note: "Internal identity link for routing future recommendations.",
+      useForMatching: true,
+      useInPublicDossier: true,
+    },
+  });
+  assert.equal(addResponse.status, 200);
+  const addPayload = await addResponse.json();
+  assert.equal(addPayload.identityLink.label, "ShadowsPit");
+  assert.equal(addPayload.identityLink.normalizedLabel, "shadowspit");
+  assert.equal(addPayload.identityLink.status, "proposed");
+  assert.equal(addPayload.identityLink.visibility, "internal_only");
+  assert.equal(addPayload.identityLink.useForMatching, false);
+  assert.equal(addPayload.identityLink.useInPublicDossier, false);
+  assert.equal(JSON.stringify(addPayload.drafts[0].fields), draftFields);
+  assert.equal(addPayload.drafts[0].fields.name, "Deadite Ash");
+  assert.deepEqual(addPayload.drafts[0].fields.tags, manualCandidateInput.recommendedTags);
+
+  const duplicateResponse = await authedPost({
+    action: "addDossierIdentityLink",
+    candidateId: created.candidate.id,
+    input: { label: "shadowspit", type: "alias" },
+  });
+  assert.equal(duplicateResponse.status, 400);
+  assert.equal((await duplicateResponse.json()).code, "duplicate_identity_link");
+
+  const publicReadModel = JSON.stringify(await (await readModel.GET()).json());
+  assert.doesNotMatch(publicReadModel, /ShadowsPit|identityLinks/);
+  assert.doesNotMatch(
+    normalizedSource("src/app/database/page.tsx") +
+      normalizedSource("src/app/database/[slug]/page.tsx"),
+    /identityLinks|ShadowsPit/,
+  );
+});
+
+test("identity link review statuses control alias matching", async () => {
+  await resetWorkflowStore();
+  const created = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Deadite Ash" },
+    })
+  ).json();
+  const candidateId = created.candidate.id;
+
+  const proposed = await (
+    await authedPost({
+      action: "addDossierIdentityLink",
+      candidateId,
+      input: { label: "ShadowsPit", type: "discord_handle" },
+    })
+  ).json();
+  const proposedMatch = workflow.matchDossierRecommendationSubject({
+    recommendation: { subjectName: "ShadowsPit" },
+    candidates: (await (await authedGet()).json()).candidates,
+  });
+  assert.equal(proposedMatch.exactCandidateId, undefined);
+
+  const confirmed = await (
+    await authedPost({
+      action: "confirmDossierIdentityLink",
+      candidateId,
+      identityLinkId: proposed.identityLink.id,
+      reviewedBy: "admin-test",
+      useForMatching: true,
+    })
+  ).json();
+  assert.equal(confirmed.identityLink.status, "confirmed");
+  assert.equal(confirmed.identityLink.confidence, "confirmed");
+  assert.ok(confirmed.identityLink.confirmedAt);
+  assert.equal(confirmed.identityLink.useForMatching, true);
+
+  const confirmedMatch = workflow.matchDossierRecommendationSubject({
+    recommendation: { subjectName: "ShadowsPit" },
+    candidates: confirmed.candidates,
+  });
+  assert.equal(confirmedMatch.exactCandidateId, candidateId);
+  assert.equal(confirmedMatch.exactMatchKind, "confirmed_alias");
+  assert.equal(confirmedMatch.aliasLabel, "ShadowsPit");
+  assert.equal(confirmedMatch.reason, "Confirmed identity link / alias match.");
+
+  const retired = await (
+    await authedPost({
+      action: "retireDossierIdentityLink",
+      candidateId,
+      identityLinkId: proposed.identityLink.id,
+    })
+  ).json();
+  const retiredMatch = workflow.matchDossierRecommendationSubject({
+    recommendation: { subjectName: "ShadowsPit" },
+    candidates: retired.candidates,
+  });
+  assert.equal(retired.identityLink.status, "retired");
+  assert.equal(retiredMatch.exactCandidateId, undefined);
+
+  const rejectedLink = await (
+    await authedPost({
+      action: "addDossierIdentityLink",
+      candidateId,
+      input: { label: "Ash Old Name", type: "previous_name" },
+    })
+  ).json();
+  const rejected = await (
+    await authedPost({
+      action: "rejectDossierIdentityLink",
+      candidateId,
+      identityLinkId: rejectedLink.identityLink.id,
+    })
+  ).json();
+  const rejectedMatch = workflow.matchDossierRecommendationSubject({
+    recommendation: { subjectName: "Ash Old Name" },
+    candidates: rejected.candidates,
+  });
+  assert.equal(rejected.identityLink.status, "rejected");
+  assert.equal(rejectedMatch.exactCandidateId, undefined);
+});
+
+test("confirmed alias match allows attach and blocks duplicate conversion", async () => {
+  await resetWorkflowStore();
+  const created = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Deadite Ash" },
+    })
+  ).json();
+  const candidateId = created.candidate.id;
+  const alias = await (
+    await authedPost({
+      action: "addDossierIdentityLink",
+      candidateId,
+      input: { label: "ShadowsPit", type: "discord_handle" },
+    })
+  ).json();
+  await authedPost({
+    action: "confirmDossierIdentityLink",
+    candidateId,
+    identityLinkId: alias.identityLink.id,
+    useForMatching: true,
+  });
+  const rec = await (
+    await authedPost({
+      action: "createDossierRecommendation",
+      input: {
+        type: "identity_link",
+        subjectName: "ShadowsPit",
+        reason: "Review identity link.",
+        evidenceSummary: "ShadowsPit may be an alternate identity label.",
+        sourceLanes: ["admin_manual"],
+      },
+    })
+  ).json();
+
+  const attachResponse = await authedPost({
+    action: "attachRecommendationToCandidate",
+    recommendationId: rec.recommendation.id,
+    candidateId,
+    createSourceNote: true,
+  });
+  assert.equal(attachResponse.status, 200);
+  const attached = await attachResponse.json();
+  assert.equal(attached.recommendation.status, "attached_to_source_file");
+  assert.equal(attached.drafts.length, 0);
+  assert.equal(attached.candidates.length, 1);
+
+  const secondRec = await (
+    await authedPost({
+      action: "createDossierRecommendation",
+      input: {
+        type: "identity_link",
+        subjectName: "ShadowsPit",
+        reason: "Exact alias match should not duplicate source file.",
+        sourceLanes: ["admin_manual"],
+      },
+    })
+  ).json();
+  const convertResponse = await authedPost({
+    action: "convertRecommendationToCandidate",
+    recommendationId: secondRec.recommendation.id,
+  });
+  assert.equal(convertResponse.status, 400);
+  const errorPayload = await convertResponse.json();
+  assert.equal(errorPayload.code, "recommendation_existing_source_file_match");
+  assert.equal(errorPayload.exactMatchKind, "confirmed_alias");
+});
 
 test("unapplied source notes count after draft creation without mutating draft fields", async () => {
   await resetWorkflowStore();
@@ -2370,6 +2580,12 @@ test("recommendation inbox and source note UI are present and bounded", () => {
   assert.match(sourceFilePage, /This source file[\s\S]*remains one subject\/entity/);
   assert.match(sourceFilePage, /create or wait for a separate BNL recommendation/);
   assert.match(sourceFilePage, /Save Info/);
+  assert.match(sourceFilePage, /Identity \/ Aliases/);
+  assert.match(sourceFilePage, /Aliases help BNL route future recommendations/);
+  assert.match(sourceFilePage, /Internal aliases are not public dossier text/);
+  assert.match(sourceFilePage, /Add Identity Link/);
+  assert.match(dashboard, /Aliases: /);
+  assert.match(dashboard, /Identity warnings/);
 
   const draftPage = source("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
   assert.match(draftPage, /Unapplied Source Notes/);
@@ -2397,6 +2613,9 @@ test("recommendation inbox and source note UI are present and bounded", () => {
   assert.match(recommendationPage, /Pre-targeted BNL Source File/);
   assert.match(recommendationPage, /This recommendation already points to an existing/);
   assert.match(recommendationPage, /Attach to Matched BNL Source File/);
+  assert.match(recommendationPage, /Matched by confirmed alias/);
+  assert.match(recommendationPage, /This alias is used for internal matching only/);
+  assert.match(recommendationPage, /Possible alias conflict/);
   assert.match(recommendationPage, /Owner\/lead identity review is required/);
   assert.doesNotMatch(recommendationPage, /Choose existing BNL Source File/);
   assert.match(recommendationPage, /Terminal recommendation actions are closed/);
@@ -2679,15 +2898,15 @@ test("BNL-ingested recommendations stay out of public read model and database pa
   const readModelPayload = await readModelResponse.json();
   assert.doesNotMatch(
     JSON.stringify(readModelPayload),
-    /Private Ingest Signal|brand-new-private-tag|recommendations|sourceFileNotes/,
+    /Private Ingest Signal|brand-new-private-tag|recommendations|sourceFileNotes|identityLinks/,
   );
 
   assert.doesNotMatch(
     normalizedSource("src/app/database/page.tsx"),
-    /sourceFileNotes|recommendations|Private Ingest Signal|brand-new-private-tag/,
+    /sourceFileNotes|recommendations|identityLinks|Private Ingest Signal|brand-new-private-tag/,
   );
   assert.doesNotMatch(
     normalizedSource("src/app/database/[slug]/page.tsx"),
-    /sourceFileNotes|recommendations|Private Ingest Signal|brand-new-private-tag/,
+    /sourceFileNotes|recommendations|identityLinks|Private Ingest Signal|brand-new-private-tag/,
   );
 });

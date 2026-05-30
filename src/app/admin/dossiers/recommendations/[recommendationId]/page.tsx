@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   matchDossierRecommendationSubject,
+  normalizeDossierSubjectName,
   type DossierCandidate,
   type DossierDraft,
   type DossierRecommendation,
@@ -171,6 +172,26 @@ export default function DossierRecommendationPage() {
         (candidate) => candidate.id === subjectMatch.exactCandidateId,
       ) ?? null)
     : null;
+  const confirmedAliasLink =
+    subjectMatch.exactMatchKind === "confirmed_alias" && exactCandidate
+      ? (exactCandidate.identityLinks ?? []).find(
+          (identityLink) =>
+            identityLink.status === "confirmed" &&
+            identityLink.useForMatching &&
+            identityLink.normalizedLabel ===
+              normalizeDossierSubjectName(recommendation?.subjectName ?? ""),
+        )
+      : undefined;
+  const possibleAliasConflictCandidates = recommendation
+    ? (payload?.candidates ?? []).filter((candidate) =>
+        (candidate.identityLinks ?? []).some(
+          (identityLink) =>
+            identityLink.status === "proposed" &&
+            identityLink.normalizedLabel ===
+              normalizeDossierSubjectName(recommendation.subjectName),
+        ),
+      )
+    : [];
   const possibleCandidates = subjectMatch.possibleCandidateIds
     .map((candidateId) =>
       payload?.candidates.find((candidate) => candidate.id === candidateId),
@@ -368,7 +389,18 @@ export default function DossierRecommendationPage() {
             </p>
             {exactCandidate ? (
               <div className="border border-accent/60 bg-accent/10 p-4 text-accent space-y-2">
-                {subjectMatch.exactMatchKind === "pre_targeted" ? (
+                {subjectMatch.exactMatchKind === "confirmed_alias" ? (
+                  <>
+                    <p className="font-bold">
+                      Matched by confirmed alias: {confirmedAliasLink?.label ?? subjectMatch.aliasLabel ?? recommendation.subjectName}
+                    </p>
+                    <p>Source file name: {exactCandidate.name}</p>
+                    <p>
+                      This alias is used for internal matching only unless public
+                      use is later approved.
+                    </p>
+                  </>
+                ) : subjectMatch.exactMatchKind === "pre_targeted" ? (
                   <>
                     <p className="font-bold">
                       Pre-targeted BNL Source File: {exactCandidate.name}
@@ -392,6 +424,19 @@ export default function DossierRecommendationPage() {
                 >
                   Attach to Matched BNL Source File
                 </button>
+              </div>
+            ) : possibleAliasConflictCandidates.length > 0 ? (
+              <div className="border border-accent/60 bg-accent/10 p-4 text-accent space-y-2">
+                <p className="font-bold">Possible alias conflict</p>
+                <p>
+                  A proposed identity link uses this subject label, but proposed
+                  aliases do not auto-match, attach, or merge source files.
+                </p>
+                <ul className="list-disc pl-5">
+                  {possibleAliasConflictCandidates.map((candidate) => (
+                    <li key={candidate.id}>{candidate.name}</li>
+                  ))}
+                </ul>
               </div>
             ) : possibleCandidates.length > 0 ? (
               <div className="border border-accent/60 bg-accent/10 p-4 text-accent space-y-2">

@@ -133,6 +133,58 @@ export type DossierSourceFileNote = {
   ingestSource?: DossierRecommendationIngestSource;
 };
 
+
+export type DossierIdentityLinkType =
+  | "alias"
+  | "artist_name"
+  | "discord_handle"
+  | "operator_name"
+  | "public_persona"
+  | "previous_name"
+  | "alternate_spelling"
+  | "related_label"
+  | "unknown";
+
+export type DossierIdentityLinkVisibility =
+  | "internal_only"
+  | "public_safe";
+
+export type DossierIdentityLinkStatus =
+  | "proposed"
+  | "confirmed"
+  | "rejected"
+  | "retired";
+
+export type DossierIdentityLinkSource =
+  | "owner_confirmed"
+  | "admin_manual"
+  | "mod_manual"
+  | "bnl_recommendation"
+  | "rd_context"
+  | "broadcast_memory"
+  | "website_dossier"
+  | "unknown";
+
+export type DossierIdentityLink = {
+  id: string;
+  candidateId: string;
+  label: string;
+  normalizedLabel: string;
+  type: DossierIdentityLinkType;
+  visibility: DossierIdentityLinkVisibility;
+  status: DossierIdentityLinkStatus;
+  source: DossierIdentityLinkSource;
+  confidence?: "low" | "medium" | "high" | "confirmed";
+  useForMatching: boolean;
+  useInPublicDossier: boolean;
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+  confirmedBy?: string;
+  confirmedAt?: string;
+};
+
 export type DossierCandidate = {
   id: string;
   name: string;
@@ -169,6 +221,7 @@ export type DossierCandidate = {
   doNotSay?: string[];
   publicSafetyNotes?: string[];
   sourceFileNotes?: DossierSourceFileNote[];
+  identityLinks?: DossierIdentityLink[];
   mergedIntoCandidateId?: string;
   mergedAt?: string;
   mergeNote?: string;
@@ -257,7 +310,8 @@ export type DossierDuplicateGroup = {
 
 export type DossierRecommendationType =
   | "new_subject"
-  | "modify_existing_dossier";
+  | "modify_existing_dossier"
+  | "identity_link";
 
 export type DossierRecommendationStatus =
   | "new"
@@ -407,7 +461,13 @@ export function getDossierSourceFileMetrics(input: {
 
 export type DossierSubjectMatchResult = {
   exactCandidateId?: string;
-  exactMatchKind?: "pre_targeted" | "subject";
+  exactMatchKind?:
+    | "pre_targeted"
+    | "name"
+    | "compact_name"
+    | "subject_key"
+    | "confirmed_alias";
+  aliasLabel?: string;
   possibleCandidateIds: string[];
   reason: string;
 };
@@ -492,33 +552,63 @@ export function matchDossierRecommendationSubject(input: {
     };
   }
 
+  let exactMatchKind: DossierSubjectMatchResult["exactMatchKind"];
   const exactCandidate = activeCandidates.find((candidate) => {
     const normalizedCandidate = normalizeDossierSubjectName(candidate.name);
     const compactCandidate = compactDossierSubjectName(candidate.name);
-    return (
-      Boolean(normalizedSubject) &&
-      (normalizedSubject === normalizedCandidate ||
-        compactSubject === compactCandidate ||
-        (Boolean(normalizedSubjectKey) &&
-          (normalizedSubjectKey === normalizedCandidate ||
-            compactSubjectKey === compactCandidate)))
-    );
+    if (!normalizedSubject) return false;
+    if (normalizedSubject === normalizedCandidate) {
+      exactMatchKind = "name";
+      return true;
+    }
+    if (compactSubject === compactCandidate) {
+      exactMatchKind = "compact_name";
+      return true;
+    }
+    if (
+      Boolean(normalizedSubjectKey) &&
+      (normalizedSubjectKey === normalizedCandidate ||
+        compactSubjectKey === compactCandidate)
+    ) {
+      exactMatchKind = "subject_key";
+      return true;
+    }
+    return false;
   });
 
+  let exactAliasCandidate: DossierCandidate | undefined;
+  let exactAliasLabel: string | undefined;
+  if (!exactCandidate && normalizedSubject) {
+    exactAliasCandidate = activeCandidates.find((candidate) => {
+      const link = (candidate.identityLinks ?? []).find(
+        (identityLink) =>
+          identityLink.status === "confirmed" &&
+          identityLink.useForMatching === true &&
+          identityLink.normalizedLabel === normalizedSubject,
+      );
+      if (!link) return false;
+      exactAliasLabel = link.label;
+      return true;
+    });
+  }
+  const safeExactCandidate = exactCandidate ?? exactAliasCandidate;
+
   const possibleCandidateIds = activeCandidates
-    .filter((candidate) => candidate.id !== exactCandidate?.id)
+    .filter((candidate) => candidate.id !== safeExactCandidate?.id)
     .filter((candidate) =>
       hasPossibleSubjectOverlap(subjectName, candidate.name),
     )
     .map((candidate) => candidate.id);
 
-  if (exactCandidate) {
+  if (safeExactCandidate) {
     return {
-      exactCandidateId: exactCandidate.id,
-      exactMatchKind: "subject",
+      exactCandidateId: safeExactCandidate.id,
+      exactMatchKind: exactAliasCandidate ? "confirmed_alias" : exactMatchKind,
+      aliasLabel: exactAliasCandidate ? exactAliasLabel : undefined,
       possibleCandidateIds,
-      reason:
-        "Exact same-subject match by normalized name, compact name, or explicit subject key.",
+      reason: exactAliasCandidate
+        ? "Confirmed identity link / alias match."
+        : "Exact same-subject match by normalized name, compact name, or explicit subject key.",
     };
   }
 
@@ -596,6 +686,11 @@ export type DossierWorkflowAction =
   | "denyCandidate"
   | "markNeedsMoreEvidence"
   | "addSourceFileNote"
+  | "addDossierIdentityLink"
+  | "updateDossierIdentityLink"
+  | "confirmDossierIdentityLink"
+  | "rejectDossierIdentityLink"
+  | "retireDossierIdentityLink"
   | "createDossierRecommendation"
   | "attachRecommendationToCandidate"
   | "convertRecommendationToCandidate"
@@ -629,6 +724,11 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "denyCandidate",
   "markNeedsMoreEvidence",
   "addSourceFileNote",
+  "addDossierIdentityLink",
+  "updateDossierIdentityLink",
+  "confirmDossierIdentityLink",
+  "rejectDossierIdentityLink",
+  "retireDossierIdentityLink",
   "createDossierRecommendation",
   "attachRecommendationToCandidate",
   "convertRecommendationToCandidate",

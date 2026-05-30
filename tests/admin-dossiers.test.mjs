@@ -66,6 +66,7 @@ async function resetWorkflowStore() {
     revision: 0,
     candidates: [],
     drafts: [],
+    recommendations: [],
     updatedAt: new Date(0).toISOString(),
   });
 }
@@ -292,7 +293,6 @@ test("admin dossier dashboard is traffic control instead of an all-in-one workbe
   );
 });
 
-
 test("dossier admin pages expose numbered dossier phases and clearer labels", () => {
   const dashboard = source("src/app/admin/dossiers/page.tsx");
   for (const label of [
@@ -309,15 +309,26 @@ test("dossier admin pages expose numbered dossier phases and clearer labels", ()
     assert.ok(dashboard.includes(label), `${label} should be present`);
   }
 
-  const sourceFilePage = source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+  const sourceFilePage = source(
+    "src/app/admin/dossiers/candidates/[candidateId]/page.tsx",
+  );
   assert.match(sourceFilePage, /Phase 1 — BNL Source File/);
-  assert.match(sourceFilePage, /This page collects what BNL knows and what mods\/admins add/);
+  assert.match(
+    sourceFilePage,
+    /This page collects what BNL knows and what mods\/admins add/,
+  );
   assert.match(sourceFilePage, /source material, not the public dossier/);
 
   const draftPage = source("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
   assert.match(draftPage, /Phase 2 — Proposed Dossier \+ BNL Edit Chat/);
-  assert.match(draftPage, /This page shows the proposed completed dossier built from the BNL Source File/);
-  assert.match(draftPage, /This page shows the proposed completed dossier built from the BNL Source File/);
+  assert.match(
+    draftPage,
+    /This page shows the proposed completed dossier built from the BNL Source File/,
+  );
+  assert.match(
+    draftPage,
+    /This page shows the proposed completed dossier built from the BNL Source File/,
+  );
 
   const ownerPage = source("src/app/admin/dossiers/owner-review/page.tsx");
   assert.match(ownerPage, /Phase 4 — Owner Review/);
@@ -331,7 +342,6 @@ test("admin dossier page has minimal loading and auth-required states", () => {
   assert.match(page, /Back to Admin/);
   assert.match(page, /MinimalDossierAdminState/);
 });
-
 
 test("dedicated draft editor route contains focused editing workflow and future BNL boundary", () => {
   const routePath = "src/app/admin/dossiers/drafts/[draftId]/page.tsx";
@@ -373,7 +383,10 @@ test("dedicated draft editor route contains focused editing workflow and future 
   assert.match(page, /nonEditableDraftStatuses/);
   assert.match(page, /draft\.status === "ready_for_owner_review"/);
   assert.match(page, /Already submitted to Owner Review/);
-  assert.match(page, /BNL will eventually generate the proposed dossier from the BNL Source File and approved sources/);
+  assert.match(
+    page,
+    /BNL will eventually generate the proposed dossier from the BNL Source File and approved sources/,
+  );
   assert.match(page, /BNL should ask only for missing specifics/);
   assert.match(page, /Draft is superseded/);
   assert.match(page, /Publishing not built yet/);
@@ -402,7 +415,7 @@ test("dedicated candidate review route contains focused evidence and action work
     "Coming later: this will save notes to the BNL Source File",
     "Create / Open Proposed Dossier",
     "Open Proposed Dossier",
-        "Mark Needs Info",
+    "Mark Needs Info",
     "Evidence summary",
     "Evidence items",
     "Public safety notes",
@@ -462,12 +475,21 @@ test("dedicated duplicate merge route contains focused manual merge workflow", (
 
 test("dashboard uses actual workflow ids and state-aware lane filtering", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
-  assert.match(page, /href=\{`\/admin\/dossiers\/candidates\/\$\{candidate\.id\}`\}/);
+  assert.match(
+    page,
+    /href=\{`\/admin\/dossiers\/candidates\/\$\{candidate\.id\}`\}/,
+  );
   assert.match(page, /href=\{`\/admin\/dossiers\/drafts\/\$\{draft\.id\}`\}/);
-  assert.match(page, /href=\{`\/admin\/dossiers\/duplicates\/\$\{group\.id\}`\}/);
+  assert.match(
+    page,
+    /href=\{`\/admin\/dossiers\/duplicates\/\$\{group\.id\}`\}/,
+  );
   assert.match(page, /activeCandidateStatuses/);
   assert.match(page, /activeCandidates = candidates\.filter/);
-  assert.match(page, /candidate\.status === "denied" \|\| candidate\.status === "merged"/);
+  assert.match(
+    page,
+    /candidate\.status === "denied" \|\| candidate\.status === "merged"/,
+  );
   assert.match(page, /activeDraftStatuses/);
   assert.match(page, /closedDraftStatuses/);
   assert.match(page, /Closed \/ History/);
@@ -528,12 +550,27 @@ test("owner review page is a placeholder lane without publishing", () => {
   assert.match(page, /Owner Final Review Queue/);
   assert.match(page, /This is Owner Review\. The owner does the final pass/);
   assert.match(page, /Owner final review is separate from admin drafting/);
-  assert.match(page, /Owner will be able to use BNL assistance plus manual editing/);
-  assert.match(page, /Owner can approve, send back, request more info, or deny/);
-  assert.match(page, /Owner approval will require owner gate\/secret in a later PR/);
-  assert.match(page, /Additional Info Added After Submission \/ Admin Addendum/);
+  assert.match(
+    page,
+    /Owner will be able to use BNL assistance plus manual editing/,
+  );
+  assert.match(
+    page,
+    /Owner can approve, send back, request more info, or deny/,
+  );
+  assert.match(
+    page,
+    /Owner approval will require owner gate\/secret in a later PR/,
+  );
+  assert.match(
+    page,
+    /Additional Info Added After Submission \/ Admin Addendum/,
+  );
   assert.match(page, /Approval does not publish yet/);
-  assert.match(page, /Owner approval still will not publish until publishing exists/);
+  assert.match(
+    page,
+    /Owner approval still will not publish until publishing exists/,
+  );
   assert.match(page, /View Submitted Draft/);
   assert.doesNotMatch(page, /publishDraft/);
   assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
@@ -590,6 +627,7 @@ test("authenticated GET returns workflow store, metadata, authoring guide, tag r
   const payload = await response.json();
   assert.deepEqual(payload.candidates, []);
   assert.deepEqual(payload.drafts, []);
+  assert.deepEqual(payload.recommendations, []);
   assert.equal(payload.workflow.version, 1);
   assert.equal(payload.workflow.status, "candidate_store_enabled");
   assert.equal(payload.workflow.storage, "memory_fallback");
@@ -1152,77 +1190,105 @@ test("duplicate awareness marks candidates matching existing database entries", 
 
 test("workflow duplicate group detection returns deterministic high-risk groups", async () => {
   await resetWorkflowStore();
-  const first = await (await authedPost({
-    action: "createManualCandidate",
-    input: { ...manualCandidateInput, name: "Signal Witch" },
-  })).json();
-  const second = await (await authedPost({
-    action: "createManualCandidate",
-    input: { ...manualCandidateInput, name: "Signal Witch", reason: "Queue/session context." },
-  })).json();
+  const first = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Signal Witch" },
+    })
+  ).json();
+  const second = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: {
+        ...manualCandidateInput,
+        name: "Signal Witch",
+        reason: "Queue/session context.",
+      },
+    })
+  ).json();
 
   const payload = await (await authedGet()).json();
   assert.equal(payload.duplicateGroups.length, 1);
   const group = payload.duplicateGroups[0];
   assert.equal(group.risk, "high");
-  assert.deepEqual(new Set(group.candidateIds), new Set([first.candidate.id, second.candidate.id]));
+  assert.deepEqual(
+    new Set(group.candidateIds),
+    new Set([first.candidate.id, second.candidate.id]),
+  );
   assert.equal(group.suggestedMasterCandidateId, first.candidate.id);
 });
 
 test("workflow duplicate group detection catches compact near duplicates", async () => {
   await resetWorkflowStore();
-  const first = await (await authedPost({
-    action: "createManualCandidate",
-    input: { ...manualCandidateInput, name: "Signal Witch" },
-  })).json();
-  const second = await (await authedPost({
-    action: "createManualCandidate",
-    input: { ...manualCandidateInput, name: "signalwitch" },
-  })).json();
+  const first = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Signal Witch" },
+    })
+  ).json();
+  const second = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "signalwitch" },
+    })
+  ).json();
 
   const payload = await (await authedGet()).json();
   assert.equal(payload.duplicateGroups.length, 1);
   assert.ok(["high", "medium"].includes(payload.duplicateGroups[0].risk));
-  assert.deepEqual(new Set(payload.duplicateGroups[0].candidateIds), new Set([first.candidate.id, second.candidate.id]));
+  assert.deepEqual(
+    new Set(payload.duplicateGroups[0].candidateIds),
+    new Set([first.candidate.id, second.candidate.id]),
+  );
 });
 
 test("workflow duplicate group detection leaves clear non-duplicates ungrouped", async () => {
   await resetWorkflowStore();
-  await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Signal Witch" } });
-  await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Cache Bird" } });
+  await authedPost({
+    action: "createManualCandidate",
+    input: { ...manualCandidateInput, name: "Signal Witch" },
+  });
+  await authedPost({
+    action: "createManualCandidate",
+    input: { ...manualCandidateInput, name: "Cache Bird" },
+  });
   const payload = await (await authedGet()).json();
   assert.deepEqual(payload.duplicateGroups, []);
 });
 
 test("mergeCandidates preserves sources and unions candidate review fields", async () => {
   await resetWorkflowStore();
-  const first = await (await authedPost({
-    action: "createManualCandidate",
-    input: {
-      ...manualCandidateInput,
-      name: "Signal Witch",
-      knownFacts: ["Fact A"],
-      missingInfo: ["Missing A"],
-      doNotSay: ["Do not say A"],
-      publicSafetyNotes: ["Safety A"],
-      recommendedTags: ["signal", "witch"],
-      proposedTags: ["draft-a"],
-    },
-  })).json();
-  const second = await (await authedPost({
-    action: "createManualCandidate",
-    input: {
-      ...manualCandidateInput,
-      name: "Signal Witch",
-      reason: "Queue/session context.",
-      knownFacts: ["Fact B", "Fact A"],
-      missingInfo: ["Missing B"],
-      doNotSay: ["Do not say B"],
-      publicSafetyNotes: ["Safety B"],
-      recommendedTags: ["queue"],
-      proposedTags: ["draft-b"],
-    },
-  })).json();
+  const first = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: {
+        ...manualCandidateInput,
+        name: "Signal Witch",
+        knownFacts: ["Fact A"],
+        missingInfo: ["Missing A"],
+        doNotSay: ["Do not say A"],
+        publicSafetyNotes: ["Safety A"],
+        recommendedTags: ["signal", "witch"],
+        proposedTags: ["draft-a"],
+      },
+    })
+  ).json();
+  const second = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: {
+        ...manualCandidateInput,
+        name: "Signal Witch",
+        reason: "Queue/session context.",
+        knownFacts: ["Fact B", "Fact A"],
+        missingInfo: ["Missing B"],
+        doNotSay: ["Do not say B"],
+        publicSafetyNotes: ["Safety B"],
+        recommendedTags: ["queue"],
+        proposedTags: ["draft-b"],
+      },
+    })
+  ).json();
 
   const response = await authedPost({
     action: "mergeCandidates",
@@ -1234,52 +1300,77 @@ test("mergeCandidates preserves sources and unions candidate review fields", asy
   });
   assert.equal(response.status, 200);
   const payload = await response.json();
-  const master = payload.candidates.find((candidate) => candidate.id === first.candidate.id);
-  const secondary = payload.candidates.find((candidate) => candidate.id === second.candidate.id);
+  const master = payload.candidates.find(
+    (candidate) => candidate.id === first.candidate.id,
+  );
+  const secondary = payload.candidates.find(
+    (candidate) => candidate.id === second.candidate.id,
+  );
   assert.equal(master.status, "needs_review");
   assert.equal(secondary.status, "merged");
   assert.equal(secondary.mergedIntoCandidateId, first.candidate.id);
   assert.deepEqual(new Set(master.knownFacts), new Set(["Fact A", "Fact B"]));
-  assert.deepEqual(new Set(master.missingInfo), new Set(["Missing A", "Missing B"]));
-  assert.deepEqual(new Set(master.doNotSay), new Set(["Do not say A", "Do not say B"]));
-  assert.deepEqual(new Set(master.publicSafetyNotes), new Set(["Safety A", "Safety B"]));
-  assert.deepEqual(new Set(master.recommendedTags), new Set(["signal", "witch", "queue"]));
-  assert.deepEqual(new Set(master.proposedTags), new Set(["draft-a", "draft-b"]));
+  assert.deepEqual(
+    new Set(master.missingInfo),
+    new Set(["Missing A", "Missing B"]),
+  );
+  assert.deepEqual(
+    new Set(master.doNotSay),
+    new Set(["Do not say A", "Do not say B"]),
+  );
+  assert.deepEqual(
+    new Set(master.publicSafetyNotes),
+    new Set(["Safety A", "Safety B"]),
+  );
+  assert.deepEqual(
+    new Set(master.recommendedTags),
+    new Set(["signal", "witch", "queue"]),
+  );
+  assert.deepEqual(
+    new Set(master.proposedTags),
+    new Set(["draft-a", "draft-b"]),
+  );
   assert.equal(payload.candidates.length, 2);
 });
 
 test("mergeCandidates prefers primary taxonomy and fills missing taxonomy from secondary", async () => {
   await resetWorkflowStore();
-  const first = await (await authedPost({
-    action: "createManualCandidate",
-    input: {
-      ...manualCandidateInput,
-      name: "Taxonomy Merge Subject",
-      recommendedCategory: undefined,
-      recommendedKind: undefined,
-      recommendedEcosystemLane: "radio_entity",
-      recommendedIdentityAuthority: "barcode_controlled",
-    },
-  })).json();
-  const second = await (await authedPost({
-    action: "createManualCandidate",
-    input: {
-      ...manualCandidateInput,
-      name: "Taxonomy Merge Subject",
-      recommendedCategory: "Entity",
-      recommendedKind: "radio_entity",
-      recommendedEcosystemLane: "community_artist",
-      recommendedIdentityAuthority: "community_owned",
-    },
-  })).json();
+  const first = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: {
+        ...manualCandidateInput,
+        name: "Taxonomy Merge Subject",
+        recommendedCategory: undefined,
+        recommendedKind: undefined,
+        recommendedEcosystemLane: "radio_entity",
+        recommendedIdentityAuthority: "barcode_controlled",
+      },
+    })
+  ).json();
+  const second = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: {
+        ...manualCandidateInput,
+        name: "Taxonomy Merge Subject",
+        recommendedCategory: "Entity",
+        recommendedKind: "radio_entity",
+        recommendedEcosystemLane: "community_artist",
+        recommendedIdentityAuthority: "community_owned",
+      },
+    })
+  ).json();
 
-  const payload = await (await authedPost({
-    action: "mergeCandidates",
-    input: {
-      primaryCandidateId: first.candidate.id,
-      sourceCandidateIds: [first.candidate.id, second.candidate.id],
-    },
-  })).json();
+  const payload = await (
+    await authedPost({
+      action: "mergeCandidates",
+      input: {
+        primaryCandidateId: first.candidate.id,
+        sourceCandidateIds: [first.candidate.id, second.candidate.id],
+      },
+    })
+  ).json();
   const master = payload.merge.masterCandidate;
   assert.equal(master.recommendedCategory, "Entity");
   assert.equal(master.recommendedKind, "radio_entity");
@@ -1289,75 +1380,192 @@ test("mergeCandidates prefers primary taxonomy and fills missing taxonomy from s
 
 test("mergeCandidates can create/update a master draft and supersede secondary drafts", async () => {
   await resetWorkflowStore();
-  const first = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Draft Merge Subject" } })).json();
-  const second = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Draft Merge Subject", recommendedKind: "radio_entity" } })).json();
-  const firstDraft = await (await authedPost({ action: "createDraftFromCandidate", candidateId: first.candidate.id })).json();
-  const secondDraft = await (await authedPost({ action: "createDraftFromCandidate", candidateId: second.candidate.id })).json();
+  const first = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Draft Merge Subject" },
+    })
+  ).json();
+  const second = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: {
+        ...manualCandidateInput,
+        name: "Draft Merge Subject",
+        recommendedKind: "radio_entity",
+      },
+    })
+  ).json();
+  const firstDraft = await (
+    await authedPost({
+      action: "createDraftFromCandidate",
+      candidateId: first.candidate.id,
+    })
+  ).json();
+  const secondDraft = await (
+    await authedPost({
+      action: "createDraftFromCandidate",
+      candidateId: second.candidate.id,
+    })
+  ).json();
 
-  const payload = await (await authedPost({
-    action: "mergeCandidates",
-    input: {
-      primaryCandidateId: first.candidate.id,
-      sourceCandidateIds: [first.candidate.id, second.candidate.id],
-      sourceDraftIds: [firstDraft.draft.id, secondDraft.draft.id],
-      createMasterDraft: true,
-    },
-  })).json();
+  const payload = await (
+    await authedPost({
+      action: "mergeCandidates",
+      input: {
+        primaryCandidateId: first.candidate.id,
+        sourceCandidateIds: [first.candidate.id, second.candidate.id],
+        sourceDraftIds: [firstDraft.draft.id, secondDraft.draft.id],
+        createMasterDraft: true,
+      },
+    })
+  ).json();
 
   const masterDraft = payload.merge.masterDraft;
-  const secondaryDraft = payload.drafts.find((draft) => draft.id === secondDraft.draft.id);
+  const secondaryDraft = payload.drafts.find(
+    (draft) => draft.id === secondDraft.draft.id,
+  );
   assert.equal(masterDraft.id, firstDraft.draft.id);
   assert.equal(masterDraft.candidateId, first.candidate.id);
   assert.equal(masterDraft.status, "draft");
   assert.equal(secondaryDraft.status, "superseded");
   assert.equal(secondaryDraft.mergedIntoDraftId, masterDraft.id);
-  assert.equal(masterDraft.fields.ecosystemLane, manualCandidateInput.recommendedEcosystemLane);
-  assert.equal(masterDraft.fields.identityAuthority, manualCandidateInput.recommendedIdentityAuthority);
+  assert.equal(
+    masterDraft.fields.ecosystemLane,
+    manualCandidateInput.recommendedEcosystemLane,
+  );
+  assert.equal(
+    masterDraft.fields.identityAuthority,
+    manualCandidateInput.recommendedIdentityAuthority,
+  );
 });
 
 test("mergeCandidates validation covers auth, missing primary, too few sources, and denied primary", async () => {
   await resetWorkflowStore();
-  const unauthorized = await route.POST(new Request("https://example.test/api/admin/dossiers", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ action: "mergeCandidates", input: { primaryCandidateId: "x", sourceCandidateIds: ["x", "y"] } }),
-  }));
+  const unauthorized = await route.POST(
+    new Request("https://example.test/api/admin/dossiers", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "mergeCandidates",
+        input: { primaryCandidateId: "x", sourceCandidateIds: ["x", "y"] },
+      }),
+    }),
+  );
   assert.equal(unauthorized.status, 401);
 
-  const missing = await authedPost({ action: "mergeCandidates", input: { primaryCandidateId: "missing", sourceCandidateIds: ["missing", "also-missing"] } });
+  const missing = await authedPost({
+    action: "mergeCandidates",
+    input: {
+      primaryCandidateId: "missing",
+      sourceCandidateIds: ["missing", "also-missing"],
+    },
+  });
   assert.equal(missing.status, 404);
 
-  const first = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Validation Subject" } })).json();
-  const tooFew = await authedPost({ action: "mergeCandidates", input: { primaryCandidateId: first.candidate.id, sourceCandidateIds: [first.candidate.id] } });
+  const first = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Validation Subject" },
+    })
+  ).json();
+  const tooFew = await authedPost({
+    action: "mergeCandidates",
+    input: {
+      primaryCandidateId: first.candidate.id,
+      sourceCandidateIds: [first.candidate.id],
+    },
+  });
   assert.equal(tooFew.status, 400);
 
-  await authedPost({ action: "denyCandidate", candidateId: first.candidate.id });
-  const second = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Validation Subject" } })).json();
-  const denied = await authedPost({ action: "mergeCandidates", input: { primaryCandidateId: first.candidate.id, sourceCandidateIds: [first.candidate.id, second.candidate.id] } });
+  await authedPost({
+    action: "denyCandidate",
+    candidateId: first.candidate.id,
+  });
+  const second = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Validation Subject" },
+    })
+  ).json();
+  const denied = await authedPost({
+    action: "mergeCandidates",
+    input: {
+      primaryCandidateId: first.candidate.id,
+      sourceCandidateIds: [first.candidate.id, second.candidate.id],
+    },
+  });
   assert.equal(denied.status, 400);
 });
 
 test("mergeCandidates does not mutate public database, public read model, tag registry, or publish", async () => {
   await resetWorkflowStore();
-  const publicDossierIdsBefore = databasePage.entries.map((entry) => entry.id).join("|");
-  const tagNamesBefore = new Set(databasePage.entries.flatMap((entry) => entry.tags));
+  const publicDossierIdsBefore = databasePage.entries
+    .map((entry) => entry.id)
+    .join("|");
+  const tagNamesBefore = new Set(
+    databasePage.entries.flatMap((entry) => entry.tags),
+  );
   const readModelBefore = await (await readModel.GET()).json();
-  const publicReadModelNamesBefore = readModelBefore.sections.dossiers.items.map((entry) => entry.name).join("|");
+  const publicReadModelNamesBefore = readModelBefore.sections.dossiers.items
+    .map((entry) => entry.name)
+    .join("|");
 
-  const first = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Workflow Merge Only", recommendedTags: ["workflow-only-tag-a"] } })).json();
-  const second = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Workflow Merge Only", recommendedTags: ["workflow-only-tag-b"] } })).json();
-  await authedPost({ action: "mergeCandidates", input: { primaryCandidateId: first.candidate.id, sourceCandidateIds: [first.candidate.id, second.candidate.id], createMasterDraft: true } });
+  const first = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: {
+        ...manualCandidateInput,
+        name: "Workflow Merge Only",
+        recommendedTags: ["workflow-only-tag-a"],
+      },
+    })
+  ).json();
+  const second = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: {
+        ...manualCandidateInput,
+        name: "Workflow Merge Only",
+        recommendedTags: ["workflow-only-tag-b"],
+      },
+    })
+  ).json();
+  await authedPost({
+    action: "mergeCandidates",
+    input: {
+      primaryCandidateId: first.candidate.id,
+      sourceCandidateIds: [first.candidate.id, second.candidate.id],
+      createMasterDraft: true,
+    },
+  });
 
-  assert.equal(databasePage.entries.map((entry) => entry.id).join("|"), publicDossierIdsBefore);
-  assert.deepEqual(new Set(databasePage.entries.flatMap((entry) => entry.tags)), tagNamesBefore);
+  assert.equal(
+    databasePage.entries.map((entry) => entry.id).join("|"),
+    publicDossierIdsBefore,
+  );
+  assert.deepEqual(
+    new Set(databasePage.entries.flatMap((entry) => entry.tags)),
+    tagNamesBefore,
+  );
   const readModelAfter = await (await readModel.GET()).json();
-  assert.equal(readModelAfter.sections.dossiers.items.map((entry) => entry.name).join("|"), publicReadModelNamesBefore);
-  assert.equal(readModelAfter.sections.dossiers.items.some((entry) => entry.name === "Workflow Merge Only"), false);
+  assert.equal(
+    readModelAfter.sections.dossiers.items.map((entry) => entry.name).join("|"),
+    publicReadModelNamesBefore,
+  );
+  assert.equal(
+    readModelAfter.sections.dossiers.items.some(
+      (entry) => entry.name === "Workflow Merge Only",
+    ),
+    false,
+  );
 });
 
 test("admin dossiers dashboard links duplicate groups to dedicated merge review", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
-  const mergePage = source("src/app/admin/dossiers/duplicates/[groupId]/page.tsx");
+  const mergePage = source(
+    "src/app/admin/dossiers/duplicates/[groupId]/page.tsx",
+  );
   assert.match(page, /Duplicate Warnings/);
   assert.match(page, /View Warning \/ Open Merge Review/);
   assert.match(page, /\/admin\/dossiers\/duplicates\//);
@@ -1369,4 +1577,396 @@ test("admin dossiers dashboard links duplicate groups to dedicated merge review"
   assert.match(mergePage, /Source candidates are preserved/);
   assert.match(mergePage, /Source drafts are preserved/);
   assert.match(mergePage, /BNL merge writing comes later/);
+});
+
+test("workflow state defaults recommendations and source notes for older stores", async () => {
+  await store.saveDossierWorkflowState({
+    version: 1,
+    revision: 0,
+    candidates: [
+      {
+        id: "legacy-candidate",
+        name: "Legacy Candidate",
+        candidateType: "unknown",
+        source: "manual",
+        tier: "review_candidate",
+        score: 50,
+        whyNow: "Legacy state",
+        reason: "Legacy reason",
+        evidenceSummary: "Legacy evidence",
+        status: "needs_review",
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+      },
+    ],
+    drafts: [],
+    updatedAt: new Date(0).toISOString(),
+  });
+  const payload = await (await authedGet()).json();
+  assert.deepEqual(payload.recommendations, []);
+  assert.deepEqual(payload.candidates[0].sourceFileNotes, []);
+});
+
+test("source file notes persist without mutating draft fields or public read model", async () => {
+  await resetWorkflowStore();
+  const created = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: manualCandidateInput,
+    })
+  ).json();
+  const draftPayload = await (
+    await authedPost({
+      action: "createDraftFromCandidate",
+      candidateId: created.candidate.id,
+    })
+  ).json();
+  const originalFields = JSON.stringify(draftPayload.draft.fields);
+  const originalUpdatedAt = created.candidate.updatedAt;
+
+  const noteResponse = await authedPost({
+    action: "addSourceFileNote",
+    candidateId: created.candidate.id,
+    input: {
+      type: "correction",
+      text: "  Correct the public-safe spelling later.  ",
+      source: "admin_manual",
+      publicSafe: true,
+      appliesToDraftId: draftPayload.draft.id,
+    },
+  });
+  assert.equal(noteResponse.status, 200);
+  const notePayload = await noteResponse.json();
+  const candidate = notePayload.candidates.find(
+    (item) => item.id === created.candidate.id,
+  );
+  assert.equal(
+    notePayload.note.text,
+    "Correct the public-safe spelling later.",
+  );
+  assert.equal(candidate.sourceFileNotes.length, 1);
+  assert.notEqual(candidate.updatedAt, originalUpdatedAt);
+  assert.equal(JSON.stringify(notePayload.drafts[0].fields), originalFields);
+
+  const getPayload = await (await authedGet()).json();
+  assert.equal(getPayload.candidates[0].sourceFileNotes[0].type, "correction");
+  assert.doesNotMatch(
+    JSON.stringify(await (await readModel.GET()).json()),
+    /sourceFileNotes|recommendations|Correct the public-safe spelling/,
+  );
+});
+
+test("post-submission source note persists as admin addendum without changing submitted draft", async () => {
+  await resetWorkflowStore();
+  const created = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: manualCandidateInput,
+    })
+  ).json();
+  const draftPayload = await (
+    await authedPost({
+      action: "createDraftFromCandidate",
+      candidateId: created.candidate.id,
+    })
+  ).json();
+  const fields = {
+    ...draftPayload.draft.fields,
+    role: "Public artist profile",
+    summary: "Owner-ready summary.",
+    tags: ["artist", "radio"],
+  };
+  await authedPost({
+    action: "saveDraft",
+    draftId: draftPayload.draft.id,
+    fields,
+  });
+  const submitted = await (
+    await authedPost({
+      action: "submitDraftForOwnerReview",
+      draftId: draftPayload.draft.id,
+    })
+  ).json();
+  const submittedFields = JSON.stringify(submitted.draft.fields);
+  const note = await (
+    await authedPost({
+      action: "addSourceFileNote",
+      candidateId: created.candidate.id,
+      input: {
+        type: "owner_note",
+        text: "Owner should see this addendum.",
+        source: "admin_manual",
+        publicSafe: false,
+        appliesToDraftId: draftPayload.draft.id,
+      },
+    })
+  ).json();
+  assert.equal(
+    note.candidates[0].sourceFileNotes[0].text,
+    "Owner should see this addendum.",
+  );
+  assert.equal(
+    JSON.stringify(
+      note.drafts.find((draft) => draft.id === draftPayload.draft.id).fields,
+    ),
+    submittedFields,
+  );
+  const sourcePage = source(
+    "src/app/admin/dossiers/candidates/[candidateId]/page.tsx",
+  );
+  assert.match(sourcePage, /Admin Addendum for owner review/);
+  assert.match(sourcePage, /does not overwrite the submitted draft/);
+});
+
+test("recommendations can be created manually without automatic candidate or draft creation", async () => {
+  await resetWorkflowStore();
+  const response = await authedPost({
+    action: "createDossierRecommendation",
+    input: {
+      type: "new_subject",
+      subjectName: "Antigrain",
+      reason:
+        "Recurring public/community presence and likely dossier-worthy subject.",
+      evidenceSummary: "Manual seed until BNL recommendation engine exists.",
+      confidence: "medium",
+      sourceLanes: ["admin_manual"],
+    },
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.recommendation.status, "new");
+  assert.deepEqual(payload.recommendation.sourceLanes, ["admin_manual"]);
+  assert.equal(payload.candidates.length, 0);
+  assert.equal(payload.drafts.length, 0);
+});
+
+test("convert recommendation creates a BNL Source File with recommendation source notes and no draft", async () => {
+  await resetWorkflowStore();
+  const created = await (
+    await authedPost({
+      action: "createDossierRecommendation",
+      input: {
+        type: "new_subject",
+        subjectName: "Convert Seed",
+        reason: "Reason to convert.",
+        evidenceSummary: "Evidence to preserve.",
+        confidence: "high",
+        sourceLanes: ["admin_manual"],
+        missingInfo: ["Confirm role"],
+        publicSafetyNotes: ["Use public facts"],
+        doNotSay: ["No private identity"],
+        recommendedTags: ["artist"],
+        recommendedCategory: "Personnel",
+        recommendedKind: "community_member",
+        recommendedEcosystemLane: "community",
+        recommendedIdentityAuthority: "community_owned",
+      },
+    })
+  ).json();
+  const response = await authedPost({
+    action: "convertRecommendationToCandidate",
+    recommendationId: created.recommendation.id,
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.recommendation.status, "converted_to_source_file");
+  assert.equal(payload.recommendation.targetCandidateId, payload.candidate.id);
+  assert.equal(payload.candidates.length, 1);
+  assert.equal(payload.drafts.length, 0);
+  assert.equal(payload.candidate.name, "Convert Seed");
+  assert.equal(payload.candidate.sourceFileNotes.length, 1);
+  assert.match(payload.candidate.sourceFileNotes[0].text, /Reason to convert/);
+  assert.match(
+    payload.candidate.sourceFileNotes[0].text,
+    /Evidence to preserve/,
+  );
+  assert.equal(payload.candidate.recommendedKind, "community_member");
+});
+
+test("attach recommendation to existing candidate can create a source note and no draft", async () => {
+  await resetWorkflowStore();
+  const candidatePayload = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: manualCandidateInput,
+    })
+  ).json();
+  const recPayload = await (
+    await authedPost({
+      action: "createDossierRecommendation",
+      input: {
+        type: "modify_existing_dossier",
+        subjectName: "Attach Seed",
+        reason: "Attach this reason.",
+        evidenceSummary: "Attach this evidence.",
+        sourceLanes: ["admin_manual"],
+      },
+    })
+  ).json();
+  const response = await authedPost({
+    action: "attachRecommendationToCandidate",
+    recommendationId: recPayload.recommendation.id,
+    candidateId: candidatePayload.candidate.id,
+    createSourceNote: true,
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.recommendation.status, "attached_to_source_file");
+  assert.equal(
+    payload.recommendation.targetCandidateId,
+    candidatePayload.candidate.id,
+  );
+  assert.equal(payload.candidates[0].sourceFileNotes.length, 1);
+  assert.match(
+    payload.candidates[0].sourceFileNotes[0].text,
+    /Attach this reason/,
+  );
+  assert.equal(payload.drafts.length, 0);
+});
+
+test("ignore and dismiss recommendations preserve records", async () => {
+  await resetWorkflowStore();
+  const first = await (
+    await authedPost({
+      action: "createDossierRecommendation",
+      input: {
+        type: "new_subject",
+        subjectName: "Ignore Seed",
+        reason: "Ignore reason",
+        sourceLanes: ["admin_manual"],
+      },
+    })
+  ).json();
+  const second = await (
+    await authedPost({
+      action: "createDossierRecommendation",
+      input: {
+        type: "new_subject",
+        subjectName: "Dismiss Seed",
+        reason: "Dismiss reason",
+        sourceLanes: ["admin_manual"],
+      },
+    })
+  ).json();
+  const ignored = await (
+    await authedPost({
+      action: "ignoreDossierRecommendation",
+      recommendationId: first.recommendation.id,
+    })
+  ).json();
+  const dismissed = await (
+    await authedPost({
+      action: "dismissDossierRecommendation",
+      recommendationId: second.recommendation.id,
+    })
+  ).json();
+  assert.equal(ignored.recommendation.status, "ignored");
+  assert.equal(dismissed.recommendation.status, "dismissed");
+  const payload = await (await authedGet()).json();
+  assert.equal(payload.recommendations.length, 2);
+  const dashboard = source("src/app/admin/dossiers/page.tsx");
+  assert.match(dashboard, /activeRecommendations/);
+  assert.match(dashboard, /\["new", "reviewing"\]/);
+});
+
+test("recommendation inbox and source note UI are present and bounded", () => {
+  const dashboard = source("src/app/admin/dossiers/page.tsx");
+  assert.match(dashboard, /Dossier Recommendation Inbox/);
+  assert.match(dashboard, /Recommendations do not publish anything/);
+  assert.match(dashboard, /Create Manual Recommendation/);
+  assert.match(dashboard, /Convert to BNL Source File/);
+  assert.match(dashboard, /Attach to Existing Source File/);
+
+  const sourceFilePage = source(
+    "src/app/admin/dossiers/candidates/[candidateId]/page.tsx",
+  );
+  assert.match(sourceFilePage, /Add to BNL Source File/);
+  assert.match(sourceFilePage, /does not directly edit the proposed dossier/);
+  assert.match(sourceFilePage, /Save Info/);
+
+  const draftPage = source("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
+  assert.match(draftPage, /BNL Source File Notes/);
+  assert.match(draftPage, /active source note/);
+
+  const recommendationPagePath =
+    "src/app/admin/dossiers/recommendations/[recommendationId]/page.tsx";
+  assert.equal(
+    fs.existsSync(path.join(projectRoot, recommendationPagePath)),
+    true,
+  );
+  assert.match(
+    source(recommendationPagePath),
+    /Recommendations are admin-only review records/,
+  );
+  assert.doesNotMatch(
+    dashboard + sourceFilePage + draftPage + source(recommendationPagePath),
+    /fetch\("\/api\/bnl/,
+  );
+  assert.doesNotMatch(
+    dashboard + sourceFilePage + draftPage + source(recommendationPagePath),
+    /publishDraft/,
+  );
+});
+
+test("source note and recommendation actions enforce auth and validation", async () => {
+  await resetWorkflowStore();
+  const unauthNote = await route.POST(
+    new Request("https://example.test/api/admin/dossiers", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "addSourceFileNote",
+        candidateId: "x",
+        input: { text: "Nope" },
+      }),
+    }),
+  );
+  assert.equal(unauthNote.status, 401);
+  const unauthRecommendation = await route.POST(
+    new Request("https://example.test/api/admin/dossiers", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "createDossierRecommendation",
+        input: { subjectName: "Nope", reason: "Nope", type: "new_subject" },
+      }),
+    }),
+  );
+  assert.equal(unauthRecommendation.status, 401);
+  assert.equal(
+    (
+      await authedPost({
+        action: "addSourceFileNote",
+        candidateId: "missing",
+        input: { text: "" },
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await authedPost({
+        action: "createDossierRecommendation",
+        input: { subjectName: "", reason: "", type: "new_subject" },
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await authedPost({
+        action: "addSourceFileNote",
+        candidateId: "missing",
+        input: { text: "valid" },
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await authedPost({
+        action: "convertRecommendationToCandidate",
+        recommendationId: "missing",
+      })
+    ).status,
+    404,
+  );
 });

@@ -68,6 +68,31 @@ function Field({
   );
 }
 
+const terminalRecommendationStatuses = new Set<DossierRecommendation["status"]>(
+  [
+    "attached_to_source_file",
+    "converted_to_source_file",
+    "ignored",
+    "dismissed",
+  ],
+);
+
+function terminalRecommendationMessage(recommendation: DossierRecommendation) {
+  if (recommendation.status === "converted_to_source_file") {
+    return "Converted to BNL Source File.";
+  }
+  if (recommendation.status === "attached_to_source_file") {
+    return "Attached to existing BNL Source File.";
+  }
+  if (recommendation.status === "ignored") {
+    return "Ignored. This recommendation is closed.";
+  }
+  if (recommendation.status === "dismissed") {
+    return "Dismissed. This recommendation is closed.";
+  }
+  return "";
+}
+
 export default function DossierRecommendationPage() {
   const params = useParams();
   const recommendationId = routeParam(params?.recommendationId);
@@ -118,6 +143,17 @@ export default function DossierRecommendationPage() {
       ),
     [payload?.candidates],
   );
+  const targetCandidate = recommendation?.targetCandidateId
+    ? (payload?.candidates.find(
+        (candidate) => candidate.id === recommendation.targetCandidateId,
+      ) ?? null)
+    : null;
+  const isTerminal = Boolean(
+    recommendation && terminalRecommendationStatuses.has(recommendation.status),
+  );
+  const terminalMessage = recommendation
+    ? terminalRecommendationMessage(recommendation)
+    : "";
 
   async function postWorkflow(body: Record<string, unknown>) {
     setSaving(true);
@@ -232,6 +268,30 @@ export default function DossierRecommendationPage() {
               {notice}
             </div>
           )}
+          {isTerminal && (
+            <div className="mt-4 border border-border/70 bg-background/30 p-4 text-sm text-muted">
+              <p className="font-bold text-foreground">{terminalMessage}</p>
+              {targetCandidate ? (
+                <Link
+                  href={`/admin/dossiers/candidates/${targetCandidate.id}`}
+                  className="mt-2 inline-flex text-accent hover:underline"
+                >
+                  Open target BNL Source File: {targetCandidate.name}
+                </Link>
+              ) : recommendation.targetCandidateId ? (
+                <Link
+                  href={`/admin/dossiers/candidates/${recommendation.targetCandidateId}`}
+                  className="mt-2 inline-flex text-accent hover:underline"
+                >
+                  Open target BNL Source File
+                </Link>
+              ) : null}
+              <p className="mt-2 text-xs uppercase tracking-widest text-muted">
+                Terminal recommendation actions are closed. No reopen/retry
+                behavior is available in this PR.
+              </p>
+            </div>
+          )}
           <div className="mt-5 flex flex-wrap gap-3 text-xs uppercase tracking-widest">
             <Link
               href="/admin/dossiers"
@@ -239,67 +299,75 @@ export default function DossierRecommendationPage() {
             >
               Back to Dossier Dashboard
             </Link>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() =>
-                void updateRecommendation("convertRecommendationToCandidate")
-              }
-              className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
-            >
-              Convert to BNL Source File
-            </button>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() =>
-                void updateRecommendation("ignoreDossierRecommendation")
-              }
-              className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent disabled:opacity-50"
-            >
-              Ignore
-            </button>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() =>
-                void updateRecommendation("dismissDossierRecommendation")
-              }
-              className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent disabled:opacity-50"
-            >
-              Dismiss
-            </button>
+            {!isTerminal && (
+              <>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() =>
+                    void updateRecommendation(
+                      "convertRecommendationToCandidate",
+                    )
+                  }
+                  className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                >
+                  Convert to BNL Source File
+                </button>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() =>
+                    void updateRecommendation("ignoreDossierRecommendation")
+                  }
+                  className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+                >
+                  Ignore
+                </button>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() =>
+                    void updateRecommendation("dismissDossierRecommendation")
+                  }
+                  className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+                >
+                  Dismiss
+                </button>
+              </>
+            )}
           </div>
         </div>
       </section>
       <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-4">
-        <section className="border border-border bg-surface p-5 text-sm text-muted">
-          <h2 className="text-2xl font-bold text-foreground mb-3">
-            Attach to Existing Source File
-          </h2>
-          <div className="flex flex-col gap-3 md:flex-row">
-            <select
-              value={targetCandidateId}
-              onChange={(event) => setTargetCandidateId(event.target.value)}
-              className="w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
-            >
-              <option value="">Choose existing BNL Source File</option>
-              {activeCandidates.map((candidate) => (
-                <option key={candidate.id} value={candidate.id}>
-                  {candidate.name}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => void attachRecommendation()}
-              className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
-            >
+        {!isTerminal && (
+          <section className="border border-border bg-surface p-5 text-sm text-muted">
+            <h2 className="text-2xl font-bold text-foreground mb-3">
               Attach to Existing Source File
-            </button>
-          </div>
-        </section>
+            </h2>
+            <div className="flex flex-col gap-3 md:flex-row">
+              <select
+                value={targetCandidateId}
+                onChange={(event) => setTargetCandidateId(event.target.value)}
+                className="w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
+              >
+                <option value="">Choose existing BNL Source File</option>
+                {activeCandidates.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void attachRecommendation()}
+                className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+              >
+                Attach to Existing Source File
+              </button>
+            </div>
+          </section>
+        )}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field title="Subject">
             <p>{recommendation.subjectName}</p>

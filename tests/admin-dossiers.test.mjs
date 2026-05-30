@@ -1675,9 +1675,15 @@ test("source file notes persist without mutating draft fields or public read mod
 
   const getPayload = await (await authedGet()).json();
   assert.equal(getPayload.candidates[0].sourceFileNotes[0].type, "correction");
+  const publicReadModel = JSON.stringify(await (await readModel.GET()).json());
   assert.doesNotMatch(
-    JSON.stringify(await (await readModel.GET()).json()),
-    /sourceFileNotes|recommendations|Correct the public-safe spelling/,
+    publicReadModel,
+    /sourceFileNotes|recommendations|Correct the public-safe spelling|admin_manual|doNotSay/,
+  );
+  assert.doesNotMatch(
+    source("src/app/database/page.tsx") +
+      source("src/app/database/[slug]/page.tsx"),
+    /sourceFileNotes|recommendations|dossier-workflow|admin_manual/,
   );
 });
 
@@ -1808,6 +1814,164 @@ test("convert recommendation creates a BNL Source File with recommendation sourc
   assert.equal(payload.candidate.recommendedKind, "community_member");
 });
 
+test("terminal recommendations cannot be converted twice or duplicate source files", async () => {
+  await resetWorkflowStore();
+  const created = await (
+    await authedPost({
+      action: "createDossierRecommendation",
+      input: {
+        type: "new_subject",
+        subjectName: "Terminal Convert Seed",
+        reason: "Convert once only.",
+        evidenceSummary: "One evidence packet.",
+        sourceLanes: ["admin_manual"],
+      },
+    })
+  ).json();
+
+  const firstResponse = await authedPost({
+    action: "convertRecommendationToCandidate",
+    recommendationId: created.recommendation.id,
+  });
+  assert.equal(firstResponse.status, 200);
+  const firstPayload = await firstResponse.json();
+  assert.equal(firstPayload.recommendation.status, "converted_to_source_file");
+  assert.equal(
+    firstPayload.recommendation.targetCandidateId,
+    firstPayload.candidate.id,
+  );
+  assert.equal(firstPayload.candidates.length, 1);
+  assert.equal(firstPayload.candidate.sourceFileNotes.length, 1);
+
+  const retryResponse = await authedPost({
+    action: "convertRecommendationToCandidate",
+    recommendationId: created.recommendation.id,
+  });
+  assert.equal(retryResponse.status, 400);
+  const retryPayload = await retryResponse.json();
+  assert.equal(retryPayload.code, "recommendation_already_terminal");
+
+  const finalPayload = await (await authedGet()).json();
+  assert.equal(finalPayload.candidates.length, 1);
+  assert.equal(finalPayload.candidates[0].sourceFileNotes.length, 1);
+  assert.equal(
+    finalPayload.recommendations[0].targetCandidateId,
+    firstPayload.candidate.id,
+  );
+});
+
+test("terminal recommendations cannot be attached, reattached, ignored, dismissed, or converted", async () => {
+  await resetWorkflowStore();
+  const candidatePayload = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Terminal Attach Target" },
+    })
+  ).json();
+
+  async function createRecommendation(subjectName) {
+    return (
+      await (
+        await authedPost({
+          action: "createDossierRecommendation",
+          input: {
+            type: "new_subject",
+            subjectName,
+            reason: `${subjectName} reason`,
+            evidenceSummary: `${subjectName} evidence`,
+            sourceLanes: ["admin_manual"],
+          },
+        })
+      ).json()
+    ).recommendation;
+  }
+
+  const converted = await createRecommendation("Already Converted");
+  const convertedPayload = await (
+    await authedPost({
+      action: "convertRecommendationToCandidate",
+      recommendationId: converted.id,
+    })
+  ).json();
+  const convertedCandidateCount = convertedPayload.candidates.length;
+
+  const attached = await createRecommendation("Already Attached");
+  const attachedPayload = await (
+    await authedPost({
+      action: "attachRecommendationToCandidate",
+      recommendationId: attached.id,
+      candidateId: candidatePayload.candidate.id,
+      createSourceNote: true,
+    })
+  ).json();
+  const attachedNoteCount = attachedPayload.candidates.find(
+    (candidate) => candidate.id === candidatePayload.candidate.id,
+  ).sourceFileNotes.length;
+
+  const ignored = await createRecommendation("Already Ignored");
+  await authedPost({
+    action: "ignoreDossierRecommendation",
+    recommendationId: ignored.id,
+  });
+
+  const dismissed = await createRecommendation("Already Dismissed");
+  await authedPost({
+    action: "dismissDossierRecommendation",
+    recommendationId: dismissed.id,
+  });
+
+  for (const recommendation of [converted, attached, ignored, dismissed]) {
+    const attachResponse = await authedPost({
+      action: "attachRecommendationToCandidate",
+      recommendationId: recommendation.id,
+      candidateId: candidatePayload.candidate.id,
+      createSourceNote: true,
+    });
+    assert.equal(attachResponse.status, 400);
+    assert.equal(
+      (await attachResponse.json()).code,
+      "recommendation_already_terminal",
+    );
+
+    const convertResponse = await authedPost({
+      action: "convertRecommendationToCandidate",
+      recommendationId: recommendation.id,
+    });
+    assert.equal(convertResponse.status, 400);
+    assert.equal(
+      (await convertResponse.json()).code,
+      "recommendation_already_terminal",
+    );
+
+    const ignoreResponse = await authedPost({
+      action: "ignoreDossierRecommendation",
+      recommendationId: recommendation.id,
+    });
+    assert.equal(ignoreResponse.status, 400);
+    assert.equal(
+      (await ignoreResponse.json()).code,
+      "recommendation_already_terminal",
+    );
+
+    const dismissResponse = await authedPost({
+      action: "dismissDossierRecommendation",
+      recommendationId: recommendation.id,
+    });
+    assert.equal(dismissResponse.status, 400);
+    assert.equal(
+      (await dismissResponse.json()).code,
+      "recommendation_already_terminal",
+    );
+  }
+
+  const finalPayload = await (await authedGet()).json();
+  assert.equal(finalPayload.candidates.length, convertedCandidateCount);
+  const finalTarget = finalPayload.candidates.find(
+    (candidate) => candidate.id === candidatePayload.candidate.id,
+  );
+  assert.equal(finalTarget.sourceFileNotes.length, attachedNoteCount);
+});
+
 test("attach recommendation to existing candidate can create a source note and no draft", async () => {
   await resetWorkflowStore();
   const candidatePayload = await (
@@ -1890,8 +2054,18 @@ test("ignore and dismiss recommendations preserve records", async () => {
   const payload = await (await authedGet()).json();
   assert.equal(payload.recommendations.length, 2);
   const dashboard = source("src/app/admin/dossiers/page.tsx");
+  const dashboardCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
   assert.match(dashboard, /activeRecommendations/);
   assert.match(dashboard, /\["new", "reviewing"\]/);
+  assert.match(dashboard, /terminalRecommendations/);
+  assertIncludesCopy(
+    dashboardCopy,
+    "Recommendation History — converted / attached / ignored / dismissed",
+  );
+  assertIncludesCopy(
+    dashboardCopy,
+    "Closed recommendation; no active action buttons",
+  );
 });
 
 test("recommendation inbox and source note UI are present and bounded", () => {
@@ -1919,16 +2093,30 @@ test("recommendation inbox and source note UI are present and bounded", () => {
     fs.existsSync(path.join(projectRoot, recommendationPagePath)),
     true,
   );
+  const recommendationPage = source(recommendationPagePath);
   assert.match(
-    source(recommendationPagePath),
+    recommendationPage,
     /Recommendations are admin-only review records/,
   );
+  assert.match(recommendationPage, /terminalRecommendationStatuses/);
+  assert.match(recommendationPage, /Converted to BNL Source File\./);
+  assert.match(recommendationPage, /Attached to existing BNL Source File\./);
+  assert.match(recommendationPage, /Ignored\. This recommendation is closed\./);
+  assert.match(
+    recommendationPage,
+    /Dismissed\. This recommendation is closed\./,
+  );
+  assert.match(recommendationPage, /!isTerminal &&/);
+  assert.match(
+    recommendationPage,
+    /Terminal recommendation actions are closed/,
+  );
   assert.doesNotMatch(
-    dashboard + sourceFilePage + draftPage + source(recommendationPagePath),
+    dashboard + sourceFilePage + draftPage + recommendationPage,
     /fetch\("\/api\/bnl/,
   );
   assert.doesNotMatch(
-    dashboard + sourceFilePage + draftPage + source(recommendationPagePath),
+    dashboard + sourceFilePage + draftPage + recommendationPage,
     /publishDraft/,
   );
 });

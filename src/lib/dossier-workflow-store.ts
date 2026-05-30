@@ -11,6 +11,7 @@ import {
   type DossierDuplicateGroup,
   type DossierRecommendation,
   type DossierRecommendationSourceLane,
+  type DossierRecommendationStatus,
   type DossierRecommendationType,
   type DossierSourceFileNote,
   type DossierSourceFileNoteSource,
@@ -476,6 +477,24 @@ const RECOMMENDATION_SOURCE_LANES: DossierRecommendationSourceLane[] = [
   "unknown",
 ];
 
+const TERMINAL_RECOMMENDATION_STATUSES = new Set<DossierRecommendationStatus>([
+  "attached_to_source_file",
+  "converted_to_source_file",
+  "ignored",
+  "dismissed",
+]);
+
+function assertRecommendationIsOpen(
+  recommendation: DossierRecommendation,
+): void {
+  if (!TERMINAL_RECOMMENDATION_STATUSES.has(recommendation.status)) return;
+  throw new DossierWorkflowInputError(
+    "Recommendation is already terminal",
+    400,
+    "recommendation_already_terminal",
+  );
+}
+
 function boundedText(value: unknown, maxLength = 2000): string {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
@@ -670,6 +689,7 @@ export async function attachRecommendationToCandidate(input: {
         "recommendation_not_found",
       );
     }
+    assertRecommendationIsOpen(recommendation);
     const candidate = currentState.candidates.find(
       (item) => item.id === input.candidateId,
     );
@@ -755,6 +775,7 @@ export async function convertRecommendationToCandidate(
         "recommendation_not_found",
       );
     }
+    assertRecommendationIsOpen(recommendation);
     const duplicate = findExistingDossierMatch(recommendation.subjectName);
     const note: DossierSourceFileNote = {
       id: createSourceFileNoteId(),
@@ -860,6 +881,7 @@ async function setRecommendationStatus(
     const recommendations = currentState.recommendations.map(
       (recommendation) => {
         if (recommendation.id !== recommendationId) return recommendation;
+        assertRecommendationIsOpen(recommendation);
         updatedRecommendation = { ...recommendation, status, updatedAt: now };
         return updatedRecommendation;
       },

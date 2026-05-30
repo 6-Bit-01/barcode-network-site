@@ -300,6 +300,14 @@ export default function DossierControlCenterPage() {
   const activeRecommendations = recommendations.filter((recommendation) =>
     ["new", "reviewing"].includes(recommendation.status),
   );
+  const terminalRecommendations = recommendations.filter((recommendation) =>
+    [
+      "attached_to_source_file",
+      "converted_to_source_file",
+      "ignored",
+      "dismissed",
+    ].includes(recommendation.status),
+  );
   const activeCandidates = candidates.filter((candidate) =>
     activeCandidateStatuses.has(candidate.status),
   );
@@ -823,6 +831,42 @@ export default function DossierControlCenterPage() {
                 </article>
               ))}
             </div>
+          )}
+
+          {terminalRecommendations.length > 0 && (
+            <details className="border border-border/70 bg-background/20 p-4 text-sm text-muted">
+              <summary className="cursor-pointer font-bold text-foreground">
+                Recommendation History — converted / attached / ignored /
+                dismissed
+              </summary>
+              <div className="mt-3 space-y-2">
+                {terminalRecommendations.slice(0, 12).map((recommendation) => (
+                  <article
+                    key={recommendation.id}
+                    className="border border-border/70 bg-background/30 p-3"
+                  >
+                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <p className="font-semibold text-foreground">
+                          {recommendation.subjectName}
+                        </p>
+                        <p>Status: {recommendation.status}</p>
+                        <p>Reason: {recommendation.reason}</p>
+                        <p className="text-xs uppercase tracking-widest text-muted">
+                          Closed recommendation; no active action buttons.
+                        </p>
+                      </div>
+                      <Link
+                        href={`/admin/dossiers/recommendations/${recommendation.id}`}
+                        className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent"
+                      >
+                        Review Closed Recommendation
+                      </Link>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </details>
           )}
         </DashboardCard>
 

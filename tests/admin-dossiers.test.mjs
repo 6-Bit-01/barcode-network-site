@@ -390,13 +390,16 @@ test("dedicated candidate review route contains focused evidence and action work
   const page = source(routePath);
   for (const label of [
     "BNL Source File",
-    "Add Info / Correction",
+    "Add to BNL Source File",
     "Add Link",
     "Add Missing Info",
     "Add Public Safety Note",
     "Add Do-Not-Say Note",
     "Additional Info Added After Submission",
     "Admin Addendum",
+    "This adds source material for BNL to use later",
+    "It does not directly edit the proposed dossier",
+    "Coming later: this will save notes to the BNL Source File",
     "Create / Open Proposed Dossier",
     "Open Proposed Dossier",
         "Mark Needs Info",
@@ -474,6 +477,7 @@ test("dashboard uses actual workflow ids and state-aware lane filtering", () => 
   assert.match(page, /Active draft already exists/);
   assert.match(page, /Source file was merged or closed/);
   assert.match(page, /Add info or create proposed dossier/);
+  assert.match(page, /Add to Source File/);
   assert.match(page, /Open proposed dossier/);
   assert.match(page, /Mark Needs Info/);
   assert.match(page, /Recommend Dismissal/);

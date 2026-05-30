@@ -21,7 +21,7 @@ function formatDate(value?: string) {
 }
 
 function PhaseRail() {
-  return <section className="border border-border bg-background/30 p-3 text-xs uppercase tracking-widest text-muted" aria-label="Dossier phase indicator"><div className="flex flex-wrap gap-2"><span className="border border-border px-3 py-2">Phase 1 — BNL Source File</span><span className="border border-border px-3 py-2">Phase 2 — Dossier Draft</span><span className="border border-border px-3 py-2">Phase 3 — Admin Ready</span><span className="border border-accent bg-accent/10 px-3 py-2 text-accent">Phase 4 — Owner Review</span><span className="border border-border px-3 py-2 opacity-60">Phase 5 — Approved / Publish Later</span></div></section>;
+  return <section className="border border-border bg-background/30 p-3 text-xs uppercase tracking-widest text-muted" aria-label="Dossier phase indicator"><div className="flex flex-wrap gap-2"><span className="border border-border px-3 py-2">Phase 1 — BNL Source File</span><span className="border border-border px-3 py-2">Phase 2 — Proposed Dossier + BNL Edit Chat</span><span className="border border-border px-3 py-2">Phase 3 — Final Admin Draft</span><span className="border border-accent bg-accent/10 px-3 py-2 text-accent">Phase 4 — Owner Review</span><span className="border border-border px-3 py-2 opacity-60">Phase 5 — Approved / Publish Later</span></div></section>;
 }
 
 export default function OwnerReviewPage() {

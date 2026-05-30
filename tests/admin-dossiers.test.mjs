@@ -239,15 +239,16 @@ test("admin dossier dashboard is traffic control instead of an all-in-one workbe
     "Manual fields are fallback/advanced",
     "Manual fields are fallback only",
     "Active BNL Source Files",
-    "Dossier Drafts",
+    "Proposed Dossiers",
     "Owner Review",
+    "Final Admin Drafts",
     "Duplicate Warnings",
     "Closed / History",
     "System Boundaries",
     "Create Manual Candidate",
     "Open Source File",
-    "Create Dossier Draft",
-    "Open Dossier Draft",
+    "Create Proposed Dossier",
+    "Open Proposed Dossier",
     "View Warning / Open Merge Review",
     "No BNL invocation",
     "No publishing",
@@ -296,27 +297,27 @@ test("dossier admin pages expose numbered dossier phases and clearer labels", ()
   const dashboard = source("src/app/admin/dossiers/page.tsx");
   for (const label of [
     "Phase 1 — BNL Source File",
-    "Phase 2 — Dossier Draft",
-    "Phase 3 — Admin Ready",
+    "Phase 2 — Proposed Dossier + BNL Edit Chat",
+    "Phase 3 — Final Admin Draft",
     "Phase 4 — Owner Review",
     "Phase 5 — Approved / Publish Later",
     "Active BNL Source Files",
-    "Dossier Drafts",
+    "Proposed Dossiers",
     "Duplicate Warnings",
     "Closed / History",
   ]) {
-    assert.match(dashboard, new RegExp(label));
+    assert.ok(dashboard.includes(label), `${label} should be present`);
   }
 
   const sourceFilePage = source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
   assert.match(sourceFilePage, /Phase 1 — BNL Source File/);
-  assert.match(sourceFilePage, /This is the BNL Source File/);
+  assert.match(sourceFilePage, /This page collects what BNL knows and what mods\/admins add/);
   assert.match(sourceFilePage, /source material, not the public dossier/);
 
   const draftPage = source("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
-  assert.match(draftPage, /Phase 2 — Dossier Draft/);
-  assert.match(draftPage, /This is the Dossier Draft/);
-  assert.match(draftPage, /proposed public dossier built from the BNL Source File/);
+  assert.match(draftPage, /Phase 2 — Proposed Dossier \+ BNL Edit Chat/);
+  assert.match(draftPage, /This page shows the proposed completed dossier built from the BNL Source File/);
+  assert.match(draftPage, /This page shows the proposed completed dossier built from the BNL Source File/);
 
   const ownerPage = source("src/app/admin/dossiers/owner-review/page.tsx");
   assert.match(ownerPage, /Phase 4 — Owner Review/);
@@ -337,29 +338,32 @@ test("dedicated draft editor route contains focused editing workflow and future 
   assert.equal(fs.existsSync(path.join(projectRoot, routePath)), true);
   const page = source(routePath);
   for (const label of [
-    "BNL Dossier Workbench",
-    "Candidate Source Packet",
-    "Suggested Dossier Draft",
-    "BNL Prompt Panel — Coming Next",
-    "Generate Draft coming soon",
-    "Revise Draft coming soon",
-    "Advanced Manual Fields",
-    "fallback/advanced editing",
+    "Proposed Dossier + BNL Edit Chat",
+    "BNL Source File",
+    "Proposed Dossier Preview",
+    "BNL Edit Chat panel — Coming Next",
+    "Open Advanced Manual Edit",
+    "fallback/manual override",
     "Save Draft",
-    "Submit to Owner Review",
+    "Complete Admin Draft",
+    "Final Admin Draft",
+    "Send to Owner Review",
+    "Return to Editing",
+    "Sending to owner does not publish",
+    "BNL edit chat comes next",
+    "revise the proposed dossier conversationally",
+    "manual override",
     "category",
     "kind",
     "ecosystemLane",
     "identityAuthority",
     "Saving does not publish.",
-    "Submitting for owner review does not publish.",
-    "BNL generation comes later",
     "Exact character limits will be enforced in a later PR.",
-    "Draft submitted to Owner Review.",
-    "This draft is waiting for owner final pass.",
+    "Sent to Owner Review",
+    "Waiting for owner final pass",
     "Back to Dossier Dashboard",
   ]) {
-    assert.match(page, new RegExp(label));
+    assert.ok(page.includes(label), `${label} should be present`);
   }
   assert.match(page, /useParams/);
   assert.match(page, /routeParam\(params\?\.draftId\)/);
@@ -369,9 +373,13 @@ test("dedicated draft editor route contains focused editing workflow and future 
   assert.match(page, /nonEditableDraftStatuses/);
   assert.match(page, /draft\.status === "ready_for_owner_review"/);
   assert.match(page, /Already submitted to Owner Review/);
+  assert.match(page, /BNL will eventually generate the proposed dossier from the BNL Source File and approved sources/);
+  assert.match(page, /BNL should ask only for missing specifics/);
   assert.match(page, /Draft is superseded/);
   assert.match(page, /Publishing not built yet/);
   assert.match(page, /Open BNL Source File/);
+  assert.match(page, /Send to Owner Review/);
+  assert.match(page, /Return to Editing/);
   assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
   assert.doesNotMatch(page, /publishDraft/);
 });
@@ -389,8 +397,8 @@ test("dedicated candidate review route contains focused evidence and action work
     "Add Do-Not-Say Note",
     "Additional Info Added After Submission",
     "Admin Addendum",
-    "Create / Open Dossier Draft",
-    "Open Dossier Draft",
+    "Create / Open Proposed Dossier",
+    "Open Proposed Dossier",
         "Mark Needs Info",
     "Evidence summary",
     "Evidence items",
@@ -465,11 +473,11 @@ test("dashboard uses actual workflow ids and state-aware lane filtering", () => 
   assert.match(page, /disabled=\{saving \|\| !canCreateDraft\}/);
   assert.match(page, /Active draft already exists/);
   assert.match(page, /Source file was merged or closed/);
-  assert.match(page, /Add info or create dossier draft/);
-  assert.match(page, /Open dossier draft/);
+  assert.match(page, /Add info or create proposed dossier/);
+  assert.match(page, /Open proposed dossier/);
   assert.match(page, /Mark Needs Info/);
   assert.match(page, /Recommend Dismissal/);
-  assert.match(page, /Open Dossier Draft/);
+  assert.match(page, /Open Proposed Dossier/);
   assert.match(page, /Superseded by/);
   assert.match(page, /Active BNL Source Files/);
   assert.match(page, /Duplicate Warnings/);

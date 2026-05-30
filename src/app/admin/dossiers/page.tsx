@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import type {
-  DossierCandidate,
-  DossierDraft,
-  DossierDuplicateGroup,
-  DossierRecommendation,
+import {
+  matchDossierRecommendationSubject,
+  type DossierCandidate,
+  type DossierDraft,
+  type DossierDuplicateGroup,
+  type DossierRecommendation,
 } from "@/lib/dossier-workflow";
 
 type WorkflowPayload = {
@@ -249,9 +250,6 @@ export default function DossierControlCenterPage() {
   const [form, setForm] = useState<ManualCandidateForm>(emptyForm);
   const [recommendationForm, setRecommendationForm] =
     useState<ManualRecommendationForm>(emptyRecommendationForm);
-  const [attachTargets, setAttachTargets] = useState<Record<string, string>>(
-    {},
-  );
   const [createdDraftIdByCandidate, setCreatedDraftIdByCandidate] = useState<
     Record<string, string>
   >({});
@@ -441,27 +439,61 @@ export default function DossierControlCenterPage() {
     }
   }
 
-  async function attachRecommendation(recommendationId: string) {
-    const candidateId = attachTargets[recommendationId];
-    if (!candidateId) {
-      setNotice("Choose an existing BNL Source File before attaching.");
+  async function attachRecommendationToMatchedSourceFile(
+    recommendation: DossierRecommendation,
+  ) {
+    const match = matchDossierRecommendationSubject({ recommendation, candidates });
+    if (!match.exactCandidateId) {
+      setNotice(
+        "Attach is only available after a same-subject BNL Source File match is confirmed.",
+      );
       return;
     }
     try {
       const data = await postWorkflow({
         action: "attachRecommendationToCandidate",
-        recommendationId,
-        candidateId,
+        recommendationId: recommendation.id,
+        candidateId: match.exactCandidateId,
         createSourceNote: true,
       });
       setNotice(
-        `${data.recommendation?.subjectName ?? "Recommendation"} attached to an existing BNL Source File. No draft was created.`,
+        `${data.recommendation?.subjectName ?? "Recommendation"} attached to the matched same-subject BNL Source File. No draft was created.`,
       );
     } catch (err) {
       setNotice(
         err instanceof Error ? err.message : "Failed to attach recommendation.",
       );
     }
+  }
+
+  function recommendationMatchState(recommendation: DossierRecommendation) {
+    const match = matchDossierRecommendationSubject({ recommendation, candidates });
+    if (match.exactMatchKind === "pre_targeted") {
+      return {
+        match,
+        state: "Pre-targeted BNL Source File",
+        nextAction: "Attach to Matched Source File",
+      };
+    }
+    if (match.exactCandidateId) {
+      return {
+        match,
+        state: "Matched existing BNL Source File",
+        nextAction: "Attach to Matched Source File",
+      };
+    }
+    if (match.possibleCandidateIds.length > 0) {
+      return {
+        match,
+        state: "Possible duplicate / identity warning",
+        nextAction: "Needs owner identity review",
+      };
+    }
+    return {
+      match,
+      state: "No BNL Source File match",
+      nextAction: "Convert to New BNL Source File",
+    };
   }
 
   async function createDraft(candidateId: string) {
@@ -630,9 +662,11 @@ export default function DossierControlCenterPage() {
           }
         >
           <p className="text-sm text-muted">
-            BNL recommendations will land here later. For now, this inbox can
-            hold manual seeds and review items. Recommendations do not publish
-            anything.
+            BNL Recommendation / Evidence Cluster records preserve BNL/manual
+            clues. A BNL Source File is one subject/entity source packet.
+            Admins can convert unmatched recommendations into new source files
+            or attach only when the system confirms a same-subject match.
+            Recommendations do not publish anything.
           </p>
           <form
             onSubmit={submitManualRecommendation}
@@ -720,7 +754,19 @@ export default function DossierControlCenterPage() {
             </p>
           ) : (
             <div className="space-y-3">
-              {activeRecommendations.map((recommendation) => (
+              {activeRecommendations.map((recommendation) => {
+                const matchState = recommendationMatchState(recommendation);
+                const exactCandidate = matchState.match.exactCandidateId
+                  ? candidates.find(
+                      (candidate) => candidate.id === matchState.match.exactCandidateId,
+                    )
+                  : null;
+                const possibleCandidates = matchState.match.possibleCandidateIds
+                  .map((candidateId) =>
+                    candidates.find((candidate) => candidate.id === candidateId),
+                  )
+                  .filter((candidate): candidate is DossierCandidate => Boolean(candidate));
+                return (
                 <article
                   key={recommendation.id}
                   className="border border-border/70 bg-background/20 p-4 text-sm text-muted"
@@ -740,12 +786,28 @@ export default function DossierControlCenterPage() {
                       <p>
                         Source lanes: {recommendation.sourceLanes.join(", ")}
                       </p>
-                      <p>Reason: {recommendation.reason}</p>
                       <p>Status: {recommendation.status}</p>
-                      <p>
-                        Suggested action:{" "}
-                        {recommendation.suggestedAction ?? "—"}
-                      </p>
+                      <p>Match state: {matchState.state}</p>
+                      <p>Recommended next action: {matchState.nextAction}</p>
+                      {exactCandidate && (
+                        <>
+                          <p>Matched subject packet: {exactCandidate.name}</p>
+                          {matchState.match.exactMatchKind ===
+                            "pre_targeted" && (
+                            <p>
+                              This recommendation already points to an existing
+                              source file.
+                            </p>
+                          )}
+                        </>
+                      )}
+                      {possibleCandidates.length > 0 && (
+                        <p>
+                          Possible matches need owner identity review: {" "}
+                          {possibleCandidates.map((candidate) => candidate.name).join(", ")}
+                        </p>
+                      )}
+                      <p>Reason: {recommendation.reason}</p>
                     </div>
                     <div className="flex max-w-sm flex-col gap-2">
                       <Link
@@ -754,50 +816,39 @@ export default function DossierControlCenterPage() {
                       >
                         Review Recommendation
                       </Link>
-                      <button
-                        type="button"
-                        disabled={saving}
-                        onClick={() =>
-                          void updateRecommendation(
-                            recommendation.id,
-                            "convertRecommendationToCandidate",
-                          )
-                        }
-                        className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50"
-                      >
-                        Convert to BNL Source File
-                      </button>
-                      <div className="flex gap-2">
-                        <select
-                          value={attachTargets[recommendation.id] ?? ""}
-                          onChange={(event) =>
-                            setAttachTargets({
-                              ...attachTargets,
-                              [recommendation.id]: event.target.value,
-                            })
-                          }
-                          className={textInputClass()}
-                        >
-                          <option value="">
-                            Attach to Existing Source File
-                          </option>
-                          {activeCandidates.map((candidate) => (
-                            <option key={candidate.id} value={candidate.id}>
-                              {candidate.name}
-                            </option>
-                          ))}
-                        </select>
+                      {matchState.match.exactCandidateId ? (
                         <button
                           type="button"
                           disabled={saving}
                           onClick={() =>
-                            void attachRecommendation(recommendation.id)
+                            void attachRecommendationToMatchedSourceFile(
+                              recommendation,
+                            )
                           }
                           className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50"
                         >
-                          Attach
+                          Attach to Matched Source File
                         </button>
-                      </div>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() =>
+                            void updateRecommendation(
+                              recommendation.id,
+                              "convertRecommendationToCandidate",
+                            )
+                          }
+                          className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50"
+                        >
+                          Convert to New BNL Source File
+                        </button>
+                      )}
+                      {matchState.match.possibleCandidateIds.length > 0 && (
+                        <p className="border border-accent/60 bg-accent/10 p-2 text-xs text-accent">
+                          Needs owner identity review before any merge or attach.
+                        </p>
+                      )}
                       <div className="flex gap-2">
                         <button
                           type="button"
@@ -829,7 +880,8 @@ export default function DossierControlCenterPage() {
                     </div>
                   </div>
                 </article>
-              ))}
+                );
+              })}
             </div>
           )}
 

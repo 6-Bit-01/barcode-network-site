@@ -320,10 +320,11 @@ export default function CandidateReviewPage() {
             {candidate.name}
           </h1>
           <p className="text-sm text-muted mt-3 max-w-3xl">
-            Source File ID: {candidate.id}. This page collects what BNL knows
-            and what mods/admins add as source material, not the public dossier.
-            Internal workflow only; notes do not publish, create tags, or mutate
-            public records.
+            Source File ID: {candidate.id}. This BNL Source File is one
+            subject/entity source packet. Admins can add information to this
+            BNL Source File, but cannot turn this source file into another
+            subject. Internal workflow only; notes do not publish, create tags,
+            or mutate public records.
           </p>
           <div className="mt-4">
             <PhaseRail />
@@ -393,13 +394,16 @@ export default function CandidateReviewPage() {
             Add to BNL Source File
           </h2>
           <p className="text-sm text-muted">
-            This adds source material for BNL. It does not directly edit the
-            proposed dossier.
+            Admins can add information to this BNL Source File. It does not
+            directly edit the proposed dossier.
           </p>
           <p className="text-sm text-muted">
-            Add to BNL Source File = add knowledge/context for BNL. BNL Edit
-            Chat = tell BNL how to revise the proposed dossier. Advanced Manual
-            Edit = fallback direct editing of the proposed dossier fields.
+            Add to BNL Source File = add info to this subject. This source file
+            remains one subject/entity. If this information belongs to a
+            different subject, create or wait for a separate BNL recommendation.
+            BNL Edit Chat = tell BNL how to revise
+            the proposed dossier. Advanced Manual Edit = fallback direct
+            editing of the proposed dossier fields.
           </p>
           {hasOwnerReviewDraft && (
             <p className="border border-accent/60 bg-accent/10 p-3 text-sm text-accent">

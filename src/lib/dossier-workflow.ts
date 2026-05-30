@@ -301,6 +301,138 @@ export type DossierRecommendation = {
   createdBy?: string;
 };
 
+
+export type DossierSubjectMatchResult = {
+  exactCandidateId?: string;
+  exactMatchKind?: "pre_targeted" | "subject";
+  possibleCandidateIds: string[];
+  reason: string;
+};
+
+export function normalizeDossierSubjectName(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b(the|a|an)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function compactDossierSubjectName(value: string): string {
+  return normalizeDossierSubjectName(value).replace(/\s+/g, "");
+}
+
+function isActiveSubjectCandidate(candidate: DossierCandidate): boolean {
+  return candidate.status !== "denied" && candidate.status !== "merged";
+}
+
+function hasPossibleSubjectOverlap(
+  subjectName: string,
+  candidateName: string,
+): boolean {
+  const normalizedSubject = normalizeDossierSubjectName(subjectName);
+  const normalizedCandidate = normalizeDossierSubjectName(candidateName);
+  const compactSubject = compactDossierSubjectName(subjectName);
+  const compactCandidate = compactDossierSubjectName(candidateName);
+
+  if (!normalizedSubject || !normalizedCandidate) return false;
+  if (
+    normalizedSubject === normalizedCandidate ||
+    compactSubject === compactCandidate
+  )
+    return false;
+  if (normalizedSubject.length < 4 || normalizedCandidate.length < 4)
+    return false;
+
+  return (
+    normalizedSubject.includes(normalizedCandidate) ||
+    normalizedCandidate.includes(normalizedSubject) ||
+    compactSubject.includes(compactCandidate) ||
+    compactCandidate.includes(compactSubject)
+  );
+}
+
+export function matchDossierRecommendationSubject(input: {
+  recommendation: Pick<
+    DossierRecommendation,
+    "subjectName" | "subjectKey" | "targetCandidateId"
+  >;
+  candidates: DossierCandidate[];
+}): DossierSubjectMatchResult {
+  const activeCandidates = input.candidates.filter(isActiveSubjectCandidate);
+  const subjectName = input.recommendation.subjectName;
+  const normalizedSubject = normalizeDossierSubjectName(subjectName);
+  const compactSubject = compactDossierSubjectName(subjectName);
+  const normalizedSubjectKey = input.recommendation.subjectKey
+    ? normalizeDossierSubjectName(input.recommendation.subjectKey)
+    : "";
+  const compactSubjectKey = input.recommendation.subjectKey
+    ? compactDossierSubjectName(input.recommendation.subjectKey)
+    : "";
+  const preTargetedCandidate = input.recommendation.targetCandidateId
+    ? activeCandidates.find(
+        (candidate) => candidate.id === input.recommendation.targetCandidateId,
+      )
+    : undefined;
+
+  if (preTargetedCandidate) {
+    return {
+      exactCandidateId: preTargetedCandidate.id,
+      exactMatchKind: "pre_targeted",
+      possibleCandidateIds: [],
+      reason:
+        "Explicit pre-targeted source-file match from recommendation targetCandidateId.",
+    };
+  }
+
+  const exactCandidate = activeCandidates.find((candidate) => {
+    const normalizedCandidate = normalizeDossierSubjectName(candidate.name);
+    const compactCandidate = compactDossierSubjectName(candidate.name);
+    return (
+      Boolean(normalizedSubject) &&
+      (normalizedSubject === normalizedCandidate ||
+        compactSubject === compactCandidate ||
+        (Boolean(normalizedSubjectKey) &&
+          (normalizedSubjectKey === normalizedCandidate ||
+            compactSubjectKey === compactCandidate)))
+    );
+  });
+
+  const possibleCandidateIds = activeCandidates
+    .filter((candidate) => candidate.id !== exactCandidate?.id)
+    .filter((candidate) =>
+      hasPossibleSubjectOverlap(subjectName, candidate.name),
+    )
+    .map((candidate) => candidate.id);
+
+  if (exactCandidate) {
+    return {
+      exactCandidateId: exactCandidate.id,
+      exactMatchKind: "subject",
+      possibleCandidateIds,
+      reason:
+        "Exact same-subject match by normalized name, compact name, or explicit subject key.",
+    };
+  }
+
+  if (possibleCandidateIds.length > 0) {
+    return {
+      possibleCandidateIds,
+      reason:
+        "Possible duplicate / identity warning from weak partial subject similarity; owner/lead identity resolution is required before attach.",
+    };
+  }
+
+  return {
+    possibleCandidateIds: [],
+    reason: "No safe same-subject BNL Source File match found.",
+  };
+}
+
 export type CreateDossierSourceFileNoteInput = {
   candidateId: string;
   type?: DossierSourceFileNoteType;

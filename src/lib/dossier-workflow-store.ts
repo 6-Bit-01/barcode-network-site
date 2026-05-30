@@ -18,6 +18,7 @@ import {
   type DossierSourceFileNoteType,
   type DossierDuplicateRisk,
   type DossierWorkflowLink,
+  matchDossierRecommendationSubject,
   type MergeDossierCandidatesInput,
 } from "@/lib/dossier-workflow";
 
@@ -585,12 +586,19 @@ function recommendationSourceNoteText(
 export class DossierWorkflowInputError extends Error {
   status: number;
   code: string;
+  details?: Record<string, unknown>;
 
-  constructor(message: string, status = 400, code = "invalid_input") {
+  constructor(
+    message: string,
+    status = 400,
+    code = "invalid_input",
+    details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = "DossierWorkflowInputError";
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -700,6 +708,32 @@ export async function attachRecommendationToCandidate(input: {
         "candidate_not_found",
       );
     }
+    if (candidate.status === "denied" || candidate.status === "merged") {
+      throw new DossierWorkflowInputError(
+        "Candidate is not an active BNL Source File",
+        400,
+        "candidate_not_attachable",
+      );
+    }
+    const match = matchDossierRecommendationSubject({
+      recommendation,
+      candidates: currentState.candidates,
+    });
+    const preTargetedCandidateMatch =
+      recommendation.targetCandidateId === candidate.id;
+    if (match.exactCandidateId !== candidate.id && !preTargetedCandidateMatch) {
+      throw new DossierWorkflowInputError(
+        "Recommendation subject does not match the selected BNL Source File",
+        400,
+        "recommendation_subject_mismatch",
+        {
+          exactCandidateId: match.exactCandidateId,
+          exactMatchKind: match.exactMatchKind,
+          possibleCandidateIds: match.possibleCandidateIds,
+          reason: match.reason,
+        },
+      );
+    }
 
     if (input.createSourceNote) {
       note = {
@@ -776,6 +810,23 @@ export async function convertRecommendationToCandidate(
       );
     }
     assertRecommendationIsOpen(recommendation);
+    const match = matchDossierRecommendationSubject({
+      recommendation,
+      candidates: currentState.candidates,
+    });
+    if (match.exactCandidateId) {
+      throw new DossierWorkflowInputError(
+        "An exact same-subject BNL Source File already exists for this recommendation",
+        400,
+        "recommendation_existing_source_file_match",
+        {
+          exactCandidateId: match.exactCandidateId,
+          exactMatchKind: match.exactMatchKind,
+          possibleCandidateIds: match.possibleCandidateIds,
+          reason: match.reason,
+        },
+      );
+    }
     const duplicate = findExistingDossierMatch(recommendation.subjectName);
     const note: DossierSourceFileNote = {
       id: createSourceFileNoteId(),

@@ -391,7 +391,7 @@ export async function POST(req: Request) {
   } catch (error) {
     if (error instanceof DossierWorkflowInputError) {
       return NextResponse.json(
-        { error: error.message, code: error.code },
+        { error: error.message, code: error.code, ...error.details },
         { status: error.status },
       );
     }

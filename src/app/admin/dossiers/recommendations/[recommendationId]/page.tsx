@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import type {
-  DossierCandidate,
-  DossierDraft,
-  DossierRecommendation,
+import {
+  matchDossierRecommendationSubject,
+  type DossierCandidate,
+  type DossierDraft,
+  type DossierRecommendation,
 } from "@/lib/dossier-workflow";
 
 type WorkflowPayload = {
@@ -82,7 +83,7 @@ function terminalRecommendationMessage(recommendation: DossierRecommendation) {
     return "Converted to BNL Source File.";
   }
   if (recommendation.status === "attached_to_source_file") {
-    return "Attached to existing BNL Source File.";
+    return "Attached to matched BNL Source File.";
   }
   if (recommendation.status === "ignored") {
     return "Ignored. This recommendation is closed.";
@@ -101,7 +102,6 @@ export default function DossierRecommendationPage() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [targetCandidateId, setTargetCandidateId] = useState("");
 
   async function loadWorkflow() {
     const response = await fetch("/api/admin/dossiers", { cache: "no-store" });
@@ -135,14 +135,6 @@ export default function DossierRecommendationPage() {
       null,
     [payload?.recommendations, recommendationId],
   );
-  const activeCandidates = useMemo(
-    () =>
-      (payload?.candidates ?? []).filter(
-        (candidate) =>
-          candidate.status !== "denied" && candidate.status !== "merged",
-      ),
-    [payload?.candidates],
-  );
   const targetCandidate = recommendation?.targetCandidateId
     ? (payload?.candidates.find(
         (candidate) => candidate.id === recommendation.targetCandidateId,
@@ -154,6 +146,22 @@ export default function DossierRecommendationPage() {
   const terminalMessage = recommendation
     ? terminalRecommendationMessage(recommendation)
     : "";
+  const subjectMatch = recommendation
+    ? matchDossierRecommendationSubject({
+        recommendation,
+        candidates: payload?.candidates ?? [],
+      })
+    : { possibleCandidateIds: [], reason: "No recommendation loaded." };
+  const exactCandidate = subjectMatch.exactCandidateId
+    ? (payload?.candidates.find(
+        (candidate) => candidate.id === subjectMatch.exactCandidateId,
+      ) ?? null)
+    : null;
+  const possibleCandidates = subjectMatch.possibleCandidateIds
+    .map((candidateId) =>
+      payload?.candidates.find((candidate) => candidate.id === candidateId),
+    )
+    .filter((candidate): candidate is DossierCandidate => Boolean(candidate));
 
   async function postWorkflow(body: Record<string, unknown>) {
     setSaving(true);
@@ -203,20 +211,22 @@ export default function DossierRecommendationPage() {
     }
   }
 
-  async function attachRecommendation() {
-    if (!targetCandidateId) {
-      setNotice("Choose an existing BNL Source File before attaching.");
+  async function attachRecommendationToMatchedSourceFile() {
+    if (!subjectMatch.exactCandidateId) {
+      setNotice(
+        "Attach is only allowed when the system confirms an exact same-subject BNL Source File match.",
+      );
       return;
     }
     try {
       const data = await postWorkflow({
         action: "attachRecommendationToCandidate",
         recommendationId,
-        candidateId: targetCandidateId,
+        candidateId: subjectMatch.exactCandidateId,
         createSourceNote: true,
       });
       setNotice(
-        `${data.recommendation?.subjectName ?? "Recommendation"} attached as source-file context. No draft was created.`,
+        `${data.recommendation?.subjectName ?? "Recommendation"} attached to the matched BNL Source File. No draft was created.`,
       );
     } catch (err) {
       setNotice(
@@ -260,8 +270,11 @@ export default function DossierRecommendationPage() {
             {recommendation.subjectName}
           </h1>
           <p className="text-sm text-muted mt-3 max-w-3xl">
-            Recommendations are admin-only review records. They do not publish,
-            create drafts, write content files, or create tags automatically.
+            BNL Recommendation / Evidence Cluster records are admin-only
+            evidence records. They do not publish, create drafts, write content
+            files, or create tags automatically. Attach is only allowed for
+            confirmed same-subject matches; merge is owner/lead identity
+            resolution.
           </p>
           {notice && (
             <div className="mt-4 border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
@@ -305,18 +318,6 @@ export default function DossierRecommendationPage() {
                   type="button"
                   disabled={saving}
                   onClick={() =>
-                    void updateRecommendation(
-                      "convertRecommendationToCandidate",
-                    )
-                  }
-                  className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
-                >
-                  Convert to BNL Source File
-                </button>
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() =>
                     void updateRecommendation("ignoreDossierRecommendation")
                   }
                   className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent disabled:opacity-50"
@@ -340,32 +341,85 @@ export default function DossierRecommendationPage() {
       </section>
       <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-4">
         {!isTerminal && (
-          <section className="border border-border bg-surface p-5 text-sm text-muted">
-            <h2 className="text-2xl font-bold text-foreground mb-3">
-              Attach to Existing Source File
+          <section className="border border-border bg-surface p-5 text-sm text-muted space-y-4">
+            <h2 className="text-2xl font-bold text-foreground">
+              Matched BNL Source File
             </h2>
-            <div className="flex flex-col gap-3 md:flex-row">
-              <select
-                value={targetCandidateId}
-                onChange={(event) => setTargetCandidateId(event.target.value)}
-                className="w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
-              >
-                <option value="">Choose existing BNL Source File</option>
-                {activeCandidates.map((candidate) => (
-                  <option key={candidate.id} value={candidate.id}>
-                    {candidate.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => void attachRecommendation()}
-                className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
-              >
-                Attach to Existing Source File
-              </button>
-            </div>
+            <p>
+              BNL Source File = one subject/entity source packet. Admins can add
+              info to this subject, but cannot freely combine unrelated
+              recommendations with arbitrary source files.
+            </p>
+            {exactCandidate ? (
+              <div className="border border-accent/60 bg-accent/10 p-4 text-accent space-y-2">
+                {subjectMatch.exactMatchKind === "pre_targeted" ? (
+                  <>
+                    <p className="font-bold">
+                      Pre-targeted BNL Source File: {exactCandidate.name}
+                    </p>
+                    <p>
+                      This recommendation already points to an existing source
+                      file.
+                    </p>
+                  </>
+                ) : (
+                  <p className="font-bold">
+                    Exact same-subject match: {exactCandidate.name}
+                  </p>
+                )}
+                <p>{subjectMatch.reason}</p>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void attachRecommendationToMatchedSourceFile()}
+                  className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                >
+                  Attach to Matched BNL Source File
+                </button>
+              </div>
+            ) : possibleCandidates.length > 0 ? (
+              <div className="border border-accent/60 bg-accent/10 p-4 text-accent space-y-2">
+                <p className="font-bold">Possible duplicate / identity warning</p>
+                <p>{subjectMatch.reason}</p>
+                <ul className="list-disc pl-5">
+                  {possibleCandidates.map((candidate) => (
+                    <li key={candidate.id}>{candidate.name}</li>
+                  ))}
+                </ul>
+                <p>
+                  Owner/lead identity review is required before merge or attach.
+                  Possible existing source files found. Confirm this is a
+                  separate subject before converting.
+                </p>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() =>
+                    void updateRecommendation("convertRecommendationToCandidate")
+                  }
+                  className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                >
+                  Convert to New BNL Source File
+                </button>
+              </div>
+            ) : (
+              <div className="border border-border/70 bg-background/30 p-4 space-y-2">
+                <p className="font-bold text-foreground">
+                  No BNL Source File match
+                </p>
+                <p>{subjectMatch.reason}</p>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() =>
+                    void updateRecommendation("convertRecommendationToCandidate")
+                  }
+                  className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                >
+                  Convert to New BNL Source File
+                </button>
+              </div>
+            )}
           </section>
         )}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">

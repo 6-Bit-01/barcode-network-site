@@ -3022,6 +3022,153 @@ test("BNL ingest creates review-only recommendations visible to admin without ca
   assert.deepEqual(adminPayload.drafts, []);
 });
 
+
+test("BNL dynamic discovery creates a normal source-file candidate with provenance and no public side effects", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+  const beforePublicTagCount = databasePage.entries.flatMap((entry) => entry.tags).length;
+
+  const response = await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Dynamic Signal System",
+    subjectKey: "dynamic-signal-system",
+    reason: "BNL discovered a source-file subject from approved lanes.",
+    evidenceSummary: "R&D context and broadcast memory both mention the system.",
+    confidence: "high",
+    sourceLanes: ["rd_context", "broadcast_memory"],
+    publicSafetyNotes: ["Keep internal until reviewed."],
+    missingInfo: ["Confirm public-safe label."],
+    recommendedCategory: "Interface",
+    recommendedKind: "system",
+    recommendedEcosystemLane: "infrastructure",
+    recommendedIdentityAuthority: "barcode_controlled",
+    recommendedTags: ["dynamic-private-tag"],
+    ingestKey: "bnl:dynamic-signal-system:2026-05-30",
+    ingestSource: "bnl_dynamic_candidate_discovery",
+  });
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.autoAction, "created_candidate");
+  assert.equal(payload.duplicate, false);
+  assert.equal(payload.recommendation.status, "converted_to_source_file");
+  assert.equal(payload.recommendation.ingestSource, "bnl_dynamic_candidate_discovery");
+  assert.ok(payload.candidate.id);
+  assert.equal(payload.candidate.name, "Dynamic Signal System");
+  assert.equal(payload.candidate.source, "bnl_dynamic_candidate_discovery");
+  assert.deepEqual(payload.candidate.sourceLanes, ["rd_context", "broadcast_memory"]);
+  assert.equal(payload.candidate.ingestKey, "bnl:dynamic-signal-system:2026-05-30");
+  assert.equal(payload.candidate.createdFromRecommendationId, payload.recommendation.id);
+  assert.equal(payload.candidate.reason, "BNL discovered a source-file subject from approved lanes.");
+  assert.equal(payload.candidate.evidenceSummary, "R&D context and broadcast memory both mention the system.");
+  assert.deepEqual(payload.candidate.publicSafetyNotes, ["Keep internal until reviewed."]);
+  assert.equal(payload.candidate.confidence, "high");
+  assert.equal(payload.candidate.recommendedCategory, "Interface");
+  assert.equal(payload.candidate.recommendedKind, "system");
+  assert.equal(payload.candidate.status, "needs_review");
+  assert.equal(payload.candidate.sourceFileNotes.length, 1);
+  assert.match(payload.candidate.sourceFileNotes[0].text, /BNL dynamic discovery source lanes: rd_context, broadcast_memory/);
+  assert.equal(payload.candidate.sourceFileNotes[0].ingestSource, "bnl_dynamic_candidate_discovery");
+
+  const adminPayload = await (await authedGet()).json();
+  assert.equal(adminPayload.candidates.length, 1);
+  assert.equal(adminPayload.candidates[0].id, payload.candidate.id);
+  assert.equal(adminPayload.recommendations.length, 1);
+  assert.equal(adminPayload.drafts.length, 0);
+  assert.equal(databasePage.entries.flatMap((entry) => entry.tags).length, beforePublicTagCount);
+  assert.doesNotMatch(JSON.stringify(databasePage.entries), /Dynamic Signal System|dynamic-private-tag/);
+
+  const readModelResponse = await readModel.GET(
+    new Request("https://example.test/api/bnl/read-model"),
+  );
+  const readModelPayload = await readModelResponse.json();
+  assert.doesNotMatch(JSON.stringify(readModelPayload), /Dynamic Signal System|dynamic-private-tag/);
+});
+
+test("BNL dynamic discovery dedupes by ingestKey and exact subject candidate", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const input = {
+    type: "new_subject",
+    subjectName: "Deduped Dynamic System",
+    reason: "BNL found a system candidate.",
+    sourceLanes: ["rd_context"],
+    ingestKey: "bnl:deduped-dynamic-system",
+    ingestSource: "bnl_dynamic_candidate_discovery",
+  };
+  const first = await (await bnlIngestPost(input)).json();
+  const second = await (await bnlIngestPost(input)).json();
+  assert.equal(first.autoAction, "created_candidate");
+  assert.equal(second.duplicate, true);
+  assert.equal(second.recommendation.id, first.recommendation.id);
+
+  const sameSubject = await (await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "The Deduped Dynamic System",
+    reason: "BNL found the same normalized subject under a different ingest key.",
+    sourceLanes: ["broadcast_memory"],
+    ingestKey: "bnl:deduped-dynamic-system:second-key",
+    ingestSource: "bnl_dynamic_candidate_discovery",
+  })).json();
+  assert.equal(sameSubject.autoAction, "attached_existing");
+  assert.equal(sameSubject.recommendation.status, "attached_to_source_file");
+  assert.equal(sameSubject.recommendation.targetCandidateId, first.candidate.id);
+
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.candidates.length, 1);
+  assert.equal(state.recommendations.length, 2);
+  assert.equal(state.candidates[0].sourceFileNotes.length, 2);
+  assert.equal(state.drafts.length, 0);
+});
+
+test("BNL dynamic identity and possible duplicate recommendations remain review-only", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const existing = await (await authedPost({
+    action: "createManualCandidate",
+    input: {
+      ...manualCandidateInput,
+      name: "Signal Archive",
+      reason: "Existing candidate for duplicate review.",
+    },
+  })).json();
+
+  const identity = await (await bnlIngestPost({
+    type: "identity_link",
+    subjectName: "Signal Alias",
+    targetCandidateId: existing.candidate.id,
+    reason: "BNL found a possible alias for review.",
+    sourceLanes: ["public_discord"],
+    ingestKey: "bnl:identity-link-review",
+    ingestSource: "bnl_dynamic_candidate_discovery",
+  })).json();
+  assert.equal(identity.recommendation.status, "new");
+  assert.equal(identity.autoAction, undefined);
+
+  const possibleDuplicate = await (await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Signal Archive Annex",
+    reason: "BNL found a nearby source-file subject that may be a duplicate.",
+    sourceLanes: ["rd_context"],
+    ingestKey: "bnl:possible-duplicate-review",
+    ingestSource: "bnl_dynamic_candidate_discovery",
+  })).json();
+  assert.equal(possibleDuplicate.autoAction, "left_for_review");
+  assert.equal(possibleDuplicate.recommendation.status, "new");
+  assert.match(
+    possibleDuplicate.recommendation.publicSafetyNotes.join(" "),
+    /possible existing source files/,
+  );
+
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.candidates.length, 1);
+  assert.equal(state.drafts.length, 0);
+  assert.equal(state.recommendations.length, 2);
+  assert.equal(state.candidates[0].identityLinks?.length ?? 0, 0);
+});
+
 test("BNL ingest dedupes active recommendations by ingestKey and fallback comparison", async () => {
   await resetWorkflowStore();
   process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";

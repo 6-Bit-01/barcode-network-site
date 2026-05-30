@@ -3,17 +3,20 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import type {
-  DossierCandidate,
-  DossierDraft,
-  DossierDuplicateGroup,
-  DossierSourceFileNoteType,
+import {
+  getDossierSourceFileMetrics,
+  type DossierCandidate,
+  type DossierDraft,
+  type DossierDuplicateGroup,
+  type DossierRecommendation,
+  type DossierSourceFileNoteType,
 } from "@/lib/dossier-workflow";
 
 type WorkflowPayload = {
   candidates: DossierCandidate[];
   drafts: DossierDraft[];
   duplicateGroups: DossierDuplicateGroup[];
+  recommendations: DossierRecommendation[];
   workflow: { status: string };
 };
 
@@ -197,6 +200,23 @@ export default function CandidateReviewPage() {
   const canUpdateCandidate = Boolean(
     candidate && !isCandidateClosed(candidate),
   );
+  const sourceMetrics = candidate
+    ? getDossierSourceFileMetrics({
+        candidate,
+        drafts: payload?.drafts ?? [],
+        recommendations: payload?.recommendations ?? [],
+      })
+    : null;
+  const attachedRecommendations = (payload?.recommendations ?? []).filter(
+    (recommendation) => recommendation.targetCandidateId === candidate?.id,
+  );
+  const nextRecommendedAction = sourceMetrics?.unappliedSourceNotesCount
+    ? "Review source updates in proposed dossier"
+    : primaryDraft
+      ? "Open Proposed Dossier"
+      : candidate?.status === "needs_more_evidence"
+        ? "Add missing info"
+        : "Create Proposed Dossier";
 
   async function postWorkflow(body: Record<string, unknown>) {
     setSaving(true);
@@ -329,6 +349,46 @@ export default function CandidateReviewPage() {
           <div className="mt-4">
             <PhaseRail />
           </div>
+          <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3 text-xs text-muted">
+            <div className="border border-border bg-background/30 p-3">
+              <p className="uppercase tracking-widest text-accent">Source strength</p>
+              <p>{sourceMetrics?.sourceDepth ?? "Low"}</p>
+            </div>
+            <div className="border border-border bg-background/30 p-3">
+              <p className="uppercase tracking-widest text-accent">Current draft status</p>
+              <p>{primaryDraft?.status ?? "No proposed dossier"}</p>
+            </div>
+            <div className="border border-border bg-background/30 p-3">
+              <p className="uppercase tracking-widest text-accent">Recommendations</p>
+              <p>{sourceMetrics?.attachedRecommendationCount ?? 0}</p>
+            </div>
+            <div className="border border-border bg-background/30 p-3">
+              <p className="uppercase tracking-widest text-accent">Source notes</p>
+              <p>{sourceMetrics?.sourceNotesCount ?? 0}</p>
+            </div>
+            <div className="border border-border bg-background/30 p-3">
+              <p className="uppercase tracking-widest text-accent">Unapplied notes</p>
+              <p>{sourceMetrics?.unappliedSourceNotesCount ?? 0}</p>
+            </div>
+            <div className="border border-border bg-background/30 p-3">
+              <p className="uppercase tracking-widest text-accent">Next action</p>
+              <p>{nextRecommendedAction}</p>
+            </div>
+          </div>
+          {(sourceMetrics?.unappliedSourceNotesCount ?? 0) > 0 && primaryDraft && (
+            <div className="mt-4 border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
+              <p>
+                This source file has new info not yet applied to the proposed
+                dossier.
+              </p>
+              <Link
+                href={`/admin/dossiers/drafts/${primaryDraft.id}`}
+                className="mt-2 inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest hover:bg-accent hover:text-background"
+              >
+                Open Proposed Dossier
+              </Link>
+            </div>
+          )}
           <div className="mt-5 flex flex-wrap gap-3 text-xs uppercase tracking-widest">
             <Link
               href="/admin/dossiers"
@@ -343,7 +403,7 @@ export default function CandidateReviewPage() {
                 disabled={saving}
                 className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
               >
-                Create / Open Proposed Dossier
+                Create Proposed Dossier
               </button>
             )}
             {primaryDraft && isDraftActive(primaryDraft) && (
@@ -386,6 +446,19 @@ export default function CandidateReviewPage() {
       </section>
 
       <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-4">
+        <section className="border border-border bg-surface p-5 space-y-4">
+          <h2 className="text-2xl font-bold text-foreground">
+            Subject Summary / Source Packet
+          </h2>
+          <p className="text-sm text-muted">
+            The BNL Source File contains known facts, current info,
+            recommendation evidence clusters, source notes, missing info,
+            public safety notes, do-not-say notes, links, taxonomy suggestions,
+            duplicate/identity warnings, and source history for this one
+            subject.
+          </p>
+        </section>
+
         <section
           id="add-info"
           className="border border-border bg-surface p-5 space-y-3"
@@ -394,7 +467,7 @@ export default function CandidateReviewPage() {
             Add to BNL Source File
           </h2>
           <p className="text-sm text-muted">
-            Admins can add information to this BNL Source File. It does not
+            This adds information to this subject&apos;s BNL Source File. It does not
             directly edit the proposed dossier.
           </p>
           <p className="text-sm text-muted">
@@ -436,7 +509,7 @@ export default function CandidateReviewPage() {
             </label>
             <label className="md:col-span-2 space-y-2">
               <span>
-                Additional Info Added After Submission / Admin Addendum
+                Source file note
               </span>
               <textarea
                 required
@@ -470,6 +543,64 @@ export default function CandidateReviewPage() {
             </div>
           </form>
         </section>
+
+        <Section title="Recommendation/evidence clusters">
+          {attachedRecommendations.length === 0 ? (
+            <p>No recommendations attached yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {attachedRecommendations.map((recommendation) => (
+                <article key={recommendation.id} className="border border-border/70 bg-background/20 p-3">
+                  <p className="text-foreground font-semibold">
+                    {recommendation.subjectName}
+                  </p>
+                  <p>{recommendation.evidenceSummary || recommendation.reason}</p>
+                  <p>Source lanes: {recommendation.sourceLanes.join(", ")}</p>
+                </article>
+              ))}
+            </div>
+          )}
+        </Section>
+
+        <Section title="Proposed Dossier">
+          {!primaryDraft ? (
+            <div className="space-y-3">
+              <p>The proposed dossier will be drafted from this BNL Source File.</p>
+              <button
+                type="button"
+                onClick={() => void createDraft()}
+                disabled={saving || !canCreateDraft}
+                className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+              >
+                Create Proposed Dossier
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p>Status: {primaryDraft.status}</p>
+              <p>Updated: {formatDate(primaryDraft.updatedAt)}</p>
+              <p>Unapplied notes: {sourceMetrics?.unappliedSourceNotesCount ?? 0}</p>
+              <Link
+                href={`/admin/dossiers/drafts/${primaryDraft.id}`}
+                className="inline-flex border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
+              >
+                Open Proposed Dossier
+              </Link>
+            </div>
+          )}
+        </Section>
+
+        {hasOwnerReviewDraft && (
+          <Section title="Owner Review">
+            <p>Submitted draft is waiting in the separate owner review page.</p>
+            <Link
+              href="/admin/dossiers/owner-review"
+              className="mt-2 inline-flex border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent"
+            >
+              Open Owner Review
+            </Link>
+          </Section>
+        )}
 
         <Section title="BNL Source File Notes">
           {sourceNotes.length === 0 ? (
@@ -569,39 +700,12 @@ export default function CandidateReviewPage() {
                 : "—"}
             </p>
           </Section>
-          <Section title="Active owner review state">
-            <p>
-              {hasOwnerReviewDraft
-                ? "Submitted draft waiting for owner review. Additional source notes become an Admin Addendum and do not overwrite the submitted draft."
-                : "No submitted owner-review draft."}
-            </p>
-          </Section>
           <Section title="Duplicate warnings">
             <p>{candidate.duplicateRisk ?? "none"}</p>
             <p>
               Existing published dossier match:{" "}
               {candidate.existingDossierMatch?.name ?? "—"}
             </p>
-          </Section>
-          <Section title="Linked drafts">
-            {linkedDrafts.length ? (
-              linkedDrafts.map((draft) => (
-                <p key={draft.id}>
-                  {draft.status === "superseded" ? "Superseded by " : ""}
-                  <Link
-                    href={`/admin/dossiers/drafts/${draft.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-accent hover:underline"
-                  >
-                    {draft.fields.name}
-                  </Link>{" "}
-                  — {draft.status}
-                </p>
-              ))
-            ) : (
-              <p>—</p>
-            )}
           </Section>
         </section>
       </section>

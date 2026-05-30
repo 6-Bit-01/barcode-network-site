@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import type {
-  DossierCandidate,
-  DossierDraft,
-  DossierDuplicateGroup,
+import {
+  getUnappliedSourceNotes,
+  type DossierCandidate,
+  type DossierDraft,
+  type DossierDuplicateGroup,
 } from "@/lib/dossier-workflow";
 import {
   DOSSIER_ECOSYSTEM_LANE_OPTIONS,
@@ -328,6 +329,10 @@ export default function DossierDraftEditorPage() {
   const activeSourceNotes = [...(candidate?.sourceFileNotes ?? [])]
     .filter((note) => note.status === "active")
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const unappliedSourceNotes = draft
+    ? getUnappliedSourceNotes({ candidate: candidate ?? {}, draft })
+    : [];
+  const sourceNoteCount = candidate?.sourceFileNotes?.length ?? 0;
 
   function draftFieldsFromForm() {
     if (!form) return {};
@@ -695,15 +700,17 @@ export default function DossierDraftEditorPage() {
               future/placeholder-only in this workflow.
             </p>
           )}
-          <p className="text-sm text-muted mt-2">
-            This page shows the proposed completed dossier built from the BNL
-            Source File. Admins will guide BNL conversationally here. Manual
-            editing is fallback only.
+          <p className="text-sm text-muted mt-2 max-w-4xl">
+            This proposed dossier is drafted from the BNL Source File. The
+            source file contains all known/admin-added material; this page
+            contains the curated draft that may become public after owner
+            review.
           </p>
-          <p className="text-sm text-muted mt-2">
+          <p className="text-sm text-muted mt-2 max-w-4xl">
             BNL will eventually generate the proposed dossier from the BNL
             Source File and approved sources. Admins will direct changes
-            conversationally. BNL should ask only for missing specifics.
+            conversationally. BNL should ask only for missing specifics. Draft
+            fields are not mutated automatically when new source notes arrive.
           </p>
           <div className="mt-4">
             <PhaseRail currentPhase={currentPhase} />
@@ -732,7 +739,7 @@ export default function DossierDraftEditorPage() {
       <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 grid grid-cols-1 lg:grid-cols-[0.85fr_1.15fr] gap-6">
         <aside className="border border-border bg-surface p-5 space-y-4">
           <h2 className="text-2xl font-bold text-foreground">
-            BNL Source File
+            BNL Source File Summary
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-muted">
             <p>
@@ -761,6 +768,16 @@ export default function DossierDraftEditorPage() {
               </span>{" "}
               {candidate?.existingDossierMatch?.name ?? "—"}
             </p>
+          </div>
+          <div className="border border-border/70 bg-background/20 p-3 text-sm text-muted">
+            <p>Source notes: {sourceNoteCount}</p>
+            <p>Unapplied source notes: {unappliedSourceNotes.length}</p>
+            <Link
+              href={`/admin/dossiers/candidates/${draft.candidateId}`}
+              className="text-accent hover:underline"
+            >
+              Open full BNL Source File
+            </Link>
           </div>
           <section className="text-sm text-muted">
             <h3 className="font-bold text-foreground">Reason</h3>
@@ -796,6 +813,39 @@ export default function DossierDraftEditorPage() {
             form={form}
             candidate={candidate ?? undefined}
           />
+          <section className="border border-border bg-surface p-5 space-y-3 text-sm text-muted">
+            <h2 className="text-2xl font-bold text-foreground">
+              Unapplied Source Notes
+            </h2>
+            {unappliedSourceNotes.length > 0 ? (
+              <>
+                <p className="border border-accent/60 bg-accent/10 p-3 text-accent">
+                  BNL Source File has new notes since this draft was last
+                  updated.
+                </p>
+                <div className="space-y-3">
+                  {unappliedSourceNotes.slice(0, 6).map((note) => (
+                    <article
+                      key={note.id}
+                      className="border border-border/70 bg-background/20 p-3"
+                    >
+                      <p className="font-semibold text-foreground">
+                        {note.type} / {new Date(note.createdAt).toLocaleString()}
+                      </p>
+                      <p className="whitespace-pre-wrap">{note.text}</p>
+                    </article>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p>No unapplied source notes. Draft fields are unchanged unless an admin saves edits here.</p>
+            )}
+            <p>
+              BNL Edit Chat will eventually apply these changes
+              conversationally. Do not auto-apply notes to draft fields.
+            </p>
+          </section>
+
           <section className="border border-accent/60 bg-accent/10 p-5 text-sm text-accent space-y-3">
             <h2 className="text-2xl font-bold">
               BNL Edit Chat panel — Coming Next

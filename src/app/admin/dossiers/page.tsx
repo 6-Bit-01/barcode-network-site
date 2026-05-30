@@ -119,12 +119,22 @@ function linkedActiveDraftFor(
 }
 
 function recommendationProvenance(recommendation: DossierRecommendation) {
+  if (recommendation.ingestSource === "bnl_dynamic_candidate_discovery") {
+    return "BNL dynamic discovery";
+  }
   if (recommendation.ingestSource === "bnl" || recommendation.createdBy === "bnl") {
     return "BNL-ingested";
   }
   return recommendation.createdBy
     ? `Seeded by ${recommendation.createdBy}`
     : "Manually seeded";
+}
+
+function candidateProvenance(candidate: DossierCandidate) {
+  if (candidate.source === "bnl_dynamic_candidate_discovery") {
+    return `BNL dynamic discovery${candidate.sourceLanes?.length ? ` / ${candidate.sourceLanes.join(", ")}` : ""}`;
+  }
+  return candidate.source;
 }
 
 function StatusPill({ children }: { children: React.ReactNode }) {
@@ -570,9 +580,10 @@ export default function DossierControlCenterPage() {
             Compact Dossier Recommendation Inbox summary. Review a record to
             convert an unmatched recommendation or attach only when the system
             confirms a same-subject BNL Source File match. No generic attach
-            dropdown is shown here. BNL-ingested recommendations are review
-            items. They do not create source files, drafts, tags, or public
-            pages until approved through the workflow.
+            dropdown is shown here. BNL dynamic discovery can create an
+            internal source file only when no exact or possible existing source
+            file match is found; identity and duplicate recommendations remain
+            review-only.
           </p>
           {activeRecommendations.length === 0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
@@ -740,6 +751,7 @@ export default function DossierControlCenterPage() {
                 <thead className="text-xs uppercase tracking-widest text-foreground">
                   <tr>
                     <th className="py-2 pr-3">BNL Source File</th>
+                    <th className="py-2 pr-3">Provenance</th>
                     <th className="py-2 pr-3">Current phase</th>
                     <th className="py-2 pr-3">Source depth / info strength</th>
                     <th className="py-2 pr-3">Source notes count</th>
@@ -793,6 +805,15 @@ export default function DossierControlCenterPage() {
                       >
                         <td className="py-3 pr-3 text-foreground font-semibold">
                           {candidate.name}
+                        </td>
+                        <td className="py-3 pr-3">
+                          <p>{candidateProvenance(candidate)}</p>
+                          {candidate.ingestKey && (
+                            <p className="text-xs">Ingest key: {candidate.ingestKey}</p>
+                          )}
+                          {candidate.createdFromRecommendationId && (
+                            <p className="text-xs">From recommendation: {candidate.createdFromRecommendationId}</p>
+                          )}
                         </td>
                         <td className="py-3 pr-3">
                           <StatusPill>{currentPhase}</StatusPill>

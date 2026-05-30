@@ -22,6 +22,7 @@ export const dynamic = "force-dynamic";
 const RECOMMENDATION_TYPES = [
   "new_subject",
   "modify_existing_dossier",
+  "identity_link",
 ] as const satisfies readonly DossierRecommendationType[];
 const SOURCE_LANES = [
   "public_discord",
@@ -194,7 +195,10 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
     createdBy: text(payload.createdBy, 200) ?? "bnl",
     ingestKey: text(payload.ingestKey, 300),
     ingestedAt: new Date().toISOString(),
-    ingestSource: "bnl",
+    ingestSource:
+      text(payload.ingestSource, 80) === "bnl_dynamic_candidate_discovery"
+        ? "bnl_dynamic_candidate_discovery"
+        : "bnl",
   };
 }
 

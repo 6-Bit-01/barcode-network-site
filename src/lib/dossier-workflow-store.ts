@@ -659,11 +659,162 @@ function normalizeRecommendationInput(
     ingestedAt: boundedText(input.ingestedAt, 80) || undefined,
     ingestSource:
       input.ingestSource === "bnl" ||
+      input.ingestSource === "bnl_dynamic_candidate_discovery" ||
       input.ingestSource === "system" ||
       input.ingestSource === "unknown"
         ? input.ingestSource
         : undefined,
   };
+}
+
+function isBnlDynamicCandidateDiscovery(
+  recommendation: Pick<DossierRecommendation, "ingestSource" | "type">,
+): boolean {
+  return (
+    recommendation.ingestSource === "bnl_dynamic_candidate_discovery" &&
+    recommendation.type === "new_subject"
+  );
+}
+
+function candidateTypeFromRecommendation(
+  recommendation: Pick<
+    DossierRecommendation,
+    "recommendedCategory" | "recommendedKind"
+  >,
+): DossierCandidate["candidateType"] {
+  if (recommendation.recommendedKind === "artist") return "artist";
+  if (recommendation.recommendedKind === "community_member") {
+    return "community_member";
+  }
+  if (recommendation.recommendedCategory === "Production") return "production";
+  if (recommendation.recommendedCategory === "Interface") return "interface";
+  if (recommendation.recommendedCategory === "Sponsor") return "sponsor";
+  if (recommendation.recommendedCategory === "Entity") return "entity";
+  return "unknown";
+}
+
+function recommendationCandidateScore(
+  recommendation: Pick<DossierRecommendation, "confidence">,
+): number {
+  return recommendation.confidence === "high"
+    ? 70
+    : recommendation.confidence === "medium"
+      ? 55
+      : 40;
+}
+
+function bnlDynamicDiscoveryNoteText(
+  recommendation: DossierRecommendation,
+): string {
+  return [
+    recommendationSourceNoteText(recommendation),
+    `BNL dynamic discovery source lanes: ${recommendation.sourceLanes.join(", ")}`,
+    recommendation.ingestKey ? `BNL dynamic ingest key: ${recommendation.ingestKey}` : "",
+    recommendation.confidence ? `BNL confidence: ${recommendation.confidence}` : "",
+    recommendation.recommendedCategory || recommendation.recommendedKind
+      ? `BNL category metadata: ${[
+          recommendation.recommendedCategory,
+          recommendation.recommendedKind,
+          recommendation.recommendedEcosystemLane,
+          recommendation.recommendedIdentityAuthority,
+        ]
+          .filter(Boolean)
+          .join(" / ")}`
+      : "",
+    ...(recommendation.publicSafetyNotes ?? []).map(
+      (note) => `Safety note: ${note}`,
+    ),
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+    .slice(0, 2000);
+}
+
+function buildCandidateFromRecommendation(input: {
+  recommendation: DossierRecommendation;
+  now: string;
+  source: DossierCandidate["source"];
+  noteText: string;
+}): DossierCandidate {
+  const { recommendation, now, source, noteText } = input;
+  const duplicate = findExistingDossierMatch(recommendation.subjectName);
+  const note: DossierSourceFileNote = {
+    id: createSourceFileNoteId(),
+    candidateId: "",
+    type: "general_note",
+    text: noteText,
+    source: "bnl_recommendation",
+    status: "active",
+    publicSafe: false,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: recommendation.createdBy,
+    ingestKey: recommendation.ingestKey,
+    ingestedAt: recommendation.ingestedAt,
+    ingestSource: recommendation.ingestSource,
+  };
+  const candidate: DossierCandidate = {
+    id: createCandidateId(),
+    name: recommendation.subjectName,
+    candidateType: candidateTypeFromRecommendation(recommendation),
+    source,
+    tier: "review_candidate",
+    score: recommendationCandidateScore(recommendation),
+    whyNow:
+      recommendation.suggestedAction ??
+      (source === "bnl_dynamic_candidate_discovery"
+        ? "BNL dynamic candidate discovery."
+        : "Recommendation inbox conversion."),
+    reason: recommendation.reason,
+    firstSeenAt: recommendation.ingestedAt ?? now,
+    lastSeenAt: now,
+    evidenceSummary: recommendation.evidenceSummary ?? recommendation.reason,
+    evidenceItems: recommendation.evidenceSummary
+      ? [
+          {
+            id: createEvidenceId(),
+            type: "operator_note",
+            label:
+              source === "bnl_dynamic_candidate_discovery"
+                ? "BNL dynamic discovery evidence"
+                : "Recommendation inbox evidence",
+            summary: recommendation.evidenceSummary,
+            count: 1,
+            firstSeenAt: recommendation.ingestedAt ?? now,
+            lastSeenAt: now,
+            publicSafe: false,
+          },
+        ]
+      : [],
+    evidenceCount: recommendation.evidenceSummary ? 1 : 0,
+    knownFacts: [],
+    confidence: recommendation.confidence ?? "low",
+    duplicateRisk: duplicate.risk,
+    existingDossierMatch: duplicate.match,
+    recommendedCategory: recommendation.recommendedCategory,
+    recommendedKind: recommendation.recommendedKind,
+    recommendedEcosystemLane: recommendation.recommendedEcosystemLane,
+    recommendedIdentityAuthority: recommendation.recommendedIdentityAuthority,
+    recommendedStatus: "PENDING",
+    recommendedClearance: "PUBLIC",
+    recommendedOrigin: "UNVERIFIED",
+    recommendedTags: recommendation.recommendedTags ?? [],
+    proposedTags: [],
+    missingInfo: recommendation.missingInfo ?? [],
+    doNotSay: recommendation.doNotSay ?? [],
+    publicSafetyNotes: recommendation.publicSafetyNotes ?? [],
+    sourceFileNotes: [{ ...note, candidateId: "" }],
+    identityLinks: [],
+    sourceLanes: recommendation.sourceLanes,
+    ingestKey: recommendation.ingestKey,
+    ingestSource: recommendation.ingestSource,
+    createdFromRecommendationId: recommendation.id,
+    status: "needs_review",
+    createdAt: now,
+    updatedAt: now,
+  };
+  candidate.sourceFileNotes = [{ ...note, candidateId: candidate.id }];
+  return candidate;
 }
 
 function isActiveRecommendation(recommendation: DossierRecommendation): boolean {
@@ -694,7 +845,12 @@ function fallbackRecommendationDedupeKey(
 
 export async function createDossierRecommendationIdempotent(
   input: CreateDossierRecommendationInput,
-): Promise<{ recommendation: DossierRecommendation; duplicate: boolean }> {
+): Promise<{
+  recommendation: DossierRecommendation;
+  duplicate: boolean;
+  candidate?: DossierCandidate;
+  autoAction?: "created_candidate" | "attached_existing" | "left_for_review";
+}> {
   const normalized = normalizeRecommendationInput(input);
   if (!normalized) {
     throw new DossierWorkflowInputError(
@@ -710,7 +866,9 @@ export async function createDossierRecommendationIdempotent(
     updatedAt: now,
   };
   let savedRecommendation: DossierRecommendation = recommendation;
+  let savedCandidate: DossierCandidate | undefined;
   let duplicate = false;
+  let autoAction: "created_candidate" | "attached_existing" | "left_for_review" | undefined;
 
   await updateDossierWorkflowState((currentState) => {
     if (recommendation.targetCandidateId) {
@@ -735,9 +893,7 @@ export async function createDossierRecommendationIdempotent(
 
     const existing = recommendation.ingestKey
       ? currentState.recommendations.find(
-          (item) =>
-            isActiveRecommendation(item) &&
-            item.ingestKey === recommendation.ingestKey,
+          (item) => item.ingestKey === recommendation.ingestKey,
         )
       : currentState.recommendations.find(
           (item) =>
@@ -752,6 +908,123 @@ export async function createDossierRecommendationIdempotent(
       return currentState;
     }
 
+    if (isBnlDynamicCandidateDiscovery(recommendation)) {
+      const ingestKeyCandidate = recommendation.ingestKey
+        ? currentState.candidates.find(
+            (candidate) =>
+              candidate.ingestKey === recommendation.ingestKey &&
+              candidate.status !== "denied" &&
+              candidate.status !== "merged",
+          )
+        : undefined;
+      if (ingestKeyCandidate) {
+        const updatedRecommendation: DossierRecommendation = {
+          ...recommendation,
+          status: "attached_to_source_file",
+          targetCandidateId: ingestKeyCandidate.id,
+          publicSafetyNotes: [
+            ...(recommendation.publicSafetyNotes ?? []),
+            "BNL dynamic discovery ingest key already exists on a source file; linked without creating a duplicate candidate.",
+          ],
+          updatedAt: now,
+        };
+        savedRecommendation = updatedRecommendation;
+        autoAction = "attached_existing";
+        return {
+          ...currentState,
+          recommendations: [updatedRecommendation, ...currentState.recommendations],
+          updatedAt: now,
+        };
+      }
+
+      const match = matchDossierRecommendationSubject({
+        recommendation,
+        candidates: currentState.candidates,
+      });
+
+      if (match.exactCandidateId) {
+        const note: DossierSourceFileNote = {
+          id: createSourceFileNoteId(),
+          candidateId: match.exactCandidateId,
+          type: "general_note",
+          text: bnlDynamicDiscoveryNoteText(recommendation),
+          source: "bnl_recommendation",
+          status: "active",
+          publicSafe: false,
+          createdAt: now,
+          updatedAt: now,
+          createdBy: recommendation.createdBy,
+          ingestKey: recommendation.ingestKey,
+          ingestedAt: recommendation.ingestedAt,
+          ingestSource: recommendation.ingestSource,
+        };
+        const updatedRecommendation: DossierRecommendation = {
+          ...recommendation,
+          status: "attached_to_source_file",
+          targetCandidateId: match.exactCandidateId,
+          publicSafetyNotes: [
+            ...(recommendation.publicSafetyNotes ?? []),
+            "BNL dynamic discovery matched an existing exact same-subject source file and was attached without creating a duplicate candidate.",
+          ],
+          updatedAt: now,
+        };
+        savedRecommendation = updatedRecommendation;
+        autoAction = "attached_existing";
+        return {
+          ...currentState,
+          recommendations: [updatedRecommendation, ...currentState.recommendations],
+          candidates: currentState.candidates.map((candidate) =>
+            candidate.id === match.exactCandidateId
+              ? {
+                  ...candidate,
+                  sourceFileNotes: [note, ...(candidate.sourceFileNotes ?? [])],
+                  updatedAt: now,
+                }
+              : candidate,
+          ),
+          updatedAt: now,
+        };
+      }
+
+      if (match.possibleCandidateIds.length === 0) {
+        const candidate = buildCandidateFromRecommendation({
+          recommendation,
+          now,
+          source: "bnl_dynamic_candidate_discovery",
+          noteText: bnlDynamicDiscoveryNoteText(recommendation),
+        });
+        const updatedRecommendation: DossierRecommendation = {
+          ...recommendation,
+          status: "converted_to_source_file",
+          targetCandidateId: candidate.id,
+          updatedAt: now,
+        };
+        savedRecommendation = updatedRecommendation;
+        savedCandidate = candidate;
+        autoAction = "created_candidate";
+        return {
+          ...currentState,
+          candidates: [candidate, ...currentState.candidates],
+          recommendations: [updatedRecommendation, ...currentState.recommendations],
+          updatedAt: now,
+        };
+      }
+
+      savedRecommendation = {
+        ...recommendation,
+        publicSafetyNotes: [
+          ...(recommendation.publicSafetyNotes ?? []),
+          "BNL dynamic discovery found possible existing source files; left in Recommendation Inbox for owner/lead duplicate or identity review.",
+        ],
+      };
+      autoAction = "left_for_review";
+      return {
+        ...currentState,
+        recommendations: [savedRecommendation, ...currentState.recommendations],
+        updatedAt: now,
+      };
+    }
+
     savedRecommendation = recommendation;
     return {
       ...currentState,
@@ -760,7 +1033,12 @@ export async function createDossierRecommendationIdempotent(
     };
   });
 
-  return { recommendation: savedRecommendation, duplicate };
+  return {
+    recommendation: savedRecommendation,
+    duplicate,
+    candidate: savedCandidate,
+    autoAction,
+  };
 }
 
 function recommendationSourceNoteText(
@@ -1459,74 +1737,18 @@ export async function convertRecommendationToCandidate(
         },
       );
     }
-    const duplicate = findExistingDossierMatch(recommendation.subjectName);
-    const note: DossierSourceFileNote = {
-      id: createSourceFileNoteId(),
-      candidateId: "",
-      type: "general_note",
-      text: recommendationSourceNoteText(recommendation),
-      source: "bnl_recommendation",
-      status: "active",
-      publicSafe: false,
-      createdAt: now,
-      updatedAt: now,
-    };
-    const candidate: DossierCandidate = {
-      id: createCandidateId(),
-      name: recommendation.subjectName,
-      candidateType: "unknown",
-      source: "manual",
-      tier: "review_candidate",
-      score:
-        recommendation.confidence === "high"
-          ? 70
-          : recommendation.confidence === "medium"
-            ? 55
-            : 40,
-      whyNow:
-        recommendation.suggestedAction ?? "Recommendation inbox conversion.",
-      reason: recommendation.reason,
-      firstSeenAt: now,
-      lastSeenAt: now,
-      evidenceSummary: recommendation.evidenceSummary ?? recommendation.reason,
-      evidenceItems: recommendation.evidenceSummary
-        ? [
-            {
-              id: createEvidenceId(),
-              type: "operator_note",
-              label: "Recommendation inbox evidence",
-              summary: recommendation.evidenceSummary,
-              count: 1,
-              firstSeenAt: now,
-              lastSeenAt: now,
-              publicSafe: false,
-            },
-          ]
-        : [],
-      evidenceCount: recommendation.evidenceSummary ? 1 : 0,
-      knownFacts: [],
-      confidence: recommendation.confidence ?? "low",
-      duplicateRisk: duplicate.risk,
-      existingDossierMatch: duplicate.match,
-      recommendedCategory: recommendation.recommendedCategory,
-      recommendedKind: recommendation.recommendedKind,
-      recommendedEcosystemLane: recommendation.recommendedEcosystemLane,
-      recommendedIdentityAuthority: recommendation.recommendedIdentityAuthority,
-      recommendedStatus: "PENDING",
-      recommendedClearance: "PUBLIC",
-      recommendedOrigin: "UNVERIFIED",
-      recommendedTags: recommendation.recommendedTags ?? [],
-      proposedTags: [],
-      missingInfo: recommendation.missingInfo ?? [],
-      doNotSay: recommendation.doNotSay ?? [],
-      publicSafetyNotes: recommendation.publicSafetyNotes ?? [],
-      sourceFileNotes: [{ ...note, candidateId: "" }],
-      identityLinks: [],
-      status: "needs_review",
-      createdAt: now,
-      updatedAt: now,
-    };
-    candidate.sourceFileNotes = [{ ...note, candidateId: candidate.id }];
+    const candidate = buildCandidateFromRecommendation({
+      recommendation,
+      now,
+      source:
+        recommendation.ingestSource === "bnl_dynamic_candidate_discovery"
+          ? "bnl_dynamic_candidate_discovery"
+          : "manual",
+      noteText:
+        recommendation.ingestSource === "bnl_dynamic_candidate_discovery"
+          ? bnlDynamicDiscoveryNoteText(recommendation)
+          : recommendationSourceNoteText(recommendation),
+    });
     const updatedRecommendation: DossierRecommendation = {
       ...recommendation,
       status: "converted_to_source_file",

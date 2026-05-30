@@ -115,6 +115,9 @@ function formatDate(value?: string) {
 }
 
 function recommendationProvenance(recommendation: DossierRecommendation) {
+  if (recommendation.ingestSource === "bnl_dynamic_candidate_discovery") {
+    return "BNL dynamic discovery";
+  }
   if (recommendation.ingestSource === "bnl" || recommendation.createdBy === "bnl") {
     return "BNL-ingested";
   }
@@ -424,9 +427,10 @@ export default function DossierRecommendationPage() {
             evidence records. They do not publish, create drafts, write content
             files, or create tags automatically. Attach is only allowed for
             confirmed same-subject matches; merge is owner/lead identity
-            resolution. BNL-ingested recommendations are review items. They do
-            not create source files, drafts, tags, or public pages until
-            approved through the workflow.
+            resolution. BNL dynamic discovery can create an internal source
+            file only when no exact or possible existing source-file match is
+            found. Identity/alias and duplicate recommendations remain review
+            items; no drafts, tags, or public pages are created automatically.
           </p>
           {notice && (
             <div className="mt-4 border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
@@ -436,6 +440,10 @@ export default function DossierRecommendationPage() {
           {isTerminal && (
             <div className="mt-4 border border-border/70 bg-background/30 p-4 text-sm text-muted">
               <p className="font-bold text-foreground">{terminalMessage}</p>
+              <p>Ingest: {recommendationProvenance(recommendation)}</p>
+              {recommendation.ingestKey && (
+                <p>Ingest key: {recommendation.ingestKey}</p>
+              )}
               {targetCandidate ? (
                 <Link
                   href={`/admin/dossiers/candidates/${targetCandidate.id}`}

@@ -10,6 +10,7 @@ export type DossierCandidateSource =
   | "queue_frequency"
   | "discord_context"
   | "website_read_model"
+  | "bnl_dynamic_candidate_discovery"
   | "combined";
 
 export type DossierCandidateType =
@@ -225,6 +226,10 @@ export type DossierCandidate = {
   publicSafetyNotes?: string[];
   sourceFileNotes?: DossierSourceFileNote[];
   identityLinks?: DossierIdentityLink[];
+  sourceLanes?: DossierRecommendationSourceLane[];
+  ingestKey?: string;
+  ingestSource?: DossierRecommendationIngestSource;
+  createdFromRecommendationId?: string;
   mergedIntoCandidateId?: string;
   mergedAt?: string;
   mergeNote?: string;
@@ -336,7 +341,11 @@ export type DossierRecommendationSourceLane =
   | "owner_manual"
   | "unknown";
 
-export type DossierRecommendationIngestSource = "bnl" | "system" | "unknown";
+export type DossierRecommendationIngestSource =
+  | "bnl"
+  | "bnl_dynamic_candidate_discovery"
+  | "system"
+  | "unknown";
 
 export type DossierRecommendation = {
   id: string;
@@ -922,6 +931,14 @@ export const DOSSIER_SOURCE_BOUNDARIES: DossierSourceBoundary[] = [
       "Public site state may include existing public-page dossiers and tags only.",
     allowedUse:
       "May help compare candidates against existing public database records.",
+  },
+  {
+    source: "bnl_dynamic_candidate_discovery",
+    label: "BNL dynamic candidate discovery",
+    boundary:
+      "BNL dynamic discovery creates internal source-file candidates only; it never publishes, drafts, confirms aliases, or creates tags automatically.",
+    allowedUse:
+      "May create an admin-only candidate when no exact or possible existing source-file match is found.",
   },
   {
     source: "combined",

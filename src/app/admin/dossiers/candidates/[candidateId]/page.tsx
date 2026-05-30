@@ -8,7 +8,9 @@ import {
   type DossierCandidate,
   type DossierDraft,
   type DossierDuplicateGroup,
+  type DossierIdentityLink,
   type DossierIdentityLinkSource,
+  type DossierIdentityLinkStatus,
   type DossierIdentityLinkType,
   type DossierIdentityLinkVisibility,
   type DossierRecommendation,
@@ -88,6 +90,34 @@ const emptyIdentityLinkForm: IdentityLinkForm = {
   useForMatching: false,
 };
 
+const identityLinkStatusLabels: Record<DossierIdentityLinkStatus, string> = {
+  proposed: "Proposed",
+  confirmed: "Confirmed",
+  rejected: "Rejected",
+  retired: "Retired",
+};
+
+const identityLinkStatusCopy: Record<DossierIdentityLinkStatus, string> = {
+  proposed:
+    "This alias is waiting for review. It will not affect matching until confirmed.",
+  confirmed:
+    "This alias is confirmed and can route future recommendations to this BNL Source File when matching is enabled.",
+  rejected: "This alias was rejected and will not be used for matching.",
+  retired: "This alias is retired and no longer used for matching.",
+};
+
+const identityReviewNotice: Record<
+  "confirmDossierIdentityLink" | "rejectDossierIdentityLink" | "retireDossierIdentityLink",
+  string
+> = {
+  confirmDossierIdentityLink:
+    "Identity link confirmed. Future recommendations can now match this alias if matching is enabled.",
+  rejectDossierIdentityLink:
+    "Identity link rejected. It will not be used for matching.",
+  retireDossierIdentityLink:
+    "Identity link retired. It is no longer active.",
+};
+
 function routeParam(value: string | string[] | undefined) {
   const raw = Array.isArray(value) ? value[0] : value;
   return raw ? decodeURIComponent(raw) : "";
@@ -137,6 +167,126 @@ function Section({
       <h2 className="font-bold text-foreground mb-2">{title}</h2>
       {children}
     </section>
+  );
+}
+
+function StatusBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex border border-border bg-background/40 px-2 py-1 text-[0.65rem] uppercase tracking-widest text-muted">
+      {children}
+    </span>
+  );
+}
+
+function IdentityLinkCard({
+  identityLink,
+  saving,
+  onReview,
+}: {
+  identityLink: DossierIdentityLink;
+  saving: boolean;
+  onReview: (
+    identityLinkId: string,
+    action:
+      | "confirmDossierIdentityLink"
+      | "rejectDossierIdentityLink"
+      | "retireDossierIdentityLink",
+    useForMatching?: boolean,
+  ) => void;
+}) {
+  const isProposed = identityLink.status === "proposed";
+  const isConfirmed = identityLink.status === "confirmed";
+  const isRetired = identityLink.status === "retired";
+
+  return (
+    <article className="border border-border/70 bg-background/20 p-3 space-y-3">
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-foreground font-semibold">{identityLink.label}</p>
+          <p className="mt-1">{identityLinkStatusCopy[identityLink.status]}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <StatusBadge>{identityLinkStatusLabels[identityLink.status]}</StatusBadge>
+          {isConfirmed && (
+            <>
+              <StatusBadge>
+                {identityLink.useForMatching
+                  ? "Active for matching"
+                  : "Not used for matching"}
+              </StatusBadge>
+              <StatusBadge>
+                {identityLink.visibility === "public_safe"
+                  ? "Public-safe label"
+                  : "Internal only"}
+              </StatusBadge>
+              <StatusBadge>
+                {identityLink.useInPublicDossier
+                  ? "Approved for public dossier text"
+                  : "Not public dossier text"}
+              </StatusBadge>
+            </>
+          )}
+          {!isConfirmed && !isRetired && (
+            <StatusBadge>Not used for matching</StatusBadge>
+          )}
+        </div>
+      </div>
+      <p>
+        Type: {identityLink.type} / Visibility: {identityLink.visibility} /
+        Source: {identityLink.source}
+      </p>
+      <p>Confidence: {identityLink.confidence ?? "—"}</p>
+      <p className="whitespace-pre-wrap">Note: {identityLink.note ?? "—"}</p>
+      <p>
+        Created: {formatDate(identityLink.createdAt)} by{" "}
+        {identityLink.createdBy ?? "—"} / Confirmed: {" "}
+        {formatDate(identityLink.confirmedAt)} by {identityLink.confirmedBy ?? "—"}
+      </p>
+      {(isProposed || isConfirmed) && (
+        <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
+          {isProposed && (
+            <>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() =>
+                  onReview(
+                    identityLink.id,
+                    "confirmDossierIdentityLink",
+                    true,
+                  )
+                }
+                className="border border-accent px-3 py-1.5 text-accent hover:bg-accent hover:text-background disabled:pointer-events-none disabled:opacity-50"
+              >
+                Confirm
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() =>
+                  onReview(identityLink.id, "rejectDossierIdentityLink")
+                }
+                className="border border-border px-3 py-1.5 hover:border-accent hover:text-accent disabled:pointer-events-none disabled:opacity-50"
+              >
+                Reject
+              </button>
+            </>
+          )}
+          {isConfirmed && (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() =>
+                onReview(identityLink.id, "retireDossierIdentityLink")
+              }
+              className="border border-border px-3 py-1.5 hover:border-accent hover:text-accent disabled:pointer-events-none disabled:opacity-50"
+            >
+              Retire
+            </button>
+          )}
+        </div>
+      )}
+    </article>
   );
 }
 
@@ -258,6 +408,16 @@ export default function CandidateReviewPage() {
       (a.status === "proposed" ? -1 : 1) -
         (b.status === "proposed" ? -1 : 1) ||
       b.updatedAt.localeCompare(a.updatedAt),
+  );
+  const proposedIdentityLinks = identityLinks.filter(
+    (identityLink) => identityLink.status === "proposed",
+  );
+  const confirmedIdentityLinks = identityLinks.filter(
+    (identityLink) => identityLink.status === "confirmed",
+  );
+  const closedIdentityLinks = identityLinks.filter(
+    (identityLink) =>
+      identityLink.status === "rejected" || identityLink.status === "retired",
   );
   const nextRecommendedAction = sourceMetrics?.unappliedSourceNotesCount
     ? "Review source updates in proposed dossier"
@@ -396,7 +556,7 @@ export default function CandidateReviewPage() {
         identityLinkId,
         useForMatching,
       });
-      setNotice("Identity link updated. No public dossier text was changed.");
+      setNotice(identityReviewNotice[action]);
     } catch (err) {
       setNotice(
         err instanceof Error ? err.message : "Failed to update identity link.",
@@ -666,80 +826,75 @@ export default function CandidateReviewPage() {
         </Section>
 
         <Section title="Identity / Aliases">
-          <div className="space-y-4">
-            <p>
-              Aliases help BNL route future recommendations to the right source
-              file. Internal aliases are not public dossier text. Public-safe
-              visibility does not publish anything yet.
-            </p>
+          <div className="space-y-5">
+            <div className="space-y-2">
+              <p>
+                Aliases help BNL route future recommendations to the right source
+                file. Internal aliases are not public dossier text. Public-safe
+                visibility does not publish anything yet.
+              </p>
+              <p className="border border-border/70 bg-background/20 p-3">
+                Adding an alias does not make it public and does not affect
+                matching until confirmed. If an alias is created as proposed,
+                matching is not active yet.
+              </p>
+            </div>
+
             {identityLinks.length === 0 ? (
               <p>No identity links saved yet.</p>
             ) : (
-              <div className="space-y-3">
-                {identityLinks.map((identityLink) => (
-                  <article
-                    key={identityLink.id}
-                    className="border border-border/70 bg-background/20 p-3 space-y-2"
+              <div className="space-y-4">
+                {[
+                  {
+                    title: "Pending Review",
+                    empty: "No pending aliases.",
+                    links: proposedIdentityLinks,
+                  },
+                  {
+                    title: "Confirmed Aliases",
+                    empty: "No confirmed aliases.",
+                    links: confirmedIdentityLinks,
+                  },
+                  {
+                    title: "Closed / Inactive",
+                    empty: "No closed aliases.",
+                    links: closedIdentityLinks,
+                  },
+                ].map((group) => (
+                  <section
+                    key={group.title}
+                    className="border border-border/60 bg-background/10 p-3 space-y-3"
                   >
-                    <p className="text-foreground font-semibold">
-                      {identityLink.label}
-                    </p>
-                    <p>
-                      Type: {identityLink.type} / Visibility: {identityLink.visibility} / Status: {identityLink.status}
-                    </p>
-                    <p>
-                      Confidence: {identityLink.confidence ?? "—"} / Source: {identityLink.source}
-                    </p>
-                    <p>
-                      Use for matching: {String(identityLink.useForMatching)} / Use in public dossier: {String(identityLink.useInPublicDossier)}
-                    </p>
-                    <p className="whitespace-pre-wrap">Note: {identityLink.note ?? "—"}</p>
-                    <p>
-                      Created: {formatDate(identityLink.createdAt)} by {identityLink.createdBy ?? "—"} / Confirmed: {formatDate(identityLink.confirmedAt)} by {identityLink.confirmedBy ?? "—"}
-                    </p>
-                    <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
-                      <button
-                        type="button"
-                        disabled={saving || identityLink.status === "confirmed"}
-                        onClick={() =>
-                          void reviewIdentityLink(
-                            identityLink.id,
-                            "confirmDossierIdentityLink",
-                            true,
-                          )
-                        }
-                        className="border border-accent px-3 py-1.5 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
-                      >
-                        Confirm
-                      </button>
-                      <button
-                        type="button"
-                        disabled={saving || identityLink.status === "rejected"}
-                        onClick={() =>
-                          void reviewIdentityLink(
-                            identityLink.id,
-                            "rejectDossierIdentityLink",
-                          )
-                        }
-                        className="border border-border px-3 py-1.5 hover:border-accent hover:text-accent disabled:opacity-50"
-                      >
-                        Reject
-                      </button>
-                      <button
-                        type="button"
-                        disabled={saving || identityLink.status === "retired"}
-                        onClick={() =>
-                          void reviewIdentityLink(
-                            identityLink.id,
-                            "retireDossierIdentityLink",
-                          )
-                        }
-                        className="border border-border px-3 py-1.5 hover:border-accent hover:text-accent disabled:opacity-50"
-                      >
-                        Retire
-                      </button>
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-bold uppercase tracking-widest text-foreground">
+                        {group.title}
+                      </h3>
+                      <span className="text-xs text-muted">
+                        {group.links.length} alias
+                        {group.links.length === 1 ? "" : "es"}
+                      </span>
                     </div>
-                  </article>
+                    {group.links.length === 0 ? (
+                      <p className="text-xs">{group.empty}</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {group.links.map((identityLink) => (
+                          <IdentityLinkCard
+                            key={identityLink.id}
+                            identityLink={identityLink}
+                            saving={saving}
+                            onReview={(identityLinkId, action, useForMatching) =>
+                              void reviewIdentityLink(
+                                identityLinkId,
+                                action,
+                                useForMatching,
+                              )
+                            }
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </section>
                 ))}
               </div>
             )}
@@ -862,7 +1017,7 @@ export default function CandidateReviewPage() {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                  className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:pointer-events-none disabled:opacity-50"
                 >
                   Add Identity Link
                 </button>

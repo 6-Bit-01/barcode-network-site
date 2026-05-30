@@ -394,9 +394,9 @@ export default function DossierRecommendationPage() {
                     <p className="font-bold">
                       Matched by confirmed alias: {confirmedAliasLink?.label ?? subjectMatch.aliasLabel ?? recommendation.subjectName}
                     </p>
-                    <p>Source file name: {exactCandidate.name}</p>
+                    <p>Target source file: {exactCandidate.name}</p>
                     <p>
-                      This alias is used for internal matching only unless public
+                      This alias is used for internal routing only unless public
                       use is later approved.
                     </p>
                   </>
@@ -427,10 +427,11 @@ export default function DossierRecommendationPage() {
               </div>
             ) : possibleAliasConflictCandidates.length > 0 ? (
               <div className="border border-accent/60 bg-accent/10 p-4 text-accent space-y-2">
-                <p className="font-bold">Possible alias conflict</p>
+                <p className="font-bold">Possible identity review needed</p>
                 <p>
                   A proposed identity link uses this subject label, but proposed
-                  aliases do not auto-match, attach, or merge source files.
+                  aliases do not count as exact confirmed matches, auto-match,
+                  attach, or merge source files.
                 </p>
                 <ul className="list-disc pl-5">
                   {possibleAliasConflictCandidates.map((candidate) => (

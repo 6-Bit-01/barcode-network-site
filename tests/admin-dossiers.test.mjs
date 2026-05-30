@@ -46,6 +46,7 @@ Module._extensions[".tsx"] = Module._extensions[".ts"];
 const require = createRequire(import.meta.url);
 const auth = require("../src/lib/auth.ts");
 const route = require("../src/app/api/admin/dossiers/route.ts");
+const bnlIngestRoute = require("../src/app/api/bnl/dossier-recommendations/route.ts");
 const workflow = require("../src/lib/dossier-workflow.ts");
 const store = require("../src/lib/dossier-workflow-store.ts");
 const { databasePage } = require("../src/content.ts");
@@ -97,6 +98,19 @@ async function authedPost(body) {
       headers: {
         "content-type": "application/json",
         cookie: await adminCookie(),
+      },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+async function bnlIngestPost(body, token = "test-bnl-ingest-token") {
+  return bnlIngestRoute.POST(
+    new Request("https://example.test/api/bnl/dossier-recommendations", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(body),
     }),
@@ -2456,5 +2470,224 @@ test("source note and recommendation actions enforce auth and validation", async
       })
     ).status,
     404,
+  );
+});
+
+test("BNL dossier recommendation ingest requires a private token", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const missingToken = await bnlIngestRoute.POST(
+    new Request("https://example.test/api/bnl/dossier-recommendations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ subjectName: "Signal Witch", reason: "Observed." }),
+    }),
+  );
+  assert.equal(missingToken.status, 401);
+
+  const wrongToken = await bnlIngestPost(
+    { subjectName: "Signal Witch", reason: "Observed." },
+    "wrong-token",
+  );
+  assert.equal(wrongToken.status, 401);
+
+  const validToken = await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Signal Witch",
+    reason: "Signal Witch appears in multiple approved source lanes.",
+    sourceLanes: ["rd_context"],
+  });
+  assert.equal(validToken.status, 200);
+  const payload = await validToken.json();
+  assert.equal(payload.ok, true);
+  assert.equal(payload.duplicate, false);
+  assert.equal(payload.recommendation.createdBy, "bnl");
+});
+
+test("BNL ingest creates review-only recommendations visible to admin without candidates or drafts", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const response = await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Signal Witch",
+    subjectKey: "signal-witch",
+    reason: "Signal Witch appears in multiple approved source lanes.",
+    evidenceSummary: "Mentioned in R&D and broadcast-memory context.",
+    confidence: "medium",
+    sourceLanes: ["rd_context", "broadcast_memory"],
+    suggestedAction: "Review source file and create or update proposed dossier.",
+    missingInfo: ["public link", "preferred display name"],
+    publicSafetyNotes: [
+      "Do not expose private Discord identity without owner approval.",
+    ],
+    doNotSay: [],
+    recommendedTags: ["artist", "broadcast-context"],
+    recommendedCategory: "Entity",
+    recommendedKind: "community_member",
+    recommendedEcosystemLane: "community_member",
+    recommendedIdentityAuthority: "community_owned",
+    ingestKey: "bnl:signal-witch:rd+broadcast:2026-05-30",
+  });
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.recommendation.status, "new");
+  assert.equal(payload.recommendation.createdBy, "bnl");
+  assert.equal(payload.recommendation.ingestSource, "bnl");
+  assert.ok(payload.recommendation.ingestedAt);
+  assert.equal(payload.recommendation.ingestKey, "bnl:signal-witch:rd+broadcast:2026-05-30");
+
+  const adminResponse = await authedGet();
+  const adminPayload = await adminResponse.json();
+  assert.equal(adminPayload.recommendations.length, 1);
+  assert.equal(adminPayload.recommendations[0].subjectName, "Signal Witch");
+  assert.deepEqual(adminPayload.candidates, []);
+  assert.deepEqual(adminPayload.drafts, []);
+});
+
+test("BNL ingest dedupes active recommendations by ingestKey and fallback comparison", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const input = {
+    type: "new_subject",
+    subjectName: "Duplicate Signal",
+    reason: "The same recommendation should not be stored twice.",
+    sourceLanes: ["rd_context"],
+    ingestKey: "bnl:duplicate-signal:2026-05-30",
+  };
+  const first = await (await bnlIngestPost(input)).json();
+  const second = await (await bnlIngestPost(input)).json();
+  assert.equal(first.duplicate, false);
+  assert.equal(second.duplicate, true);
+  assert.equal(second.recommendation.id, first.recommendation.id);
+
+  const fallbackInput = {
+    type: "new_subject",
+    subjectName: "Fallback Signal",
+    reason: "Normalize this reason for duplicate checking.",
+    sourceLanes: ["broadcast_memory", "rd_context"],
+  };
+  const fallbackFirst = await (await bnlIngestPost(fallbackInput)).json();
+  const fallbackSecond = await (await bnlIngestPost({
+    ...fallbackInput,
+    sourceLanes: ["rd_context", "broadcast_memory"],
+  })).json();
+  assert.equal(fallbackFirst.duplicate, false);
+  assert.equal(fallbackSecond.duplicate, true);
+
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.recommendations.length, 2);
+});
+
+test("BNL ingest rejects missing fields, invalid taxonomy, invalid lanes, and empty payloads", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  assert.equal((await bnlIngestPost({ reason: "Missing subject" })).status, 400);
+  assert.equal((await bnlIngestPost({ subjectName: "Missing reason" })).status, 400);
+  assert.equal((await bnlIngestPost({})).status, 400);
+  assert.equal(
+    (
+      await bnlIngestPost({
+        subjectName: "Bad Taxonomy",
+        reason: "Invalid taxonomy should fail.",
+        recommendedKind: "not_a_kind",
+        sourceLanes: ["rd_context"],
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await bnlIngestPost({
+        subjectName: "Bad Lane",
+        reason: "Invalid source lane should fail.",
+        sourceLanes: ["private_dm"],
+      })
+    ).status,
+    400,
+  );
+});
+
+test("BNL targeted ingest stores active targetCandidateId without attaching or mutating source files", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const candidateResponse = await authedPost({
+    action: "createManualCandidate",
+    input: manualCandidateInput,
+  });
+  const candidatePayload = await candidateResponse.json();
+  const candidateId = candidatePayload.candidate.id;
+
+  const beforeState = await store.getDossierWorkflowState();
+  const response = await bnlIngestPost({
+    type: "new_subject",
+    subjectName: candidatePayload.candidate.name,
+    targetCandidateId: candidateId,
+    reason: "BNL found additional evidence for this source file.",
+    sourceLanes: ["rd_context"],
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.recommendation.targetCandidateId, candidateId);
+  assert.equal(payload.recommendation.status, "new");
+
+  const afterState = await store.getDossierWorkflowState();
+  assert.equal(afterState.candidates.length, beforeState.candidates.length);
+  assert.equal(afterState.drafts.length, 0);
+  assert.equal(afterState.candidates[0].sourceFileNotes.length, beforeState.candidates[0].sourceFileNotes.length);
+
+  const invalidTarget = await bnlIngestPost({
+    subjectName: "Missing Target",
+    targetCandidateId: "not-a-candidate",
+    reason: "Invalid target should fail.",
+    sourceLanes: ["rd_context"],
+  });
+  assert.equal(invalidTarget.status, 404);
+
+  await authedPost({ action: "denyCandidate", candidateId });
+  const deniedTarget = await bnlIngestPost({
+    subjectName: candidatePayload.candidate.name,
+    targetCandidateId: candidateId,
+    reason: "Denied target should fail.",
+    sourceLanes: ["rd_context"],
+    ingestKey: "bnl:denied-target",
+  });
+  assert.equal(deniedTarget.status, 400);
+});
+
+test("BNL-ingested recommendations stay out of public read model and database pages", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Private Ingest Signal",
+    reason: "This admin-only recommendation must not leak publicly.",
+    sourceLanes: ["rd_context"],
+    publicSafetyNotes: ["Keep private until owner approval."],
+    recommendedTags: ["brand-new-private-tag"],
+  });
+
+  const readModelResponse = await readModel.GET(
+    new Request("https://example.test/api/bnl/read-model"),
+  );
+  const readModelPayload = await readModelResponse.json();
+  assert.doesNotMatch(
+    JSON.stringify(readModelPayload),
+    /Private Ingest Signal|brand-new-private-tag|recommendations|sourceFileNotes/,
+  );
+
+  assert.doesNotMatch(
+    normalizedSource("src/app/database/page.tsx"),
+    /sourceFileNotes|recommendations|Private Ingest Signal|brand-new-private-tag/,
+  );
+  assert.doesNotMatch(
+    normalizedSource("src/app/database/[slug]/page.tsx"),
+    /sourceFileNotes|recommendations|Private Ingest Signal|brand-new-private-tag/,
   );
 });

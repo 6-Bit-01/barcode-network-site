@@ -128,6 +128,9 @@ export type DossierSourceFileNote = {
   createdAt: string;
   updatedAt: string;
   createdBy?: string;
+  ingestKey?: string;
+  ingestedAt?: string;
+  ingestSource?: DossierRecommendationIngestSource;
 };
 
 export type DossierCandidate = {
@@ -275,6 +278,8 @@ export type DossierRecommendationSourceLane =
   | "owner_manual"
   | "unknown";
 
+export type DossierRecommendationIngestSource = "bnl" | "system" | "unknown";
+
 export type DossierRecommendation = {
   id: string;
   type: DossierRecommendationType;
@@ -299,6 +304,9 @@ export type DossierRecommendation = {
   createdAt: string;
   updatedAt: string;
   createdBy?: string;
+  ingestKey?: string;
+  ingestedAt?: string;
+  ingestSource?: DossierRecommendationIngestSource;
 };
 
 
@@ -558,6 +566,9 @@ export type CreateDossierRecommendationInput = {
   recommendedEcosystemLane?: DossierCandidate["recommendedEcosystemLane"];
   recommendedIdentityAuthority?: DossierCandidate["recommendedIdentityAuthority"];
   createdBy?: string;
+  ingestKey?: string;
+  ingestedAt?: string;
+  ingestSource?: DossierRecommendationIngestSource;
 };
 
 export type MergeDossierCandidatesInput = {

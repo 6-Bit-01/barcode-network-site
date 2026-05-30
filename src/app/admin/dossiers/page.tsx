@@ -118,6 +118,15 @@ function linkedActiveDraftFor(
   );
 }
 
+function recommendationProvenance(recommendation: DossierRecommendation) {
+  if (recommendation.ingestSource === "bnl" || recommendation.createdBy === "bnl") {
+    return "BNL-ingested";
+  }
+  return recommendation.createdBy
+    ? `Seeded by ${recommendation.createdBy}`
+    : "Manually seeded";
+}
+
 function StatusPill({ children }: { children: React.ReactNode }) {
   return (
     <span className="border border-border bg-background/40 px-2 py-1 text-[0.65rem] uppercase tracking-widest text-muted">
@@ -560,7 +569,9 @@ export default function DossierControlCenterPage() {
             Compact Dossier Recommendation Inbox summary. Review a record to
             convert an unmatched recommendation or attach only when the system
             confirms a same-subject BNL Source File match. No generic attach
-            dropdown is shown here.
+            dropdown is shown here. BNL-ingested recommendations are review
+            items. They do not create source files, drafts, tags, or public
+            pages until approved through the workflow.
           </p>
           {activeRecommendations.length === 0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
@@ -574,6 +585,7 @@ export default function DossierControlCenterPage() {
                   <tr>
                     <th className="py-2 pr-3">Subject</th>
                     <th className="py-2 pr-3">Match state</th>
+                    <th className="py-2 pr-3">Ingest</th>
                     <th className="py-2 pr-3">Source lanes</th>
                     <th className="py-2 pr-3">Next action</th>
                     <th className="py-2 pr-3">Review</th>
@@ -591,6 +603,12 @@ export default function DossierControlCenterPage() {
                           {recommendation.subjectName}
                         </td>
                         <td className="py-3 pr-3">{matchState.state}</td>
+                        <td className="py-3 pr-3">
+                          <p>{recommendationProvenance(recommendation)}</p>
+                          {recommendation.ingestedAt && (
+                            <p className="text-xs">{formatDate(recommendation.ingestedAt)}</p>
+                          )}
+                        </td>
                         <td className="py-3 pr-3">
                           {recommendation.sourceLanes.join(", ")}
                         </td>

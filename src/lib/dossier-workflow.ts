@@ -183,6 +183,9 @@ export type DossierIdentityLink = {
   createdBy?: string;
   confirmedBy?: string;
   confirmedAt?: string;
+  useForMatchingAfterConfirmation?: boolean;
+  createdFromRecommendationId?: string;
+  createdFromRecommendationSubject?: string;
 };
 
 export type DossierCandidate = {
@@ -318,6 +321,7 @@ export type DossierRecommendationStatus =
   | "reviewing"
   | "attached_to_source_file"
   | "converted_to_source_file"
+  | "identity_link_created"
   | "ignored"
   | "dismissed";
 
@@ -687,6 +691,7 @@ export type DossierWorkflowAction =
   | "markNeedsMoreEvidence"
   | "addSourceFileNote"
   | "addDossierIdentityLink"
+  | "createIdentityLinkFromRecommendation"
   | "updateDossierIdentityLink"
   | "confirmDossierIdentityLink"
   | "rejectDossierIdentityLink"
@@ -725,6 +730,7 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "markNeedsMoreEvidence",
   "addSourceFileNote",
   "addDossierIdentityLink",
+  "createIdentityLinkFromRecommendation",
   "updateDossierIdentityLink",
   "confirmDossierIdentityLink",
   "rejectDossierIdentityLink",

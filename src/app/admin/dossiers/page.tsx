@@ -259,6 +259,7 @@ export default function DossierControlCenterPage() {
     [
       "attached_to_source_file",
       "converted_to_source_file",
+      "identity_link_created",
       "ignored",
       "dismissed",
     ].includes(recommendation.status),
@@ -952,6 +953,33 @@ export default function DossierControlCenterPage() {
               {" "}{resolvedDuplicateGroups.length} resolved duplicate groups.
             </p>
           </div>
+          {terminalRecommendations.length > 0 && (
+            <div className="mt-4 space-y-2 text-sm text-muted">
+              {terminalRecommendations.slice(0, 5).map((recommendation) => (
+                <article
+                  key={recommendation.id}
+                  className="border border-border/70 bg-background/20 p-3"
+                >
+                  <p className="font-semibold text-foreground">
+                    {recommendation.subjectName}
+                  </p>
+                  <p>
+                    Status: {recommendation.status === "identity_link_created"
+                      ? "Identity link created — proposed, not confirmed"
+                      : recommendation.status}
+                  </p>
+                  {recommendation.targetCandidateId && (
+                    <Link
+                      href={`/admin/dossiers/candidates/${recommendation.targetCandidateId}`}
+                      className="text-accent hover:underline"
+                    >
+                      Open related BNL Source File
+                    </Link>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
         </details>
 
         <DashboardCard eyebrow="Boundaries" title="System Boundaries">

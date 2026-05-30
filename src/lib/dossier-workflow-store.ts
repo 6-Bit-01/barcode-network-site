@@ -533,6 +533,22 @@ export type CreateDossierIdentityLinkInput = {
   useInPublicDossier?: boolean;
   note?: string;
   createdBy?: string;
+  useForMatchingAfterConfirmation?: boolean;
+  createdFromRecommendationId?: string;
+  createdFromRecommendationSubject?: string;
+};
+
+export type CreateIdentityLinkFromRecommendationInput = {
+  recommendationId: string;
+  candidateId: string;
+  label: string;
+  type?: DossierIdentityLinkType;
+  visibility?: DossierIdentityLinkVisibility;
+  source?: DossierIdentityLinkSource;
+  note?: string;
+  useForMatchingAfterConfirmation?: boolean;
+  useInPublicDossier?: boolean;
+  createdBy?: string;
 };
 
 export type UpdateDossierIdentityLinkInput = Partial<
@@ -553,6 +569,7 @@ export type ReviewDossierIdentityLinkInput = {
 const TERMINAL_RECOMMENDATION_STATUSES = new Set<DossierRecommendationStatus>([
   "attached_to_source_file",
   "converted_to_source_file",
+  "identity_link_created",
   "ignored",
   "dismissed",
 ]);
@@ -816,6 +833,12 @@ function normalizeIdentityLinkInput(
     useInPublicDossier: input.useInPublicDossier === true,
     note: boundedText(input.note, 1000) || undefined,
     createdBy: boundedText(input.createdBy, 200) || undefined,
+    useForMatchingAfterConfirmation:
+      input.useForMatchingAfterConfirmation === true || input.useForMatching === true,
+    createdFromRecommendationId:
+      boundedText(input.createdFromRecommendationId, 200) || undefined,
+    createdFromRecommendationSubject:
+      boundedText(input.createdFromRecommendationSubject, 200) || undefined,
   };
 }
 
@@ -893,6 +916,142 @@ export async function addDossierIdentityLink(
   return saved ?? identityLink;
 }
 
+export async function createIdentityLinkFromRecommendation(
+  input: CreateIdentityLinkFromRecommendationInput,
+): Promise<{
+  recommendation: DossierRecommendation;
+  identityLink: DossierIdentityLink;
+}> {
+  const recommendationId = boundedText(input.recommendationId, 200);
+  const candidateId = boundedText(input.candidateId, 200);
+  const label = boundedText(input.label, 120);
+  if (!recommendationId || !candidateId || !label) {
+    throw new DossierWorkflowInputError(
+      "recommendationId, candidateId, and label are required",
+      400,
+      "invalid_identity_link_recommendation",
+    );
+  }
+
+  const now = new Date().toISOString();
+  let result:
+    | { recommendation: DossierRecommendation; identityLink: DossierIdentityLink }
+    | null = null;
+
+  await updateDossierWorkflowState((currentState) => {
+    const recommendation = currentState.recommendations.find(
+      (item) => item.id === recommendationId,
+    );
+    if (!recommendation) {
+      throw new DossierWorkflowInputError(
+        "Recommendation not found",
+        404,
+        "recommendation_not_found",
+      );
+    }
+    assertRecommendationIsOpen(recommendation);
+
+    const candidate = currentState.candidates.find((item) => item.id === candidateId);
+    if (!candidate) {
+      throw new DossierWorkflowInputError(
+        "Candidate not found",
+        404,
+        "candidate_not_found",
+      );
+    }
+    if (candidate.status === "denied" || candidate.status === "merged") {
+      throw new DossierWorkflowInputError(
+        "Candidate is not an active BNL Source File",
+        400,
+        "candidate_not_attachable",
+      );
+    }
+    if (
+      recommendation.targetCandidateId &&
+      recommendation.targetCandidateId !== candidate.id
+    ) {
+      throw new DossierWorkflowInputError(
+        "Recommendation is pre-targeted to a different BNL Source File",
+        400,
+        "recommendation_target_mismatch",
+        { targetCandidateId: recommendation.targetCandidateId },
+      );
+    }
+
+    const normalized = normalizeIdentityLinkInput({
+      candidateId,
+      label,
+      type: input.type ?? "alias",
+      visibility: input.visibility ?? "internal_only",
+      source: input.source ?? "bnl_recommendation",
+      note: input.note,
+      useForMatchingAfterConfirmation:
+        input.useForMatchingAfterConfirmation !== false,
+      useInPublicDossier: input.useInPublicDossier === true,
+      createdBy: input.createdBy,
+      createdFromRecommendationId: recommendation.id,
+      createdFromRecommendationSubject: recommendation.subjectName,
+    });
+    if (!normalized) {
+      throw new DossierWorkflowInputError(
+        "Identity link requires candidateId and a non-empty label",
+        400,
+        "invalid_identity_link",
+      );
+    }
+
+    const identityLink: DossierIdentityLink = {
+      id: createIdentityLinkId(),
+      ...normalized,
+      normalizedLabel: normalizeName(normalized.label),
+      status: "proposed",
+      useForMatching: false,
+      useInPublicDossier: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    assertNoDuplicateActiveIdentityLink({
+      candidate,
+      normalizedLabel: identityLink.normalizedLabel,
+    });
+
+    const updatedRecommendation: DossierRecommendation = {
+      ...recommendation,
+      status: "identity_link_created",
+      targetCandidateId: candidate.id,
+      updatedAt: now,
+    };
+    result = { recommendation: updatedRecommendation, identityLink };
+
+    return {
+      ...currentState,
+      recommendations: currentState.recommendations.map((item) =>
+        item.id === recommendation.id ? updatedRecommendation : item,
+      ),
+      candidates: currentState.candidates.map((item) =>
+        item.id === candidate.id
+          ? {
+              ...item,
+              identityLinks: [identityLink, ...(item.identityLinks ?? [])],
+              updatedAt: now,
+            }
+          : item,
+      ),
+      updatedAt: now,
+    };
+  });
+
+  if (!result) {
+    throw new DossierWorkflowInputError(
+      "Recommendation not found",
+      404,
+      "recommendation_not_found",
+    );
+  }
+  return result;
+}
+
 export async function updateDossierIdentityLink(
   input: UpdateDossierIdentityLinkInput,
 ): Promise<DossierIdentityLink> {
@@ -961,7 +1120,10 @@ export async function updateDossierIdentityLink(
             identityLink.status === "confirmed"
               ? input.useForMatching === true
               : false,
-          useInPublicDossier: input.useInPublicDossier === true,
+          useInPublicDossier:
+            identityLink.status === "confirmed" && input.useInPublicDossier === true,
+          useForMatchingAfterConfirmation:
+            input.useForMatching === true || identityLink.useForMatchingAfterConfirmation,
           note:
             typeof input.note === "string"
               ? boundedText(input.note, 1000) || undefined
@@ -1014,7 +1176,9 @@ async function setDossierIdentityLinkStatus(
           ...identityLink,
           status,
           confidence: status === "confirmed" ? "confirmed" : identityLink.confidence,
-          useForMatching: status === "confirmed" && input.useForMatching === true,
+          useForMatching:
+            status === "confirmed" &&
+            (input.useForMatching ?? identityLink.useForMatchingAfterConfirmation) === true,
           useInPublicDossier:
             status === "confirmed" && input.useInPublicDossier === true,
           confirmedBy:

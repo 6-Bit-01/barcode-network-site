@@ -27,6 +27,7 @@ import {
   addDossierIdentityLink,
   addDossierSourceFileNote,
   attachRecommendationToCandidate,
+  createIdentityLinkFromRecommendation,
   confirmDossierIdentityLink,
   buildDossierDuplicateGroups,
   convertRecommendationToCandidate,
@@ -108,6 +109,7 @@ const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "mergeCandidates",
   "addSourceFileNote",
   "addDossierIdentityLink",
+  "createIdentityLinkFromRecommendation",
   "updateDossierIdentityLink",
   "confirmDossierIdentityLink",
   "rejectDossierIdentityLink",
@@ -451,6 +453,36 @@ export async function POST(req: Request) {
         recommendation,
         ...payload,
       });
+    }
+
+    if (action === "createIdentityLinkFromRecommendation") {
+      const input = identityLinkInputFromBody(body);
+      const recommendationId = recommendationIdFromBody(body);
+      if (!input || !recommendationId) {
+        return NextResponse.json(
+          { error: "recommendationId, candidateId, and identity link label are required" },
+          { status: 400 },
+        );
+      }
+      const result = await createIdentityLinkFromRecommendation({
+        recommendationId,
+        candidateId: input.candidateId,
+        label: input.label,
+        type: input.type,
+        visibility: input.visibility,
+        source: input.source,
+        note: input.note,
+        useForMatchingAfterConfirmation:
+          body.useForMatchingAfterConfirmation === false ||
+          (body.input as Record<string, unknown> | undefined)
+            ?.useForMatchingAfterConfirmation === false
+            ? false
+            : true,
+        useInPublicDossier: input.useInPublicDossier,
+        createdBy: input.createdBy,
+      });
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, ...result, ...payload });
     }
 
     if (action === "attachRecommendationToCandidate") {

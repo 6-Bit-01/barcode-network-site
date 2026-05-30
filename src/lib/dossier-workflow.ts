@@ -302,6 +302,101 @@ export type DossierRecommendation = {
 };
 
 
+
+export type DossierSourceDepthLabel = "Low" | "Medium" | "Strong";
+
+export type DossierSourceFileMetrics = {
+  sourceNotesCount: number;
+  activeSourceNotesCount: number;
+  attachedRecommendationCount: number;
+  evidenceItemCount: number;
+  sourceDepth: DossierSourceDepthLabel;
+  sourceDepthScore: number;
+  unappliedSourceNotesCount: number;
+  unappliedSourceNotes: DossierSourceFileNote[];
+};
+
+function isWorkflowDraftActiveForMetrics(draft: DossierDraft): boolean {
+  return (
+    draft.status === "draft" ||
+    draft.status === "owner_changes_requested" ||
+    draft.status === "ready_for_owner_review"
+  );
+}
+
+export function getLinkedActiveDossierDraft(
+  candidate: Pick<DossierCandidate, "id">,
+  drafts: DossierDraft[],
+): DossierDraft | undefined {
+  return drafts.find(
+    (draft) =>
+      draft.candidateId === candidate.id && isWorkflowDraftActiveForMetrics(draft),
+  );
+}
+
+export function getUnappliedSourceNotes(input: {
+  candidate: Pick<DossierCandidate, "sourceFileNotes">;
+  draft?: Pick<DossierDraft, "updatedAt"> | null;
+}): DossierSourceFileNote[] {
+  if (!input.draft?.updatedAt) return [];
+  const draftUpdatedAt = Date.parse(input.draft.updatedAt);
+  if (Number.isNaN(draftUpdatedAt)) return [];
+
+  return (input.candidate.sourceFileNotes ?? [])
+    .filter((note) => {
+      if (note.status !== "active") return false;
+      const noteCreatedAt = Date.parse(note.createdAt);
+      return !Number.isNaN(noteCreatedAt) && noteCreatedAt > draftUpdatedAt;
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export function getDossierSourceFileMetrics(input: {
+  candidate: DossierCandidate;
+  drafts?: DossierDraft[];
+  recommendations?: DossierRecommendation[];
+}): DossierSourceFileMetrics {
+  const sourceNotes = input.candidate.sourceFileNotes ?? [];
+  const activeSourceNotes = sourceNotes.filter((note) => note.status === "active");
+  const attachedRecommendations = (input.recommendations ?? []).filter(
+    (recommendation) => recommendation.targetCandidateId === input.candidate.id,
+  );
+  const evidenceItemCount =
+    input.candidate.evidenceItems?.length ?? input.candidate.evidenceCount ?? 0;
+  const linkedDraft = getLinkedActiveDossierDraft(
+    input.candidate,
+    input.drafts ?? [],
+  );
+  const unappliedSourceNotes = getUnappliedSourceNotes({
+    candidate: input.candidate,
+    draft: linkedDraft,
+  });
+
+  let score = 0;
+  score += Math.min(activeSourceNotes.length, 4);
+  score += Math.min(attachedRecommendations.length, 3);
+  score += Math.min(evidenceItemCount, 3);
+  if (linkedDraft) score += 2;
+  if (input.candidate.primaryLink) score += 1;
+  if ((input.candidate.publicSafetyNotes ?? []).length > 0) score += 1;
+  if ((input.candidate.doNotSay ?? []).length > 0) score += 1;
+  if ((input.candidate.missingInfo ?? []).length > 0) score -= 1;
+
+  const sourceDepth: DossierSourceDepthLabel =
+    score >= 7 ? "Strong" : score >= 3 ? "Medium" : "Low";
+
+  return {
+    sourceNotesCount: sourceNotes.length,
+    activeSourceNotesCount: activeSourceNotes.length,
+    attachedRecommendationCount: attachedRecommendations.length,
+    evidenceItemCount,
+    sourceDepth,
+    sourceDepthScore: score,
+    unappliedSourceNotesCount: unappliedSourceNotes.length,
+    unappliedSourceNotes,
+  };
+}
+
 export type DossierSubjectMatchResult = {
   exactCandidateId?: string;
   exactMatchKind?: "pre_targeted" | "subject";

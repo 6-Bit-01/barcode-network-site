@@ -8,6 +8,9 @@ import {
   type DossierCandidate,
   type DossierDraft,
   type DossierDuplicateGroup,
+  type DossierIdentityLinkSource,
+  type DossierIdentityLinkType,
+  type DossierIdentityLinkVisibility,
   type DossierRecommendation,
   type DossierSourceFileNoteType,
 } from "@/lib/dossier-workflow";
@@ -24,6 +27,15 @@ type SourceNoteForm = {
   type: DossierSourceFileNoteType;
   text: string;
   publicSafe: boolean;
+};
+
+type IdentityLinkForm = {
+  label: string;
+  type: DossierIdentityLinkType;
+  visibility: DossierIdentityLinkVisibility;
+  source: DossierIdentityLinkSource;
+  note: string;
+  useForMatching: boolean;
 };
 
 const activeDraftStatuses = new Set<DossierDraft["status"]>([
@@ -45,6 +57,35 @@ const emptyNoteForm: SourceNoteForm = {
   type: "fact",
   text: "",
   publicSafe: true,
+};
+const identityLinkTypes: DossierIdentityLinkType[] = [
+  "alias",
+  "artist_name",
+  "discord_handle",
+  "operator_name",
+  "public_persona",
+  "previous_name",
+  "alternate_spelling",
+  "related_label",
+  "unknown",
+];
+const identityLinkSources: DossierIdentityLinkSource[] = [
+  "owner_confirmed",
+  "admin_manual",
+  "mod_manual",
+  "bnl_recommendation",
+  "rd_context",
+  "broadcast_memory",
+  "website_dossier",
+  "unknown",
+];
+const emptyIdentityLinkForm: IdentityLinkForm = {
+  label: "",
+  type: "alias",
+  visibility: "internal_only",
+  source: "admin_manual",
+  note: "",
+  useForMatching: false,
 };
 
 function routeParam(value: string | string[] | undefined) {
@@ -147,6 +188,8 @@ export default function CandidateReviewPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [noteForm, setNoteForm] = useState<SourceNoteForm>(emptyNoteForm);
+  const [identityLinkForm, setIdentityLinkForm] =
+    useState<IdentityLinkForm>(emptyIdentityLinkForm);
 
   async function loadWorkflow() {
     const response = await fetch("/api/admin/dossiers", { cache: "no-store" });
@@ -209,6 +252,12 @@ export default function CandidateReviewPage() {
     : null;
   const attachedRecommendations = (payload?.recommendations ?? []).filter(
     (recommendation) => recommendation.targetCandidateId === candidate?.id,
+  );
+  const identityLinks = [...(candidate?.identityLinks ?? [])].sort(
+    (a, b) =>
+      (a.status === "proposed" ? -1 : 1) -
+        (b.status === "proposed" ? -1 : 1) ||
+      b.updatedAt.localeCompare(a.updatedAt),
   );
   const nextRecommendedAction = sourceMetrics?.unappliedSourceNotesCount
     ? "Review source updates in proposed dossier"
@@ -305,6 +354,56 @@ export default function CandidateReviewPage() {
     }
   }
 
+
+  async function addIdentityLink(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      await postWorkflow({
+        action: "addDossierIdentityLink",
+        candidateId,
+        input: {
+          label: identityLinkForm.label,
+          type: identityLinkForm.type,
+          visibility: identityLinkForm.visibility,
+          source: identityLinkForm.source,
+          note: identityLinkForm.note,
+          useForMatching: identityLinkForm.useForMatching,
+        },
+      });
+      setIdentityLinkForm(emptyIdentityLinkForm);
+      setNotice(
+        "Identity link proposed. It will not route recommendations until confirmed.",
+      );
+    } catch (err) {
+      setNotice(
+        err instanceof Error ? err.message : "Failed to save identity link.",
+      );
+    }
+  }
+
+  async function reviewIdentityLink(
+    identityLinkId: string,
+    action:
+      | "confirmDossierIdentityLink"
+      | "rejectDossierIdentityLink"
+      | "retireDossierIdentityLink",
+    useForMatching = false,
+  ) {
+    try {
+      await postWorkflow({
+        action,
+        candidateId,
+        identityLinkId,
+        useForMatching,
+      });
+      setNotice("Identity link updated. No public dossier text was changed.");
+    } catch (err) {
+      setNotice(
+        err instanceof Error ? err.message : "Failed to update identity link.",
+      );
+    }
+  }
+
   if (loading)
     return (
       <MinimalState
@@ -365,6 +464,10 @@ export default function CandidateReviewPage() {
             <div className="border border-border bg-background/30 p-3">
               <p className="uppercase tracking-widest text-accent">Source notes</p>
               <p>{sourceMetrics?.sourceNotesCount ?? 0}</p>
+            </div>
+            <div className="border border-border bg-background/30 p-3">
+              <p className="uppercase tracking-widest text-accent">Aliases</p>
+              <p>{identityLinks.length}</p>
             </div>
             <div className="border border-border bg-background/30 p-3">
               <p className="uppercase tracking-widest text-accent">Unapplied notes</p>
@@ -560,6 +663,212 @@ export default function CandidateReviewPage() {
               ))}
             </div>
           )}
+        </Section>
+
+        <Section title="Identity / Aliases">
+          <div className="space-y-4">
+            <p>
+              Aliases help BNL route future recommendations to the right source
+              file. Internal aliases are not public dossier text. Public-safe
+              visibility does not publish anything yet.
+            </p>
+            {identityLinks.length === 0 ? (
+              <p>No identity links saved yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {identityLinks.map((identityLink) => (
+                  <article
+                    key={identityLink.id}
+                    className="border border-border/70 bg-background/20 p-3 space-y-2"
+                  >
+                    <p className="text-foreground font-semibold">
+                      {identityLink.label}
+                    </p>
+                    <p>
+                      Type: {identityLink.type} / Visibility: {identityLink.visibility} / Status: {identityLink.status}
+                    </p>
+                    <p>
+                      Confidence: {identityLink.confidence ?? "—"} / Source: {identityLink.source}
+                    </p>
+                    <p>
+                      Use for matching: {String(identityLink.useForMatching)} / Use in public dossier: {String(identityLink.useInPublicDossier)}
+                    </p>
+                    <p className="whitespace-pre-wrap">Note: {identityLink.note ?? "—"}</p>
+                    <p>
+                      Created: {formatDate(identityLink.createdAt)} by {identityLink.createdBy ?? "—"} / Confirmed: {formatDate(identityLink.confirmedAt)} by {identityLink.confirmedBy ?? "—"}
+                    </p>
+                    <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
+                      <button
+                        type="button"
+                        disabled={saving || identityLink.status === "confirmed"}
+                        onClick={() =>
+                          void reviewIdentityLink(
+                            identityLink.id,
+                            "confirmDossierIdentityLink",
+                            true,
+                          )
+                        }
+                        className="border border-accent px-3 py-1.5 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        type="button"
+                        disabled={saving || identityLink.status === "rejected"}
+                        onClick={() =>
+                          void reviewIdentityLink(
+                            identityLink.id,
+                            "rejectDossierIdentityLink",
+                          )
+                        }
+                        className="border border-border px-3 py-1.5 hover:border-accent hover:text-accent disabled:opacity-50"
+                      >
+                        Reject
+                      </button>
+                      <button
+                        type="button"
+                        disabled={saving || identityLink.status === "retired"}
+                        onClick={() =>
+                          void reviewIdentityLink(
+                            identityLink.id,
+                            "retireDossierIdentityLink",
+                          )
+                        }
+                        className="border border-border px-3 py-1.5 hover:border-accent hover:text-accent disabled:opacity-50"
+                      >
+                        Retire
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+            <form
+              onSubmit={addIdentityLink}
+              className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs uppercase tracking-widest text-muted"
+            >
+              <label className="space-y-2">
+                <span>Label</span>
+                <input
+                  required
+                  maxLength={120}
+                  value={identityLinkForm.label}
+                  onChange={(event) =>
+                    setIdentityLinkForm({
+                      ...identityLinkForm,
+                      label: event.target.value,
+                    })
+                  }
+                  className="w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
+                />
+              </label>
+              <label className="space-y-2">
+                <span>Type</span>
+                <select
+                  value={identityLinkForm.type}
+                  onChange={(event) =>
+                    setIdentityLinkForm({
+                      ...identityLinkForm,
+                      type: event.target.value as DossierIdentityLinkType,
+                    })
+                  }
+                  className="w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
+                >
+                  {identityLinkTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-2">
+                <span>Visibility</span>
+                <select
+                  value={identityLinkForm.visibility}
+                  onChange={(event) =>
+                    setIdentityLinkForm({
+                      ...identityLinkForm,
+                      visibility: event.target.value as DossierIdentityLinkVisibility,
+                    })
+                  }
+                  className="w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
+                >
+                  <option value="internal_only">internal_only</option>
+                  <option value="public_safe">public_safe</option>
+                </select>
+              </label>
+              <label className="space-y-2">
+                <span>Source</span>
+                <select
+                  value={identityLinkForm.source}
+                  onChange={(event) =>
+                    setIdentityLinkForm({
+                      ...identityLinkForm,
+                      source: event.target.value as DossierIdentityLinkSource,
+                    })
+                  }
+                  className="w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
+                >
+                  {identityLinkSources.map((source) => (
+                    <option key={source} value={source}>
+                      {source}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="md:col-span-4 space-y-2">
+                <span>Note</span>
+                <textarea
+                  maxLength={1000}
+                  value={identityLinkForm.note}
+                  onChange={(event) =>
+                    setIdentityLinkForm({
+                      ...identityLinkForm,
+                      note: event.target.value,
+                    })
+                  }
+                  className="w-full min-h-20 bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
+                />
+              </label>
+              <label className="md:col-span-2 flex items-center gap-2 normal-case tracking-normal text-sm">
+                <input
+                  type="checkbox"
+                  checked={identityLinkForm.useForMatching}
+                  onChange={(event) =>
+                    setIdentityLinkForm({
+                      ...identityLinkForm,
+                      useForMatching: event.target.checked,
+                    })
+                  }
+                />{" "}
+                Use for future matching after confirmation
+              </label>
+              <label className="md:col-span-2 flex items-center gap-2 normal-case tracking-normal text-sm">
+                <input
+                  type="checkbox"
+                  checked={identityLinkForm.visibility === "public_safe"}
+                  onChange={(event) =>
+                    setIdentityLinkForm({
+                      ...identityLinkForm,
+                      visibility: event.target.checked
+                        ? "public_safe"
+                        : "internal_only",
+                    })
+                  }
+                />{" "}
+                Public-safe label (does not publish yet)
+              </label>
+              <div className="md:col-span-4">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                >
+                  Add Identity Link
+                </button>
+              </div>
+            </form>
+          </div>
         </Section>
 
         <Section title="Proposed Dossier">

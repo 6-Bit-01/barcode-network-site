@@ -745,6 +745,7 @@ export default function DossierControlCenterPage() {
                     <th className="py-2 pr-3">Recommendation/evidence count</th>
                     <th className="py-2 pr-3">Proposed dossier status</th>
                     <th className="py-2 pr-3">Unapplied source notes count</th>
+                    <th className="py-2 pr-3">Identity links</th>
                     <th className="py-2 pr-3">Duplicate/identity warning</th>
                     <th className="py-2 pr-3">Last updated</th>
                     <th className="py-2 pr-3">Next recommended action</th>
@@ -769,6 +770,10 @@ export default function DossierControlCenterPage() {
                       : openDraftId
                         ? "draft just created"
                         : "No proposed dossier";
+                    const identityLinks = candidate.identityLinks ?? [];
+                    const proposedIdentityLinks = identityLinks.filter(
+                      (identityLink) => identityLink.status === "proposed",
+                    );
                     const nextAction =
                       (metrics?.unappliedSourceNotesCount ?? 0) > 0
                         ? "Review source updates in proposed dossier"
@@ -802,6 +807,12 @@ export default function DossierControlCenterPage() {
                         <td className="py-3 pr-3">{proposedStatus}</td>
                         <td className="py-3 pr-3">
                           Unapplied notes: {metrics?.unappliedSourceNotesCount ?? 0}
+                        </td>
+                        <td className="py-3 pr-3">
+                          Aliases: {identityLinks.length}
+                          {proposedIdentityLinks.length > 0 && (
+                            <p className="text-xs text-accent">Identity warnings</p>
+                          )}
                         </td>
                         <td className="py-3 pr-3">
                           {candidate.duplicateRisk ?? "none"}

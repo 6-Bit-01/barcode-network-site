@@ -10,6 +10,10 @@ import {
   DOSSIER_WORKFLOW_RULES,
   type CreateManualDossierCandidateInput,
   type DossierCandidate,
+  type DossierIdentityLink,
+  type DossierIdentityLinkSource,
+  type DossierIdentityLinkType,
+  type DossierIdentityLinkVisibility,
   type CreateDossierRecommendationInput,
   type CreateDossierSourceFileNoteInput,
   type DossierCandidateStatus,
@@ -20,8 +24,10 @@ import {
   type MergeDossierCandidatesInput,
 } from "@/lib/dossier-workflow";
 import {
+  addDossierIdentityLink,
   addDossierSourceFileNote,
   attachRecommendationToCandidate,
+  confirmDossierIdentityLink,
   buildDossierDuplicateGroups,
   convertRecommendationToCandidate,
   createDossierRecommendation,
@@ -33,10 +39,13 @@ import {
   getDossierWorkflowState,
   getDossierWorkflowStorageMode,
   ignoreDossierRecommendation,
+  rejectDossierIdentityLink,
+  retireDossierIdentityLink,
   mergeDossierCandidates,
   saveDossierDraft,
   submitDraftForOwnerReview,
   updateDossierCandidateStatus,
+  updateDossierIdentityLink,
   validateDossierDraftFieldsForOwnerReview,
   type DossierWorkflowState,
 } from "@/lib/dossier-workflow-store";
@@ -98,6 +107,11 @@ const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "detectDuplicateCandidates",
   "mergeCandidates",
   "addSourceFileNote",
+  "addDossierIdentityLink",
+  "updateDossierIdentityLink",
+  "confirmDossierIdentityLink",
+  "rejectDossierIdentityLink",
+  "retireDossierIdentityLink",
   "createDossierRecommendation",
   "attachRecommendationToCandidate",
   "convertRecommendationToCandidate",
@@ -157,6 +171,59 @@ function sourceFileNoteInputFromBody(
     publicSafe: input.publicSafe === true,
     appliesToDraftId: input.appliesToDraftId,
     createdBy: input.createdBy,
+  };
+}
+
+
+function identityLinkIdFromBody(body: Record<string, unknown>): string {
+  return typeof body.identityLinkId === "string"
+    ? body.identityLinkId.trim()
+    : "";
+}
+
+function identityLinkInputFromBody(
+  body: Record<string, unknown>,
+): {
+  candidateId: string;
+  label: string;
+  type?: DossierIdentityLinkType;
+  visibility?: DossierIdentityLinkVisibility;
+  source?: DossierIdentityLinkSource;
+  confidence?: DossierIdentityLink["confidence"];
+  useForMatching?: boolean;
+  useInPublicDossier?: boolean;
+  note?: string;
+  createdBy?: string;
+} | null {
+  const candidateId = candidateIdFromBody(body);
+  const value = body.input;
+  if (!candidateId || !value || typeof value !== "object") return null;
+  const input = value as Partial<DossierIdentityLink>;
+  if (typeof input.label !== "string" || !input.label.trim()) return null;
+  return {
+    candidateId,
+    label: input.label,
+    type: input.type,
+    visibility: input.visibility,
+    source: input.source,
+    confidence: input.confidence,
+    useForMatching: input.useForMatching === true,
+    useInPublicDossier: input.useInPublicDossier === true,
+    note: input.note,
+    createdBy: input.createdBy,
+  };
+}
+
+function identityLinkReviewInputFromBody(body: Record<string, unknown>) {
+  const candidateId = candidateIdFromBody(body);
+  const identityLinkId = identityLinkIdFromBody(body);
+  if (!candidateId || !identityLinkId) return null;
+  return {
+    candidateId,
+    identityLinkId,
+    reviewedBy: typeof body.reviewedBy === "string" ? body.reviewedBy : undefined,
+    useForMatching: body.useForMatching === true,
+    useInPublicDossier: body.useInPublicDossier === true,
   };
 }
 
@@ -313,6 +380,59 @@ export async function POST(req: Request) {
       const note = await addDossierSourceFileNote(input);
       const payload = await workflowPayload();
       return NextResponse.json({ ok: true, action, note, ...payload });
+    }
+
+
+    if (action === "addDossierIdentityLink") {
+      const input = identityLinkInputFromBody(body);
+      if (!input) {
+        return NextResponse.json(
+          { error: "Valid candidateId and identity link label are required" },
+          { status: 400 },
+        );
+      }
+      const identityLink = await addDossierIdentityLink(input);
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, identityLink, ...payload });
+    }
+
+    if (action === "updateDossierIdentityLink") {
+      const input = identityLinkInputFromBody(body);
+      const identityLinkId = identityLinkIdFromBody(body);
+      if (!input || !identityLinkId) {
+        return NextResponse.json(
+          { error: "Valid candidateId, identityLinkId, and identity link label are required" },
+          { status: 400 },
+        );
+      }
+      const identityLink = await updateDossierIdentityLink({
+        ...input,
+        identityLinkId,
+      });
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, identityLink, ...payload });
+    }
+
+    if (
+      action === "confirmDossierIdentityLink" ||
+      action === "rejectDossierIdentityLink" ||
+      action === "retireDossierIdentityLink"
+    ) {
+      const input = identityLinkReviewInputFromBody(body);
+      if (!input) {
+        return NextResponse.json(
+          { error: "candidateId and identityLinkId are required" },
+          { status: 400 },
+        );
+      }
+      const identityLink =
+        action === "confirmDossierIdentityLink"
+          ? await confirmDossierIdentityLink(input)
+          : action === "rejectDossierIdentityLink"
+            ? await rejectDossierIdentityLink(input)
+            : await retireDossierIdentityLink(input);
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, identityLink, ...payload });
     }
 
     if (action === "createDossierRecommendation") {

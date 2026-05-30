@@ -69,16 +69,6 @@ const nonEditableDraftStatuses = new Set<DossierDraft["status"]>([
   "published",
 ]);
 
-const draftEditorTestCopy = [
-  "BNL edit chat comes next",
-  "revise the proposed dossier conversationally",
-  "BNL will eventually generate the proposed dossier from the BNL Source File and approved sources",
-  "BNL should ask only for missing specifics",
-  "Saving does not publish.",
-  "This page shows the proposed completed dossier built from the BNL Source File",
-];
-void draftEditorTestCopy;
-
 function routeParam(value: string | string[] | undefined) {
   const raw = Array.isArray(value) ? value[0] : value;
   return raw ? decodeURIComponent(raw) : "";

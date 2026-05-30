@@ -100,21 +100,6 @@ const closedDraftStatuses = new Set<DossierDraft["status"]>([
   "published",
 ]);
 
-const dossierDashboardTestCopy = [
-  "BNL will generate complete dossier drafts from source files",
-  "Use this when BNL has not suggested a candidate yet",
-  "Main BNL-led workbench comes later",
-  "Future source packet",
-  "BNL will use the source file and approved sources to build a complete dossier draft",
-  "Manual fields are fallback/advanced",
-  "Manual fields are fallback only",
-  "Manual editing remains available",
-  "BNL will ask only for missing decisions",
-  "Admin selects or creates a candidate",
-  "Owner opens the submitted draft",
-];
-void dossierDashboardTestCopy;
-
 function MinimalDossierAdminState({
   title,
   message,

@@ -44,18 +44,6 @@ const emptyNoteForm: SourceNoteForm = {
   publicSafe: true,
 };
 
-const sourceFileTestCopy = [
-  "Add Link",
-  "Add Missing Info",
-  "Add Public Safety Note",
-  "Add Do-Not-Say Note",
-  "This adds source material for BNL to use later",
-  "Coming later: this will save notes to the BNL Source File",
-  "This page collects what BNL knows and what mods/admins add",
-  "source material, not the public dossier",
-];
-void sourceFileTestCopy;
-
 function routeParam(value: string | string[] | undefined) {
   const raw = Array.isArray(value) ? value[0] : value;
   return raw ? decodeURIComponent(raw) : "";
@@ -332,8 +320,10 @@ export default function CandidateReviewPage() {
             {candidate.name}
           </h1>
           <p className="text-sm text-muted mt-3 max-w-3xl">
-            Source File ID: {candidate.id}. Internal workflow only; notes do not
-            publish, create tags, or mutate public records.
+            Source File ID: {candidate.id}. This page collects what BNL knows
+            and what mods/admins add as source material, not the public dossier.
+            Internal workflow only; notes do not publish, create tags, or mutate
+            public records.
           </p>
           <div className="mt-4">
             <PhaseRail />
@@ -451,7 +441,7 @@ export default function CandidateReviewPage() {
                 onChange={(event) =>
                   setNoteForm({ ...noteForm, text: event.target.value })
                 }
-                placeholder="Add one concise fact, correction, Add Link entry, Add Missing Info note, Add Do-Not-Say Note guidance, Add Public Safety Note context, or general note. Coming later: this will save notes to the BNL Source File is now replaced by this real save action."
+                placeholder="Add one concise fact, correction, link note, missing-info note, do-not-say guidance, public-safety context, or general note."
                 className="w-full min-h-24 bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
               />
             </label>

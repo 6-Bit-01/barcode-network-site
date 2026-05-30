@@ -55,6 +55,17 @@ function source(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
 }
 
+function normalizedSource(relativePath) {
+  return source(relativePath).replace(/\s+/g, " ");
+}
+
+function assertIncludesCopy(text, expected) {
+  assert.ok(
+    text.includes(expected),
+    `Expected normalized source to include: ${expected}`,
+  );
+}
+
 async function adminCookie() {
   const token = await auth.createAdminToken();
   return `${auth.COOKIE_NAME}=${token}`;
@@ -228,6 +239,7 @@ test("admin panel includes Dossier Control Center link", () => {
 
 test("admin dossier dashboard is traffic control instead of an all-in-one workbench", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
+  const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
   for (const label of [
     "Dossier Control Center",
     "Quick Candidate Intake",
@@ -256,7 +268,7 @@ test("admin dossier dashboard is traffic control instead of an all-in-one workbe
     "No automatic tag creation",
     "No public database mutation",
   ]) {
-    assert.match(page, new RegExp(label));
+    assertIncludesCopy(pageCopy, label);
   }
 
   for (const route of [
@@ -312,22 +324,24 @@ test("dossier admin pages expose numbered dossier phases and clearer labels", ()
   const sourceFilePage = source(
     "src/app/admin/dossiers/candidates/[candidateId]/page.tsx",
   );
-  assert.match(sourceFilePage, /Phase 1 — BNL Source File/);
-  assert.match(
-    sourceFilePage,
-    /This page collects what BNL knows and what mods\/admins add/,
+  const sourceFileCopy = normalizedSource(
+    "src/app/admin/dossiers/candidates/[candidateId]/page.tsx",
   );
-  assert.match(sourceFilePage, /source material, not the public dossier/);
+  assert.match(sourceFilePage, /Phase 1 — BNL Source File/);
+  assertIncludesCopy(
+    sourceFileCopy,
+    "This page collects what BNL knows and what mods/admins add",
+  );
+  assertIncludesCopy(sourceFileCopy, "source material, not the public dossier");
 
   const draftPage = source("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
-  assert.match(draftPage, /Phase 2 — Proposed Dossier \+ BNL Edit Chat/);
-  assert.match(
-    draftPage,
-    /This page shows the proposed completed dossier built from the BNL Source File/,
+  const draftCopy = normalizedSource(
+    "src/app/admin/dossiers/drafts/[draftId]/page.tsx",
   );
-  assert.match(
-    draftPage,
-    /This page shows the proposed completed dossier built from the BNL Source File/,
+  assert.match(draftPage, /Phase 2 — Proposed Dossier \+ BNL Edit Chat/);
+  assertIncludesCopy(
+    draftCopy,
+    "This page shows the proposed completed dossier built from the BNL Source File",
   );
 
   const ownerPage = source("src/app/admin/dossiers/owner-review/page.tsx");
@@ -347,6 +361,7 @@ test("dedicated draft editor route contains focused editing workflow and future 
   const routePath = "src/app/admin/dossiers/drafts/[draftId]/page.tsx";
   assert.equal(fs.existsSync(path.join(projectRoot, routePath)), true);
   const page = source(routePath);
+  const pageCopy = normalizedSource(routePath);
   for (const label of [
     "Proposed Dossier + BNL Edit Chat",
     "BNL Source File",
@@ -373,7 +388,7 @@ test("dedicated draft editor route contains focused editing workflow and future 
     "Waiting for owner final pass",
     "Back to Dossier Dashboard",
   ]) {
-    assert.ok(page.includes(label), `${label} should be present`);
+    assertIncludesCopy(pageCopy, label);
   }
   assert.match(page, /useParams/);
   assert.match(page, /routeParam\(params\?\.draftId\)/);
@@ -383,11 +398,11 @@ test("dedicated draft editor route contains focused editing workflow and future 
   assert.match(page, /nonEditableDraftStatuses/);
   assert.match(page, /draft\.status === "ready_for_owner_review"/);
   assert.match(page, /Already submitted to Owner Review/);
-  assert.match(
-    page,
-    /BNL will eventually generate the proposed dossier from the BNL Source File and approved sources/,
+  assertIncludesCopy(
+    pageCopy,
+    "BNL will eventually generate the proposed dossier from the BNL Source File and approved sources",
   );
-  assert.match(page, /BNL should ask only for missing specifics/);
+  assertIncludesCopy(pageCopy, "BNL should ask only for missing specifics");
   assert.match(page, /Draft is superseded/);
   assert.match(page, /Publishing not built yet/);
   assert.match(page, /Open BNL Source File/);
@@ -401,18 +416,14 @@ test("dedicated candidate review route contains focused evidence and action work
   const routePath = "src/app/admin/dossiers/candidates/[candidateId]/page.tsx";
   assert.equal(fs.existsSync(path.join(projectRoot, routePath)), true);
   const page = source(routePath);
+  const pageCopy = normalizedSource(routePath);
   for (const label of [
     "BNL Source File",
     "Add to BNL Source File",
-    "Add Link",
-    "Add Missing Info",
-    "Add Public Safety Note",
-    "Add Do-Not-Say Note",
     "Additional Info Added After Submission",
     "Admin Addendum",
-    "This adds source material for BNL to use later",
-    "It does not directly edit the proposed dossier",
-    "Coming later: this will save notes to the BNL Source File",
+    "This adds source material for BNL. It does not directly edit the proposed dossier.",
+    "Save Info",
     "Create / Open Proposed Dossier",
     "Open Proposed Dossier",
     "Mark Needs Info",
@@ -422,8 +433,21 @@ test("dedicated candidate review route contains focused evidence and action work
     "Do-not-say",
     "Recommended taxonomy",
   ]) {
-    assert.match(page, new RegExp(label));
+    assertIncludesCopy(pageCopy, label);
   }
+  for (const noteType of [
+    "fact",
+    "correction",
+    "missing_info",
+    "public_safety",
+    "do_not_say",
+    "link_note",
+    "general_note",
+    "owner_note",
+  ]) {
+    assert.match(page, new RegExp(noteType));
+  }
+  assert.doesNotMatch(page, /Coming later: this will save notes/);
   assert.match(page, /useParams/);
   assert.match(page, /routeParam\(params\?\.candidateId\)/);
   assert.match(page, /action: "createDraftFromCandidate"/);
@@ -521,6 +545,7 @@ test("dashboard uses actual workflow ids and state-aware lane filtering", () => 
 
 test("dashboard frames manual intake as fallback and future BNL-led workbench", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
+  const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
   for (const label of [
     "Manual fallback / quick seed",
     "Use this when BNL has not suggested a candidate yet",
@@ -538,7 +563,7 @@ test("dashboard frames manual intake as fallback and future BNL-led workbench", 
     "Owner opens the submitted draft",
     "Future source packet",
   ]) {
-    assert.match(page, new RegExp(label));
+    assertIncludesCopy(pageCopy, label);
   }
   assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
 });

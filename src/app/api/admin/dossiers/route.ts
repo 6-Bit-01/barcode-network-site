@@ -10,19 +10,29 @@ import {
   DOSSIER_WORKFLOW_RULES,
   type CreateManualDossierCandidateInput,
   type DossierCandidate,
+  type CreateDossierRecommendationInput,
+  type CreateDossierSourceFileNoteInput,
   type DossierCandidateStatus,
   type DossierDraft,
   type DossierDuplicateGroup,
+  type DossierRecommendation,
   type DossierWorkflowAction,
   type MergeDossierCandidatesInput,
 } from "@/lib/dossier-workflow";
 import {
+  addDossierSourceFileNote,
+  attachRecommendationToCandidate,
   buildDossierDuplicateGroups,
+  convertRecommendationToCandidate,
+  createDossierRecommendation,
   createDraftFromCandidate,
   createManualDossierCandidate,
+  dismissDossierRecommendation,
   DossierMergeError,
+  DossierWorkflowInputError,
   getDossierWorkflowState,
   getDossierWorkflowStorageMode,
+  ignoreDossierRecommendation,
   mergeDossierCandidates,
   saveDossierDraft,
   submitDraftForOwnerReview,
@@ -36,6 +46,7 @@ export const dynamic = "force-dynamic";
 type DossierWorkflowResponse = {
   candidates: DossierCandidate[];
   drafts: DossierDraft[];
+  recommendations: DossierRecommendation[];
   duplicateGroups: DossierDuplicateGroup[];
   workflow: {
     version: 1;
@@ -71,7 +82,9 @@ type DossierWorkflowResponse = {
   tagRegistry: {
     totalUniqueTags: number;
     totalTagAssignments: number;
-    creationPolicy: ReturnType<typeof buildDossierTagRegistry>["creationPolicy"];
+    creationPolicy: ReturnType<
+      typeof buildDossierTagRegistry
+    >["creationPolicy"];
   };
 };
 
@@ -84,19 +97,29 @@ const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "markNeedsMoreEvidence",
   "detectDuplicateCandidates",
   "mergeCandidates",
+  "addSourceFileNote",
+  "createDossierRecommendation",
+  "attachRecommendationToCandidate",
+  "convertRecommendationToCandidate",
+  "ignoreDossierRecommendation",
+  "dismissDossierRecommendation",
 ]);
 
 async function isAuthenticated(req: Request): Promise<boolean> {
   const cookieHeader = req.headers.get("cookie") || "";
-  const cookies = Object.fromEntries(cookieHeader.split(";").map((cookie) => {
-    const [key, ...value] = cookie.trim().split("=");
-    return [key, value.join("=")];
-  }));
+  const cookies = Object.fromEntries(
+    cookieHeader.split(";").map((cookie) => {
+      const [key, ...value] = cookie.trim().split("=");
+      return [key, value.join("=")];
+    }),
+  );
   const token = cookies[COOKIE_NAME];
   return Boolean(token && (await verifyAdminToken(token)));
 }
 
-function validateManualCandidateInput(value: unknown): CreateManualDossierCandidateInput | null {
+function validateManualCandidateInput(
+  value: unknown,
+): CreateManualDossierCandidateInput | null {
   if (!value || typeof value !== "object") return null;
   const input = value as CreateManualDossierCandidateInput;
   if (typeof input.name !== "string" || !input.name.trim()) return null;
@@ -112,7 +135,46 @@ function draftIdFromBody(body: Record<string, unknown>): string {
   return typeof body.draftId === "string" ? body.draftId.trim() : "";
 }
 
-function mergeInputFromBody(body: Record<string, unknown>): MergeDossierCandidatesInput | null {
+function recommendationIdFromBody(body: Record<string, unknown>): string {
+  return typeof body.recommendationId === "string"
+    ? body.recommendationId.trim()
+    : "";
+}
+
+function sourceFileNoteInputFromBody(
+  body: Record<string, unknown>,
+): CreateDossierSourceFileNoteInput | null {
+  const candidateId = candidateIdFromBody(body);
+  const value = body.input;
+  if (!candidateId || !value || typeof value !== "object") return null;
+  const input = value as Partial<CreateDossierSourceFileNoteInput>;
+  if (typeof input.text !== "string" || !input.text.trim()) return null;
+  return {
+    candidateId,
+    type: input.type,
+    text: input.text,
+    source: input.source ?? "admin_manual",
+    publicSafe: input.publicSafe === true,
+    appliesToDraftId: input.appliesToDraftId,
+    createdBy: input.createdBy,
+  };
+}
+
+function recommendationInputFromBody(
+  body: Record<string, unknown>,
+): CreateDossierRecommendationInput | null {
+  const value = body.input;
+  if (!value || typeof value !== "object") return null;
+  const input = value as CreateDossierRecommendationInput;
+  if (typeof input.subjectName !== "string" || !input.subjectName.trim())
+    return null;
+  if (typeof input.reason !== "string" || !input.reason.trim()) return null;
+  return input;
+}
+
+function mergeInputFromBody(
+  body: Record<string, unknown>,
+): MergeDossierCandidatesInput | null {
   const value = body.input ?? body;
   if (!value || typeof value !== "object") return null;
   const input = value as MergeDossierCandidatesInput;
@@ -121,7 +183,9 @@ function mergeInputFromBody(body: Record<string, unknown>): MergeDossierCandidat
   return input;
 }
 
-function draftFieldsFromBody(body: Record<string, unknown>): DossierDraft["fields"] | null {
+function draftFieldsFromBody(
+  body: Record<string, unknown>,
+): DossierDraft["fields"] | null {
   const fields = body.fields ?? body.draftFields;
   if (!fields || typeof fields !== "object") return null;
   const draftFields = fields as DossierDraft["fields"];
@@ -129,15 +193,20 @@ function draftFieldsFromBody(body: Record<string, unknown>): DossierDraft["field
   return draftFields;
 }
 
-async function workflowPayload(state?: DossierWorkflowState): Promise<DossierWorkflowResponse> {
+async function workflowPayload(
+  state?: DossierWorkflowState,
+): Promise<DossierWorkflowResponse> {
   const tagRegistry = buildDossierTagRegistry(databasePage.entries);
-  const workflowState = state ?? await getDossierWorkflowState();
+  const workflowState = state ?? (await getDossierWorkflowState());
 
-  const waitingForOwnerReview = workflowState.drafts.filter((draft) => draft.status === "ready_for_owner_review");
+  const waitingForOwnerReview = workflowState.drafts.filter(
+    (draft) => draft.status === "ready_for_owner_review",
+  );
 
   return {
     candidates: workflowState.candidates,
     drafts: workflowState.drafts,
+    recommendations: workflowState.recommendations,
     duplicateGroups: buildDossierDuplicateGroups(workflowState),
     ownerReviewQueue: {
       waitingCount: waitingForOwnerReview.length,
@@ -173,7 +242,8 @@ async function workflowPayload(state?: DossierWorkflowState): Promise<DossierWor
         status: "placeholder_only",
         requiresOwnerSecretFuture: true,
         approvalPublishes: false,
-        message: "Owner approval is separate from editor save/submit and remains disabled until a future owner-secret gate PR.",
+        message:
+          "Owner approval is separate from editor save/submit and remains disabled until a future owner-secret gate PR.",
       },
     },
     authoringGuide: {
@@ -202,21 +272,28 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const action = typeof body?.action === "string" ? body.action : "";
 
   if (!DOSSIER_WORKFLOW_ACTIONS.includes(action as DossierWorkflowAction)) {
-    return NextResponse.json({ error: "Unknown dossier workflow action" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Unknown dossier workflow action" },
+      { status: 400 },
+    );
   }
 
   if (!IMPLEMENTED_ACTIONS.has(action as DossierWorkflowAction)) {
-    return NextResponse.json({
-      ok: false,
-      code: "not_implemented_yet",
-      action,
-      message: "Dossier drafting, approval, and publishing mutations remain intentionally disabled in this PR.",
-      boundaries: (await workflowPayload()).workflow.boundaries,
-    }, { status: 501 });
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "not_implemented_yet",
+        action,
+        message:
+          "Dossier drafting, approval, and publishing mutations remain intentionally disabled in this PR.",
+        boundaries: (await workflowPayload()).workflow.boundaries,
+      },
+      { status: 501 },
+    );
   }
 
   if (action === "detectDuplicateCandidates") {
@@ -224,16 +301,119 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, action, ...payload });
   }
 
+  try {
+    if (action === "addSourceFileNote") {
+      const input = sourceFileNoteInputFromBody(body);
+      if (!input) {
+        return NextResponse.json(
+          { error: "Valid candidateId and source note text are required" },
+          { status: 400 },
+        );
+      }
+      const note = await addDossierSourceFileNote(input);
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, note, ...payload });
+    }
+
+    if (action === "createDossierRecommendation") {
+      const input = recommendationInputFromBody(body);
+      if (!input) {
+        return NextResponse.json(
+          { error: "Recommendation subjectName and reason are required" },
+          { status: 400 },
+        );
+      }
+      const recommendation = await createDossierRecommendation(input);
+      const payload = await workflowPayload();
+      return NextResponse.json({
+        ok: true,
+        action,
+        recommendation,
+        ...payload,
+      });
+    }
+
+    if (action === "attachRecommendationToCandidate") {
+      const recommendationId = recommendationIdFromBody(body);
+      const candidateId = candidateIdFromBody(body);
+      if (!recommendationId || !candidateId) {
+        return NextResponse.json(
+          { error: "recommendationId and candidateId are required" },
+          { status: 400 },
+        );
+      }
+      const attachment = await attachRecommendationToCandidate({
+        recommendationId,
+        candidateId,
+        createSourceNote: body.createSourceNote === true,
+      });
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, ...attachment, ...payload });
+    }
+
+    if (action === "convertRecommendationToCandidate") {
+      const recommendationId = recommendationIdFromBody(body);
+      if (!recommendationId) {
+        return NextResponse.json(
+          { error: "recommendationId is required" },
+          { status: 400 },
+        );
+      }
+      const conversion =
+        await convertRecommendationToCandidate(recommendationId);
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, ...conversion, ...payload });
+    }
+
+    if (
+      action === "ignoreDossierRecommendation" ||
+      action === "dismissDossierRecommendation"
+    ) {
+      const recommendationId = recommendationIdFromBody(body);
+      if (!recommendationId) {
+        return NextResponse.json(
+          { error: "recommendationId is required" },
+          { status: 400 },
+        );
+      }
+      const recommendation =
+        action === "ignoreDossierRecommendation"
+          ? await ignoreDossierRecommendation(recommendationId)
+          : await dismissDossierRecommendation(recommendationId);
+      const payload = await workflowPayload();
+      return NextResponse.json({
+        ok: true,
+        action,
+        recommendation,
+        ...payload,
+      });
+    }
+  } catch (error) {
+    if (error instanceof DossierWorkflowInputError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.status },
+      );
+    }
+    throw error;
+  }
+
   if (action === "mergeCandidates") {
     const input = mergeInputFromBody(body);
     if (!input) {
-      return NextResponse.json({ error: "Valid merge input is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Valid merge input is required" },
+        { status: 400 },
+      );
     }
 
     try {
       const merge = await mergeDossierCandidates(input);
       if (!merge) {
-        return NextResponse.json({ error: "Merge did not update workflow state" }, { status: 400 });
+        return NextResponse.json(
+          { error: "Merge did not update workflow state" },
+          { status: 400 },
+        );
       }
       const payload = await workflowPayload();
       return NextResponse.json({
@@ -246,16 +426,24 @@ export async function POST(req: Request) {
       });
     } catch (error) {
       if (error instanceof DossierMergeError) {
-        return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+        return NextResponse.json(
+          { error: error.message, code: error.code },
+          { status: error.status },
+        );
       }
       throw error;
     }
   }
 
   if (action === "createManualCandidate") {
-    const input = validateManualCandidateInput(body.input ?? body.candidate ?? body);
+    const input = validateManualCandidateInput(
+      body.input ?? body.candidate ?? body,
+    );
     if (!input) {
-      return NextResponse.json({ error: "Manual candidate name and reason are required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Manual candidate name and reason are required" },
+        { status: 400 },
+      );
     }
 
     const candidate = await createManualDossierCandidate(input);
@@ -266,12 +454,18 @@ export async function POST(req: Request) {
   if (action === "createDraftFromCandidate") {
     const candidateId = candidateIdFromBody(body);
     if (!candidateId) {
-      return NextResponse.json({ error: "candidateId is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "candidateId is required" },
+        { status: 400 },
+      );
     }
 
     const draft = await createDraftFromCandidate(candidateId);
     if (!draft) {
-      return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Candidate not found" },
+        { status: 404 },
+      );
     }
 
     const payload = await workflowPayload();
@@ -281,17 +475,26 @@ export async function POST(req: Request) {
   if (action === "saveDraft") {
     const draftId = draftIdFromBody(body);
     if (!draftId) {
-      return NextResponse.json({ error: "draftId is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "draftId is required" },
+        { status: 400 },
+      );
     }
 
     const fields = draftFieldsFromBody(body);
     if (!fields) {
-      return NextResponse.json({ error: "Valid draft fields are required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Valid draft fields are required" },
+        { status: 400 },
+      );
     }
 
     const draft = await saveDossierDraft(draftId, fields);
     if (!draft) {
-      return NextResponse.json({ error: "Draft not found or not editable" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Draft not found or not editable" },
+        { status: 404 },
+      );
     }
 
     const payload = await workflowPayload();
@@ -301,22 +504,32 @@ export async function POST(req: Request) {
   if (action === "submitDraftForOwnerReview") {
     const draftId = draftIdFromBody(body);
     if (!draftId) {
-      return NextResponse.json({ error: "draftId is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "draftId is required" },
+        { status: 400 },
+      );
     }
 
     const currentState = await getDossierWorkflowState();
-    const currentDraft = currentState.drafts.find((draft) => draft.id === draftId);
+    const currentDraft = currentState.drafts.find(
+      (draft) => draft.id === draftId,
+    );
     if (!currentDraft) {
       return NextResponse.json({ error: "Draft not found" }, { status: 404 });
     }
 
-    const missingFields = validateDossierDraftFieldsForOwnerReview(currentDraft.fields);
+    const missingFields = validateDossierDraftFieldsForOwnerReview(
+      currentDraft.fields,
+    );
     if (missingFields.length > 0) {
-      return NextResponse.json({
-        error: "Draft is missing required fields for owner review",
-        code: "invalid_draft_fields",
-        missingFields,
-      }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: "Draft is missing required fields for owner review",
+          code: "invalid_draft_fields",
+          missingFields,
+        },
+        { status: 400 },
+      );
     }
 
     const draft = await submitDraftForOwnerReview(draftId);
@@ -330,10 +543,14 @@ export async function POST(req: Request) {
 
   const candidateId = candidateIdFromBody(body);
   if (!candidateId) {
-    return NextResponse.json({ error: "candidateId is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "candidateId is required" },
+      { status: 400 },
+    );
   }
 
-  const nextStatus: DossierCandidateStatus = action === "denyCandidate" ? "denied" : "needs_more_evidence";
+  const nextStatus: DossierCandidateStatus =
+    action === "denyCandidate" ? "denied" : "needs_more_evidence";
   const candidate = await updateDossierCandidateStatus(candidateId, nextStatus);
   if (!candidate) {
     return NextResponse.json({ error: "Candidate not found" }, { status: 404 });

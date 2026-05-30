@@ -2,11 +2,20 @@ import { Redis } from "@upstash/redis";
 import { databasePage, type DatabaseEntry } from "@/content";
 import {
   scoreManualDossierCandidate,
+  type CreateDossierRecommendationInput,
+  type CreateDossierSourceFileNoteInput,
   type CreateManualDossierCandidateInput,
   type DossierCandidate,
   type DossierCandidateStatus,
   type DossierDraft,
   type DossierDuplicateGroup,
+  type DossierRecommendation,
+  type DossierRecommendationSourceLane,
+  type DossierRecommendationStatus,
+  type DossierRecommendationType,
+  type DossierSourceFileNote,
+  type DossierSourceFileNoteSource,
+  type DossierSourceFileNoteType,
   type DossierDuplicateRisk,
   type DossierWorkflowLink,
   type MergeDossierCandidatesInput,
@@ -17,6 +26,7 @@ export type DossierWorkflowState = {
   revision: number;
   candidates: DossierCandidate[];
   drafts: DossierDraft[];
+  recommendations: DossierRecommendation[];
   updatedAt: string;
 };
 
@@ -43,6 +53,7 @@ function emptyWorkflowState(): DossierWorkflowState {
     revision: 0,
     candidates: [],
     drafts: [],
+    recommendations: [],
     updatedAt: new Date(0).toISOString(),
   };
 }
@@ -168,7 +179,6 @@ function hasNearNameMatch(candidateName: string, entryName: string): boolean {
   );
 }
 
-
 function uniqueStrings(...groups: Array<string[] | undefined>): string[] {
   const seen = new Set<string>();
   const output: string[] = [];
@@ -184,8 +194,15 @@ function uniqueStrings(...groups: Array<string[] | undefined>): string[] {
   return output;
 }
 
-function combineTextValues(values: Array<string | undefined>, limit = 4): string {
-  return uniqueStrings(values.filter((value): value is string => Boolean(value))).slice(0, limit).join("\n\n");
+function combineTextValues(
+  values: Array<string | undefined>,
+  limit = 4,
+): string {
+  return uniqueStrings(
+    values.filter((value): value is string => Boolean(value)),
+  )
+    .slice(0, limit)
+    .join("\n\n");
 }
 
 function riskRank(risk: DossierDuplicateRisk): number {
@@ -196,7 +213,10 @@ function confidenceRank(confidence: "low" | "medium" | "high"): number {
   return { low: 1, medium: 2, high: 3 }[confidence];
 }
 
-function activeDraftForCandidate(drafts: DossierDraft[], candidateId: string): DossierDraft | undefined {
+function activeDraftForCandidate(
+  drafts: DossierDraft[],
+  candidateId: string,
+): DossierDraft | undefined {
   return drafts.find(
     (draft) =>
       draft.candidateId === candidateId &&
@@ -207,7 +227,9 @@ function activeDraftForCandidate(drafts: DossierDraft[], candidateId: string): D
 }
 
 function preferredValue<T>(...values: Array<T | undefined>): T | undefined {
-  return values.find((value) => value !== undefined && value !== null && value !== "");
+  return values.find(
+    (value) => value !== undefined && value !== null && value !== "",
+  );
 }
 
 function findExistingDossierMatch(name: string): {
@@ -248,9 +270,17 @@ function sanitizeWorkflowState(value: unknown): DossierWorkflowState {
         ? Math.max(0, Math.floor(candidateState.revision))
         : 0,
     candidates: Array.isArray(candidateState.candidates)
-      ? candidateState.candidates
+      ? candidateState.candidates.map((candidate) => ({
+          ...candidate,
+          sourceFileNotes: Array.isArray(candidate.sourceFileNotes)
+            ? candidate.sourceFileNotes
+            : [],
+        }))
       : [],
     drafts: Array.isArray(candidateState.drafts) ? candidateState.drafts : [],
+    recommendations: Array.isArray(candidateState.recommendations)
+      ? candidateState.recommendations
+      : [],
     updatedAt:
       typeof candidateState.updatedAt === "string"
         ? candidateState.updatedAt
@@ -264,6 +294,14 @@ function createCandidateId(): string {
 
 function createEvidenceId(): string {
   return `evidence_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createRecommendationId(): string {
+  return `dossier_recommendation_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createSourceFileNoteId(): string {
+  return `source_file_note_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function createDraftId(): string {
@@ -401,6 +439,477 @@ export async function updateDossierWorkflowState(
   );
 }
 
+const SOURCE_NOTE_TYPES: DossierSourceFileNoteType[] = [
+  "fact",
+  "correction",
+  "missing_info",
+  "public_safety",
+  "do_not_say",
+  "link_note",
+  "general_note",
+  "owner_note",
+];
+const SOURCE_NOTE_SOURCES: DossierSourceFileNoteSource[] = [
+  "admin_manual",
+  "mod_manual",
+  "owner_manual",
+  "bnl_recommendation",
+  "rd_context",
+  "broadcast_memory",
+  "queue_context",
+  "website_context",
+  "discord_context",
+  "unknown",
+];
+const RECOMMENDATION_TYPES: DossierRecommendationType[] = [
+  "new_subject",
+  "modify_existing_dossier",
+];
+const RECOMMENDATION_SOURCE_LANES: DossierRecommendationSourceLane[] = [
+  "public_discord",
+  "rd_context",
+  "broadcast_memory",
+  "queue_context",
+  "website_dossier",
+  "admin_manual",
+  "mod_manual",
+  "owner_manual",
+  "unknown",
+];
+
+const TERMINAL_RECOMMENDATION_STATUSES = new Set<DossierRecommendationStatus>([
+  "attached_to_source_file",
+  "converted_to_source_file",
+  "ignored",
+  "dismissed",
+]);
+
+function assertRecommendationIsOpen(
+  recommendation: DossierRecommendation,
+): void {
+  if (!TERMINAL_RECOMMENDATION_STATUSES.has(recommendation.status)) return;
+  throw new DossierWorkflowInputError(
+    "Recommendation is already terminal",
+    400,
+    "recommendation_already_terminal",
+  );
+}
+
+function boundedText(value: unknown, maxLength = 2000): string {
+  return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+}
+
+function normalizeSourceNoteInput(
+  input: CreateDossierSourceFileNoteInput,
+): Omit<
+  DossierSourceFileNote,
+  "id" | "createdAt" | "updatedAt" | "status"
+> | null {
+  const candidateId = boundedText(input.candidateId, 200);
+  const text = boundedText(input.text);
+  if (!candidateId || !text) return null;
+  const type = SOURCE_NOTE_TYPES.includes(input.type ?? "general_note")
+    ? (input.type ?? "general_note")
+    : "general_note";
+  const source = SOURCE_NOTE_SOURCES.includes(input.source ?? "admin_manual")
+    ? (input.source ?? "admin_manual")
+    : "admin_manual";
+  return {
+    candidateId,
+    type,
+    text,
+    source,
+    publicSafe: input.publicSafe === true,
+    appliesToDraftId: boundedText(input.appliesToDraftId, 200) || undefined,
+    createdBy: boundedText(input.createdBy, 200) || undefined,
+  };
+}
+
+function normalizeRecommendationInput(
+  input: CreateDossierRecommendationInput,
+): Omit<
+  DossierRecommendation,
+  "id" | "createdAt" | "updatedAt" | "status"
+> | null {
+  const subjectName = boundedText(input.subjectName, 200);
+  const reason = boundedText(input.reason);
+  if (!subjectName || !reason) return null;
+  const type = RECOMMENDATION_TYPES.includes(input.type)
+    ? input.type
+    : "new_subject";
+  const confidence = ["low", "medium", "high"].includes(input.confidence ?? "")
+    ? input.confidence
+    : undefined;
+  const sourceLanes = (
+    Array.isArray(input.sourceLanes) ? input.sourceLanes : []
+  ).filter((lane): lane is DossierRecommendationSourceLane =>
+    RECOMMENDATION_SOURCE_LANES.includes(lane),
+  );
+  return {
+    type,
+    subjectName,
+    subjectKey: boundedText(input.subjectKey, 200) || undefined,
+    targetDossierId: boundedText(input.targetDossierId, 200) || undefined,
+    targetCandidateId: boundedText(input.targetCandidateId, 200) || undefined,
+    reason,
+    evidenceSummary: boundedText(input.evidenceSummary) || undefined,
+    confidence,
+    sourceLanes: sourceLanes.length ? sourceLanes : ["admin_manual"],
+    suggestedAction: boundedText(input.suggestedAction, 500) || undefined,
+    missingInfo: normalizeStringArray(input.missingInfo),
+    publicSafetyNotes: normalizeStringArray(input.publicSafetyNotes),
+    doNotSay: normalizeStringArray(input.doNotSay),
+    recommendedTags: normalizeStringArray(input.recommendedTags),
+    recommendedCategory: input.recommendedCategory,
+    recommendedKind: input.recommendedKind,
+    recommendedEcosystemLane: input.recommendedEcosystemLane,
+    recommendedIdentityAuthority: input.recommendedIdentityAuthority,
+    createdBy: boundedText(input.createdBy, 200) || undefined,
+  };
+}
+
+function recommendationSourceNoteText(
+  recommendation: DossierRecommendation,
+): string {
+  return [
+    `Recommendation reason: ${recommendation.reason}`,
+    recommendation.evidenceSummary
+      ? `Evidence summary: ${recommendation.evidenceSummary}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+    .slice(0, 2000);
+}
+
+export class DossierWorkflowInputError extends Error {
+  status: number;
+  code: string;
+
+  constructor(message: string, status = 400, code = "invalid_input") {
+    super(message);
+    this.name = "DossierWorkflowInputError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+export async function addDossierSourceFileNote(
+  input: CreateDossierSourceFileNoteInput,
+): Promise<DossierSourceFileNote> {
+  const normalized = normalizeSourceNoteInput(input);
+  if (!normalized) {
+    throw new DossierWorkflowInputError(
+      "Source file note requires candidateId and non-empty text",
+    );
+  }
+
+  const now = new Date().toISOString();
+  const note: DossierSourceFileNote = {
+    id: createSourceFileNoteId(),
+    ...normalized,
+    status: "active",
+    createdAt: now,
+    updatedAt: now,
+  };
+  let saved: DossierSourceFileNote | null = null;
+
+  await updateDossierWorkflowState((currentState) => {
+    let found = false;
+    const candidates = currentState.candidates.map((candidate) => {
+      if (candidate.id !== note.candidateId) return candidate;
+      found = true;
+      saved = note;
+      return {
+        ...candidate,
+        sourceFileNotes: [note, ...(candidate.sourceFileNotes ?? [])],
+        updatedAt: now,
+      };
+    });
+    if (!found) {
+      throw new DossierWorkflowInputError(
+        "Candidate not found",
+        404,
+        "candidate_not_found",
+      );
+    }
+    return { ...currentState, candidates, updatedAt: now };
+  });
+
+  return saved ?? note;
+}
+
+export async function createDossierRecommendation(
+  input: CreateDossierRecommendationInput,
+): Promise<DossierRecommendation> {
+  const normalized = normalizeRecommendationInput(input);
+  if (!normalized) {
+    throw new DossierWorkflowInputError(
+      "Recommendation requires subjectName and reason",
+    );
+  }
+  const now = new Date().toISOString();
+  const recommendation: DossierRecommendation = {
+    id: createRecommendationId(),
+    ...normalized,
+    status: "new",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await updateDossierWorkflowState((currentState) => ({
+    ...currentState,
+    recommendations: [recommendation, ...currentState.recommendations],
+    updatedAt: now,
+  }));
+
+  return recommendation;
+}
+
+export async function attachRecommendationToCandidate(input: {
+  recommendationId: string;
+  candidateId: string;
+  createSourceNote?: boolean;
+}): Promise<{
+  recommendation: DossierRecommendation;
+  note?: DossierSourceFileNote;
+}> {
+  const now = new Date().toISOString();
+  let updatedRecommendation: DossierRecommendation | null = null;
+  let note: DossierSourceFileNote | undefined;
+
+  await updateDossierWorkflowState((currentState) => {
+    const recommendation = currentState.recommendations.find(
+      (item) => item.id === input.recommendationId,
+    );
+    if (!recommendation) {
+      throw new DossierWorkflowInputError(
+        "Recommendation not found",
+        404,
+        "recommendation_not_found",
+      );
+    }
+    assertRecommendationIsOpen(recommendation);
+    const candidate = currentState.candidates.find(
+      (item) => item.id === input.candidateId,
+    );
+    if (!candidate) {
+      throw new DossierWorkflowInputError(
+        "Candidate not found",
+        404,
+        "candidate_not_found",
+      );
+    }
+
+    if (input.createSourceNote) {
+      note = {
+        id: createSourceFileNoteId(),
+        candidateId: candidate.id,
+        type: "general_note",
+        text: recommendationSourceNoteText(recommendation),
+        source: "bnl_recommendation",
+        status: "active",
+        publicSafe: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+    }
+
+    updatedRecommendation = {
+      ...recommendation,
+      status: "attached_to_source_file",
+      targetCandidateId: candidate.id,
+      updatedAt: now,
+    };
+
+    return {
+      ...currentState,
+      recommendations: currentState.recommendations.map((item) =>
+        item.id === recommendation.id ? updatedRecommendation! : item,
+      ),
+      candidates: currentState.candidates.map((item) =>
+        item.id === candidate.id
+          ? {
+              ...item,
+              sourceFileNotes: note
+                ? [note, ...(item.sourceFileNotes ?? [])]
+                : (item.sourceFileNotes ?? []),
+              updatedAt: note ? now : item.updatedAt,
+            }
+          : item,
+      ),
+      updatedAt: now,
+    };
+  });
+
+  if (!updatedRecommendation) {
+    throw new DossierWorkflowInputError(
+      "Recommendation not found",
+      404,
+      "recommendation_not_found",
+    );
+  }
+  return { recommendation: updatedRecommendation, note };
+}
+
+export async function convertRecommendationToCandidate(
+  recommendationId: string,
+): Promise<{
+  recommendation: DossierRecommendation;
+  candidate: DossierCandidate;
+}> {
+  const now = new Date().toISOString();
+  let result: {
+    recommendation: DossierRecommendation;
+    candidate: DossierCandidate;
+  } | null = null;
+
+  await updateDossierWorkflowState((currentState) => {
+    const recommendation = currentState.recommendations.find(
+      (item) => item.id === recommendationId,
+    );
+    if (!recommendation) {
+      throw new DossierWorkflowInputError(
+        "Recommendation not found",
+        404,
+        "recommendation_not_found",
+      );
+    }
+    assertRecommendationIsOpen(recommendation);
+    const duplicate = findExistingDossierMatch(recommendation.subjectName);
+    const note: DossierSourceFileNote = {
+      id: createSourceFileNoteId(),
+      candidateId: "",
+      type: "general_note",
+      text: recommendationSourceNoteText(recommendation),
+      source: "bnl_recommendation",
+      status: "active",
+      publicSafe: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const candidate: DossierCandidate = {
+      id: createCandidateId(),
+      name: recommendation.subjectName,
+      candidateType: "unknown",
+      source: "manual",
+      tier: "review_candidate",
+      score:
+        recommendation.confidence === "high"
+          ? 70
+          : recommendation.confidence === "medium"
+            ? 55
+            : 40,
+      whyNow:
+        recommendation.suggestedAction ?? "Recommendation inbox conversion.",
+      reason: recommendation.reason,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      evidenceSummary: recommendation.evidenceSummary ?? recommendation.reason,
+      evidenceItems: recommendation.evidenceSummary
+        ? [
+            {
+              id: createEvidenceId(),
+              type: "operator_note",
+              label: "Recommendation inbox evidence",
+              summary: recommendation.evidenceSummary,
+              count: 1,
+              firstSeenAt: now,
+              lastSeenAt: now,
+              publicSafe: false,
+            },
+          ]
+        : [],
+      evidenceCount: recommendation.evidenceSummary ? 1 : 0,
+      knownFacts: [],
+      confidence: recommendation.confidence ?? "low",
+      duplicateRisk: duplicate.risk,
+      existingDossierMatch: duplicate.match,
+      recommendedCategory: recommendation.recommendedCategory,
+      recommendedKind: recommendation.recommendedKind,
+      recommendedEcosystemLane: recommendation.recommendedEcosystemLane,
+      recommendedIdentityAuthority: recommendation.recommendedIdentityAuthority,
+      recommendedStatus: "PENDING",
+      recommendedClearance: "PUBLIC",
+      recommendedOrigin: "UNVERIFIED",
+      recommendedTags: recommendation.recommendedTags ?? [],
+      proposedTags: [],
+      missingInfo: recommendation.missingInfo ?? [],
+      doNotSay: recommendation.doNotSay ?? [],
+      publicSafetyNotes: recommendation.publicSafetyNotes ?? [],
+      sourceFileNotes: [{ ...note, candidateId: "" }],
+      status: "needs_review",
+      createdAt: now,
+      updatedAt: now,
+    };
+    candidate.sourceFileNotes = [{ ...note, candidateId: candidate.id }];
+    const updatedRecommendation: DossierRecommendation = {
+      ...recommendation,
+      status: "converted_to_source_file",
+      targetCandidateId: candidate.id,
+      updatedAt: now,
+    };
+    result = { recommendation: updatedRecommendation, candidate };
+
+    return {
+      ...currentState,
+      candidates: [candidate, ...currentState.candidates],
+      recommendations: currentState.recommendations.map((item) =>
+        item.id === recommendation.id ? updatedRecommendation : item,
+      ),
+      updatedAt: now,
+    };
+  });
+
+  if (!result) {
+    throw new DossierWorkflowInputError(
+      "Recommendation not found",
+      404,
+      "recommendation_not_found",
+    );
+  }
+  return result;
+}
+
+async function setRecommendationStatus(
+  recommendationId: string,
+  status: "ignored" | "dismissed",
+): Promise<DossierRecommendation> {
+  const now = new Date().toISOString();
+  let updatedRecommendation: DossierRecommendation | null = null;
+  await updateDossierWorkflowState((currentState) => {
+    const recommendations = currentState.recommendations.map(
+      (recommendation) => {
+        if (recommendation.id !== recommendationId) return recommendation;
+        assertRecommendationIsOpen(recommendation);
+        updatedRecommendation = { ...recommendation, status, updatedAt: now };
+        return updatedRecommendation;
+      },
+    );
+    if (!updatedRecommendation) {
+      throw new DossierWorkflowInputError(
+        "Recommendation not found",
+        404,
+        "recommendation_not_found",
+      );
+    }
+    return { ...currentState, recommendations, updatedAt: now };
+  });
+  return updatedRecommendation!;
+}
+
+export function ignoreDossierRecommendation(
+  recommendationId: string,
+): Promise<DossierRecommendation> {
+  return setRecommendationStatus(recommendationId, "ignored");
+}
+
+export function dismissDossierRecommendation(
+  recommendationId: string,
+): Promise<DossierRecommendation> {
+  return setRecommendationStatus(recommendationId, "dismissed");
+}
+
 export async function createManualDossierCandidate(
   input: CreateManualDossierCandidateInput,
 ): Promise<DossierCandidate> {
@@ -481,6 +990,7 @@ export async function createManualDossierCandidate(
     missingInfo,
     doNotSay,
     publicSafetyNotes,
+    sourceFileNotes: [],
     status: scored.tier === "weak_candidate" ? "suggested" : "needs_review",
     createdAt: now,
     updatedAt: now,
@@ -667,7 +1177,6 @@ export async function getDossierCandidate(
   );
 }
 
-
 export function buildDossierDuplicateGroups(
   state: DossierWorkflowState,
 ): DossierDuplicateGroup[] {
@@ -705,7 +1214,10 @@ export function buildDossierDuplicateGroups(
     ids.add(b.id);
     candidateIdsByGroupKey.set(key, ids);
     const currentRisk = groupRiskByKey.get(key) ?? "low";
-    groupRiskByKey.set(key, riskRank(risk) > riskRank(currentRisk) ? risk : currentRisk);
+    groupRiskByKey.set(
+      key,
+      riskRank(risk) > riskRank(currentRisk) ? risk : currentRisk,
+    );
     if (!groupReasonByKey.has(key)) groupReasonByKey.set(key, reason);
   }
 
@@ -719,11 +1231,23 @@ export function buildDossierDuplicateGroups(
       const compactB = compactName(b.name);
       if (!normalizedA || !normalizedB) continue;
       if (normalizedA === normalizedB) {
-        addPair(normalizedA, a, b, "high", "Exact normalized candidate name match inside workflow store.");
+        addPair(
+          normalizedA,
+          a,
+          b,
+          "high",
+          "Exact normalized candidate name match inside workflow store.",
+        );
         continue;
       }
       if (compactA && compactA === compactB) {
-        addPair(compactA, a, b, "high", "Compact candidate names match after removing punctuation and spaces.");
+        addPair(
+          compactA,
+          a,
+          b,
+          "high",
+          "Compact candidate names match after removing punctuation and spaces.",
+        );
         continue;
       }
       if (
@@ -732,7 +1256,13 @@ export function buildDossierDuplicateGroups(
         (normalizedA.includes(normalizedB) || normalizedB.includes(normalizedA))
       ) {
         const key = compactA.length <= compactB.length ? compactA : compactB;
-        addPair(key, a, b, "medium", "Candidate names appear to contain or closely overlap each other.");
+        addPair(
+          key,
+          a,
+          b,
+          "medium",
+          "Candidate names appear to contain or closely overlap each other.",
+        );
       }
     }
   }
@@ -741,30 +1271,53 @@ export function buildDossierDuplicateGroups(
     .map(([key, ids]) => {
       const groupCandidates = [...ids]
         .map((id) => eligible.find((candidate) => candidate.id === id))
-        .filter((candidate): candidate is DossierCandidate => Boolean(candidate))
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+        .filter((candidate): candidate is DossierCandidate =>
+          Boolean(candidate),
+        )
+        .sort(
+          (a, b) =>
+            a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+        );
       const draftIds = groupCandidates
         .flatMap((candidate) => draftsByCandidate.get(candidate.id) ?? [])
         .map((draft) => draft.id)
         .sort();
-      const existingPublishedDossierMatch = groupCandidates
-        .map((candidate) => candidate.existingDossierMatch)
-        .filter((match): match is NonNullable<DossierCandidate["existingDossierMatch"]> => Boolean(match))
-        .sort((a, b) => confidenceRank(b.confidence) - confidenceRank(a.confidence) || a.id.localeCompare(b.id))[0] ?? null;
+      const existingPublishedDossierMatch =
+        groupCandidates
+          .map((candidate) => candidate.existingDossierMatch)
+          .filter(
+            (
+              match,
+            ): match is NonNullable<DossierCandidate["existingDossierMatch"]> =>
+              Boolean(match),
+          )
+          .sort(
+            (a, b) =>
+              confidenceRank(b.confidence) - confidenceRank(a.confidence) ||
+              a.id.localeCompare(b.id),
+          )[0] ?? null;
       return {
         id: `workflow-duplicate-${key}`,
         normalizedName: key,
         candidateIds: groupCandidates.map((candidate) => candidate.id),
         draftIds,
-        names: uniqueStrings(groupCandidates.map((candidate) => candidate.name)).sort((a, b) => a.localeCompare(b)),
+        names: uniqueStrings(
+          groupCandidates.map((candidate) => candidate.name),
+        ).sort((a, b) => a.localeCompare(b)),
         risk: groupRiskByKey.get(key) ?? "low",
-        reason: groupReasonByKey.get(key) ?? "Possible workflow duplicate candidate names.",
+        reason:
+          groupReasonByKey.get(key) ??
+          "Possible workflow duplicate candidate names.",
         suggestedMasterCandidateId: groupCandidates[0]?.id,
         existingPublishedDossierMatch,
       } satisfies DossierDuplicateGroup;
     })
     .filter((group) => group.candidateIds.length > 1)
-    .sort((a, b) => riskRank(b.risk) - riskRank(a.risk) || a.normalizedName.localeCompare(b.normalizedName))
+    .sort(
+      (a, b) =>
+        riskRank(b.risk) - riskRank(a.risk) ||
+        a.normalizedName.localeCompare(b.normalizedName),
+    )
     .slice(0, 25);
 }
 
@@ -773,7 +1326,9 @@ function mergeEvidenceItems(
 ): NonNullable<DossierCandidate["evidenceItems"]> {
   const seen = new Set<string>();
   const output: NonNullable<DossierCandidate["evidenceItems"]> = [];
-  for (const item of candidates.flatMap((candidate) => candidate.evidenceItems ?? [])) {
+  for (const item of candidates.flatMap(
+    (candidate) => candidate.evidenceItems ?? [],
+  )) {
     const key = `${item.id || ""}|${item.summary.toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -782,9 +1337,19 @@ function mergeEvidenceItems(
   return output.slice(0, 20);
 }
 
-function strongestTier(candidates: DossierCandidate[]): DossierCandidate["tier"] {
-  const order: DossierCandidate["tier"][] = ["draft_ready", "review_candidate", "weak_candidate"];
-  return order.find((tier) => candidates.some((candidate) => candidate.tier === tier)) ?? "review_candidate";
+function strongestTier(
+  candidates: DossierCandidate[],
+): DossierCandidate["tier"] {
+  const order: DossierCandidate["tier"][] = [
+    "draft_ready",
+    "review_candidate",
+    "weak_candidate",
+  ];
+  return (
+    order.find((tier) =>
+      candidates.some((candidate) => candidate.tier === tier),
+    ) ?? "review_candidate"
+  );
 }
 
 function buildMasterDraftFields(
@@ -794,25 +1359,83 @@ function buildMasterDraftFields(
 ): DossierDraft["fields"] {
   const otherDraftFields = sourceDrafts.map((draft) => draft.fields);
   return normalizeDraftFields({
-    name: preferredValue(primaryDraft?.fields.name, masterCandidate.name, ...otherDraftFields.map((fields) => fields.name)) ?? masterCandidate.name,
-    category: preferredValue(primaryDraft?.fields.category, masterCandidate.recommendedCategory, ...otherDraftFields.map((fields) => fields.category)),
-    kind: preferredValue(primaryDraft?.fields.kind, masterCandidate.recommendedKind, ...otherDraftFields.map((fields) => fields.kind)),
-    ecosystemLane: preferredValue(primaryDraft?.fields.ecosystemLane, masterCandidate.recommendedEcosystemLane, ...otherDraftFields.map((fields) => fields.ecosystemLane)),
-    identityAuthority: preferredValue(primaryDraft?.fields.identityAuthority, masterCandidate.recommendedIdentityAuthority, ...otherDraftFields.map((fields) => fields.identityAuthority)),
-    status: preferredValue(primaryDraft?.fields.status, masterCandidate.recommendedStatus, ...otherDraftFields.map((fields) => fields.status), "PENDING"),
-    clearance: preferredValue(primaryDraft?.fields.clearance, masterCandidate.recommendedClearance, ...otherDraftFields.map((fields) => fields.clearance), "PUBLIC"),
-    role: preferredValue(primaryDraft?.fields.role, ...otherDraftFields.map((fields) => fields.role)),
-    origin: preferredValue(primaryDraft?.fields.origin, masterCandidate.recommendedOrigin, ...otherDraftFields.map((fields) => fields.origin), "UNVERIFIED"),
-    summary: preferredValue(primaryDraft?.fields.summary, masterCandidate.evidenceSummary, ...otherDraftFields.map((fields) => fields.summary)),
-    notes: combineTextValues([
-      primaryDraft?.fields.notes,
-      masterCandidate.reason,
-      masterCandidate.whyNow,
-      ...otherDraftFields.map((fields) => fields.notes),
-    ], 8),
-    tags: uniqueStrings(primaryDraft?.fields.tags, masterCandidate.recommendedTags, ...otherDraftFields.map((fields) => fields.tags)),
-    proposedTags: uniqueStrings(primaryDraft?.fields.proposedTags, masterCandidate.proposedTags, ...otherDraftFields.map((fields) => fields.proposedTags)),
-    primaryLink: preferredValue(primaryDraft?.fields.primaryLink, masterCandidate.primaryLink, ...otherDraftFields.map((fields) => fields.primaryLink)),
+    name:
+      preferredValue(
+        primaryDraft?.fields.name,
+        masterCandidate.name,
+        ...otherDraftFields.map((fields) => fields.name),
+      ) ?? masterCandidate.name,
+    category: preferredValue(
+      primaryDraft?.fields.category,
+      masterCandidate.recommendedCategory,
+      ...otherDraftFields.map((fields) => fields.category),
+    ),
+    kind: preferredValue(
+      primaryDraft?.fields.kind,
+      masterCandidate.recommendedKind,
+      ...otherDraftFields.map((fields) => fields.kind),
+    ),
+    ecosystemLane: preferredValue(
+      primaryDraft?.fields.ecosystemLane,
+      masterCandidate.recommendedEcosystemLane,
+      ...otherDraftFields.map((fields) => fields.ecosystemLane),
+    ),
+    identityAuthority: preferredValue(
+      primaryDraft?.fields.identityAuthority,
+      masterCandidate.recommendedIdentityAuthority,
+      ...otherDraftFields.map((fields) => fields.identityAuthority),
+    ),
+    status: preferredValue(
+      primaryDraft?.fields.status,
+      masterCandidate.recommendedStatus,
+      ...otherDraftFields.map((fields) => fields.status),
+      "PENDING",
+    ),
+    clearance: preferredValue(
+      primaryDraft?.fields.clearance,
+      masterCandidate.recommendedClearance,
+      ...otherDraftFields.map((fields) => fields.clearance),
+      "PUBLIC",
+    ),
+    role: preferredValue(
+      primaryDraft?.fields.role,
+      ...otherDraftFields.map((fields) => fields.role),
+    ),
+    origin: preferredValue(
+      primaryDraft?.fields.origin,
+      masterCandidate.recommendedOrigin,
+      ...otherDraftFields.map((fields) => fields.origin),
+      "UNVERIFIED",
+    ),
+    summary: preferredValue(
+      primaryDraft?.fields.summary,
+      masterCandidate.evidenceSummary,
+      ...otherDraftFields.map((fields) => fields.summary),
+    ),
+    notes: combineTextValues(
+      [
+        primaryDraft?.fields.notes,
+        masterCandidate.reason,
+        masterCandidate.whyNow,
+        ...otherDraftFields.map((fields) => fields.notes),
+      ],
+      8,
+    ),
+    tags: uniqueStrings(
+      primaryDraft?.fields.tags,
+      masterCandidate.recommendedTags,
+      ...otherDraftFields.map((fields) => fields.tags),
+    ),
+    proposedTags: uniqueStrings(
+      primaryDraft?.fields.proposedTags,
+      masterCandidate.proposedTags,
+      ...otherDraftFields.map((fields) => fields.proposedTags),
+    ),
+    primaryLink: preferredValue(
+      primaryDraft?.fields.primaryLink,
+      masterCandidate.primaryLink,
+      ...otherDraftFields.map((fields) => fields.primaryLink),
+    ),
     links: [
       ...(primaryDraft?.fields.links ?? []),
       ...otherDraftFields.flatMap((fields) => fields.links ?? []),
@@ -833,7 +1456,9 @@ export class DossierMergeError extends Error {
   }
 }
 
-export async function mergeDossierCandidates(input: MergeDossierCandidatesInput): Promise<{
+export async function mergeDossierCandidates(
+  input: MergeDossierCandidatesInput,
+): Promise<{
   masterCandidate: DossierCandidate;
   masterDraft?: DossierDraft;
   mergedCandidateIds: string[];
@@ -841,14 +1466,24 @@ export async function mergeDossierCandidates(input: MergeDossierCandidatesInput)
 } | null> {
   const now = new Date().toISOString();
   const primaryCandidateId = input.primaryCandidateId?.trim();
-  const requestedSourceIds = uniqueStrings(input.sourceCandidateIds, [primaryCandidateId]);
+  const requestedSourceIds = uniqueStrings(input.sourceCandidateIds, [
+    primaryCandidateId,
+  ]);
   const requestedDraftIds = new Set(uniqueStrings(input.sourceDraftIds));
 
   if (!primaryCandidateId) {
-    throw new DossierMergeError("primaryCandidateId is required", 400, "missing_primary_candidate");
+    throw new DossierMergeError(
+      "primaryCandidateId is required",
+      400,
+      "missing_primary_candidate",
+    );
   }
   if (requestedSourceIds.length < 2) {
-    throw new DossierMergeError("At least two source candidates are required for merge", 400, "too_few_source_candidates");
+    throw new DossierMergeError(
+      "At least two source candidates are required for merge",
+      400,
+      "too_few_source_candidates",
+    );
   }
 
   let result: {
@@ -859,55 +1494,163 @@ export async function mergeDossierCandidates(input: MergeDossierCandidatesInput)
   } | null = null;
 
   await updateDossierWorkflowState((currentState) => {
-    const candidatesById = new Map(currentState.candidates.map((candidate) => [candidate.id, candidate]));
+    const candidatesById = new Map(
+      currentState.candidates.map((candidate) => [candidate.id, candidate]),
+    );
     const primary = candidatesById.get(primaryCandidateId);
-    if (!primary) throw new DossierMergeError("Primary candidate not found", 404, "primary_candidate_not_found");
+    if (!primary)
+      throw new DossierMergeError(
+        "Primary candidate not found",
+        404,
+        "primary_candidate_not_found",
+      );
     if (primary.status === "denied") {
-      throw new DossierMergeError("Cannot merge into a denied primary candidate", 400, "primary_candidate_denied");
+      throw new DossierMergeError(
+        "Cannot merge into a denied primary candidate",
+        400,
+        "primary_candidate_denied",
+      );
     }
-    const missingSourceId = requestedSourceIds.find((id) => !candidatesById.has(id));
+    const missingSourceId = requestedSourceIds.find(
+      (id) => !candidatesById.has(id),
+    );
     if (missingSourceId) {
-      throw new DossierMergeError(`Source candidate not found: ${missingSourceId}`, 404, "source_candidate_not_found");
+      throw new DossierMergeError(
+        `Source candidate not found: ${missingSourceId}`,
+        404,
+        "source_candidate_not_found",
+      );
     }
 
-    const sources = requestedSourceIds.map((id) => candidatesById.get(id)).filter((candidate): candidate is DossierCandidate => Boolean(candidate));
-    const primaryFirstSources = [primary, ...sources.filter((candidate) => candidate.id !== primary.id)];
-    const nonPrimaryIds = primaryFirstSources.filter((candidate) => candidate.id !== primary.id).map((candidate) => candidate.id);
+    const sources = requestedSourceIds
+      .map((id) => candidatesById.get(id))
+      .filter((candidate): candidate is DossierCandidate => Boolean(candidate));
+    const primaryFirstSources = [
+      primary,
+      ...sources.filter((candidate) => candidate.id !== primary.id),
+    ];
+    const nonPrimaryIds = primaryFirstSources
+      .filter((candidate) => candidate.id !== primary.id)
+      .map((candidate) => candidate.id);
     const evidenceItems = mergeEvidenceItems(primaryFirstSources);
-    const highestDuplicateRisk = primaryFirstSources.map((candidate) => candidate.duplicateRisk ?? "none").sort((a, b) => riskRank(b) - riskRank(a))[0] ?? "none";
-    const existingDossierMatch = primaryFirstSources
-      .map((candidate) => candidate.existingDossierMatch)
-      .filter((match): match is NonNullable<DossierCandidate["existingDossierMatch"]> => Boolean(match))
-      .sort((a, b) => confidenceRank(b.confidence) - confidenceRank(a.confidence) || a.id.localeCompare(b.id))[0] ?? null;
-    const score = Math.min(100, Math.max(...primaryFirstSources.map((candidate) => candidate.score ?? 0)));
+    const highestDuplicateRisk =
+      primaryFirstSources
+        .map((candidate) => candidate.duplicateRisk ?? "none")
+        .sort((a, b) => riskRank(b) - riskRank(a))[0] ?? "none";
+    const existingDossierMatch =
+      primaryFirstSources
+        .map((candidate) => candidate.existingDossierMatch)
+        .filter(
+          (
+            match,
+          ): match is NonNullable<DossierCandidate["existingDossierMatch"]> =>
+            Boolean(match),
+        )
+        .sort(
+          (a, b) =>
+            confidenceRank(b.confidence) - confidenceRank(a.confidence) ||
+            a.id.localeCompare(b.id),
+        )[0] ?? null;
+    const score = Math.min(
+      100,
+      Math.max(...primaryFirstSources.map((candidate) => candidate.score ?? 0)),
+    );
     const masterCandidate: DossierCandidate = {
       ...primary,
-      candidateType: primary.candidateType !== "unknown" ? primary.candidateType : (primaryFirstSources.find((candidate) => candidate.candidateType !== "unknown")?.candidateType ?? primary.candidateType),
+      candidateType:
+        primary.candidateType !== "unknown"
+          ? primary.candidateType
+          : (primaryFirstSources.find(
+              (candidate) => candidate.candidateType !== "unknown",
+            )?.candidateType ?? primary.candidateType),
       source: primary.source ?? "combined",
       tier: strongestTier(primaryFirstSources),
       score,
-      reason: combineTextValues(primaryFirstSources.map((candidate) => candidate.reason), 6),
-      whyNow: combineTextValues(primaryFirstSources.map((candidate) => candidate.whyNow), 6),
-      evidenceSummary: combineTextValues(primaryFirstSources.map((candidate) => candidate.evidenceSummary), 6),
+      reason: combineTextValues(
+        primaryFirstSources.map((candidate) => candidate.reason),
+        6,
+      ),
+      whyNow: combineTextValues(
+        primaryFirstSources.map((candidate) => candidate.whyNow),
+        6,
+      ),
+      evidenceSummary: combineTextValues(
+        primaryFirstSources.map((candidate) => candidate.evidenceSummary),
+        6,
+      ),
       evidenceItems,
       evidenceCount: evidenceItems.length,
-      knownFacts: uniqueStrings(...primaryFirstSources.map((candidate) => candidate.knownFacts)),
+      knownFacts: uniqueStrings(
+        ...primaryFirstSources.map((candidate) => candidate.knownFacts),
+      ),
       duplicateRisk: highestDuplicateRisk,
       existingDossierMatch,
-      recommendedCategory: preferredValue(primary.recommendedCategory, ...primaryFirstSources.slice(1).map((candidate) => candidate.recommendedCategory)),
-      recommendedKind: preferredValue(primary.recommendedKind, ...primaryFirstSources.slice(1).map((candidate) => candidate.recommendedKind)),
-      recommendedEcosystemLane: preferredValue(primary.recommendedEcosystemLane, ...primaryFirstSources.slice(1).map((candidate) => candidate.recommendedEcosystemLane)),
-      recommendedIdentityAuthority: preferredValue(primary.recommendedIdentityAuthority, ...primaryFirstSources.slice(1).map((candidate) => candidate.recommendedIdentityAuthority)),
-      recommendedStatus: preferredValue(primary.recommendedStatus, ...primaryFirstSources.slice(1).map((candidate) => candidate.recommendedStatus)),
-      recommendedClearance: preferredValue(primary.recommendedClearance, ...primaryFirstSources.slice(1).map((candidate) => candidate.recommendedClearance)),
-      recommendedOrigin: preferredValue(primary.recommendedOrigin, ...primaryFirstSources.slice(1).map((candidate) => candidate.recommendedOrigin)),
-      recommendedTags: uniqueStrings(...primaryFirstSources.map((candidate) => candidate.recommendedTags)),
-      proposedTags: uniqueStrings(...primaryFirstSources.map((candidate) => candidate.proposedTags)),
-      primaryLink: primary.primaryLink ?? primaryFirstSources.find((candidate) => candidate.primaryLink?.publicSafe !== false)?.primaryLink,
-      missingInfo: uniqueStrings(...primaryFirstSources.map((candidate) => candidate.missingInfo)),
-      doNotSay: uniqueStrings(...primaryFirstSources.map((candidate) => candidate.doNotSay)),
-      publicSafetyNotes: uniqueStrings(...primaryFirstSources.map((candidate) => candidate.publicSafetyNotes)),
-      status: primary.status === "draft_ready" || primary.status === "draft_requested" ? "draft_ready" : "needs_review",
+      recommendedCategory: preferredValue(
+        primary.recommendedCategory,
+        ...primaryFirstSources
+          .slice(1)
+          .map((candidate) => candidate.recommendedCategory),
+      ),
+      recommendedKind: preferredValue(
+        primary.recommendedKind,
+        ...primaryFirstSources
+          .slice(1)
+          .map((candidate) => candidate.recommendedKind),
+      ),
+      recommendedEcosystemLane: preferredValue(
+        primary.recommendedEcosystemLane,
+        ...primaryFirstSources
+          .slice(1)
+          .map((candidate) => candidate.recommendedEcosystemLane),
+      ),
+      recommendedIdentityAuthority: preferredValue(
+        primary.recommendedIdentityAuthority,
+        ...primaryFirstSources
+          .slice(1)
+          .map((candidate) => candidate.recommendedIdentityAuthority),
+      ),
+      recommendedStatus: preferredValue(
+        primary.recommendedStatus,
+        ...primaryFirstSources
+          .slice(1)
+          .map((candidate) => candidate.recommendedStatus),
+      ),
+      recommendedClearance: preferredValue(
+        primary.recommendedClearance,
+        ...primaryFirstSources
+          .slice(1)
+          .map((candidate) => candidate.recommendedClearance),
+      ),
+      recommendedOrigin: preferredValue(
+        primary.recommendedOrigin,
+        ...primaryFirstSources
+          .slice(1)
+          .map((candidate) => candidate.recommendedOrigin),
+      ),
+      recommendedTags: uniqueStrings(
+        ...primaryFirstSources.map((candidate) => candidate.recommendedTags),
+      ),
+      proposedTags: uniqueStrings(
+        ...primaryFirstSources.map((candidate) => candidate.proposedTags),
+      ),
+      primaryLink:
+        primary.primaryLink ??
+        primaryFirstSources.find(
+          (candidate) => candidate.primaryLink?.publicSafe !== false,
+        )?.primaryLink,
+      missingInfo: uniqueStrings(
+        ...primaryFirstSources.map((candidate) => candidate.missingInfo),
+      ),
+      doNotSay: uniqueStrings(
+        ...primaryFirstSources.map((candidate) => candidate.doNotSay),
+      ),
+      publicSafetyNotes: uniqueStrings(
+        ...primaryFirstSources.map((candidate) => candidate.publicSafetyNotes),
+      ),
+      status:
+        primary.status === "draft_ready" || primary.status === "draft_requested"
+          ? "draft_ready"
+          : "needs_review",
       mergeNote: input.mergeNote?.trim() || undefined,
       mergeSourceCandidateIds: requestedSourceIds,
       updatedAt: now,
@@ -920,26 +1663,42 @@ export async function mergeDossierCandidates(input: MergeDossierCandidatesInput)
     if (input.createMasterDraft) {
       const sourceDrafts = currentState.drafts.filter(
         (draft) =>
-          requestedSourceIds.includes(draft.candidateId) || requestedDraftIds.has(draft.id),
+          requestedSourceIds.includes(draft.candidateId) ||
+          requestedDraftIds.has(draft.id),
       );
-      const primaryDraft = activeDraftForCandidate(currentState.drafts, primary.id);
+      const primaryDraft = activeDraftForCandidate(
+        currentState.drafts,
+        primary.id,
+      );
       const nonPrimaryDrafts = sourceDrafts.filter(
-        (draft) => draft.id !== primaryDraft?.id && draft.candidateId !== primary.id && draft.status !== "published",
+        (draft) =>
+          draft.id !== primaryDraft?.id &&
+          draft.candidateId !== primary.id &&
+          draft.status !== "published",
       );
-      const sourceDraftIds = uniqueStrings(sourceDrafts.map((draft) => draft.id));
+      const sourceDraftIds = uniqueStrings(
+        sourceDrafts.map((draft) => draft.id),
+      );
 
       if (primaryDraft) {
         masterDraft = {
           ...primaryDraft,
-          status: primaryDraft.status === "published" ? "draft" : primaryDraft.status,
-          fields: buildMasterDraftFields(masterCandidate, primaryDraft, sourceDrafts.filter((draft) => draft.id !== primaryDraft.id)),
+          status:
+            primaryDraft.status === "published" ? "draft" : primaryDraft.status,
+          fields: buildMasterDraftFields(
+            masterCandidate,
+            primaryDraft,
+            sourceDrafts.filter((draft) => draft.id !== primaryDraft.id),
+          ),
           mergeNote: input.mergeNote?.trim() || undefined,
           mergeSourceDraftIds: sourceDraftIds,
           updatedAt: now,
         };
         drafts = currentState.drafts.map((draft) => {
           if (draft.id === primaryDraft.id) return masterDraft as DossierDraft;
-          if (nonPrimaryDrafts.some((sourceDraft) => sourceDraft.id === draft.id)) {
+          if (
+            nonPrimaryDrafts.some((sourceDraft) => sourceDraft.id === draft.id)
+          ) {
             supersededDraftIds.push(draft.id);
             return {
               ...draft,
@@ -958,27 +1717,38 @@ export async function mergeDossierCandidates(input: MergeDossierCandidatesInput)
           id: createDraftId(),
           candidateId: primary.id,
           status: "draft",
-          fields: buildMasterDraftFields(masterCandidate, undefined, sourceDrafts),
+          fields: buildMasterDraftFields(
+            masterCandidate,
+            undefined,
+            sourceDrafts,
+          ),
           mergeNote: input.mergeNote?.trim() || undefined,
           mergeSourceDraftIds: sourceDraftIds,
           createdAt: now,
           updatedAt: now,
         };
-        drafts = [masterDraft, ...currentState.drafts.map((draft) => {
-          if (nonPrimaryDrafts.some((sourceDraft) => sourceDraft.id === draft.id)) {
-            supersededDraftIds.push(draft.id);
-            return {
-              ...draft,
-              status: "superseded" as const,
-              mergedIntoDraftId: masterDraft?.id,
-              mergedAt: now,
-              mergeNote: input.mergeNote?.trim() || undefined,
-              mergeSourceDraftIds: sourceDraftIds,
-              updatedAt: now,
-            };
-          }
-          return draft;
-        })];
+        drafts = [
+          masterDraft,
+          ...currentState.drafts.map((draft) => {
+            if (
+              nonPrimaryDrafts.some(
+                (sourceDraft) => sourceDraft.id === draft.id,
+              )
+            ) {
+              supersededDraftIds.push(draft.id);
+              return {
+                ...draft,
+                status: "superseded" as const,
+                mergedIntoDraftId: masterDraft?.id,
+                mergedAt: now,
+                mergeNote: input.mergeNote?.trim() || undefined,
+                mergeSourceDraftIds: sourceDraftIds,
+                updatedAt: now,
+              };
+            }
+            return draft;
+          }),
+        ];
       }
     }
 

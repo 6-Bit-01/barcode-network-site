@@ -87,6 +87,49 @@ export type DossierPublicStatus =
 export type DossierClearance = "PUBLIC" | "INTERNAL" | "RESTRICTED";
 export type DossierOrigin = "KNOWN" | "UNKNOWN" | "UNVERIFIED" | "WITHHELD";
 
+export type DossierSourceFileNoteType =
+  | "fact"
+  | "correction"
+  | "missing_info"
+  | "public_safety"
+  | "do_not_say"
+  | "link_note"
+  | "general_note"
+  | "owner_note";
+
+export type DossierSourceFileNoteSource =
+  | "admin_manual"
+  | "mod_manual"
+  | "owner_manual"
+  | "bnl_recommendation"
+  | "rd_context"
+  | "broadcast_memory"
+  | "queue_context"
+  | "website_context"
+  | "discord_context"
+  | "unknown";
+
+export type DossierSourceFileNoteStatus =
+  | "active"
+  | "incorporated"
+  | "ignored"
+  | "superseded";
+
+export type DossierSourceFileNote = {
+  id: string;
+  candidateId: string;
+  type: DossierSourceFileNoteType;
+  text: string;
+  source: DossierSourceFileNoteSource;
+  status: DossierSourceFileNoteStatus;
+  publicSafe?: boolean;
+  appliesToDraftId?: string;
+  incorporatedIntoDraftId?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+};
+
 export type DossierCandidate = {
   id: string;
   name: string;
@@ -122,6 +165,7 @@ export type DossierCandidate = {
   missingInfo?: string[];
   doNotSay?: string[];
   publicSafetyNotes?: string[];
+  sourceFileNotes?: DossierSourceFileNote[];
   mergedIntoCandidateId?: string;
   mergedAt?: string;
   mergeNote?: string;
@@ -208,6 +252,87 @@ export type DossierDuplicateGroup = {
   } | null;
 };
 
+export type DossierRecommendationType =
+  | "new_subject"
+  | "modify_existing_dossier";
+
+export type DossierRecommendationStatus =
+  | "new"
+  | "reviewing"
+  | "attached_to_source_file"
+  | "converted_to_source_file"
+  | "ignored"
+  | "dismissed";
+
+export type DossierRecommendationSourceLane =
+  | "public_discord"
+  | "rd_context"
+  | "broadcast_memory"
+  | "queue_context"
+  | "website_dossier"
+  | "admin_manual"
+  | "mod_manual"
+  | "owner_manual"
+  | "unknown";
+
+export type DossierRecommendation = {
+  id: string;
+  type: DossierRecommendationType;
+  subjectName: string;
+  subjectKey?: string;
+  targetDossierId?: string;
+  targetCandidateId?: string;
+  status: DossierRecommendationStatus;
+  reason: string;
+  evidenceSummary?: string;
+  confidence?: "low" | "medium" | "high";
+  sourceLanes: DossierRecommendationSourceLane[];
+  suggestedAction?: string;
+  missingInfo?: string[];
+  publicSafetyNotes?: string[];
+  doNotSay?: string[];
+  recommendedTags?: string[];
+  recommendedCategory?: DossierCandidate["recommendedCategory"];
+  recommendedKind?: DossierCandidate["recommendedKind"];
+  recommendedEcosystemLane?: DossierCandidate["recommendedEcosystemLane"];
+  recommendedIdentityAuthority?: DossierCandidate["recommendedIdentityAuthority"];
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+};
+
+export type CreateDossierSourceFileNoteInput = {
+  candidateId: string;
+  type?: DossierSourceFileNoteType;
+  text: string;
+  source?: DossierSourceFileNoteSource;
+  publicSafe?: boolean;
+  appliesToDraftId?: string;
+  createdBy?: string;
+};
+
+export type CreateDossierRecommendationInput = {
+  type: DossierRecommendationType;
+  subjectName: string;
+  subjectKey?: string;
+  targetDossierId?: string;
+  targetCandidateId?: string;
+  reason: string;
+  evidenceSummary?: string;
+  confidence?: "low" | "medium" | "high";
+  sourceLanes?: DossierRecommendationSourceLane[];
+  suggestedAction?: string;
+  missingInfo?: string[];
+  publicSafetyNotes?: string[];
+  doNotSay?: string[];
+  recommendedTags?: string[];
+  recommendedCategory?: DossierCandidate["recommendedCategory"];
+  recommendedKind?: DossierCandidate["recommendedKind"];
+  recommendedEcosystemLane?: DossierCandidate["recommendedEcosystemLane"];
+  recommendedIdentityAuthority?: DossierCandidate["recommendedIdentityAuthority"];
+  createdBy?: string;
+};
+
 export type MergeDossierCandidatesInput = {
   primaryCandidateId: string;
   sourceCandidateIds: string[];
@@ -232,6 +357,12 @@ export type DossierWorkflowAction =
   | "publishDraft"
   | "denyCandidate"
   | "markNeedsMoreEvidence"
+  | "addSourceFileNote"
+  | "createDossierRecommendation"
+  | "attachRecommendationToCandidate"
+  | "convertRecommendationToCandidate"
+  | "ignoreDossierRecommendation"
+  | "dismissDossierRecommendation"
   | "detectDuplicateCandidates"
   | "mergeCandidates"
   | "createMasterDraftFromMerge";
@@ -259,6 +390,12 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "publishDraft",
   "denyCandidate",
   "markNeedsMoreEvidence",
+  "addSourceFileNote",
+  "createDossierRecommendation",
+  "attachRecommendationToCandidate",
+  "convertRecommendationToCandidate",
+  "ignoreDossierRecommendation",
+  "dismissDossierRecommendation",
   "detectDuplicateCandidates",
   "mergeCandidates",
   "createMasterDraftFromMerge",

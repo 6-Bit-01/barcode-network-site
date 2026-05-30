@@ -45,6 +45,9 @@ const { getDossierPrimaryLink, getDossierPublicLinks, legacyDossierLink } = requ
 const { buildDossierTagRegistry, resolveDossierTagCanonical } = require("../src/lib/dossier-tags.ts");
 const { isBnlReadModelDossierVisible, isPublicDatabasePageVisible } = require("../src/lib/database-visibility.ts");
 const readModel = require("../src/app/api/bnl/read-model/route.ts");
+const sourceFilesReadModel = require("../src/app/api/bnl/source-files/route.ts");
+const workflowStore = require("../src/lib/dossier-workflow-store.ts");
+const workflow = require("../src/lib/dossier-workflow.ts");
 
 const forbiddenKeys = [
   "contactEmail",
@@ -67,6 +70,25 @@ const forbiddenKeys = [
 ];
 
 let sequence = 0;
+
+async function resetDossierWorkflowStore() {
+  await workflowStore.saveDossierWorkflowState({
+    version: 1,
+    revision: 0,
+    candidates: [],
+    drafts: [],
+    recommendations: [],
+    updatedAt: new Date(0).toISOString(),
+  });
+}
+
+async function sourceFilesGet(query, token = "test-source-file-read-token") {
+  return sourceFilesReadModel.GET(
+    new Request(`https://example.test/api/bnl/source-files${query}`, {
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+    }),
+  );
+}
 
 async function freshReadModelSession() {
   sequence += 1;
@@ -662,4 +684,270 @@ test("BNL read model keeps normal queue items out of broadcast memory candidates
   const artist = model.sections.artists.find((entry) => entry.normalizedName === "memory-queue-artist");
   assert.equal(artist.bnlContext.profileStatus, "not_profile");
   assert.equal(artist.bnlContext.identityStatus, "not_discord_or_account_identity");
+});
+
+function sourceFileCandidate(overrides = {}) {
+  const now = "2026-05-30T00:00:00.000Z";
+  const id = overrides.id ?? "candidate_signal_witch";
+  const name = overrides.name ?? "Signal Witch";
+  return {
+    id,
+    name,
+    candidateType: overrides.candidateType ?? "artist",
+    source: overrides.source ?? "bnl_dynamic_candidate_discovery",
+    tier: overrides.tier ?? "draft_ready",
+    score: overrides.score ?? 82,
+    whyNow: overrides.whyNow ?? "BNL found approved source-lane momentum.",
+    reason: overrides.reason ?? "Approved source lanes point to a stable subject.",
+    evidenceSummary: overrides.evidenceSummary ?? "Public show context plus operator-approved evidence.",
+    knownFacts: overrides.knownFacts ?? ["Appeared in public show context"],
+    missingInfo: overrides.missingInfo ?? ["Confirm preferred role"],
+    doNotSay: overrides.doNotSay ?? ["Do not imply private Discord identity"],
+    publicSafetyNotes: overrides.publicSafetyNotes ?? ["Use only public-safe phrasing"],
+    confidence: overrides.confidence ?? "high",
+    duplicateRisk: overrides.duplicateRisk ?? "low",
+    existingDossierMatch: overrides.existingDossierMatch ?? null,
+    recommendedCategory: overrides.recommendedCategory ?? "Personnel",
+    recommendedKind: overrides.recommendedKind ?? "radio_regular",
+    recommendedEcosystemLane: overrides.recommendedEcosystemLane ?? "radio_regular",
+    recommendedIdentityAuthority: overrides.recommendedIdentityAuthority ?? "community_owned",
+    recommendedStatus: overrides.recommendedStatus ?? "PENDING",
+    recommendedClearance: overrides.recommendedClearance ?? "PUBLIC",
+    recommendedOrigin: overrides.recommendedOrigin ?? "UNVERIFIED",
+    recommendedTags: overrides.recommendedTags ?? ["radio", "artist"],
+    proposedTags: overrides.proposedTags ?? ["bnl-discovered"],
+    sourceLanes: overrides.sourceLanes ?? ["rd_context", "broadcast_memory"],
+    ingestSource: overrides.ingestSource ?? "bnl_dynamic_candidate_discovery",
+    ingestKey: overrides.ingestKey ?? "bnl:signal-witch:read-model-test",
+    createdFromRecommendationId: overrides.createdFromRecommendationId ?? "rec_signal_witch",
+    sourceFileNotes: overrides.sourceFileNotes ?? [
+      {
+        id: "note_signal_witch",
+        candidateId: id,
+        type: "fact",
+        text: "BNL internal source summary from approved lanes; keep context bounded.",
+        source: "bnl_recommendation",
+        status: "active",
+        publicSafe: false,
+        ingestSource: "bnl_dynamic_candidate_discovery",
+        ingestKey: "bnl:signal-witch:read-model-test",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    identityLinks: overrides.identityLinks ?? [
+      {
+        id: "alias_shadowspit",
+        candidateId: id,
+        label: "ShadowsPit",
+        normalizedLabel: workflow.normalizeDossierSubjectName("ShadowsPit"),
+        type: "alias",
+        visibility: "internal_only",
+        status: "confirmed",
+        source: "owner_confirmed",
+        confidence: "confirmed",
+        useForMatching: true,
+        useInPublicDossier: false,
+        note: "Internal routing alias only.",
+        createdFromRecommendationId: "rec_alias_shadowspit",
+        createdFromRecommendationSubject: "ShadowsPit",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    status: overrides.status ?? "needs_review",
+    createdAt: overrides.createdAt ?? now,
+    updatedAt: overrides.updatedAt ?? now,
+  };
+}
+
+async function seedSourceFileReadModelState(extra = {}) {
+  const now = "2026-05-30T00:00:00.000Z";
+  const candidate = sourceFileCandidate(extra.candidate ?? {});
+  await workflowStore.saveDossierWorkflowState({
+    version: 1,
+    revision: 0,
+    candidates: [candidate, ...(extra.candidates ?? [])],
+    drafts: extra.drafts ?? [
+      {
+        id: "draft_signal_witch",
+        candidateId: candidate.id,
+        status: "ready_for_owner_review",
+        fields: { name: candidate.name },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    recommendations: extra.recommendations ?? [
+      {
+        id: "rec_signal_witch",
+        type: "new_subject",
+        subjectName: candidate.name,
+        targetCandidateId: candidate.id,
+        status: "converted_to_source_file",
+        reason: "BNL dynamic candidate discovery converted this recommendation.",
+        evidenceSummary: "Approved source lanes found the subject.",
+        confidence: "high",
+        sourceLanes: ["rd_context", "broadcast_memory"],
+        ingestKey: "bnl:signal-witch:read-model-test",
+        ingestSource: "bnl_dynamic_candidate_discovery",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    updatedAt: now,
+  });
+  return candidate;
+}
+
+test("BNL source file read model requires the private read token", async () => {
+  await resetDossierWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+
+  assert.equal((await sourceFilesGet("?subject=Signal%20Witch", "")).status, 401);
+  assert.equal((await sourceFilesGet("?subject=Signal%20Witch", "wrong-token")).status, 401);
+});
+
+test("BNL source file read model resolves subject and returns bounded provenance and safety metadata", async () => {
+  await resetDossierWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  const candidate = await seedSourceFileReadModelState();
+  const before = await workflowStore.getDossierWorkflowState();
+
+  const response = await sourceFilesGet("?subject=Signal%20Witch");
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+
+  assert.equal(payload.ok, true);
+  assert.equal(payload.found, true);
+  assert.equal(payload.mutation, false);
+  assert.equal(payload.matchKind, "name");
+  assert.equal(payload.sourceFile.candidateId, candidate.id);
+  assert.equal(payload.sourceFile.name, "Signal Witch");
+  assert.equal(payload.sourceFile.normalizedName, "signal witch");
+  assert.equal(payload.sourceFile.source, "bnl_dynamic_candidate_discovery");
+  assert.deepEqual(payload.sourceFile.sourceLanes, ["rd_context", "broadcast_memory"]);
+  assert.equal(payload.sourceFile.ingestSource, "bnl_dynamic_candidate_discovery");
+  assert.equal(payload.sourceFile.ingestKey, "bnl:signal-witch:read-model-test");
+  assert.equal(payload.sourceFile.createdFromRecommendationId, "rec_signal_witch");
+  assert.equal(payload.sourceFile.sourceFileNotes[0].summary.includes("BNL internal source summary"), true);
+  assert.equal(payload.sourceFile.sourceFileNotes[0].publicSafe, false);
+  assert.equal(payload.sourceFile.identityLinks[0].label, "ShadowsPit");
+  assert.equal(payload.sourceFile.identityLinks[0].status, "confirmed");
+  assert.equal(payload.sourceFile.identityLinks[0].useForMatching, true);
+  assert.equal(payload.sourceFile.attachedRecommendations[0].id, "rec_signal_witch");
+  assert.equal(payload.sourceFile.activeDraft.status, "ready_for_owner_review");
+  assert.equal(payload.sourceFile.ownerReview.status, "waiting");
+  assert.equal(payload.sourceFile.visibility.visibility, "internal_bnl_source_file");
+  assert.equal(payload.sourceFile.visibility.publicUse, false);
+  assert.match(payload.sourceFile.visibility.identityWarning, /not public identity proof/);
+  assert.match(payload.sourceFile.visibility.publishWarning, /not public dossiers/);
+  assert.match(payload.sourceFile.visibility.draftWarning, /not public/);
+  assert.equal(payload.sourceFile.recommendedTaxonomy.kind, "radio_regular");
+  assert.equal(payload.sourceFile.duplicateWarnings.duplicateRisk, "low");
+
+  const after = await workflowStore.getDossierWorkflowState();
+  assert.deepEqual(after, before);
+});
+
+test("BNL source file read model resolves candidateId and normalizedName lookups", async () => {
+  await resetDossierWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  const candidate = await seedSourceFileReadModelState();
+
+  const byId = await (await sourceFilesGet(`?candidateId=${candidate.id}`)).json();
+  assert.equal(byId.found, true);
+  assert.equal(byId.matchKind, "candidate_id");
+
+  const byNormalizedName = await (await sourceFilesGet("?normalizedName=signal%20witch")).json();
+  assert.equal(byNormalizedName.found, true);
+  assert.equal(byNormalizedName.matchKind, "normalized_name");
+});
+
+test("BNL source file read model resolves confirmed aliases only", async () => {
+  await resetDossierWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  await seedSourceFileReadModelState();
+
+  const payload = await (await sourceFilesGet("?alias=ShadowsPit")).json();
+  assert.equal(payload.found, true);
+  assert.equal(payload.matchKind, "confirmed_alias");
+  assert.equal(payload.matchedAlias.label, "ShadowsPit");
+  assert.equal(payload.sourceFile.name, "Signal Witch");
+});
+
+test("BNL source file read model does not confirm proposed, rejected, or retired aliases", async () => {
+  await resetDossierWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  const now = "2026-05-30T00:00:00.000Z";
+
+  for (const status of ["proposed", "rejected", "retired"]) {
+    await resetDossierWorkflowStore();
+    await seedSourceFileReadModelState({
+      candidate: {
+        identityLinks: [
+          {
+            id: `alias_${status}`,
+            candidateId: "candidate_signal_witch",
+            label: "Soft Alias",
+            normalizedLabel: workflow.normalizeDossierSubjectName("Soft Alias"),
+            type: "alias",
+            visibility: "internal_only",
+            status,
+            source: "bnl_recommendation",
+            confidence: "medium",
+            useForMatching: true,
+            useInPublicDossier: false,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+      },
+    });
+
+    const payload = await (await sourceFilesGet("?alias=Soft%20Alias")).json();
+    assert.equal(payload.found, false);
+    assert.equal(payload.reviewRequired, true);
+    assert.equal(payload.possibleMatches.length, 1);
+    assert.equal(payload.possibleMatches[0].matchKind, "unconfirmed_alias");
+    assert.equal(payload.possibleMatches[0].alias.status, status);
+  }
+});
+
+test("BNL source file read model returns found=false without mutation for no-match", async () => {
+  await resetDossierWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  await seedSourceFileReadModelState();
+  const before = await workflowStore.getDossierWorkflowState();
+
+  const response = await sourceFilesGet("?subject=Missing%20Subject");
+  const payload = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(payload.found, false);
+  assert.equal(payload.reviewRequired, false);
+  assert.deepEqual(payload.possibleMatches, []);
+  assert.match(payload.reason, /No BNL Source File match/);
+
+  const after = await workflowStore.getDossierWorkflowState();
+  assert.deepEqual(after, before);
+});
+
+test("BNL source file read model keeps public endpoint separate and does not expose private keys", async () => {
+  await resetDossierWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  await seedSourceFileReadModelState();
+
+  const unauthorized = await sourceFilesGet("?subject=Signal%20Witch", "");
+  assert.equal(unauthorized.status, 401);
+  assert.doesNotMatch(JSON.stringify(await unauthorized.json()), /Signal Witch|sourceFileNotes|identityLinks/);
+
+  const publicPayload = await modelJson();
+  assert.doesNotMatch(
+    JSON.stringify(publicPayload),
+    /Signal Witch|sourceFileNotes|identityLinks|bnl:signal-witch:read-model-test/,
+  );
+
+  const internalPayload = await (await sourceFilesGet("?subject=Signal%20Witch")).json();
+  assert.deepEqual(findForbiddenKeys(internalPayload), []);
+  assert.doesNotMatch(JSON.stringify(internalPayload), /test-source-file-read-token|stripeSessionId|customerId|accountId|paymentIntent|submitterToken|fileUrl|contactEmail/);
 });

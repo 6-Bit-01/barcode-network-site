@@ -127,6 +127,31 @@ function StatusPill({ children }: { children: React.ReactNode }) {
   return <span className="border border-border bg-background/40 px-2 py-1 text-[0.65rem] uppercase tracking-widest text-muted">{children}</span>;
 }
 
+
+const dossierPhases = [
+  "Phase 1 — BNL Source File",
+  "Phase 2 — Dossier Draft",
+  "Phase 3 — Admin Ready",
+  "Phase 4 — Owner Review",
+  "Phase 5 — Approved / Publish Later",
+];
+
+function PhaseRail({ currentPhase }: { currentPhase?: number }) {
+  return (
+    <section className="border border-border bg-surface p-4" aria-label="Dossier phase overview">
+      <p className="text-xs uppercase tracking-[0.45em] text-muted mb-3">Numbered dossier phases</p>
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-2 text-xs uppercase tracking-widest">
+        {dossierPhases.map((phase, index) => (
+          <span key={phase} className={`border px-3 py-2 ${currentPhase === index + 1 ? "border-accent text-accent bg-accent/10" : "border-border text-muted bg-background/30"}`}>
+            {phase}
+          </span>
+        ))}
+      </div>
+      <p className="mt-3 text-xs text-muted">Phase 1 collects what BNL knows and what admins add. Phase 2 builds or revises the proposed dossier. Phase 3 is admin-ready submit. Phase 4 is owner final pass. Phase 5 is approved / publish later and is not active yet.</p>
+    </section>
+  );
+}
+
 function DashboardCard({ eyebrow, title, children, aside }: { eyebrow: string; title: string; children: React.ReactNode; aside?: React.ReactNode }) {
   return (
     <section className="border border-border bg-surface p-5 space-y-4">
@@ -290,11 +315,13 @@ export default function DossierControlCenterPage() {
         {notice && <div className="border border-accent/60 bg-accent/10 p-4 text-sm text-accent">{notice}</div>}
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs text-muted">
-          <div className="border border-border bg-surface p-4"><p className="uppercase tracking-[0.35em] text-accent mb-2">Active Candidates</p><p>{activeCandidates.length} active / {closedCandidates.length} closed</p></div>
-          <div className="border border-border bg-surface p-4"><p className="uppercase tracking-[0.35em] text-accent mb-2">Drafts</p><p>{draftsInProgress.length} active / {closedDrafts.length} closed</p></div>
+          <div className="border border-border bg-surface p-4"><p className="uppercase tracking-[0.35em] text-accent mb-2">Active BNL Source Files</p><p>{activeCandidates.length} active / {closedCandidates.length} closed</p></div>
+          <div className="border border-border bg-surface p-4"><p className="uppercase tracking-[0.35em] text-accent mb-2">Dossier Drafts</p><p>{draftsInProgress.length} active / {closedDrafts.length} closed</p></div>
           <div className="border border-border bg-surface p-4"><p className="uppercase tracking-[0.35em] text-accent mb-2">Owner Review</p><p>{ownerReviewDrafts.length} waiting</p></div>
           <div className="border border-border bg-surface p-4"><p className="uppercase tracking-[0.35em] text-accent mb-2">Workflow API</p><p>{payload.workflow.status} / {payload.workflow.storage}</p></div>
         </div>
+
+        <PhaseRail />
 
         <DashboardCard eyebrow="Manual fallback" title="Quick Candidate Intake" aside={<StatusPill>Manual fallback / quick seed</StatusPill>}>
           <p className="text-sm text-muted">Manual fallback / quick seed. Use this when BNL has not suggested a candidate yet or when an operator needs to seed one directly. Main BNL-led workbench comes later. This does not publish, invoke BNL, create tags, or mutate the public database.</p>
@@ -313,10 +340,10 @@ export default function DossierControlCenterPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-sm text-muted">
             <div className="border border-border/70 bg-background/20 p-4 space-y-2">
               <p className="font-bold text-foreground">Prompt-based dossier drafting comes next.</p>
-              <p>Admin will be able to ask BNL to build or revise a dossier from approved source packets.</p>
-              <p>BNL will generate full dossier fields, not starter notes.</p>
+              <p>Mods/admins will guide BNL in plain language.</p>
+              <p>BNL will use the source file and approved sources to build a complete dossier draft. BNL will generate complete dossier drafts from source files, not starter notes.</p>
               <p>BNL will ask only for missing decisions.</p>
-              <p>Manual editing remains available. Manual fields are fallback only.</p>
+              <p>Manual editing remains available. Manual fields are fallback/advanced. Manual fields are fallback only.</p>
             </div>
             <div className="border border-border/70 bg-background/20 p-4 space-y-2">
               <p className="font-bold text-foreground">Intended future BNL-led workflow</p>
@@ -327,18 +354,20 @@ export default function DossierControlCenterPage() {
           <p className="text-xs text-muted">Future source packet: website read model, dossier taxonomy guide, authoring guide, tag registry, selected candidate facts, queue/public show context, R&amp;D/operator-approved notes, Discord-safe/mod-approved context, duplicate/merge history, and existing dossier style profile. Future output includes name, category, kind, ecosystemLane, identityAuthority, status, clearance, origin, role, summary, notes, tags, proposedTags if needed, primary link if known/public-safe, evidence/caveat notes, public safety notes, and missing info questions. BNL must not invent facts, must preserve tone/style, must keep community-owned identities separate from BARCODE-controlled characters, and must treat AI/human/unknown as tags/traits.</p>
         </DashboardCard>
 
-        <DashboardCard eyebrow="Lane 1" title="Active Subject Files" aside={<StatusPill>{activeCandidates.length} active records</StatusPill>}>
+        <DashboardCard eyebrow="Lane 1" title="Active BNL Source Files" aside={<StatusPill>{activeCandidates.length} active records</StatusPill>}>
           {activeCandidates.length === 0 ? <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">No active candidate records need review.</p> : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] text-left text-sm text-muted">
-                <thead className="text-xs uppercase tracking-widest text-foreground"><tr><th className="py-2 pr-3">Name</th><th className="py-2 pr-3">Status</th><th className="py-2 pr-3">Source</th><th className="py-2 pr-3">Tier / Score</th><th className="py-2 pr-3">Duplicate Risk</th><th className="py-2 pr-3">Updated</th><th className="py-2 pr-3">Actions</th></tr></thead>
+                <thead className="text-xs uppercase tracking-widest text-foreground"><tr><th className="py-2 pr-3">BNL Source File</th><th className="py-2 pr-3">Current phase</th><th className="py-2 pr-3">Status</th><th className="py-2 pr-3">Next recommended action</th><th className="py-2 pr-3">Duplicate Risk</th><th className="py-2 pr-3">Updated</th><th className="py-2 pr-3">Actions</th></tr></thead>
                 <tbody>{activeCandidates.map((candidate) => {
                   const draft = linkedActiveDraftFor(candidate, drafts);
                   const createdDraftId = createdDraftIdByCandidate[candidate.id];
                   const openDraftId = draft?.id ?? createdDraftId;
                   const canCreateDraft = !isCandidateClosed(candidate) && !openDraftId;
                   const canUpdateCandidate = !isCandidateClosed(candidate);
-                  return <tr key={candidate.id} className="border-t border-border/70 align-top"><td className="py-3 pr-3 text-foreground font-semibold">{candidate.name}</td><td className="py-3 pr-3">{candidate.status}</td><td className="py-3 pr-3">{candidate.source}</td><td className="py-3 pr-3">{candidate.tier} / {candidate.score}</td><td className="py-3 pr-3">{candidate.duplicateRisk ?? "none"}</td><td className="py-3 pr-3">{formatDate(candidate.updatedAt)}</td><td className="py-3 pr-3"><div className="flex flex-wrap gap-2"><Link href={`/admin/dossiers/candidates/${candidate.id}`} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Open Subject File</Link><Link href={`/admin/dossiers/candidates/${candidate.id}#add-info`} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Add Info</Link>{openDraftId ? <Link href={`/admin/dossiers/drafts/${openDraftId}`} target="_blank" rel="noopener noreferrer" className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Workbench / Draft</Link> : <button type="button" disabled={saving || !canCreateDraft} onClick={() => void createDraft(candidate.id)} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Create Draft</button>}<button type="button" disabled className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest opacity-50" title="Owner can deny later; admins can add dismissal context from the Subject File.">Recommend Dismissal (owner later)</button><button type="button" disabled={saving || !canUpdateCandidate || candidate.status === "needs_more_evidence"} onClick={() => void updateCandidate(candidate.id, "markNeedsMoreEvidence")} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest hover:border-accent hover:text-accent disabled:opacity-50">Mark Needs Info</button></div></td></tr>;
+                  const currentPhase = openDraftId ? "Phase 2 — Dossier Draft" : "Phase 1 — BNL Source File";
+                  const nextAction = openDraftId ? "Open dossier draft" : "Add info or create dossier draft";
+                  return <tr key={candidate.id} className="border-t border-border/70 align-top"><td className="py-3 pr-3 text-foreground font-semibold">{candidate.name}</td><td className="py-3 pr-3"><StatusPill>{currentPhase}</StatusPill></td><td className="py-3 pr-3"><StatusPill>{candidate.status}</StatusPill></td><td className="py-3 pr-3">{nextAction}{openDraftId && <p className="text-xs text-muted">Active draft already exists.</p>}{isCandidateClosed(candidate) && <p className="text-xs text-accent">Source file was merged or closed.</p>}</td><td className="py-3 pr-3">{candidate.duplicateRisk ?? "none"}</td><td className="py-3 pr-3">{formatDate(candidate.updatedAt)}</td><td className="py-3 pr-3"><div className="flex flex-wrap gap-2">{openDraftId ? <Link href={`/admin/dossiers/drafts/${openDraftId}`} target="_blank" rel="noopener noreferrer" className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Dossier Draft</Link> : <Link href={`/admin/dossiers/candidates/${candidate.id}`} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Source File</Link>}<Link href={`/admin/dossiers/candidates/${candidate.id}#add-info`} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Add Info</Link>{!openDraftId && <button type="button" disabled={saving || !canCreateDraft} onClick={() => void createDraft(candidate.id)} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50" title={canCreateDraft ? "Create proposed public dossier draft from this BNL Source File." : "Active draft already exists or source file was merged/denied."}>Create Dossier Draft</button>}<button type="button" disabled className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest opacity-50" title="Owner action required for final dismissal; admins can add dismissal context from the BNL Source File.">Recommend Dismissal (owner later)</button><button type="button" disabled={saving || !canUpdateCandidate || candidate.status === "needs_more_evidence"} onClick={() => void updateCandidate(candidate.id, "markNeedsMoreEvidence")} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest hover:border-accent hover:text-accent disabled:opacity-50" title={candidate.status === "needs_more_evidence" ? "Already marked needs more info." : "Mark source file as needs more info."}>Mark Needs Info</button></div></td></tr>;
                 })}</tbody>
               </table>
             </div>
@@ -346,10 +375,10 @@ export default function DossierControlCenterPage() {
         </DashboardCard>
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <DashboardCard eyebrow="Lane 2" title="Drafts Being Worked" aside={<StatusPill>{draftsInProgress.length} open</StatusPill>}>
-            {draftsInProgress.length === 0 ? <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">No draft or owner-changes-requested drafts.</p> : <div className="space-y-3">{draftsInProgress.map((draft) => {
+          <DashboardCard eyebrow="Lane 2" title="Dossier Drafts" aside={<StatusPill>{draftsInProgress.length} open</StatusPill>}>
+            {draftsInProgress.length === 0 ? <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">No active dossier drafts. Ready-for-owner-review drafts appear in Owner Review, not Dossier Drafts.</p> : <div className="space-y-3">{draftsInProgress.map((draft) => {
               const candidate = candidates.find((item) => item.id === draft.candidateId);
-              return <article key={draft.id} className="border border-border/70 bg-background/20 p-4 text-sm text-muted"><div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="font-bold text-foreground">{draft.fields.name}</p><p>Linked candidate: {candidate?.name ?? draft.candidateId}</p><p>Status: {draft.status}</p><p>Updated: {formatDate(draft.updatedAt)}</p></div><Link href={`/admin/dossiers/drafts/${draft.id}`} target="_blank" rel="noopener noreferrer" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Workbench / Draft</Link></div></article>;
+              return <article key={draft.id} className="border border-border/70 bg-background/20 p-4 text-sm text-muted"><div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="font-bold text-foreground">{draft.fields.name}</p><p>Linked candidate: {candidate?.name ?? draft.candidateId}</p><p>Status: {draft.status}</p><p>Updated: {formatDate(draft.updatedAt)}</p></div><Link href={`/admin/dossiers/drafts/${draft.id}`} target="_blank" rel="noopener noreferrer" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Dossier Draft</Link></div></article>;
             })}</div>}
           </DashboardCard>
 
@@ -357,23 +386,23 @@ export default function DossierControlCenterPage() {
             <p className="text-sm text-muted">Admin/editor submits a workflow draft here for owner focus. Owner gate/secret comes later and owner approval still will not publish until publishing exists.</p>
             {ownerReviewDrafts.length === 0 ? <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">No drafts waiting for owner review.</p> : <div className="space-y-3">{ownerReviewDrafts.map((draft) => {
               const candidate = candidates.find((item) => item.id === draft.candidateId);
-              return <article key={draft.id} className="border border-border/70 bg-background/20 p-4 text-sm text-muted"><div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="font-bold text-foreground">{draft.fields.name}</p><p>Linked candidate: {candidate?.name ?? draft.candidateId}</p><p>Updated: {formatDate(draft.updatedAt)}</p></div><Link href={`/admin/dossiers/drafts/${draft.id}`} target="_blank" rel="noopener noreferrer" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Workbench / Draft</Link></div></article>;
+              return <article key={draft.id} className="border border-border/70 bg-background/20 p-4 text-sm text-muted"><div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="font-bold text-foreground">{draft.fields.name}</p><p>Linked candidate: {candidate?.name ?? draft.candidateId}</p><p>Status: <StatusPill>Submitted</StatusPill></p><p>Phase: Phase 4 — Owner Review</p><p>Next: Waiting for owner</p><p>Updated: {formatDate(draft.updatedAt)}</p></div><Link href={`/admin/dossiers/drafts/${draft.id}`} target="_blank" rel="noopener noreferrer" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">View Submitted Draft</Link></div></article>;
             })}</div>}
-            <Link href="/admin/dossiers/owner-review" className="inline-flex border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Open Owner Review Page</Link>
+            <Link href="/admin/dossiers/owner-review" className="inline-flex border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Open Owner Review</Link>
           </DashboardCard>
         </div>
 
         <DashboardCard eyebrow="Lane 4" title="Duplicate Warnings" aside={<StatusPill>{activeDuplicateGroups.length} active groups</StatusPill>}>
-          <p className="text-sm text-muted">Possible duplicate source files detected. Owner/lead merge review required. Regular admins can view the warning, add a note later, and open subject files; final merge is owner/lead-only until an owner gate exists.</p>
-          {activeDuplicateGroups.length === 0 ? <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">No duplicate warnings need owner/lead review.</p> : <div className="space-y-3">{activeDuplicateGroups.map((group) => <article key={group.id} className="border border-border/70 bg-background/20 p-4 text-sm text-muted"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="font-bold text-foreground">{group.names.join(" / ")}</p><p>Risk: {group.risk}</p><p>{group.candidateIds.length} candidates / {group.draftIds.length} drafts</p><p>Reason: {group.reason}</p></div><div className="flex flex-wrap gap-2"><Link href={`/admin/dossiers/duplicates/${group.id}`} className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">View Duplicate Warning</Link><button type="button" disabled className="border border-border px-3 py-2 text-xs uppercase tracking-widest opacity-50">Add note coming later</button><span className="text-xs uppercase tracking-widest text-muted">Open subject files from warning page</span></div></div></article>)}</div>}
+          <p className="text-sm text-muted">Possible duplicate source files detected. Duplicate warnings help prevent multiple source files for the same subject. Owner/lead merge review required. Regular admins can view the warning, add a note later, and open BNL Source Files; final merge is owner/lead cleanup, not normal mod work.</p>
+          {activeDuplicateGroups.length === 0 ? <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">No duplicate warnings need owner/lead review.</p> : <div className="space-y-3">{activeDuplicateGroups.map((group) => <article key={group.id} className="border border-border/70 bg-background/20 p-4 text-sm text-muted"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="font-bold text-foreground">{group.names.join(" / ")}</p><p>Risk: {group.risk}</p><p>{group.candidateIds.length} candidates / {group.draftIds.length} drafts</p><p>Reason: {group.reason}</p></div><div className="flex flex-wrap gap-2"><Link href={`/admin/dossiers/duplicates/${group.id}`} className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">View Warning / Open Merge Review</Link><button type="button" disabled className="border border-border px-3 py-2 text-xs uppercase tracking-widest opacity-50">Add Note coming later</button><span className="text-xs uppercase tracking-widest text-muted">Open Source Files from warning page</span></div></div></article>)}</div>}
           {resolvedDuplicateGroups.length > 0 && <p className="text-xs text-muted">{resolvedDuplicateGroups.length} duplicate group(s) are already resolved or no longer have enough active candidates; see History below.</p>}
         </DashboardCard>
 
         <details className="border border-border bg-surface p-5">
-          <summary className="cursor-pointer text-xl font-bold text-foreground">Closed / Merged Candidates and Closed / Superseded Drafts History</summary>
+          <summary className="cursor-pointer text-xl font-bold text-foreground">Closed / History — Merged Candidates and Superseded Drafts</summary>
           <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-muted">
-            <div className="border border-border/70 bg-background/20 p-4"><p className="text-xs uppercase tracking-widest text-accent mb-2">Closed / Merged Candidates</p><p>{closedCandidates.length} closed candidate records.</p>{closedCandidates.slice(0, 8).map((candidate) => <article key={candidate.id} className="mt-3 border-t border-border/60 pt-3"><p className="text-foreground font-semibold">{candidate.name}</p><p>Status: {candidate.status}</p>{candidate.status === "merged" && <p>mergedIntoCandidateId: {candidate.mergedIntoCandidateId ?? "—"}</p>}{candidate.status === "merged" && <p>Master candidate: {candidate.mergedIntoCandidateId ? <Link className="text-accent hover:underline" href={`/admin/dossiers/candidates/${candidate.mergedIntoCandidateId}`}>{candidateName(candidate.mergedIntoCandidateId, candidates)}</Link> : "—"}</p>}{candidate.status === "merged" && <p>mergedAt: {formatDate(candidate.mergedAt)}</p>}<p className="text-xs uppercase tracking-widest text-muted">No normal active action buttons</p></article>)}</div>
-            <div className="border border-border/70 bg-background/20 p-4"><p className="text-xs uppercase tracking-widest text-accent mb-2">Closed / Superseded Drafts</p><p>{closedDrafts.length} closed draft records.</p>{closedDrafts.slice(0, 8).map((draft) => <article key={draft.id} className="mt-3 border-t border-border/60 pt-3"><p className="text-foreground font-semibold">{draft.fields.name}</p><p>Status: {draft.status}</p>{draft.status === "superseded" && <p>mergedIntoDraftId: {draft.mergedIntoDraftId ?? "—"}</p>}{draft.status === "superseded" && <p>Superseded by master draft: {draft.mergedIntoDraftId ? <Link className="text-accent hover:underline" href={`/admin/dossiers/drafts/${draft.mergedIntoDraftId}`}>{draftName(draft.mergedIntoDraftId, drafts)}</Link> : "—"}</p>}<p className="text-xs uppercase tracking-widest text-muted">Reference-only; no normal active edit button</p></article>)}</div>
+            <div className="border border-border/70 bg-background/20 p-4"><p className="text-xs uppercase tracking-widest text-accent mb-2">Closed / History — Merged Candidates</p><p>{closedCandidates.length} closed BNL Source File records.</p>{closedCandidates.slice(0, 8).map((candidate) => <article key={candidate.id} className="mt-3 border-t border-border/60 pt-3"><p className="text-foreground font-semibold">{candidate.name}</p><p>Status: {candidate.status}</p>{candidate.status === "merged" && <p>mergedIntoCandidateId: {candidate.mergedIntoCandidateId ?? "—"}</p>}{candidate.status === "merged" && <p>Master candidate: {candidate.mergedIntoCandidateId ? <Link className="text-accent hover:underline" href={`/admin/dossiers/candidates/${candidate.mergedIntoCandidateId}`}>{candidateName(candidate.mergedIntoCandidateId, candidates)}</Link> : "—"}</p>}{candidate.status === "merged" && <p>mergedAt: {formatDate(candidate.mergedAt)}</p>}<p className="text-xs uppercase tracking-widest text-muted">No normal active action buttons</p></article>)}</div>
+            <div className="border border-border/70 bg-background/20 p-4"><p className="text-xs uppercase tracking-widest text-accent mb-2">Closed / History — Superseded Drafts</p><p>{closedDrafts.length} closed dossier draft records.</p>{closedDrafts.slice(0, 8).map((draft) => <article key={draft.id} className="mt-3 border-t border-border/60 pt-3"><p className="text-foreground font-semibold">{draft.fields.name}</p><p>Status: {draft.status}</p>{draft.status === "superseded" && <p>mergedIntoDraftId: {draft.mergedIntoDraftId ?? "—"}</p>}{draft.status === "superseded" && <p>Superseded by master draft: {draft.mergedIntoDraftId ? <Link className="text-accent hover:underline" href={`/admin/dossiers/drafts/${draft.mergedIntoDraftId}`}>{draftName(draft.mergedIntoDraftId, drafts)}</Link> : "—"}</p>}<p className="text-xs uppercase tracking-widest text-muted">Reference-only; no normal active edit button</p></article>)}</div>
             <div className="border border-border/70 bg-background/20 p-4"><p className="text-xs uppercase tracking-widest text-accent mb-2">Resolved duplicate groups</p><p>{resolvedDuplicateGroups.length} group(s) no longer have at least two active, non-merged candidates.</p></div>
           </div>
         </details>

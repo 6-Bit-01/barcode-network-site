@@ -771,6 +771,9 @@ export default function DossierControlCenterPage() {
                         ? "draft just created"
                         : "No proposed dossier";
                     const identityLinks = candidate.identityLinks ?? [];
+                    const confirmedIdentityLinks = identityLinks.filter(
+                      (identityLink) => identityLink.status === "confirmed",
+                    );
                     const proposedIdentityLinks = identityLinks.filter(
                       (identityLink) => identityLink.status === "proposed",
                     );
@@ -809,9 +812,12 @@ export default function DossierControlCenterPage() {
                           Unapplied notes: {metrics?.unappliedSourceNotesCount ?? 0}
                         </td>
                         <td className="py-3 pr-3">
-                          Aliases: {identityLinks.length}
+                          Aliases: {confirmedIdentityLinks.length} confirmed
                           {proposedIdentityLinks.length > 0 && (
-                            <p className="text-xs text-accent">Identity warnings</p>
+                            <p className="text-xs text-accent">
+                              Pending aliases: {proposedIdentityLinks.length} —
+                              Identity warnings
+                            </p>
                           )}
                         </td>
                         <td className="py-3 pr-3">

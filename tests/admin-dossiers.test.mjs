@@ -1803,6 +1803,98 @@ test("identity link review statuses control alias matching", async () => {
   assert.equal(rejectedMatch.exactCandidateId, undefined);
 });
 
+test("identity alias review UX is grouped, status-aware, and public-safe", () => {
+  const dashboard = source("src/app/admin/dossiers/page.tsx");
+  const sourceFilePage = source(
+    "src/app/admin/dossiers/candidates/[candidateId]/page.tsx",
+  );
+  const recommendationPage = source(
+    "src/app/admin/dossiers/recommendations/[recommendationId]/page.tsx",
+  );
+
+  for (const label of ["Proposed", "Confirmed", "Rejected", "Retired"]) {
+    assert.match(sourceFilePage, new RegExp(label));
+  }
+  for (const group of [
+    "Pending Review",
+    "Confirmed Aliases",
+    "Closed / Inactive",
+  ]) {
+    assert.match(sourceFilePage, new RegExp(group));
+  }
+  assert.match(
+    sourceFilePage,
+    /This alias is waiting for review\. It will not affect matching until confirmed\./,
+  );
+  assert.match(
+    sourceFilePage,
+    /This alias is confirmed and can route future recommendations to this BNL Source File when matching is enabled\./,
+  );
+  assert.match(
+    sourceFilePage,
+    /This alias was rejected and will not be used for matching\./,
+  );
+  assert.match(
+    sourceFilePage,
+    /This alias is retired and no longer used for matching\./,
+  );
+  assert.match(sourceFilePage, /Active for matching/);
+  assert.match(sourceFilePage, /Not used for matching/);
+  assert.match(sourceFilePage, /Internal only/);
+  assert.match(sourceFilePage, /Public-safe label/);
+  assert.match(sourceFilePage, /Not public dossier text/);
+  assert.match(
+    sourceFilePage,
+    /Adding an alias does not make it public and does not affect\s+matching until confirmed/,
+  );
+  assert.match(sourceFilePage, /Use for future matching after confirmation/);
+  assert.match(sourceFilePage, /identityLink\.status === "proposed"/);
+  assert.match(sourceFilePage, /identityLink\.status === "confirmed"/);
+  assert.match(sourceFilePage, /identityLink\.status === "rejected" \|\| identityLink\.status === "retired"/);
+  assert.match(sourceFilePage, /\{isProposed && \(/);
+  assert.match(sourceFilePage, /Confirm/);
+  assert.match(sourceFilePage, /Reject/);
+  assert.match(sourceFilePage, /\{isConfirmed && \(/);
+  assert.match(sourceFilePage, /Retire/);
+  assert.match(sourceFilePage, /disabled:pointer-events-none/);
+  assert.match(
+    sourceFilePage,
+    /Identity link confirmed\. Future recommendations can now match this alias if matching is enabled\./,
+  );
+  assert.match(
+    sourceFilePage,
+    /Identity link rejected\. It will not be used for matching\./,
+  );
+  assert.match(
+    sourceFilePage,
+    /Identity link retired\. It is no longer active\./,
+  );
+
+  assert.match(dashboard, /Aliases: \{confirmedIdentityLinks\.length\} confirmed/);
+  assert.match(dashboard, /Pending aliases: \{proposedIdentityLinks\.length\}/);
+  assert.match(dashboard, /identityLink\.status === "confirmed"/);
+  assert.match(dashboard, /identityLink\.status === "proposed"/);
+
+  assert.match(recommendationPage, /Matched by confirmed alias/);
+  assert.match(recommendationPage, /Target source file/);
+  assert.match(
+    recommendationPage,
+    /This alias is used for internal routing only unless public\s+use is later approved\./,
+  );
+  assert.match(recommendationPage, /Possible identity review needed/);
+  assert.doesNotMatch(
+    recommendationPage,
+    /Possible alias conflict[\s\S]*exact confirmed match/,
+  );
+
+  assert.doesNotMatch(
+    source("src/app/api/bnl/read-model/route.ts") +
+      source("src/app/database/page.tsx") +
+      source("src/app/database/[slug]/page.tsx"),
+    /identityLinks|publishDraft|automatic merge/i,
+  );
+});
+
 test("confirmed alias match allows attach and blocks duplicate conversion", async () => {
   await resetWorkflowStore();
   const created = await (
@@ -2614,8 +2706,8 @@ test("recommendation inbox and source note UI are present and bounded", () => {
   assert.match(recommendationPage, /This recommendation already points to an existing/);
   assert.match(recommendationPage, /Attach to Matched BNL Source File/);
   assert.match(recommendationPage, /Matched by confirmed alias/);
-  assert.match(recommendationPage, /This alias is used for internal matching only/);
-  assert.match(recommendationPage, /Possible alias conflict/);
+  assert.match(recommendationPage, /This alias is used for internal routing only/);
+  assert.match(recommendationPage, /Possible identity review needed/);
   assert.match(recommendationPage, /Owner\/lead identity review is required/);
   assert.doesNotMatch(recommendationPage, /Choose existing BNL Source File/);
   assert.match(recommendationPage, /Terminal recommendation actions are closed/);

@@ -2024,6 +2024,163 @@ test("arbitrary recommendation attach is blocked by same-subject guardrails", as
   assert.ok(["new", "reviewing"].includes(signalWitch.status));
 });
 
+
+test("pre-targeted recommendation attaches to target source file despite alias subject", async () => {
+  await resetWorkflowStore();
+  const targetPayload = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Deadite Ash" },
+    })
+  ).json();
+  const recPayload = await (
+    await authedPost({
+      action: "createDossierRecommendation",
+      input: {
+        type: "modify_existing_dossier",
+        subjectName: "ShadowsPit",
+        targetCandidateId: targetPayload.candidate.id,
+        reason: "Alias evidence intentionally targets Deadite Ash.",
+        evidenceSummary: "Legacy/public name points to the canonical source file.",
+        sourceLanes: ["admin_manual"],
+      },
+    })
+  ).json();
+
+  const response = await authedPost({
+    action: "attachRecommendationToCandidate",
+    recommendationId: recPayload.recommendation.id,
+    candidateId: targetPayload.candidate.id,
+    createSourceNote: true,
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.recommendation.status, "attached_to_source_file");
+  assert.equal(payload.recommendation.targetCandidateId, targetPayload.candidate.id);
+  const target = payload.candidates.find(
+    (candidate) => candidate.id === targetPayload.candidate.id,
+  );
+  assert.equal(target.sourceFileNotes.length, 1);
+  assert.match(target.sourceFileNotes[0].text, /Alias evidence intentionally/);
+});
+
+test("pre-targeted recommendation cannot attach to a different source file", async () => {
+  await resetWorkflowStore();
+  const targetPayload = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Deadite Ash" },
+    })
+  ).json();
+  const otherPayload = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Mac Modem" },
+    })
+  ).json();
+  const recPayload = await (
+    await authedPost({
+      action: "createDossierRecommendation",
+      input: {
+        type: "modify_existing_dossier",
+        subjectName: "ShadowsPit",
+        targetCandidateId: targetPayload.candidate.id,
+        reason: "Targeted alias should not attach elsewhere.",
+        sourceLanes: ["admin_manual"],
+      },
+    })
+  ).json();
+
+  const response = await authedPost({
+    action: "attachRecommendationToCandidate",
+    recommendationId: recPayload.recommendation.id,
+    candidateId: otherPayload.candidate.id,
+    createSourceNote: true,
+  });
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).code, "recommendation_subject_mismatch");
+
+  const finalPayload = await (await authedGet()).json();
+  const other = finalPayload.candidates.find(
+    (candidate) => candidate.id === otherPayload.candidate.id,
+  );
+  const recommendation = finalPayload.recommendations.find(
+    (item) => item.id === recPayload.recommendation.id,
+  );
+  assert.equal(other.sourceFileNotes.length, 0);
+  assert.equal(recommendation.status, "new");
+});
+
+test("pre-targeted recommendation cannot convert to duplicate source file", async () => {
+  await resetWorkflowStore();
+  const targetPayload = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Deadite Ash" },
+    })
+  ).json();
+  const recPayload = await (
+    await authedPost({
+      action: "createDossierRecommendation",
+      input: {
+        type: "modify_existing_dossier",
+        subjectName: "ShadowsPit",
+        targetCandidateId: targetPayload.candidate.id,
+        reason: "Targeted alias should update existing source file.",
+        sourceLanes: ["admin_manual"],
+      },
+    })
+  ).json();
+
+  const response = await authedPost({
+    action: "convertRecommendationToCandidate",
+    recommendationId: recPayload.recommendation.id,
+  });
+  assert.equal(response.status, 400);
+  const errorPayload = await response.json();
+  assert.equal(errorPayload.code, "recommendation_existing_source_file_match");
+  assert.equal(errorPayload.exactCandidateId, targetPayload.candidate.id);
+  assert.equal(errorPayload.exactMatchKind, "pre_targeted");
+
+  const finalPayload = await (await authedGet()).json();
+  assert.equal(finalPayload.candidates.length, 1);
+});
+
+test("pre-targeted recommendation target must be active", async () => {
+  await resetWorkflowStore();
+  const targetPayload = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Closed Target" },
+    })
+  ).json();
+  await authedPost({
+    action: "denyCandidate",
+    candidateId: targetPayload.candidate.id,
+  });
+  const recPayload = await (
+    await authedPost({
+      action: "createDossierRecommendation",
+      input: {
+        type: "modify_existing_dossier",
+        subjectName: "Closed Alias",
+        targetCandidateId: targetPayload.candidate.id,
+        reason: "Closed targets cannot receive pre-targeted evidence.",
+        sourceLanes: ["admin_manual"],
+      },
+    })
+  ).json();
+
+  const response = await authedPost({
+    action: "attachRecommendationToCandidate",
+    recommendationId: recPayload.recommendation.id,
+    candidateId: targetPayload.candidate.id,
+    createSourceNote: true,
+  });
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).code, "candidate_not_attachable");
+});
+
 test("convert recommendation is blocked when exact source file match exists", async () => {
   await resetWorkflowStore();
   await authedPost({
@@ -2185,6 +2342,8 @@ test("recommendation inbox and source note UI are present and bounded", () => {
   assert.match(dashboard, /Convert to New BNL Source File/);
   assert.match(dashboard, /Match state/);
   assert.match(dashboard, /Matched existing BNL Source File/);
+  assert.match(dashboard, /Pre-targeted BNL Source File/);
+  assert.match(dashboard, /This recommendation already points to an existing/);
   assert.match(dashboard, /Possible duplicate \/ identity warning/);
   assert.match(dashboard, /No BNL Source File match/);
   assert.match(dashboard, /Attach to Matched Source File/);
@@ -2224,6 +2383,8 @@ test("recommendation inbox and source note UI are present and bounded", () => {
   );
   assert.match(recommendationPage, /!isTerminal &&/);
   assert.match(recommendationPage, /Matched BNL Source File/);
+  assert.match(recommendationPage, /Pre-targeted BNL Source File/);
+  assert.match(recommendationPage, /This recommendation already points to an existing/);
   assert.match(recommendationPage, /Attach to Matched BNL Source File/);
   assert.match(recommendationPage, /Owner\/lead identity review is required/);
   assert.doesNotMatch(recommendationPage, /Choose existing BNL Source File/);

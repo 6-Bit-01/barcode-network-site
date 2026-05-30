@@ -352,9 +352,21 @@ export default function DossierRecommendationPage() {
             </p>
             {exactCandidate ? (
               <div className="border border-accent/60 bg-accent/10 p-4 text-accent space-y-2">
-                <p className="font-bold">
-                  Exact same-subject match: {exactCandidate.name}
-                </p>
+                {subjectMatch.exactMatchKind === "pre_targeted" ? (
+                  <>
+                    <p className="font-bold">
+                      Pre-targeted BNL Source File: {exactCandidate.name}
+                    </p>
+                    <p>
+                      This recommendation already points to an existing source
+                      file.
+                    </p>
+                  </>
+                ) : (
+                  <p className="font-bold">
+                    Exact same-subject match: {exactCandidate.name}
+                  </p>
+                )}
                 <p>{subjectMatch.reason}</p>
                 <button
                   type="button"

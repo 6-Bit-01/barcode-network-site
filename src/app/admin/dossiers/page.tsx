@@ -468,6 +468,13 @@ export default function DossierControlCenterPage() {
 
   function recommendationMatchState(recommendation: DossierRecommendation) {
     const match = matchDossierRecommendationSubject({ recommendation, candidates });
+    if (match.exactMatchKind === "pre_targeted") {
+      return {
+        match,
+        state: "Pre-targeted BNL Source File",
+        nextAction: "Attach to Matched Source File",
+      };
+    }
     if (match.exactCandidateId) {
       return {
         match,
@@ -783,7 +790,16 @@ export default function DossierControlCenterPage() {
                       <p>Match state: {matchState.state}</p>
                       <p>Recommended next action: {matchState.nextAction}</p>
                       {exactCandidate && (
-                        <p>Matched subject packet: {exactCandidate.name}</p>
+                        <>
+                          <p>Matched subject packet: {exactCandidate.name}</p>
+                          {matchState.match.exactMatchKind ===
+                            "pre_targeted" && (
+                            <p>
+                              This recommendation already points to an existing
+                              source file.
+                            </p>
+                          )}
+                        </>
                       )}
                       {possibleCandidates.length > 0 && (
                         <p>

@@ -304,6 +304,7 @@ export type DossierRecommendation = {
 
 export type DossierSubjectMatchResult = {
   exactCandidateId?: string;
+  exactMatchKind?: "pre_targeted" | "subject";
   possibleCandidateIds: string[];
   reason: string;
 };
@@ -329,16 +330,23 @@ function isActiveSubjectCandidate(candidate: DossierCandidate): boolean {
   return candidate.status !== "denied" && candidate.status !== "merged";
 }
 
-function hasPossibleSubjectOverlap(subjectName: string, candidateName: string): boolean {
+function hasPossibleSubjectOverlap(
+  subjectName: string,
+  candidateName: string,
+): boolean {
   const normalizedSubject = normalizeDossierSubjectName(subjectName);
   const normalizedCandidate = normalizeDossierSubjectName(candidateName);
   const compactSubject = compactDossierSubjectName(subjectName);
   const compactCandidate = compactDossierSubjectName(candidateName);
 
   if (!normalizedSubject || !normalizedCandidate) return false;
-  if (normalizedSubject === normalizedCandidate || compactSubject === compactCandidate)
+  if (
+    normalizedSubject === normalizedCandidate ||
+    compactSubject === compactCandidate
+  )
     return false;
-  if (normalizedSubject.length < 4 || normalizedCandidate.length < 4) return false;
+  if (normalizedSubject.length < 4 || normalizedCandidate.length < 4)
+    return false;
 
   return (
     normalizedSubject.includes(normalizedCandidate) ||
@@ -349,7 +357,10 @@ function hasPossibleSubjectOverlap(subjectName: string, candidateName: string): 
 }
 
 export function matchDossierRecommendationSubject(input: {
-  recommendation: Pick<DossierRecommendation, "subjectName" | "subjectKey">;
+  recommendation: Pick<
+    DossierRecommendation,
+    "subjectName" | "subjectKey" | "targetCandidateId"
+  >;
   candidates: DossierCandidate[];
 }): DossierSubjectMatchResult {
   const activeCandidates = input.candidates.filter(isActiveSubjectCandidate);
@@ -362,6 +373,21 @@ export function matchDossierRecommendationSubject(input: {
   const compactSubjectKey = input.recommendation.subjectKey
     ? compactDossierSubjectName(input.recommendation.subjectKey)
     : "";
+  const preTargetedCandidate = input.recommendation.targetCandidateId
+    ? activeCandidates.find(
+        (candidate) => candidate.id === input.recommendation.targetCandidateId,
+      )
+    : undefined;
+
+  if (preTargetedCandidate) {
+    return {
+      exactCandidateId: preTargetedCandidate.id,
+      exactMatchKind: "pre_targeted",
+      possibleCandidateIds: [],
+      reason:
+        "Explicit pre-targeted source-file match from recommendation targetCandidateId.",
+    };
+  }
 
   const exactCandidate = activeCandidates.find((candidate) => {
     const normalizedCandidate = normalizeDossierSubjectName(candidate.name);
@@ -378,21 +404,26 @@ export function matchDossierRecommendationSubject(input: {
 
   const possibleCandidateIds = activeCandidates
     .filter((candidate) => candidate.id !== exactCandidate?.id)
-    .filter((candidate) => hasPossibleSubjectOverlap(subjectName, candidate.name))
+    .filter((candidate) =>
+      hasPossibleSubjectOverlap(subjectName, candidate.name),
+    )
     .map((candidate) => candidate.id);
 
   if (exactCandidate) {
     return {
       exactCandidateId: exactCandidate.id,
+      exactMatchKind: "subject",
       possibleCandidateIds,
-      reason: "Exact same-subject match by normalized name, compact name, or explicit subject key.",
+      reason:
+        "Exact same-subject match by normalized name, compact name, or explicit subject key.",
     };
   }
 
   if (possibleCandidateIds.length > 0) {
     return {
       possibleCandidateIds,
-      reason: "Possible duplicate / identity warning from weak partial subject similarity; owner/lead identity resolution is required before attach.",
+      reason:
+        "Possible duplicate / identity warning from weak partial subject similarity; owner/lead identity resolution is required before attach.",
     };
   }
 

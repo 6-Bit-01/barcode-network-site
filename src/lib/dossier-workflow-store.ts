@@ -719,13 +719,16 @@ export async function attachRecommendationToCandidate(input: {
       recommendation,
       candidates: currentState.candidates,
     });
-    if (match.exactCandidateId !== candidate.id) {
+    const preTargetedCandidateMatch =
+      recommendation.targetCandidateId === candidate.id;
+    if (match.exactCandidateId !== candidate.id && !preTargetedCandidateMatch) {
       throw new DossierWorkflowInputError(
         "Recommendation subject does not match the selected BNL Source File",
         400,
         "recommendation_subject_mismatch",
         {
           exactCandidateId: match.exactCandidateId,
+          exactMatchKind: match.exactMatchKind,
           possibleCandidateIds: match.possibleCandidateIds,
           reason: match.reason,
         },
@@ -818,6 +821,7 @@ export async function convertRecommendationToCandidate(
         "recommendation_existing_source_file_match",
         {
           exactCandidateId: match.exactCandidateId,
+          exactMatchKind: match.exactMatchKind,
           possibleCandidateIds: match.possibleCandidateIds,
           reason: match.reason,
         },

@@ -566,7 +566,112 @@ function normalizeRecommendationInput(
     recommendedEcosystemLane: input.recommendedEcosystemLane,
     recommendedIdentityAuthority: input.recommendedIdentityAuthority,
     createdBy: boundedText(input.createdBy, 200) || undefined,
+    ingestKey: boundedText(input.ingestKey, 300) || undefined,
+    ingestedAt: boundedText(input.ingestedAt, 80) || undefined,
+    ingestSource:
+      input.ingestSource === "bnl" ||
+      input.ingestSource === "system" ||
+      input.ingestSource === "unknown"
+        ? input.ingestSource
+        : undefined,
   };
+}
+
+function isActiveRecommendation(recommendation: DossierRecommendation): boolean {
+  return !TERMINAL_RECOMMENDATION_STATUSES.has(recommendation.status);
+}
+
+function recommendationDedupeSubject(value: string): string {
+  return normalizeName(value);
+}
+
+function recommendationDedupeText(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function fallbackRecommendationDedupeKey(
+  recommendation: Pick<
+    DossierRecommendation,
+    "subjectName" | "type" | "sourceLanes" | "reason"
+  >,
+): string {
+  return [
+    recommendationDedupeSubject(recommendation.subjectName),
+    recommendation.type,
+    [...recommendation.sourceLanes].sort().join("+"),
+    recommendationDedupeText(recommendation.reason),
+  ].join("|");
+}
+
+export async function createDossierRecommendationIdempotent(
+  input: CreateDossierRecommendationInput,
+): Promise<{ recommendation: DossierRecommendation; duplicate: boolean }> {
+  const normalized = normalizeRecommendationInput(input);
+  if (!normalized) {
+    throw new DossierWorkflowInputError(
+      "Recommendation requires subjectName and reason",
+    );
+  }
+  const now = new Date().toISOString();
+  const recommendation: DossierRecommendation = {
+    id: createRecommendationId(),
+    ...normalized,
+    status: "new",
+    createdAt: now,
+    updatedAt: now,
+  };
+  let savedRecommendation: DossierRecommendation = recommendation;
+  let duplicate = false;
+
+  await updateDossierWorkflowState((currentState) => {
+    if (recommendation.targetCandidateId) {
+      const candidate = currentState.candidates.find(
+        (item) => item.id === recommendation.targetCandidateId,
+      );
+      if (!candidate) {
+        throw new DossierWorkflowInputError(
+          "Target candidate not found",
+          404,
+          "target_candidate_not_found",
+        );
+      }
+      if (candidate.status === "denied" || candidate.status === "merged") {
+        throw new DossierWorkflowInputError(
+          "Target candidate is not an active BNL Source File",
+          400,
+          "target_candidate_not_active",
+        );
+      }
+    }
+
+    const existing = recommendation.ingestKey
+      ? currentState.recommendations.find(
+          (item) =>
+            isActiveRecommendation(item) &&
+            item.ingestKey === recommendation.ingestKey,
+        )
+      : currentState.recommendations.find(
+          (item) =>
+            isActiveRecommendation(item) &&
+            fallbackRecommendationDedupeKey(item) ===
+              fallbackRecommendationDedupeKey(recommendation),
+        );
+
+    if (existing) {
+      savedRecommendation = existing;
+      duplicate = true;
+      return currentState;
+    }
+
+    savedRecommendation = recommendation;
+    return {
+      ...currentState,
+      recommendations: [recommendation, ...currentState.recommendations],
+      updatedAt: now,
+    };
+  });
+
+  return { recommendation: savedRecommendation, duplicate };
 }
 
 function recommendationSourceNoteText(

@@ -54,6 +54,20 @@ function list(items: string[] | undefined, empty = "—") {
   );
 }
 
+function formatDate(value?: string) {
+  if (!value) return "—";
+  return new Date(value).toLocaleString();
+}
+
+function recommendationProvenance(recommendation: DossierRecommendation) {
+  if (recommendation.ingestSource === "bnl" || recommendation.createdBy === "bnl") {
+    return "BNL-ingested";
+  }
+  return recommendation.createdBy
+    ? `Seeded by ${recommendation.createdBy}`
+    : "Manually seeded";
+}
+
 function Field({
   title,
   children,
@@ -274,7 +288,9 @@ export default function DossierRecommendationPage() {
             evidence records. They do not publish, create drafts, write content
             files, or create tags automatically. Attach is only allowed for
             confirmed same-subject matches; merge is owner/lead identity
-            resolution.
+            resolution. BNL-ingested recommendations are review items. They do
+            not create source files, drafts, tags, or public pages until
+            approved through the workflow.
           </p>
           {notice && (
             <div className="mt-4 border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
@@ -430,6 +446,13 @@ export default function DossierRecommendationPage() {
             <p>
               {recommendation.type} / {recommendation.status}
             </p>
+          </Field>
+          <Field title="Ingest source">
+            <p>{recommendationProvenance(recommendation)}</p>
+            <p>Created by: {recommendation.createdBy ?? "—"}</p>
+            <p>Ingest source: {recommendation.ingestSource ?? "—"}</p>
+            <p>Ingested at: {formatDate(recommendation.ingestedAt)}</p>
+            <p>Ingest key: {recommendation.ingestKey ?? "—"}</p>
           </Field>
           <Field title="Reason">
             <p>{recommendation.reason}</p>

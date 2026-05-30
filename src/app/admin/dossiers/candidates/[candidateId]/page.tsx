@@ -182,9 +182,11 @@ function IdentityLinkCard({
   identityLink,
   saving,
   onReview,
+  recommendation,
 }: {
   identityLink: DossierIdentityLink;
   saving: boolean;
+  recommendation?: DossierRecommendation;
   onReview: (
     identityLinkId: string,
     action:
@@ -236,6 +238,20 @@ function IdentityLinkCard({
         Source: {identityLink.source}
       </p>
       <p>Confidence: {identityLink.confidence ?? "—"}</p>
+      {identityLink.createdFromRecommendationId && (
+        <div className="border border-border/70 bg-background/30 p-3 space-y-1">
+          <p className="font-semibold text-foreground">Created from recommendation</p>
+          <p>Recommendation subject: {identityLink.createdFromRecommendationSubject ?? recommendation?.subjectName ?? "—"}</p>
+          <p>Source lanes: {recommendation?.sourceLanes.join(", ") ?? "—"}</p>
+          <p>Ingest source: {recommendation?.ingestSource ?? recommendation?.createdBy ?? "—"}</p>
+          <Link
+            href={`/admin/dossiers/recommendations/${identityLink.createdFromRecommendationId}`}
+            className="inline-flex text-accent hover:underline"
+          >
+            Open recommendation
+          </Link>
+        </div>
+      )}
       <p className="whitespace-pre-wrap">Note: {identityLink.note ?? "—"}</p>
       <p>
         Created: {formatDate(identityLink.createdAt)} by{" "}
@@ -418,6 +434,12 @@ export default function CandidateReviewPage() {
   const closedIdentityLinks = identityLinks.filter(
     (identityLink) =>
       identityLink.status === "rejected" || identityLink.status === "retired",
+  );
+  const recommendationById = new Map(
+    (payload?.recommendations ?? []).map((recommendation) => [
+      recommendation.id,
+      recommendation,
+    ]),
   );
   const nextRecommendedAction = sourceMetrics?.unappliedSourceNotesCount
     ? "Review source updates in proposed dossier"
@@ -883,6 +905,11 @@ export default function CandidateReviewPage() {
                             key={identityLink.id}
                             identityLink={identityLink}
                             saving={saving}
+                            recommendation={
+                              identityLink.createdFromRecommendationId
+                                ? recommendationById.get(identityLink.createdFromRecommendationId)
+                                : undefined
+                            }
                             onReview={(identityLinkId, action, useForMatching) =>
                               void reviewIdentityLink(
                                 identityLinkId,

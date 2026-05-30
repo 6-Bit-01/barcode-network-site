@@ -1803,6 +1803,156 @@ test("identity link review statuses control alias matching", async () => {
   assert.equal(rejectedMatch.exactCandidateId, undefined);
 });
 
+
+test("identity link recommendations create proposed aliases safely", async () => {
+  await resetWorkflowStore();
+  const publicEntriesBefore = JSON.stringify(databasePage.entries);
+
+  const candidatePayload = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Deadite Ash" },
+    })
+  ).json();
+  const candidateId = candidatePayload.candidate.id;
+  const recommendationPayload = await (
+    await authedPost({
+      action: "createDossierRecommendation",
+      input: {
+        type: "identity_link",
+        subjectName: "ShadowsPit",
+        targetCandidateId: candidateId,
+        reason: "BNL recommends reviewing this as an identity label.",
+        evidenceSummary: "Observed in admin-safe source lanes.",
+        sourceLanes: ["rd_context", "broadcast_memory"],
+        ingestSource: "bnl",
+        createdBy: "bnl",
+      },
+    })
+  ).json();
+
+  const response = await authedPost({
+    action: "createIdentityLinkFromRecommendation",
+    recommendationId: recommendationPayload.recommendation.id,
+    candidateId,
+    input: {
+      label: "ShadowsPit",
+      note: "Review before matching.",
+    },
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.identityLink.label, "ShadowsPit");
+  assert.equal(payload.identityLink.type, "alias");
+  assert.equal(payload.identityLink.visibility, "internal_only");
+  assert.equal(payload.identityLink.source, "bnl_recommendation");
+  assert.equal(payload.identityLink.status, "proposed");
+  assert.equal(payload.identityLink.useForMatchingAfterConfirmation, true);
+  assert.equal(payload.identityLink.useForMatching, false);
+  assert.equal(payload.identityLink.useInPublicDossier, false);
+  assert.equal(
+    payload.identityLink.createdFromRecommendationId,
+    recommendationPayload.recommendation.id,
+  );
+  assert.equal(payload.identityLink.createdFromRecommendationSubject, "ShadowsPit");
+  assert.equal(payload.recommendation.status, "identity_link_created");
+  assert.equal(payload.recommendation.targetCandidateId, candidateId);
+  assert.equal(payload.drafts.length, 0);
+  assert.equal(payload.candidates.length, 1);
+  assert.equal(JSON.stringify(databasePage.entries), publicEntriesBefore);
+  assert.doesNotMatch(
+    JSON.stringify(await (await readModel.GET()).json()),
+    /ShadowsPit|identityLinks|identity_link_created/,
+  );
+
+  const proposedMatch = workflow.matchDossierRecommendationSubject({
+    recommendation: { subjectName: "ShadowsPit" },
+    candidates: payload.candidates,
+  });
+  assert.equal(proposedMatch.exactCandidateId, undefined);
+
+  const staleResponse = await authedPost({
+    action: "createIdentityLinkFromRecommendation",
+    recommendationId: recommendationPayload.recommendation.id,
+    candidateId,
+    input: { label: "Shadow Pit Duplicate" },
+  });
+  assert.equal(staleResponse.status, 400);
+  assert.equal((await staleResponse.json()).code, "recommendation_already_terminal");
+});
+
+test("identity link recommendation duplicate, invalid, and target mismatch cases fail safely", async () => {
+  await resetWorkflowStore();
+  const first = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Deadite Ash" },
+    })
+  ).json();
+  const second = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Other Source File" },
+    })
+  ).json();
+  const candidateId = first.candidate.id;
+
+  await authedPost({
+    action: "addDossierIdentityLink",
+    candidateId,
+    input: { label: "ShadowsPit" },
+  });
+  const duplicateRec = await (
+    await authedPost({
+      action: "createDossierRecommendation",
+      input: {
+        type: "identity_link",
+        subjectName: "ShadowsPit",
+        reason: "Duplicate label should fail.",
+        sourceLanes: ["admin_manual"],
+      },
+    })
+  ).json();
+  const duplicateResponse = await authedPost({
+    action: "createIdentityLinkFromRecommendation",
+    recommendationId: duplicateRec.recommendation.id,
+    candidateId,
+    input: { label: "shadowspit" },
+  });
+  assert.equal(duplicateResponse.status, 400);
+  assert.equal((await duplicateResponse.json()).code, "duplicate_identity_link");
+
+  const invalidResponse = await authedPost({
+    action: "createIdentityLinkFromRecommendation",
+    recommendationId: duplicateRec.recommendation.id,
+    candidateId: "missing-candidate",
+    input: { label: "Missing Candidate Alias" },
+  });
+  assert.equal(invalidResponse.status, 404);
+  assert.equal((await invalidResponse.json()).code, "candidate_not_found");
+
+  const targeted = await (
+    await authedPost({
+      action: "createDossierRecommendation",
+      input: {
+        type: "identity_link",
+        subjectName: "Wrong Target Label",
+        targetCandidateId: candidateId,
+        reason: "Target mismatch should fail.",
+        sourceLanes: ["admin_manual"],
+      },
+    })
+  ).json();
+  const mismatch = await authedPost({
+    action: "createIdentityLinkFromRecommendation",
+    recommendationId: targeted.recommendation.id,
+    candidateId: second.candidate.id,
+    input: { label: "Wrong Target Label" },
+  });
+  assert.equal(mismatch.status, 400);
+  assert.equal((await mismatch.json()).code, "recommendation_target_mismatch");
+});
+
 test("identity alias review UX is grouped, status-aware, and public-safe", () => {
   const dashboard = source("src/app/admin/dossiers/page.tsx");
   const sourceFilePage = source(
@@ -1856,6 +2006,9 @@ test("identity alias review UX is grouped, status-aware, and public-safe", () =>
   assert.match(sourceFilePage, /Reject/);
   assert.match(sourceFilePage, /\{isConfirmed && \(/);
   assert.match(sourceFilePage, /Retire/);
+  assert.match(sourceFilePage, /Created from recommendation/);
+  assert.match(sourceFilePage, /Recommendation subject:/);
+  assert.match(sourceFilePage, /Open recommendation/);
   assert.match(sourceFilePage, /disabled:pointer-events-none/);
   assert.match(
     sourceFilePage,
@@ -1874,8 +2027,14 @@ test("identity alias review UX is grouped, status-aware, and public-safe", () =>
   assert.match(dashboard, /Pending aliases: \{proposedIdentityLinks\.length\}/);
   assert.match(dashboard, /identityLink\.status === "confirmed"/);
   assert.match(dashboard, /identityLink\.status === "proposed"/);
+  assert.match(dashboard, /identity_link_created/);
 
   assert.match(recommendationPage, /Matched by confirmed alias/);
+  assert.match(recommendationPage, /Create Identity Link/);
+  assert.match(recommendationPage, /Create Proposed Identity Link/);
+  assert.match(recommendationPage, /Use for future matching after confirmation/);
+  assert.match(recommendationPage, /Use in public dossier later/);
+  assert.match(recommendationPage, /Proposed identity link created\. Confirm it from the BNL Source File when ready\./);
   assert.match(recommendationPage, /Target source file/);
   assert.match(
     recommendationPage,
@@ -2706,6 +2865,11 @@ test("recommendation inbox and source note UI are present and bounded", () => {
   assert.match(recommendationPage, /This recommendation already points to an existing/);
   assert.match(recommendationPage, /Attach to Matched BNL Source File/);
   assert.match(recommendationPage, /Matched by confirmed alias/);
+  assert.match(recommendationPage, /Create Identity Link/);
+  assert.match(recommendationPage, /Create Proposed Identity Link/);
+  assert.match(recommendationPage, /Use for future matching after confirmation/);
+  assert.match(recommendationPage, /Use in public dossier later/);
+  assert.match(recommendationPage, /Proposed identity link created\. Confirm it from the BNL Source File when ready\./);
   assert.match(recommendationPage, /This alias is used for internal routing only/);
   assert.match(recommendationPage, /Possible identity review needed/);
   assert.match(recommendationPage, /Owner\/lead identity review is required/);

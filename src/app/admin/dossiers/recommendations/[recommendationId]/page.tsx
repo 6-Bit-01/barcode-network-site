@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   matchDossierRecommendationSubject,
   normalizeDossierSubjectName,
   type DossierCandidate,
   type DossierDraft,
+  type DossierIdentityLinkSource,
+  type DossierIdentityLinkType,
+  type DossierIdentityLinkVisibility,
   type DossierRecommendation,
 } from "@/lib/dossier-workflow";
 
@@ -17,6 +20,57 @@ type WorkflowPayload = {
   recommendations: DossierRecommendation[];
   workflow: { status: string };
 };
+
+type IdentityLinkRecommendationForm = {
+  candidateId: string;
+  label: string;
+  type: DossierIdentityLinkType;
+  visibility: DossierIdentityLinkVisibility;
+  source: DossierIdentityLinkSource;
+  note: string;
+  useForMatchingAfterConfirmation: boolean;
+  useInPublicDossier: boolean;
+};
+
+const identityLinkTypes: DossierIdentityLinkType[] = [
+  "alias",
+  "artist_name",
+  "discord_handle",
+  "operator_name",
+  "public_persona",
+  "previous_name",
+  "alternate_spelling",
+  "related_label",
+  "unknown",
+];
+const identityLinkSources: DossierIdentityLinkSource[] = [
+  "bnl_recommendation",
+  "admin_manual",
+  "mod_manual",
+  "owner_confirmed",
+  "rd_context",
+  "broadcast_memory",
+  "website_dossier",
+  "unknown",
+];
+
+function identityLinkDefaults(
+  recommendation?: DossierRecommendation | null,
+  candidateId = "",
+): IdentityLinkRecommendationForm {
+  return {
+    candidateId,
+    label: recommendation?.subjectName ?? "",
+    type: "alias",
+    visibility: "internal_only",
+    source: "bnl_recommendation",
+    note: recommendation
+      ? `Created from recommendation ${recommendation.id}.`
+      : "",
+    useForMatchingAfterConfirmation: true,
+    useInPublicDossier: false,
+  };
+}
 
 function routeParam(value: string | string[] | undefined) {
   const raw = Array.isArray(value) ? value[0] : value;
@@ -88,6 +142,7 @@ const terminalRecommendationStatuses = new Set<DossierRecommendation["status"]>(
   [
     "attached_to_source_file",
     "converted_to_source_file",
+    "identity_link_created",
     "ignored",
     "dismissed",
   ],
@@ -99,6 +154,9 @@ function terminalRecommendationMessage(recommendation: DossierRecommendation) {
   }
   if (recommendation.status === "attached_to_source_file") {
     return "Attached to matched BNL Source File.";
+  }
+  if (recommendation.status === "identity_link_created") {
+    return "Proposed identity link created. Confirm it from the BNL Source File when ready.";
   }
   if (recommendation.status === "ignored") {
     return "Ignored. This recommendation is closed.";
@@ -117,8 +175,10 @@ export default function DossierRecommendationPage() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [identityLinkForm, setIdentityLinkForm] =
+    useState<IdentityLinkRecommendationForm>(() => identityLinkDefaults());
 
-  async function loadWorkflow() {
+  const loadWorkflow = useCallback(async function loadWorkflow() {
     const response = await fetch("/api/admin/dossiers", { cache: "no-store" });
     if (!response.ok)
       throw new Error(
@@ -126,8 +186,28 @@ export default function DossierRecommendationPage() {
           ? "Admin authentication required"
           : `Workflow API returned ${response.status}.`,
       );
-    setPayload((await response.json()) as WorkflowPayload);
-  }
+    const nextPayload = (await response.json()) as WorkflowPayload;
+    const nextRecommendation = nextPayload.recommendations.find(
+      (item) => item.id === recommendationId,
+    );
+    if (nextRecommendation) {
+      const nextMatch = matchDossierRecommendationSubject({
+        recommendation: nextRecommendation,
+        candidates: nextPayload.candidates,
+      });
+      const nextCandidateId =
+        nextRecommendation.targetCandidateId ??
+        nextMatch.exactCandidateId ??
+        nextMatch.possibleCandidateIds[0] ??
+        "";
+      setIdentityLinkForm((current) =>
+        current.label || current.candidateId
+          ? current
+          : identityLinkDefaults(nextRecommendation, nextCandidateId),
+      );
+    }
+    setPayload(nextPayload);
+  }, [recommendationId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -142,7 +222,7 @@ export default function DossierRecommendationPage() {
         .finally(() => setLoading(false));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [recommendationId]);
+  }, [loadWorkflow]);
 
   const recommendation = useMemo(
     () =>
@@ -197,7 +277,11 @@ export default function DossierRecommendationPage() {
       payload?.candidates.find((candidate) => candidate.id === candidateId),
     )
     .filter((candidate): candidate is DossierCandidate => Boolean(candidate));
-
+  const activeCandidates = (payload?.candidates ?? []).filter(
+    (candidate) => candidate.status !== "denied" && candidate.status !== "merged",
+  );
+  const preselectedCandidateId =
+    targetCandidate?.id ?? exactCandidate?.id ?? possibleCandidates[0]?.id ?? "";
   async function postWorkflow(body: Record<string, unknown>) {
     setSaving(true);
     setNotice(null);
@@ -266,6 +350,37 @@ export default function DossierRecommendationPage() {
     } catch (err) {
       setNotice(
         err instanceof Error ? err.message : "Failed to attach recommendation.",
+      );
+    }
+  }
+
+
+  async function createIdentityLink(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      await postWorkflow({
+        action: "createIdentityLinkFromRecommendation",
+        recommendationId,
+        candidateId: identityLinkForm.candidateId,
+        input: {
+          label: identityLinkForm.label,
+          type: identityLinkForm.type,
+          visibility: identityLinkForm.visibility,
+          source: identityLinkForm.source,
+          note: identityLinkForm.note,
+          useForMatchingAfterConfirmation:
+            identityLinkForm.useForMatchingAfterConfirmation,
+          useInPublicDossier: identityLinkForm.useInPublicDossier,
+        },
+      });
+      setNotice(
+        "Proposed identity link created. Confirm it from the BNL Source File when ready.",
+      );
+    } catch (err) {
+      setNotice(
+        err instanceof Error
+          ? err.message
+          : "Failed to create proposed identity link.",
       );
     }
   }
@@ -482,6 +597,170 @@ export default function DossierRecommendationPage() {
                 </button>
               </div>
             )}
+          </section>
+        )}
+
+        {!isTerminal && (
+          <section className="border border-border bg-surface p-5 space-y-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.45em] text-muted mb-2">
+                Create Identity Link
+              </p>
+              <h2 className="text-xl font-bold text-foreground">
+                Create proposed identity link
+              </h2>
+              <p className="text-sm text-muted mt-2">
+                Recommendation subject: {recommendation.subjectName}. This creates
+                a proposed alias on the selected BNL Source File only. It does not
+                confirm the alias, publish, merge source files, create a draft, or
+                create tags.
+              </p>
+              {preselectedCandidateId && (
+                <p className="mt-2 text-sm text-accent">
+                  Matched/pre-targeted BNL Source File: {targetCandidate?.name ?? exactCandidate?.name ?? possibleCandidates[0]?.name}
+                </p>
+              )}
+            </div>
+            <form
+              onSubmit={createIdentityLink}
+              className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs uppercase tracking-widest text-muted"
+            >
+              <label className="space-y-2 md:col-span-2">
+                <span>BNL Source File</span>
+                <select
+                  required
+                  value={identityLinkForm.candidateId}
+                  onChange={(event) =>
+                    setIdentityLinkForm({
+                      ...identityLinkForm,
+                      candidateId: event.target.value,
+                    })
+                  }
+                  className="w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
+                >
+                  <option value="">Select BNL Source File</option>
+                  {activeCandidates.map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-2 md:col-span-2">
+                <span>Alias label</span>
+                <input
+                  required
+                  maxLength={120}
+                  value={identityLinkForm.label}
+                  onChange={(event) =>
+                    setIdentityLinkForm({
+                      ...identityLinkForm,
+                      label: event.target.value,
+                    })
+                  }
+                  className="w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
+                />
+              </label>
+              <label className="space-y-2">
+                <span>Identity link type</span>
+                <select
+                  value={identityLinkForm.type}
+                  onChange={(event) =>
+                    setIdentityLinkForm({
+                      ...identityLinkForm,
+                      type: event.target.value as DossierIdentityLinkType,
+                    })
+                  }
+                  className="w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
+                >
+                  {identityLinkTypes.map((type) => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-2">
+                <span>Visibility</span>
+                <select
+                  value={identityLinkForm.visibility}
+                  onChange={(event) =>
+                    setIdentityLinkForm({
+                      ...identityLinkForm,
+                      visibility: event.target.value as DossierIdentityLinkVisibility,
+                    })
+                  }
+                  className="w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
+                >
+                  <option value="internal_only">internal_only</option>
+                  <option value="public_safe">public_safe</option>
+                </select>
+              </label>
+              <label className="space-y-2">
+                <span>Source</span>
+                <select
+                  value={identityLinkForm.source}
+                  onChange={(event) =>
+                    setIdentityLinkForm({
+                      ...identityLinkForm,
+                      source: event.target.value as DossierIdentityLinkSource,
+                    })
+                  }
+                  className="w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
+                >
+                  {identityLinkSources.map((source) => (
+                    <option key={source} value={source}>{source}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="md:col-span-4 space-y-2">
+                <span>Note</span>
+                <textarea
+                  maxLength={1000}
+                  value={identityLinkForm.note}
+                  onChange={(event) =>
+                    setIdentityLinkForm({
+                      ...identityLinkForm,
+                      note: event.target.value,
+                    })
+                  }
+                  className="w-full min-h-20 bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
+                />
+              </label>
+              <label className="md:col-span-2 flex items-center gap-2 normal-case tracking-normal text-sm">
+                <input
+                  type="checkbox"
+                  checked={identityLinkForm.useForMatchingAfterConfirmation}
+                  onChange={(event) =>
+                    setIdentityLinkForm({
+                      ...identityLinkForm,
+                      useForMatchingAfterConfirmation: event.target.checked,
+                    })
+                  }
+                />
+                Use for future matching after confirmation
+              </label>
+              <label className="md:col-span-2 flex items-center gap-2 normal-case tracking-normal text-sm">
+                <input
+                  type="checkbox"
+                  checked={identityLinkForm.useInPublicDossier}
+                  onChange={(event) =>
+                    setIdentityLinkForm({
+                      ...identityLinkForm,
+                      useInPublicDossier: event.target.checked,
+                    })
+                  }
+                />
+                Use in public dossier later
+              </label>
+              <div className="md:col-span-4">
+                <button
+                  type="submit"
+                  disabled={saving || !identityLinkForm.candidateId}
+                  className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:pointer-events-none disabled:opacity-50"
+                >
+                  Create Proposed Identity Link
+                </button>
+              </div>
+            </form>
           </section>
         )}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -1,21 +1,12 @@
-/* eslint-disable react/jsx-no-comment-textnodes */
 "use client";
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import {
-  DOSSIER_CANDIDATE_SCORING_POLICY,
-  DOSSIER_SOURCE_BOUNDARIES,
-  DOSSIER_WORKFLOW_ACTIONS,
-  type DossierCandidate,
-  type DossierDraft,
-  type DossierDuplicateGroup,
+import type {
+  DossierCandidate,
+  DossierDraft,
+  DossierDuplicateGroup,
 } from "@/lib/dossier-workflow";
-import {
-  DOSSIER_ECOSYSTEM_LANE_OPTIONS,
-  DOSSIER_IDENTITY_AUTHORITY_OPTIONS,
-  DOSSIER_KIND_OPTIONS,
-} from "@/lib/dossier-taxonomy";
 
 type WorkflowPayload = {
   candidates: DossierCandidate[];
@@ -26,45 +17,14 @@ type WorkflowPayload = {
     storage: string;
     updatedAt?: string;
     boundaries: string[];
-    scoringPolicy?: typeof DOSSIER_CANDIDATE_SCORING_POLICY;
-    ownerGate?: {
-      message: string;
-      requiresOwnerSecretFuture: boolean;
-      approvalPublishes: boolean;
-    };
   };
   ownerReviewQueue?: {
     waitingCount: number;
     draftCount: number;
     candidateCount: number;
   };
-  authoringGuide?: {
-    version: string;
-  };
-  tagRegistry?: {
-    totalUniqueTags: number;
-    totalTagAssignments: number;
-  };
-};
-
-type DraftForm = {
-  name: string;
-  category: string;
-  kind: DossierDraft["fields"]["kind"] | "";
-  ecosystemLane: DossierDraft["fields"]["ecosystemLane"] | "";
-  identityAuthority: DossierDraft["fields"]["identityAuthority"] | "";
-  status: string;
-  clearance: string;
-  role: string;
-  origin: string;
-  summary: string;
-  notes: string;
-  tags: string;
-  proposedTags: string;
-  primaryLinkLabel: string;
-  primaryLinkUrl: string;
-  primaryLinkType: string;
-  selectedBy: "operator" | "subject" | "legacy";
+  authoringGuide?: { version: string };
+  tagRegistry?: { totalUniqueTags: number; totalTagAssignments: number };
 };
 
 type ManualCandidateForm = {
@@ -73,68 +33,16 @@ type ManualCandidateForm = {
   reason: string;
   whyNow: string;
   evidenceSummary: string;
-  knownFacts: string;
-  missingInfo: string;
-  doNotSay: string;
-  publicSafetyNotes: string;
   recommendedCategory: string;
-  recommendedKind: string;
-  recommendedEcosystemLane: string;
-  recommendedIdentityAuthority: string;
-  recommendedStatus: string;
-  recommendedClearance: string;
-  recommendedOrigin: string;
-  recommendedTags: string;
-  proposedTags: string;
-  primaryLinkLabel: string;
-  primaryLinkUrl: string;
-  primaryLinkType: string;
-  selectedBy: "operator" | "subject";
 };
 
-const emptyDraftForm: DraftForm = {
-  name: "",
-  category: "",
-  kind: "",
-  ecosystemLane: "",
-  identityAuthority: "",
-  status: "",
-  clearance: "",
-  role: "",
-  origin: "",
-  summary: "",
-  notes: "",
-  tags: "",
-  proposedTags: "",
-  primaryLinkLabel: "",
-  primaryLinkUrl: "",
-  primaryLinkType: "website",
-  selectedBy: "operator",
-};
-
-const emptyManualCandidateForm: ManualCandidateForm = {
+const emptyForm: ManualCandidateForm = {
   name: "",
   candidateType: "unknown",
   reason: "",
   whyNow: "",
   evidenceSummary: "",
-  knownFacts: "",
-  missingInfo: "",
-  doNotSay: "",
-  publicSafetyNotes: "",
   recommendedCategory: "",
-  recommendedKind: "",
-  recommendedEcosystemLane: "",
-  recommendedIdentityAuthority: "",
-  recommendedStatus: "",
-  recommendedClearance: "",
-  recommendedOrigin: "",
-  recommendedTags: "",
-  proposedTags: "",
-  primaryLinkLabel: "",
-  primaryLinkUrl: "",
-  primaryLinkType: "website",
-  selectedBy: "operator",
 };
 
 const candidateTypes: DossierCandidate["candidateType"][] = [
@@ -147,69 +55,36 @@ const candidateTypes: DossierCandidate["candidateType"][] = [
   "story_arc",
   "unknown",
 ];
-const categoryOptions = [
-  "",
-  "Entity",
-  "Personnel",
-  "Sponsor",
-  "Interface",
-  "Production",
-];
-const statusOptions = [
-  "",
-  "ACTIVE",
-  "INACTIVE",
-  "ARCHIVED",
-  "PENDING",
-  "UNKNOWN",
-];
-const clearanceOptions = ["", "PUBLIC", "INTERNAL", "RESTRICTED"];
-const originOptions = ["", "KNOWN", "UNKNOWN", "UNVERIFIED", "WITHHELD"];
-const kindOptions = ["", ...DOSSIER_KIND_OPTIONS];
-const ecosystemLaneOptions = ["", ...DOSSIER_ECOSYSTEM_LANE_OPTIONS];
-const identityAuthorityOptions = ["", ...DOSSIER_IDENTITY_AUTHORITY_OPTIONS];
+const categoryOptions = ["", "Entity", "Personnel", "Sponsor", "Interface", "Production"];
+const activeCandidateStatuses = new Set<DossierCandidate["status"]>([
+  "suggested",
+  "needs_review",
+  "selected",
+  "draft_requested",
+  "draft_ready",
+  "needs_revision",
+  "needs_more_evidence",
+  "approved",
+]);
+const activeDraftStatuses = new Set<DossierDraft["status"]>([
+  "draft",
+  "owner_changes_requested",
+]);
+const closedDraftStatuses = new Set<DossierDraft["status"]>([
+  "denied",
+  "superseded",
+  "owner_approved",
+  "published",
+]);
 
-const reviewActions = [
-  "Generate Draft",
-  "Try Again: Too Long",
-  "Try Again: Too Vague",
-  "Try Again: Too Much Lore",
-  "Try Again: Too Dry",
-  "Try Again: Wrong Tags",
-  "Rewrite Summary Only",
-  "Rewrite Notes Only",
-  "Owner Approve Draft",
-  "Owner Request Changes",
-  "Owner Deny Draft",
-];
-
-const focusedAssistantPrompts = [
-  "Why was this recommended?",
-  "What evidence is missing?",
-  "Suggest safer public version",
-  "Suggest stronger in-universe version",
-  "Explain tag choices",
-];
-
-function MinimalDossierAdminState({
-  title,
-  message,
-}: {
-  title: string;
-  message: string;
-}) {
+function MinimalDossierAdminState({ title, message }: { title: string; message: string }) {
   return (
     <main className="pt-14 min-h-screen flex items-center justify-center px-4">
       <section className="w-full max-w-md border border-border bg-surface p-8">
-        <p className="text-xs uppercase tracking-[0.5em] text-muted mb-5">
-          // ADMIN ACCESS CHECK
-        </p>
+        <p className="text-xs uppercase tracking-[0.5em] text-muted mb-5">ADMIN ACCESS CHECK</p>
         <h1 className="text-2xl font-bold text-foreground">{title}</h1>
         <p className="text-sm text-muted mt-3">{message}</p>
-        <Link
-          href="/admin"
-          className="mt-6 inline-flex border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background transition-all"
-        >
+        <Link href="/admin" className="mt-6 inline-flex border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background transition-all">
           Back to Admin
         </Link>
       </section>
@@ -217,150 +92,123 @@ function MinimalDossierAdminState({
   );
 }
 
-function listOrEmpty(items: string[] | undefined, empty: string) {
-  if (!items || items.length === 0)
-    return <p className="text-muted">{empty}</p>;
-  return (
-    <ul className="list-disc pl-5 space-y-1">
-      {items.map((item) => (
-        <li key={item}>{item}</li>
-      ))}
-    </ul>
-  );
-}
-
-function lines(value: string): string[] {
-  return value
-    .split("\n")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
 function textInputClass() {
   return "w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground";
 }
 
-function draftFormFromDraft(draft: DossierDraft | null): DraftForm {
-  if (!draft) return emptyDraftForm;
-  return {
-    name: draft.fields.name ?? "",
-    category: draft.fields.category ?? "",
-    kind: draft.fields.kind ?? "",
-    ecosystemLane: draft.fields.ecosystemLane ?? "",
-    identityAuthority: draft.fields.identityAuthority ?? "",
-    status: draft.fields.status ?? "",
-    clearance: draft.fields.clearance ?? "",
-    role: draft.fields.role ?? "",
-    origin: draft.fields.origin ?? "",
-    summary: draft.fields.summary ?? "",
-    notes: draft.fields.notes ?? "",
-    tags: (draft.fields.tags ?? []).join("\n"),
-    proposedTags: (draft.fields.proposedTags ?? []).join("\n"),
-    primaryLinkLabel: draft.fields.primaryLink?.label ?? "",
-    primaryLinkUrl: draft.fields.primaryLink?.url ?? "",
-    primaryLinkType: draft.fields.primaryLink?.type ?? "website",
-    selectedBy: draft.fields.primaryLink?.selectedBy ?? "operator",
-  };
+function formatDate(value?: string) {
+  if (!value) return "—";
+  return new Date(value).toLocaleString();
 }
 
-export default function AdminDossiersPage() {
+function isCandidateClosed(candidate: DossierCandidate) {
+  return candidate.status === "denied" || candidate.status === "merged";
+}
+
+function isDraftActive(draft: DossierDraft) {
+  return activeDraftStatuses.has(draft.status);
+}
+
+function linkedActiveDraftFor(candidate: DossierCandidate, drafts: DossierDraft[]) {
+  return drafts.find((draft) => draft.candidateId === candidate.id && isDraftActive(draft));
+}
+
+function candidateName(candidateId: string | undefined, candidates: DossierCandidate[]) {
+  if (!candidateId) return "master retained";
+  return candidates.find((candidate) => candidate.id === candidateId)?.name ?? candidateId;
+}
+
+function draftName(draftId: string | undefined, drafts: DossierDraft[]) {
+  if (!draftId) return "master retained";
+  return drafts.find((draft) => draft.id === draftId)?.fields.name ?? draftId;
+}
+
+function StatusPill({ children }: { children: React.ReactNode }) {
+  return <span className="border border-border bg-background/40 px-2 py-1 text-[0.65rem] uppercase tracking-widest text-muted">{children}</span>;
+}
+
+
+const dossierPhases = [
+  "Phase 1 — BNL Source File",
+  "Phase 2 — Proposed Dossier + BNL Edit Chat",
+  "Phase 3 — Final Admin Draft",
+  "Phase 4 — Owner Review",
+  "Phase 5 — Approved / Publish Later",
+];
+
+function PhaseRail({ currentPhase }: { currentPhase?: number }) {
+  return (
+    <section className="border border-border bg-surface p-4" aria-label="Dossier phase overview">
+      <p className="text-xs uppercase tracking-[0.45em] text-muted mb-3">Numbered dossier phases</p>
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-2 text-xs uppercase tracking-widest">
+        {dossierPhases.map((phase, index) => (
+          <span key={phase} className={`border px-3 py-2 ${currentPhase === index + 1 ? "border-accent text-accent bg-accent/10" : "border-border text-muted bg-background/30"}`}>
+            {phase}
+          </span>
+        ))}
+      </div>
+      <p className="mt-3 text-xs text-muted">Phase 1 collects what BNL knows and what admins add. Phase 2 builds or revises the proposed dossier with future BNL edit chat. Phase 3 is the final admin draft confirmation. Phase 4 is owner final pass. Phase 5 is approved / publish later and is not active yet.</p>
+    </section>
+  );
+}
+
+function DashboardCard({ eyebrow, title, children, aside }: { eyebrow: string; title: string; children: React.ReactNode; aside?: React.ReactNode }) {
+  return (
+    <section className="border border-border bg-surface p-5 space-y-4">
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.45em] text-muted mb-2">{eyebrow}</p>
+          <h2 className="text-xl font-bold text-foreground">{title}</h2>
+        </div>
+        {aside}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+export default function DossierControlCenterPage() {
   const [payload, setPayload] = useState<WorkflowPayload | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState<ManualCandidateForm>(
-    emptyManualCandidateForm,
-  );
-  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(
-    null,
-  );
-  const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
-  const [draftForm, setDraftForm] = useState<DraftForm>(emptyDraftForm);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [mergePrimaryByGroup, setMergePrimaryByGroup] = useState<Record<string, string>>({});
-  const [mergeIncludedByGroup, setMergeIncludedByGroup] = useState<Record<string, string[]>>({});
-  const [mergeDraftByGroup, setMergeDraftByGroup] = useState<Record<string, boolean>>({});
-  const [mergeNoteByGroup, setMergeNoteByGroup] = useState<Record<string, string>>({});
+  const [form, setForm] = useState<ManualCandidateForm>(emptyForm);
+  const [createdDraftIdByCandidate, setCreatedDraftIdByCandidate] = useState<Record<string, string>>({});
 
   async function loadWorkflow() {
-    try {
-      const response = await fetch("/api/admin/dossiers", {
-        cache: "no-store",
-      });
-      if (!response.ok) {
-        throw new Error(
-          response.status === 401
-            ? "Admin authentication required."
-            : `Workflow API returned ${response.status}.`,
-        );
-      }
-      const data = (await response.json()) as WorkflowPayload;
-      setPayload(data);
-      setSelectedCandidateId((current) =>
-        current && data.candidates.some((candidate) => candidate.id === current)
-          ? current
-          : (data.candidates[0]?.id ?? null),
-      );
-      setSelectedDraftId((current) => {
-        const nextDraft =
-          current && data.drafts.some((draft) => draft.id === current)
-            ? (data.drafts.find((draft) => draft.id === current) ?? null)
-            : (data.drafts[0] ?? null);
-        setDraftForm(draftFormFromDraft(nextDraft));
-        return nextDraft?.id ?? null;
-      });
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to load dossier workflow.",
-      );
-    } finally {
-      setLoading(false);
+    setError(null);
+    const response = await fetch("/api/admin/dossiers", { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(response.status === 401 ? "Admin authentication required" : `Workflow API returned ${response.status}.`);
     }
+    setPayload((await response.json()) as WorkflowPayload);
   }
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadWorkflow();
+      loadWorkflow()
+        .catch((err) => setError(err instanceof Error ? err.message : "Failed to load dossier workflow."))
+        .finally(() => setLoading(false));
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
 
-  const candidates = useMemo(
-    () => payload?.candidates ?? [],
-    [payload?.candidates],
-  );
+  const candidates = useMemo(() => payload?.candidates ?? [], [payload?.candidates]);
   const drafts = useMemo(() => payload?.drafts ?? [], [payload?.drafts]);
-  const duplicateGroups = useMemo(
-    () => payload?.duplicateGroups ?? [],
-    [payload?.duplicateGroups],
-  );
-  const boundaries = payload?.workflow.boundaries ?? [];
-  const scoringPolicy =
-    payload?.workflow.scoringPolicy ?? DOSSIER_CANDIDATE_SCORING_POLICY;
-  const selectedCandidate = useMemo(
-    () =>
-      candidates.find((candidate) => candidate.id === selectedCandidateId) ??
-      candidates[0] ??
-      null,
-    [candidates, selectedCandidateId],
-  );
-  const selectedDraft = useMemo(
-    () =>
-      drafts.find((draft) => draft.id === selectedDraftId) ??
-      drafts.find((draft) => draft.candidateId === selectedCandidate?.id) ??
-      drafts[0] ??
-      null,
-    [drafts, selectedCandidate?.id, selectedDraftId],
-  );
-  const selectedDraftCandidate = selectedDraft
-    ? (candidates.find(
-        (candidate) => candidate.id === selectedDraft.candidateId,
-      ) ?? null)
-    : null;
-  const ownerReviewDrafts = drafts.filter(
-    (draft) => draft.status === "ready_for_owner_review",
-  );
-  const selectedEvidence = selectedCandidate?.evidenceItems ?? [];
+  const duplicateGroups = useMemo(() => payload?.duplicateGroups ?? [], [payload?.duplicateGroups]);
+  const activeCandidates = candidates.filter((candidate) => activeCandidateStatuses.has(candidate.status));
+  const closedCandidates = candidates.filter((candidate) => candidate.status === "denied" || candidate.status === "merged");
+  const draftsInProgress = drafts.filter((draft) => isDraftActive(draft));
+  const ownerReviewDrafts = drafts.filter((draft) => draft.status === "ready_for_owner_review");
+  const closedDrafts = drafts.filter((draft) => closedDraftStatuses.has(draft.status));
+  const activeDuplicateGroups = duplicateGroups.filter((group) => {
+    const activeGroupCandidates = group.candidateIds
+      .map((candidateId) => candidates.find((candidate) => candidate.id === candidateId))
+      .filter((candidate): candidate is DossierCandidate => candidate !== undefined && !isCandidateClosed(candidate));
+    return activeGroupCandidates.length >= 2;
+  });
+  const resolvedDuplicateGroups = duplicateGroups.filter((group) => !activeDuplicateGroups.some((activeGroup) => activeGroup.id === group.id));
 
   async function postWorkflow(body: Record<string, unknown>) {
     setSaving(true);
@@ -371,35 +219,14 @@ export default function AdminDossiersPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = (await response
-        .json()
-        .catch(() => ({}))) as Partial<WorkflowPayload> & {
+      const data = (await response.json().catch(() => ({}))) as Partial<WorkflowPayload> & {
         candidate?: DossierCandidate;
         draft?: DossierDraft;
         error?: string;
         message?: string;
-        missingFields?: string[];
-        merge?: {
-          masterCandidate: DossierCandidate;
-          masterDraft?: DossierDraft;
-        };
       };
-      if (!response.ok) {
-        const missing = data.missingFields?.length
-          ? ` Missing fields: ${data.missingFields.join(", ")}.`
-          : "";
-        throw new Error(
-          `${data.error ?? data.message ?? `Workflow API returned ${response.status}.`}${missing}`,
-        );
-      }
-      if (data.candidates && data.drafts && data.workflow)
-        setPayload(data as WorkflowPayload);
-      if (data.candidate) setSelectedCandidateId(data.candidate.id);
-      if (data.draft) {
-        setSelectedDraftId(data.draft.id);
-        setSelectedCandidateId(data.draft.candidateId);
-        setDraftForm(draftFormFromDraft(data.draft));
-      }
+      if (!response.ok) throw new Error(data.error ?? data.message ?? `Workflow API returned ${response.status}.`);
+      if (data.candidates && data.drafts && data.workflow) setPayload(data as WorkflowPayload);
       return data;
     } finally {
       setSaving(false);
@@ -409,15 +236,6 @@ export default function AdminDossiersPage() {
   async function submitManualCandidate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
-      const primaryLink = form.primaryLinkUrl.trim()
-        ? {
-            label: form.primaryLinkLabel.trim() || "Featured link",
-            url: form.primaryLinkUrl.trim(),
-            type: form.primaryLinkType.trim() || "website",
-            selectedBy: form.selectedBy,
-            publicSafe: true,
-          }
-        : undefined;
       const data = await postWorkflow({
         action: "createManualCandidate",
         input: {
@@ -426,1653 +244,182 @@ export default function AdminDossiersPage() {
           reason: form.reason,
           whyNow: form.whyNow,
           evidenceSummary: form.evidenceSummary,
-          knownFacts: lines(form.knownFacts),
-          missingInfo: lines(form.missingInfo),
-          doNotSay: lines(form.doNotSay),
-          publicSafetyNotes: lines(form.publicSafetyNotes),
           recommendedCategory: form.recommendedCategory || undefined,
-          recommendedKind: form.recommendedKind || undefined,
-          recommendedEcosystemLane: form.recommendedEcosystemLane || undefined,
-          recommendedIdentityAuthority:
-            form.recommendedIdentityAuthority || undefined,
-          recommendedStatus: form.recommendedStatus || undefined,
-          recommendedClearance: form.recommendedClearance || undefined,
-          recommendedOrigin: form.recommendedOrigin || undefined,
-          recommendedTags: lines(form.recommendedTags),
-          proposedTags: lines(form.proposedTags),
-          primaryLink,
         },
       });
-      setForm(emptyManualCandidateForm);
-      setNotice(
-        `Manual candidate created: ${data.candidate?.name ?? "candidate"}. No public dossier or tag was created.`,
-      );
+      setForm(emptyForm);
+      setNotice(`Manual candidate created: ${data.candidate?.name ?? "candidate"}. No BNL invocation, publishing, tag creation, or public database mutation occurred.`);
     } catch (err) {
-      setNotice(
-        err instanceof Error
-          ? err.message
-          : "Failed to create manual candidate.",
-      );
+      setNotice(err instanceof Error ? err.message : "Failed to create manual candidate.");
     }
   }
 
-  async function createOrOpenDraft(candidateId: string) {
-    const existingDraft = drafts.find(
-      (draft) =>
-        draft.candidateId === candidateId &&
-        draft.status !== "denied" &&
-        draft.status !== "published",
-    );
-    if (existingDraft) {
-      setSelectedCandidateId(candidateId);
-      setSelectedDraftId(existingDraft.id);
-      setDraftForm(draftFormFromDraft(existingDraft));
-      setNotice(
-        `Opened existing draft for ${existingDraft.fields.name || "candidate"}.`,
-      );
-      return;
-    }
+  async function createDraft(candidateId: string) {
+    const candidate = candidates.find((item) => item.id === candidateId);
+    if (!candidate || isCandidateClosed(candidate) || linkedActiveDraftFor(candidate, drafts)) return;
 
     try {
-      const data = await postWorkflow({
-        action: "createDraftFromCandidate",
-        candidateId,
-      });
-      setNotice(
-        `Draft created: ${data.draft?.fields.name ?? "draft"}. Saving this draft does not publish anything.`,
-      );
+      const data = await postWorkflow({ action: "createDraftFromCandidate", candidateId });
+      if (data.draft) {
+        setCreatedDraftIdByCandidate((current) => ({ ...current, [candidateId]: data.draft?.id ?? "" }));
+        setNotice(`Draft created: ${data.draft.fields.name}. Open the dedicated draft editor to continue. Saving does not publish.`);
+      }
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Failed to create draft.");
     }
   }
 
-  function draftFieldsFromForm(): DossierDraft["fields"] {
-    return {
-      name: draftForm.name,
-      category: draftForm.category
-        ? (draftForm.category as DossierDraft["fields"]["category"])
-        : undefined,
-      kind: draftForm.kind || undefined,
-      ecosystemLane: draftForm.ecosystemLane || undefined,
-      identityAuthority: draftForm.identityAuthority || undefined,
-      status: draftForm.status
-        ? (draftForm.status as DossierDraft["fields"]["status"])
-        : undefined,
-      clearance: draftForm.clearance
-        ? (draftForm.clearance as DossierDraft["fields"]["clearance"])
-        : undefined,
-      role: draftForm.role,
-      origin: draftForm.origin
-        ? (draftForm.origin as DossierDraft["fields"]["origin"])
-        : undefined,
-      summary: draftForm.summary,
-      notes: draftForm.notes,
-      tags: lines(draftForm.tags),
-      proposedTags: lines(draftForm.proposedTags),
-      primaryLink: draftForm.primaryLinkUrl.trim()
-        ? {
-            label: draftForm.primaryLinkLabel.trim() || "Featured link",
-            url: draftForm.primaryLinkUrl.trim(),
-            type: draftForm.primaryLinkType.trim() || "website",
-            selectedBy: draftForm.selectedBy,
-            publicSafe: true,
-          }
-        : undefined,
-      files: [],
-    };
-  }
+  async function updateCandidate(candidateId: string, action: "markNeedsMoreEvidence") {
+    const candidate = candidates.find((item) => item.id === candidateId);
+    if (!candidate || isCandidateClosed(candidate)) return;
 
-  async function saveSelectedDraft() {
-    if (!selectedDraft) return;
-    try {
-      const data = await postWorkflow({
-        action: "saveDraft",
-        draftId: selectedDraft.id,
-        fields: draftFieldsFromForm(),
-      });
-      setNotice(
-        `Draft saved: ${data.draft?.fields.name ?? "draft"}. Saving this draft does not publish anything.`,
-      );
-    } catch (err) {
-      setNotice(err instanceof Error ? err.message : "Failed to save draft.");
-    }
-  }
-
-  async function submitSelectedDraftForOwnerReview() {
-    if (!selectedDraft) return;
-    try {
-      const data = await postWorkflow({
-        action: "submitDraftForOwnerReview",
-        draftId: selectedDraft.id,
-      });
-      setNotice(
-        `Draft submitted for owner review: ${data.draft?.fields.name ?? "draft"}. Submitting for owner review does not publish anything.`,
-      );
-    } catch (err) {
-      setNotice(
-        err instanceof Error
-          ? err.message
-          : "Failed to submit draft for owner review.",
-      );
-    }
-  }
-
-  async function updateCandidateStatus(
-    candidateId: string,
-    action: "denyCandidate" | "markNeedsMoreEvidence",
-  ) {
     try {
       const data = await postWorkflow({ action, candidateId });
-      setNotice(
-        `${data.candidate?.name ?? "Candidate"} updated to ${data.candidate?.status ?? "requested status"}.`,
-      );
+      setNotice(`${data.candidate?.name ?? "Candidate"} updated. Workflow records remain internal only.`);
     } catch (err) {
-      setNotice(
-        err instanceof Error
-          ? err.message
-          : "Failed to update candidate status.",
-      );
+      setNotice(err instanceof Error ? err.message : "Failed to update candidate.");
     }
-  }
-
-  async function mergeDuplicateGroup(group: DossierDuplicateGroup) {
-    const primaryCandidateId =
-      mergePrimaryByGroup[group.id] ??
-      group.suggestedMasterCandidateId ??
-      group.candidateIds[0];
-    const sourceCandidateIds =
-      mergeIncludedByGroup[group.id]?.length
-        ? mergeIncludedByGroup[group.id]
-        : group.candidateIds;
-    try {
-      const data = await postWorkflow({
-        action: "mergeCandidates",
-        input: {
-          primaryCandidateId,
-          sourceCandidateIds,
-          sourceDraftIds: group.draftIds,
-          createMasterDraft: Boolean(mergeDraftByGroup[group.id]),
-          mergeNote: mergeNoteByGroup[group.id] ?? "",
-        },
-      });
-      const masterCandidate = data.merge?.masterCandidate ?? data.candidate;
-      const masterDraft = data.merge?.masterDraft ?? data.draft;
-      if (masterCandidate) setSelectedCandidateId(masterCandidate.id);
-      if (masterDraft) {
-        setSelectedDraftId(masterDraft.id);
-        setDraftForm(draftFormFromDraft(masterDraft));
-      }
-      setNotice(
-        masterDraft
-          ? `Merged candidates into ${masterCandidate?.name ?? "master candidate"} and created/updated a master draft. Nothing published.`
-          : `Merged candidates into ${masterCandidate?.name ?? "master candidate"}. Source records were preserved.`,
-      );
-    } catch (err) {
-      setNotice(err instanceof Error ? err.message : "Failed to merge duplicate candidates.");
-    }
-  }
-
-  function toggleMergeCandidate(group: DossierDuplicateGroup, candidateId: string) {
-    const current = mergeIncludedByGroup[group.id] ?? group.candidateIds;
-    const next = current.includes(candidateId)
-      ? current.filter((id) => id !== candidateId)
-      : [...current, candidateId];
-    setMergeIncludedByGroup({ ...mergeIncludedByGroup, [group.id]: next });
   }
 
   if (loading) {
-    return (
-      <MinimalDossierAdminState
-        title="Checking admin access..."
-        message="Verifying operator credentials before loading the dossier workflow."
-      />
-    );
+    return <MinimalDossierAdminState title="Checking admin access..." message="Loading the dossier workflow dashboard." />;
   }
 
   if (error || !payload) {
-    return (
-      <MinimalDossierAdminState
-        title="Admin authentication required"
-        message={
-          error ??
-          "Sign in from the admin panel before opening this operator workflow."
-        }
-      />
-    );
+    return <MinimalDossierAdminState title="Admin authentication required" message={error ?? "Sign in through /admin before opening the dossier workflow."} />;
   }
 
   return (
-    <main className="pt-14 min-h-screen">
-      <section className="border-b border-border noise-bg">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-12">
-          <p className="text-xs uppercase tracking-[0.5em] text-muted mb-4">
-            // ADMIN: DOSSIER WORKFLOW
-          </p>
-          <h1
-            aria-label="Dossier Control Center"
-            className="text-4xl font-bold tracking-tight text-foreground"
-          >
-            <span className="text-accent text-glow">Dossier</span> Control
-            Center
+    <main className="pt-14 min-h-screen bg-background">
+      <section className="border-b border-border bg-surface/80">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-10">
+          <p className="text-xs uppercase tracking-[0.5em] text-muted mb-4">ADMIN DOSSIER WORKFLOW</p>
+          <h1 aria-label="Dossier Control Center" className="text-4xl font-bold tracking-tight text-foreground">
+            <span className="text-accent text-glow">Dossier</span> Control Center
           </h1>
           <p className="text-sm text-muted mt-3 max-w-3xl">
-            Review why a candidate was recommended, inspect evidence and
-            duplicate risk, then classify taxonomy before owner review.
-            AI/human/unknown are tags, not the organizing structure.
+            Dashboard traffic control for the question: What needs attention next? Candidate review, draft editing, owner review, and merge comparison now live in dedicated workflow lanes.
+          </p>
+          <p className="text-sm text-muted mt-2 max-w-3xl">
+            BNL generation comes later. Future BNL full-dossier drafting should land in the dedicated draft editor with complete fields, approved source packets, duplicate/merge history, style guidance, and strict no-invention rules.
           </p>
           <div className="mt-5 flex flex-wrap gap-3 text-xs uppercase tracking-widest">
-            <Link
-              href="/admin"
-              className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent transition-all"
-            >
-              Back to Admin
-            </Link>
-            <Link
-              href="/database"
-              className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent transition-all"
-            >
-              Public Database
-            </Link>
+            <Link href="/admin" className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent transition-all">Back to Admin</Link>
+            <Link href="/database" className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent transition-all">Public Database</Link>
+            <Link href="/admin/dossiers/owner-review" className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background transition-all">Owner Review</Link>
           </div>
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 text-xs text-muted">
-          <div className="border border-border bg-surface p-4">
-            <p className="uppercase tracking-[0.35em] text-accent mb-2">
-              Workflow API
-            </p>
-            <p>
-              Candidate store enabled. Storage: {payload.workflow.storage}.
-              Updated: {payload.workflow.updatedAt ?? "not available"}.
-            </p>
-          </div>
-          <div className="border border-border bg-surface p-4">
-            <p className="uppercase tracking-[0.35em] text-accent mb-2">
-              Authoring Guide
-            </p>
-            <p>Version: {payload.authoringGuide?.version ?? "unknown"}</p>
-          </div>
-          <div className="border border-border bg-surface p-4">
-            <p className="uppercase tracking-[0.35em] text-accent mb-2">
-              Tag Registry
-            </p>
-            <p>
-              {payload.tagRegistry
-                ? `${payload.tagRegistry.totalUniqueTags} tags / ${payload.tagRegistry.totalTagAssignments} assignments`
-                : "No tag registry summary returned."}
-            </p>
-          </div>
+      <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-6">
+        {notice && <div className="border border-accent/60 bg-accent/10 p-4 text-sm text-accent">{notice}</div>}
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs text-muted">
+          <div className="border border-border bg-surface p-4"><p className="uppercase tracking-[0.35em] text-accent mb-2">Active BNL Source Files</p><p>{activeCandidates.length} active / {closedCandidates.length} closed</p></div>
+          <div className="border border-border bg-surface p-4"><p className="uppercase tracking-[0.35em] text-accent mb-2">Proposed Dossiers</p><p>{draftsInProgress.length} active / {closedDrafts.length} closed</p></div>
+          <div className="border border-border bg-surface p-4"><p className="uppercase tracking-[0.35em] text-accent mb-2">Owner Review</p><p>{ownerReviewDrafts.length} waiting</p></div>
+          <div className="border border-border bg-surface p-4"><p className="uppercase tracking-[0.35em] text-accent mb-2">Workflow API</p><p>{payload.workflow.status} / {payload.workflow.storage}</p></div>
         </div>
 
-        <section className="border border-border bg-surface p-6 space-y-5">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.5em] text-muted mb-3">
-                Possible Duplicates / Merge
-              </p>
-              <h2 className="text-2xl font-bold text-foreground">
-                Possible Duplicates / Merge
-              </h2>
-              <div className="text-sm text-muted mt-2 space-y-1">
-                <p>Merge is manual. Nothing auto-merges.</p>
-                <p>Source candidates are preserved and marked merged.</p>
-                <p>Source drafts are preserved and marked superseded.</p>
-                <p>Merged drafts do not publish.</p>
-                <p>BNL merge writing comes later; this PR uses deterministic field combining only.</p>
-                <p>
-                  BNL may later recommend candidates from R&amp;D, Discord-safe
-                  context, queue recurrence, and the website read model. Multiple
-                  sources may point at the same subject, so BNL should attach
-                  evidence to existing candidates or merge candidates rather
-                  than create duplicates. This page prepares for that path but
-                  does not invoke BNL.
-                </p>
-              </div>
+        <PhaseRail />
+
+        <DashboardCard eyebrow="Manual fallback" title="Quick Candidate Intake" aside={<StatusPill>Manual fallback / quick seed</StatusPill>}>
+          <p className="text-sm text-muted">Manual fallback / quick seed. Use this when BNL has not suggested a candidate yet or when an operator needs to seed one directly. Main BNL-led workbench comes later. This does not publish, invoke BNL, create tags, or mutate the public database.</p>
+          <form onSubmit={submitManualCandidate} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3 text-xs uppercase tracking-widest text-muted">
+            <label className="space-y-2 xl:col-span-2"><span>Name</span><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={textInputClass()} /></label>
+            <label className="space-y-2"><span>Type</span><select value={form.candidateType} onChange={(event) => setForm({ ...form, candidateType: event.target.value as DossierCandidate["candidateType"] })} className={textInputClass()}>{candidateTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
+            <label className="space-y-2"><span>Recommended category</span><select value={form.recommendedCategory} onChange={(event) => setForm({ ...form, recommendedCategory: event.target.value })} className={textInputClass()}>{categoryOptions.map((value) => <option key={value} value={value}>{value || "No recommendation"}</option>)}</select></label>
+            <label className="space-y-2 xl:col-span-2"><span>Reason</span><input required value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} className={textInputClass()} /></label>
+            <label className="space-y-2 xl:col-span-3"><span>Why now</span><textarea value={form.whyNow} onChange={(event) => setForm({ ...form, whyNow: event.target.value })} className={`${textInputClass()} min-h-20`} /></label>
+            <label className="space-y-2 xl:col-span-3"><span>Evidence summary</span><textarea value={form.evidenceSummary} onChange={(event) => setForm({ ...form, evidenceSummary: event.target.value })} className={`${textInputClass()} min-h-20`} /></label>
+            <div className="xl:col-span-6"><button type="submit" disabled={saving} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Create Manual Candidate</button></div>
+          </form>
+        </DashboardCard>
+
+        <DashboardCard eyebrow="Coming next" title="BNL Dossier Workbench — Coming Next" aside={<StatusPill>future BNL-led flow</StatusPill>}>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-sm text-muted">
+            <div className="border border-border/70 bg-background/20 p-4 space-y-2">
+              <p className="font-bold text-foreground">Prompt-based dossier drafting comes next.</p>
+              <p>Mods/admins will guide BNL in plain language.</p>
+              <p>BNL will use the source file and approved sources to build a complete dossier draft. BNL will generate complete dossier drafts from source files, not starter notes.</p>
+              <p>BNL will ask only for missing decisions.</p>
+              <p>Manual editing remains available. Manual fields are fallback/advanced. Manual fields are fallback only.</p>
             </div>
-            <p className="text-xs uppercase tracking-widest text-muted">
-              {duplicateGroups.length} duplicate groups
-            </p>
+            <div className="border border-border/70 bg-background/20 p-4 space-y-2">
+              <p className="font-bold text-foreground">Intended future BNL-led workflow</p>
+              <p>Admin selects or creates a candidate, gives BNL a loose instruction, BNL gathers the approved source packet, drafts complete dossier fields, admin asks for revisions or edits manually, then submits to Owner Review.</p>
+              <p>Owner opens the submitted draft, can prompt BNL for final changes, edit manually, approve, send back, deny, or request more info. Approval still does not publish until publishing workflow exists.</p>
+            </div>
           </div>
+          <p className="text-xs text-muted">Future source packet: website read model, dossier taxonomy guide, authoring guide, tag registry, selected candidate facts, queue/public show context, R&amp;D/operator-approved notes, Discord-safe/mod-approved context, duplicate/merge history, and existing dossier style profile. Future output includes a complete proposed dossier, tags, taxonomy, warnings, missing info questions, and public-safety caveats. BNL must not invent facts, must preserve tone/style, must keep community-owned identities separate from BARCODE-controlled characters, and must treat AI/human/unknown as tags/traits.</p>
+        </DashboardCard>
 
-          {duplicateGroups.length === 0 ? (
-            <p className="border border-border/70 bg-background/30 p-4 text-sm text-muted">
-              No workflow-internal duplicate groups detected. Published database
-              duplicate checks still run during manual candidate intake.
-            </p>
-          ) : (
-            <div className="space-y-4">
-              {duplicateGroups.map((group) => {
-                const groupCandidates = group.candidateIds
-                  .map((candidateId) =>
-                    candidates.find((candidate) => candidate.id === candidateId),
-                  )
-                  .filter((candidate): candidate is DossierCandidate => Boolean(candidate));
-                const included = mergeIncludedByGroup[group.id] ?? group.candidateIds;
-                const primary =
-                  mergePrimaryByGroup[group.id] ??
-                  group.suggestedMasterCandidateId ??
-                  group.candidateIds[0];
-                const createMasterDraft = Boolean(mergeDraftByGroup[group.id]);
-                return (
-                  <article key={group.id} className="border border-border/70 bg-background/20 p-4 space-y-4">
-                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                      <div>
-                        <h3 className="text-lg font-bold text-foreground">
-                          {group.names.join(" / ") || group.normalizedName}
-                        </h3>
-                        <p className="text-xs uppercase tracking-widest text-muted">
-                          normalized: {group.normalizedName} / risk: {group.risk} /
-                          candidates: {group.candidateIds.length} / drafts: {group.draftIds.length}
-                        </p>
-                        <p className="text-sm text-muted mt-1">{group.reason}</p>
-                        {group.existingPublishedDossierMatch ? (
-                          <p className="text-xs text-accent mt-1">
-                            Existing published dossier match: {group.existingPublishedDossierMatch.id} / {group.existingPublishedDossierMatch.name} ({group.existingPublishedDossierMatch.confidence})
-                          </p>
-                        ) : null}
-                      </div>
-                      <button
-                        disabled={saving || included.length < 2}
-                        onClick={() => mergeDuplicateGroup(group)}
-                        className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
-                      >
-                        {createMasterDraft
-                          ? "Create Master Draft from Merge"
-                          : "Merge into Master Candidate"}
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                      {groupCandidates.map((candidate) => {
-                        const linkedDraft = drafts.find((draft) => draft.candidateId === candidate.id);
-                        return (
-                          <div key={candidate.id} className="border border-border bg-surface p-3 text-sm text-muted space-y-2">
-                            <div className="flex flex-wrap items-center gap-3 text-xs uppercase tracking-widest">
-                              <label className="flex items-center gap-2">
-                                <input
-                                  type="radio"
-                                  name={`primary-${group.id}`}
-                                  checked={primary === candidate.id}
-                                  onChange={() =>
-                                    setMergePrimaryByGroup({
-                                      ...mergePrimaryByGroup,
-                                      [group.id]: candidate.id,
-                                    })
-                                  }
-                                />
-                                Master
-                              </label>
-                              <label className="flex items-center gap-2">
-                                <input
-                                  type="checkbox"
-                                  checked={included.includes(candidate.id)}
-                                  onChange={() => toggleMergeCandidate(group, candidate.id)}
-                                />
-                                Include
-                              </label>
-                            </div>
-                            <p className="text-foreground font-bold">{candidate.name}</p>
-                            <p>Status/source: {candidate.status} / {candidate.source}</p>
-                            <p>Reason: {candidate.reason || "—"}</p>
-                            <p>Why now: {candidate.whyNow || "—"}</p>
-                            <p>Evidence summary: {candidate.evidenceSummary || "—"}</p>
-                            <div><span className="text-foreground">Known facts:</span> {listOrEmpty(candidate.knownFacts, "None recorded")}</div>
-                            <div><span className="text-foreground">Missing info:</span> {listOrEmpty(candidate.missingInfo, "None recorded")}</div>
-                            <p>
-                              Recommended taxonomy: {candidate.recommendedCategory ?? "—"} / {candidate.recommendedKind ?? "—"} / {candidate.recommendedEcosystemLane ?? "—"} / {candidate.recommendedIdentityAuthority ?? "—"}
-                            </p>
-                            <p>Recommended tags: {(candidate.recommendedTags ?? []).join(", ") || "—"}</p>
-                            <p>Linked draft status: {linkedDraft?.status ?? "No linked draft"}</p>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs uppercase tracking-widest text-muted">
-                      <label className="flex items-center gap-2 border border-border bg-surface p-3">
-                        <input
-                          type="radio"
-                          checked={!createMasterDraft}
-                          onChange={() =>
-                            setMergeDraftByGroup({ ...mergeDraftByGroup, [group.id]: false })
-                          }
-                        />
-                        Merge candidates only
-                      </label>
-                      <label className="flex items-center gap-2 border border-border bg-surface p-3">
-                        <input
-                          type="radio"
-                          checked={createMasterDraft}
-                          onChange={() =>
-                            setMergeDraftByGroup({ ...mergeDraftByGroup, [group.id]: true })
-                          }
-                        />
-                        Merge candidates and create/update master draft
-                      </label>
-                      <label className="md:col-span-2 space-y-2">
-                        <span>Merge note</span>
-                        <textarea
-                          value={mergeNoteByGroup[group.id] ?? ""}
-                          onChange={(event) =>
-                            setMergeNoteByGroup({
-                              ...mergeNoteByGroup,
-                              [group.id]: event.target.value,
-                            })
-                          }
-                          className={`${textInputClass()} min-h-20`}
-                        />
-                      </label>
-                    </div>
-                  </article>
-                );
-              })}
+        <DashboardCard eyebrow="Lane 1" title="Active BNL Source Files" aside={<StatusPill>{activeCandidates.length} active records</StatusPill>}>
+          {activeCandidates.length === 0 ? <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">No active candidate records need review.</p> : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] text-left text-sm text-muted">
+                <thead className="text-xs uppercase tracking-widest text-foreground"><tr><th className="py-2 pr-3">BNL Source File</th><th className="py-2 pr-3">Current phase</th><th className="py-2 pr-3">Status</th><th className="py-2 pr-3">Next recommended action</th><th className="py-2 pr-3">Duplicate Risk</th><th className="py-2 pr-3">Updated</th><th className="py-2 pr-3">Actions</th></tr></thead>
+                <tbody>{activeCandidates.map((candidate) => {
+                  const draft = linkedActiveDraftFor(candidate, drafts);
+                  const createdDraftId = createdDraftIdByCandidate[candidate.id];
+                  const openDraftId = draft?.id ?? createdDraftId;
+                  const canCreateDraft = !isCandidateClosed(candidate) && !openDraftId;
+                  const canUpdateCandidate = !isCandidateClosed(candidate);
+                  const currentPhase = openDraftId ? "Phase 2 — Proposed Dossier + BNL Edit Chat" : "Phase 1 — BNL Source File";
+                  const nextAction = openDraftId ? "Open proposed dossier" : "Add info or create proposed dossier";
+                  return <tr key={candidate.id} className="border-t border-border/70 align-top"><td className="py-3 pr-3 text-foreground font-semibold">{candidate.name}</td><td className="py-3 pr-3"><StatusPill>{currentPhase}</StatusPill></td><td className="py-3 pr-3"><StatusPill>{candidate.status}</StatusPill></td><td className="py-3 pr-3">{nextAction}{openDraftId && <p className="text-xs text-muted">Active draft already exists.</p>}{isCandidateClosed(candidate) && <p className="text-xs text-accent">Source file was merged or closed.</p>}</td><td className="py-3 pr-3">{candidate.duplicateRisk ?? "none"}</td><td className="py-3 pr-3">{formatDate(candidate.updatedAt)}</td><td className="py-3 pr-3"><div className="flex flex-wrap gap-2">{openDraftId ? <Link href={`/admin/dossiers/drafts/${openDraftId}`} target="_blank" rel="noopener noreferrer" className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Proposed Dossier</Link> : <Link href={`/admin/dossiers/candidates/${candidate.id}`} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Source File</Link>}<Link href={`/admin/dossiers/candidates/${candidate.id}#add-info`} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Add to Source File</Link>{!openDraftId && <button type="button" disabled={saving || !canCreateDraft} onClick={() => void createDraft(candidate.id)} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50" title={canCreateDraft ? "Create proposed dossier from this BNL Source File." : "Active draft already exists or source file was merged/denied."}>Create Proposed Dossier</button>}<button type="button" disabled className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest opacity-50" title="Owner action required for final dismissal; admins can add dismissal context from the BNL Source File.">Recommend Dismissal (owner later)</button><button type="button" disabled={saving || !canUpdateCandidate || candidate.status === "needs_more_evidence"} onClick={() => void updateCandidate(candidate.id, "markNeedsMoreEvidence")} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest hover:border-accent hover:text-accent disabled:opacity-50" title={candidate.status === "needs_more_evidence" ? "Already marked needs more info." : "Mark source file as needs more info."}>Mark Needs Info</button></div></td></tr>;
+                })}</tbody>
+              </table>
             </div>
           )}
-        </section>
+        </DashboardCard>
 
-        <section className="border border-border bg-surface p-6 space-y-5">
-          <div>
-            <p className="text-xs uppercase tracking-[0.5em] text-muted mb-3">
-              Manual Candidate Intake
-            </p>
-            <h2 className="text-2xl font-bold text-foreground">
-              Manual Candidate Intake
-            </h2>
-            <p className="text-sm text-muted mt-2">
-              Create workflow-only candidates. This form does not call BNL,
-              publish dossiers, create tags, or write src/content.ts.
-              AI/human/unknown are tags, not the organizing structure.
-            </p>
-          </div>
-          <form
-            onSubmit={submitManualCandidate}
-            className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 text-xs uppercase tracking-widest text-muted"
-          >
-            <label className="space-y-2">
-              <span>Name</span>
-              <input
-                required
-                value={form.name}
-                onChange={(event) =>
-                  setForm({ ...form, name: event.target.value })
-                }
-                className={textInputClass()}
-              />
-            </label>
-            <label className="space-y-2">
-              <span>Candidate type</span>
-              <select
-                value={form.candidateType}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    candidateType: event.target
-                      .value as DossierCandidate["candidateType"],
-                  })
-                }
-                className={textInputClass()}
-              >
-                {candidateTypes.map((type) => (
-                  <option key={type}>{type}</option>
-                ))}
-              </select>
-            </label>
-            <label className="xl:col-span-2 space-y-2">
-              <span>Reason</span>
-              <input
-                required
-                value={form.reason}
-                onChange={(event) =>
-                  setForm({ ...form, reason: event.target.value })
-                }
-                className={textInputClass()}
-              />
-            </label>
-            <label className="md:col-span-2 space-y-2">
-              <span>Why now</span>
-              <textarea
-                value={form.whyNow}
-                onChange={(event) =>
-                  setForm({ ...form, whyNow: event.target.value })
-                }
-                className={`${textInputClass()} min-h-24`}
-              />
-            </label>
-            <label className="md:col-span-2 space-y-2">
-              <span>Evidence summary</span>
-              <textarea
-                value={form.evidenceSummary}
-                onChange={(event) =>
-                  setForm({ ...form, evidenceSummary: event.target.value })
-                }
-                className={`${textInputClass()} min-h-24`}
-              />
-            </label>
-            <label className="space-y-2">
-              <span>Known facts</span>
-              <textarea
-                placeholder="One per line"
-                value={form.knownFacts}
-                onChange={(event) =>
-                  setForm({ ...form, knownFacts: event.target.value })
-                }
-                className={`${textInputClass()} min-h-28`}
-              />
-            </label>
-            <label className="space-y-2">
-              <span>Missing info</span>
-              <textarea
-                placeholder="One per line"
-                value={form.missingInfo}
-                onChange={(event) =>
-                  setForm({ ...form, missingInfo: event.target.value })
-                }
-                className={`${textInputClass()} min-h-28`}
-              />
-            </label>
-            <label className="space-y-2">
-              <span>Do Not Say</span>
-              <textarea
-                placeholder="One per line"
-                value={form.doNotSay}
-                onChange={(event) =>
-                  setForm({ ...form, doNotSay: event.target.value })
-                }
-                className={`${textInputClass()} min-h-28`}
-              />
-            </label>
-            <label className="space-y-2">
-              <span>Public safety notes</span>
-              <textarea
-                placeholder="One per line"
-                value={form.publicSafetyNotes}
-                onChange={(event) =>
-                  setForm({ ...form, publicSafetyNotes: event.target.value })
-                }
-                className={`${textInputClass()} min-h-28`}
-              />
-            </label>
-            <label className="space-y-2">
-              <span>Recommended category</span>
-              <select
-                value={form.recommendedCategory}
-                onChange={(event) =>
-                  setForm({ ...form, recommendedCategory: event.target.value })
-                }
-                className={textInputClass()}
-              >
-                {categoryOptions.map((value) => (
-                  <option key={value} value={value}>
-                    {value || "No recommendation"}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-2">
-              <span>Recommended kind</span>
-              <select
-                value={form.recommendedKind}
-                onChange={(event) =>
-                  setForm({ ...form, recommendedKind: event.target.value })
-                }
-                className={textInputClass()}
-              >
-                {kindOptions.map((value) => (
-                  <option key={value} value={value}>
-                    {value || "No recommendation"}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-2">
-              <span>Recommended ecosystem lane</span>
-              <select
-                value={form.recommendedEcosystemLane}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    recommendedEcosystemLane: event.target.value,
-                  })
-                }
-                className={textInputClass()}
-              >
-                {ecosystemLaneOptions.map((value) => (
-                  <option key={value} value={value}>
-                    {value || "No recommendation"}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-2">
-              <span>Recommended identity authority</span>
-              <select
-                value={form.recommendedIdentityAuthority}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    recommendedIdentityAuthority: event.target.value,
-                  })
-                }
-                className={textInputClass()}
-              >
-                {identityAuthorityOptions.map((value) => (
-                  <option key={value} value={value}>
-                    {value || "No recommendation"}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-2">
-              <span>Recommended status</span>
-              <select
-                value={form.recommendedStatus}
-                onChange={(event) =>
-                  setForm({ ...form, recommendedStatus: event.target.value })
-                }
-                className={textInputClass()}
-              >
-                {statusOptions.map((value) => (
-                  <option key={value} value={value}>
-                    {value || "No recommendation"}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-2">
-              <span>Recommended clearance</span>
-              <select
-                value={form.recommendedClearance}
-                onChange={(event) =>
-                  setForm({ ...form, recommendedClearance: event.target.value })
-                }
-                className={textInputClass()}
-              >
-                {clearanceOptions.map((value) => (
-                  <option key={value} value={value}>
-                    {value || "No recommendation"}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-2">
-              <span>Recommended origin</span>
-              <select
-                value={form.recommendedOrigin}
-                onChange={(event) =>
-                  setForm({ ...form, recommendedOrigin: event.target.value })
-                }
-                className={textInputClass()}
-              >
-                {originOptions.map((value) => (
-                  <option key={value} value={value}>
-                    {value || "No recommendation"}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="md:col-span-2 space-y-2">
-              <span>Recommended tags</span>
-              <textarea
-                placeholder="One existing tag per line"
-                value={form.recommendedTags}
-                onChange={(event) =>
-                  setForm({ ...form, recommendedTags: event.target.value })
-                }
-                className={`${textInputClass()} min-h-24`}
-              />
-            </label>
-            <label className="md:col-span-2 space-y-2">
-              <span>Proposed tags</span>
-              <textarea
-                placeholder="One proposed tag per line"
-                value={form.proposedTags}
-                onChange={(event) =>
-                  setForm({ ...form, proposedTags: event.target.value })
-                }
-                className={`${textInputClass()} min-h-24`}
-              />
-            </label>
-            <label className="space-y-2">
-              <span>Featured/primary link label</span>
-              <input
-                value={form.primaryLinkLabel}
-                onChange={(event) =>
-                  setForm({ ...form, primaryLinkLabel: event.target.value })
-                }
-                className={textInputClass()}
-              />
-            </label>
-            <label className="space-y-2">
-              <span>Featured/primary link URL</span>
-              <input
-                value={form.primaryLinkUrl}
-                onChange={(event) =>
-                  setForm({ ...form, primaryLinkUrl: event.target.value })
-                }
-                className={textInputClass()}
-              />
-            </label>
-            <label className="space-y-2">
-              <span>Featured/primary link type</span>
-              <input
-                value={form.primaryLinkType}
-                onChange={(event) =>
-                  setForm({ ...form, primaryLinkType: event.target.value })
-                }
-                className={textInputClass()}
-              />
-            </label>
-            <label className="space-y-2">
-              <span>selectedBy</span>
-              <select
-                value={form.selectedBy}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    selectedBy: event.target.value as "operator" | "subject",
-                  })
-                }
-                className={textInputClass()}
-              >
-                <option value="operator">operator</option>
-                <option value="subject">subject</option>
-              </select>
-            </label>
-            <div className="md:col-span-2 xl:col-span-4 flex flex-col gap-3 md:flex-row md:items-center">
-              <button
-                disabled={saving}
-                className="border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
-              >
-                {saving ? "Saving candidate..." : "Create Manual Candidate"}
-              </button>
-              {notice ? (
-                <p className="text-sm normal-case tracking-normal text-muted">
-                  {notice}
-                </p>
-              ) : null}
-            </div>
-          </form>
-        </section>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <DashboardCard eyebrow="Lane 2" title="Proposed Dossiers" aside={<StatusPill>{draftsInProgress.length} open</StatusPill>}>
+            {draftsInProgress.length === 0 ? <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">No active proposed dossiers. Ready-for-owner-review drafts appear in Owner Review, not Proposed Dossiers.</p> : <div className="space-y-3">{draftsInProgress.map((draft) => {
+              const candidate = candidates.find((item) => item.id === draft.candidateId);
+              return <article key={draft.id} className="border border-border/70 bg-background/20 p-4 text-sm text-muted"><div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="font-bold text-foreground">{draft.fields.name}</p><p>Linked candidate: {candidate?.name ?? draft.candidateId}</p><p>Status: {draft.status}</p><p>Updated: {formatDate(draft.updatedAt)}</p></div><Link href={`/admin/dossiers/drafts/${draft.id}`} target="_blank" rel="noopener noreferrer" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Proposed Dossier</Link></div></article>;
+            })}</div>}
+          </DashboardCard>
 
-        <section className="border border-border bg-surface p-6 space-y-5">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.5em] text-muted mb-3">
-                Candidate Queue
-              </p>
-              <h2 className="text-2xl font-bold text-foreground">
-                Candidate Queue
-              </h2>
-              <p className="text-sm text-muted mt-2">
-                Candidates are recommendations and stored workflow records, not
-                public dossiers.
-              </p>
-            </div>
-            <p className="text-xs uppercase tracking-widest text-muted">
-              {candidates.length} candidates
-            </p>
-          </div>
-          <div className="overflow-x-auto border border-border/70">
-            <table className="w-full min-w-[1180px] text-left text-xs">
-              <thead className="bg-background/60 text-muted uppercase tracking-widest">
-                <tr>
-                  <th className="px-3 py-3">Candidate name</th>
-                  <th className="px-3 py-3">Type</th>
-                  <th className="px-3 py-3">Tier</th>
-                  <th className="px-3 py-3">Score</th>
-                  <th className="px-3 py-3">Why Now</th>
-                  <th className="px-3 py-3">Evidence count</th>
-                  <th className="px-3 py-3">Duplicate Risk</th>
-                  <th className="px-3 py-3">Status</th>
-                  <th className="px-3 py-3">Updated</th>
-                  <th className="px-3 py-3">Controls</th>
-                </tr>
-              </thead>
-              <tbody>
-                {candidates.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={10}
-                      className="px-3 py-8 text-center text-muted"
-                    >
-                      No candidates yet. Use Manual Candidate Intake to create a
-                      workflow-only review record.
-                    </td>
-                  </tr>
-                ) : (
-                  candidates.map((candidate) => (
-                    <tr
-                      key={candidate.id}
-                      className={`border-t border-border/70 ${selectedCandidate?.id === candidate.id ? "bg-accent/10" : ""}`}
-                    >
-                      <td className="px-3 py-3 text-foreground">
-                        <button
-                          className="text-left underline-offset-4 hover:underline"
-                          onClick={() => setSelectedCandidateId(candidate.id)}
-                        >
-                          {candidate.name}
-                        </button>
-                      </td>
-                      <td className="px-3 py-3">{candidate.candidateType}</td>
-                      <td className="px-3 py-3">{candidate.tier}</td>
-                      <td className="px-3 py-3">{candidate.score}</td>
-                      <td className="px-3 py-3">{candidate.whyNow || "—"}</td>
-                      <td className="px-3 py-3">
-                        {candidate.evidenceItems?.length ??
-                          candidate.evidenceCount ??
-                          0}
-                      </td>
-                      <td className="px-3 py-3">
-                        {candidate.duplicateRisk ?? "unknown"}
-                      </td>
-                      <td className="px-3 py-3">{candidate.status}</td>
-                      <td className="px-3 py-3">{candidate.updatedAt}</td>
-                      <td className="px-3 py-3">
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            disabled={saving}
-                            onClick={() =>
-                              updateCandidateStatus(
-                                candidate.id,
-                                "denyCandidate",
-                              )
-                            }
-                            className="border border-border px-2 py-1 text-muted hover:border-accent hover:text-accent disabled:opacity-50"
-                          >
-                            Deny
-                          </button>
-                          <button
-                            disabled={saving}
-                            onClick={() =>
-                              updateCandidateStatus(
-                                candidate.id,
-                                "markNeedsMoreEvidence",
-                              )
-                            }
-                            className="border border-border px-2 py-1 text-muted hover:border-accent hover:text-accent disabled:opacity-50"
-                          >
-                            Needs More Evidence
-                          </button>
-                          <button
-                            disabled={saving}
-                            onClick={() => createOrOpenDraft(candidate.id)}
-                            className="border border-accent px-2 py-1 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
-                          >
-                            {drafts.some(
-                              (draft) =>
-                                draft.candidateId === candidate.id &&
-                                draft.status !== "denied" &&
-                                draft.status !== "published",
-                            )
-                              ? "Open Draft"
-                              : "Create Draft"}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+          <DashboardCard eyebrow="Lane 3" title="Final Admin Drafts" aside={<StatusPill>confirm before owner</StatusPill>}>
+            <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">Final Admin Draft is the confirmation step after Phase 2. Review Final Draft appears inside the Proposed Dossier page before Send to Owner Review; no separate stored status exists yet.</p>
+          </DashboardCard>
 
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="border border-border bg-surface p-6 space-y-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.5em] text-muted mb-3">
-                Candidate Evidence
-              </p>
-              <h2 className="text-2xl font-bold text-foreground">
-                Candidate Evidence
-              </h2>
-              <p className="text-sm text-muted mt-2">
-                Evidence is not public copy by default.{" "}
-                {
-                  "Identity authority separates BARCODE-controlled characters from community-owned identities."
-                }
-              </p>
-            </div>
-            <div className="border border-border bg-background/30 p-4 text-sm text-muted space-y-2">
-              <p>
-                <span className="text-foreground">Evidence summary:</span>{" "}
-                {selectedCandidate?.evidenceSummary ?? "No selected candidate."}
-              </p>
-              <p>
-                <span className="text-foreground">Source/tier/score:</span>{" "}
-                {selectedCandidate
-                  ? `${selectedCandidate.source} / ${selectedCandidate.tier} / ${selectedCandidate.score}`
-                  : "No selected candidate."}
-              </p>
-              <p>
-                <span className="text-foreground">Primary link:</span>{" "}
-                {selectedCandidate?.primaryLink
-                  ? `${selectedCandidate.primaryLink.label} — ${selectedCandidate.primaryLink.url}`
-                  : "No selected candidate primary link."}
-              </p>
-            </div>
-            <div className="space-y-2 text-xs text-muted">
-              {selectedEvidence.length === 0 ? (
-                <p className="border border-border bg-background/20 p-3">
-                  No evidence items yet.
-                </p>
-              ) : (
-                selectedEvidence.map((item) => (
-                  <div
-                    key={item.id}
-                    className="border border-border bg-background/20 p-3"
-                  >
-                    <p className="text-foreground">
-                      {item.label} ({item.type})
-                    </p>
-                    <p>{item.summary}</p>
-                    <p>
-                      Count: {item.count ?? 1} / publicSafe:{" "}
-                      {item.publicSafe ? "yes" : "no"}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+          <DashboardCard eyebrow="Lane 4" title="Owner Review" aside={<StatusPill>{ownerReviewDrafts.length} waiting</StatusPill>}>
+            <p className="text-sm text-muted">Admin/editor submits a workflow draft here for owner focus. Owner gate/secret comes later and owner approval still will not publish until publishing exists.</p>
+            {ownerReviewDrafts.length === 0 ? <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">No drafts waiting for owner review.</p> : <div className="space-y-3">{ownerReviewDrafts.map((draft) => {
+              const candidate = candidates.find((item) => item.id === draft.candidateId);
+              return <article key={draft.id} className="border border-border/70 bg-background/20 p-4 text-sm text-muted"><div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="font-bold text-foreground">{draft.fields.name}</p><p>Linked candidate: {candidate?.name ?? draft.candidateId}</p><p>Status: <StatusPill>Submitted</StatusPill></p><p>Phase: Phase 4 — Owner Review</p><p>Next: Waiting for owner</p><p>Updated: {formatDate(draft.updatedAt)}</p></div><Link href={`/admin/dossiers/drafts/${draft.id}`} target="_blank" rel="noopener noreferrer" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">View Submitted Draft</Link></div></article>;
+            })}</div>}
+            <Link href="/admin/dossiers/owner-review" className="inline-flex border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Open Owner Review</Link>
+          </DashboardCard>
+        </div>
 
-          <div className="border border-border bg-surface p-6 space-y-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.5em] text-muted mb-3">
-                Candidate Gate / Scoring
-              </p>
-              <h2 className="text-2xl font-bold text-foreground">
-                Candidate Gate / Scoring
-              </h2>
-              <p className="text-sm text-muted mt-2">{scoringPolicy.gate}</p>
-            </div>
-            <div className="space-y-2 text-xs text-muted">
-              <p>
-                <span className="text-foreground">weak candidate:</span>{" "}
-                {scoringPolicy.tiers.weak_candidate} Minimum score{" "}
-                {scoringPolicy.thresholds.weakCandidateMin}.
-              </p>
-              <p>
-                <span className="text-foreground">review candidate:</span>{" "}
-                {scoringPolicy.tiers.review_candidate} Minimum score{" "}
-                {scoringPolicy.thresholds.reviewCandidateMin}.
-              </p>
-              <p>
-                <span className="text-foreground">draft-ready:</span>{" "}
-                {scoringPolicy.tiers.draft_ready} Minimum score{" "}
-                {scoringPolicy.thresholds.draftReadyMin}.
-              </p>
-              <p>{scoringPolicy.signals.manualNomination}</p>
-              <p>Duplicate risk must be resolved before drafting.</p>
-            </div>
-          </div>
+        <DashboardCard eyebrow="Lane 5" title="Duplicate Warnings" aside={<StatusPill>{activeDuplicateGroups.length} active groups</StatusPill>}>
+          <p className="text-sm text-muted">Possible duplicate source files detected. Duplicate warnings help prevent multiple source files for the same subject. Owner/lead merge review required. Regular admins can view the warning, add a note later, and open BNL Source Files; final merge is owner/lead cleanup, not normal mod work.</p>
+          {activeDuplicateGroups.length === 0 ? <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">No duplicate warnings need owner/lead review.</p> : <div className="space-y-3">{activeDuplicateGroups.map((group) => <article key={group.id} className="border border-border/70 bg-background/20 p-4 text-sm text-muted"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="font-bold text-foreground">{group.names.join(" / ")}</p><p>Risk: {group.risk}</p><p>{group.candidateIds.length} candidates / {group.draftIds.length} drafts</p><p>Reason: {group.reason}</p></div><div className="flex flex-wrap gap-2"><Link href={`/admin/dossiers/duplicates/${group.id}`} className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">View Warning / Open Merge Review</Link><button type="button" disabled className="border border-border px-3 py-2 text-xs uppercase tracking-widest opacity-50">Add Note coming later</button><span className="text-xs uppercase tracking-widest text-muted">Open Source Files from warning page</span></div></div></article>)}</div>}
+          {resolvedDuplicateGroups.length > 0 && <p className="text-xs text-muted">{resolvedDuplicateGroups.length} duplicate group(s) are already resolved or no longer have enough active candidates; see History below.</p>}
+        </DashboardCard>
 
-          <div className="border border-border bg-surface p-6 space-y-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.5em] text-muted mb-3">
-                Draft Readiness / Missing Info
-              </p>
-              <h2 className="text-2xl font-bold text-foreground">
-                Draft Readiness / Missing Info
-              </h2>
-              <p className="text-sm text-muted mt-2">
-                Missing Info, Do Not Say, public safety notes, and duplicate
-                warnings block draft requests until reviewed.
-              </p>
-            </div>
-            <div className="grid grid-cols-1 gap-3 text-xs text-muted">
-              <div className="border border-border bg-background/30 p-3">
-                <p className="uppercase tracking-widest text-accent mb-2">
-                  Known facts
-                </p>
-                {listOrEmpty(
-                  selectedCandidate?.knownFacts,
-                  "No selected candidate; known facts will appear here.",
-                )}
-              </div>
-              <div className="border border-border bg-background/30 p-3">
-                <p className="uppercase tracking-widest text-accent mb-2">
-                  Missing info
-                </p>
-                {listOrEmpty(
-                  selectedCandidate?.missingInfo,
-                  "No selected candidate; missing facts will appear here.",
-                )}
-              </div>
-              <div className="border border-border bg-background/30 p-3">
-                <p className="uppercase tracking-widest text-accent mb-2">
-                  Do Not Say
-                </p>
-                {listOrEmpty(
-                  selectedCandidate?.doNotSay,
-                  "No restricted phrasing recorded yet.",
-                )}
-              </div>
-              <div className="border border-border bg-background/30 p-3">
-                <p className="uppercase tracking-widest text-accent mb-2">
-                  Public safety notes
-                </p>
-                {listOrEmpty(
-                  selectedCandidate?.publicSafetyNotes,
-                  "No public-safety notes recorded yet.",
-                )}
-              </div>
-              <div className="border border-border bg-background/30 p-3">
-                <p className="uppercase tracking-widest text-accent mb-2">
-                  Recommended taxonomy
-                </p>
-                <p>
-                  {selectedCandidate
-                    ? [
-                        selectedCandidate.recommendedCategory,
-                        selectedCandidate.recommendedKind,
-                        selectedCandidate.recommendedEcosystemLane,
-                        selectedCandidate.recommendedIdentityAuthority,
-                      ]
-                        .filter(Boolean)
-                        .join(" / ") || "No recommended taxonomy recorded yet."
-                    : "No selected candidate."}
-                </p>
-              </div>
-              <div className="border border-border bg-background/30 p-3">
-                <p className="uppercase tracking-widest text-accent mb-2">
-                  Recommended tags
-                </p>
-                {listOrEmpty(
-                  selectedCandidate?.recommendedTags,
-                  "No recommended tags recorded yet.",
-                )}
-              </div>
-              <div className="border border-border bg-background/30 p-3">
-                <p className="uppercase tracking-widest text-accent mb-2">
-                  Proposed tags
-                </p>
-                {listOrEmpty(
-                  selectedCandidate?.proposedTags,
-                  "No proposed tags recorded yet.",
-                )}
-              </div>
-              <div className="border border-border bg-background/30 p-3">
-                <p className="uppercase tracking-widest text-accent mb-2">
-                  Existing Dossier Match / Duplicate Warning
-                </p>
-                <p>
-                  {selectedCandidate?.existingDossierMatch
-                    ? `${selectedCandidate.existingDossierMatch.id} — ${selectedCandidate.existingDossierMatch.name} (${selectedCandidate.existingDossierMatch.confidence})`
-                    : "No selected candidate or duplicate match yet."}
-                </p>
-              </div>
-            </div>
+        <details className="border border-border bg-surface p-5">
+          <summary className="cursor-pointer text-xl font-bold text-foreground">Closed / History — Merged Candidates and Superseded Drafts</summary>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-muted">
+            <div className="border border-border/70 bg-background/20 p-4"><p className="text-xs uppercase tracking-widest text-accent mb-2">Closed / History — Merged Candidates</p><p>{closedCandidates.length} closed BNL Source File records.</p>{closedCandidates.slice(0, 8).map((candidate) => <article key={candidate.id} className="mt-3 border-t border-border/60 pt-3"><p className="text-foreground font-semibold">{candidate.name}</p><p>Status: {candidate.status}</p>{candidate.status === "merged" && <p>mergedIntoCandidateId: {candidate.mergedIntoCandidateId ?? "—"}</p>}{candidate.status === "merged" && <p>Master candidate: {candidate.mergedIntoCandidateId ? <Link className="text-accent hover:underline" href={`/admin/dossiers/candidates/${candidate.mergedIntoCandidateId}`}>{candidateName(candidate.mergedIntoCandidateId, candidates)}</Link> : "—"}</p>}{candidate.status === "merged" && <p>mergedAt: {formatDate(candidate.mergedAt)}</p>}<p className="text-xs uppercase tracking-widest text-muted">No normal active action buttons</p></article>)}</div>
+            <div className="border border-border/70 bg-background/20 p-4"><p className="text-xs uppercase tracking-widest text-accent mb-2">Closed / History — Superseded Drafts</p><p>{closedDrafts.length} closed proposed dossier records.</p>{closedDrafts.slice(0, 8).map((draft) => <article key={draft.id} className="mt-3 border-t border-border/60 pt-3"><p className="text-foreground font-semibold">{draft.fields.name}</p><p>Status: {draft.status}</p>{draft.status === "superseded" && <p>mergedIntoDraftId: {draft.mergedIntoDraftId ?? "—"}</p>}{draft.status === "superseded" && <p>Superseded by master draft: {draft.mergedIntoDraftId ? <Link className="text-accent hover:underline" href={`/admin/dossiers/drafts/${draft.mergedIntoDraftId}`}>{draftName(draft.mergedIntoDraftId, drafts)}</Link> : "—"}</p>}<p className="text-xs uppercase tracking-widest text-muted">Reference-only; no normal active edit button</p></article>)}</div>
+            <div className="border border-border/70 bg-background/20 p-4"><p className="text-xs uppercase tracking-widest text-accent mb-2">Resolved duplicate groups</p><p>{resolvedDuplicateGroups.length} group(s) no longer have at least two active, non-merged candidates.</p></div>
           </div>
-        </section>
+        </details>
 
-        <section className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-          <div className="lg:col-span-3 border border-border bg-surface p-6 space-y-5">
-            <div>
-              <p className="text-xs uppercase tracking-[0.5em] text-muted mb-3">
-                Draft Workspace
-              </p>
-              <h2 className="text-2xl font-bold text-foreground">
-                Draft Workspace
-              </h2>
-              <p className="text-sm text-muted mt-2">
-                Manual draft only — BNL generation comes later. Saving this
-                draft does not publish anything.{" "}
-                {
-                  "Sheila/Cliff-style Network characters are not the same as community mods."
-                }
-              </p>
-            </div>
-            {!selectedDraft ? (
-              <div className="border border-border bg-background/30 p-4 text-sm text-muted">
-                <p className="text-xs uppercase tracking-widest text-accent mb-2">
-                  No Draft Selected
-                </p>
-                <p>
-                  {selectedCandidate
-                    ? `${selectedCandidate.name} is selected. Use Create Draft in the Candidate Queue to start a manual workflow draft.`
-                    : "No selected candidate."}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-5">
-                <div className="border border-border bg-background/30 p-4 text-xs text-muted space-y-2">
-                  <p className="uppercase tracking-widest text-accent">
-                    Selected Draft
-                  </p>
-                  <p>
-                    <span className="text-foreground">Draft:</span>{" "}
-                    {selectedDraft.fields.name || selectedDraft.id}
-                  </p>
-                  <p>
-                    <span className="text-foreground">Status:</span>{" "}
-                    {selectedDraft.status}
-                  </p>
-                  <p>
-                    <span className="text-foreground">Linked candidate:</span>{" "}
-                    {selectedDraftCandidate
-                      ? `${selectedDraftCandidate.name} (${selectedDraftCandidate.id})`
-                      : selectedDraft.candidateId}
-                  </p>
-                  <p>
-                    Owner approval will require owner secret in a future PR.
-                    Owner approval is separate from editor save/submit and still
-                    will not publish until publishing workflow exists.
-                  </p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs uppercase tracking-widest text-muted">
-                  <label className="space-y-2">
-                    <span>Name</span>
-                    <input
-                      value={draftForm.name}
-                      onChange={(event) =>
-                        setDraftForm({ ...draftForm, name: event.target.value })
-                      }
-                      className={textInputClass()}
-                    />
-                  </label>
-                  <label className="space-y-2">
-                    <span>Role</span>
-                    <input
-                      value={draftForm.role}
-                      onChange={(event) =>
-                        setDraftForm({ ...draftForm, role: event.target.value })
-                      }
-                      className={textInputClass()}
-                    />
-                  </label>
-                  <label className="space-y-2">
-                    <span>Category</span>
-                    <select
-                      value={draftForm.category}
-                      onChange={(event) =>
-                        setDraftForm({
-                          ...draftForm,
-                          category: event.target.value,
-                        })
-                      }
-                      className={textInputClass()}
-                    >
-                      {categoryOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option || "Select category"}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="space-y-2">
-                    <span>Kind</span>
-                    <select
-                      value={draftForm.kind}
-                      onChange={(event) =>
-                        setDraftForm({
-                          ...draftForm,
-                          kind: event.target.value as DraftForm["kind"],
-                        })
-                      }
-                      className={textInputClass()}
-                    >
-                      {kindOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option || "Select kind"}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="space-y-2">
-                    <span>Ecosystem lane</span>
-                    <select
-                      value={draftForm.ecosystemLane}
-                      onChange={(event) =>
-                        setDraftForm({
-                          ...draftForm,
-                          ecosystemLane: event.target
-                            .value as DraftForm["ecosystemLane"],
-                        })
-                      }
-                      className={textInputClass()}
-                    >
-                      {ecosystemLaneOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option || "Select ecosystem lane"}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="space-y-2">
-                    <span>Identity authority</span>
-                    <select
-                      value={draftForm.identityAuthority}
-                      onChange={(event) =>
-                        setDraftForm({
-                          ...draftForm,
-                          identityAuthority: event.target
-                            .value as DraftForm["identityAuthority"],
-                        })
-                      }
-                      className={textInputClass()}
-                    >
-                      {identityAuthorityOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option || "Select identity authority"}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="space-y-2">
-                    <span>Status</span>
-                    <select
-                      value={draftForm.status}
-                      onChange={(event) =>
-                        setDraftForm({
-                          ...draftForm,
-                          status: event.target.value,
-                        })
-                      }
-                      className={textInputClass()}
-                    >
-                      {statusOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option || "Select status"}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="space-y-2">
-                    <span>Clearance</span>
-                    <select
-                      value={draftForm.clearance}
-                      onChange={(event) =>
-                        setDraftForm({
-                          ...draftForm,
-                          clearance: event.target.value,
-                        })
-                      }
-                      className={textInputClass()}
-                    >
-                      {clearanceOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option || "Select clearance"}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="space-y-2">
-                    <span>Origin</span>
-                    <select
-                      value={draftForm.origin}
-                      onChange={(event) =>
-                        setDraftForm({
-                          ...draftForm,
-                          origin: event.target.value,
-                        })
-                      }
-                      className={textInputClass()}
-                    >
-                      {originOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option || "Select origin"}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="md:col-span-2 space-y-2">
-                    <span>Summary</span>
-                    <textarea
-                      value={draftForm.summary}
-                      onChange={(event) =>
-                        setDraftForm({
-                          ...draftForm,
-                          summary: event.target.value,
-                        })
-                      }
-                      className={`${textInputClass()} min-h-28`}
-                    />
-                  </label>
-                  <label className="md:col-span-2 space-y-2">
-                    <span>Notes</span>
-                    <textarea
-                      value={draftForm.notes}
-                      onChange={(event) =>
-                        setDraftForm({
-                          ...draftForm,
-                          notes: event.target.value,
-                        })
-                      }
-                      className={`${textInputClass()} min-h-28`}
-                    />
-                  </label>
-                  <label className="space-y-2">
-                    <span>Tags, one per line</span>
-                    <textarea
-                      value={draftForm.tags}
-                      onChange={(event) =>
-                        setDraftForm({ ...draftForm, tags: event.target.value })
-                      }
-                      className={`${textInputClass()} min-h-28`}
-                    />
-                  </label>
-                  <label className="space-y-2">
-                    <span>Proposed tags, one per line</span>
-                    <textarea
-                      value={draftForm.proposedTags}
-                      onChange={(event) =>
-                        setDraftForm({
-                          ...draftForm,
-                          proposedTags: event.target.value,
-                        })
-                      }
-                      className={`${textInputClass()} min-h-28`}
-                    />
-                  </label>
-                  <label className="space-y-2">
-                    <span>Primary link label</span>
-                    <input
-                      value={draftForm.primaryLinkLabel}
-                      onChange={(event) =>
-                        setDraftForm({
-                          ...draftForm,
-                          primaryLinkLabel: event.target.value,
-                        })
-                      }
-                      className={textInputClass()}
-                    />
-                  </label>
-                  <label className="space-y-2">
-                    <span>Primary link URL</span>
-                    <input
-                      value={draftForm.primaryLinkUrl}
-                      onChange={(event) =>
-                        setDraftForm({
-                          ...draftForm,
-                          primaryLinkUrl: event.target.value,
-                        })
-                      }
-                      className={textInputClass()}
-                    />
-                  </label>
-                  <label className="space-y-2">
-                    <span>Primary link type</span>
-                    <input
-                      value={draftForm.primaryLinkType}
-                      onChange={(event) =>
-                        setDraftForm({
-                          ...draftForm,
-                          primaryLinkType: event.target.value,
-                        })
-                      }
-                      className={textInputClass()}
-                    />
-                  </label>
-                  <label className="space-y-2">
-                    <span>selectedBy</span>
-                    <select
-                      value={draftForm.selectedBy}
-                      onChange={(event) =>
-                        setDraftForm({
-                          ...draftForm,
-                          selectedBy: event.target
-                            .value as DraftForm["selectedBy"],
-                        })
-                      }
-                      className={textInputClass()}
-                    >
-                      <option value="operator">operator</option>
-                      <option value="subject">subject</option>
-                      <option value="legacy">legacy</option>
-                    </select>
-                  </label>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-muted">
-                  <div className="border border-border bg-background/30 p-3">
-                    <p className="uppercase tracking-widest text-accent mb-2">
-                      Known facts display from candidate
-                    </p>
-                    {listOrEmpty(
-                      selectedDraftCandidate?.knownFacts,
-                      "No known facts recorded on linked candidate.",
-                    )}
-                  </div>
-                  <div className="border border-border bg-background/30 p-3">
-                    <p className="uppercase tracking-widest text-accent mb-2">
-                      Do-not-say display from candidate
-                    </p>
-                    {listOrEmpty(
-                      selectedDraftCandidate?.doNotSay,
-                      "No do-not-say notes recorded on linked candidate.",
-                    )}
-                  </div>
-                  <div className="border border-border bg-background/30 p-3">
-                    <p className="uppercase tracking-widest text-accent mb-2">
-                      Public safety notes display from candidate
-                    </p>
-                    {listOrEmpty(
-                      selectedDraftCandidate?.publicSafetyNotes,
-                      "No public-safety notes recorded on linked candidate.",
-                    )}
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    disabled={saving}
-                    onClick={saveSelectedDraft}
-                    className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
-                  >
-                    Save Draft
-                  </button>
-                  <button
-                    type="button"
-                    disabled={saving}
-                    onClick={submitSelectedDraftForOwnerReview}
-                    className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50"
-                  >
-                    Submit for Owner Review
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="lg:col-span-2 border border-border bg-surface p-6 space-y-5">
-            <div>
-              <p className="text-xs uppercase tracking-[0.5em] text-muted mb-3">
-                Review Actions
-              </p>
-              <h2 className="text-2xl font-bold text-foreground">
-                Review Actions
-              </h2>
-              <p className="text-sm text-muted mt-2">
-                Owner approval actions are disabled placeholders. Owner approval
-                will require owner secret in a future PR and will not publish
-                until publishing exists.
-              </p>
-            </div>
-            <div className="grid grid-cols-1 gap-3">
-              {reviewActions.map((label) => (
-                <button
-                  key={label}
-                  disabled
-                  className="w-full border border-border px-4 py-3 text-xs uppercase tracking-widest text-muted opacity-60"
-                >
-                  {label} — placeholder only
-                </button>
-              ))}
-            </div>
-            <div className="border border-border bg-background/30 p-4 text-xs text-muted space-y-2">
-              <p className="uppercase tracking-widest text-accent">
-                Future API actions
-              </p>
-              <p>{DOSSIER_WORKFLOW_ACTIONS.join(", ")}</p>
-              <p>
-                Current drafts loaded: {drafts.length}. Mutations do not publish
-                or mutate real dossier content.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section className="border border-border bg-surface p-6 space-y-5">
-          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.5em] text-muted mb-3">
-                Owner Review Queue
-              </p>
-              <h2 className="text-2xl font-bold text-foreground">
-                Owner Review Queue
-              </h2>
-              <p className="text-sm text-muted mt-2">
-                Drafts waiting for owner review appear here. Owner approval is
-                separate from editor save/submit and remains placeholder-only.
-              </p>
-            </div>
-            <p className="text-xs uppercase tracking-widest text-muted">
-              {payload.ownerReviewQueue?.waitingCount ??
-                ownerReviewDrafts.length}{" "}
-              waiting / {payload.ownerReviewQueue?.draftCount ?? drafts.length}{" "}
-              drafts /{" "}
-              {payload.ownerReviewQueue?.candidateCount ?? candidates.length}{" "}
-              candidates
-            </p>
-          </div>
-          <div className="grid grid-cols-1 gap-3 text-xs text-muted">
-            {ownerReviewDrafts.length === 0 ? (
-              <p className="border border-border bg-background/30 p-4">
-                No drafts are ready_for_owner_review yet.
-              </p>
-            ) : (
-              ownerReviewDrafts.map((draft) => {
-                const candidate = candidates.find(
-                  (item) => item.id === draft.candidateId,
-                );
-                return (
-                  <div
-                    key={draft.id}
-                    className="border border-border bg-background/30 p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
-                  >
-                    <div>
-                      <p className="text-foreground">
-                        {draft.fields.name || draft.id}
-                      </p>
-                      <p>
-                        Linked candidate:{" "}
-                        {candidate
-                          ? `${candidate.name} (${candidate.id})`
-                          : draft.candidateId}
-                      </p>
-                      <p>Updated: {draft.updatedAt}</p>
-                      <p>Status: {draft.status}</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedDraftId(draft.id);
-                          setSelectedCandidateId(draft.candidateId);
-                          setDraftForm(draftFormFromDraft(draft));
-                        }}
-                        className="border border-accent px-3 py-2 uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
-                      >
-                        Open
-                      </button>
-                      <button
-                        type="button"
-                        disabled
-                        className="border border-border px-3 py-2 uppercase tracking-widest text-muted opacity-60"
-                      >
-                        Owner Approve — placeholder
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </section>
-
-        <section className="border border-border bg-surface p-6 space-y-5">
-          <div>
-            <p className="text-xs uppercase tracking-[0.5em] text-muted mb-3">
-              Focused BNL Assistant
-            </p>
-            <h2 className="text-2xl font-bold text-foreground">
-              Focused BNL Assistant
-            </h2>
-            <p className="text-sm text-muted mt-2">
-              Disabled placeholder only. It does not call BNL, write memory,
-              publish, create tags, or create dossiers in this PR.
-            </p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
-            {focusedAssistantPrompts.map((prompt) => (
-              <button
-                key={prompt}
-                disabled
-                className="border border-border bg-background/30 px-3 py-3 text-xs uppercase tracking-widest text-muted opacity-60"
-              >
-                {prompt}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="border border-accent/40 bg-surface p-6 space-y-5">
-          <div>
-            <p className="text-xs uppercase tracking-[0.5em] text-accent mb-3">
-              System Boundaries
-            </p>
-            <h2 className="text-2xl font-bold text-foreground">
-              System Boundaries
-            </h2>
-            <p className="text-sm text-muted mt-2">
-              The dossier workflow keeps evidence, draft generation, approval,
-              and publishing separate.
-            </p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-muted">
-            {boundaries.map((boundary) => (
-              <p
-                key={boundary}
-                className="border border-border bg-background/30 p-3"
-              >
-                {boundary}
-              </p>
-            ))}
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 text-xs text-muted">
-            {DOSSIER_SOURCE_BOUNDARIES.map((source) => (
-              <div
-                key={source.source}
-                className="border border-border bg-background/30 p-4 space-y-2"
-              >
-                <p className="uppercase tracking-widest text-accent">
-                  {source.source}
-                </p>
-                <p className="text-foreground">{source.label}</p>
-                <p>{source.boundary}</p>
-                <p>{source.allowedUse}</p>
-              </div>
-            ))}
-          </div>
-          <ul className="list-disc pl-5 text-sm text-muted space-y-1">
-            <li>BNL recommends and drafts only.</li>
-            <li>
-              Admin approves/publishes in a future controlled publishing
-              workflow.
-            </li>
-            <li>No automatic dossier creation.</li>
-            <li>No automatic tag creation.</li>
-            <li>No Discord identity merging.</li>
-            <li>No payment/customer identity.</li>
-            <li>Queue frequency is evidence, not identity.</li>
-            <li>
-              Loose intake / strict publishing keeps early candidates separate
-              from approved public dossiers.
-            </li>
+        <DashboardCard eyebrow="Boundaries" title="System Boundaries">
+          <ul className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm text-muted">
+            <li className="border border-border/70 bg-background/20 p-3">No BNL invocation.</li>
+            <li className="border border-border/70 bg-background/20 p-3">No publishing.</li>
+            <li className="border border-border/70 bg-background/20 p-3">No automatic tag creation.</li>
+            <li className="border border-border/70 bg-background/20 p-3">No public database mutation.</li>
           </ul>
-        </section>
+          <p className="text-xs text-muted">Dedicated pages keep operators in one lane: candidate review, focused draft editor, owner review, or merge review. Dashboard buttons navigate; there is no hidden editor below unrelated sections and no dashboard auto-scroll workflow.</p>
+        </DashboardCard>
       </section>
     </main>
   );

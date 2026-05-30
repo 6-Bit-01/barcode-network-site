@@ -225,77 +225,57 @@ test("admin panel includes Dossier Control Center link", () => {
   assert.match(adminPage, /href="\/admin\/dossiers"/);
 });
 
-test("admin dossier page gates workflow behind successful API payload and includes manual intake UI", () => {
+test("admin dossier dashboard is traffic control instead of an all-in-one workbench", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
   for (const label of [
     "Dossier Control Center",
-    "Manual Candidate Intake",
-    "Candidate Queue",
-    "Candidate Evidence",
-    "Candidate Gate / Scoring",
-    "Draft Readiness / Missing Info",
-    "Draft Workspace",
-    "Review Actions",
-    "Owner Review Queue",
-    "Focused BNL Assistant",
+    "Quick Candidate Intake",
+    "Manual fallback / quick seed",
+    "BNL Dossier Workbench — Coming Next",
+    "Prompt-based dossier drafting comes next",
+    "BNL will generate complete dossier drafts from source files",
+    "BNL will ask only for missing decisions",
+    "Manual editing remains available",
+    "Manual fields are fallback/advanced",
+    "Manual fields are fallback only",
+    "Active BNL Source Files",
+    "Proposed Dossiers",
+    "Owner Review",
+    "Final Admin Drafts",
+    "Duplicate Warnings",
+    "Closed / History",
     "System Boundaries",
+    "Create Manual Candidate",
+    "Open Source File",
+    "Create Proposed Dossier",
+    "Open Proposed Dossier",
+    "View Warning / Open Merge Review",
+    "No BNL invocation",
+    "No publishing",
+    "No automatic tag creation",
+    "No public database mutation",
   ]) {
     assert.match(page, new RegExp(label));
   }
-  for (const label of [
-    "Known facts",
-    "Missing info",
-    "Do Not Say",
-    "Public safety notes",
-    "Recommended kind",
-    "Recommended ecosystem lane",
-    "Recommended identity authority",
-    "Kind",
-    "Ecosystem lane",
-    "Identity authority",
-    "Deny",
-    "Needs More Evidence",
-    "Create Draft",
-    "Save Draft",
-    "Submit for Owner Review",
-    "Manual draft only",
-    "does not publish",
-    "Focused BNL Assistant",
-    "Disabled placeholder only",
-  ]) {
-    assert.match(page, new RegExp(label));
-  }
-  assert.match(page, /\/api\/admin\/dossiers/);
-  assert.match(page, /Create Manual Candidate/);
-  assert.match(page, /Featured\/primary link label/);
-  assert.match(page, /selectedBy/);
-  assert.match(page, /No selected candidate/);
-  assert.match(page, /Why Now/);
-  assert.match(page, /Duplicate Risk/);
-  assert.match(page, /loose intake \/ strict publishing/i);
-  assert.match(page, /Try Again: Too Long/);
-  assert.match(page, /Owner Approve Draft/);
-  assert.match(page, /kind: draftForm\.kind \|\| undefined/);
-  assert.match(page, /ecosystemLane: draftForm\.ecosystemLane \|\| undefined/);
-  assert.match(
-    page,
-    /identityAuthority: draftForm\.identityAuthority \|\| undefined/,
-  );
-  assert.match(page, /BNL generation comes later/);
-  assert.match(
-    page,
-    /AI\/human\/unknown are tags, not the organizing structure/,
-  );
-  assert.match(
-    page,
-    /Identity authority separates BARCODE-controlled characters from community-owned identities/,
-  );
-  assert.match(
-    page,
-    /Sheila\/Cliff-style Network characters are not the same as community mods/,
-  );
 
-  assert.doesNotMatch(page, /fetch\(\"\/api\/bnl/);
+  for (const route of [
+    "/admin/dossiers/candidates/",
+    "/admin/dossiers/drafts/",
+    "/admin/dossiers/duplicates/",
+  ]) {
+    assert.match(page, new RegExp(route));
+  }
+
+  assert.doesNotMatch(page, /Draft Workspace/);
+  assert.doesNotMatch(page, /Candidate Evidence/);
+  assert.doesNotMatch(page, /Candidate Gate \/ Scoring/);
+  assert.doesNotMatch(page, /Focused BNL Assistant/);
+  assert.doesNotMatch(page, /Merge candidates and create\/update master draft/);
+  assert.doesNotMatch(page, /Save Draft/);
+  assert.doesNotMatch(page, /Submit for Owner Review/);
+  assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
+  assert.match(page, /target="_blank"/);
+  assert.match(page, /rel="noopener noreferrer"/);
   assert.match(page, /if \(loading\)/);
   assert.match(page, /if \(error \|\| !payload\)/);
 
@@ -312,12 +292,251 @@ test("admin dossier page gates workflow behind successful API payload and includ
   );
 });
 
+
+test("dossier admin pages expose numbered dossier phases and clearer labels", () => {
+  const dashboard = source("src/app/admin/dossiers/page.tsx");
+  for (const label of [
+    "Phase 1 — BNL Source File",
+    "Phase 2 — Proposed Dossier + BNL Edit Chat",
+    "Phase 3 — Final Admin Draft",
+    "Phase 4 — Owner Review",
+    "Phase 5 — Approved / Publish Later",
+    "Active BNL Source Files",
+    "Proposed Dossiers",
+    "Duplicate Warnings",
+    "Closed / History",
+  ]) {
+    assert.ok(dashboard.includes(label), `${label} should be present`);
+  }
+
+  const sourceFilePage = source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+  assert.match(sourceFilePage, /Phase 1 — BNL Source File/);
+  assert.match(sourceFilePage, /This page collects what BNL knows and what mods\/admins add/);
+  assert.match(sourceFilePage, /source material, not the public dossier/);
+
+  const draftPage = source("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
+  assert.match(draftPage, /Phase 2 — Proposed Dossier \+ BNL Edit Chat/);
+  assert.match(draftPage, /This page shows the proposed completed dossier built from the BNL Source File/);
+  assert.match(draftPage, /This page shows the proposed completed dossier built from the BNL Source File/);
+
+  const ownerPage = source("src/app/admin/dossiers/owner-review/page.tsx");
+  assert.match(ownerPage, /Phase 4 — Owner Review/);
+  assert.match(ownerPage, /This is Owner Review/);
+});
+
 test("admin dossier page has minimal loading and auth-required states", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
   assert.match(page, /Checking admin access\.\.\./);
   assert.match(page, /Admin authentication required/);
   assert.match(page, /Back to Admin/);
   assert.match(page, /MinimalDossierAdminState/);
+});
+
+
+test("dedicated draft editor route contains focused editing workflow and future BNL boundary", () => {
+  const routePath = "src/app/admin/dossiers/drafts/[draftId]/page.tsx";
+  assert.equal(fs.existsSync(path.join(projectRoot, routePath)), true);
+  const page = source(routePath);
+  for (const label of [
+    "Proposed Dossier + BNL Edit Chat",
+    "BNL Source File",
+    "Proposed Dossier Preview",
+    "BNL Edit Chat panel — Coming Next",
+    "Open Advanced Manual Edit",
+    "fallback/manual override",
+    "Save Draft",
+    "Complete Admin Draft",
+    "Final Admin Draft",
+    "Send to Owner Review",
+    "Return to Editing",
+    "Sending to owner does not publish",
+    "BNL edit chat comes next",
+    "revise the proposed dossier conversationally",
+    "manual override",
+    "category",
+    "kind",
+    "ecosystemLane",
+    "identityAuthority",
+    "Saving does not publish.",
+    "Exact character limits will be enforced in a later PR.",
+    "Sent to Owner Review",
+    "Waiting for owner final pass",
+    "Back to Dossier Dashboard",
+  ]) {
+    assert.ok(page.includes(label), `${label} should be present`);
+  }
+  assert.match(page, /useParams/);
+  assert.match(page, /routeParam\(params\?\.draftId\)/);
+  assert.match(page, /action: "saveDraft"/);
+  assert.match(page, /action: "submitDraftForOwnerReview"/);
+  assert.match(page, /setSubmitted\(true\)/);
+  assert.match(page, /nonEditableDraftStatuses/);
+  assert.match(page, /draft\.status === "ready_for_owner_review"/);
+  assert.match(page, /Already submitted to Owner Review/);
+  assert.match(page, /BNL will eventually generate the proposed dossier from the BNL Source File and approved sources/);
+  assert.match(page, /BNL should ask only for missing specifics/);
+  assert.match(page, /Draft is superseded/);
+  assert.match(page, /Publishing not built yet/);
+  assert.match(page, /Open BNL Source File/);
+  assert.match(page, /Send to Owner Review/);
+  assert.match(page, /Return to Editing/);
+  assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
+  assert.doesNotMatch(page, /publishDraft/);
+});
+
+test("dedicated candidate review route contains focused evidence and action workflow", () => {
+  const routePath = "src/app/admin/dossiers/candidates/[candidateId]/page.tsx";
+  assert.equal(fs.existsSync(path.join(projectRoot, routePath)), true);
+  const page = source(routePath);
+  for (const label of [
+    "BNL Source File",
+    "Add to BNL Source File",
+    "Add Link",
+    "Add Missing Info",
+    "Add Public Safety Note",
+    "Add Do-Not-Say Note",
+    "Additional Info Added After Submission",
+    "Admin Addendum",
+    "This adds source material for BNL to use later",
+    "It does not directly edit the proposed dossier",
+    "Coming later: this will save notes to the BNL Source File",
+    "Create / Open Proposed Dossier",
+    "Open Proposed Dossier",
+        "Mark Needs Info",
+    "Evidence summary",
+    "Evidence items",
+    "Public safety notes",
+    "Do-not-say",
+    "Recommended taxonomy",
+  ]) {
+    assert.match(page, new RegExp(label));
+  }
+  assert.match(page, /useParams/);
+  assert.match(page, /routeParam\(params\?\.candidateId\)/);
+  assert.match(page, /action: "createDraftFromCandidate"/);
+  assert.doesNotMatch(page, />Deny<|>Deny<\/button>/);
+  assert.doesNotMatch(page, />Final Approve<|>Publish<|>Delete<|>Final Merge</);
+  assert.match(page, /action, candidateId/);
+  assert.match(page, /target="_blank"/);
+  assert.match(page, /rel="noopener noreferrer"/);
+  assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
+  assert.doesNotMatch(page, /publishDraft/);
+});
+
+test("dedicated duplicate merge route contains focused manual merge workflow", () => {
+  const routePath = "src/app/admin/dossiers/duplicates/[groupId]/page.tsx";
+  assert.equal(fs.existsSync(path.join(projectRoot, routePath)), true);
+  const page = source(routePath);
+  for (const label of [
+    "Merge Review",
+    "Merge is owner/lead cleanup",
+    "This combines BNL Source Files",
+    "Owner/Lead Merge Controls",
+    "high-risk admin preview",
+    "Nothing auto-merges",
+    "Source candidates are preserved",
+    "Source drafts are preserved",
+    "Merge candidates only",
+    "Merge candidates and create/update master draft",
+    "Pre-merge summary",
+    "Master candidate:",
+    "Included candidates:",
+    "No public database record will be created.",
+    "No tags will be created.",
+    "BNL will not be invoked.",
+    "Merge result",
+    "Merged source candidates",
+    "Superseded source drafts",
+    "Open master draft",
+  ]) {
+    assert.match(page, new RegExp(label));
+  }
+  assert.match(page, /useParams/);
+  assert.match(page, /routeParam\(params\?\.groupId\)/);
+  assert.match(page, /action: "mergeCandidates"/);
+  assert.match(page, /disabled=\{saving \|\| !canMerge\}/);
+  assert.match(page, /includedCandidateIds\.includes\(primaryCandidate\.id\)/);
+  assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
+  assert.doesNotMatch(page, /publishDraft/);
+});
+
+test("dashboard uses actual workflow ids and state-aware lane filtering", () => {
+  const page = source("src/app/admin/dossiers/page.tsx");
+  assert.match(page, /href=\{`\/admin\/dossiers\/candidates\/\$\{candidate\.id\}`\}/);
+  assert.match(page, /href=\{`\/admin\/dossiers\/drafts\/\$\{draft\.id\}`\}/);
+  assert.match(page, /href=\{`\/admin\/dossiers\/duplicates\/\$\{group\.id\}`\}/);
+  assert.match(page, /activeCandidateStatuses/);
+  assert.match(page, /activeCandidates = candidates\.filter/);
+  assert.match(page, /candidate\.status === "denied" \|\| candidate\.status === "merged"/);
+  assert.match(page, /activeDraftStatuses/);
+  assert.match(page, /closedDraftStatuses/);
+  assert.match(page, /Closed \/ History/);
+  assert.match(page, /Closed \/ History — Merged Candidates/);
+  assert.match(page, /Closed \/ History — Superseded Drafts/);
+  assert.match(page, /disabled=\{saving \|\| !canCreateDraft\}/);
+  assert.match(page, /Active draft already exists/);
+  assert.match(page, /Source file was merged or closed/);
+  assert.match(page, /Add info or create proposed dossier/);
+  assert.match(page, /Add to Source File/);
+  assert.match(page, /Open proposed dossier/);
+  assert.match(page, /Mark Needs Info/);
+  assert.match(page, /Recommend Dismissal/);
+  assert.match(page, /Open Proposed Dossier/);
+  assert.match(page, /Superseded by/);
+  assert.match(page, /Active BNL Source Files/);
+  assert.match(page, /Duplicate Warnings/);
+  assert.match(page, /View Warning \/ Open Merge Review/);
+  assert.match(page, /Recommend Dismissal/);
+  assert.doesNotMatch(page, />Deny<|>Deny<\/button>/);
+  assert.match(page, /"approved"/);
+  assert.match(page, /"owner_approved"/);
+  assert.match(page, /mergedIntoCandidateId/);
+  assert.match(page, /mergedAt/);
+  assert.match(page, /mergedIntoDraftId/);
+  assert.match(page, /No normal active action buttons/);
+  assert.match(page, /Reference-only; no normal active edit button/);
+});
+
+test("dashboard frames manual intake as fallback and future BNL-led workbench", () => {
+  const page = source("src/app/admin/dossiers/page.tsx");
+  for (const label of [
+    "Manual fallback / quick seed",
+    "Use this when BNL has not suggested a candidate yet",
+    "Main BNL-led workbench comes later",
+    "BNL Dossier Workbench — Coming Next",
+    "Prompt-based dossier drafting comes next",
+    "Mods/admins will guide BNL in plain language",
+    "BNL will use the source file and approved sources to build a complete dossier draft",
+    "BNL will generate complete dossier drafts from source files",
+    "BNL will ask only for missing decisions",
+    "Manual editing remains available",
+    "Manual fields are fallback/advanced",
+    "Manual fields are fallback only",
+    "Admin selects or creates a candidate",
+    "Owner opens the submitted draft",
+    "Future source packet",
+  ]) {
+    assert.match(page, new RegExp(label));
+  }
+  assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
+});
+
+test("owner review page is a placeholder lane without publishing", () => {
+  const routePath = "src/app/admin/dossiers/owner-review/page.tsx";
+  assert.equal(fs.existsSync(path.join(projectRoot, routePath)), true);
+  const page = source(routePath);
+  assert.match(page, /Owner Final Review Queue/);
+  assert.match(page, /This is Owner Review\. The owner does the final pass/);
+  assert.match(page, /Owner final review is separate from admin drafting/);
+  assert.match(page, /Owner will be able to use BNL assistance plus manual editing/);
+  assert.match(page, /Owner can approve, send back, request more info, or deny/);
+  assert.match(page, /Owner approval will require owner gate\/secret in a later PR/);
+  assert.match(page, /Additional Info Added After Submission \/ Admin Addendum/);
+  assert.match(page, /Approval does not publish yet/);
+  assert.match(page, /Owner approval still will not publish until publishing exists/);
+  assert.match(page, /View Submitted Draft/);
+  assert.doesNotMatch(page, /publishDraft/);
+  assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
 });
 
 test("dossier workflow types include manual input and scoring policy contracts", () => {
@@ -1136,13 +1355,18 @@ test("mergeCandidates does not mutate public database, public read model, tag re
   assert.equal(readModelAfter.sections.dossiers.items.some((entry) => entry.name === "Workflow Merge Only"), false);
 });
 
-test("admin dossiers page includes duplicate merge workflow copy and controls", () => {
+test("admin dossiers dashboard links duplicate groups to dedicated merge review", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
-  assert.match(page, /Possible Duplicates \/ Merge/);
-  assert.match(page, /Merge into Master Candidate/);
-  assert.match(page, /Create Master Draft from Merge/);
-  assert.match(page, /Merge is manual/);
-  assert.match(page, /Source candidates are preserved/);
-  assert.match(page, /Source drafts are preserved/);
-  assert.match(page, /BNL merge writing comes later/);
+  const mergePage = source("src/app/admin/dossiers/duplicates/[groupId]/page.tsx");
+  assert.match(page, /Duplicate Warnings/);
+  assert.match(page, /View Warning \/ Open Merge Review/);
+  assert.match(page, /\/admin\/dossiers\/duplicates\//);
+  assert.doesNotMatch(page, /Merge into Master Candidate/);
+  assert.doesNotMatch(page, /Create Master Draft from Merge/);
+  assert.match(mergePage, /Merge is owner\/lead cleanup/);
+  assert.match(mergePage, /This combines BNL Source Files/);
+  assert.match(mergePage, /Nothing auto-merges/);
+  assert.match(mergePage, /Source candidates are preserved/);
+  assert.match(mergePage, /Source drafts are preserved/);
+  assert.match(mergePage, /BNL merge writing comes later/);
 });

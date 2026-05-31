@@ -971,6 +971,21 @@ export default function DossierControlCenterPage() {
             work, not as brand-new public dossiers. Owner approval is required
             before public changes.
           </p>
+          <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-muted">
+            <p className="border border-border/70 bg-background/20 p-3">
+              Existing public dossier found: protected source lookup can now
+              recognize a published dossier target even when no internal update
+              file exists yet.
+            </p>
+            <p className="border border-border/70 bg-background/20 p-3">
+              No internal update file exists yet: use the protected Create
+              Existing Dossier Update action before enrichment attaches notes.
+            </p>
+            <p className="border border-border/70 bg-background/20 p-3">
+              Review-only; no public changes. The update lane does not approve
+              public copy, aliases, identity merges, or publication.
+            </p>
+          </div>
           {existingDossierUpdates.length === 0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
               No existing public dossier update records are waiting.

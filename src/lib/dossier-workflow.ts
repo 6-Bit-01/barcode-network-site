@@ -313,6 +313,12 @@ export type CreateManualDossierCandidateInput = {
   primaryLink?: DossierDraft["fields"]["primaryLink"];
 };
 
+export type CreateExistingDossierUpdateTargetInput = {
+  dossierId: string;
+  requestedSubject?: string;
+  createdBy?: string;
+};
+
 export type DossierDuplicateGroup = {
   id: string;
   normalizedName: string;

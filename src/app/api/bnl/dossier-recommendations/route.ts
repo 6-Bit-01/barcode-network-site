@@ -23,6 +23,7 @@ const RECOMMENDATION_TYPES = [
   "new_subject",
   "modify_existing_dossier",
   "identity_link",
+  "possible_connection_review",
 ] as const satisfies readonly DossierRecommendationType[];
 const SOURCE_LANES = [
   "public_discord",
@@ -132,6 +133,46 @@ function tokenMatches(providedToken: string): boolean {
   return expected.length === provided.length && timingSafeEqual(expected, provided);
 }
 
+function supportedIngestSource(value: unknown): CreateDossierRecommendationInput["ingestSource"] {
+  const normalized = text(value, 80);
+  if (
+    normalized === "bnl_dynamic_candidate_discovery" ||
+    normalized === "bnl_source_knowledge_bridge"
+  ) {
+    return normalized;
+  }
+  return "bnl";
+}
+
+function normalizeBridgeSourceLane(value: unknown): {
+  lane: DossierRecommendationSourceLane;
+  original?: string;
+} {
+  if (typeof value !== "string") throw new Error("Invalid source lane");
+  if (SOURCE_LANES.includes(value as DossierRecommendationSourceLane)) {
+    return { lane: value as DossierRecommendationSourceLane };
+  }
+  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
+  const mapped: Record<string, DossierRecommendationSourceLane> = {
+    source_blind_memory_trace: "broadcast_memory",
+    memory_trace: "broadcast_memory",
+    broadcast_trace: "broadcast_memory",
+    local_broadcast_memory: "broadcast_memory",
+    rd_knowledge_store: "rd_context",
+    r_d_knowledge_store: "rd_context",
+    local_rd_context: "rd_context",
+    website_read_model: "website_dossier",
+    existing_dossier: "website_dossier",
+    source_file: "admin_manual",
+    source_files: "admin_manual",
+    source_knowledge_bridge: "admin_manual",
+    bnl_source_knowledge_bridge: "admin_manual",
+    local_knowledge_store: "admin_manual",
+    operator_notes: "admin_manual",
+  };
+  return { lane: mapped[normalized] ?? "unknown", original: value.trim() };
+}
+
 function normalizePayload(value: unknown): CreateDossierRecommendationInput {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Invalid payload");
@@ -139,16 +180,29 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
   const payload = value as Record<string, unknown>;
   if (Object.keys(payload).length === 0) throw new Error("Invalid payload");
 
+  const ingestSource = supportedIngestSource(payload.ingestSource);
+  const isBridgeIngest = ingestSource === "bnl_source_knowledge_bridge";
   const sourceLanesInput = payload.sourceLanes;
   let sourceLanes: DossierRecommendationSourceLane[];
+  const bridgeSourceLaneDetails: string[] = [];
   if (sourceLanesInput === undefined) {
     sourceLanes = ["unknown"];
   } else {
     if (!Array.isArray(sourceLanesInput)) throw new Error("Invalid source lane");
-    sourceLanes = sourceLanesInput.map((lane) =>
-      enumValue(lane, SOURCE_LANES, "source lane"),
-    ) as DossierRecommendationSourceLane[];
-    sourceLanes = sourceLanes.filter(Boolean);
+    if (isBridgeIngest) {
+      const normalized = sourceLanesInput.map(normalizeBridgeSourceLane);
+      sourceLanes = normalized.map((item) => item.lane);
+      bridgeSourceLaneDetails.push(
+        ...normalized
+          .filter((item) => item.original)
+          .map((item) => `${item.original} -> ${item.lane}`),
+      );
+    } else {
+      sourceLanes = sourceLanesInput.map((lane) =>
+        enumValue(lane, SOURCE_LANES, "source lane"),
+      ) as DossierRecommendationSourceLane[];
+    }
+    sourceLanes = Array.from(new Set(sourceLanes.filter(Boolean)));
     if (sourceLanes.length === 0) sourceLanes = ["unknown"];
   }
 
@@ -162,6 +216,16 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
 
   const subjectName = text(payload.subjectName, 200);
   const reason = text(payload.reason, 2000);
+  const evidenceSummary = text(payload.evidenceSummary, 2000);
+  const bridgeEvidenceSummary = bridgeSourceLaneDetails.length
+    ? [
+        evidenceSummary,
+        `Bridge source lane mapping: ${bridgeSourceLaneDetails.join(", ")}`,
+      ]
+        .filter(Boolean)
+        .join("\n\n")
+        .slice(0, 2000)
+    : evidenceSummary;
   if (!subjectName) throw new Error("subjectName is required");
   if (!reason) throw new Error("reason is required");
 
@@ -172,7 +236,7 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
     targetCandidateId: text(payload.targetCandidateId, 200),
     targetDossierId,
     reason,
-    evidenceSummary: text(payload.evidenceSummary, 2000),
+    evidenceSummary: bridgeEvidenceSummary,
     confidence: enumValue(payload.confidence, CONFIDENCES, "confidence"),
     sourceLanes,
     suggestedAction: text(payload.suggestedAction, 500),
@@ -195,10 +259,7 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
     createdBy: text(payload.createdBy, 200) ?? "bnl",
     ingestKey: text(payload.ingestKey, 300),
     ingestedAt: new Date().toISOString(),
-    ingestSource:
-      text(payload.ingestSource, 80) === "bnl_dynamic_candidate_discovery"
-        ? "bnl_dynamic_candidate_discovery"
-        : "bnl",
+    ingestSource,
   };
 }
 

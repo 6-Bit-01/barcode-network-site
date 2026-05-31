@@ -853,6 +853,77 @@ test("BNL source file read model resolves subject and returns bounded provenance
   assert.deepEqual(after, before);
 });
 
+
+
+test("BNL source file read model includes Source Knowledge Bridge candidates with boundary warnings", async () => {
+  await resetDossierWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  const candidate = await seedSourceFileReadModelState({
+    candidate: {
+      id: "candidate_bridge_subject",
+      name: "Bridge Known Subject",
+      source: "bnl_source_knowledge_bridge",
+      ingestSource: "bnl_source_knowledge_bridge",
+      ingestKey: "bnl:bridge-known-subject",
+      createdFromRecommendationId: "rec_bridge_subject",
+      sourceLanes: ["broadcast_memory", "admin_manual"],
+      publicSafetyNotes: [
+        "Source Knowledge Bridge origin: BNL local knowledge stores.",
+        "Public use requires review before any public dossier copy is written.",
+        "source-blind memory trace",
+      ],
+      sourceFileNotes: [
+        {
+          id: "note_bridge_subject",
+          candidateId: "candidate_bridge_subject",
+          type: "general_note",
+          text: "BNL Source Knowledge Bridge origin. Source Knowledge Bridge source lanes/types summary: broadcast_memory, admin_manual. Public use requires review before any public dossier copy is written. source-blind memory trace.",
+          source: "bnl_recommendation",
+          status: "active",
+          publicSafe: false,
+          ingestSource: "bnl_source_knowledge_bridge",
+          ingestKey: "bnl:bridge-known-subject",
+          createdAt: "2026-05-30T00:00:00.000Z",
+          updatedAt: "2026-05-30T00:00:00.000Z",
+        },
+      ],
+    },
+    recommendations: [
+      {
+        id: "rec_bridge_subject",
+        type: "new_subject",
+        subjectName: "Bridge Known Subject",
+        targetCandidateId: "candidate_bridge_subject",
+        status: "converted_to_source_file",
+        reason: "Bridge recommendation converted into an internal source file.",
+        evidenceSummary: "Bridge local knowledge stores found the subject.",
+        confidence: "medium",
+        sourceLanes: ["broadcast_memory", "admin_manual"],
+        ingestKey: "bnl:bridge-known-subject",
+        ingestSource: "bnl_source_knowledge_bridge",
+        createdAt: "2026-05-30T00:00:00.000Z",
+        updatedAt: "2026-05-30T00:00:00.000Z",
+      },
+    ],
+  });
+
+  const payload = await (await sourceFilesGet("?subject=Bridge%20Known%20Subject")).json();
+  assert.equal(payload.found, true);
+  assert.equal(payload.sourceFile.candidateId, candidate.id);
+  assert.equal(payload.sourceFile.source, "bnl_source_knowledge_bridge");
+  assert.equal(payload.sourceFile.ingestSource, "bnl_source_knowledge_bridge");
+  assert.deepEqual(payload.sourceFile.sourceLanes, ["broadcast_memory", "admin_manual"]);
+  assert.match(payload.sourceFile.visibility.boundaryLabel, /internal working case file; not a public dossier/);
+  assert.equal(payload.sourceFile.visibility.publicUseReviewRequired, true);
+  assert.match(JSON.stringify(payload.sourceFile), /Source Knowledge Bridge origin|Public use requires review|source-blind memory trace/);
+
+  const publicPayload = await modelJson();
+  assert.doesNotMatch(
+    JSON.stringify(publicPayload),
+    /Bridge Known Subject|bnl:bridge-known-subject|Source Knowledge Bridge/,
+  );
+});
+
 test("BNL source file read model resolves candidateId and normalizedName lookups", async () => {
   await resetDossierWorkflowStore();
   process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";

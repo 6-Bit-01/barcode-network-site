@@ -11,6 +11,7 @@ export type DossierCandidateSource =
   | "discord_context"
   | "website_read_model"
   | "bnl_dynamic_candidate_discovery"
+  | "bnl_source_knowledge_bridge"
   | "combined";
 
 export type DossierCandidateType =
@@ -319,7 +320,8 @@ export type DossierDuplicateGroup = {
 export type DossierRecommendationType =
   | "new_subject"
   | "modify_existing_dossier"
-  | "identity_link";
+  | "identity_link"
+  | "possible_connection_review";
 
 export type DossierRecommendationStatus =
   | "new"
@@ -344,6 +346,7 @@ export type DossierRecommendationSourceLane =
 export type DossierRecommendationIngestSource =
   | "bnl"
   | "bnl_dynamic_candidate_discovery"
+  | "bnl_source_knowledge_bridge"
   | "system"
   | "unknown";
 

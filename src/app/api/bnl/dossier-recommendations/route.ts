@@ -137,7 +137,8 @@ function supportedIngestSource(value: unknown): CreateDossierRecommendationInput
   const normalized = text(value, 80);
   if (
     normalized === "bnl_dynamic_candidate_discovery" ||
-    normalized === "bnl_source_knowledge_bridge"
+    normalized === "bnl_source_knowledge_bridge" ||
+    normalized === "bnl_source_file_enrichment"
   ) {
     return normalized;
   }
@@ -167,6 +168,11 @@ function normalizeBridgeSourceLane(value: unknown): {
     source_files: "admin_manual",
     source_knowledge_bridge: "admin_manual",
     bnl_source_knowledge_bridge: "admin_manual",
+    bnl_source_file_enrichment: "admin_manual",
+    source_file_enrichment: "admin_manual",
+    active_source_file: "admin_manual",
+    candidate_intake: "admin_manual",
+    existing_dossier_update: "website_dossier",
     local_knowledge_store: "admin_manual",
     operator_notes: "admin_manual",
   };
@@ -182,6 +188,8 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
 
   const ingestSource = supportedIngestSource(payload.ingestSource);
   const isBridgeIngest = ingestSource === "bnl_source_knowledge_bridge";
+  const isStructuredBnlSourceIngest =
+    isBridgeIngest || ingestSource === "bnl_source_file_enrichment";
   const sourceLanesInput = payload.sourceLanes;
   let sourceLanes: DossierRecommendationSourceLane[];
   const bridgeSourceLaneDetails: string[] = [];
@@ -189,7 +197,7 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
     sourceLanes = ["unknown"];
   } else {
     if (!Array.isArray(sourceLanesInput)) throw new Error("Invalid source lane");
-    if (isBridgeIngest) {
+    if (isStructuredBnlSourceIngest) {
       const normalized = sourceLanesInput.map(normalizeBridgeSourceLane);
       sourceLanes = normalized.map((item) => item.lane);
       bridgeSourceLaneDetails.push(
@@ -216,7 +224,12 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
 
   const subjectName = text(payload.subjectName, 200);
   const reason = text(payload.reason, 2000);
-  const evidenceSummary = text(payload.evidenceSummary, 2000);
+  const evidenceSummary =
+    payload.evidenceSummary &&
+    typeof payload.evidenceSummary === "object" &&
+    !Array.isArray(payload.evidenceSummary)
+      ? JSON.stringify(payload.evidenceSummary).slice(0, 2000)
+      : text(payload.evidenceSummary, 2000);
   const bridgeEvidenceSummary = bridgeSourceLaneDetails.length
     ? [
         evidenceSummary,
@@ -239,6 +252,7 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
     evidenceSummary: bridgeEvidenceSummary,
     confidence: enumValue(payload.confidence, CONFIDENCES, "confidence"),
     sourceLanes,
+    sourceTypes: stringList(payload.sourceTypes, 120),
     suggestedAction: text(payload.suggestedAction, 500),
     missingInfo: stringList(payload.missingInfo),
     publicSafetyNotes: stringList(payload.publicSafetyNotes),

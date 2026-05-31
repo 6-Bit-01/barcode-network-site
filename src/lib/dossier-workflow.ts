@@ -12,6 +12,7 @@ export type DossierCandidateSource =
   | "website_read_model"
   | "bnl_dynamic_candidate_discovery"
   | "bnl_source_knowledge_bridge"
+  | "bnl_source_file_enrichment"
   | "combined";
 
 export type DossierCandidateType =
@@ -331,6 +332,8 @@ export type DossierRecommendationStatus =
   | "new"
   | "reviewing"
   | "attached_to_source_file"
+  | "attached_to_candidate_intake"
+  | "attached_to_existing_dossier_update"
   | "converted_to_source_file"
   | "identity_link_created"
   | "ignored"
@@ -352,6 +355,7 @@ export type DossierRecommendationIngestSource =
   | "bnl"
   | "bnl_dynamic_candidate_discovery"
   | "bnl_source_knowledge_bridge"
+  | "bnl_source_file_enrichment"
   | "system"
   | "unknown";
 
@@ -367,6 +371,7 @@ export type DossierRecommendation = {
   evidenceSummary?: string;
   confidence?: "low" | "medium" | "high";
   sourceLanes: DossierRecommendationSourceLane[];
+  sourceTypes?: string[];
   suggestedAction?: string;
   missingInfo?: string[];
   publicSafetyNotes?: string[];
@@ -677,6 +682,7 @@ export type CreateDossierRecommendationInput = {
   evidenceSummary?: string;
   confidence?: "low" | "medium" | "high";
   sourceLanes?: DossierRecommendationSourceLane[];
+  sourceTypes?: string[];
   suggestedAction?: string;
   missingInfo?: string[];
   publicSafetyNotes?: string[];
@@ -971,6 +977,14 @@ export const DOSSIER_SOURCE_BOUNDARIES: DossierSourceBoundary[] = [
       "BNL dynamic discovery creates Candidate Intake records first; it never publishes, drafts, confirms aliases, creates tags, or opens active Source Files automatically.",
     allowedUse:
       "May create an admin-only Candidate Intake record when no exact or possible existing source-file match is found; admin promotion is required before active source-file work.",
+  },
+  {
+    source: "bnl_source_file_enrichment",
+    label: "BNL Source File Enrichment",
+    boundary:
+      "BNL-generated enrichment is review-only internal case-file material; it is not discovery, public copy, or publication approval.",
+    allowedUse:
+      "May attach to an existing workflow lane for owner/admin review; it never creates public dossiers, confirms aliases, merges identities, or publishes by itself.",
   },
   {
     source: "combined",

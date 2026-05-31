@@ -195,10 +195,12 @@ function sourceWarningLabels(input: {
     lanes.has("broadcast_memory") ? "Source-blind memory trace" : "",
     input.candidate.ingestSource === "bnl_dynamic_candidate_discovery" ||
     input.candidate.ingestSource === "bnl_source_knowledge_bridge" ||
+    input.candidate.ingestSource === "bnl_source_file_enrichment" ||
     input.recommendations.some(
       (recommendation) =>
         recommendation.ingestSource === "bnl_dynamic_candidate_discovery" ||
-        recommendation.ingestSource === "bnl_source_knowledge_bridge",
+        recommendation.ingestSource === "bnl_source_knowledge_bridge" ||
+        recommendation.ingestSource === "bnl_source_file_enrichment",
     )
       ? "Internal/private review required"
       : "",
@@ -1357,17 +1359,28 @@ export default function CandidateReviewPage() {
             <p>No saved source notes yet.</p>
           ) : (
             <div className="space-y-3">
-              {sourceNotes.map((note) => (
+              {sourceNotes.map((note) => {
+                const isEnrichmentNote =
+                  note.ingestSource === "bnl_source_file_enrichment";
+                return (
                 <article
                   key={note.id}
                   className="border border-border/70 bg-background/20 p-3"
                 >
                   <p className="text-foreground font-semibold">
-                    {note.type} / {note.status}
+                    {isEnrichmentNote ? "BNL Source File Enrichment" : note.type} / {note.status}
                   </p>
+                  {isEnrichmentNote && (
+                    <div className="mb-2 flex flex-wrap gap-2">
+                      <StatusBadge>Review-only</StatusBadge>
+                      <StatusBadge>Internal case-file material</StatusBadge>
+                      <StatusBadge>Not public copy</StatusBadge>
+                      <StatusBadge>Owner/admin review required</StatusBadge>
+                    </div>
+                  )}
                   <p className="whitespace-pre-wrap">{note.text}</p>
                   <p>
-                    Source: {note.source} / Public safe:{" "}
+                    Source: {note.source} / Ingest source: {note.ingestSource ?? "—"} / Public safe:{" "}
                     {String(note.publicSafe)} / Created:{" "}
                     {formatDate(note.createdAt)}
                   </p>
@@ -1385,7 +1398,8 @@ export default function CandidateReviewPage() {
                     )}
                   </p>
                 </article>
-              ))}
+              );
+              })}
             </div>
           )}
         </Section>

@@ -115,8 +115,14 @@ function formatDate(value?: string) {
 }
 
 function recommendationProvenance(recommendation: DossierRecommendation) {
+  if (recommendation.ingestSource === "bnl_source_file_enrichment") {
+    return "BNL Source File Enrichment";
+  }
   if (recommendation.ingestSource === "bnl_dynamic_candidate_discovery") {
     return "BNL dynamic discovery";
+  }
+  if (recommendation.ingestSource === "bnl_source_knowledge_bridge") {
+    return "BNL Source Knowledge Bridge";
   }
   if (recommendation.ingestSource === "bnl" || recommendation.createdBy === "bnl") {
     return "BNL-ingested";
@@ -144,6 +150,8 @@ function Field({
 const terminalRecommendationStatuses = new Set<DossierRecommendation["status"]>(
   [
     "attached_to_source_file",
+    "attached_to_candidate_intake",
+    "attached_to_existing_dossier_update",
     "converted_to_source_file",
     "identity_link_created",
     "ignored",
@@ -157,6 +165,12 @@ function terminalRecommendationMessage(recommendation: DossierRecommendation) {
   }
   if (recommendation.status === "attached_to_source_file") {
     return "Attached to matched BNL Source File.";
+  }
+  if (recommendation.status === "attached_to_candidate_intake") {
+    return "Attached to Candidate Intake as review-only enrichment.";
+  }
+  if (recommendation.status === "attached_to_existing_dossier_update") {
+    return "Attached to Existing Dossier Update as review-only enrichment.";
   }
   if (recommendation.status === "identity_link_created") {
     return "Proposed identity link created. Confirm it from the BNL Source File when ready.";
@@ -283,6 +297,17 @@ export default function DossierRecommendationPage() {
   const activeCandidates = (payload?.candidates ?? []).filter(
     (candidate) => candidate.status !== "denied" && candidate.status !== "merged",
   );
+  const enrichmentLane =
+    recommendation?.ingestSource === "bnl_source_file_enrichment"
+      ? targetCandidate?.status === "active_source_file"
+        ? "Active Source File"
+        : targetCandidate?.status === "candidate_intake"
+          ? "Candidate Intake"
+          : targetCandidate?.status === "existing_dossier_update"
+            ? "Existing Dossier Update"
+            : "Recommendation Inbox"
+      : null;
+  const isEnrichmentRecommendation = enrichmentLane !== null;
   const preselectedCandidateId =
     targetCandidate?.id ?? exactCandidate?.id ?? possibleCandidates[0]?.id ?? "";
   async function postWorkflow(body: Record<string, unknown>) {
@@ -502,7 +527,25 @@ export default function DossierRecommendationPage() {
         </div>
       </section>
       <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-4">
-        {!isTerminal && (
+        {isEnrichmentRecommendation && (
+          <section className="border border-accent/60 bg-accent/10 p-5 text-sm text-accent space-y-3">
+            <p className="text-xs uppercase tracking-[0.45em]">BNL Source File Enrichment</p>
+            <h2 className="text-2xl font-bold">Review-only internal case-file material</h2>
+            <p>
+              This packet is BNL-generated enrichment, not candidate discovery,
+              not raw bridge intake, not public copy, and not publication approval.
+              Owner/admin review is required before any public use.
+            </p>
+            <p>Enrichment target lane: {enrichmentLane}</p>
+            {targetCandidate ? (
+              <p>Target record: {targetCandidate.name} ({targetCandidate.status})</p>
+            ) : (
+              <p>No target candidate is set; this remains in the Recommendation Inbox.</p>
+            )}
+            <p>Allowed actions: review, dismiss, ignore, or attach only through the matched target lane. No public dossier, alias confirmation, merge, or Proposed Dossier is created automatically.</p>
+          </section>
+        )}
+        {!isTerminal && !isEnrichmentRecommendation && (
           <section className="border border-border bg-surface p-5 text-sm text-muted space-y-4">
             <h2 className="text-2xl font-bold text-foreground">
               Matched BNL Source File
@@ -802,6 +845,9 @@ export default function DossierRecommendationPage() {
           <Field title="Source lanes">
             <p>{recommendation.sourceLanes.join(", ")}</p>
           </Field>
+          <Field title="Source types">
+            <p>{recommendation.sourceTypes?.join(", ") || "—"}</p>
+          </Field>
           <Field title="Confidence">
             <p>{recommendation.confidence ?? "—"}</p>
           </Field>
@@ -826,8 +872,15 @@ export default function DossierRecommendationPage() {
               {recommendation.ingestSource?.startsWith("bnl") && (
                 <li>Internal/private review required</li>
               )}
+              {recommendation.ingestSource === "bnl_source_file_enrichment" && (
+                <>
+                  <li>Review-only BNL-generated enrichment</li>
+                  <li>Internal case-file material; not public copy</li>
+                  <li>Does not publish or create Proposed Dossiers</li>
+                </>
+              )}
               <li>Public use not allowed until review</li>
-              <li>Owner review required</li>
+              <li>Owner/admin review required</li>
               {recommendation.type === "identity_link" && (
                 <li>Possible connection, not confirmed identity</li>
               )}

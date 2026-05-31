@@ -13,6 +13,7 @@ import {
   type DossierIdentityLinkVisibility,
   type DossierRecommendation,
 } from "@/lib/dossier-workflow";
+import { createHumanReadableRecommendationView } from "@/lib/dossier-note-display";
 
 type WorkflowPayload = {
   candidates: DossierCandidate[];
@@ -143,6 +144,76 @@ function Field({
     <section className="border border-border/70 bg-background/20 p-4 text-sm text-muted">
       <h2 className="font-bold text-foreground mb-2">{title}</h2>
       {children}
+    </section>
+  );
+}
+
+function StatusBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex border border-border bg-background/40 px-2 py-1 text-[0.65rem] uppercase tracking-widest text-muted">
+      {children}
+    </span>
+  );
+}
+
+function HumanReadableRecommendationCaseFile({
+  recommendation,
+}: {
+  recommendation: DossierRecommendation;
+}) {
+  const view = createHumanReadableRecommendationView(recommendation);
+  return (
+    <section className="border border-border bg-surface p-5 space-y-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-2">
+          <p className="text-xs uppercase tracking-[0.4em] text-accent">Human case-file view</p>
+          <h2 className="text-2xl font-bold text-foreground">{view.sourceLabel}</h2>
+          <p className="text-sm text-muted">{view.sourceCopy}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <StatusBadge>{recommendation.status}</StatusBadge>
+          <StatusBadge>Created {formatDate(recommendation.createdAt)}</StatusBadge>
+          <StatusBadge>{view.warningCount} warnings</StatusBadge>
+          <StatusBadge>{view.missingInfoCount} missing info</StatusBadge>
+        </div>
+      </div>
+      <p className="border border-border/60 bg-background/30 p-3 text-sm text-foreground">
+        {view.summary}
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {view.sections.map((section) => (
+          <section key={section.title} className="border border-border/60 bg-background/20 p-3 text-sm text-muted">
+            <h3 className="font-bold text-foreground mb-2">{section.title}</h3>
+            {section.items.length === 1 ? (
+              <p className="whitespace-pre-wrap">{section.items[0]}</p>
+            ) : (
+              <ul className="list-disc pl-5 space-y-1">
+                {section.items.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ))}
+      </div>
+      <details className="border border-border/60 bg-background/20 p-3 text-xs text-muted">
+        <summary className="cursor-pointer font-semibold text-foreground">
+          Raw metadata / audit details
+        </summary>
+        <div className="mt-3 space-y-3">
+          <dl className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {view.rawMetadata.map((item, index) => (
+              <div key={`${item.label}-${index}`} className="border border-border/50 bg-background/20 p-2">
+                <dt className="uppercase tracking-widest text-accent">{item.label}</dt>
+                <dd className="break-words whitespace-pre-wrap">{item.value || "—"}</dd>
+              </div>
+            ))}
+          </dl>
+          <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words border border-border/50 bg-background/30 p-3">
+            {view.rawText || "No raw text stored."}
+          </pre>
+        </div>
+      </details>
     </section>
   );
 }
@@ -817,6 +888,7 @@ export default function DossierRecommendationPage() {
             </form>
           </section>
         )}
+        <HumanReadableRecommendationCaseFile recommendation={recommendation} />
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field title="Subject">
             <p>{recommendation.subjectName}</p>
@@ -826,7 +898,7 @@ export default function DossierRecommendationPage() {
               {recommendation.type} / {recommendation.status}
             </p>
           </Field>
-          <Field title="Ingest source">
+          <Field title="Admin audit summary">
             <p>{recommendationProvenance(recommendation)}</p>
             <p>Created by: {recommendation.createdBy ?? "—"}</p>
             <p>Ingest source: {recommendation.ingestSource ?? "—"}</p>

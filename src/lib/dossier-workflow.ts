@@ -733,6 +733,8 @@ export type DossierWorkflowAction =
   | "ignoreDossierRecommendation"
   | "dismissDossierRecommendation"
   | "archiveDossierRecommendation"
+  | "attachCandidateToExistingDossier"
+  | "markCandidateAsExistingDossierUpdate"
   | "detectDuplicateCandidates"
   | "mergeCandidates"
   | "createMasterDraftFromMerge";
@@ -777,6 +779,8 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "ignoreDossierRecommendation",
   "dismissDossierRecommendation",
   "archiveDossierRecommendation",
+  "attachCandidateToExistingDossier",
+  "markCandidateAsExistingDossierUpdate",
   "detectDuplicateCandidates",
   "mergeCandidates",
   "createMasterDraftFromMerge",

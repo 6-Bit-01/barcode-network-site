@@ -77,8 +77,9 @@ type SourceFileSummary = {
   normalizedName: string;
   candidateType: DossierCandidate["candidateType"];
   status: DossierCandidate["status"];
-  workflowLane: "active_source_file";
-  sourceFileActive: true;
+  workflowLane: "active_source_file" | "existing_dossier_update";
+  sourceFileActive: boolean;
+  laneDescription: string;
   tier: DossierCandidate["tier"];
   score: number;
   confidence: DossierCandidate["confidence"] | null;
@@ -317,8 +318,15 @@ function sourceFileReadModel(input: {
     normalizedName: normalizeDossierSubjectName(input.candidate.name),
     candidateType: input.candidate.candidateType,
     status: input.candidate.status,
-    workflowLane: "active_source_file",
-    sourceFileActive: true,
+    workflowLane:
+      input.candidate.status === "existing_dossier_update"
+        ? "existing_dossier_update"
+        : "active_source_file",
+    sourceFileActive: input.candidate.status !== "existing_dossier_update",
+    laneDescription:
+      input.candidate.status === "existing_dossier_update"
+        ? "Update/enrichment material for an existing public dossier; not a new public dossier candidate."
+        : "Active BNL Source File / internal working case file.",
     tier: input.candidate.tier,
     score: input.candidate.score,
     confidence: input.candidate.confidence ?? null,
@@ -409,11 +417,14 @@ function resolveSourceFile(input: {
   const compactValue = compactDossierSubjectName(input.value);
 
   if (input.mode === "candidateId") {
-    const exact = activeCandidates.find((candidate) => candidate.id === input.value);
-    return {
-      matches: exact ? [{ candidate: exact, matchKind: "candidate_id" as const }] : [],
-      possibleMatches: [],
-    };
+    const exact = input.candidates.find((candidate) => candidate.id === input.value);
+    if (exact && (isActiveCandidate(exact) || exact.status === "existing_dossier_update")) {
+      return {
+        matches: [{ candidate: exact, matchKind: "candidate_id" as const }],
+        possibleMatches: [],
+      };
+    }
+    return { matches: [], possibleMatches: [] };
   }
 
   const directMatches: ResolvedMatch[] = activeCandidates

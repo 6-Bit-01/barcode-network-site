@@ -23,6 +23,7 @@ type WorkflowPayload = {
   duplicateGroups: DossierDuplicateGroup[];
   recommendations: DossierRecommendation[];
   workflow: { status: string };
+  publicDossiers?: Array<{ id: string; name: string }>;
 };
 
 type SourceNoteForm = {
@@ -394,6 +395,8 @@ export default function CandidateReviewPage() {
   const [noteForm, setNoteForm] = useState<SourceNoteForm>(emptyNoteForm);
   const [identityLinkForm, setIdentityLinkForm] =
     useState<IdentityLinkForm>(emptyIdentityLinkForm);
+  const [selectedExistingDossierId, setSelectedExistingDossierId] =
+    useState("");
 
   async function loadWorkflow() {
     const response = await fetch("/api/admin/dossiers", { cache: "no-store" });
@@ -481,6 +484,10 @@ export default function CandidateReviewPage() {
   const confirmedIdentityLinks = identityLinks.filter(
     (identityLink) => identityLink.status === "confirmed",
   );
+  const publicDossiers = payload?.publicDossiers ?? [];
+  const existingDossierSelection =
+    selectedExistingDossierId || candidate?.existingDossierMatch?.id || "";
+  const isExistingDossierUpdate = candidate?.status === "existing_dossier_update";
   const closedIdentityLinks = identityLinks.filter(
     (identityLink) =>
       identityLink.status === "rejected" || identityLink.status === "retired",
@@ -564,11 +571,22 @@ export default function CandidateReviewPage() {
       | "promoteCandidateToSourceFile"
       | "archiveCandidate"
       | "restoreCandidate"
-      | "permanentlyDeleteCandidate",
+      | "permanentlyDeleteCandidate"
+      | "attachCandidateToExistingDossier"
+      | "markCandidateAsExistingDossierUpdate",
   ) {
     if (!candidate) return;
     try {
       const body: Record<string, unknown> = { action, candidateId };
+      if (
+        action === "attachCandidateToExistingDossier" ||
+        action === "markCandidateAsExistingDossierUpdate"
+      ) {
+        if (existingDossierSelection) {
+          body.dossierId = existingDossierSelection;
+          body.confidence = selectedExistingDossierId ? "high" : candidate.existingDossierMatch?.confidence;
+        }
+      }
       if (action === "permanentlyDeleteCandidate") {
         const confirmation = window.prompt(
           `Permanent delete removes this unpublished workflow item${
@@ -588,7 +606,11 @@ export default function CandidateReviewPage() {
             ? "Source file restored to Candidate Intake so it can be reviewed and promoted again if needed."
             : action === "permanentlyDeleteCandidate"
               ? "Source file permanently deleted from unpublished workflow records. Public dossiers were not changed."
-              : "Candidate promoted to an Active BNL Source File. Public dossiers were not changed.",
+              : action === "attachCandidateToExistingDossier"
+                ? "Existing public dossier target attached. Public dossier content was not changed."
+                : action === "markCandidateAsExistingDossierUpdate"
+                  ? "Source file moved to Existing Dossier Updates / Enrichment. Public dossier content was not changed."
+                  : "Candidate promoted to an Active BNL Source File. Public dossiers were not changed.",
       );
     } catch (err) {
       setNotice(
@@ -718,6 +740,11 @@ export default function CandidateReviewPage() {
             source file into another subject. Notes do not publish, create tags,
             or mutate public records.
           </p>
+          {isExistingDossierUpdate && (
+            <p className="mt-4 border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
+              This is not a new dossier candidate. This is review material for an existing public dossier.
+            </p>
+          )}
           <div className="mt-4">
             <PhaseRail />
           </div>
@@ -812,6 +839,29 @@ export default function CandidateReviewPage() {
             >
               Mark Needs Info
             </button>
+            <button
+              type="button"
+              onClick={() =>
+                void candidateLifecycleAction("markCandidateAsExistingDossierUpdate")
+              }
+              disabled={saving || !canUpdateCandidate || !existingDossierSelection}
+              className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+              title="Reclassify this record as update/enrichment material for the attached public dossier. Does not publish or edit public content."
+            >
+              Move to Existing Dossier Update
+            </button>
+            {isExistingDossierUpdate && (
+              <button
+                type="button"
+                onClick={() =>
+                  void candidateLifecycleAction("promoteCandidateToSourceFile")
+                }
+                disabled={saving}
+                className="border border-border px-4 py-2 text-foreground hover:border-accent hover:text-accent disabled:opacity-50"
+              >
+                Move Back to Active Source File
+              </button>
+            )}
             {canPromoteCandidate && (
               <button
                 type="button"
@@ -887,6 +937,63 @@ export default function CandidateReviewPage() {
             {sourceWarningLabels({ candidate, recommendations: attachedRecommendations }).map((label) => (
               <StatusBadge key={label}>{label}</StatusBadge>
             ))}
+          </div>
+        </section>
+
+        <section className="border border-border bg-surface p-5 space-y-4">
+          <h2 className="text-2xl font-bold text-foreground">
+            Existing Public Dossier Match
+          </h2>
+          {candidate.existingDossierMatch ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-muted">
+              <p>Matched public dossier name: {candidate.existingDossierMatch.name}</p>
+              <p>Match confidence: {candidate.existingDossierMatch.confidence}</p>
+              <p>Public dossier id/slug: {candidate.existingDossierMatch.id}</p>
+              <p>Current workflow state: {candidate.status}</p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted">
+              No existing public dossier match currently attached.
+            </p>
+          )}
+          <label className="block space-y-2 text-xs uppercase tracking-widest text-muted">
+            Attach to Existing Public Dossier
+            <select
+              value={existingDossierSelection}
+              onChange={(event) => setSelectedExistingDossierId(event.target.value)}
+              className="w-full max-w-xl bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
+            >
+              <option value="">Choose public dossier…</option>
+              {publicDossiers.map((dossier) => (
+                <option key={dossier.id} value={dossier.id}>
+                  {dossier.name} ({dossier.id})
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex flex-wrap gap-3 text-xs uppercase tracking-widest">
+            <button
+              type="button"
+              onClick={() =>
+                void candidateLifecycleAction("attachCandidateToExistingDossier")
+              }
+              disabled={saving || !existingDossierSelection}
+              className="border border-border px-4 py-2 text-foreground hover:border-accent hover:text-accent disabled:opacity-50"
+            >
+              Attach to Existing Public Dossier
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                void candidateLifecycleAction("markCandidateAsExistingDossierUpdate")
+              }
+              disabled={saving || !canUpdateCandidate || !existingDossierSelection}
+              className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+            >
+              {isExistingDossierUpdate
+                ? "Mark as Enrichment for Existing Dossier"
+                : "Move to Existing Dossier Update"}
+            </button>
           </div>
         </section>
 

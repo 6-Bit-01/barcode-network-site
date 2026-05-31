@@ -52,6 +52,7 @@ const store = require("../src/lib/dossier-workflow-store.ts");
 const { databasePage } = require("../src/content.ts");
 const readModel = require("../src/app/api/bnl/read-model/route.ts");
 const sourceFilesReadModel = require("../src/app/api/bnl/source-files/route.ts");
+const noteDisplay = require("../src/lib/dossier-note-display.ts");
 
 function source(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
@@ -374,8 +375,8 @@ test("dossier workflow boundary copy separates case files, drafts, owner review,
     "Do not treat this as public copy",
     "Case File Summary",
     "Evidence / Source Notes",
-    "Known / Claimed / Inferred",
-    "Public-Safe Facts",
+    "Review Context / Possible Supporting Evidence",
+    "Public-Safe Facts Pending Owner/Admin Approval",
     "Internal-Only Notes",
     "Source Warnings",
     "Conflicts / Needs Review",
@@ -499,8 +500,8 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     "Internal working case file",
     "Do not treat this as public copy",
     "Evidence / Source Notes",
-    "Known / Claimed / Inferred",
-    "Public-Safe Facts",
+    "Review Context / Possible Supporting Evidence",
+    "Public-Safe Facts Pending Owner/Admin Approval",
     "Internal-Only Notes",
     "Source Warnings",
     "Conflicts / Needs Review",
@@ -541,6 +542,88 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
   assert.doesNotMatch(page, />Final Approve<|>Publish<|>Delete<|>Final Merge</);
   assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
   assert.doesNotMatch(page, /publishDraft/);
+});
+
+
+test("admin source file note display derives a human case-file view and collapses raw metadata", () => {
+  const legacy = noteDisplay.createHumanReadableSourceFileNoteView({
+    type: "general_note",
+    text: [
+      "Bridge memory suggests recurring source context.",
+      "Source qualities: source-blind memory trace",
+      "Visibility: internal/debug",
+      "Evidence mapping: ingestKey -> bridge record",
+      "Missing info: confirm owner-approved public copy",
+      "Do not say: do not present bridge memory as a known fact",
+    ].join("\n"),
+    source: "bnl_recommendation",
+    status: "active",
+    publicSafe: false,
+    createdAt: "2026-05-30T00:00:00.000Z",
+    ingestSource: "bnl_source_knowledge_bridge",
+    ingestKey: "bnl:bridge-debug-key",
+  });
+
+  assert.equal(legacy.sourceLabel, "Legacy BNL Source Knowledge Bridge Note");
+  assert.match(legacy.sourceCopy, /older bridge path/);
+  assert.equal(legacy.legacyRawFormatting, true);
+  assert.match(legacy.summary, /Bridge memory suggests/);
+  assert.equal(legacy.sections.some((section) => section.title === "Known Facts"), false);
+  assert.equal(legacy.sections.some((section) => section.title === "Missing Info"), true);
+  assert.equal(legacy.sections.some((section) => section.title === "Do Not Say"), true);
+  assert.equal(legacy.rawMetadata.some((item) => item.label === "Source qualities"), true);
+  assert.equal(legacy.rawMetadata.some((item) => item.label === "ingestKey"), true);
+
+  const enrichment = noteDisplay.createHumanReadableSourceFileNoteView({
+    type: "general_note",
+    text: "Summary: Enrichment found review-only context.\nSafety note: keep internal.",
+    source: "bnl_recommendation",
+    status: "active",
+    publicSafe: false,
+    createdAt: "2026-05-30T00:00:00.000Z",
+    ingestSource: "bnl_source_file_enrichment",
+    ingestKey: "bnl:enrichment-key",
+  });
+
+  assert.equal(enrichment.sourceLabel, "BNL Source File Enrichment");
+  assert.match(enrichment.sourceCopy, /Public copy still requires owner\/admin approval/);
+  assert.equal(enrichment.rawMetadata.some((item) => item.label === "ingestKey"), true);
+});
+
+test("admin Source File and recommendation pages render readable sections with collapsed audit details", () => {
+  const displayHelper = normalizedSource("src/lib/dossier-note-display.ts");
+  const candidatePage = `${normalizedSource("src/app/admin/dossiers/candidates/[candidateId]/page.tsx")} ${displayHelper}`;
+  const recommendationPage = `${normalizedSource("src/app/admin/dossiers/recommendations/[recommendationId]/page.tsx")} ${displayHelper}`;
+
+  for (const label of [
+    "HumanReadableNoteView",
+    "Legacy BNL Source Knowledge Bridge Note",
+    "BNL Source File Enrichment",
+    "This is review-only source material imported from the older bridge path. Treat it as internal context, not public dossier copy.",
+    "Review-only enrichment generated for this workflow record. Public copy still requires owner/admin approval.",
+    "Raw metadata / audit details",
+    "warnings",
+    "missing info",
+    "Review Context / Possible Supporting Evidence",
+    "Source-Limited Notes",
+    "Needs Owner Review",
+  ]) {
+    assertIncludesCopy(candidatePage, label);
+  }
+
+  for (const label of [
+    "Human case-file view",
+    "Raw metadata / audit details",
+    "Summary",
+    "Why It Matters / Review Reason",
+    "Evidence",
+    "Source Warnings",
+    "Missing Info",
+    "Suggested Next Action",
+    "Do Not Say",
+  ]) {
+    assertIncludesCopy(recommendationPage, label);
+  }
 });
 
 test("dedicated duplicate merge route contains focused manual merge workflow", () => {
@@ -4051,7 +4134,7 @@ test("BNL Source File enrichment without target remains in inbox and cannot conv
 test("admin dossier UI labels BNL Source File enrichment separately from bridge and discovery", () => {
   const dashboard = source("src/app/admin/dossiers/page.tsx");
   const recommendationPage = source("src/app/admin/dossiers/recommendations/[recommendationId]/page.tsx");
-  const candidatePage = source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+  const candidatePage = `${source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx")} ${source("src/lib/dossier-note-display.ts")}`;
 
   assert.match(dashboard, /BNL Source File Enrichment/);
   assert.match(dashboard, /Review-only internal case-file material; not public copy/);
@@ -4060,5 +4143,5 @@ test("admin dossier UI labels BNL Source File enrichment separately from bridge 
   assert.match(recommendationPage, /not raw bridge intake/);
   assert.match(recommendationPage, /Owner\/admin review is required before any public use/);
   assert.match(candidatePage, /BNL Source File Enrichment/);
-  assert.match(candidatePage, /Internal case-file material/);
+  assert.match(candidatePage, /internal case-file material|Internal working case-file material/);
 });

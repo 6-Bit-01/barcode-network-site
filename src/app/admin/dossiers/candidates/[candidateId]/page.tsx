@@ -16,6 +16,7 @@ import {
   type DossierRecommendation,
   type DossierSourceFileNoteType,
 } from "@/lib/dossier-workflow";
+import { createHumanReadableSourceFileNoteView } from "@/lib/dossier-note-display";
 
 type WorkflowPayload = {
   candidates: DossierCandidate[];
@@ -343,6 +344,85 @@ function IdentityLinkCard({
           )}
         </div>
       )}
+    </article>
+  );
+}
+
+function HumanReadableNoteView({
+  view,
+  createdAt,
+  workflowLane,
+  appliedDraftId,
+}: {
+  view: ReturnType<typeof createHumanReadableSourceFileNoteView>;
+  createdAt?: string;
+  workflowLane?: string;
+  appliedDraftId?: string;
+}) {
+  return (
+    <article className="border border-border/70 bg-background/20 p-4 space-y-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-2">
+          <p className="text-foreground font-semibold">{view.sourceLabel}</p>
+          <p className="text-xs text-muted">{view.sourceCopy}</p>
+          {view.legacyRawFormatting && (
+            <p className="text-xs text-accent">
+              This note uses legacy/raw formatting; the readable case-file view below is derived for admin review only.
+            </p>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <StatusBadge>{view.reviewStatus ?? "review"}</StatusBadge>
+          <StatusBadge>Created {formatDate(createdAt)}</StatusBadge>
+          {workflowLane && <StatusBadge>Lane {workflowLane}</StatusBadge>}
+          <StatusBadge>{view.warningCount} warnings</StatusBadge>
+          <StatusBadge>{view.missingInfoCount} missing info</StatusBadge>
+        </div>
+      </div>
+      <p className="border border-border/60 bg-background/30 p-3 text-sm text-foreground">
+        {view.summary}
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {view.sections.map((section) => (
+          <section key={section.title} className="border border-border/60 bg-background/20 p-3 text-sm text-muted">
+            <h3 className="font-bold text-foreground mb-2">{section.title}</h3>
+            {section.items.length === 1 ? (
+              <p className="whitespace-pre-wrap">{section.items[0]}</p>
+            ) : (
+              <ul className="list-disc pl-5 space-y-1">
+                {section.items.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ))}
+      </div>
+      {appliedDraftId && (
+        <p className="text-xs text-muted">
+          Applied draft: <Link className="text-accent hover:underline" href={`/admin/dossiers/drafts/${appliedDraftId}`}>{appliedDraftId}</Link>
+        </p>
+      )}
+      <details className="border border-border/60 bg-background/20 p-3 text-xs text-muted">
+        <summary className="cursor-pointer font-semibold text-foreground">
+          Raw metadata / audit details
+        </summary>
+        <div className="mt-3 space-y-3">
+          {view.rawMetadata.length > 0 && (
+            <dl className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {view.rawMetadata.map((item, index) => (
+                <div key={`${item.label}-${index}`} className="border border-border/50 bg-background/20 p-2">
+                  <dt className="uppercase tracking-widest text-accent">{item.label}</dt>
+                  <dd className="break-words whitespace-pre-wrap">{item.value || "—"}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words border border-border/50 bg-background/30 p-3">
+            {view.rawText || "No raw text stored."}
+          </pre>
+        </div>
+      </details>
     </article>
   );
 }
@@ -1359,47 +1439,15 @@ export default function CandidateReviewPage() {
             <p>No saved source notes yet.</p>
           ) : (
             <div className="space-y-3">
-              {sourceNotes.map((note) => {
-                const isEnrichmentNote =
-                  note.ingestSource === "bnl_source_file_enrichment";
-                return (
-                <article
+              {sourceNotes.map((note) => (
+                <HumanReadableNoteView
                   key={note.id}
-                  className="border border-border/70 bg-background/20 p-3"
-                >
-                  <p className="text-foreground font-semibold">
-                    {isEnrichmentNote ? "BNL Source File Enrichment" : note.type} / {note.status}
-                  </p>
-                  {isEnrichmentNote && (
-                    <div className="mb-2 flex flex-wrap gap-2">
-                      <StatusBadge>Review-only</StatusBadge>
-                      <StatusBadge>Internal case-file material</StatusBadge>
-                      <StatusBadge>Not public copy</StatusBadge>
-                      <StatusBadge>Owner/admin review required</StatusBadge>
-                    </div>
-                  )}
-                  <p className="whitespace-pre-wrap">{note.text}</p>
-                  <p>
-                    Source: {note.source} / Ingest source: {note.ingestSource ?? "—"} / Public safe:{" "}
-                    {String(note.publicSafe)} / Created:{" "}
-                    {formatDate(note.createdAt)}
-                  </p>
-                  <p>
-                    Applied draft:{" "}
-                    {note.appliesToDraftId ? (
-                      <Link
-                        className="text-accent hover:underline"
-                        href={`/admin/dossiers/drafts/${note.appliesToDraftId}`}
-                      >
-                        {note.appliesToDraftId}
-                      </Link>
-                    ) : (
-                      "—"
-                    )}
-                  </p>
-                </article>
-              );
-              })}
+                  view={createHumanReadableSourceFileNoteView(note)}
+                  createdAt={note.createdAt}
+                  workflowLane={candidate.status}
+                  appliedDraftId={note.appliesToDraftId}
+                />
+              ))}
             </div>
           )}
         </Section>
@@ -1429,13 +1477,13 @@ export default function CandidateReviewPage() {
               <p>—</p>
             )}
           </Section>
-          <Section title="Known / Claimed / Inferred">{list(candidate.knownFacts)}</Section>
+          <Section title="Review Context / Possible Supporting Evidence">{list(candidate.knownFacts)}</Section>
           <Section title="Corrections / extra notes">
             <p>Saved notes now live in BNL Source File Notes above.</p>
           </Section>
           <Section title="Missing Info">{list(candidate.missingInfo)}</Section>
           <Section title="Do Not Say">{list(candidate.doNotSay)}</Section>
-          <Section title="Public-Safe Facts">
+          <Section title="Public-Safe Facts Pending Owner/Admin Approval">
             {list(candidate.knownFacts?.filter(Boolean), "No public-safe facts marked yet.")}
           </Section>
           <Section title="Internal-Only Notes">
@@ -1444,7 +1492,7 @@ export default function CandidateReviewPage() {
                 {sourceNotes
                   .filter((note) => note.publicSafe !== true)
                   .map((note) => (
-                    <li key={note.id}>{note.text}</li>
+                    <li key={note.id}>{createHumanReadableSourceFileNoteView(note).summary}</li>
                   ))}
               </ul>
             ) : (

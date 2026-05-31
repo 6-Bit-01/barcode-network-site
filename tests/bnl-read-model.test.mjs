@@ -988,6 +988,31 @@ test("BNL source file read model does not confirm proposed, rejected, or retired
   }
 });
 
+
+test("BNL source file read model does not return archived or denied workflow records", async () => {
+  await resetDossierWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  await seedSourceFileReadModelState({
+    candidate: {
+      status: "archived",
+    },
+    drafts: [],
+  });
+
+  const archivedPayload = await (await sourceFilesGet("?subject=Signal%20Witch")).json();
+  assert.equal(archivedPayload.found, false);
+
+  await seedSourceFileReadModelState({
+    candidate: {
+      status: "denied",
+    },
+    drafts: [],
+  });
+
+  const deniedPayload = await (await sourceFilesGet("?subject=Signal%20Witch")).json();
+  assert.equal(deniedPayload.found, false);
+});
+
 test("BNL source file read model returns found=false without mutation for no-match", async () => {
   await resetDossierWorkflowStore();
   process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";

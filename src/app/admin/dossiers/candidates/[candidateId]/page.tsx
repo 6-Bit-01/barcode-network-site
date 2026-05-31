@@ -439,13 +439,25 @@ export default function CandidateReviewPage() {
   const hasOwnerReviewDraft = linkedDrafts.some(
     (draft) => draft.status === "ready_for_owner_review",
   );
+  const isArchivedCandidate = candidate?.status === "archived";
+  const isCandidateIntake = candidate?.status === "candidate_intake";
+  const canPromoteCandidate = Boolean(candidate && isCandidateIntake);
+  const canArchiveCandidate = Boolean(
+    candidate && !isCandidateClosed(candidate) && !isArchivedCandidate,
+  );
+  const canRestoreCandidate = Boolean(candidate && isArchivedCandidate);
+  const canPermanentlyDeleteCandidate = Boolean(
+    candidate && !isCandidateClosed(candidate),
+  );
   const canCreateDraft = Boolean(
     candidate &&
     !isCandidateClosed(candidate) &&
+    !isArchivedCandidate &&
+    !isCandidateIntake &&
     !linkedDrafts.some((draft) => isDraftActive(draft)),
   );
   const canUpdateCandidate = Boolean(
-    candidate && !isCandidateClosed(candidate),
+    candidate && !isCandidateClosed(candidate) && !isArchivedCandidate,
   );
   const sourceMetrics = candidate
     ? getDossierSourceFileMetrics({
@@ -543,6 +555,46 @@ export default function CandidateReviewPage() {
     } catch (err) {
       setNotice(
         err instanceof Error ? err.message : "Failed to update candidate.",
+      );
+    }
+  }
+
+  async function candidateLifecycleAction(
+    action:
+      | "promoteCandidateToSourceFile"
+      | "archiveCandidate"
+      | "restoreCandidate"
+      | "permanentlyDeleteCandidate",
+  ) {
+    if (!candidate) return;
+    try {
+      const body: Record<string, unknown> = { action, candidateId };
+      if (action === "permanentlyDeleteCandidate") {
+        const confirmation = window.prompt(
+          `Permanent delete removes this unpublished workflow item${
+            linkedDrafts.length > 0
+              ? ` and ${linkedDrafts.length} linked unpublished proposed dossier draft${linkedDrafts.length === 1 ? "" : "s"}`
+              : ""
+          }. Public dossiers and published data are not deleted. Type "DELETE SOURCE FILE" to confirm.`,
+        );
+        if (confirmation !== "DELETE SOURCE FILE") return;
+        body.confirmation = confirmation;
+      }
+      await postWorkflow(body);
+      setNotice(
+        action === "archiveCandidate"
+          ? "Source file archived. It is removed from active dashboard lanes without deleting public dossiers or published data."
+          : action === "restoreCandidate"
+            ? "Source file restored to Candidate Intake so it can be reviewed and promoted again if needed."
+            : action === "permanentlyDeleteCandidate"
+              ? "Source file permanently deleted from unpublished workflow records. Public dossiers were not changed."
+              : "Candidate promoted to an Active BNL Source File. Public dossiers were not changed.",
+      );
+    } catch (err) {
+      setNotice(
+        err instanceof Error
+          ? err.message
+          : "Failed to update source file lifecycle.",
       );
     }
   }
@@ -760,6 +812,52 @@ export default function CandidateReviewPage() {
             >
               Mark Needs Info
             </button>
+            {canPromoteCandidate && (
+              <button
+                type="button"
+                onClick={() =>
+                  void candidateLifecycleAction("promoteCandidateToSourceFile")
+                }
+                disabled={saving}
+                className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+              >
+                Promote to Source File
+              </button>
+            )}
+            {canArchiveCandidate && (
+              <button
+                type="button"
+                onClick={() => void candidateLifecycleAction("archiveCandidate")}
+                disabled={saving}
+                className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+                title="Safe cleanup: removes this source file from active dashboard lanes without deleting public dossiers or published data."
+              >
+                Archive
+              </button>
+            )}
+            {canRestoreCandidate && (
+              <button
+                type="button"
+                onClick={() => void candidateLifecycleAction("restoreCandidate")}
+                disabled={saving}
+                className="border border-border px-4 py-2 text-foreground hover:border-accent hover:text-accent disabled:opacity-50"
+              >
+                Restore
+              </button>
+            )}
+            {canPermanentlyDeleteCandidate && (
+              <button
+                type="button"
+                onClick={() =>
+                  void candidateLifecycleAction("permanentlyDeleteCandidate")
+                }
+                disabled={saving}
+                className="border border-red-500/70 px-4 py-2 text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+                title='Requires typing "DELETE SOURCE FILE". Does not delete public dossiers or published data.'
+              >
+                Delete Permanently
+              </button>
+            )}
           </div>
           {notice && (
             <div className="mt-4 border border-accent/60 bg-accent/10 p-3 text-sm text-accent">

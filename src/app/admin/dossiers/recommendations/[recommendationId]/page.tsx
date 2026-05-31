@@ -117,16 +117,16 @@ function formatDate(value?: string) {
 
 function recommendationProvenance(recommendation: DossierRecommendation) {
   if (recommendation.ingestSource === "bnl_source_file_enrichment") {
-    return "BNL Source File Enrichment";
+    return "BNL review addendum";
   }
   if (recommendation.ingestSource === "bnl_dynamic_candidate_discovery") {
-    return "BNL dynamic discovery";
+    return "Known from BNL records";
   }
   if (recommendation.ingestSource === "bnl_source_knowledge_bridge") {
-    return "BNL Source Knowledge Bridge";
+    return "Older BNL review note";
   }
   if (recommendation.ingestSource === "bnl" || recommendation.createdBy === "bnl") {
-    return "BNL-ingested";
+    return "Known from BNL records";
   }
   return recommendation.createdBy
     ? `Seeded by ${recommendation.createdBy}`
@@ -156,30 +156,50 @@ function StatusBadge({ children }: { children: React.ReactNode }) {
   );
 }
 
+function recommendationAddsUsefulInformation(recommendation: DossierRecommendation) {
+  return Boolean(
+    recommendation.evidenceSummary ||
+      recommendation.reason ||
+      (recommendation.missingInfo ?? []).length ||
+      (recommendation.publicSafetyNotes ?? []).length ||
+      (recommendation.doNotSay ?? []).length,
+  );
+}
+
 function HumanReadableRecommendationCaseFile({
   recommendation,
 }: {
   recommendation: DossierRecommendation;
 }) {
   const view = createHumanReadableRecommendationView(recommendation);
+  const addsUsefulInformation = recommendationAddsUsefulInformation(recommendation);
   return (
     <section className="border border-border bg-surface p-5 space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="space-y-2">
-          <p className="text-xs uppercase tracking-[0.4em] text-accent">Human case-file view</p>
-          <h2 className="text-2xl font-bold text-foreground">{view.sourceLabel}</h2>
+          <p className="text-xs uppercase tracking-[0.4em] text-accent">Plain-English review view</p>
+          <h2 className="text-2xl font-bold text-foreground">Recommendation Takeaway</h2>
           <p className="text-sm text-muted">{view.sourceCopy}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <StatusBadge>{recommendation.status}</StatusBadge>
           <StatusBadge>Created {formatDate(recommendation.createdAt)}</StatusBadge>
           <StatusBadge>{view.warningCount} warnings</StatusBadge>
-          <StatusBadge>{view.missingInfoCount} missing info</StatusBadge>
+          <StatusBadge>{view.missingInfoCount} open questions</StatusBadge>
+          <StatusBadge>{addsUsefulInformation ? "Adds review context" : "Thin: routing only"}</StatusBadge>
         </div>
       </div>
-      <p className="border border-border/60 bg-background/30 p-3 text-sm text-foreground">
-        {view.summary}
-      </p>
+      <div className="border border-border/60 bg-background/30 p-3 text-sm text-foreground space-y-2">
+        <p className="font-semibold">{view.summary}</p>
+        <p className="text-muted">
+          {addsUsefulInformation
+            ? "This recommendation may add useful internal context. Review the claims and safety notes before attaching it to a source file or drafting from it."
+            : "This recommendation is currently thin. It mainly says where the item belongs and does not add enough useful context to draft from."}
+        </p>
+        <p className="text-muted">
+          Next step: attach it to the right BNL Source File, create a proposed identity link, dismiss it, or convert it only after confirming it is a separate subject.
+        </p>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {view.sections.map((section) => (
           <section key={section.title} className="border border-border/60 bg-background/20 p-3 text-sm text-muted">
@@ -198,7 +218,7 @@ function HumanReadableRecommendationCaseFile({
       </div>
       <details className="border border-border/60 bg-background/20 p-3 text-xs text-muted">
         <summary className="cursor-pointer font-semibold text-foreground">
-          Raw metadata / audit details
+          Technical audit details
         </summary>
         <div className="mt-3 space-y-3">
           <dl className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -210,7 +230,7 @@ function HumanReadableRecommendationCaseFile({
             ))}
           </dl>
           <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words border border-border/50 bg-background/30 p-3">
-            {view.rawText || "No raw text stored."}
+            {view.rawText || "No original text stored."}
           </pre>
         </div>
       </details>
@@ -547,14 +567,14 @@ export default function DossierRecommendationPage() {
                   href={`/admin/dossiers/candidates/${targetCandidate.id}`}
                   className="mt-2 inline-flex text-accent hover:underline"
                 >
-                  Open target workflow record: {targetCandidate.name}
+                  Open target internal record: {targetCandidate.name}
                 </Link>
               ) : recommendation.targetCandidateId ? (
                 <Link
                   href={`/admin/dossiers/candidates/${recommendation.targetCandidateId}`}
                   className="mt-2 inline-flex text-accent hover:underline"
                 >
-                  Open target workflow record
+                  Open target internal record
                 </Link>
               ) : null}
               <p className="mt-2 text-xs uppercase tracking-widest text-muted">
@@ -600,14 +620,14 @@ export default function DossierRecommendationPage() {
       <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-4">
         {isEnrichmentRecommendation && (
           <section className="border border-accent/60 bg-accent/10 p-5 text-sm text-accent space-y-3">
-            <p className="text-xs uppercase tracking-[0.45em]">BNL Source File Enrichment</p>
+            <p className="text-xs uppercase tracking-[0.45em]">BNL Review Addendum</p>
             <h2 className="text-2xl font-bold">Review-only internal case-file material</h2>
             <p>
-              This packet is BNL-generated enrichment, not candidate discovery,
-              not raw bridge intake, not public copy, and not publication approval.
-              Owner/admin review is required before any public use.
+              This packet is BNL-generated review context, not candidate discovery,
+              not public copy, and not publication approval. Owner/admin review
+              is required before any public use.
             </p>
-            <p>Enrichment target lane: {enrichmentLane}</p>
+            <p>Review target: {enrichmentLane}</p>
             {targetCandidate ? (
               <p>Target record: {targetCandidate.name} ({targetCandidate.status})</p>
             ) : (
@@ -736,7 +756,7 @@ export default function DossierRecommendationPage() {
               </h2>
               <p className="text-sm text-muted mt-2">
                 Recommendation subject: {recommendation.subjectName}. This creates
-                a proposed alias on the selected workflow record only. It does not
+                a proposed alias on the selected internal record only. It does not
                 confirm the alias, publish, merge source files, create a draft, or
                 create tags.
               </p>

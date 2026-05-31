@@ -53,6 +53,7 @@ const { databasePage } = require("../src/content.ts");
 const readModel = require("../src/app/api/bnl/read-model/route.ts");
 const sourceFilesReadModel = require("../src/app/api/bnl/source-files/route.ts");
 const noteDisplay = require("../src/lib/dossier-note-display.ts");
+const sourceFileSummary = require("../src/lib/dossier-source-file-summary.ts");
 
 function source(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
@@ -344,7 +345,7 @@ test("dossier admin pages expose the control-center/source-hub/draft-workspace m
   const sourceFileCopy = normalizedSource(
     "src/app/admin/dossiers/candidates/[candidateId]/page.tsx",
   );
-  assertIncludesCopy(sourceFileCopy, "Case File Summary");
+  assertIncludesCopy(sourceFileCopy, "Source File Summary");
   assertIncludesCopy(sourceFileCopy, "Archive");
   assertIncludesCopy(sourceFileCopy, "Delete Permanently");
   assertIncludesCopy(sourceFileCopy, "Restore");
@@ -373,7 +374,7 @@ test("dossier workflow boundary copy separates case files, drafts, owner review,
   for (const label of [
     "Internal working case file",
     "Do not treat this as public copy",
-    "Case File Summary",
+    "Source File Summary",
     "Evidence / Source Notes",
     "Review Context / Possible Supporting Evidence",
     "Public-Safe Facts Pending Owner/Admin Approval",
@@ -384,7 +385,7 @@ test("dossier workflow boundary copy separates case files, drafts, owner review,
     "Do Not Say",
     "Missing Info",
     "Ready for Proposed Dossier",
-    "Source-blind memory trace",
+    "Review-only memory context",
     "Internal/private review required",
     "Public use not allowed until review",
   ]) {
@@ -480,13 +481,10 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     "Source notes",
     "Unapplied notes",
     "Next action",
-    "Case File Summary",
-    "recommendation evidence clusters",
-    "missing info",
-    "public safety notes",
-    "do-not-say notes",
-    "taxonomy suggestions",
-    "duplicate/identity warnings",
+    "Source File Summary",
+    "Review Boundaries",
+    "claims that need review",
+    "public-safety notes",
     "Add to BNL Source File",
     "This adds information to this subject&apos;s BNL Source File. It does not directly edit the proposed dossier.",
     "Recommendation/evidence clusters",
@@ -508,14 +506,14 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     "Identity / Alias Review",
     "Do Not Say",
     "Missing Info",
-    "Source-blind memory trace",
+    "Review-only memory context",
     "Internal/private review required",
     "Public use not allowed until review",
     "Owner review required",
     "Possible connection, not confirmed identity",
     "Existing Public Dossier Match",
     "No existing public dossier match currently attached.",
-    "This workflow record is an existing dossier update / enrichment target, not a new dossier proposal.",
+    "This internal record is an existing dossier update / enrichment target, not a new dossier proposal.",
     "Move Back to Active Source File",
   ]) {
     assertIncludesCopy(pageCopy, label);
@@ -564,13 +562,13 @@ test("admin source file note display derives a human case-file view and collapse
     ingestKey: "bnl:bridge-debug-key",
   });
 
-  assert.equal(legacy.sourceLabel, "Legacy BNL Source Knowledge Bridge Note");
-  assert.match(legacy.sourceCopy, /older bridge path/);
+  assert.equal(legacy.sourceLabel, "Older BNL Review Note");
+  assert.match(legacy.sourceCopy, /Review-only context connected/);
   assert.equal(legacy.legacyRawFormatting, true);
-  assert.match(legacy.summary, /Bridge memory suggests/);
+  assert.match(legacy.summary, /review-only context connected/);
   assert.equal(legacy.sections.some((section) => section.title === "Known Facts"), false);
-  assert.equal(legacy.sections.some((section) => section.title === "Missing Info"), true);
-  assert.equal(legacy.sections.some((section) => section.title === "Do Not Say"), true);
+  assert.equal(legacy.sections.some((section) => section.title === "Open Questions"), true);
+  assert.equal(legacy.sections.some((section) => section.title === "Not Public Yet"), true);
   assert.equal(legacy.rawMetadata.some((item) => item.label === "Source qualities"), true);
   assert.equal(legacy.rawMetadata.some((item) => item.label === "ingestKey"), true);
 
@@ -585,42 +583,56 @@ test("admin source file note display derives a human case-file view and collapse
     ingestKey: "bnl:enrichment-key",
   });
 
-  assert.equal(enrichment.sourceLabel, "BNL Source File Enrichment");
+  assert.equal(enrichment.sourceLabel, "BNL Review Addendum");
   assert.match(enrichment.sourceCopy, /Public copy still requires owner\/admin approval/);
   assert.equal(enrichment.rawMetadata.some((item) => item.label === "ingestKey"), true);
 });
 
 test("admin Source File and recommendation pages render readable sections with collapsed audit details", () => {
   const displayHelper = normalizedSource("src/lib/dossier-note-display.ts");
-  const candidatePage = `${normalizedSource("src/app/admin/dossiers/candidates/[candidateId]/page.tsx")} ${displayHelper}`;
+  const summaryHelper = normalizedSource("src/lib/dossier-source-file-summary.ts");
+  const candidatePage = `${normalizedSource("src/app/admin/dossiers/candidates/[candidateId]/page.tsx")} ${displayHelper} ${summaryHelper}`;
   const recommendationPage = `${normalizedSource("src/app/admin/dossiers/recommendations/[recommendationId]/page.tsx")} ${displayHelper}`;
 
   for (const label of [
     "HumanReadableNoteView",
-    "Legacy BNL Source Knowledge Bridge Note",
-    "BNL Source File Enrichment",
-    "This is review-only source material imported from the older bridge path. Treat it as internal context, not public dossier copy.",
-    "Review-only enrichment generated for this workflow record. Public copy still requires owner/admin approval.",
-    "Raw metadata / audit details",
+    "Source File Summary",
+    "Current Read",
+    "What BNL Actually Knows",
+    "Why This File Exists",
+    "Useful Evidence",
+    "Patterns / Themes",
+    "Open Questions",
+    "Recommended Next Step",
+    "Substance:",
+    "Public readiness:",
+    "Existing public dossier:",
+    "Next action:",
+    "This file is currently thin",
+    "Older BNL Review Note",
+    "BNL Review Addendum",
+    "Review-only context connected to this subject",
+    "Technical audit details",
     "warnings",
-    "missing info",
-    "Review Context / Possible Supporting Evidence",
-    "Source-Limited Notes",
-    "Needs Owner Review",
+    "Open Questions",
+    "Claimed / Needs Review",
+    "Pattern BNL Noticed",
+    "Not Public Yet",
   ]) {
     assertIncludesCopy(candidatePage, label);
   }
 
   for (const label of [
-    "Human case-file view",
-    "Raw metadata / audit details",
-    "Summary",
-    "Why It Matters / Review Reason",
-    "Evidence",
-    "Source Warnings",
-    "Missing Info",
-    "Suggested Next Action",
-    "Do Not Say",
+    "Plain-English review view",
+    "Recommendation Takeaway",
+    "Technical audit details",
+    "Adds review context",
+    "Thin: routing only",
+    "Claimed / Needs Review",
+    "Pattern BNL Noticed",
+    "Not Public Yet",
+    "Open Questions",
+    "Recommended Next Step",
   ]) {
     assertIncludesCopy(recommendationPage, label);
   }
@@ -3061,6 +3073,90 @@ test("recommendation inbox and source note UI are present and bounded", () => {
   );
 });
 
+
+
+test("derived Source File summary labels thin files without fake substance", () => {
+  const thinCandidate = {
+    id: "candidate_thin",
+    name: "Thin Subject",
+    candidateType: "unknown",
+    source: "bnl_dynamic_candidate_discovery",
+    tier: "weak_candidate",
+    score: 1,
+    whyNow: "",
+    reason: "",
+    evidenceSummary: "",
+    sourceFileNotes: [],
+    status: "active_source_file",
+    createdAt: "2026-05-31T00:00:00.000Z",
+    updatedAt: "2026-05-31T00:00:00.000Z",
+  };
+  const summary = sourceFileSummary.createDossierSourceFileSummary({
+    candidate: thinCandidate,
+    drafts: [],
+    recommendations: [],
+  });
+  assert.equal(summary.substanceLevel, "thin");
+  assert.equal(summary.publicReadiness, "not_ready");
+  assert.match(summary.currentRead, /currently thin/);
+  assert.match(summary.usefulEvidence[0], /No useful evidence/);
+  assert.doesNotMatch(
+    JSON.stringify(summary),
+    /ingest|source lane|evidence mapping|workflow record|bridge|metadata|payload|normalized|targetCandidateId|internal id|raw source|source qualities/i,
+  );
+
+  const usefulSummary = sourceFileSummary.createDossierSourceFileSummary({
+    candidate: {
+      ...thinCandidate,
+      reason: "Repeated approved-channel mentions and admin notes suggest this subject needs review.",
+      whyNow: "The subject has appeared repeatedly around BARCODE Radio planning notes.",
+      evidenceSummary: "Approved notes mention repeated appearances and a public-safe role summary.",
+      knownFacts: ["Confirmed / Strong public-safe context exists in approved notes."],
+      evidenceItems: [
+        {
+          id: "evidence_1",
+          type: "operator_note",
+          label: "Approved note",
+          summary: "Public-safe approved note with repeated appearances.",
+          publicSafe: true,
+        },
+      ],
+      sourceFileNotes: [
+        {
+          id: "note_1",
+          candidateId: "candidate_thin",
+          type: "fact",
+          text: "Public-safe admin note with concrete context for review.",
+          source: "admin_manual",
+          status: "active",
+          publicSafe: true,
+          createdAt: "2026-05-31T00:00:00.000Z",
+          updatedAt: "2026-05-31T00:00:00.000Z",
+        },
+      ],
+    },
+    drafts: [],
+    recommendations: [
+      {
+        id: "rec_1",
+        type: "new_subject",
+        subjectName: "Thin Subject",
+        reason: "Repeated approved-channel references need admin review.",
+        evidenceSummary: "Multiple approved notes mention the subject in the same context.",
+        confidence: "medium",
+        status: "new",
+        createdBy: "bnl",
+        sourceLanes: ["rd_context"],
+        sourceTypes: [],
+        targetCandidateId: "candidate_thin",
+        createdAt: "2026-05-31T00:00:00.000Z",
+        updatedAt: "2026-05-31T00:00:00.000Z",
+      },
+    ],
+  });
+  assert.match(usefulSummary.substanceLevel, /useful|strong/);
+});
+
 test("source note and recommendation actions enforce auth and validation", async () => {
   await resetWorkflowStore();
   const unauthNote = await route.POST(
@@ -4136,12 +4232,11 @@ test("admin dossier UI labels BNL Source File enrichment separately from bridge 
   const recommendationPage = source("src/app/admin/dossiers/recommendations/[recommendationId]/page.tsx");
   const candidatePage = `${source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx")} ${source("src/lib/dossier-note-display.ts")}`;
 
-  assert.match(dashboard, /BNL Source File Enrichment/);
-  assert.match(dashboard, /Review-only internal case-file material; not public copy/);
-  assert.match(recommendationPage, /BNL Source File Enrichment/);
+  assert.match(dashboard, /BNL review addendum|Known from BNL records \/ review addendum/);
+  assert.match(recommendationPage, /BNL Review Addendum|BNL review addendum/);
   assert.match(recommendationPage, /not candidate discovery/);
-  assert.match(recommendationPage, /not raw bridge intake/);
-  assert.match(recommendationPage, /Owner\/admin review is required before any public use/);
-  assert.match(candidatePage, /BNL Source File Enrichment/);
-  assert.match(candidatePage, /internal case-file material|Internal working case-file material/);
+  assert.doesNotMatch(recommendationPage, /raw bridge intake/);
+  assert.match(recommendationPage, /Owner\/admin review[\s\S]*required before any public use/);
+  assert.match(candidatePage, /BNL Review Addendum/);
+  assert.match(candidatePage, /Internal working material|Review-only enrichment/);
 });

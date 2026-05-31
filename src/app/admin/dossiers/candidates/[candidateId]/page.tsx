@@ -17,6 +17,11 @@ import {
   type DossierSourceFileNoteType,
 } from "@/lib/dossier-workflow";
 import { createHumanReadableSourceFileNoteView } from "@/lib/dossier-note-display";
+import {
+  createDossierSourceFileSummary,
+  formatDossierSummaryBadge,
+  type DossierSourceFileSummary,
+} from "@/lib/dossier-source-file-summary";
 
 type WorkflowPayload = {
   candidates: DossierCandidate[];
@@ -193,7 +198,7 @@ function sourceWarningLabels(input: {
     ...input.recommendations.flatMap((recommendation) => recommendation.sourceLanes),
   ]);
   return uniqueLabels([
-    lanes.has("broadcast_memory") ? "Source-blind memory trace" : "",
+    lanes.has("broadcast_memory") ? "Review-only memory context" : "",
     input.candidate.ingestSource === "bnl_dynamic_candidate_discovery" ||
     input.candidate.ingestSource === "bnl_source_knowledge_bridge" ||
     input.candidate.ingestSource === "bnl_source_file_enrichment" ||
@@ -348,6 +353,75 @@ function IdentityLinkCard({
   );
 }
 
+function SummaryList({ items }: { items: string[] }) {
+  return items.length === 1 ? (
+    <p>{items[0]}</p>
+  ) : (
+    <ul className="list-disc pl-5 space-y-1">
+      {items.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
+  );
+}
+
+function SourceFileSummaryPanel({
+  summary,
+}: {
+  summary: DossierSourceFileSummary;
+}) {
+  return (
+    <section className="border border-accent/70 bg-surface p-5 space-y-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.45em] text-accent mb-2">
+            Source File Summary
+          </p>
+          <h2 className="text-2xl font-bold text-foreground">Current Read</h2>
+          <p className="mt-2 text-sm text-muted max-w-4xl">{summary.currentRead}</p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
+          <StatusBadge>
+            Substance: {formatDossierSummaryBadge(summary.substanceLevel)}
+          </StatusBadge>
+          <StatusBadge>
+            Public readiness: {formatDossierSummaryBadge(summary.publicReadiness)}
+          </StatusBadge>
+          <StatusBadge>
+            Existing public dossier: {formatDossierSummaryBadge(summary.existingPublicDossier)}
+          </StatusBadge>
+          <StatusBadge>
+            Next action: {formatDossierSummaryBadge(summary.nextAction)}
+          </StatusBadge>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 text-sm text-muted">
+        <Section title="What BNL Actually Knows">
+          <SummaryList items={summary.knownContext} />
+        </Section>
+        <Section title="Why This File Exists">
+          <p>{summary.whyTracked}</p>
+        </Section>
+        <Section title="Useful Evidence">
+          <SummaryList items={summary.usefulEvidence} />
+        </Section>
+        <Section title="Patterns / Themes">
+          <SummaryList items={summary.patterns} />
+        </Section>
+        <Section title="Open Questions">
+          <SummaryList items={[...summary.uncertainties, ...summary.missingInfo]} />
+        </Section>
+        <Section title="Recommended Next Step">
+          <p>{summary.recommendedNextAction}</p>
+        </Section>
+      </div>
+      <p className="text-xs text-muted">
+        Internal-only briefing. It helps operators decide what to review next and does not publish or change public dossier copy.
+      </p>
+    </section>
+  );
+}
+
 function HumanReadableNoteView({
   view,
   createdAt,
@@ -363,25 +437,22 @@ function HumanReadableNoteView({
     <article className="border border-border/70 bg-background/20 p-4 space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="space-y-2">
-          <p className="text-foreground font-semibold">{view.sourceLabel}</p>
+          <p className="text-foreground font-semibold">{view.summary}</p>
           <p className="text-xs text-muted">{view.sourceCopy}</p>
           {view.legacyRawFormatting && (
             <p className="text-xs text-accent">
-              This note uses legacy/raw formatting; the readable case-file view below is derived for admin review only.
+              This older note had technical formatting. The readable case-file view below is derived for admin review only.
             </p>
           )}
         </div>
         <div className="flex flex-wrap gap-2">
           <StatusBadge>{view.reviewStatus ?? "review"}</StatusBadge>
           <StatusBadge>Created {formatDate(createdAt)}</StatusBadge>
-          {workflowLane && <StatusBadge>Lane {workflowLane}</StatusBadge>}
+          {workflowLane && <StatusBadge>Review-only</StatusBadge>}
           <StatusBadge>{view.warningCount} warnings</StatusBadge>
           <StatusBadge>{view.missingInfoCount} missing info</StatusBadge>
         </div>
       </div>
-      <p className="border border-border/60 bg-background/30 p-3 text-sm text-foreground">
-        {view.summary}
-      </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {view.sections.map((section) => (
           <section key={section.title} className="border border-border/60 bg-background/20 p-3 text-sm text-muted">
@@ -405,7 +476,7 @@ function HumanReadableNoteView({
       )}
       <details className="border border-border/60 bg-background/20 p-3 text-xs text-muted">
         <summary className="cursor-pointer font-semibold text-foreground">
-          Raw metadata / audit details
+          Technical audit details
         </summary>
         <div className="mt-3 space-y-3">
           {view.rawMetadata.length > 0 && (
@@ -419,7 +490,7 @@ function HumanReadableNoteView({
             </dl>
           )}
           <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words border border-border/50 bg-background/30 p-3">
-            {view.rawText || "No raw text stored."}
+            {view.rawText || "No original text stored."}
           </pre>
         </div>
       </details>
@@ -496,7 +567,7 @@ export default function CandidateReviewPage() {
       void loadWorkflow()
         .catch((err) =>
           setError(
-            err instanceof Error ? err.message : "Failed to load workflow record.",
+            err instanceof Error ? err.message : "Failed to load internal record.",
           ),
         )
         .finally(() => setLoading(false));
@@ -554,6 +625,13 @@ export default function CandidateReviewPage() {
   const attachedRecommendations = (payload?.recommendations ?? []).filter(
     (recommendation) => recommendation.targetCandidateId === candidate?.id,
   );
+  const sourceFileSummary = candidate
+    ? createDossierSourceFileSummary({
+        candidate,
+        drafts: linkedDrafts,
+        recommendations: attachedRecommendations,
+      })
+    : null;
   const identityLinks = [...(candidate?.identityLinks ?? [])].sort(
     (a, b) =>
       (a.status === "proposed" ? -1 : 1) -
@@ -643,7 +721,7 @@ export default function CandidateReviewPage() {
       );
     } catch (err) {
       setNotice(
-        err instanceof Error ? err.message : "Failed to update workflow record.",
+        err instanceof Error ? err.message : "Failed to update internal record.",
       );
     }
   }
@@ -687,7 +765,7 @@ export default function CandidateReviewPage() {
           : action === "restoreCandidate"
             ? "Workflow record restored to intake review so it can be reviewed and promoted again if needed."
             : action === "permanentlyDeleteCandidate"
-              ? "Source file permanently deleted from unpublished workflow records. Public dossiers were not changed."
+              ? "Source file permanently deleted from unpublished internal records. Public dossiers were not changed."
               : action === "attachCandidateToExistingDossier"
                 ? "Existing public dossier target attached. Public dossier content was not changed."
                 : action === "markCandidateAsExistingDossierUpdate"
@@ -784,7 +862,7 @@ export default function CandidateReviewPage() {
     return (
       <MinimalState
         title="Loading BNL Source File"
-        message="Checking the candidate workflow record."
+        message="Checking the Source File."
       />
     );
   if (error || !payload)
@@ -824,7 +902,7 @@ export default function CandidateReviewPage() {
           </p>
           {isExistingDossierUpdate && (
             <p className="mt-4 border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
-              This workflow record is an existing dossier update / enrichment target, not a new dossier proposal.
+              This internal record is an existing dossier update / enrichment target, not a new dossier proposal.
             </p>
           )}
           <div className="mt-4">
@@ -1000,20 +1078,17 @@ export default function CandidateReviewPage() {
       </section>
 
       <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-4">
+        {sourceFileSummary && <SourceFileSummaryPanel summary={sourceFileSummary} />}
+
         <section className="border border-border bg-surface p-5 space-y-4">
           <h2 className="text-2xl font-bold text-foreground">
-            Case File Summary
+            Review Boundaries
           </h2>
           <p className="text-sm text-muted">
-            The BNL Source File is an internal working case file / evidence
-            folder. It can contain confirmed facts, claimed facts, inferred
-            facts, messy evidence, recommendation evidence clusters,
-            source-blind memory traces, private/internal notes, conflicting
-            information, missing info, warnings, do-not-say
-            notes, identity possibilities, duplicate/identity warnings,
-            taxonomy suggestions, public safety notes, and public-safe facts. It
-            is not an
-            almost-public dossier.
+            This is an internal working case file. It can hold confirmed facts,
+            claims that need review, possible connections, public-safety notes,
+            and private context. It is not public copy and should not be treated
+            as proof on its own.
           </p>
           <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
             {sourceWarningLabels({ candidate, recommendations: attachedRecommendations }).map((label) => (

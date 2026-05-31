@@ -122,16 +122,16 @@ function linkedActiveDraftFor(
 
 function recommendationProvenance(recommendation: DossierRecommendation) {
   if (recommendation.ingestSource === "bnl_source_file_enrichment") {
-    return "BNL Source File Enrichment";
+    return "BNL review addendum";
   }
   if (recommendation.ingestSource === "bnl_dynamic_candidate_discovery") {
-    return "BNL dynamic discovery";
+    return "BNL records";
   }
   if (recommendation.ingestSource === "bnl_source_knowledge_bridge") {
-    return "BNL Source Knowledge Bridge";
+    return "Older BNL review note";
   }
   if (recommendation.ingestSource === "bnl" || recommendation.createdBy === "bnl") {
-    return "BNL-ingested";
+    return "Known from BNL records";
   }
   return recommendation.createdBy
     ? `Seeded by ${recommendation.createdBy}`
@@ -140,15 +140,16 @@ function recommendationProvenance(recommendation: DossierRecommendation) {
 
 function candidateProvenance(candidate: DossierCandidate) {
   if (candidate.source === "bnl_source_file_enrichment") {
-    return `BNL Source File Enrichment${candidate.sourceLanes?.length ? ` / ${candidate.sourceLanes.join(", ")}` : ""}`;
+    return "Known from BNL records / review addendum";
   }
   if (candidate.source === "bnl_dynamic_candidate_discovery") {
-    return `BNL dynamic discovery${candidate.sourceLanes?.length ? ` / ${candidate.sourceLanes.join(", ")}` : ""}`;
+    return "Known from BNL records";
   }
   if (candidate.source === "bnl_source_knowledge_bridge") {
-    return `BNL Source Knowledge Bridge${candidate.sourceLanes?.length ? ` / ${candidate.sourceLanes.join(", ")}` : ""}`;
+    return "Known from older BNL review notes";
   }
-  return candidate.source;
+  if (candidate.source === "manual") return "Added by an operator";
+  return "Internal note";
 }
 
 function StatusPill({ children }: { children: React.ReactNode }) {
@@ -426,12 +427,12 @@ export default function DossierControlCenterPage() {
       return {
         match,
         state: target?.status === "active_source_file"
-          ? "BNL Source File Enrichment / Active Source File"
+          ? "BNL review addendum / Active Source File"
           : target?.status === "candidate_intake"
-            ? "BNL Source File Enrichment / Intake Item"
+            ? "BNL review addendum / Intake Item"
             : target?.status === "existing_dossier_update"
-              ? "BNL Source File Enrichment / Existing Dossier Update"
-              : "BNL Source File Enrichment / Recommendation Inbox",
+              ? "BNL review addendum / Existing Dossier Update"
+              : "BNL review addendum / Recommendation Inbox",
         nextAction: "Review-only internal case-file material; not public copy",
       };
     }
@@ -512,7 +513,7 @@ export default function DossierControlCenterPage() {
       );
     } catch (err) {
       setNotice(
-        err instanceof Error ? err.message : "Failed to update workflow record.",
+        err instanceof Error ? err.message : "Failed to update internal record.",
       );
     }
   }
@@ -583,7 +584,7 @@ export default function DossierControlCenterPage() {
           : action === "restoreCandidate"
             ? `${candidate.name} restored to intake review. Public dossiers were not changed.`
             : action === "permanentlyDeleteCandidate"
-              ? `${candidate.name} permanently deleted from unpublished workflow records. Public dossiers were not changed.`
+              ? `${candidate.name} permanently deleted from unpublished internal records. Public dossiers were not changed.`
               : action === "attachCandidateToExistingDossier"
                 ? `${candidate.name} attached to an existing public dossier target. Public dossier content was not changed.`
                 : action === "markCandidateAsExistingDossierUpdate"
@@ -918,8 +919,8 @@ export default function DossierControlCenterPage() {
           <p className="text-sm text-muted mb-4">
             BNL-discovered subjects stay here until an admin explicitly promotes
             them to an Active BNL Source File / Working Case File. Evidence,
-            source warnings, ingest keys, safety notes, do-not-say notes, and
-            missing-info notes are preserved during promotion.
+            review warnings, safety notes, do-not-say notes, and open questions
+            are preserved during promotion.
           </p>
           {candidateIntakeItems.length === 0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
@@ -985,8 +986,8 @@ export default function DossierControlCenterPage() {
                       <p>Matched public dossier: {candidate.existingDossierMatch?.name ?? "—"}</p>
                       <p>Public dossier target id: {candidate.existingDossierMatch?.id ?? "—"}</p>
                       <p>Match confidence: {candidate.existingDossierMatch?.confidence ?? "—"}</p>
-                      <p>Evidence/source notes: {(candidate.sourceFileNotes ?? []).length} notes preserved</p>
-                      <p>Source warnings: {(candidate.publicSafetyNotes ?? []).length} public-safety notes / {(candidate.doNotSay ?? []).length} do-not-say notes / {(candidate.missingInfo ?? []).length} missing-info notes</p>
+                      <p>Evidence and notes: {(candidate.sourceFileNotes ?? []).length} notes preserved</p>
+                      <p>Review warnings: {(candidate.publicSafetyNotes ?? []).length} public-safety notes / {(candidate.doNotSay ?? []).length} do-not-say notes / {(candidate.missingInfo ?? []).length} open questions</p>
                       <p>Proposed action: review update/enrichment; owner approval required before public changes.</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -1357,7 +1358,7 @@ export default function DossierControlCenterPage() {
           </p>
           {archivedCandidates.length === 0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
-              No archived workflow records.
+              No archived internal records.
             </p>
           ) : (
             <div className="space-y-2 text-sm text-muted">
@@ -1444,7 +1445,7 @@ export default function DossierControlCenterPage() {
             </li>
           </ul>
           <p className="text-xs text-muted">
-            Dedicated pages keep operators in one lane: workflow record review,
+            Dedicated pages keep operators in one lane: internal record review,
             focused draft editor, owner review, or merge review. Dashboard
             buttons navigate; there is no hidden editor below unrelated sections
             and no dashboard auto-scroll workflow.

@@ -77,22 +77,22 @@ function addItem(sections: Map<string, string[]>, title: string, value?: string)
 function sourceLabel(ingestSource?: DossierRecommendationIngestSource) {
   if (ingestSource === "bnl_source_knowledge_bridge") {
     return {
-      label: "Legacy BNL Source Knowledge Bridge Note",
+      label: "Older BNL Review Note",
       copy:
-        "This is review-only source material imported from the older bridge path. Treat it as internal context, not public dossier copy.",
+        "Review-only context connected to this subject. Treat it as internal background, not public dossier copy.",
     };
   }
   if (ingestSource === "bnl_source_file_enrichment") {
     return {
-      label: "BNL Source File Enrichment",
+      label: "BNL Review Addendum",
       copy:
-        "Review-only enrichment generated for this workflow record. Public copy still requires owner/admin approval.",
+        "Review-only enrichment for this subject. Public copy still requires owner/admin approval.",
     };
   }
   return {
-    label: "BNL Source File Note",
+    label: "Internal Case-File Note",
     copy:
-      "Internal working case-file material. Review before using in any proposed or public dossier copy.",
+      "Internal working material. Review before using in any proposed or public dossier copy.",
   };
 }
 
@@ -100,6 +100,36 @@ function excerpt(text: string, maxLength = 220) {
   const compact = text.replace(/\s+/g, " ").trim();
   if (compact.length <= maxLength) return compact;
   return `${compact.slice(0, maxLength - 1).trim()}…`;
+}
+
+function hasSubstance(note: NoteLike, sections: Map<string, string[]>) {
+  return Boolean(
+    note.evidenceSummary ||
+      note.reason ||
+      sections.get("Confirmed / Strong")?.length ||
+      sections.get("Claimed / Needs Review")?.length ||
+      sections.get("Pattern BNL Noticed")?.length ||
+      sections.get("Not Public Yet")?.length ||
+      (note.publicSafetyNotes ?? []).length ||
+      (note.missingInfo ?? []).length,
+  );
+}
+
+function plainTakeaway(note: NoteLike, sections: Map<string, string[]>, fallback: string) {
+  if (note.ingestSource === "bnl_source_knowledge_bridge") {
+    return hasSubstance(note, sections)
+      ? "BNL found older review-only context connected to this subject. Review the evidence before using it publicly."
+      : "BNL found review-only context connected to this subject, but the note does not yet contain enough public-safe detail to draft from.";
+  }
+  if (note.ingestSource === "bnl_source_file_enrichment") {
+    return hasSubstance(note, sections)
+      ? "BNL found review-only enrichment for this subject. Check what is useful, claimed, or not public before drafting from it."
+      : "BNL added a review-only enrichment note, but it mostly confirms the file needs more useful context before drafting.";
+  }
+  if (hasSubstance(note, sections)) {
+    return "This internal note may add useful context. Review what is confirmed, claimed, or not public before drafting from it.";
+  }
+  return fallback || "This internal note is review-only and does not yet add enough public-safe detail to draft from.";
 }
 
 export function createHumanReadableSourceFileNoteView(
@@ -130,39 +160,38 @@ export function createHumanReadableSourceFileNoteView(
       continue;
     }
     if (evidenceHeadingPattern.test(line)) {
-      addItem(sections, "Possible Supporting Evidence", withoutHeading(line));
+      addItem(sections, "Claimed / Needs Review", withoutHeading(line));
     } else if (publicSafetyHeadingPattern.test(line)) {
-      addItem(sections, "Public Safety", withoutHeading(line));
+      addItem(sections, "Not Public Yet", withoutHeading(line));
     } else if (missingInfoHeadingPattern.test(line)) {
-      addItem(sections, "Missing Info", withoutHeading(line));
+      addItem(sections, "Open Questions", withoutHeading(line));
     } else if (doNotSayHeadingPattern.test(line)) {
-      addItem(sections, "Do Not Say", withoutHeading(line));
+      addItem(sections, "Not Public Yet", withoutHeading(line));
     } else if (actionHeadingPattern.test(line)) {
-      addItem(sections, "Suggested Next Action", withoutHeading(line));
+      addItem(sections, "Recommended Next Step", withoutHeading(line));
     } else if (summaryHeadingPattern.test(line)) {
-      addItem(sections, "Review Context", withoutHeading(line));
+      addItem(sections, "Pattern BNL Noticed", withoutHeading(line));
     } else if (/public use requires review|internal\/private review|required|review-only|not public copy|owner\/admin review/i.test(line)) {
-      addItem(sections, "Needs Owner Review", line);
+      addItem(sections, "Not Public Yet", line);
     } else if (!summary) {
       summary = line;
     } else {
-      addItem(sections, "Source-Limited Notes", line);
+      addItem(sections, "Claimed / Needs Review", line);
     }
   }
 
   if (!summary) summary = excerpt(text) || "Review-only internal source-file note.";
 
-  addItem(sections, "Summary", summary);
-  addItem(sections, "Why It Matters / Review Reason", note.reason);
-  addItem(sections, "Evidence", note.evidenceSummary);
-  for (const item of note.publicSafetyNotes ?? []) addItem(sections, "Source Warnings", item);
-  for (const item of note.missingInfo ?? []) addItem(sections, "Missing Info", item);
-  for (const item of note.doNotSay ?? []) addItem(sections, "Do Not Say", item);
-  addItem(sections, "Suggested Next Action", note.suggestedAction);
-  addItem(sections, "Admin Metadata", `Source: ${note.source ?? "—"}`);
-  addItem(sections, "Admin Metadata", `Status: ${note.status ?? "—"}`);
-  addItem(sections, "Admin Metadata", `Public safe: ${String(note.publicSafe)}`);
+  addItem(sections, "Pattern BNL Noticed", note.reason || summary);
+  addItem(sections, "Claimed / Needs Review", note.evidenceSummary);
+  for (const item of note.publicSafetyNotes ?? []) addItem(sections, "Not Public Yet", item);
+  for (const item of note.missingInfo ?? []) addItem(sections, "Open Questions", item);
+  for (const item of note.doNotSay ?? []) addItem(sections, "Not Public Yet", item);
+  addItem(sections, "Recommended Next Step", note.suggestedAction);
 
+  rawMetadata.push({ label: "noteSource", value: note.source ?? "—" });
+  rawMetadata.push({ label: "noteStatus", value: note.status ?? "—" });
+  rawMetadata.push({ label: "publicSafe", value: String(note.publicSafe) });
   if (note.ingestKey) rawMetadata.push({ label: "ingestKey", value: note.ingestKey });
   if (note.ingestedAt) rawMetadata.push({ label: "ingestedAt", value: note.ingestedAt });
   if (note.ingestSource) rawMetadata.push({ label: "ingestSource", value: note.ingestSource });
@@ -172,10 +201,10 @@ export function createHumanReadableSourceFileNoteView(
 
   const warningCount = (note.publicSafetyNotes ?? []).length +
     Array.from(sections.entries())
-      .filter(([title]) => title === "Source Warnings" || title === "Public Safety")
+      .filter(([title]) => title === "Not Public Yet")
       .reduce((count, [, items]) => count + items.length, 0);
   const missingInfoCount =
-    (note.missingInfo ?? []).length + (sections.get("Missing Info")?.length ?? 0);
+    (note.missingInfo ?? []).length + (sections.get("Open Questions")?.length ?? 0);
 
   return {
     sourceLabel: source.label,
@@ -183,7 +212,7 @@ export function createHumanReadableSourceFileNoteView(
     isLegacyBridge: note.ingestSource === "bnl_source_knowledge_bridge",
     isEnrichment: note.ingestSource === "bnl_source_file_enrichment",
     legacyRawFormatting,
-    summary: excerpt(summary),
+    summary: plainTakeaway(note, sections, excerpt(summary)),
     sections: Array.from(sections.entries()).map(([title, items]) => ({ title, items })),
     rawMetadata,
     rawText: text,

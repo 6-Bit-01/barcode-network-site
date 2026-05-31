@@ -114,15 +114,16 @@ const identityLinkStatusCopy: Record<DossierIdentityLinkStatus, string> = {
 };
 
 const identityReviewNotice: Record<
-  "confirmDossierIdentityLink" | "rejectDossierIdentityLink" | "retireDossierIdentityLink",
+  | "confirmDossierIdentityLink"
+  | "rejectDossierIdentityLink"
+  | "retireDossierIdentityLink",
   string
 > = {
   confirmDossierIdentityLink:
     "Identity link confirmed. Future recommendations can now match this alias if matching is enabled; it is still not public identity proof.",
   rejectDossierIdentityLink:
     "Identity link rejected. It will not be used for matching.",
-  retireDossierIdentityLink:
-    "Identity link retired. It is no longer active.",
+  retireDossierIdentityLink: "Identity link retired. It is no longer active.",
 };
 
 function routeParam(value: string | string[] | undefined) {
@@ -195,7 +196,9 @@ function sourceWarningLabels(input: {
 }) {
   const lanes = new Set([
     ...(input.candidate.sourceLanes ?? []),
-    ...input.recommendations.flatMap((recommendation) => recommendation.sourceLanes),
+    ...input.recommendations.flatMap(
+      (recommendation) => recommendation.sourceLanes,
+    ),
   ]);
   return uniqueLabels([
     lanes.has("broadcast_memory") ? "Review-only memory context" : "",
@@ -218,7 +221,10 @@ function sourceWarningLabels(input: {
       : "",
     input.recommendations.some(
       (recommendation) => recommendation.type === "identity_link",
-    ) || (input.candidate.identityLinks ?? []).some((link) => link.status === "proposed")
+    ) ||
+    (input.candidate.identityLinks ?? []).some(
+      (link) => link.status === "proposed",
+    )
       ? "Possible connection, not confirmed identity"
       : "",
     "Owner review required",
@@ -255,7 +261,9 @@ function IdentityLinkCard({
           <p className="mt-1">{identityLinkStatusCopy[identityLink.status]}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <StatusBadge>{identityLinkStatusLabels[identityLink.status]}</StatusBadge>
+          <StatusBadge>
+            {identityLinkStatusLabels[identityLink.status]}
+          </StatusBadge>
           {isConfirmed && (
             <>
               <StatusBadge>
@@ -287,10 +295,20 @@ function IdentityLinkCard({
       <p>Confidence: {identityLink.confidence ?? "—"}</p>
       {identityLink.createdFromRecommendationId && (
         <div className="border border-border/70 bg-background/30 p-3 space-y-1">
-          <p className="font-semibold text-foreground">Created from recommendation</p>
-          <p>Recommendation subject: {identityLink.createdFromRecommendationSubject ?? recommendation?.subjectName ?? "—"}</p>
+          <p className="font-semibold text-foreground">
+            Created from recommendation
+          </p>
+          <p>
+            Recommendation subject:{" "}
+            {identityLink.createdFromRecommendationSubject ??
+              recommendation?.subjectName ??
+              "—"}
+          </p>
           <p>Source lanes: {recommendation?.sourceLanes.join(", ") ?? "—"}</p>
-          <p>Ingest source: {recommendation?.ingestSource ?? recommendation?.createdBy ?? "—"}</p>
+          <p>
+            Ingest source:{" "}
+            {recommendation?.ingestSource ?? recommendation?.createdBy ?? "—"}
+          </p>
           <Link
             href={`/admin/dossiers/recommendations/${identityLink.createdFromRecommendationId}`}
             className="inline-flex text-accent hover:underline"
@@ -302,8 +320,9 @@ function IdentityLinkCard({
       <p className="whitespace-pre-wrap">Note: {identityLink.note ?? "—"}</p>
       <p>
         Created: {formatDate(identityLink.createdAt)} by{" "}
-        {identityLink.createdBy ?? "—"} / Confirmed: {" "}
-        {formatDate(identityLink.confirmedAt)} by {identityLink.confirmedBy ?? "—"}
+        {identityLink.createdBy ?? "—"} / Confirmed:{" "}
+        {formatDate(identityLink.confirmedAt)} by{" "}
+        {identityLink.confirmedBy ?? "—"}
       </p>
       {(isProposed || isConfirmed) && (
         <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
@@ -313,11 +332,7 @@ function IdentityLinkCard({
                 type="button"
                 disabled={saving}
                 onClick={() =>
-                  onReview(
-                    identityLink.id,
-                    "confirmDossierIdentityLink",
-                    true,
-                  )
+                  onReview(identityLink.id, "confirmDossierIdentityLink", true)
                 }
                 className="border border-accent px-3 py-1.5 text-accent hover:bg-accent hover:text-background disabled:pointer-events-none disabled:opacity-50"
               >
@@ -378,20 +393,27 @@ function SourceFileSummaryPanel({
             Source File Summary
           </p>
           <h2 className="text-2xl font-bold text-foreground">Current Read</h2>
-          <p className="mt-2 text-sm text-muted max-w-4xl">{summary.currentRead}</p>
+          <p className="mt-2 text-sm text-muted max-w-4xl">
+            {summary.currentRead}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
           <StatusBadge>
             Substance: {formatDossierSummaryBadge(summary.substanceLevel)}
           </StatusBadge>
           <StatusBadge>
-            Public readiness: {formatDossierSummaryBadge(summary.publicReadiness)}
+            Public readiness:{" "}
+            {formatDossierSummaryBadge(summary.publicReadiness)}
           </StatusBadge>
           <StatusBadge>
-            Existing public dossier: {formatDossierSummaryBadge(summary.existingPublicDossier)}
+            Existing public dossier:{" "}
+            {formatDossierSummaryBadge(summary.existingPublicDossier)}
           </StatusBadge>
           <StatusBadge>
             Next action: {formatDossierSummaryBadge(summary.nextAction)}
+          </StatusBadge>
+          <StatusBadge>
+            Summary source: {formatDossierSummaryBadge(summary.summarySource)}
           </StatusBadge>
         </div>
       </div>
@@ -402,21 +424,33 @@ function SourceFileSummaryPanel({
         <Section title="Why This File Exists">
           <p>{summary.whyTracked}</p>
         </Section>
-        <Section title="Useful Evidence">
-          <SummaryList items={summary.usefulEvidence} />
+        {summary.usefulEvidence.length > 0 && (
+          <Section title="Useful Evidence">
+            <SummaryList items={summary.usefulEvidence} />
+          </Section>
+        )}
+        <Section title="Case File Quality">
+          <p>
+            {summary.summarySource === "thin"
+              ? summary.currentRead
+              : "This file has enough human-readable context to continue review, but it remains internal until separately approved."}
+          </p>
         </Section>
         <Section title="Patterns / Themes">
           <SummaryList items={summary.patterns} />
         </Section>
         <Section title="Open Questions">
-          <SummaryList items={[...summary.uncertainties, ...summary.missingInfo]} />
+          <SummaryList
+            items={[...summary.uncertainties, ...summary.missingInfo]}
+          />
         </Section>
         <Section title="Recommended Next Step">
           <p>{summary.recommendedNextAction}</p>
         </Section>
       </div>
       <p className="text-xs text-muted">
-        Internal-only briefing. It helps operators decide what to review next and does not publish or change public dossier copy.
+        Internal-only briefing. It helps operators decide what to review next
+        and does not publish or change public dossier copy.
       </p>
     </section>
   );
@@ -441,7 +475,8 @@ function HumanReadableNoteView({
           <p className="text-xs text-muted">{view.sourceCopy}</p>
           {view.legacyRawFormatting && (
             <p className="text-xs text-accent">
-              This older note had technical formatting. The readable case-file view below is derived for admin review only.
+              This older note had technical formatting. The readable case-file
+              view below is derived for admin review only.
             </p>
           )}
         </div>
@@ -455,7 +490,10 @@ function HumanReadableNoteView({
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {view.sections.map((section) => (
-          <section key={section.title} className="border border-border/60 bg-background/20 p-3 text-sm text-muted">
+          <section
+            key={section.title}
+            className="border border-border/60 bg-background/20 p-3 text-sm text-muted"
+          >
             <h3 className="font-bold text-foreground mb-2">{section.title}</h3>
             {section.items.length === 1 ? (
               <p className="whitespace-pre-wrap">{section.items[0]}</p>
@@ -471,7 +509,13 @@ function HumanReadableNoteView({
       </div>
       {appliedDraftId && (
         <p className="text-xs text-muted">
-          Applied draft: <Link className="text-accent hover:underline" href={`/admin/dossiers/drafts/${appliedDraftId}`}>{appliedDraftId}</Link>
+          Applied draft:{" "}
+          <Link
+            className="text-accent hover:underline"
+            href={`/admin/dossiers/drafts/${appliedDraftId}`}
+          >
+            {appliedDraftId}
+          </Link>
         </p>
       )}
       <details className="border border-border/60 bg-background/20 p-3 text-xs text-muted">
@@ -482,9 +526,16 @@ function HumanReadableNoteView({
           {view.rawMetadata.length > 0 && (
             <dl className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {view.rawMetadata.map((item, index) => (
-                <div key={`${item.label}-${index}`} className="border border-border/50 bg-background/20 p-2">
-                  <dt className="uppercase tracking-widest text-accent">{item.label}</dt>
-                  <dd className="break-words whitespace-pre-wrap">{item.value || "—"}</dd>
+                <div
+                  key={`${item.label}-${index}`}
+                  className="border border-border/50 bg-background/20 p-2"
+                >
+                  <dt className="uppercase tracking-widest text-accent">
+                    {item.label}
+                  </dt>
+                  <dd className="break-words whitespace-pre-wrap">
+                    {item.value || "—"}
+                  </dd>
                 </div>
               ))}
             </dl>
@@ -546,8 +597,9 @@ export default function CandidateReviewPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [noteForm, setNoteForm] = useState<SourceNoteForm>(emptyNoteForm);
-  const [identityLinkForm, setIdentityLinkForm] =
-    useState<IdentityLinkForm>(emptyIdentityLinkForm);
+  const [identityLinkForm, setIdentityLinkForm] = useState<IdentityLinkForm>(
+    emptyIdentityLinkForm,
+  );
   const [selectedExistingDossierId, setSelectedExistingDossierId] =
     useState("");
 
@@ -567,7 +619,9 @@ export default function CandidateReviewPage() {
       void loadWorkflow()
         .catch((err) =>
           setError(
-            err instanceof Error ? err.message : "Failed to load internal record.",
+            err instanceof Error
+              ? err.message
+              : "Failed to load internal record.",
           ),
         )
         .finally(() => setLoading(false));
@@ -579,6 +633,7 @@ export default function CandidateReviewPage() {
     () => payload?.candidates.find((item) => item.id === candidateId) ?? null,
     [payload?.candidates, candidateId],
   );
+
   const linkedDrafts = useMemo(
     () =>
       payload?.drafts.filter((draft) => draft.candidateId === candidateId) ??
@@ -634,8 +689,7 @@ export default function CandidateReviewPage() {
     : null;
   const identityLinks = [...(candidate?.identityLinks ?? [])].sort(
     (a, b) =>
-      (a.status === "proposed" ? -1 : 1) -
-        (b.status === "proposed" ? -1 : 1) ||
+      (a.status === "proposed" ? -1 : 1) - (b.status === "proposed" ? -1 : 1) ||
       b.updatedAt.localeCompare(a.updatedAt),
   );
   const proposedIdentityLinks = identityLinks.filter(
@@ -647,7 +701,8 @@ export default function CandidateReviewPage() {
   const publicDossiers = payload?.publicDossiers ?? [];
   const existingDossierSelection =
     selectedExistingDossierId || candidate?.existingDossierMatch?.id || "";
-  const isExistingDossierUpdate = candidate?.status === "existing_dossier_update";
+  const isExistingDossierUpdate =
+    candidate?.status === "existing_dossier_update";
   const closedIdentityLinks = identityLinks.filter(
     (identityLink) =>
       identityLink.status === "rejected" || identityLink.status === "retired",
@@ -721,7 +776,9 @@ export default function CandidateReviewPage() {
       );
     } catch (err) {
       setNotice(
-        err instanceof Error ? err.message : "Failed to update internal record.",
+        err instanceof Error
+          ? err.message
+          : "Failed to update internal record.",
       );
     }
   }
@@ -744,7 +801,9 @@ export default function CandidateReviewPage() {
       ) {
         if (existingDossierSelection) {
           body.dossierId = existingDossierSelection;
-          body.confidence = selectedExistingDossierId ? "high" : candidate.existingDossierMatch?.confidence;
+          body.confidence = selectedExistingDossierId
+            ? "high"
+            : candidate.existingDossierMatch?.confidence;
         }
       }
       if (action === "permanentlyDeleteCandidate") {
@@ -781,6 +840,33 @@ export default function CandidateReviewPage() {
     }
   }
 
+  async function saveSourceFileSummary(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      const formData = new FormData(event.currentTarget);
+      await postWorkflow({
+        action: "updateSourceFileSummary",
+        candidateId,
+        input: {
+          summaryText: String(formData.get("summaryText") ?? ""),
+          knownContext: String(formData.get("knownContext") ?? ""),
+          openQuestions: String(formData.get("openQuestions") ?? ""),
+          nextAction: String(formData.get("nextAction") ?? ""),
+          updatedBy: "admin",
+        },
+      });
+      setNotice(
+        "Internal Source File summary saved. It stays private and does not publish or overwrite raw notes.",
+      );
+    } catch (err) {
+      setNotice(
+        err instanceof Error
+          ? err.message
+          : "Failed to save Source File summary.",
+      );
+    }
+  }
+
   async function addSourceFileNote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
@@ -807,7 +893,6 @@ export default function CandidateReviewPage() {
       );
     }
   }
-
 
   async function addIdentityLink(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -902,7 +987,8 @@ export default function CandidateReviewPage() {
           </p>
           {isExistingDossierUpdate && (
             <p className="mt-4 border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
-              This internal record is an existing dossier update / enrichment target, not a new dossier proposal.
+              This internal record is an existing dossier update / enrichment
+              target, not a new dossier proposal.
             </p>
           )}
           <div className="mt-4">
@@ -910,19 +996,27 @@ export default function CandidateReviewPage() {
           </div>
           <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3 text-xs text-muted">
             <div className="border border-border bg-background/30 p-3">
-              <p className="uppercase tracking-widest text-accent">Source strength</p>
+              <p className="uppercase tracking-widest text-accent">
+                Source strength
+              </p>
               <p>{sourceMetrics?.sourceDepth ?? "Low"}</p>
             </div>
             <div className="border border-border bg-background/30 p-3">
-              <p className="uppercase tracking-widest text-accent">Current draft status</p>
+              <p className="uppercase tracking-widest text-accent">
+                Current draft status
+              </p>
               <p>{primaryDraft?.status ?? "No proposed dossier"}</p>
             </div>
             <div className="border border-border bg-background/30 p-3">
-              <p className="uppercase tracking-widest text-accent">Recommendations</p>
+              <p className="uppercase tracking-widest text-accent">
+                Recommendations
+              </p>
               <p>{sourceMetrics?.attachedRecommendationCount ?? 0}</p>
             </div>
             <div className="border border-border bg-background/30 p-3">
-              <p className="uppercase tracking-widest text-accent">Source notes</p>
+              <p className="uppercase tracking-widest text-accent">
+                Source notes
+              </p>
               <p>{sourceMetrics?.sourceNotesCount ?? 0}</p>
             </div>
             <div className="border border-border bg-background/30 p-3">
@@ -930,28 +1024,33 @@ export default function CandidateReviewPage() {
               <p>{identityLinks.length}</p>
             </div>
             <div className="border border-border bg-background/30 p-3">
-              <p className="uppercase tracking-widest text-accent">Unapplied notes</p>
+              <p className="uppercase tracking-widest text-accent">
+                Unapplied notes
+              </p>
               <p>{sourceMetrics?.unappliedSourceNotesCount ?? 0}</p>
             </div>
             <div className="border border-border bg-background/30 p-3">
-              <p className="uppercase tracking-widest text-accent">Next action</p>
+              <p className="uppercase tracking-widest text-accent">
+                Next action
+              </p>
               <p>{nextRecommendedAction}</p>
             </div>
           </div>
-          {(sourceMetrics?.unappliedSourceNotesCount ?? 0) > 0 && primaryDraft && (
-            <div className="mt-4 border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
-              <p>
-                This source file has new info not yet applied to the proposed
-                dossier.
-              </p>
-              <Link
-                href={`/admin/dossiers/drafts/${primaryDraft.id}`}
-                className="mt-2 inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest hover:bg-accent hover:text-background"
-              >
-                Open Proposed Dossier
-              </Link>
-            </div>
-          )}
+          {(sourceMetrics?.unappliedSourceNotesCount ?? 0) > 0 &&
+            primaryDraft && (
+              <div className="mt-4 border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
+                <p>
+                  This source file has new info not yet applied to the proposed
+                  dossier.
+                </p>
+                <Link
+                  href={`/admin/dossiers/drafts/${primaryDraft.id}`}
+                  className="mt-2 inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest hover:bg-accent hover:text-background"
+                >
+                  Open Proposed Dossier
+                </Link>
+              </div>
+            )}
           <div className="mt-5 flex flex-wrap gap-3 text-xs uppercase tracking-widest">
             <Link
               href="/admin/dossiers"
@@ -1002,9 +1101,13 @@ export default function CandidateReviewPage() {
             <button
               type="button"
               onClick={() =>
-                void candidateLifecycleAction("markCandidateAsExistingDossierUpdate")
+                void candidateLifecycleAction(
+                  "markCandidateAsExistingDossierUpdate",
+                )
               }
-              disabled={saving || !canUpdateCandidate || !existingDossierSelection}
+              disabled={
+                saving || !canUpdateCandidate || !existingDossierSelection
+              }
               className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
               title="Reclassify this record as update/enrichment material for the attached public dossier. Does not publish or edit public content."
             >
@@ -1037,7 +1140,9 @@ export default function CandidateReviewPage() {
             {canArchiveCandidate && (
               <button
                 type="button"
-                onClick={() => void candidateLifecycleAction("archiveCandidate")}
+                onClick={() =>
+                  void candidateLifecycleAction("archiveCandidate")
+                }
                 disabled={saving}
                 className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent disabled:opacity-50"
                 title="Safe cleanup: removes this source file from active dashboard lanes without deleting public dossiers or published data."
@@ -1048,7 +1153,9 @@ export default function CandidateReviewPage() {
             {canRestoreCandidate && (
               <button
                 type="button"
-                onClick={() => void candidateLifecycleAction("restoreCandidate")}
+                onClick={() =>
+                  void candidateLifecycleAction("restoreCandidate")
+                }
                 disabled={saving}
                 className="border border-border px-4 py-2 text-foreground hover:border-accent hover:text-accent disabled:opacity-50"
               >
@@ -1078,7 +1185,84 @@ export default function CandidateReviewPage() {
       </section>
 
       <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-4">
-        {sourceFileSummary && <SourceFileSummaryPanel summary={sourceFileSummary} />}
+        {sourceFileSummary && (
+          <SourceFileSummaryPanel summary={sourceFileSummary} />
+        )}
+
+        <section className="border border-border bg-surface p-5 space-y-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.4em] text-accent mb-2">
+              Internal Operator Summary
+            </p>
+            <h2 className="text-2xl font-bold text-foreground">
+              Persistent Source File Draft
+            </h2>
+            <p className="text-sm text-muted mt-2 max-w-4xl">
+              Save a short private read of what is actually known. This does not
+              publish, overwrite BNL raw notes, or enter public dossier copy.
+            </p>
+          </div>
+          <form
+            onSubmit={saveSourceFileSummary}
+            className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm"
+          >
+            <label className="md:col-span-2 space-y-2 text-xs uppercase tracking-widest text-muted">
+              Summary text
+              <textarea
+                name="summaryText"
+                defaultValue={candidate.sourceFileSummary?.summaryText ?? ""}
+                rows={3}
+                className="w-full bg-background border border-border px-3 py-2 text-sm normal-case tracking-normal text-foreground"
+                placeholder="Plain-English internal summary of what BNL actually knows…"
+              />
+            </label>
+            <label className="space-y-2 text-xs uppercase tracking-widest text-muted">
+              Known context
+              <textarea
+                name="knownContext"
+                defaultValue={(
+                  candidate.sourceFileSummary?.knownContext ?? []
+                ).join("\n")}
+                rows={4}
+                className="w-full bg-background border border-border px-3 py-2 text-sm normal-case tracking-normal text-foreground"
+                placeholder="One useful context line per row"
+              />
+            </label>
+            <label className="space-y-2 text-xs uppercase tracking-widest text-muted">
+              Open questions
+              <textarea
+                name="openQuestions"
+                defaultValue={(
+                  candidate.sourceFileSummary?.openQuestions ?? []
+                ).join("\n")}
+                rows={4}
+                className="w-full bg-background border border-border px-3 py-2 text-sm normal-case tracking-normal text-foreground"
+                placeholder="One review question per row"
+              />
+            </label>
+            <label className="md:col-span-2 space-y-2 text-xs uppercase tracking-widest text-muted">
+              Next action
+              <input
+                name="nextAction"
+                defaultValue={candidate.sourceFileSummary?.nextAction ?? ""}
+                className="w-full bg-background border border-border px-3 py-2 text-sm normal-case tracking-normal text-foreground"
+                placeholder="What should an operator do next?"
+              />
+            </label>
+            <div className="md:col-span-2 flex flex-wrap gap-3 text-xs uppercase tracking-widest">
+              <button
+                type="submit"
+                disabled={saving}
+                className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+              >
+                Save Internal Summary
+              </button>
+              <span className="text-muted self-center">
+                Internal only; public pages are unchanged.
+              </span>
+            </div>
+          </form>
+        </section>
 
         <section className="border border-border bg-surface p-5 space-y-4">
           <h2 className="text-2xl font-bold text-foreground">
@@ -1091,7 +1275,10 @@ export default function CandidateReviewPage() {
             as proof on its own.
           </p>
           <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
-            {sourceWarningLabels({ candidate, recommendations: attachedRecommendations }).map((label) => (
+            {sourceWarningLabels({
+              candidate,
+              recommendations: attachedRecommendations,
+            }).map((label) => (
               <StatusBadge key={label}>{label}</StatusBadge>
             ))}
           </div>
@@ -1103,8 +1290,13 @@ export default function CandidateReviewPage() {
           </h2>
           {candidate.existingDossierMatch ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-muted">
-              <p>Matched public dossier name: {candidate.existingDossierMatch.name}</p>
-              <p>Match confidence: {candidate.existingDossierMatch.confidence}</p>
+              <p>
+                Matched public dossier name:{" "}
+                {candidate.existingDossierMatch.name}
+              </p>
+              <p>
+                Match confidence: {candidate.existingDossierMatch.confidence}
+              </p>
               <p>Public dossier id/slug: {candidate.existingDossierMatch.id}</p>
               <p>Current workflow state: {candidate.status}</p>
             </div>
@@ -1117,7 +1309,9 @@ export default function CandidateReviewPage() {
             Attach to Existing Public Dossier
             <select
               value={existingDossierSelection}
-              onChange={(event) => setSelectedExistingDossierId(event.target.value)}
+              onChange={(event) =>
+                setSelectedExistingDossierId(event.target.value)
+              }
               className="w-full max-w-xl bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
             >
               <option value="">Choose public dossier…</option>
@@ -1132,7 +1326,9 @@ export default function CandidateReviewPage() {
             <button
               type="button"
               onClick={() =>
-                void candidateLifecycleAction("attachCandidateToExistingDossier")
+                void candidateLifecycleAction(
+                  "attachCandidateToExistingDossier",
+                )
               }
               disabled={saving || !existingDossierSelection}
               className="border border-border px-4 py-2 text-foreground hover:border-accent hover:text-accent disabled:opacity-50"
@@ -1142,9 +1338,13 @@ export default function CandidateReviewPage() {
             <button
               type="button"
               onClick={() =>
-                void candidateLifecycleAction("markCandidateAsExistingDossierUpdate")
+                void candidateLifecycleAction(
+                  "markCandidateAsExistingDossierUpdate",
+                )
               }
-              disabled={saving || !canUpdateCandidate || !existingDossierSelection}
+              disabled={
+                saving || !canUpdateCandidate || !existingDossierSelection
+              }
               className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
             >
               {isExistingDossierUpdate
@@ -1162,16 +1362,16 @@ export default function CandidateReviewPage() {
             Add to BNL Source File
           </h2>
           <p className="text-sm text-muted">
-            This adds information to this subject&apos;s BNL Source File. It does not
-            directly edit the proposed dossier.
+            This adds information to this subject&apos;s BNL Source File. It
+            does not directly edit the proposed dossier.
           </p>
           <p className="text-sm text-muted">
             Add to BNL Source File = add info to this subject. This source file
             remains one subject/entity. If this information belongs to a
             different subject, create or wait for a separate BNL recommendation.
-            BNL Edit Chat = tell BNL how to revise
-            the proposed dossier. Advanced Manual Edit = fallback direct
-            editing of the proposed dossier fields.
+            BNL Edit Chat = tell BNL how to revise the proposed dossier.
+            Advanced Manual Edit = fallback direct editing of the proposed
+            dossier fields.
           </p>
           {hasOwnerReviewDraft && (
             <p className="border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
@@ -1203,9 +1403,7 @@ export default function CandidateReviewPage() {
               </select>
             </label>
             <label className="md:col-span-2 space-y-2">
-              <span>
-                Source file note
-              </span>
+              <span>Source file note</span>
               <textarea
                 required
                 maxLength={2000}
@@ -1240,7 +1438,10 @@ export default function CandidateReviewPage() {
         </section>
 
         <Section title="Evidence / Source Notes">
-          <p className="mb-3">BNL recommendations are evidence/source-file inputs, not public copy.</p>
+          <p className="mb-3">
+            BNL recommendations are evidence/source-file inputs, not public
+            copy.
+          </p>
         </Section>
 
         <Section title="Recommendation/evidence clusters">
@@ -1249,11 +1450,16 @@ export default function CandidateReviewPage() {
           ) : (
             <div className="space-y-3">
               {attachedRecommendations.map((recommendation) => (
-                <article key={recommendation.id} className="border border-border/70 bg-background/20 p-3">
+                <article
+                  key={recommendation.id}
+                  className="border border-border/70 bg-background/20 p-3"
+                >
                   <p className="text-foreground font-semibold">
                     {recommendation.subjectName}
                   </p>
-                  <p>{recommendation.evidenceSummary || recommendation.reason}</p>
+                  <p>
+                    {recommendation.evidenceSummary || recommendation.reason}
+                  </p>
                   <p>Source lanes: {recommendation.sourceLanes.join(", ")}</p>
                 </article>
               ))}
@@ -1265,11 +1471,11 @@ export default function CandidateReviewPage() {
           <div className="space-y-5">
             <div className="space-y-2">
               <p>
-                Aliases help BNL route future recommendations to the right source
-                file. Identity recommendations create proposed review material
-                only, not confirmed identity. Internal aliases are not public dossier text
-                and remain admin-only. Public-safe visibility does not publish
-                anything yet.
+                Aliases help BNL route future recommendations to the right
+                source file. Identity recommendations create proposed review
+                material only, not confirmed identity. Internal aliases are not
+                public dossier text and remain admin-only. Public-safe
+                visibility does not publish anything yet.
               </p>
               <p className="border border-border/70 bg-background/20 p-3">
                 Adding an alias does not make it public and does not affect
@@ -1323,10 +1529,16 @@ export default function CandidateReviewPage() {
                             saving={saving}
                             recommendation={
                               identityLink.createdFromRecommendationId
-                                ? recommendationById.get(identityLink.createdFromRecommendationId)
+                                ? recommendationById.get(
+                                    identityLink.createdFromRecommendationId,
+                                  )
                                 : undefined
                             }
-                            onReview={(identityLinkId, action, useForMatching) =>
+                            onReview={(
+                              identityLinkId,
+                              action,
+                              useForMatching,
+                            ) =>
                               void reviewIdentityLink(
                                 identityLinkId,
                                 action,
@@ -1386,7 +1598,8 @@ export default function CandidateReviewPage() {
                   onChange={(event) =>
                     setIdentityLinkForm({
                       ...identityLinkForm,
-                      visibility: event.target.value as DossierIdentityLinkVisibility,
+                      visibility: event.target
+                        .value as DossierIdentityLinkVisibility,
                     })
                   }
                   className="w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
@@ -1472,7 +1685,11 @@ export default function CandidateReviewPage() {
         <Section title="Proposed Dossier">
           {!primaryDraft ? (
             <div className="space-y-3">
-              <p>Ready for Proposed Dossier: the proposed dossier should be written from reviewed, public-safe Source File material, not copied wholesale from this working case file.</p>
+              <p>
+                Ready for Proposed Dossier: the proposed dossier should be
+                written from reviewed, public-safe Source File material, not
+                copied wholesale from this working case file.
+              </p>
               <button
                 type="button"
                 onClick={() => void createDraft()}
@@ -1486,7 +1703,9 @@ export default function CandidateReviewPage() {
             <div className="space-y-2">
               <p>Status: {primaryDraft.status}</p>
               <p>Updated: {formatDate(primaryDraft.updatedAt)}</p>
-              <p>Unapplied notes: {sourceMetrics?.unappliedSourceNotesCount ?? 0}</p>
+              <p>
+                Unapplied notes: {sourceMetrics?.unappliedSourceNotesCount ?? 0}
+              </p>
               <Link
                 href={`/admin/dossiers/drafts/${primaryDraft.id}`}
                 className="inline-flex border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
@@ -1552,14 +1771,19 @@ export default function CandidateReviewPage() {
               <p>—</p>
             )}
           </Section>
-          <Section title="Review Context / Possible Supporting Evidence">{list(candidate.knownFacts)}</Section>
+          <Section title="Review Context / Possible Supporting Evidence">
+            {list(candidate.knownFacts)}
+          </Section>
           <Section title="Corrections / extra notes">
             <p>Saved notes now live in BNL Source File Notes above.</p>
           </Section>
           <Section title="Missing Info">{list(candidate.missingInfo)}</Section>
           <Section title="Do Not Say">{list(candidate.doNotSay)}</Section>
           <Section title="Public-Safe Facts Pending Owner/Admin Approval">
-            {list(candidate.knownFacts?.filter(Boolean), "No public-safe facts marked yet.")}
+            {list(
+              candidate.knownFacts?.filter(Boolean),
+              "No public-safe facts marked yet.",
+            )}
           </Section>
           <Section title="Internal-Only Notes">
             {sourceNotes.filter((note) => note.publicSafe !== true).length ? (
@@ -1567,7 +1791,9 @@ export default function CandidateReviewPage() {
                 {sourceNotes
                   .filter((note) => note.publicSafe !== true)
                   .map((note) => (
-                    <li key={note.id}>{createHumanReadableSourceFileNoteView(note).summary}</li>
+                    <li key={note.id}>
+                      {createHumanReadableSourceFileNoteView(note).summary}
+                    </li>
                   ))}
               </ul>
             ) : (
@@ -1576,7 +1802,10 @@ export default function CandidateReviewPage() {
           </Section>
           <Section title="Source Warnings">
             <div className="flex flex-wrap gap-2">
-              {sourceWarningLabels({ candidate, recommendations: attachedRecommendations }).map((label) => (
+              {sourceWarningLabels({
+                candidate,
+                recommendations: attachedRecommendations,
+              }).map((label) => (
                 <StatusBadge key={label}>{label}</StatusBadge>
               ))}
             </div>

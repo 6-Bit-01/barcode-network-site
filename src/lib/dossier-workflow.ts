@@ -122,6 +122,15 @@ export type DossierSourceFileNoteStatus =
   | "ignored"
   | "superseded";
 
+export type DossierSourceFileOperatorSummary = {
+  summaryText?: string;
+  knownContext?: string[];
+  openQuestions?: string[];
+  nextAction?: string;
+  updatedAt: string;
+  updatedBy?: string;
+};
+
 export type DossierSourceFileNote = {
   id: string;
   candidateId: string;
@@ -140,7 +149,6 @@ export type DossierSourceFileNote = {
   ingestSource?: DossierRecommendationIngestSource;
 };
 
-
 export type DossierIdentityLinkType =
   | "alias"
   | "artist_name"
@@ -152,9 +160,7 @@ export type DossierIdentityLinkType =
   | "related_label"
   | "unknown";
 
-export type DossierIdentityLinkVisibility =
-  | "internal_only"
-  | "public_safe";
+export type DossierIdentityLinkVisibility = "internal_only" | "public_safe";
 
 export type DossierIdentityLinkStatus =
   | "proposed"
@@ -230,6 +236,7 @@ export type DossierCandidate = {
   missingInfo?: string[];
   doNotSay?: string[];
   publicSafetyNotes?: string[];
+  sourceFileSummary?: DossierSourceFileOperatorSummary;
   sourceFileNotes?: DossierSourceFileNote[];
   identityLinks?: DossierIdentityLink[];
   sourceLanes?: DossierRecommendationSourceLane[];
@@ -389,8 +396,6 @@ export type DossierRecommendation = {
   ingestSource?: DossierRecommendationIngestSource;
 };
 
-
-
 export type DossierSourceDepthLabel = "Low" | "Medium" | "Strong";
 
 export type DossierSourceFileMetrics = {
@@ -418,7 +423,8 @@ export function getLinkedActiveDossierDraft(
 ): DossierDraft | undefined {
   return drafts.find(
     (draft) =>
-      draft.candidateId === candidate.id && isWorkflowDraftActiveForMetrics(draft),
+      draft.candidateId === candidate.id &&
+      isWorkflowDraftActiveForMetrics(draft),
   );
 }
 
@@ -445,7 +451,9 @@ export function getDossierSourceFileMetrics(input: {
   recommendations?: DossierRecommendation[];
 }): DossierSourceFileMetrics {
   const sourceNotes = input.candidate.sourceFileNotes ?? [];
-  const activeSourceNotes = sourceNotes.filter((note) => note.status === "active");
+  const activeSourceNotes = sourceNotes.filter(
+    (note) => note.status === "active",
+  );
   const attachedRecommendations = (input.recommendations ?? []).filter(
     (recommendation) => recommendation.targetCandidateId === input.candidate.id,
   );
@@ -515,7 +523,9 @@ export function compactDossierSubjectName(value: string): string {
   return normalizeDossierSubjectName(value).replace(/\s+/g, "");
 }
 
-export function isActiveSourceFileCandidate(candidate: Pick<DossierCandidate, "status">): boolean {
+export function isActiveSourceFileCandidate(
+  candidate: Pick<DossierCandidate, "status">,
+): boolean {
   return (
     candidate.status !== "candidate_intake" &&
     candidate.status !== "existing_dossier_update" &&
@@ -662,6 +672,15 @@ export function matchDossierRecommendationSubject(input: {
   };
 }
 
+export type UpdateDossierSourceFileSummaryInput = {
+  candidateId: string;
+  summaryText?: string;
+  knownContext?: string[];
+  openQuestions?: string[];
+  nextAction?: string;
+  updatedBy?: string;
+};
+
 export type CreateDossierSourceFileNoteInput = {
   candidateId: string;
   type?: DossierSourceFileNoteType;
@@ -722,6 +741,7 @@ export type DossierWorkflowAction =
   | "publishDraft"
   | "denyCandidate"
   | "markNeedsMoreEvidence"
+  | "updateSourceFileSummary"
   | "addSourceFileNote"
   | "addDossierIdentityLink"
   | "createIdentityLinkFromRecommendation"
@@ -768,6 +788,7 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "publishDraft",
   "denyCandidate",
   "markNeedsMoreEvidence",
+  "updateSourceFileSummary",
   "addSourceFileNote",
   "addDossierIdentityLink",
   "createIdentityLinkFromRecommendation",

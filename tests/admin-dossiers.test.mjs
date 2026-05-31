@@ -608,7 +608,7 @@ test("admin Source File and recommendation pages render readable sections with c
     "Public readiness:",
     "Existing public dossier:",
     "Next action:",
-    "This file is currently thin",
+    "This file is still thin",
     "Older BNL Review Note",
     "BNL Review Addendum",
     "Review-only context connected to this subject",
@@ -3098,7 +3098,7 @@ test("derived Source File summary labels thin files without fake substance", () 
   });
   assert.equal(summary.substanceLevel, "thin");
   assert.equal(summary.publicReadiness, "not_ready");
-  assert.match(summary.currentRead, /currently thin/);
+  assert.match(summary.currentRead, /still thin/);
   assert.match(summary.usefulEvidence[0], /No useful evidence/);
   assert.doesNotMatch(
     JSON.stringify(summary),
@@ -4239,4 +4239,155 @@ test("admin dossier UI labels BNL Source File enrichment separately from bridge 
   assert.match(recommendationPage, /Owner\/admin review[\s\S]*required before any public use/);
   assert.match(candidatePage, /BNL Review Addendum/);
   assert.match(candidatePage, /Internal working material|Review-only enrichment/);
+});
+
+test("source file meaning filter hides backend terms from main views while preserving audit details", () => {
+  const note = {
+    type: "general_note",
+    text: [
+      "Evidence summary: user_profiles/local_profile_observed",
+      "Evidence summary: user_profiles/local_profile_observed",
+      "Source lane mapping: relationship_journal -> unknown",
+      "Public safety: private_review_required",
+      "Public safety: public_use_not_allowed_until_review",
+    ].join("\n"),
+    source: "bnl_recommendation",
+    status: "active",
+    publicSafe: false,
+    createdAt: "2026-05-31T00:00:00.000Z",
+    ingestSource: "bnl_source_knowledge_bridge",
+    ingestKey: "bnl:test:candidate_id_123456789",
+  };
+
+  const view = noteDisplay.createHumanReadableSourceFileNoteView(note);
+  const mainText = JSON.stringify({ summary: view.summary, sections: view.sections });
+  assert.doesNotMatch(mainText, /user_profiles|local_profile_observed|relationship_journal|unknown -> unknown|private_review_required|public_use_not_allowed_until_review|source lane/i);
+  assert.match(mainText, /BNL has a local profile match for this subject/);
+  assert.match(mainText, /This needs internal review before public use|Do not use publicly until owner\/admin review/);
+  assert.equal(
+    (mainText.match(/BNL has a local profile match for this subject/g) ?? []).length,
+    1,
+  );
+  assert.match(JSON.stringify(view.rawMetadata), /source lane|relationship_journal|unknown/i);
+  assert.match(view.rawText, /user_profiles\/local_profile_observed/);
+});
+
+test("source file summary suppresses fake patterns, shows thin warning, and prefers operator summary", () => {
+  const baseCandidate = {
+    id: "candidate_summary_filter",
+    name: "Melanie Heart",
+    candidateType: "unknown",
+    source: "bnl_source_knowledge_bridge",
+    tier: "review_candidate",
+    score: 1,
+    whyNow: "source lane mapping relationship_journal -> unknown",
+    reason: "user_profiles/local_profile_observed conversations/public_discord_observed",
+    evidenceSummary: "relationship_journal -> unknown",
+    publicSafetyNotes: ["private_review_required", "private_review_required"],
+    doNotSay: ["public_use_not_allowed_until_review"],
+    sourceFileNotes: [
+      {
+        id: "note_backend_only",
+        candidateId: "candidate_summary_filter",
+        type: "general_note",
+        text: "Evidence summary: user_profiles/local_profile_observed",
+        source: "bnl_recommendation",
+        status: "active",
+        publicSafe: false,
+        createdAt: "2026-05-31T00:00:00.000Z",
+        updatedAt: "2026-05-31T00:00:00.000Z",
+      },
+    ],
+    status: "active_source_file",
+    createdAt: "2026-05-31T00:00:00.000Z",
+    updatedAt: "2026-05-31T00:00:00.000Z",
+  };
+
+  const thin = sourceFileSummary.createDossierSourceFileSummary({ candidate: baseCandidate });
+  const thinMain = JSON.stringify(thin);
+  assert.equal(thin.summarySource, "thin");
+  assert.match(thin.currentRead, /This file is still thin/);
+  assert.deepEqual(thin.patterns, ["No meaningful pattern has been extracted yet."]);
+  assert.doesNotMatch(thinMain, /user_profiles|local_profile_observed|relationship_journal|private_review_required|public_use_not_allowed_until_review|unknown -> unknown/);
+
+  const operator = sourceFileSummary.createDossierSourceFileSummary({
+    candidate: {
+      ...baseCandidate,
+      sourceFileSummary: {
+        summaryText: "Operator says Melanie Heart has repeat community context to review.",
+        knownContext: ["Appears across repeated community review notes."],
+        openQuestions: ["Confirm what is public-safe before drafting."],
+        nextAction: "Ask an owner to review the context before drafting.",
+        updatedAt: "2026-05-31T01:00:00.000Z",
+        updatedBy: "admin",
+      },
+    },
+  });
+  assert.equal(operator.summarySource, "operator");
+  assert.equal(
+    operator.currentRead,
+    "Operator says Melanie Heart has repeat community context to review.",
+  );
+  assert.deepEqual(operator.knownContext, ["Appears across repeated community review notes."]);
+
+  const shortOperator = sourceFileSummary.createDossierSourceFileSummary({
+    candidate: {
+      ...baseCandidate,
+      sourceFileSummary: {
+        summaryText: "Archive",
+        knownContext: ["Ask owner", "Ask owner"],
+        openQuestions: ["Needs review"],
+        nextAction: "Enrich",
+        updatedAt: "2026-05-31T01:00:00.000Z",
+        updatedBy: "admin",
+      },
+    },
+  });
+  assert.equal(shortOperator.summarySource, "operator");
+  assert.equal(shortOperator.currentRead, "Archive");
+  assert.deepEqual(shortOperator.knownContext, ["Ask owner"]);
+  assert.deepEqual(shortOperator.missingInfo, ["Needs review"]);
+  assert.equal(shortOperator.recommendedNextAction, "Enrich");
+
+  const junkOperator = sourceFileSummary.createDossierSourceFileSummary({
+    candidate: {
+      ...baseCandidate,
+      sourceFileSummary: {
+        summaryText: "local_profile_observed",
+        knownContext: ["relationship_journal -> unknown"],
+        openQuestions: ["metadata"],
+        nextAction: "ingestKey",
+        updatedAt: "2026-05-31T01:00:00.000Z",
+        updatedBy: "admin",
+      },
+    },
+  });
+  const junkText = JSON.stringify(junkOperator);
+  assert.equal(junkOperator.summarySource, "thin");
+  assert.doesNotMatch(junkText, /local_profile_observed|relationship_journal|metadata|ingestKey/);
+});
+
+test("recommendation detail case-file view uses the same sanitizer", () => {
+  const recommendation = {
+    id: "rec_filter",
+    type: "new_subject",
+    subjectName: "Melanie Heart",
+    status: "new",
+    reason: "BNL Source Knowledge Bridge origin: relationship_journal -> unknown",
+    evidenceSummary: "user_profiles/local_profile_observed conversations/public_discord_observed",
+    confidence: "low",
+    sourceLanes: ["rd_context"],
+    sourceTypes: ["relationship_journal"],
+    publicSafetyNotes: ["private_review_required", "private_review_required"],
+    ingestKey: "bnl:rec_filter:raw_target_id_123456789",
+    ingestSource: "bnl_source_knowledge_bridge",
+    createdAt: "2026-05-31T00:00:00.000Z",
+    updatedAt: "2026-05-31T00:00:00.000Z",
+  };
+
+  const view = noteDisplay.createHumanReadableRecommendationView(recommendation);
+  const mainText = JSON.stringify({ summary: view.summary, sections: view.sections });
+  assert.doesNotMatch(mainText, /relationship_journal|local_profile_observed|public_discord_observed|private_review_required|rd_context|target_id/);
+  assert.match(mainText, /BNL has a local profile match for this subject/);
+  assert.match(JSON.stringify(view.rawMetadata), /relationship_journal|rd_context|bnl:rec_filter/);
 });

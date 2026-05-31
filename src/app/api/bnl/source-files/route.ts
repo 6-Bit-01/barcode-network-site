@@ -143,6 +143,7 @@ type SourceFileSummary = {
     status: DossierRecommendation["status"];
     confidence: DossierRecommendation["confidence"] | null;
     sourceLanes: DossierRecommendation["sourceLanes"];
+    sourceTypes: string[];
     ingestSource: DossierRecommendation["ingestSource"] | null;
     ingestKey: string | null;
     reason: string;
@@ -302,6 +303,7 @@ function sourceFileReadModel(input: {
       status: recommendation.status,
       confidence: recommendation.confidence ?? null,
       sourceLanes: recommendation.sourceLanes,
+      sourceTypes: recommendation.sourceTypes ?? [],
       ingestSource: recommendation.ingestSource ?? null,
       ingestKey: recommendation.ingestKey ?? null,
       reason: recommendation.reason,

@@ -3752,3 +3752,204 @@ test("BNL-ingested recommendations stay out of public read model and database pa
     /sourceFileNotes|recommendations|identityLinks|Private Ingest Signal|brand-new-private-tag/,
   );
 });
+
+test("BNL Source File enrichment preserves provenance and attaches to an active Source File without public side effects", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  const beforePublic = JSON.stringify(databasePage.entries);
+
+  const intake = await (await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Enrichment Active Subject",
+    reason: "BNL dynamic discovery found the active subject.",
+    evidenceSummary: "Starter evidence.",
+    sourceLanes: ["rd_context"],
+    ingestKey: "bnl:enrichment-active-subject:discovery",
+    ingestSource: "bnl_dynamic_candidate_discovery",
+  })).json();
+  const promoted = await (await authedPost({
+    action: "promoteCandidateToSourceFile",
+    candidateId: intake.candidate.id,
+  })).json();
+  assert.equal(promoted.candidate.status, "active_source_file");
+
+  const response = await bnlIngestPost({
+    type: "modify_existing_dossier",
+    subjectName: "Enrichment Active Subject",
+    targetCandidateId: intake.candidate.id,
+    reason: "BNL generated source-file enrichment for review.",
+    evidenceSummary: {
+      observedFacts: ["Active source enrichment fact."],
+      warnings: ["Needs owner review."],
+      missingInfo: ["Confirm public-safe source."],
+      doNotSay: ["Do not publish internal language."],
+    },
+    confidence: "medium",
+    sourceLanes: ["active_source_file", "rd_knowledge_store"],
+    sourceTypes: ["source_file_note", "public_safety_note"],
+    missingInfo: ["Confirm public-safe source."],
+    publicSafetyNotes: ["Review-only; not public copy."],
+    doNotSay: ["Do not publish internal language."],
+    ingestKey: "bnl:enrichment-active-subject:enrichment",
+    ingestSource: "bnl_source_file_enrichment",
+  });
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.autoAction, "attached_existing");
+  assert.equal(payload.candidate, undefined);
+  assert.equal(payload.recommendation.ingestSource, "bnl_source_file_enrichment");
+  assert.equal(payload.recommendation.ingestKey, "bnl:enrichment-active-subject:enrichment");
+  assert.equal(payload.recommendation.status, "attached_to_source_file");
+  assert.equal(payload.recommendation.targetCandidateId, intake.candidate.id);
+  assert.deepEqual(payload.recommendation.sourceLanes, ["admin_manual", "rd_context"]);
+  assert.deepEqual(payload.recommendation.sourceTypes, ["source_file_note", "public_safety_note"]);
+  assert.match(payload.recommendation.evidenceSummary, /observedFacts/);
+  assert.deepEqual(payload.recommendation.missingInfo, ["Confirm public-safe source."]);
+  assert.deepEqual(payload.recommendation.doNotSay, ["Do not publish internal language."]);
+  assert.deepEqual(payload.recommendation.publicSafetyNotes.slice(0, 1), ["Review-only; not public copy."]);
+  assert.match(payload.recommendation.publicSafetyNotes.join(" "), /Active BNL Source File/);
+
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.candidates.length, 1);
+  const active = state.candidates[0];
+  assert.equal(active.status, "active_source_file");
+  assert.equal(active.sourceFileNotes[0].ingestSource, "bnl_source_file_enrichment");
+  assert.equal(active.sourceFileNotes[0].ingestKey, "bnl:enrichment-active-subject:enrichment");
+  assert.equal(active.sourceFileNotes[0].publicSafe, false);
+  assert.match(active.sourceFileNotes[0].text, /BNL Source File Enrichment/);
+  assert.match(active.sourceFileNotes[0].text, /source_file_note, public_safety_note/);
+  assert.equal(state.drafts.length, 0);
+
+  const protectedPayload = await (await sourceFilesGet("?candidateId=" + encodeURIComponent(intake.candidate.id))).json();
+  assert.equal(protectedPayload.found, true);
+  assert.equal(protectedPayload.sourceFile.sourceFileNotes[0].ingestSource, "bnl_source_file_enrichment");
+  assert.equal(protectedPayload.sourceFile.attachedRecommendations[0].ingestSource, "bnl_source_file_enrichment");
+  assert.deepEqual(protectedPayload.sourceFile.attachedRecommendations[0].sourceTypes, ["source_file_note", "public_safety_note"]);
+  assert.equal(protectedPayload.sourceFile.visibility.publicUse, false);
+  assert.equal(protectedPayload.sourceFile.visibility.publicUseReviewRequired, true);
+
+  const publicPayload = await (await readModel.GET(new Request("https://example.test/api/bnl/read-model"))).json();
+  assert.equal(JSON.stringify(databasePage.entries), beforePublic);
+  assert.doesNotMatch(JSON.stringify(publicPayload), /Enrichment Active Subject|bnl_source_file_enrichment|source_file_note/);
+});
+
+test("BNL Source File enrichment attaches to Candidate Intake and Existing Dossier Update without promotion or public edits", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+  const beforePublic = JSON.stringify(databasePage.entries.find((entry) => entry.name === "6 Bit"));
+
+  const intake = await (await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Enrichment Intake Subject",
+    reason: "BNL discovered an intake subject.",
+    sourceLanes: ["rd_context"],
+    ingestKey: "bnl:enrichment-intake-subject:discovery",
+    ingestSource: "bnl_dynamic_candidate_discovery",
+  })).json();
+  assert.equal(intake.candidate.status, "candidate_intake");
+
+  const intakeEnrichment = await (await bnlIngestPost({
+    type: "modify_existing_dossier",
+    subjectName: "Enrichment Intake Subject",
+    targetCandidateId: intake.candidate.id,
+    reason: "BNL generated intake enrichment for review.",
+    evidenceSummary: "Candidate Intake enrichment only.",
+    sourceLanes: ["candidate_intake"],
+    sourceTypes: ["intake_enrichment"],
+    ingestKey: "bnl:enrichment-intake-subject:enrichment",
+    ingestSource: "bnl_source_file_enrichment",
+  })).json();
+  assert.equal(intakeEnrichment.autoAction, "attached_existing");
+  assert.equal(intakeEnrichment.recommendation.status, "attached_to_candidate_intake");
+  assert.equal(intakeEnrichment.recommendation.ingestSource, "bnl_source_file_enrichment");
+  let state = await store.getDossierWorkflowState();
+  let intakeCandidate = state.candidates.find((candidate) => candidate.id === intake.candidate.id);
+  assert.equal(intakeCandidate.status, "candidate_intake");
+  assert.equal(intakeCandidate.sourceFileNotes[0].ingestSource, "bnl_source_file_enrichment");
+
+  const existingUpdate = await (await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "6 Bit",
+    reason: "Bridge found an existing public dossier update lane.",
+    sourceLanes: ["website_dossier"],
+    ingestKey: "bnl:enrichment-existing-update:bridge",
+    ingestSource: "bnl_source_knowledge_bridge",
+  })).json();
+  assert.equal(existingUpdate.candidate.status, "existing_dossier_update");
+
+  const updateEnrichment = await (await bnlIngestPost({
+    type: "modify_existing_dossier",
+    subjectName: "6 Bit",
+    targetCandidateId: existingUpdate.candidate.id,
+    reason: "BNL generated existing dossier update enrichment.",
+    evidenceSummary: "Existing Dossier Update enrichment only.",
+    sourceLanes: ["existing_dossier_update"],
+    sourceTypes: ["existing_dossier_update_note"],
+    ingestKey: "bnl:enrichment-existing-update:enrichment",
+    ingestSource: "bnl_source_file_enrichment",
+  })).json();
+  assert.equal(updateEnrichment.autoAction, "attached_existing");
+  assert.equal(updateEnrichment.recommendation.status, "attached_to_existing_dossier_update");
+  state = await store.getDossierWorkflowState();
+  const updateCandidate = state.candidates.find((candidate) => candidate.id === existingUpdate.candidate.id);
+  assert.equal(updateCandidate.status, "existing_dossier_update");
+  assert.equal(updateCandidate.sourceFileNotes[0].ingestSource, "bnl_source_file_enrichment");
+  assert.equal(JSON.stringify(databasePage.entries.find((entry) => entry.name === "6 Bit")), beforePublic);
+  assert.equal(state.drafts.length, 0);
+});
+
+test("BNL Source File enrichment without target remains in inbox and cannot convert to a new candidate", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const payload = await (await bnlIngestPost({
+    type: "modify_existing_dossier",
+    subjectName: "Untargeted Enrichment Subject",
+    reason: "BNL generated enrichment without a safe target.",
+    evidenceSummary: "Review-only enrichment should not create intake.",
+    sourceLanes: ["source_file_enrichment"],
+    sourceTypes: ["untargeted_enrichment"],
+    missingInfo: ["Resolve exact target."],
+    publicSafetyNotes: ["Owner/admin review required."],
+    doNotSay: ["Do not create public copy."],
+    ingestKey: "bnl:untargeted-enrichment",
+    ingestSource: "bnl_source_file_enrichment",
+  })).json();
+
+  assert.equal(payload.autoAction, "left_for_review");
+  assert.equal(payload.candidate, undefined);
+  assert.equal(payload.recommendation.status, "new");
+  assert.equal(payload.recommendation.ingestSource, "bnl_source_file_enrichment");
+  assert.deepEqual(payload.recommendation.sourceLanes, ["admin_manual"]);
+  assert.deepEqual(payload.recommendation.sourceTypes, ["untargeted_enrichment"]);
+  assert.match(payload.recommendation.publicSafetyNotes.join(" "), /left in Recommendation Inbox/);
+
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.candidates.length, 0);
+  assert.equal(state.drafts.length, 0);
+  assert.equal(state.recommendations.length, 1);
+
+  const convertResponse = await authedPost({
+    action: "convertRecommendationToCandidate",
+    recommendationId: payload.recommendation.id,
+  });
+  assert.equal(convertResponse.status, 400);
+  assert.equal((await convertResponse.json()).code, "enrichment_cannot_create_candidate");
+});
+
+test("admin dossier UI labels BNL Source File enrichment separately from bridge and discovery", () => {
+  const dashboard = source("src/app/admin/dossiers/page.tsx");
+  const recommendationPage = source("src/app/admin/dossiers/recommendations/[recommendationId]/page.tsx");
+  const candidatePage = source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+
+  assert.match(dashboard, /BNL Source File Enrichment/);
+  assert.match(dashboard, /Review-only internal case-file material; not public copy/);
+  assert.match(recommendationPage, /BNL Source File Enrichment/);
+  assert.match(recommendationPage, /not candidate discovery/);
+  assert.match(recommendationPage, /not raw bridge intake/);
+  assert.match(recommendationPage, /Owner\/admin review is required before any public use/);
+  assert.match(candidatePage, /BNL Source File Enrichment/);
+  assert.match(candidatePage, /Internal case-file material/);
+});

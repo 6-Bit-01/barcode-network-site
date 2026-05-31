@@ -570,6 +570,8 @@ export type ReviewDossierIdentityLinkInput = {
 
 const TERMINAL_RECOMMENDATION_STATUSES = new Set<DossierRecommendationStatus>([
   "attached_to_source_file",
+  "attached_to_candidate_intake",
+  "attached_to_existing_dossier_update",
   "converted_to_source_file",
   "identity_link_created",
   "ignored",
@@ -648,6 +650,7 @@ function normalizeRecommendationInput(
     evidenceSummary: boundedText(input.evidenceSummary) || undefined,
     confidence,
     sourceLanes: sourceLanes.length ? sourceLanes : ["admin_manual"],
+    sourceTypes: normalizeStringArray(input.sourceTypes).slice(0, 25),
     suggestedAction: boundedText(input.suggestedAction, 500) || undefined,
     missingInfo: normalizeStringArray(input.missingInfo),
     publicSafetyNotes: normalizeStringArray(input.publicSafetyNotes),
@@ -664,6 +667,7 @@ function normalizeRecommendationInput(
       input.ingestSource === "bnl" ||
       input.ingestSource === "bnl_dynamic_candidate_discovery" ||
       input.ingestSource === "bnl_source_knowledge_bridge" ||
+      input.ingestSource === "bnl_source_file_enrichment" ||
       input.ingestSource === "system" ||
       input.ingestSource === "unknown"
         ? input.ingestSource
@@ -684,6 +688,9 @@ function isAutoConvertibleBnlSourceRecommendation(
 function bnlIngestLabel(
   recommendation: Pick<DossierRecommendation, "ingestSource">,
 ): string {
+  if (recommendation.ingestSource === "bnl_source_file_enrichment") {
+    return "BNL Source File Enrichment";
+  }
   if (recommendation.ingestSource === "bnl_source_knowledge_bridge") {
     return "BNL Source Knowledge Bridge";
   }
@@ -696,9 +703,13 @@ function bnlIngestLabel(
 function bnlIngestCandidateSource(
   recommendation: Pick<DossierRecommendation, "ingestSource">,
 ): DossierCandidate["source"] {
-  return recommendation.ingestSource === "bnl_source_knowledge_bridge"
-    ? "bnl_source_knowledge_bridge"
-    : "bnl_dynamic_candidate_discovery";
+  if (recommendation.ingestSource === "bnl_source_knowledge_bridge") {
+    return "bnl_source_knowledge_bridge";
+  }
+  if (recommendation.ingestSource === "bnl_source_file_enrichment") {
+    return "bnl_source_file_enrichment";
+  }
+  return "bnl_dynamic_candidate_discovery";
 }
 
 function candidateTypeFromRecommendation(
@@ -731,13 +742,21 @@ function recommendationCandidateScore(
 function bnlAutoCandidateSourceNotes(
   recommendation: Pick<DossierRecommendation, "ingestSource">,
 ): string[] {
-  return recommendation.ingestSource === "bnl_source_knowledge_bridge"
-    ? [
-        "Source Knowledge Bridge origin: BNL local knowledge stores.",
-        "Public use requires review before any public dossier copy is written.",
-        "Internal/private review required for bridge-derived context.",
-      ]
-    : [];
+  if (recommendation.ingestSource === "bnl_source_knowledge_bridge") {
+    return [
+      "Source Knowledge Bridge origin: BNL local knowledge stores.",
+      "Public use requires review before any public dossier copy is written.",
+      "Internal/private review required for bridge-derived context.",
+    ];
+  }
+  if (recommendation.ingestSource === "bnl_source_file_enrichment") {
+    return [
+      "BNL Source File Enrichment origin: BNL-generated enrichment.",
+      "Review-only internal case-file material; not public copy.",
+      "Owner/admin review required before any public use.",
+    ];
+  }
+  return [];
 }
 
 function bnlAutoCandidateNoteText(
@@ -747,8 +766,14 @@ function bnlAutoCandidateNoteText(
   return [
     recommendationSourceNoteText(recommendation),
     `${label} origin.`,
-    recommendation.ingestSource === "bnl_source_knowledge_bridge"
-      ? `${label} source lanes/types summary: ${recommendation.sourceLanes.join(", ")}`
+    recommendation.ingestSource === "bnl_source_knowledge_bridge" ||
+    recommendation.ingestSource === "bnl_source_file_enrichment"
+      ? `${label} source lanes/types summary: ${[
+          recommendation.sourceLanes.join(", "),
+          recommendation.sourceTypes?.length ? `source types: ${recommendation.sourceTypes.join(", ")}` : "",
+        ]
+          .filter(Boolean)
+          .join(" / ")}`
       : `${label} source lanes: ${recommendation.sourceLanes.join(", ")}`,
     recommendation.ingestKey ? `${label} ingest key: ${recommendation.ingestKey}` : "",
     recommendation.confidence ? `${label} confidence: ${recommendation.confidence}` : "",
@@ -920,6 +945,8 @@ export async function createDossierRecommendationIdempotent(
   let savedCandidate: DossierCandidate | undefined;
   let duplicate = false;
   let autoAction: "created_candidate" | "attached_existing" | "left_for_review" | undefined;
+  const isEnrichmentIngest =
+    recommendation.ingestSource === "bnl_source_file_enrichment";
 
   await updateDossierWorkflowState((currentState) => {
     if (recommendation.targetCandidateId) {
@@ -933,7 +960,7 @@ export async function createDossierRecommendationIdempotent(
           "target_candidate_not_found",
         );
       }
-      if (!isActiveSourceFileCandidate(candidate)) {
+      if (!isActiveSourceFileCandidate(candidate) && !isEnrichmentIngest) {
         throw new DossierWorkflowInputError(
           "Target candidate is not an active BNL Source File",
           400,
@@ -957,6 +984,101 @@ export async function createDossierRecommendationIdempotent(
       savedRecommendation = existing;
       duplicate = true;
       return currentState;
+    }
+
+    if (isEnrichmentIngest) {
+      if (recommendation.targetCandidateId) {
+        const targetCandidate = currentState.candidates.find(
+          (candidate) => candidate.id === recommendation.targetCandidateId,
+        );
+        if (!targetCandidate) {
+          throw new DossierWorkflowInputError(
+            "Target candidate not found",
+            404,
+            "target_candidate_not_found",
+          );
+        }
+        if (
+          targetCandidate.status !== "active_source_file" &&
+          targetCandidate.status !== "candidate_intake" &&
+          targetCandidate.status !== "existing_dossier_update"
+        ) {
+          throw new DossierWorkflowInputError(
+            "BNL Source File Enrichment target is not an attachable workflow lane",
+            400,
+            "enrichment_target_not_attachable",
+          );
+        }
+        const targetStatusNote =
+          targetCandidate.status === "active_source_file"
+            ? "attached to an Active BNL Source File for review only; no public dossier was changed."
+            : targetCandidate.status === "candidate_intake"
+              ? "attached to Candidate Intake as enrichment, not active case-file fact; no promotion occurred."
+              : targetCandidate.status === "existing_dossier_update"
+                ? "attached as Existing Dossier Update enrichment; public dossier content was not edited."
+                : "attached to the targeted workflow record for review only; no public content changed.";
+        const updatedStatus: DossierRecommendationStatus =
+          targetCandidate.status === "candidate_intake"
+            ? "attached_to_candidate_intake"
+            : targetCandidate.status === "existing_dossier_update"
+              ? "attached_to_existing_dossier_update"
+              : "attached_to_source_file";
+        const note: DossierSourceFileNote = {
+          id: createSourceFileNoteId(),
+          candidateId: targetCandidate.id,
+          type: "general_note",
+          text: bnlAutoCandidateNoteText(recommendation),
+          source: "bnl_recommendation",
+          status: "active",
+          publicSafe: false,
+          createdAt: now,
+          updatedAt: now,
+          createdBy: recommendation.createdBy,
+          ingestKey: recommendation.ingestKey,
+          ingestedAt: recommendation.ingestedAt,
+          ingestSource: recommendation.ingestSource,
+        };
+        const updatedRecommendation: DossierRecommendation = {
+          ...recommendation,
+          status: updatedStatus,
+          targetCandidateId: targetCandidate.id,
+          publicSafetyNotes: [
+            ...(recommendation.publicSafetyNotes ?? []),
+            `${bnlIngestLabel(recommendation)} ${targetStatusNote}`,
+          ],
+          updatedAt: now,
+        };
+        savedRecommendation = updatedRecommendation;
+        autoAction = "attached_existing";
+        return {
+          ...currentState,
+          recommendations: [updatedRecommendation, ...currentState.recommendations],
+          candidates: currentState.candidates.map((candidate) =>
+            candidate.id === targetCandidate.id
+              ? {
+                  ...candidate,
+                  sourceFileNotes: [note, ...(candidate.sourceFileNotes ?? [])],
+                  updatedAt: now,
+                }
+              : candidate,
+          ),
+          updatedAt: now,
+        };
+      }
+
+      savedRecommendation = {
+        ...recommendation,
+        publicSafetyNotes: [
+          ...(recommendation.publicSafetyNotes ?? []),
+          `${bnlIngestLabel(recommendation)} has no target; left in Recommendation Inbox for owner/admin review. No Candidate Intake, Source File, Proposed Dossier, alias, merge, or public content was created.`,
+        ],
+      };
+      autoAction = "left_for_review";
+      return {
+        ...currentState,
+        recommendations: [savedRecommendation, ...currentState.recommendations],
+        updatedAt: now,
+      };
     }
 
     if (isAutoConvertibleBnlSourceRecommendation(recommendation)) {
@@ -1730,12 +1852,18 @@ export async function attachRecommendationToCandidate(input: {
         id: createSourceFileNoteId(),
         candidateId: candidate.id,
         type: "general_note",
-        text: recommendationSourceNoteText(recommendation),
+        text: recommendation.ingestSource?.startsWith("bnl")
+          ? bnlAutoCandidateNoteText(recommendation)
+          : recommendationSourceNoteText(recommendation),
         source: "bnl_recommendation",
         status: "active",
         publicSafe: false,
         createdAt: now,
         updatedAt: now,
+        createdBy: recommendation.createdBy,
+        ingestKey: recommendation.ingestKey,
+        ingestedAt: recommendation.ingestedAt,
+        ingestSource: recommendation.ingestSource,
       };
     }
 
@@ -1800,6 +1928,13 @@ export async function convertRecommendationToCandidate(
       );
     }
     assertRecommendationIsOpen(recommendation);
+    if (recommendation.ingestSource === "bnl_source_file_enrichment") {
+      throw new DossierWorkflowInputError(
+        "BNL Source File Enrichment cannot create a new candidate automatically",
+        400,
+        "enrichment_cannot_create_candidate",
+      );
+    }
     const match = matchDossierRecommendationSubject({
       recommendation,
       candidates: currentState.candidates,

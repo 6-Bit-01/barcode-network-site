@@ -1050,3 +1050,69 @@ test("BNL source file read model keeps public endpoint separate and does not exp
   assert.deepEqual(findForbiddenKeys(internalPayload), []);
   assert.doesNotMatch(JSON.stringify(internalPayload), /test-source-file-read-token|stripeSessionId|customerId|accountId|paymentIntent|submitterToken|fileUrl|contactEmail/);
 });
+
+test("BNL source file read model includes Source File Enrichment notes only in protected source files", async () => {
+  await resetDossierWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  const candidate = await seedSourceFileReadModelState({
+    candidate: {
+      id: "candidate_enrichment_subject",
+      name: "Enrichment Read Subject",
+      status: "active_source_file",
+      sourceFileNotes: [
+        {
+          id: "note_enrichment_subject",
+          candidateId: "candidate_enrichment_subject",
+          type: "general_note",
+          text: "BNL Source File Enrichment origin. Review-only internal case-file material; not public copy. Owner/admin review required before public use.",
+          source: "bnl_recommendation",
+          status: "active",
+          publicSafe: false,
+          ingestSource: "bnl_source_file_enrichment",
+          ingestKey: "bnl:enrichment-read-subject",
+          createdAt: "2026-05-30T00:00:00.000Z",
+          updatedAt: "2026-05-30T00:00:00.000Z",
+        },
+      ],
+    },
+    recommendations: [
+      {
+        id: "rec_enrichment_subject",
+        type: "modify_existing_dossier",
+        subjectName: "Enrichment Read Subject",
+        targetCandidateId: "candidate_enrichment_subject",
+        status: "attached_to_source_file",
+        reason: "BNL generated review-only source-file enrichment.",
+        evidenceSummary: JSON.stringify({ observedFacts: ["Internal enrichment fact"], warnings: ["Do not publish raw note"] }),
+        confidence: "medium",
+        sourceLanes: ["admin_manual", "rd_context"],
+        sourceTypes: ["source_file_note", "warning"],
+        ingestKey: "bnl:enrichment-read-subject",
+        ingestSource: "bnl_source_file_enrichment",
+        publicSafetyNotes: ["Review-only internal case-file material."],
+        missingInfo: ["Confirm owner-approved public copy."],
+        doNotSay: ["Do not publish raw note."],
+        createdAt: "2026-05-30T00:00:00.000Z",
+        updatedAt: "2026-05-30T00:00:00.000Z",
+      },
+    ],
+    drafts: [],
+  });
+
+  const payload = await (await sourceFilesGet("?subject=Enrichment%20Read%20Subject")).json();
+  assert.equal(payload.found, true);
+  assert.equal(payload.sourceFile.candidateId, candidate.id);
+  assert.equal(payload.sourceFile.sourceFileNotes[0].ingestSource, "bnl_source_file_enrichment");
+  assert.equal(payload.sourceFile.sourceFileNotes[0].publicSafe, false);
+  assert.equal(payload.sourceFile.attachedRecommendations[0].ingestSource, "bnl_source_file_enrichment");
+  assert.deepEqual(payload.sourceFile.attachedRecommendations[0].sourceTypes, ["source_file_note", "warning"]);
+  assert.match(payload.sourceFile.attachedRecommendations[0].evidenceSummary, /observedFacts/);
+  assert.equal(payload.sourceFile.visibility.publicUse, false);
+  assert.equal(payload.sourceFile.visibility.publicUseReviewRequired, true);
+
+  const publicPayload = await modelJson();
+  assert.doesNotMatch(
+    JSON.stringify(publicPayload),
+    /Enrichment Read Subject|bnl_source_file_enrichment|Internal enrichment fact|source_file_note/,
+  );
+});

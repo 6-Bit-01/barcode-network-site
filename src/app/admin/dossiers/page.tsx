@@ -120,6 +120,9 @@ function linkedActiveDraftFor(
 }
 
 function recommendationProvenance(recommendation: DossierRecommendation) {
+  if (recommendation.ingestSource === "bnl_source_file_enrichment") {
+    return "BNL Source File Enrichment";
+  }
   if (recommendation.ingestSource === "bnl_dynamic_candidate_discovery") {
     return "BNL dynamic discovery";
   }
@@ -135,6 +138,9 @@ function recommendationProvenance(recommendation: DossierRecommendation) {
 }
 
 function candidateProvenance(candidate: DossierCandidate) {
+  if (candidate.source === "bnl_source_file_enrichment") {
+    return `BNL Source File Enrichment${candidate.sourceLanes?.length ? ` / ${candidate.sourceLanes.join(", ")}` : ""}`;
+  }
   if (candidate.source === "bnl_dynamic_candidate_discovery") {
     return `BNL dynamic discovery${candidate.sourceLanes?.length ? ` / ${candidate.sourceLanes.join(", ")}` : ""}`;
   }
@@ -405,6 +411,22 @@ export default function DossierControlCenterPage() {
 
   function recommendationMatchState(recommendation: DossierRecommendation) {
     const match = matchDossierRecommendationSubject({ recommendation, candidates });
+    if (recommendation.ingestSource === "bnl_source_file_enrichment") {
+      const target = recommendation.targetCandidateId
+        ? candidates.find((candidate) => candidate.id === recommendation.targetCandidateId)
+        : null;
+      return {
+        match,
+        state: target?.status === "active_source_file"
+          ? "BNL Source File Enrichment / Active Source File"
+          : target?.status === "candidate_intake"
+            ? "BNL Source File Enrichment / Candidate Intake"
+            : target?.status === "existing_dossier_update"
+              ? "BNL Source File Enrichment / Existing Dossier Update"
+              : "BNL Source File Enrichment / Recommendation Inbox",
+        nextAction: "Review-only internal case-file material; not public copy",
+      };
+    }
     if (match.exactMatchKind === "pre_targeted") {
       return {
         match,

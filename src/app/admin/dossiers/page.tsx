@@ -46,6 +46,7 @@ const emptyRecommendationForm: ManualRecommendationForm = {
 };
 
 const activeCandidateStatuses = new Set<DossierCandidate["status"]>([
+  "active_source_file",
   "suggested",
   "needs_review",
   "selected",
@@ -280,10 +281,20 @@ export default function DossierControlCenterPage() {
       "identity_link_created",
       "ignored",
       "dismissed",
+      "archived",
     ].includes(recommendation.status),
+  );
+  const candidateIntakeItems = candidates.filter(
+    (candidate) => candidate.status === "candidate_intake",
   );
   const activeCandidates = candidates.filter((candidate) =>
     activeCandidateStatuses.has(candidate.status),
+  );
+  const existingDossierUpdates = candidates.filter(
+    (candidate) => candidate.status === "existing_dossier_update",
+  );
+  const archivedCandidates = candidates.filter(
+    (candidate) => candidate.status === "archived",
   );
   const closedCandidates = candidates.filter(
     (candidate) =>
@@ -327,6 +338,11 @@ export default function DossierControlCenterPage() {
   const sourceFilesWithUnappliedNotes = activeCandidates.filter(
     (candidate) =>
       (sourceFileMetrics.get(candidate.id)?.unappliedSourceNotesCount ?? 0) > 0,
+  );
+  const proposedDossiers = drafts.filter((draft) =>
+    ["draft", "owner_changes_requested", "ready_for_owner_review"].includes(
+      draft.status,
+    ),
   );
   const closedHistoryCount =
     closedCandidates.length + closedDrafts.length + terminalRecommendations.length;
@@ -410,10 +426,17 @@ export default function DossierControlCenterPage() {
         nextAction: "Needs owner identity review",
       };
     }
+    if (recommendation.targetDossierId || recommendation.type === "modify_existing_dossier") {
+      return {
+        match,
+        state: "Existing Dossier Update",
+        nextAction: "Review as update to existing dossier",
+      };
+    }
     return {
       match,
-      state: "No BNL Source File match",
-      nextAction: "Convert to New BNL Source File",
+      state: "No BNL Source File match / Candidate Intake / Newly Discovered",
+      nextAction: "Stage for intake, then promote if accepted",
     };
   }
 
@@ -461,6 +484,57 @@ export default function DossierControlCenterPage() {
       setNotice(
         err instanceof Error ? err.message : "Failed to update candidate.",
       );
+    }
+  }
+
+
+  async function recommendationAction(
+    recommendationId: string,
+    action: "dismissDossierRecommendation" | "archiveDossierRecommendation",
+  ) {
+    try {
+      await postWorkflow({ action, recommendationId });
+      setNotice(
+        action === "archiveDossierRecommendation"
+          ? "Recommendation archived. It is removed from active workflow lanes without deleting public dossiers."
+          : "Recommendation dismissed. Public dossiers were not changed.",
+      );
+    } catch (err) {
+      setNotice(
+        err instanceof Error ? err.message : "Recommendation action failed.",
+      );
+    }
+  }
+
+  async function candidateAction(
+    candidateId: string,
+    action:
+      | "promoteCandidateToSourceFile"
+      | "archiveCandidate"
+      | "restoreCandidate"
+      | "permanentlyDeleteCandidate",
+  ) {
+    const candidate = candidates.find((item) => item.id === candidateId);
+    if (!candidate) return;
+
+    try {
+      const body: Record<string, unknown> = { action, candidateId };
+      if (action === "permanentlyDeleteCandidate") {
+        const confirmation = window.prompt(
+          'Permanent delete removes this workflow item and linked unpublished drafts. Type "DELETE SOURCE FILE" to confirm.',
+        );
+        if (confirmation !== "DELETE SOURCE FILE") return;
+        body.confirmation = confirmation;
+      }
+      const data = await postWorkflow(body);
+      setNotice(
+        `${candidate.name} updated via ${action}. Public dossiers were not changed.`,
+      );
+      if (data.candidates && data.drafts && data.workflow) {
+        setPayload(data as WorkflowPayload);
+      }
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Candidate action failed.");
     }
   }
 
@@ -537,6 +611,12 @@ export default function DossierControlCenterPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 text-xs text-muted">
           {[
             ["Total BNL Source Files", candidates.length],
+            ["Candidate Intake", candidateIntakeItems.length],
+            ["Active Source Files", activeCandidates.length],
+            ["Existing Dossier Updates", existingDossierUpdates.length],
+            ["Proposed Dossiers", proposedDossiers.length],
+            ["Owner Review waiting", ownerReviewDrafts.length],
+            ["Archived / Trash", archivedCandidates.length],
             ["Source Files needing info", sourceFilesNeedingInfo.length],
             ["Source Files with proposed dossiers", sourceFilesWithDrafts.length],
             [
@@ -544,7 +624,6 @@ export default function DossierControlCenterPage() {
               sourceFilesWithUnappliedNotes.length,
             ],
             ["Recommendations waiting", activeRecommendations.length],
-            ["Owner Review waiting", ownerReviewDrafts.length],
             ["Duplicate / identity warnings", activeDuplicateGroups.length],
             ["Closed / history", closedHistoryCount],
           ].map(([label, value]) => (
@@ -637,12 +716,40 @@ export default function DossierControlCenterPage() {
                         </td>
                         <td className="py-3 pr-3">{matchState.nextAction}</td>
                         <td className="py-3 pr-3">
-                          <Link
-                            href={`/admin/dossiers/recommendations/${recommendation.id}`}
-                            className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
-                          >
-                            Review Recommendation
-                          </Link>
+                          <div className="flex flex-wrap gap-2">
+                            <Link
+                              href={`/admin/dossiers/recommendations/${recommendation.id}`}
+                              className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
+                            >
+                              Review Recommendation
+                            </Link>
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() =>
+                                void recommendationAction(
+                                  recommendation.id,
+                                  "archiveDossierRecommendation",
+                                )
+                              }
+                              className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+                            >
+                              Archive
+                            </button>
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() =>
+                                void recommendationAction(
+                                  recommendation.id,
+                                  "dismissDossierRecommendation",
+                                )
+                              }
+                              className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+                            >
+                              Dismiss
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -742,10 +849,105 @@ export default function DossierControlCenterPage() {
           </form>
         </details>
 
+
+        <DashboardCard
+          eyebrow="Candidate Intake"
+          title="Candidate Intake / Newly Discovered"
+          aside={<StatusPill>{candidateIntakeItems.length} staged items</StatusPill>}
+        >
+          <p className="text-sm text-muted mb-4">
+            BNL-discovered subjects stay here until an admin explicitly promotes
+            them to an Active BNL Source File / Working Case File. Evidence,
+            source warnings, ingest keys, safety notes, do-not-say notes, and
+            missing-info notes are preserved during promotion.
+          </p>
+          {candidateIntakeItems.length === 0 ? (
+            <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
+              No newly discovered Candidate Intake items are waiting.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {candidateIntakeItems.map((candidate) => (
+                <article key={candidate.id} className="border border-border/70 bg-background/20 p-4 text-sm text-muted">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <p className="font-bold text-foreground">{candidate.name}</p>
+                      <p>Source: {candidateProvenance(candidate)}</p>
+                      <p>Status/stage: Candidate Intake / {candidate.status}</p>
+                      {(candidate.publicSafetyNotes ?? []).length > 0 && (
+                        <p className="text-accent">Warning badges: source warnings present</p>
+                      )}
+                      {candidate.existingDossierMatch && (
+                        <p>Possible public dossier match: {candidate.existingDossierMatch.name}</p>
+                      )}
+                      <p>Next action: Promote to Source File or archive junk/test extraction.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Link href={`/admin/dossiers/candidates/${candidate.id}`} className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">
+                        Review Intake
+                      </Link>
+                      <button type="button" disabled={saving} onClick={() => void candidateAction(candidate.id, "promoteCandidateToSourceFile")} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50">
+                        Promote to Source File
+                      </button>
+                      <button type="button" disabled={saving} onClick={() => void candidateAction(candidate.id, "archiveCandidate")} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">
+                        Archive
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </DashboardCard>
+
+        <DashboardCard
+          eyebrow="Existing dossier updates"
+          title="Existing Dossier Updates / Enrichment Candidates"
+          aside={<StatusPill>{existingDossierUpdates.length} update candidates</StatusPill>}
+        >
+          <p className="text-sm text-muted mb-4">
+            Exact public dossier matches are staged as proposed updates/enrichment
+            work, not as brand-new public dossiers. Owner approval is required
+            before public changes.
+          </p>
+          {existingDossierUpdates.length === 0 ? (
+            <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
+              No existing public dossier update candidates are waiting.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {existingDossierUpdates.map((candidate) => (
+                <article key={candidate.id} className="border border-border/70 bg-background/20 p-4 text-sm text-muted">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <p className="font-bold text-foreground">Existing Dossier Update: {candidate.existingDossierMatch?.name ?? candidate.name}</p>
+                      <p>Recommendation subject: {candidate.name}</p>
+                      <p>Matched public dossier: {candidate.existingDossierMatch?.name ?? "—"}</p>
+                      <p>Evidence/source notes: {(candidate.sourceFileNotes ?? []).length} notes preserved</p>
+                      <p>Proposed action: Review as update to existing dossier; owner approval required before public changes.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Link href={`/admin/dossiers/candidates/${candidate.id}`} className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">
+                        Review Update
+                      </Link>
+                      <button type="button" disabled={saving} onClick={() => void candidateAction(candidate.id, "promoteCandidateToSourceFile")} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50">
+                        Convert to Source File
+                      </button>
+                      <button type="button" disabled={saving} onClick={() => void candidateAction(candidate.id, "archiveCandidate")} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">
+                        Archive / wrong match
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </DashboardCard>
+
         <DashboardCard
           eyebrow="Primary operations"
-          title="BNL Source Files"
-          aside={<StatusPill>{activeCandidates.length} active source files</StatusPill>}
+          title="Active BNL Source Files / Working Case Files"
+          aside={<StatusPill>{activeCandidates.length} active working case files</StatusPill>}
         >
           <p className="text-sm text-muted">
             Open a BNL Source File working case file to review evidence. Proposed
@@ -982,6 +1184,45 @@ export default function DossierControlCenterPage() {
                     >
                       View Warning / Open Merge Review
                     </Link>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </DashboardCard>
+
+
+        <DashboardCard
+          eyebrow="Archive / Trash"
+          title="Archived / Dismissed / Trash"
+          aside={<StatusPill>{archivedCandidates.length} archived items</StatusPill>}
+        >
+          <p className="text-sm text-muted mb-4">
+            Archive is the safe default for junk, test, error, low-confidence, or
+            source-blind extractions. Permanent delete is protected by explicit
+            confirmation text and never deletes public dossiers.
+          </p>
+          {archivedCandidates.length === 0 ? (
+            <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
+              No archived Candidate Intake or Source File items.
+            </p>
+          ) : (
+            <div className="space-y-2 text-sm text-muted">
+              {archivedCandidates.slice(0, 10).map((candidate) => (
+                <article key={candidate.id} className="border border-border/70 bg-background/20 p-3">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="font-semibold text-foreground">{candidate.name}</p>
+                      <p>Source: {candidateProvenance(candidate)} / status: {candidate.status}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" disabled={saving} onClick={() => void candidateAction(candidate.id, "restoreCandidate")} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50">
+                        Restore to Intake
+                      </button>
+                      <button type="button" disabled={saving} onClick={() => void candidateAction(candidate.id, "permanentlyDeleteCandidate")} className="border border-red-500/70 px-3 py-1.5 text-xs uppercase tracking-widest text-red-300 hover:bg-red-500/10 disabled:opacity-50">
+                        Delete permanently
+                      </button>
+                    </div>
                   </div>
                 </article>
               ))}

@@ -26,6 +26,8 @@ import {
 import {
   addDossierIdentityLink,
   addDossierSourceFileNote,
+  archiveDossierCandidate,
+  archiveDossierRecommendation,
   attachRecommendationToCandidate,
   createIdentityLinkFromRecommendation,
   confirmDossierIdentityLink,
@@ -43,6 +45,9 @@ import {
   rejectDossierIdentityLink,
   retireDossierIdentityLink,
   mergeDossierCandidates,
+  permanentlyDeleteDossierCandidate,
+  promoteCandidateToSourceFile,
+  restoreDossierCandidate,
   saveDossierDraft,
   submitDraftForOwnerReview,
   updateDossierCandidateStatus,
@@ -117,8 +122,13 @@ const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "createDossierRecommendation",
   "attachRecommendationToCandidate",
   "convertRecommendationToCandidate",
+  "promoteCandidateToSourceFile",
+  "archiveCandidate",
+  "restoreCandidate",
+  "permanentlyDeleteCandidate",
   "ignoreDossierRecommendation",
   "dismissDossierRecommendation",
+  "archiveDossierRecommendation",
 ]);
 
 async function isAuthenticated(req: Request): Promise<boolean> {
@@ -517,9 +527,54 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, action, ...conversion, ...payload });
     }
 
+
+    if (
+      action === "promoteCandidateToSourceFile" ||
+      action === "archiveCandidate" ||
+      action === "restoreCandidate"
+    ) {
+      const candidateId = candidateIdFromBody(body);
+      if (!candidateId) {
+        return NextResponse.json(
+          { error: "candidateId is required" },
+          { status: 400 },
+        );
+      }
+      const candidate =
+        action === "promoteCandidateToSourceFile"
+          ? await promoteCandidateToSourceFile(candidateId)
+          : action === "archiveCandidate"
+            ? await archiveDossierCandidate(candidateId)
+            : await restoreDossierCandidate(candidateId);
+      if (!candidate) {
+        return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
+      }
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, candidate, ...payload });
+    }
+
+    if (action === "permanentlyDeleteCandidate") {
+      const candidateId = candidateIdFromBody(body);
+      const confirmation =
+        typeof body.confirmation === "string" ? body.confirmation : "";
+      if (!candidateId) {
+        return NextResponse.json(
+          { error: "candidateId is required" },
+          { status: 400 },
+        );
+      }
+      const deletion = await permanentlyDeleteDossierCandidate({
+        candidateId,
+        confirmation,
+      });
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, deletion, ...payload });
+    }
+
     if (
       action === "ignoreDossierRecommendation" ||
-      action === "dismissDossierRecommendation"
+      action === "dismissDossierRecommendation" ||
+      action === "archiveDossierRecommendation"
     ) {
       const recommendationId = recommendationIdFromBody(body);
       if (!recommendationId) {
@@ -531,7 +586,9 @@ export async function POST(req: Request) {
       const recommendation =
         action === "ignoreDossierRecommendation"
           ? await ignoreDossierRecommendation(recommendationId)
-          : await dismissDossierRecommendation(recommendationId);
+          : action === "dismissDossierRecommendation"
+            ? await dismissDossierRecommendation(recommendationId)
+            : await archiveDossierRecommendation(recommendationId);
       const payload = await workflowPayload();
       return NextResponse.json({
         ok: true,

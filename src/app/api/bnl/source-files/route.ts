@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
   compactDossierSubjectName,
+  isActiveSourceFileCandidate,
   normalizeDossierSubjectName,
   type DossierCandidate,
   type DossierDraft,
@@ -76,6 +77,8 @@ type SourceFileSummary = {
   normalizedName: string;
   candidateType: DossierCandidate["candidateType"];
   status: DossierCandidate["status"];
+  workflowLane: "active_source_file";
+  sourceFileActive: true;
   tier: DossierCandidate["tier"];
   score: number;
   confidence: DossierCandidate["confidence"] | null;
@@ -202,7 +205,7 @@ function queryFrom(req: Request): { mode: QueryMode; value: string } | null {
 }
 
 function isActiveCandidate(candidate: DossierCandidate): boolean {
-  return candidate.status !== "denied" && candidate.status !== "merged";
+  return isActiveSourceFileCandidate(candidate);
 }
 
 function noteSummary(note: DossierSourceFileNote): string {
@@ -314,6 +317,8 @@ function sourceFileReadModel(input: {
     normalizedName: normalizeDossierSubjectName(input.candidate.name),
     candidateType: input.candidate.candidateType,
     status: input.candidate.status,
+    workflowLane: "active_source_file",
+    sourceFileActive: true,
     tier: input.candidate.tier,
     score: input.candidate.score,
     confidence: input.candidate.confidence ?? null,

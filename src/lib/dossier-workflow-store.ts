@@ -23,6 +23,7 @@ import {
   type DossierSourceFileNoteType,
   type DossierDuplicateRisk,
   type DossierWorkflowLink,
+  isActiveSourceFileCandidate,
   matchDossierRecommendationSubject,
   type MergeDossierCandidatesInput,
 } from "@/lib/dossier-workflow";
@@ -573,6 +574,7 @@ const TERMINAL_RECOMMENDATION_STATUSES = new Set<DossierRecommendationStatus>([
   "identity_link_created",
   "ignored",
   "dismissed",
+  "archived",
 ]);
 
 function assertRecommendationIsOpen(
@@ -858,7 +860,7 @@ function buildCandidateFromRecommendation(input: {
     ingestKey: recommendation.ingestKey,
     ingestSource: recommendation.ingestSource,
     createdFromRecommendationId: recommendation.id,
-    status: "needs_review",
+    status: duplicate.match?.confidence === "high" ? "existing_dossier_update" : "candidate_intake",
     createdAt: now,
     updatedAt: now,
   };
@@ -931,7 +933,7 @@ export async function createDossierRecommendationIdempotent(
           "target_candidate_not_found",
         );
       }
-      if (candidate.status === "denied" || candidate.status === "merged") {
+      if (!isActiveSourceFileCandidate(candidate)) {
         throw new DossierWorkflowInputError(
           "Target candidate is not an active BNL Source File",
           400,
@@ -962,8 +964,7 @@ export async function createDossierRecommendationIdempotent(
         ? currentState.candidates.find(
             (candidate) =>
               candidate.ingestKey === recommendation.ingestKey &&
-              candidate.status !== "denied" &&
-              candidate.status !== "merged",
+              isActiveSourceFileCandidate(candidate),
           )
         : undefined;
       if (ingestKeyCandidate) {
@@ -1070,11 +1071,17 @@ export async function createDossierRecommendationIdempotent(
           ...recommendation,
           status: "converted_to_source_file",
           targetCandidateId: candidate.id,
+          publicSafetyNotes: [
+            ...(recommendation.publicSafetyNotes ?? []),
+            candidate.status === "existing_dossier_update"
+              ? `${bnlIngestLabel(recommendation)} matched an existing public dossier and was staged as an Existing Dossier Update; no public dossier was edited.`
+              : `${bnlIngestLabel(recommendation)} was staged as Candidate Intake; admin promotion is required before it becomes an active Source File.`,
+          ],
           updatedAt: now,
         };
         savedRecommendation = updatedRecommendation;
         savedCandidate = candidate;
-        autoAction = "created_candidate";
+        autoAction = candidate.status === "existing_dossier_update" ? "left_for_review" : "created_candidate";
         return {
           ...currentState,
           candidates: [candidate, ...currentState.candidates],
@@ -1310,7 +1317,7 @@ export async function createIdentityLinkFromRecommendation(
         "candidate_not_found",
       );
     }
-    if (candidate.status === "denied" || candidate.status === "merged") {
+    if (!isActiveSourceFileCandidate(candidate)) {
       throw new DossierWorkflowInputError(
         "Candidate is not an active BNL Source File",
         400,
@@ -1691,7 +1698,7 @@ export async function attachRecommendationToCandidate(input: {
         "candidate_not_found",
       );
     }
-    if (candidate.status === "denied" || candidate.status === "merged") {
+    if (!isActiveSourceFileCandidate(candidate)) {
       throw new DossierWorkflowInputError(
         "Candidate is not an active BNL Source File",
         400,
@@ -1824,17 +1831,18 @@ export async function convertRecommendationToCandidate(
           ? bnlAutoCandidateNoteText(recommendation)
           : recommendationSourceNoteText(recommendation),
     });
+    const promotedCandidate = { ...candidate, status: "active_source_file" as const };
     const updatedRecommendation: DossierRecommendation = {
       ...recommendation,
       status: "converted_to_source_file",
       targetCandidateId: candidate.id,
       updatedAt: now,
     };
-    result = { recommendation: updatedRecommendation, candidate };
+    result = { recommendation: updatedRecommendation, candidate: promotedCandidate };
 
     return {
       ...currentState,
-      candidates: [candidate, ...currentState.candidates],
+      candidates: [promotedCandidate, ...currentState.candidates],
       recommendations: currentState.recommendations.map((item) =>
         item.id === recommendation.id ? updatedRecommendation : item,
       ),
@@ -1854,7 +1862,7 @@ export async function convertRecommendationToCandidate(
 
 async function setRecommendationStatus(
   recommendationId: string,
-  status: "ignored" | "dismissed",
+  status: "ignored" | "dismissed" | "archived",
 ): Promise<DossierRecommendation> {
   const now = new Date().toISOString();
   let updatedRecommendation: DossierRecommendation | null = null;
@@ -1889,6 +1897,12 @@ export function dismissDossierRecommendation(
   recommendationId: string,
 ): Promise<DossierRecommendation> {
   return setRecommendationStatus(recommendationId, "dismissed");
+}
+
+export function archiveDossierRecommendation(
+  recommendationId: string,
+): Promise<DossierRecommendation> {
+  return setRecommendationStatus(recommendationId, "archived");
 }
 
 export async function createManualDossierCandidate(
@@ -1984,6 +1998,100 @@ export async function createManualDossierCandidate(
   }));
 
   return candidate;
+}
+
+
+export async function promoteCandidateToSourceFile(
+  candidateId: string,
+): Promise<DossierCandidate | null> {
+  const now = new Date().toISOString();
+  let updatedCandidate: DossierCandidate | null = null;
+
+  await updateDossierWorkflowState((currentState) => {
+    const candidates = currentState.candidates.map((candidate) => {
+      if (candidate.id !== candidateId) return candidate;
+      if (candidate.status === "denied" || candidate.status === "merged") {
+        throw new DossierWorkflowInputError(
+          "Closed candidates cannot be promoted to active BNL Source Files",
+          400,
+          "candidate_closed",
+        );
+      }
+      updatedCandidate = {
+        ...candidate,
+        status: "active_source_file",
+        updatedAt: now,
+      };
+      return updatedCandidate;
+    });
+
+    if (!updatedCandidate) return currentState;
+    return { ...currentState, candidates, updatedAt: now };
+  });
+
+  return updatedCandidate;
+}
+
+export async function archiveDossierCandidate(
+  candidateId: string,
+): Promise<DossierCandidate | null> {
+  return updateDossierCandidateStatus(candidateId, "archived");
+}
+
+export async function restoreDossierCandidate(
+  candidateId: string,
+): Promise<DossierCandidate | null> {
+  return updateDossierCandidateStatus(candidateId, "candidate_intake");
+}
+
+export async function permanentlyDeleteDossierCandidate(input: {
+  candidateId: string;
+  confirmation: string;
+}): Promise<{ candidateId: string; deleted: boolean }> {
+  if (input.confirmation !== "DELETE SOURCE FILE") {
+    throw new DossierWorkflowInputError(
+      'Permanent delete requires confirmation text "DELETE SOURCE FILE"',
+      400,
+      "delete_confirmation_required",
+    );
+  }
+  let deleted = false;
+  const now = new Date().toISOString();
+  await updateDossierWorkflowState((currentState) => {
+    const candidate = currentState.candidates.find(
+      (item) => item.id === input.candidateId,
+    );
+    if (!candidate) return currentState;
+    const linkedPublicDraft = currentState.drafts.find(
+      (draft) =>
+        draft.candidateId === input.candidateId &&
+        (draft.status === "published" || draft.status === "owner_approved"),
+    );
+    if (linkedPublicDraft) {
+      throw new DossierWorkflowInputError(
+        "Candidates with approved or published drafts cannot be permanently deleted",
+        400,
+        "candidate_delete_protected",
+      );
+    }
+    deleted = true;
+    return {
+      ...currentState,
+      candidates: currentState.candidates.filter(
+        (item) => item.id !== input.candidateId,
+      ),
+      drafts: currentState.drafts.filter(
+        (draft) => draft.candidateId !== input.candidateId,
+      ),
+      recommendations: currentState.recommendations.map((recommendation) =>
+        recommendation.targetCandidateId === input.candidateId
+          ? { ...recommendation, targetCandidateId: undefined, updatedAt: now }
+          : recommendation,
+      ),
+      updatedAt: now,
+    };
+  });
+  return { candidateId: input.candidateId, deleted };
 }
 
 export async function updateDossierCandidateStatus(

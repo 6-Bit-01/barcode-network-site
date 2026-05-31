@@ -2828,7 +2828,7 @@ test("exact match attach recommendation to existing source file creates a source
   assert.equal(payload.drafts.length, 0);
 });
 
-test("ignore and dismiss recommendations preserve records", async () => {
+test("ignore, dismiss, and archive recommendations preserve records", async () => {
   await resetWorkflowStore();
   const first = await (
     await authedPost({
@@ -2889,6 +2889,7 @@ test("recommendation inbox and source note UI are present and bounded", () => {
   assert.match(dashboard, /Possible duplicate \/ identity warning/);
   assert.match(dashboard, /No BNL Source File match/);
   assert.match(dashboard, /Review Recommendation/);
+  assert.match(dashboard, /archiveDossierRecommendation/);
   assert.doesNotMatch(dashboard, /Attach to Existing Source File/);
 
   const sourceFilePage = source(
@@ -3091,7 +3092,7 @@ test("BNL ingest creates review-only recommendations visible to admin without ca
 });
 
 
-test("BNL dynamic discovery creates a normal source-file candidate with provenance and no public side effects", async () => {
+test("BNL dynamic discovery creates a Candidate Intake item with provenance and no public side effects", async () => {
   await resetWorkflowStore();
   process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
   const beforePublicTagCount = databasePage.entries.flatMap((entry) => entry.tags).length;
@@ -3133,7 +3134,7 @@ test("BNL dynamic discovery creates a normal source-file candidate with provenan
   assert.equal(payload.candidate.confidence, "high");
   assert.equal(payload.candidate.recommendedCategory, "Interface");
   assert.equal(payload.candidate.recommendedKind, "system");
-  assert.equal(payload.candidate.status, "needs_review");
+  assert.equal(payload.candidate.status, "candidate_intake");
   assert.equal(payload.candidate.sourceFileNotes.length, 1);
   assert.match(payload.candidate.sourceFileNotes[0].text, /BNL dynamic discovery source lanes: rd_context, broadcast_memory/);
   assert.equal(payload.candidate.sourceFileNotes[0].ingestSource, "bnl_dynamic_candidate_discovery");
@@ -3170,6 +3171,11 @@ test("BNL dynamic discovery dedupes by ingestKey and exact subject candidate", a
   assert.equal(first.autoAction, "created_candidate");
   assert.equal(second.duplicate, true);
   assert.equal(second.recommendation.id, first.recommendation.id);
+
+  await authedPost({
+    action: "promoteCandidateToSourceFile",
+    candidateId: first.candidate.id,
+  });
 
   const sameSubject = await (await bnlIngestPost({
     type: "new_subject",
@@ -3239,7 +3245,7 @@ test("BNL dynamic identity and possible duplicate recommendations remain review-
 
 
 
-test("BNL Source Knowledge Bridge new-subject recommendations create source-file candidates with warnings", async () => {
+test("BNL Source Knowledge Bridge new-subject recommendations create Candidate Intake items with warnings", async () => {
   await resetWorkflowStore();
   process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
   process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
@@ -3277,7 +3283,7 @@ test("BNL Source Knowledge Bridge new-subject recommendations create source-file
   assert.equal(payload.candidate.name, "Bridge Memory Subject");
   assert.equal(payload.candidate.source, "bnl_source_knowledge_bridge");
   assert.equal(payload.candidate.ingestSource, "bnl_source_knowledge_bridge");
-  assert.equal(payload.candidate.status, "needs_review");
+  assert.equal(payload.candidate.status, "candidate_intake");
   assert.equal(payload.candidate.recommendedKind, "entity");
   assert.deepEqual(payload.candidate.sourceLanes, ["broadcast_memory", "admin_manual"]);
   assert.match(payload.candidate.publicSafetyNotes.join(" "), /Source Knowledge Bridge origin|Public use requires review|Internal\/private review required|source-blind memory trace/);
@@ -3293,9 +3299,21 @@ test("BNL Source Knowledge Bridge new-subject recommendations create source-file
   assert.equal(adminPayload.recommendations.length, 1);
   assert.equal(adminPayload.drafts.length, 0);
 
+  const intakeProtectedPayload = await (await sourceFilesGet("?subject=Bridge%20Memory%20Subject")).json();
+  assert.equal(intakeProtectedPayload.found, false);
+  assert.match(intakeProtectedPayload.reason, /No BNL Source File match found/);
+
+  const promoted = await (await authedPost({
+    action: "promoteCandidateToSourceFile",
+    candidateId: payload.candidate.id,
+  })).json();
+  assert.equal(promoted.candidate.status, "active_source_file");
+
   const protectedPayload = await (await sourceFilesGet("?subject=Bridge%20Memory%20Subject")).json();
   assert.equal(protectedPayload.sourceFile.source, "bnl_source_knowledge_bridge");
   assert.equal(protectedPayload.sourceFile.ingestSource, "bnl_source_knowledge_bridge");
+  assert.equal(protectedPayload.sourceFile.workflowLane, "active_source_file");
+  assert.equal(protectedPayload.sourceFile.sourceFileActive, true);
   assert.match(protectedPayload.sourceFile.visibility.boundaryLabel, /internal working case file; not a public dossier/);
   assert.equal(protectedPayload.sourceFile.visibility.publicUseReviewRequired, true);
   assert.match(JSON.stringify(protectedPayload.sourceFile), /Source Knowledge Bridge origin|public use requires review|source-blind memory trace/);
@@ -3332,6 +3350,11 @@ test("BNL Source Knowledge Bridge attach, duplicate, possible-match, and identit
   })).json();
   assert.equal(duplicate.duplicate, true);
   assert.equal(duplicate.recommendation.id, first.recommendation.id);
+
+  await authedPost({
+    action: "promoteCandidateToSourceFile",
+    candidateId: first.candidate.id,
+  });
 
   const sameSubject = await (await bnlIngestPost({
     type: "new_subject",
@@ -3386,6 +3409,102 @@ test("BNL Source Knowledge Bridge attach, duplicate, possible-match, and identit
   assert.equal(state.recommendations.length, 5);
   assert.equal(state.candidates[0].sourceFileNotes.length, 2);
   assert.equal(state.candidates[0].identityLinks?.length ?? 0, 0);
+});
+
+
+test("Candidate Intake promotion, archive/restore, and protected delete keep source warnings bounded", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+
+  const intake = await (await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Cleanup Intake Subject",
+    reason: "BNL found a cleanup candidate.",
+    evidenceSummary: "Bridge evidence should survive promotion.",
+    sourceLanes: ["rd_context"],
+    publicSafetyNotes: ["source warning survives"],
+    doNotSay: ["do not publish raw alias"],
+    missingInfo: ["confirm public-safe details"],
+    ingestKey: "bnl:cleanup-intake-subject",
+    ingestSource: "bnl_dynamic_candidate_discovery",
+  })).json();
+
+  assert.equal(intake.candidate.status, "candidate_intake");
+  assert.equal((await sourceFilesGet("?subject=Cleanup%20Intake%20Subject")).status, 200);
+  const intakeRead = await (await sourceFilesGet("?subject=Cleanup%20Intake%20Subject")).json();
+  assert.equal(intakeRead.found, false);
+
+  const promoted = await (await authedPost({
+    action: "promoteCandidateToSourceFile",
+    candidateId: intake.candidate.id,
+  })).json();
+  assert.equal(promoted.candidate.status, "active_source_file");
+  assert.deepEqual(promoted.candidate.publicSafetyNotes, intake.candidate.publicSafetyNotes);
+  assert.deepEqual(promoted.candidate.doNotSay, intake.candidate.doNotSay);
+  assert.deepEqual(promoted.candidate.missingInfo, intake.candidate.missingInfo);
+  assert.equal(promoted.candidate.ingestKey, intake.candidate.ingestKey);
+  assert.equal(promoted.candidate.sourceFileNotes[0].ingestSource, "bnl_dynamic_candidate_discovery");
+
+  const activeRead = await (await sourceFilesGet("?subject=Cleanup%20Intake%20Subject")).json();
+  assert.equal(activeRead.found, true);
+  assert.equal(activeRead.sourceFile.workflowLane, "active_source_file");
+
+  const archived = await (await authedPost({
+    action: "archiveCandidate",
+    candidateId: intake.candidate.id,
+  })).json();
+  assert.equal(archived.candidate.status, "archived");
+  const archivedRead = await (await sourceFilesGet("?subject=Cleanup%20Intake%20Subject")).json();
+  assert.equal(archivedRead.found, false);
+
+  const restore = await (await authedPost({
+    action: "restoreCandidate",
+    candidateId: intake.candidate.id,
+  })).json();
+  assert.equal(restore.candidate.status, "candidate_intake");
+
+  const blockedDelete = await authedPost({
+    action: "permanentlyDeleteCandidate",
+    candidateId: intake.candidate.id,
+    confirmation: "delete",
+  });
+  assert.equal(blockedDelete.status, 400);
+
+  const deleted = await (await authedPost({
+    action: "permanentlyDeleteCandidate",
+    candidateId: intake.candidate.id,
+    confirmation: "DELETE SOURCE FILE",
+  })).json();
+  assert.equal(deleted.deletion.deleted, true);
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.candidates.length, 0);
+});
+
+test("exact existing public dossier matches route to Existing Dossier Update without editing public content", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+  const before = JSON.stringify(databasePage.entries.find((entry) => entry.name === "6 Bit"));
+
+  const payload = await (await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "6 Bit",
+    reason: "BNL found enrichment material for an existing public dossier.",
+    evidenceSummary: "New internal source note only.",
+    sourceLanes: ["website_dossier", "rd_context"],
+    ingestKey: "bnl:existing-dossier-6-bit-update",
+    ingestSource: "bnl_source_knowledge_bridge",
+  })).json();
+
+  assert.equal(payload.autoAction, "left_for_review");
+  assert.equal(payload.candidate.status, "existing_dossier_update");
+  assert.equal(payload.candidate.existingDossierMatch.name, "6 Bit");
+  assert.match(payload.recommendation.publicSafetyNotes.join(" "), /Existing Dossier Update/);
+  assert.equal(JSON.stringify(databasePage.entries.find((entry) => entry.name === "6 Bit")), before);
+
+  const adminPayload = await (await authedGet()).json();
+  assert.equal(adminPayload.candidates[0].status, "existing_dossier_update");
+  assert.equal(adminPayload.drafts.length, 0);
 });
 
 test("BNL ingest dedupes active recommendations by ingestKey and fallback comparison", async () => {

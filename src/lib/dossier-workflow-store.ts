@@ -4,6 +4,7 @@ import {
   scoreManualDossierCandidate,
   type CreateDossierRecommendationInput,
   type CreateDossierSourceFileNoteInput,
+  type UpdateDossierSourceFileSummaryInput,
   type CreateManualDossierCandidateInput,
   type DossierCandidate,
   type DossierCandidateStatus,
@@ -282,6 +283,11 @@ function sanitizeWorkflowState(value: unknown): DossierWorkflowState {
           sourceFileNotes: Array.isArray(candidate.sourceFileNotes)
             ? candidate.sourceFileNotes
             : [],
+          sourceFileSummary:
+            candidate.sourceFileSummary &&
+            typeof candidate.sourceFileSummary === "object"
+              ? candidate.sourceFileSummary
+              : undefined,
           identityLinks: Array.isArray(candidate.identityLinks)
             ? candidate.identityLinks
             : [],
@@ -493,7 +499,6 @@ const RECOMMENDATION_SOURCE_LANES: DossierRecommendationSourceLane[] = [
   "unknown",
 ];
 
-
 const IDENTITY_LINK_TYPES: DossierIdentityLinkType[] = [
   "alias",
   "artist_name",
@@ -592,6 +597,38 @@ function assertRecommendationIsOpen(
 
 function boundedText(value: unknown, maxLength = 2000): string {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+}
+
+function normalizeSummaryLines(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => boundedText(item, 500))
+      .filter(Boolean)
+      .slice(0, 6);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(/\n+/)
+      .map((item) => boundedText(item, 500))
+      .filter(Boolean)
+      .slice(0, 6);
+  }
+  return [];
+}
+
+function normalizeSourceFileSummaryInput(
+  input: UpdateDossierSourceFileSummaryInput,
+) {
+  const candidateId = boundedText(input.candidateId, 200);
+  if (!candidateId) return null;
+  return {
+    candidateId,
+    summaryText: boundedText(input.summaryText, 1200),
+    knownContext: normalizeSummaryLines(input.knownContext),
+    openQuestions: normalizeSummaryLines(input.openQuestions),
+    nextAction: boundedText(input.nextAction, 500),
+    updatedBy: boundedText(input.updatedBy, 200) || undefined,
+  };
 }
 
 function normalizeSourceNoteInput(
@@ -770,13 +807,19 @@ function bnlAutoCandidateNoteText(
     recommendation.ingestSource === "bnl_source_file_enrichment"
       ? `${label} source lanes/types summary: ${[
           recommendation.sourceLanes.join(", "),
-          recommendation.sourceTypes?.length ? `source types: ${recommendation.sourceTypes.join(", ")}` : "",
+          recommendation.sourceTypes?.length
+            ? `source types: ${recommendation.sourceTypes.join(", ")}`
+            : "",
         ]
           .filter(Boolean)
           .join(" / ")}`
       : `${label} source lanes: ${recommendation.sourceLanes.join(", ")}`,
-    recommendation.ingestKey ? `${label} ingest key: ${recommendation.ingestKey}` : "",
-    recommendation.confidence ? `${label} confidence: ${recommendation.confidence}` : "",
+    recommendation.ingestKey
+      ? `${label} ingest key: ${recommendation.ingestKey}`
+      : "",
+    recommendation.confidence
+      ? `${label} confidence: ${recommendation.confidence}`
+      : "",
     recommendation.recommendedCategory || recommendation.recommendedKind
       ? `${label} taxonomy metadata: ${[
           recommendation.recommendedCategory,
@@ -792,7 +835,9 @@ function bnlAutoCandidateNoteText(
       (note) => `Safety note: ${note}`,
     ),
     ...(recommendation.doNotSay ?? []).map((note) => `Do not say: ${note}`),
-    ...(recommendation.missingInfo ?? []).map((note) => `Missing info: ${note}`),
+    ...(recommendation.missingInfo ?? []).map(
+      (note) => `Missing info: ${note}`,
+    ),
   ]
     .filter(Boolean)
     .join("\n\n")
@@ -885,7 +930,10 @@ function buildCandidateFromRecommendation(input: {
     ingestKey: recommendation.ingestKey,
     ingestSource: recommendation.ingestSource,
     createdFromRecommendationId: recommendation.id,
-    status: duplicate.match?.confidence === "high" ? "existing_dossier_update" : "candidate_intake",
+    status:
+      duplicate.match?.confidence === "high"
+        ? "existing_dossier_update"
+        : "candidate_intake",
     createdAt: now,
     updatedAt: now,
   };
@@ -893,7 +941,9 @@ function buildCandidateFromRecommendation(input: {
   return candidate;
 }
 
-function isActiveRecommendation(recommendation: DossierRecommendation): boolean {
+function isActiveRecommendation(
+  recommendation: DossierRecommendation,
+): boolean {
   return !TERMINAL_RECOMMENDATION_STATUSES.has(recommendation.status);
 }
 
@@ -944,7 +994,11 @@ export async function createDossierRecommendationIdempotent(
   let savedRecommendation: DossierRecommendation = recommendation;
   let savedCandidate: DossierCandidate | undefined;
   let duplicate = false;
-  let autoAction: "created_candidate" | "attached_existing" | "left_for_review" | undefined;
+  let autoAction:
+    | "created_candidate"
+    | "attached_existing"
+    | "left_for_review"
+    | undefined;
   const isEnrichmentIngest =
     recommendation.ingestSource === "bnl_source_file_enrichment";
 
@@ -1052,7 +1106,10 @@ export async function createDossierRecommendationIdempotent(
         autoAction = "attached_existing";
         return {
           ...currentState,
-          recommendations: [updatedRecommendation, ...currentState.recommendations],
+          recommendations: [
+            updatedRecommendation,
+            ...currentState.recommendations,
+          ],
           candidates: currentState.candidates.map((candidate) =>
             candidate.id === targetCandidate.id
               ? {
@@ -1119,7 +1176,10 @@ export async function createDossierRecommendationIdempotent(
         autoAction = "attached_existing";
         return {
           ...currentState,
-          recommendations: [updatedRecommendation, ...currentState.recommendations],
+          recommendations: [
+            updatedRecommendation,
+            ...currentState.recommendations,
+          ],
           candidates: currentState.candidates.map((candidate) =>
             candidate.id === ingestKeyCandidate.id
               ? {
@@ -1168,7 +1228,10 @@ export async function createDossierRecommendationIdempotent(
         autoAction = "attached_existing";
         return {
           ...currentState,
-          recommendations: [updatedRecommendation, ...currentState.recommendations],
+          recommendations: [
+            updatedRecommendation,
+            ...currentState.recommendations,
+          ],
           candidates: currentState.candidates.map((candidate) =>
             candidate.id === match.exactCandidateId
               ? {
@@ -1203,11 +1266,17 @@ export async function createDossierRecommendationIdempotent(
         };
         savedRecommendation = updatedRecommendation;
         savedCandidate = candidate;
-        autoAction = candidate.status === "existing_dossier_update" ? "left_for_review" : "created_candidate";
+        autoAction =
+          candidate.status === "existing_dossier_update"
+            ? "left_for_review"
+            : "created_candidate";
         return {
           ...currentState,
           candidates: [candidate, ...currentState.candidates],
-          recommendations: [updatedRecommendation, ...currentState.recommendations],
+          recommendations: [
+            updatedRecommendation,
+            ...currentState.recommendations,
+          ],
           updatedAt: now,
         };
       }
@@ -1276,7 +1345,6 @@ export class DossierWorkflowInputError extends Error {
   }
 }
 
-
 function normalizeIdentityLinkInput(
   input: CreateDossierIdentityLinkInput,
 ): Omit<
@@ -1314,7 +1382,8 @@ function normalizeIdentityLinkInput(
     note: boundedText(input.note, 1000) || undefined,
     createdBy: boundedText(input.createdBy, 200) || undefined,
     useForMatchingAfterConfirmation:
-      input.useForMatchingAfterConfirmation === true || input.useForMatching === true,
+      input.useForMatchingAfterConfirmation === true ||
+      input.useForMatching === true,
     createdFromRecommendationId:
       boundedText(input.createdFromRecommendationId, 200) || undefined,
     createdFromRecommendationSubject:
@@ -1414,9 +1483,10 @@ export async function createIdentityLinkFromRecommendation(
   }
 
   const now = new Date().toISOString();
-  let result:
-    | { recommendation: DossierRecommendation; identityLink: DossierIdentityLink }
-    | null = null;
+  let result: {
+    recommendation: DossierRecommendation;
+    identityLink: DossierIdentityLink;
+  } | null = null;
 
   await updateDossierWorkflowState((currentState) => {
     const recommendation = currentState.recommendations.find(
@@ -1431,7 +1501,9 @@ export async function createIdentityLinkFromRecommendation(
     }
     assertRecommendationIsOpen(recommendation);
 
-    const candidate = currentState.candidates.find((item) => item.id === candidateId);
+    const candidate = currentState.candidates.find(
+      (item) => item.id === candidateId,
+    );
     if (!candidate) {
       throw new DossierWorkflowInputError(
         "Candidate not found",
@@ -1601,9 +1673,11 @@ export async function updateDossierIdentityLink(
               ? input.useForMatching === true
               : false,
           useInPublicDossier:
-            identityLink.status === "confirmed" && input.useInPublicDossier === true,
+            identityLink.status === "confirmed" &&
+            input.useInPublicDossier === true,
           useForMatchingAfterConfirmation:
-            input.useForMatching === true || identityLink.useForMatchingAfterConfirmation,
+            input.useForMatching === true ||
+            identityLink.useForMatchingAfterConfirmation,
           note:
             typeof input.note === "string"
               ? boundedText(input.note, 1000) || undefined
@@ -1612,7 +1686,11 @@ export async function updateDossierIdentityLink(
         };
         return updatedLink;
       });
-      return { ...candidate, identityLinks, updatedAt: foundLink ? now : candidate.updatedAt };
+      return {
+        ...candidate,
+        identityLinks,
+        updatedAt: foundLink ? now : candidate.updatedAt,
+      };
     });
     if (!foundCandidate) {
       throw new DossierWorkflowInputError(
@@ -1649,32 +1727,41 @@ async function setDossierIdentityLinkStatus(
     const candidates = currentState.candidates.map((candidate) => {
       if (candidate.id !== candidateId) return candidate;
       foundCandidate = true;
-      const identityLinks = (candidate.identityLinks ?? []).map((identityLink) => {
-        if (identityLink.id !== identityLinkId) return identityLink;
-        foundLink = true;
-        updatedLink = {
-          ...identityLink,
-          status,
-          confidence: status === "confirmed" ? "confirmed" : identityLink.confidence,
-          useForMatching:
-            status === "confirmed" &&
-            (input.useForMatching ?? identityLink.useForMatchingAfterConfirmation) === true,
-          useInPublicDossier:
-            status === "confirmed" && input.useInPublicDossier === true,
-          confirmedBy:
-            status === "confirmed"
-              ? boundedText(input.reviewedBy, 200) || identityLink.confirmedBy
-              : identityLink.confirmedBy,
-          confirmedAt: status === "confirmed" ? now : identityLink.confirmedAt,
-          updatedAt: now,
-        };
-        if (status !== "confirmed") {
-          updatedLink.useForMatching = false;
-          updatedLink.useInPublicDossier = false;
-        }
-        return updatedLink;
-      });
-      return { ...candidate, identityLinks, updatedAt: foundLink ? now : candidate.updatedAt };
+      const identityLinks = (candidate.identityLinks ?? []).map(
+        (identityLink) => {
+          if (identityLink.id !== identityLinkId) return identityLink;
+          foundLink = true;
+          updatedLink = {
+            ...identityLink,
+            status,
+            confidence:
+              status === "confirmed" ? "confirmed" : identityLink.confidence,
+            useForMatching:
+              status === "confirmed" &&
+              (input.useForMatching ??
+                identityLink.useForMatchingAfterConfirmation) === true,
+            useInPublicDossier:
+              status === "confirmed" && input.useInPublicDossier === true,
+            confirmedBy:
+              status === "confirmed"
+                ? boundedText(input.reviewedBy, 200) || identityLink.confirmedBy
+                : identityLink.confirmedBy,
+            confirmedAt:
+              status === "confirmed" ? now : identityLink.confirmedAt,
+            updatedAt: now,
+          };
+          if (status !== "confirmed") {
+            updatedLink.useForMatching = false;
+            updatedLink.useInPublicDossier = false;
+          }
+          return updatedLink;
+        },
+      );
+      return {
+        ...candidate,
+        identityLinks,
+        updatedAt: foundLink ? now : candidate.updatedAt,
+      };
     });
     if (!foundCandidate) {
       throw new DossierWorkflowInputError(
@@ -1712,6 +1799,61 @@ export function retireDossierIdentityLink(
   input: ReviewDossierIdentityLinkInput,
 ): Promise<DossierIdentityLink> {
   return setDossierIdentityLinkStatus(input, "retired");
+}
+
+export async function updateDossierSourceFileSummary(
+  input: UpdateDossierSourceFileSummaryInput,
+): Promise<DossierCandidate | null> {
+  const normalized = normalizeSourceFileSummaryInput(input);
+  if (!normalized) {
+    throw new DossierWorkflowInputError(
+      "Source file summary requires a candidateId",
+      400,
+      "candidate_id_required",
+    );
+  }
+
+  const now = new Date().toISOString();
+  let updatedCandidate: DossierCandidate | null = null;
+
+  await updateDossierWorkflowState((currentState) => {
+    let found = false;
+    const candidates = currentState.candidates.map((candidate) => {
+      if (candidate.id !== normalized.candidateId) return candidate;
+      found = true;
+      const hasSummary = Boolean(
+        normalized.summaryText ||
+        normalized.knownContext.length ||
+        normalized.openQuestions.length ||
+        normalized.nextAction,
+      );
+      updatedCandidate = {
+        ...candidate,
+        sourceFileSummary: hasSummary
+          ? {
+              summaryText: normalized.summaryText,
+              knownContext: normalized.knownContext,
+              openQuestions: normalized.openQuestions,
+              nextAction: normalized.nextAction,
+              updatedAt: now,
+              updatedBy: normalized.updatedBy,
+            }
+          : undefined,
+        updatedAt: now,
+      };
+      return updatedCandidate;
+    });
+    if (!found) {
+      throw new DossierWorkflowInputError(
+        "Candidate not found",
+        404,
+        "candidate_not_found",
+      );
+    }
+    return { ...currentState, candidates, updatedAt: now };
+  });
+
+  return updatedCandidate;
 }
 
 export async function addDossierSourceFileNote(
@@ -1966,14 +2108,20 @@ export async function convertRecommendationToCandidate(
           ? bnlAutoCandidateNoteText(recommendation)
           : recommendationSourceNoteText(recommendation),
     });
-    const promotedCandidate = { ...candidate, status: "active_source_file" as const };
+    const promotedCandidate = {
+      ...candidate,
+      status: "active_source_file" as const,
+    };
     const updatedRecommendation: DossierRecommendation = {
       ...recommendation,
       status: "converted_to_source_file",
       targetCandidateId: candidate.id,
       updatedAt: now,
     };
-    result = { recommendation: updatedRecommendation, candidate: promotedCandidate };
+    result = {
+      recommendation: updatedRecommendation,
+      candidate: promotedCandidate,
+    };
 
     return {
       ...currentState,
@@ -2135,7 +2283,6 @@ export async function createManualDossierCandidate(
   return candidate;
 }
 
-
 export async function promoteCandidateToSourceFile(
   candidateId: string,
 ): Promise<DossierCandidate | null> {
@@ -2169,7 +2316,9 @@ export async function promoteCandidateToSourceFile(
 
 function publicDossierMatchForId(
   dossierId: string,
-  confidence: NonNullable<DossierCandidate["existingDossierMatch"]>["confidence"] = "high",
+  confidence: NonNullable<
+    DossierCandidate["existingDossierMatch"]
+  >["confidence"] = "high",
 ): NonNullable<DossierCandidate["existingDossierMatch"]> {
   const entry = databasePage.entries.find((item) => item.id === dossierId);
   if (!entry) {
@@ -2185,7 +2334,9 @@ function publicDossierMatchForId(
 export async function attachCandidateToExistingDossier(input: {
   candidateId: string;
   dossierId: string;
-  confidence?: NonNullable<DossierCandidate["existingDossierMatch"]>["confidence"];
+  confidence?: NonNullable<
+    DossierCandidate["existingDossierMatch"]
+  >["confidence"];
 }): Promise<DossierCandidate | null> {
   const now = new Date().toISOString();
   const existingDossierMatch = publicDossierMatchForId(
@@ -2223,7 +2374,9 @@ export async function attachCandidateToExistingDossier(input: {
 export async function markCandidateAsExistingDossierUpdate(input: {
   candidateId: string;
   dossierId?: string;
-  confidence?: NonNullable<DossierCandidate["existingDossierMatch"]>["confidence"];
+  confidence?: NonNullable<
+    DossierCandidate["existingDossierMatch"]
+  >["confidence"];
 }): Promise<DossierCandidate | null> {
   const now = new Date().toISOString();
   let updatedCandidate: DossierCandidate | null = null;

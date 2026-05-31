@@ -16,6 +16,7 @@ import {
   type DossierIdentityLinkVisibility,
   type CreateDossierRecommendationInput,
   type CreateDossierSourceFileNoteInput,
+  type UpdateDossierSourceFileSummaryInput,
   type DossierCandidateStatus,
   type DossierDraft,
   type DossierDuplicateGroup,
@@ -26,6 +27,7 @@ import {
 import {
   addDossierIdentityLink,
   addDossierSourceFileNote,
+  updateDossierSourceFileSummary,
   archiveDossierCandidate,
   archiveDossierRecommendation,
   attachCandidateToExistingDossier,
@@ -115,6 +117,7 @@ const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "markNeedsMoreEvidence",
   "detectDuplicateCandidates",
   "mergeCandidates",
+  "updateSourceFileSummary",
   "addSourceFileNote",
   "addDossierIdentityLink",
   "createIdentityLinkFromRecommendation",
@@ -172,6 +175,34 @@ function recommendationIdFromBody(body: Record<string, unknown>): string {
     : "";
 }
 
+function stringArrayFromBodyValue(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+  if (typeof value === "string") return value.split(/\n+/);
+  return [];
+}
+
+function sourceFileSummaryInputFromBody(
+  body: Record<string, unknown>,
+): UpdateDossierSourceFileSummaryInput | null {
+  const candidateId = candidateIdFromBody(body);
+  const value = body.input;
+  if (!candidateId || !value || typeof value !== "object") return null;
+  const input = value as Partial<UpdateDossierSourceFileSummaryInput>;
+  return {
+    candidateId,
+    summaryText:
+      typeof input.summaryText === "string" ? input.summaryText : undefined,
+    knownContext: stringArrayFromBodyValue(input.knownContext),
+    openQuestions: stringArrayFromBodyValue(input.openQuestions),
+    nextAction:
+      typeof input.nextAction === "string" ? input.nextAction : undefined,
+    updatedBy:
+      typeof input.updatedBy === "string" ? input.updatedBy : undefined,
+  };
+}
+
 function sourceFileNoteInputFromBody(
   body: Record<string, unknown>,
 ): CreateDossierSourceFileNoteInput | null {
@@ -191,16 +222,13 @@ function sourceFileNoteInputFromBody(
   };
 }
 
-
 function identityLinkIdFromBody(body: Record<string, unknown>): string {
   return typeof body.identityLinkId === "string"
     ? body.identityLinkId.trim()
     : "";
 }
 
-function identityLinkInputFromBody(
-  body: Record<string, unknown>,
-): {
+function identityLinkInputFromBody(body: Record<string, unknown>): {
   candidateId: string;
   label: string;
   type?: DossierIdentityLinkType;
@@ -238,7 +266,8 @@ function identityLinkReviewInputFromBody(body: Record<string, unknown>) {
   return {
     candidateId,
     identityLinkId,
-    reviewedBy: typeof body.reviewedBy === "string" ? body.reviewedBy : undefined,
+    reviewedBy:
+      typeof body.reviewedBy === "string" ? body.reviewedBy : undefined,
     useForMatching: body.useForMatching === true,
     useInPublicDossier: body.useInPublicDossier === true,
   };
@@ -390,6 +419,22 @@ export async function POST(req: Request) {
   }
 
   try {
+    if (action === "updateSourceFileSummary") {
+      const input = sourceFileSummaryInputFromBody(body);
+      if (!input) {
+        return NextResponse.json(
+          {
+            error:
+              "Valid candidateId and source file summary input are required",
+          },
+          { status: 400 },
+        );
+      }
+      const candidate = await updateDossierSourceFileSummary(input);
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, candidate, ...payload });
+    }
+
     if (action === "addSourceFileNote") {
       const input = sourceFileNoteInputFromBody(body);
       if (!input) {
@@ -402,7 +447,6 @@ export async function POST(req: Request) {
       const payload = await workflowPayload();
       return NextResponse.json({ ok: true, action, note, ...payload });
     }
-
 
     if (action === "addDossierIdentityLink") {
       const input = identityLinkInputFromBody(body);
@@ -422,7 +466,10 @@ export async function POST(req: Request) {
       const identityLinkId = identityLinkIdFromBody(body);
       if (!input || !identityLinkId) {
         return NextResponse.json(
-          { error: "Valid candidateId, identityLinkId, and identity link label are required" },
+          {
+            error:
+              "Valid candidateId, identityLinkId, and identity link label are required",
+          },
           { status: 400 },
         );
       }
@@ -479,7 +526,10 @@ export async function POST(req: Request) {
       const recommendationId = recommendationIdFromBody(body);
       if (!input || !recommendationId) {
         return NextResponse.json(
-          { error: "recommendationId, candidateId, and identity link label are required" },
+          {
+            error:
+              "recommendationId, candidateId, and identity link label are required",
+          },
           { status: 400 },
         );
       }
@@ -536,7 +586,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, action, ...conversion, ...payload });
     }
 
-
     if (
       action === "attachCandidateToExistingDossier" ||
       action === "markCandidateAsExistingDossierUpdate"
@@ -545,7 +594,8 @@ export async function POST(req: Request) {
       const dossierId =
         typeof body.dossierId === "string"
           ? body.dossierId.trim()
-          : typeof (body.input as Record<string, unknown> | undefined)?.dossierId === "string"
+          : typeof (body.input as Record<string, unknown> | undefined)
+                ?.dossierId === "string"
             ? String((body.input as Record<string, unknown>).dossierId).trim()
             : "";
       const confidenceValue =
@@ -580,7 +630,9 @@ export async function POST(req: Request) {
             });
       if (!candidate) {
         return NextResponse.json(
-          { error: dossierId ? "Candidate not found" : "dossierId is required" },
+          {
+            error: dossierId ? "Candidate not found" : "dossierId is required",
+          },
           { status: dossierId ? 404 : 400 },
         );
       }
@@ -607,7 +659,10 @@ export async function POST(req: Request) {
             ? await archiveDossierCandidate(candidateId)
             : await restoreDossierCandidate(candidateId);
       if (!candidate) {
-        return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
+        return NextResponse.json(
+          { error: "Candidate not found" },
+          { status: 404 },
+        );
       }
       const payload = await workflowPayload();
       return NextResponse.json({ ok: true, action, candidate, ...payload });

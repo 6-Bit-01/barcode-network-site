@@ -720,6 +720,7 @@ function sourceFileCandidate(overrides = {}) {
     ingestSource: overrides.ingestSource ?? "bnl_dynamic_candidate_discovery",
     ingestKey: overrides.ingestKey ?? "bnl:signal-witch:read-model-test",
     createdFromRecommendationId: overrides.createdFromRecommendationId ?? "rec_signal_witch",
+    sourceFileSummary: overrides.sourceFileSummary,
     sourceFileNotes: overrides.sourceFileNotes ?? [
       {
         id: "note_signal_witch",
@@ -1196,7 +1197,18 @@ test("BNL source file read model returns found=false without mutation for no-mat
 test("BNL source file read model keeps public endpoint separate and does not expose private keys", async () => {
   await resetDossierWorkflowStore();
   process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
-  await seedSourceFileReadModelState();
+  await seedSourceFileReadModelState({
+    candidate: {
+      sourceFileSummary: {
+        summaryText: "Operator-only Signal Witch summary must stay private.",
+        knownContext: ["Operator-only known context"],
+        openQuestions: ["Operator-only open question"],
+        nextAction: "Operator-only next action",
+        updatedAt: "2026-05-30T01:00:00.000Z",
+        updatedBy: "admin",
+      },
+    },
+  });
 
   const unauthorized = await sourceFilesGet("?subject=Signal%20Witch", "");
   assert.equal(unauthorized.status, 401);
@@ -1205,10 +1217,12 @@ test("BNL source file read model keeps public endpoint separate and does not exp
   const publicPayload = await modelJson();
   assert.doesNotMatch(
     JSON.stringify(publicPayload),
-    /Signal Witch|sourceFileNotes|identityLinks|bnl:signal-witch:read-model-test|candidate_intake|existing_dossier_update/,
+    /Signal Witch|sourceFileNotes|identityLinks|sourceFileSummary|Operator-only|bnl:signal-witch:read-model-test|candidate_intake|existing_dossier_update/,
   );
 
   const internalPayload = await (await sourceFilesGet("?subject=Signal%20Witch")).json();
+  assert.equal(internalPayload.sourceFile.sourceFileSummary, undefined);
+  assert.doesNotMatch(JSON.stringify(internalPayload), /Operator-only|sourceFileSummary/);
   assert.deepEqual(findForbiddenKeys(internalPayload), []);
   assert.doesNotMatch(JSON.stringify(internalPayload), /test-source-file-read-token|stripeSessionId|customerId|accountId|paymentIntent|submitterToken|fileUrl|contactEmail/);
 });

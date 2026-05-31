@@ -125,7 +125,10 @@ function recommendationProvenance(recommendation: DossierRecommendation) {
   if (recommendation.ingestSource === "bnl_source_knowledge_bridge") {
     return "Older BNL review note";
   }
-  if (recommendation.ingestSource === "bnl" || recommendation.createdBy === "bnl") {
+  if (
+    recommendation.ingestSource === "bnl" ||
+    recommendation.createdBy === "bnl"
+  ) {
     return "Known from BNL records";
   }
   return recommendation.createdBy
@@ -156,13 +159,15 @@ function StatusBadge({ children }: { children: React.ReactNode }) {
   );
 }
 
-function recommendationAddsUsefulInformation(recommendation: DossierRecommendation) {
-  return Boolean(
-    recommendation.evidenceSummary ||
-      recommendation.reason ||
-      (recommendation.missingInfo ?? []).length ||
-      (recommendation.publicSafetyNotes ?? []).length ||
-      (recommendation.doNotSay ?? []).length,
+function recommendationAddsUsefulInformation(
+  view: ReturnType<typeof createHumanReadableRecommendationView>,
+) {
+  return view.sections.some(
+    (section) =>
+      section.title !== "Case File Quality" &&
+      section.items.some(
+        (item) => item !== "No meaningful pattern has been extracted yet.",
+      ),
   );
 }
 
@@ -172,21 +177,31 @@ function HumanReadableRecommendationCaseFile({
   recommendation: DossierRecommendation;
 }) {
   const view = createHumanReadableRecommendationView(recommendation);
-  const addsUsefulInformation = recommendationAddsUsefulInformation(recommendation);
+  const addsUsefulInformation = recommendationAddsUsefulInformation(view);
   return (
     <section className="border border-border bg-surface p-5 space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="space-y-2">
-          <p className="text-xs uppercase tracking-[0.4em] text-accent">Plain-English review view</p>
-          <h2 className="text-2xl font-bold text-foreground">Recommendation Takeaway</h2>
+          <p className="text-xs uppercase tracking-[0.4em] text-accent">
+            Plain-English review view
+          </p>
+          <h2 className="text-2xl font-bold text-foreground">
+            Recommendation Takeaway
+          </h2>
           <p className="text-sm text-muted">{view.sourceCopy}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <StatusBadge>{recommendation.status}</StatusBadge>
-          <StatusBadge>Created {formatDate(recommendation.createdAt)}</StatusBadge>
+          <StatusBadge>
+            Created {formatDate(recommendation.createdAt)}
+          </StatusBadge>
           <StatusBadge>{view.warningCount} warnings</StatusBadge>
           <StatusBadge>{view.missingInfoCount} open questions</StatusBadge>
-          <StatusBadge>{addsUsefulInformation ? "Adds review context" : "Thin: routing only"}</StatusBadge>
+          <StatusBadge>
+            {addsUsefulInformation
+              ? "Adds review context"
+              : "Thin: routing only"}
+          </StatusBadge>
         </div>
       </div>
       <div className="border border-border/60 bg-background/30 p-3 text-sm text-foreground space-y-2">
@@ -197,12 +212,17 @@ function HumanReadableRecommendationCaseFile({
             : "This recommendation is currently thin. It mainly says where the item belongs and does not add enough useful context to draft from."}
         </p>
         <p className="text-muted">
-          Next step: attach it to the right BNL Source File, create a proposed identity link, dismiss it, or convert it only after confirming it is a separate subject.
+          Next step: attach it to the right BNL Source File, create a proposed
+          identity link, dismiss it, or convert it only after confirming it is a
+          separate subject.
         </p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {view.sections.map((section) => (
-          <section key={section.title} className="border border-border/60 bg-background/20 p-3 text-sm text-muted">
+          <section
+            key={section.title}
+            className="border border-border/60 bg-background/20 p-3 text-sm text-muted"
+          >
             <h3 className="font-bold text-foreground mb-2">{section.title}</h3>
             {section.items.length === 1 ? (
               <p className="whitespace-pre-wrap">{section.items[0]}</p>
@@ -223,9 +243,16 @@ function HumanReadableRecommendationCaseFile({
         <div className="mt-3 space-y-3">
           <dl className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {view.rawMetadata.map((item, index) => (
-              <div key={`${item.label}-${index}`} className="border border-border/50 bg-background/20 p-2">
-                <dt className="uppercase tracking-widest text-accent">{item.label}</dt>
-                <dd className="break-words whitespace-pre-wrap">{item.value || "—"}</dd>
+              <div
+                key={`${item.label}-${index}`}
+                className="border border-border/50 bg-background/20 p-2"
+              >
+                <dt className="uppercase tracking-widest text-accent">
+                  {item.label}
+                </dt>
+                <dd className="break-words whitespace-pre-wrap">
+                  {item.value || "—"}
+                </dd>
               </div>
             ))}
           </dl>
@@ -286,36 +313,41 @@ export default function DossierRecommendationPage() {
   const [identityLinkForm, setIdentityLinkForm] =
     useState<IdentityLinkRecommendationForm>(() => identityLinkDefaults());
 
-  const loadWorkflow = useCallback(async function loadWorkflow() {
-    const response = await fetch("/api/admin/dossiers", { cache: "no-store" });
-    if (!response.ok)
-      throw new Error(
-        response.status === 401
-          ? "Admin authentication required"
-          : `Workflow API returned ${response.status}.`,
-      );
-    const nextPayload = (await response.json()) as WorkflowPayload;
-    const nextRecommendation = nextPayload.recommendations.find(
-      (item) => item.id === recommendationId,
-    );
-    if (nextRecommendation) {
-      const nextMatch = matchDossierRecommendationSubject({
-        recommendation: nextRecommendation,
-        candidates: nextPayload.candidates,
+  const loadWorkflow = useCallback(
+    async function loadWorkflow() {
+      const response = await fetch("/api/admin/dossiers", {
+        cache: "no-store",
       });
-      const nextCandidateId =
-        nextRecommendation.targetCandidateId ??
-        nextMatch.exactCandidateId ??
-        nextMatch.possibleCandidateIds[0] ??
-        "";
-      setIdentityLinkForm((current) =>
-        current.label || current.candidateId
-          ? current
-          : identityLinkDefaults(nextRecommendation, nextCandidateId),
+      if (!response.ok)
+        throw new Error(
+          response.status === 401
+            ? "Admin authentication required"
+            : `Workflow API returned ${response.status}.`,
+        );
+      const nextPayload = (await response.json()) as WorkflowPayload;
+      const nextRecommendation = nextPayload.recommendations.find(
+        (item) => item.id === recommendationId,
       );
-    }
-    setPayload(nextPayload);
-  }, [recommendationId]);
+      if (nextRecommendation) {
+        const nextMatch = matchDossierRecommendationSubject({
+          recommendation: nextRecommendation,
+          candidates: nextPayload.candidates,
+        });
+        const nextCandidateId =
+          nextRecommendation.targetCandidateId ??
+          nextMatch.exactCandidateId ??
+          nextMatch.possibleCandidateIds[0] ??
+          "";
+        setIdentityLinkForm((current) =>
+          current.label || current.candidateId
+            ? current
+            : identityLinkDefaults(nextRecommendation, nextCandidateId),
+        );
+      }
+      setPayload(nextPayload);
+    },
+    [recommendationId],
+  );
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -386,7 +418,8 @@ export default function DossierRecommendationPage() {
     )
     .filter((candidate): candidate is DossierCandidate => Boolean(candidate));
   const activeCandidates = (payload?.candidates ?? []).filter(
-    (candidate) => candidate.status !== "denied" && candidate.status !== "merged",
+    (candidate) =>
+      candidate.status !== "denied" && candidate.status !== "merged",
   );
   const enrichmentLane =
     recommendation?.ingestSource === "bnl_source_file_enrichment"
@@ -400,7 +433,10 @@ export default function DossierRecommendationPage() {
       : null;
   const isEnrichmentRecommendation = enrichmentLane !== null;
   const preselectedCandidateId =
-    targetCandidate?.id ?? exactCandidate?.id ?? possibleCandidates[0]?.id ?? "";
+    targetCandidate?.id ??
+    exactCandidate?.id ??
+    possibleCandidates[0]?.id ??
+    "";
   async function postWorkflow(body: Record<string, unknown>) {
     setSaving(true);
     setNotice(null);
@@ -472,7 +508,6 @@ export default function DossierRecommendationPage() {
       );
     }
   }
-
 
   async function createIdentityLink(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -620,20 +655,33 @@ export default function DossierRecommendationPage() {
       <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-4">
         {isEnrichmentRecommendation && (
           <section className="border border-accent/60 bg-accent/10 p-5 text-sm text-accent space-y-3">
-            <p className="text-xs uppercase tracking-[0.45em]">BNL Review Addendum</p>
-            <h2 className="text-2xl font-bold">Review-only internal case-file material</h2>
+            <p className="text-xs uppercase tracking-[0.45em]">
+              BNL Review Addendum
+            </p>
+            <h2 className="text-2xl font-bold">
+              Review-only internal case-file material
+            </h2>
             <p>
-              This packet is BNL-generated review context, not candidate discovery,
-              not public copy, and not publication approval. Owner/admin review
-              is required before any public use.
+              {
+                "This packet is BNL-generated review context. It is not candidate discovery, not public copy, and not publication approval. Owner/admin review is required before any public use."
+              }
             </p>
             <p>Review target: {enrichmentLane}</p>
             {targetCandidate ? (
-              <p>Target record: {targetCandidate.name} ({targetCandidate.status})</p>
+              <p>
+                Target record: {targetCandidate.name} ({targetCandidate.status})
+              </p>
             ) : (
-              <p>No target candidate is set; this remains in the Recommendation Inbox.</p>
+              <p>
+                No target candidate is set; this remains in the Recommendation
+                Inbox.
+              </p>
             )}
-            <p>Allowed actions: review, dismiss, ignore, or attach only through the matched target lane. No public dossier, alias confirmation, merge, or Proposed Dossier is created automatically.</p>
+            <p>
+              Allowed actions: review, dismiss, ignore, or attach only through
+              the matched target lane. No public dossier, alias confirmation,
+              merge, or Proposed Dossier is created automatically.
+            </p>
           </section>
         )}
         {!isTerminal && !isEnrichmentRecommendation && (
@@ -652,7 +700,10 @@ export default function DossierRecommendationPage() {
                 {subjectMatch.exactMatchKind === "confirmed_alias" ? (
                   <>
                     <p className="font-bold">
-                      Matched by confirmed alias: {confirmedAliasLink?.label ?? subjectMatch.aliasLabel ?? recommendation.subjectName}
+                      Matched by confirmed alias:{" "}
+                      {confirmedAliasLink?.label ??
+                        subjectMatch.aliasLabel ??
+                        recommendation.subjectName}
                     </p>
                     <p>Target source file: {exactCandidate.name}</p>
                     <p>
@@ -701,7 +752,9 @@ export default function DossierRecommendationPage() {
               </div>
             ) : possibleCandidates.length > 0 ? (
               <div className="border border-accent/60 bg-accent/10 p-4 text-accent space-y-2">
-                <p className="font-bold">Possible duplicate / identity warning</p>
+                <p className="font-bold">
+                  Possible duplicate / identity warning
+                </p>
                 <p>{subjectMatch.reason}</p>
                 <ul className="list-disc pl-5">
                   {possibleCandidates.map((candidate) => (
@@ -717,7 +770,9 @@ export default function DossierRecommendationPage() {
                   type="button"
                   disabled={saving}
                   onClick={() =>
-                    void updateRecommendation("convertRecommendationToCandidate")
+                    void updateRecommendation(
+                      "convertRecommendationToCandidate",
+                    )
                   }
                   className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
                 >
@@ -734,7 +789,9 @@ export default function DossierRecommendationPage() {
                   type="button"
                   disabled={saving}
                   onClick={() =>
-                    void updateRecommendation("convertRecommendationToCandidate")
+                    void updateRecommendation(
+                      "convertRecommendationToCandidate",
+                    )
                   }
                   className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
                 >
@@ -755,14 +812,17 @@ export default function DossierRecommendationPage() {
                 Create proposed identity link
               </h2>
               <p className="text-sm text-muted mt-2">
-                Recommendation subject: {recommendation.subjectName}. This creates
-                a proposed alias on the selected internal record only. It does not
-                confirm the alias, publish, merge source files, create a draft, or
-                create tags.
+                Recommendation subject: {recommendation.subjectName}. This
+                creates a proposed alias on the selected internal record only.
+                It does not confirm the alias, publish, merge source files,
+                create a draft, or create tags.
               </p>
               {preselectedCandidateId && (
                 <p className="mt-2 text-sm text-accent">
-                  Matched/pre-targeted enrichment target: {targetCandidate?.name ?? exactCandidate?.name ?? possibleCandidates[0]?.name}
+                  Matched/pre-targeted enrichment target:{" "}
+                  {targetCandidate?.name ??
+                    exactCandidate?.name ??
+                    possibleCandidates[0]?.name}
                 </p>
               )}
             </div>
@@ -819,7 +879,9 @@ export default function DossierRecommendationPage() {
                   className="w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
                 >
                   {identityLinkTypes.map((type) => (
-                    <option key={type} value={type}>{type}</option>
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -830,7 +892,8 @@ export default function DossierRecommendationPage() {
                   onChange={(event) =>
                     setIdentityLinkForm({
                       ...identityLinkForm,
-                      visibility: event.target.value as DossierIdentityLinkVisibility,
+                      visibility: event.target
+                        .value as DossierIdentityLinkVisibility,
                     })
                   }
                   className="w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
@@ -852,7 +915,9 @@ export default function DossierRecommendationPage() {
                   className="w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
                 >
                   {identityLinkSources.map((source) => (
-                    <option key={source} value={source}>{source}</option>
+                    <option key={source} value={source}>
+                      {source}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -929,7 +994,10 @@ export default function DossierRecommendationPage() {
             <p>{recommendation.reason}</p>
           </Field>
           <Field title="Evidence / Source Notes">
-            <p>Recommendation detail is evidence for the internal working case file, not public dossier copy.</p>
+            <p>
+              Recommendation detail is evidence for the internal working case
+              file, not public dossier copy.
+            </p>
           </Field>
           <Field title="Evidence summary">
             <p>{recommendation.evidenceSummary ?? "—"}</p>

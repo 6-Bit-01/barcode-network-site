@@ -4391,3 +4391,11 @@ test("recommendation detail case-file view uses the same sanitizer", () => {
   assert.match(mainText, /BNL has a local profile match for this subject/);
   assert.match(JSON.stringify(view.rawMetadata), /relationship_journal|rd_context|bnl:rec_filter/);
 });
+
+test("admin dashboard explains public dossier-only source lookup fallback", () => {
+  const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
+  assertIncludesCopy(pageCopy, "Existing public dossier found");
+  assertIncludesCopy(pageCopy, "No internal update file exists yet");
+  assertIncludesCopy(pageCopy, "Create Existing Dossier Update");
+  assertIncludesCopy(pageCopy, "Review-only; no public changes");
+});

@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import { databasePage, type DatabaseEntry } from "@/content";
 import {
   compactDossierSubjectName,
   isActiveSourceFileCandidate,
@@ -10,7 +11,10 @@ import {
   type DossierRecommendation,
   type DossierSourceFileNote,
 } from "@/lib/dossier-workflow";
-import { getDossierWorkflowState } from "@/lib/dossier-workflow-store";
+import {
+  createExistingDossierUpdateTarget,
+  getDossierWorkflowState,
+} from "@/lib/dossier-workflow-store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -60,7 +64,8 @@ type MatchKind =
   | "existing_dossier_update_name"
   | "existing_dossier_update_compact_name"
   | "existing_dossier_update_normalized_name"
-  | "existing_dossier_update_confirmed_alias";
+  | "existing_dossier_update_confirmed_alias"
+  | "public_dossier_only";
 
 type PossibleMatchKind =
   | "same_name"
@@ -71,12 +76,153 @@ type PossibleMatchKind =
 type WorkflowLane =
   | "candidate_intake"
   | "active_source_file"
-  | "existing_dossier_update";
+  | "existing_dossier_update"
+  | "public_dossier_update_target";
 
 type QueryMode = "candidateId" | "subject" | "alias" | "normalizedName";
 
 type AliasMatchKind = Extract<MatchKind, `${string}alias`>;
 type DirectMatchKind = Exclude<MatchKind, AliasMatchKind>;
+
+type PublicDossierMatchKind =
+  | "public_dossier_name"
+  | "public_dossier_normalized_name"
+  | "public_dossier_compact_name"
+  | "public_dossier_slug"
+  | "public_dossier_tag";
+
+type PublicDossierMatch = {
+  entry: DatabaseEntry;
+  slug: string;
+  matchKind: PublicDossierMatchKind;
+};
+
+const PUBLIC_DOSSIER_ONLY_WARNING =
+  "Public dossier exists, but no internal Existing Dossier Update record exists yet. Create an internal update target before enrichment can attach notes.";
+
+function slugifyPublicDossierName(name: string) {
+  return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+}
+
+function publicDossierMatchSummary(match: PublicDossierMatch) {
+  return {
+    targetDossierId: match.entry.id,
+    publicDossierName: match.entry.name,
+    publicDossierSlug: match.slug,
+    publicDossierPath: `/database/${match.slug}`,
+    publicDossierCategory: match.entry.category,
+    publicDossierKind: match.entry.kind,
+    publicDossierStatus: match.entry.status,
+    publicDossierClearance: match.entry.clearance,
+    matchKind: match.matchKind,
+    confidence:
+      match.matchKind === "public_dossier_name" ||
+      match.matchKind === "public_dossier_normalized_name" ||
+      match.matchKind === "public_dossier_slug"
+        ? "high"
+        : "medium",
+  };
+}
+
+function resolvePublicDossierOnlyMatch(input: {
+  mode: QueryMode;
+  value: string;
+}): PublicDossierMatch[] {
+  if (input.mode === "candidateId") return [];
+  const normalizedValue = normalizeDossierSubjectName(input.value);
+  const compactValue = compactDossierSubjectName(input.value);
+  const slugValue = slugifyPublicDossierName(input.value);
+  if (!normalizedValue && !slugValue) return [];
+
+  return databasePage.entries
+    .map((entry): PublicDossierMatch | null => {
+      const slug = slugifyPublicDossierName(entry.name);
+      const normalizedName = normalizeDossierSubjectName(entry.name);
+      const compactName = compactDossierSubjectName(entry.name);
+      const tagMatch = (entry.tags ?? []).some(
+        (tag) => normalizeDossierSubjectName(tag) === normalizedValue,
+      );
+
+      if (input.mode === "alias" && tagMatch) {
+        return { entry, slug, matchKind: "public_dossier_tag" };
+      }
+      if (input.mode === "normalizedName" && normalizedValue === normalizedName) {
+        return { entry, slug, matchKind: "public_dossier_normalized_name" };
+      }
+      if (input.mode === "subject" && input.value.trim() === entry.name) {
+        return { entry, slug, matchKind: "public_dossier_name" };
+      }
+      if (input.mode === "subject" && normalizedValue === normalizedName) {
+        return { entry, slug, matchKind: "public_dossier_normalized_name" };
+      }
+      if (input.mode === "subject" && compactValue === compactName) {
+        return { entry, slug, matchKind: "public_dossier_compact_name" };
+      }
+      if (input.mode !== "alias" && slugValue === slug) {
+        return { entry, slug, matchKind: "public_dossier_slug" };
+      }
+      return null;
+    })
+    .filter((match): match is PublicDossierMatch => Boolean(match));
+}
+
+function publicDossierOnlyResponse(input: {
+  query: { mode: QueryMode; value: string };
+  match: PublicDossierMatch;
+  possibleMatches: ReturnType<typeof possibleMatchSummary>[];
+}) {
+  const publicMatch = publicDossierMatchSummary(input.match);
+  return {
+    ok: true,
+    found: true,
+    scope: "bnl_internal_source_file_read_model",
+    auth: "BNL_SOURCE_FILE_READ_TOKEN",
+    mutation: false,
+    query: input.query,
+    matchKind: "public_dossier_only" as const,
+    workflowLane: "public_dossier_update_target" as const,
+    sourceFileActive: false,
+    laneDescription:
+      "Existing public dossier found; no internal update file exists yet. Protected/internal suggestion only.",
+    publicDossierMatchFound: true,
+    existingDossierUpdateLane: false,
+    candidateIntake: false,
+    publicCopyApproval: false,
+    reviewRequired: true,
+    recommendedAction: "create_existing_dossier_update" as const,
+    warning: PUBLIC_DOSSIER_ONLY_WARNING,
+    targetDossierId: input.match.entry.id,
+    publicDossierName: input.match.entry.name,
+    publicDossierSlug: input.match.slug,
+    publicDossierPath: `/database/${input.match.slug}`,
+    publicDossierMatch: publicMatch,
+    sourceFile: null,
+    sourceRecord: null,
+    possibleMatches: input.possibleMatches,
+    createExistingDossierUpdateAction: {
+      method: "POST",
+      endpoint: "/api/bnl/source-files",
+      action: "create_existing_dossier_update",
+      targetDossierId: input.match.entry.id,
+      publicDossierSlug: input.match.slug,
+      requestedSubject: input.query.value,
+      mutation: "internal_workflow_only",
+      publishesPublicDossier: false,
+    },
+    readModelBoundary: {
+      ...VISIBILITY_BOUNDARY,
+      boundaryLabel:
+        "internal protected lookup fallback; existing public dossier target suggestion only",
+      publishWarning:
+        "Public dossier-only fallback is not an active Source File, Candidate Intake item, public copy approval, alias confirmation, identity merge, or publication action",
+    },
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+function stringFromBody(value: unknown): string {
+  return typeof value === "string" ? value.trim().slice(0, 200) : "";
+}
 
 type ResolvedMatch =
   | {
@@ -643,6 +789,20 @@ export async function GET(req: Request) {
     candidates: state.candidates,
   });
 
+  if (matches.length === 0) {
+    const publicDossierMatches = resolvePublicDossierOnlyMatch(query);
+    if (publicDossierMatches.length === 1) {
+      return NextResponse.json(
+        publicDossierOnlyResponse({
+          query,
+          match: publicDossierMatches[0],
+          possibleMatches,
+        }),
+        { headers: { "Cache-Control": CACHE_CONTROL } },
+      );
+    }
+  }
+
   if (matches.length === 1) {
     const match = matches[0];
     const sourceRecord = sourceFileReadModel({
@@ -713,6 +873,88 @@ export async function GET(req: Request) {
           : possibleMatches.length > 0
             ? "Only possible BNL Source File matches found; no confirmed match was resolved."
             : "No BNL Source File match found.",
+      readModelBoundary: VISIBILITY_BOUNDARY,
+      generatedAt: new Date().toISOString(),
+    },
+    { headers: { "Cache-Control": CACHE_CONTROL } },
+  );
+}
+
+export async function POST(req: Request) {
+  if (!tokenMatches(bearerToken(req))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "Valid JSON body is required" },
+      { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+    );
+  }
+
+  const action = stringFromBody(body.action);
+  if (action !== "create_existing_dossier_update") {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Unsupported action",
+        supportedActions: ["create_existing_dossier_update"],
+      },
+      { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+    );
+  }
+
+  const targetDossierId = stringFromBody(body.targetDossierId);
+  const requestedSubject = stringFromBody(body.requestedSubject);
+  const publicDossierSlug = stringFromBody(body.publicDossierSlug);
+  const publicDossierName = stringFromBody(body.publicDossierName);
+  const entry = targetDossierId
+    ? databasePage.entries.find((item) => item.id === targetDossierId)
+    : databasePage.entries.find((item) => {
+        const slug = slugifyPublicDossierName(item.name);
+        return (
+          (publicDossierSlug && slug === publicDossierSlug) ||
+          (publicDossierName &&
+            normalizeDossierSubjectName(item.name) ===
+              normalizeDossierSubjectName(publicDossierName))
+        );
+      });
+
+  if (!entry) {
+    return NextResponse.json(
+      { ok: false, error: "Existing public dossier target was not found" },
+      { status: 404, headers: { "Cache-Control": CACHE_CONTROL } },
+    );
+  }
+
+  const beforePublicDossier = JSON.stringify(entry);
+  const candidate = await createExistingDossierUpdateTarget({
+    dossierId: entry.id,
+    requestedSubject: requestedSubject || publicDossierName || entry.name,
+    createdBy: "bnl_source_files_protected_lookup",
+  });
+  const afterEntry = databasePage.entries.find((item) => item.id === entry.id);
+
+  return NextResponse.json(
+    {
+      ok: true,
+      action,
+      mutation: "internal_workflow_only",
+      publishesPublicDossier: false,
+      publicDossierMutated: JSON.stringify(afterEntry) !== beforePublicDossier,
+      workflowLane: "existing_dossier_update",
+      sourceFileActive: false,
+      existingDossierUpdateLane: true,
+      publicDossierMatchFound: true,
+      targetDossierId: entry.id,
+      publicDossierName: entry.name,
+      publicDossierSlug: slugifyPublicDossierName(entry.name),
+      candidate,
+      warning:
+        "Internal Existing Dossier Update lane created for review-only enrichment. No public dossier content was published or changed.",
       readModelBoundary: VISIBILITY_BOUNDARY,
       generatedAt: new Date().toISOString(),
     },

@@ -6,6 +6,7 @@ import {
   type CreateDossierSourceFileNoteInput,
   type UpdateDossierSourceFileSummaryInput,
   type CreateManualDossierCandidateInput,
+  type CreateExistingDossierUpdateTargetInput,
   type DossierCandidate,
   type DossierCandidateStatus,
   type DossierIdentityLink,
@@ -2186,6 +2187,125 @@ export function archiveDossierRecommendation(
   recommendationId: string,
 ): Promise<DossierRecommendation> {
   return setRecommendationStatus(recommendationId, "archived");
+}
+
+function candidateTypeFromPublicDossierEntry(
+  entry: DatabaseEntry,
+): DossierCandidate["candidateType"] {
+  if (entry.kind === "artist") return "artist";
+  if (entry.kind === "community_member" || entry.category === "Personnel") {
+    return "community_member";
+  }
+  if (entry.category === "Production") return "production";
+  if (entry.category === "Interface") return "interface";
+  if (entry.category === "Sponsor") return "sponsor";
+  if (entry.category === "Entity") return "entity";
+  return "unknown";
+}
+
+export async function createExistingDossierUpdateTarget(
+  input: CreateExistingDossierUpdateTargetInput,
+): Promise<DossierCandidate> {
+  const now = new Date().toISOString();
+  const entry = databasePage.entries.find((item) => item.id === input.dossierId);
+  if (!entry) {
+    throw new DossierWorkflowInputError(
+      "Existing public dossier target was not found",
+      400,
+      "existing_dossier_not_found",
+    );
+  }
+
+  const existingDossierMatch = {
+    id: entry.id,
+    name: entry.name,
+    confidence: "high" as const,
+  };
+  const requestedSubject = input.requestedSubject?.trim();
+  const requestedSubjectNote =
+    requestedSubject && requestedSubject !== entry.name
+      ? ` Requested lookup subject: ${requestedSubject}.`
+      : "";
+
+  const candidate: DossierCandidate = {
+    id: createCandidateId(),
+    name: entry.name,
+    candidateType: candidateTypeFromPublicDossierEntry(entry),
+    source: "website_read_model",
+    tier: "review_candidate",
+    score: 58,
+    whyNow:
+      "BNL/operator requested source enrichment for an existing public dossier subject.",
+    reason:
+      "Existing public dossier found; internal update lane created for review-only enrichment.",
+    firstSeenAt: now,
+    lastSeenAt: now,
+    evidenceSummary: `Existing public dossier ${entry.id} / ${entry.name} matched protected source-file lookup.${requestedSubjectNote}`,
+    evidenceItems: [
+      {
+        id: createEvidenceId(),
+        type: "website_context",
+        label: "Existing public dossier match",
+        summary: `Existing public dossier ${entry.id} / ${entry.name} is the review-only update target.`,
+        count: 1,
+        firstSeenAt: now,
+        lastSeenAt: now,
+        publicSafe: true,
+      },
+    ],
+    evidenceCount: 1,
+    knownFacts: [`Existing public dossier target: ${entry.id} / ${entry.name}.`],
+    confidence: "medium",
+    duplicateRisk: "high",
+    existingDossierMatch,
+    recommendedCategory: entry.category,
+    recommendedKind: entry.kind,
+    recommendedEcosystemLane: entry.ecosystemLane,
+    recommendedIdentityAuthority: entry.identityAuthority,
+    recommendedStatus: entry.status,
+    recommendedClearance: entry.clearance,
+    recommendedOrigin: entry.origin,
+    recommendedTags: entry.tags,
+    proposedTags: [],
+    missingInfo: [
+      "Review enrichment notes before applying anything to a proposed dossier or public content.",
+    ],
+    doNotSay: [
+      "Do not treat update notes as owner-approved public copy.",
+    ],
+    publicSafetyNotes: [
+      "Review-only update material; do not publish automatically.",
+      "This internal update lane does not approve public copy, aliases, identity merges, or publication.",
+    ],
+    sourceFileNotes: [],
+    identityLinks: [],
+    sourceLanes: ["website_dossier"],
+    status: "existing_dossier_update",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  let createdOrExistingCandidate = candidate;
+
+  await updateDossierWorkflowState((currentState) => {
+    const existing = currentState.candidates.find(
+      (item) =>
+        item.status === "existing_dossier_update" &&
+        item.existingDossierMatch?.id === entry.id,
+    );
+    if (existing) {
+      createdOrExistingCandidate = existing;
+      return currentState;
+    }
+
+    return {
+      ...currentState,
+      candidates: [candidate, ...currentState.candidates],
+      updatedAt: now,
+    };
+  });
+
+  return createdOrExistingCandidate;
 }
 
 export async function createManualDossierCandidate(

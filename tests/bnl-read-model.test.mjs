@@ -82,6 +82,22 @@ async function resetDossierWorkflowStore() {
   });
 }
 
+
+async function sourceFilesPost(body, token = "test-source-file-read-token") {
+  return sourceFilesReadModel.POST(
+    new Request("https://example.test/api/bnl/source-files", {
+      method: "POST",
+      headers: token
+        ? {
+            "content-type": "application/json",
+            authorization: `Bearer ${token}`,
+          }
+        : { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
 async function sourceFilesGet(query, token = "test-source-file-read-token") {
   return sourceFilesReadModel.GET(
     new Request(`https://example.test/api/bnl/source-files${query}`, {
@@ -860,6 +876,97 @@ test("BNL source file read model resolves active Source Files by subject and ret
 });
 
 
+
+
+test("BNL source file read model falls back to a public dossier-only target without exposing internal notes", async () => {
+  await resetDossierWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  const before = await workflowStore.getDossierWorkflowState();
+
+  const response = await sourceFilesGet(`?subject=${encodeURIComponent("DJ Floppydisc")}`);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+
+  assert.equal(payload.ok, true);
+  assert.equal(payload.found, true);
+  assert.equal(payload.matchKind, "public_dossier_only");
+  assert.equal(payload.workflowLane, "public_dossier_update_target");
+  assert.equal(payload.sourceFileActive, false);
+  assert.equal(payload.publicDossierMatchFound, true);
+  assert.equal(payload.existingDossierUpdateLane, false);
+  assert.equal(payload.candidateIntake, false);
+  assert.equal(payload.publicCopyApproval, false);
+  assert.equal(payload.targetDossierId, "EN-004");
+  assert.equal(payload.publicDossierName, "DJ Floppydisc");
+  assert.equal(payload.publicDossierSlug, "dj-floppydisc");
+  assert.equal(payload.recommendedAction, "create_existing_dossier_update");
+  assert.equal(payload.createExistingDossierUpdateAction.action, "create_existing_dossier_update");
+  assert.equal(payload.createExistingDossierUpdateAction.publishesPublicDossier, false);
+  assert.match(payload.warning, /Public dossier exists/);
+  assert.equal(payload.sourceFile, null);
+  assert.equal(payload.sourceRecord, null);
+  assert.doesNotMatch(JSON.stringify(payload), /sourceFileNotes|identityLinks|internal notes|private aliases/i);
+
+  const after = await workflowStore.getDossierWorkflowState();
+  assert.deepEqual(after, before);
+});
+
+test("BNL source file read model public dossier fallback resolves normalized and compact public names", async () => {
+  await resetDossierWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+
+  const normalized = await (await sourceFilesGet("?normalizedName=dj%20floppydisc")).json();
+  assert.equal(normalized.matchKind, "public_dossier_only");
+  assert.equal(normalized.publicDossierName, "DJ Floppydisc");
+  assert.equal(normalized.publicDossierMatch.matchKind, "public_dossier_normalized_name");
+
+  const compact = await (await sourceFilesGet("?subject=DJFloppydisc")).json();
+  assert.equal(compact.matchKind, "public_dossier_only");
+  assert.equal(compact.publicDossierName, "DJ Floppydisc");
+  assert.equal(compact.publicDossierMatch.matchKind, "public_dossier_compact_name");
+});
+
+test("BNL source file read model creates an internal Existing Dossier Update target from public dossier fallback only", async () => {
+  await resetDossierWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  const publicBefore = JSON.stringify(databasePage.entries.find((entry) => entry.id === "EN-004"));
+
+  const createResponse = await sourceFilesPost({
+    action: "create_existing_dossier_update",
+    targetDossierId: "EN-004",
+    requestedSubject: "DJ Floppydisc",
+  });
+  assert.equal(createResponse.status, 200);
+  const created = await createResponse.json();
+
+  assert.equal(created.ok, true);
+  assert.equal(created.mutation, "internal_workflow_only");
+  assert.equal(created.publishesPublicDossier, false);
+  assert.equal(created.publicDossierMutated, false);
+  assert.equal(created.workflowLane, "existing_dossier_update");
+  assert.equal(created.sourceFileActive, false);
+  assert.equal(created.candidate.status, "existing_dossier_update");
+  assert.equal(created.candidate.source, "website_read_model");
+  assert.equal(created.candidate.candidateType, "entity");
+  assert.equal(created.candidate.existingDossierMatch.id, "EN-004");
+  assert.equal(created.candidate.existingDossierMatch.name, "DJ Floppydisc");
+  assert.match(created.candidate.reason, /Existing public dossier found/);
+  assert.match(created.candidate.whyNow, /BNL\/operator requested/);
+  assert.match(created.candidate.publicSafetyNotes.join(" "), /Review-only update material; do not publish automatically/);
+  assert.match(created.candidate.doNotSay.join(" "), /Do not treat update notes as owner-approved public copy/);
+  assert.equal(JSON.stringify(databasePage.entries.find((entry) => entry.id === "EN-004")), publicBefore);
+
+  const lookup = await (await sourceFilesGet(`?subject=${encodeURIComponent("DJ Floppydisc")}`)).json();
+  assert.equal(lookup.matchKind, "existing_dossier_update_name");
+  assert.equal(lookup.workflowLane, "existing_dossier_update");
+  assert.equal(lookup.sourceFileActive, false);
+  assert.equal(lookup.sourceFile.duplicateWarnings.existingDossierMatch.id, "EN-004");
+
+  const publicReadModelPayload = await (await readModel.GET(
+    new Request("https://example.test/api/bnl/read-model"),
+  )).json();
+  assert.doesNotMatch(JSON.stringify(publicReadModelPayload), /internal update lane|review-only enrichment|owner-approved public copy/i);
+});
 
 test("BNL source file read model includes Source Knowledge Bridge candidates with boundary warnings", async () => {
   await resetDossierWorkflowStore();

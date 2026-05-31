@@ -2032,6 +2032,104 @@ export async function promoteCandidateToSourceFile(
   return updatedCandidate;
 }
 
+function publicDossierMatchForId(
+  dossierId: string,
+  confidence: NonNullable<DossierCandidate["existingDossierMatch"]>["confidence"] = "high",
+): NonNullable<DossierCandidate["existingDossierMatch"]> {
+  const entry = databasePage.entries.find((item) => item.id === dossierId);
+  if (!entry) {
+    throw new DossierWorkflowInputError(
+      "Existing public dossier target was not found",
+      400,
+      "existing_dossier_not_found",
+    );
+  }
+  return { id: entry.id, name: entry.name, confidence };
+}
+
+export async function attachCandidateToExistingDossier(input: {
+  candidateId: string;
+  dossierId: string;
+  confidence?: NonNullable<DossierCandidate["existingDossierMatch"]>["confidence"];
+}): Promise<DossierCandidate | null> {
+  const now = new Date().toISOString();
+  const existingDossierMatch = publicDossierMatchForId(
+    input.dossierId,
+    input.confidence ?? "high",
+  );
+  let updatedCandidate: DossierCandidate | null = null;
+
+  await updateDossierWorkflowState((currentState) => {
+    const candidates = currentState.candidates.map((candidate) => {
+      if (candidate.id !== input.candidateId) return candidate;
+      if (candidate.status === "denied" || candidate.status === "merged") {
+        throw new DossierWorkflowInputError(
+          "Closed candidates cannot be attached to an existing public dossier",
+          400,
+          "candidate_closed",
+        );
+      }
+      updatedCandidate = {
+        ...candidate,
+        existingDossierMatch,
+        duplicateRisk: candidate.duplicateRisk === "high" ? "high" : "medium",
+        updatedAt: now,
+      };
+      return updatedCandidate;
+    });
+
+    if (!updatedCandidate) return currentState;
+    return { ...currentState, candidates, updatedAt: now };
+  });
+
+  return updatedCandidate;
+}
+
+export async function markCandidateAsExistingDossierUpdate(input: {
+  candidateId: string;
+  dossierId?: string;
+  confidence?: NonNullable<DossierCandidate["existingDossierMatch"]>["confidence"];
+}): Promise<DossierCandidate | null> {
+  const now = new Date().toISOString();
+  let updatedCandidate: DossierCandidate | null = null;
+
+  await updateDossierWorkflowState((currentState) => {
+    const candidates = currentState.candidates.map((candidate) => {
+      if (candidate.id !== input.candidateId) return candidate;
+      if (candidate.status === "denied" || candidate.status === "merged") {
+        throw new DossierWorkflowInputError(
+          "Closed candidates cannot be reclassified as existing dossier updates",
+          400,
+          "candidate_closed",
+        );
+      }
+      const existingDossierMatch = input.dossierId
+        ? publicDossierMatchForId(input.dossierId, input.confidence ?? "high")
+        : candidate.existingDossierMatch;
+      if (!existingDossierMatch) {
+        throw new DossierWorkflowInputError(
+          "Attach an existing public dossier target before moving this source file to Existing Dossier Updates",
+          400,
+          "existing_dossier_match_required",
+        );
+      }
+      updatedCandidate = {
+        ...candidate,
+        existingDossierMatch,
+        duplicateRisk: candidate.duplicateRisk === "high" ? "high" : "medium",
+        status: "existing_dossier_update",
+        updatedAt: now,
+      };
+      return updatedCandidate;
+    });
+
+    if (!updatedCandidate) return currentState;
+    return { ...currentState, candidates, updatedAt: now };
+  });
+
+  return updatedCandidate;
+}
+
 export async function archiveDossierCandidate(
   candidateId: string,
 ): Promise<DossierCandidate | null> {

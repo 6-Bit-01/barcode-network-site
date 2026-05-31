@@ -282,6 +282,10 @@ test("admin dossier dashboard is a Control Center overview instead of an all-in-
     "Open Source File",
     "Archive",
     "Delete Permanently",
+    "Move to Existing Dossier Update",
+    "Attach to Existing Public Dossier",
+    "Existing Dossier Updates / Enrichment Candidates",
+    "owner approval required before public changes",
     "DELETE SOURCE FILE",
     "Safe cleanup: move this source file out of active dashboard lanes without deleting public dossiers or published data.",
     "case file has warnings",
@@ -306,6 +310,8 @@ test("admin dossier dashboard is a Control Center overview instead of an all-in-
   assert.match(page, /href=\{`\/admin\/dossiers\/duplicates\/\$\{group\.id\}`\}/);
   assert.match(page, /candidateAction\(candidate\.id, "archiveCandidate"\)/);
   assert.match(page, /candidateAction\(\s*candidate\.id,\s*"permanentlyDeleteCandidate"/);
+  assert.match(page, /markCandidateAsExistingDossierUpdate/);
+  assert.match(page, /attachCandidateToExistingDossier/);
   assert.doesNotMatch(page, /eyebrow="Lane 2"/);
   assert.doesNotMatch(page, /title="Proposed Dossiers"/);
   assert.doesNotMatch(page, /title="Final Admin Drafts"/);
@@ -506,6 +512,10 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     "Public use not allowed until review",
     "Owner review required",
     "Possible connection, not confirmed identity",
+    "Existing Public Dossier Match",
+    "No existing public dossier match currently attached.",
+    "This is not a new dossier candidate. This is review material for an existing public dossier.",
+    "Move Back to Active Source File",
   ]) {
     assertIncludesCopy(pageCopy, label);
   }
@@ -525,6 +535,8 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
   assert.match(page, /routeParam\(params\?\.candidateId\)/);
   assert.match(page, /action: "createDraftFromCandidate"/);
   assert.match(page, /action: "addSourceFileNote"/);
+  assert.match(page, /attachCandidateToExistingDossier/);
+  assert.match(page, /markCandidateAsExistingDossierUpdate/);
   assert.doesNotMatch(page, />Deny<|>Deny<\/button>/);
   assert.doesNotMatch(page, />Final Approve<|>Publish<|>Delete<|>Final Merge</);
   assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
@@ -3606,6 +3618,98 @@ test("exact existing public dossier matches route to Existing Dossier Update wit
   const adminPayload = await (await authedGet()).json();
   assert.equal(adminPayload.candidates[0].status, "existing_dossier_update");
   assert.equal(adminPayload.drafts.length, 0);
+});
+
+test("active Source File with an existing public dossier match reclassifies to Existing Dossier Update safely", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  const publicBefore = JSON.stringify(databasePage.entries.find((entry) => entry.name === "Mac Modem"));
+
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+  const created = await (await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Mac Modem",
+    reason: "Existing public dossier has enrichment material to review.",
+    evidenceSummary: "Existing public dossier enrichment evidence.",
+    sourceLanes: ["website_dossier", "rd_context"],
+    missingInfo: ["Confirm whether this belongs in the public dossier."],
+    doNotSay: ["Do not publish internal modem lore note."],
+    publicSafetyNotes: ["Owner approval required before public copy changes."],
+    ingestKey: "bnl:mac-modem-existing-update",
+    ingestSource: "bnl_source_knowledge_bridge",
+  })).json();
+  assert.equal(created.candidate.existingDossierMatch.name, "Mac Modem");
+
+  const promoted = await (await authedPost({
+    action: "promoteCandidateToSourceFile",
+    candidateId: created.candidate.id,
+  })).json();
+  assert.equal(promoted.candidate.status, "active_source_file");
+
+  await (await authedPost({
+    action: "addSourceFileNote",
+    candidateId: created.candidate.id,
+    input: {
+      type: "correction",
+      text: "Preserve this enrichment note during reclassification.",
+      source: "bnl_recommendation",
+      publicSafe: false,
+    },
+  })).json();
+
+  const activeRead = await (await sourceFilesGet(`?subject=${encodeURIComponent("Mac Modem")}`)).json();
+  assert.equal(activeRead.found, true);
+  assert.equal(activeRead.sourceFile.workflowLane, "active_source_file");
+  assert.equal(activeRead.sourceFile.sourceFileActive, true);
+
+  const reclassified = await (await authedPost({
+    action: "markCandidateAsExistingDossierUpdate",
+    candidateId: created.candidate.id,
+  })).json();
+  assert.equal(reclassified.candidate.status, "existing_dossier_update");
+  assert.equal(reclassified.candidate.existingDossierMatch.name, "Mac Modem");
+  assert.equal(reclassified.candidate.ingestKey, "bnl:mac-modem-existing-update");
+  assert.equal(reclassified.candidate.ingestSource, "bnl_source_knowledge_bridge");
+  assert.deepEqual(reclassified.candidate.missingInfo, ["Confirm whether this belongs in the public dossier."]);
+  assert.deepEqual(reclassified.candidate.doNotSay, ["Do not publish internal modem lore note."]);
+  assert.ok(reclassified.candidate.publicSafetyNotes.includes("Owner approval required before public copy changes."));
+  assert.match(reclassified.candidate.publicSafetyNotes.join(" "), /Source Knowledge Bridge origin|Public use requires review/);
+  assert.match(JSON.stringify(reclassified.candidate.sourceFileNotes), /Preserve this enrichment note/);
+  assert.equal(JSON.stringify(databasePage.entries.find((entry) => entry.name === "Mac Modem")), publicBefore);
+
+  const adminPayload = await (await authedGet()).json();
+  const updateLaneCandidate = adminPayload.candidates.find((candidate) => candidate.id === created.candidate.id);
+  assert.equal(updateLaneCandidate.status, "existing_dossier_update");
+  assert.equal(updateLaneCandidate.existingDossierMatch.name, "Mac Modem");
+
+  const subjectRead = await (await sourceFilesGet(`?subject=${encodeURIComponent("Mac Modem")}`)).json();
+  assert.equal(subjectRead.found, false);
+  assert.match(subjectRead.reason, /No BNL Source File match found/);
+
+  const candidateRead = await (await sourceFilesGet(`?candidateId=${encodeURIComponent(created.candidate.id)}`)).json();
+  assert.equal(candidateRead.found, true);
+  assert.equal(candidateRead.sourceFile.workflowLane, "existing_dossier_update");
+  assert.equal(candidateRead.sourceFile.sourceFileActive, false);
+  assert.match(candidateRead.sourceFile.laneDescription, /update\/enrichment material/i);
+  assert.equal(candidateRead.sourceFile.duplicateWarnings.existingDossierMatch.name, "Mac Modem");
+
+  const publicReadModelPayload = await (await readModel.GET(
+    new Request("https://example.test/api/bnl/read-model"),
+  )).json();
+  assert.doesNotMatch(JSON.stringify(publicReadModelPayload), /Preserve this enrichment note|bnl:mac-modem-existing-update|Existing public dossier enrichment evidence/);
+
+  const archived = await (await authedPost({
+    action: "archiveCandidate",
+    candidateId: created.candidate.id,
+  })).json();
+  assert.equal(archived.candidate.status, "archived");
+
+  const restoredActive = await (await authedPost({
+    action: "promoteCandidateToSourceFile",
+    candidateId: created.candidate.id,
+  })).json();
+  assert.equal(restoredActive.candidate.status, "active_source_file");
+  assert.equal(restoredActive.candidate.existingDossierMatch.name, "Mac Modem");
 });
 
 test("BNL ingest dedupes active recommendations by ingestKey and fallback comparison", async () => {

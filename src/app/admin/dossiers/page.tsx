@@ -29,6 +29,7 @@ type WorkflowPayload = {
   };
   authoringGuide?: { version: string };
   tagRegistry?: { totalUniqueTags: number; totalTagAssignments: number };
+  publicDossiers?: Array<{ id: string; name: string }>;
 };
 
 type ManualRecommendationForm = {
@@ -229,6 +230,9 @@ export default function DossierControlCenterPage() {
   const [createdDraftIdByCandidate, setCreatedDraftIdByCandidate] = useState<
     Record<string, string>
   >({});
+  const [selectedDossierByCandidate, setSelectedDossierByCandidate] = useState<
+    Record<string, string>
+  >({});
 
   async function loadWorkflow() {
     setError(null);
@@ -270,6 +274,10 @@ export default function DossierControlCenterPage() {
   const recommendations = useMemo(
     () => payload?.recommendations ?? [],
     [payload?.recommendations],
+  );
+  const publicDossiers = useMemo(
+    () => payload?.publicDossiers ?? [],
+    [payload?.publicDossiers],
   );
   const activeRecommendations = recommendations.filter((recommendation) =>
     ["new", "reviewing"].includes(recommendation.status),
@@ -512,13 +520,26 @@ export default function DossierControlCenterPage() {
       | "promoteCandidateToSourceFile"
       | "archiveCandidate"
       | "restoreCandidate"
-      | "permanentlyDeleteCandidate",
+      | "permanentlyDeleteCandidate"
+      | "attachCandidateToExistingDossier"
+      | "markCandidateAsExistingDossierUpdate",
   ) {
     const candidate = candidates.find((item) => item.id === candidateId);
     if (!candidate) return;
 
     try {
       const body: Record<string, unknown> = { action, candidateId };
+      if (
+        action === "attachCandidateToExistingDossier" ||
+        action === "markCandidateAsExistingDossierUpdate"
+      ) {
+        const selectedDossierId =
+          selectedDossierByCandidate[candidateId] || candidate.existingDossierMatch?.id || "";
+        if (selectedDossierId) {
+          body.dossierId = selectedDossierId;
+          body.confidence = selectedDossierByCandidate[candidateId] ? "high" : candidate.existingDossierMatch?.confidence;
+        }
+      }
       if (action === "permanentlyDeleteCandidate") {
         const linkedDrafts = drafts.filter(
           (draft) => draft.candidateId === candidateId,
@@ -541,7 +562,11 @@ export default function DossierControlCenterPage() {
             ? `${candidate.name} restored to Candidate Intake. Public dossiers were not changed.`
             : action === "permanentlyDeleteCandidate"
               ? `${candidate.name} permanently deleted from unpublished workflow records. Public dossiers were not changed.`
-              : `${candidate.name} promoted to an Active BNL Source File. Public dossiers were not changed.`;
+              : action === "attachCandidateToExistingDossier"
+                ? `${candidate.name} attached to an existing public dossier target. Public dossier content was not changed.`
+                : action === "markCandidateAsExistingDossierUpdate"
+                  ? `${candidate.name} moved to Existing Dossier Updates / Enrichment. Public dossier content was not changed.`
+                  : `${candidate.name} promoted to an Active BNL Source File. Public dossiers were not changed.`;
       setNotice(actionNotice);
       if (data.candidates && data.drafts && data.workflow) {
         setPayload(data as WorkflowPayload);
@@ -936,8 +961,11 @@ export default function DossierControlCenterPage() {
                       <p className="font-bold text-foreground">Existing Dossier Update: {candidate.existingDossierMatch?.name ?? candidate.name}</p>
                       <p>Recommendation subject: {candidate.name}</p>
                       <p>Matched public dossier: {candidate.existingDossierMatch?.name ?? "—"}</p>
+                      <p>Public dossier target id: {candidate.existingDossierMatch?.id ?? "—"}</p>
+                      <p>Match confidence: {candidate.existingDossierMatch?.confidence ?? "—"}</p>
                       <p>Evidence/source notes: {(candidate.sourceFileNotes ?? []).length} notes preserved</p>
-                      <p>Proposed action: Review as update to existing dossier; owner approval required before public changes.</p>
+                      <p>Source warnings: {(candidate.publicSafetyNotes ?? []).length} public-safety notes / {(candidate.doNotSay ?? []).length} do-not-say notes / {(candidate.missingInfo ?? []).length} missing-info notes</p>
+                      <p>Proposed action: review update/enrichment; owner approval required before public changes.</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Link href={`/admin/dossiers/candidates/${candidate.id}`} className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">
@@ -1090,6 +1118,11 @@ export default function DossierControlCenterPage() {
                             <p>ready for draft/review</p>
                           )}
                           <p>Duplicate risk: {candidate.duplicateRisk ?? "none"}</p>
+                          {candidate.existingDossierMatch && (
+                            <p className="text-accent">
+                              Existing public dossier match: {candidate.existingDossierMatch.name} ({candidate.existingDossierMatch.confidence})
+                            </p>
+                          )}
                         </td>
                         <td className="py-3 pr-3">
                           {formatDate(candidate.updatedAt)}
@@ -1110,6 +1143,66 @@ export default function DossierControlCenterPage() {
                             >
                               Open Source File
                             </Link>
+                            {candidate.existingDossierMatch && (
+                              <button
+                                type="button"
+                                disabled={saving}
+                                onClick={() =>
+                                  void candidateAction(
+                                    candidate.id,
+                                    "markCandidateAsExistingDossierUpdate",
+                                  )
+                                }
+                                className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                                title="Reclassify this active Source File as update/enrichment material for the matched public dossier. Does not publish or edit public content."
+                              >
+                                Move to Existing Dossier Update
+                              </button>
+                            )}
+                            <label className="flex flex-col gap-1 text-[0.65rem] uppercase tracking-widest text-muted">
+                              Attach to Existing Public Dossier
+                              <select
+                                value={
+                                  selectedDossierByCandidate[candidate.id] ??
+                                  candidate.existingDossierMatch?.id ??
+                                  ""
+                                }
+                                onChange={(event) =>
+                                  setSelectedDossierByCandidate((current) => ({
+                                    ...current,
+                                    [candidate.id]: event.target.value,
+                                  }))
+                                }
+                                className="max-w-[14rem] bg-background border border-border px-2 py-1.5 text-xs normal-case tracking-normal text-foreground"
+                              >
+                                <option value="">Choose public dossier…</option>
+                                {publicDossiers.map((dossier) => (
+                                  <option key={dossier.id} value={dossier.id}>
+                                    {dossier.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <button
+                              type="button"
+                              disabled={
+                                saving ||
+                                !(
+                                  selectedDossierByCandidate[candidate.id] ||
+                                  candidate.existingDossierMatch?.id
+                                )
+                              }
+                              onClick={() =>
+                                void candidateAction(
+                                  candidate.id,
+                                  "attachCandidateToExistingDossier",
+                                )
+                              }
+                              className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50"
+                              title="Store the confirmed existing public dossier target without publishing or changing public dossier content."
+                            >
+                              Attach
+                            </button>
                             {openDraftId && (
                               <Link
                                 href={`/admin/dossiers/drafts/${openDraftId}`}

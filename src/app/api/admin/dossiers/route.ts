@@ -28,6 +28,7 @@ import {
   addDossierSourceFileNote,
   archiveDossierCandidate,
   archiveDossierRecommendation,
+  attachCandidateToExistingDossier,
   attachRecommendationToCandidate,
   createIdentityLinkFromRecommendation,
   confirmDossierIdentityLink,
@@ -45,6 +46,7 @@ import {
   rejectDossierIdentityLink,
   retireDossierIdentityLink,
   mergeDossierCandidates,
+  markCandidateAsExistingDossierUpdate,
   permanentlyDeleteDossierCandidate,
   promoteCandidateToSourceFile,
   restoreDossierCandidate,
@@ -101,6 +103,7 @@ type DossierWorkflowResponse = {
       typeof buildDossierTagRegistry
     >["creationPolicy"];
   };
+  publicDossiers: Array<{ id: string; name: string }>;
 };
 
 const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
@@ -129,6 +132,8 @@ const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "ignoreDossierRecommendation",
   "dismissDossierRecommendation",
   "archiveDossierRecommendation",
+  "attachCandidateToExistingDossier",
+  "markCandidateAsExistingDossierUpdate",
 ]);
 
 async function isAuthenticated(req: Request): Promise<boolean> {
@@ -335,6 +340,10 @@ async function workflowPayload(
       totalTagAssignments: tagRegistry.totalTagAssignments,
       creationPolicy: tagRegistry.creationPolicy,
     },
+    publicDossiers: databasePage.entries.map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+    })),
   };
 }
 
@@ -527,6 +536,57 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, action, ...conversion, ...payload });
     }
 
+
+    if (
+      action === "attachCandidateToExistingDossier" ||
+      action === "markCandidateAsExistingDossierUpdate"
+    ) {
+      const candidateId = candidateIdFromBody(body);
+      const dossierId =
+        typeof body.dossierId === "string"
+          ? body.dossierId.trim()
+          : typeof (body.input as Record<string, unknown> | undefined)?.dossierId === "string"
+            ? String((body.input as Record<string, unknown>).dossierId).trim()
+            : "";
+      const confidenceValue =
+        typeof body.confidence === "string"
+          ? body.confidence
+          : (body.input as Record<string, unknown> | undefined)?.confidence;
+      const confidence =
+        confidenceValue === "low" ||
+        confidenceValue === "medium" ||
+        confidenceValue === "high"
+          ? confidenceValue
+          : undefined;
+      if (!candidateId) {
+        return NextResponse.json(
+          { error: "candidateId is required" },
+          { status: 400 },
+        );
+      }
+      const candidate =
+        action === "attachCandidateToExistingDossier"
+          ? dossierId
+            ? await attachCandidateToExistingDossier({
+                candidateId,
+                dossierId,
+                confidence,
+              })
+            : null
+          : await markCandidateAsExistingDossierUpdate({
+              candidateId,
+              dossierId: dossierId || undefined,
+              confidence,
+            });
+      if (!candidate) {
+        return NextResponse.json(
+          { error: dossierId ? "Candidate not found" : "dossierId is required" },
+          { status: dossierId ? 404 : 400 },
+        );
+      }
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, candidate, ...payload });
+    }
 
     if (
       action === "promoteCandidateToSourceFile" ||

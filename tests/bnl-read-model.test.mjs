@@ -1013,6 +1013,29 @@ test("BNL source file read model does not return archived or denied workflow rec
   assert.equal(deniedPayload.found, false);
 });
 
+test("BNL source file read model labels Existing Dossier Updates only on explicit candidateId lookup", async () => {
+  await resetDossierWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  const candidate = await seedSourceFileReadModelState({
+    candidate: {
+      status: "existing_dossier_update",
+      existingDossierMatch: { id: "mac-modem", name: "Mac Modem", confidence: "high" },
+    },
+    drafts: [],
+  });
+
+  const subjectPayload = await (await sourceFilesGet("?subject=Signal%20Witch")).json();
+  assert.equal(subjectPayload.found, false);
+  assert.match(subjectPayload.reason, /No BNL Source File match found/);
+
+  const candidatePayload = await (await sourceFilesGet(`?candidateId=${candidate.id}`)).json();
+  assert.equal(candidatePayload.found, true);
+  assert.equal(candidatePayload.sourceFile.workflowLane, "existing_dossier_update");
+  assert.equal(candidatePayload.sourceFile.sourceFileActive, false);
+  assert.match(candidatePayload.sourceFile.laneDescription, /update\/enrichment material/i);
+  assert.equal(candidatePayload.sourceFile.duplicateWarnings.existingDossierMatch.name, "Mac Modem");
+});
+
 test("BNL source file read model returns found=false without mutation for no-match", async () => {
   await resetDossierWorkflowStore();
   process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";

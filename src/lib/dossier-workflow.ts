@@ -54,6 +54,10 @@ export type DossierCandidateEvidence = {
 };
 
 export type DossierCandidateStatus =
+  | "candidate_intake"
+  | "active_source_file"
+  | "existing_dossier_update"
+  | "archived"
   | "suggested"
   | "needs_review"
   | "selected"
@@ -330,7 +334,8 @@ export type DossierRecommendationStatus =
   | "converted_to_source_file"
   | "identity_link_created"
   | "ignored"
-  | "dismissed";
+  | "dismissed"
+  | "archived";
 
 export type DossierRecommendationSourceLane =
   | "public_discord"
@@ -505,8 +510,18 @@ export function compactDossierSubjectName(value: string): string {
   return normalizeDossierSubjectName(value).replace(/\s+/g, "");
 }
 
+export function isActiveSourceFileCandidate(candidate: Pick<DossierCandidate, "status">): boolean {
+  return (
+    candidate.status !== "candidate_intake" &&
+    candidate.status !== "existing_dossier_update" &&
+    candidate.status !== "archived" &&
+    candidate.status !== "denied" &&
+    candidate.status !== "merged"
+  );
+}
+
 function isActiveSubjectCandidate(candidate: DossierCandidate): boolean {
-  return candidate.status !== "denied" && candidate.status !== "merged";
+  return isActiveSourceFileCandidate(candidate);
 }
 
 function hasPossibleSubjectOverlap(
@@ -711,8 +726,13 @@ export type DossierWorkflowAction =
   | "createDossierRecommendation"
   | "attachRecommendationToCandidate"
   | "convertRecommendationToCandidate"
+  | "promoteCandidateToSourceFile"
+  | "archiveCandidate"
+  | "restoreCandidate"
+  | "permanentlyDeleteCandidate"
   | "ignoreDossierRecommendation"
   | "dismissDossierRecommendation"
+  | "archiveDossierRecommendation"
   | "detectDuplicateCandidates"
   | "mergeCandidates"
   | "createMasterDraftFromMerge";
@@ -750,8 +770,13 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "createDossierRecommendation",
   "attachRecommendationToCandidate",
   "convertRecommendationToCandidate",
+  "promoteCandidateToSourceFile",
+  "archiveCandidate",
+  "restoreCandidate",
+  "permanentlyDeleteCandidate",
   "ignoreDossierRecommendation",
   "dismissDossierRecommendation",
+  "archiveDossierRecommendation",
   "detectDuplicateCandidates",
   "mergeCandidates",
   "createMasterDraftFromMerge",
@@ -939,9 +964,9 @@ export const DOSSIER_SOURCE_BOUNDARIES: DossierSourceBoundary[] = [
     source: "bnl_dynamic_candidate_discovery",
     label: "BNL dynamic candidate discovery",
     boundary:
-      "BNL dynamic discovery creates internal source-file candidates only; it never publishes, drafts, confirms aliases, or creates tags automatically.",
+      "BNL dynamic discovery creates Candidate Intake records first; it never publishes, drafts, confirms aliases, creates tags, or opens active Source Files automatically.",
     allowedUse:
-      "May create an admin-only candidate when no exact or possible existing source-file match is found.",
+      "May create an admin-only Candidate Intake record when no exact or possible existing source-file match is found; admin promotion is required before active source-file work.",
   },
   {
     source: "combined",
@@ -965,5 +990,5 @@ export const DOSSIER_WORKFLOW_RULES = [
   "Proposed tags are proposal-only until an operator or site content update creates them.",
   "AI/human/unknown nature tags do not organize dossiers; category, kind, ecosystem lane, and identity authority come first.",
   "Sheila/Cliff-style Network characters are BARCODE-controlled records, while mods are community-owned identities.",
-  "Loose intake, strict drafting/publishing: candidates can enter review early, but drafting and publishing require evidence, duplicate checks, and public-safety review.",
+  "Loose intake, strict drafting/publishing: BNL discoveries enter Candidate Intake first, active Source Files require admin promotion, and drafting/publishing require evidence, duplicate checks, public-safety review, and owner approval.",
 ] as const;

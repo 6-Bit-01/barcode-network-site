@@ -256,13 +256,13 @@ test("admin dossier dashboard is a Control Center overview instead of an all-in-
   const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
   for (const label of [
     "Dossier Control Center",
-    "Overview of BNL Source Files, recommendations, proposed dossiers, and owner review status. Open a source file to work on a subject.",
+    "Overview of BNL Source Files as internal working case files, BNL recommendations as evidence inputs, proposed dossiers as curated public-facing drafts, and owner review status. Open a source file to work on a subject.",
     "Total BNL Source Files",
     "Recommendations waiting",
     "Owner Review waiting",
     "BNL Dossier Workbench",
     "BNL drafting comes next.",
-    "BNL will use each BNL Source File to generate or revise proposed dossiers.",
+    "BNL will use reviewed, public-safe material from each BNL Source File to generate or revise proposed dossiers.",
     "For now, source files collect information and proposed dossiers remain manually reviewable.",
     "Dossier Recommendation Inbox",
     "Manual Recommendation Seed",
@@ -271,6 +271,13 @@ test("admin dossier dashboard is a Control Center overview instead of an all-in-
     "Source depth / info strength",
     "Unapplied notes:",
     "Open Source File",
+    "case file has warnings",
+    "case file has source-blind material",
+    "case file has public-safe facts",
+    "identity review pending",
+    "proposed dossier exists",
+    "owner review pending",
+    "ready for draft/review",
     "System Boundaries",
     "No BNL invocation",
     "No publishing",
@@ -315,15 +322,15 @@ test("dossier admin pages expose the control-center/source-hub/draft-workspace m
   const sourceFileCopy = normalizedSource(
     "src/app/admin/dossiers/candidates/[candidateId]/page.tsx",
   );
-  assertIncludesCopy(sourceFileCopy, "Subject Summary / Source Packet");
-  assertIncludesCopy(sourceFileCopy, "The proposed dossier will be drafted from this BNL Source File.");
+  assertIncludesCopy(sourceFileCopy, "Case File Summary");
+  assertIncludesCopy(sourceFileCopy, "Ready for Proposed Dossier: the proposed dossier should be written from reviewed, public-safe Source File material, not copied wholesale from this working case file.");
 
   const draftCopy = normalizedSource(
     "src/app/admin/dossiers/drafts/[draftId]/page.tsx",
   );
   assertIncludesCopy(
     draftCopy,
-    "This proposed dossier is drafted from the BNL Source File. The source file contains all known/admin-added material; this page contains the curated draft that may become public after owner review.",
+    "This is the curated public-facing draft. It should be generated/written from reviewed BNL Source File material, not copied wholesale from the internal working case file.",
   );
   assertIncludesCopy(draftCopy, "BNL Source File Summary");
   assertIncludesCopy(draftCopy, "Unapplied Source Notes");
@@ -331,6 +338,42 @@ test("dossier admin pages expose the control-center/source-hub/draft-workspace m
   const ownerPage = source("src/app/admin/dossiers/owner-review/page.tsx");
   assert.match(ownerPage, /Phase 4 — Owner Review/);
   assert.match(ownerPage, /This is Owner Review/);
+});
+
+test("dossier workflow boundary copy separates case files, drafts, owner review, and recommendations", () => {
+  const sourceFilePage = normalizedSource("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+  for (const label of [
+    "Internal working case file",
+    "Do not treat this as public copy",
+    "Case File Summary",
+    "Evidence / Source Notes",
+    "Known / Claimed / Inferred",
+    "Public-Safe Facts",
+    "Internal-Only Notes",
+    "Source Warnings",
+    "Conflicts / Needs Review",
+    "Identity / Alias Review",
+    "Do Not Say",
+    "Missing Info",
+    "Ready for Proposed Dossier",
+    "Source-blind memory trace",
+    "Internal/private review required",
+    "Public use not allowed until review",
+  ]) {
+    assertIncludesCopy(sourceFilePage, label);
+  }
+
+  const draftPage = normalizedSource("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
+  assertIncludesCopy(draftPage, "This is the curated public-facing draft");
+  assertIncludesCopy(draftPage, "not copied wholesale from the internal working case file");
+
+  const ownerPage = normalizedSource("src/app/admin/dossiers/owner-review/page.tsx");
+  assertIncludesCopy(ownerPage, "Owner Review is the final gate before anything becomes publishable/public");
+
+  const recommendationPage = normalizedSource("src/app/admin/dossiers/recommendations/[recommendationId]/page.tsx");
+  assertIncludesCopy(recommendationPage, "evidence records and Source File inputs, not public copy");
+  assertIncludesCopy(recommendationPage, "Identity/alias and duplicate recommendations create proposed review material only");
+  assertIncludesCopy(recommendationPage, "Possible connection, not confirmed identity");
 });
 
 test("admin dossier page has minimal loading and auth-required states", () => {
@@ -409,7 +452,7 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     "Source notes",
     "Unapplied notes",
     "Next action",
-    "Subject Summary / Source Packet",
+    "Case File Summary",
     "recommendation evidence clusters",
     "missing info",
     "public safety notes",
@@ -421,11 +464,27 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     "Recommendation/evidence clusters",
     "No recommendations attached yet.",
     "Proposed Dossier",
-    "The proposed dossier will be drafted from this BNL Source File.",
+    "Ready for Proposed Dossier: the proposed dossier should be written from reviewed, public-safe Source File material, not copied wholesale from this working case file.",
     "Create Proposed Dossier",
     "Open Proposed Dossier",
     "Save Info",
     "Mark Needs Info",
+    "Internal working case file",
+    "Do not treat this as public copy",
+    "Evidence / Source Notes",
+    "Known / Claimed / Inferred",
+    "Public-Safe Facts",
+    "Internal-Only Notes",
+    "Source Warnings",
+    "Conflicts / Needs Review",
+    "Identity / Alias Review",
+    "Do Not Say",
+    "Missing Info",
+    "Source-blind memory trace",
+    "Internal/private review required",
+    "Public use not allowed until review",
+    "Owner review required",
+    "Possible connection, not confirmed identity",
   ]) {
     assertIncludesCopy(pageCopy, label);
   }
@@ -522,7 +581,7 @@ test("dashboard frames manual recommendation seed as collapsed fallback and BNL 
     "Create Manual Recommendation",
     "BNL Dossier Workbench",
     "BNL drafting comes next.",
-    "BNL will use each BNL Source File to generate or revise proposed dossiers.",
+    "BNL will use reviewed, public-safe material from each BNL Source File to generate or revise proposed dossiers.",
     "For now, source files collect information and proposed dossiers remain manually reviewable.",
   ]) {
     assertIncludesCopy(pageCopy, label);
@@ -537,7 +596,7 @@ test("owner review page is a placeholder lane without publishing", () => {
   assert.equal(fs.existsSync(path.join(projectRoot, routePath)), true);
   const page = source(routePath);
   assert.match(page, /Owner Final Review Queue/);
-  assert.match(page, /This is Owner Review\. The owner does the final pass/);
+  assert.match(page, /This is Owner Review\. Owner Review is the final gate before anything becomes publishable\/public/);
   assert.match(page, /Owner final review is separate from admin drafting/);
   assert.match(
     page,
@@ -2012,7 +2071,7 @@ test("identity alias review UX is grouped, status-aware, and public-safe", () =>
   assert.match(sourceFilePage, /disabled:pointer-events-none/);
   assert.match(
     sourceFilePage,
-    /Identity link confirmed\. Future recommendations can now match this alias if matching is enabled\./,
+    /Identity link confirmed\. Future recommendations can now match this alias if matching is enabled; it is still not public identity proof\./,
   );
   assert.match(
     sourceFilePage,
@@ -2033,7 +2092,7 @@ test("identity alias review UX is grouped, status-aware, and public-safe", () =>
   assert.match(recommendationPage, /Create Identity Link/);
   assert.match(recommendationPage, /Create Proposed Identity Link/);
   assert.match(recommendationPage, /Use for future matching after confirmation/);
-  assert.match(recommendationPage, /Use in public dossier later/);
+  assert.match(recommendationPage, /Use in public dossier later after review/);
   assert.match(recommendationPage, /Proposed identity link created\. Confirm it from the BNL Source File when ready\./);
   assert.match(recommendationPage, /Target source file/);
   assert.match(
@@ -2831,7 +2890,7 @@ test("recommendation inbox and source note UI are present and bounded", () => {
   assert.match(sourceFilePage, /This source file[\s\S]*remains one subject\/entity/);
   assert.match(sourceFilePage, /create or wait for a separate BNL recommendation/);
   assert.match(sourceFilePage, /Save Info/);
-  assert.match(sourceFilePage, /Identity \/ Aliases/);
+  assert.match(sourceFilePage, /Identity \/ Alias Review/);
   assert.match(sourceFilePage, /Aliases help BNL route future recommendations/);
   assert.match(sourceFilePage, /Internal aliases are not public dossier text/);
   assert.match(sourceFilePage, /Add Identity Link/);
@@ -2868,7 +2927,7 @@ test("recommendation inbox and source note UI are present and bounded", () => {
   assert.match(recommendationPage, /Create Identity Link/);
   assert.match(recommendationPage, /Create Proposed Identity Link/);
   assert.match(recommendationPage, /Use for future matching after confirmation/);
-  assert.match(recommendationPage, /Use in public dossier later/);
+  assert.match(recommendationPage, /Use in public dossier later after review/);
   assert.match(recommendationPage, /Proposed identity link created\. Confirm it from the BNL Source File when ready\./);
   assert.match(recommendationPage, /This alias is used for internal routing only/);
   assert.match(recommendationPage, /Possible identity review needed/);

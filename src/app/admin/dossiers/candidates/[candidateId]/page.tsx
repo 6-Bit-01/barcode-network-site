@@ -111,7 +111,7 @@ const identityReviewNotice: Record<
   string
 > = {
   confirmDossierIdentityLink:
-    "Identity link confirmed. Future recommendations can now match this alias if matching is enabled.",
+    "Identity link confirmed. Future recommendations can now match this alias if matching is enabled; it is still not public identity proof.",
   rejectDossierIdentityLink:
     "Identity link rejected. It will not be used for matching.",
   retireDossierIdentityLink:
@@ -176,6 +176,42 @@ function StatusBadge({ children }: { children: React.ReactNode }) {
       {children}
     </span>
   );
+}
+
+function uniqueLabels(labels: string[]) {
+  return Array.from(new Set(labels.filter(Boolean)));
+}
+
+function sourceWarningLabels(input: {
+  candidate: DossierCandidate;
+  recommendations: DossierRecommendation[];
+}) {
+  const lanes = new Set([
+    ...(input.candidate.sourceLanes ?? []),
+    ...input.recommendations.flatMap((recommendation) => recommendation.sourceLanes),
+  ]);
+  return uniqueLabels([
+    lanes.has("broadcast_memory") ? "Source-blind memory trace" : "",
+    input.candidate.ingestSource === "bnl_dynamic_candidate_discovery" ||
+    input.recommendations.some(
+      (recommendation) =>
+        recommendation.ingestSource === "bnl_dynamic_candidate_discovery",
+    )
+      ? "Internal/private review required"
+      : "",
+    (input.candidate.publicSafetyNotes ?? []).length > 0 ||
+    input.recommendations.some(
+      (recommendation) => (recommendation.publicSafetyNotes ?? []).length > 0,
+    )
+      ? "Public use not allowed until review"
+      : "",
+    input.recommendations.some(
+      (recommendation) => recommendation.type === "identity_link",
+    ) || (input.candidate.identityLinks ?? []).some((link) => link.status === "proposed")
+      ? "Possible connection, not confirmed identity"
+      : "",
+    "Owner review required",
+  ]);
 }
 
 function IdentityLinkCard({
@@ -621,10 +657,11 @@ export default function CandidateReviewPage() {
             {candidate.name}
           </h1>
           <p className="text-sm text-muted mt-3 max-w-3xl">
-            Source File ID: {candidate.id}. This BNL Source File is one
-            subject/entity source packet. Admins can add information to this
-            BNL Source File, but cannot turn this source file into another
-            subject. Internal workflow only; notes do not publish, create tags,
+            Source File ID: {candidate.id}. Internal working case file. This may
+            include unverified, internal, conflicting, source-blind, or
+            private-review material. Do not treat this as public copy. Admins
+            can add information to this BNL Source File, but cannot turn this
+            source file into another subject. Notes do not publish, create tags,
             or mutate public records.
           </p>
           <div className="mt-4">
@@ -733,15 +770,24 @@ export default function CandidateReviewPage() {
       <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-4">
         <section className="border border-border bg-surface p-5 space-y-4">
           <h2 className="text-2xl font-bold text-foreground">
-            Subject Summary / Source Packet
+            Case File Summary
           </h2>
           <p className="text-sm text-muted">
-            The BNL Source File contains known facts, current info,
-            recommendation evidence clusters, source notes, missing info,
-            public safety notes, do-not-say notes, links, taxonomy suggestions,
-            duplicate/identity warnings, and source history for this one
-            subject.
+            The BNL Source File is an internal working case file / evidence
+            folder. It can contain confirmed facts, claimed facts, inferred
+            facts, messy evidence, recommendation evidence clusters,
+            source-blind memory traces, private/internal notes, conflicting
+            information, missing info, warnings, do-not-say
+            notes, identity possibilities, duplicate/identity warnings,
+            taxonomy suggestions, public safety notes, and public-safe facts. It
+            is not an
+            almost-public dossier.
           </p>
+          <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
+            {sourceWarningLabels({ candidate, recommendations: attachedRecommendations }).map((label) => (
+              <StatusBadge key={label}>{label}</StatusBadge>
+            ))}
+          </div>
         </section>
 
         <section
@@ -829,6 +875,10 @@ export default function CandidateReviewPage() {
           </form>
         </section>
 
+        <Section title="Evidence / Source Notes">
+          <p className="mb-3">BNL recommendations are evidence/source-file inputs, not public copy.</p>
+        </Section>
+
         <Section title="Recommendation/evidence clusters">
           {attachedRecommendations.length === 0 ? (
             <p>No recommendations attached yet.</p>
@@ -847,13 +897,15 @@ export default function CandidateReviewPage() {
           )}
         </Section>
 
-        <Section title="Identity / Aliases">
+        <Section title="Identity / Alias Review">
           <div className="space-y-5">
             <div className="space-y-2">
               <p>
                 Aliases help BNL route future recommendations to the right source
-                file. Internal aliases are not public dossier text. Public-safe
-                visibility does not publish anything yet.
+                file. Identity recommendations create proposed review material
+                only, not confirmed identity. Internal aliases are not public dossier text
+                and remain admin-only. Public-safe visibility does not publish
+                anything yet.
               </p>
               <p className="border border-border/70 bg-background/20 p-3">
                 Adding an alias does not make it public and does not affect
@@ -1056,7 +1108,7 @@ export default function CandidateReviewPage() {
         <Section title="Proposed Dossier">
           {!primaryDraft ? (
             <div className="space-y-3">
-              <p>The proposed dossier will be drafted from this BNL Source File.</p>
+              <p>Ready for Proposed Dossier: the proposed dossier should be written from reviewed, public-safe Source File material, not copied wholesale from this working case file.</p>
               <button
                 type="button"
                 onClick={() => void createDraft()}
@@ -1093,7 +1145,7 @@ export default function CandidateReviewPage() {
           </Section>
         )}
 
-        <Section title="BNL Source File Notes">
+        <Section title="Source-File Notes UI">
           {sourceNotes.length === 0 ? (
             <p>No saved source notes yet.</p>
           ) : (
@@ -1156,12 +1208,39 @@ export default function CandidateReviewPage() {
               <p>—</p>
             )}
           </Section>
-          <Section title="Known facts">{list(candidate.knownFacts)}</Section>
+          <Section title="Known / Claimed / Inferred">{list(candidate.knownFacts)}</Section>
           <Section title="Corrections / extra notes">
             <p>Saved notes now live in BNL Source File Notes above.</p>
           </Section>
-          <Section title="Missing info">{list(candidate.missingInfo)}</Section>
-          <Section title="Do-not-say">{list(candidate.doNotSay)}</Section>
+          <Section title="Missing Info">{list(candidate.missingInfo)}</Section>
+          <Section title="Do Not Say">{list(candidate.doNotSay)}</Section>
+          <Section title="Public-Safe Facts">
+            {list(candidate.knownFacts?.filter(Boolean), "No public-safe facts marked yet.")}
+          </Section>
+          <Section title="Internal-Only Notes">
+            {sourceNotes.filter((note) => note.publicSafe !== true).length ? (
+              <ul className="list-disc pl-5 space-y-1">
+                {sourceNotes
+                  .filter((note) => note.publicSafe !== true)
+                  .map((note) => (
+                    <li key={note.id}>{note.text}</li>
+                  ))}
+              </ul>
+            ) : (
+              <p className="text-muted">No internal-only notes saved yet.</p>
+            )}
+          </Section>
+          <Section title="Source Warnings">
+            <div className="flex flex-wrap gap-2">
+              {sourceWarningLabels({ candidate, recommendations: attachedRecommendations }).map((label) => (
+                <StatusBadge key={label}>{label}</StatusBadge>
+              ))}
+            </div>
+          </Section>
+          <Section title="Conflicts / Needs Review">
+            <p>Duplicate risk: {candidate.duplicateRisk ?? "none"}</p>
+            <p>Pending identity aliases: {proposedIdentityLinks.length}</p>
+          </Section>
           <Section title="Public safety notes">
             {list(candidate.publicSafetyNotes)}
           </Section>

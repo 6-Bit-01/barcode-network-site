@@ -839,10 +839,13 @@ test("BNL source file read model resolves subject and returns bounded provenance
   assert.equal(payload.sourceFile.activeDraft.status, "ready_for_owner_review");
   assert.equal(payload.sourceFile.ownerReview.status, "waiting");
   assert.equal(payload.sourceFile.visibility.visibility, "internal_bnl_source_file");
+  assert.equal(payload.sourceFile.visibility.boundaryLabel, "internal working case file; not a public dossier");
   assert.equal(payload.sourceFile.visibility.publicUse, false);
+  assert.equal(payload.sourceFile.visibility.publicUseReviewRequired, true);
+  assert.match(payload.sourceFile.visibility.publicSummaryAllowed, /reviewed, owner-approved/);
   assert.match(payload.sourceFile.visibility.identityWarning, /not public identity proof/);
-  assert.match(payload.sourceFile.visibility.publishWarning, /not public dossiers/);
-  assert.match(payload.sourceFile.visibility.draftWarning, /not public/);
+  assert.match(payload.sourceFile.visibility.publishWarning, /internal working case files, not public dossiers/);
+  assert.match(payload.sourceFile.visibility.draftWarning, /curated public-facing drafts only/);
   assert.equal(payload.sourceFile.recommendedTaxonomy.kind, "radio_regular");
   assert.equal(payload.sourceFile.duplicateWarnings.duplicateRisk, "low");
 

@@ -173,10 +173,12 @@ function PhaseRail({ currentPhase }: { currentPhase?: number }) {
         ))}
       </div>
       <p className="mt-3 text-xs text-muted">
-        Phase 1 collects what BNL knows and what admins add. Phase 2 builds or
-        revises the proposed dossier with future BNL edit chat. Phase 3 is the
-        final admin draft confirmation. Phase 4 is owner final pass. Phase 5 is
-        approved / publish later and is not active yet.
+        Phase 1 is the internal working case file / evidence folder; it is not
+        public copy. Phase 2 is the curated public-facing draft written from
+        reviewed Source File material. Phase 3 is final admin draft
+        confirmation. Phase 4 is the owner final approval gate before anything
+        becomes publishable/public. Phase 5 is approved / publish later and is
+        not active yet.
       </p>
     </section>
   );
@@ -491,8 +493,10 @@ export default function DossierControlCenterPage() {
             Center
           </h1>
           <p className="text-sm text-muted mt-3 max-w-3xl">
-            Overview of BNL Source Files, recommendations, proposed dossiers,
-            and owner review status. Open a source file to work on a subject.
+            Overview of BNL Source Files as internal working case files, BNL
+            recommendations as evidence inputs, proposed dossiers as curated
+            public-facing drafts, and owner review status. Open a source file to
+            work on a subject.
           </p>
           <div className="mt-5 flex flex-wrap gap-3 text-xs uppercase tracking-widest">
             <Link
@@ -559,8 +563,8 @@ export default function DossierControlCenterPage() {
               BNL drafting comes next.
             </p>
             <p className="border border-border/70 bg-background/20 p-3">
-              BNL will use each BNL Source File to generate or revise proposed
-              dossiers.
+              BNL will use reviewed, public-safe material from each BNL Source
+              File to generate or revise proposed dossiers.
             </p>
             <p className="border border-border/70 bg-background/20 p-3">
               For now, source files collect information and proposed dossiers
@@ -577,13 +581,14 @@ export default function DossierControlCenterPage() {
           }
         >
           <p className="text-sm text-muted">
-            Compact Dossier Recommendation Inbox summary. Review a record to
+            Compact Dossier Recommendation Inbox summary. BNL recommendations
+            are evidence/source-file inputs, not public copy. Review a record to
             convert an unmatched recommendation or attach only when the system
             confirms a same-subject BNL Source File match. No generic attach
             dropdown is shown here. BNL dynamic discovery can create an
-            internal source file only when no exact or possible existing source
-            file match is found; identity and duplicate recommendations remain
-            review-only.
+            internal working case file only when no exact or possible existing
+            source-file match is found; identity and duplicate recommendations
+            create review material only.
           </p>
           {activeRecommendations.length === 0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
@@ -737,9 +742,10 @@ export default function DossierControlCenterPage() {
           aside={<StatusPill>{activeCandidates.length} active source files</StatusPill>}
         >
           <p className="text-sm text-muted">
-            Open a BNL Source File to work on a subject. Proposed Dossiers,
-            final admin confirmation, and owner review are shown here as status
-            only instead of full dashboard workboard lanes.
+            Open a BNL Source File working case file to review evidence. Proposed
+            Dossiers, final admin confirmation, and owner review are shown here
+            as concise status indicators only instead of full dashboard
+            workboard lanes.
           </p>
           {activeCandidates.length === 0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
@@ -759,7 +765,7 @@ export default function DossierControlCenterPage() {
                     <th className="py-2 pr-3">Proposed dossier status</th>
                     <th className="py-2 pr-3">Unapplied source notes count</th>
                     <th className="py-2 pr-3">Identity links</th>
-                    <th className="py-2 pr-3">Duplicate/identity warning</th>
+                    <th className="py-2 pr-3">Case file indicators</th>
                     <th className="py-2 pr-3">Last updated</th>
                     <th className="py-2 pr-3">Next recommended action</th>
                     <th className="py-2 pr-3">Open</th>
@@ -842,8 +848,27 @@ export default function DossierControlCenterPage() {
                             </p>
                           )}
                         </td>
-                        <td className="py-3 pr-3">
-                          {candidate.duplicateRisk ?? "none"}
+                        <td className="py-3 pr-3 space-y-1">
+                          {(candidate.publicSafetyNotes ?? []).length > 0 && (
+                            <p>case file has warnings</p>
+                          )}
+                          {(candidate.sourceLanes ?? []).includes("broadcast_memory") && (
+                            <p>case file has source-blind material</p>
+                          )}
+                          {(candidate.knownFacts ?? []).length > 0 && (
+                            <p>case file has public-safe facts</p>
+                          )}
+                          {proposedIdentityLinks.length > 0 && (
+                            <p>identity review pending</p>
+                          )}
+                          {openDraftId && <p>proposed dossier exists</p>}
+                          {draft?.status === "ready_for_owner_review" && (
+                            <p>owner review pending</p>
+                          )}
+                          {!openDraftId && candidate.status !== "needs_more_evidence" && (
+                            <p>ready for draft/review</p>
+                          )}
+                          <p>Duplicate risk: {candidate.duplicateRisk ?? "none"}</p>
                         </td>
                         <td className="py-3 pr-3">
                           {formatDate(candidate.updatedAt)}

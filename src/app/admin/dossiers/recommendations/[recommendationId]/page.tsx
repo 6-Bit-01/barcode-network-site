@@ -424,13 +424,15 @@ export default function DossierRecommendationPage() {
           </h1>
           <p className="text-sm text-muted mt-3 max-w-3xl">
             BNL Recommendation / Evidence Cluster records are admin-only
-            evidence records. They do not publish, create drafts, write content
-            files, or create tags automatically. Attach is only allowed for
-            confirmed same-subject matches; merge is owner/lead identity
-            resolution. BNL dynamic discovery can create an internal source
-            file only when no exact or possible existing source-file match is
-            found. Identity/alias and duplicate recommendations remain review
-            items; no drafts, tags, or public pages are created automatically.
+            evidence records and Source File inputs, not public copy. They do
+            not publish, create drafts, write content files, or create tags
+            automatically. Attach is only allowed for confirmed same-subject
+            matches; merge is owner/lead identity resolution. BNL dynamic
+            discovery can create an internal working case file only when no
+            exact or possible existing source-file match is found.
+            Identity/alias and duplicate recommendations create proposed review
+            material only; they do not confirm identity, merge identities,
+            create drafts, create tags, or create public pages automatically.
           </p>
           {notice && (
             <div className="mt-4 border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
@@ -506,9 +508,10 @@ export default function DossierRecommendationPage() {
               Matched BNL Source File
             </h2>
             <p>
-              BNL Source File = one subject/entity source packet. Admins can add
-              info to this subject, but cannot freely combine unrelated
-              recommendations with arbitrary source files.
+              BNL Source File = internal working case file / evidence folder for
+              one subject/entity. Admins can add info to this subject, but
+              cannot freely combine unrelated recommendations with arbitrary
+              source files. Public use requires review.
             </p>
             {exactCandidate ? (
               <div className="border border-accent/60 bg-accent/10 p-4 text-accent space-y-2">
@@ -757,7 +760,7 @@ export default function DossierRecommendationPage() {
                     })
                   }
                 />
-                Use in public dossier later
+                Use in public dossier later after review
               </label>
               <div className="md:col-span-4">
                 <button
@@ -790,6 +793,9 @@ export default function DossierRecommendationPage() {
           <Field title="Reason">
             <p>{recommendation.reason}</p>
           </Field>
+          <Field title="Evidence / Source Notes">
+            <p>Recommendation detail is evidence for the internal working case file, not public dossier copy.</p>
+          </Field>
           <Field title="Evidence summary">
             <p>{recommendation.evidenceSummary ?? "—"}</p>
           </Field>
@@ -812,6 +818,21 @@ export default function DossierRecommendationPage() {
           </Field>
           <Field title="Missing info">{list(recommendation.missingInfo)}</Field>
           <Field title="Do-not-say">{list(recommendation.doNotSay)}</Field>
+          <Field title="Source Warnings">
+            <ul className="list-disc pl-5 space-y-1">
+              {recommendation.sourceLanes.includes("broadcast_memory") && (
+                <li>Source-blind memory trace</li>
+              )}
+              {recommendation.ingestSource?.startsWith("bnl") && (
+                <li>Internal/private review required</li>
+              )}
+              <li>Public use not allowed until review</li>
+              <li>Owner review required</li>
+              {recommendation.type === "identity_link" && (
+                <li>Possible connection, not confirmed identity</li>
+              )}
+            </ul>
+          </Field>
           <Field title="Public safety notes">
             {list(recommendation.publicSafetyNotes)}
           </Field>

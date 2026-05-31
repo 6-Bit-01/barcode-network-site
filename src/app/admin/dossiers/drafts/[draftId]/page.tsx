@@ -186,8 +186,9 @@ function ProposedDossierPreview({
           Proposed Dossier Preview
         </h2>
         <p className="text-sm text-muted">
-          This is the readable proposed completed dossier. It is not public and
-          does not publish.
+          This is the curated public-facing draft. It should be
+          generated/written from reviewed Source File material, not copied
+          wholesale from the case file. It is not public and does not publish.
         </p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-muted">
@@ -701,10 +702,12 @@ export default function DossierDraftEditorPage() {
             </p>
           )}
           <p className="text-sm text-muted mt-2 max-w-4xl">
-            This proposed dossier is drafted from the BNL Source File. The
-            source file contains all known/admin-added material; this page
-            contains the curated draft that may become public after owner
-            review.
+            This is the curated public-facing draft. It should be
+            generated/written from reviewed BNL Source File material, not copied
+            wholesale from the internal working case file. The source file may
+            contain unverified, internal, conflicting, source-blind, or
+            private-review material; this page contains only the curated draft
+            that may become public after owner review.
           </p>
           <p className="text-sm text-muted mt-2 max-w-4xl">
             BNL will eventually generate the proposed dossier from the BNL

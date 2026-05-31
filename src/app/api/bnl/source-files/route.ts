@@ -21,21 +21,25 @@ const MAX_POSSIBLE_MATCHES = 8;
 
 const VISIBILITY_BOUNDARY = {
   visibility: "internal_bnl_source_file" as const,
+  boundaryLabel: "internal working case file; not a public dossier" as const,
   publicUse: false,
+  publicUseReviewRequired: true,
   publicSummaryAllowed:
-    "only when a field is explicitly publicSafe or already published elsewhere" as const,
+    "only when a field is explicitly publicSafe, reviewed, owner-approved, or already published elsewhere" as const,
   identityWarning:
     "identity links and aliases are workflow/routing context, not public identity proof" as const,
-  publishWarning: "BNL Source Files are not public dossiers" as const,
+  publishWarning:
+    "BNL Source Files are internal working case files, not public dossiers" as const,
   draftWarning:
-    "proposed dossiers/drafts are not public until owner-approved and published" as const,
+    "proposed dossiers/drafts are curated public-facing drafts only; they are not public until owner-approved and published" as const,
   allowedUse: [
     "internal/operator source-file retrieval",
     "same-subject routing and review context",
     "draft preparation context inside the authenticated BNL boundary",
+    "public-safe review support before a proposed dossier is curated",
   ],
   disallowedUse: [
-    "public repetition unless a field is explicitly public-safe or already published elsewhere",
+    "public repetition unless a field is explicitly public-safe, reviewed, owner-approved, or already published elsewhere",
     "claiming aliases prove public identity",
     "publishing or mutating source files, drafts, recommendations, or content.ts",
     "exposing private payment, customer, account, upload, contact, token, or raw transcript data",

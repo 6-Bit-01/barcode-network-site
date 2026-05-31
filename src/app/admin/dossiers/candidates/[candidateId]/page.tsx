@@ -843,22 +843,15 @@ export default function CandidateReviewPage() {
   async function saveSourceFileSummary(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
+      const formData = new FormData(event.currentTarget);
       await postWorkflow({
         action: "updateSourceFileSummary",
         candidateId,
         input: {
-          summaryText: String(
-            new FormData(event.currentTarget).get("summaryText") ?? "",
-          ),
-          knownContext: String(
-            new FormData(event.currentTarget).get("knownContext") ?? "",
-          ),
-          openQuestions: String(
-            new FormData(event.currentTarget).get("openQuestions") ?? "",
-          ),
-          nextAction: String(
-            new FormData(event.currentTarget).get("nextAction") ?? "",
-          ),
+          summaryText: String(formData.get("summaryText") ?? ""),
+          knownContext: String(formData.get("knownContext") ?? ""),
+          openQuestions: String(formData.get("openQuestions") ?? ""),
+          nextAction: String(formData.get("nextAction") ?? ""),
           updatedBy: "admin",
         },
       });

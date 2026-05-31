@@ -49,7 +49,7 @@ type NoteLike = Pick<
 };
 
 const thinFileWarning =
-  "This file is currently thin. This file is still thin. It confirms that BNL has some internal references to this subject, but it does not yet contain enough history, repeated patterns, public-safe facts, or specific context to draft from.";
+  "This file is still thin. It confirms that BNL has some internal references to this subject, but it does not yet contain enough history, repeated patterns, public-safe facts, or specific context to draft from.";
 
 const noPatternCopy = "No meaningful pattern has been extracted yet.";
 

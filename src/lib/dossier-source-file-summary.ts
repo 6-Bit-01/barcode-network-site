@@ -62,7 +62,7 @@ function unique(items: Array<string | undefined | null>, limit = 4): string[] {
 }
 
 export const DOSSIER_THIN_FILE_WARNING =
-  "This file is currently thin. This file is still thin. It confirms that BNL has some internal references to this subject, but it does not yet contain enough history, repeated patterns, public-safe facts, or specific context to draft from.";
+  "This file is still thin. It confirms that BNL has some internal references to this subject, but it does not yet contain enough history, repeated patterns, public-safe facts, or specific context to draft from.";
 
 export const DOSSIER_NO_MEANINGFUL_PATTERN =
   "No meaningful pattern has been extracted yet.";

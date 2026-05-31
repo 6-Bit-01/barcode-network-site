@@ -608,7 +608,7 @@ test("admin Source File and recommendation pages render readable sections with c
     "Public readiness:",
     "Existing public dossier:",
     "Next action:",
-    "This file is currently thin",
+    "This file is still thin",
     "Older BNL Review Note",
     "BNL Review Addendum",
     "Review-only context connected to this subject",
@@ -3098,7 +3098,7 @@ test("derived Source File summary labels thin files without fake substance", () 
   });
   assert.equal(summary.substanceLevel, "thin");
   assert.equal(summary.publicReadiness, "not_ready");
-  assert.match(summary.currentRead, /currently thin/);
+  assert.match(summary.currentRead, /still thin/);
   assert.match(summary.usefulEvidence[0], /No useful evidence/);
   assert.doesNotMatch(
     JSON.stringify(summary),

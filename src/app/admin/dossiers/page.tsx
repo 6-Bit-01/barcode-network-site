@@ -520,16 +520,29 @@ export default function DossierControlCenterPage() {
     try {
       const body: Record<string, unknown> = { action, candidateId };
       if (action === "permanentlyDeleteCandidate") {
+        const linkedDrafts = drafts.filter(
+          (draft) => draft.candidateId === candidateId,
+        );
         const confirmation = window.prompt(
-          'Permanent delete removes this workflow item and linked unpublished drafts. Type "DELETE SOURCE FILE" to confirm.',
+          `Permanent delete removes the unpublished workflow item${
+            linkedDrafts.length > 0
+              ? ` and ${linkedDrafts.length} linked unpublished proposed dossier draft${linkedDrafts.length === 1 ? "" : "s"}`
+              : ""
+          }. Public dossiers and published data are not deleted. Type "DELETE SOURCE FILE" to confirm.`,
         );
         if (confirmation !== "DELETE SOURCE FILE") return;
         body.confirmation = confirmation;
       }
       const data = await postWorkflow(body);
-      setNotice(
-        `${candidate.name} updated via ${action}. Public dossiers were not changed.`,
-      );
+      const actionNotice =
+        action === "archiveCandidate"
+          ? `${candidate.name} archived. It moved out of active dashboard lanes and public dossiers were not changed.`
+          : action === "restoreCandidate"
+            ? `${candidate.name} restored to Candidate Intake. Public dossiers were not changed.`
+            : action === "permanentlyDeleteCandidate"
+              ? `${candidate.name} permanently deleted from unpublished workflow records. Public dossiers were not changed.`
+              : `${candidate.name} promoted to an Active BNL Source File. Public dossiers were not changed.`;
+      setNotice(actionNotice);
       if (data.candidates && data.drafts && data.workflow) {
         setPayload(data as WorkflowPayload);
       }
@@ -976,7 +989,7 @@ export default function DossierControlCenterPage() {
                     <th className="py-2 pr-3">Case file indicators</th>
                     <th className="py-2 pr-3">Last updated</th>
                     <th className="py-2 pr-3">Next recommended action</th>
-                    <th className="py-2 pr-3">Open</th>
+                    <th className="py-2 pr-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1138,6 +1151,31 @@ export default function DossierControlCenterPage() {
                               className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest hover:border-accent hover:text-accent disabled:opacity-50"
                             >
                               Mark Needs Info
+                            </button>
+                            <button
+                              type="button"
+                              disabled={saving || !canUpdateCandidate}
+                              onClick={() =>
+                                void candidateAction(candidate.id, "archiveCandidate")
+                              }
+                              className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+                              title="Safe cleanup: move this source file out of active dashboard lanes without deleting public dossiers or published data."
+                            >
+                              Archive
+                            </button>
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() =>
+                                void candidateAction(
+                                  candidate.id,
+                                  "permanentlyDeleteCandidate",
+                                )
+                              }
+                              className="border border-red-500/70 px-3 py-1.5 text-xs uppercase tracking-widest text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+                              title='Requires typing "DELETE SOURCE FILE". Does not delete public dossiers or published data.'
+                            >
+                              Delete Permanently
                             </button>
                           </div>
                         </td>

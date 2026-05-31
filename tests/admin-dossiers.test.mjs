@@ -280,6 +280,10 @@ test("admin dossier dashboard is a Control Center overview instead of an all-in-
     "Source depth / info strength",
     "Unapplied notes:",
     "Open Source File",
+    "Archive",
+    "Delete Permanently",
+    "DELETE SOURCE FILE",
+    "Safe cleanup: move this source file out of active dashboard lanes without deleting public dossiers or published data.",
     "case file has warnings",
     "case file has source-blind material",
     "case file has public-safe facts",
@@ -300,6 +304,8 @@ test("admin dossier dashboard is a Control Center overview instead of an all-in-
   assert.match(page, /href=\{`\/admin\/dossiers\/candidates\/\$\{candidate\.id\}`\}/);
   assert.match(page, /href=\{`\/admin\/dossiers\/drafts\/\$\{openDraftId\}`\}/);
   assert.match(page, /href=\{`\/admin\/dossiers\/duplicates\/\$\{group\.id\}`\}/);
+  assert.match(page, /candidateAction\(candidate\.id, "archiveCandidate"\)/);
+  assert.match(page, /candidateAction\(\s*candidate\.id,\s*"permanentlyDeleteCandidate"/);
   assert.doesNotMatch(page, /eyebrow="Lane 2"/);
   assert.doesNotMatch(page, /title="Proposed Dossiers"/);
   assert.doesNotMatch(page, /title="Final Admin Drafts"/);
@@ -332,6 +338,12 @@ test("dossier admin pages expose the control-center/source-hub/draft-workspace m
     "src/app/admin/dossiers/candidates/[candidateId]/page.tsx",
   );
   assertIncludesCopy(sourceFileCopy, "Case File Summary");
+  assertIncludesCopy(sourceFileCopy, "Archive");
+  assertIncludesCopy(sourceFileCopy, "Delete Permanently");
+  assertIncludesCopy(sourceFileCopy, "Restore");
+  assertIncludesCopy(sourceFileCopy, "Promote to Source File");
+  assertIncludesCopy(sourceFileCopy, "DELETE SOURCE FILE");
+  assertIncludesCopy(sourceFileCopy, "Public dossiers and published data are not deleted");
   assertIncludesCopy(sourceFileCopy, "Ready for Proposed Dossier: the proposed dossier should be written from reviewed, public-safe Source File material, not copied wholesale from this working case file.");
 
   const draftCopy = normalizedSource(
@@ -3411,6 +3423,95 @@ test("BNL Source Knowledge Bridge attach, duplicate, possible-match, and identit
   assert.equal(state.candidates[0].identityLinks?.length ?? 0, 0);
 });
 
+
+
+test("active source file cleanup controls archive, restore, and delete without public data mutation", async () => {
+  await resetWorkflowStore();
+  const publicDossierBefore = JSON.stringify(databasePage.entries);
+  const publicReadModelBefore = await (await readModel.GET(new Request("https://example.test/api/bnl/read-model"))).json();
+
+  const created = await (await authedPost({
+    action: "createManualCandidate",
+    input: {
+      ...manualCandidateInput,
+      name: "Active Cleanup Source",
+      reason: "Operator needs to clean an active source file.",
+    },
+  })).json();
+
+  const promoted = await (await authedPost({
+    action: "promoteCandidateToSourceFile",
+    candidateId: created.candidate.id,
+  })).json();
+  assert.equal(promoted.candidate.status, "active_source_file");
+
+  const draft = await (await authedPost({
+    action: "createDraftFromCandidate",
+    candidateId: created.candidate.id,
+  })).json();
+  assert.equal(draft.draft.candidateId, created.candidate.id);
+
+  const activeRead = await (await sourceFilesGet("?subject=Active%20Cleanup%20Source")).json();
+  assert.equal(activeRead.found, true);
+
+  const archived = await (await authedPost({
+    action: "archiveCandidate",
+    candidateId: created.candidate.id,
+  })).json();
+  assert.equal(archived.candidate.status, "archived");
+  assert.equal(
+    archived.candidates.some((candidate) =>
+      candidate.id === created.candidate.id && candidate.status === "active_source_file",
+    ),
+    false,
+  );
+  assert.equal(
+    archived.candidates.some((candidate) =>
+      candidate.id === created.candidate.id && candidate.status === "archived",
+    ),
+    true,
+  );
+  const archivedRead = await (await sourceFilesGet("?subject=Active%20Cleanup%20Source")).json();
+  assert.equal(archivedRead.found, false);
+
+  const restored = await (await authedPost({
+    action: "restoreCandidate",
+    candidateId: created.candidate.id,
+  })).json();
+  assert.equal(restored.candidate.status, "candidate_intake");
+
+  const blockedDelete = await authedPost({
+    action: "permanentlyDeleteCandidate",
+    candidateId: created.candidate.id,
+    confirmation: "DELETE",
+  });
+  assert.equal(blockedDelete.status, 400);
+  assert.equal(
+    (await store.getDossierWorkflowState()).candidates.some(
+      (candidate) => candidate.id === created.candidate.id,
+    ),
+    true,
+  );
+
+  const deleted = await (await authedPost({
+    action: "permanentlyDeleteCandidate",
+    candidateId: created.candidate.id,
+    confirmation: "DELETE SOURCE FILE",
+  })).json();
+  assert.equal(deleted.deletion.deleted, true);
+  assert.equal(
+    deleted.candidates.some((candidate) => candidate.id === created.candidate.id),
+    false,
+  );
+  assert.equal(
+    deleted.drafts.some((item) => item.candidateId === created.candidate.id),
+    false,
+  );
+
+  const publicReadModelAfter = await (await readModel.GET(new Request("https://example.test/api/bnl/read-model"))).json();
+  assert.equal(JSON.stringify(databasePage.entries), publicDossierBefore);
+  assert.deepEqual(publicReadModelAfter.sections.dossiers, publicReadModelBefore.sections.dossiers);
+});
 
 test("Candidate Intake promotion, archive/restore, and protected delete keep source warnings bounded", async () => {
   await resetWorkflowStore();

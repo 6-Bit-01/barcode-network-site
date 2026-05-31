@@ -51,6 +51,7 @@ const workflow = require("../src/lib/dossier-workflow.ts");
 const store = require("../src/lib/dossier-workflow-store.ts");
 const { databasePage } = require("../src/content.ts");
 const readModel = require("../src/app/api/bnl/read-model/route.ts");
+const sourceFilesReadModel = require("../src/app/api/bnl/source-files/route.ts");
 
 function source(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
@@ -100,6 +101,14 @@ async function authedPost(body) {
         cookie: await adminCookie(),
       },
       body: JSON.stringify(body),
+    }),
+  );
+}
+
+async function sourceFilesGet(query, token = "test-source-file-read-token") {
+  return sourceFilesReadModel.GET(
+    new Request(`https://example.test/api/bnl/source-files${query}`, {
+      headers: { authorization: `Bearer ${token}` },
     }),
   );
 }
@@ -3225,6 +3234,157 @@ test("BNL dynamic identity and possible duplicate recommendations remain review-
   assert.equal(state.candidates.length, 1);
   assert.equal(state.drafts.length, 0);
   assert.equal(state.recommendations.length, 2);
+  assert.equal(state.candidates[0].identityLinks?.length ?? 0, 0);
+});
+
+
+
+test("BNL Source Knowledge Bridge new-subject recommendations create source-file candidates with warnings", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  const beforePublicTagCount = databasePage.entries.flatMap((entry) => entry.tags).length;
+
+  const response = await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Bridge Memory Subject",
+    subjectKey: "bridge-memory-subject",
+    reason: "Source Knowledge Bridge found an older known subject in local stores.",
+    evidenceSummary: "Older source-file knowledge mentions the subject repeatedly.",
+    confidence: "medium",
+    sourceLanes: ["source_blind_memory_trace", "local_knowledge_store"],
+    suggestedAction: "Create an internal source file only; review before public use.",
+    missingInfo: ["Confirm public-safe name."],
+    publicSafetyNotes: ["source-blind memory trace", "public use requires review"],
+    doNotSay: ["Do not expose internal alias material."],
+    recommendedTags: ["bridge-private-tag"],
+    recommendedCategory: "Entity",
+    recommendedKind: "entity",
+    recommendedEcosystemLane: "unknown",
+    recommendedIdentityAuthority: "mixed_or_unclear",
+    ingestKey: "bnl:bridge-memory-subject",
+    ingestSource: "bnl_source_knowledge_bridge",
+  });
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.autoAction, "created_candidate");
+  assert.equal(payload.duplicate, false);
+  assert.equal(payload.recommendation.status, "converted_to_source_file");
+  assert.equal(payload.recommendation.ingestSource, "bnl_source_knowledge_bridge");
+  assert.deepEqual(payload.recommendation.sourceLanes, ["broadcast_memory", "admin_manual"]);
+  assert.match(payload.recommendation.evidenceSummary, /Bridge source lane mapping: source_blind_memory_trace -> broadcast_memory, local_knowledge_store -> admin_manual/);
+  assert.equal(payload.candidate.name, "Bridge Memory Subject");
+  assert.equal(payload.candidate.source, "bnl_source_knowledge_bridge");
+  assert.equal(payload.candidate.ingestSource, "bnl_source_knowledge_bridge");
+  assert.equal(payload.candidate.status, "needs_review");
+  assert.equal(payload.candidate.recommendedKind, "entity");
+  assert.deepEqual(payload.candidate.sourceLanes, ["broadcast_memory", "admin_manual"]);
+  assert.match(payload.candidate.publicSafetyNotes.join(" "), /Source Knowledge Bridge origin|Public use requires review|Internal\/private review required|source-blind memory trace/);
+  assert.match(payload.candidate.sourceFileNotes[0].text, /BNL Source Knowledge Bridge origin/);
+  assert.match(payload.candidate.sourceFileNotes[0].text, /source lanes\/types summary: broadcast_memory, admin_manual/);
+  assert.match(payload.candidate.sourceFileNotes[0].text, /source-blind memory trace/);
+  assert.match(payload.candidate.sourceFileNotes[0].text, /public use requires review/i);
+  assert.equal(payload.candidate.sourceFileNotes[0].ingestSource, "bnl_source_knowledge_bridge");
+
+  const adminPayload = await (await authedGet()).json();
+  assert.equal(adminPayload.candidates.length, 1);
+  assert.equal(adminPayload.candidates[0].id, payload.candidate.id);
+  assert.equal(adminPayload.recommendations.length, 1);
+  assert.equal(adminPayload.drafts.length, 0);
+
+  const protectedPayload = await (await sourceFilesGet("?subject=Bridge%20Memory%20Subject")).json();
+  assert.equal(protectedPayload.sourceFile.source, "bnl_source_knowledge_bridge");
+  assert.equal(protectedPayload.sourceFile.ingestSource, "bnl_source_knowledge_bridge");
+  assert.match(protectedPayload.sourceFile.visibility.boundaryLabel, /internal working case file; not a public dossier/);
+  assert.equal(protectedPayload.sourceFile.visibility.publicUseReviewRequired, true);
+  assert.match(JSON.stringify(protectedPayload.sourceFile), /Source Knowledge Bridge origin|public use requires review|source-blind memory trace/);
+
+  const publicReadModelPayload = await (await readModel.GET(
+    new Request("https://example.test/api/bnl/read-model"),
+  )).json();
+  assert.equal(databasePage.entries.flatMap((entry) => entry.tags).length, beforePublicTagCount);
+  assert.doesNotMatch(JSON.stringify(publicReadModelPayload), /Bridge Memory Subject|bridge-private-tag|Source Knowledge Bridge/);
+});
+
+test("BNL Source Knowledge Bridge attach, duplicate, possible-match, and identity recommendations stay bounded", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const first = await (await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Bridge Deduped Subject",
+    reason: "Bridge found an older known subject.",
+    sourceLanes: ["broadcast_memory"],
+    publicSafetyNotes: ["source-blind memory trace"],
+    ingestKey: "bnl:bridge-deduped-subject",
+    ingestSource: "bnl_source_knowledge_bridge",
+  })).json();
+  assert.equal(first.autoAction, "created_candidate");
+
+  const duplicate = await (await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Bridge Deduped Subject",
+    reason: "Bridge found an older known subject.",
+    sourceLanes: ["broadcast_memory"],
+    ingestKey: "bnl:bridge-deduped-subject",
+    ingestSource: "bnl_source_knowledge_bridge",
+  })).json();
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(duplicate.recommendation.id, first.recommendation.id);
+
+  const sameSubject = await (await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "The Bridge Deduped Subject",
+    reason: "Bridge found the same subject under a separate ingest key.",
+    sourceLanes: ["local_source_file"],
+    ingestKey: "bnl:bridge-deduped-subject:second",
+    ingestSource: "bnl_source_knowledge_bridge",
+  })).json();
+  assert.equal(sameSubject.autoAction, "attached_existing");
+  assert.equal(sameSubject.recommendation.status, "attached_to_source_file");
+  assert.equal(sameSubject.recommendation.targetCandidateId, first.candidate.id);
+
+  const possible = await (await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Bridge Deduped Subject Annex",
+    reason: "Bridge found a nearby source-file subject that may be a duplicate.",
+    sourceLanes: ["local_knowledge_store"],
+    ingestKey: "bnl:bridge-possible-duplicate",
+    ingestSource: "bnl_source_knowledge_bridge",
+  })).json();
+  assert.equal(possible.autoAction, "left_for_review");
+  assert.equal(possible.recommendation.status, "new");
+  assert.match(possible.recommendation.publicSafetyNotes.join(" "), /possible existing source files/);
+
+  const identity = await (await bnlIngestPost({
+    type: "identity_link",
+    subjectName: "Bridge Alias",
+    targetCandidateId: first.candidate.id,
+    reason: "Bridge found a possible alias for review only.",
+    sourceLanes: ["source_blind_memory_trace"],
+    ingestKey: "bnl:bridge-identity-review",
+    ingestSource: "bnl_source_knowledge_bridge",
+  })).json();
+  assert.equal(identity.recommendation.status, "new");
+  assert.equal(identity.autoAction, undefined);
+
+  const connection = await (await bnlIngestPost({
+    type: "possible_connection_review",
+    subjectName: "Bridge Connection",
+    reason: "Bridge found a possible connection for human review only.",
+    sourceLanes: ["local_knowledge_store"],
+    ingestKey: "bnl:bridge-connection-review",
+    ingestSource: "bnl_source_knowledge_bridge",
+  })).json();
+  assert.equal(connection.recommendation.status, "new");
+  assert.equal(connection.autoAction, undefined);
+
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.candidates.length, 1);
+  assert.equal(state.drafts.length, 0);
+  assert.equal(state.recommendations.length, 5);
+  assert.equal(state.candidates[0].sourceFileNotes.length, 2);
   assert.equal(state.candidates[0].identityLinks?.length ?? 0, 0);
 });
 

@@ -122,6 +122,9 @@ function recommendationProvenance(recommendation: DossierRecommendation) {
   if (recommendation.ingestSource === "bnl_dynamic_candidate_discovery") {
     return "BNL dynamic discovery";
   }
+  if (recommendation.ingestSource === "bnl_source_knowledge_bridge") {
+    return "BNL Source Knowledge Bridge";
+  }
   if (recommendation.ingestSource === "bnl" || recommendation.createdBy === "bnl") {
     return "BNL-ingested";
   }
@@ -133,6 +136,9 @@ function recommendationProvenance(recommendation: DossierRecommendation) {
 function candidateProvenance(candidate: DossierCandidate) {
   if (candidate.source === "bnl_dynamic_candidate_discovery") {
     return `BNL dynamic discovery${candidate.sourceLanes?.length ? ` / ${candidate.sourceLanes.join(", ")}` : ""}`;
+  }
+  if (candidate.source === "bnl_source_knowledge_bridge") {
+    return `BNL Source Knowledge Bridge${candidate.sourceLanes?.length ? ` / ${candidate.sourceLanes.join(", ")}` : ""}`;
   }
   return candidate.source;
 }

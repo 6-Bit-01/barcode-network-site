@@ -193,9 +193,11 @@ function sourceWarningLabels(input: {
   return uniqueLabels([
     lanes.has("broadcast_memory") ? "Source-blind memory trace" : "",
     input.candidate.ingestSource === "bnl_dynamic_candidate_discovery" ||
+    input.candidate.ingestSource === "bnl_source_knowledge_bridge" ||
     input.recommendations.some(
       (recommendation) =>
-        recommendation.ingestSource === "bnl_dynamic_candidate_discovery",
+        recommendation.ingestSource === "bnl_dynamic_candidate_discovery" ||
+        recommendation.ingestSource === "bnl_source_knowledge_bridge",
     )
       ? "Internal/private review required"
       : "",

@@ -284,7 +284,7 @@ test("admin dossier dashboard is a Control Center overview instead of an all-in-
     "Delete Permanently",
     "Move to Existing Dossier Update",
     "Attach to Existing Public Dossier",
-    "Existing Dossier Updates / Enrichment Candidates",
+    "Existing Dossier Updates / Enrichment Targets",
     "owner approval required before public changes",
     "DELETE SOURCE FILE",
     "Safe cleanup: move this source file out of active dashboard lanes without deleting public dossiers or published data.",
@@ -514,7 +514,7 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     "Possible connection, not confirmed identity",
     "Existing Public Dossier Match",
     "No existing public dossier match currently attached.",
-    "This is not a new dossier candidate. This is review material for an existing public dossier.",
+    "This workflow record is an existing dossier update / enrichment target, not a new dossier proposal.",
     "Move Back to Active Source File",
   ]) {
     assertIncludesCopy(pageCopy, label);
@@ -2911,7 +2911,7 @@ test("recommendation inbox and source note UI are present and bounded", () => {
   assert.match(dashboard, /Matched existing BNL Source File/);
   assert.match(dashboard, /Pre-targeted BNL Source File/);
   assert.match(dashboard, /Possible duplicate \/ identity warning/);
-  assert.match(dashboard, /No BNL Source File match/);
+  assert.match(dashboard, /No active source file match/);
   assert.match(dashboard, /Review Recommendation/);
   assert.match(dashboard, /archiveDossierRecommendation/);
   assert.doesNotMatch(dashboard, /Attach to Existing Source File/);
@@ -2926,7 +2926,7 @@ test("recommendation inbox and source note UI are present and bounded", () => {
   assert.match(sourceFilePage, /Save Info/);
   assert.match(sourceFilePage, /Identity \/ Alias Review/);
   assert.match(sourceFilePage, /Aliases help BNL route future recommendations/);
-  assert.match(sourceFilePage, /Internal aliases are not public dossier text/);
+  assert.match(sourceFilePage, /Internal aliases are not\s+public dossier text/);
   assert.match(sourceFilePage, /Add Identity Link/);
   assert.match(dashboard, /Aliases: /);
   assert.match(dashboard, /Identity warnings/);
@@ -3324,8 +3324,9 @@ test("BNL Source Knowledge Bridge new-subject recommendations create Candidate I
   assert.equal(adminPayload.drafts.length, 0);
 
   const intakeProtectedPayload = await (await sourceFilesGet("?subject=Bridge%20Memory%20Subject")).json();
-  assert.equal(intakeProtectedPayload.found, false);
-  assert.match(intakeProtectedPayload.reason, /No BNL Source File match found/);
+  assert.equal(intakeProtectedPayload.found, true);
+  assert.equal(intakeProtectedPayload.sourceFile.workflowLane, "candidate_intake");
+  assert.equal(intakeProtectedPayload.sourceFile.sourceFileActive, false);
 
   const promoted = await (await authedPost({
     action: "promoteCandidateToSourceFile",
@@ -3546,7 +3547,9 @@ test("Candidate Intake promotion, archive/restore, and protected delete keep sou
   assert.equal(intake.candidate.status, "candidate_intake");
   assert.equal((await sourceFilesGet("?subject=Cleanup%20Intake%20Subject")).status, 200);
   const intakeRead = await (await sourceFilesGet("?subject=Cleanup%20Intake%20Subject")).json();
-  assert.equal(intakeRead.found, false);
+  assert.equal(intakeRead.found, true);
+  assert.equal(intakeRead.sourceFile.workflowLane, "candidate_intake");
+  assert.equal(intakeRead.sourceFile.sourceFileActive, false);
 
   const promoted = await (await authedPost({
     action: "promoteCandidateToSourceFile",
@@ -3683,14 +3686,16 @@ test("active Source File with an existing public dossier match reclassifies to E
   assert.equal(updateLaneCandidate.existingDossierMatch.name, "Mac Modem");
 
   const subjectRead = await (await sourceFilesGet(`?subject=${encodeURIComponent("Mac Modem")}`)).json();
-  assert.equal(subjectRead.found, false);
-  assert.match(subjectRead.reason, /No BNL Source File match found/);
+  assert.equal(subjectRead.found, true);
+  assert.equal(subjectRead.matchKind, "existing_dossier_update_name");
+  assert.equal(subjectRead.sourceFile.workflowLane, "existing_dossier_update");
+  assert.equal(subjectRead.sourceFile.sourceFileActive, false);
 
   const candidateRead = await (await sourceFilesGet(`?candidateId=${encodeURIComponent(created.candidate.id)}`)).json();
   assert.equal(candidateRead.found, true);
   assert.equal(candidateRead.sourceFile.workflowLane, "existing_dossier_update");
   assert.equal(candidateRead.sourceFile.sourceFileActive, false);
-  assert.match(candidateRead.sourceFile.laneDescription, /update\/enrichment material/i);
+  assert.match(candidateRead.sourceFile.laneDescription, /Existing Dossier Update \/ Enrichment material/);
   assert.equal(candidateRead.sourceFile.duplicateWarnings.existingDossierMatch.name, "Mac Modem");
 
   const publicReadModelPayload = await (await readModel.GET(

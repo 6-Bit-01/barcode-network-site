@@ -52,7 +52,15 @@ type MatchKind =
   | "name"
   | "compact_name"
   | "normalized_name"
-  | "confirmed_alias";
+  | "confirmed_alias"
+  | "candidate_intake_name"
+  | "candidate_intake_compact_name"
+  | "candidate_intake_normalized_name"
+  | "candidate_intake_confirmed_alias"
+  | "existing_dossier_update_name"
+  | "existing_dossier_update_compact_name"
+  | "existing_dossier_update_normalized_name"
+  | "existing_dossier_update_confirmed_alias";
 
 type PossibleMatchKind =
   | "same_name"
@@ -60,14 +68,25 @@ type PossibleMatchKind =
   | "unconfirmed_alias"
   | "partial_name";
 
+type WorkflowLane =
+  | "candidate_intake"
+  | "active_source_file"
+  | "existing_dossier_update";
+
 type QueryMode = "candidateId" | "subject" | "alias" | "normalizedName";
 
+type AliasMatchKind = Extract<MatchKind, `${string}alias`>;
+type DirectMatchKind = Exclude<MatchKind, AliasMatchKind>;
+
 type ResolvedMatch =
-  | { candidate: DossierCandidate; matchKind: Exclude<MatchKind, "confirmed_alias"> }
+  | {
+      candidate: DossierCandidate;
+      matchKind: DirectMatchKind;
+    }
   | {
       candidate: DossierCandidate;
       alias: DossierIdentityLink;
-      matchKind: "confirmed_alias";
+      matchKind: AliasMatchKind;
     };
 
 type SourceFileSummary = {
@@ -77,7 +96,7 @@ type SourceFileSummary = {
   normalizedName: string;
   candidateType: DossierCandidate["candidateType"];
   status: DossierCandidate["status"];
-  workflowLane: "active_source_file" | "existing_dossier_update";
+  workflowLane: WorkflowLane;
   sourceFileActive: boolean;
   laneDescription: string;
   tier: DossierCandidate["tier"];
@@ -159,7 +178,11 @@ type SourceFileSummary = {
     createdAt: string;
   } | null;
   ownerReview: {
-    status: "waiting" | "changes_requested" | "approved" | "not_in_owner_review";
+    status:
+      | "waiting"
+      | "changes_requested"
+      | "approved"
+      | "not_in_owner_review";
     draftId: string | null;
   };
   duplicateWarnings: {
@@ -186,7 +209,9 @@ function tokenMatches(providedToken: string): boolean {
   if (!expectedToken || !providedToken) return false;
   const expected = Buffer.from(expectedToken);
   const provided = Buffer.from(providedToken);
-  return expected.length === provided.length && timingSafeEqual(expected, provided);
+  return (
+    expected.length === provided.length && timingSafeEqual(expected, provided)
+  );
 }
 
 function cleanQueryValue(value: string | null): string {
@@ -199,7 +224,9 @@ function queryFrom(req: Request): { mode: QueryMode; value: string } | null {
   if (candidateId) return { mode: "candidateId", value: candidateId };
   const alias = cleanQueryValue(url.searchParams.get("alias"));
   if (alias) return { mode: "alias", value: alias };
-  const normalizedName = cleanQueryValue(url.searchParams.get("normalizedName"));
+  const normalizedName = cleanQueryValue(
+    url.searchParams.get("normalizedName"),
+  );
   if (normalizedName) return { mode: "normalizedName", value: normalizedName };
   const subject = cleanQueryValue(url.searchParams.get("subject"));
   if (subject) return { mode: "subject", value: subject };
@@ -208,6 +235,57 @@ function queryFrom(req: Request): { mode: QueryMode; value: string } | null {
 
 function isActiveCandidate(candidate: DossierCandidate): boolean {
   return isActiveSourceFileCandidate(candidate);
+}
+
+function isLookupCandidate(candidate: DossierCandidate): boolean {
+  return (
+    isActiveCandidate(candidate) ||
+    candidate.status === "candidate_intake" ||
+    candidate.status === "existing_dossier_update"
+  );
+}
+
+function workflowLaneFor(candidate: DossierCandidate): WorkflowLane {
+  if (candidate.status === "candidate_intake") return "candidate_intake";
+  if (candidate.status === "existing_dossier_update") {
+    return "existing_dossier_update";
+  }
+  return "active_source_file";
+}
+
+function laneDescriptionFor(candidate: DossierCandidate): string {
+  const lane = workflowLaneFor(candidate);
+  if (lane === "candidate_intake") {
+    return "Candidate Intake / newly discovered subject; not active case-file fact.";
+  }
+  if (lane === "existing_dossier_update") {
+    return "Existing Dossier Update / Enrichment material; not an active Source File and not public copy.";
+  }
+  return "Active BNL Source File / internal working case file.";
+}
+
+function matchKindForLane(
+  candidate: DossierCandidate,
+  baseKind: "name" | "compact_name" | "normalized_name" | "confirmed_alias",
+): MatchKind {
+  const lane = workflowLaneFor(candidate);
+  if (lane === "candidate_intake") {
+    if (baseKind === "name") return "candidate_intake_name";
+    if (baseKind === "compact_name") return "candidate_intake_compact_name";
+    if (baseKind === "normalized_name")
+      return "candidate_intake_normalized_name";
+    return "candidate_intake_confirmed_alias";
+  }
+  if (lane === "existing_dossier_update") {
+    if (baseKind === "name") return "existing_dossier_update_name";
+    if (baseKind === "compact_name")
+      return "existing_dossier_update_compact_name";
+    if (baseKind === "normalized_name") {
+      return "existing_dossier_update_normalized_name";
+    }
+    return "existing_dossier_update_confirmed_alias";
+  }
+  return baseKind;
 }
 
 function noteSummary(note: DossierSourceFileNote): string {
@@ -222,7 +300,8 @@ function hasPartialNameOverlap(query: string, name: string): boolean {
   const compactQuery = compactDossierSubjectName(query);
   const compactName = compactDossierSubjectName(name);
   if (!normalizedQuery || !normalizedName) return false;
-  if (normalizedQuery === normalizedName || compactQuery === compactName) return false;
+  if (normalizedQuery === normalizedName || compactQuery === compactName)
+    return false;
   if (normalizedQuery.length < 4 || normalizedName.length < 4) return false;
   return (
     normalizedQuery.includes(normalizedName) ||
@@ -237,11 +316,15 @@ function possibleMatchSummary(
   matchKind: PossibleMatchKind,
   alias?: DossierIdentityLink,
 ) {
+  const workflowLane = workflowLaneFor(candidate);
   return {
     candidateId: candidate.id,
     name: candidate.name,
     normalizedName: normalizeDossierSubjectName(candidate.name),
     status: candidate.status,
+    workflowLane,
+    sourceFileActive: workflowLane === "active_source_file",
+    laneDescription: laneDescriptionFor(candidate),
     candidateType: candidate.candidateType,
     source: candidate.source,
     confidence: candidate.confidence ?? null,
@@ -266,7 +349,10 @@ function possibleMatchSummary(
   };
 }
 
-function findActiveDraft(drafts: DossierDraft[], candidateId: string): DossierDraft | null {
+function findActiveDraft(
+  drafts: DossierDraft[],
+  candidateId: string,
+): DossierDraft | null {
   return (
     drafts.find(
       (draft) =>
@@ -278,13 +364,17 @@ function findActiveDraft(drafts: DossierDraft[], candidateId: string): DossierDr
   );
 }
 
-function ownerReviewStatus(draft: DossierDraft | null): SourceFileSummary["ownerReview"] {
+function ownerReviewStatus(
+  draft: DossierDraft | null,
+): SourceFileSummary["ownerReview"] {
   if (!draft) return { status: "not_in_owner_review", draftId: null };
-  if (draft.status === "ready_for_owner_review") return { status: "waiting", draftId: draft.id };
+  if (draft.status === "ready_for_owner_review")
+    return { status: "waiting", draftId: draft.id };
   if (draft.status === "owner_changes_requested") {
     return { status: "changes_requested", draftId: draft.id };
   }
-  if (draft.status === "owner_approved") return { status: "approved", draftId: draft.id };
+  if (draft.status === "owner_approved")
+    return { status: "approved", draftId: draft.id };
   return { status: "not_in_owner_review", draftId: draft.id };
 }
 
@@ -295,7 +385,10 @@ function sourceFileReadModel(input: {
 }): SourceFileSummary {
   const activeDraft = findActiveDraft(input.drafts, input.candidate.id);
   const attachedRecommendations = input.recommendations
-    .filter((recommendation) => recommendation.targetCandidateId === input.candidate.id)
+    .filter(
+      (recommendation) =>
+        recommendation.targetCandidateId === input.candidate.id,
+    )
     .slice(0, MAX_RECOMMENDATIONS)
     .map((recommendation) => ({
       id: recommendation.id,
@@ -320,15 +413,9 @@ function sourceFileReadModel(input: {
     normalizedName: normalizeDossierSubjectName(input.candidate.name),
     candidateType: input.candidate.candidateType,
     status: input.candidate.status,
-    workflowLane:
-      input.candidate.status === "existing_dossier_update"
-        ? "existing_dossier_update"
-        : "active_source_file",
-    sourceFileActive: input.candidate.status !== "existing_dossier_update",
-    laneDescription:
-      input.candidate.status === "existing_dossier_update"
-        ? "Update/enrichment material for an existing public dossier; not a new public dossier candidate."
-        : "Active BNL Source File / internal working case file.",
+    workflowLane: workflowLaneFor(input.candidate),
+    sourceFileActive: workflowLaneFor(input.candidate) === "active_source_file",
+    laneDescription: laneDescriptionFor(input.candidate),
     tier: input.candidate.tier,
     score: input.candidate.score,
     confidence: input.candidate.confidence ?? null,
@@ -336,7 +423,8 @@ function sourceFileReadModel(input: {
     sourceLanes: input.candidate.sourceLanes ?? [],
     ingestSource: input.candidate.ingestSource ?? null,
     ingestKey: input.candidate.ingestKey ?? null,
-    createdFromRecommendationId: input.candidate.createdFromRecommendationId ?? null,
+    createdFromRecommendationId:
+      input.candidate.createdFromRecommendationId ?? null,
     reason: input.candidate.reason,
     whyNow: input.candidate.whyNow,
     evidenceSummary: input.candidate.evidenceSummary,
@@ -369,24 +457,27 @@ function sourceFileReadModel(input: {
       createdAt: note.createdAt,
       updatedAt: note.updatedAt,
     })),
-    identityLinks: (input.candidate.identityLinks ?? []).map((identityLink) => ({
-      id: identityLink.id,
-      label: identityLink.label,
-      normalizedLabel: identityLink.normalizedLabel,
-      type: identityLink.type,
-      visibility: identityLink.visibility,
-      status: identityLink.status,
-      source: identityLink.source,
-      confidence: identityLink.confidence ?? null,
-      useForMatching: identityLink.useForMatching,
-      useInPublicDossier: identityLink.useInPublicDossier,
-      note: identityLink.note ?? null,
-      createdFromRecommendationId: identityLink.createdFromRecommendationId ?? null,
-      createdFromRecommendationSubject:
-        identityLink.createdFromRecommendationSubject ?? null,
-      createdAt: identityLink.createdAt,
-      updatedAt: identityLink.updatedAt,
-    })),
+    identityLinks: (input.candidate.identityLinks ?? []).map(
+      (identityLink) => ({
+        id: identityLink.id,
+        label: identityLink.label,
+        normalizedLabel: identityLink.normalizedLabel,
+        type: identityLink.type,
+        visibility: identityLink.visibility,
+        status: identityLink.status,
+        source: identityLink.source,
+        confidence: identityLink.confidence ?? null,
+        useForMatching: identityLink.useForMatching,
+        useInPublicDossier: identityLink.useInPublicDossier,
+        note: identityLink.note ?? null,
+        createdFromRecommendationId:
+          identityLink.createdFromRecommendationId ?? null,
+        createdFromRecommendationSubject:
+          identityLink.createdFromRecommendationSubject ?? null,
+        createdAt: identityLink.createdAt,
+        updatedAt: identityLink.updatedAt,
+      }),
+    ),
     attachedRecommendations,
     activeDraft: activeDraft
       ? {
@@ -414,13 +505,15 @@ function resolveSourceFile(input: {
   value: string;
   candidates: DossierCandidate[];
 }) {
-  const activeCandidates = input.candidates.filter(isActiveCandidate);
+  const lookupCandidates = input.candidates.filter(isLookupCandidate);
   const normalizedValue = normalizeDossierSubjectName(input.value);
   const compactValue = compactDossierSubjectName(input.value);
 
   if (input.mode === "candidateId") {
-    const exact = input.candidates.find((candidate) => candidate.id === input.value);
-    if (exact && (isActiveCandidate(exact) || exact.status === "existing_dossier_update")) {
+    const exact = input.candidates.find(
+      (candidate) => candidate.id === input.value,
+    );
+    if (exact && isLookupCandidate(exact)) {
       return {
         matches: [{ candidate: exact, matchKind: "candidate_id" as const }],
         possibleMatches: [],
@@ -429,24 +522,42 @@ function resolveSourceFile(input: {
     return { matches: [], possibleMatches: [] };
   }
 
-  const directMatches: ResolvedMatch[] = activeCandidates
+  const directMatches: ResolvedMatch[] = lookupCandidates
     .map((candidate): ResolvedMatch | null => {
       const normalizedName = normalizeDossierSubjectName(candidate.name);
       const compactName = compactDossierSubjectName(candidate.name);
-      if (input.mode === "normalizedName" && normalizedValue === normalizedName) {
-        return { candidate, matchKind: "normalized_name" as const };
+      if (
+        input.mode === "normalizedName" &&
+        normalizedValue === normalizedName
+      ) {
+        return {
+          candidate,
+          matchKind: matchKindForLane(
+            candidate,
+            "normalized_name",
+          ) as DirectMatchKind,
+        };
       }
       if (input.mode === "subject" && normalizedValue === normalizedName) {
-        return { candidate, matchKind: "name" as const };
+        return {
+          candidate,
+          matchKind: matchKindForLane(candidate, "name") as DirectMatchKind,
+        };
       }
       if (input.mode === "subject" && compactValue === compactName) {
-        return { candidate, matchKind: "compact_name" as const };
+        return {
+          candidate,
+          matchKind: matchKindForLane(
+            candidate,
+            "compact_name",
+          ) as DirectMatchKind,
+        };
       }
       return null;
     })
     .filter((match): match is ResolvedMatch => Boolean(match));
 
-  const confirmedAliasMatches: ResolvedMatch[] = activeCandidates
+  const confirmedAliasMatches: ResolvedMatch[] = lookupCandidates
     .map((candidate): ResolvedMatch | null => {
       const alias = (candidate.identityLinks ?? []).find(
         (identityLink) =>
@@ -454,22 +565,39 @@ function resolveSourceFile(input: {
           identityLink.useForMatching === true &&
           identityLink.normalizedLabel === normalizedValue,
       );
-      return alias ? { candidate, alias, matchKind: "confirmed_alias" as const } : null;
+      return alias
+        ? {
+            candidate,
+            alias,
+            matchKind: matchKindForLane(
+              candidate,
+              "confirmed_alias",
+            ) as AliasMatchKind,
+          }
+        : null;
     })
     .filter((match): match is ResolvedMatch => Boolean(match));
 
-  const matches = input.mode === "alias" ? confirmedAliasMatches : directMatches;
+  const allMatches =
+    input.mode === "alias" ? confirmedAliasMatches : directMatches;
+  const activeMatches = allMatches.filter((match) =>
+    isActiveCandidate(match.candidate),
+  );
+  const matches = activeMatches.length > 0 ? activeMatches : allMatches;
   const matchedIds = new Set(matches.map((match) => match.candidate.id));
 
-  const possibleMatches = activeCandidates
+  const possibleMatches = lookupCandidates
     .filter((candidate) => !matchedIds.has(candidate.id))
     .flatMap((candidate) => {
       const alias = (candidate.identityLinks ?? []).find(
         (identityLink) =>
           identityLink.normalizedLabel === normalizedValue &&
-          (identityLink.status !== "confirmed" || identityLink.useForMatching !== true),
+          (identityLink.status !== "confirmed" ||
+            identityLink.useForMatching !== true),
       );
-      if (alias) return [possibleMatchSummary(candidate, "unconfirmed_alias", alias)];
+      if (alias) {
+        return [possibleMatchSummary(candidate, "unconfirmed_alias", alias)];
+      }
       const normalizedName = normalizeDossierSubjectName(candidate.name);
       const compactName = compactDossierSubjectName(candidate.name);
       if (normalizedValue === normalizedName) {
@@ -478,7 +606,10 @@ function resolveSourceFile(input: {
       if (compactValue === compactName) {
         return [possibleMatchSummary(candidate, "compact_name")];
       }
-      if (input.mode !== "alias" && hasPartialNameOverlap(input.value, candidate.name)) {
+      if (
+        input.mode !== "alias" &&
+        hasPartialNameOverlap(input.value, candidate.name)
+      ) {
         return [possibleMatchSummary(candidate, "partial_name")];
       }
       return [];
@@ -514,6 +645,11 @@ export async function GET(req: Request) {
 
   if (matches.length === 1) {
     const match = matches[0];
+    const sourceRecord = sourceFileReadModel({
+      candidate: match.candidate,
+      drafts: state.drafts,
+      recommendations: state.recommendations,
+    });
     return NextResponse.json(
       {
         ok: true,
@@ -536,11 +672,12 @@ export async function GET(req: Request) {
                 useInPublicDossier: match.alias.useInPublicDossier,
               }
             : null,
-        sourceFile: sourceFileReadModel({
-          candidate: match.candidate,
-          drafts: state.drafts,
-          recommendations: state.recommendations,
-        }),
+        workflowLane: workflowLaneFor(match.candidate),
+        sourceFileActive:
+          workflowLaneFor(match.candidate) === "active_source_file",
+        laneDescription: laneDescriptionFor(match.candidate),
+        sourceFile: sourceRecord,
+        sourceRecord,
         possibleMatches,
         readModelBoundary: VISIBILITY_BOUNDARY,
         generatedAt: new Date().toISOString(),
@@ -552,7 +689,7 @@ export async function GET(req: Request) {
   const multipleMatches = matches.map((match) =>
     possibleMatchSummary(
       match.candidate,
-      match.matchKind === "confirmed_alias" ? "unconfirmed_alias" : "same_name",
+      match.matchKind.includes("alias") ? "unconfirmed_alias" : "same_name",
       "alias" in match ? match.alias : undefined,
     ),
   );

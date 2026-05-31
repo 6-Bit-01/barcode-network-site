@@ -808,7 +808,7 @@ test("BNL source file read model requires the private read token", async () => {
   assert.equal((await sourceFilesGet("?subject=Signal%20Witch", "wrong-token")).status, 401);
 });
 
-test("BNL source file read model resolves subject and returns bounded provenance and safety metadata", async () => {
+test("BNL source file read model resolves active Source Files by subject and returns bounded provenance and safety metadata", async () => {
   await resetDossierWorkflowStore();
   process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
   const candidate = await seedSourceFileReadModelState();
@@ -822,6 +822,11 @@ test("BNL source file read model resolves subject and returns bounded provenance
   assert.equal(payload.found, true);
   assert.equal(payload.mutation, false);
   assert.equal(payload.matchKind, "name");
+  assert.equal(payload.workflowLane, "active_source_file");
+  assert.equal(payload.sourceFileActive, true);
+  assert.equal(payload.sourceFile.workflowLane, "active_source_file");
+  assert.equal(payload.sourceFile.sourceFileActive, true);
+  assert.equal(payload.sourceRecord.candidateId, candidate.id);
   assert.equal(payload.sourceFile.candidateId, candidate.id);
   assert.equal(payload.sourceFile.name, "Signal Witch");
   assert.equal(payload.sourceFile.normalizedName, "signal witch");
@@ -938,6 +943,138 @@ test("BNL source file read model resolves candidateId and normalizedName lookups
   assert.equal(byNormalizedName.matchKind, "normalized_name");
 });
 
+test("BNL source file read model resolves Existing Dossier Updates by exact subject when no active Source File exists", async () => {
+  await resetDossierWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  const candidate = await seedSourceFileReadModelState({
+    candidate: {
+      id: "candidate_hellcatnz_update",
+      name: "HellcatNZ",
+      status: "existing_dossier_update",
+      existingDossierMatch: { id: "hellcatnz", name: "HellcatNZ", confidence: "high" },
+    },
+    drafts: [],
+  });
+
+  const payload = await (await sourceFilesGet("?subject=HellcatNZ")).json();
+  assert.equal(payload.ok, true);
+  assert.equal(payload.found, true);
+  assert.equal(payload.matchKind, "existing_dossier_update_name");
+  assert.equal(payload.workflowLane, "existing_dossier_update");
+  assert.equal(payload.sourceFileActive, false);
+  assert.equal(payload.laneDescription, "Existing Dossier Update / Enrichment material; not an active Source File and not public copy.");
+  assert.equal(payload.sourceFile.candidateId, candidate.id);
+  assert.equal(payload.sourceFile.workflowLane, "existing_dossier_update");
+  assert.equal(payload.sourceFile.sourceFileActive, false);
+  assert.equal(payload.sourceRecord.workflowLane, "existing_dossier_update");
+  assert.match(payload.readModelBoundary.boundaryLabel, /internal working case file; not a public dossier/);
+});
+
+test("BNL source file read model resolves Existing Dossier Updates by candidateId, alias, and normalizedName with lane labels", async () => {
+  await resetDossierWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  const candidate = await seedSourceFileReadModelState({
+    candidate: {
+      id: "candidate_update_alias_lookup",
+      name: "Existing Update Target",
+      status: "existing_dossier_update",
+      identityLinks: [
+        {
+          id: "alias_update_lookup",
+          candidateId: "candidate_update_alias_lookup",
+          label: "Update Alias",
+          normalizedLabel: workflow.normalizeDossierSubjectName("Update Alias"),
+          type: "alias",
+          visibility: "internal_only",
+          status: "confirmed",
+          source: "owner_confirmed",
+          confidence: "confirmed",
+          useForMatching: true,
+          useInPublicDossier: false,
+          createdAt: "2026-05-30T00:00:00.000Z",
+          updatedAt: "2026-05-30T00:00:00.000Z",
+        },
+      ],
+    },
+    drafts: [],
+  });
+
+  const byId = await (await sourceFilesGet(`?candidateId=${candidate.id}`)).json();
+  assert.equal(byId.found, true);
+  assert.equal(byId.matchKind, "candidate_id");
+  assert.equal(byId.sourceFile.workflowLane, "existing_dossier_update");
+  assert.equal(byId.sourceFile.sourceFileActive, false);
+
+  const byNormalized = await (await sourceFilesGet("?normalizedName=existing%20update%20target")).json();
+  assert.equal(byNormalized.found, true);
+  assert.equal(byNormalized.matchKind, "existing_dossier_update_normalized_name");
+  assert.equal(byNormalized.sourceFile.workflowLane, "existing_dossier_update");
+
+  const byAlias = await (await sourceFilesGet("?alias=Update%20Alias")).json();
+  assert.equal(byAlias.found, true);
+  assert.equal(byAlias.matchKind, "existing_dossier_update_confirmed_alias");
+  assert.equal(byAlias.matchedAlias.label, "Update Alias");
+  assert.equal(byAlias.sourceFile.workflowLane, "existing_dossier_update");
+});
+
+test("BNL source file read model resolves Candidate Intake exact lookup with intake lane labels", async () => {
+  await resetDossierWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  await seedSourceFileReadModelState({
+    candidate: {
+      id: "candidate_intake_lookup",
+      name: "Fresh Intake Target",
+      status: "candidate_intake",
+    },
+    drafts: [],
+  });
+
+  const payload = await (await sourceFilesGet("?subject=Fresh%20Intake%20Target")).json();
+  assert.equal(payload.found, true);
+  assert.equal(payload.matchKind, "candidate_intake_name");
+  assert.equal(payload.workflowLane, "candidate_intake");
+  assert.equal(payload.sourceFile.workflowLane, "candidate_intake");
+  assert.equal(payload.sourceFile.sourceFileActive, false);
+  assert.equal(payload.sourceFile.laneDescription, "Candidate Intake / newly discovered subject; not active case-file fact.");
+});
+
+test("BNL source file read model keeps active Source File priority over same-name update records", async () => {
+  await resetDossierWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  const active = sourceFileCandidate({
+    id: "candidate_shared_active",
+    name: "Shared Signal",
+    status: "active_source_file",
+  });
+  const update = sourceFileCandidate({
+    id: "candidate_shared_update",
+    name: "Shared Signal",
+    status: "existing_dossier_update",
+    sourceFileNotes: [],
+    identityLinks: [],
+  });
+  await workflowStore.saveDossierWorkflowState({
+    version: 1,
+    revision: 0,
+    candidates: [update, active],
+    drafts: [],
+    recommendations: [],
+    updatedAt: "2026-05-30T00:00:00.000Z",
+  });
+
+  const payload = await (await sourceFilesGet("?subject=Shared%20Signal")).json();
+  assert.equal(payload.found, true);
+  assert.equal(payload.sourceFile.candidateId, active.id);
+  assert.equal(payload.matchKind, "name");
+  assert.equal(payload.sourceFile.workflowLane, "active_source_file");
+  assert.equal(payload.possibleMatches.some((match) => match.candidateId === update.id && match.workflowLane === "existing_dossier_update"), true);
+
+  const byUpdateId = await (await sourceFilesGet(`?candidateId=${update.id}`)).json();
+  assert.equal(byUpdateId.found, true);
+  assert.equal(byUpdateId.sourceFile.candidateId, update.id);
+  assert.equal(byUpdateId.sourceFile.workflowLane, "existing_dossier_update");
+});
+
 test("BNL source file read model resolves confirmed aliases only", async () => {
   await resetDossierWorkflowStore();
   process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
@@ -1013,7 +1150,7 @@ test("BNL source file read model does not return archived or denied workflow rec
   assert.equal(deniedPayload.found, false);
 });
 
-test("BNL source file read model labels Existing Dossier Updates only on explicit candidateId lookup", async () => {
+test("BNL source file read model labels Existing Dossier Updates without making them active Source Files", async () => {
   await resetDossierWorkflowStore();
   process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
   const candidate = await seedSourceFileReadModelState({
@@ -1025,14 +1162,16 @@ test("BNL source file read model labels Existing Dossier Updates only on explici
   });
 
   const subjectPayload = await (await sourceFilesGet("?subject=Signal%20Witch")).json();
-  assert.equal(subjectPayload.found, false);
-  assert.match(subjectPayload.reason, /No BNL Source File match found/);
+  assert.equal(subjectPayload.found, true);
+  assert.equal(subjectPayload.matchKind, "existing_dossier_update_name");
+  assert.equal(subjectPayload.sourceFile.workflowLane, "existing_dossier_update");
+  assert.equal(subjectPayload.sourceFile.sourceFileActive, false);
 
   const candidatePayload = await (await sourceFilesGet(`?candidateId=${candidate.id}`)).json();
   assert.equal(candidatePayload.found, true);
   assert.equal(candidatePayload.sourceFile.workflowLane, "existing_dossier_update");
   assert.equal(candidatePayload.sourceFile.sourceFileActive, false);
-  assert.match(candidatePayload.sourceFile.laneDescription, /update\/enrichment material/i);
+  assert.match(candidatePayload.sourceFile.laneDescription, /Existing Dossier Update \/ Enrichment material/);
   assert.equal(candidatePayload.sourceFile.duplicateWarnings.existingDossierMatch.name, "Mac Modem");
 });
 
@@ -1066,7 +1205,7 @@ test("BNL source file read model keeps public endpoint separate and does not exp
   const publicPayload = await modelJson();
   assert.doesNotMatch(
     JSON.stringify(publicPayload),
-    /Signal Witch|sourceFileNotes|identityLinks|bnl:signal-witch:read-model-test/,
+    /Signal Witch|sourceFileNotes|identityLinks|bnl:signal-witch:read-model-test|candidate_intake|existing_dossier_update/,
   );
 
   const internalPayload = await (await sourceFilesGet("?subject=Signal%20Witch")).json();

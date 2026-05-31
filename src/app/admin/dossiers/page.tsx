@@ -428,7 +428,7 @@ export default function DossierControlCenterPage() {
         state: target?.status === "active_source_file"
           ? "BNL Source File Enrichment / Active Source File"
           : target?.status === "candidate_intake"
-            ? "BNL Source File Enrichment / Candidate Intake"
+            ? "BNL Source File Enrichment / Intake Item"
             : target?.status === "existing_dossier_update"
               ? "BNL Source File Enrichment / Existing Dossier Update"
               : "BNL Source File Enrichment / Recommendation Inbox",
@@ -465,7 +465,7 @@ export default function DossierControlCenterPage() {
     }
     return {
       match,
-      state: "No BNL Source File match / Candidate Intake / Newly Discovered",
+      state: "No active source file match / Intake Item / Newly Discovered",
       nextAction: "Stage for intake, then promote if accepted",
     };
   }
@@ -508,11 +508,11 @@ export default function DossierControlCenterPage() {
     try {
       const data = await postWorkflow({ action, candidateId });
       setNotice(
-        `${data.candidate?.name ?? "Candidate"} updated. Workflow records remain internal only.`,
+        `${data.candidate?.name ?? "Workflow record"} updated. Workflow records remain internal only.`,
       );
     } catch (err) {
       setNotice(
-        err instanceof Error ? err.message : "Failed to update candidate.",
+        err instanceof Error ? err.message : "Failed to update workflow record.",
       );
     }
   }
@@ -581,7 +581,7 @@ export default function DossierControlCenterPage() {
         action === "archiveCandidate"
           ? `${candidate.name} archived. It moved out of active dashboard lanes and public dossiers were not changed.`
           : action === "restoreCandidate"
-            ? `${candidate.name} restored to Candidate Intake. Public dossiers were not changed.`
+            ? `${candidate.name} restored to intake review. Public dossiers were not changed.`
             : action === "permanentlyDeleteCandidate"
               ? `${candidate.name} permanently deleted from unpublished workflow records. Public dossiers were not changed.`
               : action === "attachCandidateToExistingDossier"
@@ -912,7 +912,7 @@ export default function DossierControlCenterPage() {
 
         <DashboardCard
           eyebrow="Candidate Intake"
-          title="Candidate Intake / Newly Discovered"
+          title="Intake Items / Newly Discovered"
           aside={<StatusPill>{candidateIntakeItems.length} staged items</StatusPill>}
         >
           <p className="text-sm text-muted mb-4">
@@ -923,7 +923,7 @@ export default function DossierControlCenterPage() {
           </p>
           {candidateIntakeItems.length === 0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
-              No newly discovered Candidate Intake items are waiting.
+              No newly discovered intake items are waiting.
             </p>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -933,7 +933,7 @@ export default function DossierControlCenterPage() {
                     <div>
                       <p className="font-bold text-foreground">{candidate.name}</p>
                       <p>Source: {candidateProvenance(candidate)}</p>
-                      <p>Status/stage: Candidate Intake / {candidate.status}</p>
+                      <p>Status/stage: Intake item / {candidate.status}</p>
                       {(candidate.publicSafetyNotes ?? []).length > 0 && (
                         <p className="text-accent">Warning badges: source warnings present</p>
                       )}
@@ -962,8 +962,8 @@ export default function DossierControlCenterPage() {
 
         <DashboardCard
           eyebrow="Existing dossier updates"
-          title="Existing Dossier Updates / Enrichment Candidates"
-          aside={<StatusPill>{existingDossierUpdates.length} update candidates</StatusPill>}
+          title="Existing Dossier Updates / Enrichment Targets"
+          aside={<StatusPill>{existingDossierUpdates.length} update records</StatusPill>}
         >
           <p className="text-sm text-muted mb-4">
             Exact public dossier matches are staged as proposed updates/enrichment
@@ -972,7 +972,7 @@ export default function DossierControlCenterPage() {
           </p>
           {existingDossierUpdates.length === 0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
-              No existing public dossier update candidates are waiting.
+              No existing public dossier update records are waiting.
             </p>
           ) : (
             <div className="space-y-3">
@@ -1357,7 +1357,7 @@ export default function DossierControlCenterPage() {
           </p>
           {archivedCandidates.length === 0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
-              No archived Candidate Intake or Source File items.
+              No archived workflow records.
             </p>
           ) : (
             <div className="space-y-2 text-sm text-muted">
@@ -1444,7 +1444,7 @@ export default function DossierControlCenterPage() {
             </li>
           </ul>
           <p className="text-xs text-muted">
-            Dedicated pages keep operators in one lane: candidate review,
+            Dedicated pages keep operators in one lane: workflow record review,
             focused draft editor, owner review, or merge review. Dashboard
             buttons navigate; there is no hidden editor below unrelated sections
             and no dashboard auto-scroll workflow.

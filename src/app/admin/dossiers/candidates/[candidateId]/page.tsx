@@ -416,7 +416,7 @@ export default function CandidateReviewPage() {
       void loadWorkflow()
         .catch((err) =>
           setError(
-            err instanceof Error ? err.message : "Failed to load candidate.",
+            err instanceof Error ? err.message : "Failed to load workflow record.",
           ),
         )
         .finally(() => setLoading(false));
@@ -559,11 +559,11 @@ export default function CandidateReviewPage() {
     try {
       const data = await postWorkflow({ action, candidateId });
       setNotice(
-        `${data.candidate?.name ?? "Candidate"} updated. Workflow records remain internal only.`,
+        `${data.candidate?.name ?? "Workflow record"} updated. Workflow records remain internal only.`,
       );
     } catch (err) {
       setNotice(
-        err instanceof Error ? err.message : "Failed to update candidate.",
+        err instanceof Error ? err.message : "Failed to update workflow record.",
       );
     }
   }
@@ -605,14 +605,14 @@ export default function CandidateReviewPage() {
         action === "archiveCandidate"
           ? "Source file archived. It is removed from active dashboard lanes without deleting public dossiers or published data."
           : action === "restoreCandidate"
-            ? "Source file restored to Candidate Intake so it can be reviewed and promoted again if needed."
+            ? "Workflow record restored to intake review so it can be reviewed and promoted again if needed."
             : action === "permanentlyDeleteCandidate"
               ? "Source file permanently deleted from unpublished workflow records. Public dossiers were not changed."
               : action === "attachCandidateToExistingDossier"
                 ? "Existing public dossier target attached. Public dossier content was not changed."
                 : action === "markCandidateAsExistingDossierUpdate"
-                  ? "Source file moved to Existing Dossier Updates / Enrichment. Public dossier content was not changed."
-                  : "Candidate promoted to an Active BNL Source File. Public dossiers were not changed.",
+                  ? "Workflow record moved to Existing Dossier Updates / Enrichment. Public dossier content was not changed."
+                  : "Intake item promoted to an active BNL Source File. Public dossiers were not changed.",
       );
     } catch (err) {
       setNotice(
@@ -744,7 +744,7 @@ export default function CandidateReviewPage() {
           </p>
           {isExistingDossierUpdate && (
             <p className="mt-4 border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
-              This is not a new dossier candidate. This is review material for an existing public dossier.
+              This workflow record is an existing dossier update / enrichment target, not a new dossier proposal.
             </p>
           )}
           <div className="mt-4">

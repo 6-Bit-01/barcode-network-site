@@ -167,7 +167,7 @@ function terminalRecommendationMessage(recommendation: DossierRecommendation) {
     return "Attached to matched BNL Source File.";
   }
   if (recommendation.status === "attached_to_candidate_intake") {
-    return "Attached to Candidate Intake as review-only enrichment.";
+    return "Attached to intake item as review-only enrichment.";
   }
   if (recommendation.status === "attached_to_existing_dossier_update") {
     return "Attached to Existing Dossier Update as review-only enrichment.";
@@ -302,7 +302,7 @@ export default function DossierRecommendationPage() {
       ? targetCandidate?.status === "active_source_file"
         ? "Active Source File"
         : targetCandidate?.status === "candidate_intake"
-          ? "Candidate Intake"
+          ? "Intake Item"
           : targetCandidate?.status === "existing_dossier_update"
             ? "Existing Dossier Update"
             : "Recommendation Inbox"
@@ -476,14 +476,14 @@ export default function DossierRecommendationPage() {
                   href={`/admin/dossiers/candidates/${targetCandidate.id}`}
                   className="mt-2 inline-flex text-accent hover:underline"
                 >
-                  Open target BNL Source File: {targetCandidate.name}
+                  Open target workflow record: {targetCandidate.name}
                 </Link>
               ) : recommendation.targetCandidateId ? (
                 <Link
                   href={`/admin/dossiers/candidates/${recommendation.targetCandidateId}`}
                   className="mt-2 inline-flex text-accent hover:underline"
                 >
-                  Open target BNL Source File
+                  Open target workflow record
                 </Link>
               ) : null}
               <p className="mt-2 text-xs uppercase tracking-widest text-muted">
@@ -665,13 +665,13 @@ export default function DossierRecommendationPage() {
               </h2>
               <p className="text-sm text-muted mt-2">
                 Recommendation subject: {recommendation.subjectName}. This creates
-                a proposed alias on the selected BNL Source File only. It does not
+                a proposed alias on the selected workflow record only. It does not
                 confirm the alias, publish, merge source files, create a draft, or
                 create tags.
               </p>
               {preselectedCandidateId && (
                 <p className="mt-2 text-sm text-accent">
-                  Matched/pre-targeted BNL Source File: {targetCandidate?.name ?? exactCandidate?.name ?? possibleCandidates[0]?.name}
+                  Matched/pre-targeted enrichment target: {targetCandidate?.name ?? exactCandidate?.name ?? possibleCandidates[0]?.name}
                 </p>
               )}
             </div>

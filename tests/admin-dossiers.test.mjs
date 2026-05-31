@@ -4329,6 +4329,42 @@ test("source file summary suppresses fake patterns, shows thin warning, and pref
     "Operator says Melanie Heart has repeat community context to review.",
   );
   assert.deepEqual(operator.knownContext, ["Appears across repeated community review notes."]);
+
+  const shortOperator = sourceFileSummary.createDossierSourceFileSummary({
+    candidate: {
+      ...baseCandidate,
+      sourceFileSummary: {
+        summaryText: "Archive",
+        knownContext: ["Ask owner", "Ask owner"],
+        openQuestions: ["Needs review"],
+        nextAction: "Enrich",
+        updatedAt: "2026-05-31T01:00:00.000Z",
+        updatedBy: "admin",
+      },
+    },
+  });
+  assert.equal(shortOperator.summarySource, "operator");
+  assert.equal(shortOperator.currentRead, "Archive");
+  assert.deepEqual(shortOperator.knownContext, ["Ask owner"]);
+  assert.deepEqual(shortOperator.missingInfo, ["Needs review"]);
+  assert.equal(shortOperator.recommendedNextAction, "Enrich");
+
+  const junkOperator = sourceFileSummary.createDossierSourceFileSummary({
+    candidate: {
+      ...baseCandidate,
+      sourceFileSummary: {
+        summaryText: "local_profile_observed",
+        knownContext: ["relationship_journal -> unknown"],
+        openQuestions: ["metadata"],
+        nextAction: "ingestKey",
+        updatedAt: "2026-05-31T01:00:00.000Z",
+        updatedBy: "admin",
+      },
+    },
+  });
+  const junkText = JSON.stringify(junkOperator);
+  assert.equal(junkOperator.summarySource, "thin");
+  assert.doesNotMatch(junkText, /local_profile_observed|relationship_journal|metadata|ingestKey/);
 });
 
 test("recommendation detail case-file view uses the same sanitizer", () => {

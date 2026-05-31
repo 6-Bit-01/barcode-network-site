@@ -61,6 +61,31 @@ function unique(items: Array<string | undefined | null>, limit = 4): string[] {
   return sanitizeDossierMeaningItems(items, limit);
 }
 
+function cleanOperatorSummaryValue(value?: string | null): string | undefined {
+  const clean = value?.replace(/\s+/g, " ").trim();
+  if (!clean) return undefined;
+  if (containsDossierBackendJunk(clean)) return undefined;
+  return clean;
+}
+
+function trustedOperatorSummaryItems(
+  items: Array<string | undefined | null>,
+  limit = 4,
+): string[] {
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const item of items) {
+    const clean = cleanOperatorSummaryValue(item);
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(clean);
+    if (output.length >= limit) break;
+  }
+  return output;
+}
+
 export const DOSSIER_THIN_FILE_WARNING =
   "This file is still thin. It confirms that BNL has some internal references to this subject, but it does not yet contain enough history, repeated patterns, public-safe facts, or specific context to draft from.";
 
@@ -184,13 +209,19 @@ export function createDossierSourceFileSummary(
     activeDraftStatuses.has(draft.status),
   );
   const operatorSummary = candidate.sourceFileSummary;
-  const operatorKnownContext = unique(operatorSummary?.knownContext ?? [], 4);
-  const operatorOpenQuestions = unique(operatorSummary?.openQuestions ?? [], 4);
-  const operatorNextAction = sanitizeDossierMeaningItems(
+  const operatorKnownContext = trustedOperatorSummaryItems(
+    operatorSummary?.knownContext ?? [],
+    4,
+  );
+  const operatorOpenQuestions = trustedOperatorSummaryItems(
+    operatorSummary?.openQuestions ?? [],
+    4,
+  );
+  const operatorNextAction = trustedOperatorSummaryItems(
     [operatorSummary?.nextAction],
     1,
   )[0];
-  const operatorSummaryText = sanitizeDossierMeaningItems(
+  const operatorSummaryText = trustedOperatorSummaryItems(
     [operatorSummary?.summaryText],
     1,
   )[0];

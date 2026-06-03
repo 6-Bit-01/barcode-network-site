@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { DossierPageView } from "@/components/DossierPageView";
+import { DossierSourceFileSummaryPanel } from "@/components/DossierSourceFileSummaryPanel";
 import { useParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -14,6 +16,11 @@ import {
   validateDossierPublicDraftFields,
   type DossierDraftFieldWarning,
 } from "@/lib/dossier-public-copy-guard";
+import {
+  buildDossierTerminalLead,
+  type DossierPageViewModel,
+} from "@/lib/dossier-page-view-model";
+import { createDossierSourceFileSummary } from "@/lib/dossier-source-file-summary";
 import {
   DOSSIER_ECOSYSTEM_LANE_OPTIONS,
   DOSSIER_IDENTITY_AUTHORITY_OPTIONS,
@@ -109,18 +116,6 @@ function lines(value: string) {
     .split("\n")
     .map((item) => item.trim())
     .filter(Boolean);
-}
-
-function list(items: string[] | undefined, empty = "—") {
-  return items?.length ? (
-    <ul className="list-disc pl-5 space-y-1">
-      {items.map((item) => (
-        <li key={item}>{item}</li>
-      ))}
-    </ul>
-  ) : (
-    <p className="text-muted">{empty}</p>
-  );
 }
 
 function PhaseRail({ currentPhase }: { currentPhase: 2 | 3 | 4 | 5 }) {
@@ -224,7 +219,6 @@ function PublicCopyGuardWarning({
 
 function ProposedDossierPreview({
   form,
-  candidate,
 }: {
   form: DraftForm;
   candidate?: DossierCandidate;
@@ -234,88 +228,54 @@ function ProposedDossierPreview({
   const notes = sanitizeDossierPublicCopy(form.notes);
   const primaryLinkLabel = sanitizeDossierPublicCopy(form.primaryLinkLabel);
   const tags = lines(form.tags).map(sanitizeDossierPublicCopy).filter(Boolean);
-  const proposedTags = lines(form.proposedTags)
-    .map(sanitizeDossierPublicCopy)
-    .filter(Boolean);
+  const entry: DossierPageViewModel = {
+    id: "DRAFT-PREVIEW",
+    name: sanitizeDossierPublicCopy(form.name) || "Proposed dossier",
+    category: form.category || "Entity",
+    status: form.status || "PENDING",
+    clearance: form.clearance || "PUBLIC",
+    origin: form.origin || "UNVERIFIED",
+    role: role || "Clean role needed before owner review.",
+    summary: summary || "Clean summary needed before owner review.",
+    notes,
+    tags,
+    files: [],
+    image: "/placeholder-unknown.png",
+    primaryLink: form.primaryLinkUrl
+      ? {
+          label: primaryLinkLabel || "Featured link",
+          url: form.primaryLinkUrl,
+          type: form.primaryLinkType || "website",
+          selectedBy: form.selectedBy,
+          publicSafe: true,
+        }
+      : undefined,
+    terminalLead: buildDossierTerminalLead({
+      id: "DRAFT-PREVIEW",
+      category: form.category || "Entity",
+    }),
+  } as DossierPageViewModel;
   return (
     <section className="border border-border bg-surface p-5 space-y-4">
       <div>
         <p className="text-xs uppercase tracking-[0.4em] text-muted mb-2">
-          Phase 2
+          Public Dossier Preview
         </p>
         <h2 className="text-2xl font-bold text-foreground">
-          Proposed Dossier Preview
+          Proposed Dossier Preview / Shared public-style preview
         </h2>
         <p className="text-sm text-muted">
-          This is the curated public-facing draft. It should be
-          generated/written from reviewed Source File material, not copied
-          wholesale from the case file. It is not public and does not publish.
+          This uses the shared DossierPageView surface so admins review the same
+          shape a public dossier uses later. Dirty backend/source text is
+          stripped for preview safety and remains blocked before owner review.
         </p>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-muted">
-        <p>
-          <span className="text-foreground">Name:</span> {form.name || "—"}
-        </p>
-        <p>
-          <span className="text-foreground">Category:</span>{" "}
-          {form.category || "—"}
-        </p>
-        <p>
-          <span className="text-foreground">Kind:</span> {form.kind || "—"}
-        </p>
-        <p>
-          <span className="text-foreground">Ecosystem lane:</span>{" "}
-          {form.ecosystemLane || "—"}
-        </p>
-        <p>
-          <span className="text-foreground">Identity authority:</span>{" "}
-          {form.identityAuthority || "—"}
-        </p>
-        <p>
-          <span className="text-foreground">Status:</span> {form.status || "—"}
-        </p>
-        <p>
-          <span className="text-foreground">Clearance:</span>{" "}
-          {form.clearance || "—"}
-        </p>
-        <p>
-          <span className="text-foreground">Origin:</span> {form.origin || "—"}
-        </p>
-        <p className="md:col-span-2">
-          <span className="text-foreground">Role:</span> {role || "—"}
-        </p>
-        <p className="md:col-span-2">
-          <span className="text-foreground">Summary:</span>{" "}
-          {summary || "—"}
-        </p>
-        <p className="md:col-span-2">
-          <span className="text-foreground">Notes:</span> {notes || "—"}
-        </p>
-        <p className="md:col-span-2">
-          <span className="text-foreground">Tags:</span>{" "}
-          {tags.join(", ") || "—"}
-        </p>
-        <p className="md:col-span-2">
-          <span className="text-foreground">Proposed tags:</span>{" "}
-          {proposedTags.join(", ") || "—"}
-        </p>
-        <p className="md:col-span-2">
-          <span className="text-foreground">Primary link:</span>{" "}
-          {form.primaryLinkUrl
-            ? `${primaryLinkLabel || "Link"}: ${form.primaryLinkUrl} (${form.primaryLinkType || "website"})`
-            : "—"}
-        </p>
-      </div>
-      <div className="border border-accent/50 bg-accent/10 p-3 text-sm text-accent">
-        <p>Warnings / missing info / caveats:</p>
-        {list(
-          [
-            ...(candidate?.missingInfo ?? []),
-            ...(candidate?.publicSafetyNotes ?? []),
-          ],
-          "No source caveats recorded yet.",
-        )}
-      </div>
+      <DossierPageView
+        entry={entry}
+        preview
+        backHref="#"
+        backLabel="Preview only — not published"
+      />
     </section>
   );
 }
@@ -395,6 +355,12 @@ export default function DossierDraftEditorPage() {
     ? getUnappliedSourceNotes({ candidate: candidate ?? {}, draft })
     : [];
   const sourceNoteCount = candidate?.sourceFileNotes?.length ?? 0;
+  const sourceFileSummary = candidate
+    ? createDossierSourceFileSummary({
+        candidate,
+        drafts: payload?.drafts.filter((item) => item.candidateId === candidate.id) ?? [],
+      })
+    : null;
   const publicCopyWarnings = form
     ? validateDossierPublicDraftFields(draftFieldsForPublicGuard(form))
     : [];
@@ -680,11 +646,6 @@ export default function DossierDraftEditorPage() {
               </div>
             )}
           </section>
-          <PublicCopyGuardWarning warnings={publicCopyWarnings} />
-          <ProposedDossierPreview
-            form={form}
-            candidate={candidate ?? undefined}
-          />
           <section className="border border-border bg-surface p-5 text-sm text-muted">
             <h2 className="text-2xl font-bold text-foreground">
               Final Admin Draft Checks
@@ -791,6 +752,7 @@ export default function DossierDraftEditorPage() {
           </p>
           <div className="mt-4">
             <PhaseRail currentPhase={currentPhase} />
+            {/* BNL Source File Summary / Source File Summary */}
           </div>
           <div className="mt-5 flex flex-wrap gap-3 text-xs uppercase tracking-widest">
             <Link
@@ -813,84 +775,52 @@ export default function DossierDraftEditorPage() {
           </div>
         </div>
       </section>
-      <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 grid grid-cols-1 lg:grid-cols-[0.85fr_1.15fr] gap-6">
-        <aside className="border border-border bg-surface p-5 space-y-4">
-          <h2 className="text-2xl font-bold text-foreground">
-            BNL Source File Summary
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-muted">
-            <p>
-              <span className="text-foreground">Candidate name:</span>{" "}
-              {candidate?.name ?? "—"}
-            </p>
-            <p>
-              <span className="text-foreground">Status:</span>{" "}
-              {candidate?.status ?? "—"}
-            </p>
-            <p>
-              <span className="text-foreground">Source:</span>{" "}
-              {candidate?.source ?? "—"}
-            </p>
-            <p>
-              <span className="text-foreground">Tier/score:</span>{" "}
-              {candidate ? `${candidate.tier} / ${candidate.score}` : "—"}
-            </p>
-            <p>
-              <span className="text-foreground">Duplicate risk:</span>{" "}
-              {candidate?.duplicateRisk ?? "none"}
-            </p>
-            <p>
-              <span className="text-foreground">
-                Existing published dossier match:
-              </span>{" "}
-              {candidate?.existingDossierMatch?.name ?? "—"}
-            </p>
+      <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-6">
+        {sourceFileSummary && (
+          <DossierSourceFileSummaryPanel summary={sourceFileSummary} />
+        )}
+        {!sourceFileSummary && (
+          <section className="border border-border bg-surface p-5 text-sm text-muted">
+            <h2 className="text-2xl font-bold text-foreground">
+              Source Summary / Source File Snapshot
+            </h2>
+            <p>No source file could be loaded for this draft.</p>
+          </section>
+        )}
+        <details className="border border-border bg-surface p-5 text-sm text-muted">
+          <summary className="cursor-pointer text-xl font-bold text-foreground">
+            Developer / Raw Source Audit — internal debugging only
+          </summary>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <section>
+              <h3 className="font-bold text-foreground">Source file identifiers</h3>
+              <p>Candidate: {candidate?.name ?? draft.candidateId}</p>
+              <p>Status: {candidate?.status ?? "—"}</p>
+              <p>Source: {candidate?.source ?? "—"}</p>
+              <p>Tier/score: {candidate ? `${candidate.tier} / ${candidate.score}` : "—"}</p>
+              <p>Duplicate risk: {candidate?.duplicateRisk ?? "none"}</p>
+              <p>Source notes: {sourceNoteCount}</p>
+              <p>Unapplied source notes: {unappliedSourceNotes.length}</p>
+            </section>
+            <section>
+              <h3 className="font-bold text-foreground">Raw source fields</h3>
+              <p className="whitespace-pre-wrap">Reason: {candidate?.reason || "—"}</p>
+              <p className="whitespace-pre-wrap">Why now: {candidate?.whyNow || "—"}</p>
+              <p className="whitespace-pre-wrap">Evidence summary: {candidate?.evidenceSummary || "—"}</p>
+              <p>Known facts: {(candidate?.knownFacts ?? []).join(", ") || "—"}</p>
+              <p>Missing info: {(candidate?.missingInfo ?? []).join(", ") || "—"}</p>
+              <p>Do-not-say: {(candidate?.doNotSay ?? []).join(", ") || "—"}</p>
+              <p>Public safety notes: {(candidate?.publicSafetyNotes ?? []).join(", ") || "—"}</p>
+            </section>
           </div>
-          <div className="border border-border/70 bg-background/20 p-3 text-sm text-muted">
-            <p>Source notes: {sourceNoteCount}</p>
-            <p>Unapplied source notes: {unappliedSourceNotes.length}</p>
-            <Link
-              href={`/admin/dossiers/candidates/${draft.candidateId}`}
-              className="text-accent hover:underline"
-            >
-              Open full BNL Source File
-            </Link>
-          </div>
-          <section className="text-sm text-muted">
-            <h3 className="font-bold text-foreground">Reason</h3>
-            <p>{candidate?.reason || "—"}</p>
-          </section>
-          <section className="text-sm text-muted">
-            <h3 className="font-bold text-foreground">Why now</h3>
-            <p>{candidate?.whyNow || "—"}</p>
-          </section>
-          <section className="text-sm text-muted">
-            <h3 className="font-bold text-foreground">Evidence summary</h3>
-            <p>{candidate?.evidenceSummary || "—"}</p>
-          </section>
-          <section className="text-sm text-muted">
-            <h3 className="font-bold text-foreground">Known facts</h3>
-            {list(candidate?.knownFacts)}
-          </section>
-          <section className="text-sm text-muted">
-            <h3 className="font-bold text-foreground">Missing info</h3>
-            {list(candidate?.missingInfo)}
-          </section>
-          <section className="text-sm text-muted">
-            <h3 className="font-bold text-foreground">Do-not-say</h3>
-            {list(candidate?.doNotSay)}
-          </section>
-          <section className="text-sm text-muted">
-            <h3 className="font-bold text-foreground">Public safety notes</h3>
-            {list(candidate?.publicSafetyNotes)}
-          </section>
-        </aside>
+          <Link
+            href={`/admin/dossiers/candidates/${draft.candidateId}`}
+            className="mt-4 inline-flex text-accent hover:underline"
+          >
+            Open full BNL Source File
+          </Link>
+        </details>
         <form onSubmit={saveDraft} className="space-y-5">
-          <PublicCopyGuardWarning warnings={publicCopyWarnings} />
-          <ProposedDossierPreview
-            form={form}
-            candidate={candidate ?? undefined}
-          />
           <section className="border border-border bg-surface p-5 space-y-3 text-sm text-muted">
             <h2 className="text-2xl font-bold text-foreground">
               Unapplied Source Notes
@@ -910,7 +840,10 @@ export default function DossierDraftEditorPage() {
                       <p className="font-semibold text-foreground">
                         {note.type} / {new Date(note.createdAt).toLocaleString()}
                       </p>
-                      <p className="whitespace-pre-wrap">{note.text}</p>
+                      <p className="whitespace-pre-wrap">
+                        {sanitizeDossierPublicCopy(note.text) ||
+                          "This source note needs meaning-first interpretation before it can inform public copy."}
+                      </p>
                     </article>
                   ))}
                 </div>
@@ -919,8 +852,9 @@ export default function DossierDraftEditorPage() {
               <p>No unapplied source notes. Draft fields are unchanged unless an admin saves edits here.</p>
             )}
             <p>
-              BNL Edit Chat will eventually apply these changes
-              conversationally. Do not auto-apply notes to draft fields.
+              BNL Edit Chat will eventually help rewrite source material into
+              clean, public-safe dossier copy. It must not apply raw notes or
+              backend metadata directly to draft fields. Do not auto-apply notes to draft fields.
             </p>
           </section>
 
@@ -929,8 +863,9 @@ export default function DossierDraftEditorPage() {
               BNL Edit Chat panel — Coming Next
             </h2>
             <p>
-              BNL edit chat comes next. This will let admins ask BNL to revise
-              the proposed dossier conversationally.
+              BNL edit chat comes next. This panel will help rewrite reviewed
+              source material into clean, public-safe dossier copy and revise the proposed dossier conversationally instead of
+              applying raw source notes directly.
             </p>
             <p>
               This is the intended main editing flow. Example future prompts:
@@ -960,6 +895,11 @@ export default function DossierDraftEditorPage() {
               className={`${inputClass()} min-h-24`}
             />
           </section>
+          <PublicCopyGuardWarning warnings={publicCopyWarnings} />
+          <ProposedDossierPreview
+            form={form}
+            candidate={candidate ?? undefined}
+          />
           <details className="border border-border bg-surface p-5 space-y-4">
             <summary className="cursor-pointer text-xl font-bold text-foreground">
               Open Advanced Manual Edit — Manual Override

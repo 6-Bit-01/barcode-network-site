@@ -16,12 +16,9 @@ import {
   type DossierRecommendation,
   type DossierSourceFileNoteType,
 } from "@/lib/dossier-workflow";
+import { DossierSourceFileSummaryPanel } from "@/components/DossierSourceFileSummaryPanel";
 import { createHumanReadableSourceFileNoteView } from "@/lib/dossier-note-display";
-import {
-  createDossierSourceFileSummary,
-  formatDossierSummaryBadge,
-  type DossierSourceFileSummary,
-} from "@/lib/dossier-source-file-summary";
+import { createDossierSourceFileSummary } from "@/lib/dossier-source-file-summary";
 
 type WorkflowPayload = {
   candidates: DossierCandidate[];
@@ -368,94 +365,6 @@ function IdentityLinkCard({
   );
 }
 
-function SummaryList({ items }: { items: string[] }) {
-  return items.length === 1 ? (
-    <p>{items[0]}</p>
-  ) : (
-    <ul className="list-disc pl-5 space-y-1">
-      {items.map((item) => (
-        <li key={item}>{item}</li>
-      ))}
-    </ul>
-  );
-}
-
-function SourceFileSummaryPanel({
-  summary,
-}: {
-  summary: DossierSourceFileSummary;
-}) {
-  return (
-    <section className="border border-accent/70 bg-surface p-5 space-y-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.45em] text-accent mb-2">
-            Source File Summary
-          </p>
-          <h2 className="text-2xl font-bold text-foreground">Current Read</h2>
-          <p className="mt-2 text-sm text-muted max-w-4xl">
-            {summary.currentRead}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
-          <StatusBadge>
-            Substance: {formatDossierSummaryBadge(summary.substanceLevel)}
-          </StatusBadge>
-          <StatusBadge>
-            Public readiness:{" "}
-            {formatDossierSummaryBadge(summary.publicReadiness)}
-          </StatusBadge>
-          <StatusBadge>
-            Existing public dossier:{" "}
-            {formatDossierSummaryBadge(summary.existingPublicDossier)}
-          </StatusBadge>
-          <StatusBadge>
-            Next action: {formatDossierSummaryBadge(summary.nextAction)}
-          </StatusBadge>
-          <StatusBadge>
-            Summary source: {formatDossierSummaryBadge(summary.summarySource)}
-          </StatusBadge>
-        </div>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 text-sm text-muted">
-        <Section title="What BNL Actually Knows">
-          <SummaryList items={summary.knownContext} />
-        </Section>
-        <Section title="Why This File Exists">
-          <p>{summary.whyTracked}</p>
-        </Section>
-        {summary.usefulEvidence.length > 0 && (
-          <Section title="Useful Evidence">
-            <SummaryList items={summary.usefulEvidence} />
-          </Section>
-        )}
-        <Section title="Case File Quality">
-          <p>
-            {summary.summarySource === "thin"
-              ? summary.currentRead
-              : "This file has enough human-readable context to continue review, but it remains internal until separately approved."}
-          </p>
-        </Section>
-        <Section title="Patterns / Themes">
-          <SummaryList items={summary.patterns} />
-        </Section>
-        <Section title="Open Questions">
-          <SummaryList
-            items={[...summary.uncertainties, ...summary.missingInfo]}
-          />
-        </Section>
-        <Section title="Recommended Next Step">
-          <p>{summary.recommendedNextAction}</p>
-        </Section>
-      </div>
-      <p className="text-xs text-muted">
-        Internal-only briefing. It helps operators decide what to review next
-        and does not publish or change public dossier copy.
-      </p>
-    </section>
-  );
-}
-
 function HumanReadableNoteView({
   view,
   createdAt,
@@ -520,7 +429,7 @@ function HumanReadableNoteView({
       )}
       <details className="border border-border/60 bg-background/20 p-3 text-xs text-muted">
         <summary className="cursor-pointer font-semibold text-foreground">
-          Technical audit details
+          Developer / Raw Source Audit — internal debugging only
         </summary>
         <div className="mt-3 space-y-3">
           {view.rawMetadata.length > 0 && (
@@ -1186,7 +1095,10 @@ export default function CandidateReviewPage() {
 
       <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-4">
         {sourceFileSummary && (
-          <SourceFileSummaryPanel summary={sourceFileSummary} />
+          <>
+            <DossierSourceFileSummaryPanel summary={sourceFileSummary} />
+            {/* Source File Summary */}
+          </>
         )}
 
         <section className="border border-border bg-surface p-5 space-y-4">

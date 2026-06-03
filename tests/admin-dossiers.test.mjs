@@ -672,7 +672,8 @@ test("admin source file note display derives a human case-file view and collapse
 test("admin Source File and recommendation pages render readable sections with collapsed audit details", () => {
   const displayHelper = normalizedSource("src/lib/dossier-note-display.ts");
   const summaryHelper = normalizedSource("src/lib/dossier-source-file-summary.ts");
-  const candidatePage = `${normalizedSource("src/app/admin/dossiers/candidates/[candidateId]/page.tsx")} ${displayHelper} ${summaryHelper}`;
+  const summaryPanel = normalizedSource("src/components/DossierSourceFileSummaryPanel.tsx");
+  const candidatePage = `${normalizedSource("src/app/admin/dossiers/candidates/[candidateId]/page.tsx")} ${displayHelper} ${summaryHelper} ${summaryPanel}`;
   const recommendationPage = `${normalizedSource("src/app/admin/dossiers/recommendations/[recommendationId]/page.tsx")} ${displayHelper}`;
 
   for (const label of [
@@ -693,7 +694,7 @@ test("admin Source File and recommendation pages render readable sections with c
     "Older BNL Review Note",
     "BNL Review Addendum",
     "Review-only context connected to this subject",
-    "Technical audit details",
+    "Developer / Raw Source Audit",
     "warnings",
     "Open Questions",
     "Claimed / Needs Review",
@@ -4532,4 +4533,106 @@ test("admin dashboard explains public dossier-only source lookup fallback", () =
   assertIncludesCopy(pageCopy, "No internal update file exists yet");
   assertIncludesCopy(pageCopy, "Create Existing Dossier Update");
   assertIncludesCopy(pageCopy, "Review-only; no public changes");
+});
+
+test("Phase 2 draft workflow keeps PR 155 stacked shared preview order", () => {
+  const page = source("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
+  assert.match(page, /DossierSourceFileSummaryPanel/);
+  assert.match(page, /DossierPageView/);
+  assert.match(page, /Source Summary \/ Source File Snapshot/);
+  assert.match(page, /BNL Edit Chat panel/);
+  assert.match(page, /Public Dossier Preview/);
+  const renderedWorkflow = page.slice(page.indexOf("<form onSubmit={saveDraft}"));
+  assert.ok(
+    renderedWorkflow.indexOf("BNL Edit Chat panel") < renderedWorkflow.indexOf("ProposedDossierPreview"),
+  );
+  assert.ok(
+    page.indexOf("DossierSourceFileSummaryPanel") < page.indexOf("<form onSubmit={saveDraft}"),
+  );
+  assert.doesNotMatch(page, /grid-cols-\[0\.85fr_1\.15fr\]/);
+});
+
+test("meaning-first source summary filters backend source exhaust from normal buckets", () => {
+  const summary = sourceFileSummary.createDossierSourceFileSummary({
+    candidate: {
+      id: "candidate_backend_only",
+      name: "LostMarbles",
+      candidateType: "unknown",
+      source: "bnl_source_knowledge_bridge",
+      tier: "review_candidate",
+      score: 4,
+      whyNow: "Bridge source lane mapping: conversations -> unknown, user_profiles -> unknown",
+      reason: "conversations/public_discord_observed: public_home conversation model mentions LostMarbles",
+      evidenceSummary: "ingestKey bnl:source:candidate_backend_only",
+      status: "active_source_file",
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:00.000Z",
+      sourceFileNotes: [
+        {
+          id: "note_backend_only",
+          candidateId: "candidate_backend_only",
+          type: "general_note",
+          text: "user_profiles/local_profile_observed\nconversations/public_discord_observed",
+          source: "bnl_recommendation",
+          status: "active",
+          publicSafe: false,
+          createdAt: "2026-06-01T00:00:00.000Z",
+          updatedAt: "2026-06-01T00:00:00.000Z",
+        },
+      ],
+    },
+  });
+  const mainText = JSON.stringify({
+    currentRead: summary.currentRead,
+    knownContext: summary.knownContext,
+    usefulEvidence: summary.usefulEvidence,
+    patterns: summary.patterns,
+    confirmedStrong: summary.confirmedStrong,
+    claimedNeedsReview: summary.claimedNeedsReview,
+    missingInfo: summary.missingInfo,
+    notPublicYet: summary.notPublicYet,
+    recommendedNextAction: summary.recommendedNextAction,
+  });
+  assert.doesNotMatch(mainText, /user_profiles\/local_profile_observed/i);
+  assert.doesNotMatch(mainText, /conversations\/public_discord_observed/i);
+  assert.doesNotMatch(mainText, /source lane mapping|ingestKey|unknown -> unknown/i);
+  assert.match(mainText, /not yet contain enough human-usable context/i);
+});
+
+test("meaning-first source summary keeps human source substance in useful buckets", () => {
+  const summary = sourceFileSummary.createDossierSourceFileSummary({
+    candidate: {
+      id: "candidate_human_context",
+      name: "Human Context Subject",
+      candidateType: "artist",
+      source: "manual",
+      tier: "draft_ready",
+      score: 12,
+      whyNow: "The subject has repeated community presence across BARCODE Radio planning notes.",
+      reason: "Admins noticed a recurring collaborator pattern around recent broadcast planning.",
+      evidenceSummary: "The subject is repeatedly mentioned as a collaborator in public-safe planning notes.",
+      knownFacts: ["The subject is connected to recent BARCODE Radio planning."],
+      missingInfo: ["Confirm the preferred public display name."],
+      publicSafetyNotes: ["Do not describe private Discord context publicly."],
+      status: "active_source_file",
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:00.000Z",
+    },
+  });
+  assert.match(summary.usefulEvidence.join(" "), /repeatedly mentioned as a collaborator/i);
+  assert.match(summary.knownContext.join(" "), /BARCODE Radio planning/i);
+  assert.match(summary.patterns.join(" "), /repeated community presence/i);
+  assert.match(summary.notPublicYet.join(" "), /private Discord context/i);
+});
+
+test("raw provenance remains collapsed and outside normal preview surfaces", () => {
+  const draftPage = source("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
+  const candidatePage = source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+  const previewFunction = draftPage.slice(
+    draftPage.indexOf("function ProposedDossierPreview"),
+    draftPage.indexOf("export default function DossierDraftEditorPage"),
+  );
+  assert.match(draftPage, /Developer \/ Raw Source Audit — internal debugging only/);
+  assert.match(candidatePage, /Developer \/ Raw Source Audit — internal debugging only/);
+  assert.doesNotMatch(previewFunction, /candidate\?\.reason|candidate\?\.whyNow|candidate\?\.evidenceSummary|note\.text/);
 });

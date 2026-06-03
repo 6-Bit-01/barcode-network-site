@@ -34,8 +34,11 @@ export type DossierSourceFileSummary = {
   whyTracked: string;
   usefulEvidence: string[];
   patterns: string[];
+  confirmedStrong: string[];
+  claimedNeedsReview: string[];
   uncertainties: string[];
   missingInfo: string[];
+  notPublicYet: string[];
   recommendedNextAction: string;
   substanceLevel: DossierSourceFileSubstanceLevel;
   publicReadiness: DossierSourceFilePublicReadiness;
@@ -87,7 +90,7 @@ function trustedOperatorSummaryItems(
 }
 
 export const DOSSIER_THIN_FILE_WARNING =
-  "This file is still thin. It confirms that BNL has some internal references to this subject, but it does not yet contain enough history, repeated patterns, public-safe facts, or specific context to draft from.";
+  "This file is still thin. This source file only confirms that BNL found internal references. It does not yet contain enough human-usable context to draft from.";
 
 export const DOSSIER_NO_MEANINGFUL_PATTERN =
   "No meaningful pattern has been extracted yet.";
@@ -259,7 +262,7 @@ export function createDossierSourceFileSummary(
     ].filter((item) => hasDossierMeaningfulPattern(item)),
     3,
   );
-  const uncertainties = unique(
+  const notPublicYet = unique(
     [
       ...(candidate.publicSafetyNotes ?? []),
       ...(candidate.doNotSay ?? []),
@@ -267,6 +270,27 @@ export function createDossierSourceFileSummary(
         ...(recommendation.publicSafetyNotes ?? []),
         ...(recommendation.doNotSay ?? []),
       ]),
+    ],
+    4,
+  );
+  const uncertainties = notPublicYet;
+  const confirmedStrong = unique(
+    [
+      ...(candidate.knownFacts ?? []),
+      ...(candidate.sourceFileNotes ?? [])
+        .filter((note) => note.publicSafe === true)
+        .map((note) => note.text),
+    ],
+    4,
+  );
+  const claimedNeedsReview = unique(
+    [
+      candidate.reason,
+      candidate.whyNow,
+      ...recommendations.map((recommendation) => recommendation.reason),
+      ...(candidate.sourceFileNotes ?? [])
+        .filter((note) => note.publicSafe !== true)
+        .map((note) => note.text),
     ],
     4,
   );
@@ -324,6 +348,14 @@ export function createDossierSourceFileSummary(
             "No useful evidence has been captured yet beyond the fact that this internal file exists.",
           ],
     patterns: patterns.length > 0 ? patterns : [DOSSIER_NO_MEANINGFUL_PATTERN],
+    confirmedStrong:
+      confirmedStrong.length > 0
+        ? confirmedStrong
+        : ["No confirmed public-safe facts have been separated yet."],
+    claimedNeedsReview:
+      claimedNeedsReview.length > 0
+        ? claimedNeedsReview
+        : ["No human-readable claims have been extracted yet."],
     uncertainties:
       uncertainties.length > 0
         ? uncertainties
@@ -338,6 +370,10 @@ export function createDossierSourceFileSummary(
           : [
               "Needs more history, repeated appearances, public-safe facts, and owner/admin context.",
             ],
+    notPublicYet:
+      notPublicYet.length > 0
+        ? notPublicYet
+        : ["Do not say more publicly until owner/admin review confirms it."],
     recommendedNextAction: operatorNextAction ?? nextActionCopy(action),
     substanceLevel: level,
     publicReadiness: readiness,

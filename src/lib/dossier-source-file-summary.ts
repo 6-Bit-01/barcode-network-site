@@ -58,6 +58,12 @@ export type DossierSourceFileSummary = {
   communitySignals: string[];
   sourceCoverage: string[];
   evidenceDetails: string[];
+  representativeEvidence: string[];
+  activityFrequencySummary: string[];
+  topChannels: string[];
+  topTopicDetails: string[];
+  recentActivitySummary: string[];
+  authoredVsMentionedSummary: string[];
   publicUseCandidates: string[];
   reviewOnlyEvidence: string[];
   queueSubmissionStatus?: string;
@@ -348,6 +354,30 @@ export function createDossierSourceFileSummary(
     recommendations.flatMap((recommendation) => recommendation.evidenceDetails ?? []),
     6,
   );
+  const structuredRepresentativeEvidence = unique(
+    recommendations.flatMap((recommendation) => recommendation.representativeEvidence ?? []),
+    8,
+  );
+  const structuredActivityFrequencySummary = unique(
+    recommendations.flatMap((recommendation) => recommendation.activityFrequencySummary ?? []),
+    4,
+  );
+  const structuredTopChannels = unique(
+    recommendations.flatMap((recommendation) => recommendation.topChannels ?? []),
+    6,
+  );
+  const structuredTopTopicDetails = unique(
+    recommendations.flatMap((recommendation) => recommendation.topTopicDetails ?? []),
+    6,
+  );
+  const structuredRecentActivitySummary = unique(
+    recommendations.flatMap((recommendation) => recommendation.recentActivitySummary ?? []),
+    4,
+  );
+  const structuredAuthoredVsMentionedSummary = unique(
+    recommendations.flatMap((recommendation) => recommendation.authoredVsMentionedSummary ?? []),
+    4,
+  );
   const structuredPublicUseCandidates = unique(
     recommendations.flatMap(
       (recommendation) => recommendation.publicUseCandidates ?? [],
@@ -372,7 +402,7 @@ export function createDossierSourceFileSummary(
     recommendations.flatMap((recommendation) => [
       ...(recommendation.sourceAuthority ?? []),
       recommendation.confidence
-        ? `Confidence: ${recommendation.confidence}. Review source boundaries before public use.`
+        ? `Source confidence: ${recommendation.confidence}. Review source boundaries before public use.`
         : undefined,
     ]),
     5,
@@ -568,6 +598,12 @@ export function createDossierSourceFileSummary(
     communitySignals: structuredCommunitySignals,
     sourceCoverage: structuredSourceCoverage,
     evidenceDetails: structuredEvidenceDetails,
+    representativeEvidence: structuredRepresentativeEvidence,
+    activityFrequencySummary: structuredActivityFrequencySummary,
+    topChannels: structuredTopChannels,
+    topTopicDetails: structuredTopTopicDetails,
+    recentActivitySummary: structuredRecentActivitySummary,
+    authoredVsMentionedSummary: structuredAuthoredVsMentionedSummary,
     publicUseCandidates: structuredPublicUseCandidates,
     reviewOnlyEvidence: structuredReviewOnlyEvidence,
     queueSubmissionStatus: queueRecommendation?.queueSubmissionStatus,

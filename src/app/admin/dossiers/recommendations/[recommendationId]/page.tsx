@@ -134,7 +134,7 @@ function sourceAuthorityItems(recommendation: DossierRecommendation): string[] {
   return [
     ...sanitized,
     recommendation.confidence
-      ? `Confidence: ${recommendation.confidence}`
+      ? `Source confidence: ${recommendation.confidence}`
       : undefined,
     (recommendation.sourceAuthority ?? []).length > 0 && sanitized.length === 0
       ? "Source authority was supplied by BNL; review raw audit details before public use."
@@ -1034,7 +1034,7 @@ export default function DossierRecommendationPage() {
           <Field title="Reason">
             <p>{recommendation.reason}</p>
           </Field>
-          <Field title="Evidence / Source Notes">
+          <Field title="Evidence Log">
             <p>
               Recommendation detail is evidence for the internal working case
               file, not public dossier copy.
@@ -1043,7 +1043,7 @@ export default function DossierRecommendationPage() {
           <Field title="Known Context / Current Read">
             {list(recommendation.knownContext)}
           </Field>
-          <Field title="Best Evidence to Review">
+          <Field title="What BNL Found">
             {list(recommendation.bestEvidenceToReview)}
           </Field>
           <Field title="Useful Evidence">
@@ -1052,7 +1052,7 @@ export default function DossierRecommendationPage() {
           <Field title="Observed Channels / Activity">
             {list(recommendation.observedChannels)}
           </Field>
-          <Field title="Conversation Highlights">
+          <Field title="Public Activity Notes">
             {list(recommendation.conversationHighlights)}
           </Field>
           <Field title="Music / Show Signals">
@@ -1073,10 +1073,10 @@ export default function DossierRecommendationPage() {
               ...(recommendation.publicUseCandidates ?? []),
             ])}
           </Field>
-          <Field title="Review-Only Evidence">
+          <Field title="Review-Only Cautions">
             {list(recommendation.reviewOnlyEvidence)}
           </Field>
-          <Field title="Private/Internal Notes">
+          <Field title="Review-Only Cautions / Internal Notes">
             {list(recommendation.privateOnlyNotes)}
           </Field>
           <Field title="Not Public Yet">
@@ -1085,10 +1085,22 @@ export default function DossierRecommendationPage() {
           <Field title="Source Coverage">
             {list(recommendation.sourceCoverage)}
           </Field>
-          <Field title="Topic Breakdown">
-            {list(recommendation.topicBreakdown)}
+          <Field title="Main Discussion Areas">
+            {list([
+              ...(recommendation.topTopicDetails ?? []),
+              ...(recommendation.topicBreakdown ?? []),
+            ])}
           </Field>
-          <Field title="Evidence Details">
+          <Field title="Activity Details">
+            {list([
+              ...(recommendation.topChannels ?? []),
+              ...(recommendation.activityFrequencySummary ?? []),
+              ...(recommendation.recentActivitySummary ?? []),
+              ...(recommendation.authoredVsMentionedSummary ?? []),
+              ...(recommendation.representativeEvidence ?? []),
+            ])}
+          </Field>
+          <Field title="Evidence Log Details">
             {list(recommendation.evidenceDetails)}
           </Field>
           <Field title="Queue / Submission Status">
@@ -1097,7 +1109,7 @@ export default function DossierRecommendationPage() {
           <Field title="Recommended Next Action">
             <p>{recommendation.recommendedAction ?? recommendation.suggestedAction ?? "—"}</p>
           </Field>
-          <Field title="Source Authority / Confidence">
+          <Field title="Evidence Status">
             {list(sourceAuthorityItems(recommendation))}
           </Field>
           <Field title="Evidence summary">

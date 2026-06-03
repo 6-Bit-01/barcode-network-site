@@ -1,5 +1,7 @@
 "use client";
 
+import { DossierPageView } from "@/components/DossierPageView";
+import { draftToDossierPreviewViewModel } from "@/lib/dossier-page-view-model";
 import Link from "next/link";
 import { DossierPageView } from "@/components/DossierPageView";
 import { DossierSourceFileSummaryPanel } from "@/components/DossierSourceFileSummaryPanel";
@@ -256,8 +258,8 @@ function ProposedDossierPreview({
   } as Pick<DossierDraft, "id" | "fields">;
   const dossier = draftToDossierPreviewViewModel(previewDraft);
   return (
-    <section className="border border-border bg-surface p-5 space-y-4">
-      <div>
+    <section className="border border-border bg-surface space-y-4 overflow-hidden">
+      <div className="p-5 pb-0">
         <p className="text-xs uppercase tracking-[0.4em] text-muted mb-2">
           Public Dossier Preview
         </p>

@@ -1707,7 +1707,10 @@ export default function CandidateReviewPage() {
               {sourceNotes.map((note) => (
                 <HumanReadableNoteView
                   key={note.id}
-                  view={createHumanReadableSourceFileNoteView(note)}
+                  view={createHumanReadableSourceFileNoteView({
+                    ...note,
+                    subjectName: candidate.name,
+                  })}
                   createdAt={note.createdAt}
                   workflowLane={candidate.status}
                   appliedDraftId={note.appliesToDraftId}
@@ -1796,7 +1799,10 @@ export default function CandidateReviewPage() {
                   .filter((note) => note.publicSafe !== true)
                   .map((note) => (
                     <li key={note.id}>
-                      {createHumanReadableSourceFileNoteView(note).summary}
+                      {createHumanReadableSourceFileNoteView({
+                        ...note,
+                        subjectName: candidate.name,
+                      }).summary}
                     </li>
                   ))}
               </ul>

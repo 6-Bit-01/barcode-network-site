@@ -4772,14 +4772,101 @@ test("source file meaning filter hides backend terms from main views while prese
   const view = noteDisplay.createHumanReadableSourceFileNoteView(note);
   const mainText = JSON.stringify({ summary: view.summary, sections: view.sections });
   assert.doesNotMatch(mainText, /user_profiles|local_profile_observed|relationship_journal|unknown -> unknown|private_review_required|public_use_not_allowed_until_review|source lane/i);
-  assert.match(mainText, /BNL has a local profile match for this subject/);
+  assert.match(mainText, /BNL found an internal local profile match for this subject/);
   assert.match(mainText, /This needs internal review before public use|Do not use publicly until owner\/admin review/);
   assert.equal(
-    (mainText.match(/BNL has a local profile match for this subject/g) ?? []).length,
+    (mainText.match(/BNL found an internal local profile match for this subject/g) ?? []).length,
     1,
   );
   assert.match(JSON.stringify(view.rawMetadata), /source lane|relationship_journal|unknown/i);
   assert.match(view.rawText, /user_profiles\/local_profile_observed/);
+});
+
+
+
+test("legacy source-file note view translates raw source memory instead of leaking it", async () => {
+  await resetWorkflowStore();
+  const beforePublic = JSON.stringify(databasePage.entries);
+  const rawLegacyText = [
+    "Evidence summary: user_profiles/local_profile_observed: Local profile observed for Crow. help_signal: EDGE_SESSION abc123456789",
+    "relationship_journal/local_relationship_trace: help_signal: User asked for help in EDGE_SESSION abc123456789",
+    "Source lanes: unknown",
+    "Source lane mapping: relationship_journal -> unknown, user_profiles -> unknown",
+    "Summary: BNL local knowledge stores.",
+  ].join("\n");
+  const note = {
+    type: "general_note",
+    text: rawLegacyText,
+    source: "bnl_recommendation",
+    status: "active",
+    publicSafe: false,
+    createdAt: "2026-06-01T00:00:00.000Z",
+    updatedAt: "2026-06-01T00:00:00.000Z",
+    ingestSource: "bnl_source_knowledge_bridge",
+    ingestKey: "bnl:legacy-crow-note",
+    evidenceSummary:
+      "user_profiles/local_profile_observed: Local profile observed for Crow. relationship_journal/local_relationship_trace help_signal: EDGE_SESSION abc123456789",
+    reason: "BNL local knowledge stores. relationship_journal/local_relationship_trace",
+    subjectName: "Crow",
+  };
+
+  const view = noteDisplay.createHumanReadableSourceFileNoteView(note);
+  const visibleSections = JSON.stringify(view.sections);
+  const usefulEvidence = JSON.stringify(
+    view.sections.find((section) => section.title === "Useful Evidence")?.items ?? [],
+  );
+  const claimedNeedsReview = JSON.stringify(
+    view.sections.find((section) => section.title === "Claimed / Needs Review")?.items ?? [],
+  );
+
+  for (const visibleText of [visibleSections, usefulEvidence, claimedNeedsReview]) {
+    assert.doesNotMatch(visibleText, /help_signal:?/i);
+    assert.doesNotMatch(visibleText, /EDGE_SESSI(?:ON)?/i);
+    assert.doesNotMatch(visibleText, /relationship_journal\/local_relationship_trace/i);
+    assert.doesNotMatch(visibleText, /user_profiles\/local_profile_observed/i);
+    assert.doesNotMatch(visibleText, /conversations\/public_discord_observed/i);
+    assert.doesNotMatch(visibleText, /source lane mapping|Source lanes: unknown|unknown -> unknown/i);
+    assert.doesNotMatch(visibleText, /: Local profile observed|: BNL local knowledge stores\./i);
+  }
+
+  assert.match(usefulEvidence, /BNL found an internal local profile match for Crow/);
+  assert.match(usefulEvidence, /BNL found prior relationship\/context notes connected to Crow/);
+  assert.match(visibleSections, /Internal BNL memory references exist, but they need owner review before public use/);
+  assert.equal(
+    (visibleSections.match(/local profile match/g) ?? []).length,
+    1,
+  );
+  assert.equal(
+    (visibleSections.match(/relationship\/context notes/g) ?? []).length,
+    1,
+  );
+
+  assert.match(view.rawText ?? "", /user_profiles\/local_profile_observed/);
+  assert.match(view.rawText ?? "", /EDGE_SESSION/);
+  assert.match(JSON.stringify(view.rawMetadata), /legacyEvidenceSummary/);
+  assert.match(JSON.stringify(view.rawMetadata), /user_profiles\/local_profile_observed/);
+  assert.match(JSON.stringify(view.rawMetadata), /legacyReason/);
+  assert.match(JSON.stringify(view.rawMetadata), /relationship_journal\/local_relationship_trace/);
+
+  const candidatePayload = await (await authedPost({
+    action: "createManualCandidate",
+    input: {
+      ...manualCandidateInput,
+      name: "Crow Legacy Note",
+      reason: "Manual review shell for legacy note leak test.",
+      evidenceSummary: note.evidenceSummary,
+    },
+  })).json();
+  const draftPayload = await (await authedPost({
+    action: "createDraftFromCandidate",
+    candidateId: candidatePayload.candidate.id,
+  })).json();
+  const draftText = JSON.stringify(draftPayload.draft.fields);
+  assert.doesNotMatch(draftText, /help_signal|EDGE_SESSION|user_profiles\/local_profile_observed|relationship_journal\/local_relationship_trace/i);
+
+  const publicPayload = await (await readModel.GET(new Request("https://example.test/api/bnl/read-model"))).json();
+  assert.equal(JSON.stringify(databasePage.entries), beforePublic);
+  assert.doesNotMatch(JSON.stringify(publicPayload), /Crow Legacy Note|help_signal|EDGE_SESSION|local_profile_observed/i);
 });
 
 test("source file summary suppresses fake patterns, shows thin warning, and prefers operator summary", () => {
@@ -4898,7 +4985,7 @@ test("recommendation detail case-file view uses the same sanitizer", () => {
   const view = noteDisplay.createHumanReadableRecommendationView(recommendation);
   const mainText = JSON.stringify({ summary: view.summary, sections: view.sections });
   assert.doesNotMatch(mainText, /relationship_journal|local_profile_observed|public_discord_observed|private_review_required|rd_context|target_id/);
-  assert.match(mainText, /BNL has a local profile match for this subject/);
+  assert.match(mainText, /BNL found an internal local profile match for Melanie Heart/);
   assert.match(JSON.stringify(view.rawMetadata), /relationship_journal|rd_context|bnl:rec_filter/);
 });
 

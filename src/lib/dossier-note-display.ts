@@ -555,7 +555,7 @@ export function createHumanReadableSourceFileNoteView(
   for (const item of note.notPublicYet ?? [])
     addShortWarning(sections, item, subjectOptions);
   for (const item of note.bestEvidenceToReview ?? [])
-    addItem(sections, "What BNL Found", item, subjectOptions);
+    addItem(sections, "Key Intelligence", item, subjectOptions);
   for (const item of note.observedChannels ?? [])
     addItem(sections, "Observed Channels / Activity", item, subjectOptions);
   for (const item of note.conversationHighlights ?? [])
@@ -567,7 +567,7 @@ export function createHumanReadableSourceFileNoteView(
   for (const item of note.bnlInteractionSignals ?? [])
     addItem(sections, "BNL Interaction Signals", item, subjectOptions);
   for (const item of note.topicBreakdown ?? [])
-    addItem(sections, "Main Discussion Areas", item, subjectOptions);
+    addItem(sections, "Supporting Classification", item, subjectOptions);
   for (const item of note.evidenceDetails ?? [])
     addItem(sections, "Evidence Log", item, subjectOptions);
   for (const item of note.representativeEvidence ?? [])
@@ -577,7 +577,7 @@ export function createHumanReadableSourceFileNoteView(
   for (const item of note.topChannels ?? [])
     addItem(sections, "Top Channels", item, subjectOptions);
   for (const item of note.topTopicDetails ?? [])
-    addItem(sections, "Main Discussion Areas", item, subjectOptions);
+    addItem(sections, "Supporting Classification", item, subjectOptions);
   for (const item of note.recentActivitySummary ?? [])
     addItem(sections, "Recent Activity", item, subjectOptions);
   for (const item of note.authoredVsMentionedSummary ?? [])

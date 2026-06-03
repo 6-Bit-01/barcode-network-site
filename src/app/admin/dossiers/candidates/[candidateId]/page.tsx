@@ -1169,6 +1169,9 @@ export default function CandidateReviewPage() {
             <DossierSourceFileSummaryPanel
               summary={sourceFileSummary}
               entityReadout={entityActivityReadout}
+              subjectName={candidate.name}
+              recommendations={attachedRecommendations}
+              sourceFileNotes={candidate.sourceFileNotes ?? []}
             />
             {/* Source File Summary */}
           </>
@@ -1288,33 +1291,42 @@ export default function CandidateReviewPage() {
           </p>
         </Section>
 
-        <Section title="Recommendation/evidence clusters">
+        <Section title="Supporting Evidence Log">
+          <p className="mb-3">
+            Recommendation evidence clusters are collapsed by default so repeated
+            owner-review warnings do not crowd the actionable Source File Snapshot.
+          </p>
           {attachedRecommendations.length === 0 ? (
             <p>No recommendations attached yet.</p>
           ) : (
-            <div className="space-y-3">
-              {attachedRecommendations.map((recommendation) => (
-                <article
-                  key={recommendation.id}
-                  className="border border-border/70 bg-background/20 p-3"
-                >
-                  <p className="text-foreground font-semibold">
-                    {recommendation.subjectName}
-                  </p>
-                  {recommendationEvidenceItems(recommendation).length ? (
-                    <ul className="list-disc pl-5 space-y-1">
-                      {recommendationEvidenceItems(recommendation).map(
-                        (item) => (
-                          <li key={item}>{item}</li>
-                        ),
-                      )}
-                    </ul>
-                  ) : (
-                    <p>More public-safe context needed before drafting.</p>
-                  )}
-                </article>
-              ))}
-            </div>
+            <details className="border border-border/70 bg-background/20 p-3">
+              <summary className="cursor-pointer text-foreground font-semibold">
+                Developer / Raw Source Audit — recommendation evidence clusters
+              </summary>
+              <div className="mt-3 space-y-3">
+                {attachedRecommendations.map((recommendation) => (
+                  <article
+                    key={recommendation.id}
+                    className="border border-border/70 bg-background/20 p-3"
+                  >
+                    <p className="text-foreground font-semibold">
+                      {recommendation.subjectName}
+                    </p>
+                    {recommendationEvidenceItems(recommendation).length ? (
+                      <ul className="list-disc pl-5 space-y-1">
+                        {recommendationEvidenceItems(recommendation).map(
+                          (item) => (
+                            <li key={item}>{item}</li>
+                          ),
+                        )}
+                      </ul>
+                    ) : (
+                      <p>Generic owner-review warning already covered above.</p>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </details>
           )}
         </Section>
 

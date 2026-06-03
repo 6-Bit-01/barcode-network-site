@@ -725,8 +725,8 @@ export default function DossierDraftEditorPage() {
           </div>
         </div>
       </section>
-      <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 grid grid-cols-1 lg:grid-cols-[0.85fr_1.15fr] gap-6">
-        <aside className="border border-border bg-surface p-5 space-y-4">
+      <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-6">
+        <section className="border border-border bg-surface p-5 space-y-4">
           <h2 className="text-2xl font-bold text-foreground">
             BNL Source File Summary
           </h2>
@@ -796,44 +796,8 @@ export default function DossierDraftEditorPage() {
             <h3 className="font-bold text-foreground">Public safety notes</h3>
             {list(candidate?.publicSafetyNotes)}
           </section>
-        </aside>
+        </section>
         <form onSubmit={saveDraft} className="space-y-5">
-          <ProposedDossierPreview
-            form={form}
-            candidate={candidate ?? undefined}
-          />
-          <section className="border border-border bg-surface p-5 space-y-3 text-sm text-muted">
-            <h2 className="text-2xl font-bold text-foreground">
-              Unapplied Source Notes
-            </h2>
-            {unappliedSourceNotes.length > 0 ? (
-              <>
-                <p className="border border-accent/60 bg-accent/10 p-3 text-accent">
-                  BNL Source File has new notes since this draft was last
-                  updated.
-                </p>
-                <div className="space-y-3">
-                  {unappliedSourceNotes.slice(0, 6).map((note) => (
-                    <article
-                      key={note.id}
-                      className="border border-border/70 bg-background/20 p-3"
-                    >
-                      <p className="font-semibold text-foreground">
-                        {note.type} / {new Date(note.createdAt).toLocaleString()}
-                      </p>
-                      <p className="whitespace-pre-wrap">{note.text}</p>
-                    </article>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <p>No unapplied source notes. Draft fields are unchanged unless an admin saves edits here.</p>
-            )}
-            <p>
-              BNL Edit Chat will eventually apply these changes
-              conversationally. Do not auto-apply notes to draft fields.
-            </p>
-          </section>
 
           <section className="border border-accent/60 bg-accent/10 p-5 text-sm text-accent space-y-3">
             <h2 className="text-2xl font-bold">
@@ -870,6 +834,42 @@ export default function DossierDraftEditorPage() {
               placeholder="BNL edit chat is not wired yet."
               className={`${inputClass()} min-h-24`}
             />
+          </section>
+          <ProposedDossierPreview
+            form={form}
+            candidate={candidate ?? undefined}
+          />
+          <section className="border border-border bg-surface p-5 space-y-3 text-sm text-muted">
+            <h2 className="text-2xl font-bold text-foreground">
+              Unapplied Source Notes
+            </h2>
+            {unappliedSourceNotes.length > 0 ? (
+              <>
+                <p className="border border-accent/60 bg-accent/10 p-3 text-accent">
+                  BNL Source File has new notes since this draft was last
+                  updated.
+                </p>
+                <div className="space-y-3">
+                  {unappliedSourceNotes.slice(0, 6).map((note) => (
+                    <article
+                      key={note.id}
+                      className="border border-border/70 bg-background/20 p-3"
+                    >
+                      <p className="font-semibold text-foreground">
+                        {note.type} / {new Date(note.createdAt).toLocaleString()}
+                      </p>
+                      <p className="whitespace-pre-wrap">{note.text}</p>
+                    </article>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p>No unapplied source notes. Draft fields are unchanged unless an admin saves edits here.</p>
+            )}
+            <p>
+              BNL Edit Chat will eventually apply these changes
+              conversationally. Do not auto-apply notes to draft fields.
+            </p>
           </section>
           <details className="border border-border bg-surface p-5 space-y-4">
             <summary className="cursor-pointer text-xl font-bold text-foreground">

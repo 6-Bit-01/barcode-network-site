@@ -137,6 +137,31 @@ test("draft proposed dossier preview maps draft fields into shared public layout
   assert.equal(viewModel.showTerminalReadout, true);
 });
 
+
+test("phase 2 draft editor stacks source summary, BNL edit panel, and dossier preview full-width", () => {
+  const adminPageSource = normalizedSource("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
+  const sourceSummaryIndex = adminPageSource.indexOf("BNL Source File Summary");
+  const editPanelIndex = adminPageSource.indexOf("BNL Edit Chat panel — Coming Next", sourceSummaryIndex);
+  const previewIndex = adminPageSource.indexOf("<ProposedDossierPreview form={form} candidate={candidate ?? undefined} />", editPanelIndex);
+
+  assert.notEqual(sourceSummaryIndex, -1);
+  assert.notEqual(editPanelIndex, -1);
+  assert.notEqual(previewIndex, -1);
+  assert.ok(
+    sourceSummaryIndex < editPanelIndex,
+    "Source summary should appear before BNL edit panel.",
+  );
+  assert.ok(
+    editPanelIndex < previewIndex,
+    "BNL edit panel should appear before dossier preview.",
+  );
+  assertIncludesCopy(adminPageSource, "mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-6");
+  assert.doesNotMatch(
+    adminPageSource,
+    /grid grid-cols-1 lg:grid-cols-\[0\.85fr_1\.15fr\]/,
+  );
+});
+
 test("admin source-file caveats stay outside the public-style dossier preview model", () => {
   const adminPageSource = normalizedSource("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
   const componentSource = source("src/components/DossierPageView.tsx");

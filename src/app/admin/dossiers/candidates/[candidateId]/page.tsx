@@ -16,9 +16,11 @@ import {
   type DossierRecommendation,
   type DossierSourceFileNoteType,
 } from "@/lib/dossier-workflow";
+import { DossierEntityActivityReadoutPanel } from "@/components/DossierEntityActivityReadoutPanel";
 import { DossierSourceFileSummaryPanel } from "@/components/DossierSourceFileSummaryPanel";
 import { createHumanReadableSourceFileNoteView } from "@/lib/dossier-note-display";
 import { createDossierSourceFileSummary } from "@/lib/dossier-source-file-summary";
+import { createDossierEntityActivityReadoutFromSourceFile } from "@/lib/dossier-entity-activity-readout";
 import {
   sanitizeMeaningFirstItems,
   sourceFileEvidenceClusterItems,
@@ -648,6 +650,13 @@ export default function CandidateReviewPage() {
         recommendations: attachedRecommendations,
       })
     : null;
+  const entityActivityReadout = candidate
+    ? createDossierEntityActivityReadoutFromSourceFile({
+        summary: sourceFileSummary,
+        recommendations: attachedRecommendations,
+        subjectName: candidate.name,
+      })
+    : null;
   const identityLinks = [...(candidate?.identityLinks ?? [])].sort(
     (a, b) =>
       (a.status === "proposed" ? -1 : 1) - (b.status === "proposed" ? -1 : 1) ||
@@ -1151,6 +1160,9 @@ export default function CandidateReviewPage() {
             <DossierSourceFileSummaryPanel summary={sourceFileSummary} />
             {/* Source File Summary */}
           </>
+        )}
+        {entityActivityReadout && (
+          <DossierEntityActivityReadoutPanel readout={entityActivityReadout} />
         )}
 
         <section className="border border-border bg-surface p-5 space-y-4">

@@ -13,7 +13,9 @@ import {
   type DossierIdentityLinkVisibility,
   type DossierRecommendation,
 } from "@/lib/dossier-workflow";
+import { DossierEntityActivityReadoutPanel } from "@/components/DossierEntityActivityReadoutPanel";
 import { createHumanReadableRecommendationView } from "@/lib/dossier-note-display";
+import { createDossierEntityActivityReadoutFromRecommendation } from "@/lib/dossier-entity-activity-readout";
 import { sanitizeMeaningFirstItems } from "@/lib/dossier-source-memory-meaning";
 
 type WorkflowPayload = {
@@ -387,6 +389,9 @@ export default function DossierRecommendationPage() {
       null,
     [payload?.recommendations, recommendationId],
   );
+  const entityActivityReadout = recommendation
+    ? createDossierEntityActivityReadoutFromRecommendation(recommendation)
+    : null;
   const targetCandidate = recommendation?.targetCandidateId
     ? (payload?.candidates.find(
         (candidate) => candidate.id === recommendation.targetCandidateId,
@@ -991,6 +996,12 @@ export default function DossierRecommendationPage() {
           </section>
         )}
         <HumanReadableRecommendationCaseFile recommendation={recommendation} />
+        {entityActivityReadout && (
+          <DossierEntityActivityReadoutPanel
+            readout={entityActivityReadout}
+            compact
+          />
+        )}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field title="Subject">
             <p>{recommendation.subjectName}</p>

@@ -54,6 +54,7 @@ const readModel = require("../src/app/api/bnl/read-model/route.ts");
 const sourceFilesReadModel = require("../src/app/api/bnl/source-files/route.ts");
 const noteDisplay = require("../src/lib/dossier-note-display.ts");
 const sourceFileSummary = require("../src/lib/dossier-source-file-summary.ts");
+const entityReadout = require("../src/lib/dossier-entity-activity-readout.ts");
 const sourceMemoryMeaning = require("../src/lib/dossier-source-memory-meaning.ts");
 const publicCopyGuard = require("../src/lib/dossier-public-copy-guard.ts");
 const dossierPageViewModel = require("../src/lib/dossier-page-view-model.ts");
@@ -5099,6 +5100,88 @@ test("raw provenance remains collapsed and outside normal preview surfaces", () 
   assert.match(draftPage, /Developer \/ Raw Source Audit — internal debugging only/);
   assert.match(candidatePage, /Developer \/ Raw Source Audit — internal debugging only/);
   assert.doesNotMatch(previewFunction, /candidate\?\.reason|candidate\?\.whyNow|candidate\?\.evidenceSummary|note\.text/);
+});
+
+test("BNL Entity Readout panel is mounted on admin Source File and recommendation pages", () => {
+  const sourceFilePage = normalizedSource("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+  const recommendationPage = normalizedSource("src/app/admin/dossiers/recommendations/[recommendationId]/page.tsx");
+  const panel = normalizedSource("src/components/DossierEntityActivityReadoutPanel.tsx");
+
+  assert.match(sourceFilePage, /DossierEntityActivityReadoutPanel/);
+  assert.match(sourceFilePage, /createDossierEntityActivityReadoutFromSourceFile/);
+  assert.ok(
+    sourceFilePage.indexOf("DossierSourceFileSummaryPanel") <
+      sourceFilePage.indexOf("DossierEntityActivityReadoutPanel readout={entityActivityReadout}"),
+  );
+  assert.match(recommendationPage, /createDossierEntityActivityReadoutFromRecommendation/);
+  assert.match(recommendationPage, /DossierEntityActivityReadoutPanel/);
+  assertIncludesCopy(panel, "BNL Entity Readout / Entity Activity Summary");
+  assertIncludesCopy(panel, "Relationship Context — Review Only");
+  assertIncludesCopy(panel, "Public-Safe Possibilities Pending Owner Review");
+  assertIncludesCopy(panel, "Private/Internal Notes — Review Only");
+  assertIncludesCopy(panel, "Queue/submission history is not connected to BNL entity summaries yet.");
+  assertIncludesCopy(panel, "Source Authority / Confidence");
+  assertIncludesCopy(panel, "No live BNL call");
+  assertIncludesCopy(panel, "does not autofill Proposed Dossier fields");
+  assert.doesNotMatch(panel, /rawProvenance/);
+});
+
+test("BNL Entity Readout prefers structured packet fields and filters raw provenance labels", () => {
+  const recommendation = {
+    subjectName: "Structured Packet Subject",
+    knownContext: ["BNL currently reads this subject as a recurring radio-side collaborator."],
+    usefulEvidence: ["Two reviewed source notes mention recurring set-support work."],
+    relationshipSignals: ["Private relationship context suggests an operator-adjacent connection."],
+    publicSafePossibilities: ["May be described as a collaborator after owner review."],
+    privateOnlyNotes: ["Private-only note about the internal contact path."],
+    notPublicYet: ["Do not publish the collaborator label until owner review."],
+    missingInfo: ["Missing owner-confirmed public wording."],
+    recommendedAction: "Ask an owner to separate public-safe collaborator language from internal relationship context.",
+    confidence: "high",
+    sourceAuthority: [
+      "Mixed BNL memory plus admin review; not owner-confirmed.",
+      "relationship_journal/local_relationship_trace",
+    ],
+    suggestedAction: "Attach after review.",
+  };
+
+  const readout = entityReadout.createDossierEntityActivityReadoutFromRecommendation(recommendation);
+  assert.equal(readout.readoutSource, "structured");
+  assert.deepEqual(readout.knownContext, recommendation.knownContext);
+  assert.deepEqual(readout.usefulEvidence, recommendation.usefulEvidence);
+  assert.deepEqual(readout.relationshipSignals, recommendation.relationshipSignals);
+  assert.deepEqual(readout.publicSafePossibilities, recommendation.publicSafePossibilities);
+  assert.deepEqual(readout.privateOnlyNotes, recommendation.privateOnlyNotes);
+  assert.deepEqual(readout.notPublicYet, recommendation.notPublicYet);
+  assert.deepEqual(readout.missingInfo, recommendation.missingInfo);
+  assert.equal(readout.recommendedAction, recommendation.recommendedAction);
+  assert.equal(readout.confidence, "high");
+  assert.match(JSON.stringify(readout.sourceAuthority), /Mixed BNL memory/);
+  assert.doesNotMatch(
+    JSON.stringify(readout),
+    /relationship_journal|local_relationship_trace|user_profiles\/local_profile_observed|conversations\/public_discord_observed|source lane mapping|unknown -> unknown|help_signal|EDGE_SESSION|raw-trace|backendTraceId/,
+  );
+});
+
+test("BNL Entity Readout legacy fallback renders safe empty states without changing public previews", () => {
+  const readout = entityReadout.createDossierEntityActivityReadoutFromSourceFile({
+    summary: null,
+    recommendations: [],
+    subjectName: "Legacy Subject",
+  });
+  assert.equal(readout.readoutSource, "fallback");
+  assert.match(readout.currentRead, /not attached a structured entity summary/);
+  assert.deepEqual(readout.knownContext, []);
+  assert.deepEqual(readout.usefulEvidence, []);
+  assert.deepEqual(readout.privateOnlyNotes, []);
+
+  const draftPage = source("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
+  assert.doesNotMatch(draftPage, /DossierEntityActivityReadoutPanel|createDossierEntityActivityReadout/);
+  assert.doesNotMatch(draftPage, /privateOnlyNotes|rawProvenance|relationshipSignals/);
+
+  const databaseSlugPage = source("src/app/database/[slug]/page.tsx");
+  assert.match(databaseSlugPage, /databasePage\.entries/);
+  assert.match(databaseSlugPage, /<DossierPageView dossier=\{databaseEntryToDossierPageViewModel\(entry\)\}/);
 });
 
 test("BNL structured source packet v2 is ingested, summarized, and kept review-only", async () => {

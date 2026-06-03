@@ -372,6 +372,18 @@ export type DossierRecommendationIngestSource =
   | "system"
   | "unknown";
 
+export type DossierStructuredSourcePacket = {
+  knownContext?: string[];
+  usefulEvidence?: string[];
+  relationshipSignals?: string[];
+  publicSafePossibilities?: string[];
+  privateOnlyNotes?: string[];
+  notPublicYet?: string[];
+  recommendedAction?: string;
+  sourceAuthority?: string[];
+  rawProvenance?: unknown;
+};
+
 export type DossierRecommendation = {
   id: string;
   type: DossierRecommendationType;
@@ -386,6 +398,15 @@ export type DossierRecommendation = {
   sourceLanes: DossierRecommendationSourceLane[];
   sourceTypes?: string[];
   suggestedAction?: string;
+  knownContext?: string[];
+  usefulEvidence?: string[];
+  relationshipSignals?: string[];
+  publicSafePossibilities?: string[];
+  privateOnlyNotes?: string[];
+  notPublicYet?: string[];
+  recommendedAction?: string;
+  sourceAuthority?: string[];
+  rawProvenance?: unknown;
   missingInfo?: string[];
   publicSafetyNotes?: string[];
   doNotSay?: string[];
@@ -703,12 +724,21 @@ export type CreateDossierRecommendationInput = {
   subjectKey?: string;
   targetDossierId?: string;
   targetCandidateId?: string;
-  reason: string;
+  reason?: string;
   evidenceSummary?: string;
   confidence?: "low" | "medium" | "high";
   sourceLanes?: DossierRecommendationSourceLane[];
   sourceTypes?: string[];
   suggestedAction?: string;
+  knownContext?: string[];
+  usefulEvidence?: string[];
+  relationshipSignals?: string[];
+  publicSafePossibilities?: string[];
+  privateOnlyNotes?: string[];
+  notPublicYet?: string[];
+  recommendedAction?: string;
+  sourceAuthority?: string[];
+  rawProvenance?: unknown;
   missingInfo?: string[];
   publicSafetyNotes?: string[];
   doNotSay?: string[];

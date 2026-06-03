@@ -691,6 +691,28 @@ function normalizeSourceNoteInput(
   };
 }
 
+
+function normalizePacketStringArray(value: unknown): string[] | undefined {
+  const items = normalizeStringArray(value).slice(0, 25);
+  return items.length ? items : undefined;
+}
+
+function cloneJsonValue(value: unknown): unknown {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function firstStructuredRecommendationReason(
+  input: CreateDossierRecommendationInput,
+): string | undefined {
+  return (
+    normalizePacketStringArray(input.knownContext)?.[0] ??
+    normalizePacketStringArray(input.usefulEvidence)?.[0] ??
+    boundedText(input.recommendedAction, 1000) ??
+    normalizePacketStringArray(input.publicSafePossibilities)?.[0]
+  );
+}
+
 function normalizeRecommendationInput(
   input: CreateDossierRecommendationInput,
 ): Omit<
@@ -698,7 +720,8 @@ function normalizeRecommendationInput(
   "id" | "createdAt" | "updatedAt" | "status"
 > | null {
   const subjectName = boundedText(input.subjectName, 200);
-  const reason = boundedText(input.reason);
+  const reason =
+    boundedText(input.reason) ?? firstStructuredRecommendationReason(input);
   if (!subjectName || !reason) return null;
   const type = RECOMMENDATION_TYPES.includes(input.type)
     ? input.type
@@ -723,6 +746,17 @@ function normalizeRecommendationInput(
     sourceLanes: sourceLanes.length ? sourceLanes : ["admin_manual"],
     sourceTypes: normalizeStringArray(input.sourceTypes).slice(0, 25),
     suggestedAction: boundedText(input.suggestedAction, 500) || undefined,
+    knownContext: normalizePacketStringArray(input.knownContext),
+    usefulEvidence: normalizePacketStringArray(input.usefulEvidence),
+    relationshipSignals: normalizePacketStringArray(input.relationshipSignals),
+    publicSafePossibilities: normalizePacketStringArray(
+      input.publicSafePossibilities,
+    ),
+    privateOnlyNotes: normalizePacketStringArray(input.privateOnlyNotes),
+    notPublicYet: normalizePacketStringArray(input.notPublicYet),
+    recommendedAction: boundedText(input.recommendedAction, 1000) || undefined,
+    sourceAuthority: normalizePacketStringArray(input.sourceAuthority),
+    rawProvenance: cloneJsonValue(input.rawProvenance),
     missingInfo: normalizeStringArray(input.missingInfo),
     publicSafetyNotes: normalizeStringArray(input.publicSafetyNotes),
     doNotSay: normalizeStringArray(input.doNotSay),
@@ -875,7 +909,7 @@ function bnlAutoCandidateNoteText(
   ]
     .filter(Boolean)
     .join("\n\n")
-    .slice(0, 2000);
+    .slice(0, 4000);
 }
 
 function buildCandidateFromRecommendation(input: {
@@ -909,6 +943,7 @@ function buildCandidateFromRecommendation(input: {
     tier: "review_candidate",
     score: recommendationCandidateScore(recommendation),
     whyNow:
+      recommendation.recommendedAction ??
       recommendation.suggestedAction ??
       (source === "bnl_dynamic_candidate_discovery"
         ? "BNL dynamic candidate discovery."
@@ -918,8 +953,22 @@ function buildCandidateFromRecommendation(input: {
     reason: recommendation.reason,
     firstSeenAt: recommendation.ingestedAt ?? now,
     lastSeenAt: now,
-    evidenceSummary: recommendation.evidenceSummary ?? recommendation.reason,
-    evidenceItems: recommendation.evidenceSummary
+    evidenceSummary:
+      recommendation.usefulEvidence?.join("\n") ??
+      recommendation.evidenceSummary ??
+      recommendation.reason,
+    evidenceItems: (recommendation.usefulEvidence?.length ?? 0) > 0
+      ? recommendation.usefulEvidence!.map((summary) => ({
+          id: createEvidenceId(),
+          type: "operator_note" as const,
+          label: "BNL structured useful evidence",
+          summary,
+          count: 1,
+          firstSeenAt: recommendation.ingestedAt ?? now,
+          lastSeenAt: now,
+          publicSafe: false,
+        }))
+      : recommendation.evidenceSummary
       ? [
           {
             id: createEvidenceId(),
@@ -938,8 +987,10 @@ function buildCandidateFromRecommendation(input: {
           },
         ]
       : [],
-    evidenceCount: recommendation.evidenceSummary ? 1 : 0,
-    knownFacts: [],
+    evidenceCount:
+      recommendation.usefulEvidence?.length ??
+      (recommendation.evidenceSummary ? 1 : 0),
+    knownFacts: recommendation.knownContext ?? [],
     confidence: recommendation.confidence ?? "low",
     duplicateRisk: duplicate.risk,
     existingDossierMatch: duplicate.match,
@@ -953,9 +1004,15 @@ function buildCandidateFromRecommendation(input: {
     recommendedTags: recommendation.recommendedTags ?? [],
     proposedTags: [],
     missingInfo: recommendation.missingInfo ?? [],
-    doNotSay: recommendation.doNotSay ?? [],
+    doNotSay: uniqueStrings(
+      recommendation.doNotSay,
+      recommendation.notPublicYet,
+    ),
     publicSafetyNotes: uniqueStrings(
       recommendation.publicSafetyNotes,
+      recommendation.privateOnlyNotes,
+      recommendation.relationshipSignals,
+      recommendation.notPublicYet,
       bnlAutoCandidateSourceNotes(recommendation),
     ),
     sourceFileNotes: [{ ...note, candidateId: "" }],
@@ -1346,18 +1403,40 @@ export async function createDossierRecommendationIdempotent(
   };
 }
 
+function packetLines(label: string, items?: string[]): string[] {
+  return (items ?? []).map((item) => `${label}: ${item}`);
+}
+
 function recommendationSourceNoteText(
   recommendation: DossierRecommendation,
 ): string {
   return [
     `Recommendation reason: ${recommendation.reason}`,
+    ...packetLines("Known context", recommendation.knownContext),
+    ...packetLines("Useful evidence", recommendation.usefulEvidence),
+    ...packetLines(
+      "Relationship signal — private review",
+      recommendation.relationshipSignals,
+    ),
+    ...packetLines(
+      "Public-safe possibility pending owner review",
+      recommendation.publicSafePossibilities,
+    ),
+    ...packetLines("Private/internal note", recommendation.privateOnlyNotes),
+    ...packetLines("Not public yet", recommendation.notPublicYet),
+    recommendation.recommendedAction
+      ? `Recommended next action: ${recommendation.recommendedAction}`
+      : "",
+    ...(recommendation.sourceAuthority ?? []).map(
+      (item) => `Source authority / confidence boundary: ${item}`,
+    ),
     recommendation.evidenceSummary
       ? `Evidence summary: ${recommendation.evidenceSummary}`
       : "",
   ]
     .filter(Boolean)
     .join("\n\n")
-    .slice(0, 2000);
+    .slice(0, 4000);
 }
 
 export class DossierWorkflowInputError extends Error {

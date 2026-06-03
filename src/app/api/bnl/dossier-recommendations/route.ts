@@ -105,6 +105,33 @@ function stringList(value: unknown, maxItemLength = 500): string[] | undefined {
   return items.length ? (items as string[]) : [];
 }
 
+function packetStringList(
+  value: unknown,
+  maxItemLength = 1000,
+): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "string") {
+    const item = text(value, maxItemLength);
+    return item ? [item] : [];
+  }
+  if (!Array.isArray(value)) {
+    throw new Error("Expected text or a list of strings");
+  }
+  if (value.length > 25) throw new Error("Packet field has too many items");
+  const items = value.map((item) => text(item, maxItemLength)).filter(Boolean);
+  return items.length ? (items as string[]) : [];
+}
+
+function rawJsonValue(value: unknown): unknown {
+  if (value === undefined) return undefined;
+  const json = JSON.stringify(value);
+  if (json === undefined) {
+    throw new Error("rawProvenance must be JSON serializable");
+  }
+  if (json.length > 20000) throw new Error("rawProvenance is too large");
+  return JSON.parse(json);
+}
+
 function enumValue<T extends string>(
   value: unknown,
   allowed: readonly T[],
@@ -223,7 +250,22 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
   }
 
   const subjectName = text(payload.subjectName, 200);
-  const reason = text(payload.reason, 2000);
+  const knownContext = packetStringList(payload.knownContext);
+  const usefulEvidence = packetStringList(payload.usefulEvidence);
+  const relationshipSignals = packetStringList(payload.relationshipSignals);
+  const publicSafePossibilities = packetStringList(
+    payload.publicSafePossibilities,
+  );
+  const privateOnlyNotes = packetStringList(payload.privateOnlyNotes);
+  const notPublicYet = packetStringList(payload.notPublicYet);
+  const recommendedAction = text(payload.recommendedAction, 1000);
+  const sourceAuthority = packetStringList(payload.sourceAuthority, 1000);
+  const rawProvenance = rawJsonValue(payload.rawProvenance);
+  const reason =
+    text(payload.reason, 2000) ??
+    knownContext?.[0] ??
+    usefulEvidence?.[0] ??
+    recommendedAction;
   const evidenceSummary =
     payload.evidenceSummary &&
     typeof payload.evidenceSummary === "object" &&
@@ -240,7 +282,9 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
         .slice(0, 2000)
     : evidenceSummary;
   if (!subjectName) throw new Error("subjectName is required");
-  if (!reason) throw new Error("reason is required");
+  if (!reason) {
+    throw new Error("reason or structured source context is required");
+  }
 
   return {
     type: enumValue(payload.type ?? "new_subject", RECOMMENDATION_TYPES, "type") ?? "new_subject",
@@ -254,6 +298,15 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
     sourceLanes,
     sourceTypes: stringList(payload.sourceTypes, 120),
     suggestedAction: text(payload.suggestedAction, 500),
+    knownContext,
+    usefulEvidence,
+    relationshipSignals,
+    publicSafePossibilities,
+    privateOnlyNotes,
+    notPublicYet,
+    recommendedAction,
+    sourceAuthority,
+    rawProvenance,
     missingInfo: stringList(payload.missingInfo),
     publicSafetyNotes: stringList(payload.publicSafetyNotes),
     doNotSay: stringList(payload.doNotSay),

@@ -91,11 +91,23 @@ export function DossierSourceFileSummaryPanel({
         <Section title="Claimed / Needs Review">
           <SummaryList items={summary.claimedNeedsReview} />
         </Section>
+        <Section title="Private Relationship Context — Review Only">
+          <SummaryList items={summary.privateRelationshipContext} />
+        </Section>
+        <Section title="Public-Safe Possibilities Pending Owner Review">
+          <SummaryList items={summary.publicSafePossibilities} />
+        </Section>
+        <Section title="Private/Internal Notes">
+          <SummaryList items={summary.privateOnlyNotes} />
+        </Section>
         <Section title="Missing Info / Open Questions">
           <SummaryList items={summary.missingInfo} />
         </Section>
         <Section title="Not Public Yet">
           <SummaryList items={summary.notPublicYet} />
+        </Section>
+        <Section title="Source Authority / Confidence">
+          <SummaryList items={summary.sourceAuthority} />
         </Section>
         <Section title="Recommended Next Step">
           <p>{summary.recommendedNextAction}</p>

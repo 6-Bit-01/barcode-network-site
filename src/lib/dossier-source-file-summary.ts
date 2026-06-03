@@ -43,9 +43,13 @@ export type DossierSourceFileSummary = {
   patterns: string[];
   confirmedStrong: string[];
   claimedNeedsReview: string[];
+  privateRelationshipContext: string[];
+  publicSafePossibilities: string[];
+  privateOnlyNotes: string[];
   uncertainties: string[];
   missingInfo: string[];
   notPublicYet: string[];
+  sourceAuthority: string[];
   recommendedNextAction: string;
   substanceLevel: DossierSourceFileSubstanceLevel;
   publicReadiness: DossierSourceFilePublicReadiness;
@@ -250,6 +254,55 @@ export function createDossierSourceFileSummary(
       ...(recommendation.sourceLanes ?? []),
     ]),
   ];
+  const structuredKnownContext = unique(
+    recommendations.flatMap(
+      (recommendation) => recommendation.knownContext ?? [],
+    ),
+    6,
+  );
+  const structuredUsefulEvidence = unique(
+    recommendations.flatMap(
+      (recommendation) => recommendation.usefulEvidence ?? [],
+    ),
+    6,
+  );
+  const structuredRelationshipSignals = unique(
+    recommendations.flatMap(
+      (recommendation) => recommendation.relationshipSignals ?? [],
+    ),
+    6,
+  );
+  const structuredPublicSafePossibilities = unique(
+    recommendations.flatMap(
+      (recommendation) => recommendation.publicSafePossibilities ?? [],
+    ),
+    6,
+  );
+  const structuredPrivateOnlyNotes = unique(
+    recommendations.flatMap(
+      (recommendation) => recommendation.privateOnlyNotes ?? [],
+    ),
+    6,
+  );
+  const structuredNotPublicYet = unique(
+    recommendations.flatMap((recommendation) =>
+      recommendation.notPublicYet ?? [],
+    ),
+    6,
+  );
+  const structuredRecommendedAction = unique(
+    recommendations.map((recommendation) => recommendation.recommendedAction),
+    1,
+  )[0];
+  const structuredSourceAuthority = unique(
+    recommendations.flatMap((recommendation) => [
+      ...(recommendation.sourceAuthority ?? []),
+      recommendation.confidence
+        ? `Confidence: ${recommendation.confidence}. Review source boundaries before public use.`
+        : undefined,
+    ]),
+    5,
+  );
   const sourceMemoryEvidence = sourceFileEvidenceClusterItems(
     rawEvidenceValues,
     {
@@ -271,6 +324,7 @@ export function createDossierSourceFileSummary(
   )[0];
   const usefulEvidence = unique(
     [
+      ...structuredUsefulEvidence,
       ...sourceMemoryEvidence,
       candidate.evidenceSummary,
       ...(candidate.evidenceItems ?? []).map(
@@ -284,6 +338,7 @@ export function createDossierSourceFileSummary(
   );
   const knownContext = unique(
     [
+      ...structuredKnownContext,
       ...(candidate.knownFacts ?? []),
       sourceFileReasonMeaning(candidate.reason, candidate.name),
       ...(candidate.sourceFileNotes ?? [])
@@ -302,6 +357,9 @@ export function createDossierSourceFileSummary(
   );
   const notPublicYet = unique(
     [
+      ...structuredNotPublicYet,
+      ...structuredPrivateOnlyNotes,
+      ...structuredRelationshipSignals,
       ...(candidate.publicSafetyNotes ?? []),
       ...(candidate.doNotSay ?? []),
       ...recommendations.flatMap((recommendation) => [
@@ -323,6 +381,8 @@ export function createDossierSourceFileSummary(
   );
   const claimedNeedsReview = unique(
     [
+      ...structuredRelationshipSignals,
+      ...structuredPublicSafePossibilities,
       sourceFileReasonMeaning(candidate.reason, candidate.name),
       sourceFileWhyNowMeaning(candidate.whyNow),
       ...recommendations.map((recommendation) => recommendation.reason),
@@ -395,6 +455,18 @@ export function createDossierSourceFileSummary(
       claimedNeedsReview.length > 0
         ? claimedNeedsReview
         : ["No human-readable claims have been extracted yet."],
+    privateRelationshipContext:
+      structuredRelationshipSignals.length > 0
+        ? structuredRelationshipSignals
+        : ["No private relationship/context signals are recorded in the structured packet."],
+    publicSafePossibilities:
+      structuredPublicSafePossibilities.length > 0
+        ? structuredPublicSafePossibilities
+        : ["No public-safe possibilities are pending owner review yet."],
+    privateOnlyNotes:
+      structuredPrivateOnlyNotes.length > 0
+        ? structuredPrivateOnlyNotes
+        : ["No private/internal notes are recorded in the structured packet."],
     uncertainties:
       uncertainties.length > 0
         ? uncertainties
@@ -413,7 +485,12 @@ export function createDossierSourceFileSummary(
       notPublicYet.length > 0
         ? notPublicYet
         : ["Do not say more publicly until owner/admin review confirms it."],
-    recommendedNextAction: operatorNextAction ?? nextActionCopy(action),
+    sourceAuthority:
+      structuredSourceAuthority.length > 0
+        ? structuredSourceAuthority
+        : ["Source authority has not been separated from confidence yet."],
+    recommendedNextAction:
+      operatorNextAction ?? structuredRecommendedAction ?? nextActionCopy(action),
     substanceLevel: level,
     publicReadiness: readiness,
     existingPublicDossier: candidate.existingDossierMatch

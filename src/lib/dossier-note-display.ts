@@ -3,7 +3,10 @@ import type {
   DossierRecommendationIngestSource,
   DossierSourceFileNote,
 } from "./dossier-workflow";
-import { sourceMemoryMeaningItems } from "./dossier-source-memory-meaning";
+import {
+  isRawSourceMemoryDebugText,
+  sourceMemoryMeaningItems,
+} from "./dossier-source-memory-meaning";
 
 export type DossierHumanReadableSection = {
   title: string;
@@ -45,8 +48,18 @@ type NoteLike = Pick<
   publicSafetyNotes?: string[];
   doNotSay?: string[];
   suggestedAction?: string;
+  knownContext?: string[];
+  usefulEvidence?: string[];
+  relationshipSignals?: string[];
+  publicSafePossibilities?: string[];
+  privateOnlyNotes?: string[];
+  notPublicYet?: string[];
+  recommendedAction?: string;
+  sourceAuthority?: string[];
+  rawProvenance?: unknown;
   evidenceSummary?: string;
   reason?: string;
+  subjectName?: string;
 };
 
 const thinFileWarning =
@@ -70,7 +83,7 @@ const summaryHeadingPattern =
   /^(summary|review context|why it matters|review reason|reason)\s*:/i;
 
 const technicalTermPattern =
-  /\b(source lane|source_lanes|sourceTypes|sourceCounts|ingest|ingestKey|bridge source lane mapping|workflow record|payload|metadata|local_profile_observed|public_discord_observed|local_relationship_trace|relationship_journal|user_profiles|conversations|rd_context|broadcast_memory|public_safe_candidate|private_review_required|owner_review_required|public_use_not_allowed_until_review|internal_only|target id|targetId|candidate id|candidateId|recommendation id|recommendationId|source type mapping|source type mappings|source types|source_lanes|public_home|admin\/dossiers|api\/admin|api\/bnl)\b|unknown\s*->\s*unknown/i;
+  /\b(source lane|source_lanes|sourceTypes|sourceCounts|ingest|ingestKey|bridge source lane mapping|workflow record|payload|metadata|local_profile_observed|public_discord_observed|local_relationship_trace|relationship_journal|user_profiles|conversations|rd_context|broadcast_memory|help_signal|EDGE_SESSI(?:ON)?|BNL local knowledge stores?|public_safe_candidate|private_review_required|owner_review_required|public_use_not_allowed_until_review|internal_only|target id|targetId|candidate id|candidateId|recommendation id|recommendationId|source type mapping|source type mappings|source types|source_lanes|public_home|admin\/dossiers|api\/admin|api\/bnl)\b|unknown\s*->\s*unknown/i;
 
 const rawIdPattern =
   /\b(?:candidate|target|dossier|source_file|recommendation|rec|bnl)_[a-z0-9][a-z0-9_-]{8,}\b/i;
@@ -150,18 +163,26 @@ function uniqueItems(items: string[], limit = 6) {
   return output;
 }
 
-function translatedTechnicalSignals(value: string) {
-  return uniqueItems([
-    ...sourceMemoryMeaningItems(value, { includePublicDiscord: true }),
-    ...technicalTranslations
+function translatedTechnicalSignals(
+  value: string,
+  options: { subjectName?: string } = {},
+) {
+  const sourceMemoryMeanings = sourceMemoryMeaningItems(value, {
+    subjectName: options.subjectName,
+    includePublicDiscord: true,
+  });
+  if (sourceMemoryMeanings.length) return uniqueItems(sourceMemoryMeanings);
+  return uniqueItems(
+    technicalTranslations
       .filter(([pattern]) => pattern.test(value))
       .map(([, copy]) => copy),
-  ]);
+  );
 }
 
 export function containsDossierBackendJunk(value?: string | null) {
   if (!value) return false;
   return (
+    isRawSourceMemoryDebugText(value) ||
     technicalTermPattern.test(value) ||
     routeLikePattern.test(value) ||
     rawIdPattern.test(value) ||
@@ -216,13 +237,23 @@ function stripBackendFragments(value: string) {
     .trim();
 }
 
-export function humanizeDossierMeaningLine(value?: string | null): string[] {
+export function humanizeDossierMeaningLine(
+  value?: string | null,
+  options: { subjectName?: string } = {},
+): string[] {
   const clean = cleanLine(value ?? "")
     .replace(/\s+/g, " ")
     .trim();
   if (!clean) return [];
 
-  const translations = translatedTechnicalSignals(clean);
+  const translations = translatedTechnicalSignals(clean, options);
+  if (containsDossierBackendJunk(clean) || isRawSourceMemoryDebugText(clean)) {
+    return translations.length
+      ? translations
+      : [
+          "Internal BNL memory references exist, but they need owner review before public use.",
+        ];
+  }
   const stripped = stripBackendFragments(clean);
   const includeStripped =
     sentenceHasHumanMeaning(stripped) &&
@@ -254,25 +285,44 @@ function addItem(
   sections: Map<string, string[]>,
   title: string,
   value?: string,
-  options?: { translateOnly?: boolean },
+  options?: { translateOnly?: boolean; subjectName?: string },
 ) {
   const candidates = options?.translateOnly
-    ? translatedTechnicalSignals(value ?? "")
-    : humanizeDossierMeaningLine(value);
+    ? translatedTechnicalSignals(value ?? "", {
+        subjectName: options.subjectName,
+      })
+    : humanizeDossierMeaningLine(value, { subjectName: options?.subjectName });
   if (!candidates.length) return;
   const items = uniqueItems([...(sections.get(title) ?? []), ...candidates]);
   sections.set(title, items);
 }
 
-function addPattern(sections: Map<string, string[]>, value?: string) {
+function addPattern(
+  sections: Map<string, string[]>,
+  value?: string,
+  options: { subjectName?: string } = {},
+) {
   if (!hasDossierMeaningfulPattern(value)) return;
-  addItem(sections, "Pattern BNL Noticed", value);
+  addItem(sections, "Pattern BNL Noticed", value, options);
 }
 
-function addShortWarning(sections: Map<string, string[]>, value?: string) {
-  const translations = translatedTechnicalSignals(value ?? "");
+function addShortWarning(
+  sections: Map<string, string[]>,
+  value?: string,
+  options: { subjectName?: string } = {},
+) {
+  if (containsDossierBackendJunk(value) || isRawSourceMemoryDebugText(value)) {
+    addItem(
+      sections,
+      "Not Public Yet",
+      "Do not use publicly until owner/admin review.",
+      options,
+    );
+    return;
+  }
+  const translations = translatedTechnicalSignals(value ?? "", options);
   if (translations.length) {
-    addItem(sections, "Not Public Yet", translations[0]);
+    addItem(sections, "Not Public Yet", translations[0], options);
     return;
   }
   if (
@@ -284,8 +334,26 @@ function addShortWarning(sections: Map<string, string[]>, value?: string) {
       sections,
       "Not Public Yet",
       "Do not use publicly until owner/admin review.",
+      options,
     );
   }
+}
+
+function addClaimedNeedsReview(
+  sections: Map<string, string[]>,
+  value?: string,
+  options: { subjectName?: string } = {},
+) {
+  if (containsDossierBackendJunk(value) || isRawSourceMemoryDebugText(value)) {
+    addItem(
+      sections,
+      "Claimed / Needs Review",
+      "Internal BNL memory references exist, but they need owner review before public use.",
+      options,
+    );
+    return;
+  }
+  addItem(sections, "Claimed / Needs Review", value, options);
 }
 
 function sourceLabel(ingestSource?: DossierRecommendationIngestSource) {
@@ -378,6 +446,7 @@ export function createHumanReadableSourceFileNoteView(
   const rawMetadata: Array<{ label: string; value: string }> = [];
   const text = note.text ?? "";
   const rawLines = text.split(/\n+/).map(cleanLine).filter(Boolean);
+  const subjectOptions = { subjectName: note.subjectName };
   let legacyRawFormatting = false;
   let summary = "";
 
@@ -387,9 +456,10 @@ export function createHumanReadableSourceFileNoteView(
       const [label, ...rest] = line.split(":");
       rawMetadata.push({ label: label.trim(), value: rest.join(":").trim() });
       addItem(sections, "Useful Evidence", rest.join(":"), {
+        ...subjectOptions,
         translateOnly: true,
       });
-      addShortWarning(sections, rest.join(":"));
+      addShortWarning(sections, rest.join(":"), subjectOptions);
       continue;
     }
     if (
@@ -401,31 +471,32 @@ export function createHumanReadableSourceFileNoteView(
       const [label, ...rest] = line.split(":");
       rawMetadata.push({ label: label.trim(), value: rest.join(":").trim() });
       addItem(sections, "Useful Evidence", rest.join(":"), {
+        ...subjectOptions,
         translateOnly: true,
       });
-      addShortWarning(sections, rest.join(":"));
+      addShortWarning(sections, rest.join(":"), subjectOptions);
       continue;
     }
     if (evidenceHeadingPattern.test(line)) {
-      addItem(sections, "Useful Evidence", withoutHeading(line));
+      addItem(sections, "Useful Evidence", withoutHeading(line), subjectOptions);
     } else if (publicSafetyHeadingPattern.test(line)) {
-      addShortWarning(sections, withoutHeading(line));
+      addShortWarning(sections, withoutHeading(line), subjectOptions);
     } else if (missingInfoHeadingPattern.test(line)) {
-      addItem(sections, "Open Questions", withoutHeading(line));
+      addItem(sections, "Open Questions", withoutHeading(line), subjectOptions);
     } else if (doNotSayHeadingPattern.test(line)) {
-      addShortWarning(sections, withoutHeading(line));
+      addShortWarning(sections, withoutHeading(line), subjectOptions);
     } else if (actionHeadingPattern.test(line)) {
-      addItem(sections, "Recommended Next Step", withoutHeading(line));
+      addItem(sections, "Recommended Next Step", withoutHeading(line), subjectOptions);
     } else if (summaryHeadingPattern.test(line)) {
       const body = withoutHeading(line);
-      if (hasDossierMeaningfulPattern(body)) addPattern(sections, body);
-      else addItem(sections, "Claimed / Needs Review", body);
+      if (hasDossierMeaningfulPattern(body)) addPattern(sections, body, subjectOptions);
+      else addClaimedNeedsReview(sections, body, subjectOptions);
     } else if (
       /public use requires review|internal\/private review|required|review-only|not public copy|owner\/admin review/i.test(
         line,
       )
     ) {
-      addShortWarning(sections, line);
+      addShortWarning(sections, line, subjectOptions);
     } else if (
       !summary &&
       sentenceHasHumanMeaning(line) &&
@@ -433,25 +504,51 @@ export function createHumanReadableSourceFileNoteView(
     ) {
       summary = line;
     } else if (hasDossierMeaningfulPattern(line)) {
-      addPattern(sections, line);
+      addPattern(sections, line, subjectOptions);
     } else {
-      addItem(sections, "Claimed / Needs Review", line);
-      addItem(sections, "Useful Evidence", line, { translateOnly: true });
-      addShortWarning(sections, line);
+      addClaimedNeedsReview(sections, line, subjectOptions);
+      addItem(sections, "Useful Evidence", line, {
+        ...subjectOptions,
+        translateOnly: true,
+      });
+      addShortWarning(sections, line, subjectOptions);
     }
   }
 
   if (!summary)
     summary = excerpt(text) || "Review-only internal source-file note.";
 
-  addPattern(sections, note.reason);
-  addItem(sections, "Useful Evidence", note.evidenceSummary);
+  for (const item of note.knownContext ?? [])
+    addItem(sections, "Known Context / Current Read", item, subjectOptions);
+  for (const item of note.usefulEvidence ?? [])
+    addItem(sections, "Useful Evidence", item, subjectOptions);
+  for (const item of note.relationshipSignals ?? [])
+    addItem(sections, "Private Relationship Context — Review Only", item, subjectOptions);
+  for (const item of note.publicSafePossibilities ?? [])
+    addItem(
+      sections,
+      "Public-Safe Possibilities Pending Owner Review",
+      item,
+      subjectOptions,
+    );
+  for (const item of note.privateOnlyNotes ?? [])
+    addItem(sections, "Private/Internal Notes", item, subjectOptions);
+  for (const item of note.notPublicYet ?? [])
+    addShortWarning(sections, item, subjectOptions);
+  addItem(sections, "Recommended Next Step", note.recommendedAction, subjectOptions);
+  for (const item of note.sourceAuthority ?? [])
+    addItem(sections, "Source Authority / Confidence", item, subjectOptions);
+  addPattern(sections, note.reason, subjectOptions);
+  if ((note.usefulEvidence ?? []).length === 0) {
+    addItem(sections, "Useful Evidence", note.evidenceSummary, subjectOptions);
+  }
   for (const item of note.publicSafetyNotes ?? [])
-    addShortWarning(sections, item);
+    addShortWarning(sections, item, subjectOptions);
   for (const item of note.missingInfo ?? [])
-    addItem(sections, "Open Questions", item);
-  for (const item of note.doNotSay ?? []) addShortWarning(sections, item);
-  addItem(sections, "Recommended Next Step", note.suggestedAction);
+    addItem(sections, "Open Questions", item, subjectOptions);
+  for (const item of note.doNotSay ?? [])
+    addShortWarning(sections, item, subjectOptions);
+  addItem(sections, "Recommended Next Step", note.suggestedAction, subjectOptions);
 
   if (!sections.get("Pattern BNL Noticed")?.length) {
     sections.set("Pattern BNL Noticed", [noPatternCopy]);
@@ -481,6 +578,24 @@ export function createHumanReadableSourceFileNoteView(
     });
   if (note.confidence)
     rawMetadata.push({ label: "confidence", value: note.confidence });
+  if (note.rawProvenance !== undefined)
+    rawMetadata.push({
+      label: "rawProvenance",
+      value: JSON.stringify(note.rawProvenance, null, 2),
+    });
+
+  if (note.reason && containsDossierBackendJunk(note.reason)) {
+    rawMetadata.push({ label: "legacyReason", value: note.reason });
+  }
+  if (
+    note.evidenceSummary &&
+    containsDossierBackendJunk(note.evidenceSummary)
+  ) {
+    rawMetadata.push({
+      label: "legacyEvidenceSummary",
+      value: note.evidenceSummary,
+    });
+  }
 
   const sectionEntries = Array.from(sections.entries())
     .map(([title, items]) => ({ title, items: uniqueItems(items) }))
@@ -514,7 +629,31 @@ export function createHumanReadableRecommendationView(
 ): DossierHumanReadableNoteView {
   return createHumanReadableSourceFileNoteView({
     type: "general_note",
-    text: [recommendation.reason, recommendation.evidenceSummary]
+    text: [
+      recommendation.reason,
+      (recommendation.knownContext ?? [])
+        .map((item) => `Known context: ${item}`)
+        .join("\n"),
+      (recommendation.usefulEvidence ?? [])
+        .map((item) => `Useful evidence: ${item}`)
+        .join("\n"),
+      (recommendation.relationshipSignals ?? [])
+        .map((item) => `Relationship signal — private review: ${item}`)
+        .join("\n"),
+      (recommendation.publicSafePossibilities ?? [])
+        .map((item) => `Public-safe possibility pending owner review: ${item}`)
+        .join("\n"),
+      (recommendation.privateOnlyNotes ?? [])
+        .map((item) => `Private/internal note: ${item}`)
+        .join("\n"),
+      (recommendation.notPublicYet ?? [])
+        .map((item) => `Not public yet: ${item}`)
+        .join("\n"),
+      recommendation.recommendedAction
+        ? `Recommended next action: ${recommendation.recommendedAction}`
+        : "",
+      recommendation.evidenceSummary,
+    ]
       .filter(Boolean)
       .join("\n\n"),
     source: "bnl_recommendation",
@@ -531,7 +670,17 @@ export function createHumanReadableRecommendationView(
     publicSafetyNotes: recommendation.publicSafetyNotes,
     doNotSay: recommendation.doNotSay,
     suggestedAction: recommendation.suggestedAction,
+    knownContext: recommendation.knownContext,
+    usefulEvidence: recommendation.usefulEvidence,
+    relationshipSignals: recommendation.relationshipSignals,
+    publicSafePossibilities: recommendation.publicSafePossibilities,
+    privateOnlyNotes: recommendation.privateOnlyNotes,
+    notPublicYet: recommendation.notPublicYet,
+    recommendedAction: recommendation.recommendedAction,
+    sourceAuthority: recommendation.sourceAuthority,
+    rawProvenance: recommendation.rawProvenance,
     evidenceSummary: recommendation.evidenceSummary,
     reason: recommendation.reason,
+    subjectName: recommendation.subjectName,
   });
 }

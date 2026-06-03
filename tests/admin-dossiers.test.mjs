@@ -905,7 +905,7 @@ test("admin Source File and recommendation pages render readable sections with c
   for (const label of [
     "Plain-English review view",
     "Recommendation Takeaway",
-    "Technical audit details",
+    "Developer / Raw Source Audit",
     "Adds review context",
     "Thin: routing only",
     "Claimed / Needs Review",
@@ -4772,14 +4772,101 @@ test("source file meaning filter hides backend terms from main views while prese
   const view = noteDisplay.createHumanReadableSourceFileNoteView(note);
   const mainText = JSON.stringify({ summary: view.summary, sections: view.sections });
   assert.doesNotMatch(mainText, /user_profiles|local_profile_observed|relationship_journal|unknown -> unknown|private_review_required|public_use_not_allowed_until_review|source lane/i);
-  assert.match(mainText, /BNL has a local profile match for this subject/);
+  assert.match(mainText, /BNL found an internal local profile match for this subject/);
   assert.match(mainText, /This needs internal review before public use|Do not use publicly until owner\/admin review/);
   assert.equal(
-    (mainText.match(/BNL has a local profile match for this subject/g) ?? []).length,
+    (mainText.match(/BNL found an internal local profile match for this subject/g) ?? []).length,
     1,
   );
   assert.match(JSON.stringify(view.rawMetadata), /source lane|relationship_journal|unknown/i);
   assert.match(view.rawText, /user_profiles\/local_profile_observed/);
+});
+
+
+
+test("legacy source-file note view translates raw source memory instead of leaking it", async () => {
+  await resetWorkflowStore();
+  const beforePublic = JSON.stringify(databasePage.entries);
+  const rawLegacyText = [
+    "Evidence summary: user_profiles/local_profile_observed: Local profile observed for Crow. help_signal: EDGE_SESSION abc123456789",
+    "relationship_journal/local_relationship_trace: help_signal: User asked for help in EDGE_SESSION abc123456789",
+    "Source lanes: unknown",
+    "Source lane mapping: relationship_journal -> unknown, user_profiles -> unknown",
+    "Summary: BNL local knowledge stores.",
+  ].join("\n");
+  const note = {
+    type: "general_note",
+    text: rawLegacyText,
+    source: "bnl_recommendation",
+    status: "active",
+    publicSafe: false,
+    createdAt: "2026-06-01T00:00:00.000Z",
+    updatedAt: "2026-06-01T00:00:00.000Z",
+    ingestSource: "bnl_source_knowledge_bridge",
+    ingestKey: "bnl:legacy-crow-note",
+    evidenceSummary:
+      "user_profiles/local_profile_observed: Local profile observed for Crow. relationship_journal/local_relationship_trace help_signal: EDGE_SESSION abc123456789",
+    reason: "BNL local knowledge stores. relationship_journal/local_relationship_trace",
+    subjectName: "Crow",
+  };
+
+  const view = noteDisplay.createHumanReadableSourceFileNoteView(note);
+  const visibleSections = JSON.stringify(view.sections);
+  const usefulEvidence = JSON.stringify(
+    view.sections.find((section) => section.title === "Useful Evidence")?.items ?? [],
+  );
+  const claimedNeedsReview = JSON.stringify(
+    view.sections.find((section) => section.title === "Claimed / Needs Review")?.items ?? [],
+  );
+
+  for (const visibleText of [visibleSections, usefulEvidence, claimedNeedsReview]) {
+    assert.doesNotMatch(visibleText, /help_signal:?/i);
+    assert.doesNotMatch(visibleText, /EDGE_SESSI(?:ON)?/i);
+    assert.doesNotMatch(visibleText, /relationship_journal\/local_relationship_trace/i);
+    assert.doesNotMatch(visibleText, /user_profiles\/local_profile_observed/i);
+    assert.doesNotMatch(visibleText, /conversations\/public_discord_observed/i);
+    assert.doesNotMatch(visibleText, /source lane mapping|Source lanes: unknown|unknown -> unknown/i);
+    assert.doesNotMatch(visibleText, /: Local profile observed|: BNL local knowledge stores\./i);
+  }
+
+  assert.match(usefulEvidence, /BNL found an internal local profile match for Crow/);
+  assert.match(usefulEvidence, /BNL found prior relationship\/context notes connected to Crow/);
+  assert.match(visibleSections, /Internal BNL memory references exist, but they need owner review before public use/);
+  assert.equal(
+    (visibleSections.match(/local profile match/g) ?? []).length,
+    1,
+  );
+  assert.equal(
+    (visibleSections.match(/relationship\/context notes/g) ?? []).length,
+    1,
+  );
+
+  assert.match(view.rawText ?? "", /user_profiles\/local_profile_observed/);
+  assert.match(view.rawText ?? "", /EDGE_SESSION/);
+  assert.match(JSON.stringify(view.rawMetadata), /legacyEvidenceSummary/);
+  assert.match(JSON.stringify(view.rawMetadata), /user_profiles\/local_profile_observed/);
+  assert.match(JSON.stringify(view.rawMetadata), /legacyReason/);
+  assert.match(JSON.stringify(view.rawMetadata), /relationship_journal\/local_relationship_trace/);
+
+  const candidatePayload = await (await authedPost({
+    action: "createManualCandidate",
+    input: {
+      ...manualCandidateInput,
+      name: "Crow Legacy Note",
+      reason: "Manual review shell for legacy note leak test.",
+      evidenceSummary: note.evidenceSummary,
+    },
+  })).json();
+  const draftPayload = await (await authedPost({
+    action: "createDraftFromCandidate",
+    candidateId: candidatePayload.candidate.id,
+  })).json();
+  const draftText = JSON.stringify(draftPayload.draft.fields);
+  assert.doesNotMatch(draftText, /help_signal|EDGE_SESSION|user_profiles\/local_profile_observed|relationship_journal\/local_relationship_trace/i);
+
+  const publicPayload = await (await readModel.GET(new Request("https://example.test/api/bnl/read-model"))).json();
+  assert.equal(JSON.stringify(databasePage.entries), beforePublic);
+  assert.doesNotMatch(JSON.stringify(publicPayload), /Crow Legacy Note|help_signal|EDGE_SESSION|local_profile_observed/i);
 });
 
 test("source file summary suppresses fake patterns, shows thin warning, and prefers operator summary", () => {
@@ -4898,7 +4985,7 @@ test("recommendation detail case-file view uses the same sanitizer", () => {
   const view = noteDisplay.createHumanReadableRecommendationView(recommendation);
   const mainText = JSON.stringify({ summary: view.summary, sections: view.sections });
   assert.doesNotMatch(mainText, /relationship_journal|local_profile_observed|public_discord_observed|private_review_required|rd_context|target_id/);
-  assert.match(mainText, /BNL has a local profile match for this subject/);
+  assert.match(mainText, /BNL found an internal local profile match for Melanie Heart/);
   assert.match(JSON.stringify(view.rawMetadata), /relationship_journal|rd_context|bnl:rec_filter/);
 });
 
@@ -5012,4 +5099,108 @@ test("raw provenance remains collapsed and outside normal preview surfaces", () 
   assert.match(draftPage, /Developer \/ Raw Source Audit — internal debugging only/);
   assert.match(candidatePage, /Developer \/ Raw Source Audit — internal debugging only/);
   assert.doesNotMatch(previewFunction, /candidate\?\.reason|candidate\?\.whyNow|candidate\?\.evidenceSummary|note\.text/);
+});
+
+test("BNL structured source packet v2 is ingested, summarized, and kept review-only", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const candidatePayload = await (await authedPost({
+    action: "createManualCandidate",
+    input: {
+      ...manualCandidateInput,
+      name: "Structured Packet Subject",
+      reason: "Existing source file for structured packet review.",
+      evidenceSummary: "Reviewed starter context.",
+    },
+  })).json();
+  await authedPost({
+    action: "promoteCandidateToSourceFile",
+    candidateId: candidatePayload.candidate.id,
+  });
+
+  const packet = {
+    type: "modify_existing_dossier",
+    subjectName: "Structured Packet Subject",
+    targetCandidateId: candidatePayload.candidate.id,
+    knownContext: ["BNL currently reads this subject as a recurring radio-side collaborator."],
+    usefulEvidence: ["Two reviewed source notes mention recurring set-support work."],
+    relationshipSignals: ["Private relationship context suggests an operator-adjacent connection."],
+    publicSafePossibilities: ["May be described as a collaborator after owner review."],
+    privateOnlyNotes: ["Private-only note about the internal contact path."],
+    notPublicYet: ["Do not publish the collaborator label until owner review."],
+    recommendedAction: "Ask an owner to separate public-safe collaborator language from internal relationship context.",
+    confidence: "high",
+    sourceAuthority: ["Mixed BNL memory plus admin review; not owner-confirmed."],
+    rawProvenance: {
+      backendTraceId: "raw-trace-structured-packet-v2",
+      lanes: ["relationship_journal", "operator_notes"],
+    },
+    sourceLanes: ["active_source_file", "operator_notes"],
+    sourceTypes: ["source_memory_packet_v2"],
+    ingestKey: "bnl:structured-source-packet-v2",
+    ingestSource: "bnl_source_file_enrichment",
+  };
+
+  const response = await bnlIngestPost(packet);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.autoAction, "attached_existing");
+  assert.equal(payload.recommendation.reason, packet.knownContext[0]);
+  assert.deepEqual(payload.recommendation.knownContext, packet.knownContext);
+  assert.deepEqual(payload.recommendation.usefulEvidence, packet.usefulEvidence);
+  assert.deepEqual(payload.recommendation.relationshipSignals, packet.relationshipSignals);
+  assert.deepEqual(payload.recommendation.publicSafePossibilities, packet.publicSafePossibilities);
+  assert.deepEqual(payload.recommendation.privateOnlyNotes, packet.privateOnlyNotes);
+  assert.deepEqual(payload.recommendation.notPublicYet, packet.notPublicYet);
+  assert.equal(payload.recommendation.recommendedAction, packet.recommendedAction);
+  assert.deepEqual(payload.recommendation.sourceAuthority, packet.sourceAuthority);
+  assert.deepEqual(payload.recommendation.rawProvenance, packet.rawProvenance);
+
+  const state = await store.getDossierWorkflowState();
+  const savedRecommendation = state.recommendations.find(
+    (recommendation) => recommendation.ingestKey === packet.ingestKey,
+  );
+  assert.ok(savedRecommendation);
+  assert.deepEqual(savedRecommendation.usefulEvidence, packet.usefulEvidence);
+  assert.deepEqual(savedRecommendation.rawProvenance, packet.rawProvenance);
+  const sourceFile = state.candidates.find(
+    (candidate) => candidate.id === candidatePayload.candidate.id,
+  );
+  assert.ok(sourceFile);
+  assert.equal(sourceFile.sourceFileNotes.length, 1);
+  assert.match(sourceFile.sourceFileNotes[0].text, /Useful evidence: Two reviewed source notes/);
+  assert.match(sourceFile.sourceFileNotes[0].text, /Relationship signal — private review/);
+  assert.doesNotMatch(sourceFile.sourceFileNotes[0].text, /raw-trace-structured-packet-v2/);
+
+  const summary = sourceFileSummary.createDossierSourceFileSummary({
+    candidate: sourceFile,
+    recommendations: [savedRecommendation],
+  });
+  assert.match(JSON.stringify(summary.usefulEvidence), /Two reviewed source notes/);
+  assert.match(JSON.stringify(summary.privateRelationshipContext), /Private relationship context/);
+  assert.match(JSON.stringify(summary.claimedNeedsReview), /Private relationship context|collaborator after owner review/);
+  assert.match(JSON.stringify(summary.publicSafePossibilities), /collaborator after owner review/);
+  assert.match(JSON.stringify(summary.privateOnlyNotes), /internal contact path/);
+  assert.match(JSON.stringify(summary.notPublicYet), /Do not publish the collaborator label|Private relationship context|internal contact path/);
+  assert.match(JSON.stringify(summary.sourceAuthority), /Confidence: high|Mixed BNL memory/);
+  assert.doesNotMatch(JSON.stringify(summary), /raw-trace-structured-packet-v2/);
+
+  const view = noteDisplay.createHumanReadableRecommendationView(savedRecommendation);
+  assert.match(JSON.stringify(view.sections), /Two reviewed source notes/);
+  assert.match(JSON.stringify(view.sections), /Private Relationship Context/);
+  assert.match(JSON.stringify(view.rawMetadata), /raw-trace-structured-packet-v2/);
+  assert.doesNotMatch(JSON.stringify(view.sections), /raw-trace-structured-packet-v2/);
+
+  const draftPayload = await (await authedPost({
+    action: "createDraftFromCandidate",
+    candidateId: sourceFile.id,
+  })).json();
+  const draftText = JSON.stringify(draftPayload.draft.fields);
+  assert.doesNotMatch(draftText, /raw-trace-structured-packet-v2/);
+  assert.doesNotMatch(draftText, /Private-only note|internal contact path|relationship context/);
+
+  const publicPayload = await (await readModel.GET(new Request("https://example.test/api/bnl/read-model"))).json();
+  assert.doesNotMatch(JSON.stringify(publicPayload), /Structured Packet Subject|raw-trace-structured-packet-v2|internal contact path/);
+  assert.equal(state.drafts.length, 0, "No draft existed before the explicit createDraftFromCandidate call.");
 });

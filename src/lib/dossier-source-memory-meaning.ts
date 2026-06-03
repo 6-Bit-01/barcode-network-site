@@ -2,7 +2,7 @@ const rawSourcePathPattern =
   /\b(?:user_profiles|relationship_journal|conversations|memory_tiers|rd_context|broadcast_memory|source_blind_memory_trace|local_knowledge_store)\s*\/\s*[a-z0-9_/-]+\b/i;
 
 const rawBackendLabelPattern =
-  /\b(?:local_profile_observed|local_relationship_trace|public_discord_observed|source lane mapping|bridge source lane mapping|source lanes?:\s*unknown|unknown\s*->\s*unknown|help_signal\s*:|EDGE_SESSION|ingestKey|candidateId|recommendationId|targetId|sourceTypes|sourceCounts|memory_tiers|private_review_required|owner_review_required|public_use_not_allowed_until_review)\b/i;
+  /\b(?:local_profile_observed|local_relationship_trace|public_discord_observed|source lane mapping|bridge source lane mapping|source lanes?:\s*unknown|unknown\s*->\s*unknown|help_signal\s*:|EDGE_SESSI(?:ON)?|ingestKey|candidateId|recommendationId|targetId|sourceTypes|sourceCounts|memory_tiers|private_review_required|owner_review_required|public_use_not_allowed_until_review)\b/i;
 
 const rawIdPattern =
   /\b(?:candidate|target|dossier|source_file|recommendation|rec|bnl|edge_session|ingest)[_:][a-z0-9][a-z0-9_-]{8,}\b/i;
@@ -21,6 +21,12 @@ const localKnowledgePattern =
 
 function compact(value?: string | null) {
   return value?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+function inferredSubject(value: string): string | undefined {
+  return value.match(/local profile observed for ([A-Z][A-Za-z0-9 ._-]{1,80})/i)?.[1]
+    ?.replace(/[.;:,].*$/, "")
+    .trim();
 }
 
 function subjectCopy(subjectName?: string) {
@@ -67,7 +73,8 @@ export function sourceMemoryMeaningItems(
   if (/^\s*(?:bridge\s+)?source lane mapping\s*:/i.test(clean)) return [];
 
   const items: string[] = [];
-  const subject = subjectCopy(options.subjectName);
+  const subjectName = options.subjectName ?? inferredSubject(clean);
+  const subject = subjectCopy(subjectName);
 
   if (localProfilePattern.test(clean)) {
     items.push(`BNL found an internal local profile match${subject}.`);
@@ -75,8 +82,8 @@ export function sourceMemoryMeaningItems(
 
   if (relationshipTracePattern.test(clean)) {
     items.push(
-      options.subjectName
-        ? `BNL found prior relationship/context notes connected to ${options.subjectName}.`
+      subjectName
+        ? `BNL found prior relationship/context notes connected to ${subjectName}.`
         : "BNL found prior relationship/context notes connected to this subject.",
     );
   }

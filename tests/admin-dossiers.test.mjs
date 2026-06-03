@@ -57,6 +57,7 @@ const sourceFileSummary = require("../src/lib/dossier-source-file-summary.ts");
 const entityReadout = require("../src/lib/dossier-entity-activity-readout.ts");
 const sourceMemoryMeaning = require("../src/lib/dossier-source-memory-meaning.ts");
 const sourceSummaryPanelComponent = require("../src/components/DossierSourceFileSummaryPanel.tsx");
+const actionableBrief = require("../src/lib/dossier-source-file-actionable-brief.ts");
 const publicCopyGuard = require("../src/lib/dossier-public-copy-guard.ts");
 const dossierPageViewModel = require("../src/lib/dossier-page-view-model.ts");
 
@@ -5644,6 +5645,24 @@ test("Source File Snapshot promotes actionable Crow intelligence above classific
     lastUpdatedAt: "2026-06-03T00:00:00.000Z",
     summarySource: "structured",
   };
+  const attachedRecommendation = {
+    subjectName: "Crow",
+    usefulEvidence: ["Recurring named topic: Orion appears across reviewed messages."],
+    musicSignals: ["Tool/platform mention: Suno appears in reviewed music-making context."],
+    bnlInteractionSignals: ["BNL interaction pattern: Crow has repeated BNL conversation evidence."],
+    queueSubmissionStatus: "not_connected",
+  };
+  const sourceFileNotes = [
+    {
+      text: [
+        "Recurring named topic: Orion",
+        "Tool/platform mention: Suno",
+        "BNL interaction pattern: Crow appears in repeated exchanges involving BNL.",
+        "Queue/submission history is not connected yet.",
+        "source-file memory cannot confirm submitted songs.",
+      ].join("\n"),
+    },
+  ];
   const readout = entityReadout.createDossierEntityActivityReadoutFromSourceFile({
     summary,
     recommendations: [],
@@ -5653,6 +5672,8 @@ test("Source File Snapshot promotes actionable Crow intelligence above classific
     summary,
     entityReadout: readout,
     subjectName: "Crow",
+    recommendations: [attachedRecommendation],
+    sourceFileNotes,
   }));
   const keyStart = text.indexOf("Key Intelligence");
   const supportingStart = text.indexOf("Supporting Evidence Log");
@@ -5660,7 +5681,7 @@ test("Source File Snapshot promotes actionable Crow intelligence above classific
   assert.match(text, /Key Intelligence/);
   assert.match(text, /Orion appears in reviewed evidence connected to Crow/);
   assert.match(text, /Suno appears in reviewed evidence/);
-  assert.match(text, /BNL interaction pattern: Crow asks BNL/);
+  assert.match(text, /Crow has repeated BNL interaction evidence in approved review context/);
   assert.match(text, /Queue\/submission history is not connected yet/);
   assert.match(text, /This evidence does not confirm submitted song counts, play history, source type, or Priority\/payment history/);
   assert.match(text, /Missing Before Public Dossier/);
@@ -5674,6 +5695,88 @@ test("Source File Snapshot promotes actionable Crow intelligence above classific
   assert.ok(keyStart >= 0 && supportingStart > keyStart);
   assert.doesNotMatch(text.slice(keyStart, supportingStart), /Main evidence categories|Automated topic label/);
   assert.doesNotMatch(text, /What BNL Found|rawProvenance|Priority\/payment status confirmed|submitted song counts confirmed/);
+});
+
+test("actionable brief scans recommendations and source notes without fake Possible topics", () => {
+  const summary = {
+    currentRead: "Crow has source-file enrichment awaiting review.",
+    knownContext: [],
+    whyTracked: "Admin review.",
+    usefulEvidence: [],
+    patterns: [],
+    confirmedStrong: [],
+    claimedNeedsReview: [],
+    privateRelationshipContext: [],
+    publicSafePossibilities: [],
+    privateOnlyNotes: [],
+    uncertainties: [],
+    missingInfo: [],
+    notPublicYet: [],
+    observedChannels: [],
+    conversationHighlights: [],
+    topicBreakdown: [],
+    bestEvidenceToReview: [],
+    bnlInteractionSignals: [],
+    musicSignals: [],
+    communitySignals: [],
+    sourceCoverage: [],
+    evidenceDetails: [],
+    representativeEvidence: [],
+    activityFrequencySummary: [],
+    topChannels: [],
+    topTopicDetails: [],
+    recentActivitySummary: [],
+    authoredVsMentionedSummary: [],
+    publicUseCandidates: [],
+    reviewOnlyEvidence: [],
+    queueSubmissionStatus: "not_connected",
+    queueSubmissionNote: "Queue/submission history is not connected yet.",
+    sourceAuthority: [],
+    recommendedNextAction: "Review enrichment before public use.",
+    substanceLevel: "partial",
+    publicReadiness: "needs_review",
+    existingPublicDossier: "no",
+    nextAction: "owner_review",
+    lastUpdatedAt: "2026-06-03T00:00:00.000Z",
+    summarySource: "structured",
+  };
+  const possibleLine = "Possible music/submission-related language appears in reviewed evidence, but queue/submission identity is not connected yet.";
+  const brief = actionableBrief.buildSourceFileActionableBrief({
+    summary,
+    subjectName: "Crow",
+    recommendations: [
+      {
+        subjectName: "Crow",
+        usefulEvidence: ["Recurring named topic: Orion appears across reviewed messages."],
+        musicSignals: ["Tool/platform mention: Suno appears in reviewed music-making context."],
+        bnlInteractionSignals: ["BNL interaction pattern: repeated exchanges involving BNL."],
+        evidenceDetails: [possibleLine],
+        queueSubmissionStatus: "not_connected",
+      },
+    ],
+    sourceFileNotes: [
+      {
+        text: [
+          "Review-only recurring topic: Orion",
+          "Tool/platform mention: Suno",
+          "BNL interaction pattern: Crow has repeated BNL interaction evidence.",
+          "source-file memory cannot confirm submitted songs.",
+          "Reception and co-participant analysis is not available yet.",
+          possibleLine,
+        ].join("\n"),
+      },
+    ],
+  });
+  const allBriefText = JSON.stringify(brief);
+
+  assert.match(allBriefText, /Orion appears in reviewed evidence connected to Crow/);
+  assert.match(allBriefText, /Suno appears in reviewed evidence connected to Crow/);
+  assert.match(allBriefText, /Crow has repeated BNL interaction evidence in approved review context/);
+  assert.match(allBriefText, /Queue\/submission history is not connected yet/);
+  assert.match(allBriefText, /source-file memory cannot confirm submitted songs|submitted song counts/);
+  assert.match(allBriefText, /Reception and co-participant analysis is not available/);
+  assert.doesNotMatch(allBriefText, /Possible appears in reviewed evidence/);
+  assert.doesNotMatch(JSON.stringify(brief.namedTopics), /Possible/);
 });
 
 test("BNL Entity Readout prefers structured packet fields and filters raw provenance labels", () => {

@@ -1170,6 +1170,8 @@ export default function CandidateReviewPage() {
               summary={sourceFileSummary}
               entityReadout={entityActivityReadout}
               subjectName={candidate.name}
+              recommendations={attachedRecommendations}
+              sourceFileNotes={candidate.sourceFileNotes ?? []}
             />
             {/* Source File Summary */}
           </>

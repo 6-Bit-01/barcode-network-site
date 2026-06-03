@@ -2,6 +2,7 @@
 
 import type React from "react";
 import type { DossierEntityActivityReadout } from "@/lib/dossier-entity-activity-readout";
+import type { DossierRecommendation, DossierSourceFileNote } from "@/lib/dossier-workflow";
 import { buildSourceFileActionableBrief } from "@/lib/dossier-source-file-actionable-brief";
 import { containsDossierBackendJunk } from "@/lib/dossier-note-display";
 import {
@@ -158,6 +159,38 @@ function fallbackItems(items: string[], empty: string) {
   return items.length ? items : [empty];
 }
 
+function visibleDedupeKey(item: string) {
+  return item
+    .toLowerCase()
+    .replace(/^(?:music\/platform signal|supporting evidence|supporting classification|source coverage|evidence detail):\s*/i, "")
+    .replace(/[^a-z0-9#]+/g, " ")
+    .trim();
+}
+
+function withoutVisibleRepeats(items: string[], seen: Set<string>) {
+  const output: string[] = [];
+  for (const item of items) {
+    const key = visibleDedupeKey(item);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    output.push(item);
+  }
+  return output;
+}
+
+function markVisible(items: string[], seen: Set<string>) {
+  const output: string[] = [];
+  const localSeen = new Set<string>();
+  for (const item of items) {
+    const key = visibleDedupeKey(item);
+    if (!key || localSeen.has(key)) continue;
+    localSeen.add(key);
+    seen.add(key);
+    output.push(item);
+  }
+  return output;
+}
+
 function queueStatusItems(status?: string, note?: string) {
   const items: string[] = [];
   if (status === "not_connected") {
@@ -220,11 +253,15 @@ export function DossierSourceFileSummaryPanel({
   summary,
   entityReadout,
   subjectName,
+  recommendations = [],
+  sourceFileNotes = [],
   title = "Source File Snapshot / BNL Readout",
 }: {
   summary: DossierSourceFileSummary;
   entityReadout?: DossierEntityActivityReadout | null;
   subjectName?: string;
+  recommendations?: Array<Partial<DossierRecommendation>>;
+  sourceFileNotes?: Array<Pick<DossierSourceFileNote, "text"> | string | null | undefined>;
   title?: string;
 }) {
   const currentRead = entityReadout?.currentRead ?? summary.currentRead;
@@ -288,26 +325,59 @@ export function DossierSourceFileSummaryPanel({
     entityReadout,
     summary,
     subjectName,
+    recommendations,
+    sourceFileNotes,
   });
+  const visibleFacts = new Set<string>();
+  const keyFindings = markVisible(actionableBrief.keyFindings, visibleFacts);
+  const namedTopics = markVisible(actionableBrief.namedTopics, visibleFacts);
+  const bnlInteractionPatterns = markVisible(actionableBrief.bnlInteractionPatterns, visibleFacts);
+  const platformAndMusicSignals = markVisible(
+    [...actionableBrief.platformSignals, ...actionableBrief.musicSignals],
+    visibleFacts,
+  );
+  const communityActivity = markVisible(actionableBrief.communityActivity, visibleFacts);
+  const queueSubmissionStatus = markVisible(actionableBrief.queueSubmissionStatus, visibleFacts);
+  const reviewOnlyCautions = markVisible(actionableBrief.reviewOnlyCautions, visibleFacts);
+  const missingBeforePublic = markVisible(
+    missingChecklist([...missingInfo, ...actionableBrief.missingInfo]),
+    visibleFacts,
+  );
+  const recommendedNextActions = markVisible(
+    fallbackItems(actionableBrief.recommendedNextActions, recommendedAction),
+    visibleFacts,
+  );
   const activityChannels = safeReviewItems([
     ...topChannels.map((item) => `Public channel/activity: ${item}`),
     ...observedChannels.map((item) => `Observed activity: ${item}`),
   ], 6);
-  const activityNamedTopics = actionableBrief.namedTopics;
-  const activityPlatformMentions = safeReviewItems([
-    ...actionableBrief.platformSignals,
-    ...actionableBrief.musicSignals,
-  ], 6);
-  const activityBnlInteraction = actionableBrief.bnlInteractionPatterns;
+  const activityNamedTopics = withoutVisibleRepeats(namedTopics, visibleFacts);
+  const activityPlatformMentions = withoutVisibleRepeats(
+    safeReviewItems([
+      ...actionableBrief.platformSignals,
+      ...actionableBrief.musicSignals,
+    ], 6),
+    visibleFacts,
+  );
+  const activityBnlInteraction = withoutVisibleRepeats(bnlInteractionPatterns, visibleFacts);
   const activityFrequency = safeReviewItems([
     ...activityFrequencySummary.map((item) => `Frequency: ${item}`),
     ...recentActivitySummary.map((item) => `Recency: ${item}`),
     ...authoredVsMentionedSummary.map((item) => `Posted/mentioned balance: ${item}`),
   ], 6);
-  const activitySupportingEvidence = safeReviewItems([
-    ...representativeEvidence.map((item) => isClassificationText(item) ? `Supporting review item: ${item}` : `Representative public activity: ${item}`),
-    ...conversationHighlights.map((item) => isClassificationText(item) ? `Supporting review item: ${item}` : `Public activity note: ${item}`),
-  ], 6);
+  const activitySupportingEvidence = withoutVisibleRepeats(
+    safeReviewItems([
+      ...representativeEvidence.map((item) => isClassificationText(item) ? `Supporting review item: ${item}` : `Representative public activity: ${item}`),
+      ...conversationHighlights.map((item) => isClassificationText(item) ? `Supporting review item: ${item}` : `Public activity note: ${item}`),
+    ], 6),
+    visibleFacts,
+  );
+  const supportingEvidenceLog = withoutVisibleRepeats(
+    [...actionableBrief.supportingEvidence, ...evidenceStatus, ...sourceAuthority].filter(
+      (item) => !/owner review|required|more public-safe context needed/i.test(item),
+    ),
+    visibleFacts,
+  );
 
 
   return (
@@ -369,7 +439,7 @@ export function DossierSourceFileSummaryPanel({
         >
           <SummaryList
             items={fallbackItems(
-              actionableBrief.keyFindings,
+              keyFindings,
               "No high-value actionable intelligence has been extracted yet.",
             )}
           />
@@ -378,32 +448,32 @@ export function DossierSourceFileSummaryPanel({
           title="Named Topics / People"
           helper="Recurring names surfaced for review before any public use."
         >
-          <SummaryList items={fallbackItems(actionableBrief.namedTopics, "No recurring named topic has been extracted yet.")} />
+          <SummaryList items={fallbackItems(namedTopics, "No recurring named topic has been extracted yet.")} />
         </Section>
         <Section
           title="BNL Interaction Pattern"
           helper="How this source appears to interact with BNL in approved review context."
         >
-          <SummaryList items={fallbackItems(actionableBrief.bnlInteractionPatterns, "No BNL interaction pattern has been extracted yet.")} />
+          <SummaryList items={fallbackItems(bnlInteractionPatterns, "No BNL interaction pattern has been extracted yet.")} />
         </Section>
         <Section
           title="Music / Platform Signals"
           helper="Tool, platform, music, or show signals that still need review before public use."
         >
-          <SummaryList items={fallbackItems([...actionableBrief.platformSignals, ...actionableBrief.musicSignals], "No music/tool/platform signal has been extracted yet.")} />
+          <SummaryList items={fallbackItems(platformAndMusicSignals, "No music/tool/platform signal has been extracted yet.")} />
         </Section>
         <Section
           title="Community Activity"
           helper="Approved public/community context without raw transcripts or IDs."
         >
-          <SummaryList items={fallbackItems(actionableBrief.communityActivity, "No community activity detail has been extracted yet.")} />
+          <SummaryList items={fallbackItems(communityActivity, "No community activity detail has been extracted yet.")} />
         </Section>
         <Section
           title="Queue / Submission Status"
           tone="review"
           helper="Submission and payment boundaries. Do not infer queue history from source evidence."
         >
-          <SummaryList items={actionableBrief.queueSubmissionStatus} />
+          <SummaryList items={queueSubmissionStatus} />
         </Section>
         <Section
           title="Activity Details"
@@ -423,14 +493,14 @@ export function DossierSourceFileSummaryPanel({
           tone="review"
           helper="Internal, private, source-blind, or unconfirmed context. Do not use publicly unless owner/admin review approves it."
         >
-          <SummaryList items={fallbackItems(actionableBrief.reviewOnlyCautions, "No review-only cautions are recorded in the structured readout.")} />
+          <SummaryList items={fallbackItems(reviewOnlyCautions, "No review-only cautions are recorded in the structured readout.")} />
         </Section>
         <Section
           title="Missing Before Public Dossier"
           tone="caution"
           helper="What still needs to be confirmed before this can become a clean public dossier."
         >
-          <SummaryList items={missingChecklist([...missingInfo, ...actionableBrief.missingInfo])} />
+          <SummaryList items={missingBeforePublic} />
         </Section>
         <Section
           title="Dossier Use / Public-Safe Possibilities"
@@ -445,13 +515,13 @@ export function DossierSourceFileSummaryPanel({
           />
         </Section>
         <Section title="Recommended Next Action">
-          <SummaryList items={fallbackItems(actionableBrief.recommendedNextActions, recommendedAction)} />
+          <SummaryList items={recommendedNextActions} />
         </Section>
         <Section
           title="Supporting Evidence Log"
           helper="Lower-priority source coverage, supporting classification, and evidence-log records. These support review, but they are not public copy."
         >
-          <SummaryList items={fallbackItems([...actionableBrief.supportingEvidence, ...evidenceStatus, ...sourceAuthority], "No lower-priority supporting evidence entries have been attached yet.")} />
+          <SummaryList items={fallbackItems(supportingEvidenceLog, "No lower-priority supporting evidence entries have been attached yet.")} />
         </Section>
       </div>
       <p className="text-xs text-muted">

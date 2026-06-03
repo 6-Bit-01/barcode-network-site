@@ -26,18 +26,36 @@ type BriefInput = {
 };
 
 const platformNames = ["Suno", "Udio", "Ableton", "Bandcamp", "SoundCloud", "Spotify", "YouTube", "Discord"];
-const genericTopicWords = new Set([
-  "BNL",
-  "BARCODE",
-  "Radio",
-  "Source",
-  "File",
-  "Dossier",
+const blockedTopicLabels = new Set([
+  "Admin",
+  "Activity",
   "Automated",
+  "BARCODE",
+  "BNL",
+  "Community",
+  "Confirm",
+  "Context",
+  "Dossier",
+  "Evidence",
+  "File",
+  "History",
+  "Music",
+  "Owner",
+  "Pattern",
+  "Platform",
+  "Possible",
+  "Private",
+  "Public",
+  "Queue",
+  "Radio",
   "Recurring",
   "Review",
-  "Music",
-  "Community",
+  "Reviewed",
+  "Signal",
+  "Source",
+  "Submission",
+  "This",
+  "Tool",
 ]);
 
 function clean(items: Array<string | undefined | null>, limit = 6) {
@@ -83,12 +101,37 @@ function valuesFrom(
   ], 10);
 }
 
-function sourceNoteText(input: BriefInput) {
+function textLines(items: Array<string | undefined | null>) {
   return unique(
+    items.flatMap((item) =>
+      (item ?? "")
+        .split(/\r?\n+/)
+        .map((line) => line.trim())
+        .filter(Boolean),
+    ),
+    40,
+  );
+}
+
+function sourceNoteText(input: BriefInput) {
+  return textLines(
     (input.sourceFileNotes ?? []).map((note) =>
       typeof note === "string" ? note : note?.text,
     ),
-    10,
+  );
+}
+
+function recommendationScalarText(input: BriefInput) {
+  return textLines(
+    (input.recommendations ?? []).flatMap((recommendation) => [
+      recommendation.reason,
+      recommendation.evidenceSummary,
+      recommendation.queueSubmissionNote,
+      recommendation.recommendedAction,
+      ...(recommendation.sourceAuthority ?? []),
+      ...(recommendation.publicSafetyNotes ?? []),
+      ...(recommendation.missingInfo ?? []),
+    ]),
   );
 }
 
@@ -100,27 +143,36 @@ function isGenericReviewWarning(value: string) {
   return /owner review|required|missing display name|public identity not confirmed|more public-safe context needed/i.test(value);
 }
 
+function cleanTopicLabel(value?: string, subjectName?: string) {
+  const label = value
+    ?.replace(/[.?!,;:]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!label) return undefined;
+  if (!/^[A-Z][\w'-]{1,40}$/.test(label)) return undefined;
+  if (label === subjectName || blockedTopicLabels.has(label)) return undefined;
+  return label;
+}
+
 function extractNamedTopicLabel(value: string, subjectName?: string) {
   const cleanValue = value.replace(/\s+/g, " ").trim();
-  const explicit = cleanValue.match(/Recurring named topic\s*[:/—-]\s*([A-Z][\w'-]{1,40})/i);
-  if (explicit?.[1]) return explicit[1];
-  const slash = cleanValue.match(/Recurring named topic\s*\/\s*([A-Z][\w'-]{1,40})/i);
-  if (slash?.[1]) return slash[1];
-  const appears = cleanValue.match(/\b([A-Z][\w'-]{1,40})\s+appears\b/);
-  if (appears?.[1]) return appears[1];
-  const ongoing = cleanValue.match(/\b(?:returned to|mention|mentions|discuss(?:es|ion)|topic)\s+([A-Z][\w'-]{1,40})\b/i);
-  if (ongoing?.[1]) return ongoing[1];
-  const proper = cleanValue.match(/\b([A-Z][a-z][\w'-]{1,40})\b/);
-  if (!proper?.[1]) return undefined;
-  if (proper[1] === subjectName || genericTopicWords.has(proper[1])) return undefined;
-  return proper[1];
+  const patterns = [
+    /\bRecurring named topic\s*[:/—-]\s*([A-Z][\w'-]{1,40})\b/i,
+    /\bReview-only recurring topic\s*[:/—-]\s*([A-Z][\w'-]{1,40})\b/i,
+    /\btopic\s*:\s*([A-Z][\w'-]{1,40})\b/i,
+    /\b([A-Z][\w'-]{1,40})\s+appears in reviewed evidence\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = cleanValue.match(pattern);
+    const label = cleanTopicLabel(match?.[1], subjectName);
+    if (label) return label;
+  }
+  return undefined;
 }
 
 function namedTopicItems(items: string[], subjectName?: string) {
   const topics = unique(
-    items
-      .filter((item) => /recurring named topic|named topic|\bappears\b|returned to/i.test(item))
-      .map((item) => extractNamedTopicLabel(item, subjectName)),
+    items.map((item) => extractNamedTopicLabel(item, subjectName)),
     4,
   );
   return topics.map(
@@ -128,7 +180,7 @@ function namedTopicItems(items: string[], subjectName?: string) {
   );
 }
 
-function platformItems(items: string[]) {
+function platformItems(items: string[], subjectName?: string) {
   const names = unique(
     items.flatMap((item) =>
       platformNames.filter((platform) => new RegExp(`\\b${platform}\\b`, "i").test(item)),
@@ -137,22 +189,23 @@ function platformItems(items: string[]) {
   );
   return names.map((name) => {
     if (/suno/i.test(name)) {
-      return "Suno appears in reviewed evidence. Confirm through queue/submission data before claiming submitted songs.";
+      return `Suno appears in reviewed evidence connected to ${subjectName ?? "this source file"}. Confirm through queue/submission data before claiming submitted songs or source type.`;
     }
     return `${name} appears in reviewed evidence. Confirm the platform context before using it in public copy.`;
   });
 }
 
-function bnlPatternItems(items: string[]) {
+function bnlPatternItems(items: string[], subjectName?: string) {
   const patterns = unique(items, 4);
-  if (patterns.length) {
-    return patterns.map((item) =>
-      /BNL interaction pattern/i.test(item)
-        ? item
-        : `BNL interaction pattern: ${item}`,
-    );
+  if (!patterns.length) return [];
+  if (patterns.some((item) => /repeated|recurring|exchange|conversation/i.test(item))) {
+    return [
+      `${subjectName ?? "This source"} has repeated BNL interaction evidence in approved review context. Review the evidence before using this publicly.`,
+    ];
   }
-  return [];
+  return [
+    `${subjectName ?? "This source"} appears in exchanges involving BNL. Review the evidence before using this publicly.`,
+  ];
 }
 
 function communityItems(channels: string[], communitySignals: string[], subjectName?: string) {
@@ -195,6 +248,9 @@ export function buildSourceFileActionableBrief(input: BriefInput): SourceFileAct
   const representativeEvidence = valuesFrom(input, "representativeEvidence", "representativeEvidence");
   const evidenceDetails = valuesFrom(input, "evidenceDetails", "evidenceDetails");
   const sourceCoverage = valuesFrom(input, "sourceCoverage", "sourceCoverage");
+  const noteText = sourceNoteText(input);
+  const recommendationText = recommendationScalarText(input);
+  const enrichmentText = unique([...noteText, ...recommendationText], 40);
   const reviewOnly = valuesFrom(input, "reviewOnlyEvidence", "reviewOnlyEvidence").concat(
     valuesFrom(input, "relationshipSignals", "privateRelationshipContext"),
     valuesFrom(input, "privateOnlyNotes", "privateOnlyNotes"),
@@ -211,20 +267,30 @@ export function buildSourceFileActionableBrief(input: BriefInput): SourceFileAct
     ...communitySignals,
     ...channels,
     ...representativeEvidence,
-    ...sourceNoteText(input),
+    ...enrichmentText,
   ], 40);
 
   const namedTopics = namedTopicItems(allFactText, subjectName);
-  const platformSignals = platformItems([...musicSignals, ...usefulEvidence, ...bestEvidence, ...sourceNoteText(input)]);
-  const bnlInteractionPatterns = bnlPatternItems(bnlSignals);
-  const communityActivity = communityItems(channels, communitySignals, subjectName);
-  const queueSubmissionStatus = queueItems(
-    input.entityReadout?.queueSubmissionStatus ?? input.summary?.queueSubmissionStatus,
-    input.entityReadout?.queueSubmissionNote ?? input.summary?.queueSubmissionNote,
+  const platformSignals = platformItems([...musicSignals, ...usefulEvidence, ...bestEvidence, ...enrichmentText], subjectName);
+  const bnlInteractionPatterns = bnlPatternItems(
+    unique([
+      ...bnlSignals,
+      ...enrichmentText.filter((item) => /BNL interaction pattern|repeated .*BNL|BNL conversation|exchanges involving BNL/i.test(item)),
+    ], 6),
+    subjectName,
   );
+  const communityActivity = communityItems(channels, communitySignals, subjectName);
+  const queueSubmissionStatus = unique([
+    ...queueItems(
+      input.entityReadout?.queueSubmissionStatus ?? input.summary?.queueSubmissionStatus,
+      input.entityReadout?.queueSubmissionNote ?? input.summary?.queueSubmissionNote,
+    ),
+    ...enrichmentText.filter((item) => /Queue\/submission history is not connected yet|source-file memory cannot confirm submitted songs|cannot confirm submitted songs/i.test(item)),
+  ], 4);
   const musicSignalItems = unique(musicSignals, 4).map((item) => `Music/platform signal: ${item}`);
   const reviewOnlyCautions = unique([
     ...reviewOnly,
+    ...enrichmentText.filter((item) => /review-only|internal context|Reception and co-participant analysis is not available/i.test(item)),
     "Reception and co-participant analysis is not available yet.",
   ], 6);
   const missingInfo = unique([
@@ -246,6 +312,7 @@ export function buildSourceFileActionableBrief(input: BriefInput): SourceFileAct
     ...topicBreakdown.filter(isClassification).map((item) => `Supporting classification: ${item}`),
     ...topTopicDetails.filter(isClassification).map((item) => `Supporting classification: ${item}`),
     ...representativeEvidence.filter((item) => !isGenericReviewWarning(item)).map((item) => `Supporting evidence: ${item}`),
+    ...enrichmentText.filter((item) => /Possible music\/submission-related language|source-file memory cannot confirm submitted songs/i.test(item)),
     ...bestEvidence.filter((item) => !namedTopics.some((topic) => topic.includes(item))),
   ], 10);
 

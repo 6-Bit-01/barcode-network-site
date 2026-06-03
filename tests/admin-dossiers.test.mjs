@@ -905,7 +905,7 @@ test("admin Source File and recommendation pages render readable sections with c
   for (const label of [
     "Plain-English review view",
     "Recommendation Takeaway",
-    "Technical audit details",
+    "Developer / Raw Source Audit",
     "Adds review context",
     "Thin: routing only",
     "Claimed / Needs Review",
@@ -5012,4 +5012,108 @@ test("raw provenance remains collapsed and outside normal preview surfaces", () 
   assert.match(draftPage, /Developer \/ Raw Source Audit — internal debugging only/);
   assert.match(candidatePage, /Developer \/ Raw Source Audit — internal debugging only/);
   assert.doesNotMatch(previewFunction, /candidate\?\.reason|candidate\?\.whyNow|candidate\?\.evidenceSummary|note\.text/);
+});
+
+test("BNL structured source packet v2 is ingested, summarized, and kept review-only", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const candidatePayload = await (await authedPost({
+    action: "createManualCandidate",
+    input: {
+      ...manualCandidateInput,
+      name: "Structured Packet Subject",
+      reason: "Existing source file for structured packet review.",
+      evidenceSummary: "Reviewed starter context.",
+    },
+  })).json();
+  await authedPost({
+    action: "promoteCandidateToSourceFile",
+    candidateId: candidatePayload.candidate.id,
+  });
+
+  const packet = {
+    type: "modify_existing_dossier",
+    subjectName: "Structured Packet Subject",
+    targetCandidateId: candidatePayload.candidate.id,
+    knownContext: ["BNL currently reads this subject as a recurring radio-side collaborator."],
+    usefulEvidence: ["Two reviewed source notes mention recurring set-support work."],
+    relationshipSignals: ["Private relationship context suggests an operator-adjacent connection."],
+    publicSafePossibilities: ["May be described as a collaborator after owner review."],
+    privateOnlyNotes: ["Private-only note about the internal contact path."],
+    notPublicYet: ["Do not publish the collaborator label until owner review."],
+    recommendedAction: "Ask an owner to separate public-safe collaborator language from internal relationship context.",
+    confidence: "high",
+    sourceAuthority: ["Mixed BNL memory plus admin review; not owner-confirmed."],
+    rawProvenance: {
+      backendTraceId: "raw-trace-structured-packet-v2",
+      lanes: ["relationship_journal", "operator_notes"],
+    },
+    sourceLanes: ["active_source_file", "operator_notes"],
+    sourceTypes: ["source_memory_packet_v2"],
+    ingestKey: "bnl:structured-source-packet-v2",
+    ingestSource: "bnl_source_file_enrichment",
+  };
+
+  const response = await bnlIngestPost(packet);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.autoAction, "attached_existing");
+  assert.equal(payload.recommendation.reason, packet.knownContext[0]);
+  assert.deepEqual(payload.recommendation.knownContext, packet.knownContext);
+  assert.deepEqual(payload.recommendation.usefulEvidence, packet.usefulEvidence);
+  assert.deepEqual(payload.recommendation.relationshipSignals, packet.relationshipSignals);
+  assert.deepEqual(payload.recommendation.publicSafePossibilities, packet.publicSafePossibilities);
+  assert.deepEqual(payload.recommendation.privateOnlyNotes, packet.privateOnlyNotes);
+  assert.deepEqual(payload.recommendation.notPublicYet, packet.notPublicYet);
+  assert.equal(payload.recommendation.recommendedAction, packet.recommendedAction);
+  assert.deepEqual(payload.recommendation.sourceAuthority, packet.sourceAuthority);
+  assert.deepEqual(payload.recommendation.rawProvenance, packet.rawProvenance);
+
+  const state = await store.getDossierWorkflowState();
+  const savedRecommendation = state.recommendations.find(
+    (recommendation) => recommendation.ingestKey === packet.ingestKey,
+  );
+  assert.ok(savedRecommendation);
+  assert.deepEqual(savedRecommendation.usefulEvidence, packet.usefulEvidence);
+  assert.deepEqual(savedRecommendation.rawProvenance, packet.rawProvenance);
+  const sourceFile = state.candidates.find(
+    (candidate) => candidate.id === candidatePayload.candidate.id,
+  );
+  assert.ok(sourceFile);
+  assert.equal(sourceFile.sourceFileNotes.length, 1);
+  assert.match(sourceFile.sourceFileNotes[0].text, /Useful evidence: Two reviewed source notes/);
+  assert.match(sourceFile.sourceFileNotes[0].text, /Relationship signal — private review/);
+  assert.doesNotMatch(sourceFile.sourceFileNotes[0].text, /raw-trace-structured-packet-v2/);
+
+  const summary = sourceFileSummary.createDossierSourceFileSummary({
+    candidate: sourceFile,
+    recommendations: [savedRecommendation],
+  });
+  assert.match(JSON.stringify(summary.usefulEvidence), /Two reviewed source notes/);
+  assert.match(JSON.stringify(summary.privateRelationshipContext), /Private relationship context/);
+  assert.match(JSON.stringify(summary.claimedNeedsReview), /Private relationship context|collaborator after owner review/);
+  assert.match(JSON.stringify(summary.publicSafePossibilities), /collaborator after owner review/);
+  assert.match(JSON.stringify(summary.privateOnlyNotes), /internal contact path/);
+  assert.match(JSON.stringify(summary.notPublicYet), /Do not publish the collaborator label|Private relationship context|internal contact path/);
+  assert.match(JSON.stringify(summary.sourceAuthority), /Confidence: high|Mixed BNL memory/);
+  assert.doesNotMatch(JSON.stringify(summary), /raw-trace-structured-packet-v2/);
+
+  const view = noteDisplay.createHumanReadableRecommendationView(savedRecommendation);
+  assert.match(JSON.stringify(view.sections), /Two reviewed source notes/);
+  assert.match(JSON.stringify(view.sections), /Private Relationship Context/);
+  assert.match(JSON.stringify(view.rawMetadata), /raw-trace-structured-packet-v2/);
+  assert.doesNotMatch(JSON.stringify(view.sections), /raw-trace-structured-packet-v2/);
+
+  const draftPayload = await (await authedPost({
+    action: "createDraftFromCandidate",
+    candidateId: sourceFile.id,
+  })).json();
+  const draftText = JSON.stringify(draftPayload.draft.fields);
+  assert.doesNotMatch(draftText, /raw-trace-structured-packet-v2/);
+  assert.doesNotMatch(draftText, /Private-only note|internal contact path|relationship context/);
+
+  const publicPayload = await (await readModel.GET(new Request("https://example.test/api/bnl/read-model"))).json();
+  assert.doesNotMatch(JSON.stringify(publicPayload), /Structured Packet Subject|raw-trace-structured-packet-v2|internal contact path/);
+  assert.equal(state.drafts.length, 0, "No draft existed before the explicit createDraftFromCandidate call.");
 });

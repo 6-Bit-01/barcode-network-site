@@ -184,6 +184,8 @@ function meaningFirstList(
 function recommendationEvidenceItems(recommendation: DossierRecommendation) {
   const clusterItems = sourceFileEvidenceClusterItems(
     [
+      ...(recommendation.usefulEvidence ?? []),
+      ...(recommendation.knownContext ?? []),
       recommendation.evidenceSummary,
       recommendation.reason,
       ...(recommendation.sourceTypes ?? []),
@@ -192,7 +194,12 @@ function recommendationEvidenceItems(recommendation: DossierRecommendation) {
     { subjectName: recommendation.subjectName },
   );
   const humanItems = sanitizeMeaningFirstItems(
-    [recommendation.evidenceSummary, recommendation.reason],
+    [
+      ...(recommendation.usefulEvidence ?? []),
+      ...(recommendation.knownContext ?? []),
+      recommendation.evidenceSummary,
+      recommendation.reason,
+    ],
     {
       subjectName: recommendation.subjectName,
       includePublicDiscord: true,

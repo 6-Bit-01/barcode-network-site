@@ -14,6 +14,7 @@ import {
   type DossierRecommendation,
 } from "@/lib/dossier-workflow";
 import { createHumanReadableRecommendationView } from "@/lib/dossier-note-display";
+import { sanitizeMeaningFirstItems } from "@/lib/dossier-source-memory-meaning";
 
 type WorkflowPayload = {
   candidates: DossierCandidate[];
@@ -108,6 +109,22 @@ function list(items: string[] | undefined, empty = "—") {
   ) : (
     <p>{empty}</p>
   );
+}
+
+function sourceAuthorityItems(recommendation: DossierRecommendation): string[] {
+  const sanitized = sanitizeMeaningFirstItems(
+    recommendation.sourceAuthority ?? [],
+    { subjectName: recommendation.subjectName },
+  );
+  return [
+    ...sanitized,
+    recommendation.confidence
+      ? `Confidence: ${recommendation.confidence}`
+      : undefined,
+    (recommendation.sourceAuthority ?? []).length > 0 && sanitized.length === 0
+      ? "Source authority was supplied by BNL; review raw audit details before public use."
+      : undefined,
+  ].filter((item): item is string => Boolean(item));
 }
 
 function formatDate(value?: string) {
@@ -238,7 +255,7 @@ function HumanReadableRecommendationCaseFile({
       </div>
       <details className="border border-border/60 bg-background/20 p-3 text-xs text-muted">
         <summary className="cursor-pointer font-semibold text-foreground">
-          Technical audit details
+          Developer / Raw Source Audit
         </summary>
         <div className="mt-3 space-y-3">
           <dl className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -998,6 +1015,30 @@ export default function DossierRecommendationPage() {
               Recommendation detail is evidence for the internal working case
               file, not public dossier copy.
             </p>
+          </Field>
+          <Field title="Known Context / Current Read">
+            {list(recommendation.knownContext)}
+          </Field>
+          <Field title="Useful Evidence">
+            {list(recommendation.usefulEvidence)}
+          </Field>
+          <Field title="Private Relationship Context — Review Only">
+            {list(recommendation.relationshipSignals)}
+          </Field>
+          <Field title="Public-Safe Possibilities Pending Owner Review">
+            {list(recommendation.publicSafePossibilities)}
+          </Field>
+          <Field title="Private/Internal Notes">
+            {list(recommendation.privateOnlyNotes)}
+          </Field>
+          <Field title="Not Public Yet">
+            {list(recommendation.notPublicYet)}
+          </Field>
+          <Field title="Recommended Next Action">
+            <p>{recommendation.recommendedAction ?? recommendation.suggestedAction ?? "—"}</p>
+          </Field>
+          <Field title="Source Authority / Confidence">
+            {list(sourceAuthorityItems(recommendation))}
           </Field>
           <Field title="Evidence summary">
             <p>{recommendation.evidenceSummary ?? "—"}</p>

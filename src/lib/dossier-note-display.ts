@@ -45,6 +45,15 @@ type NoteLike = Pick<
   publicSafetyNotes?: string[];
   doNotSay?: string[];
   suggestedAction?: string;
+  knownContext?: string[];
+  usefulEvidence?: string[];
+  relationshipSignals?: string[];
+  publicSafePossibilities?: string[];
+  privateOnlyNotes?: string[];
+  notPublicYet?: string[];
+  recommendedAction?: string;
+  sourceAuthority?: string[];
+  rawProvenance?: unknown;
   evidenceSummary?: string;
   reason?: string;
 };
@@ -444,8 +453,28 @@ export function createHumanReadableSourceFileNoteView(
   if (!summary)
     summary = excerpt(text) || "Review-only internal source-file note.";
 
+  for (const item of note.knownContext ?? [])
+    addItem(sections, "Known Context / Current Read", item);
+  for (const item of note.usefulEvidence ?? [])
+    addItem(sections, "Useful Evidence", item);
+  for (const item of note.relationshipSignals ?? [])
+    addItem(sections, "Private Relationship Context — Review Only", item);
+  for (const item of note.publicSafePossibilities ?? [])
+    addItem(
+      sections,
+      "Public-Safe Possibilities Pending Owner Review",
+      item,
+    );
+  for (const item of note.privateOnlyNotes ?? [])
+    addItem(sections, "Private/Internal Notes", item);
+  for (const item of note.notPublicYet ?? []) addShortWarning(sections, item);
+  addItem(sections, "Recommended Next Step", note.recommendedAction);
+  for (const item of note.sourceAuthority ?? [])
+    addItem(sections, "Source Authority / Confidence", item);
   addPattern(sections, note.reason);
-  addItem(sections, "Useful Evidence", note.evidenceSummary);
+  if ((note.usefulEvidence ?? []).length === 0) {
+    addItem(sections, "Useful Evidence", note.evidenceSummary);
+  }
   for (const item of note.publicSafetyNotes ?? [])
     addShortWarning(sections, item);
   for (const item of note.missingInfo ?? [])
@@ -481,6 +510,11 @@ export function createHumanReadableSourceFileNoteView(
     });
   if (note.confidence)
     rawMetadata.push({ label: "confidence", value: note.confidence });
+  if (note.rawProvenance !== undefined)
+    rawMetadata.push({
+      label: "rawProvenance",
+      value: JSON.stringify(note.rawProvenance, null, 2),
+    });
 
   const sectionEntries = Array.from(sections.entries())
     .map(([title, items]) => ({ title, items: uniqueItems(items) }))
@@ -514,7 +548,31 @@ export function createHumanReadableRecommendationView(
 ): DossierHumanReadableNoteView {
   return createHumanReadableSourceFileNoteView({
     type: "general_note",
-    text: [recommendation.reason, recommendation.evidenceSummary]
+    text: [
+      recommendation.reason,
+      (recommendation.knownContext ?? [])
+        .map((item) => `Known context: ${item}`)
+        .join("\n"),
+      (recommendation.usefulEvidence ?? [])
+        .map((item) => `Useful evidence: ${item}`)
+        .join("\n"),
+      (recommendation.relationshipSignals ?? [])
+        .map((item) => `Relationship signal — private review: ${item}`)
+        .join("\n"),
+      (recommendation.publicSafePossibilities ?? [])
+        .map((item) => `Public-safe possibility pending owner review: ${item}`)
+        .join("\n"),
+      (recommendation.privateOnlyNotes ?? [])
+        .map((item) => `Private/internal note: ${item}`)
+        .join("\n"),
+      (recommendation.notPublicYet ?? [])
+        .map((item) => `Not public yet: ${item}`)
+        .join("\n"),
+      recommendation.recommendedAction
+        ? `Recommended next action: ${recommendation.recommendedAction}`
+        : "",
+      recommendation.evidenceSummary,
+    ]
       .filter(Boolean)
       .join("\n\n"),
     source: "bnl_recommendation",
@@ -531,6 +589,15 @@ export function createHumanReadableRecommendationView(
     publicSafetyNotes: recommendation.publicSafetyNotes,
     doNotSay: recommendation.doNotSay,
     suggestedAction: recommendation.suggestedAction,
+    knownContext: recommendation.knownContext,
+    usefulEvidence: recommendation.usefulEvidence,
+    relationshipSignals: recommendation.relationshipSignals,
+    publicSafePossibilities: recommendation.publicSafePossibilities,
+    privateOnlyNotes: recommendation.privateOnlyNotes,
+    notPublicYet: recommendation.notPublicYet,
+    recommendedAction: recommendation.recommendedAction,
+    sourceAuthority: recommendation.sourceAuthority,
+    rawProvenance: recommendation.rawProvenance,
     evidenceSummary: recommendation.evidenceSummary,
     reason: recommendation.reason,
   });

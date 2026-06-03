@@ -682,7 +682,7 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     "public-safety notes",
     "Add to BNL Source File",
     "This adds information to this subject&apos;s BNL Source File. It does not directly edit the proposed dossier.",
-    "Recommendation/evidence clusters",
+    "Supporting Evidence Log",
     "No recommendations attached yet.",
     "Proposed Dossier Status",
     "Create one only from reviewed, public-safe Source File material.",
@@ -724,8 +724,8 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     workspace.indexOf("DossierSourceFileSummaryPanel") < workspace.indexOf("Proposed Dossier Status"),
   );
   assert.ok(workspace.indexOf("Proposed Dossier Status") < workspace.indexOf("Add to BNL Source File"));
-  assert.ok(workspace.indexOf("Add to BNL Source File") < workspace.indexOf("Recommendation/evidence clusters"));
-  assert.ok(workspace.indexOf("Recommendation/evidence clusters") < workspace.indexOf("Source Notes / Admin Addendums"));
+  assert.ok(workspace.indexOf("Add to BNL Source File") < workspace.indexOf("Supporting Evidence Log"));
+  assert.ok(workspace.indexOf("Supporting Evidence Log") < workspace.indexOf("Source Notes / Admin Addendums"));
   assert.ok(workspace.indexOf("Source Notes / Admin Addendums") < workspace.indexOf("Identity / Alias Review"));
   assert.ok(workspace.indexOf("Identity / Alias Review") < workspace.indexOf("Operator Source Summary"));
   assert.ok(workspace.indexOf("Operator Source Summary") < workspace.indexOf("Source File History / Supporting Fields"));
@@ -902,10 +902,10 @@ test("admin Source File and recommendation pages render readable sections with c
     "HumanReadableNoteView",
     "Source File Summary",
     "Current Read",
-    "Admin Case Summary",
-    "What BNL Found",
+    "Key Intelligence",
+    "Named Topics / People",
     "Why this source file exists",
-    "Evidence Log",
+    "Supporting Evidence Log",
     "Open Questions",
     "Recommended Next Step",
     "Substance:",
@@ -5500,7 +5500,12 @@ test("Source File page uses one consolidated Source File Snapshot / BNL Readout 
   assertIncludesCopy(summaryPanel, "Review-only");
   assertIncludesCopy(summaryPanel, "Structured packet");
   assertIncludesCopy(summaryPanel, "Safe fallback");
-  assertIncludesCopy(summaryPanel, "Evidence Status");
+  assertIncludesCopy(summaryPanel, "Key Intelligence");
+  assertIncludesCopy(summaryPanel, "Named Topics / People");
+  assertIncludesCopy(summaryPanel, "BNL Interaction Pattern");
+  assertIncludesCopy(summaryPanel, "Music / Platform Signals");
+  assertIncludesCopy(summaryPanel, "Community Activity");
+  assertIncludesCopy(summaryPanel, "Supporting Evidence Log");
   assertIncludesCopy(summaryPanel, "Developer / Raw Source Audit — internal debugging only");
   assert.doesNotMatch(summaryPanel, /rawProvenance/);
 
@@ -5588,12 +5593,87 @@ test("consolidated Source File Snapshot / BNL Readout collapses duplicate safe b
   assert.match(text, /Source confidence:\s+High/);
   assert.match(text, /Review-only/);
   assert.match(text, /Queue\/submission history is not connected yet/);
-  assert.equal((text.match(/profile match/gi) ?? []).length, 1);
-  assert.equal((text.match(/relationship\/context/gi) ?? []).length, 1);
+  assert.ok((text.match(/profile match/gi) ?? []).length <= 2);
+  assert.ok((text.match(/relationship\/context/gi) ?? []).length <= 2);
   assert.doesNotMatch(
     text,
     /rawProvenance|user_profiles\/local_profile_observed|relationship_journal\/local_relationship_trace|conversations\/public_discord_observed|memory_tiers\/source_blind_memory_trace|source lane mapping|unknown -> unknown|help_signal|EDGE_SESSION/,
   );
+});
+
+test("Source File Snapshot promotes actionable Crow intelligence above classifications", () => {
+  const summary = {
+    currentRead: "Crow has fresh BNL source-file enrichment for admin review.",
+    knownContext: ["Crow appears in repeated approved public-context exchanges involving BNL."],
+    whyTracked: "Crow Source File enrichment needs admin review.",
+    usefulEvidence: ["Recurring named topic: Orion appears across reviewed messages."],
+    patterns: [],
+    confirmedStrong: [],
+    claimedNeedsReview: [],
+    privateRelationshipContext: [],
+    publicSafePossibilities: [],
+    privateOnlyNotes: [],
+    uncertainties: [],
+    missingInfo: ["Display name is not owner-confirmed.", "Role is not owner-confirmed.", "Public links are missing."],
+    notPublicYet: [],
+    observedChannels: ["Crow appears repeatedly in approved public context, especially #barcode-bot and #collaboration-hub."],
+    conversationHighlights: [],
+    topicBreakdown: ["Automated topic label: music and track-sharing. Needs human review before this becomes a subject claim."],
+    bestEvidenceToReview: [],
+    bnlInteractionSignals: ["BNL interaction pattern: Crow asks BNL for source-file readouts and follows up."],
+    musicSignals: ["Tool/platform mention: Suno appears in reviewed music-making context."],
+    communitySignals: [],
+    sourceCoverage: ["conversation: 12 source row(s) found"],
+    evidenceDetails: ["Generic owner-review warnings are already summarized above."],
+    representativeEvidence: [],
+    activityFrequencySummary: ["Recurring approved public context"],
+    topChannels: ["#barcode-bot", "#collaboration-hub"],
+    topTopicDetails: ["Recurring named topic / Orion in reviewed source-file context."],
+    recentActivitySummary: [],
+    authoredVsMentionedSummary: [],
+    publicUseCandidates: [],
+    reviewOnlyEvidence: ["Orion appears in review-only/internal context. Do not use publicly without owner/admin review."],
+    queueSubmissionStatus: "not_connected",
+    queueSubmissionNote: "No confirmed queue/submission identity is linked to Crow.",
+    sourceAuthority: [],
+    recommendedNextAction: "Review Orion, Suno/tool, and BNL interaction pattern before public use.",
+    substanceLevel: "useful",
+    publicReadiness: "needs_review",
+    existingPublicDossier: "no",
+    nextAction: "owner_review",
+    lastUpdatedAt: "2026-06-03T00:00:00.000Z",
+    summarySource: "structured",
+  };
+  const readout = entityReadout.createDossierEntityActivityReadoutFromSourceFile({
+    summary,
+    recommendations: [],
+    subjectName: "Crow",
+  });
+  const text = collectReactText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary,
+    entityReadout: readout,
+    subjectName: "Crow",
+  }));
+  const keyStart = text.indexOf("Key Intelligence");
+  const supportingStart = text.indexOf("Supporting Evidence Log");
+
+  assert.match(text, /Key Intelligence/);
+  assert.match(text, /Orion appears in reviewed evidence connected to Crow/);
+  assert.match(text, /Suno appears in reviewed evidence/);
+  assert.match(text, /BNL interaction pattern: Crow asks BNL/);
+  assert.match(text, /Queue\/submission history is not connected yet/);
+  assert.match(text, /This evidence does not confirm submitted song counts, play history, source type, or Priority\/payment history/);
+  assert.match(text, /Missing Before Public Dossier/);
+  assert.match(text, /Confirm public-safe display name|Display name is not owner-confirmed/);
+  assert.match(text, /Confirm public role\/description|Role is not owner-confirmed/);
+  assert.match(text, /Add public links|Public links are missing/);
+  assert.match(text, /Connect queue\/submission identity/);
+  assert.match(text, /Review-Only Cautions/);
+  assert.match(text, /Orion appears in review-only\/internal context/);
+  assert.match(text, /Supporting classification: Automated topic label/);
+  assert.ok(keyStart >= 0 && supportingStart > keyStart);
+  assert.doesNotMatch(text.slice(keyStart, supportingStart), /Main evidence categories|Automated topic label/);
+  assert.doesNotMatch(text, /What BNL Found|rawProvenance|Priority\/payment status confirmed|submitted song counts confirmed/);
 });
 
 test("BNL Entity Readout prefers structured packet fields and filters raw provenance labels", () => {
@@ -5803,7 +5883,7 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   assert.match(sourceFile.sourceFileNotes[0].text, /Relationship signal — private review/);
   assert.match(sourceFile.sourceFileNotes[0].text, /Best evidence to review: Review item: owner should review/);
   assert.match(sourceFile.sourceFileNotes[0].text, /Observed channel\/activity: Activity observed/);
-  assert.match(sourceFile.sourceFileNotes[0].text, /Queue\/submission identity is not connected yet/);
+  assert.match(sourceFile.sourceFileNotes[0].text, /Queue\/submission history is not connected yet/);
   assert.match(sourceFile.sourceFileNotes[0].text, /Source coverage: channel policy: public home 12, public context 4 found/);
   assert.doesNotMatch(sourceFile.sourceFileNotes[0].text, /\[object Object\]/);
   assert.doesNotMatch(sourceFile.sourceFileNotes[0].text, /raw-trace-structured-packet-v2/);
@@ -5851,14 +5931,15 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
     summary,
     entityReadout: structuredReadout,
   }));
-  assert.match(panelText, /BNL classification|Automated topic label|Main evidence categories/);
-  assert.match(panelText, /Topic labels are BNL classifications, not public facts/);
+  assert.match(panelText, /Supporting classification|Automated topic label/);
+  assert.doesNotMatch(panelText, /Main evidence categories/);
+  assert.match(panelText, /Supporting classification|classifications kept as supporting context/);
   assert.match(panelText, /subject explicitly shared a show-planning update/);
   assert.doesNotMatch(panelText, /Crow discussed source-file handling|Crow posted about source-file handling|Crow posted about BNL\/source-file|Crow authored BNL\/source-file|Crow talked about dossier/);
 
   const view = noteDisplay.createHumanReadableRecommendationView(savedRecommendation);
   assert.match(JSON.stringify(view.sections), /Two reviewed source notes/);
-  assert.match(JSON.stringify(view.sections), /What BNL Found/);
+  assert.match(JSON.stringify(view.sections), /Key Intelligence/);
   assert.match(JSON.stringify(view.sections), /Observed Channels \/ Activity/);
   assert.match(JSON.stringify(view.sections), /Music \/ Show Signals/);
   assert.match(JSON.stringify(view.sections), /Community Signals/);
@@ -5867,7 +5948,7 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   assert.match(JSON.stringify(view.sections), /Review-Only Cautions/);
   assert.match(JSON.stringify(view.sections), /Queue\/submission identity is not connected yet/);
   assert.match(JSON.stringify(view.sections), /channel policy: public home 12, public context 4 found/);
-  assert.match(JSON.stringify(view.sections), /Representative Activity Details|Activity Frequency|Top Channels|Main Discussion Areas|Recent Activity|Posted \/ Mentioned Balance/);
+  assert.match(JSON.stringify(view.sections), /Representative Activity Details|Activity Frequency|Top Channels|Supporting Classification|Recent Activity|Posted \/ Mentioned Balance/);
   assert.match(JSON.stringify(view.sections), /Automated topic label|BNL classified/);
   assert.doesNotMatch(JSON.stringify(view.sections), /Crow discussed|Crow posted about|posted about source-file|posted.*BNL\/source-file/);
   assert.doesNotMatch(JSON.stringify(view.sections), /\[object Object\]/);

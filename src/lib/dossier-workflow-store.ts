@@ -1822,7 +1822,32 @@ function packetLines(label: string, items?: string[]): string[] {
 function recommendationSourceNoteText(
   recommendation: DossierRecommendation,
 ): string {
+  const queueStatus = recommendation.queueSubmissionStatus
+    ? `Queue/submission status: ${
+        recommendation.queueSubmissionStatus === "not_connected"
+          ? "Queue/submission history is not connected yet. This evidence does not confirm submitted song counts, play history, source type, or Priority/payment history."
+          : recommendation.queueSubmissionStatus
+      }`
+    : "";
+  const actionableSummary = [
+    "Actionable Summary:",
+    ...packetLines("Recurring named topic", [
+      (recommendation.usefulEvidence ?? []).find((item) => /recurring named topic/i.test(item)),
+      (recommendation.topTopicDetails ?? []).find((item) => /recurring named topic/i.test(item)),
+    ].filter(Boolean) as string[]),
+    ...packetLines("Tool/platform mention", [
+      (recommendation.musicSignals ?? []).find((item) => /tool|platform|suno|udio|ableton|bandcamp|soundcloud/i.test(item)),
+    ].filter(Boolean) as string[]),
+    ...packetLines("BNL interaction pattern", recommendation.bnlInteractionSignals),
+    queueStatus,
+    recommendation.recommendedAction
+      ? `Recommended next action: ${recommendation.recommendedAction}`
+      : "",
+    "",
+    "Detailed Evidence Log:",
+  ];
   return [
+    ...actionableSummary,
     `Recommendation reason: ${recommendation.reason}`,
     ...packetLines("Known context", recommendation.knownContext),
     ...packetLines("Useful evidence", recommendation.usefulEvidence),
@@ -1839,33 +1864,27 @@ function recommendationSourceNoteText(
     ...packetLines("Best evidence to review", recommendation.bestEvidenceToReview),
     ...packetLines("Observed channel/activity", recommendation.observedChannels),
     ...packetLines("Conversation highlight", recommendation.conversationHighlights),
-    ...packetLines("Topic breakdown", recommendation.topicBreakdown),
     ...packetLines("BNL interaction signal", recommendation.bnlInteractionSignals),
     ...packetLines("Music/show signal", recommendation.musicSignals),
     ...packetLines("Community signal", recommendation.communitySignals),
-    ...packetLines("Source coverage", recommendation.sourceCoverage),
-    ...packetLines("Evidence detail", recommendation.evidenceDetails),
-    ...packetLines("Representative evidence", recommendation.representativeEvidence),
     ...packetLines("Activity frequency", recommendation.activityFrequencySummary),
     ...packetLines("Top channel", recommendation.topChannels),
-    ...packetLines("Main topic detail", recommendation.topTopicDetails),
     ...packetLines("Recent activity", recommendation.recentActivitySummary),
     ...packetLines("Posted/mentioned balance", recommendation.authoredVsMentionedSummary),
     ...packetLines("Public-use candidate pending owner review", recommendation.publicUseCandidates),
     ...packetLines("Review-only evidence", recommendation.reviewOnlyEvidence),
-    recommendation.queueSubmissionStatus
-      ? `Queue/submission status: ${
-          recommendation.queueSubmissionStatus === "not_connected"
-            ? "Queue/submission identity is not connected yet."
-            : recommendation.queueSubmissionStatus
-        }`
-      : "",
+    queueStatus,
     recommendation.queueSubmissionNote
       ? `Queue/submission note: ${recommendation.queueSubmissionNote}`
       : "",
     recommendation.recommendedAction
       ? `Recommended next action: ${recommendation.recommendedAction}`
       : "",
+    ...packetLines("Supporting classification", recommendation.topicBreakdown),
+    ...packetLines("Supporting classification", recommendation.topTopicDetails),
+    ...packetLines("Source coverage", recommendation.sourceCoverage),
+    ...packetLines("Evidence detail", recommendation.evidenceDetails),
+    ...packetLines("Representative evidence", recommendation.representativeEvidence),
     ...(recommendation.sourceAuthority ?? []).map(
       (item) => `Source authority / confidence boundary: ${item}`,
     ),
@@ -1875,7 +1894,7 @@ function recommendationSourceNoteText(
   ]
     .filter(Boolean)
     .join("\n\n")
-    .slice(0, 4000);
+    .slice(0, 6000);
 }
 
 export class DossierWorkflowInputError extends Error {

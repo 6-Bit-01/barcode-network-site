@@ -2,6 +2,7 @@
 
 import type React from "react";
 import type { DossierEntityActivityReadout } from "@/lib/dossier-entity-activity-readout";
+import { buildSourceFileActionableBrief } from "@/lib/dossier-source-file-actionable-brief";
 import { containsDossierBackendJunk } from "@/lib/dossier-note-display";
 import {
   formatDossierSummaryBadge,
@@ -52,6 +53,25 @@ function SummaryList({ items }: { items: string[] }) {
         <li key={item}>{item}</li>
       ))}
     </ul>
+  );
+}
+
+function ActivityGroup({
+  title,
+  items,
+  empty,
+}: {
+  title: string;
+  items: string[];
+  empty: string;
+}) {
+  return (
+    <div className="border border-border/50 bg-background/20 p-2">
+      <h4 className="mb-1 text-xs font-bold uppercase tracking-widest text-foreground">
+        {title}
+      </h4>
+      <SummaryList items={fallbackItems(items, empty)} />
+    </div>
   );
 }
 
@@ -199,55 +219,22 @@ function missingChecklist(items: string[]) {
 export function DossierSourceFileSummaryPanel({
   summary,
   entityReadout,
+  subjectName,
   title = "Source File Snapshot / BNL Readout",
 }: {
   summary: DossierSourceFileSummary;
   entityReadout?: DossierEntityActivityReadout | null;
+  subjectName?: string;
   title?: string;
 }) {
-  const knownContext = safeReviewItems([
-    ...(entityReadout?.knownContext ?? []),
-    ...summary.knownContext,
-  ]);
-  const entityCurrentReadDuplicatesKnown = knownContext.some(
-    (known) =>
-      duplicateMeaningKey(known) === duplicateMeaningKey(entityReadout?.currentRead ?? ""),
-  );
-  const currentRead =
-    entityReadout?.currentRead && !entityCurrentReadDuplicatesKnown
-      ? entityReadout.currentRead
-      : summary.currentRead;
-  const usefulEvidence = safeReviewItems(
-    [...(entityReadout?.usefulEvidence ?? []), ...summary.usefulEvidence].filter(
-      (item) =>
-        !knownContext.some(
-          (known) => duplicateMeaningKey(known) === duplicateMeaningKey(item ?? ""),
-        ),
-    ),
-  );
-  const relationshipContext = safeReviewItems([
-    ...(entityReadout?.relationshipSignals ?? []),
-    ...summary.privateRelationshipContext,
-  ]);
+  const currentRead = entityReadout?.currentRead ?? summary.currentRead;
   const publicSafePossibilities = safeReviewItems([
     ...(entityReadout?.publicSafePossibilities ?? []),
     ...summary.publicSafePossibilities,
   ]);
-  const privateOnlyNotes = safeReviewItems([
-    ...(entityReadout?.privateOnlyNotes ?? []),
-    ...summary.privateOnlyNotes,
-  ]);
-  const notPublicYet = safeReviewItems([
-    ...(entityReadout?.notPublicYet ?? []),
-    ...summary.notPublicYet,
-  ]);
   const missingInfo = safeReviewItems([
     ...(entityReadout?.missingInfo ?? []),
     ...summary.missingInfo,
-  ]);
-  const bestEvidenceToReview = safeReviewItems([
-    ...(entityReadout?.bestEvidenceToReview ?? []),
-    ...summary.bestEvidenceToReview,
   ]);
   const observedChannels = safeReviewItems([
     ...(entityReadout?.observedChannels ?? []),
@@ -257,33 +244,9 @@ export function DossierSourceFileSummaryPanel({
     ...(entityReadout?.conversationHighlights ?? []),
     ...summary.conversationHighlights,
   ]);
-  const musicSignals = safeReviewItems([
-    ...(entityReadout?.musicSignals ?? []),
-    ...summary.musicSignals,
-  ]);
-  const communitySignals = safeReviewItems([
-    ...(entityReadout?.communitySignals ?? []),
-    ...summary.communitySignals,
-  ]);
-  const bnlInteractionSignals = safeReviewItems([
-    ...(entityReadout?.bnlInteractionSignals ?? []),
-    ...summary.bnlInteractionSignals,
-  ]);
   const publicUseCandidates = safeReviewItems([
     ...(entityReadout?.publicUseCandidates ?? []),
     ...summary.publicUseCandidates,
-  ]);
-  const reviewOnlyEvidence = safeReviewItems([
-    ...(entityReadout?.reviewOnlyEvidence ?? []),
-    ...summary.reviewOnlyEvidence,
-  ]);
-  const sourceCoverage = safeReviewItems([
-    ...(entityReadout?.sourceCoverage ?? []),
-    ...summary.sourceCoverage,
-  ]);
-  const evidenceDetails = safeReviewItems([
-    ...(entityReadout?.evidenceDetails ?? []),
-    ...summary.evidenceDetails,
   ]);
   const representativeEvidence = safeReviewItems([
     ...(entityReadout?.representativeEvidence ?? []),
@@ -297,10 +260,6 @@ export function DossierSourceFileSummaryPanel({
     ...(entityReadout?.topChannels ?? []),
     ...(summary.topChannels ?? []),
   ]);
-  const topTopicDetails = safeReviewItems([
-    ...(entityReadout?.topTopicDetails ?? []),
-    ...(summary.topTopicDetails ?? []),
-  ]);
   const recentActivitySummary = safeReviewItems([
     ...(entityReadout?.recentActivitySummary ?? []),
     ...(summary.recentActivitySummary ?? []),
@@ -309,10 +268,6 @@ export function DossierSourceFileSummaryPanel({
     ...(entityReadout?.authoredVsMentionedSummary ?? []),
     ...(summary.authoredVsMentionedSummary ?? []),
   ], 4);
-  const topicBreakdown = safeReviewItems([
-    ...(entityReadout?.topicBreakdown ?? []),
-    ...summary.topicBreakdown,
-  ]);
   const queueItems = queueStatusItems(
     entityReadout?.queueSubmissionStatus ?? summary.queueSubmissionStatus,
     entityReadout?.queueSubmissionNote ?? summary.queueSubmissionNote,
@@ -329,55 +284,31 @@ export function DossierSourceFileSummaryPanel({
     `Identity certainty: ${identityCertaintyLabel(summary)}.`,
     `Source confidence: ${sourceConfidenceLabel(entityReadout?.confidence)}.`,
   ];
-  const adminCaseSummary = safeReviewItems([
-    `Identity status: ${identityCertaintyLabel(summary)}; display name and role still need owner/admin confirmation before public use.`,
-    observedChannels[0] || topChannels[0] || "Approved public/community activity may exist, but it still needs review.",
-    topicBreakdown.length || topTopicDetails.length
-      ? "Topic labels are BNL classifications, not public facts."
-      : "No main evidence category has been reviewed yet.",
-    "Review-only cautions must stay internal unless owner/admin review approves them.",
-    queueItems[0] ?? "Queue/submission history is not connected yet.",
-  ], 5);
-  const whatBnlFound = safeReviewItems([
-    `Identity: ${knownContext[0] ?? "public display name and role still need owner/admin review."}`,
-    observedChannels.length || topChannels.length
-      ? `Public activity: ${[...topChannels, ...observedChannels].slice(0, 2).join("; ")}.`
-      : "Public activity: no approved public activity detail has been summarized yet.",
-    topicBreakdown.length || topTopicDetails.length
-      ? `Main evidence categories: BNL classified items under ${[...topTopicDetails, ...topicBreakdown].slice(0, 3).join("; ")}. Review item details before treating them as subject claims.`
-      : "Main evidence categories: topic detail is based on approved evidence labels, not full conversation review.",
-    bestEvidenceToReview.length ? `Strong lead: ${bestEvidenceToReview[0]}` : undefined,
-    representativeEvidence.length ? `Representative public activity or review item: ${representativeEvidence[0]}` : undefined,
-    reviewOnlyEvidence.length || relationshipContext.length
-      ? "Review-only context exists, but it cannot become public copy without owner/admin review."
-      : undefined,
+  const actionableBrief = buildSourceFileActionableBrief({
+    entityReadout,
+    summary,
+    subjectName,
+  });
+  const activityChannels = safeReviewItems([
+    ...topChannels.map((item) => `Public channel/activity: ${item}`),
+    ...observedChannels.map((item) => `Observed activity: ${item}`),
   ], 6);
-  const activityDetails = safeReviewItems([
-    ...topChannels.map((item) => `Channel activity: ${item}`),
-    ...topTopicDetails.map((item) => `BNL classification: ${item}`),
+  const activityNamedTopics = actionableBrief.namedTopics;
+  const activityPlatformMentions = safeReviewItems([
+    ...actionableBrief.platformSignals,
+    ...actionableBrief.musicSignals,
+  ], 6);
+  const activityBnlInteraction = actionableBrief.bnlInteractionPatterns;
+  const activityFrequency = safeReviewItems([
     ...activityFrequencySummary.map((item) => `Frequency: ${item}`),
     ...recentActivitySummary.map((item) => `Recency: ${item}`),
     ...authoredVsMentionedSummary.map((item) => `Posted/mentioned balance: ${item}`),
-    ...representativeEvidence.map((item) => isClassificationText(item) ? `Review item: ${item}` : `Representative public activity: ${item}`),
-    ...conversationHighlights.map((item) => isClassificationText(item) ? `Review item: ${item}` : `Public activity note: ${item}`),
-    ...musicSignals.map((item) => `Music/show note: ${item}`),
-    ...communitySignals.map((item) => `Community note: ${item}`),
-    ...bnlInteractionSignals.map((item) => `BNL handling note: ${item}`),
-  ], 10);
-  const reviewCautions = safeReviewItems([
-    ...reviewOnlyEvidence,
-    ...relationshipContext,
-    ...privateOnlyNotes,
-    ...notPublicYet,
-    "Reception and co-participant analysis is not available yet.",
-  ], 8);
-  const evidenceLog = safeReviewItems([
-    ...sourceCoverage,
-    ...evidenceDetails,
-    ...usefulEvidence,
-    ...summary.patterns,
-    ...summary.confirmedStrong,
-  ], 10);
+  ], 6);
+  const activitySupportingEvidence = safeReviewItems([
+    ...representativeEvidence.map((item) => isClassificationText(item) ? `Supporting review item: ${item}` : `Representative public activity: ${item}`),
+    ...conversationHighlights.map((item) => isClassificationText(item) ? `Supporting review item: ${item}` : `Public activity note: ${item}`),
+  ], 6);
+
 
   return (
     <section className="border border-accent/70 bg-surface p-5 space-y-4">
@@ -433,27 +364,73 @@ export function DossierSourceFileSummaryPanel({
           />
         </Section>
         <Section
-          title="Admin Case Summary"
-          helper="Short grouped readout for admin triage. These are review notes, not public dossier text."
-        >
-          <SummaryList items={adminCaseSummary} />
-        </Section>
-        <Section
-          title="What BNL Found"
-          helper="Human-readable leads synthesized from structured evidence. Raw evidence rows stay out of this summary."
-        >
-          <SummaryList items={whatBnlFound} />
-        </Section>
-        <Section
-          title="Activity Details"
-          helper="Readable activity, channel, topic, frequency, and recency notes from the structured BNL evidence packet."
+          title="Key Intelligence"
+          helper="Highest-value facts first. These are admin-review leads, not public dossier copy."
         >
           <SummaryList
             items={fallbackItems(
-              activityDetails,
-              "No structured activity details have been supplied yet.",
+              actionableBrief.keyFindings,
+              "No high-value actionable intelligence has been extracted yet.",
             )}
           />
+        </Section>
+        <Section
+          title="Named Topics / People"
+          helper="Recurring names surfaced for review before any public use."
+        >
+          <SummaryList items={fallbackItems(actionableBrief.namedTopics, "No recurring named topic has been extracted yet.")} />
+        </Section>
+        <Section
+          title="BNL Interaction Pattern"
+          helper="How this source appears to interact with BNL in approved review context."
+        >
+          <SummaryList items={fallbackItems(actionableBrief.bnlInteractionPatterns, "No BNL interaction pattern has been extracted yet.")} />
+        </Section>
+        <Section
+          title="Music / Platform Signals"
+          helper="Tool, platform, music, or show signals that still need review before public use."
+        >
+          <SummaryList items={fallbackItems([...actionableBrief.platformSignals, ...actionableBrief.musicSignals], "No music/tool/platform signal has been extracted yet.")} />
+        </Section>
+        <Section
+          title="Community Activity"
+          helper="Approved public/community context without raw transcripts or IDs."
+        >
+          <SummaryList items={fallbackItems(actionableBrief.communityActivity, "No community activity detail has been extracted yet.")} />
+        </Section>
+        <Section
+          title="Queue / Submission Status"
+          tone="review"
+          helper="Submission and payment boundaries. Do not infer queue history from source evidence."
+        >
+          <SummaryList items={actionableBrief.queueSubmissionStatus} />
+        </Section>
+        <Section
+          title="Activity Details"
+          helper="Structured activity split by review use, with classifications kept as supporting context."
+        >
+          <div className="space-y-2">
+            <ActivityGroup title="Public Channels / Activity" items={activityChannels} empty="No public channel/activity detail has been supplied yet." />
+            <ActivityGroup title="Named Topics" items={activityNamedTopics} empty="No named topic detail has been supplied yet." />
+            <ActivityGroup title="Tool / Platform Mentions" items={activityPlatformMentions} empty="No tool/platform mention has been supplied yet." />
+            <ActivityGroup title="BNL Interaction" items={activityBnlInteraction} empty="No BNL interaction detail has been supplied yet." />
+            <ActivityGroup title="Frequency / Recency" items={activityFrequency} empty="No frequency or recency detail has been supplied yet." />
+            <ActivityGroup title="Supporting Evidence" items={activitySupportingEvidence} empty="No representative supporting evidence has been supplied yet." />
+          </div>
+        </Section>
+        <Section
+          title="Review-Only Cautions"
+          tone="review"
+          helper="Internal, private, source-blind, or unconfirmed context. Do not use publicly unless owner/admin review approves it."
+        >
+          <SummaryList items={fallbackItems(actionableBrief.reviewOnlyCautions, "No review-only cautions are recorded in the structured readout.")} />
+        </Section>
+        <Section
+          title="Missing Before Public Dossier"
+          tone="caution"
+          helper="What still needs to be confirmed before this can become a clean public dossier."
+        >
+          <SummaryList items={missingChecklist([...missingInfo, ...actionableBrief.missingInfo])} />
         </Section>
         <Section
           title="Dossier Use / Public-Safe Possibilities"
@@ -467,34 +444,14 @@ export function DossierSourceFileSummaryPanel({
             )}
           />
         </Section>
-        <Section
-          title="Missing Before Public Dossier"
-          tone="caution"
-          helper="What still needs to be confirmed before this can become a clean public dossier."
-        >
-          <SummaryList items={missingChecklist(missingInfo)} />
-        </Section>
-        <Section
-          title="Review-Only Cautions"
-          tone="review"
-          helper="Internal, private, source-blind, or unconfirmed context. Do not use publicly unless owner/admin review approves it."
-        >
-          <SummaryList items={fallbackItems(reviewCautions, "No review-only cautions are recorded in the structured readout.")} />
-        </Section>
-        <Section
-          title="Evidence Log"
-          helper="Historical notes and BNL enrichment records. These support review, but they are not public copy."
-        >
-          <SummaryList items={fallbackItems(evidenceLog, "No lower-priority evidence log entries have been attached yet.")} />
-        </Section>
-        <Section
-          title="Evidence Status"
-          helper="Admin-friendly status labels derived from the available evidence and source confidence."
-        >
-          <SummaryList items={[...evidenceStatus, ...sourceAuthority]} />
-        </Section>
         <Section title="Recommended Next Action">
-          <p>{recommendedAction}</p>
+          <SummaryList items={fallbackItems(actionableBrief.recommendedNextActions, recommendedAction)} />
+        </Section>
+        <Section
+          title="Supporting Evidence Log"
+          helper="Lower-priority source coverage, supporting classification, and evidence-log records. These support review, but they are not public copy."
+        >
+          <SummaryList items={fallbackItems([...actionableBrief.supportingEvidence, ...evidenceStatus, ...sourceAuthority], "No lower-priority supporting evidence entries have been attached yet.")} />
         </Section>
       </div>
       <p className="text-xs text-muted">

@@ -19,6 +19,12 @@ import {
 import { DossierSourceFileSummaryPanel } from "@/components/DossierSourceFileSummaryPanel";
 import { createHumanReadableSourceFileNoteView } from "@/lib/dossier-note-display";
 import { createDossierSourceFileSummary } from "@/lib/dossier-source-file-summary";
+import {
+  sanitizeMeaningFirstItems,
+  sourceFileEvidenceClusterItems,
+  sourceFileReasonMeaning,
+  sourceFileWhyNowMeaning,
+} from "@/lib/dossier-source-memory-meaning";
 
 type WorkflowPayload = {
   candidates: DossierCandidate[];
@@ -160,6 +166,41 @@ function list(items: string[] | undefined, empty = "—") {
   );
 }
 
+function meaningFirstList(
+  items: Array<string | undefined> | undefined,
+  empty = "—",
+  subjectName?: string,
+) {
+  return list(
+    sanitizeMeaningFirstItems(items ?? [], {
+      subjectName,
+      fallback: empty,
+      includePublicDiscord: true,
+    }),
+    empty,
+  );
+}
+
+function recommendationEvidenceItems(recommendation: DossierRecommendation) {
+  const clusterItems = sourceFileEvidenceClusterItems(
+    [
+      recommendation.evidenceSummary,
+      recommendation.reason,
+      ...(recommendation.sourceTypes ?? []),
+      ...(recommendation.sourceLanes ?? []),
+    ],
+    { subjectName: recommendation.subjectName },
+  );
+  const humanItems = sanitizeMeaningFirstItems(
+    [recommendation.evidenceSummary, recommendation.reason],
+    {
+      subjectName: recommendation.subjectName,
+      includePublicDiscord: true,
+    },
+  );
+  return clusterItems.length ? clusterItems : humanItems;
+}
+
 function Section({
   title,
   children,
@@ -286,8 +327,8 @@ function IdentityLinkCard({
         </div>
       </div>
       <p>
-        Type: {identityLink.type} / Visibility: {identityLink.visibility} /
-        Source: {identityLink.source}
+        Identity-link review metadata is admin-only and does not publish, merge,
+        or prove a public identity.
       </p>
       <p>Confidence: {identityLink.confidence ?? "—"}</p>
       {identityLink.createdFromRecommendationId && (
@@ -301,11 +342,15 @@ function IdentityLinkCard({
               recommendation?.subjectName ??
               "—"}
           </p>
-          <p>Source lanes: {recommendation?.sourceLanes.join(", ") ?? "—"}</p>
-          <p>
-            Ingest source:{" "}
-            {recommendation?.ingestSource ?? recommendation?.createdBy ?? "—"}
-          </p>
+          {recommendation ? (
+            <ul className="list-disc pl-5 space-y-1">
+              {recommendationEvidenceItems(recommendation).map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          ) : (
+            <p>Review-only recommendation context is attached.</p>
+          )}
           <Link
             href={`/admin/dossiers/recommendations/${identityLink.createdFromRecommendationId}`}
             className="inline-flex text-accent hover:underline"
@@ -1369,10 +1414,17 @@ export default function CandidateReviewPage() {
                   <p className="text-foreground font-semibold">
                     {recommendation.subjectName}
                   </p>
-                  <p>
-                    {recommendation.evidenceSummary || recommendation.reason}
-                  </p>
-                  <p>Source lanes: {recommendation.sourceLanes.join(", ")}</p>
+                  {recommendationEvidenceItems(recommendation).length ? (
+                    <ul className="list-disc pl-5 space-y-1">
+                      {recommendationEvidenceItems(recommendation).map(
+                        (item) => (
+                          <li key={item}>{item}</li>
+                        ),
+                      )}
+                    </ul>
+                  ) : (
+                    <p>More public-safe context needed before drafting.</p>
+                  )}
                 </article>
               ))}
             </div>
@@ -1660,22 +1712,48 @@ export default function CandidateReviewPage() {
 
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Section title="Reason">
-            <p>{candidate.reason || "—"}</p>
+            <p>{sourceFileReasonMeaning(candidate.reason, candidate.name)}</p>
           </Section>
           <Section title="Why now">
-            <p>{candidate.whyNow || "—"}</p>
+            <p>{sourceFileWhyNowMeaning(candidate.whyNow)}</p>
           </Section>
           <Section title="Evidence summary">
-            <p>{candidate.evidenceSummary || "—"}</p>
+            <p>
+              {
+                sanitizeMeaningFirstItems([candidate.evidenceSummary], {
+                  subjectName: candidate.name,
+                  fallback: "—",
+                  includePublicDiscord: true,
+                })[0]
+              }
+            </p>
           </Section>
           <Section title="Evidence items">
             {candidate.evidenceItems?.length ? (
               candidate.evidenceItems.map((item) => (
                 <article key={item.id} className="mb-2">
-                  <p className="text-foreground">{item.label}</p>
-                  <p>{item.summary}</p>
+                  <p className="text-foreground">
+                    {
+                      sanitizeMeaningFirstItems([item.label], {
+                        subjectName: candidate.name,
+                        fallback: "Internal evidence item.",
+                      })[0]
+                    }
+                  </p>
                   <p>
-                    Type: {item.type} / Public safe: {String(item.publicSafe)}
+                    {
+                      sanitizeMeaningFirstItems([item.summary], {
+                        subjectName: candidate.name,
+                        fallback: "Owner review required before public use.",
+                        includePublicDiscord: true,
+                      })[0]
+                    }
+                  </p>
+                  <p>
+                    Visibility:{" "}
+                    {item.publicSafe
+                      ? "public-safe after review"
+                      : "internal review only"}
                   </p>
                 </article>
               ))
@@ -1684,16 +1762,23 @@ export default function CandidateReviewPage() {
             )}
           </Section>
           <Section title="Review Context / Possible Supporting Evidence">
-            {list(candidate.knownFacts)}
+            {meaningFirstList(candidate.knownFacts, "—", candidate.name)}
           </Section>
           <Section title="Corrections / extra notes">
             <p>Saved notes now live in BNL Source File Notes above.</p>
           </Section>
-          <Section title="Missing Info">{list(candidate.missingInfo)}</Section>
-          <Section title="Do Not Say">{list(candidate.doNotSay)}</Section>
+          <Section title="Missing Info">
+            {meaningFirstList(candidate.missingInfo, "—", candidate.name)}
+          </Section>
+          <Section title="Do Not Say">
+            {meaningFirstList(candidate.doNotSay, "—", candidate.name)}
+          </Section>
           <Section title="Public-Safe Facts Pending Owner/Admin Approval">
             {list(
-              candidate.knownFacts?.filter(Boolean),
+              sanitizeMeaningFirstItems(
+                candidate.knownFacts?.filter(Boolean) ?? [],
+                { subjectName: candidate.name },
+              ),
               "No public-safe facts marked yet.",
             )}
           </Section>
@@ -1727,7 +1812,7 @@ export default function CandidateReviewPage() {
             <p>Pending identity aliases: {proposedIdentityLinks.length}</p>
           </Section>
           <Section title="Public safety notes">
-            {list(candidate.publicSafetyNotes)}
+            {meaningFirstList(candidate.publicSafetyNotes, "—", candidate.name)}
           </Section>
           <Section title="Recommended taxonomy">
             <p>

@@ -54,6 +54,7 @@ const readModel = require("../src/app/api/bnl/read-model/route.ts");
 const sourceFilesReadModel = require("../src/app/api/bnl/source-files/route.ts");
 const noteDisplay = require("../src/lib/dossier-note-display.ts");
 const sourceFileSummary = require("../src/lib/dossier-source-file-summary.ts");
+const sourceMemoryMeaning = require("../src/lib/dossier-source-memory-meaning.ts");
 const publicCopyGuard = require("../src/lib/dossier-public-copy-guard.ts");
 const dossierPageViewModel = require("../src/lib/dossier-page-view-model.ts");
 
@@ -4643,6 +4644,111 @@ test("admin dossier UI labels BNL Source File enrichment separately from bridge 
   assert.match(recommendationPage, /Owner\/admin review[\s\S]*required before any public use/);
   assert.match(candidatePage, /BNL Review Addendum/);
   assert.match(candidatePage, /Internal working material|Review-only enrichment/);
+});
+
+
+test("source memory meaning formatter interprets raw labels and keeps mappings debug-only", () => {
+  assert.deepEqual(
+    sourceMemoryMeaning.sourceMemoryMeaningItems(
+      "user_profiles/local_profile_observed: Local profile observed for Crow.",
+      { subjectName: "Crow" },
+    ),
+    ["BNL found an internal local profile match for Crow."],
+  );
+  assert.deepEqual(
+    sourceMemoryMeaning.sourceMemoryMeaningItems(
+      "relationship_journal/local_relationship_trace: help_signal: User asked for help...",
+    ),
+    ["BNL found prior relationship/context notes connected to this subject."],
+  );
+  assert.deepEqual(
+    sourceMemoryMeaning.sourceMemoryMeaningItems(
+      "source lane mapping: relationship_journal -> unknown, user_profiles -> unknown",
+    ),
+    [],
+  );
+  assert.equal(
+    sourceMemoryMeaning.isRawSourceMappingOnly(
+      "source lane mapping: relationship_journal -> unknown, user_profiles -> unknown",
+    ),
+    true,
+  );
+  assert.deepEqual(
+    sourceMemoryMeaning.sourceMemoryMeaningItems("BNL local knowledge stores."),
+    ["Internal BNL memory references exist, but they need owner review before public use."],
+  );
+});
+
+test("candidate Source File visible panels render interpreted memory evidence", () => {
+  const candidatePage = normalizedSource("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+  assert.doesNotMatch(candidatePage, /<p>Source lanes:/);
+  assert.match(candidatePage, /recommendationEvidenceItems/);
+  assert.match(candidatePage, /sourceFileReasonMeaning\(candidate\.reason, candidate\.name\)/);
+  assert.match(candidatePage, /sourceFileWhyNowMeaning\(candidate\.whyNow\)/);
+
+  const summary = sourceFileSummary.createDossierSourceFileSummary({
+    candidate: {
+      id: "candidate_crow_memory",
+      name: "Crow",
+      candidateType: "unknown",
+      source: "bnl_source_knowledge_bridge",
+      tier: "review_candidate",
+      score: 4,
+      whyNow: "Source lanes: unknown",
+      reason:
+        "Knowledge bridge found Crow in existing BNL local knowledge stores (relationship_journal, user_profiles). Source qualities: local_profile_observed, local_relationship_trace.",
+      evidenceSummary:
+        "user_profiles/local_profile_observed relationship_journal/local_relationship_trace source lane mapping: relationship_journal -> unknown, user_profiles -> unknown",
+      status: "active_source_file",
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:00.000Z",
+      sourceFileNotes: [
+        {
+          id: "note_crow_memory",
+          candidateId: "candidate_crow_memory",
+          type: "general_note",
+          text: "relationship_journal/local_relationship_trace: help_signal: User asked for help... EDGE_SESSION abc",
+          source: "bnl_recommendation",
+          status: "active",
+          publicSafe: false,
+          createdAt: "2026-06-01T00:00:00.000Z",
+          updatedAt: "2026-06-01T00:00:00.000Z",
+        },
+      ],
+    },
+  });
+
+  const visibleSummary = JSON.stringify({
+    currentRead: summary.currentRead,
+    knownContext: summary.knownContext,
+    usefulEvidence: summary.usefulEvidence,
+    patterns: summary.patterns,
+    confirmedStrong: summary.confirmedStrong,
+    claimedNeedsReview: summary.claimedNeedsReview,
+    missingInfo: summary.missingInfo,
+    notPublicYet: summary.notPublicYet,
+    recommendedNextAction: summary.recommendedNextAction,
+  });
+  assert.doesNotMatch(visibleSummary, /user_profiles\/local_profile_observed/i);
+  assert.doesNotMatch(visibleSummary, /relationship_journal\/local_relationship_trace/i);
+  assert.doesNotMatch(visibleSummary, /source lane mapping|Source lanes: unknown|unknown -> unknown|help_signal|EDGE_SESSION/i);
+  assert.match(visibleSummary, /BNL found an internal local profile match for Crow/);
+  assert.match(visibleSummary, /BNL found prior relationship\/context notes connected to Crow/);
+  assert.match(visibleSummary, /Public-safe identity is not confirmed/);
+
+  assert.equal(
+    sourceMemoryMeaning.sourceFileReasonMeaning(
+      "user_profiles/local_profile_observed conversations/public_discord_observed",
+      "Crow",
+    ),
+    "BNL found existing internal context for Crow and created this source file so an owner can decide whether it should become a usable dossier record.",
+  );
+  assert.equal(
+    sourceMemoryMeaning.sourceFileWhyNowMeaning(
+      "source lane mapping relationship_journal -> unknown",
+    ),
+    "Needs owner review before any public dossier copy is drafted, published, merged, or linked to an identity.",
+  );
 });
 
 test("source file meaning filter hides backend terms from main views while preserving audit details", () => {

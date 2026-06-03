@@ -3,6 +3,7 @@ import type {
   DossierRecommendationIngestSource,
   DossierSourceFileNote,
 } from "./dossier-workflow";
+import { sourceMemoryMeaningItems } from "./dossier-source-memory-meaning";
 
 export type DossierHumanReadableSection = {
   title: string;
@@ -150,11 +151,12 @@ function uniqueItems(items: string[], limit = 6) {
 }
 
 function translatedTechnicalSignals(value: string) {
-  return uniqueItems(
-    technicalTranslations
+  return uniqueItems([
+    ...sourceMemoryMeaningItems(value, { includePublicDiscord: true }),
+    ...technicalTranslations
       .filter(([pattern]) => pattern.test(value))
       .map(([, copy]) => copy),
-  );
+  ]);
 }
 
 export function containsDossierBackendJunk(value?: string | null) {

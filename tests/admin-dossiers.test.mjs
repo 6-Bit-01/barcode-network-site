@@ -474,6 +474,29 @@ test("dedicated draft editor route contains focused editing workflow and future 
 });
 
 
+
+test("shared DossierPageView preserves PR 155 dossier API and public layout", () => {
+  const sharedView = source("src/components/DossierPageView.tsx");
+  const viewModel = source("src/lib/dossier-page-view-model.ts");
+  assert.match(sharedView, /type DossierPageViewProps = \{[\s\S]*dossier: DossierPageViewModel/);
+  assert.match(sharedView, /export function DossierPageView\(\{[\s\S]*dossier,/);
+  assert.doesNotMatch(sharedView, /entry: DossierPageViewModel/);
+  for (const section of [
+    "Dossier Record",
+    "Intelligence Brief",
+    "Attached Files",
+    "Terminal Readout",
+    "BARCODE_NETWORK // DOSSIER QUERY",
+  ]) {
+    assertIncludesCopy(sharedView.replace(/\s+/g, " "), section);
+  }
+  assert.match(sharedView, /InfoRow label="Role" value=\{dossier\.role\}/);
+  assert.match(sharedView, /dossier\.tags\.map/);
+  assert.match(sharedView, /dossier\.primaryLink/);
+  assert.match(viewModel, /export type DossierPageViewModel/);
+  assert.match(viewModel, /terminalLead: string/);
+});
+
 test("admin dirty-copy warning stays outside shared public DossierPageView", () => {
   const draftPage = source("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
   const sharedViewPath = "src/components/DossierPageView.tsx";
@@ -1415,6 +1438,7 @@ test("public database slug page stays backed by existing public entries", () => 
   const page = source("src/app/database/[slug]/page.tsx");
   assert.match(page, /databasePage\.entries/);
   assert.match(page, /generateStaticParams/);
+  assert.match(page, /<DossierPageView dossier=\{createDossierPageViewModel\(entry\)\}/);
   assert.doesNotMatch(page, /dossier-public-copy-guard/);
   assert.ok(databasePage.entries.length > 0);
 });
@@ -4539,6 +4563,8 @@ test("Phase 2 draft workflow keeps PR 155 stacked shared preview order", () => {
   const page = source("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
   assert.match(page, /DossierSourceFileSummaryPanel/);
   assert.match(page, /DossierPageView/);
+  assert.match(page, /dossier=\{dossier\}/);
+  assert.doesNotMatch(page, /entry=\{dossier\}|entry=\{entry\}/);
   assert.match(page, /Source Summary \/ Source File Snapshot/);
   assert.match(page, /BNL Edit Chat panel/);
   assert.match(page, /Public Dossier Preview/);

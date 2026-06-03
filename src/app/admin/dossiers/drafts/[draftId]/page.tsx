@@ -228,7 +228,7 @@ function ProposedDossierPreview({
   const notes = sanitizeDossierPublicCopy(form.notes);
   const primaryLinkLabel = sanitizeDossierPublicCopy(form.primaryLinkLabel);
   const tags = lines(form.tags).map(sanitizeDossierPublicCopy).filter(Boolean);
-  const entry: DossierPageViewModel = {
+  const dossier: DossierPageViewModel = {
     id: "DRAFT-PREVIEW",
     name: sanitizeDossierPublicCopy(form.name) || "Proposed dossier",
     category: form.category || "Entity",
@@ -271,7 +271,7 @@ function ProposedDossierPreview({
         </p>
       </div>
       <DossierPageView
-        entry={entry}
+        dossier={dossier}
         preview
         backHref="#"
         backLabel="Preview only — not published"

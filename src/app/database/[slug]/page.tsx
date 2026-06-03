@@ -43,5 +43,5 @@ export default async function EntityPage({
 
   if (!entry) notFound();
 
-  return <DossierPageView entry={createDossierPageViewModel(entry)} />;
+  return <DossierPageView dossier={createDossierPageViewModel(entry)} />;
 }

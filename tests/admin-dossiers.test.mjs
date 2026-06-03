@@ -5154,7 +5154,7 @@ test("Source File page uses one consolidated Source File Snapshot / BNL Readout 
   );
   assert.match(summaryPanel, /Source File Snapshot \/ BNL Readout/);
   assertIncludesCopy(summaryPanel, "Relationship Context — Review Only");
-  assertIncludesCopy(summaryPanel, "Public-Safe Possibilities Pending Owner Review");
+  assertIncludesCopy(summaryPanel, "Public-Safe / Public-Use Candidates Pending Owner Review");
   assertIncludesCopy(summaryPanel, "Private/Internal Notes");
   assertIncludesCopy(summaryPanel, "Queue/submission not connected");
   assertIncludesCopy(summaryPanel, "Review-only");
@@ -5184,6 +5184,17 @@ test("consolidated Source File Snapshot / BNL Readout collapses duplicate safe b
     uncertainties: ["Treat possible connections as unconfirmed."],
     missingInfo: ["Missing owner-confirmed wording."],
     notPublicYet: ["Do not publish relationship context yet."],
+    observedChannels: [],
+    conversationHighlights: [],
+    topicBreakdown: [],
+    bestEvidenceToReview: [],
+    bnlInteractionSignals: [],
+    musicSignals: [],
+    communitySignals: [],
+    sourceCoverage: [],
+    evidenceDetails: [],
+    publicUseCandidates: [],
+    reviewOnlyEvidence: [],
     sourceAuthority: ["Mixed BNL memory plus admin review; not owner-confirmed."],
     recommendedNextAction: "Ask owner to separate public-safe language.",
     substanceLevel: "useful",
@@ -5207,6 +5218,17 @@ test("consolidated Source File Snapshot / BNL Readout collapses duplicate safe b
     publicSafePossibilities: ["May be described after owner review."],
     privateOnlyNotes: ["Private owner-review note."],
     notPublicYet: ["Do not publish relationship context yet."],
+    observedChannels: ["Raw activity in EDGE_SESSION should be filtered"],
+    conversationHighlights: [],
+    topicBreakdown: [],
+    bestEvidenceToReview: [],
+    bnlInteractionSignals: [],
+    musicSignals: [],
+    communitySignals: [],
+    sourceCoverage: [],
+    evidenceDetails: [],
+    publicUseCandidates: [],
+    reviewOnlyEvidence: [],
     missingInfo: ["Missing owner-confirmed wording."],
     sourceAuthority: ["Admin review packet; not owner-confirmed.", "EDGE_SESSION"],
     recommendedAction: "Ask owner to separate public-safe language.",
@@ -5323,6 +5345,19 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
     recommendedAction: "Ask an owner to separate public-safe collaborator language from internal relationship context.",
     confidence: "high",
     sourceAuthority: ["Mixed BNL memory plus admin review; not owner-confirmed."],
+    observedChannels: ["Activity observed in owner-reviewable BARCODE Radio planning context."],
+    conversationHighlights: ["Conversation highlight notes recurring support around show planning."],
+    topicBreakdown: ["Topic breakdown emphasizes radio support and community coordination."],
+    bestEvidenceToReview: ["Owner should review the recurring set-support source note first."],
+    bnlInteractionSignals: ["BNL interaction signal: recurring admin-side mention pattern."],
+    musicSignals: ["Music/show signal: set-support work appears around radio planning."],
+    communitySignals: ["Community signal: repeated collaborator mentions in review context."],
+    sourceCoverage: ["Source coverage spans reviewed notes and BNL memory; no queue bridge."],
+    evidenceDetails: ["Evidence detail stays internal until owner-approved wording exists."],
+    publicUseCandidates: ["Possible collaborator wording pending owner review."],
+    reviewOnlyEvidence: ["Review-only evidence: internal relationship context needs owner review."],
+    queueSubmissionStatus: "not_connected",
+    queueSubmissionNote: "No confirmed queue/submission identity is linked to this source file.",
     rawProvenance: {
       backendTraceId: "raw-trace-structured-packet-v2",
       lanes: ["relationship_journal", "operator_notes"],
@@ -5346,6 +5381,16 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   assert.deepEqual(payload.recommendation.notPublicYet, packet.notPublicYet);
   assert.equal(payload.recommendation.recommendedAction, packet.recommendedAction);
   assert.deepEqual(payload.recommendation.sourceAuthority, packet.sourceAuthority);
+  assert.deepEqual(payload.recommendation.observedChannels, packet.observedChannels);
+  assert.deepEqual(payload.recommendation.conversationHighlights, packet.conversationHighlights);
+  assert.deepEqual(payload.recommendation.bestEvidenceToReview, packet.bestEvidenceToReview);
+  assert.deepEqual(payload.recommendation.bnlInteractionSignals, packet.bnlInteractionSignals);
+  assert.deepEqual(payload.recommendation.musicSignals, packet.musicSignals);
+  assert.deepEqual(payload.recommendation.communitySignals, packet.communitySignals);
+  assert.deepEqual(payload.recommendation.publicUseCandidates, packet.publicUseCandidates);
+  assert.deepEqual(payload.recommendation.reviewOnlyEvidence, packet.reviewOnlyEvidence);
+  assert.equal(payload.recommendation.queueSubmissionStatus, "not_connected");
+  assert.equal(payload.recommendation.queueSubmissionNote, packet.queueSubmissionNote);
   assert.deepEqual(payload.recommendation.rawProvenance, packet.rawProvenance);
 
   const state = await store.getDossierWorkflowState();
@@ -5354,6 +5399,13 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   );
   assert.ok(savedRecommendation);
   assert.deepEqual(savedRecommendation.usefulEvidence, packet.usefulEvidence);
+  assert.deepEqual(savedRecommendation.bestEvidenceToReview, packet.bestEvidenceToReview);
+  assert.deepEqual(savedRecommendation.observedChannels, packet.observedChannels);
+  assert.deepEqual(savedRecommendation.conversationHighlights, packet.conversationHighlights);
+  assert.deepEqual(savedRecommendation.musicSignals, packet.musicSignals);
+  assert.deepEqual(savedRecommendation.communitySignals, packet.communitySignals);
+  assert.deepEqual(savedRecommendation.bnlInteractionSignals, packet.bnlInteractionSignals);
+  assert.equal(savedRecommendation.queueSubmissionStatus, "not_connected");
   assert.deepEqual(savedRecommendation.rawProvenance, packet.rawProvenance);
   const sourceFile = state.candidates.find(
     (candidate) => candidate.id === candidatePayload.candidate.id,
@@ -5362,12 +5414,25 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   assert.equal(sourceFile.sourceFileNotes.length, 1);
   assert.match(sourceFile.sourceFileNotes[0].text, /Useful evidence: Two reviewed source notes/);
   assert.match(sourceFile.sourceFileNotes[0].text, /Relationship signal — private review/);
+  assert.match(sourceFile.sourceFileNotes[0].text, /Best evidence to review: Owner should review/);
+  assert.match(sourceFile.sourceFileNotes[0].text, /Observed channel\/activity: Activity observed/);
+  assert.match(sourceFile.sourceFileNotes[0].text, /Queue\/submission identity is not connected yet/);
   assert.doesNotMatch(sourceFile.sourceFileNotes[0].text, /raw-trace-structured-packet-v2/);
 
   const summary = sourceFileSummary.createDossierSourceFileSummary({
     candidate: sourceFile,
     recommendations: [savedRecommendation],
   });
+  assert.match(JSON.stringify(summary.bestEvidenceToReview), /Owner should review/);
+  assert.match(JSON.stringify(summary.observedChannels), /Activity observed/);
+  assert.match(JSON.stringify(summary.conversationHighlights), /Conversation highlight/);
+  assert.match(JSON.stringify(summary.musicSignals), /Music\/show signal/);
+  assert.match(JSON.stringify(summary.communitySignals), /Community signal/);
+  assert.match(JSON.stringify(summary.bnlInteractionSignals), /BNL interaction signal/);
+  assert.match(JSON.stringify(summary.publicUseCandidates), /pending owner review/);
+  assert.match(JSON.stringify(summary.reviewOnlyEvidence), /Review-only evidence/);
+  assert.equal(summary.queueSubmissionStatus, "not_connected");
+  assert.match(summary.queueSubmissionNote, /No confirmed queue/);
   assert.match(JSON.stringify(summary.usefulEvidence), /Two reviewed source notes/);
   assert.match(JSON.stringify(summary.privateRelationshipContext), /Private relationship context/);
   assert.match(JSON.stringify(summary.claimedNeedsReview), /Private relationship context|collaborator after owner review/);
@@ -5379,6 +5444,14 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
 
   const view = noteDisplay.createHumanReadableRecommendationView(savedRecommendation);
   assert.match(JSON.stringify(view.sections), /Two reviewed source notes/);
+  assert.match(JSON.stringify(view.sections), /Best Evidence to Review/);
+  assert.match(JSON.stringify(view.sections), /Observed Channels \/ Activity/);
+  assert.match(JSON.stringify(view.sections), /Music \/ Show Signals/);
+  assert.match(JSON.stringify(view.sections), /Community Signals/);
+  assert.match(JSON.stringify(view.sections), /BNL Interaction Signals/);
+  assert.match(JSON.stringify(view.sections), /Public-Use Candidates Pending Owner Review/);
+  assert.match(JSON.stringify(view.sections), /Review-Only Evidence/);
+  assert.match(JSON.stringify(view.sections), /Queue\/submission identity is not connected yet/);
   assert.match(JSON.stringify(view.sections), /Private Relationship Context/);
   assert.match(JSON.stringify(view.rawMetadata), /raw-trace-structured-packet-v2/);
   assert.doesNotMatch(JSON.stringify(view.sections), /raw-trace-structured-packet-v2/);
@@ -5389,7 +5462,7 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   })).json();
   const draftText = JSON.stringify(draftPayload.draft.fields);
   assert.doesNotMatch(draftText, /raw-trace-structured-packet-v2/);
-  assert.doesNotMatch(draftText, /Private-only note|internal contact path|relationship context/);
+  assert.doesNotMatch(draftText, /Private-only note|internal contact path|relationship context|Owner should review|Conversation highlight|Review-only evidence/);
 
   const publicPayload = await (await readModel.GET(new Request("https://example.test/api/bnl/read-model"))).json();
   assert.doesNotMatch(JSON.stringify(publicPayload), /Structured Packet Subject|raw-trace-structured-packet-v2|internal contact path/);

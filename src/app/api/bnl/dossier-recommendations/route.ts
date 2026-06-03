@@ -87,6 +87,14 @@ const IDENTITY_AUTHORITIES = [
   "mixed_or_unclear",
 ] as const satisfies readonly DossierIdentityAuthority[];
 const CONFIDENCES = ["low", "medium", "high"] as const;
+const QUEUE_SUBMISSION_STATUSES = [
+  "not_connected",
+  "connected",
+  "confirmed_submission",
+  "no_submission_found",
+  "review_needed",
+  "unknown",
+] as const;
 
 function text(value: unknown, maxLength: number): string | undefined {
   if (value === undefined || value === null) return undefined;
@@ -258,13 +266,32 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
   );
   const privateOnlyNotes = packetStringList(payload.privateOnlyNotes);
   const notPublicYet = packetStringList(payload.notPublicYet);
+  const observedChannels = packetStringList(payload.observedChannels);
+  const conversationHighlights = packetStringList(payload.conversationHighlights);
+  const topicBreakdown = packetStringList(payload.topicBreakdown);
+  const bestEvidenceToReview = packetStringList(payload.bestEvidenceToReview);
+  const bnlInteractionSignals = packetStringList(payload.bnlInteractionSignals);
+  const musicSignals = packetStringList(payload.musicSignals);
+  const communitySignals = packetStringList(payload.communitySignals);
+  const sourceCoverage = packetStringList(payload.sourceCoverage);
+  const evidenceDetails = packetStringList(payload.evidenceDetails);
+  const publicUseCandidates = packetStringList(payload.publicUseCandidates);
+  const reviewOnlyEvidence = packetStringList(payload.reviewOnlyEvidence);
+  const queueSubmissionStatus = enumValue(
+    payload.queueSubmissionStatus,
+    QUEUE_SUBMISSION_STATUSES,
+    "queue submission status",
+  );
+  const queueSubmissionNote = text(payload.queueSubmissionNote, 1000);
   const recommendedAction = text(payload.recommendedAction, 1000);
   const sourceAuthority = packetStringList(payload.sourceAuthority, 1000);
   const rawProvenance = rawJsonValue(payload.rawProvenance);
   const reason =
     text(payload.reason, 2000) ??
     knownContext?.[0] ??
+    bestEvidenceToReview?.[0] ??
     usefulEvidence?.[0] ??
+    conversationHighlights?.[0] ??
     recommendedAction;
   const evidenceSummary =
     payload.evidenceSummary &&
@@ -304,6 +331,19 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
     publicSafePossibilities,
     privateOnlyNotes,
     notPublicYet,
+    observedChannels,
+    conversationHighlights,
+    topicBreakdown,
+    bestEvidenceToReview,
+    bnlInteractionSignals,
+    musicSignals,
+    communitySignals,
+    sourceCoverage,
+    evidenceDetails,
+    publicUseCandidates,
+    reviewOnlyEvidence,
+    queueSubmissionStatus,
+    queueSubmissionNote,
     recommendedAction,
     sourceAuthority,
     rawProvenance,

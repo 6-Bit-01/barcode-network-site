@@ -10,6 +10,19 @@ export type DossierEntityActivityReadout = {
   publicSafePossibilities: string[];
   privateOnlyNotes: string[];
   notPublicYet: string[];
+  observedChannels: string[];
+  conversationHighlights: string[];
+  topicBreakdown: string[];
+  bestEvidenceToReview: string[];
+  bnlInteractionSignals: string[];
+  musicSignals: string[];
+  communitySignals: string[];
+  sourceCoverage: string[];
+  evidenceDetails: string[];
+  publicUseCandidates: string[];
+  reviewOnlyEvidence: string[];
+  queueSubmissionStatus?: string;
+  queueSubmissionNote?: string;
   missingInfo: string[];
   sourceAuthority: string[];
   recommendedAction: string;
@@ -26,6 +39,19 @@ type ReadoutRecommendation = Pick<
   | "publicSafePossibilities"
   | "privateOnlyNotes"
   | "notPublicYet"
+  | "observedChannels"
+  | "conversationHighlights"
+  | "topicBreakdown"
+  | "bestEvidenceToReview"
+  | "bnlInteractionSignals"
+  | "musicSignals"
+  | "communitySignals"
+  | "sourceCoverage"
+  | "evidenceDetails"
+  | "publicUseCandidates"
+  | "reviewOnlyEvidence"
+  | "queueSubmissionStatus"
+  | "queueSubmissionNote"
   | "missingInfo"
   | "sourceAuthority"
   | "recommendedAction"
@@ -69,6 +95,19 @@ function recommendationHasStructuredReadout(
       recommendation.publicSafePossibilities?.length ||
       recommendation.privateOnlyNotes?.length ||
       recommendation.notPublicYet?.length ||
+      recommendation.observedChannels?.length ||
+      recommendation.conversationHighlights?.length ||
+      recommendation.topicBreakdown?.length ||
+      recommendation.bestEvidenceToReview?.length ||
+      recommendation.bnlInteractionSignals?.length ||
+      recommendation.musicSignals?.length ||
+      recommendation.communitySignals?.length ||
+      recommendation.sourceCoverage?.length ||
+      recommendation.evidenceDetails?.length ||
+      recommendation.publicUseCandidates?.length ||
+      recommendation.reviewOnlyEvidence?.length ||
+      recommendation.queueSubmissionStatus ||
+      recommendation.queueSubmissionNote ||
       recommendation.missingInfo?.length ||
       recommendation.sourceAuthority?.length ||
       recommendation.recommendedAction ||
@@ -115,6 +154,66 @@ function structuredReadoutFromRecommendations(
       (recommendation) => recommendation.notPublicYet ?? [],
     ),
   );
+
+  const observedChannels = cleanItems(
+    structuredRecommendations.flatMap(
+      (recommendation) => recommendation.observedChannels ?? [],
+    ),
+  );
+  const conversationHighlights = cleanItems(
+    structuredRecommendations.flatMap(
+      (recommendation) => recommendation.conversationHighlights ?? [],
+    ),
+  );
+  const topicBreakdown = cleanItems(
+    structuredRecommendations.flatMap(
+      (recommendation) => recommendation.topicBreakdown ?? [],
+    ),
+  );
+  const bestEvidenceToReview = cleanItems(
+    structuredRecommendations.flatMap(
+      (recommendation) => recommendation.bestEvidenceToReview ?? [],
+    ),
+  );
+  const bnlInteractionSignals = cleanItems(
+    structuredRecommendations.flatMap(
+      (recommendation) => recommendation.bnlInteractionSignals ?? [],
+    ),
+  );
+  const musicSignals = cleanItems(
+    structuredRecommendations.flatMap(
+      (recommendation) => recommendation.musicSignals ?? [],
+    ),
+  );
+  const communitySignals = cleanItems(
+    structuredRecommendations.flatMap(
+      (recommendation) => recommendation.communitySignals ?? [],
+    ),
+  );
+  const sourceCoverage = cleanItems(
+    structuredRecommendations.flatMap(
+      (recommendation) => recommendation.sourceCoverage ?? [],
+    ),
+  );
+  const evidenceDetails = cleanItems(
+    structuredRecommendations.flatMap(
+      (recommendation) => recommendation.evidenceDetails ?? [],
+    ),
+  );
+  const publicUseCandidates = cleanItems(
+    structuredRecommendations.flatMap(
+      (recommendation) => recommendation.publicUseCandidates ?? [],
+    ),
+  );
+  const reviewOnlyEvidence = cleanItems(
+    structuredRecommendations.flatMap(
+      (recommendation) => recommendation.reviewOnlyEvidence ?? [],
+    ),
+  );
+  const queueRecommendation = structuredRecommendations.find(
+    (recommendation) =>
+      recommendation.queueSubmissionStatus || recommendation.queueSubmissionNote,
+  );
   const missingInfo = cleanItems(
     structuredRecommendations.flatMap(
       (recommendation) => recommendation.missingInfo ?? [],
@@ -150,6 +249,19 @@ function structuredReadoutFromRecommendations(
     publicSafePossibilities,
     privateOnlyNotes,
     notPublicYet,
+    observedChannels,
+    conversationHighlights,
+    topicBreakdown,
+    bestEvidenceToReview,
+    bnlInteractionSignals,
+    musicSignals,
+    communitySignals,
+    sourceCoverage,
+    evidenceDetails,
+    publicUseCandidates,
+    reviewOnlyEvidence,
+    queueSubmissionStatus: queueRecommendation?.queueSubmissionStatus,
+    queueSubmissionNote: cleanText(queueRecommendation?.queueSubmissionNote),
     missingInfo,
     sourceAuthority,
     recommendedAction:
@@ -183,6 +295,19 @@ export function createDossierEntityActivityReadoutFromSourceFile({
     publicSafePossibilities: cleanItems(summary?.publicSafePossibilities ?? []),
     privateOnlyNotes: cleanItems(summary?.privateOnlyNotes ?? []),
     notPublicYet: cleanItems(summary?.notPublicYet ?? []),
+    observedChannels: cleanItems(summary?.observedChannels ?? []),
+    conversationHighlights: cleanItems(summary?.conversationHighlights ?? []),
+    topicBreakdown: cleanItems(summary?.topicBreakdown ?? []),
+    bestEvidenceToReview: cleanItems(summary?.bestEvidenceToReview ?? []),
+    bnlInteractionSignals: cleanItems(summary?.bnlInteractionSignals ?? []),
+    musicSignals: cleanItems(summary?.musicSignals ?? []),
+    communitySignals: cleanItems(summary?.communitySignals ?? []),
+    sourceCoverage: cleanItems(summary?.sourceCoverage ?? []),
+    evidenceDetails: cleanItems(summary?.evidenceDetails ?? []),
+    publicUseCandidates: cleanItems(summary?.publicUseCandidates ?? []),
+    reviewOnlyEvidence: cleanItems(summary?.reviewOnlyEvidence ?? []),
+    queueSubmissionStatus: summary?.queueSubmissionStatus,
+    queueSubmissionNote: cleanText(summary?.queueSubmissionNote),
     missingInfo: cleanItems(summary?.missingInfo ?? []),
     sourceAuthority: cleanItems(summary?.sourceAuthority ?? [], 5),
     recommendedAction:
@@ -205,6 +330,17 @@ export function createDossierEntityActivityReadoutFromRecommendation(
       publicSafePossibilities: [],
       privateOnlyNotes: [],
       notPublicYet: [],
+      observedChannels: [],
+      conversationHighlights: [],
+      topicBreakdown: [],
+      bestEvidenceToReview: [],
+      bnlInteractionSignals: [],
+      musicSignals: [],
+      communitySignals: [],
+      sourceCoverage: [],
+      evidenceDetails: [],
+      publicUseCandidates: [],
+      reviewOnlyEvidence: [],
       missingInfo: [],
       sourceAuthority: [],
       recommendedAction:

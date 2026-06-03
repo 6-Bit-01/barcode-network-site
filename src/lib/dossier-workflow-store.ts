@@ -707,7 +707,9 @@ function firstStructuredRecommendationReason(
 ): string | undefined {
   return (
     normalizePacketStringArray(input.knownContext)?.[0] ??
+    normalizePacketStringArray(input.bestEvidenceToReview)?.[0] ??
     normalizePacketStringArray(input.usefulEvidence)?.[0] ??
+    normalizePacketStringArray(input.conversationHighlights)?.[0] ??
     boundedText(input.recommendedAction, 1000) ??
     normalizePacketStringArray(input.publicSafePossibilities)?.[0]
   );
@@ -754,6 +756,19 @@ function normalizeRecommendationInput(
     ),
     privateOnlyNotes: normalizePacketStringArray(input.privateOnlyNotes),
     notPublicYet: normalizePacketStringArray(input.notPublicYet),
+    observedChannels: normalizePacketStringArray(input.observedChannels),
+    conversationHighlights: normalizePacketStringArray(input.conversationHighlights),
+    topicBreakdown: normalizePacketStringArray(input.topicBreakdown),
+    bestEvidenceToReview: normalizePacketStringArray(input.bestEvidenceToReview),
+    bnlInteractionSignals: normalizePacketStringArray(input.bnlInteractionSignals),
+    musicSignals: normalizePacketStringArray(input.musicSignals),
+    communitySignals: normalizePacketStringArray(input.communitySignals),
+    sourceCoverage: normalizePacketStringArray(input.sourceCoverage),
+    evidenceDetails: normalizePacketStringArray(input.evidenceDetails),
+    publicUseCandidates: normalizePacketStringArray(input.publicUseCandidates),
+    reviewOnlyEvidence: normalizePacketStringArray(input.reviewOnlyEvidence),
+    queueSubmissionStatus: input.queueSubmissionStatus,
+    queueSubmissionNote: boundedText(input.queueSubmissionNote, 1000) || undefined,
     recommendedAction: boundedText(input.recommendedAction, 1000) || undefined,
     sourceAuthority: normalizePacketStringArray(input.sourceAuthority),
     rawProvenance: cloneJsonValue(input.rawProvenance),
@@ -989,6 +1004,7 @@ function buildCandidateFromRecommendation(input: {
       : [],
     evidenceCount:
       recommendation.usefulEvidence?.length ??
+      recommendation.bestEvidenceToReview?.length ??
       (recommendation.evidenceSummary ? 1 : 0),
     knownFacts: recommendation.knownContext ?? [],
     confidence: recommendation.confidence ?? "low",
@@ -1424,6 +1440,27 @@ function recommendationSourceNoteText(
     ),
     ...packetLines("Private/internal note", recommendation.privateOnlyNotes),
     ...packetLines("Not public yet", recommendation.notPublicYet),
+    ...packetLines("Best evidence to review", recommendation.bestEvidenceToReview),
+    ...packetLines("Observed channel/activity", recommendation.observedChannels),
+    ...packetLines("Conversation highlight", recommendation.conversationHighlights),
+    ...packetLines("Topic breakdown", recommendation.topicBreakdown),
+    ...packetLines("BNL interaction signal", recommendation.bnlInteractionSignals),
+    ...packetLines("Music/show signal", recommendation.musicSignals),
+    ...packetLines("Community signal", recommendation.communitySignals),
+    ...packetLines("Source coverage", recommendation.sourceCoverage),
+    ...packetLines("Evidence detail", recommendation.evidenceDetails),
+    ...packetLines("Public-use candidate pending owner review", recommendation.publicUseCandidates),
+    ...packetLines("Review-only evidence", recommendation.reviewOnlyEvidence),
+    recommendation.queueSubmissionStatus
+      ? `Queue/submission status: ${
+          recommendation.queueSubmissionStatus === "not_connected"
+            ? "Queue/submission identity is not connected yet."
+            : recommendation.queueSubmissionStatus
+        }`
+      : "",
+    recommendation.queueSubmissionNote
+      ? `Queue/submission note: ${recommendation.queueSubmissionNote}`
+      : "",
     recommendation.recommendedAction
       ? `Recommended next action: ${recommendation.recommendedAction}`
       : "",

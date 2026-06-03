@@ -372,6 +372,14 @@ export type DossierRecommendationIngestSource =
   | "system"
   | "unknown";
 
+export type DossierQueueSubmissionStatus =
+  | "not_connected"
+  | "connected"
+  | "confirmed_submission"
+  | "no_submission_found"
+  | "review_needed"
+  | "unknown";
+
 export type DossierStructuredSourcePacket = {
   knownContext?: string[];
   usefulEvidence?: string[];
@@ -379,6 +387,19 @@ export type DossierStructuredSourcePacket = {
   publicSafePossibilities?: string[];
   privateOnlyNotes?: string[];
   notPublicYet?: string[];
+  observedChannels?: string[];
+  conversationHighlights?: string[];
+  topicBreakdown?: string[];
+  bestEvidenceToReview?: string[];
+  bnlInteractionSignals?: string[];
+  musicSignals?: string[];
+  communitySignals?: string[];
+  sourceCoverage?: string[];
+  evidenceDetails?: string[];
+  publicUseCandidates?: string[];
+  reviewOnlyEvidence?: string[];
+  queueSubmissionStatus?: DossierQueueSubmissionStatus;
+  queueSubmissionNote?: string;
   recommendedAction?: string;
   sourceAuthority?: string[];
   rawProvenance?: unknown;
@@ -404,6 +425,19 @@ export type DossierRecommendation = {
   publicSafePossibilities?: string[];
   privateOnlyNotes?: string[];
   notPublicYet?: string[];
+  observedChannels?: string[];
+  conversationHighlights?: string[];
+  topicBreakdown?: string[];
+  bestEvidenceToReview?: string[];
+  bnlInteractionSignals?: string[];
+  musicSignals?: string[];
+  communitySignals?: string[];
+  sourceCoverage?: string[];
+  evidenceDetails?: string[];
+  publicUseCandidates?: string[];
+  reviewOnlyEvidence?: string[];
+  queueSubmissionStatus?: DossierQueueSubmissionStatus;
+  queueSubmissionNote?: string;
   recommendedAction?: string;
   sourceAuthority?: string[];
   rawProvenance?: unknown;
@@ -736,6 +770,19 @@ export type CreateDossierRecommendationInput = {
   publicSafePossibilities?: string[];
   privateOnlyNotes?: string[];
   notPublicYet?: string[];
+  observedChannels?: string[];
+  conversationHighlights?: string[];
+  topicBreakdown?: string[];
+  bestEvidenceToReview?: string[];
+  bnlInteractionSignals?: string[];
+  musicSignals?: string[];
+  communitySignals?: string[];
+  sourceCoverage?: string[];
+  evidenceDetails?: string[];
+  publicUseCandidates?: string[];
+  reviewOnlyEvidence?: string[];
+  queueSubmissionStatus?: DossierQueueSubmissionStatus;
+  queueSubmissionNote?: string;
   recommendedAction?: string;
   sourceAuthority?: string[];
   rawProvenance?: unknown;

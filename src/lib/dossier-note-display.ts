@@ -54,6 +54,19 @@ type NoteLike = Pick<
   publicSafePossibilities?: string[];
   privateOnlyNotes?: string[];
   notPublicYet?: string[];
+  observedChannels?: string[];
+  conversationHighlights?: string[];
+  topicBreakdown?: string[];
+  bestEvidenceToReview?: string[];
+  bnlInteractionSignals?: string[];
+  musicSignals?: string[];
+  communitySignals?: string[];
+  sourceCoverage?: string[];
+  evidenceDetails?: string[];
+  publicUseCandidates?: string[];
+  reviewOnlyEvidence?: string[];
+  queueSubmissionStatus?: string;
+  queueSubmissionNote?: string;
   recommendedAction?: string;
   sourceAuthority?: string[];
   rawProvenance?: unknown;
@@ -535,6 +548,49 @@ export function createHumanReadableSourceFileNoteView(
     addItem(sections, "Private/Internal Notes", item, subjectOptions);
   for (const item of note.notPublicYet ?? [])
     addShortWarning(sections, item, subjectOptions);
+  for (const item of note.bestEvidenceToReview ?? [])
+    addItem(sections, "Best Evidence to Review", item, subjectOptions);
+  for (const item of note.observedChannels ?? [])
+    addItem(sections, "Observed Channels / Activity", item, subjectOptions);
+  for (const item of note.conversationHighlights ?? [])
+    addItem(sections, "Conversation Highlights", item, subjectOptions);
+  for (const item of note.musicSignals ?? [])
+    addItem(sections, "Music / Show Signals", item, subjectOptions);
+  for (const item of note.communitySignals ?? [])
+    addItem(sections, "Community Signals", item, subjectOptions);
+  for (const item of note.bnlInteractionSignals ?? [])
+    addItem(sections, "BNL Interaction Signals", item, subjectOptions);
+  for (const item of note.topicBreakdown ?? [])
+    addItem(sections, "Topic Breakdown", item, subjectOptions);
+  for (const item of note.evidenceDetails ?? [])
+    addItem(sections, "Evidence Details", item, subjectOptions);
+  for (const item of note.publicUseCandidates ?? [])
+    addItem(
+      sections,
+      "Public-Use Candidates Pending Owner Review",
+      item,
+      subjectOptions,
+    );
+  for (const item of note.reviewOnlyEvidence ?? [])
+    addItem(sections, "Review-Only Evidence", item, subjectOptions);
+  for (const item of note.sourceCoverage ?? [])
+    addItem(sections, "Source Coverage", item, subjectOptions);
+  if (note.queueSubmissionStatus === "not_connected") {
+    addItem(
+      sections,
+      "Queue / Submission Status",
+      "Queue/submission identity is not connected yet.",
+      subjectOptions,
+    );
+  } else if (note.queueSubmissionStatus) {
+    addItem(
+      sections,
+      "Queue / Submission Status",
+      `Queue/submission status: ${note.queueSubmissionStatus.replace(/_/g, " ")}.`,
+      subjectOptions,
+    );
+  }
+  addItem(sections, "Queue / Submission Status", note.queueSubmissionNote, subjectOptions);
   addItem(sections, "Recommended Next Step", note.recommendedAction, subjectOptions);
   for (const item of note.sourceAuthority ?? [])
     addItem(sections, "Source Authority / Confidence", item, subjectOptions);
@@ -649,6 +705,38 @@ export function createHumanReadableRecommendationView(
       (recommendation.notPublicYet ?? [])
         .map((item) => `Not public yet: ${item}`)
         .join("\n"),
+      (recommendation.bestEvidenceToReview ?? [])
+        .map((item) => `Best evidence to review: ${item}`)
+        .join("\n"),
+      (recommendation.observedChannels ?? [])
+        .map((item) => `Observed channel/activity: ${item}`)
+        .join("\n"),
+      (recommendation.conversationHighlights ?? [])
+        .map((item) => `Conversation highlight: ${item}`)
+        .join("\n"),
+      (recommendation.musicSignals ?? [])
+        .map((item) => `Music/show signal: ${item}`)
+        .join("\n"),
+      (recommendation.communitySignals ?? [])
+        .map((item) => `Community signal: ${item}`)
+        .join("\n"),
+      (recommendation.bnlInteractionSignals ?? [])
+        .map((item) => `BNL interaction signal: ${item}`)
+        .join("\n"),
+      (recommendation.publicUseCandidates ?? [])
+        .map((item) => `Public-use candidate pending owner review: ${item}`)
+        .join("\n"),
+      (recommendation.reviewOnlyEvidence ?? [])
+        .map((item) => `Review-only evidence: ${item}`)
+        .join("\n"),
+      recommendation.queueSubmissionStatus === "not_connected"
+        ? "Queue/submission status: Queue/submission identity is not connected yet."
+        : recommendation.queueSubmissionStatus
+          ? `Queue/submission status: ${recommendation.queueSubmissionStatus}`
+          : "",
+      recommendation.queueSubmissionNote
+        ? `Queue/submission note: ${recommendation.queueSubmissionNote}`
+        : "",
       recommendation.recommendedAction
         ? `Recommended next action: ${recommendation.recommendedAction}`
         : "",
@@ -676,6 +764,19 @@ export function createHumanReadableRecommendationView(
     publicSafePossibilities: recommendation.publicSafePossibilities,
     privateOnlyNotes: recommendation.privateOnlyNotes,
     notPublicYet: recommendation.notPublicYet,
+    observedChannels: recommendation.observedChannels,
+    conversationHighlights: recommendation.conversationHighlights,
+    topicBreakdown: recommendation.topicBreakdown,
+    bestEvidenceToReview: recommendation.bestEvidenceToReview,
+    bnlInteractionSignals: recommendation.bnlInteractionSignals,
+    musicSignals: recommendation.musicSignals,
+    communitySignals: recommendation.communitySignals,
+    sourceCoverage: recommendation.sourceCoverage,
+    evidenceDetails: recommendation.evidenceDetails,
+    publicUseCandidates: recommendation.publicUseCandidates,
+    reviewOnlyEvidence: recommendation.reviewOnlyEvidence,
+    queueSubmissionStatus: recommendation.queueSubmissionStatus,
+    queueSubmissionNote: recommendation.queueSubmissionNote,
     recommendedAction: recommendation.recommendedAction,
     sourceAuthority: recommendation.sourceAuthority,
     rawProvenance: recommendation.rawProvenance,

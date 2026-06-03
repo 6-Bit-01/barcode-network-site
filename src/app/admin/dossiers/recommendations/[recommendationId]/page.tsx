@@ -113,6 +113,19 @@ function list(items: string[] | undefined, empty = "—") {
   );
 }
 
+function queueSubmissionItems(recommendation: DossierRecommendation): string[] {
+  const items: string[] = [];
+  if (recommendation.queueSubmissionStatus === "not_connected") {
+    items.push("Queue/submission identity is not connected yet.");
+  } else if (recommendation.queueSubmissionStatus) {
+    items.push(
+      `Queue/submission status: ${recommendation.queueSubmissionStatus.replace(/_/g, " ")}.`,
+    );
+  }
+  if (recommendation.queueSubmissionNote) items.push(recommendation.queueSubmissionNote);
+  return sanitizeMeaningFirstItems(items, { limit: 3 });
+}
+
 function sourceAuthorityItems(recommendation: DossierRecommendation): string[] {
   const sanitized = sanitizeMeaningFirstItems(
     recommendation.sourceAuthority ?? [],
@@ -1030,20 +1043,56 @@ export default function DossierRecommendationPage() {
           <Field title="Known Context / Current Read">
             {list(recommendation.knownContext)}
           </Field>
+          <Field title="Best Evidence to Review">
+            {list(recommendation.bestEvidenceToReview)}
+          </Field>
           <Field title="Useful Evidence">
             {list(recommendation.usefulEvidence)}
+          </Field>
+          <Field title="Observed Channels / Activity">
+            {list(recommendation.observedChannels)}
+          </Field>
+          <Field title="Conversation Highlights">
+            {list(recommendation.conversationHighlights)}
+          </Field>
+          <Field title="Music / Show Signals">
+            {list(recommendation.musicSignals)}
+          </Field>
+          <Field title="Community Signals">
+            {list(recommendation.communitySignals)}
+          </Field>
+          <Field title="BNL Interaction Signals">
+            {list(recommendation.bnlInteractionSignals)}
           </Field>
           <Field title="Private Relationship Context — Review Only">
             {list(recommendation.relationshipSignals)}
           </Field>
-          <Field title="Public-Safe Possibilities Pending Owner Review">
-            {list(recommendation.publicSafePossibilities)}
+          <Field title="Public-Safe / Public-Use Candidates Pending Owner Review">
+            {list([
+              ...(recommendation.publicSafePossibilities ?? []),
+              ...(recommendation.publicUseCandidates ?? []),
+            ])}
+          </Field>
+          <Field title="Review-Only Evidence">
+            {list(recommendation.reviewOnlyEvidence)}
           </Field>
           <Field title="Private/Internal Notes">
             {list(recommendation.privateOnlyNotes)}
           </Field>
           <Field title="Not Public Yet">
             {list(recommendation.notPublicYet)}
+          </Field>
+          <Field title="Source Coverage">
+            {list(recommendation.sourceCoverage)}
+          </Field>
+          <Field title="Topic Breakdown">
+            {list(recommendation.topicBreakdown)}
+          </Field>
+          <Field title="Evidence Details">
+            {list(recommendation.evidenceDetails)}
+          </Field>
+          <Field title="Queue / Submission Status">
+            {list(queueSubmissionItems(recommendation))}
           </Field>
           <Field title="Recommended Next Action">
             <p>{recommendation.recommendedAction ?? recommendation.suggestedAction ?? "—"}</p>

@@ -87,6 +87,14 @@ const IDENTITY_AUTHORITIES = [
   "mixed_or_unclear",
 ] as const satisfies readonly DossierIdentityAuthority[];
 const CONFIDENCES = ["low", "medium", "high"] as const;
+const QUEUE_SUBMISSION_STATUSES = [
+  "not_connected",
+  "connected",
+  "confirmed_submission",
+  "no_submission_found",
+  "review_needed",
+  "unknown",
+] as const;
 
 function text(value: unknown, maxLength: number): string | undefined {
   if (value === undefined || value === null) return undefined;
@@ -119,6 +127,82 @@ function packetStringList(
   }
   if (value.length > 25) throw new Error("Packet field has too many items");
   const items = value.map((item) => text(item, maxItemLength)).filter(Boolean);
+  return items.length ? (items as string[]) : [];
+}
+
+function coverageText(value: unknown, maxLength: number): string | undefined {
+  const clean = text(value, maxLength);
+  if (!clean) return undefined;
+  if (/[{}\[\]<>]/.test(clean) || /[\\/]/.test(clean)) {
+    throw new Error("sourceCoverage contains unsupported raw metadata");
+  }
+  if (/\b(?:candidate|target|dossier|source_file|recommendation|rec|bnl)_[a-z0-9][a-z0-9_-]{8,}\b/i.test(clean)) {
+    throw new Error("sourceCoverage contains a raw identifier");
+  }
+  return clean;
+}
+
+function coverageLabel(value: string): string {
+  return value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function finiteCoverageNumber(value: unknown, field: string): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`Invalid sourceCoverage ${field}`);
+  }
+  if (Math.abs(value) > 1_000_000_000) {
+    throw new Error(`sourceCoverage ${field} is too large`);
+  }
+  return value;
+}
+
+function sourceCoverageItem(value: unknown): string | undefined {
+  if (typeof value === "string") return coverageText(value, 1000);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Expected sourceCoverage item to be text or an object");
+  }
+  const item = value as Record<string, unknown>;
+  const allowedKeys = new Set(["source", "count", "counts", "status"]);
+  for (const key of Object.keys(item)) {
+    if (!allowedKeys.has(key)) {
+      throw new Error("sourceCoverage contains unsupported metadata");
+    }
+  }
+  const source = coverageText(item.source, 120);
+  const status = coverageText(item.status, 80);
+  const count = finiteCoverageNumber(item.count, "count");
+  const countParts: string[] = [];
+  if (item.counts !== undefined) {
+    if (!item.counts || typeof item.counts !== "object" || Array.isArray(item.counts)) {
+      throw new Error("sourceCoverage counts must be an object");
+    }
+    const counts = item.counts as Record<string, unknown>;
+    const entries = Object.entries(counts);
+    if (entries.length > 20) throw new Error("sourceCoverage counts has too many keys");
+    for (const [key, rawCount] of entries) {
+      const cleanKey = coverageText(key, 80);
+      const cleanCount = finiteCoverageNumber(rawCount, "counts value");
+      if (cleanKey && cleanCount !== undefined) {
+        countParts.push(`${coverageLabel(cleanKey)} ${cleanCount}`);
+      }
+    }
+  }
+  const label = source ? coverageLabel(source) : "Source coverage";
+  const pieces = countParts.length
+    ? [`${label}: ${countParts.join(", ")}`]
+    : count !== undefined
+      ? [`${label}: ${count} source row(s)`]
+      : [label];
+  if (status) pieces.push(coverageLabel(status));
+  return pieces.join(" ").trim();
+}
+
+function sourceCoverageList(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined;
+  const rawItems = Array.isArray(value) ? value : [value];
+  if (rawItems.length > 25) throw new Error("sourceCoverage has too many items");
+  const items = rawItems.map(sourceCoverageItem).filter(Boolean);
   return items.length ? (items as string[]) : [];
 }
 
@@ -258,13 +342,32 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
   );
   const privateOnlyNotes = packetStringList(payload.privateOnlyNotes);
   const notPublicYet = packetStringList(payload.notPublicYet);
+  const observedChannels = packetStringList(payload.observedChannels);
+  const conversationHighlights = packetStringList(payload.conversationHighlights);
+  const topicBreakdown = packetStringList(payload.topicBreakdown);
+  const bestEvidenceToReview = packetStringList(payload.bestEvidenceToReview);
+  const bnlInteractionSignals = packetStringList(payload.bnlInteractionSignals);
+  const musicSignals = packetStringList(payload.musicSignals);
+  const communitySignals = packetStringList(payload.communitySignals);
+  const sourceCoverage = sourceCoverageList(payload.sourceCoverage);
+  const evidenceDetails = packetStringList(payload.evidenceDetails);
+  const publicUseCandidates = packetStringList(payload.publicUseCandidates);
+  const reviewOnlyEvidence = packetStringList(payload.reviewOnlyEvidence);
+  const queueSubmissionStatus = enumValue(
+    payload.queueSubmissionStatus,
+    QUEUE_SUBMISSION_STATUSES,
+    "queue submission status",
+  );
+  const queueSubmissionNote = text(payload.queueSubmissionNote, 1000);
   const recommendedAction = text(payload.recommendedAction, 1000);
   const sourceAuthority = packetStringList(payload.sourceAuthority, 1000);
   const rawProvenance = rawJsonValue(payload.rawProvenance);
   const reason =
     text(payload.reason, 2000) ??
     knownContext?.[0] ??
+    bestEvidenceToReview?.[0] ??
     usefulEvidence?.[0] ??
+    conversationHighlights?.[0] ??
     recommendedAction;
   const evidenceSummary =
     payload.evidenceSummary &&
@@ -304,6 +407,19 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
     publicSafePossibilities,
     privateOnlyNotes,
     notPublicYet,
+    observedChannels,
+    conversationHighlights,
+    topicBreakdown,
+    bestEvidenceToReview,
+    bnlInteractionSignals,
+    musicSignals,
+    communitySignals,
+    sourceCoverage,
+    evidenceDetails,
+    publicUseCandidates,
+    reviewOnlyEvidence,
+    queueSubmissionStatus,
+    queueSubmissionNote,
     recommendedAction,
     sourceAuthority,
     rawProvenance,

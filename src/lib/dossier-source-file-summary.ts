@@ -49,6 +49,19 @@ export type DossierSourceFileSummary = {
   uncertainties: string[];
   missingInfo: string[];
   notPublicYet: string[];
+  observedChannels: string[];
+  conversationHighlights: string[];
+  topicBreakdown: string[];
+  bestEvidenceToReview: string[];
+  bnlInteractionSignals: string[];
+  musicSignals: string[];
+  communitySignals: string[];
+  sourceCoverage: string[];
+  evidenceDetails: string[];
+  publicUseCandidates: string[];
+  reviewOnlyEvidence: string[];
+  queueSubmissionStatus?: string;
+  queueSubmissionNote?: string;
   sourceAuthority: string[];
   recommendedNextAction: string;
   substanceLevel: DossierSourceFileSubstanceLevel;
@@ -290,6 +303,67 @@ export function createDossierSourceFileSummary(
     ),
     6,
   );
+
+  const structuredObservedChannels = unique(
+    recommendations.flatMap((recommendation) => recommendation.observedChannels ?? []),
+    6,
+  );
+  const structuredConversationHighlights = unique(
+    recommendations.flatMap(
+      (recommendation) => recommendation.conversationHighlights ?? [],
+    ),
+    6,
+  );
+  const structuredTopicBreakdown = unique(
+    recommendations.flatMap((recommendation) => recommendation.topicBreakdown ?? []),
+    6,
+  );
+  const structuredBestEvidenceToReview = unique(
+    recommendations.flatMap(
+      (recommendation) => recommendation.bestEvidenceToReview ?? [],
+    ),
+    6,
+  );
+  const structuredBnlInteractionSignals = unique(
+    recommendations.flatMap(
+      (recommendation) => recommendation.bnlInteractionSignals ?? [],
+    ),
+    6,
+  );
+  const structuredMusicSignals = unique(
+    recommendations.flatMap((recommendation) => recommendation.musicSignals ?? []),
+    6,
+  );
+  const structuredCommunitySignals = unique(
+    recommendations.flatMap(
+      (recommendation) => recommendation.communitySignals ?? [],
+    ),
+    6,
+  );
+  const structuredSourceCoverage = unique(
+    recommendations.flatMap((recommendation) => recommendation.sourceCoverage ?? []),
+    6,
+  );
+  const structuredEvidenceDetails = unique(
+    recommendations.flatMap((recommendation) => recommendation.evidenceDetails ?? []),
+    6,
+  );
+  const structuredPublicUseCandidates = unique(
+    recommendations.flatMap(
+      (recommendation) => recommendation.publicUseCandidates ?? [],
+    ),
+    6,
+  );
+  const structuredReviewOnlyEvidence = unique(
+    recommendations.flatMap(
+      (recommendation) => recommendation.reviewOnlyEvidence ?? [],
+    ),
+    6,
+  );
+  const queueRecommendation = recommendations.find(
+    (recommendation) =>
+      recommendation.queueSubmissionStatus || recommendation.queueSubmissionNote,
+  );
   const structuredRecommendedAction = unique(
     recommendations.map((recommendation) => recommendation.recommendedAction),
     1,
@@ -485,6 +559,19 @@ export function createDossierSourceFileSummary(
       notPublicYet.length > 0
         ? notPublicYet
         : ["Do not say more publicly until owner/admin review confirms it."],
+    observedChannels: structuredObservedChannels,
+    conversationHighlights: structuredConversationHighlights,
+    topicBreakdown: structuredTopicBreakdown,
+    bestEvidenceToReview: structuredBestEvidenceToReview,
+    bnlInteractionSignals: structuredBnlInteractionSignals,
+    musicSignals: structuredMusicSignals,
+    communitySignals: structuredCommunitySignals,
+    sourceCoverage: structuredSourceCoverage,
+    evidenceDetails: structuredEvidenceDetails,
+    publicUseCandidates: structuredPublicUseCandidates,
+    reviewOnlyEvidence: structuredReviewOnlyEvidence,
+    queueSubmissionStatus: queueRecommendation?.queueSubmissionStatus,
+    queueSubmissionNote: queueRecommendation?.queueSubmissionNote,
     sourceAuthority:
       structuredSourceAuthority.length > 0
         ? structuredSourceAuthority

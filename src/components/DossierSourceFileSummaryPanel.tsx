@@ -91,6 +91,17 @@ function fallbackItems(items: string[], empty: string) {
   return items.length ? items : [empty];
 }
 
+function queueStatusItems(status?: string, note?: string) {
+  const items: string[] = [];
+  if (status === "not_connected") {
+    items.push("Queue/submission identity is not connected yet.");
+  } else if (status) {
+    items.push(`Queue/submission status: ${status.replace(/_/g, " ")}.`);
+  }
+  if (note) items.push(note);
+  return safeReviewItems(items, 3);
+}
+
 export function DossierSourceFileSummaryPanel({
   summary,
   entityReadout,
@@ -140,6 +151,54 @@ export function DossierSourceFileSummaryPanel({
     ...(entityReadout?.missingInfo ?? []),
     ...summary.missingInfo,
   ]);
+  const bestEvidenceToReview = safeReviewItems([
+    ...(entityReadout?.bestEvidenceToReview ?? []),
+    ...summary.bestEvidenceToReview,
+  ]);
+  const observedChannels = safeReviewItems([
+    ...(entityReadout?.observedChannels ?? []),
+    ...summary.observedChannels,
+  ]);
+  const conversationHighlights = safeReviewItems([
+    ...(entityReadout?.conversationHighlights ?? []),
+    ...summary.conversationHighlights,
+  ]);
+  const musicSignals = safeReviewItems([
+    ...(entityReadout?.musicSignals ?? []),
+    ...summary.musicSignals,
+  ]);
+  const communitySignals = safeReviewItems([
+    ...(entityReadout?.communitySignals ?? []),
+    ...summary.communitySignals,
+  ]);
+  const bnlInteractionSignals = safeReviewItems([
+    ...(entityReadout?.bnlInteractionSignals ?? []),
+    ...summary.bnlInteractionSignals,
+  ]);
+  const publicUseCandidates = safeReviewItems([
+    ...(entityReadout?.publicUseCandidates ?? []),
+    ...summary.publicUseCandidates,
+  ]);
+  const reviewOnlyEvidence = safeReviewItems([
+    ...(entityReadout?.reviewOnlyEvidence ?? []),
+    ...summary.reviewOnlyEvidence,
+  ]);
+  const sourceCoverage = safeReviewItems([
+    ...(entityReadout?.sourceCoverage ?? []),
+    ...summary.sourceCoverage,
+  ]);
+  const evidenceDetails = safeReviewItems([
+    ...(entityReadout?.evidenceDetails ?? []),
+    ...summary.evidenceDetails,
+  ]);
+  const topicBreakdown = safeReviewItems([
+    ...(entityReadout?.topicBreakdown ?? []),
+    ...summary.topicBreakdown,
+  ]);
+  const queueItems = queueStatusItems(
+    entityReadout?.queueSubmissionStatus ?? summary.queueSubmissionStatus,
+    entityReadout?.queueSubmissionNote ?? summary.queueSubmissionNote,
+  );
   const sourceAuthority = safeReviewItems([
     ...(entityReadout?.sourceAuthority ?? []),
     ...summary.sourceAuthority,
@@ -193,7 +252,9 @@ export function DossierSourceFileSummaryPanel({
               ? "Structured packet"
               : "Safe fallback"}
           </StatusBadge>
-          <StatusBadge>Queue/submission not connected</StatusBadge>
+          <StatusBadge>
+            {queueItems[0] ?? "Queue/submission not connected"}
+          </StatusBadge>
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 text-sm text-muted">
@@ -205,6 +266,11 @@ export function DossierSourceFileSummaryPanel({
             items={fallbackItems(knownContext, "No public-safe facts confirmed yet.")}
           />
         </Section>
+        {bestEvidenceToReview.length > 0 && (
+          <Section title="Best Evidence to Review">
+            <SummaryList items={bestEvidenceToReview} />
+          </Section>
+        )}
         <Section title="Useful Evidence">
           <SummaryList
             items={fallbackItems(
@@ -213,6 +279,41 @@ export function DossierSourceFileSummaryPanel({
             )}
           />
         </Section>
+        {observedChannels.length > 0 && (
+          <Section title="Observed Channels / Activity">
+            <SummaryList items={observedChannels} />
+          </Section>
+        )}
+        {conversationHighlights.length > 0 && (
+          <Section title="Conversation Highlights">
+            <SummaryList items={conversationHighlights} />
+          </Section>
+        )}
+        {musicSignals.length > 0 && (
+          <Section title="Music / Show Signals">
+            <SummaryList items={musicSignals} />
+          </Section>
+        )}
+        {communitySignals.length > 0 && (
+          <Section title="Community Signals">
+            <SummaryList items={communitySignals} />
+          </Section>
+        )}
+        {bnlInteractionSignals.length > 0 && (
+          <Section title="BNL Interaction Signals" tone="review">
+            <SummaryList items={bnlInteractionSignals} />
+          </Section>
+        )}
+        {topicBreakdown.length > 0 && (
+          <Section title="Topic Breakdown">
+            <SummaryList items={topicBreakdown} />
+          </Section>
+        )}
+        {evidenceDetails.length > 0 && (
+          <Section title="Evidence Details">
+            <SummaryList items={evidenceDetails} />
+          </Section>
+        )}
         <Section title="Pattern BNL Noticed / Patterns / Themes">
           <SummaryList items={summary.patterns} />
         </Section>
@@ -235,14 +336,19 @@ export function DossierSourceFileSummaryPanel({
             )}
           />
         </Section>
-        <Section title="Public-Safe Possibilities Pending Owner Review" tone="review">
+        <Section title="Public-Safe / Public-Use Candidates Pending Owner Review" tone="review">
           <SummaryList
             items={fallbackItems(
-              publicSafePossibilities,
+              safeReviewItems([...publicSafePossibilities, ...publicUseCandidates]),
               "Owner review needed before public wording.",
             )}
           />
         </Section>
+        {reviewOnlyEvidence.length > 0 && (
+          <Section title="Review-Only Evidence" tone="review">
+            <SummaryList items={reviewOnlyEvidence} />
+          </Section>
+        )}
         <Section title="Private/Internal Notes" tone="review">
           <SummaryList
             items={fallbackItems(
@@ -259,6 +365,11 @@ export function DossierSourceFileSummaryPanel({
             )}
           />
         </Section>
+        {sourceCoverage.length > 0 && (
+          <Section title="Source Coverage">
+            <SummaryList items={sourceCoverage} />
+          </Section>
+        )}
         <Section title="Missing Info / Open Questions">
           <SummaryList
             items={fallbackItems(
@@ -267,6 +378,11 @@ export function DossierSourceFileSummaryPanel({
             )}
           />
         </Section>
+        {queueItems.length > 0 && (
+          <Section title="Queue / Submission Status" tone="review">
+            <SummaryList items={queueItems} />
+          </Section>
+        )}
         <Section title="Source Authority / Confidence">
           <SummaryList
             items={fallbackItems(

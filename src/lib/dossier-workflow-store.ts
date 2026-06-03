@@ -758,6 +758,26 @@ function normalizeSourceCoverageInput(value: unknown): string[] | undefined {
 }
 
 
+
+function evidenceLooksLikeClassification(value?: string) {
+  return /\b(?:automated topic|topic label|classified|classification|evidence categor(?:y|ies)|topic breakdown|topic detail|source-file|dossier|BNL\/source-file|BNL source-file|BNL\/source file|source file\/dossier)\b/i.test(value ?? "");
+}
+
+function evidenceClassificationCopy(value?: string) {
+  const clean = boundedText(value, 240)
+    ?.replace(/\bauthored\b/gi, "")
+    .replace(/\bposted\b/gi, "")
+    .replace(/\bCrow\s+(?:discussed|posted about|talked about|authored)\b/gi, "")
+    .replace(/\bdiscussed\b/gi, "related to")
+    .replace(/\bhandling\b/gi, "context")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[-:;,\s]+|[-:;,\s]+$/g, "");
+  if (!clean) return undefined;
+  if (/\bclassified\b/i.test(clean) || /\bautomated topic/i.test(clean)) return clean;
+  return `Automated topic label: ${clean}. Needs human review before this becomes a subject claim.`;
+}
+
 function normalizeEvidenceReadoutItem(value: unknown): string | undefined {
   if (typeof value === "string") return boundedText(value, 1000) || undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
@@ -791,10 +811,16 @@ function normalizeEvidenceReadoutItem(value: unknown): string | undefined {
   for (const key of Object.keys(item)) {
     if (!allowed.has(key)) return undefined;
   }
+  const summary = boundedText(item.summary, 500) || boundedText(item.detail, 500) || boundedText(item.label, 500);
+  const topic = boundedText(item.topic, 120);
+  const classificationCopy = evidenceLooksLikeClassification(topic) || evidenceLooksLikeClassification(summary)
+    ? evidenceClassificationCopy(summary) ?? evidenceClassificationCopy(topic)
+    : undefined;
+  const activityType = boundedText(item.activityType, 80) || boundedText(item.type, 80) || boundedText(item.kind, 80);
   const textParts = [
-    boundedText(item.summary, 500) || boundedText(item.detail, 500) || boundedText(item.label, 500),
-    (boundedText(item.activityType, 80) || boundedText(item.type, 80) || boundedText(item.kind, 80))?.replace(/^authored$/i, "posted"),
-    boundedText(item.topic, 120) ? `about ${normalizeCoverageLabel(String(item.topic))}` : undefined,
+    classificationCopy ?? summary,
+    classificationCopy ? undefined : activityType?.replace(/^authored$/i, "posted"),
+    topic ? (classificationCopy ? `automated topic label ${normalizeCoverageLabel(topic)}` : `about ${normalizeCoverageLabel(topic)}`) : undefined,
     boundedText(item.channel, 120) ? `in ${String(item.channel).startsWith("#") ? String(item.channel) : `#${normalizeCoverageLabel(String(item.channel))}`}` : undefined,
     boundedText(item.context, 180) ? normalizeCoverageLabel(String(item.context)) : undefined,
     boundedText(item.frequency, 160) || boundedText(item.recency, 160) || boundedText(item.window, 160),

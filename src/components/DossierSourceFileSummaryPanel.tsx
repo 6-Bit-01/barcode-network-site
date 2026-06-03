@@ -55,25 +55,48 @@ function SummaryList({ items }: { items: string[] }) {
   );
 }
 
+function isClassificationText(value: string) {
+  return /\b(?:automated topic|topic label|classified|classification|evidence categor(?:y|ies)|topic breakdown|topic detail|source-file|dossier|BNL\/source-file|BNL source-file|BNL\/source file|source file\/dossier)\b/i.test(value);
+}
+
+function classificationLabel(value: string) {
+  const clean = value
+    .replace(/\bauthored\b/gi, "")
+    .replace(/\bposted\b/gi, "")
+    .replace(/\bCrow\s+(?:discussed|posted about|talked about|authored)\b/gi, "")
+    .replace(/\bdiscussed\b/gi, "related to")
+    .replace(/\bhandling\b/gi, "context")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[-:;,\s]+|[-:;,\s]+$/g, "");
+  if (/\bclassified\b/i.test(clean) || /\bautomated topic/i.test(clean)) {
+    return clean;
+  }
+  return `Automated topic label: ${clean}. Needs human review before this becomes a subject claim.`;
+}
+
 function displaySafeText(value?: string | null) {
   const clean = value?.replace(/\s+/g, " ").trim();
   if (!clean) return undefined;
-  if (containsDossierBackendJunk(clean) || isRawSourceMemoryDebugText(clean)) {
-    return undefined;
-  }
   if (/\[object Object\]/i.test(clean)) return undefined;
   if (/\b(?:authored_public_conversation|profile_match)\b/i.test(clean)) return undefined;
   if (/\b(?:user_profiles|conversations|relationship_journal|source_memory_packet|source table|table name)\b/i.test(clean)) {
     return undefined;
   }
+  if (isClassificationText(clean)) {
+    return classificationLabel(clean)
+      .replace(/\bpublic-side\b/gi, "approved public context")
+      .replace(/\brow\(s\)\b/gi, "items");
+  }
+  if (containsDossierBackendJunk(clean) || isRawSourceMemoryDebugText(clean)) {
+    return undefined;
+  }
   return clean
-    .replace(/\bauthored\b/gi, "posted")
-    .replace(/\bauthored public-side row\(s\)\b/gi, "posted in approved public context")
-    .replace(/\bpublic-side row\(s\)\b/gi, "approved public context")
+    .replace(/\bauthored public-side row\(s\)\b/gi, "approved public context item")
+    .replace(/\bpublic-side row\(s\)\b/gi, "approved public context item")
     .replace(/\brow\(s\)\b/gi, "items")
     .replace(/\bpublic-side\b/gi, "approved public context")
     .replace(/\bReview candidate\b/g, "Review item")
-    .replace(/\bcandidate\b/gi, "lead")
     .replace(/\bidentity matching context\b/gi, "identity review context")
     .replace(/\blocal context\b/gi, "BNL review context")
     .replace(/\bprofile_match\b/gi, "local profile match");
@@ -309,7 +332,9 @@ export function DossierSourceFileSummaryPanel({
   const adminCaseSummary = safeReviewItems([
     `Identity status: ${identityCertaintyLabel(summary)}; display name and role still need owner/admin confirmation before public use.`,
     observedChannels[0] || topChannels[0] || "Approved public/community activity may exist, but it still needs review.",
-    topicBreakdown[0] || topTopicDetails[0] || "Main discussion areas are based on approved evidence labels, not full conversation review.",
+    topicBreakdown.length || topTopicDetails.length
+      ? "Topic labels are BNL classifications, not public facts."
+      : "No main evidence category has been reviewed yet.",
     "Review-only cautions must stay internal unless owner/admin review approves them.",
     queueItems[0] ?? "Queue/submission history is not connected yet.",
   ], 5);
@@ -319,22 +344,22 @@ export function DossierSourceFileSummaryPanel({
       ? `Public activity: ${[...topChannels, ...observedChannels].slice(0, 2).join("; ")}.`
       : "Public activity: no approved public activity detail has been summarized yet.",
     topicBreakdown.length || topTopicDetails.length
-      ? `Main discussion areas: ${[...topTopicDetails, ...topicBreakdown].slice(0, 3).join("; ")}.`
-      : "Main discussion areas: topic detail is based on approved public-side evidence labels, not full conversation review.",
+      ? `Main evidence categories: BNL classified items under ${[...topTopicDetails, ...topicBreakdown].slice(0, 3).join("; ")}. Review item details before treating them as subject claims.`
+      : "Main evidence categories: topic detail is based on approved evidence labels, not full conversation review.",
     bestEvidenceToReview.length ? `Strong lead: ${bestEvidenceToReview[0]}` : undefined,
-    representativeEvidence.length ? `Representative activity: ${representativeEvidence[0]}` : undefined,
+    representativeEvidence.length ? `Representative public activity or review item: ${representativeEvidence[0]}` : undefined,
     reviewOnlyEvidence.length || relationshipContext.length
       ? "Review-only context exists, but it cannot become public copy without owner/admin review."
       : undefined,
   ], 6);
   const activityDetails = safeReviewItems([
     ...topChannels.map((item) => `Channel activity: ${item}`),
-    ...topTopicDetails.map((item) => `Topic detail: ${item}`),
+    ...topTopicDetails.map((item) => `BNL classification: ${item}`),
     ...activityFrequencySummary.map((item) => `Frequency: ${item}`),
     ...recentActivitySummary.map((item) => `Recency: ${item}`),
     ...authoredVsMentionedSummary.map((item) => `Posted/mentioned balance: ${item}`),
-    ...representativeEvidence.map((item) => `Example lead: ${item}`),
-    ...conversationHighlights.map((item) => `Public activity note: ${item}`),
+    ...representativeEvidence.map((item) => isClassificationText(item) ? `Review item: ${item}` : `Representative public activity: ${item}`),
+    ...conversationHighlights.map((item) => isClassificationText(item) ? `Review item: ${item}` : `Public activity note: ${item}`),
     ...musicSignals.map((item) => `Music/show note: ${item}`),
     ...communitySignals.map((item) => `Community note: ${item}`),
     ...bnlInteractionSignals.map((item) => `BNL handling note: ${item}`),

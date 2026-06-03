@@ -191,7 +191,12 @@ function reviewEvidenceText(value: unknown, field: string, maxLength = 1000): st
   if (clean === "[object Object]" || /\[object Object\]/i.test(clean)) {
     throw new Error(`${field} contains object text`);
   }
-  if (/[{}<>]/.test(clean) || /(?:^|\s)(?:[A-Za-z]:)?[\\/][\w./-]+/.test(clean) || /\b[\w.-]+(?:[\\/][\w.-]+){2,}\b/.test(clean)) {
+  const classificationLike = /\b(?:BNL\/source-file|source-file\/dossier(?:-related)?|music\/track|help\/support)\b/i.test(clean);
+  if (
+    /[{}<>]/.test(clean) ||
+    /(?:^|\s)(?:[A-Za-z]:)?[\\/][\w./-]+/.test(clean) ||
+    (!classificationLike && /\b[\w.-]+(?:[\\/][\w.-]+){2,}\b/.test(clean))
+  ) {
     throw new Error(`${field} contains unsupported raw metadata`);
   }
   if (/\b(?:candidate|target|dossier|source_file|recommendation|rec|bnl|user|message|channel)_[a-z0-9][a-z0-9_-]{8,}\b/i.test(clean)) {
@@ -209,6 +214,26 @@ function reviewEvidenceNumber(value: unknown, field: string): number | undefined
   return value;
 }
 
+
+function evidenceLooksLikeClassification(value?: string) {
+  return /\b(?:automated topic|topic label|classified|classification|evidence categor(?:y|ies)|topic breakdown|topic detail|source-file|dossier|BNL\/source-file|BNL source-file|BNL\/source file|source file\/dossier)\b/i.test(value ?? "");
+}
+
+function evidenceClassificationCopy(value?: string) {
+  const clean = reviewEvidenceText(value, "classification", 240)
+    ?.replace(/\bauthored\b/gi, "")
+    .replace(/\bposted\b/gi, "")
+    .replace(/\bCrow\s+(?:discussed|posted about|talked about|authored)\b/gi, "")
+    .replace(/\bdiscussed\b/gi, "related to")
+    .replace(/\bhandling\b/gi, "context")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[-:;,\s]+|[-:;,\s]+$/g, "");
+  if (!clean) return undefined;
+  if (/\bclassified\b/i.test(clean) || /\bautomated topic/i.test(clean)) return clean;
+  return `Automated topic label: ${clean}. Needs human review before this becomes a subject claim.`;
+}
+
 function reviewEvidenceObjectItem(value: Record<string, unknown>, field: string, maxLength = 1000): string | undefined {
   const parts: string[] = [];
   for (const key of Object.keys(value)) {
@@ -216,13 +241,17 @@ function reviewEvidenceObjectItem(value: Record<string, unknown>, field: string,
       throw new Error(`${field} contains unsupported metadata`);
     }
   }
-  const summary = reviewEvidenceText(value.summary ?? value.detail ?? value.label, field, 500);
-  if (summary) parts.push(summary);
+  const rawSummary = reviewEvidenceText(value.summary ?? value.detail ?? value.label, field, 500);
   const topic = reviewEvidenceText(value.topic, field, 120);
+  const classificationCopy = evidenceLooksLikeClassification(topic) || evidenceLooksLikeClassification(rawSummary)
+    ? evidenceClassificationCopy(rawSummary) ?? evidenceClassificationCopy(topic)
+    : undefined;
+  if (classificationCopy) parts.push(classificationCopy);
+  else if (rawSummary) parts.push(rawSummary);
   const channel = reviewEvidenceText(value.channel, field, 120);
   const context = reviewEvidenceText(value.context, field, 180);
   let activityType = reviewEvidenceText(value.activityType ?? value.type ?? value.kind, field, 80);
-  if (/^authored$/i.test(activityType ?? "")) activityType = "posted";
+  if (/^authored$/i.test(activityType ?? "")) activityType = classificationCopy ? undefined : "posted";
   const status = reviewEvidenceText(value.status ?? value.visibility, field, 80);
   const relationship = reviewEvidenceText(value.relationship, field, 80);
   const window = reviewEvidenceText(value.window ?? value.recency ?? value.frequency, field, 160);
@@ -260,7 +289,7 @@ function reviewEvidenceObjectItem(value: Record<string, unknown>, field: string,
   }
   const detailParts = [
     activityType && coverageLabel(activityType),
-    topic && `about ${coverageLabel(topic)}`,
+    topic && (classificationCopy ? `automated topic label ${coverageLabel(topic)}` : `about ${coverageLabel(topic)}`),
     channel && `in ${channel.startsWith("#") ? channel : `#${coverageLabel(channel)}`}`,
     channels.length ? `in ${channels.map((item) => item.startsWith("#") ? item : `#${coverageLabel(item)}`).join(", ")}` : undefined,
     context && coverageLabel(context),

@@ -5514,9 +5514,9 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
     confidence: "high",
     sourceAuthority: ["Mixed BNL memory plus admin review; not owner-confirmed."],
     observedChannels: ["Activity observed in owner-reviewable BARCODE Radio planning context."],
-    conversationHighlights: ["Conversation highlight notes recurring support around show planning."],
-    topicBreakdown: ["Topic breakdown emphasizes radio support and community coordination."],
-    bestEvidenceToReview: ["Owner should review the recurring set-support source note first."],
+    conversationHighlights: ["Public activity note: subject explicitly shared a show-planning update in approved context."],
+    topicBreakdown: ["Automated topic label: radio support and community coordination. Needs human review before this becomes a subject claim."],
+    bestEvidenceToReview: ["Review item: owner should review the recurring set-support source note first."],
     bnlInteractionSignals: ["BNL interaction signal: recurring admin-side mention pattern."],
     musicSignals: ["Music/show signal: set-support work appears around radio planning."],
     communitySignals: ["Community signal: repeated collaborator mentions in review context."],
@@ -5533,16 +5533,20 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
     representativeEvidence: [
       {
         activityType: "authored",
-        topic: "BNL/source-file handling",
+        topic: "BNL/source-file/dossier discussion",
         channel: "barcode-bot",
-        summary: "Crow discussed source-file handling in approved public context.",
+        summary: "BNL classified this approved-context evidence as source-file/dossier-related.",
+        detail: "Automated topic classification; review before using as a subject claim.",
       },
     ],
     activityFrequencySummary: [
       { frequency: "Recurring approved public context", count: 5 },
     ],
     topChannels: [{ channel: "finished-tracks", count: 3 }],
-    topTopicDetails: [{ topic: "music/track-sharing", count: 4 }],
+    topTopicDetails: [
+      { topic: "music/track-sharing", count: 4 },
+      { topic: "BNL/source-file/dossier discussion", count: 1 },
+    ],
     recentActivitySummary: [{ recency: "Recent approved public context", recentCount: 2 }],
     authoredVsMentionedSummary: [{ postedCount: 4, mentionedCount: 1 }],
     publicUseCandidates: ["Possible collaborator wording pending owner review."],
@@ -5584,7 +5588,8 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   assert.doesNotMatch(JSON.stringify(payload.recommendation.sourceCoverage), /\[object Object\]/);
   assert.deepEqual(payload.recommendation.publicUseCandidates, packet.publicUseCandidates);
   assert.deepEqual(payload.recommendation.reviewOnlyEvidence, packet.reviewOnlyEvidence);
-  assert.match(JSON.stringify(payload.recommendation.representativeEvidence), /Crow discussed source-file handling/);
+  assert.match(JSON.stringify(payload.recommendation.representativeEvidence), /BNL classified this approved-context evidence as source-file\/dossier-related/);
+  assert.doesNotMatch(JSON.stringify(payload.recommendation.representativeEvidence), /Crow discussed|Crow posted about|posted about source-file|posted.*BNL\/source-file/);
   assert.match(JSON.stringify(payload.recommendation.topChannels), /#finished tracks|#finished-tracks/);
   assert.match(JSON.stringify(payload.recommendation.topTopicDetails), /music\/track sharing|music track sharing/);
   assert.match(JSON.stringify(payload.recommendation.activityFrequencySummary), /Recurring approved public context/);
@@ -5606,7 +5611,8 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   assert.deepEqual(savedRecommendation.musicSignals, packet.musicSignals);
   assert.deepEqual(savedRecommendation.communitySignals, packet.communitySignals);
   assert.deepEqual(savedRecommendation.bnlInteractionSignals, packet.bnlInteractionSignals);
-  assert.match(JSON.stringify(savedRecommendation.representativeEvidence), /Crow discussed source-file handling/);
+  assert.match(JSON.stringify(savedRecommendation.representativeEvidence), /BNL classified this approved-context evidence as source-file\/dossier-related/);
+  assert.doesNotMatch(JSON.stringify(savedRecommendation.representativeEvidence), /Crow discussed|Crow posted about|posted about source-file|posted.*BNL\/source-file/);
   assert.match(JSON.stringify(savedRecommendation.topChannels), /finished/);
   assert.match(JSON.stringify(savedRecommendation.topTopicDetails), /music/);
   assert.match(JSON.stringify(savedRecommendation.activityFrequencySummary), /Recurring/);
@@ -5623,7 +5629,7 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   assert.equal(sourceFile.sourceFileNotes.length, 1);
   assert.match(sourceFile.sourceFileNotes[0].text, /Useful evidence: Two reviewed source notes/);
   assert.match(sourceFile.sourceFileNotes[0].text, /Relationship signal — private review/);
-  assert.match(sourceFile.sourceFileNotes[0].text, /Best evidence to review: Owner should review/);
+  assert.match(sourceFile.sourceFileNotes[0].text, /Best evidence to review: Review item: owner should review/);
   assert.match(sourceFile.sourceFileNotes[0].text, /Observed channel\/activity: Activity observed/);
   assert.match(sourceFile.sourceFileNotes[0].text, /Queue\/submission identity is not connected yet/);
   assert.match(sourceFile.sourceFileNotes[0].text, /Source coverage: channel policy: public home 12, public context 4 found/);
@@ -5634,17 +5640,19 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
     candidate: sourceFile,
     recommendations: [savedRecommendation],
   });
-  assert.match(JSON.stringify(summary.bestEvidenceToReview), /Owner should review/);
+  assert.match(JSON.stringify(summary.bestEvidenceToReview), /owner should review/i);
   assert.match(JSON.stringify(summary.observedChannels), /Activity observed/);
-  assert.match(JSON.stringify(summary.conversationHighlights), /Conversation highlight/);
+  assert.match(JSON.stringify(summary.conversationHighlights), /subject explicitly shared/);
   assert.match(JSON.stringify(summary.musicSignals), /Music\/show signal/);
   assert.match(JSON.stringify(summary.communitySignals), /Community signal/);
   assert.match(JSON.stringify(summary.bnlInteractionSignals), /BNL interaction signal/);
   assert.match(JSON.stringify(summary.sourceCoverage), /conversation: 14 source row\(s\) found/);
   assert.match(JSON.stringify(summary.sourceCoverage), /channel policy: public home 12, public context 4 found/);
-  assert.match(JSON.stringify(summary.representativeEvidence), /Crow discussed source-file handling/);
+  assert.match(JSON.stringify(summary.representativeEvidence), /BNL classified this approved-context evidence as source-file\/dossier-related/);
+  assert.doesNotMatch(JSON.stringify(summary.representativeEvidence), /Crow discussed|Crow posted about|posted about source-file|posted.*BNL\/source-file/);
   assert.match(JSON.stringify(summary.topChannels), /finished/);
   assert.match(JSON.stringify(summary.topTopicDetails), /music/);
+  assert.match(JSON.stringify(summary.topTopicDetails), /Automated topic label|BNL\/source-file\/dossier discussion/);
   assert.match(JSON.stringify(summary.activityFrequencySummary), /Recurring/);
   assert.match(JSON.stringify(summary.recentActivitySummary), /Recent/);
   assert.match(JSON.stringify(summary.authoredVsMentionedSummary), /posted item|mention/);
@@ -5662,6 +5670,20 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   assert.match(JSON.stringify(summary.sourceAuthority), /Source confidence: high|Mixed BNL memory/);
   assert.doesNotMatch(JSON.stringify(summary), /raw-trace-structured-packet-v2/);
 
+  const structuredReadout = entityReadout.createDossierEntityActivityReadoutFromSourceFile({
+    summary,
+    recommendations: [savedRecommendation],
+    subjectName: sourceFile.name,
+  });
+  const panelText = collectReactText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary,
+    entityReadout: structuredReadout,
+  }));
+  assert.match(panelText, /BNL classification|Automated topic label|Main evidence categories/);
+  assert.match(panelText, /Topic labels are BNL classifications, not public facts/);
+  assert.match(panelText, /subject explicitly shared a show-planning update/);
+  assert.doesNotMatch(panelText, /Crow discussed source-file handling|Crow posted about source-file handling|Crow posted about BNL\/source-file|Crow authored BNL\/source-file|Crow talked about dossier/);
+
   const view = noteDisplay.createHumanReadableRecommendationView(savedRecommendation);
   assert.match(JSON.stringify(view.sections), /Two reviewed source notes/);
   assert.match(JSON.stringify(view.sections), /What BNL Found/);
@@ -5674,6 +5696,8 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   assert.match(JSON.stringify(view.sections), /Queue\/submission identity is not connected yet/);
   assert.match(JSON.stringify(view.sections), /channel policy: public home 12, public context 4 found/);
   assert.match(JSON.stringify(view.sections), /Representative Activity Details|Activity Frequency|Top Channels|Main Discussion Areas|Recent Activity|Posted \/ Mentioned Balance/);
+  assert.match(JSON.stringify(view.sections), /Automated topic label|BNL classified/);
+  assert.doesNotMatch(JSON.stringify(view.sections), /Crow discussed|Crow posted about|posted about source-file|posted.*BNL\/source-file/);
   assert.doesNotMatch(JSON.stringify(view.sections), /\[object Object\]/);
   assert.match(JSON.stringify(view.sections), /Private Relationship Context/);
   assert.match(JSON.stringify(view.rawMetadata), /raw-trace-structured-packet-v2/);

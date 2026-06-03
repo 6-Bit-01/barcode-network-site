@@ -656,6 +656,12 @@ export default function CandidateReviewPage() {
         subjectName: candidate.name,
       })
     : null;
+  const hasSavedOperatorSourceSummary = Boolean(
+    candidate?.sourceFileSummary?.summaryText?.trim() ||
+      candidate?.sourceFileSummary?.knownContext?.length ||
+      candidate?.sourceFileSummary?.openQuestions?.length ||
+      candidate?.sourceFileSummary?.nextAction?.trim(),
+  );
   const identityLinks = [...(candidate?.identityLinks ?? [])].sort(
     (a, b) =>
       (a.status === "proposed" ? -1 : 1) - (b.status === "proposed" ? -1 : 1) ||
@@ -1012,12 +1018,10 @@ export default function CandidateReviewPage() {
                   This source file has new info not yet applied to the proposed
                   dossier.
                 </p>
-                <Link
-                  href={`/admin/dossiers/drafts/${primaryDraft.id}`}
-                  className="mt-2 inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest hover:bg-accent hover:text-background"
-                >
-                  Open Proposed Dossier
-                </Link>
+                <p className="mt-2 text-xs uppercase tracking-widest">
+                  Use the primary Proposed Dossier action above to apply the new
+                  source information.
+                </p>
               </div>
             )}
           <div className="mt-5 flex flex-wrap gap-3 text-xs uppercase tracking-widest">
@@ -1027,6 +1031,12 @@ export default function CandidateReviewPage() {
             >
               Back to Dossier Control Center
             </Link>
+            <a
+              href="#add-info"
+              className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background"
+            >
+              Add to BNL Source File
+            </a>
             {canCreateDraft && (
               <button
                 type="button"
@@ -1163,170 +1173,32 @@ export default function CandidateReviewPage() {
             {/* Source File Summary */}
           </>
         )}
-        <section className="border border-border bg-surface p-5 space-y-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.4em] text-accent mb-2">
-              Internal Operator Summary
-            </p>
-            <h2 className="text-2xl font-bold text-foreground">
-              Persistent Source File Draft
-            </h2>
-            <p className="text-sm text-muted mt-2 max-w-4xl">
-              Save a short private read of what is actually known. This does not
-              publish, overwrite BNL raw notes, or enter public dossier copy.
-            </p>
-          </div>
-          <form
-            onSubmit={saveSourceFileSummary}
-            className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm"
-          >
-            <label className="md:col-span-2 space-y-2 text-xs uppercase tracking-widest text-muted">
-              Summary text
-              <textarea
-                name="summaryText"
-                defaultValue={candidate.sourceFileSummary?.summaryText ?? ""}
-                rows={3}
-                className="w-full bg-background border border-border px-3 py-2 text-sm normal-case tracking-normal text-foreground"
-                placeholder="Plain-English internal summary of what BNL actually knows…"
-              />
-            </label>
-            <label className="space-y-2 text-xs uppercase tracking-widest text-muted">
-              Known context
-              <textarea
-                name="knownContext"
-                defaultValue={(
-                  candidate.sourceFileSummary?.knownContext ?? []
-                ).join("\n")}
-                rows={4}
-                className="w-full bg-background border border-border px-3 py-2 text-sm normal-case tracking-normal text-foreground"
-                placeholder="One useful context line per row"
-              />
-            </label>
-            <label className="space-y-2 text-xs uppercase tracking-widest text-muted">
-              Open questions
-              <textarea
-                name="openQuestions"
-                defaultValue={(
-                  candidate.sourceFileSummary?.openQuestions ?? []
-                ).join("\n")}
-                rows={4}
-                className="w-full bg-background border border-border px-3 py-2 text-sm normal-case tracking-normal text-foreground"
-                placeholder="One review question per row"
-              />
-            </label>
-            <label className="md:col-span-2 space-y-2 text-xs uppercase tracking-widest text-muted">
-              Next action
-              <input
-                name="nextAction"
-                defaultValue={candidate.sourceFileSummary?.nextAction ?? ""}
-                className="w-full bg-background border border-border px-3 py-2 text-sm normal-case tracking-normal text-foreground"
-                placeholder="What should an operator do next?"
-              />
-            </label>
-            <div className="md:col-span-2 flex flex-wrap gap-3 text-xs uppercase tracking-widest">
-              <button
-                type="submit"
-                disabled={saving}
-                className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
-              >
-                Save Internal Summary
-              </button>
-              <span className="text-muted self-center">
-                Internal only; public pages are unchanged.
-              </span>
-            </div>
-          </form>
-        </section>
-
-        <section className="border border-border bg-surface p-5 space-y-4">
-          <h2 className="text-2xl font-bold text-foreground">
-            Review Boundaries
-          </h2>
-          <p className="text-sm text-muted">
-            This is an internal working case file. It can hold confirmed facts,
-            claims that need review, possible connections, public-safety notes,
-            and private context. It is not public copy and should not be treated
-            as proof on its own.
-          </p>
-          <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
-            {sourceWarningLabels({
-              candidate,
-              recommendations: attachedRecommendations,
-            }).map((label) => (
-              <StatusBadge key={label}>{label}</StatusBadge>
-            ))}
-          </div>
-        </section>
-
-        <section className="border border-border bg-surface p-5 space-y-4">
-          <h2 className="text-2xl font-bold text-foreground">
-            Existing Public Dossier Match
-          </h2>
-          {candidate.existingDossierMatch ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-muted">
+        <Section title="Proposed Dossier Status">
+          {!primaryDraft ? (
+            <div className="space-y-2">
+              <p>No Proposed Dossier exists yet.</p>
               <p>
-                Matched public dossier name:{" "}
-                {candidate.existingDossierMatch.name}
+                Create one only from reviewed, public-safe Source File material.
+                The primary Create Proposed Dossier action lives in the page
+                header so drafting does not become a parallel workflow.
               </p>
-              <p>
-                Match confidence: {candidate.existingDossierMatch.confidence}
-              </p>
-              <p>Public dossier id/slug: {candidate.existingDossierMatch.id}</p>
-              <p>Current workflow state: {candidate.status}</p>
             </div>
           ) : (
-            <p className="text-sm text-muted">
-              No existing public dossier match currently attached.
-            </p>
+            <div className="space-y-2">
+              <p>Status: {primaryDraft.status}</p>
+              <p>Updated: {formatDate(primaryDraft.updatedAt)}</p>
+              <p>
+                Unapplied source notes: {sourceMetrics?.unappliedSourceNotesCount ?? 0}
+              </p>
+              <p>
+                Owner review blocked until admins separate public-safe language
+                from internal Source File context in the dedicated Proposed
+                Dossier editor.
+              </p>
+            </div>
           )}
-          <label className="block space-y-2 text-xs uppercase tracking-widest text-muted">
-            Attach to Existing Public Dossier
-            <select
-              value={existingDossierSelection}
-              onChange={(event) =>
-                setSelectedExistingDossierId(event.target.value)
-              }
-              className="w-full max-w-xl bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
-            >
-              <option value="">Choose public dossier…</option>
-              {publicDossiers.map((dossier) => (
-                <option key={dossier.id} value={dossier.id}>
-                  {dossier.name} ({dossier.id})
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="flex flex-wrap gap-3 text-xs uppercase tracking-widest">
-            <button
-              type="button"
-              onClick={() =>
-                void candidateLifecycleAction(
-                  "attachCandidateToExistingDossier",
-                )
-              }
-              disabled={saving || !existingDossierSelection}
-              className="border border-border px-4 py-2 text-foreground hover:border-accent hover:text-accent disabled:opacity-50"
-            >
-              Attach to Existing Public Dossier
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                void candidateLifecycleAction(
-                  "markCandidateAsExistingDossierUpdate",
-                )
-              }
-              disabled={
-                saving || !canUpdateCandidate || !existingDossierSelection
-              }
-              className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
-            >
-              {isExistingDossierUpdate
-                ? "Mark as Enrichment for Existing Dossier"
-                : "Move to Existing Dossier Update"}
-            </button>
-          </div>
-        </section>
+        </Section>
+
 
         <section
           id="add-info"
@@ -1340,12 +1212,10 @@ export default function CandidateReviewPage() {
             does not directly edit the proposed dossier.
           </p>
           <p className="text-sm text-muted">
-            Add to BNL Source File = add info to this subject. This source file
-            remains one subject/entity. If this information belongs to a
-            different subject, create or wait for a separate BNL recommendation.
-            BNL Edit Chat = tell BNL how to revise the proposed dossier.
-            Advanced Manual Edit = fallback direct editing of the proposed
-            dossier fields.
+            Add to BNL Source File = add a source note, correction, evidence,
+            warning, public-safe fact, or missing-info item to this subject. This
+            source file remains one subject/entity. If this information belongs
+            to a different subject, create or wait for a separate BNL recommendation.
           </p>
           {hasOwnerReviewDraft && (
             <p className="border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
@@ -1443,6 +1313,27 @@ export default function CandidateReviewPage() {
                     <p>More public-safe context needed before drafting.</p>
                   )}
                 </article>
+              ))}
+            </div>
+          )}
+        </Section>
+
+        <Section title="Source Notes / Admin Addendums">
+          {sourceNotes.length === 0 ? (
+            <p>No saved source notes yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {sourceNotes.map((note) => (
+                <HumanReadableNoteView
+                  key={note.id}
+                  view={createHumanReadableSourceFileNoteView({
+                    ...note,
+                    subjectName: candidate.name,
+                  })}
+                  createdAt={note.createdAt}
+                  workflowLane={candidate.status}
+                  appliedDraftId={note.appliesToDraftId}
+                />
               ))}
             </div>
           )}
@@ -1663,74 +1554,181 @@ export default function CandidateReviewPage() {
           </div>
         </Section>
 
-        <Section title="Proposed Dossier">
-          {!primaryDraft ? (
-            <div className="space-y-3">
+
+
+        <section className="border border-border bg-surface p-5 space-y-4">
+          <h2 className="text-2xl font-bold text-foreground">
+            Review Boundaries
+          </h2>
+          <p className="text-sm text-muted">
+            This is an internal working case file. It can hold confirmed facts,
+            claims that need review, possible connections, public-safety notes,
+            and private context. It is not public copy and should not be treated
+            as proof on its own.
+          </p>
+          <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
+            {sourceWarningLabels({
+              candidate,
+              recommendations: attachedRecommendations,
+            }).map((label) => (
+              <StatusBadge key={label}>{label}</StatusBadge>
+            ))}
+          </div>
+        </section>
+
+        <section className="border border-border bg-surface p-5 space-y-4">
+          <h2 className="text-2xl font-bold text-foreground">
+            Existing Public Dossier Match
+          </h2>
+          {candidate.existingDossierMatch ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-muted">
               <p>
-                Ready for Proposed Dossier: the proposed dossier should be
-                written from reviewed, public-safe Source File material, not
-                copied wholesale from this working case file.
+                Matched public dossier name: {candidate.existingDossierMatch.name}
               </p>
-              <button
-                type="button"
-                onClick={() => void createDraft()}
-                disabled={saving || !canCreateDraft}
-                className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
-              >
-                Create Proposed Dossier
-              </button>
+              <p>Match confidence: {candidate.existingDossierMatch.confidence}</p>
+              <p>Public dossier id/slug: {candidate.existingDossierMatch.id}</p>
+              <p>Current workflow state: {candidate.status}</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              <p>Status: {primaryDraft.status}</p>
-              <p>Updated: {formatDate(primaryDraft.updatedAt)}</p>
-              <p>
-                Unapplied notes: {sourceMetrics?.unappliedSourceNotesCount ?? 0}
-              </p>
-              <Link
-                href={`/admin/dossiers/drafts/${primaryDraft.id}`}
-                className="inline-flex border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
-              >
-                Open Proposed Dossier
-              </Link>
-            </div>
+            <p className="text-sm text-muted">
+              No existing public dossier match currently attached.
+            </p>
           )}
-        </Section>
-
-        {hasOwnerReviewDraft && (
-          <Section title="Owner Review">
-            <p>Submitted draft is waiting in the separate owner review page.</p>
-            <Link
-              href="/admin/dossiers/owner-review"
-              className="mt-2 inline-flex border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent"
+          <label className="block space-y-2 text-xs uppercase tracking-widest text-muted">
+            Attach to Existing Public Dossier
+            <select
+              value={existingDossierSelection}
+              onChange={(event) =>
+                setSelectedExistingDossierId(event.target.value)
+              }
+              className="w-full max-w-xl bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
             >
-              Open Owner Review
-            </Link>
-          </Section>
-        )}
-
-        <Section title="Source-File Notes UI">
-          {sourceNotes.length === 0 ? (
-            <p>No saved source notes yet.</p>
-          ) : (
-            <div className="space-y-3">
-              {sourceNotes.map((note) => (
-                <HumanReadableNoteView
-                  key={note.id}
-                  view={createHumanReadableSourceFileNoteView({
-                    ...note,
-                    subjectName: candidate.name,
-                  })}
-                  createdAt={note.createdAt}
-                  workflowLane={candidate.status}
-                  appliedDraftId={note.appliesToDraftId}
-                />
+              <option value="">Choose public dossier…</option>
+              {publicDossiers.map((dossier) => (
+                <option key={dossier.id} value={dossier.id}>
+                  {dossier.name} ({dossier.id})
+                </option>
               ))}
-            </div>
-          )}
-        </Section>
+            </select>
+          </label>
+          <div className="flex flex-wrap gap-3 text-xs uppercase tracking-widest">
+            <button
+              type="button"
+              onClick={() =>
+                void candidateLifecycleAction("attachCandidateToExistingDossier")
+              }
+              disabled={saving || !existingDossierSelection}
+              className="border border-border px-4 py-2 text-foreground hover:border-accent hover:text-accent disabled:opacity-50"
+            >
+              Attach to Existing Public Dossier
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                void candidateLifecycleAction(
+                  "markCandidateAsExistingDossierUpdate",
+                )
+              }
+              disabled={
+                saving || !canUpdateCandidate || !existingDossierSelection
+              }
+              className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+            >
+              {isExistingDossierUpdate
+                ? "Mark as Enrichment for Existing Dossier"
+                : "Move to Existing Dossier Update"}
+            </button>
+          </div>
+        </section>
 
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <details
+          open={hasSavedOperatorSourceSummary}
+          className="border border-border bg-surface p-5 text-sm text-muted"
+        >
+          <summary className="cursor-pointer text-xl font-bold text-foreground">
+            Operator Source Summary
+          </summary>
+          <p className="mt-3 text-sm text-muted max-w-4xl">
+            Optional internal override for the top Source File summary. Use only
+            when BNL&apos;s current read needs owner/admin correction. This is not a
+            draft, not public copy, and not the normal add-info workflow.
+          </p>
+          <form
+            onSubmit={saveSourceFileSummary}
+            className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm"
+          >
+            <label className="md:col-span-2 space-y-2 text-xs uppercase tracking-widest text-muted">
+              Summary text
+              <textarea
+                name="summaryText"
+                defaultValue={candidate.sourceFileSummary?.summaryText ?? ""}
+                rows={3}
+                className="w-full bg-background border border-border px-3 py-2 text-sm normal-case tracking-normal text-foreground"
+                placeholder="Plain-English internal correction to BNL's current read…"
+              />
+            </label>
+            <label className="space-y-2 text-xs uppercase tracking-widest text-muted">
+              Known context
+              <textarea
+                name="knownContext"
+                defaultValue={(
+                  candidate.sourceFileSummary?.knownContext ?? []
+                ).join("\n")}
+                rows={4}
+                className="w-full bg-background border border-border px-3 py-2 text-sm normal-case tracking-normal text-foreground"
+                placeholder="One owner/admin-corrected context line per row"
+              />
+            </label>
+            <label className="space-y-2 text-xs uppercase tracking-widest text-muted">
+              Open questions
+              <textarea
+                name="openQuestions"
+                defaultValue={(
+                  candidate.sourceFileSummary?.openQuestions ?? []
+                ).join("\n")}
+                rows={4}
+                className="w-full bg-background border border-border px-3 py-2 text-sm normal-case tracking-normal text-foreground"
+                placeholder="One review question per row"
+              />
+            </label>
+            <label className="md:col-span-2 space-y-2 text-xs uppercase tracking-widest text-muted">
+              Next action
+              <input
+                name="nextAction"
+                defaultValue={candidate.sourceFileSummary?.nextAction ?? ""}
+                className="w-full bg-background border border-border px-3 py-2 text-sm normal-case tracking-normal text-foreground"
+                placeholder="What should an operator do next?"
+              />
+            </label>
+            <div className="md:col-span-2 flex flex-wrap gap-3 text-xs uppercase tracking-widest">
+              <button
+                type="submit"
+                disabled={saving}
+                className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+              >
+                Save Operator Source Summary
+              </button>
+              <span className="text-muted self-center">
+                Optional override only; use Add to BNL Source File for normal
+                source updates.
+              </span>
+            </div>
+          </form>
+        </details>
+
+
+
+        <details className="border border-border bg-surface p-5 text-sm text-muted">
+          <summary className="cursor-pointer text-2xl font-bold text-foreground">
+            Source File History / Supporting Fields
+          </summary>
+          <p className="mt-3 mb-4">
+            Compact supporting fields and older source-file context. Use the
+            consolidated snapshot and Source Notes above for the primary review
+            workflow.
+          </p>
+          <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
           <Section title="Reason">
             <p>{sourceFileReasonMeaning(candidate.reason, candidate.name)}</p>
           </Section>
@@ -1870,7 +1868,8 @@ export default function CandidateReviewPage() {
               {candidate.existingDossierMatch?.name ?? "—"}
             </p>
           </Section>
-        </section>
+          </section>
+        </details>
       </section>
     </main>
   );

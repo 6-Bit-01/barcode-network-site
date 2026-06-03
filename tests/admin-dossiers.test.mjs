@@ -501,7 +501,8 @@ test("dossier admin pages expose the control-center/source-hub/draft-workspace m
   assertIncludesCopy(sourceFileCopy, "Promote to Source File");
   assertIncludesCopy(sourceFileCopy, "DELETE SOURCE FILE");
   assertIncludesCopy(sourceFileCopy, "Public dossiers and published data are not deleted");
-  assertIncludesCopy(sourceFileCopy, "Ready for Proposed Dossier: the proposed dossier should be written from reviewed, public-safe Source File material, not copied wholesale from this working case file.");
+  assertIncludesCopy(sourceFileCopy, "Proposed Dossier Status");
+  assertIncludesCopy(sourceFileCopy, "Create one only from reviewed, public-safe Source File material.");
 
   const draftCopy = normalizedSource(
     "src/app/admin/dossiers/drafts/[draftId]/page.tsx",
@@ -525,6 +526,8 @@ test("dossier workflow boundary copy separates case files, drafts, owner review,
     "Do not treat this as public copy",
     "Source File Summary",
     "Evidence / Source Notes",
+    "Source Notes / Admin Addendums",
+    "Source File History / Supporting Fields",
     "Review Context / Possible Supporting Evidence",
     "Public-Safe Facts Pending Owner/Admin Approval",
     "Internal-Only Notes",
@@ -533,7 +536,7 @@ test("dossier workflow boundary copy separates case files, drafts, owner review,
     "Identity / Alias Review",
     "Do Not Say",
     "Missing Info",
-    "Ready for Proposed Dossier",
+    "Proposed Dossier Status",
     "Review-only memory context",
     "Internal/private review required",
     "Public use not allowed until review",
@@ -681,8 +684,8 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     "This adds information to this subject&apos;s BNL Source File. It does not directly edit the proposed dossier.",
     "Recommendation/evidence clusters",
     "No recommendations attached yet.",
-    "Proposed Dossier",
-    "Ready for Proposed Dossier: the proposed dossier should be written from reviewed, public-safe Source File material, not copied wholesale from this working case file.",
+    "Proposed Dossier Status",
+    "Create one only from reviewed, public-safe Source File material.",
     "Create Proposed Dossier",
     "Open Proposed Dossier",
     "Save Info",
@@ -690,6 +693,8 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     "Internal working case file",
     "Do not treat this as public copy",
     "Evidence / Source Notes",
+    "Source Notes / Admin Addendums",
+    "Source File History / Supporting Fields",
     "Review Context / Possible Supporting Evidence",
     "Public-Safe Facts Pending Owner/Admin Approval",
     "Internal-Only Notes",
@@ -710,6 +715,23 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
   ]) {
     assertIncludesCopy(pageCopy, label);
   }
+  assert.doesNotMatch(pageCopy, /Persistent Source File Draft/);
+  assert.doesNotMatch(pageCopy, /Internal Operator Summary/);
+  assert.doesNotMatch(pageCopy, /Save Internal Summary/);
+  assert.match(pageCopy, /Operator Source Summary/);
+  const workspace = page.slice(page.indexOf("<DossierSourceFileSummaryPanel"));
+  assert.ok(
+    workspace.indexOf("DossierSourceFileSummaryPanel") < workspace.indexOf("Proposed Dossier Status"),
+  );
+  assert.ok(workspace.indexOf("Proposed Dossier Status") < workspace.indexOf("Add to BNL Source File"));
+  assert.ok(workspace.indexOf("Add to BNL Source File") < workspace.indexOf("Recommendation/evidence clusters"));
+  assert.ok(workspace.indexOf("Recommendation/evidence clusters") < workspace.indexOf("Source Notes / Admin Addendums"));
+  assert.ok(workspace.indexOf("Source Notes / Admin Addendums") < workspace.indexOf("Identity / Alias Review"));
+  assert.ok(workspace.indexOf("Identity / Alias Review") < workspace.indexOf("Operator Source Summary"));
+  assert.ok(workspace.indexOf("Operator Source Summary") < workspace.indexOf("Source File History / Supporting Fields"));
+  assert.equal((page.match(/>\s*Open Proposed Dossier\s*</g) ?? []).length, 1);
+  assert.equal((page.match(/>\s*Create Proposed Dossier\s*</g) ?? []).length, 1);
+
   for (const noteType of [
     "fact",
     "correction",
@@ -5124,6 +5146,9 @@ test("Source File page uses one consolidated Source File Snapshot / BNL Readout 
   assert.match(sourceFilePage, /DossierSourceFileSummaryPanel/);
   assert.match(sourceFilePage, /entityReadout=\{entityActivityReadout\}/);
   assert.doesNotMatch(sourceFilePage, /DossierEntityActivityReadoutPanel readout=\{entityActivityReadout\}/);
+  assert.doesNotMatch(sourceFilePage, /Persistent Source File Draft|Save Internal Summary/);
+  assert.match(sourceFilePage, /Operator Source Summary/);
+  assert.match(sourceFilePage, /Add to BNL Source File/);
   assert.ok(
     sourceFilePage.indexOf("DossierSourceFileSummaryPanel") < sourceFilePage.indexOf("<form onSubmit={saveSourceFileSummary}"),
   );

@@ -1242,6 +1242,147 @@ function fallbackRecommendationDedupeKey(
   ].join("|");
 }
 
+function stableFingerprintValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value
+      .map(stableFingerprintValue)
+      .filter((item) => item !== undefined);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .map(([key, item]) => [key, stableFingerprintValue(item)] as const)
+        .filter(([, item]) => item !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right)),
+    );
+  }
+  if (typeof value === "string") return value.trim().replace(/\s+/g, " ");
+  return value ?? undefined;
+}
+
+export function bnlSourceFileEnrichmentDigest(
+  recommendation: Pick<
+    DossierRecommendation,
+    | "reason"
+    | "evidenceSummary"
+    | "knownContext"
+    | "usefulEvidence"
+    | "relationshipSignals"
+    | "observedChannels"
+    | "conversationHighlights"
+    | "representativeEvidence"
+    | "activityFrequencySummary"
+    | "topChannels"
+    | "topTopicDetails"
+    | "recentActivitySummary"
+    | "authoredVsMentionedSummary"
+    | "topicBreakdown"
+    | "bestEvidenceToReview"
+    | "bnlInteractionSignals"
+    | "musicSignals"
+    | "communitySignals"
+    | "evidenceDetails"
+    | "publicUseCandidates"
+    | "reviewOnlyEvidence"
+    | "queueSubmissionStatus"
+    | "queueSubmissionNote"
+    | "missingInfo"
+    | "recommendedAction"
+    | "sourceCoverage"
+    | "publicSafePossibilities"
+    | "notPublicYet"
+    | "doNotSay"
+    | "sourceTypes"
+    | "sourceLanes"
+  >,
+): string {
+  return JSON.stringify(
+    stableFingerprintValue({
+      reason: recommendation.reason,
+      evidenceSummary: recommendation.evidenceSummary,
+      knownContext: recommendation.knownContext,
+      usefulEvidence: recommendation.usefulEvidence,
+      relationshipSignals: recommendation.relationshipSignals,
+      observedChannels: recommendation.observedChannels,
+      conversationHighlights: recommendation.conversationHighlights,
+      representativeEvidence: recommendation.representativeEvidence,
+      activityFrequencySummary: recommendation.activityFrequencySummary,
+      topChannels: recommendation.topChannels,
+      topTopicDetails: recommendation.topTopicDetails,
+      recentActivitySummary: recommendation.recentActivitySummary,
+      authoredVsMentionedSummary: recommendation.authoredVsMentionedSummary,
+      topicBreakdown: recommendation.topicBreakdown,
+      bestEvidenceToReview: recommendation.bestEvidenceToReview,
+      bnlInteractionSignals: recommendation.bnlInteractionSignals,
+      musicSignals: recommendation.musicSignals,
+      communitySignals: recommendation.communitySignals,
+      evidenceDetails: recommendation.evidenceDetails,
+      publicUseCandidates: recommendation.publicUseCandidates,
+      reviewOnlyEvidence: recommendation.reviewOnlyEvidence,
+      queueSubmissionStatus: recommendation.queueSubmissionStatus,
+      queueSubmissionNote: recommendation.queueSubmissionNote,
+      missingInfo: recommendation.missingInfo,
+      recommendedAction: recommendation.recommendedAction,
+      sourceCoverage: recommendation.sourceCoverage,
+      publicSafePossibilities: recommendation.publicSafePossibilities,
+      notPublicYet: recommendation.notPublicYet,
+      doNotSay: recommendation.doNotSay,
+      sourceTypes: recommendation.sourceTypes,
+      sourceLanes: recommendation.sourceLanes,
+    }),
+  );
+}
+
+const BNL_SOURCE_FILE_ENRICHMENT_REFRESH_NOTE =
+  "BNL Source File Enrichment was refreshed with newer review-only intelligence. No public dossier content was changed.";
+
+function sourceFileEnrichmentAttachmentStatus(
+  candidate: DossierCandidate,
+): DossierRecommendationStatus {
+  if (candidate.status === "candidate_intake") return "attached_to_candidate_intake";
+  if (candidate.status === "existing_dossier_update") {
+    return "attached_to_existing_dossier_update";
+  }
+  return "attached_to_source_file";
+}
+
+function upsertSourceFileEnrichmentNote(input: {
+  candidate: DossierCandidate;
+  recommendation: DossierRecommendation;
+  now: string;
+}): DossierCandidate {
+  const noteText = bnlAutoCandidateNoteText(input.recommendation);
+  const existingNote = (input.candidate.sourceFileNotes ?? []).find(
+    (note) =>
+      Boolean(input.recommendation.ingestKey) &&
+      note.ingestKey === input.recommendation.ingestKey &&
+      note.ingestSource === "bnl_source_file_enrichment",
+  );
+  const refreshedNote: DossierSourceFileNote = {
+    id: existingNote?.id ?? createSourceFileNoteId(),
+    candidateId: input.candidate.id,
+    type: "general_note",
+    text: noteText,
+    source: "bnl_recommendation",
+    status: "active",
+    publicSafe: false,
+    createdAt: existingNote?.createdAt ?? input.now,
+    updatedAt: input.now,
+    createdBy: input.recommendation.createdBy,
+    ingestKey: input.recommendation.ingestKey,
+    ingestedAt: input.recommendation.ingestedAt,
+    ingestSource: input.recommendation.ingestSource,
+  };
+  const otherNotes = (input.candidate.sourceFileNotes ?? []).filter(
+    (note) => note.id !== existingNote?.id,
+  );
+  return {
+    ...input.candidate,
+    sourceFileNotes: [refreshedNote, ...otherNotes],
+    updatedAt: input.now,
+  };
+}
+
 export async function createDossierRecommendationIdempotent(
   input: CreateDossierRecommendationInput,
 ): Promise<{
@@ -1308,6 +1449,102 @@ export async function createDossierRecommendationIdempotent(
         );
 
     if (existing) {
+      if (
+        isEnrichmentIngest &&
+        existing.ingestSource === "bnl_source_file_enrichment"
+      ) {
+        const existingDigest = bnlSourceFileEnrichmentDigest(existing);
+        const nextDigest = bnlSourceFileEnrichmentDigest(recommendation);
+        if (existingDigest === nextDigest) {
+          savedRecommendation = existing;
+          duplicate = true;
+          return currentState;
+        }
+
+        const targetCandidateId =
+          recommendation.targetCandidateId ?? existing.targetCandidateId;
+        const targetCandidate = targetCandidateId
+          ? currentState.candidates.find(
+              (candidate) => candidate.id === targetCandidateId,
+            )
+          : undefined;
+        const refreshedRecommendationBase: DossierRecommendation = {
+          ...recommendation,
+          id: existing.id,
+          status: existing.status,
+          targetCandidateId,
+          createdAt: existing.createdAt,
+          updatedAt: now,
+          publicSafetyNotes: uniqueStrings(recommendation.publicSafetyNotes, [
+            BNL_SOURCE_FILE_ENRICHMENT_REFRESH_NOTE,
+          ]),
+        };
+
+        if (targetCandidate) {
+          if (!isSourceFileEnrichmentAttachableCandidate(targetCandidate)) {
+            savedRecommendation = {
+              ...refreshedRecommendationBase,
+              publicSafetyNotes: uniqueStrings(
+                refreshedRecommendationBase.publicSafetyNotes,
+                [
+                  "Target exists but is not open for enrichment attachment. No Source File, Proposed Dossier, public page, alias, merge, or owner-review state was changed.",
+                ],
+              ),
+            };
+            autoAction = "left_for_review";
+            return {
+              ...currentState,
+              recommendations: currentState.recommendations.map((item) =>
+                item.id === existing.id ? savedRecommendation : item,
+              ),
+              updatedAt: now,
+            };
+          }
+
+          const updatedRecommendation: DossierRecommendation = {
+            ...refreshedRecommendationBase,
+            status: sourceFileEnrichmentAttachmentStatus(targetCandidate),
+            targetCandidateId: targetCandidate.id,
+          };
+          savedRecommendation = updatedRecommendation;
+          autoAction = "attached_existing";
+          return {
+            ...currentState,
+            recommendations: currentState.recommendations.map((item) =>
+              item.id === existing.id ? updatedRecommendation : item,
+            ),
+            candidates: currentState.candidates.map((candidate) =>
+              candidate.id === targetCandidate.id
+                ? upsertSourceFileEnrichmentNote({
+                    candidate,
+                    recommendation: updatedRecommendation,
+                    now,
+                  })
+                : candidate,
+            ),
+            updatedAt: now,
+          };
+        }
+
+        savedRecommendation = {
+          ...refreshedRecommendationBase,
+          publicSafetyNotes: uniqueStrings(
+            refreshedRecommendationBase.publicSafetyNotes,
+            [
+              `${bnlIngestLabel(recommendation)} has no target; refreshed in Recommendation Inbox for owner/admin review. No Candidate Intake, Source File, Proposed Dossier, alias, merge, or public content was created.`,
+            ],
+          ),
+        };
+        autoAction = "left_for_review";
+        return {
+          ...currentState,
+          recommendations: currentState.recommendations.map((item) =>
+            item.id === existing.id ? savedRecommendation : item,
+          ),
+          updatedAt: now,
+        };
+      }
+
       savedRecommendation = existing;
       duplicate = true;
       return currentState;
@@ -1358,21 +1595,6 @@ export async function createDossierRecommendationIdempotent(
             : targetCandidate.status === "existing_dossier_update"
               ? "attached_to_existing_dossier_update"
               : "attached_to_source_file";
-        const note: DossierSourceFileNote = {
-          id: createSourceFileNoteId(),
-          candidateId: targetCandidate.id,
-          type: "general_note",
-          text: bnlAutoCandidateNoteText(recommendation),
-          source: "bnl_recommendation",
-          status: "active",
-          publicSafe: false,
-          createdAt: now,
-          updatedAt: now,
-          createdBy: recommendation.createdBy,
-          ingestKey: recommendation.ingestKey,
-          ingestedAt: recommendation.ingestedAt,
-          ingestSource: recommendation.ingestSource,
-        };
         const updatedRecommendation: DossierRecommendation = {
           ...recommendation,
           status: updatedStatus,
@@ -1393,11 +1615,11 @@ export async function createDossierRecommendationIdempotent(
           ],
           candidates: currentState.candidates.map((candidate) =>
             candidate.id === targetCandidate.id
-              ? {
-                  ...candidate,
-                  sourceFileNotes: [note, ...(candidate.sourceFileNotes ?? [])],
-                  updatedAt: now,
-                }
+              ? upsertSourceFileEnrichmentNote({
+                  candidate,
+                  recommendation: updatedRecommendation,
+                  now,
+                })
               : candidate,
           ),
           updatedAt: now,

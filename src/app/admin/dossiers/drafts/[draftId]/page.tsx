@@ -1,5 +1,7 @@
 "use client";
 
+import { DossierPageView } from "@/components/DossierPageView";
+import { draftToDossierPreviewViewModel } from "@/lib/dossier-page-view-model";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -167,6 +169,37 @@ function draftFormFromDraft(draft: DossierDraft): DraftForm {
   };
 }
 
+function previewDraftFromForm(form: DraftForm): Pick<DossierDraft, "id" | "fields"> {
+  return {
+    id: "preview",
+    fields: {
+      name: form.name,
+      category: form.category as DossierDraft["fields"]["category"],
+      kind: form.kind || undefined,
+      ecosystemLane: form.ecosystemLane || undefined,
+      identityAuthority: form.identityAuthority || undefined,
+      status: form.status as DossierDraft["fields"]["status"],
+      clearance: form.clearance as DossierDraft["fields"]["clearance"],
+      origin: form.origin as DossierDraft["fields"]["origin"],
+      role: form.role,
+      summary: form.summary,
+      notes: form.notes,
+      tags: lines(form.tags),
+      proposedTags: lines(form.proposedTags),
+      primaryLink: form.primaryLinkUrl
+        ? {
+            label: form.primaryLinkLabel || "Link",
+            url: form.primaryLinkUrl,
+            type: form.primaryLinkType || "website",
+            selectedBy: form.selectedBy,
+            publicSafe: true,
+          }
+        : undefined,
+      files: [],
+    },
+  };
+}
+
 function ProposedDossierPreview({
   form,
   candidate,
@@ -174,79 +207,32 @@ function ProposedDossierPreview({
   form: DraftForm;
   candidate?: DossierCandidate;
 }) {
-  const tags = lines(form.tags);
-  const proposedTags = lines(form.proposedTags);
+  const dossier = draftToDossierPreviewViewModel(previewDraftFromForm(form));
+
   return (
-    <section className="border border-border bg-surface p-5 space-y-4">
-      <div>
+    <section className="border border-border bg-surface space-y-4 overflow-hidden">
+      <div className="p-5 pb-0">
         <p className="text-xs uppercase tracking-[0.4em] text-muted mb-2">
           Phase 2
         </p>
         <h2 className="text-2xl font-bold text-foreground">
           Proposed Dossier Preview
         </h2>
-        <p className="text-sm text-muted">
-          This is the curated public-facing draft. It should be
-          generated/written from reviewed Source File material, not copied
-          wholesale from the case file. It is not public and does not publish.
-        </p>
+        <div className="mt-3 space-y-1 text-sm text-muted">
+          <p>This is how the dossier will appear if approved.</p>
+          <p>
+            Source-file notes remain internal. Only the proposed fields below
+            are being previewed.
+          </p>
+          <p>
+            Owner review should judge public clarity, source safety, and
+            whether this is actually worth publishing.
+          </p>
+        </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-muted">
-        <p>
-          <span className="text-foreground">Name:</span> {form.name || "—"}
-        </p>
-        <p>
-          <span className="text-foreground">Category:</span>{" "}
-          {form.category || "—"}
-        </p>
-        <p>
-          <span className="text-foreground">Kind:</span> {form.kind || "—"}
-        </p>
-        <p>
-          <span className="text-foreground">Ecosystem lane:</span>{" "}
-          {form.ecosystemLane || "—"}
-        </p>
-        <p>
-          <span className="text-foreground">Identity authority:</span>{" "}
-          {form.identityAuthority || "—"}
-        </p>
-        <p>
-          <span className="text-foreground">Status:</span> {form.status || "—"}
-        </p>
-        <p>
-          <span className="text-foreground">Clearance:</span>{" "}
-          {form.clearance || "—"}
-        </p>
-        <p>
-          <span className="text-foreground">Origin:</span> {form.origin || "—"}
-        </p>
-        <p className="md:col-span-2">
-          <span className="text-foreground">Role:</span> {form.role || "—"}
-        </p>
-        <p className="md:col-span-2">
-          <span className="text-foreground">Summary:</span>{" "}
-          {form.summary || "—"}
-        </p>
-        <p className="md:col-span-2">
-          <span className="text-foreground">Notes:</span> {form.notes || "—"}
-        </p>
-        <p className="md:col-span-2">
-          <span className="text-foreground">Tags:</span>{" "}
-          {tags.join(", ") || "—"}
-        </p>
-        <p className="md:col-span-2">
-          <span className="text-foreground">Proposed tags:</span>{" "}
-          {proposedTags.join(", ") || "—"}
-        </p>
-        <p className="md:col-span-2">
-          <span className="text-foreground">Primary link:</span>{" "}
-          {form.primaryLinkUrl
-            ? `${form.primaryLinkLabel || "Link"}: ${form.primaryLinkUrl} (${form.primaryLinkType || "website"})`
-            : "—"}
-        </p>
-      </div>
-      <div className="border border-accent/50 bg-accent/10 p-3 text-sm text-accent">
-        <p>Warnings / missing info / caveats:</p>
+      <DossierPageView dossier={dossier} />
+      <div className="mx-5 mb-5 border border-accent/50 bg-accent/10 p-3 text-sm text-accent">
+        <p>Admin-only warnings / missing info / caveats:</p>
         {list(
           [
             ...(candidate?.missingInfo ?? []),
@@ -739,8 +725,8 @@ export default function DossierDraftEditorPage() {
           </div>
         </div>
       </section>
-      <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 grid grid-cols-1 lg:grid-cols-[0.85fr_1.15fr] gap-6">
-        <aside className="border border-border bg-surface p-5 space-y-4">
+      <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-6">
+        <section className="border border-border bg-surface p-5 space-y-4">
           <h2 className="text-2xl font-bold text-foreground">
             BNL Source File Summary
           </h2>
@@ -810,44 +796,8 @@ export default function DossierDraftEditorPage() {
             <h3 className="font-bold text-foreground">Public safety notes</h3>
             {list(candidate?.publicSafetyNotes)}
           </section>
-        </aside>
+        </section>
         <form onSubmit={saveDraft} className="space-y-5">
-          <ProposedDossierPreview
-            form={form}
-            candidate={candidate ?? undefined}
-          />
-          <section className="border border-border bg-surface p-5 space-y-3 text-sm text-muted">
-            <h2 className="text-2xl font-bold text-foreground">
-              Unapplied Source Notes
-            </h2>
-            {unappliedSourceNotes.length > 0 ? (
-              <>
-                <p className="border border-accent/60 bg-accent/10 p-3 text-accent">
-                  BNL Source File has new notes since this draft was last
-                  updated.
-                </p>
-                <div className="space-y-3">
-                  {unappliedSourceNotes.slice(0, 6).map((note) => (
-                    <article
-                      key={note.id}
-                      className="border border-border/70 bg-background/20 p-3"
-                    >
-                      <p className="font-semibold text-foreground">
-                        {note.type} / {new Date(note.createdAt).toLocaleString()}
-                      </p>
-                      <p className="whitespace-pre-wrap">{note.text}</p>
-                    </article>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <p>No unapplied source notes. Draft fields are unchanged unless an admin saves edits here.</p>
-            )}
-            <p>
-              BNL Edit Chat will eventually apply these changes
-              conversationally. Do not auto-apply notes to draft fields.
-            </p>
-          </section>
 
           <section className="border border-accent/60 bg-accent/10 p-5 text-sm text-accent space-y-3">
             <h2 className="text-2xl font-bold">
@@ -884,6 +834,42 @@ export default function DossierDraftEditorPage() {
               placeholder="BNL edit chat is not wired yet."
               className={`${inputClass()} min-h-24`}
             />
+          </section>
+          <ProposedDossierPreview
+            form={form}
+            candidate={candidate ?? undefined}
+          />
+          <section className="border border-border bg-surface p-5 space-y-3 text-sm text-muted">
+            <h2 className="text-2xl font-bold text-foreground">
+              Unapplied Source Notes
+            </h2>
+            {unappliedSourceNotes.length > 0 ? (
+              <>
+                <p className="border border-accent/60 bg-accent/10 p-3 text-accent">
+                  BNL Source File has new notes since this draft was last
+                  updated.
+                </p>
+                <div className="space-y-3">
+                  {unappliedSourceNotes.slice(0, 6).map((note) => (
+                    <article
+                      key={note.id}
+                      className="border border-border/70 bg-background/20 p-3"
+                    >
+                      <p className="font-semibold text-foreground">
+                        {note.type} / {new Date(note.createdAt).toLocaleString()}
+                      </p>
+                      <p className="whitespace-pre-wrap">{note.text}</p>
+                    </article>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p>No unapplied source notes. Draft fields are unchanged unless an admin saves edits here.</p>
+            )}
+            <p>
+              BNL Edit Chat will eventually apply these changes
+              conversationally. Do not auto-apply notes to draft fields.
+            </p>
           </section>
           <details className="border border-border bg-surface p-5 space-y-4">
             <summary className="cursor-pointer text-xl font-bold text-foreground">

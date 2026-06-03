@@ -54,6 +54,7 @@ const readModel = require("../src/app/api/bnl/read-model/route.ts");
 const sourceFilesReadModel = require("../src/app/api/bnl/source-files/route.ts");
 const noteDisplay = require("../src/lib/dossier-note-display.ts");
 const sourceFileSummary = require("../src/lib/dossier-source-file-summary.ts");
+const dossierPageViewModel = require("../src/lib/dossier-page-view-model.ts");
 
 function source(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
@@ -69,6 +70,119 @@ function assertIncludesCopy(text, expected) {
     `Expected normalized source to include: ${expected}`,
   );
 }
+
+test("public database dossiers render through shared dossier page view", () => {
+  const publicPageSource = normalizedSource("src/app/database/[slug]/page.tsx");
+  const sharedViewSource = source("src/components/DossierPageView.tsx");
+  const entry = databasePage.entries[0];
+  const viewModel = dossierPageViewModel.databaseEntryToDossierPageViewModel(entry);
+
+  assertIncludesCopy(publicPageSource, "<DossierPageView dossier={databaseEntryToDossierPageViewModel(entry)} />");
+  assert.match(sharedViewSource, /Dossier Record/);
+  assert.match(sharedViewSource, /Intelligence Brief/);
+  assert.match(sharedViewSource, /Attached Files/);
+  assert.match(sharedViewSource, /BARCODE_NETWORK \/\/ DOSSIER QUERY/);
+  assert.equal(viewModel.id, entry.id);
+  assert.equal(viewModel.name, entry.name);
+  assert.equal(viewModel.summary, entry.summary);
+  assert.equal(viewModel.files, entry.files);
+  assert.equal(viewModel.showTerminalReadout, true);
+});
+
+test("draft proposed dossier preview maps draft fields into shared public layout model", () => {
+  const draft = {
+    id: "draft-preview-123456",
+    fields: {
+      id: "PR-155",
+      name: "Preview Subject",
+      category: "Personnel",
+      status: "PENDING",
+      clearance: "INTERNAL",
+      role: "Preview Role",
+      origin: "UNVERIFIED",
+      summary: "Curated public-safe summary.",
+      notes: "Curated public-safe notes.",
+      tags: ["existing-tag"],
+      proposedTags: ["proposed-tag"],
+      primaryLink: {
+        label: "Preview Link",
+        url: "https://example.com/preview",
+        type: "website",
+        selectedBy: "operator",
+        publicSafe: true,
+      },
+      files: [],
+    },
+  };
+
+  const viewModel = dossierPageViewModel.draftToDossierPreviewViewModel(draft);
+
+  assert.equal(viewModel.id, "PR-155");
+  assert.equal(viewModel.name, "Preview Subject");
+  assert.equal(viewModel.category, "Personnel");
+  assert.equal(viewModel.status, "PENDING");
+  assert.equal(viewModel.clearance, "INTERNAL");
+  assert.equal(viewModel.role, "Preview Role");
+  assert.equal(viewModel.origin, "UNVERIFIED");
+  assert.equal(viewModel.summary, "Curated public-safe summary.");
+  assert.equal(viewModel.notes, "Curated public-safe notes.");
+  assert.deepEqual(viewModel.tags, ["existing-tag", "proposed-tag"]);
+  assert.deepEqual(viewModel.primaryLink, {
+    label: "Preview Link",
+    url: "https://example.com/preview",
+    type: "website",
+  });
+  assert.equal(viewModel.previewMode, true);
+  assert.equal(viewModel.unpublishedLabel, "UNPUBLISHED PREVIEW");
+  assert.equal(viewModel.showTerminalReadout, true);
+});
+
+
+test("phase 2 draft editor stacks source summary, BNL edit panel, and dossier preview full-width", () => {
+  const adminPageSource = normalizedSource("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
+  const sourceSummaryIndex = adminPageSource.indexOf("BNL Source File Summary");
+  const editPanelIndex = adminPageSource.indexOf("BNL Edit Chat panel — Coming Next", sourceSummaryIndex);
+  const previewIndex = adminPageSource.indexOf("<ProposedDossierPreview form={form} candidate={candidate ?? undefined} />", editPanelIndex);
+
+  assert.notEqual(sourceSummaryIndex, -1);
+  assert.notEqual(editPanelIndex, -1);
+  assert.notEqual(previewIndex, -1);
+  assert.ok(
+    sourceSummaryIndex < editPanelIndex,
+    "Source summary should appear before BNL edit panel.",
+  );
+  assert.ok(
+    editPanelIndex < previewIndex,
+    "BNL edit panel should appear before dossier preview.",
+  );
+  assertIncludesCopy(adminPageSource, "mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-6");
+  assert.doesNotMatch(
+    adminPageSource,
+    /grid grid-cols-1 lg:grid-cols-\[0\.85fr_1\.15fr\]/,
+  );
+});
+
+test("admin source-file caveats stay outside the public-style dossier preview model", () => {
+  const adminPageSource = normalizedSource("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
+  const componentSource = source("src/components/DossierPageView.tsx");
+  const draft = {
+    id: "draft-private-raw-metadata",
+    fields: {
+      name: "Source Safe Subject",
+      summary: "Only curated proposed summary.",
+      notes: "Only curated proposed notes.",
+    },
+  };
+  const viewModel = dossierPageViewModel.draftToDossierPreviewViewModel(draft);
+
+  assertIncludesCopy(adminPageSource, "Admin-only warnings / missing info / caveats:");
+  assertIncludesCopy(adminPageSource, "Source-file notes remain internal. Only the proposed fields below are being previewed.");
+  assert.match(componentSource, /UNPUBLISHED PREVIEW/);
+  assert.doesNotMatch(componentSource, /missingInfo|publicSafetyNotes|sourceFileNotes|evidenceSummary|doNotSay/);
+  assert.doesNotMatch(JSON.stringify(viewModel), /missingInfo|publicSafetyNotes|sourceFileNotes|evidenceSummary|doNotSay|raw-metadata/);
+  assert.equal(viewModel.summary, "Only curated proposed summary.");
+  assert.equal(viewModel.notes, "Only curated proposed notes.");
+});
 
 async function adminCookie() {
   const token = await auth.createAdminToken();

@@ -13,6 +13,9 @@ import {
   type DossierDuplicateGroup,
 } from "@/lib/dossier-workflow";
 import {
+  DOSSIER_PUBLIC_ROLE_PLACEHOLDER,
+  DOSSIER_PUBLIC_SUMMARY_PLACEHOLDER,
+  isDossierPublicCopyPlaceholder,
   sanitizeDossierPublicCopy,
   validateDossierPublicDraftFields,
   type DossierDraftFieldWarning,
@@ -183,6 +186,21 @@ function draftFieldsForPublicGuard(form: DraftForm): DossierDraft["fields"] {
   };
 }
 
+function ThinSourcePublicCopyWarning({
+  show,
+}: {
+  show: boolean;
+}) {
+  if (!show) return null;
+  return (
+    <section className="border border-accent/70 bg-accent/10 p-5 text-sm text-accent">
+      Source material is not strong enough for public dossier copy yet. Add
+      public-safe facts or use BNL Edit Chat after more source context is
+      available.
+    </section>
+  );
+}
+
 function PublicCopyGuardWarning({
   warnings,
 }: {
@@ -237,8 +255,8 @@ function ProposedDossierPreview({
       status: form.status || "PENDING",
       clearance: form.clearance || "PUBLIC",
       origin: form.origin || "UNVERIFIED",
-      role: role || "Clean role needed before owner review.",
-      summary: summary || "Clean summary needed before owner review.",
+      role: role || DOSSIER_PUBLIC_ROLE_PLACEHOLDER,
+      summary: summary || DOSSIER_PUBLIC_SUMMARY_PLACEHOLDER,
       notes,
       tags,
       proposedTags,
@@ -359,7 +377,16 @@ export default function DossierDraftEditorPage() {
   const publicCopyWarnings = form
     ? validateDossierPublicDraftFields(draftFieldsForPublicGuard(form))
     : [];
-  const publicCopyIsDirty = publicCopyWarnings.length > 0;
+  const sourceMaterialNeedsPublicCopy = Boolean(
+    form &&
+      (!form.summary.trim() ||
+        !form.role.trim() ||
+        isDossierPublicCopyPlaceholder(form.summary) ||
+        isDossierPublicCopyPlaceholder(form.role) ||
+        sourceFileSummary?.substanceLevel === "thin"),
+  );
+  const publicCopyIsDirty =
+    publicCopyWarnings.length > 0 || sourceMaterialNeedsPublicCopy;
 
   function draftFieldsFromForm() {
     if (!form) return {};
@@ -891,6 +918,7 @@ export default function DossierDraftEditorPage() {
             />
           </section>
           <PublicCopyGuardWarning warnings={publicCopyWarnings} />
+          <ThinSourcePublicCopyWarning show={sourceMaterialNeedsPublicCopy} />
           <ProposedDossierPreview
             form={form}
             candidate={candidate ?? undefined}

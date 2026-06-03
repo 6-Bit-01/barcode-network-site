@@ -607,6 +607,25 @@ export function isActiveSourceFileCandidate(
   );
 }
 
+const SOURCE_FILE_ENRICHMENT_ATTACHABLE_STATUSES = new Set<DossierCandidateStatus>([
+  "candidate_intake",
+  "active_source_file",
+  "existing_dossier_update",
+  "suggested",
+  "needs_review",
+  "selected",
+  "draft_requested",
+  "draft_ready",
+  "needs_revision",
+  "needs_more_evidence",
+]);
+
+export function isSourceFileEnrichmentAttachableCandidate(
+  candidate: Pick<DossierCandidate, "status">,
+): boolean {
+  return SOURCE_FILE_ENRICHMENT_ATTACHABLE_STATUSES.has(candidate.status);
+}
+
 function isActiveSubjectCandidate(candidate: DossierCandidate): boolean {
   return isActiveSourceFileCandidate(candidate);
 }

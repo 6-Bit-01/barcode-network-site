@@ -1,10 +1,9 @@
 "use client";
 
 import { DossierPageView } from "@/components/DossierPageView";
+import { DossierSourceFileSummaryPanel } from "@/components/DossierSourceFileSummaryPanel";
 import { draftToDossierPreviewViewModel } from "@/lib/dossier-page-view-model";
 import Link from "next/link";
-import { DossierPageView } from "@/components/DossierPageView";
-import { DossierSourceFileSummaryPanel } from "@/components/DossierSourceFileSummaryPanel";
 import { useParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -18,7 +17,6 @@ import {
   validateDossierPublicDraftFields,
   type DossierDraftFieldWarning,
 } from "@/lib/dossier-public-copy-guard";
-import { draftToDossierPreviewViewModel } from "@/lib/dossier-page-view-model";
 import { createDossierSourceFileSummary } from "@/lib/dossier-source-file-summary";
 import {
   DOSSIER_ECOSYSTEM_LANE_OPTIONS,

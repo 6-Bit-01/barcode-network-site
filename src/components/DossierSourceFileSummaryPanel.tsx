@@ -261,6 +261,11 @@ export function DossierSourceFileSummaryPanel({
         <Section title="Current Read / Why This File Exists">
           <p>{currentRead}</p>
         </Section>
+        <Section title="Known Context — What BNL Actually Knows">
+          <SummaryList
+            items={fallbackItems(knownContext, "No public-safe facts confirmed yet.")}
+          />
+        </Section>
         {bestEvidenceToReview.length > 0 && (
           <Section title="Best Evidence to Review">
             <SummaryList items={bestEvidenceToReview} />

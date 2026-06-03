@@ -130,6 +130,82 @@ function packetStringList(
   return items.length ? (items as string[]) : [];
 }
 
+function coverageText(value: unknown, maxLength: number): string | undefined {
+  const clean = text(value, maxLength);
+  if (!clean) return undefined;
+  if (/[{}\[\]<>]/.test(clean) || /[\\/]/.test(clean)) {
+    throw new Error("sourceCoverage contains unsupported raw metadata");
+  }
+  if (/\b(?:candidate|target|dossier|source_file|recommendation|rec|bnl)_[a-z0-9][a-z0-9_-]{8,}\b/i.test(clean)) {
+    throw new Error("sourceCoverage contains a raw identifier");
+  }
+  return clean;
+}
+
+function coverageLabel(value: string): string {
+  return value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function finiteCoverageNumber(value: unknown, field: string): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`Invalid sourceCoverage ${field}`);
+  }
+  if (Math.abs(value) > 1_000_000_000) {
+    throw new Error(`sourceCoverage ${field} is too large`);
+  }
+  return value;
+}
+
+function sourceCoverageItem(value: unknown): string | undefined {
+  if (typeof value === "string") return coverageText(value, 1000);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Expected sourceCoverage item to be text or an object");
+  }
+  const item = value as Record<string, unknown>;
+  const allowedKeys = new Set(["source", "count", "counts", "status"]);
+  for (const key of Object.keys(item)) {
+    if (!allowedKeys.has(key)) {
+      throw new Error("sourceCoverage contains unsupported metadata");
+    }
+  }
+  const source = coverageText(item.source, 120);
+  const status = coverageText(item.status, 80);
+  const count = finiteCoverageNumber(item.count, "count");
+  const countParts: string[] = [];
+  if (item.counts !== undefined) {
+    if (!item.counts || typeof item.counts !== "object" || Array.isArray(item.counts)) {
+      throw new Error("sourceCoverage counts must be an object");
+    }
+    const counts = item.counts as Record<string, unknown>;
+    const entries = Object.entries(counts);
+    if (entries.length > 20) throw new Error("sourceCoverage counts has too many keys");
+    for (const [key, rawCount] of entries) {
+      const cleanKey = coverageText(key, 80);
+      const cleanCount = finiteCoverageNumber(rawCount, "counts value");
+      if (cleanKey && cleanCount !== undefined) {
+        countParts.push(`${coverageLabel(cleanKey)} ${cleanCount}`);
+      }
+    }
+  }
+  const label = source ? coverageLabel(source) : "Source coverage";
+  const pieces = countParts.length
+    ? [`${label}: ${countParts.join(", ")}`]
+    : count !== undefined
+      ? [`${label}: ${count} source row(s)`]
+      : [label];
+  if (status) pieces.push(coverageLabel(status));
+  return pieces.join(" ").trim();
+}
+
+function sourceCoverageList(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined;
+  const rawItems = Array.isArray(value) ? value : [value];
+  if (rawItems.length > 25) throw new Error("sourceCoverage has too many items");
+  const items = rawItems.map(sourceCoverageItem).filter(Boolean);
+  return items.length ? (items as string[]) : [];
+}
+
 function rawJsonValue(value: unknown): unknown {
   if (value === undefined) return undefined;
   const json = JSON.stringify(value);
@@ -273,7 +349,7 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
   const bnlInteractionSignals = packetStringList(payload.bnlInteractionSignals);
   const musicSignals = packetStringList(payload.musicSignals);
   const communitySignals = packetStringList(payload.communitySignals);
-  const sourceCoverage = packetStringList(payload.sourceCoverage);
+  const sourceCoverage = sourceCoverageList(payload.sourceCoverage);
   const evidenceDetails = packetStringList(payload.evidenceDetails);
   const publicUseCandidates = packetStringList(payload.publicUseCandidates);
   const reviewOnlyEvidence = packetStringList(payload.reviewOnlyEvidence);

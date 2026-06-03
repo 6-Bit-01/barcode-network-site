@@ -123,7 +123,7 @@ function queueSubmissionItems(recommendation: DossierRecommendation): string[] {
     );
   }
   if (recommendation.queueSubmissionNote) items.push(recommendation.queueSubmissionNote);
-  return sanitizeMeaningFirstItems(items, 3);
+  return sanitizeMeaningFirstItems(items, { limit: 3 });
 }
 
 function sourceAuthorityItems(recommendation: DossierRecommendation): string[] {

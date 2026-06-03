@@ -5352,7 +5352,15 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
     bnlInteractionSignals: ["BNL interaction signal: recurring admin-side mention pattern."],
     musicSignals: ["Music/show signal: set-support work appears around radio planning."],
     communitySignals: ["Community signal: repeated collaborator mentions in review context."],
-    sourceCoverage: ["Source coverage spans reviewed notes and BNL memory; no queue bridge."],
+    sourceCoverage: [
+      { source: "conversation", count: 14, status: "found" },
+      {
+        source: "channel_policy",
+        counts: { public_home: 12, public_context: 4 },
+        status: "found",
+      },
+      "Legacy source coverage text remains accepted.",
+    ],
     evidenceDetails: ["Evidence detail stays internal until owner-approved wording exists."],
     publicUseCandidates: ["Possible collaborator wording pending owner review."],
     reviewOnlyEvidence: ["Review-only evidence: internal relationship context needs owner review."],
@@ -5387,6 +5395,10 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   assert.deepEqual(payload.recommendation.bnlInteractionSignals, packet.bnlInteractionSignals);
   assert.deepEqual(payload.recommendation.musicSignals, packet.musicSignals);
   assert.deepEqual(payload.recommendation.communitySignals, packet.communitySignals);
+  assert.match(JSON.stringify(payload.recommendation.sourceCoverage), /conversation: 14 source row\(s\) found/);
+  assert.match(JSON.stringify(payload.recommendation.sourceCoverage), /channel policy: public home 12, public context 4 found/);
+  assert.match(JSON.stringify(payload.recommendation.sourceCoverage), /Legacy source coverage text remains accepted/);
+  assert.doesNotMatch(JSON.stringify(payload.recommendation.sourceCoverage), /\[object Object\]/);
   assert.deepEqual(payload.recommendation.publicUseCandidates, packet.publicUseCandidates);
   assert.deepEqual(payload.recommendation.reviewOnlyEvidence, packet.reviewOnlyEvidence);
   assert.equal(payload.recommendation.queueSubmissionStatus, "not_connected");
@@ -5405,6 +5417,8 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   assert.deepEqual(savedRecommendation.musicSignals, packet.musicSignals);
   assert.deepEqual(savedRecommendation.communitySignals, packet.communitySignals);
   assert.deepEqual(savedRecommendation.bnlInteractionSignals, packet.bnlInteractionSignals);
+  assert.match(JSON.stringify(savedRecommendation.sourceCoverage), /channel policy: public home 12, public context 4 found/);
+  assert.doesNotMatch(JSON.stringify(savedRecommendation.sourceCoverage), /\[object Object\]/);
   assert.equal(savedRecommendation.queueSubmissionStatus, "not_connected");
   assert.deepEqual(savedRecommendation.rawProvenance, packet.rawProvenance);
   const sourceFile = state.candidates.find(
@@ -5417,6 +5431,8 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   assert.match(sourceFile.sourceFileNotes[0].text, /Best evidence to review: Owner should review/);
   assert.match(sourceFile.sourceFileNotes[0].text, /Observed channel\/activity: Activity observed/);
   assert.match(sourceFile.sourceFileNotes[0].text, /Queue\/submission identity is not connected yet/);
+  assert.match(sourceFile.sourceFileNotes[0].text, /Source coverage: channel policy: public home 12, public context 4 found/);
+  assert.doesNotMatch(sourceFile.sourceFileNotes[0].text, /\[object Object\]/);
   assert.doesNotMatch(sourceFile.sourceFileNotes[0].text, /raw-trace-structured-packet-v2/);
 
   const summary = sourceFileSummary.createDossierSourceFileSummary({
@@ -5429,6 +5445,9 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   assert.match(JSON.stringify(summary.musicSignals), /Music\/show signal/);
   assert.match(JSON.stringify(summary.communitySignals), /Community signal/);
   assert.match(JSON.stringify(summary.bnlInteractionSignals), /BNL interaction signal/);
+  assert.match(JSON.stringify(summary.sourceCoverage), /conversation: 14 source row\(s\) found/);
+  assert.match(JSON.stringify(summary.sourceCoverage), /channel policy: public home 12, public context 4 found/);
+  assert.doesNotMatch(JSON.stringify(summary.sourceCoverage), /\[object Object\]/);
   assert.match(JSON.stringify(summary.publicUseCandidates), /pending owner review/);
   assert.match(JSON.stringify(summary.reviewOnlyEvidence), /Review-only evidence/);
   assert.equal(summary.queueSubmissionStatus, "not_connected");
@@ -5452,6 +5471,8 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   assert.match(JSON.stringify(view.sections), /Public-Use Candidates Pending Owner Review/);
   assert.match(JSON.stringify(view.sections), /Review-Only Evidence/);
   assert.match(JSON.stringify(view.sections), /Queue\/submission identity is not connected yet/);
+  assert.match(JSON.stringify(view.sections), /channel policy: public home 12, public context 4 found/);
+  assert.doesNotMatch(JSON.stringify(view.sections), /\[object Object\]/);
   assert.match(JSON.stringify(view.sections), /Private Relationship Context/);
   assert.match(JSON.stringify(view.rawMetadata), /raw-trace-structured-packet-v2/);
   assert.doesNotMatch(JSON.stringify(view.sections), /raw-trace-structured-packet-v2/);
@@ -5462,7 +5483,7 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   })).json();
   const draftText = JSON.stringify(draftPayload.draft.fields);
   assert.doesNotMatch(draftText, /raw-trace-structured-packet-v2/);
-  assert.doesNotMatch(draftText, /Private-only note|internal contact path|relationship context|Owner should review|Conversation highlight|Review-only evidence/);
+  assert.doesNotMatch(draftText, /Private-only note|internal contact path|relationship context|Owner should review|Conversation highlight|Review-only evidence|channel policy|\[object Object\]/);
 
   const publicPayload = await (await readModel.GET(new Request("https://example.test/api/bnl/read-model"))).json();
   assert.doesNotMatch(JSON.stringify(publicPayload), /Structured Packet Subject|raw-trace-structured-packet-v2|internal contact path/);

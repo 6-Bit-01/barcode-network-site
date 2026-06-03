@@ -380,6 +380,17 @@ export type DossierQueueSubmissionStatus =
   | "review_needed"
   | "unknown";
 
+export type DossierSourceCoverageItem = {
+  source?: string;
+  count?: number;
+  counts?: Record<string, number>;
+  status?: string;
+};
+
+export type DossierSourceCoverageInput = Array<
+  string | DossierSourceCoverageItem
+>;
+
 export type DossierStructuredSourcePacket = {
   knownContext?: string[];
   usefulEvidence?: string[];
@@ -394,7 +405,7 @@ export type DossierStructuredSourcePacket = {
   bnlInteractionSignals?: string[];
   musicSignals?: string[];
   communitySignals?: string[];
-  sourceCoverage?: string[];
+  sourceCoverage?: DossierSourceCoverageInput;
   evidenceDetails?: string[];
   publicUseCandidates?: string[];
   reviewOnlyEvidence?: string[];
@@ -777,7 +788,7 @@ export type CreateDossierRecommendationInput = {
   bnlInteractionSignals?: string[];
   musicSignals?: string[];
   communitySignals?: string[];
-  sourceCoverage?: string[];
+  sourceCoverage?: DossierSourceCoverageInput;
   evidenceDetails?: string[];
   publicUseCandidates?: string[];
   reviewOnlyEvidence?: string[];

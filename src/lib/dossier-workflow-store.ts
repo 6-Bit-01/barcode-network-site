@@ -697,6 +697,65 @@ function normalizePacketStringArray(value: unknown): string[] | undefined {
   return items.length ? items : undefined;
 }
 
+function normalizeCoverageLabel(value: string): string {
+  return value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function normalizeCoverageText(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const clean = boundedText(value, maxLength);
+  if (!clean) return undefined;
+  if (/[{}\[\]<>]/.test(clean) || /[\\/]/.test(clean)) return undefined;
+  if (/\b(?:candidate|target|dossier|source_file|recommendation|rec|bnl)_[a-z0-9][a-z0-9_-]{8,}\b/i.test(clean)) {
+    return undefined;
+  }
+  return clean;
+}
+
+function normalizeCoverageNumber(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  if (Math.abs(value) > 1_000_000_000) return undefined;
+  return value;
+}
+
+function normalizeSourceCoverageItem(value: unknown): string | undefined {
+  const textItem = normalizeCoverageText(value, 1000);
+  if (textItem) return textItem;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const item = value as Record<string, unknown>;
+  const source = normalizeCoverageText(item.source, 120);
+  const status = normalizeCoverageText(item.status, 80);
+  const count = normalizeCoverageNumber(item.count);
+  const countParts: string[] = [];
+  if (item.counts && typeof item.counts === "object" && !Array.isArray(item.counts)) {
+    for (const [key, rawCount] of Object.entries(item.counts).slice(0, 20)) {
+      const cleanKey = normalizeCoverageText(key, 80);
+      const cleanCount = normalizeCoverageNumber(rawCount);
+      if (cleanKey && cleanCount !== undefined) {
+        countParts.push(`${normalizeCoverageLabel(cleanKey)} ${cleanCount}`);
+      }
+    }
+  }
+  const label = source ? normalizeCoverageLabel(source) : "Source coverage";
+  const pieces = countParts.length
+    ? [`${label}: ${countParts.join(", ")}`]
+    : count !== undefined
+      ? [`${label}: ${count} source row(s)`]
+      : [label];
+  if (status) pieces.push(normalizeCoverageLabel(status));
+  const normalized = pieces.join(" ").trim();
+  return normalized && normalized !== "Source coverage" ? normalized : undefined;
+}
+
+function normalizeSourceCoverageInput(value: unknown): string[] | undefined {
+  const rawItems = Array.isArray(value) ? value : value === undefined ? [] : [value];
+  const items = rawItems
+    .slice(0, 25)
+    .map(normalizeSourceCoverageItem)
+    .filter((item): item is string => Boolean(item));
+  return items.length ? items : undefined;
+}
+
 function cloneJsonValue(value: unknown): unknown {
   if (value === undefined) return undefined;
   return JSON.parse(JSON.stringify(value));
@@ -763,7 +822,7 @@ function normalizeRecommendationInput(
     bnlInteractionSignals: normalizePacketStringArray(input.bnlInteractionSignals),
     musicSignals: normalizePacketStringArray(input.musicSignals),
     communitySignals: normalizePacketStringArray(input.communitySignals),
-    sourceCoverage: normalizePacketStringArray(input.sourceCoverage),
+    sourceCoverage: normalizeSourceCoverageInput(input.sourceCoverage),
     evidenceDetails: normalizePacketStringArray(input.evidenceDetails),
     publicUseCandidates: normalizePacketStringArray(input.publicUseCandidates),
     reviewOnlyEvidence: normalizePacketStringArray(input.reviewOnlyEvidence),

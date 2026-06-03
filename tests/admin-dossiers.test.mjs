@@ -54,6 +54,7 @@ const readModel = require("../src/app/api/bnl/read-model/route.ts");
 const sourceFilesReadModel = require("../src/app/api/bnl/source-files/route.ts");
 const noteDisplay = require("../src/lib/dossier-note-display.ts");
 const sourceFileSummary = require("../src/lib/dossier-source-file-summary.ts");
+const publicCopyGuard = require("../src/lib/dossier-public-copy-guard.ts");
 
 function source(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
@@ -464,9 +465,27 @@ test("dedicated draft editor route contains focused editing workflow and future 
   assert.match(page, /Open BNL Source File/);
   assert.match(page, /Send to Owner Review/);
   assert.match(page, /Return to Editing/);
+  assert.match(page, /PublicCopyGuardWarning/);
+  assert.match(page, /Clean draft public copy/);
+  assert.match(page, /Do not send to owner review yet/);
+  assert.match(page, /sanitizeDossierPublicCopy/);
   assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
   assert.doesNotMatch(page, /publishDraft/);
 });
+
+
+test("admin dirty-copy warning stays outside shared public DossierPageView", () => {
+  const draftPage = source("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
+  const sharedViewPath = "src/components/DossierPageView.tsx";
+  const sharedView = fs.existsSync(path.join(projectRoot, sharedViewPath))
+    ? source(sharedViewPath)
+    : "";
+  assert.match(draftPage, /PublicCopyGuardWarning/);
+  assert.match(draftPage, /Clean draft public copy/);
+  assert.doesNotMatch(sharedView, /Clean draft public copy/);
+  assert.doesNotMatch(sharedView, /PublicCopyGuardWarning/);
+});
+
 
 test("dedicated candidate review route is the BNL Source File subject hub", () => {
   const routePath = "src/app/admin/dossiers/candidates/[candidateId]/page.tsx";
@@ -540,6 +559,68 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
   assert.doesNotMatch(page, />Final Approve<|>Publish<|>Delete<|>Final Merge</);
   assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
   assert.doesNotMatch(page, /publishDraft/);
+});
+
+
+
+test("dossier public-copy guard flags backend source junk but allows human copy", () => {
+  assert.equal(
+    publicCopyGuard.containsDossierPublicCopyJunk(
+      "Starter note only: user_profiles/local_profile_observed found a source lane mapping",
+    ),
+    true,
+  );
+  assert.equal(
+    publicCopyGuard.containsDossierPublicCopyJunk(
+      [
+        "conversations/public_discord_observed: public_home conversation model mentions LostMarbles",
+        "conversations/public_discord_observed: public_home conversation model mentions LostMarbles",
+      ].join("\n"),
+    ),
+    true,
+  );
+  assert.equal(
+    publicCopyGuard.containsDossierPublicCopyJunk(
+      "Bridge source lane mapping: conversations -> unknown, user_profiles -> unknown",
+    ),
+    true,
+  );
+  assert.equal(
+    publicCopyGuard.containsDossierPublicCopyJunk(
+      "A community artist known for vivid live sets and recurring BARCODE Radio collaborations.",
+    ),
+    false,
+  );
+  assert.equal(
+    publicCopyGuard.sanitizeDossierPublicCopy(
+      [
+        "A community artist with a public-safe dossier summary.",
+        "conversations/public_discord_observed: source lane mapping",
+        "A community artist with a public-safe dossier summary.",
+      ].join("\n"),
+    ),
+    "A community artist with a public-safe dossier summary.",
+  );
+});
+
+test("draft public-copy validation warns on dirty proposed fields", () => {
+  const warnings = publicCopyGuard.validateDossierPublicDraftFields({
+    name: "Debug Subject",
+    role: "candidateId: dossier_candidate_debug_12345",
+    summary: "conversations/public_discord_observed conversations/public_discord_observed",
+    notes: "Bridge source lane mapping: conversations -> unknown, user_profiles -> unknown",
+    tags: ["artist", "user_profiles/local_profile_observed"],
+    primaryLink: {
+      label: "ingestKey bnl:debug-source",
+      url: "https://example.test",
+      type: "website",
+    },
+  });
+
+  assert.deepEqual(
+    warnings.map((warning) => warning.label),
+    ["Role", "Summary", "Notes", "Tags", "Primary Link label"],
+  );
 });
 
 
@@ -1284,6 +1365,59 @@ test("submitDraftForOwnerReview validates required fields and updates owner queu
   assert.equal(getPayload.ownerReviewQueue.waitingCount, 1);
   assert.equal(getPayload.drafts[0].status, "ready_for_owner_review");
 });
+
+
+test("owner review submission blocks dirty Summary, Role, and Tags", async () => {
+  await resetWorkflowStore();
+  const createCandidatePayload = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: manualCandidateInput,
+    })
+  ).json();
+  const createDraftPayload = await (
+    await authedPost({
+      action: "createDraftFromCandidate",
+      candidateId: createCandidatePayload.candidate.id,
+    })
+  ).json();
+
+  await authedPost({
+    action: "saveDraft",
+    draftId: createDraftPayload.draft.id,
+    fields: {
+      ...createDraftPayload.draft.fields,
+      kind: manualCandidateInput.recommendedKind,
+      ecosystemLane: manualCandidateInput.recommendedEcosystemLane,
+      identityAuthority: manualCandidateInput.recommendedIdentityAuthority,
+      role: "candidateId: dossier_candidate_debug_12345",
+      summary: "conversations/public_discord_observed conversations/public_discord_observed",
+      tags: ["artist", "user_profiles/local_profile_observed"],
+    },
+  });
+
+  const dirtyResponse = await authedPost({
+    action: "submitDraftForOwnerReview",
+    draftId: createDraftPayload.draft.id,
+  });
+  assert.equal(dirtyResponse.status, 400);
+  const dirtyPayload = await dirtyResponse.json();
+  assert.equal(dirtyPayload.code, "invalid_draft_fields");
+  assert.ok(dirtyPayload.missingFields.includes("role"));
+  assert.ok(dirtyPayload.missingFields.includes("summary"));
+  assert.ok(dirtyPayload.missingFields.includes("tags"));
+});
+
+
+
+test("public database slug page stays backed by existing public entries", () => {
+  const page = source("src/app/database/[slug]/page.tsx");
+  assert.match(page, /databasePage\.entries/);
+  assert.match(page, /generateStaticParams/);
+  assert.doesNotMatch(page, /dossier-public-copy-guard/);
+  assert.ok(databasePage.entries.length > 0);
+});
+
 
 test("manual candidate workflow does not publish to database, read model dossiers, or tag registry", async () => {
   await resetWorkflowStore();

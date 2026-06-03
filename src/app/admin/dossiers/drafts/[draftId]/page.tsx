@@ -10,6 +10,11 @@ import {
   type DossierDuplicateGroup,
 } from "@/lib/dossier-workflow";
 import {
+  sanitizeDossierPublicCopy,
+  validateDossierPublicDraftFields,
+  type DossierDraftFieldWarning,
+} from "@/lib/dossier-public-copy-guard";
+import {
   DOSSIER_ECOSYSTEM_LANE_OPTIONS,
   DOSSIER_IDENTITY_AUTHORITY_OPTIONS,
   DOSSIER_KIND_OPTIONS,
@@ -167,6 +172,56 @@ function draftFormFromDraft(draft: DossierDraft): DraftForm {
   };
 }
 
+function draftFieldsForPublicGuard(form: DraftForm): DossierDraft["fields"] {
+  return {
+    name: form.name,
+    role: form.role,
+    summary: form.summary,
+    notes: form.notes,
+    tags: lines(form.tags),
+    proposedTags: lines(form.proposedTags),
+    primaryLink: form.primaryLinkUrl
+      ? {
+          label: form.primaryLinkLabel || form.name,
+          url: form.primaryLinkUrl,
+          type: form.primaryLinkType || "website",
+          selectedBy: form.selectedBy,
+        }
+      : undefined,
+  };
+}
+
+function PublicCopyGuardWarning({
+  warnings,
+}: {
+  warnings: DossierDraftFieldWarning[];
+}) {
+  if (warnings.length === 0) return null;
+  const labels = [...new Set(warnings.map((warning) => warning.label))];
+  return (
+    <section className="border border-accent/70 bg-accent/10 p-5 text-sm text-accent space-y-3">
+      <p className="text-xs uppercase tracking-[0.4em]">Clean draft needed</p>
+      <h2 className="text-2xl font-bold">Clean draft public copy</h2>
+      <p>
+        This proposed dossier contains internal source/debug text in
+        public-facing fields. Clean {labels.join(", ")} before owner review.
+      </p>
+      <ul className="list-disc pl-5 space-y-1">
+        {warnings.map((warning) => (
+          <li key={`${warning.field}-${warning.message}`}>
+            <span className="font-semibold">{warning.label}:</span>{" "}
+            {warning.message}
+          </li>
+        ))}
+      </ul>
+      <p>
+        Use source summary to rewrite. Do not send to owner review yet. Raw
+        source/audit material remains available in Source File sections.
+      </p>
+    </section>
+  );
+}
+
 function ProposedDossierPreview({
   form,
   candidate,
@@ -174,8 +229,14 @@ function ProposedDossierPreview({
   form: DraftForm;
   candidate?: DossierCandidate;
 }) {
-  const tags = lines(form.tags);
-  const proposedTags = lines(form.proposedTags);
+  const role = sanitizeDossierPublicCopy(form.role);
+  const summary = sanitizeDossierPublicCopy(form.summary);
+  const notes = sanitizeDossierPublicCopy(form.notes);
+  const primaryLinkLabel = sanitizeDossierPublicCopy(form.primaryLinkLabel);
+  const tags = lines(form.tags).map(sanitizeDossierPublicCopy).filter(Boolean);
+  const proposedTags = lines(form.proposedTags)
+    .map(sanitizeDossierPublicCopy)
+    .filter(Boolean);
   return (
     <section className="border border-border bg-surface p-5 space-y-4">
       <div>
@@ -221,14 +282,14 @@ function ProposedDossierPreview({
           <span className="text-foreground">Origin:</span> {form.origin || "—"}
         </p>
         <p className="md:col-span-2">
-          <span className="text-foreground">Role:</span> {form.role || "—"}
+          <span className="text-foreground">Role:</span> {role || "—"}
         </p>
         <p className="md:col-span-2">
           <span className="text-foreground">Summary:</span>{" "}
-          {form.summary || "—"}
+          {summary || "—"}
         </p>
         <p className="md:col-span-2">
-          <span className="text-foreground">Notes:</span> {form.notes || "—"}
+          <span className="text-foreground">Notes:</span> {notes || "—"}
         </p>
         <p className="md:col-span-2">
           <span className="text-foreground">Tags:</span>{" "}
@@ -241,7 +302,7 @@ function ProposedDossierPreview({
         <p className="md:col-span-2">
           <span className="text-foreground">Primary link:</span>{" "}
           {form.primaryLinkUrl
-            ? `${form.primaryLinkLabel || "Link"}: ${form.primaryLinkUrl} (${form.primaryLinkType || "website"})`
+            ? `${primaryLinkLabel || "Link"}: ${form.primaryLinkUrl} (${form.primaryLinkType || "website"})`
             : "—"}
         </p>
       </div>
@@ -334,6 +395,10 @@ export default function DossierDraftEditorPage() {
     ? getUnappliedSourceNotes({ candidate: candidate ?? {}, draft })
     : [];
   const sourceNoteCount = candidate?.sourceFileNotes?.length ?? 0;
+  const publicCopyWarnings = form
+    ? validateDossierPublicDraftFields(draftFieldsForPublicGuard(form))
+    : [];
+  const publicCopyIsDirty = publicCopyWarnings.length > 0;
 
   function draftFieldsFromForm() {
     if (!form) return {};
@@ -408,6 +473,10 @@ export default function DossierDraftEditorPage() {
 
   async function completeAdminDraft() {
     if (!draft || !isEditable) return;
+    if (publicCopyIsDirty) {
+      setNotice("Clean draft public copy before final admin review.");
+      return;
+    }
     await saveDraft();
     setConfirming(true);
     setNotice(
@@ -417,6 +486,10 @@ export default function DossierDraftEditorPage() {
 
   async function sendToOwnerReview() {
     if (!draft || !isEditable) return;
+    if (publicCopyIsDirty) {
+      setNotice("Clean draft public copy before sending to Owner Review.");
+      return;
+    }
     try {
       await saveDraft();
       await postWorkflow({
@@ -607,6 +680,7 @@ export default function DossierDraftEditorPage() {
               </div>
             )}
           </section>
+          <PublicCopyGuardWarning warnings={publicCopyWarnings} />
           <ProposedDossierPreview
             form={form}
             candidate={candidate ?? undefined}
@@ -629,7 +703,7 @@ export default function DossierDraftEditorPage() {
             <button
               type="button"
               onClick={() => void sendToOwnerReview()}
-              disabled={saving || !isEditable}
+              disabled={saving || !isEditable || publicCopyIsDirty}
               className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
             >
               Send to Owner Review
@@ -812,6 +886,7 @@ export default function DossierDraftEditorPage() {
           </section>
         </aside>
         <form onSubmit={saveDraft} className="space-y-5">
+          <PublicCopyGuardWarning warnings={publicCopyWarnings} />
           <ProposedDossierPreview
             form={form}
             candidate={candidate ?? undefined}
@@ -1137,7 +1212,7 @@ export default function DossierDraftEditorPage() {
             <button
               type="button"
               onClick={() => void completeAdminDraft()}
-              disabled={saving || !isEditable}
+              disabled={saving || !isEditable || publicCopyIsDirty}
               className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
             >
               Complete Admin Draft

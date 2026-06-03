@@ -12,7 +12,7 @@ function draftId(draft: Pick<DossierDraft, "id" | "fields">) {
   return draftValue(draft.fields.id, `DRAFT-${draft.id.slice(0, 8).toUpperCase()}`);
 }
 
-function draftPrimaryLink(draft: Pick<DossierDraft, "fields">) {
+function draftPrimaryLink(draft: Pick<DossierDraft, "id" | "fields">) {
   const link = draft.fields.primaryLink;
   if (!link?.url || link.publicSafe === false) return null;
   return {
@@ -61,7 +61,6 @@ export function draftToDossierPreviewViewModel(
     status,
   });
   const primaryLink = draftPrimaryLink(draft);
-
   return {
     id,
     name: draftValue(draft.fields.name, "Untitled Proposed Dossier"),

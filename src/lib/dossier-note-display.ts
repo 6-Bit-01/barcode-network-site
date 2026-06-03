@@ -69,12 +69,12 @@ const summaryHeadingPattern =
   /^(summary|review context|why it matters|review reason|reason)\s*:/i;
 
 const technicalTermPattern =
-  /\b(source lane|source_lanes|sourceTypes|sourceCounts|ingest|ingestKey|bridge source lane mapping|workflow record|payload|metadata|local_profile_observed|public_discord_observed|local_relationship_trace|relationship_journal|user_profiles|conversations|rd_context|broadcast_memory|public_safe_candidate|private_review_required|owner_review_required|public_use_not_allowed_until_review|internal_only|target id|targetId|candidate id|candidateId)\b|unknown\s*->\s*unknown/i;
+  /\b(source lane|source_lanes|sourceTypes|sourceCounts|ingest|ingestKey|bridge source lane mapping|workflow record|payload|metadata|local_profile_observed|public_discord_observed|local_relationship_trace|relationship_journal|user_profiles|conversations|rd_context|broadcast_memory|public_safe_candidate|private_review_required|owner_review_required|public_use_not_allowed_until_review|internal_only|target id|targetId|candidate id|candidateId|recommendation id|recommendationId|source type mapping|source type mappings|source types|source_lanes|public_home|admin\/dossiers|api\/admin|api\/bnl)\b|unknown\s*->\s*unknown/i;
 
 const rawIdPattern =
   /\b(?:candidate|target|dossier|source_file|recommendation|rec|bnl)_[a-z0-9][a-z0-9_-]{8,}\b/i;
 const routeLikePattern =
-  /\b(?:user_profiles|conversations|relationship_journal|rd_context|broadcast_memory)\s*\/\s*[a-z0-9_/-]+\b/i;
+  /\b(?:user_profiles|conversations|relationship_journal|rd_context|broadcast_memory|api|admin|database)\s*\/\s*[a-z0-9_/-]+\b/i;
 const underscoreBackendPattern = /\b[a-z]+(?:_[a-z0-9]+){2,}\b/;
 
 const technicalTranslations: Array<[RegExp, string]> = [

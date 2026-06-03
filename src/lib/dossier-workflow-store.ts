@@ -1,5 +1,6 @@
 import { Redis } from "@upstash/redis";
 import { databasePage, type DatabaseEntry } from "@/content";
+import { validateDossierPublicDraftFields } from "@/lib/dossier-public-copy-guard";
 import {
   scoreManualDossierCandidate,
   type CreateDossierRecommendationInput,
@@ -99,6 +100,23 @@ function normalizeWorkflowLink(
   };
 }
 
+function normalizeDraftText(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const seen = new Set<string>();
+  const lines = value
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => {
+      const key = line.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  return lines.join("\n").trim() || undefined;
+}
+
 function normalizeDraftFields(
   fields: DossierDraft["fields"],
 ): DossierDraft["fields"] {
@@ -115,11 +133,10 @@ function normalizeDraftFields(
     identityAuthority: fields.identityAuthority,
     status: fields.status,
     clearance: fields.clearance,
-    role: typeof fields.role === "string" ? fields.role.trim() : undefined,
+    role: normalizeDraftText(fields.role),
     origin: fields.origin,
-    summary:
-      typeof fields.summary === "string" ? fields.summary.trim() : undefined,
-    notes: typeof fields.notes === "string" ? fields.notes.trim() : undefined,
+    summary: normalizeDraftText(fields.summary),
+    notes: normalizeDraftText(fields.notes),
     tags: normalizeStringArray(fields.tags),
     proposedTags: normalizeStringArray(fields.proposedTags),
     primaryLink,
@@ -148,6 +165,12 @@ export function validateDossierDraftFieldsForOwnerReview(
   if (!normalized.role) missing.push("role");
   if (!normalized.summary) missing.push("summary");
   if (!normalized.tags || normalized.tags.length === 0) missing.push("tags");
+
+  const publicCopyWarnings = validateDossierPublicDraftFields(fields);
+  for (const warning of publicCopyWarnings) {
+    if (!missing.includes(warning.field)) missing.push(warning.field);
+  }
+
   return missing;
 }
 

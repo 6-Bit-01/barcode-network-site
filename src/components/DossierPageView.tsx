@@ -66,9 +66,9 @@ function buildTerminalLead(dossier: DossierPageViewModel) {
     "OPEN ARCHIVE NODE",
   ];
 
-  const commandIndex = dossier.id
-    .split("")
-    .reduce((sum, char) => sum + char.charCodeAt(0), 0) % commands.length;
+  const commandIndex =
+    dossier.id.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0) %
+    commands.length;
 
   return `> ${commands[commandIndex]} // TARGET: ${dossier.id} // ${dossier.category.toUpperCase()}`;
 }
@@ -80,7 +80,7 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
   const terminalLead = dossier.terminalLead ?? buildTerminalLead(dossier);
 
   return (
-    <div className="pt-14">
+    <div className={dossier.previewMode ? "" : "pt-14"}>
       {/* Back link (top) */}
       <section>
         <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-6">
@@ -106,14 +106,18 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
             {/* Quick meta badges */}
             <div className="flex flex-wrap gap-3 mt-6">
               {dossier.previewMode && (
-                <span className="text-xs uppercase tracking-widest px-2 py-1 border border-accent/50 bg-accent/10 text-accent">
+                <span className="text-xs uppercase tracking-widest px-2 py-1 border border-accent/40 text-accent">
                   {dossier.unpublishedLabel ?? "UNPUBLISHED PREVIEW"}
                 </span>
               )}
-              <span className={`text-xs uppercase tracking-widest px-2 py-1 border border-current/20 ${statusColors[dossier.status] || "text-muted"}`}>
+              <span
+                className={`text-xs uppercase tracking-widest px-2 py-1 border border-current/20 ${statusColors[dossier.status] || "text-muted"}`}
+              >
                 {dossier.status}
               </span>
-              <span className={`text-xs uppercase tracking-widest px-2 py-1 border border-current/20 ${clearanceColors[dossier.clearance] || "text-muted"}`}>
+              <span
+                className={`text-xs uppercase tracking-widest px-2 py-1 border border-current/20 ${clearanceColors[dossier.clearance] || "text-muted"}`}
+              >
                 {dossier.clearance}
               </span>
               <span className="text-xs uppercase tracking-widest px-2 py-1 border border-border text-muted">
@@ -136,8 +140,12 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
                 />
               </div>
               <div className="mt-2 flex items-center justify-between px-1">
-                <span className="text-xs font-mono text-muted/50">{dossier.id}</span>
-                <span className={`text-xs font-mono ${clearanceColors[dossier.clearance] || "text-muted/50"}`}>
+                <span className="text-xs font-mono text-muted/50">
+                  {dossier.id}
+                </span>
+                <span
+                  className={`text-xs font-mono ${clearanceColors[dossier.clearance] || "text-muted/50"}`}
+                >
                   {dossier.clearance}
                 </span>
               </div>
@@ -163,10 +171,22 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
                 <InfoRow label="Designation" value={dossier.id} />
                 <InfoRow label="Name" value={dossier.name} accent />
                 <InfoRow label="Category" value={dossier.category} />
-                <InfoRow label="Status" value={dossier.status} colorClass={statusColors[dossier.status]} />
-                <InfoRow label="Clearance" value={dossier.clearance} colorClass={clearanceColors[dossier.clearance]} />
+                <InfoRow
+                  label="Status"
+                  value={dossier.status}
+                  colorClass={statusColors[dossier.status]}
+                />
+                <InfoRow
+                  label="Clearance"
+                  value={dossier.clearance}
+                  colorClass={clearanceColors[dossier.clearance]}
+                />
                 <InfoRow label="Role" value={dossier.role} />
-                <InfoRow label="Origin" value={dossier.origin} colorClass={originColors[dossier.origin]} />
+                <InfoRow
+                  label="Origin"
+                  value={dossier.origin}
+                  colorClass={originColors[dossier.origin]}
+                />
                 <div className="flex items-center justify-between border-b border-border/50 pb-2">
                   <span className="text-xs uppercase tracking-[0.3em] text-muted">
                     Tags
@@ -194,7 +214,11 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
                       className="text-sm text-accent hover:text-accent-dim transition-colors truncate max-w-[60%] text-right"
                     >
                       {dossier.primaryLink.label}
-                      <span className="text-muted/50"> · {dossier.primaryLink.type}</span> →
+                      <span className="text-muted/50">
+                        {" "}
+                        · {dossier.primaryLink.type}
+                      </span>{" "}
+                      →
                     </a>
                   </div>
                 )}
@@ -212,13 +236,17 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
 
               <div className="text-base text-foreground/70 leading-relaxed space-y-6">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-muted mb-2">Summary</p>
+                  <p className="text-xs uppercase tracking-[0.3em] text-muted mb-2">
+                    Summary
+                  </p>
                   <p>{dossier.summary}</p>
                 </div>
 
                 {dossier.notes && (
                   <div>
-                    <p className="text-xs uppercase tracking-[0.3em] text-muted mb-2">Notes</p>
+                    <p className="text-xs uppercase tracking-[0.3em] text-muted mb-2">
+                      Notes
+                    </p>
                     <p className="text-sm text-foreground/50 border-l-2 border-accent/20 pl-4">
                       {dossier.notes}
                     </p>
@@ -262,7 +290,9 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
                       <p className="text-xs uppercase tracking-[0.3em] text-muted mb-3">
                         ▶ {file.name}
                       </p>
-                      {file.url.includes("drive.google.com") || file.url.includes("youtube.com") || file.url.includes("youtu.be") ? (
+                      {file.url.includes("drive.google.com") ||
+                      file.url.includes("youtube.com") ||
+                      file.url.includes("youtu.be") ? (
                         <div className="relative aspect-video">
                           <iframe
                             src={file.url}
@@ -272,11 +302,7 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
                           />
                         </div>
                       ) : (
-                        <video
-                          controls
-                          preload="metadata"
-                          className="w-full"
-                        >
+                        <video controls preload="metadata" className="w-full">
                           <source src={file.url} />
                         </video>
                       )}
@@ -331,8 +357,14 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
               <div className="space-y-1 text-sm text-foreground/60">
                 <p>{terminalLead}</p>
                 <p>&gt; RECORD FOUND: {dossier.name}</p>
-                <p>&gt; STATUS: {dossier.status}{" // "}CLEARANCE: {dossier.clearance}</p>
-                <p>&gt; CATEGORY: {dossier.category}{" // "}ORIGIN: {dossier.origin}</p>
+                <p>
+                  &gt; STATUS: {dossier.status}
+                  {" // "}CLEARANCE: {dossier.clearance}
+                </p>
+                <p>
+                  &gt; CATEGORY: {dossier.category}
+                  {" // "}ORIGIN: {dossier.origin}
+                </p>
                 <p className="text-accent mt-3">
                   &gt; DOSSIER LOADED<span className="cursor-blink">_</span>
                 </p>

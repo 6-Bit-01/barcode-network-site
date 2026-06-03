@@ -4552,6 +4552,178 @@ test("BNL Source File enrichment preserves provenance and attaches to an active 
   assert.doesNotMatch(JSON.stringify(publicPayload), /Enrichment Active Subject|bnl_source_file_enrichment|source_file_note/);
 });
 
+
+
+test("BNL Source File enrichment upserts changed same-key content but still dedupes identical refreshes", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  const beforePublic = JSON.stringify(databasePage.entries);
+  const publicSlugPageBefore = source("src/app/database/[slug]/page.tsx");
+
+  const intake = await (await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Crow Source File Refresh",
+    reason: "BNL dynamic discovery found Crow for source-file review.",
+    evidenceSummary: "Starter discovery only.",
+    sourceLanes: ["rd_context"],
+    ingestKey: "bnl:crow-source-refresh:discovery",
+    ingestSource: "bnl_dynamic_candidate_discovery",
+  })).json();
+  await authedPost({
+    action: "promoteCandidateToSourceFile",
+    candidateId: intake.candidate.id,
+  });
+
+  const baseEnrichment = {
+    type: "modify_existing_dossier",
+    subjectName: "Crow Source File Refresh",
+    targetCandidateId: intake.candidate.id,
+    reason: "BNL generated source-file enrichment for Crow review.",
+    sourceLanes: ["active_source_file", "rd_knowledge_store"],
+    sourceTypes: ["source_file_note"],
+    ingestKey: "bnl:crow-source-refresh:enrichment",
+    ingestSource: "bnl_source_file_enrichment",
+    knownContext: ["Older generic BNL enrichment for Crow."],
+    usefulEvidence: ["Generic source-file context needs owner review."],
+    reviewOnlyEvidence: ["Older review-only packet."],
+    publicSafetyNotes: ["Review-only; not public copy."],
+    rawProvenance: {
+      backendId: "raw-old-backend-id",
+      fetchedAt: "2026-01-01T00:00:00.000Z",
+    },
+  };
+
+  const firstPayload = await (await bnlIngestPost(baseEnrichment)).json();
+  assert.equal(firstPayload.duplicate, false);
+  assert.equal(firstPayload.autoAction, "attached_existing");
+  const originalRecommendationId = firstPayload.recommendation.id;
+
+  const identicalPayload = await (await bnlIngestPost({
+    ...baseEnrichment,
+    rawProvenance: {
+      backendId: "raw-new-backend-id-that-should-not-affect-digest",
+      fetchedAt: "2026-06-03T00:00:00.000Z",
+    },
+  })).json();
+  assert.equal(identicalPayload.duplicate, true);
+  assert.equal(identicalPayload.recommendation.id, originalRecommendationId);
+
+  let state = await store.getDossierWorkflowState();
+  let sourceFile = state.candidates.find((candidate) => candidate.id === intake.candidate.id);
+  let enrichmentNotes = sourceFile.sourceFileNotes.filter(
+    (note) => note.ingestSource === "bnl_source_file_enrichment",
+  );
+  assert.equal(enrichmentNotes.length, 1);
+  assert.doesNotMatch(enrichmentNotes[0].text, /raw-old-backend-id|raw-new-backend-id/);
+
+  const changedEnrichment = {
+    ...baseEnrichment,
+    knownContext: ["Crow has recurring named Orion discussion in reviewed context."],
+    usefulEvidence: ["Recurring named topic: Orion appears across reviewed messages."],
+    conversationHighlights: ["Crow returned to Orion as an ongoing named topic."],
+    topTopicDetails: ["Recurring named topic / Orion in reviewed source-file context."],
+    musicSignals: ["Suno/tool mention appears in reviewed music-making context."],
+    bnlInteractionSignals: ["BNL interaction pattern: asks BNL for source-file readouts and follows up."],
+    reviewOnlyEvidence: ["Latest PR #226 fact extraction packet for owner review."],
+    recommendedAction: "Review Orion, Suno/tool, and BNL interaction pattern before public use.",
+    rawProvenance: {
+      backendId: "raw-latest-backend-id",
+      fetchedAt: "2026-06-03T12:00:00.000Z",
+    },
+  };
+  const changedPayload = await (await bnlIngestPost(changedEnrichment)).json();
+  assert.equal(changedPayload.duplicate, false);
+  assert.equal(changedPayload.autoAction, "attached_existing");
+  assert.equal(changedPayload.recommendation.id, originalRecommendationId);
+  assert.deepEqual(changedPayload.recommendation.knownContext, changedEnrichment.knownContext);
+  assert.match(changedPayload.recommendation.publicSafetyNotes.join(" "), /refreshed with newer review-only intelligence/);
+  assert.deepEqual(changedPayload.recommendation.rawProvenance, changedEnrichment.rawProvenance);
+
+  state = await store.getDossierWorkflowState();
+  const savedRecommendations = state.recommendations.filter(
+    (recommendation) => recommendation.ingestKey === baseEnrichment.ingestKey,
+  );
+  assert.equal(savedRecommendations.length, 1);
+  assert.equal(savedRecommendations[0].id, originalRecommendationId);
+  assert.deepEqual(savedRecommendations[0].knownContext, changedEnrichment.knownContext);
+  assert.equal(savedRecommendations[0].targetCandidateId, intake.candidate.id);
+  assert.deepEqual(savedRecommendations[0].rawProvenance, changedEnrichment.rawProvenance);
+
+  sourceFile = state.candidates.find((candidate) => candidate.id === intake.candidate.id);
+  enrichmentNotes = sourceFile.sourceFileNotes.filter(
+    (note) => note.ingestSource === "bnl_source_file_enrichment",
+  );
+  assert.equal(enrichmentNotes.length, 1);
+  const note = enrichmentNotes[0];
+  assert.equal(note.ingestKey, baseEnrichment.ingestKey);
+  assert.equal(note.publicSafe, false);
+  assert.match(note.text, /Recurring named topic: Orion/);
+  assert.match(note.text, /Suno\/tool mention/);
+  assert.match(note.text, /BNL interaction pattern/);
+  assert.doesNotMatch(note.text, /Older generic BNL enrichment|raw-latest-backend-id|rawProvenance/);
+
+  const protectedPayload = await (
+    await sourceFilesGet("?candidateId=" + encodeURIComponent(intake.candidate.id))
+  ).json();
+  assert.equal(protectedPayload.found, true);
+  const protectedEnrichmentNotes = protectedPayload.sourceFile.sourceFileNotes.filter(
+    (note) => note.ingestSource === "bnl_source_file_enrichment",
+  );
+  assert.equal(protectedEnrichmentNotes.length, 1);
+  assert.match(protectedEnrichmentNotes[0].summary, /Orion/);
+  const protectedEnrichmentRecommendation = protectedPayload.sourceFile.attachedRecommendations.find(
+    (recommendation) => recommendation.ingestKey === baseEnrichment.ingestKey,
+  );
+  assert.equal(protectedEnrichmentRecommendation.id, originalRecommendationId);
+  assert.equal(protectedEnrichmentRecommendation.updatedAt, savedRecommendations[0].updatedAt);
+
+  const publicPayload = await (await readModel.GET(new Request("https://example.test/api/bnl/read-model"))).json();
+  assert.equal(JSON.stringify(databasePage.entries), beforePublic);
+  assert.equal(source("src/app/database/[slug]/page.tsx"), publicSlugPageBefore);
+  assert.doesNotMatch(
+    JSON.stringify(publicPayload),
+    /Crow Source File Refresh|Orion|Suno|bnl_source_file_enrichment|raw-latest-backend-id/,
+  );
+});
+
+test("non-enrichment ingest keys keep duplicate recommendation behavior", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const first = await (await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Normal Duplicate Subject",
+    reason: "BNL discovery should keep ordinary idempotency.",
+    evidenceSummary: "Original ordinary recommendation.",
+    sourceLanes: ["rd_context"],
+    ingestKey: "bnl:normal-duplicate-key",
+    ingestSource: "bnl_dynamic_candidate_discovery",
+  })).json();
+  const duplicate = await (await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Normal Duplicate Subject",
+    reason: "BNL discovery changed but should still dedupe by ingest key.",
+    evidenceSummary: "Changed ordinary recommendation should not update.",
+    sourceLanes: ["rd_context"],
+    ingestKey: "bnl:normal-duplicate-key",
+    ingestSource: "bnl_dynamic_candidate_discovery",
+  })).json();
+
+  assert.equal(first.duplicate, false);
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(duplicate.recommendation.id, first.recommendation.id);
+  assert.equal(duplicate.recommendation.reason, first.recommendation.reason);
+
+  const state = await store.getDossierWorkflowState();
+  assert.equal(
+    state.recommendations.filter((recommendation) => recommendation.ingestKey === "bnl:normal-duplicate-key").length,
+    1,
+  );
+  assert.equal(state.recommendations[0].reason, first.recommendation.reason);
+});
+
+
 test("BNL Source File enrichment attaches to Candidate Intake and Existing Dossier Update without promotion or public edits", async () => {
   await resetWorkflowStore();
   process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";

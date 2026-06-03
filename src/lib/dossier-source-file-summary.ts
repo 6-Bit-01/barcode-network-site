@@ -132,8 +132,6 @@ function substanceScore({
     ).length,
     3,
   );
-  if (candidate.publicSafetyNotes?.length) score += 1;
-  if (candidate.doNotSay?.length) score += 1;
   return score;
 }
 

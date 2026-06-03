@@ -1,6 +1,12 @@
 import { Redis } from "@upstash/redis";
 import { databasePage, type DatabaseEntry } from "@/content";
-import { validateDossierPublicDraftFields } from "@/lib/dossier-public-copy-guard";
+import {
+  DOSSIER_PUBLIC_ROLE_PLACEHOLDER,
+  DOSSIER_PUBLIC_SUMMARY_PLACEHOLDER,
+  isDossierPublicCopyPlaceholder,
+  sanitizeDossierPublicCopy,
+  validateDossierPublicDraftFields,
+} from "@/lib/dossier-public-copy-guard";
 import {
   scoreManualDossierCandidate,
   type CreateDossierRecommendationInput,
@@ -162,8 +168,12 @@ export function validateDossierDraftFieldsForOwnerReview(
   if (!normalized.status) missing.push("status");
   if (!normalized.clearance) missing.push("clearance");
   if (!normalized.origin) missing.push("origin");
-  if (!normalized.role) missing.push("role");
-  if (!normalized.summary) missing.push("summary");
+  if (!normalized.role || isDossierPublicCopyPlaceholder(normalized.role)) {
+    missing.push("role");
+  }
+  if (!normalized.summary || isDossierPublicCopyPlaceholder(normalized.summary)) {
+    missing.push("summary");
+  }
   if (!normalized.tags || normalized.tags.length === 0) missing.push("tags");
 
   const publicCopyWarnings = validateDossierPublicDraftFields(fields);
@@ -2649,6 +2659,29 @@ export async function updateDossierCandidateStatus(
   return updatedCandidate;
 }
 
+function cleanDraftSeedText(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const clean = sanitizeDossierPublicCopy(value);
+  return clean || undefined;
+}
+
+function cleanDraftSeedTags(values: string[] | undefined): string[] {
+  return (values ?? [])
+    .map((value) => sanitizeDossierPublicCopy(value))
+    .filter(Boolean);
+}
+
+function cleanDraftSeedPrimaryLink(
+  link: DossierWorkflowLink | undefined,
+): DossierWorkflowLink | undefined {
+  if (!link?.url) return undefined;
+  const label = sanitizeDossierPublicCopy(link.label);
+  return {
+    ...link,
+    label: label || "Featured link",
+  };
+}
+
 export async function createDraftFromCandidate(
   candidateId: string,
 ): Promise<DossierDraft | null> {
@@ -2672,17 +2705,10 @@ export async function createDraftFromCandidate(
       return currentState;
     }
 
-    const starterNotes = [
-      candidate.evidenceSummary
-        ? `Starter evidence note: ${candidate.evidenceSummary}`
-        : "",
-      ...(candidate.publicSafetyNotes ?? []).map(
-        (note) => `Public safety: ${note}`,
-      ),
-      ...(candidate.missingInfo ?? []).map((note) => `Missing info: ${note}`),
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const publicSummary = cleanDraftSeedText(candidate.evidenceSummary);
+    const publicTags = cleanDraftSeedTags(candidate.recommendedTags);
+    const publicProposedTags = cleanDraftSeedTags(candidate.proposedTags);
+    const publicPrimaryLink = cleanDraftSeedPrimaryLink(candidate.primaryLink);
 
     draft = {
       id: createDraftId(),
@@ -2697,13 +2723,12 @@ export async function createDraftFromCandidate(
         status: candidate.recommendedStatus ?? "PENDING",
         clearance: candidate.recommendedClearance ?? "PUBLIC",
         origin: candidate.recommendedOrigin ?? "UNVERIFIED",
-        summary: candidate.evidenceSummary
-          ? `Starter note only: ${candidate.evidenceSummary}`
-          : "",
-        notes: starterNotes,
-        tags: candidate.recommendedTags ?? [],
-        proposedTags: candidate.proposedTags ?? [],
-        primaryLink: candidate.primaryLink,
+        role: DOSSIER_PUBLIC_ROLE_PLACEHOLDER,
+        summary: publicSummary ?? DOSSIER_PUBLIC_SUMMARY_PLACEHOLDER,
+        notes: "",
+        tags: publicTags,
+        proposedTags: publicProposedTags,
+        primaryLink: publicPrimaryLink,
         files: [],
       }),
       createdAt: now,

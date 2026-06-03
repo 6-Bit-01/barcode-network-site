@@ -55,6 +55,7 @@ const sourceFilesReadModel = require("../src/app/api/bnl/source-files/route.ts")
 const noteDisplay = require("../src/lib/dossier-note-display.ts");
 const sourceFileSummary = require("../src/lib/dossier-source-file-summary.ts");
 const publicCopyGuard = require("../src/lib/dossier-public-copy-guard.ts");
+const dossierPageViewModel = require("../src/lib/dossier-page-view-model.ts");
 
 function source(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
@@ -138,6 +139,37 @@ test("draft proposed dossier preview maps draft fields into shared public layout
 });
 
 
+test("proposed dossier preview sanitizes internal starter phrases before DossierPageView", () => {
+  const adminPageSource = source("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
+  assert.match(adminPageSource, /sanitizeDossierPublicCopy\(form\.summary\)/);
+  assert.match(adminPageSource, /sanitizeDossierPublicCopy\(form\.notes\)/);
+  assert.match(adminPageSource, /<DossierPageView dossier=\{dossier\} \/>/);
+
+  const draft = {
+    id: "draft-sanitized-preview",
+    fields: {
+      name: "Starter Subject",
+      role: publicCopyGuard.sanitizeDossierPublicCopy(
+        "Starter note only: add a dossier entry",
+      ) || publicCopyGuard.DOSSIER_PUBLIC_ROLE_PLACEHOLDER,
+      summary: publicCopyGuard.sanitizeDossierPublicCopy(
+        "Starter note only: add a dossier entry",
+      ) || publicCopyGuard.DOSSIER_PUBLIC_SUMMARY_PLACEHOLDER,
+      notes: publicCopyGuard.sanitizeDossierPublicCopy(
+        "Starter evidence note: Missing info: confirm copy",
+      ),
+      tags: [],
+      proposedTags: [],
+      files: [],
+    },
+  };
+  const viewModel = dossierPageViewModel.draftToDossierPreviewViewModel(draft);
+  assert.doesNotMatch(
+    JSON.stringify(viewModel),
+    /Starter note only|Starter evidence note|Missing info|add a dossier entry/i,
+  );
+});
+
 test("phase 2 draft editor stacks source summary, BNL edit panel, and dossier preview full-width", () => {
   const adminPageSource = normalizedSource("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
   const sourceSummaryIndex = adminPageSource.indexOf("BNL Source File Summary");
@@ -175,8 +207,8 @@ test("admin source-file caveats stay outside the public-style dossier preview mo
   };
   const viewModel = dossierPageViewModel.draftToDossierPreviewViewModel(draft);
 
-  assertIncludesCopy(adminPageSource, "Admin-only warnings / missing info / caveats:");
-  assertIncludesCopy(adminPageSource, "Source-file notes remain internal. Only the proposed fields below are being previewed.");
+  assertIncludesCopy(adminPageSource, "Developer / Raw Source Audit — internal debugging only");
+  assertIncludesCopy(adminPageSource, "Public safety notes:");
   assert.match(componentSource, /UNPUBLISHED PREVIEW/);
   assert.doesNotMatch(componentSource, /missingInfo|publicSafetyNotes|sourceFileNotes|evidenceSummary|doNotSay/);
   assert.doesNotMatch(JSON.stringify(viewModel), /missingInfo|publicSafetyNotes|sourceFileNotes|evidenceSummary|doNotSay|raw-metadata/);
@@ -619,6 +651,7 @@ test("admin dirty-copy warning stays outside shared public DossierPageView", () 
     : "";
   assert.match(draftPage, /PublicCopyGuardWarning/);
   assert.match(draftPage, /Clean draft public copy/);
+  assert.match(draftPage, /Source material is not strong enough for public dossier copy yet/);
   assert.doesNotMatch(sharedView, /Clean draft public copy/);
   assert.doesNotMatch(sharedView, /PublicCopyGuardWarning/);
 });
@@ -700,6 +733,32 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
 
 
 
+test("dossier public-copy guard flags internal starter and source phrases", () => {
+  for (const phrase of [
+    "Starter note only: internal scaffold",
+    "Starter evidence note: internal scaffold",
+    "Public safety: private_review_required",
+    "Missing info: confirm owner-approved public copy",
+    "broadcast_memory: internal lane",
+    "Do not expose private Discord identity",
+    "Verify public-safe wording before publishing.",
+    "Internal discovery classification: review-only",
+    "BNL discovery is review-only until admin review.",
+    "Medium-confidence BNL discovery.",
+    "Review before converting, merging, aliasing, drafting, or publishing.",
+    "source-file note copied into public copy",
+    "source file note copied into public copy",
+    "dossier seed for internal workflow",
+    "add a dossier entry",
+  ]) {
+    assert.equal(
+      publicCopyGuard.containsDossierPublicCopyJunk(phrase),
+      true,
+      `${phrase} should be blocked from public draft fields`,
+    );
+  }
+});
+
 test("dossier public-copy guard flags backend source junk but allows human copy", () => {
   assert.equal(
     publicCopyGuard.containsDossierPublicCopyJunk(
@@ -745,8 +804,9 @@ test("draft public-copy validation warns on dirty proposed fields", () => {
     name: "Debug Subject",
     role: "candidateId: dossier_candidate_debug_12345",
     summary: "conversations/public_discord_observed conversations/public_discord_observed",
-    notes: "Bridge source lane mapping: conversations -> unknown, user_profiles -> unknown",
+    notes: "Starter evidence note: Public safety: review before publishing",
     tags: ["artist", "user_profiles/local_profile_observed"],
+    proposedTags: ["source file", "manual-review"],
     primaryLink: {
       label: "ingestKey bnl:debug-source",
       url: "https://example.test",
@@ -756,7 +816,7 @@ test("draft public-copy validation warns on dirty proposed fields", () => {
 
   assert.deepEqual(
     warnings.map((warning) => warning.label),
-    ["Role", "Summary", "Notes", "Tags", "Primary Link label"],
+    ["Role", "Summary", "Notes", "Tags", "Proposed tags", "Primary Link label"],
   );
 });
 
@@ -1329,6 +1389,75 @@ test("createDraftFromCandidate creates one workflow draft from candidate recomme
   assert.equal(payload.drafts.length, 1);
 });
 
+test("createDraftFromCandidate keeps internal starter notes out of public draft fields", async () => {
+  await resetWorkflowStore();
+  const input = {
+    ...manualCandidateInput,
+    name: "Thin Starter Note Candidate",
+    reason: "add a dossier entry",
+    whyNow: "broadcast_memory: internal review lane",
+    evidenceSummary: "add a dossier entry",
+    knownFacts: [],
+    missingInfo: ["confirm owner-approved public copy"],
+    doNotSay: ["Do not expose private Discord identity"],
+    publicSafetyNotes: ["Verify public-safe wording before publishing."],
+    recommendedTags: ["source file", "artist"],
+    proposedTags: ["dossier seed", "manual-review"],
+    primaryLink: {
+      ...manualCandidateInput.primaryLink,
+      label: "source-file dossier seed",
+    },
+  };
+  const created = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input,
+    })
+  ).json();
+  const payload = await (
+    await authedPost({
+      action: "createDraftFromCandidate",
+      candidateId: created.candidate.id,
+    })
+  ).json();
+
+  const fields = payload.draft.fields;
+  const publicText = JSON.stringify({
+    summary: fields.summary,
+    notes: fields.notes,
+    role: fields.role,
+    tags: fields.tags,
+    proposedTags: fields.proposedTags,
+    primaryLinkLabel: fields.primaryLink?.label,
+  });
+  for (const phrase of [
+    "Starter note only",
+    "Starter evidence note",
+    "Public safety:",
+    "Missing info:",
+    "broadcast_memory:",
+    "add a dossier entry",
+    "dossier seed",
+    "source-file",
+  ]) {
+    assert.doesNotMatch(publicText, new RegExp(phrase, "i"));
+  }
+  assert.equal(fields.summary, publicCopyGuard.DOSSIER_PUBLIC_SUMMARY_PLACEHOLDER);
+  assert.equal(fields.role, publicCopyGuard.DOSSIER_PUBLIC_ROLE_PLACEHOLDER);
+  assert.equal(fields.notes, undefined);
+  assert.deepEqual(fields.tags, ["artist"]);
+  assert.deepEqual(fields.proposedTags, ["manual-review"]);
+  assert.equal(fields.primaryLink.label, "Featured link");
+
+  const sourceSummary = sourceFileSummary.createDossierSourceFileSummary({
+    candidate: created.candidate,
+    drafts: [payload.draft],
+  });
+  assert.equal(sourceSummary.substanceLevel, "thin");
+  assert.match(JSON.stringify(sourceSummary), /confirm owner-approved public copy|Verify public-safe wording/);
+  assert.doesNotMatch(JSON.stringify(fields), /confirm owner-approved public copy|Verify public-safe wording/);
+});
+
 test("createDraftFromCandidate returns existing active draft without duplicating", async () => {
   await resetWorkflowStore();
   const createCandidatePayload = await (
@@ -1505,7 +1634,7 @@ test("submitDraftForOwnerReview validates required fields and updates owner queu
 });
 
 
-test("owner review submission blocks dirty Summary, Role, and Tags", async () => {
+test("owner review submission blocks dirty Summary, Notes, Role, and Tags", async () => {
   await resetWorkflowStore();
   const createCandidatePayload = await (
     await authedPost({
@@ -1529,7 +1658,8 @@ test("owner review submission blocks dirty Summary, Role, and Tags", async () =>
       ecosystemLane: manualCandidateInput.recommendedEcosystemLane,
       identityAuthority: manualCandidateInput.recommendedIdentityAuthority,
       role: "candidateId: dossier_candidate_debug_12345",
-      summary: "conversations/public_discord_observed conversations/public_discord_observed",
+      summary: "Starter note only: add a dossier entry",
+      notes: "Starter evidence note: Public safety: verify public-safe wording",
       tags: ["artist", "user_profiles/local_profile_observed"],
     },
   });
@@ -1543,6 +1673,7 @@ test("owner review submission blocks dirty Summary, Role, and Tags", async () =>
   assert.equal(dirtyPayload.code, "invalid_draft_fields");
   assert.ok(dirtyPayload.missingFields.includes("role"));
   assert.ok(dirtyPayload.missingFields.includes("summary"));
+  assert.ok(dirtyPayload.missingFields.includes("notes"));
   assert.ok(dirtyPayload.missingFields.includes("tags"));
 });
 

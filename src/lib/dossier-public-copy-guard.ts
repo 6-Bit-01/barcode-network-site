@@ -33,7 +33,35 @@ const SOURCE_LABELS = [
   "local_relationship_trace",
 ];
 
+export const DOSSIER_PUBLIC_SUMMARY_PLACEHOLDER =
+  "Clean public summary needed before owner review.";
+export const DOSSIER_PUBLIC_NOTES_PLACEHOLDER =
+  "Clean public notes needed before owner review.";
+export const DOSSIER_PUBLIC_ROLE_PLACEHOLDER =
+  "Clean role needed before owner review.";
+
+const PUBLIC_COPY_PLACEHOLDERS = new Set([
+  DOSSIER_PUBLIC_SUMMARY_PLACEHOLDER.toLowerCase(),
+  DOSSIER_PUBLIC_NOTES_PLACEHOLDER.toLowerCase(),
+  DOSSIER_PUBLIC_ROLE_PLACEHOLDER.toLowerCase(),
+]);
+
 const JUNK_PATTERNS = [
+  /\bstarter note only\s*:/i,
+  /\bstarter evidence note\s*:/i,
+  /\bpublic safety\s*:/i,
+  /\bmissing info\s*:/i,
+  /\bbroadcast_memory\s*:/i,
+  /\bdo not expose private discord identity\b/i,
+  /\bverify public-safe wording\b/i,
+  /\binternal discovery classification\b/i,
+  /\bbnl discovery is review-only\b/i,
+  /\breview before converting\b/i,
+  /\bmedium-confidence bnl discovery\b/i,
+  /\bsource-file\b/i,
+  /\bsource file\b/i,
+  /\bdossier seed\b/i,
+  /\badd a dossier entry\b/i,
   /\buser_profiles\//i,
   /\bconversations\//i,
   /\brelationship_journal\b/i,
@@ -113,6 +141,11 @@ function isMostlyBackendTerms(value: string): boolean {
   if (!words || words.length < 5) return false;
   const backendCount = words.filter((word) => BACKEND_TERMS.includes(word)).length;
   return backendCount >= 3 && backendCount / words.length >= 0.35;
+}
+
+export function isDossierPublicCopyPlaceholder(value: string | undefined): boolean {
+  const trimmed = value?.trim().toLowerCase();
+  return Boolean(trimmed && PUBLIC_COPY_PLACEHOLDERS.has(trimmed));
 }
 
 export function containsDossierPublicCopyJunk(value: string): boolean {

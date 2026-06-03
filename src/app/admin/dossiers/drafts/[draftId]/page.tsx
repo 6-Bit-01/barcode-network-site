@@ -16,10 +16,7 @@ import {
   validateDossierPublicDraftFields,
   type DossierDraftFieldWarning,
 } from "@/lib/dossier-public-copy-guard";
-import {
-  buildDossierTerminalLead,
-  type DossierPageViewModel,
-} from "@/lib/dossier-page-view-model";
+import { draftToDossierPreviewViewModel } from "@/lib/dossier-page-view-model";
 import { createDossierSourceFileSummary } from "@/lib/dossier-source-file-summary";
 import {
   DOSSIER_ECOSYSTEM_LANE_OPTIONS,
@@ -228,33 +225,36 @@ function ProposedDossierPreview({
   const notes = sanitizeDossierPublicCopy(form.notes);
   const primaryLinkLabel = sanitizeDossierPublicCopy(form.primaryLinkLabel);
   const tags = lines(form.tags).map(sanitizeDossierPublicCopy).filter(Boolean);
-  const dossier: DossierPageViewModel = {
-    id: "DRAFT-PREVIEW",
-    name: sanitizeDossierPublicCopy(form.name) || "Proposed dossier",
-    category: form.category || "Entity",
-    status: form.status || "PENDING",
-    clearance: form.clearance || "PUBLIC",
-    origin: form.origin || "UNVERIFIED",
-    role: role || "Clean role needed before owner review.",
-    summary: summary || "Clean summary needed before owner review.",
-    notes,
-    tags,
-    files: [],
-    image: "/placeholder-unknown.png",
-    primaryLink: form.primaryLinkUrl
-      ? {
-          label: primaryLinkLabel || "Featured link",
-          url: form.primaryLinkUrl,
-          type: form.primaryLinkType || "website",
-          selectedBy: form.selectedBy,
-          publicSafe: true,
-        }
-      : undefined,
-    terminalLead: buildDossierTerminalLead({
+  const proposedTags = lines(form.proposedTags)
+    .map(sanitizeDossierPublicCopy)
+    .filter(Boolean);
+  const previewDraft = {
+    id: "draft-preview",
+    fields: {
       id: "DRAFT-PREVIEW",
+      name: sanitizeDossierPublicCopy(form.name) || "Proposed dossier",
       category: form.category || "Entity",
-    }),
-  } as DossierPageViewModel;
+      status: form.status || "PENDING",
+      clearance: form.clearance || "PUBLIC",
+      origin: form.origin || "UNVERIFIED",
+      role: role || "Clean role needed before owner review.",
+      summary: summary || "Clean summary needed before owner review.",
+      notes,
+      tags,
+      proposedTags,
+      primaryLink: form.primaryLinkUrl
+        ? {
+            label: primaryLinkLabel || "Featured link",
+            url: form.primaryLinkUrl,
+            type: form.primaryLinkType || "website",
+            selectedBy: form.selectedBy,
+            publicSafe: true,
+          }
+        : undefined,
+      files: [],
+    },
+  } as Pick<DossierDraft, "id" | "fields">;
+  const dossier = draftToDossierPreviewViewModel(previewDraft);
   return (
     <section className="border border-border bg-surface p-5 space-y-4">
       <div>
@@ -270,12 +270,7 @@ function ProposedDossierPreview({
           stripped for preview safety and remains blocked before owner review.
         </p>
       </div>
-      <DossierPageView
-        dossier={dossier}
-        preview
-        backHref="#"
-        backLabel="Preview only — not published"
-      />
+      <DossierPageView dossier={dossier} />
     </section>
   );
 }

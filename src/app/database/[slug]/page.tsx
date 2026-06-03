@@ -1,6 +1,6 @@
 import { databasePage } from "@/content";
 import { DossierPageView } from "@/components/DossierPageView";
-import { createDossierPageViewModel } from "@/lib/dossier-page-view-model";
+import { databaseEntryToDossierPageViewModel } from "@/lib/dossier-page-view-model";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 
@@ -8,12 +8,14 @@ function slugify(name: string) {
   return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
 }
 
+// Generate static paths for all entries
 export function generateStaticParams() {
   return databasePage.entries.map((entry) => ({
     slug: slugify(entry.name),
   }));
 }
 
+// Dynamic metadata per entity
 export async function generateMetadata({
   params,
 }: {
@@ -43,5 +45,5 @@ export default async function EntityPage({
 
   if (!entry) notFound();
 
-  return <DossierPageView dossier={createDossierPageViewModel(entry)} />;
+  return <DossierPageView dossier={databaseEntryToDossierPageViewModel(entry)} />;
 }

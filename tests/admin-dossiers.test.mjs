@@ -478,8 +478,8 @@ test("dedicated draft editor route contains focused editing workflow and future 
 test("shared DossierPageView preserves PR 155 dossier API and public layout", () => {
   const sharedView = source("src/components/DossierPageView.tsx");
   const viewModel = source("src/lib/dossier-page-view-model.ts");
-  assert.match(sharedView, /type DossierPageViewProps = \{[\s\S]*dossier: DossierPageViewModel/);
-  assert.match(sharedView, /export function DossierPageView\(\{[\s\S]*dossier,/);
+  assert.match(sharedView, /export type DossierPageViewModel/);
+  assert.match(sharedView, /export function DossierPageView\(\{ dossier \}: \{ dossier: DossierPageViewModel \}\)/);
   assert.doesNotMatch(sharedView, /entry: DossierPageViewModel/);
   for (const section of [
     "Dossier Record",
@@ -493,8 +493,9 @@ test("shared DossierPageView preserves PR 155 dossier API and public layout", ()
   assert.match(sharedView, /InfoRow label="Role" value=\{dossier\.role\}/);
   assert.match(sharedView, /dossier\.tags\.map/);
   assert.match(sharedView, /dossier\.primaryLink/);
-  assert.match(viewModel, /export type DossierPageViewModel/);
-  assert.match(viewModel, /terminalLead: string/);
+  assert.match(viewModel, /databaseEntryToDossierPageViewModel/);
+  assert.match(viewModel, /draftToDossierPreviewViewModel/);
+  assert.match(viewModel, /import type \{ DossierPageViewModel \} from "@\/components\/DossierPageView"/);
 });
 
 test("admin dirty-copy warning stays outside shared public DossierPageView", () => {
@@ -1438,7 +1439,7 @@ test("public database slug page stays backed by existing public entries", () => 
   const page = source("src/app/database/[slug]/page.tsx");
   assert.match(page, /databasePage\.entries/);
   assert.match(page, /generateStaticParams/);
-  assert.match(page, /<DossierPageView dossier=\{createDossierPageViewModel\(entry\)\}/);
+  assert.match(page, /<DossierPageView dossier=\{databaseEntryToDossierPageViewModel\(entry\)\}/);
   assert.doesNotMatch(page, /dossier-public-copy-guard/);
   assert.ok(databasePage.entries.length > 0);
 });

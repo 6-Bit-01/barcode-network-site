@@ -1,15 +1,40 @@
-"use client";
-
+import { PageHero, SectionDot } from "@/components/LiveEffects";
 import Image from "next/image";
 import Link from "next/link";
-import { PageHero, SectionDot } from "@/components/LiveEffects";
-import type { DossierPageViewModel } from "@/lib/dossier-page-view-model";
 
-type DossierPageViewProps = {
-  dossier: DossierPageViewModel;
+export type DossierPageViewLink = {
+  label: string;
+  url: string;
+  type: string;
+};
+
+export type DossierPageViewFile = {
+  name: string;
+  url: string;
+  type: "download" | "audio" | "video" | "image";
+};
+
+export type DossierPageViewModel = {
+  id: string;
+  name: string;
+  image: string;
+  category: string;
+  status: string;
+  clearance: string;
+  role: string;
+  origin: string;
+  summary: string;
+  notes: string;
+  tags: string[];
+  primaryLink?: DossierPageViewLink | null;
+  links?: DossierPageViewLink[];
+  files: DossierPageViewFile[];
   backHref?: string;
   backLabel?: string;
-  preview?: boolean;
+  previewMode?: boolean;
+  unpublishedLabel?: string;
+  showTerminalReadout?: boolean;
+  terminalLead?: string;
 };
 
 const statusColors: Record<string, string> = {
@@ -33,14 +58,29 @@ const originColors: Record<string, string> = {
   WITHHELD: "text-muted",
 };
 
-export function DossierPageView({
-  dossier,
-  backHref = "/database",
-  backLabel = "← Back to Database",
-  preview = false,
-}: DossierPageViewProps) {
+function buildTerminalLead(dossier: DossierPageViewModel) {
+  const commands = [
+    "TRACE DOSSIER ROUTE",
+    "PULL ENTITY RECORD",
+    "DECODE NETWORK SIGNATURE",
+    "OPEN ARCHIVE NODE",
+  ];
+
+  const commandIndex =
+    dossier.id.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0) %
+    commands.length;
+
+  return `> ${commands[commandIndex]} // TARGET: ${dossier.id} // ${dossier.category.toUpperCase()}`;
+}
+
+export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) {
+  const backHref = dossier.backHref ?? "/database";
+  const backLabel = dossier.backLabel ?? "Back to Database";
+  const showTerminalReadout = dossier.showTerminalReadout ?? true;
+  const terminalLead = dossier.terminalLead ?? buildTerminalLead(dossier);
+
   return (
-    <div className={preview ? "" : "pt-14"}>
+    <div className={dossier.previewMode ? "" : "pt-14"}>
       {/* Back link (top) */}
       <section>
         <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-6">
@@ -48,7 +88,7 @@ export function DossierPageView({
             href={backHref}
             className="inline-flex items-center text-sm uppercase tracking-widest text-muted hover:text-accent transition-colors"
           >
-            {backLabel}
+            ← {backLabel}
           </Link>
         </div>
       </section>
@@ -65,6 +105,11 @@ export function DossierPageView({
             />
             {/* Quick meta badges */}
             <div className="flex flex-wrap gap-3 mt-6">
+              {dossier.previewMode && (
+                <span className="text-xs uppercase tracking-widest px-2 py-1 border border-accent/40 text-accent">
+                  {dossier.unpublishedLabel ?? "UNPUBLISHED PREVIEW"}
+                </span>
+              )}
               <span
                 className={`text-xs uppercase tracking-widest px-2 py-1 border border-current/20 ${statusColors[dossier.status] || "text-muted"}`}
               >
@@ -225,8 +270,8 @@ export function DossierPageView({
             </div>
 
             <div className="space-y-6">
-              {dossier.files.map((file, index) => (
-                <div key={`${file.name}-${index}`}>
+              {dossier.files.map((file, i) => (
+                <div key={i}>
                   {file.type === "audio" ? (
                     <div className="border border-accent/20 bg-surface p-4">
                       <p className="text-xs uppercase tracking-[0.3em] text-muted mb-3">
@@ -302,30 +347,32 @@ export function DossierPageView({
       )}
 
       {/* Terminal Readout */}
-      <section className="border-b border-border">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
-          <div className="bg-surface border border-border p-6 font-mono">
-            <p className="text-xs text-muted mb-4">
-              &gt; BARCODE_NETWORK // DOSSIER QUERY
-            </p>
-            <div className="space-y-1 text-sm text-foreground/60">
-              <p>{dossier.terminalLead}</p>
-              <p>&gt; RECORD FOUND: {dossier.name}</p>
-              <p>
-                &gt; STATUS: {dossier.status}
-                {" // "}CLEARANCE: {dossier.clearance}
+      {showTerminalReadout && (
+        <section className="border-b border-border">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
+            <div className="bg-surface border border-border p-6 font-mono">
+              <p className="text-xs text-muted mb-4">
+                &gt; BARCODE_NETWORK // DOSSIER QUERY
               </p>
-              <p>
-                &gt; CATEGORY: {dossier.category}
-                {" // "}ORIGIN: {dossier.origin}
-              </p>
-              <p className="text-accent mt-3">
-                &gt; DOSSIER LOADED<span className="cursor-blink">_</span>
-              </p>
+              <div className="space-y-1 text-sm text-foreground/60">
+                <p>{terminalLead}</p>
+                <p>&gt; RECORD FOUND: {dossier.name}</p>
+                <p>
+                  &gt; STATUS: {dossier.status}
+                  {" // "}CLEARANCE: {dossier.clearance}
+                </p>
+                <p>
+                  &gt; CATEGORY: {dossier.category}
+                  {" // "}ORIGIN: {dossier.origin}
+                </p>
+                <p className="text-accent mt-3">
+                  &gt; DOSSIER LOADED<span className="cursor-blink">_</span>
+                </p>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Back link */}
       <section>
@@ -334,7 +381,7 @@ export function DossierPageView({
             href={backHref}
             className="inline-flex items-center text-sm uppercase tracking-widest text-muted hover:text-accent transition-colors"
           >
-            {backLabel}
+            ← {backLabel}
           </Link>
         </div>
       </section>

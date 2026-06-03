@@ -157,6 +157,140 @@ function finiteCoverageNumber(value: unknown, field: string): number | undefined
   return value;
 }
 
+
+const REVIEW_EVIDENCE_ALLOWED_KEYS = new Set([
+  "summary",
+  "label",
+  "detail",
+  "topic",
+  "channel",
+  "channels",
+  "context",
+  "status",
+  "kind",
+  "type",
+  "activityType",
+  "relationship",
+  "visibility",
+  "window",
+  "recency",
+  "frequency",
+  "count",
+  "counts",
+  "postedCount",
+  "mentionedCount",
+  "publicCount",
+  "recentCount",
+  "firstSeen",
+  "lastSeen",
+]);
+
+function reviewEvidenceText(value: unknown, field: string, maxLength = 1000): string | undefined {
+  const clean = text(value, maxLength);
+  if (!clean) return undefined;
+  if (clean === "[object Object]" || /\[object Object\]/i.test(clean)) {
+    throw new Error(`${field} contains object text`);
+  }
+  if (/[{}<>]/.test(clean) || /(?:^|\s)(?:[A-Za-z]:)?[\\/][\w./-]+/.test(clean) || /\b[\w.-]+(?:[\\/][\w.-]+){2,}\b/.test(clean)) {
+    throw new Error(`${field} contains unsupported raw metadata`);
+  }
+  if (/\b(?:candidate|target|dossier|source_file|recommendation|rec|bnl|user|message|channel)_[a-z0-9][a-z0-9_-]{8,}\b/i.test(clean)) {
+    throw new Error(`${field} contains a raw identifier`);
+  }
+  return clean;
+}
+
+function reviewEvidenceNumber(value: unknown, field: string): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`${field} count must be a number`);
+  }
+  if (Math.abs(value) > 1_000_000) throw new Error(`${field} count is too large`);
+  return value;
+}
+
+function reviewEvidenceObjectItem(value: Record<string, unknown>, field: string, maxLength = 1000): string | undefined {
+  const parts: string[] = [];
+  for (const key of Object.keys(value)) {
+    if (!REVIEW_EVIDENCE_ALLOWED_KEYS.has(key)) {
+      throw new Error(`${field} contains unsupported metadata`);
+    }
+  }
+  const summary = reviewEvidenceText(value.summary ?? value.detail ?? value.label, field, 500);
+  if (summary) parts.push(summary);
+  const topic = reviewEvidenceText(value.topic, field, 120);
+  const channel = reviewEvidenceText(value.channel, field, 120);
+  const context = reviewEvidenceText(value.context, field, 180);
+  let activityType = reviewEvidenceText(value.activityType ?? value.type ?? value.kind, field, 80);
+  if (/^authored$/i.test(activityType ?? "")) activityType = "posted";
+  const status = reviewEvidenceText(value.status ?? value.visibility, field, 80);
+  const relationship = reviewEvidenceText(value.relationship, field, 80);
+  const window = reviewEvidenceText(value.window ?? value.recency ?? value.frequency, field, 160);
+  const firstSeen = reviewEvidenceText(value.firstSeen, field, 80);
+  const lastSeen = reviewEvidenceText(value.lastSeen, field, 80);
+  const count = reviewEvidenceNumber(value.count, field);
+  const postedCount = reviewEvidenceNumber(value.postedCount, field);
+  const mentionedCount = reviewEvidenceNumber(value.mentionedCount, field);
+  const publicCount = reviewEvidenceNumber(value.publicCount, field);
+  const recentCount = reviewEvidenceNumber(value.recentCount, field);
+  const channels = Array.isArray(value.channels)
+    ? value.channels.slice(0, 6).map((item) => reviewEvidenceText(item, field, 80)).filter((item): item is string => Boolean(item))
+    : value.channels === undefined
+      ? []
+      : (() => { throw new Error(`${field} channels must be a list`); })();
+  const countParts: string[] = [];
+  if (count !== undefined) countParts.push(`${count} item${count === 1 ? "" : "s"}`);
+  if (postedCount !== undefined) countParts.push(`${postedCount} posted item${postedCount === 1 ? "" : "s"}`);
+  if (mentionedCount !== undefined) countParts.push(`${mentionedCount} mention${mentionedCount === 1 ? "" : "s"}`);
+  if (publicCount !== undefined) countParts.push(`${publicCount} approved public item${publicCount === 1 ? "" : "s"}`);
+  if (recentCount !== undefined) countParts.push(`${recentCount} recent item${recentCount === 1 ? "" : "s"}`);
+  if (value.counts !== undefined) {
+    if (!value.counts || typeof value.counts !== "object" || Array.isArray(value.counts)) {
+      throw new Error(`${field} counts must be an object`);
+    }
+    const entries = Object.entries(value.counts as Record<string, unknown>);
+    if (entries.length > 12) throw new Error(`${field} counts has too many keys`);
+    for (const [key, rawCount] of entries) {
+      const cleanKey = reviewEvidenceText(key, field, 80);
+      const cleanCount = reviewEvidenceNumber(rawCount, field);
+      if (cleanKey && cleanCount !== undefined) {
+        countParts.push(`${coverageLabel(cleanKey)} ${cleanCount}`);
+      }
+    }
+  }
+  const detailParts = [
+    activityType && coverageLabel(activityType),
+    topic && `about ${coverageLabel(topic)}`,
+    channel && `in ${channel.startsWith("#") ? channel : `#${coverageLabel(channel)}`}`,
+    channels.length ? `in ${channels.map((item) => item.startsWith("#") ? item : `#${coverageLabel(item)}`).join(", ")}` : undefined,
+    context && coverageLabel(context),
+    relationship && coverageLabel(relationship),
+    countParts.length ? countParts.join(", ") : undefined,
+    window && coverageLabel(window),
+    firstSeen && `first seen ${firstSeen}`,
+    lastSeen && `last seen ${lastSeen}`,
+    status && coverageLabel(status),
+  ].filter(Boolean);
+  if (detailParts.length) parts.push(detailParts.join("; "));
+  return reviewEvidenceText(parts.join(" — "), field, maxLength);
+}
+
+function reviewEvidenceItem(value: unknown, field: string): string | undefined {
+  if (typeof value === "string") return reviewEvidenceText(value, field);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${field} item must be text or a supported object`);
+  }
+  return reviewEvidenceObjectItem(value as Record<string, unknown>, field);
+}
+
+function reviewEvidenceList(value: unknown, field: string): string[] | undefined {
+  if (value === undefined) return undefined;
+  const rawItems = Array.isArray(value) ? value : [value];
+  if (rawItems.length > 25) throw new Error(`${field} has too many items`);
+  const items = rawItems.map((item) => reviewEvidenceItem(item, field)).filter(Boolean);
+  return items.length ? (items as string[]) : [];
+}
+
 function sourceCoverageItem(value: unknown): string | undefined {
   if (typeof value === "string") return coverageText(value, 1000);
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -351,6 +485,12 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
   const communitySignals = packetStringList(payload.communitySignals);
   const sourceCoverage = sourceCoverageList(payload.sourceCoverage);
   const evidenceDetails = packetStringList(payload.evidenceDetails);
+  const representativeEvidence = reviewEvidenceList(payload.representativeEvidence, "representativeEvidence");
+  const activityFrequencySummary = reviewEvidenceList(payload.activityFrequencySummary, "activityFrequencySummary");
+  const topChannels = reviewEvidenceList(payload.topChannels, "topChannels");
+  const topTopicDetails = reviewEvidenceList(payload.topTopicDetails, "topTopicDetails");
+  const recentActivitySummary = reviewEvidenceList(payload.recentActivitySummary, "recentActivitySummary");
+  const authoredVsMentionedSummary = reviewEvidenceList(payload.authoredVsMentionedSummary, "authoredVsMentionedSummary");
   const publicUseCandidates = packetStringList(payload.publicUseCandidates);
   const reviewOnlyEvidence = packetStringList(payload.reviewOnlyEvidence);
   const queueSubmissionStatus = enumValue(
@@ -416,6 +556,12 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
     communitySignals,
     sourceCoverage,
     evidenceDetails,
+    representativeEvidence,
+    activityFrequencySummary,
+    topChannels,
+    topTopicDetails,
+    recentActivitySummary,
+    authoredVsMentionedSummary,
     publicUseCandidates,
     reviewOnlyEvidence,
     queueSubmissionStatus,

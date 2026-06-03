@@ -407,6 +407,12 @@ export type DossierStructuredSourcePacket = {
   communitySignals?: string[];
   sourceCoverage?: DossierSourceCoverageInput;
   evidenceDetails?: string[];
+  representativeEvidence?: string[];
+  activityFrequencySummary?: string[];
+  topChannels?: string[];
+  topTopicDetails?: string[];
+  recentActivitySummary?: string[];
+  authoredVsMentionedSummary?: string[];
   publicUseCandidates?: string[];
   reviewOnlyEvidence?: string[];
   queueSubmissionStatus?: DossierQueueSubmissionStatus;
@@ -445,6 +451,12 @@ export type DossierRecommendation = {
   communitySignals?: string[];
   sourceCoverage?: string[];
   evidenceDetails?: string[];
+  representativeEvidence?: string[];
+  activityFrequencySummary?: string[];
+  topChannels?: string[];
+  topTopicDetails?: string[];
+  recentActivitySummary?: string[];
+  authoredVsMentionedSummary?: string[];
   publicUseCandidates?: string[];
   reviewOnlyEvidence?: string[];
   queueSubmissionStatus?: DossierQueueSubmissionStatus;
@@ -809,6 +821,12 @@ export type CreateDossierRecommendationInput = {
   communitySignals?: string[];
   sourceCoverage?: DossierSourceCoverageInput;
   evidenceDetails?: string[];
+  representativeEvidence?: string[];
+  activityFrequencySummary?: string[];
+  topChannels?: string[];
+  topTopicDetails?: string[];
+  recentActivitySummary?: string[];
+  authoredVsMentionedSummary?: string[];
   publicUseCandidates?: string[];
   reviewOnlyEvidence?: string[];
   queueSubmissionStatus?: DossierQueueSubmissionStatus;

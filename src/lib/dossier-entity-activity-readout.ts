@@ -19,6 +19,12 @@ export type DossierEntityActivityReadout = {
   communitySignals: string[];
   sourceCoverage: string[];
   evidenceDetails: string[];
+  representativeEvidence: string[];
+  activityFrequencySummary: string[];
+  topChannels: string[];
+  topTopicDetails: string[];
+  recentActivitySummary: string[];
+  authoredVsMentionedSummary: string[];
   publicUseCandidates: string[];
   reviewOnlyEvidence: string[];
   queueSubmissionStatus?: string;
@@ -48,6 +54,12 @@ type ReadoutRecommendation = Pick<
   | "communitySignals"
   | "sourceCoverage"
   | "evidenceDetails"
+  | "representativeEvidence"
+  | "activityFrequencySummary"
+  | "topChannels"
+  | "topTopicDetails"
+  | "recentActivitySummary"
+  | "authoredVsMentionedSummary"
   | "publicUseCandidates"
   | "reviewOnlyEvidence"
   | "queueSubmissionStatus"
@@ -104,6 +116,12 @@ function recommendationHasStructuredReadout(
       recommendation.communitySignals?.length ||
       recommendation.sourceCoverage?.length ||
       recommendation.evidenceDetails?.length ||
+      recommendation.representativeEvidence?.length ||
+      recommendation.activityFrequencySummary?.length ||
+      recommendation.topChannels?.length ||
+      recommendation.topTopicDetails?.length ||
+      recommendation.recentActivitySummary?.length ||
+      recommendation.authoredVsMentionedSummary?.length ||
       recommendation.publicUseCandidates?.length ||
       recommendation.reviewOnlyEvidence?.length ||
       recommendation.queueSubmissionStatus ||
@@ -200,6 +218,40 @@ function structuredReadoutFromRecommendations(
       (recommendation) => recommendation.evidenceDetails ?? [],
     ),
   );
+  const representativeEvidence = cleanItems(
+    structuredRecommendations.flatMap(
+      (recommendation) => recommendation.representativeEvidence ?? [],
+    ),
+    8,
+  );
+  const activityFrequencySummary = cleanItems(
+    structuredRecommendations.flatMap(
+      (recommendation) => recommendation.activityFrequencySummary ?? [],
+    ),
+    4,
+  );
+  const topChannels = cleanItems(
+    structuredRecommendations.flatMap((recommendation) => recommendation.topChannels ?? []),
+    6,
+  );
+  const topTopicDetails = cleanItems(
+    structuredRecommendations.flatMap(
+      (recommendation) => recommendation.topTopicDetails ?? [],
+    ),
+    6,
+  );
+  const recentActivitySummary = cleanItems(
+    structuredRecommendations.flatMap(
+      (recommendation) => recommendation.recentActivitySummary ?? [],
+    ),
+    4,
+  );
+  const authoredVsMentionedSummary = cleanItems(
+    structuredRecommendations.flatMap(
+      (recommendation) => recommendation.authoredVsMentionedSummary ?? [],
+    ),
+    4,
+  );
   const publicUseCandidates = cleanItems(
     structuredRecommendations.flatMap(
       (recommendation) => recommendation.publicUseCandidates ?? [],
@@ -258,6 +310,12 @@ function structuredReadoutFromRecommendations(
     communitySignals,
     sourceCoverage,
     evidenceDetails,
+    representativeEvidence,
+    activityFrequencySummary,
+    topChannels,
+    topTopicDetails,
+    recentActivitySummary,
+    authoredVsMentionedSummary,
     publicUseCandidates,
     reviewOnlyEvidence,
     queueSubmissionStatus: queueRecommendation?.queueSubmissionStatus,
@@ -304,6 +362,12 @@ export function createDossierEntityActivityReadoutFromSourceFile({
     communitySignals: cleanItems(summary?.communitySignals ?? []),
     sourceCoverage: cleanItems(summary?.sourceCoverage ?? []),
     evidenceDetails: cleanItems(summary?.evidenceDetails ?? []),
+    representativeEvidence: cleanItems(summary?.representativeEvidence ?? [], 8),
+    activityFrequencySummary: cleanItems(summary?.activityFrequencySummary ?? [], 4),
+    topChannels: cleanItems(summary?.topChannels ?? [], 6),
+    topTopicDetails: cleanItems(summary?.topTopicDetails ?? [], 6),
+    recentActivitySummary: cleanItems(summary?.recentActivitySummary ?? [], 4),
+    authoredVsMentionedSummary: cleanItems(summary?.authoredVsMentionedSummary ?? [], 4),
     publicUseCandidates: cleanItems(summary?.publicUseCandidates ?? []),
     reviewOnlyEvidence: cleanItems(summary?.reviewOnlyEvidence ?? []),
     queueSubmissionStatus: summary?.queueSubmissionStatus,
@@ -339,6 +403,12 @@ export function createDossierEntityActivityReadoutFromRecommendation(
       communitySignals: [],
       sourceCoverage: [],
       evidenceDetails: [],
+      representativeEvidence: [],
+      activityFrequencySummary: [],
+      topChannels: [],
+      topTopicDetails: [],
+      recentActivitySummary: [],
+      authoredVsMentionedSummary: [],
       publicUseCandidates: [],
       reviewOnlyEvidence: [],
       missingInfo: [],

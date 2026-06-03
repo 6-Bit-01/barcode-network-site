@@ -757,6 +757,80 @@ function normalizeSourceCoverageInput(value: unknown): string[] | undefined {
   return items.length ? items : undefined;
 }
 
+
+function normalizeEvidenceReadoutItem(value: unknown): string | undefined {
+  if (typeof value === "string") return boundedText(value, 1000) || undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const item = value as Record<string, unknown>;
+  const allowed = new Set([
+    "summary",
+    "label",
+    "detail",
+    "topic",
+    "channel",
+    "channels",
+    "context",
+    "status",
+    "kind",
+    "type",
+    "activityType",
+    "relationship",
+    "visibility",
+    "window",
+    "recency",
+    "frequency",
+    "count",
+    "counts",
+    "postedCount",
+    "mentionedCount",
+    "publicCount",
+    "recentCount",
+    "firstSeen",
+    "lastSeen",
+  ]);
+  for (const key of Object.keys(item)) {
+    if (!allowed.has(key)) return undefined;
+  }
+  const textParts = [
+    boundedText(item.summary, 500) || boundedText(item.detail, 500) || boundedText(item.label, 500),
+    (boundedText(item.activityType, 80) || boundedText(item.type, 80) || boundedText(item.kind, 80))?.replace(/^authored$/i, "posted"),
+    boundedText(item.topic, 120) ? `about ${normalizeCoverageLabel(String(item.topic))}` : undefined,
+    boundedText(item.channel, 120) ? `in ${String(item.channel).startsWith("#") ? String(item.channel) : `#${normalizeCoverageLabel(String(item.channel))}`}` : undefined,
+    boundedText(item.context, 180) ? normalizeCoverageLabel(String(item.context)) : undefined,
+    boundedText(item.frequency, 160) || boundedText(item.recency, 160) || boundedText(item.window, 160),
+    boundedText(item.status, 80) || boundedText(item.visibility, 80),
+  ];
+  const countParts: string[] = [];
+  for (const [label, raw] of [
+    ["items", item.count],
+    ["posted items", item.postedCount],
+    ["mentions", item.mentionedCount],
+    ["approved public items", item.publicCount],
+    ["recent items", item.recentCount],
+  ] as const) {
+    const count = normalizeCoverageNumber(raw);
+    if (count !== undefined) countParts.push(`${count} ${label}`);
+  }
+  if (item.counts && typeof item.counts === "object" && !Array.isArray(item.counts)) {
+    for (const [key, rawCount] of Object.entries(item.counts).slice(0, 12)) {
+      const count = normalizeCoverageNumber(rawCount);
+      const cleanKey = boundedText(key, 80);
+      if (cleanKey && count !== undefined) countParts.push(`${normalizeCoverageLabel(cleanKey)} ${count}`);
+    }
+  }
+  if (countParts.length) textParts.push(countParts.join(", "));
+  return boundedText(textParts.filter(Boolean).join(" — "), 1000) || undefined;
+}
+
+function normalizeEvidenceReadoutArray(value: unknown): string[] | undefined {
+  const rawItems = Array.isArray(value) ? value : value === undefined ? [] : [value];
+  const items = rawItems
+    .slice(0, 25)
+    .map(normalizeEvidenceReadoutItem)
+    .filter((item): item is string => Boolean(item));
+  return items.length ? items : undefined;
+}
+
 function cloneJsonValue(value: unknown): unknown {
   if (value === undefined) return undefined;
   return JSON.parse(JSON.stringify(value));
@@ -825,6 +899,12 @@ function normalizeRecommendationInput(
     communitySignals: normalizePacketStringArray(input.communitySignals),
     sourceCoverage: normalizeSourceCoverageInput(input.sourceCoverage),
     evidenceDetails: normalizePacketStringArray(input.evidenceDetails),
+    representativeEvidence: normalizeEvidenceReadoutArray(input.representativeEvidence),
+    activityFrequencySummary: normalizeEvidenceReadoutArray(input.activityFrequencySummary),
+    topChannels: normalizeEvidenceReadoutArray(input.topChannels),
+    topTopicDetails: normalizeEvidenceReadoutArray(input.topTopicDetails),
+    recentActivitySummary: normalizeEvidenceReadoutArray(input.recentActivitySummary),
+    authoredVsMentionedSummary: normalizeEvidenceReadoutArray(input.authoredVsMentionedSummary),
     publicUseCandidates: normalizePacketStringArray(input.publicUseCandidates),
     reviewOnlyEvidence: normalizePacketStringArray(input.reviewOnlyEvidence),
     queueSubmissionStatus: input.queueSubmissionStatus,
@@ -1517,6 +1597,12 @@ function recommendationSourceNoteText(
     ...packetLines("Community signal", recommendation.communitySignals),
     ...packetLines("Source coverage", recommendation.sourceCoverage),
     ...packetLines("Evidence detail", recommendation.evidenceDetails),
+    ...packetLines("Representative evidence", recommendation.representativeEvidence),
+    ...packetLines("Activity frequency", recommendation.activityFrequencySummary),
+    ...packetLines("Top channel", recommendation.topChannels),
+    ...packetLines("Main topic detail", recommendation.topTopicDetails),
+    ...packetLines("Recent activity", recommendation.recentActivitySummary),
+    ...packetLines("Posted/mentioned balance", recommendation.authoredVsMentionedSummary),
     ...packetLines("Public-use candidate pending owner review", recommendation.publicUseCandidates),
     ...packetLines("Review-only evidence", recommendation.reviewOnlyEvidence),
     recommendation.queueSubmissionStatus

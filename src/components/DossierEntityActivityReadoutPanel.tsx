@@ -34,6 +34,19 @@ function Section({
   );
 }
 
+function sourceConfidenceLabel(value?: string) {
+  const values = (value ?? "")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+  const uniqueValues = Array.from(new Set(values));
+  if (uniqueValues.length !== 1) return "Mixed / review required";
+  if (uniqueValues[0] === "low") return "Low";
+  if (uniqueValues[0] === "medium") return "Medium";
+  if (uniqueValues[0] === "high") return "High";
+  return "Mixed / review required";
+}
+
 function ReadoutList({ items, empty }: { items: string[]; empty: string }) {
   return items.length ? (
     items.length === 1 ? (
@@ -79,7 +92,7 @@ export function DossierEntityActivityReadoutPanel({
           </ReadoutBadge>
           <ReadoutBadge>Review-only</ReadoutBadge>
           <ReadoutBadge>No live BNL call</ReadoutBadge>
-          {readout.confidence && <ReadoutBadge>Confidence: {readout.confidence}</ReadoutBadge>}
+          <ReadoutBadge>Source confidence: {sourceConfidenceLabel(readout.confidence)}</ReadoutBadge>
         </div>
       </div>
 
@@ -99,11 +112,18 @@ export function DossierEntityActivityReadoutPanel({
             empty="No useful evidence has been attached to this entity readout yet."
           />
         </Section>
-        <Section title="Activity / Channel Signals">
-          <div className="space-y-2">
-            <p>No reviewed channel/activity summary has been attached yet.</p>
-            <p>Queue/submission history is not connected to BNL entity summaries yet.</p>
-          </div>
+        <Section title="Activity Details">
+          <ReadoutList
+            items={[
+              ...readout.topChannels,
+              ...readout.topTopicDetails,
+              ...readout.activityFrequencySummary,
+              ...readout.recentActivitySummary,
+              ...readout.authoredVsMentionedSummary,
+              ...readout.representativeEvidence,
+            ]}
+            empty="No reviewed channel/activity summary has been attached yet. Queue/submission history is not connected to BNL entity summaries yet."
+          />
         </Section>
         <Section title="Relationship Context — Review Only" tone="review">
           <ReadoutList
@@ -117,7 +137,7 @@ export function DossierEntityActivityReadoutPanel({
             empty="Owner review needed before public wording."
           />
         </Section>
-        <Section title="Private/Internal Notes — Review Only" tone="review">
+        <Section title="Review-Only Cautions" tone="review">
           <ReadoutList
             items={readout.privateOnlyNotes}
             empty="No private/internal notes are recorded in the structured readout."
@@ -137,16 +157,14 @@ export function DossierEntityActivityReadoutPanel({
             />
           </Section>
         )}
-        <Section title="Source Authority / Confidence">
+        <Section title="Evidence Status">
           <ReadoutList
             items={readout.sourceAuthority}
-            empty="Source authority has not been separated from confidence yet."
+            empty="Source confidence: mixed / review required."
           />
-          {readout.confidence && (
-            <p className="mt-2 text-xs uppercase tracking-widest text-accent">
-              Confidence: {readout.confidence}
-            </p>
-          )}
+          <p className="mt-2 text-xs uppercase tracking-widest text-accent">
+            Source confidence: {sourceConfidenceLabel(readout.confidence)}
+          </p>
         </Section>
         <Section title="Recommended Next Action">
           <p>{readout.recommendedAction}</p>

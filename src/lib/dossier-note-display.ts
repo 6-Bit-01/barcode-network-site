@@ -63,6 +63,12 @@ type NoteLike = Pick<
   communitySignals?: string[];
   sourceCoverage?: string[];
   evidenceDetails?: string[];
+  representativeEvidence?: string[];
+  activityFrequencySummary?: string[];
+  topChannels?: string[];
+  topTopicDetails?: string[];
+  recentActivitySummary?: string[];
+  authoredVsMentionedSummary?: string[];
   publicUseCandidates?: string[];
   reviewOnlyEvidence?: string[];
   queueSubmissionStatus?: string;
@@ -545,15 +551,15 @@ export function createHumanReadableSourceFileNoteView(
       subjectOptions,
     );
   for (const item of note.privateOnlyNotes ?? [])
-    addItem(sections, "Private/Internal Notes", item, subjectOptions);
+    addItem(sections, "Review-Only Cautions", item, subjectOptions);
   for (const item of note.notPublicYet ?? [])
     addShortWarning(sections, item, subjectOptions);
   for (const item of note.bestEvidenceToReview ?? [])
-    addItem(sections, "Best Evidence to Review", item, subjectOptions);
+    addItem(sections, "What BNL Found", item, subjectOptions);
   for (const item of note.observedChannels ?? [])
     addItem(sections, "Observed Channels / Activity", item, subjectOptions);
   for (const item of note.conversationHighlights ?? [])
-    addItem(sections, "Conversation Highlights", item, subjectOptions);
+    addItem(sections, "Public Activity Notes", item, subjectOptions);
   for (const item of note.musicSignals ?? [])
     addItem(sections, "Music / Show Signals", item, subjectOptions);
   for (const item of note.communitySignals ?? [])
@@ -561,9 +567,21 @@ export function createHumanReadableSourceFileNoteView(
   for (const item of note.bnlInteractionSignals ?? [])
     addItem(sections, "BNL Interaction Signals", item, subjectOptions);
   for (const item of note.topicBreakdown ?? [])
-    addItem(sections, "Topic Breakdown", item, subjectOptions);
+    addItem(sections, "Main Discussion Areas", item, subjectOptions);
   for (const item of note.evidenceDetails ?? [])
-    addItem(sections, "Evidence Details", item, subjectOptions);
+    addItem(sections, "Evidence Log", item, subjectOptions);
+  for (const item of note.representativeEvidence ?? [])
+    addItem(sections, "Representative Activity Details", item, subjectOptions);
+  for (const item of note.activityFrequencySummary ?? [])
+    addItem(sections, "Activity Frequency", item, subjectOptions);
+  for (const item of note.topChannels ?? [])
+    addItem(sections, "Top Channels", item, subjectOptions);
+  for (const item of note.topTopicDetails ?? [])
+    addItem(sections, "Main Discussion Areas", item, subjectOptions);
+  for (const item of note.recentActivitySummary ?? [])
+    addItem(sections, "Recent Activity", item, subjectOptions);
+  for (const item of note.authoredVsMentionedSummary ?? [])
+    addItem(sections, "Posted / Mentioned Balance", item, subjectOptions);
   for (const item of note.publicUseCandidates ?? [])
     addItem(
       sections,
@@ -572,7 +590,7 @@ export function createHumanReadableSourceFileNoteView(
       subjectOptions,
     );
   for (const item of note.reviewOnlyEvidence ?? [])
-    addItem(sections, "Review-Only Evidence", item, subjectOptions);
+    addItem(sections, "Review-Only Cautions", item, subjectOptions);
   for (const item of note.sourceCoverage ?? [])
     addItem(sections, "Source Coverage", item, subjectOptions);
   if (note.queueSubmissionStatus === "not_connected") {
@@ -593,7 +611,7 @@ export function createHumanReadableSourceFileNoteView(
   addItem(sections, "Queue / Submission Status", note.queueSubmissionNote, subjectOptions);
   addItem(sections, "Recommended Next Step", note.recommendedAction, subjectOptions);
   for (const item of note.sourceAuthority ?? [])
-    addItem(sections, "Source Authority / Confidence", item, subjectOptions);
+    addItem(sections, "Evidence Status", item, subjectOptions);
   addPattern(sections, note.reason, subjectOptions);
   if ((note.usefulEvidence ?? []).length === 0) {
     addItem(sections, "Useful Evidence", note.evidenceSummary, subjectOptions);
@@ -723,6 +741,24 @@ export function createHumanReadableRecommendationView(
       (recommendation.bnlInteractionSignals ?? [])
         .map((item) => `BNL interaction signal: ${item}`)
         .join("\n"),
+      (recommendation.representativeEvidence ?? [])
+        .map((item) => `Representative evidence: ${item}`)
+        .join("\n"),
+      (recommendation.activityFrequencySummary ?? [])
+        .map((item) => `Activity frequency: ${item}`)
+        .join("\n"),
+      (recommendation.topChannels ?? [])
+        .map((item) => `Top channel: ${item}`)
+        .join("\n"),
+      (recommendation.topTopicDetails ?? [])
+        .map((item) => `Main topic detail: ${item}`)
+        .join("\n"),
+      (recommendation.recentActivitySummary ?? [])
+        .map((item) => `Recent activity: ${item}`)
+        .join("\n"),
+      (recommendation.authoredVsMentionedSummary ?? [])
+        .map((item) => `Posted/mentioned balance: ${item}`)
+        .join("\n"),
       (recommendation.publicUseCandidates ?? [])
         .map((item) => `Public-use candidate pending owner review: ${item}`)
         .join("\n"),
@@ -773,6 +809,12 @@ export function createHumanReadableRecommendationView(
     communitySignals: recommendation.communitySignals,
     sourceCoverage: recommendation.sourceCoverage,
     evidenceDetails: recommendation.evidenceDetails,
+    representativeEvidence: recommendation.representativeEvidence,
+    activityFrequencySummary: recommendation.activityFrequencySummary,
+    topChannels: recommendation.topChannels,
+    topTopicDetails: recommendation.topTopicDetails,
+    recentActivitySummary: recommendation.recentActivitySummary,
+    authoredVsMentionedSummary: recommendation.authoredVsMentionedSummary,
     publicUseCandidates: recommendation.publicUseCandidates,
     reviewOnlyEvidence: recommendation.reviewOnlyEvidence,
     queueSubmissionStatus: recommendation.queueSubmissionStatus,

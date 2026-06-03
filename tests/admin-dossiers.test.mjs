@@ -56,6 +56,7 @@ const noteDisplay = require("../src/lib/dossier-note-display.ts");
 const sourceFileSummary = require("../src/lib/dossier-source-file-summary.ts");
 const entityReadout = require("../src/lib/dossier-entity-activity-readout.ts");
 const sourceMemoryMeaning = require("../src/lib/dossier-source-memory-meaning.ts");
+const sourceSummaryPanelComponent = require("../src/components/DossierSourceFileSummaryPanel.tsx");
 const publicCopyGuard = require("../src/lib/dossier-public-copy-guard.ts");
 const dossierPageViewModel = require("../src/lib/dossier-page-view-model.ts");
 
@@ -5102,28 +5103,110 @@ test("raw provenance remains collapsed and outside normal preview surfaces", () 
   assert.doesNotMatch(previewFunction, /candidate\?\.reason|candidate\?\.whyNow|candidate\?\.evidenceSummary|note\.text/);
 });
 
-test("BNL Entity Readout panel is mounted on admin Source File and recommendation pages", () => {
+function collectReactText(node) {
+  if (node === null || node === undefined || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(collectReactText).join(" ");
+  if (typeof node === "object" && typeof node.type === "function") {
+    return collectReactText(node.type(node.props ?? {}));
+  }
+  if (typeof node === "object") return collectReactText(node.props?.children);
+  return "";
+}
+
+test("Source File page uses one consolidated Source File Snapshot / BNL Readout panel", () => {
   const sourceFilePage = normalizedSource("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
   const recommendationPage = normalizedSource("src/app/admin/dossiers/recommendations/[recommendationId]/page.tsx");
-  const panel = normalizedSource("src/components/DossierEntityActivityReadoutPanel.tsx");
+  const summaryPanel = normalizedSource("src/components/DossierSourceFileSummaryPanel.tsx");
+  const readoutPanel = normalizedSource("src/components/DossierEntityActivityReadoutPanel.tsx");
 
-  assert.match(sourceFilePage, /DossierEntityActivityReadoutPanel/);
   assert.match(sourceFilePage, /createDossierEntityActivityReadoutFromSourceFile/);
+  assert.match(sourceFilePage, /DossierSourceFileSummaryPanel/);
+  assert.match(sourceFilePage, /entityReadout=\{entityActivityReadout\}/);
+  assert.doesNotMatch(sourceFilePage, /DossierEntityActivityReadoutPanel readout=\{entityActivityReadout\}/);
   assert.ok(
-    sourceFilePage.indexOf("DossierSourceFileSummaryPanel") <
-      sourceFilePage.indexOf("DossierEntityActivityReadoutPanel readout={entityActivityReadout}"),
+    sourceFilePage.indexOf("DossierSourceFileSummaryPanel") < sourceFilePage.indexOf("<form onSubmit={saveSourceFileSummary}"),
   );
+  assert.match(summaryPanel, /Source File Snapshot \/ BNL Readout/);
+  assertIncludesCopy(summaryPanel, "Relationship Context — Review Only");
+  assertIncludesCopy(summaryPanel, "Public-Safe Possibilities Pending Owner Review");
+  assertIncludesCopy(summaryPanel, "Private/Internal Notes");
+  assertIncludesCopy(summaryPanel, "Queue/submission not connected");
+  assertIncludesCopy(summaryPanel, "Review-only");
+  assertIncludesCopy(summaryPanel, "Structured packet");
+  assertIncludesCopy(summaryPanel, "Safe fallback");
+  assertIncludesCopy(summaryPanel, "Source Authority / Confidence");
+  assertIncludesCopy(summaryPanel, "Developer / Raw Source Audit — internal debugging only");
+  assert.doesNotMatch(summaryPanel, /rawProvenance/);
+
   assert.match(recommendationPage, /createDossierEntityActivityReadoutFromRecommendation/);
   assert.match(recommendationPage, /DossierEntityActivityReadoutPanel/);
-  assertIncludesCopy(panel, "BNL Entity Readout / Entity Activity Summary");
-  assertIncludesCopy(panel, "Relationship Context — Review Only");
-  assertIncludesCopy(panel, "Public-Safe Possibilities Pending Owner Review");
-  assertIncludesCopy(panel, "Private/Internal Notes — Review Only");
-  assertIncludesCopy(panel, "Queue/submission history is not connected to BNL entity summaries yet.");
-  assertIncludesCopy(panel, "Source Authority / Confidence");
-  assertIncludesCopy(panel, "No live BNL call");
-  assertIncludesCopy(panel, "does not autofill Proposed Dossier fields");
-  assert.doesNotMatch(panel, /rawProvenance/);
+  assertIncludesCopy(readoutPanel, "BNL Entity Readout / Entity Activity Summary");
+});
+
+test("consolidated Source File Snapshot / BNL Readout collapses duplicate safe bullets and keeps raw labels audit-only", () => {
+  const summary = {
+    currentRead: "Crow has a useful internal case file.",
+    knownContext: ["Local profile match found for Crow."],
+    whyTracked: "Internal review.",
+    usefulEvidence: ["Local profile match found for Crow."],
+    patterns: ["No meaningful pattern has been extracted yet."],
+    confirmedStrong: ["No confirmed public-safe facts have been separated yet."],
+    claimedNeedsReview: ["Review-only relationship/context signal exists for this subject."],
+    privateRelationshipContext: ["Review-only relationship/context signal exists for this subject."],
+    publicSafePossibilities: ["May be described after owner review."],
+    privateOnlyNotes: ["Internal note for admin review."],
+    uncertainties: ["Treat possible connections as unconfirmed."],
+    missingInfo: ["Missing owner-confirmed wording."],
+    notPublicYet: ["Do not publish relationship context yet."],
+    sourceAuthority: ["Mixed BNL memory plus admin review; not owner-confirmed."],
+    recommendedNextAction: "Ask owner to separate public-safe language.",
+    substanceLevel: "useful",
+    publicReadiness: "needs_review",
+    existingPublicDossier: "no",
+    nextAction: "owner_review",
+    lastUpdatedAt: "2026-06-03T00:00:00.000Z",
+    summarySource: "structured",
+  };
+  const entityReadoutValue = {
+    currentRead: "BNL found an internal local profile match for Crow.",
+    knownContext: ["BNL found an internal local profile match for Crow."],
+    usefulEvidence: [
+      "Local profile match found for Crow.",
+      "user_profiles/local_profile_observed",
+    ],
+    relationshipSignals: [
+      "BNL found prior relationship/context notes connected to Crow.",
+      "relationship_journal/local_relationship_trace",
+    ],
+    publicSafePossibilities: ["May be described after owner review."],
+    privateOnlyNotes: ["Private owner-review note."],
+    notPublicYet: ["Do not publish relationship context yet."],
+    missingInfo: ["Missing owner-confirmed wording."],
+    sourceAuthority: ["Admin review packet; not owner-confirmed.", "EDGE_SESSION"],
+    recommendedAction: "Ask owner to separate public-safe language.",
+    confidence: "high",
+    readoutSource: "structured",
+  };
+
+  const element = sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary,
+    entityReadout: entityReadoutValue,
+  });
+  const text = collectReactText(element);
+
+  assert.match(text, /Source File Snapshot \/ BNL Readout/);
+  assert.match(text, /BNL found an internal local profile match for Crow/);
+  assert.match(text, /BNL found prior relationship\/context notes connected to Crow/);
+  assert.match(text, /Confidence:\s+high/);
+  assert.match(text, /Review-only/);
+  assert.match(text, /Queue\/submission not connected/);
+  assert.equal((text.match(/profile match/gi) ?? []).length, 1);
+  assert.equal((text.match(/relationship\/context/gi) ?? []).length, 1);
+  assert.doesNotMatch(
+    text,
+    /rawProvenance|user_profiles\/local_profile_observed|relationship_journal\/local_relationship_trace|conversations\/public_discord_observed|memory_tiers\/source_blind_memory_trace|source lane mapping|unknown -> unknown|help_signal|EDGE_SESSION/,
+  );
 });
 
 test("BNL Entity Readout prefers structured packet fields and filters raw provenance labels", () => {

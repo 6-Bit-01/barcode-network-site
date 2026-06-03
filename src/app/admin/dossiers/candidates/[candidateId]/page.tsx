@@ -16,7 +16,6 @@ import {
   type DossierRecommendation,
   type DossierSourceFileNoteType,
 } from "@/lib/dossier-workflow";
-import { DossierEntityActivityReadoutPanel } from "@/components/DossierEntityActivityReadoutPanel";
 import { DossierSourceFileSummaryPanel } from "@/components/DossierSourceFileSummaryPanel";
 import { createHumanReadableSourceFileNoteView } from "@/lib/dossier-note-display";
 import { createDossierSourceFileSummary } from "@/lib/dossier-source-file-summary";
@@ -1157,14 +1156,13 @@ export default function CandidateReviewPage() {
       <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-4">
         {sourceFileSummary && (
           <>
-            <DossierSourceFileSummaryPanel summary={sourceFileSummary} />
+            <DossierSourceFileSummaryPanel
+              summary={sourceFileSummary}
+              entityReadout={entityActivityReadout}
+            />
             {/* Source File Summary */}
           </>
         )}
-        {entityActivityReadout && (
-          <DossierEntityActivityReadoutPanel readout={entityActivityReadout} />
-        )}
-
         <section className="border border-border bg-surface p-5 space-y-4">
           <div>
             <p className="text-xs uppercase tracking-[0.4em] text-accent mb-2">

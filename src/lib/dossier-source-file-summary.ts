@@ -8,6 +8,13 @@ import {
   hasDossierMeaningfulPattern,
   sanitizeDossierMeaningItems,
 } from "./dossier-note-display";
+import {
+  isRawSourceMemoryDebugText,
+  sanitizeMeaningFirstItems,
+  sourceFileEvidenceClusterItems,
+  sourceFileReasonMeaning,
+  sourceFileWhyNowMeaning,
+} from "./dossier-source-memory-meaning";
 
 export type DossierSourceFileSubstanceLevel =
   | "thin"
@@ -67,7 +74,8 @@ function unique(items: Array<string | undefined | null>, limit = 4): string[] {
 function cleanOperatorSummaryValue(value?: string | null): string | undefined {
   const clean = value?.replace(/\s+/g, " ").trim();
   if (!clean) return undefined;
-  if (containsDossierBackendJunk(clean)) return undefined;
+  if (containsDossierBackendJunk(clean) || isRawSourceMemoryDebugText(clean))
+    return undefined;
   return clean;
 }
 
@@ -226,12 +234,44 @@ export function createDossierSourceFileSummary(
     [operatorSummary?.summaryText],
     1,
   )[0];
+  const rawEvidenceValues = [
+    candidate.evidenceSummary,
+    candidate.reason,
+    candidate.whyNow,
+    ...(candidate.evidenceItems ?? []).flatMap((item) => [
+      item.label,
+      item.summary,
+    ]),
+    ...(candidate.sourceFileNotes ?? []).map((note) => note.text),
+    ...recommendations.flatMap((recommendation) => [
+      recommendation.reason,
+      recommendation.evidenceSummary,
+      ...(recommendation.sourceTypes ?? []),
+      ...(recommendation.sourceLanes ?? []),
+    ]),
+  ];
+  const sourceMemoryEvidence = sourceFileEvidenceClusterItems(
+    rawEvidenceValues,
+    {
+      subjectName: candidate.name,
+    },
+  );
+  const nonPublicSourceNoteMeanings = sanitizeMeaningFirstItems(
+    (candidate.sourceFileNotes ?? [])
+      .filter((note) => note.publicSafe !== true)
+      .map((note) => note.text),
+    {
+      subjectName: candidate.name,
+      includePublicDiscord: true,
+    },
+  );
   const structuredSummary = unique(
     [candidate.evidenceSummary, candidate.reason],
     1,
   )[0];
   const usefulEvidence = unique(
     [
+      ...sourceMemoryEvidence,
       candidate.evidenceSummary,
       ...(candidate.evidenceItems ?? []).map(
         (item) => item.summary || item.label,
@@ -240,12 +280,12 @@ export function createDossierSourceFileSummary(
         (recommendation) => recommendation.evidenceSummary,
       ),
     ],
-    4,
+    5,
   );
   const knownContext = unique(
     [
       ...(candidate.knownFacts ?? []),
-      candidate.reason,
+      sourceFileReasonMeaning(candidate.reason, candidate.name),
       ...(candidate.sourceFileNotes ?? [])
         .filter((note) => note.publicSafe === true)
         .map((note) => note.text),
@@ -254,7 +294,7 @@ export function createDossierSourceFileSummary(
   );
   const patterns = unique(
     [
-      candidate.whyNow,
+      sourceFileWhyNowMeaning(candidate.whyNow),
       ...recommendations.map((recommendation) => recommendation.reason),
       ...(candidate.sourceFileNotes ?? []).map((note) => note.text),
     ].filter((item) => hasDossierMeaningfulPattern(item)),
@@ -283,12 +323,10 @@ export function createDossierSourceFileSummary(
   );
   const claimedNeedsReview = unique(
     [
-      candidate.reason,
-      candidate.whyNow,
+      sourceFileReasonMeaning(candidate.reason, candidate.name),
+      sourceFileWhyNowMeaning(candidate.whyNow),
       ...recommendations.map((recommendation) => recommendation.reason),
-      ...(candidate.sourceFileNotes ?? [])
-        .filter((note) => note.publicSafe !== true)
-        .map((note) => note.text),
+      ...nonPublicSourceNoteMeanings,
     ],
     4,
   );
@@ -337,7 +375,10 @@ export function createDossierSourceFileSummary(
               "BNL has this subject in the internal review workspace, but no substantial public-safe context has been captured yet.",
             ],
     whyTracked:
-      unique([candidate.reason, candidate.whyNow], 1)[0] ||
+      sanitizeMeaningFirstItems([candidate.reason, candidate.whyNow], {
+        subjectName: candidate.name,
+        limit: 1,
+      })[0] ||
       "This subject is being tracked because it appeared in BNL records and needs human review before any public use.",
     usefulEvidence:
       usefulEvidence.length > 0

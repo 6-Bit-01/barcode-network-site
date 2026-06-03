@@ -4585,6 +4585,7 @@ test("BNL Source File enrichment attaches to Candidate Intake and Existing Dossi
   let intakeCandidate = state.candidates.find((candidate) => candidate.id === intake.candidate.id);
   assert.equal(intakeCandidate.status, "candidate_intake");
   assert.equal(intakeCandidate.sourceFileNotes[0].ingestSource, "bnl_source_file_enrichment");
+  assert.equal(intakeCandidate.sourceFileNotes[0].publicSafe, false);
 
   const existingUpdate = await (await bnlIngestPost({
     type: "new_subject",
@@ -4613,8 +4614,175 @@ test("BNL Source File enrichment attaches to Candidate Intake and Existing Dossi
   const updateCandidate = state.candidates.find((candidate) => candidate.id === existingUpdate.candidate.id);
   assert.equal(updateCandidate.status, "existing_dossier_update");
   assert.equal(updateCandidate.sourceFileNotes[0].ingestSource, "bnl_source_file_enrichment");
+  assert.equal(updateCandidate.sourceFileNotes[0].publicSafe, false);
   assert.equal(JSON.stringify(databasePage.entries.find((entry) => entry.name === "6 Bit")), beforePublic);
   assert.equal(state.drafts.length, 0);
+});
+
+test("BNL Source File enrichment attaches across open review lanes without public draft mutation", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+  const beforePublic = JSON.stringify(databasePage.entries);
+  const openStatuses = [
+    "suggested",
+    "needs_review",
+    "selected",
+    "draft_requested",
+    "draft_ready",
+    "needs_revision",
+    "needs_more_evidence",
+  ];
+
+  for (const status of openStatuses) {
+    const candidate = await store.createManualDossierCandidate({
+      ...manualCandidateInput,
+      name: `Open Enrichment ${status}`,
+      evidenceSummary: `Public-safe seed for ${status}.`,
+    });
+    await store.updateDossierCandidateStatus(candidate.id, status);
+    let draftBefore;
+    if (status === "draft_ready") {
+      draftBefore = await store.createDraftFromCandidate(candidate.id);
+      await store.updateDossierCandidateStatus(candidate.id, status);
+    }
+
+    const response = await bnlIngestPost({
+      type: "modify_existing_dossier",
+      subjectName: `Open Enrichment ${status}`,
+      targetCandidateId: candidate.id,
+      reason: `BNL generated ${status} source-file enrichment for review.`,
+      evidenceSummary: `Review-only enrichment for ${status}.`,
+      sourceLanes: ["active_source_file"],
+      sourceTypes: ["source_file_note"],
+      publicSafetyNotes: ["Review-only source enrichment."],
+      ingestKey: `bnl:open-enrichment:${status}`,
+      ingestSource: "bnl_source_file_enrichment",
+      rawProvenance: {
+        sourcePath: `internal/source/${status}`,
+        backendId: `backend-${status}`,
+      },
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.autoAction, "attached_existing");
+    assert.equal(payload.candidate, undefined);
+    assert.equal(payload.recommendation.status, "attached_to_source_file");
+    assert.equal(payload.recommendation.targetCandidateId, candidate.id);
+    assert.match(payload.recommendation.publicSafetyNotes.join(" "), /review-only BNL Source File Enrichment/);
+    assert.match(payload.recommendation.publicSafetyNotes.join(" "), /no public dossier content was changed/);
+    assert.match(payload.recommendation.publicSafetyNotes.join(" "), /owner\/admin review is still required/);
+    assert.deepEqual(payload.recommendation.rawProvenance, {
+      sourcePath: `internal/source/${status}`,
+      backendId: `backend-${status}`,
+    });
+
+    const state = await store.getDossierWorkflowState();
+    const savedCandidate = state.candidates.find((item) => item.id === candidate.id);
+    assert.equal(savedCandidate.status, status);
+    assert.equal(savedCandidate.sourceFileNotes.length, 1);
+    assert.equal(savedCandidate.sourceFileNotes[0].ingestSource, "bnl_source_file_enrichment");
+    assert.equal(savedCandidate.sourceFileNotes[0].publicSafe, false);
+    assert.match(savedCandidate.sourceFileNotes[0].text, /BNL Source File Enrichment/);
+
+    if (draftBefore) {
+      const draftAfter = state.drafts.find((draft) => draft.id === draftBefore.id);
+      assert.deepEqual(draftAfter.fields, draftBefore.fields);
+      assert.doesNotMatch(JSON.stringify(draftAfter.fields), /Review-only enrichment|source_file_note|backend-/);
+    }
+  }
+
+  assert.equal(JSON.stringify(databasePage.entries), beforePublic);
+  const publicPayload = await (await readModel.GET(new Request("https://example.test/api/bnl/read-model"))).json();
+  assert.doesNotMatch(JSON.stringify(publicPayload), /Open Enrichment|bnl_source_file_enrichment|backend-/);
+});
+
+test("BNL Source File enrichment terminal targets are left for review without attaching", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+  const beforePublic = JSON.stringify(databasePage.entries);
+  const terminalStatuses = ["archived", "approved", "denied", "merged"];
+
+  for (const status of terminalStatuses) {
+    const candidate = await store.createManualDossierCandidate({
+      ...manualCandidateInput,
+      name: `Terminal Enrichment ${status}`,
+    });
+    await store.updateDossierCandidateStatus(candidate.id, status);
+
+    const response = await bnlIngestPost({
+      type: "modify_existing_dossier",
+      subjectName: `Terminal Enrichment ${status}`,
+      targetCandidateId: candidate.id,
+      reason: `BNL generated terminal ${status} enrichment for review.`,
+      evidenceSummary: `Terminal enrichment for ${status}.`,
+      sourceLanes: ["active_source_file"],
+      sourceTypes: ["source_file_note"],
+      ingestKey: `bnl:terminal-enrichment:${status}`,
+      ingestSource: "bnl_source_file_enrichment",
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.autoAction, "left_for_review");
+    assert.equal(payload.candidate, undefined);
+    assert.equal(payload.recommendation.status, "new");
+    assert.equal(payload.recommendation.targetCandidateId, candidate.id);
+    assert.match(
+      payload.recommendation.publicSafetyNotes.join(" "),
+      /Target exists but is not open for enrichment attachment/,
+    );
+    assert.match(
+      payload.recommendation.publicSafetyNotes.join(" "),
+      /No Source File, Proposed Dossier, public page, alias, merge, or owner-review state was changed/,
+    );
+
+    const state = await store.getDossierWorkflowState();
+    const savedCandidate = state.candidates.find((item) => item.id === candidate.id);
+    assert.equal(savedCandidate.status, status);
+    assert.equal(savedCandidate.sourceFileNotes.length, 0);
+  }
+
+  assert.equal(JSON.stringify(databasePage.entries), beforePublic);
+});
+
+test("BNL Source File enrichment keeps missing targets strict and does not loosen other target rules", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const missingResponse = await bnlIngestPost({
+    type: "modify_existing_dossier",
+    subjectName: "Missing Target Enrichment",
+    targetCandidateId: "missing-candidate-id",
+    reason: "BNL generated enrichment for a bad target.",
+    evidenceSummary: "Should fail strictly.",
+    ingestKey: "bnl:missing-target-enrichment",
+    ingestSource: "bnl_source_file_enrichment",
+  });
+  assert.equal(missingResponse.status, 404);
+  assert.equal((await missingResponse.json()).code, "target_candidate_not_found");
+
+  const intake = await (await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Non Enrichment Intake Target",
+    reason: "BNL dynamic discovery created candidate intake.",
+    sourceLanes: ["rd_context"],
+    ingestKey: "bnl:non-enrichment-intake-target:discovery",
+    ingestSource: "bnl_dynamic_candidate_discovery",
+  })).json();
+  assert.equal(intake.candidate.status, "candidate_intake");
+
+  const bridgeResponse = await bnlIngestPost({
+    type: "modify_existing_dossier",
+    subjectName: "Non Enrichment Intake Target",
+    targetCandidateId: intake.candidate.id,
+    reason: "Bridge should not attach to candidate intake through enrichment rules.",
+    evidenceSummary: "Non-enrichment target rule should stay strict.",
+    ingestKey: "bnl:non-enrichment-intake-target:bridge",
+    ingestSource: "bnl_source_knowledge_bridge",
+  });
+  assert.equal(bridgeResponse.status, 400);
+  assert.equal((await bridgeResponse.json()).code, "target_candidate_not_active");
 });
 
 test("BNL Source File enrichment without target remains in inbox and cannot convert to a new candidate", async () => {

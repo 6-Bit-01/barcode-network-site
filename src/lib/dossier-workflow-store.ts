@@ -33,6 +33,7 @@ import {
   type DossierDuplicateRisk,
   type DossierWorkflowLink,
   isActiveSourceFileCandidate,
+  isSourceFileEnrichmentAttachableCandidate,
   matchDossierRecommendationSubject,
   type MergeDossierCandidatesInput,
 } from "@/lib/dossier-workflow";
@@ -1218,25 +1219,33 @@ export async function createDossierRecommendationIdempotent(
             "target_candidate_not_found",
           );
         }
-        if (
-          targetCandidate.status !== "active_source_file" &&
-          targetCandidate.status !== "candidate_intake" &&
-          targetCandidate.status !== "existing_dossier_update"
-        ) {
-          throw new DossierWorkflowInputError(
-            "BNL Source File Enrichment target is not an attachable workflow lane",
-            400,
-            "enrichment_target_not_attachable",
-          );
+        if (!isSourceFileEnrichmentAttachableCandidate(targetCandidate)) {
+          savedRecommendation = {
+            ...recommendation,
+            publicSafetyNotes: [
+              ...(recommendation.publicSafetyNotes ?? []),
+              "Target exists but is not open for enrichment attachment. No Source File, Proposed Dossier, public page, alias, merge, or owner-review state was changed.",
+            ],
+            updatedAt: now,
+          };
+          autoAction = "left_for_review";
+          return {
+            ...currentState,
+            recommendations: [
+              savedRecommendation,
+              ...currentState.recommendations,
+            ],
+            updatedAt: now,
+          };
         }
         const targetStatusNote =
-          targetCandidate.status === "active_source_file"
-            ? "attached to an Active BNL Source File for review only; no public dossier was changed."
-            : targetCandidate.status === "candidate_intake"
-              ? "attached to Candidate Intake as enrichment, not active case-file fact; no promotion occurred."
-              : targetCandidate.status === "existing_dossier_update"
-                ? "attached as Existing Dossier Update enrichment; public dossier content was not edited."
-                : "attached to the targeted workflow record for review only; no public content changed.";
+          targetCandidate.status === "candidate_intake"
+            ? "attached as review-only BNL Source File Enrichment to Candidate Intake; no public dossier content was changed; owner/admin review is still required."
+            : targetCandidate.status === "existing_dossier_update"
+              ? "attached as review-only BNL Source File Enrichment to Existing Dossier Update; no public dossier content was changed; owner/admin review is still required."
+              : targetCandidate.status === "active_source_file"
+                ? "attached as review-only BNL Source File Enrichment to an Active BNL Source File; no public dossier content was changed; owner/admin review is still required."
+                : "attached as review-only BNL Source File Enrichment to an open Source File review lane; no public dossier content was changed; owner/admin review is still required.";
         const updatedStatus: DossierRecommendationStatus =
           targetCandidate.status === "candidate_intake"
             ? "attached_to_candidate_intake"

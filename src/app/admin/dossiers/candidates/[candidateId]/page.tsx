@@ -642,6 +642,13 @@ export default function CandidateReviewPage() {
   const attachedRecommendations = (payload?.recommendations ?? []).filter(
     (recommendation) => recommendation.targetCandidateId === candidate?.id,
   );
+  const latestRecommendationTimestamp = attachedRecommendations
+    .map(
+      (recommendation) => recommendation.updatedAt ?? recommendation.createdAt,
+    )
+    .filter(Boolean)
+    .sort()
+    .at(-1);
   const sourceFileSummary = candidate
     ? createDossierSourceFileSummary({
         candidate,
@@ -658,9 +665,9 @@ export default function CandidateReviewPage() {
     : null;
   const hasSavedOperatorSourceSummary = Boolean(
     candidate?.sourceFileSummary?.summaryText?.trim() ||
-      candidate?.sourceFileSummary?.knownContext?.length ||
-      candidate?.sourceFileSummary?.openQuestions?.length ||
-      candidate?.sourceFileSummary?.nextAction?.trim(),
+    candidate?.sourceFileSummary?.knownContext?.length ||
+    candidate?.sourceFileSummary?.openQuestions?.length ||
+    candidate?.sourceFileSummary?.nextAction?.trim(),
   );
   const identityLinks = [...(candidate?.identityLinks ?? [])].sort(
     (a, b) =>
@@ -1172,6 +1179,13 @@ export default function CandidateReviewPage() {
               subjectName={candidate.name}
               recommendations={attachedRecommendations}
               sourceFileNotes={candidate.sourceFileNotes ?? []}
+              currentLane={candidate.status}
+              latestRecommendationTimestamp={latestRecommendationTimestamp}
+              sourceFileTargetStatus={
+                isExistingDossierUpdate
+                  ? "existing dossier update"
+                  : "active source file"
+              }
             />
             {/* Source File Summary */}
           </>
@@ -1191,7 +1205,8 @@ export default function CandidateReviewPage() {
               <p>Status: {primaryDraft.status}</p>
               <p>Updated: {formatDate(primaryDraft.updatedAt)}</p>
               <p>
-                Unapplied source notes: {sourceMetrics?.unappliedSourceNotesCount ?? 0}
+                Unapplied source notes:{" "}
+                {sourceMetrics?.unappliedSourceNotesCount ?? 0}
               </p>
               <p>
                 Owner review blocked until admins separate public-safe language
@@ -1201,7 +1216,6 @@ export default function CandidateReviewPage() {
             </div>
           )}
         </Section>
-
 
         <section
           id="add-info"
@@ -1216,9 +1230,10 @@ export default function CandidateReviewPage() {
           </p>
           <p className="text-sm text-muted">
             Add to BNL Source File = add a source note, correction, evidence,
-            warning, public-safe fact, or missing-info item to this subject. This
-            source file remains one subject/entity. If this information belongs
-            to a different subject, create or wait for a separate BNL recommendation.
+            warning, public-safe fact, or missing-info item to this subject.
+            This source file remains one subject/entity. If this information
+            belongs to a different subject, create or wait for a separate BNL
+            recommendation.
           </p>
           {hasOwnerReviewDraft && (
             <p className="border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
@@ -1283,52 +1298,6 @@ export default function CandidateReviewPage() {
             </div>
           </form>
         </section>
-
-        <Section title="Evidence / Source Notes">
-          <p className="mb-3">
-            BNL recommendations are evidence/source-file inputs, not public
-            copy.
-          </p>
-        </Section>
-
-        <Section title="Supporting Evidence Log">
-          <p className="mb-3">
-            Recommendation evidence clusters are collapsed by default so repeated
-            owner-review warnings do not crowd the actionable Source File Snapshot.
-          </p>
-          {attachedRecommendations.length === 0 ? (
-            <p>No recommendations attached yet.</p>
-          ) : (
-            <details className="border border-border/70 bg-background/20 p-3">
-              <summary className="cursor-pointer text-foreground font-semibold">
-                Developer / Raw Source Audit — recommendation evidence clusters
-              </summary>
-              <div className="mt-3 space-y-3">
-                {attachedRecommendations.map((recommendation) => (
-                  <article
-                    key={recommendation.id}
-                    className="border border-border/70 bg-background/20 p-3"
-                  >
-                    <p className="text-foreground font-semibold">
-                      {recommendation.subjectName}
-                    </p>
-                    {recommendationEvidenceItems(recommendation).length ? (
-                      <ul className="list-disc pl-5 space-y-1">
-                        {recommendationEvidenceItems(recommendation).map(
-                          (item) => (
-                            <li key={item}>{item}</li>
-                          ),
-                        )}
-                      </ul>
-                    ) : (
-                      <p>Generic owner-review warning already covered above.</p>
-                    )}
-                  </article>
-                ))}
-              </div>
-            </details>
-          )}
-        </Section>
 
         <Section title="Source Notes / Admin Addendums">
           {sourceNotes.length === 0 ? (
@@ -1566,8 +1535,6 @@ export default function CandidateReviewPage() {
           </div>
         </Section>
 
-
-
         <section className="border border-border bg-surface p-5 space-y-4">
           <h2 className="text-2xl font-bold text-foreground">
             Review Boundaries
@@ -1595,9 +1562,12 @@ export default function CandidateReviewPage() {
           {candidate.existingDossierMatch ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-muted">
               <p>
-                Matched public dossier name: {candidate.existingDossierMatch.name}
+                Matched public dossier name:{" "}
+                {candidate.existingDossierMatch.name}
               </p>
-              <p>Match confidence: {candidate.existingDossierMatch.confidence}</p>
+              <p>
+                Match confidence: {candidate.existingDossierMatch.confidence}
+              </p>
               <p>Public dossier id/slug: {candidate.existingDossierMatch.id}</p>
               <p>Current workflow state: {candidate.status}</p>
             </div>
@@ -1627,7 +1597,9 @@ export default function CandidateReviewPage() {
             <button
               type="button"
               onClick={() =>
-                void candidateLifecycleAction("attachCandidateToExistingDossier")
+                void candidateLifecycleAction(
+                  "attachCandidateToExistingDossier",
+                )
               }
               disabled={saving || !existingDossierSelection}
               className="border border-border px-4 py-2 text-foreground hover:border-accent hover:text-accent disabled:opacity-50"
@@ -1662,8 +1634,8 @@ export default function CandidateReviewPage() {
           </summary>
           <p className="mt-3 text-sm text-muted max-w-4xl">
             Optional internal override for the top Source File summary. Use only
-            when BNL&apos;s current read needs owner/admin correction. This is not a
-            draft, not public copy, and not the normal add-info workflow.
+            when BNL&apos;s current read needs owner/admin correction. This is
+            not a draft, not public copy, and not the normal add-info workflow.
           </p>
           <form
             onSubmit={saveSourceFileSummary}
@@ -1728,158 +1700,161 @@ export default function CandidateReviewPage() {
           </form>
         </details>
 
-
-
         <details className="border border-border bg-surface p-5 text-sm text-muted">
           <summary className="cursor-pointer text-2xl font-bold text-foreground">
-            Source File History / Supporting Fields
+            Diagnostics — collapsed by default
           </summary>
           <p className="mt-3 mb-4">
-            Compact supporting fields and older source-file context. Use the
-            consolidated snapshot and Source Notes above for the primary review
-            workflow.
+            Diagnostics only. Not Source File claims. Raw, technical, and legacy
+            supporting fields stay here so the primary review flow remains
+            concise.
           </p>
           <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-          <Section title="Reason">
-            <p>{sourceFileReasonMeaning(candidate.reason, candidate.name)}</p>
-          </Section>
-          <Section title="Why now">
-            <p>{sourceFileWhyNowMeaning(candidate.whyNow)}</p>
-          </Section>
-          <Section title="Evidence summary">
-            <p>
-              {
-                sanitizeMeaningFirstItems([candidate.evidenceSummary], {
-                  subjectName: candidate.name,
-                  fallback: "—",
-                  includePublicDiscord: true,
-                })[0]
-              }
-            </p>
-          </Section>
-          <Section title="Evidence items">
-            {candidate.evidenceItems?.length ? (
-              candidate.evidenceItems.map((item) => (
-                <article key={item.id} className="mb-2">
-                  <p className="text-foreground">
-                    {
-                      sanitizeMeaningFirstItems([item.label], {
-                        subjectName: candidate.name,
-                        fallback: "Internal evidence item.",
-                      })[0]
-                    }
-                  </p>
-                  <p>
-                    {
-                      sanitizeMeaningFirstItems([item.summary], {
-                        subjectName: candidate.name,
-                        fallback: "Owner review required before public use.",
-                        includePublicDiscord: true,
-                      })[0]
-                    }
-                  </p>
-                  <p>
-                    Visibility:{" "}
-                    {item.publicSafe
-                      ? "public-safe after review"
-                      : "internal review only"}
-                  </p>
-                </article>
-              ))
-            ) : (
-              <p>—</p>
-            )}
-          </Section>
-          <Section title="Review Context / Possible Supporting Evidence">
-            {meaningFirstList(candidate.knownFacts, "—", candidate.name)}
-          </Section>
-          <Section title="Corrections / extra notes">
-            <p>Saved notes now live in BNL Source File Notes above.</p>
-          </Section>
-          <Section title="Missing Info">
-            {meaningFirstList(candidate.missingInfo, "—", candidate.name)}
-          </Section>
-          <Section title="Do Not Say">
-            {meaningFirstList(candidate.doNotSay, "—", candidate.name)}
-          </Section>
-          <Section title="Public-Safe Facts Pending Owner/Admin Approval">
-            {list(
-              sanitizeMeaningFirstItems(
-                candidate.knownFacts?.filter(Boolean) ?? [],
-                { subjectName: candidate.name },
-              ),
-              "No public-safe facts marked yet.",
-            )}
-          </Section>
-          <Section title="Internal-Only Notes">
-            {sourceNotes.filter((note) => note.publicSafe !== true).length ? (
-              <ul className="list-disc pl-5 space-y-1">
-                {sourceNotes
-                  .filter((note) => note.publicSafe !== true)
-                  .map((note) => (
-                    <li key={note.id}>
-                      {createHumanReadableSourceFileNoteView({
-                        ...note,
-                        subjectName: candidate.name,
-                      }).summary}
-                    </li>
-                  ))}
-              </ul>
-            ) : (
-              <p className="text-muted">No internal-only notes saved yet.</p>
-            )}
-          </Section>
-          <Section title="Source Warnings">
-            <div className="flex flex-wrap gap-2">
-              {sourceWarningLabels({
-                candidate,
-                recommendations: attachedRecommendations,
-              }).map((label) => (
-                <StatusBadge key={label}>{label}</StatusBadge>
-              ))}
-            </div>
-          </Section>
-          <Section title="Conflicts / Needs Review">
-            <p>Duplicate risk: {candidate.duplicateRisk ?? "none"}</p>
-            <p>Pending identity aliases: {proposedIdentityLinks.length}</p>
-          </Section>
-          <Section title="Public safety notes">
-            {meaningFirstList(candidate.publicSafetyNotes, "—", candidate.name)}
-          </Section>
-          <Section title="Recommended taxonomy">
-            <p>
-              {candidate.recommendedCategory ?? "—"} /{" "}
-              {candidate.recommendedKind ?? "—"} /{" "}
-              {candidate.recommendedEcosystemLane ?? "—"} /{" "}
-              {candidate.recommendedIdentityAuthority ?? "—"}
-            </p>
-            <p>
-              Status/clearance/origin: {candidate.recommendedStatus ?? "—"} /{" "}
-              {candidate.recommendedClearance ?? "—"} /{" "}
-              {candidate.recommendedOrigin ?? "—"}
-            </p>
-          </Section>
-          <Section title="Recommended tags">
-            <p>{candidate.recommendedTags?.join(", ") || "—"}</p>
-          </Section>
-          <Section title="Proposed tags">
-            <p>{candidate.proposedTags?.join(", ") || "—"}</p>
-          </Section>
-          <Section title="Primary link">
-            <p>
-              {candidate.primaryLink
-                ? `${candidate.primaryLink.label}: ${candidate.primaryLink.url} (${candidate.primaryLink.type})`
-                : "—"}
-            </p>
-          </Section>
-          <Section title="Duplicate warnings">
-            <p>{candidate.duplicateRisk ?? "none"}</p>
-            <p>
-              Existing published dossier match:{" "}
-              {candidate.existingDossierMatch?.name ?? "—"}
-            </p>
-          </Section>
+            <Section title="Reason">
+              <p>{sourceFileReasonMeaning(candidate.reason, candidate.name)}</p>
+            </Section>
+            <Section title="Why now">
+              <p>{sourceFileWhyNowMeaning(candidate.whyNow)}</p>
+            </Section>
+            <Section title="Evidence summary">
+              <p>
+                {
+                  sanitizeMeaningFirstItems([candidate.evidenceSummary], {
+                    subjectName: candidate.name,
+                    fallback: "—",
+                    includePublicDiscord: true,
+                  })[0]
+                }
+              </p>
+            </Section>
+            <Section title="Evidence items">
+              {candidate.evidenceItems?.length ? (
+                candidate.evidenceItems.map((item) => (
+                  <article key={item.id} className="mb-2">
+                    <p className="text-foreground">
+                      {
+                        sanitizeMeaningFirstItems([item.label], {
+                          subjectName: candidate.name,
+                          fallback: "Internal evidence item.",
+                        })[0]
+                      }
+                    </p>
+                    <p>
+                      {
+                        sanitizeMeaningFirstItems([item.summary], {
+                          subjectName: candidate.name,
+                          fallback: "Owner review required before public use.",
+                          includePublicDiscord: true,
+                        })[0]
+                      }
+                    </p>
+                    <p>
+                      Visibility:{" "}
+                      {item.publicSafe
+                        ? "public-safe after review"
+                        : "internal review only"}
+                    </p>
+                  </article>
+                ))
+              ) : (
+                <p>—</p>
+              )}
+            </Section>
+            <Section title="Review Context / Possible Supporting Evidence">
+              {meaningFirstList(candidate.knownFacts, "—", candidate.name)}
+            </Section>
+            <Section title="Corrections / extra notes">
+              <p>Saved notes now live in BNL Source File Notes above.</p>
+            </Section>
+            <Section title="Missing Info">
+              {meaningFirstList(candidate.missingInfo, "—", candidate.name)}
+            </Section>
+            <Section title="Do Not Say">
+              {meaningFirstList(candidate.doNotSay, "—", candidate.name)}
+            </Section>
+            <Section title="Public-Safe Facts Pending Owner/Admin Approval">
+              {list(
+                sanitizeMeaningFirstItems(
+                  candidate.knownFacts?.filter(Boolean) ?? [],
+                  { subjectName: candidate.name },
+                ),
+                "No public-safe facts marked yet.",
+              )}
+            </Section>
+            <Section title="Internal-Only Notes">
+              {sourceNotes.filter((note) => note.publicSafe !== true).length ? (
+                <ul className="list-disc pl-5 space-y-1">
+                  {sourceNotes
+                    .filter((note) => note.publicSafe !== true)
+                    .map((note) => (
+                      <li key={note.id}>
+                        {
+                          createHumanReadableSourceFileNoteView({
+                            ...note,
+                            subjectName: candidate.name,
+                          }).summary
+                        }
+                      </li>
+                    ))}
+                </ul>
+              ) : (
+                <p className="text-muted">No internal-only notes saved yet.</p>
+              )}
+            </Section>
+            <Section title="Source Warnings">
+              <div className="flex flex-wrap gap-2">
+                {sourceWarningLabels({
+                  candidate,
+                  recommendations: attachedRecommendations,
+                }).map((label) => (
+                  <StatusBadge key={label}>{label}</StatusBadge>
+                ))}
+              </div>
+            </Section>
+            <Section title="Conflicts / Needs Review">
+              <p>Duplicate risk: {candidate.duplicateRisk ?? "none"}</p>
+              <p>Pending identity aliases: {proposedIdentityLinks.length}</p>
+            </Section>
+            <Section title="Public safety notes">
+              {meaningFirstList(
+                candidate.publicSafetyNotes,
+                "—",
+                candidate.name,
+              )}
+            </Section>
+            <Section title="Recommended taxonomy">
+              <p>
+                {candidate.recommendedCategory ?? "—"} /{" "}
+                {candidate.recommendedKind ?? "—"} /{" "}
+                {candidate.recommendedEcosystemLane ?? "—"} /{" "}
+                {candidate.recommendedIdentityAuthority ?? "—"}
+              </p>
+              <p>
+                Status/clearance/origin: {candidate.recommendedStatus ?? "—"} /{" "}
+                {candidate.recommendedClearance ?? "—"} /{" "}
+                {candidate.recommendedOrigin ?? "—"}
+              </p>
+            </Section>
+            <Section title="Recommended tags">
+              <p>{candidate.recommendedTags?.join(", ") || "—"}</p>
+            </Section>
+            <Section title="Proposed tags">
+              <p>{candidate.proposedTags?.join(", ") || "—"}</p>
+            </Section>
+            <Section title="Primary link">
+              <p>
+                {candidate.primaryLink
+                  ? `${candidate.primaryLink.label}: ${candidate.primaryLink.url} (${candidate.primaryLink.type})`
+                  : "—"}
+              </p>
+            </Section>
+            <Section title="Duplicate warnings">
+              <p>{candidate.duplicateRisk ?? "none"}</p>
+              <p>
+                Existing published dossier match:{" "}
+                {candidate.existingDossierMatch?.name ?? "—"}
+              </p>
+            </Section>
           </section>
         </details>
       </section>

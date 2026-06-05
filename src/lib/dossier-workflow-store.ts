@@ -338,9 +338,11 @@ function sanitizeWorkflowState(value: unknown): DossierWorkflowState {
     recommendations: Array.isArray(candidateState.recommendations)
       ? candidateState.recommendations
       : [],
-    sourceFileRefreshRequests: Array.isArray(candidateState.sourceFileRefreshRequests)
-      ? candidateState.sourceFileRefreshRequests
-      : [],
+    sourceFileRefreshRequests: mergeActiveSourceFileRefreshRequests(
+      Array.isArray(candidateState.sourceFileRefreshRequests)
+        ? candidateState.sourceFileRefreshRequests
+        : [],
+    ),
     updatedAt:
       typeof candidateState.updatedAt === "string"
         ? candidateState.updatedAt
@@ -1460,6 +1462,70 @@ function latestCompletedRefreshRequest(input: {
   );
 }
 
+function sourceFileRefreshDedupeKey(
+  request: Pick<DossierSourceFileRefreshRequest, "candidateId" | "normalizedSubjectKey" | "subjectName">,
+): string {
+  const candidateKey = request.candidateId?.trim();
+  if (candidateKey) return `candidate:${candidateKey}`;
+  const normalizedSubjectKey = request.normalizedSubjectKey?.trim()
+    ? request.normalizedSubjectKey.trim()
+    : normalizeName(request.subjectName);
+  return `subject:${normalizedSubjectKey}`;
+}
+
+function mergeActiveSourceFileRefreshRequests(
+  requests: DossierSourceFileRefreshRequest[],
+): DossierSourceFileRefreshRequest[] {
+  const merged = new Map<string, DossierSourceFileRefreshRequest>();
+  const output: DossierSourceFileRefreshRequest[] = [];
+
+  for (const request of requests) {
+    if (!OPEN_REQUEST_STATUSES.has(request.status)) {
+      output.push(request);
+      continue;
+    }
+
+    const key = sourceFileRefreshDedupeKey(request);
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, request);
+      output.push(request);
+      continue;
+    }
+
+    const mergedRequest: DossierSourceFileRefreshRequest = {
+      ...existing,
+      candidateId: existing.candidateId ?? request.candidateId,
+      subjectName: existing.subjectName || request.subjectName,
+      normalizedSubjectKey:
+        existing.normalizedSubjectKey || request.normalizedSubjectKey,
+      reason: request.updatedAt >= existing.updatedAt ? request.reason : existing.reason,
+      requestSource:
+        request.updatedAt >= existing.updatedAt
+          ? request.requestSource
+          : existing.requestSource,
+      priority: Math.max(existing.priority ?? 0, request.priority ?? 0),
+      requestedAt:
+        request.requestedAt < existing.requestedAt
+          ? request.requestedAt
+          : existing.requestedAt,
+      requestedBy: request.requestedBy ?? existing.requestedBy,
+      updatedAt:
+        request.updatedAt > existing.updatedAt ? request.updatedAt : existing.updatedAt,
+      lastAttemptAt:
+        request.lastAttemptAt &&
+        (!existing.lastAttemptAt || request.lastAttemptAt > existing.lastAttemptAt)
+          ? request.lastAttemptAt
+          : existing.lastAttemptAt,
+    };
+    merged.set(key, mergedRequest);
+    const outputIndex = output.findIndex((item) => item.id === existing.id);
+    if (outputIndex >= 0) output[outputIndex] = mergedRequest;
+  }
+
+  return output;
+}
+
 export function evaluateDossierSourceFileRefresh(input: {
   candidate: DossierCandidate;
   recommendations: DossierRecommendation[];
@@ -1552,14 +1618,20 @@ function upsertSourceFileRefreshRequestInState(input: {
   now: string;
   force?: boolean;
 }): { state: DossierWorkflowState; request: DossierSourceFileRefreshRequest; created: boolean } {
+  const state = {
+    ...input.state,
+    sourceFileRefreshRequests: mergeActiveSourceFileRefreshRequests(
+      input.state.sourceFileRefreshRequests,
+    ),
+  };
   const normalizedSubjectKey = normalizeName(input.candidate.name);
-  const existingIndex = input.state.sourceFileRefreshRequests.findIndex(
+  const existingIndex = state.sourceFileRefreshRequests.findIndex(
     (request) =>
       OPEN_REQUEST_STATUSES.has(request.status) &&
       (request.candidateId === input.candidate.id || request.normalizedSubjectKey === normalizedSubjectKey),
   );
   if (existingIndex >= 0) {
-    const existing = input.state.sourceFileRefreshRequests[existingIndex];
+    const existing = state.sourceFileRefreshRequests[existingIndex];
     const updated: DossierSourceFileRefreshRequest = {
       ...existing,
       candidateId: existing.candidateId ?? input.candidate.id,
@@ -1571,10 +1643,10 @@ function upsertSourceFileRefreshRequestInState(input: {
       requestedBy: input.requestedBy ?? existing.requestedBy,
       updatedAt: input.now,
     };
-    const requests = [...input.state.sourceFileRefreshRequests];
+    const requests = [...state.sourceFileRefreshRequests];
     requests[existingIndex] = updated;
     return {
-      state: { ...input.state, sourceFileRefreshRequests: requests, updatedAt: input.now },
+      state: { ...state, sourceFileRefreshRequests: requests, updatedAt: input.now },
       request: updated,
       created: false,
     };
@@ -1582,13 +1654,13 @@ function upsertSourceFileRefreshRequestInState(input: {
 
   if (!input.force) {
     const recentCompleted = latestCompletedRefreshRequest({
-      requests: input.state.sourceFileRefreshRequests,
+      requests: state.sourceFileRefreshRequests,
       candidate: input.candidate,
     });
     const completedAt = recentCompleted?.completedAt ? Date.parse(recentCompleted.completedAt) : NaN;
     const nowTime = Date.parse(input.now);
     if (!Number.isNaN(completedAt) && !Number.isNaN(nowTime) && nowTime - completedAt < OPEN_REFRESH_RECENT_COMPLETED_MS) {
-      return { state: input.state, request: recentCompleted!, created: false };
+      return { state, request: recentCompleted!, created: false };
     }
   }
 
@@ -1607,8 +1679,8 @@ function upsertSourceFileRefreshRequestInState(input: {
   };
   return {
     state: {
-      ...input.state,
-      sourceFileRefreshRequests: [request, ...input.state.sourceFileRefreshRequests],
+      ...state,
+      sourceFileRefreshRequests: [request, ...state.sourceFileRefreshRequests],
       updatedAt: input.now,
     },
     request,
@@ -1638,9 +1710,22 @@ export async function recordDossierSourceFileOpen(input: {
       refreshRequests: currentState.sourceFileRefreshRequests,
       now,
     });
-    if (!decision.needed || latestOpenRefreshRequest({ requests: currentState.sourceFileRefreshRequests, candidate })) {
-      result = { request: latestOpenRefreshRequest({ requests: currentState.sourceFileRefreshRequests, candidate }) ?? null, decision, created: false };
-      return currentState;
+    const existingOpenRequest = latestOpenRefreshRequest({
+      requests: mergeActiveSourceFileRefreshRequests(
+        currentState.sourceFileRefreshRequests,
+      ),
+      candidate,
+    });
+    if (!decision.needed || existingOpenRequest) {
+      result = { request: existingOpenRequest ?? null, decision, created: false };
+      return existingOpenRequest
+        ? {
+            ...currentState,
+            sourceFileRefreshRequests: mergeActiveSourceFileRefreshRequests(
+              currentState.sourceFileRefreshRequests,
+            ),
+          }
+        : currentState;
     }
     const upserted = upsertSourceFileRefreshRequestInState({
       state: currentState,
@@ -1704,7 +1789,10 @@ export async function updateDossierSourceFileRefreshRequestStatus(input: {
   const now = new Date().toISOString();
   let updated: DossierSourceFileRefreshRequest | null = null;
   await updateDossierWorkflowState((currentState) => {
-    const requests = currentState.sourceFileRefreshRequests.map((request) => {
+    const activeDedupedRequests = mergeActiveSourceFileRefreshRequests(
+      currentState.sourceFileRefreshRequests,
+    );
+    const requests = activeDedupedRequests.map((request) => {
       if (request.id !== input.requestId) return request;
       updated = {
         ...request,
@@ -1733,7 +1821,10 @@ function completeMatchingRefreshRequestsInState(input: {
   );
   const targetCandidateId = input.recommendation.targetCandidateId;
   let changed = false;
-  const requests = input.state.sourceFileRefreshRequests.map((request) => {
+  const activeDedupedRequests = mergeActiveSourceFileRefreshRequests(
+    input.state.sourceFileRefreshRequests,
+  );
+  const requests = activeDedupedRequests.map((request) => {
     const matches =
       COMPLETABLE_REFRESH_STATUSES.has(request.status) &&
       ((targetCandidateId && request.candidateId === targetCandidateId) ||

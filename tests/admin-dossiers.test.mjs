@@ -361,6 +361,24 @@ test("Source File open refresh workflow dedupes, exposes bot polling, and comple
   assert.equal(secondOpen.sourceFileRefreshRequests.length, 1);
   assert.equal(secondOpen.refresh.created, false);
 
+  const thirdOpen = await (await authedPost({ action: "recordSourceFileOpen", candidateId })).json();
+  assert.equal(thirdOpen.sourceFileRefreshRequests.filter((request) => request.status === "pending" || request.status === "claimed").length, 1);
+  assert.equal(thirdOpen.sourceFileRefreshRequests[0].id, firstOpen.sourceFileRefreshRequests[0].id);
+
+  const duplicateState = await store.getDossierWorkflowState();
+  await store.saveDossierWorkflowState({
+    ...duplicateState,
+    sourceFileRefreshRequests: [
+      ...duplicateState.sourceFileRefreshRequests,
+      {
+        ...duplicateState.sourceFileRefreshRequests[0],
+        id: "legacy-duplicate-refresh-request",
+        updatedAt: new Date(Date.now() + 1).toISOString(),
+      },
+    ],
+  });
+  assert.equal((await store.getDossierWorkflowState()).sourceFileRefreshRequests.filter((request) => request.status === "pending" || request.status === "claimed").length, 1);
+
   const manual = await (await authedPost({
     action: "requestSourceFileRefresh",
     candidateId,
@@ -370,6 +388,18 @@ test("Source File open refresh workflow dedupes, exposes bot polling, and comple
   assert.equal(manual.sourceFileRefreshRequests.length, 1);
   assert.equal(manual.sourceFileRefreshRequests[0].reason, "Manual test refresh request.");
   assert.equal(manual.sourceFileRefreshRequests[0].requestSource, "manual_admin");
+  const manualRequestId = manual.sourceFileRefreshRequests[0].id;
+
+  const manualReload = await (await authedPost({
+    action: "requestSourceFileRefresh",
+    candidateId,
+    reason: "Manual test refresh request clicked again.",
+  })).json();
+  const manualActiveRequests = manualReload.sourceFileRefreshRequests.filter((request) => request.status === "pending" || request.status === "claimed");
+  assert.equal(manualReload.refresh.created, false);
+  assert.equal(manualActiveRequests.length, 1);
+  assert.equal(manualActiveRequests[0].id, manualRequestId);
+  assert.equal(manualActiveRequests[0].reason, "Manual test refresh request clicked again.");
 
   const poll = await (await refreshRequestsGet("?limit=5")).json();
   assert.equal(poll.ok, true);
@@ -870,6 +900,14 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     "Source strength",
     "Current draft status",
     "Recommendations",
+    "Refresh status",
+    "Source File Refresh",
+    "BNL refresh requested",
+    "Waiting for BNL",
+    "BNL refresh in progress",
+    "BNL refresh completed",
+    "This Source File has not been refreshed yet",
+    "Request BNL Refresh",
     "Source notes",
     "Unapplied notes",
     "Next action",
@@ -910,6 +948,9 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
   ]) {
     assertIncludesCopy(pageCopy, label);
   }
+  assert.match(page, /latestRefreshRequest\.status === "pending"[\s\S]*"BNL refresh requested"/);
+  assert.match(page, /latestRefreshRequest\.status === "claimed"[\s\S]*"BNL refresh in progress"/);
+  assert.match(page, /Waiting for BNL\.[\s\S]*has not been refreshed yet/);
   assert.doesNotMatch(pageCopy, /Persistent Source File Draft/);
   assert.doesNotMatch(pageCopy, /Internal Operator Summary/);
   assert.doesNotMatch(pageCopy, /Save Internal Summary/);

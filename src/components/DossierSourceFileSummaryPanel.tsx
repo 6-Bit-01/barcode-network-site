@@ -64,10 +64,12 @@ function ActivityGroup({
   title,
   items,
   empty,
+  receipts = [],
 }: {
   title: string;
   items: string[];
   empty: string;
+  receipts?: string[];
 }) {
   return (
     <div className="border border-border/50 bg-background/20 p-2">
@@ -75,6 +77,18 @@ function ActivityGroup({
         {title}
       </h4>
       <SummaryList items={fallbackItems(items, empty)} />
+      {receipts.length > 0 && (
+        <details className="mt-3 border border-border/50 bg-background/30 p-2 text-xs text-muted">
+          <summary className="cursor-pointer font-semibold text-foreground">
+            Show evidence / Evidence receipts — collapsed by default
+          </summary>
+          <ul className="mt-2 list-disc space-y-1 pl-4">
+            {receipts.map((receipt) => (
+              <li key={receipt}>{receipt}</li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }
@@ -125,7 +139,7 @@ function displaySafeText(value?: string | null) {
   if (containsDossierBackendJunk(clean) || isRawSourceMemoryDebugText(clean)) {
     return undefined;
   }
-  return clean
+  return stripRawUrls(clean)
     .replace(
       /\bauthored public-side row\(s\)\b/gi,
       "approved public context item",
@@ -370,6 +384,179 @@ function takeWithoutRepeats(items: string[], seen: Set<string>, limit = 6) {
   );
 }
 
+
+type EvidenceReceiptGroup =
+  | "role"
+  | "relationship"
+  | "creative"
+  | "eventCommunity"
+  | "bnl"
+  | "activity";
+
+type EvidenceReceipt = {
+  group: EvidenceReceiptGroup;
+  specificity: number;
+  text: string;
+  key: string;
+};
+
+function stripRawUrls(value: string) {
+  return value.replace(/https?:\/\/[^\s)\]]+/gi, (url) => {
+    try {
+      const parsed = new URL(url);
+      return platformLabelFromDomain(parsed.hostname) ?? parsed.hostname.replace(/^www\./i, "");
+    } catch {
+      return "linked platform";
+    }
+  });
+}
+
+function platformLabelFromDomain(domain: string) {
+  const host = domain.toLowerCase().replace(/^www\./, "");
+  if (host.includes("youtu.be") || host.includes("youtube.com")) return "YouTube/youtu.be";
+  if (host.includes("soundcloud.com")) return "SoundCloud";
+  if (host.includes("bandcamp.com")) return "Bandcamp";
+  if (host.includes("spotify.com")) return "Spotify";
+  if (host.includes("discord.gg") || host.includes("discord.com")) return "Discord";
+  if (host.includes("twitch.tv")) return "Twitch";
+  if (host.includes("vimeo.com")) return "Vimeo";
+  return undefined;
+}
+
+function safeReceiptSummary(value: string) {
+  if (/legacy recurring-subject|rawRefJson|source table|row IDs?|source lane mapping|\[object Object\]/i.test(value)) {
+    return undefined;
+  }
+  const clean = displaySafeText(stripRawUrls(value));
+  if (!clean) return undefined;
+  return clean
+    .replace(/\brawRefJson\b/gi, "raw diagnostic detail")
+    .replace(/\brow IDs?\b/gi, "source item identifiers")
+    .replace(/\bsource table names?\b/gi, "source diagnostics")
+    .replace(/relationship\/context/gi, "relationship notes")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function receiptContext(value: string) {
+  const channel = value.match(/#[a-z0-9][\w-]*/i)?.[0];
+  if (channel) return ` in ${channel}`;
+  if (/approved public context|public-safe|public context/i.test(value)) {
+    return " in approved public context";
+  }
+  if (/discord/i.test(value)) return " in Discord context";
+  return "";
+}
+
+function receiptDate(value: string) {
+  const iso = value.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
+  if (iso) {
+    const date = new Date(`${iso[1]}-${iso[2]}-${iso[3]}T00:00:00.000Z`);
+    if (!Number.isNaN(date.getTime())) {
+      return `, ${date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}`;
+    }
+  }
+  const month = value.match(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}\b/i)?.[0];
+  return month ? `, ${month}` : "";
+}
+
+function receiptVisibility(value: string, group: EvidenceReceiptGroup) {
+  if (/private|internal|review-only|owner review|not public|do not use publicly/i.test(value)) {
+    return "Owner review required before public copy.";
+  }
+  if (group === "relationship") return "Owner review required before public copy.";
+  if (group === "eventCommunity") return "Review event/community details before public use.";
+  return "Review before public use.";
+}
+
+function receiptTypeAndGroup(value: string): Pick<EvidenceReceipt, "group" | "specificity"> & { label: string } | undefined {
+  if (/derived duplicate .*suppressed|duplicate link references suppressed/i.test(value)) {
+    return { group: "creative", specificity: 90, label: "Derived duplicate references suppressed" };
+  }
+  if (/video platform links?|youtube|youtu\.be|vimeo|twitch/i.test(value)) {
+    return { group: "creative", specificity: 100, label: "Video platform link evidence" };
+  }
+  if (/event\/contest links?|event links?|contest links?|competition|contest announcement|discord event/i.test(value)) {
+    return { group: "eventCommunity", specificity: 100, label: "Event/contest link evidence" };
+  }
+  if (/actual music platform links?|music platform links?|bandcamp|soundcloud|spotify|suno|udio/i.test(value)) {
+    return { group: "creative", specificity: 95, label: "Actual music platform link evidence" };
+  }
+  if (/community\/server links?|server links?|discord|community server/i.test(value)) {
+    return { group: "eventCommunity", specificity: 80, label: "Community/server link evidence" };
+  }
+  if (/platform references?|tool\/platform|platform mention|platform signal/i.test(value)) {
+    return { group: "creative", specificity: 70, label: "Platform reference evidence" };
+  }
+  if (/song\/track\/demo\/WIP mentions?|track|demo|wip|song mention/i.test(value)) {
+    return { group: "creative", specificity: 65, label: "Song/track/demo/WIP mention evidence" };
+  }
+  if (/music discussion|collaboration|music-making|songwriting|producer|production/i.test(value)) {
+    return { group: "creative", specificity: 60, label: "Music discussion evidence" };
+  }
+  if (/generic links?|link evidence|website|url/i.test(value)) {
+    return { group: "creative", specificity: 40, label: "Generic link evidence" };
+  }
+  if (/relationship\/context|relationship context|relationship signal|relationship trace|prior relationship|collaborator|appears in reviewed evidence/i.test(value)) {
+    return { group: "relationship", specificity: 85, label: "Relationship evidence" };
+  }
+  if (/BNL interaction|source-file|dossier|challenging|antagonistic|boundary|boundaries/i.test(value)) {
+    return { group: "bnl", specificity: 75, label: "BNL-facing interaction evidence" };
+  }
+  if (/role signal|known context|current read|why tracked/i.test(value)) {
+    return { group: "role", specificity: 30, label: "Role signal evidence" };
+  }
+  if (/activity|conversation|recurring|recent|posted|mentioned|theme|topic/i.test(value)) {
+    return { group: "activity", specificity: 50, label: "Activity/theme evidence" };
+  }
+  return undefined;
+}
+
+function evidenceReceiptKey(value: string) {
+  return stripRawUrls(value)
+    .toLowerCase()
+    .replace(/^(?:actual music platform links?|video platform links?|event\/contest links?|community\/server links?|generic links?|platform references?|music discussion|song\/track\/demo\/wip mentions?):\s*/i, "")
+    .replace(/[^a-z0-9#]+/g, " ")
+    .trim();
+}
+
+function buildEvidenceReceipts(items: Array<string | undefined | null>, limit = 4) {
+  const byKey = new Map<string, EvidenceReceipt>();
+  for (const item of items) {
+    const clean = safeReceiptSummary(item ?? "");
+    if (!clean || isClassificationText(clean)) continue;
+    const type = receiptTypeAndGroup(clean);
+    if (!type) continue;
+    const key = evidenceReceiptKey(clean);
+    if (!key) continue;
+    const receipt: EvidenceReceipt = {
+      group: type.group,
+      specificity: type.specificity,
+      key,
+      text: `${type.label}: ${clean}${receiptContext(clean)}${receiptDate(clean)}. ${receiptVisibility(clean, type.group)}`,
+    };
+    const existing = byKey.get(key);
+    if (!existing || receipt.specificity > existing.specificity) byKey.set(key, receipt);
+  }
+
+  const used = new Set<string>();
+  const grouped: Record<EvidenceReceiptGroup, string[]> = {
+    role: [],
+    relationship: [],
+    creative: [],
+    eventCommunity: [],
+    bnl: [],
+    activity: [],
+  };
+  for (const receipt of Array.from(byKey.values()).sort((a, b) => b.specificity - a.specificity)) {
+    const visibleKey = visibleDedupeKey(receipt.text);
+    if (used.has(visibleKey)) continue;
+    used.add(visibleKey);
+    if (grouped[receipt.group].length < limit) grouped[receipt.group].push(receipt.text);
+  }
+  return grouped;
+}
+
 export function DossierSourceFileSummaryPanel({
   summary,
   entityReadout,
@@ -515,6 +702,21 @@ export function DossierSourceFileSummaryPanel({
   const duplicateSuppression = linkEvidence.find((item) =>
     /^Derived duplicate link references suppressed:/i.test(item),
   );
+  const evidenceReceipts = buildEvidenceReceipts([
+    currentRead,
+    summary.whyTracked,
+    ...allSignals,
+    ...publicSafePossibilities,
+    ...publicUseCandidates,
+    ...representativeEvidence,
+    ...activityFrequencySummary,
+    ...topChannels,
+    ...recentActivitySummary,
+    ...authoredVsMentionedSummary,
+    ...sourceAuthority,
+    ...actionableBrief.supportingEvidence,
+    ...actionableBrief.reviewOnlyCautions,
+  ]);
   const whatBnlKnows = [
     {
       title: "Role Signals",
@@ -524,6 +726,7 @@ export function DossierSourceFileSummaryPanel({
         4,
       ),
       empty: "No clear role signal has been extracted yet.",
+      receiptGroup: "role" as EvidenceReceiptGroup,
     },
     {
       title: "Relationships / People / Projects",
@@ -538,6 +741,7 @@ export function DossierSourceFileSummaryPanel({
       ),
       empty:
         "No relationship, people, or project signal has been separated yet.",
+      receiptGroup: "relationship" as EvidenceReceiptGroup,
     },
     {
       title: "BNL Interaction",
@@ -547,6 +751,7 @@ export function DossierSourceFileSummaryPanel({
         4,
       ),
       empty: "No BNL interaction pattern has been extracted yet.",
+      receiptGroup: "bnl" as EvidenceReceiptGroup,
     },
     {
       title: "Creative / Music / Platform Signals",
@@ -561,6 +766,7 @@ export function DossierSourceFileSummaryPanel({
       ),
       empty:
         "No creative, music, platform, or link signal has been extracted yet.",
+      receiptGroup: "creative" as EvidenceReceiptGroup,
     },
     {
       title: "Event / Contest / Community Signals",
@@ -577,6 +783,7 @@ export function DossierSourceFileSummaryPanel({
       ),
       empty:
         "No event, contest, channel, or community signal has been separated yet.",
+      receiptGroup: "eventCommunity" as EvidenceReceiptGroup,
     },
     {
       title: "Activity & Themes",
@@ -591,6 +798,7 @@ export function DossierSourceFileSummaryPanel({
         6,
       ),
       empty: "No conversation theme or activity rhythm has been extracted yet.",
+      receiptGroup: "activity" as EvidenceReceiptGroup,
     },
   ];
   const queueStatus =
@@ -771,6 +979,7 @@ export function DossierSourceFileSummaryPanel({
               title={group.title}
               items={group.items}
               empty={group.empty}
+              receipts={evidenceReceipts[group.receiptGroup]}
             />
           ))}
         </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   getDossierSourceFileMetrics,
@@ -20,7 +20,10 @@ import {
 } from "@/lib/dossier-workflow";
 import { DossierSourceFileSummaryPanel } from "@/components/DossierSourceFileSummaryPanel";
 import { createHumanReadableSourceFileNoteView } from "@/lib/dossier-note-display";
-import { createDossierSourceFileSummary } from "@/lib/dossier-source-file-summary";
+import {
+  createDossierSourceFileSummary,
+  selectDossierSourceFileDisplayRecommendations,
+} from "@/lib/dossier-source-file-summary";
 import { createDossierEntityActivityReadoutFromSourceFile } from "@/lib/dossier-entity-activity-readout";
 import {
   sanitizeMeaningFirstItems,
@@ -555,6 +558,7 @@ function PhaseRail() {
 
 export default function CandidateReviewPage() {
   const params = useParams();
+  const router = useRouter();
   const candidateId = routeParam(params?.candidateId);
   const [payload, setPayload] = useState<WorkflowPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -568,7 +572,7 @@ export default function CandidateReviewPage() {
   const [selectedExistingDossierId, setSelectedExistingDossierId] =
     useState("");
 
-  async function loadWorkflow() {
+  async function fetchWorkflowPayload() {
     const response = await fetch("/api/admin/dossiers", { cache: "no-store" });
     if (!response.ok)
       throw new Error(
@@ -576,8 +580,14 @@ export default function CandidateReviewPage() {
           ? "Admin authentication required"
           : `Workflow API returned ${response.status}.`,
       );
-    const data = (await response.json()) as WorkflowPayload;
+    return (await response.json()) as WorkflowPayload;
+  }
+
+  async function loadWorkflow(options: { recordOpen?: boolean } = {}) {
+    const data = await fetchWorkflowPayload();
     setPayload(data);
+
+    if (options.recordOpen === false) return;
 
     const openResponse = await fetch("/api/admin/dossiers", {
       method: "POST",
@@ -591,7 +601,7 @@ export default function CandidateReviewPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadWorkflow()
+      void loadWorkflow({ recordOpen: true })
         .catch((err) =>
           setError(
             err instanceof Error
@@ -603,6 +613,67 @@ export default function CandidateReviewPage() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [candidateId]);
+
+  useEffect(() => {
+    const candidateSubjectKey = payload?.candidates.find(
+      (item) => item.id === candidateId,
+    )?.name;
+    if (!candidateSubjectKey) return;
+    const normalizedSubjectKey =
+      normalizeDossierSubjectName(candidateSubjectKey);
+    const pendingRefreshRequest = payload?.sourceFileRefreshRequests
+      .filter(
+        (request) =>
+          (request.candidateId === candidateId ||
+            request.normalizedSubjectKey === normalizedSubjectKey) &&
+          (request.status === "pending" || request.status === "claimed"),
+      )
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+    if (!pendingRefreshRequest) return;
+
+    let cancelled = false;
+    const pollForRefreshCompletion = async () => {
+      try {
+        const freshPayload = await fetchWorkflowPayload();
+        if (cancelled) return;
+        setPayload(freshPayload);
+        const latestMatchingRefresh = freshPayload.sourceFileRefreshRequests
+          .filter(
+            (request) =>
+              request.candidateId === candidateId ||
+              request.normalizedSubjectKey === normalizedSubjectKey,
+          )
+          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+        if (
+          latestMatchingRefresh &&
+          latestMatchingRefresh.status !== "pending" &&
+          latestMatchingRefresh.status !== "claimed"
+        ) {
+          router.refresh();
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setNotice(
+            err instanceof Error
+              ? err.message
+              : "Failed to check BNL Source File refresh status.",
+          );
+        }
+      }
+    };
+    const interval = window.setInterval(() => {
+      void pollForRefreshCompletion();
+    }, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [
+    candidateId,
+    payload?.candidates,
+    payload?.sourceFileRefreshRequests,
+    router,
+  ]);
 
   const candidate = useMemo(
     () => payload?.candidates.find((item) => item.id === candidateId) ?? null,
@@ -652,9 +723,13 @@ export default function CandidateReviewPage() {
         recommendations: payload?.recommendations ?? [],
       })
     : null;
-  const attachedRecommendations = (payload?.recommendations ?? []).filter(
-    (recommendation) => recommendation.targetCandidateId === candidate?.id,
-  );
+  const attachedRecommendations = candidate
+    ? selectDossierSourceFileDisplayRecommendations({
+        candidate,
+        recommendations: payload?.recommendations ?? [],
+        refreshRequests: payload?.sourceFileRefreshRequests ?? [],
+      })
+    : [];
   const latestRecommendationTimestamp = attachedRecommendations
     .map(
       (recommendation) => recommendation.updatedAt ?? recommendation.createdAt,
@@ -677,7 +752,9 @@ export default function CandidateReviewPage() {
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
   const latestRefreshRequest =
     activeRefreshRequest ??
-    [...refreshRequests].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+    [...refreshRequests].sort((a, b) =>
+      b.updatedAt.localeCompare(a.updatedAt),
+    )[0];
   const refreshStatusLabel = latestRefreshRequest
     ? latestRefreshRequest.status === "pending"
       ? "BNL refresh requested"
@@ -809,8 +886,8 @@ export default function CandidateReviewPage() {
       setNotice(
         refresh?.created === false
           ? "BNL refresh already requested. Waiting for BNL to process it through the Source File refresh worker."
-          : data.message ??
-              "BNL refresh requested. BNL will process this through the Source File refresh worker.",
+          : (data.message ??
+              "BNL refresh requested. BNL will process this through the Source File refresh worker."),
       );
     } catch (err) {
       setNotice(

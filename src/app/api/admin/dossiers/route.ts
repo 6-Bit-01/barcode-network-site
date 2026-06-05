@@ -21,6 +21,7 @@ import {
   type DossierDraft,
   type DossierDuplicateGroup,
   type DossierRecommendation,
+  type DossierSourceFileRefreshRequest,
   type DossierWorkflowAction,
   type MergeDossierCandidatesInput,
 } from "@/lib/dossier-workflow";
@@ -45,7 +46,9 @@ import {
   getDossierWorkflowState,
   getDossierWorkflowStorageMode,
   ignoreDossierRecommendation,
+  recordDossierSourceFileOpen,
   rejectDossierIdentityLink,
+  requestDossierSourceFileRefresh,
   retireDossierIdentityLink,
   mergeDossierCandidates,
   markCandidateAsExistingDossierUpdate,
@@ -66,6 +69,7 @@ type DossierWorkflowResponse = {
   candidates: DossierCandidate[];
   drafts: DossierDraft[];
   recommendations: DossierRecommendation[];
+  sourceFileRefreshRequests: DossierSourceFileRefreshRequest[];
   duplicateGroups: DossierDuplicateGroup[];
   workflow: {
     version: 1;
@@ -119,6 +123,8 @@ const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "mergeCandidates",
   "updateSourceFileSummary",
   "addSourceFileNote",
+  "requestSourceFileRefresh",
+  "recordSourceFileOpen",
   "addDossierIdentityLink",
   "createIdentityLinkFromRecommendation",
   "updateDossierIdentityLink",
@@ -320,6 +326,7 @@ async function workflowPayload(
     candidates: workflowState.candidates,
     drafts: workflowState.drafts,
     recommendations: workflowState.recommendations,
+    sourceFileRefreshRequests: workflowState.sourceFileRefreshRequests,
     duplicateGroups: buildDossierDuplicateGroups(workflowState),
     ownerReviewQueue: {
       waitingCount: waitingForOwnerReview.length,
@@ -446,6 +453,47 @@ export async function POST(req: Request) {
       const note = await addDossierSourceFileNote(input);
       const payload = await workflowPayload();
       return NextResponse.json({ ok: true, action, note, ...payload });
+    }
+
+    if (action === "recordSourceFileOpen") {
+      const candidateId = candidateIdFromBody(body);
+      if (!candidateId) {
+        return NextResponse.json(
+          { error: "Source File open tracking requires candidateId" },
+          { status: 400 },
+        );
+      }
+      const refresh = await recordDossierSourceFileOpen({
+        candidateId,
+        requestedBy: "admin_open_source_file",
+      });
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, refresh, ...payload });
+    }
+
+    if (action === "requestSourceFileRefresh") {
+      const candidateId = candidateIdFromBody(body);
+      if (!candidateId) {
+        return NextResponse.json(
+          { error: "BNL refresh request requires candidateId" },
+          { status: 400 },
+        );
+      }
+      const refresh = await requestDossierSourceFileRefresh({
+        candidateId,
+        reason: typeof body.reason === "string" ? body.reason : undefined,
+        requestSource: "manual_admin",
+        requestedBy: "admin_manual",
+      });
+      const payload = await workflowPayload();
+      return NextResponse.json({
+        ok: true,
+        action,
+        refresh,
+        message:
+          "BNL refresh requested. BNL will process this through the Source File refresh worker.",
+        ...payload,
+      });
     }
 
     if (action === "addDossierIdentityLink") {

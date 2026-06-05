@@ -5695,12 +5695,12 @@ test("Entity Intelligence Review Console displays #238 link categories and one q
     currentRead: "Antigrain has cleaner entity-ledger output for admin review.",
     knownContext: ["Antigrain has video platform links in reviewed evidence."],
     whyTracked: "BNL Source File enrichment needs display review.",
-    usefulEvidence: ["video platform links: YouTube and youtu.be evidence", "event/contest links: Discord contest announcement", "music discussion: collaboration discussion without invented platform claims"],
+    usefulEvidence: ["video platform links: YouTube and youtu.be evidence from https://youtu.be/example123", "event/contest links: Discord contest announcement", "music discussion: collaboration discussion without invented platform claims"],
     patterns: [], confirmedStrong: [], claimedNeedsReview: [], privateRelationshipContext: [],
     publicSafePossibilities: ["Public-safe candidate: video link evidence can be reviewed without private copy."],
     privateOnlyNotes: ["Review-only: owner/admin should validate public wording."],
     uncertainties: [], missingInfo: [], notPublicYet: [],
-    observedChannels: ["community/server links: Discord event channel"],
+    observedChannels: ["community/server links: Discord event channel #barcode-bot"],
     conversationHighlights: ["song/track/demo/WIP mentions: demo discussion appears without submission proof"],
     topicBreakdown: ["Legacy recurring-subject candidate dump: do not show as main intelligence"],
     bestEvidenceToReview: [], bnlInteractionSignals: [],
@@ -5721,11 +5721,50 @@ test("Entity Intelligence Review Console displays #238 link categories and one q
   assert.match(text, /Video platform links/);
   assert.match(text, /Event\/contest links/);
   assert.match(text, /Music discussion/);
+  assert.match(text, /Show evidence \/ Evidence receipts — collapsed by default/);
+  assert.match(text, /Video platform link evidence:.*YouTube\/youtu\.be|Video platform link evidence:.*video platform links/i);
+  assert.doesNotMatch(text, /Actual music platform link evidence:[^\.]*YouTube/i);
+  assert.doesNotMatch(text, /https:\/\/youtu\.be\/example123/);
   assert.match(text, /Derived duplicate link references suppressed/);
   assert.equal((text.match(/Queue\/submission history is not connected yet\. Do not claim submissions/g) ?? []).length, 1);
   assert.doesNotMatch(normalReviewText, /Legacy recurring-subject candidate dump|rawRefJson|source table|row IDs?|\[object Object\]|source lane mapping/);
+  assert.doesNotMatch(normalReviewText, /knownContext|usefulEvidence|rawProvenance|sourceCoverage|evidenceDetails|representativeEvidence/);
   assert.match(text, /Public-safe Evidence/);
   assert.match(text, /Review-only Evidence/);
+});
+
+
+
+test("Entity Intelligence Review Console separates Hellcat-style Discord event receipts from music links", () => {
+  const summary = {
+    currentRead: "HellcatNZ has event and community link evidence ready for admin review.",
+    knownContext: ["HellcatNZ has event/contest links in reviewed evidence."],
+    whyTracked: "BNL Source File enrichment needs receipt-level review.",
+    usefulEvidence: [
+      "event/contest links: Discord event link in #hellcat-nz on 2026-06-03: https://discord.com/events/123/456",
+      "community/server links: Discord community context in #hellcat-nz",
+    ],
+    patterns: [], confirmedStrong: [], claimedNeedsReview: [], privateRelationshipContext: [],
+    publicSafePossibilities: [], privateOnlyNotes: [], uncertainties: [], missingInfo: [], notPublicYet: [],
+    observedChannels: ["#hellcat-nz"], conversationHighlights: [], topicBreakdown: [], bestEvidenceToReview: [], bnlInteractionSignals: [],
+    musicSignals: ["music discussion: track discussion appears separately from the event link"],
+    communitySignals: ["event/contest links: Discord event link in #hellcat-nz, Jun 3"],
+    sourceCoverage: [], evidenceDetails: ["rawRefJson and source table names remain diagnostic-only"], representativeEvidence: [],
+    activityFrequencySummary: [], topChannels: [], topTopicDetails: [], recentActivitySummary: [], authoredVsMentionedSummary: [], publicUseCandidates: [],
+    reviewOnlyEvidence: [], queueSubmissionStatus: "not_connected", queueSubmissionNote: "No queue bridge exists for HellcatNZ.",
+    sourceAuthority: [], recommendedNextAction: "Review event details before public use.", substanceLevel: "useful", publicReadiness: "needs_review", existingPublicDossier: "no", nextAction: "owner_review", lastUpdatedAt: "2026-06-03T00:00:00.000Z", summarySource: "structured",
+  };
+
+  const text = collectReactText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, subjectName: "HellcatNZ" }));
+  const normalReviewText = text.slice(0, text.indexOf("Diagnostics — collapsed by default"));
+
+  assert.match(text, /Show evidence \/ Evidence receipts — collapsed by default/);
+  assert.match(text, /Event\/contest link evidence:.*Discord event link.*#hellcat-nz/i);
+  assert.doesNotMatch(text, /Actual music platform link evidence:.*Discord event/i);
+  assert.doesNotMatch(text, /https:\/\/discord\.com\/events\/123\/456/);
+  assert.doesNotMatch(normalReviewText, /rawRefJson|source table names|\[object Object\]|row IDs?|source lane mapping/);
+  assert.equal((text.match(/Queue\/submission history is not connected yet\. Do not claim submissions/g) ?? []).length, 1);
+  assert.match(text, /Diagnostics — collapsed by default/);
 });
 
 test("actionable brief scans recommendations and source notes without fake Possible topics", () => {

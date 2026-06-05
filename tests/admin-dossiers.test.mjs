@@ -52,6 +52,7 @@ const store = require("../src/lib/dossier-workflow-store.ts");
 const { databasePage } = require("../src/content.ts");
 const readModel = require("../src/app/api/bnl/read-model/route.ts");
 const sourceFilesReadModel = require("../src/app/api/bnl/source-files/route.ts");
+const sourceFileRefreshRequestsRoute = require("../src/app/api/bnl/source-files/refresh-requests/route.ts");
 const noteDisplay = require("../src/lib/dossier-note-display.ts");
 const sourceFileSummary = require("../src/lib/dossier-source-file-summary.ts");
 const entityReadout = require("../src/lib/dossier-entity-activity-readout.ts");
@@ -265,6 +266,29 @@ async function sourceFilesGet(query, token = "test-source-file-read-token") {
   );
 }
 
+async function refreshRequestsGet(query = "", token = "test-source-file-read-token") {
+  return sourceFileRefreshRequestsRoute.GET(
+    new Request(`https://example.test/api/bnl/source-files/refresh-requests${query}`, {
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+    }),
+  );
+}
+
+async function refreshRequestsPost(body, token = "test-source-file-read-token") {
+  return sourceFileRefreshRequestsRoute.POST(
+    new Request("https://example.test/api/bnl/source-files/refresh-requests", {
+      method: "POST",
+      headers: token
+        ? {
+            "content-type": "application/json",
+            authorization: `Bearer ${token}`,
+          }
+        : { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
 async function bnlIngestPost(body, token = "test-bnl-ingest-token") {
   return bnlIngestRoute.POST(
     new Request("https://example.test/api/bnl/dossier-recommendations", {
@@ -308,6 +332,209 @@ const manualCandidateInput = {
     publicSafe: true,
   },
 };
+
+
+test("Source File open refresh workflow dedupes, exposes bot polling, and completes on BNL enrichment", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const created = await (await authedPost({
+    action: "createManualCandidate",
+    input: {
+      name: "Refresh Fixture Subject",
+      candidateType: "artist",
+      reason: "Operator wants a refresh workflow fixture.",
+      whyNow: "The source file needs BNL review.",
+      evidenceSummary: "Admin fixture evidence.",
+    },
+  })).json();
+  const candidateId = created.candidate.id;
+  await authedPost({ action: "promoteCandidateToSourceFile", candidateId });
+
+  const firstOpen = await (await authedPost({ action: "recordSourceFileOpen", candidateId })).json();
+  assert.equal(firstOpen.refresh.request.status, "pending");
+  assert.equal(firstOpen.sourceFileRefreshRequests.length, 1);
+  assert.equal(firstOpen.sourceFileRefreshRequests[0].requestSource, "missing_bnl_refresh");
+
+  const secondOpen = await (await authedPost({ action: "recordSourceFileOpen", candidateId })).json();
+  assert.equal(secondOpen.sourceFileRefreshRequests.length, 1);
+  assert.equal(secondOpen.refresh.created, false);
+
+  const thirdOpen = await (await authedPost({ action: "recordSourceFileOpen", candidateId })).json();
+  assert.equal(thirdOpen.sourceFileRefreshRequests.filter((request) => request.status === "pending" || request.status === "claimed").length, 1);
+  assert.equal(thirdOpen.sourceFileRefreshRequests[0].id, firstOpen.sourceFileRefreshRequests[0].id);
+
+  const duplicateState = await store.getDossierWorkflowState();
+  await store.saveDossierWorkflowState({
+    ...duplicateState,
+    sourceFileRefreshRequests: [
+      ...duplicateState.sourceFileRefreshRequests,
+      {
+        ...duplicateState.sourceFileRefreshRequests[0],
+        id: "legacy-duplicate-refresh-request",
+        updatedAt: new Date(Date.now() + 1).toISOString(),
+      },
+    ],
+  });
+  assert.equal((await store.getDossierWorkflowState()).sourceFileRefreshRequests.filter((request) => request.status === "pending" || request.status === "claimed").length, 1);
+
+  const manual = await (await authedPost({
+    action: "requestSourceFileRefresh",
+    candidateId,
+    reason: "Manual test refresh request.",
+  })).json();
+  assert.equal(manual.message, "BNL refresh requested. BNL will process this through the Source File refresh worker.");
+  assert.equal(manual.sourceFileRefreshRequests.length, 1);
+  assert.equal(manual.sourceFileRefreshRequests[0].reason, "Manual test refresh request.");
+  assert.equal(manual.sourceFileRefreshRequests[0].requestSource, "manual_admin");
+  const manualRequestId = manual.sourceFileRefreshRequests[0].id;
+
+  const manualReload = await (await authedPost({
+    action: "requestSourceFileRefresh",
+    candidateId,
+    reason: "Manual test refresh request clicked again.",
+  })).json();
+  const manualActiveRequests = manualReload.sourceFileRefreshRequests.filter((request) => request.status === "pending" || request.status === "claimed");
+  assert.equal(manualReload.refresh.created, false);
+  assert.equal(manualActiveRequests.length, 1);
+  assert.equal(manualActiveRequests[0].id, manualRequestId);
+  assert.equal(manualActiveRequests[0].reason, "Manual test refresh request clicked again.");
+
+  const poll = await (await refreshRequestsGet("?limit=5")).json();
+  assert.equal(poll.ok, true);
+  assert.equal(poll.requests.length, 1);
+  assert.equal(poll.requests[0].candidateId, candidateId);
+  assert.equal(poll.requests[0].subjectName, "Refresh Fixture Subject");
+
+  const claimed = await (await refreshRequestsPost({
+    requestId: poll.requests[0].id,
+    status: "claimed",
+  })).json();
+  assert.equal(claimed.request.status, "claimed");
+  assert.ok(claimed.request.lastAttemptAt);
+
+  const completed = await (await refreshRequestsPost({
+    requestId: poll.requests[0].id,
+    status: "completed",
+    completedByRecommendationId: "manual-complete-rec",
+  })).json();
+  assert.equal(completed.request.status, "completed");
+  assert.equal(completed.request.completedByRecommendationId, "manual-complete-rec");
+
+  const afterRecentCompletion = await (await authedPost({ action: "recordSourceFileOpen", candidateId })).json();
+  assert.equal(afterRecentCompletion.sourceFileRefreshRequests.length, 1);
+  assert.equal(afterRecentCompletion.refresh.request, null);
+
+  const manualAgain = await (await authedPost({
+    action: "requestSourceFileRefresh",
+    candidateId,
+    reason: "Manual refresh after completion.",
+  })).json();
+  assert.equal(manualAgain.sourceFileRefreshRequests.filter((request) => request.status === "pending").length, 1);
+
+  const ingest = await (await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Refresh Fixture Subject",
+    targetCandidateId: candidateId,
+    reason: "BNL refreshed this source file.",
+    evidenceSummary: "Fresh enrichment evidence.",
+    sourceLanes: ["rd_context"],
+    ingestKey: "refresh-fixture-enrichment-1",
+    ingestSource: "bnl_source_file_enrichment",
+  })).json();
+  assert.equal(ingest.ok, true);
+
+  const finalState = await store.getDossierWorkflowState();
+  const finalRequest = finalState.sourceFileRefreshRequests.find((request) => request.reason === "Manual refresh after completion.");
+  assert.equal(finalRequest.status, "completed");
+  assert.equal(finalRequest.completedByRecommendationId, ingest.recommendation.id);
+});
+
+test("fresh Source File open does not auto-request refresh and public read model stays read-only", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+
+  const now = new Date().toISOString();
+  await store.saveDossierWorkflowState({
+    version: 1,
+    revision: 0,
+    candidates: [{
+      id: "fresh-source-candidate",
+      name: "Fresh Fixture Subject",
+      candidateType: "artist",
+      source: "manual",
+      tier: "review_candidate",
+      score: 5,
+      whyNow: "Fresh test fixture.",
+      reason: "Fresh test fixture.",
+      evidenceSummary: "Fresh source file evidence.",
+      sourceFileNotes: [],
+      status: "active_source_file",
+      createdAt: now,
+      updatedAt: now,
+    }],
+    drafts: [],
+    recommendations: [{
+      id: "fresh-source-rec",
+      type: "new_subject",
+      subjectName: "Fresh Fixture Subject",
+      targetCandidateId: "fresh-source-candidate",
+      status: "attached_to_source_file",
+      reason: "Fresh BNL enrichment.",
+      sourceLanes: ["rd_context"],
+      createdAt: now,
+      updatedAt: now,
+      ingestSource: "bnl_source_file_enrichment",
+      ingestedAt: now,
+    }],
+    sourceFileRefreshRequests: [],
+    updatedAt: now,
+  });
+
+  const opened = await (await authedPost({ action: "recordSourceFileOpen", candidateId: "fresh-source-candidate" })).json();
+  assert.equal(opened.refresh.decision.needed, false);
+  assert.equal(opened.sourceFileRefreshRequests.length, 0);
+
+  const beforePublicRead = await store.getDossierWorkflowState();
+  const publicRead = await (await sourceFilesGet("?subject=Fresh%20Fixture%20Subject")).json();
+  assert.equal(publicRead.ok, true);
+  assert.equal(publicRead.mutation, false);
+  assert.deepEqual(await store.getDossierWorkflowState(), beforePublicRead);
+});
+
+test("bot can mark Source File refresh request failed without public workflow side effects", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
+
+  const created = await (await authedPost({
+    action: "createManualCandidate",
+    input: {
+      name: "Failed Refresh Fixture",
+      reason: "Operator wants failure status coverage.",
+      whyNow: "Testing refresh request failure.",
+      evidenceSummary: "Failure fixture evidence.",
+    },
+  })).json();
+  const candidateId = created.candidate.id;
+  await authedPost({ action: "promoteCandidateToSourceFile", candidateId });
+  const requested = await (await authedPost({ action: "requestSourceFileRefresh", candidateId })).json();
+  const requestId = requested.refresh.request.id;
+
+  const failed = await (await refreshRequestsPost({
+    requestId,
+    status: "failed",
+    failureReason: "Bot worker test failure.",
+  })).json();
+  assert.equal(failed.request.status, "failed");
+  assert.equal(failed.request.failureReason, "Bot worker test failure.");
+  assert.equal(failed.publishesPublicDossier, false);
+
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.drafts.length, 0);
+  assert.equal(state.recommendations.length, 0);
+  assert.equal(state.candidates.some((candidate) => candidate.id === candidateId), true);
+});
 
 test("taxonomy source types, entry annotations, and tag aliases are present", () => {
   const contentSource = source("src/content.ts");
@@ -673,6 +900,14 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     "Source strength",
     "Current draft status",
     "Recommendations",
+    "Refresh status",
+    "Source File Refresh",
+    "BNL refresh requested",
+    "Waiting for BNL",
+    "BNL refresh in progress",
+    "BNL refresh completed",
+    "This Source File has not been refreshed yet",
+    "Request BNL Refresh",
     "Source notes",
     "Unapplied notes",
     "Next action",
@@ -713,6 +948,9 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
   ]) {
     assertIncludesCopy(pageCopy, label);
   }
+  assert.match(page, /latestRefreshRequest\.status === "pending"[\s\S]*"BNL refresh requested"/);
+  assert.match(page, /latestRefreshRequest\.status === "claimed"[\s\S]*"BNL refresh in progress"/);
+  assert.match(page, /Waiting for BNL\.[\s\S]*has not been refreshed yet/);
   assert.doesNotMatch(pageCopy, /Persistent Source File Draft/);
   assert.doesNotMatch(pageCopy, /Internal Operator Summary/);
   assert.doesNotMatch(pageCopy, /Save Internal Summary/);

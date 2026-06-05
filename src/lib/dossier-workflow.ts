@@ -372,6 +372,51 @@ export type DossierRecommendationIngestSource =
   | "system"
   | "unknown";
 
+
+export type DossierSourceFileRefreshRequestStatus =
+  | "pending"
+  | "claimed"
+  | "completed"
+  | "failed"
+  | "skipped"
+  | "cancelled";
+
+export type DossierSourceFileRefreshRequestSource =
+  | "opened_source_file"
+  | "manual_admin"
+  | "stale_source_file"
+  | "missing_bnl_refresh"
+  | "source_notes_newer_than_bnl"
+  | "existing_dossier_update_review";
+
+export type DossierSourceFileRefreshRequest = {
+  id: string;
+  candidateId?: string;
+  subjectName: string;
+  normalizedSubjectKey: string;
+  status: DossierSourceFileRefreshRequestStatus;
+  reason: string;
+  requestedBy?: string;
+  requestedAt: string;
+  updatedAt: string;
+  lastAttemptAt?: string;
+  completedAt?: string;
+  completedByRecommendationId?: string;
+  failureReason?: string;
+  requestSource: DossierSourceFileRefreshRequestSource;
+  priority: number;
+  notBeforeAt?: string;
+};
+
+export type DossierSourceFileRefreshDecision = {
+  needed: boolean;
+  reason: string;
+  requestSource: DossierSourceFileRefreshRequestSource;
+  priority: number;
+  latestRecommendationTimestamp?: string;
+  latestSourceNoteTimestamp?: string;
+};
+
 export type DossierQueueSubmissionStatus =
   | "not_connected"
   | "connected"
@@ -874,6 +919,8 @@ export type DossierWorkflowAction =
   | "markNeedsMoreEvidence"
   | "updateSourceFileSummary"
   | "addSourceFileNote"
+  | "requestSourceFileRefresh"
+  | "recordSourceFileOpen"
   | "addDossierIdentityLink"
   | "createIdentityLinkFromRecommendation"
   | "updateDossierIdentityLink"
@@ -921,6 +968,8 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "markNeedsMoreEvidence",
   "updateSourceFileSummary",
   "addSourceFileNote",
+  "requestSourceFileRefresh",
+  "recordSourceFileOpen",
   "addDossierIdentityLink",
   "createIdentityLinkFromRecommendation",
   "updateDossierIdentityLink",

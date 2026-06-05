@@ -27,6 +27,10 @@ import {
   type DossierRecommendationSourceLane,
   type DossierRecommendationStatus,
   type DossierRecommendationType,
+  type DossierSourceFileRefreshDecision,
+  type DossierSourceFileRefreshRequest,
+  type DossierSourceFileRefreshRequestSource,
+  type DossierSourceFileRefreshRequestStatus,
   type DossierSourceFileNote,
   type DossierSourceFileNoteSource,
   type DossierSourceFileNoteType,
@@ -44,6 +48,7 @@ export type DossierWorkflowState = {
   candidates: DossierCandidate[];
   drafts: DossierDraft[];
   recommendations: DossierRecommendation[];
+  sourceFileRefreshRequests: DossierSourceFileRefreshRequest[];
   updatedAt: string;
 };
 
@@ -71,6 +76,7 @@ function emptyWorkflowState(): DossierWorkflowState {
     candidates: [],
     drafts: [],
     recommendations: [],
+    sourceFileRefreshRequests: [],
     updatedAt: new Date(0).toISOString(),
   };
 }
@@ -332,6 +338,11 @@ function sanitizeWorkflowState(value: unknown): DossierWorkflowState {
     recommendations: Array.isArray(candidateState.recommendations)
       ? candidateState.recommendations
       : [],
+    sourceFileRefreshRequests: mergeActiveSourceFileRefreshRequests(
+      Array.isArray(candidateState.sourceFileRefreshRequests)
+        ? candidateState.sourceFileRefreshRequests
+        : [],
+    ),
     updatedAt:
       typeof candidateState.updatedAt === "string"
         ? candidateState.updatedAt
@@ -353,6 +364,10 @@ function createRecommendationId(): string {
 
 function createSourceFileNoteId(): string {
   return `source_file_note_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createSourceFileRefreshRequestId(): string {
+  return `source_file_refresh_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function createIdentityLinkId(): string {
@@ -1383,6 +1398,451 @@ function upsertSourceFileEnrichmentNote(input: {
   };
 }
 
+
+const OPEN_REFRESH_RECENT_COMPLETED_MS = 60 * 60 * 1000;
+const DEFAULT_REFRESH_STALE_MS = 24 * 60 * 60 * 1000;
+const OPEN_REQUEST_STATUSES = new Set<DossierSourceFileRefreshRequestStatus>([
+  "pending",
+  "claimed",
+]);
+const COMPLETABLE_REFRESH_STATUSES = new Set<DossierSourceFileRefreshRequestStatus>([
+  "pending",
+  "claimed",
+]);
+
+function latestBnlSourceFileRecommendation(input: {
+  candidate: DossierCandidate;
+  recommendations: DossierRecommendation[];
+}): DossierRecommendation | undefined {
+  return input.recommendations
+    .filter(
+      (recommendation) =>
+        recommendation.targetCandidateId === input.candidate.id &&
+        recommendation.ingestSource === "bnl_source_file_enrichment",
+    )
+    .sort((a, b) =>
+      (b.ingestedAt ?? b.updatedAt ?? b.createdAt).localeCompare(
+        a.ingestedAt ?? a.updatedAt ?? a.createdAt,
+      ),
+    )[0];
+}
+
+function latestActiveSourceNoteTimestamp(candidate: DossierCandidate): string | undefined {
+  return (candidate.sourceFileNotes ?? [])
+    .filter((note) => note.status === "active")
+    .map((note) => note.updatedAt ?? note.createdAt)
+    .filter(Boolean)
+    .sort()
+    .at(-1);
+}
+
+function latestOpenRefreshRequest(input: {
+  requests: DossierSourceFileRefreshRequest[];
+  candidate: DossierCandidate;
+}): DossierSourceFileRefreshRequest | undefined {
+  const normalized = normalizeName(input.candidate.name);
+  return input.requests.find(
+    (request) =>
+      OPEN_REQUEST_STATUSES.has(request.status) &&
+      (request.candidateId === input.candidate.id ||
+        request.normalizedSubjectKey === normalized),
+  );
+}
+
+function latestCompletedRefreshRequest(input: {
+  requests: DossierSourceFileRefreshRequest[];
+  candidate: DossierCandidate;
+}): DossierSourceFileRefreshRequest | undefined {
+  const normalized = normalizeName(input.candidate.name);
+  return input.requests.find(
+    (request) =>
+      request.status === "completed" &&
+      (request.candidateId === input.candidate.id ||
+        request.normalizedSubjectKey === normalized),
+  );
+}
+
+function sourceFileRefreshDedupeKey(
+  request: Pick<DossierSourceFileRefreshRequest, "candidateId" | "normalizedSubjectKey" | "subjectName">,
+): string {
+  const candidateKey = request.candidateId?.trim();
+  if (candidateKey) return `candidate:${candidateKey}`;
+  const normalizedSubjectKey = request.normalizedSubjectKey?.trim()
+    ? request.normalizedSubjectKey.trim()
+    : normalizeName(request.subjectName);
+  return `subject:${normalizedSubjectKey}`;
+}
+
+function mergeActiveSourceFileRefreshRequests(
+  requests: DossierSourceFileRefreshRequest[],
+): DossierSourceFileRefreshRequest[] {
+  const merged = new Map<string, DossierSourceFileRefreshRequest>();
+  const output: DossierSourceFileRefreshRequest[] = [];
+
+  for (const request of requests) {
+    if (!OPEN_REQUEST_STATUSES.has(request.status)) {
+      output.push(request);
+      continue;
+    }
+
+    const key = sourceFileRefreshDedupeKey(request);
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, request);
+      output.push(request);
+      continue;
+    }
+
+    const mergedRequest: DossierSourceFileRefreshRequest = {
+      ...existing,
+      candidateId: existing.candidateId ?? request.candidateId,
+      subjectName: existing.subjectName || request.subjectName,
+      normalizedSubjectKey:
+        existing.normalizedSubjectKey || request.normalizedSubjectKey,
+      reason: request.updatedAt >= existing.updatedAt ? request.reason : existing.reason,
+      requestSource:
+        request.updatedAt >= existing.updatedAt
+          ? request.requestSource
+          : existing.requestSource,
+      priority: Math.max(existing.priority ?? 0, request.priority ?? 0),
+      requestedAt:
+        request.requestedAt < existing.requestedAt
+          ? request.requestedAt
+          : existing.requestedAt,
+      requestedBy: request.requestedBy ?? existing.requestedBy,
+      updatedAt:
+        request.updatedAt > existing.updatedAt ? request.updatedAt : existing.updatedAt,
+      lastAttemptAt:
+        request.lastAttemptAt &&
+        (!existing.lastAttemptAt || request.lastAttemptAt > existing.lastAttemptAt)
+          ? request.lastAttemptAt
+          : existing.lastAttemptAt,
+    };
+    merged.set(key, mergedRequest);
+    const outputIndex = output.findIndex((item) => item.id === existing.id);
+    if (outputIndex >= 0) output[outputIndex] = mergedRequest;
+  }
+
+  return output;
+}
+
+export function evaluateDossierSourceFileRefresh(input: {
+  candidate: DossierCandidate;
+  recommendations: DossierRecommendation[];
+  refreshRequests?: DossierSourceFileRefreshRequest[];
+  now?: string;
+  staleAfterMs?: number;
+}): DossierSourceFileRefreshDecision {
+  const now = input.now ?? new Date().toISOString();
+  const staleAfterMs = input.staleAfterMs ?? DEFAULT_REFRESH_STALE_MS;
+  const latestRecommendation = latestBnlSourceFileRecommendation(input);
+  const latestRecommendationTimestamp = latestRecommendation
+    ? (latestRecommendation.ingestedAt ?? latestRecommendation.updatedAt ?? latestRecommendation.createdAt)
+    : undefined;
+  const latestSourceNoteTimestamp = latestActiveSourceNoteTimestamp(input.candidate);
+  const completed = latestCompletedRefreshRequest({
+    requests: input.refreshRequests ?? [],
+    candidate: input.candidate,
+  });
+  const completedAt = completed?.completedAt ? Date.parse(completed.completedAt) : NaN;
+  const nowTime = Date.parse(now);
+
+  if (
+    completed &&
+    !Number.isNaN(completedAt) &&
+    !Number.isNaN(nowTime) &&
+    nowTime - completedAt < OPEN_REFRESH_RECENT_COMPLETED_MS
+  ) {
+    return {
+      needed: false,
+      reason: "A BNL refresh completed recently.",
+      requestSource: "opened_source_file",
+      priority: 1,
+      latestRecommendationTimestamp,
+      latestSourceNoteTimestamp,
+    };
+  }
+
+  if (!latestRecommendationTimestamp) {
+    return {
+      needed: true,
+      reason: "No BNL Source File enrichment recommendation exists yet.",
+      requestSource: "missing_bnl_refresh",
+      priority: input.candidate.status === "existing_dossier_update" ? 70 : 60,
+      latestRecommendationTimestamp,
+      latestSourceNoteTimestamp,
+    };
+  }
+
+  const recommendationTime = Date.parse(latestRecommendationTimestamp);
+  const noteTime = latestSourceNoteTimestamp ? Date.parse(latestSourceNoteTimestamp) : NaN;
+  if (!Number.isNaN(noteTime) && !Number.isNaN(recommendationTime) && noteTime > recommendationTime) {
+    return {
+      needed: true,
+      reason: "Source file notes are newer than the latest BNL enrichment.",
+      requestSource: "source_notes_newer_than_bnl",
+      priority: 80,
+      latestRecommendationTimestamp,
+      latestSourceNoteTimestamp,
+    };
+  }
+
+  if (!Number.isNaN(recommendationTime) && !Number.isNaN(nowTime) && nowTime - recommendationTime > staleAfterMs) {
+    return {
+      needed: true,
+      reason: "Latest BNL Source File enrichment is older than the refresh policy threshold.",
+      requestSource: input.candidate.status === "existing_dossier_update" ? "existing_dossier_update_review" : "stale_source_file",
+      priority: input.candidate.status === "existing_dossier_update" ? 75 : 50,
+      latestRecommendationTimestamp,
+      latestSourceNoteTimestamp,
+    };
+  }
+
+  return {
+    needed: false,
+    reason: "Latest BNL Source File enrichment is fresh for the current source file notes.",
+    requestSource: "opened_source_file",
+    priority: 1,
+    latestRecommendationTimestamp,
+    latestSourceNoteTimestamp,
+  };
+}
+
+function upsertSourceFileRefreshRequestInState(input: {
+  state: DossierWorkflowState;
+  candidate: DossierCandidate;
+  reason: string;
+  requestSource: DossierSourceFileRefreshRequestSource;
+  priority: number;
+  requestedBy?: string;
+  now: string;
+  force?: boolean;
+}): { state: DossierWorkflowState; request: DossierSourceFileRefreshRequest; created: boolean } {
+  const state = {
+    ...input.state,
+    sourceFileRefreshRequests: mergeActiveSourceFileRefreshRequests(
+      input.state.sourceFileRefreshRequests,
+    ),
+  };
+  const normalizedSubjectKey = normalizeName(input.candidate.name);
+  const existingIndex = state.sourceFileRefreshRequests.findIndex(
+    (request) =>
+      OPEN_REQUEST_STATUSES.has(request.status) &&
+      (request.candidateId === input.candidate.id || request.normalizedSubjectKey === normalizedSubjectKey),
+  );
+  if (existingIndex >= 0) {
+    const existing = state.sourceFileRefreshRequests[existingIndex];
+    const updated: DossierSourceFileRefreshRequest = {
+      ...existing,
+      candidateId: existing.candidateId ?? input.candidate.id,
+      subjectName: existing.subjectName || input.candidate.name,
+      normalizedSubjectKey: existing.normalizedSubjectKey || normalizedSubjectKey,
+      reason: input.reason || existing.reason,
+      requestSource: input.requestSource,
+      priority: Math.max(existing.priority ?? 0, input.priority),
+      requestedBy: input.requestedBy ?? existing.requestedBy,
+      updatedAt: input.now,
+    };
+    const requests = [...state.sourceFileRefreshRequests];
+    requests[existingIndex] = updated;
+    return {
+      state: { ...state, sourceFileRefreshRequests: requests, updatedAt: input.now },
+      request: updated,
+      created: false,
+    };
+  }
+
+  if (!input.force) {
+    const recentCompleted = latestCompletedRefreshRequest({
+      requests: state.sourceFileRefreshRequests,
+      candidate: input.candidate,
+    });
+    const completedAt = recentCompleted?.completedAt ? Date.parse(recentCompleted.completedAt) : NaN;
+    const nowTime = Date.parse(input.now);
+    if (!Number.isNaN(completedAt) && !Number.isNaN(nowTime) && nowTime - completedAt < OPEN_REFRESH_RECENT_COMPLETED_MS) {
+      return { state, request: recentCompleted!, created: false };
+    }
+  }
+
+  const request: DossierSourceFileRefreshRequest = {
+    id: createSourceFileRefreshRequestId(),
+    candidateId: input.candidate.id,
+    subjectName: input.candidate.name,
+    normalizedSubjectKey,
+    status: "pending",
+    reason: input.reason,
+    requestedBy: input.requestedBy,
+    requestedAt: input.now,
+    updatedAt: input.now,
+    requestSource: input.requestSource,
+    priority: input.priority,
+  };
+  return {
+    state: {
+      ...state,
+      sourceFileRefreshRequests: [request, ...state.sourceFileRefreshRequests],
+      updatedAt: input.now,
+    },
+    request,
+    created: true,
+  };
+}
+
+export async function recordDossierSourceFileOpen(input: {
+  candidateId: string;
+  requestedBy?: string;
+}): Promise<{ request: DossierSourceFileRefreshRequest | null; decision: DossierSourceFileRefreshDecision; created: boolean }> {
+  const now = new Date().toISOString();
+  let result: { request: DossierSourceFileRefreshRequest | null; decision: DossierSourceFileRefreshDecision; created: boolean } | null = null;
+  await updateDossierWorkflowState((currentState) => {
+    const candidate = currentState.candidates.find((item) => item.id === input.candidateId);
+    if (!candidate || !isSourceFileEnrichmentAttachableCandidate(candidate)) {
+      result = {
+        request: null,
+        decision: { needed: false, reason: "Source File candidate was not found or is closed.", requestSource: "opened_source_file", priority: 1 },
+        created: false,
+      };
+      return currentState;
+    }
+    const decision = evaluateDossierSourceFileRefresh({
+      candidate,
+      recommendations: currentState.recommendations,
+      refreshRequests: currentState.sourceFileRefreshRequests,
+      now,
+    });
+    const existingOpenRequest = latestOpenRefreshRequest({
+      requests: mergeActiveSourceFileRefreshRequests(
+        currentState.sourceFileRefreshRequests,
+      ),
+      candidate,
+    });
+    if (!decision.needed || existingOpenRequest) {
+      result = { request: existingOpenRequest ?? null, decision, created: false };
+      return existingOpenRequest
+        ? {
+            ...currentState,
+            sourceFileRefreshRequests: mergeActiveSourceFileRefreshRequests(
+              currentState.sourceFileRefreshRequests,
+            ),
+          }
+        : currentState;
+    }
+    const upserted = upsertSourceFileRefreshRequestInState({
+      state: currentState,
+      candidate,
+      reason: decision.reason,
+      requestSource: decision.requestSource === "opened_source_file" ? "opened_source_file" : decision.requestSource,
+      priority: decision.priority,
+      requestedBy: input.requestedBy ?? "admin_open_source_file",
+      now,
+    });
+    result = { request: upserted.request, decision, created: upserted.created };
+    return upserted.state;
+  });
+  return result!;
+}
+
+export async function requestDossierSourceFileRefresh(input: {
+  candidateId: string;
+  reason?: string;
+  requestSource?: DossierSourceFileRefreshRequestSource;
+  requestedBy?: string;
+  priority?: number;
+}): Promise<{ request: DossierSourceFileRefreshRequest; created: boolean }> {
+  const now = new Date().toISOString();
+  let result: { request: DossierSourceFileRefreshRequest; created: boolean } | null = null;
+  await updateDossierWorkflowState((currentState) => {
+    const candidate = currentState.candidates.find((item) => item.id === input.candidateId);
+    if (!candidate || !isSourceFileEnrichmentAttachableCandidate(candidate)) {
+      throw new DossierWorkflowInputError("Source File candidate was not found or cannot be refreshed");
+    }
+    const upserted = upsertSourceFileRefreshRequestInState({
+      state: currentState,
+      candidate,
+      reason: input.reason?.trim() || "Manual admin requested a BNL Source File refresh.",
+      requestSource: input.requestSource ?? "manual_admin",
+      priority: input.priority ?? 90,
+      requestedBy: input.requestedBy ?? "admin_manual",
+      now,
+      force: true,
+    });
+    result = { request: upserted.request, created: upserted.created };
+    return upserted.state;
+  });
+  return result!;
+}
+
+export async function listPendingDossierSourceFileRefreshRequests(limit = 25): Promise<DossierSourceFileRefreshRequest[]> {
+  const state = await getDossierWorkflowState();
+  return state.sourceFileRefreshRequests
+    .filter((request) => request.status === "pending")
+    .sort((a, b) => (b.priority - a.priority) || a.requestedAt.localeCompare(b.requestedAt))
+    .slice(0, Math.max(1, Math.min(100, limit)));
+}
+
+export async function updateDossierSourceFileRefreshRequestStatus(input: {
+  requestId: string;
+  status: DossierSourceFileRefreshRequestStatus;
+  completedByRecommendationId?: string;
+  failureReason?: string;
+}): Promise<DossierSourceFileRefreshRequest | null> {
+  const now = new Date().toISOString();
+  let updated: DossierSourceFileRefreshRequest | null = null;
+  await updateDossierWorkflowState((currentState) => {
+    const activeDedupedRequests = mergeActiveSourceFileRefreshRequests(
+      currentState.sourceFileRefreshRequests,
+    );
+    const requests = activeDedupedRequests.map((request) => {
+      if (request.id !== input.requestId) return request;
+      updated = {
+        ...request,
+        status: input.status,
+        updatedAt: now,
+        lastAttemptAt: input.status === "claimed" ? now : request.lastAttemptAt,
+        completedAt: input.status === "completed" || input.status === "skipped" ? now : request.completedAt,
+        completedByRecommendationId: input.completedByRecommendationId ?? request.completedByRecommendationId,
+        failureReason: input.failureReason ?? request.failureReason,
+      };
+      return updated;
+    });
+    return updated ? { ...currentState, sourceFileRefreshRequests: requests, updatedAt: now } : currentState;
+  });
+  return updated;
+}
+
+function completeMatchingRefreshRequestsInState(input: {
+  state: DossierWorkflowState;
+  recommendation: DossierRecommendation;
+  now: string;
+}): DossierWorkflowState {
+  if (input.recommendation.ingestSource !== "bnl_source_file_enrichment") return input.state;
+  const normalizedSubjectKey = normalizeName(
+    input.recommendation.subjectKey || input.recommendation.subjectName,
+  );
+  const targetCandidateId = input.recommendation.targetCandidateId;
+  let changed = false;
+  const activeDedupedRequests = mergeActiveSourceFileRefreshRequests(
+    input.state.sourceFileRefreshRequests,
+  );
+  const requests = activeDedupedRequests.map((request) => {
+    const matches =
+      COMPLETABLE_REFRESH_STATUSES.has(request.status) &&
+      ((targetCandidateId && request.candidateId === targetCandidateId) ||
+        request.normalizedSubjectKey === normalizedSubjectKey ||
+        normalizeName(request.subjectName) === normalizeName(input.recommendation.subjectName));
+    if (!matches) return request;
+    changed = true;
+    return {
+      ...request,
+      status: "completed" as const,
+      completedAt: input.now,
+      completedByRecommendationId: input.recommendation.id,
+      updatedAt: input.now,
+    };
+  });
+  return changed ? { ...input.state, sourceFileRefreshRequests: requests, updatedAt: input.now } : input.state;
+}
+
 export async function createDossierRecommendationIdempotent(
   input: CreateDossierRecommendationInput,
 ): Promise<{
@@ -1806,6 +2266,16 @@ export async function createDossierRecommendationIdempotent(
       updatedAt: now,
     };
   });
+
+  if (savedRecommendation.ingestSource === "bnl_source_file_enrichment") {
+    await updateDossierWorkflowState((currentState) =>
+      completeMatchingRefreshRequestsInState({
+        state: currentState,
+        recommendation: savedRecommendation,
+        now,
+      }),
+    );
+  }
 
   return {
     recommendation: savedRecommendation,

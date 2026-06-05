@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   getDossierSourceFileMetrics,
+  normalizeDossierSubjectName,
   type DossierCandidate,
   type DossierDraft,
   type DossierDuplicateGroup,
@@ -14,6 +15,7 @@ import {
   type DossierIdentityLinkType,
   type DossierIdentityLinkVisibility,
   type DossierRecommendation,
+  type DossierSourceFileRefreshRequest,
   type DossierSourceFileNoteType,
 } from "@/lib/dossier-workflow";
 import { DossierSourceFileSummaryPanel } from "@/components/DossierSourceFileSummaryPanel";
@@ -32,6 +34,7 @@ type WorkflowPayload = {
   drafts: DossierDraft[];
   duplicateGroups: DossierDuplicateGroup[];
   recommendations: DossierRecommendation[];
+  sourceFileRefreshRequests: DossierSourceFileRefreshRequest[];
   workflow: { status: string };
   publicDossiers?: Array<{ id: string; name: string }>;
 };
@@ -573,7 +576,17 @@ export default function CandidateReviewPage() {
           ? "Admin authentication required"
           : `Workflow API returned ${response.status}.`,
       );
-    setPayload((await response.json()) as WorkflowPayload);
+    const data = (await response.json()) as WorkflowPayload;
+    setPayload(data);
+
+    const openResponse = await fetch("/api/admin/dossiers", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "recordSourceFileOpen", candidateId }),
+    });
+    if (openResponse.ok) {
+      setPayload((await openResponse.json()) as WorkflowPayload);
+    }
   }
 
   useEffect(() => {
@@ -649,6 +662,52 @@ export default function CandidateReviewPage() {
     .filter(Boolean)
     .sort()
     .at(-1);
+  const candidateRefreshKey = candidate
+    ? normalizeDossierSubjectName(candidate.name)
+    : "";
+  const refreshRequests = (payload?.sourceFileRefreshRequests ?? []).filter(
+    (request) =>
+      request.candidateId === candidate?.id ||
+      request.normalizedSubjectKey === candidateRefreshKey,
+  );
+  const activeRefreshRequest = refreshRequests
+    .filter(
+      (request) => request.status === "pending" || request.status === "claimed",
+    )
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  const latestRefreshRequest =
+    activeRefreshRequest ??
+    [...refreshRequests].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  const refreshStatusLabel = latestRefreshRequest
+    ? latestRefreshRequest.status === "pending"
+      ? "BNL refresh requested"
+      : latestRefreshRequest.status === "claimed"
+        ? "BNL refresh in progress"
+        : latestRefreshRequest.status === "completed"
+          ? "BNL refresh completed"
+          : latestRefreshRequest.status === "failed"
+            ? "BNL refresh failed"
+            : latestRefreshRequest.status
+    : "No refresh requested";
+  const refreshStatusDetail = latestRefreshRequest
+    ? latestRefreshRequest.status === "pending"
+      ? "Waiting for BNL. This Source File has not been refreshed yet."
+      : latestRefreshRequest.status === "claimed"
+        ? "BNL has claimed this request and is processing it. This Source File has not been marked refreshed yet."
+        : latestRefreshRequest.status === "completed"
+          ? `Completed ${formatDate(latestRefreshRequest.completedAt)}${
+              latestRefreshRequest.completedByRecommendationId
+                ? ` by recommendation ${latestRefreshRequest.completedByRecommendationId}`
+                : ""
+            }.`
+          : latestRefreshRequest.status === "failed"
+            ? `Refresh failed${
+                latestRefreshRequest.failureReason
+                  ? `: ${latestRefreshRequest.failureReason}`
+                  : "."
+              }`
+            : "Refresh request is no longer active."
+    : "No refresh requested.";
   const sourceFileSummary = candidate
     ? createDossierSourceFileSummary({
         candidate,
@@ -717,6 +776,10 @@ export default function CandidateReviewPage() {
         .catch(() => ({}))) as Partial<WorkflowPayload> & {
         candidate?: DossierCandidate;
         draft?: DossierDraft;
+        refresh?: {
+          created?: boolean;
+          request?: DossierSourceFileRefreshRequest;
+        };
         error?: string;
         message?: string;
       };
@@ -731,6 +794,30 @@ export default function CandidateReviewPage() {
       return data;
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function requestBnlRefresh() {
+    if (!candidate) return;
+    try {
+      const data = await postWorkflow({
+        action: "requestSourceFileRefresh",
+        candidateId,
+        reason: "Manual admin requested a BNL Source File refresh.",
+      });
+      const refresh = data.refresh;
+      setNotice(
+        refresh?.created === false
+          ? "BNL refresh already requested. Waiting for BNL to process it through the Source File refresh worker."
+          : data.message ??
+              "BNL refresh requested. BNL will process this through the Source File refresh worker.",
+      );
+    } catch (err) {
+      setNotice(
+        err instanceof Error
+          ? err.message
+          : "Failed to request BNL Source File refresh.",
+      );
     }
   }
 
@@ -997,6 +1084,12 @@ export default function CandidateReviewPage() {
             </div>
             <div className="border border-border bg-background/30 p-3">
               <p className="uppercase tracking-widest text-accent">
+                Refresh status
+              </p>
+              <p>{refreshStatusLabel}</p>
+            </div>
+            <div className="border border-border bg-background/30 p-3">
+              <p className="uppercase tracking-widest text-accent">
                 Source notes
               </p>
               <p>{sourceMetrics?.sourceNotesCount ?? 0}</p>
@@ -1031,6 +1124,29 @@ export default function CandidateReviewPage() {
                 </p>
               </div>
             )}
+          <div className="mt-4 border border-border bg-background/30 p-3 text-sm text-muted">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-widest text-accent">
+                  Source File Refresh
+                </p>
+                <p className="text-foreground">{refreshStatusLabel}</p>
+                <p className="mt-1">{refreshStatusDetail}</p>
+                {latestRefreshRequest && (
+                  <p className="mt-1">Reason: {latestRefreshRequest.reason}</p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => void requestBnlRefresh()}
+                disabled={saving || !candidate}
+                className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+              >
+                Request BNL Refresh
+              </button>
+            </div>
+          </div>
+
           <div className="mt-5 flex flex-wrap gap-3 text-xs uppercase tracking-widest">
             <Link
               href="/admin/dossiers"

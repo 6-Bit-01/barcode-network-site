@@ -536,6 +536,152 @@ test("bot can mark Source File refresh request failed without public workflow si
   assert.equal(state.candidates.some((candidate) => candidate.id === candidateId), true);
 });
 
+
+test("Source File display recommendations prefer completed and newest BNL enrichments without pending false refresh", () => {
+  const now = "2026-06-01T00:00:00.000Z";
+  const candidate = {
+    id: "source-refresh-candidate",
+    name: "Source Refresh Subject",
+    candidateType: "artist",
+    source: "manual",
+    tier: "review_candidate",
+    score: 5,
+    whyNow: "Refresh selection test.",
+    reason: "Refresh selection test.",
+    evidenceSummary: "Existing source-file fallback evidence.",
+    sourceFileNotes: [],
+    status: "active_source_file",
+    createdAt: now,
+    updatedAt: now,
+  };
+  const olderBnl = {
+    id: "older-bnl-rec",
+    type: "new_subject",
+    subjectName: candidate.name,
+    targetCandidateId: candidate.id,
+    status: "attached_to_source_file",
+    reason: "Older BNL refresh reason.",
+    evidenceSummary: "Older BNL evidence should not control the Source File.",
+    knownContext: ["Older BNL known context."],
+    usefulEvidence: ["Older BNL useful evidence."],
+    sourceLanes: ["rd_context"],
+    createdAt: "2026-06-01T00:00:00.000Z",
+    updatedAt: "2026-06-01T00:00:00.000Z",
+    ingestedAt: "2026-06-01T00:00:00.000Z",
+    ingestSource: "bnl_source_file_enrichment",
+  };
+  const newerBnl = {
+    ...olderBnl,
+    id: "newer-bnl-rec",
+    reason: "Newer BNL refresh reason.",
+    evidenceSummary: "Newer BNL evidence controls the Source File.",
+    knownContext: ["Newer BNL known context."],
+    usefulEvidence: ["Newer BNL useful evidence."],
+    createdAt: "2026-06-02T00:00:00.000Z",
+    updatedAt: "2026-06-02T00:00:00.000Z",
+    ingestedAt: "2026-06-02T00:00:00.000Z",
+  };
+  const pendingRequest = {
+    id: "pending-refresh-request",
+    candidateId: candidate.id,
+    subjectName: candidate.name,
+    normalizedSubjectKey: workflow.normalizeDossierSubjectName(candidate.name),
+    status: "pending",
+    reason: "Pending refresh should not claim fresh data yet.",
+    requestedAt: "2026-06-03T00:00:00.000Z",
+    updatedAt: "2026-06-03T00:00:00.000Z",
+    requestSource: "manual_admin",
+    priority: 90,
+  };
+  const completedRequest = {
+    ...pendingRequest,
+    id: "completed-refresh-request",
+    status: "completed",
+    completedAt: "2026-06-04T00:00:00.000Z",
+    updatedAt: "2026-06-04T00:00:00.000Z",
+    completedByRecommendationId: newerBnl.id,
+  };
+
+  const completedSelection = sourceFileSummary.selectDossierSourceFileDisplayRecommendations({
+    candidate,
+    recommendations: [olderBnl, newerBnl],
+    refreshRequests: [completedRequest],
+  });
+  assert.equal(completedSelection[0].id, newerBnl.id);
+  const completedSummary = sourceFileSummary.createDossierSourceFileSummary({
+    candidate,
+    recommendations: completedSelection,
+  });
+  assert.deepEqual(completedSummary.knownContext, ["Newer BNL known context."]);
+  assert.match(completedSummary.usefulEvidence.join(" "), /Newer BNL evidence controls/);
+  assert.doesNotMatch(completedSummary.knownContext.join(" "), /Older BNL/);
+
+  const newestFallbackSelection = sourceFileSummary.selectDossierSourceFileDisplayRecommendations({
+    candidate,
+    recommendations: [olderBnl, newerBnl],
+    refreshRequests: [],
+  });
+  assert.equal(newestFallbackSelection[0].id, newerBnl.id);
+
+  const subjectKeyFallbackSelection = sourceFileSummary.selectDossierSourceFileDisplayRecommendations({
+    candidate,
+    recommendations: [
+      olderBnl,
+      {
+        ...newerBnl,
+        id: "subject-key-bnl-rec",
+        targetCandidateId: undefined,
+        subjectKey: workflow.normalizeDossierSubjectName(candidate.name),
+        knownContext: ["Subject-key BNL known context."],
+        updatedAt: "2026-06-05T00:00:00.000Z",
+        ingestedAt: "2026-06-05T00:00:00.000Z",
+      },
+    ],
+    refreshRequests: [],
+  });
+  assert.equal(subjectKeyFallbackSelection[0].id, olderBnl.id);
+
+  const pendingSelection = sourceFileSummary.selectDossierSourceFileDisplayRecommendations({
+    candidate,
+    recommendations: [olderBnl],
+    refreshRequests: [pendingRequest],
+  });
+  const pendingSummary = sourceFileSummary.createDossierSourceFileSummary({
+    candidate,
+    recommendations: pendingSelection,
+  });
+  assert.equal(pendingSelection[0].id, olderBnl.id);
+  assert.match(pendingSummary.usefulEvidence.join(" "), /Older BNL evidence/);
+});
+
+test("admin Source File page polls pending refreshes, stops on terminal state, and preserves UI sections", () => {
+  const page = source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+  const pageCopy = `${normalizedSource("src/app/admin/dossiers/candidates/[candidateId]/page.tsx")} ${normalizedSource("src/components/DossierSourceFileSummaryPanel.tsx")}`;
+
+  assert.match(page, /window\.setInterval/);
+  assert.match(page, /pollForRefreshCompletion/);
+  assert.match(page, /request\.status === "pending" \|\| request\.status === "claimed"/);
+  assert.match(page, /fetchWorkflowPayload\(\)/);
+  assert.match(page, /router\.refresh\(\)/);
+  assert.match(page, /window\.clearInterval\(interval\)/);
+  assert.match(page, /latestRefreshRequest\.status === "completed"[\s\S]*Completed/);
+  assert.match(page, /latestRefreshRequest\.status === "failed"[\s\S]*failureReason/);
+  assert.match(page, /completedByRecommendationId/);
+
+  for (const label of [
+    "Review Snapshot",
+    "What BNL Knows",
+    "Evidence receipts",
+    "Source Notes / Admin Addendums",
+    "Identity / Alias Review",
+    "Phase 4 — Owner Review",
+    "Diagnostics — collapsed by default",
+  ]) {
+    assertIncludesCopy(pageCopy, label);
+  }
+  assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
+});
+
 test("taxonomy source types, entry annotations, and tag aliases are present", () => {
   const contentSource = source("src/content.ts");
   const tagSource = source("src/lib/dossier-tags.ts");

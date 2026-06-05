@@ -2,7 +2,9 @@ import type {
   DossierCandidate,
   DossierDraft,
   DossierRecommendation,
+  DossierSourceFileRefreshRequest,
 } from "./dossier-workflow";
+import { normalizeDossierSubjectName } from "./dossier-workflow";
 import {
   containsDossierBackendJunk,
   hasDossierMeaningfulPattern,
@@ -230,6 +232,130 @@ function nextActionCopy(action: DossierSourceFileNextAction) {
   return "Add real context: repeated appearances, channel notes, public-safe facts, missing history, and owner/admin review notes.";
 }
 
+function recommendationTimestamp(recommendation: DossierRecommendation) {
+  return (
+    recommendation.ingestedAt ??
+    recommendation.updatedAt ??
+    recommendation.createdAt ??
+    ""
+  );
+}
+
+function sortRecommendationsNewestFirst(
+  recommendations: DossierRecommendation[],
+): DossierRecommendation[] {
+  return [...recommendations].sort((a, b) => {
+    const timestampComparison = recommendationTimestamp(b).localeCompare(
+      recommendationTimestamp(a),
+    );
+    if (timestampComparison !== 0) return timestampComparison;
+    return b.id.localeCompare(a.id);
+  });
+}
+
+function isBnlSourceFileEnrichment(recommendation: DossierRecommendation) {
+  return recommendation.ingestSource === "bnl_source_file_enrichment";
+}
+
+function isRecommendationRelevantToCandidate(input: {
+  recommendation: DossierRecommendation;
+  candidate: DossierCandidate;
+}) {
+  const { recommendation, candidate } = input;
+  if (recommendation.targetCandidateId) {
+    return recommendation.targetCandidateId === candidate.id;
+  }
+  return (
+    normalizeDossierSubjectName(
+      recommendation.subjectKey || recommendation.subjectName,
+    ) === normalizeDossierSubjectName(candidate.name)
+  );
+}
+
+function latestCompletedRefreshRequest(input: {
+  candidate: DossierCandidate;
+  refreshRequests?: DossierSourceFileRefreshRequest[];
+}) {
+  const candidateSubjectKey = normalizeDossierSubjectName(input.candidate.name);
+  return (input.refreshRequests ?? [])
+    .filter(
+      (request) =>
+        request.status === "completed" &&
+        (request.candidateId === input.candidate.id ||
+          request.normalizedSubjectKey === candidateSubjectKey),
+    )
+    .sort((a, b) =>
+      (b.completedAt ?? b.updatedAt).localeCompare(
+        a.completedAt ?? a.updatedAt,
+      ),
+    )[0];
+}
+
+export function selectDossierSourceFileDisplayRecommendations(input: {
+  candidate: DossierCandidate;
+  recommendations?: DossierRecommendation[];
+  refreshRequests?: DossierSourceFileRefreshRequest[];
+}): DossierRecommendation[] {
+  const recommendations = input.recommendations ?? [];
+  const relevantRecommendations = recommendations.filter((recommendation) =>
+    isRecommendationRelevantToCandidate({
+      recommendation,
+      candidate: input.candidate,
+    }),
+  );
+  const completedRefresh = latestCompletedRefreshRequest({
+    candidate: input.candidate,
+    refreshRequests: input.refreshRequests,
+  });
+  const completedRefreshRecommendation =
+    completedRefresh?.completedByRecommendationId
+      ? relevantRecommendations.find(
+          (recommendation) =>
+            recommendation.id ===
+              completedRefresh.completedByRecommendationId &&
+            isBnlSourceFileEnrichment(recommendation),
+        )
+      : undefined;
+  const newestTargetedEnrichment = sortRecommendationsNewestFirst(
+    relevantRecommendations.filter(
+      (recommendation) =>
+        isBnlSourceFileEnrichment(recommendation) &&
+        recommendation.targetCandidateId === input.candidate.id,
+    ),
+  )[0];
+  const candidateSubjectKey = normalizeDossierSubjectName(input.candidate.name);
+  const newestSubjectKeyEnrichment = sortRecommendationsNewestFirst(
+    relevantRecommendations.filter(
+      (recommendation) =>
+        isBnlSourceFileEnrichment(recommendation) &&
+        !recommendation.targetCandidateId &&
+        normalizeDossierSubjectName(
+          recommendation.subjectKey || recommendation.subjectName,
+        ) === candidateSubjectKey,
+    ),
+  )[0];
+
+  const selectedEnrichment =
+    completedRefreshRecommendation ??
+    newestTargetedEnrichment ??
+    newestSubjectKeyEnrichment;
+
+  if (!selectedEnrichment) {
+    return sortRecommendationsNewestFirst(relevantRecommendations);
+  }
+
+  return [
+    selectedEnrichment,
+    ...sortRecommendationsNewestFirst(
+      relevantRecommendations.filter(
+        (recommendation) =>
+          recommendation.id !== selectedEnrichment.id &&
+          !isBnlSourceFileEnrichment(recommendation),
+      ),
+    ),
+  ];
+}
+
 export function createDossierSourceFileSummary(
   input: SummaryInput,
 ): DossierSourceFileSummary {
@@ -304,14 +430,16 @@ export function createDossierSourceFileSummary(
     6,
   );
   const structuredNotPublicYet = unique(
-    recommendations.flatMap((recommendation) =>
-      recommendation.notPublicYet ?? [],
+    recommendations.flatMap(
+      (recommendation) => recommendation.notPublicYet ?? [],
     ),
     6,
   );
 
   const structuredObservedChannels = unique(
-    recommendations.flatMap((recommendation) => recommendation.observedChannels ?? []),
+    recommendations.flatMap(
+      (recommendation) => recommendation.observedChannels ?? [],
+    ),
     6,
   );
   const structuredConversationHighlights = unique(
@@ -321,7 +449,9 @@ export function createDossierSourceFileSummary(
     6,
   );
   const structuredTopicBreakdown = unique(
-    recommendations.flatMap((recommendation) => recommendation.topicBreakdown ?? []),
+    recommendations.flatMap(
+      (recommendation) => recommendation.topicBreakdown ?? [],
+    ),
     6,
   );
   const structuredBestEvidenceToReview = unique(
@@ -337,7 +467,9 @@ export function createDossierSourceFileSummary(
     6,
   );
   const structuredMusicSignals = unique(
-    recommendations.flatMap((recommendation) => recommendation.musicSignals ?? []),
+    recommendations.flatMap(
+      (recommendation) => recommendation.musicSignals ?? [],
+    ),
     6,
   );
   const structuredCommunitySignals = unique(
@@ -347,35 +479,51 @@ export function createDossierSourceFileSummary(
     6,
   );
   const structuredSourceCoverage = unique(
-    recommendations.flatMap((recommendation) => recommendation.sourceCoverage ?? []),
+    recommendations.flatMap(
+      (recommendation) => recommendation.sourceCoverage ?? [],
+    ),
     6,
   );
   const structuredEvidenceDetails = unique(
-    recommendations.flatMap((recommendation) => recommendation.evidenceDetails ?? []),
+    recommendations.flatMap(
+      (recommendation) => recommendation.evidenceDetails ?? [],
+    ),
     6,
   );
   const structuredRepresentativeEvidence = unique(
-    recommendations.flatMap((recommendation) => recommendation.representativeEvidence ?? []),
+    recommendations.flatMap(
+      (recommendation) => recommendation.representativeEvidence ?? [],
+    ),
     8,
   );
   const structuredActivityFrequencySummary = unique(
-    recommendations.flatMap((recommendation) => recommendation.activityFrequencySummary ?? []),
+    recommendations.flatMap(
+      (recommendation) => recommendation.activityFrequencySummary ?? [],
+    ),
     4,
   );
   const structuredTopChannels = unique(
-    recommendations.flatMap((recommendation) => recommendation.topChannels ?? []),
+    recommendations.flatMap(
+      (recommendation) => recommendation.topChannels ?? [],
+    ),
     6,
   );
   const structuredTopTopicDetails = unique(
-    recommendations.flatMap((recommendation) => recommendation.topTopicDetails ?? []),
+    recommendations.flatMap(
+      (recommendation) => recommendation.topTopicDetails ?? [],
+    ),
     6,
   );
   const structuredRecentActivitySummary = unique(
-    recommendations.flatMap((recommendation) => recommendation.recentActivitySummary ?? []),
+    recommendations.flatMap(
+      (recommendation) => recommendation.recentActivitySummary ?? [],
+    ),
     4,
   );
   const structuredAuthoredVsMentionedSummary = unique(
-    recommendations.flatMap((recommendation) => recommendation.authoredVsMentionedSummary ?? []),
+    recommendations.flatMap(
+      (recommendation) => recommendation.authoredVsMentionedSummary ?? [],
+    ),
     4,
   );
   const structuredPublicUseCandidates = unique(
@@ -392,7 +540,8 @@ export function createDossierSourceFileSummary(
   );
   const queueRecommendation = recommendations.find(
     (recommendation) =>
-      recommendation.queueSubmissionStatus || recommendation.queueSubmissionNote,
+      recommendation.queueSubmissionStatus ||
+      recommendation.queueSubmissionNote,
   );
   const structuredRecommendedAction = unique(
     recommendations.map((recommendation) => recommendation.recommendedAction),
@@ -562,7 +711,9 @@ export function createDossierSourceFileSummary(
     privateRelationshipContext:
       structuredRelationshipSignals.length > 0
         ? structuredRelationshipSignals
-        : ["No private relationship/context signals are recorded in the structured packet."],
+        : [
+            "No private relationship/context signals are recorded in the structured packet.",
+          ],
     publicSafePossibilities:
       structuredPublicSafePossibilities.length > 0
         ? structuredPublicSafePossibilities
@@ -613,7 +764,9 @@ export function createDossierSourceFileSummary(
         ? structuredSourceAuthority
         : ["Source authority has not been separated from confidence yet."],
     recommendedNextAction:
-      operatorNextAction ?? structuredRecommendedAction ?? nextActionCopy(action),
+      operatorNextAction ??
+      structuredRecommendedAction ??
+      nextActionCopy(action),
     substanceLevel: level,
     publicReadiness: readiness,
     existingPublicDossier: candidate.existingDossierMatch

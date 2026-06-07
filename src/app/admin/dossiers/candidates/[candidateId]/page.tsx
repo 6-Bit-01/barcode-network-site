@@ -136,6 +136,115 @@ const identityReviewNotice: Record<
   retireDossierIdentityLink: "Identity link retired. It is no longer active.",
 };
 
+const openRefreshStatuses = new Set<DossierSourceFileRefreshRequest["status"]>([
+  "pending",
+  "claimed",
+]);
+
+function isOpenRefreshRequest(request?: DossierSourceFileRefreshRequest | null) {
+  return Boolean(request && openRefreshStatuses.has(request.status));
+}
+
+function refreshRequestMatchesCandidate(input: {
+  request: DossierSourceFileRefreshRequest;
+  candidateId: string;
+  normalizedSubjectKey: string;
+}) {
+  return (
+    input.request.candidateId === input.candidateId ||
+    input.request.normalizedSubjectKey === input.normalizedSubjectKey
+  );
+}
+
+function latestMatchingRefreshRequest(input: {
+  requests: DossierSourceFileRefreshRequest[];
+  candidateId: string;
+  normalizedSubjectKey: string;
+  requestId?: string;
+}) {
+  const matchingRequests = input.requests.filter((request) =>
+    input.requestId
+      ? request.id === input.requestId ||
+        refreshRequestMatchesCandidate({
+          request,
+          candidateId: input.candidateId,
+          normalizedSubjectKey: input.normalizedSubjectKey,
+        })
+      : refreshRequestMatchesCandidate({
+          request,
+          candidateId: input.candidateId,
+          normalizedSubjectKey: input.normalizedSubjectKey,
+        }),
+  );
+
+  const exactRequest = input.requestId
+    ? matchingRequests.find((request) => request.id === input.requestId)
+    : undefined;
+  return (
+    exactRequest ??
+    matchingRequests.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
+  );
+}
+
+function isBnlSourceFileEnrichment(recommendation: DossierRecommendation) {
+  return recommendation.ingestSource === "bnl_source_file_enrichment";
+}
+
+function recommendationTimestamp(recommendation: DossierRecommendation) {
+  return (
+    recommendation.updatedAt ??
+    recommendation.ingestedAt ??
+    recommendation.createdAt
+  );
+}
+
+function latestBnlSourceFileEnrichment(input: {
+  candidate: DossierCandidate;
+  recommendations: DossierRecommendation[];
+}) {
+  const candidateSubjectKey = normalizeDossierSubjectName(input.candidate.name);
+  const newestForCandidate = (recommendations: DossierRecommendation[]) =>
+    [...recommendations].sort((a, b) =>
+      recommendationTimestamp(b).localeCompare(recommendationTimestamp(a)),
+    )[0];
+
+  return (
+    newestForCandidate(
+      input.recommendations.filter(
+        (recommendation) =>
+          isBnlSourceFileEnrichment(recommendation) &&
+          recommendation.targetCandidateId === input.candidate.id,
+      ),
+    ) ??
+    newestForCandidate(
+      input.recommendations.filter(
+        (recommendation) =>
+          isBnlSourceFileEnrichment(recommendation) &&
+          !recommendation.targetCandidateId &&
+          normalizeDossierSubjectName(
+            recommendation.subjectKey || recommendation.subjectName,
+          ) === candidateSubjectKey,
+      ),
+    )
+  );
+}
+
+function requestResolvedByNewerEnrichment(input: {
+  request?: DossierSourceFileRefreshRequest;
+  recommendation?: DossierRecommendation;
+}) {
+  if (!input.request || !isOpenRefreshRequest(input.request)) return false;
+  const recommendationTimestampValue = input.recommendation
+    ? Date.parse(recommendationTimestamp(input.recommendation))
+    : NaN;
+  const requestedAt = Date.parse(input.request.requestedAt);
+  return (
+    !Number.isNaN(recommendationTimestampValue) &&
+    !Number.isNaN(requestedAt) &&
+    recommendationTimestampValue > requestedAt
+  );
+}
+
 function routeParam(value: string | string[] | undefined) {
   const raw = Array.isArray(value) ? value[0] : value;
   return raw ? decodeURIComponent(raw) : "";
@@ -571,9 +680,18 @@ export default function CandidateReviewPage() {
   );
   const [selectedExistingDossierId, setSelectedExistingDossierId] =
     useState("");
+  const [refreshPollingTarget, setRefreshPollingTarget] = useState<{
+    requestId?: string;
+    candidateId: string;
+  } | null>(null);
 
-  async function fetchWorkflowPayload() {
-    const response = await fetch("/api/admin/dossiers", { cache: "no-store" });
+  async function fetchWorkflowPayload(options: { cacheBust?: boolean } = {}) {
+    const response = await fetch(
+      options.cacheBust
+        ? `/api/admin/dossiers?refresh=${Date.now()}`
+        : "/api/admin/dossiers",
+      { cache: "no-store" },
+    );
     if (!response.ok)
       throw new Error(
         response.status === 401
@@ -595,7 +713,19 @@ export default function CandidateReviewPage() {
       body: JSON.stringify({ action: "recordSourceFileOpen", candidateId }),
     });
     if (openResponse.ok) {
-      setPayload((await openResponse.json()) as WorkflowPayload);
+      const openPayload = (await openResponse.json()) as WorkflowPayload & {
+        refresh?: { request?: DossierSourceFileRefreshRequest | null };
+      };
+      setPayload(openPayload);
+      if (
+        openPayload.refresh?.request &&
+        isOpenRefreshRequest(openPayload.refresh.request)
+      ) {
+        setRefreshPollingTarget({
+          candidateId,
+          requestId: openPayload.refresh.request.id,
+        });
+      }
     }
   }
 
@@ -615,41 +745,78 @@ export default function CandidateReviewPage() {
   }, [candidateId]);
 
   useEffect(() => {
-    const candidateSubjectKey = payload?.candidates.find(
-      (item) => item.id === candidateId,
-    )?.name;
-    if (!candidateSubjectKey) return;
-    const normalizedSubjectKey =
-      normalizeDossierSubjectName(candidateSubjectKey);
-    const pendingRefreshRequest = payload?.sourceFileRefreshRequests
-      .filter(
-        (request) =>
-          (request.candidateId === candidateId ||
-            request.normalizedSubjectKey === normalizedSubjectKey) &&
-          (request.status === "pending" || request.status === "claimed"),
-      )
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
-    if (!pendingRefreshRequest) return;
+    const candidate = payload?.candidates.find((item) => item.id === candidateId);
+    if (!candidate) return;
+    const normalizedSubjectKey = normalizeDossierSubjectName(candidate.name);
+    const pendingRefreshRequest = latestMatchingRefreshRequest({
+      requests: payload?.sourceFileRefreshRequests ?? [],
+      candidateId,
+      normalizedSubjectKey,
+      requestId: refreshPollingTarget?.requestId,
+    });
+    const latestEnrichment = latestBnlSourceFileEnrichment({
+      candidate,
+      recommendations: payload?.recommendations ?? [],
+    });
+    const isResolvedByEnrichment = requestResolvedByNewerEnrichment({
+      request: pendingRefreshRequest,
+      recommendation: latestEnrichment,
+    });
+    if (!isOpenRefreshRequest(pendingRefreshRequest) || isResolvedByEnrichment) {
+      if (isResolvedByEnrichment) {
+        setRefreshPollingTarget(null);
+      }
+      return;
+    }
 
     let cancelled = false;
     const pollForRefreshCompletion = async () => {
       try {
-        const freshPayload = await fetchWorkflowPayload();
+        const freshPayload = await fetchWorkflowPayload({ cacheBust: true });
         if (cancelled) return;
         setPayload(freshPayload);
-        const latestMatchingRefresh = freshPayload.sourceFileRefreshRequests
-          .filter(
-            (request) =>
-              request.candidateId === candidateId ||
-              request.normalizedSubjectKey === normalizedSubjectKey,
-          )
-          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
-        if (
-          latestMatchingRefresh &&
-          latestMatchingRefresh.status !== "pending" &&
-          latestMatchingRefresh.status !== "claimed"
-        ) {
-          router.refresh();
+        const freshCandidate = freshPayload.candidates.find(
+          (item) => item.id === candidateId,
+        );
+        if (!freshCandidate) return;
+        const freshSubjectKey = normalizeDossierSubjectName(freshCandidate.name);
+        const latestMatchingRefresh = latestMatchingRefreshRequest({
+          requests: freshPayload.sourceFileRefreshRequests,
+          candidateId,
+          normalizedSubjectKey: freshSubjectKey,
+          requestId: refreshPollingTarget?.requestId ?? pendingRefreshRequest.id,
+        });
+        const freshEnrichment = latestBnlSourceFileEnrichment({
+          candidate: freshCandidate,
+          recommendations: freshPayload.recommendations,
+        });
+        const resolvedByFreshEnrichment = requestResolvedByNewerEnrichment({
+          request: latestMatchingRefresh,
+          recommendation: freshEnrichment,
+        });
+        const terminalRefresh =
+          latestMatchingRefresh && !isOpenRefreshRequest(latestMatchingRefresh);
+        if (terminalRefresh || resolvedByFreshEnrichment || !latestMatchingRefresh) {
+          const refreshedPayload = await fetchWorkflowPayload({ cacheBust: true });
+          if (!cancelled) {
+            setPayload(refreshedPayload);
+            setRefreshPollingTarget(null);
+            router.refresh();
+            const completedRecommendationVisible = latestMatchingRefresh
+              ?.completedByRecommendationId
+              ? refreshedPayload.recommendations.some(
+                  (recommendation) =>
+                    recommendation.id ===
+                    latestMatchingRefresh.completedByRecommendationId,
+                )
+              : true;
+            if (
+              latestMatchingRefresh?.status === "completed" &&
+              !completedRecommendationVisible
+            ) {
+              window.setTimeout(() => window.location.reload(), 500);
+            }
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -671,7 +838,9 @@ export default function CandidateReviewPage() {
   }, [
     candidateId,
     payload?.candidates,
+    payload?.recommendations,
     payload?.sourceFileRefreshRequests,
+    refreshPollingTarget,
     router,
   ]);
 
@@ -745,46 +914,88 @@ export default function CandidateReviewPage() {
       request.candidateId === candidate?.id ||
       request.normalizedSubjectKey === candidateRefreshKey,
   );
+  const latestEnrichmentForRefreshStatus = candidate
+    ? latestBnlSourceFileEnrichment({
+        candidate,
+        recommendations: payload?.recommendations ?? [],
+      })
+    : undefined;
   const activeRefreshRequest = refreshRequests
-    .filter(
-      (request) => request.status === "pending" || request.status === "claimed",
-    )
+    .filter((request) => isOpenRefreshRequest(request))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  const activeRefreshResolvedByEnrichment = requestResolvedByNewerEnrichment({
+    request: activeRefreshRequest,
+    recommendation: latestEnrichmentForRefreshStatus,
+  });
   const latestRefreshRequest =
     activeRefreshRequest ??
     [...refreshRequests].sort((a, b) =>
       b.updatedAt.localeCompare(a.updatedAt),
     )[0];
-  const refreshStatusLabel = latestRefreshRequest
-    ? latestRefreshRequest.status === "pending"
-      ? "BNL refresh requested"
-      : latestRefreshRequest.status === "claimed"
-        ? "BNL refresh in progress"
-        : latestRefreshRequest.status === "completed"
-          ? "BNL refresh completed"
-          : latestRefreshRequest.status === "failed"
-            ? "BNL refresh failed"
-            : latestRefreshRequest.status
-    : "No refresh requested";
-  const refreshStatusDetail = latestRefreshRequest
-    ? latestRefreshRequest.status === "pending"
-      ? "Waiting for BNL. This Source File has not been refreshed yet."
-      : latestRefreshRequest.status === "claimed"
-        ? "BNL has claimed this request and is processing it. This Source File has not been marked refreshed yet."
-        : latestRefreshRequest.status === "completed"
-          ? `Completed ${formatDate(latestRefreshRequest.completedAt)}${
-              latestRefreshRequest.completedByRecommendationId
-                ? ` by recommendation ${latestRefreshRequest.completedByRecommendationId}`
-                : ""
-            }.`
-          : latestRefreshRequest.status === "failed"
-            ? `Refresh failed${
-                latestRefreshRequest.failureReason
-                  ? `: ${latestRefreshRequest.failureReason}`
-                  : "."
-              }`
-            : "Refresh request is no longer active."
-    : "No refresh requested.";
+  const refreshStatusLabel = activeRefreshResolvedByEnrichment
+    ? "BNL refresh completed"
+    : latestRefreshRequest
+      ? latestRefreshRequest.status === "pending"
+        ? "BNL refresh requested"
+        : latestRefreshRequest.status === "claimed"
+          ? "BNL refresh in progress"
+          : latestRefreshRequest.status === "completed"
+            ? "BNL refresh completed"
+            : latestRefreshRequest.status === "failed"
+              ? "BNL refresh failed"
+              : latestRefreshRequest.status === "skipped"
+                ? "BNL refresh skipped"
+                : latestRefreshRequest.status === "cancelled"
+                  ? "BNL refresh cancelled"
+                  : latestRefreshRequest.status
+      : "No active request";
+  const refreshStatusDetail = activeRefreshResolvedByEnrichment
+    ? `Completed / refreshed by latest BNL Source File enrichment ${
+        latestEnrichmentForRefreshStatus?.id ?? "—"
+      }. Latest enrichment is newer than the request timestamp, so the page is no longer waiting for BNL.`
+    : latestRefreshRequest
+      ? latestRefreshRequest.status === "pending"
+        ? "Waiting for BNL. This Source File has not been refreshed yet."
+        : latestRefreshRequest.status === "claimed"
+          ? "BNL has claimed this request and is processing it. This Source File has not been marked refreshed yet."
+          : latestRefreshRequest.status === "completed"
+            ? `Completed ${formatDate(latestRefreshRequest.completedAt)}${
+                latestRefreshRequest.completedByRecommendationId
+                  ? ` by recommendation ${latestRefreshRequest.completedByRecommendationId}`
+                  : ""
+              }.`
+            : latestRefreshRequest.status === "failed"
+              ? `Refresh failed${
+                  latestRefreshRequest.failureReason
+                    ? `: ${latestRefreshRequest.failureReason}`
+                    : "."
+                }`
+              : latestRefreshRequest.status === "skipped"
+                ? `Refresh skipped${
+                    latestRefreshRequest.failureReason
+                      ? `: ${latestRefreshRequest.failureReason}`
+                      : "."
+                  }`
+                : latestRefreshRequest.status === "cancelled"
+                  ? `Refresh cancelled${
+                      latestRefreshRequest.failureReason
+                        ? `: ${latestRefreshRequest.failureReason}`
+                        : "."
+                    }`
+                  : "Refresh request is no longer active."
+      : "No active request.";
+  const manualRefreshDisabled =
+    saving ||
+    !candidate ||
+    (Boolean(activeRefreshRequest) && !activeRefreshResolvedByEnrichment);
+  const manualRefreshButtonLabel =
+    activeRefreshRequest && !activeRefreshResolvedByEnrichment
+      ? activeRefreshRequest.status === "claimed"
+        ? "Refresh In Progress"
+        : "Refresh Requested"
+      : latestRefreshRequest?.status === "failed"
+        ? "Retry BNL Refresh"
+        : "Request BNL Refresh";
   const sourceFileSummary = candidate
     ? createDossierSourceFileSummary({
         candidate,
@@ -883,11 +1094,16 @@ export default function CandidateReviewPage() {
         reason: "Manual admin requested a BNL Source File refresh.",
       });
       const refresh = data.refresh;
+      if (refresh?.request && isOpenRefreshRequest(refresh.request)) {
+        setRefreshPollingTarget({ candidateId, requestId: refresh.request.id });
+      }
       setNotice(
-        refresh?.created === false
-          ? "BNL refresh already requested. Waiting for BNL to process it through the Source File refresh worker."
-          : (data.message ??
-              "BNL refresh requested. BNL will process this through the Source File refresh worker."),
+        refresh?.request && !isOpenRefreshRequest(refresh.request)
+          ? `BNL refresh request is ${refresh.request.status}. You can retry if another refresh is needed.`
+          : refresh?.created === false
+            ? "BNL refresh already requested. Waiting for BNL to process it through the Source File refresh worker."
+            : (data.message ??
+                "BNL refresh requested. BNL will process this through the Source File refresh worker."),
       );
     } catch (err) {
       setNotice(
@@ -1216,10 +1432,10 @@ export default function CandidateReviewPage() {
               <button
                 type="button"
                 onClick={() => void requestBnlRefresh()}
-                disabled={saving || !candidate}
+                disabled={manualRefreshDisabled}
                 className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
               >
-                Request BNL Refresh
+                {manualRefreshButtonLabel}
               </button>
             </div>
           </div>

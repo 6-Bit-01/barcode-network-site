@@ -309,7 +309,7 @@ export function selectDossierSourceFileDisplayRecommendations(input: {
   });
   const completedRefreshRecommendation =
     completedRefresh?.completedByRecommendationId
-      ? relevantRecommendations.find(
+      ? recommendations.find(
           (recommendation) =>
             recommendation.id ===
               completedRefresh.completedByRecommendationId &&

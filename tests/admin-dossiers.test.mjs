@@ -608,6 +608,23 @@ test("Source File display recommendations prefer completed and newest BNL enrich
     refreshRequests: [completedRequest],
   });
   assert.equal(completedSelection[0].id, newerBnl.id);
+
+  const completedByIdSelection =
+    sourceFileSummary.selectDossierSourceFileDisplayRecommendations({
+      candidate,
+      recommendations: [
+        olderBnl,
+        {
+          ...newerBnl,
+          subjectName: "BNL Returned Explicit Completed ID",
+          subjectKey: "bnl returned explicit completed id",
+          targetCandidateId: undefined,
+        },
+      ],
+      refreshRequests: [completedRequest],
+    });
+  assert.equal(completedByIdSelection[0].id, newerBnl.id);
+
   const completedSummary = sourceFileSummary.createDossierSourceFileSummary({
     candidate,
     recommendations: completedSelection,
@@ -660,13 +677,20 @@ test("admin Source File page polls pending refreshes, stops on terminal state, a
 
   assert.match(page, /window\.setInterval/);
   assert.match(page, /pollForRefreshCompletion/);
-  assert.match(page, /request\.status === "pending" \|\| request\.status === "claimed"/);
-  assert.match(page, /fetchWorkflowPayload\(\)/);
+  assert.match(page, /openRefreshStatuses/);
+  assert.match(page, /isOpenRefreshRequest/);
+  assert.match(page, /fetchWorkflowPayload\(\{ cacheBust: true \}\)/);
   assert.match(page, /router\.refresh\(\)/);
+  assert.match(page, /window\.location\.reload\(\)/);
   assert.match(page, /window\.clearInterval\(interval\)/);
   assert.match(page, /latestRefreshRequest\.status === "completed"[\s\S]*Completed/);
   assert.match(page, /latestRefreshRequest\.status === "failed"[\s\S]*failureReason/);
   assert.match(page, /completedByRecommendationId/);
+  assert.match(page, /setRefreshPollingTarget\(\{ candidateId, requestId: refresh\.request\.id \}\)/);
+  assert.match(page, /Refresh Requested/);
+  assert.match(page, /Retry BNL Refresh/);
+  assert.match(page, /activeRefreshResolvedByEnrichment/);
+  assert.match(page, /No active request/);
 
   for (const label of [
     "Review Snapshot",

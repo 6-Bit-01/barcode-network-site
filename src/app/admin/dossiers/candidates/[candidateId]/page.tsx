@@ -42,6 +42,13 @@ type WorkflowPayload = {
   publicDossiers?: Array<{ id: string; name: string }>;
 };
 
+type ImmediateRefreshResult = {
+  ok: boolean;
+  status: "success" | "failed" | "skipped" | "timeout" | "unavailable";
+  recommendationId?: string;
+  failureReason?: string;
+};
+
 type SourceNoteForm = {
   type: DossierSourceFileNoteType;
   text: string;
@@ -140,6 +147,7 @@ const openRefreshStatuses = new Set<DossierSourceFileRefreshRequest["status"]>([
   "pending",
   "claimed",
 ]);
+const STALE_OPEN_REFRESH_REQUEST_MS = 5 * 60 * 1000;
 
 function isOpenRefreshRequest(request?: DossierSourceFileRefreshRequest | null) {
   return Boolean(request && openRefreshStatuses.has(request.status));
@@ -150,10 +158,16 @@ function refreshRequestMatchesCandidate(input: {
   candidateId: string;
   normalizedSubjectKey: string;
 }) {
-  return (
-    input.request.candidateId === input.candidateId ||
-    input.request.normalizedSubjectKey === input.normalizedSubjectKey
-  );
+  if (input.request.candidateId) {
+    return input.request.candidateId === input.candidateId;
+  }
+  return input.request.normalizedSubjectKey === input.normalizedSubjectKey;
+}
+
+function isStaleOpenRefreshRequest(request?: DossierSourceFileRefreshRequest | null) {
+  if (!request || !isOpenRefreshRequest(request)) return false;
+  const updatedAt = Date.parse(request.updatedAt || request.requestedAt);
+  return !Number.isNaN(updatedAt) && Date.now() - updatedAt > STALE_OPEN_REFRESH_REQUEST_MS;
 }
 
 function latestMatchingRefreshRequest(input: {
@@ -684,6 +698,11 @@ export default function CandidateReviewPage() {
     requestId?: string;
     candidateId: string;
   } | null>(null);
+  const [sourceFileOpenState, setSourceFileOpenState] = useState<{
+    openedAt?: string;
+    immediateRefresh?: ImmediateRefreshResult;
+    running: boolean;
+  }>({ running: false });
 
   async function fetchWorkflowPayload(options: { cacheBust?: boolean } = {}) {
     const response = await fetch(
@@ -702,43 +721,65 @@ export default function CandidateReviewPage() {
   }
 
   async function loadWorkflow(options: { recordOpen?: boolean } = {}) {
-    const data = await fetchWorkflowPayload();
-    setPayload(data);
+    if (options.recordOpen === false) {
+      const data = await fetchWorkflowPayload();
+      setPayload(data);
+      return;
+    }
 
-    if (options.recordOpen === false) return;
-
+    setSourceFileOpenState({ running: true });
     const openResponse = await fetch("/api/admin/dossiers", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action: "recordSourceFileOpen", candidateId }),
     });
-    if (openResponse.ok) {
-      const openPayload = (await openResponse.json()) as WorkflowPayload & {
-        refresh?: { request?: DossierSourceFileRefreshRequest | null };
-      };
-      setPayload(openPayload);
-      if (
-        openPayload.refresh?.request &&
-        isOpenRefreshRequest(openPayload.refresh.request)
-      ) {
-        setRefreshPollingTarget({
-          candidateId,
-          requestId: openPayload.refresh.request.id,
-        });
-      }
+    if (!openResponse.ok) {
+      throw new Error(`Workflow API returned ${openResponse.status}.`);
+    }
+    const openPayload = (await openResponse.json()) as WorkflowPayload & {
+      openedAt?: string;
+      refresh?: { request?: DossierSourceFileRefreshRequest | null };
+      immediateRefresh?: ImmediateRefreshResult;
+    };
+    setPayload(openPayload);
+    setSourceFileOpenState({
+      openedAt: openPayload.openedAt,
+      immediateRefresh: openPayload.immediateRefresh,
+      running: false,
+    });
+    if (
+      openPayload.refresh?.request &&
+      isOpenRefreshRequest(openPayload.refresh.request)
+    ) {
+      setRefreshPollingTarget({
+        candidateId,
+        requestId: openPayload.refresh.request.id,
+      });
     }
   }
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void loadWorkflow({ recordOpen: true })
-        .catch((err) =>
+        .catch((err) => {
+          setSourceFileOpenState((current) => ({
+            ...current,
+            running: false,
+            immediateRefresh: {
+              ok: false,
+              status: "failed",
+              failureReason:
+                err instanceof Error
+                  ? err.message
+                  : "Failed to load internal record.",
+            },
+          }));
           setError(
             err instanceof Error
               ? err.message
               : "Failed to load internal record.",
-          ),
-        )
+          );
+        })
         .finally(() => setLoading(false));
     }, 0);
     return () => window.clearTimeout(timer);
@@ -911,8 +952,12 @@ export default function CandidateReviewPage() {
     : "";
   const refreshRequests = (payload?.sourceFileRefreshRequests ?? []).filter(
     (request) =>
-      request.candidateId === candidate?.id ||
-      request.normalizedSubjectKey === candidateRefreshKey,
+      candidate &&
+      refreshRequestMatchesCandidate({
+        request,
+        candidateId: candidate.id,
+        normalizedSubjectKey: candidateRefreshKey,
+      }),
   );
   const latestEnrichmentForRefreshStatus = candidate
     ? latestBnlSourceFileEnrichment({
@@ -920,82 +965,68 @@ export default function CandidateReviewPage() {
         recommendations: payload?.recommendations ?? [],
       })
     : undefined;
-  const activeRefreshRequest = refreshRequests
-    .filter((request) => isOpenRefreshRequest(request))
+  const nonStaleActiveRefreshRequest = refreshRequests
+    .filter(
+      (request) => isOpenRefreshRequest(request) && !isStaleOpenRefreshRequest(request),
+    )
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
   const activeRefreshResolvedByEnrichment = requestResolvedByNewerEnrichment({
-    request: activeRefreshRequest,
+    request: nonStaleActiveRefreshRequest,
     recommendation: latestEnrichmentForRefreshStatus,
   });
   const latestRefreshRequest =
-    activeRefreshRequest ??
+    nonStaleActiveRefreshRequest ??
     [...refreshRequests].sort((a, b) =>
       b.updatedAt.localeCompare(a.updatedAt),
     )[0];
-  const refreshStatusLabel = activeRefreshResolvedByEnrichment
-    ? "BNL refresh completed"
-    : latestRefreshRequest
-      ? latestRefreshRequest.status === "pending"
-        ? "BNL refresh requested"
-        : latestRefreshRequest.status === "claimed"
-          ? "BNL refresh in progress"
-          : latestRefreshRequest.status === "completed"
-            ? "BNL refresh completed"
-            : latestRefreshRequest.status === "failed"
-              ? "BNL refresh failed"
-              : latestRefreshRequest.status === "skipped"
-                ? "BNL refresh skipped"
-                : latestRefreshRequest.status === "cancelled"
-                  ? "BNL refresh cancelled"
-                  : latestRefreshRequest.status
-      : "No active request";
-  const refreshStatusDetail = activeRefreshResolvedByEnrichment
-    ? `Completed / refreshed by latest BNL Source File enrichment ${
-        latestEnrichmentForRefreshStatus?.id ?? "—"
-      }. Latest enrichment is newer than the request timestamp, so the page is no longer waiting for BNL.`
-    : latestRefreshRequest
-      ? latestRefreshRequest.status === "pending"
-        ? "Waiting for BNL. This Source File has not been refreshed yet."
-        : latestRefreshRequest.status === "claimed"
-          ? "BNL has claimed this request and is processing it. This Source File has not been marked refreshed yet."
-          : latestRefreshRequest.status === "completed"
-            ? `Completed ${formatDate(latestRefreshRequest.completedAt)}${
-                latestRefreshRequest.completedByRecommendationId
-                  ? ` by recommendation ${latestRefreshRequest.completedByRecommendationId}`
-                  : ""
-              }.`
-            : latestRefreshRequest.status === "failed"
-              ? `Refresh failed${
-                  latestRefreshRequest.failureReason
-                    ? `: ${latestRefreshRequest.failureReason}`
-                    : "."
-                }`
-              : latestRefreshRequest.status === "skipped"
-                ? `Refresh skipped${
-                    latestRefreshRequest.failureReason
-                      ? `: ${latestRefreshRequest.failureReason}`
-                      : "."
-                  }`
-                : latestRefreshRequest.status === "cancelled"
-                  ? `Refresh cancelled${
-                      latestRefreshRequest.failureReason
-                        ? `: ${latestRefreshRequest.failureReason}`
-                        : "."
-                    }`
-                  : "Refresh request is no longer active."
-      : "No active request.";
-  const manualRefreshDisabled =
-    saving ||
-    !candidate ||
-    (Boolean(activeRefreshRequest) && !activeRefreshResolvedByEnrichment);
-  const manualRefreshButtonLabel =
-    activeRefreshRequest && !activeRefreshResolvedByEnrichment
-      ? activeRefreshRequest.status === "claimed"
-        ? "Refresh In Progress"
-        : "Refresh Requested"
-      : latestRefreshRequest?.status === "failed"
-        ? "Retry BNL Refresh"
-        : "Request BNL Refresh";
+  const openTimestamp = sourceFileOpenState.openedAt;
+  const latestEnrichmentTimestamp = latestEnrichmentForRefreshStatus
+    ? recommendationTimestamp(latestEnrichmentForRefreshStatus)
+    : undefined;
+  const latestEnrichmentNewerThanOpen = Boolean(
+    openTimestamp &&
+      latestEnrichmentTimestamp &&
+      Date.parse(latestEnrichmentTimestamp) > Date.parse(openTimestamp),
+  );
+  const immediateRecommendationVisible = Boolean(
+    sourceFileOpenState.immediateRefresh?.recommendationId &&
+      attachedRecommendations.some(
+        (recommendation) =>
+          recommendation.id === sourceFileOpenState.immediateRefresh?.recommendationId,
+      ),
+  );
+  const sourceFileFreshForOpen = Boolean(
+    latestEnrichmentNewerThanOpen ||
+      (sourceFileOpenState.immediateRefresh?.ok && immediateRecommendationVisible),
+  );
+  const refreshStatusLabel = sourceFileOpenState.running
+    ? "UPDATING SOURCE FILE"
+    : sourceFileFreshForOpen
+      ? "FILE UPDATED"
+      : "FILE NOT UPDATED";
+  const refreshStatusDetail = sourceFileOpenState.running
+    ? "BNL is updating this Source File now through the server-side immediate refresh endpoint."
+    : sourceFileFreshForOpen
+      ? "Latest BNL enrichment is fresh for this page open."
+      : "This page is not treating older BNL Source File data as current. Use FILE NOT UPDATED to retry the immediate update.";
+  const refreshFailureReason =
+    sourceFileOpenState.immediateRefresh?.failureReason ??
+    latestRefreshRequest?.failureReason ??
+    (!sourceFileFreshForOpen && !sourceFileOpenState.running
+      ? "No fresh BNL enrichment is visible for this page open."
+      : undefined);
+  const manualRefreshDisabled = saving || !candidate || sourceFileOpenState.running || sourceFileFreshForOpen;
+  const manualRefreshButtonLabel = sourceFileOpenState.running
+    ? sourceFileOpenState.immediateRefresh
+      ? "RETRYING UPDATE"
+      : "UPDATING SOURCE FILE"
+    : sourceFileFreshForOpen
+      ? "FILE UPDATED"
+      : "FILE NOT UPDATED";
+  const manualRefreshButtonClass = sourceFileFreshForOpen
+    ? "border border-border bg-muted/20 px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-70"
+    : "border border-red-500 px-4 py-2 text-xs uppercase tracking-widest text-red-400 hover:bg-red-500 hover:text-background disabled:opacity-50";
+  const staleDataWarning = !sourceFileFreshForOpen;
   const sourceFileSummary = candidate
     ? createDossierSourceFileSummary({
         candidate,
@@ -1069,6 +1100,7 @@ export default function CandidateReviewPage() {
           request?: DossierSourceFileRefreshRequest;
         };
         error?: string;
+        immediateRefresh?: ImmediateRefreshResult;
         message?: string;
       };
       if (!response.ok)
@@ -1087,25 +1119,41 @@ export default function CandidateReviewPage() {
 
   async function requestBnlRefresh() {
     if (!candidate) return;
+    setSourceFileOpenState((current) => ({ ...current, running: true }));
     try {
       const data = await postWorkflow({
         action: "requestSourceFileRefresh",
         candidateId,
-        reason: "Manual admin requested a BNL Source File refresh.",
+        reason: "Manual admin requested a BNL Source File immediate update retry.",
       });
       const refresh = data.refresh;
       if (refresh?.request && isOpenRefreshRequest(refresh.request)) {
         setRefreshPollingTarget({ candidateId, requestId: refresh.request.id });
       }
+      setSourceFileOpenState({
+        openedAt: new Date().toISOString(),
+        immediateRefresh: data.immediateRefresh,
+        running: false,
+      });
       setNotice(
-        refresh?.request && !isOpenRefreshRequest(refresh.request)
-          ? `BNL refresh request is ${refresh.request.status}. You can retry if another refresh is needed.`
-          : refresh?.created === false
-            ? "BNL refresh already requested. Waiting for BNL to process it through the Source File refresh worker."
-            : (data.message ??
-                "BNL refresh requested. BNL will process this through the Source File refresh worker."),
+        data.immediateRefresh?.ok
+          ? "BNL Source File updated immediately."
+          : (data.immediateRefresh?.failureReason ??
+              "BNL Source File immediate update did not complete. Retry from FILE NOT UPDATED."),
       );
     } catch (err) {
+      setSourceFileOpenState((current) => ({
+        ...current,
+        running: false,
+        immediateRefresh: {
+          ok: false,
+          status: "failed",
+          failureReason:
+            err instanceof Error
+              ? err.message
+              : "Failed to request BNL Source File refresh.",
+        },
+      }));
       setNotice(
         err instanceof Error
           ? err.message
@@ -1425,15 +1473,27 @@ export default function CandidateReviewPage() {
                 </p>
                 <p className="text-foreground">{refreshStatusLabel}</p>
                 <p className="mt-1">{refreshStatusDetail}</p>
-                {latestRefreshRequest && (
-                  <p className="mt-1">Reason: {latestRefreshRequest.reason}</p>
+                {refreshFailureReason && (
+                  <p className="mt-1 text-red-300">Reason: {refreshFailureReason}</p>
                 )}
+                {staleDataWarning && (
+                  <p className="mt-2 border border-red-500/60 bg-red-500/10 p-2 text-xs uppercase tracking-widest text-red-300">
+                    Last-known BNL data is not current for this page open.
+                  </p>
+                )}
+                <p className="mt-2 text-xs">
+                  Diagnostics: request {latestRefreshRequest?.id ?? "—"} / status{" "}
+                  {latestRefreshRequest?.status ?? "—"} / latest enrichment{" "}
+                  {latestEnrichmentTimestamp ?? "—"} / immediate{" "}
+                  {sourceFileOpenState.immediateRefresh?.status ??
+                    (sourceFileOpenState.running ? "running" : "—")}
+                </p>
               </div>
               <button
                 type="button"
                 onClick={() => void requestBnlRefresh()}
                 disabled={manualRefreshDisabled}
-                className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                className={manualRefreshButtonClass}
               >
                 {manualRefreshButtonLabel}
               </button>
@@ -1700,7 +1760,7 @@ export default function CandidateReviewPage() {
               <button
                 type="submit"
                 disabled={saving}
-                className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                className={manualRefreshButtonClass}
               >
                 Save Info
               </button>

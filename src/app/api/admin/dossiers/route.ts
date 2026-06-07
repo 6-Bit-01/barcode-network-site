@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
 import { databasePage } from "@/content";
 import { dossierAuthoringGuide } from "@/lib/dossier-authoring-guide";
+import { refreshBnlSourceFileNow } from "@/lib/bnl-source-file-refresh-now";
 import { buildDossierTagRegistry } from "@/lib/dossier-tags";
 import {
   DOSSIER_CANDIDATE_SCORING_POLICY,
@@ -59,6 +60,7 @@ import {
   submitDraftForOwnerReview,
   updateDossierCandidateStatus,
   updateDossierIdentityLink,
+  updateDossierSourceFileRefreshRequestStatus,
   validateDossierDraftFieldsForOwnerReview,
   type DossierWorkflowState,
 } from "@/lib/dossier-workflow-store";
@@ -463,12 +465,44 @@ export async function POST(req: Request) {
           { status: 400 },
         );
       }
+      const openedAt = new Date().toISOString();
       const refresh = await recordDossierSourceFileOpen({
         candidateId,
         requestedBy: "admin_open_source_file",
       });
+      const immediateRefresh = refresh.request
+        ? await refreshBnlSourceFileNow({
+            request: refresh.request,
+            source: "admin_open_source_file",
+          })
+        : {
+            ok: false,
+            status: "skipped" as const,
+            failureReason: refresh.decision.reason,
+          };
+      if (refresh.request && immediateRefresh.ok) {
+        await updateDossierSourceFileRefreshRequestStatus({
+          requestId: refresh.request.id,
+          status: "completed",
+          completedByRecommendationId: immediateRefresh.recommendationId,
+        });
+      } else if (refresh.request && immediateRefresh.status !== "unavailable") {
+        await updateDossierSourceFileRefreshRequestStatus({
+          requestId: refresh.request.id,
+          status:
+            immediateRefresh.status === "skipped" ? "skipped" : "failed",
+          failureReason: immediateRefresh.failureReason,
+        });
+      }
       const payload = await workflowPayload();
-      return NextResponse.json({ ok: true, action, refresh, ...payload });
+      return NextResponse.json({
+        ok: true,
+        action,
+        openedAt,
+        refresh,
+        immediateRefresh,
+        ...payload,
+      });
     }
 
     if (action === "requestSourceFileRefresh") {
@@ -485,13 +519,33 @@ export async function POST(req: Request) {
         requestSource: "manual_admin",
         requestedBy: "admin_manual",
       });
+      const immediateRefresh = await refreshBnlSourceFileNow({
+        request: refresh.request,
+        source: "admin_manual",
+      });
+      if (immediateRefresh.ok) {
+        await updateDossierSourceFileRefreshRequestStatus({
+          requestId: refresh.request.id,
+          status: "completed",
+          completedByRecommendationId: immediateRefresh.recommendationId,
+        });
+      } else if (immediateRefresh.status !== "unavailable") {
+        await updateDossierSourceFileRefreshRequestStatus({
+          requestId: refresh.request.id,
+          status:
+            immediateRefresh.status === "skipped" ? "skipped" : "failed",
+          failureReason: immediateRefresh.failureReason,
+        });
+      }
       const payload = await workflowPayload();
       return NextResponse.json({
         ok: true,
         action,
         refresh,
-        message:
-          "BNL refresh requested. BNL will process this through the Source File refresh worker.",
+        immediateRefresh,
+        message: immediateRefresh.ok
+          ? "BNL Source File updated immediately."
+          : "BNL Source File immediate update did not complete. Retry from the status button.",
         ...payload,
       });
     }

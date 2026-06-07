@@ -384,7 +384,8 @@ test("Source File open refresh workflow dedupes, exposes bot polling, and comple
     candidateId,
     reason: "Manual test refresh request.",
   })).json();
-  assert.equal(manual.message, "BNL refresh requested. BNL will process this through the Source File refresh worker.");
+  assert.equal(manual.message, "BNL Source File immediate update did not complete. Retry from the status button.");
+  assert.equal(manual.immediateRefresh.status, "unavailable");
   assert.equal(manual.sourceFileRefreshRequests.length, 1);
   assert.equal(manual.sourceFileRefreshRequests[0].reason, "Manual test refresh request.");
   assert.equal(manual.sourceFileRefreshRequests[0].requestSource, "manual_admin");
@@ -423,8 +424,9 @@ test("Source File open refresh workflow dedupes, exposes bot polling, and comple
   assert.equal(completed.request.completedByRecommendationId, "manual-complete-rec");
 
   const afterRecentCompletion = await (await authedPost({ action: "recordSourceFileOpen", candidateId })).json();
-  assert.equal(afterRecentCompletion.sourceFileRefreshRequests.length, 1);
-  assert.equal(afterRecentCompletion.refresh.request, null);
+  assert.equal(afterRecentCompletion.sourceFileRefreshRequests.length, 2);
+  assert.equal(afterRecentCompletion.refresh.request.status, "pending");
+  assert.equal(afterRecentCompletion.immediateRefresh.status, "unavailable");
 
   const manualAgain = await (await authedPost({
     action: "requestSourceFileRefresh",
@@ -451,7 +453,128 @@ test("Source File open refresh workflow dedupes, exposes bot polling, and comple
   assert.equal(finalRequest.completedByRecommendationId, ingest.recommendation.id);
 });
 
-test("fresh Source File open does not auto-request refresh and public read model stays read-only", async () => {
+
+
+test("Source File open and retry call BNL refresh-now server-side with safe status results", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL = "https://bnl.example.test/internal/source-files/refresh-now";
+  process.env.BNL_SOURCE_FILE_REFRESH_TOKEN = "test-refresh-token";
+  process.env.BNL_SOURCE_FILE_REFRESH_NOW_TIMEOUT_MS = "1000";
+
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    assert.equal(String(url), process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL);
+    assert.equal(options.headers["X-BNL-REFRESH-TOKEN"], "test-refresh-token");
+    const body = JSON.parse(options.body);
+    assert.equal(body.source, calls.length === 1 ? "admin_open_source_file" : "admin_manual");
+    assert.ok(body.requestId);
+    assert.equal(body.candidateId, body.candidateId);
+    if (calls.length === 1) {
+      return Response.json({ ok: true, status: "success", recommendationId: "fresh-rec-id" });
+    }
+    return Response.json({ ok: false, status: "failed", failureReason: "BNL fixture failure" }, { status: 500 });
+  };
+
+  try {
+    const created = await (await authedPost({
+      action: "createManualCandidate",
+      input: {
+        name: "Immediate Refresh Fixture",
+        candidateType: "artist",
+        reason: "Operator wants immediate refresh coverage.",
+        whyNow: "The source file should update on open.",
+        evidenceSummary: "Admin fixture evidence.",
+      },
+    })).json();
+    const candidateId = created.candidate.id;
+    await authedPost({ action: "promoteCandidateToSourceFile", candidateId });
+
+    const opened = await (await authedPost({ action: "recordSourceFileOpen", candidateId })).json();
+    assert.equal(opened.immediateRefresh.ok, true);
+    assert.equal(opened.immediateRefresh.status, "success");
+    assert.equal(opened.immediateRefresh.recommendationId, "fresh-rec-id");
+    assert.equal(opened.sourceFileRefreshRequests[0].status, "completed");
+    assert.equal(opened.sourceFileRefreshRequests[0].completedByRecommendationId, "fresh-rec-id");
+
+    const retry = await (await authedPost({
+      action: "requestSourceFileRefresh",
+      candidateId,
+      reason: "Retry immediate refresh after failed visible state.",
+    })).json();
+    assert.equal(retry.immediateRefresh.ok, false);
+    assert.equal(retry.immediateRefresh.status, "failed");
+    assert.equal(retry.immediateRefresh.failureReason, "BNL fixture failure");
+    assert.equal(calls.length, 2);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL;
+    delete process.env.BNL_SOURCE_FILE_REFRESH_TOKEN;
+    delete process.env.BNL_SOURCE_FILE_REFRESH_NOW_TIMEOUT_MS;
+  }
+});
+
+test("Source File immediate refresh timeout/unavailable and stale open requests do not trap retries or cross-file matching", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL = "https://bnl.example.test/internal/source-files/refresh-now";
+  process.env.BNL_SOURCE_FILE_REFRESH_TOKEN = "test-refresh-token";
+  process.env.BNL_SOURCE_FILE_REFRESH_NOW_TIMEOUT_MS = "5";
+  const originalFetch = global.fetch;
+  global.fetch = async (_url, options = {}) =>
+    new Promise((_resolve, reject) => {
+      options.signal?.addEventListener("abort", () => {
+        const error = new Error("aborted");
+        error.name = "AbortError";
+        reject(error);
+      });
+    });
+
+  try {
+    const first = await (await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Candidate Match Alpha" },
+    })).json();
+    const second = await (await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Candidate Match Alpha" },
+    })).json();
+    await authedPost({ action: "promoteCandidateToSourceFile", candidateId: first.candidate.id });
+    await authedPost({ action: "promoteCandidateToSourceFile", candidateId: second.candidate.id });
+
+    const old = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const state = await store.getDossierWorkflowState();
+    await store.saveDossierWorkflowState({
+      ...state,
+      sourceFileRefreshRequests: [{
+        id: "old-claimed-for-other-candidate",
+        candidateId: first.candidate.id,
+        subjectName: "Candidate Match Alpha",
+        normalizedSubjectKey: workflow.normalizeDossierSubjectName("Candidate Match Alpha"),
+        status: "claimed",
+        reason: "Old claimed request should expire for display.",
+        requestedAt: old,
+        updatedAt: old,
+        requestSource: "manual_admin",
+        priority: 90,
+      }],
+    });
+
+    const openedSecond = await (await authedPost({ action: "recordSourceFileOpen", candidateId: second.candidate.id })).json();
+    assert.equal(openedSecond.immediateRefresh.status, "timeout");
+    assert.equal(openedSecond.sourceFileRefreshRequests.some((request) => request.candidateId === second.candidate.id), true);
+    const oldRequest = openedSecond.sourceFileRefreshRequests.find((request) => request.id === "old-claimed-for-other-candidate");
+    assert.equal(oldRequest.status, "failed");
+    assert.equal(openedSecond.sourceFileRefreshRequests.filter((request) => request.candidateId === second.candidate.id).length, 1);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL;
+    delete process.env.BNL_SOURCE_FILE_REFRESH_TOKEN;
+    delete process.env.BNL_SOURCE_FILE_REFRESH_NOW_TIMEOUT_MS;
+  }
+});
+
+test("fresh Source File open still asks BNL immediately and public read model stays read-only", async () => {
   await resetWorkflowStore();
   process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
 
@@ -494,7 +617,9 @@ test("fresh Source File open does not auto-request refresh and public read model
 
   const opened = await (await authedPost({ action: "recordSourceFileOpen", candidateId: "fresh-source-candidate" })).json();
   assert.equal(opened.refresh.decision.needed, false);
-  assert.equal(opened.sourceFileRefreshRequests.length, 0);
+  assert.equal(opened.immediateRefresh.status, "unavailable");
+  assert.equal(opened.sourceFileRefreshRequests.length, 1);
+  assert.equal(opened.sourceFileRefreshRequests[0].requestSource, "opened_source_file");
 
   const beforePublicRead = await store.getDossierWorkflowState();
   const publicRead = await (await sourceFilesGet("?subject=Fresh%20Fixture%20Subject")).json();
@@ -671,7 +796,7 @@ test("Source File display recommendations prefer completed and newest BNL enrich
   assert.match(pendingSummary.usefulEvidence.join(" "), /Older BNL evidence/);
 });
 
-test("admin Source File page polls pending refreshes, stops on terminal state, and preserves UI sections", () => {
+test("admin Source File page uses immediate refresh status/retry UI and preserves sections", () => {
   const page = source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
   const pageCopy = `${normalizedSource("src/app/admin/dossiers/candidates/[candidateId]/page.tsx")} ${normalizedSource("src/components/DossierSourceFileSummaryPanel.tsx")}`;
 
@@ -683,14 +808,16 @@ test("admin Source File page polls pending refreshes, stops on terminal state, a
   assert.match(page, /router\.refresh\(\)/);
   assert.match(page, /window\.location\.reload\(\)/);
   assert.match(page, /window\.clearInterval\(interval\)/);
-  assert.match(page, /latestRefreshRequest\.status === "completed"[\s\S]*Completed/);
-  assert.match(page, /latestRefreshRequest\.status === "failed"[\s\S]*failureReason/);
   assert.match(page, /completedByRecommendationId/);
   assert.match(page, /setRefreshPollingTarget\(\{ candidateId, requestId: refresh\.request\.id \}\)/);
-  assert.match(page, /Refresh Requested/);
-  assert.match(page, /Retry BNL Refresh/);
-  assert.match(page, /activeRefreshResolvedByEnrichment/);
-  assert.match(page, /No active request/);
+  assert.match(page, /UPDATING SOURCE FILE/);
+  assert.match(page, /FILE UPDATED/);
+  assert.match(page, /FILE NOT UPDATED/);
+  assert.match(page, /RETRYING UPDATE/);
+  assert.match(page, /Last-known BNL data is not current for this page open/);
+  assert.match(page, /Diagnostics: request/);
+  assert.doesNotMatch(page, /Refresh Requested/);
+  assert.doesNotMatch(page, /Waiting for BNL/);
 
   for (const label of [
     "Review Snapshot",
@@ -1072,12 +1199,11 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     "Recommendations",
     "Refresh status",
     "Source File Refresh",
-    "BNL refresh requested",
-    "Waiting for BNL",
-    "BNL refresh in progress",
-    "BNL refresh completed",
-    "This Source File has not been refreshed yet",
-    "Request BNL Refresh",
+    "UPDATING SOURCE FILE",
+    "FILE UPDATED",
+    "FILE NOT UPDATED",
+    "RETRYING UPDATE",
+    "Last-known BNL data is not current for this page open",
     "Source notes",
     "Unapplied notes",
     "Next action",
@@ -1118,9 +1244,9 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
   ]) {
     assertIncludesCopy(pageCopy, label);
   }
-  assert.match(page, /latestRefreshRequest\.status === "pending"[\s\S]*"BNL refresh requested"/);
-  assert.match(page, /latestRefreshRequest\.status === "claimed"[\s\S]*"BNL refresh in progress"/);
-  assert.match(page, /Waiting for BNL\.[\s\S]*has not been refreshed yet/);
+  assert.match(page, /sourceFileFreshForOpen/);
+  assert.match(page, /sourceFileOpenState\.running/);
+  assert.match(page, /isStaleOpenRefreshRequest/);
   assert.doesNotMatch(pageCopy, /Persistent Source File Draft/);
   assert.doesNotMatch(pageCopy, /Internal Operator Summary/);
   assert.doesNotMatch(pageCopy, /Save Internal Summary/);

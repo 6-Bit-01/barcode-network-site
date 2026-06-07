@@ -1401,6 +1401,7 @@ function upsertSourceFileEnrichmentNote(input: {
 
 const OPEN_REFRESH_RECENT_COMPLETED_MS = 60 * 60 * 1000;
 const DEFAULT_REFRESH_STALE_MS = 24 * 60 * 60 * 1000;
+const STALE_OPEN_REFRESH_REQUEST_MS = 5 * 60 * 1000;
 const OPEN_REQUEST_STATUSES = new Set<DossierSourceFileRefreshRequestStatus>([
   "pending",
   "claimed",
@@ -1436,16 +1437,24 @@ function latestActiveSourceNoteTimestamp(candidate: DossierCandidate): string | 
     .at(-1);
 }
 
+function sourceFileRefreshRequestMatchesCandidate(input: {
+  request: DossierSourceFileRefreshRequest;
+  candidate: DossierCandidate;
+}): boolean {
+  if (input.request.candidateId) {
+    return input.request.candidateId === input.candidate.id;
+  }
+  return input.request.normalizedSubjectKey === normalizeName(input.candidate.name);
+}
+
 function latestOpenRefreshRequest(input: {
   requests: DossierSourceFileRefreshRequest[];
   candidate: DossierCandidate;
 }): DossierSourceFileRefreshRequest | undefined {
-  const normalized = normalizeName(input.candidate.name);
   return input.requests.find(
     (request) =>
       OPEN_REQUEST_STATUSES.has(request.status) &&
-      (request.candidateId === input.candidate.id ||
-        request.normalizedSubjectKey === normalized),
+      sourceFileRefreshRequestMatchesCandidate({ request, candidate: input.candidate }),
   );
 }
 
@@ -1453,12 +1462,10 @@ function latestCompletedRefreshRequest(input: {
   requests: DossierSourceFileRefreshRequest[];
   candidate: DossierCandidate;
 }): DossierSourceFileRefreshRequest | undefined {
-  const normalized = normalizeName(input.candidate.name);
   return input.requests.find(
     (request) =>
       request.status === "completed" &&
-      (request.candidateId === input.candidate.id ||
-        request.normalizedSubjectKey === normalized),
+      sourceFileRefreshRequestMatchesCandidate({ request, candidate: input.candidate }),
   );
 }
 
@@ -1608,6 +1615,32 @@ export function evaluateDossierSourceFileRefresh(input: {
   };
 }
 
+function expireStaleOpenRefreshRequests(
+  requests: DossierSourceFileRefreshRequest[],
+  now: string,
+): DossierSourceFileRefreshRequest[] {
+  const nowTime = Date.parse(now);
+  return requests.map((request) => {
+    const updatedAt = Date.parse(request.updatedAt || request.requestedAt);
+    if (
+      OPEN_REQUEST_STATUSES.has(request.status) &&
+      !Number.isNaN(nowTime) &&
+      !Number.isNaN(updatedAt) &&
+      nowTime - updatedAt > STALE_OPEN_REFRESH_REQUEST_MS
+    ) {
+      return {
+        ...request,
+        status: "failed" as const,
+        updatedAt: now,
+        failureReason:
+          request.failureReason ??
+          "Refresh request expired before immediate BNL update completed.",
+      };
+    }
+    return request;
+  });
+}
+
 function upsertSourceFileRefreshRequestInState(input: {
   state: DossierWorkflowState;
   candidate: DossierCandidate;
@@ -1621,14 +1654,14 @@ function upsertSourceFileRefreshRequestInState(input: {
   const state = {
     ...input.state,
     sourceFileRefreshRequests: mergeActiveSourceFileRefreshRequests(
-      input.state.sourceFileRefreshRequests,
+      expireStaleOpenRefreshRequests(input.state.sourceFileRefreshRequests, input.now),
     ),
   };
   const normalizedSubjectKey = normalizeName(input.candidate.name);
   const existingIndex = state.sourceFileRefreshRequests.findIndex(
     (request) =>
       OPEN_REQUEST_STATUSES.has(request.status) &&
-      (request.candidateId === input.candidate.id || request.normalizedSubjectKey === normalizedSubjectKey),
+      sourceFileRefreshRequestMatchesCandidate({ request, candidate: input.candidate }),
   );
   if (existingIndex >= 0) {
     const existing = state.sourceFileRefreshRequests[existingIndex];
@@ -1710,31 +1743,17 @@ export async function recordDossierSourceFileOpen(input: {
       refreshRequests: currentState.sourceFileRefreshRequests,
       now,
     });
-    const existingOpenRequest = latestOpenRefreshRequest({
-      requests: mergeActiveSourceFileRefreshRequests(
-        currentState.sourceFileRefreshRequests,
-      ),
-      candidate,
-    });
-    if (!decision.needed || existingOpenRequest) {
-      result = { request: existingOpenRequest ?? null, decision, created: false };
-      return existingOpenRequest
-        ? {
-            ...currentState,
-            sourceFileRefreshRequests: mergeActiveSourceFileRefreshRequests(
-              currentState.sourceFileRefreshRequests,
-            ),
-          }
-        : currentState;
-    }
     const upserted = upsertSourceFileRefreshRequestInState({
       state: currentState,
       candidate,
-      reason: decision.reason,
+      reason: decision.needed
+        ? decision.reason
+        : "Admin opened the Source File and requested an immediate BNL freshness check.",
       requestSource: decision.requestSource === "opened_source_file" ? "opened_source_file" : decision.requestSource,
-      priority: decision.priority,
+      priority: Math.max(decision.priority, 60),
       requestedBy: input.requestedBy ?? "admin_open_source_file",
       now,
+      force: true,
     });
     result = { request: upserted.request, decision, created: upserted.created };
     return upserted.state;
@@ -1827,9 +1846,10 @@ function completeMatchingRefreshRequestsInState(input: {
   const requests = activeDedupedRequests.map((request) => {
     const matches =
       COMPLETABLE_REFRESH_STATUSES.has(request.status) &&
-      ((targetCandidateId && request.candidateId === targetCandidateId) ||
-        request.normalizedSubjectKey === normalizedSubjectKey ||
-        normalizeName(request.subjectName) === normalizeName(input.recommendation.subjectName));
+      (request.candidateId
+        ? Boolean(targetCandidateId && request.candidateId === targetCandidateId)
+        : request.normalizedSubjectKey === normalizedSubjectKey ||
+          normalizeName(request.subjectName) === normalizeName(input.recommendation.subjectName));
     if (!matches) return request;
     changed = true;
     return {

@@ -322,6 +322,11 @@ export default function DossierControlCenterPage() {
     closedDraftStatuses.has(draft.status),
   );
   const activeDuplicateGroups = duplicateGroups.filter((group) => {
+    if (group.category === "signal_already_attached") return true;
+    if (group.category === "existing_public_dossier_overlap") return true;
+    if (group.category === "dossier_seed_likely_duplicate_of_case_file") return true;
+    if (group.category === "dossier_seed_can_be_promoted") return true;
+    if (group.category === "low_value_junk_test_extraction_candidate") return true;
     const activeGroupCandidates = group.candidateIds
       .map((candidateId) =>
         candidates.find((candidate) => candidate.id === candidateId),
@@ -336,6 +341,18 @@ export default function DossierControlCenterPage() {
     (group) =>
       !activeDuplicateGroups.some((activeGroup) => activeGroup.id === group.id),
   );
+  const duplicateAnalysisSummary = {
+    exact: activeDuplicateGroups.filter((group) => group.category === "exact_same_subject").length,
+    possible: activeDuplicateGroups.filter((group) => group.category === "possible_same_subject").length,
+    identity: activeDuplicateGroups.filter((group) => group.category === "identity_link_review_needed").length,
+    existingDossier: activeDuplicateGroups.filter((group) => group.category === "existing_public_dossier_overlap").length,
+    archive: activeDuplicateGroups.filter(
+      (group) =>
+        group.actionSafety === "safe_cleanup_recommendation" ||
+        (group.archiveCandidateIds?.length ?? 0) > 0 ||
+        (group.archiveRecommendationIds?.length ?? 0) > 0,
+    ).length,
+  };
   const sourceFileMetrics = new Map(
     candidates.map((candidate) => [
       candidate.id,
@@ -682,7 +699,8 @@ export default function DossierControlCenterPage() {
               sourceFilesWithUnappliedNotes.length,
             ],
             ["Signals Waiting", activeRecommendations.length],
-            ["Identity Links", activeDuplicateGroups.length],
+            ["Identity Links", activeDuplicateGroups.filter((group) => group.category === "identity_link_review_needed").length],
+            ["Record Compactor", activeDuplicateGroups.length],
             ["Archive / History", closedHistoryCount],
           ].map(([label, value]) => (
             <div key={label} className="border border-border bg-surface p-4">
@@ -1301,32 +1319,76 @@ export default function DossierControlCenterPage() {
         </DashboardCard>
 
         <DashboardCard
-          eyebrow="Identity safety"
-          title="Identity Links"
+          eyebrow="Duplicate Analysis"
+          title="Record Compactor"
           aside={
             <StatusPill>
-              {activeDuplicateGroups.length} active warnings
+              {activeDuplicateGroups.length} active groups
             </StatusPill>
           }
         >
+          <p className="text-sm text-muted">
+            Duplicate Analysis groups related BNL Signals, Dossier Seeds, Case Files, Dossier Updates, Identity Links, Proposed Dossiers, and existing public dossier overlaps. It recommends safe cleanup or review decisions only; it does not auto-merge, auto-delete, auto-publish, auto-draft, auto-tag, or auto-confirm aliases.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 text-xs text-muted">
+            {[
+              ["Exact duplicate groups", duplicateAnalysisSummary.exact],
+              ["Possible duplicate groups", duplicateAnalysisSummary.possible],
+              ["Identity-link review groups", duplicateAnalysisSummary.identity],
+              ["Existing dossier overlap groups", duplicateAnalysisSummary.existingDossier],
+              ["Archive candidates", duplicateAnalysisSummary.archive],
+            ].map(([label, value]) => (
+              <div key={label} className="border border-border/70 bg-background/20 p-3">
+                <p className="uppercase tracking-[0.3em] text-accent mb-2">{label}</p>
+                <p className="text-xl font-bold text-foreground">{value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-muted">
+            <p className="border border-border/70 bg-background/20 p-3">
+              Safe cleanup recommendation: explicit admin archive or review can reduce clutter without changing public dossier content.
+            </p>
+            <p className="border border-border/70 bg-background/20 p-3">
+              Identity-sensitive recommendation: aliases or public dossier overlap require admin identity review before linking or compacting.
+            </p>
+            <p className="border border-border/70 bg-background/20 p-3">
+              Destructive action requiring confirmation: merge/delete remains behind existing explicit controls and never runs automatically.
+            </p>
+          </div>
           {activeDuplicateGroups.length === 0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
-              No duplicate or identity warnings need owner/lead review.
+              No duplicate or compactor recommendations need owner/lead review.
             </p>
           ) : (
             <div className="space-y-3">
-              {activeDuplicateGroups.map((group) => (
+              {activeDuplicateGroups.slice(0, 12).map((group) => (
                 <article
                   key={group.id}
                   className="border border-border/70 bg-background/20 p-4 text-sm text-muted"
                 >
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div>
+                    <div className="space-y-2">
                       <p className="font-bold text-foreground">
                         {group.names.join(" / ")}
                       </p>
-                      <p>Risk: {group.risk}</p>
-                      <p>Reason: {group.reason}</p>
+                      <div className="flex flex-wrap gap-2 text-[0.65rem] uppercase tracking-widest">
+                        <StatusPill>{group.category.replace(/_/g, " ")}</StatusPill>
+                        <StatusPill>Risk: {group.risk}</StatusPill>
+                        <StatusPill>{group.actionSafety.replace(/_/g, " ")}</StatusPill>
+                      </div>
+                      <p>Why grouped: {group.reasons?.join(" ") || group.reason}</p>
+                      <p>Recommended action: {group.recommendedAction}</p>
+                      <p>Admin must decide: {group.adminDecision}</p>
+                      <div>
+                        <p className="text-foreground">Records involved:</p>
+                        <ul className="mt-1 list-disc pl-5 space-y-1">
+                          {group.records.map((record) => (
+                            <li key={`${record.kind}-${record.id}`}>
+                              {record.workspaceType}: {record.label} ({record.status ?? record.kind})
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     </div>
                     <Link
                       href={`/admin/dossiers/duplicates/${group.id}`}

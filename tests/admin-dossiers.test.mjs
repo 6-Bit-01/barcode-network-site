@@ -2406,6 +2406,250 @@ test("workflow duplicate group detection leaves clear non-duplicates ungrouped",
   assert.deepEqual(payload.duplicateGroups, []);
 });
 
+
+test("record compactor separates exact, possible, and existing dossier overlap analysis", async () => {
+  await resetWorkflowStore();
+  const first = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Signal Witch" },
+    })
+  ).json();
+  const second = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Signal Witch" },
+    })
+  ).json();
+  await authedPost({
+    action: "createManualCandidate",
+    input: { ...manualCandidateInput, name: "Signal Witch Extended" },
+  });
+  await authedPost({
+    action: "createManualCandidate",
+    input: {
+      ...manualCandidateInput,
+      name: databasePage.entries[0].name,
+      reason: "Existing public dossier overlap should be separate.",
+    },
+  });
+
+  const payload = await (await authedGet()).json();
+  const exact = payload.duplicateGroups.find(
+    (group) => group.category === "exact_same_subject",
+  );
+  const possible = payload.duplicateGroups.find(
+    (group) => group.category === "possible_same_subject",
+  );
+  const existingOverlap = payload.duplicateGroups.find(
+    (group) => group.category === "existing_public_dossier_overlap",
+  );
+
+  assert.ok(exact);
+  assert.equal(exact.risk, "high");
+  assert.deepEqual(
+    new Set([first.candidate.id, second.candidate.id]),
+    new Set(exact.candidateIds),
+  );
+  assert.ok(possible);
+  assert.equal(possible.risk, "medium");
+  assert.ok(existingOverlap);
+  assert.equal(existingOverlap.existingPublishedDossierMatch.id, databasePage.entries[0].id);
+  assert.ok(existingOverlap.records.some((record) => record.workspaceType === "Existing Public Dossier"));
+});
+
+test("record compactor uses only confirmed matching aliases as identity proof", async () => {
+  await resetWorkflowStore();
+  const aliasOwner = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Deadite Ash" },
+    })
+  ).json();
+  await authedPost({
+    action: "createManualCandidate",
+    input: { ...manualCandidateInput, name: "ShadowsPit" },
+  });
+
+  const proposed = await (
+    await authedPost({
+      action: "addDossierIdentityLink",
+      candidateId: aliasOwner.candidate.id,
+      input: { label: "ShadowsPit", type: "discord_handle", useForMatching: true },
+    })
+  ).json();
+  let payload = await (await authedGet()).json();
+  assert.equal(
+    payload.duplicateGroups.some((group) => group.category === "identity_link_review_needed"),
+    false,
+  );
+
+  await authedPost({
+    action: "confirmDossierIdentityLink",
+    candidateId: aliasOwner.candidate.id,
+    identityLinkId: proposed.identityLink.id,
+    useForMatching: false,
+  });
+  payload = await (await authedGet()).json();
+  assert.equal(
+    payload.duplicateGroups.some((group) => group.category === "identity_link_review_needed"),
+    false,
+  );
+
+  const rejected = await (
+    await authedPost({
+      action: "addDossierIdentityLink",
+      candidateId: aliasOwner.candidate.id,
+      input: { label: "Shadows Pit", type: "alias" },
+    })
+  ).json();
+  await authedPost({
+    action: "rejectDossierIdentityLink",
+    candidateId: aliasOwner.candidate.id,
+    identityLinkId: rejected.identityLink.id,
+  });
+  const retired = await (
+    await authedPost({
+      action: "addDossierIdentityLink",
+      candidateId: aliasOwner.candidate.id,
+      input: { label: "SP Retired", type: "alternate_spelling" },
+    })
+  ).json();
+  await authedPost({
+    action: "retireDossierIdentityLink",
+    candidateId: aliasOwner.candidate.id,
+    identityLinkId: retired.identityLink.id,
+  });
+  payload = await (await authedGet()).json();
+  assert.equal(
+    payload.duplicateGroups.some((group) => group.category === "identity_link_review_needed"),
+    false,
+  );
+
+  const confirmedMatch = await (
+    await authedPost({
+      action: "addDossierIdentityLink",
+      candidateId: aliasOwner.candidate.id,
+      input: { label: "ShadowsPit Live", type: "alias" },
+    })
+  ).json();
+  await authedPost({
+    action: "createManualCandidate",
+    input: { ...manualCandidateInput, name: "ShadowsPit Live" },
+  });
+  await authedPost({
+    action: "confirmDossierIdentityLink",
+    candidateId: aliasOwner.candidate.id,
+    identityLinkId: confirmedMatch.identityLink.id,
+    useForMatching: true,
+  });
+  payload = await (await authedGet()).json();
+  const identityGroup = payload.duplicateGroups.find(
+    (group) => group.category === "identity_link_review_needed",
+  );
+  assert.ok(identityGroup);
+  assert.equal(identityGroup.actionSafety, "identity_sensitive_recommendation");
+  assert.ok(identityGroup.records.some((record) => record.workspaceType === "Identity Link"));
+});
+
+test("record compactor flags attached signals and seed duplicates without automation", async () => {
+  await resetWorkflowStore();
+  const caseFile = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Compactor Subject" },
+    })
+  ).json();
+  await authedPost({ action: "promoteCandidateToSourceFile", candidateId: caseFile.candidate.id });
+  const signal = await (
+    await authedPost({
+      action: "createDossierRecommendation",
+      input: {
+        type: "new_subject",
+        subjectName: "Compactor Subject",
+        reason: "Signal should attach to existing Case File.",
+        sourceLanes: ["admin_manual"],
+      },
+    })
+  ).json();
+  await authedPost({
+    action: "attachRecommendationToCandidate",
+    recommendationId: signal.recommendation.id,
+    candidateId: caseFile.candidate.id,
+  });
+  const seed = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Compactor Subject" },
+    })
+  ).json();
+
+  const currentState = await store.getDossierWorkflowState();
+  await store.saveDossierWorkflowState({
+    ...currentState,
+    candidates: currentState.candidates.map((candidate) =>
+      candidate.id === seed.candidate.id
+        ? { ...candidate, status: "candidate_intake" }
+        : candidate,
+    ),
+  });
+
+  const before = await (await authedGet()).json();
+  const beforeCandidateStatuses = before.candidates.map((candidate) => `${candidate.id}:${candidate.status}`).join("|");
+  const beforeRecommendationStatuses = before.recommendations.map((recommendation) => `${recommendation.id}:${recommendation.status}`).join("|");
+  const payload = await (await authedGet()).json();
+  const attachedGroup = payload.duplicateGroups.find(
+    (group) => group.category === "signal_already_attached",
+  );
+  const seedGroup = payload.duplicateGroups.find(
+    (group) => group.category === "dossier_seed_likely_duplicate_of_case_file",
+  );
+
+  assert.ok(attachedGroup);
+  assert.equal(attachedGroup.actionSafety, "safe_cleanup_recommendation");
+  assert.deepEqual(attachedGroup.archiveRecommendationIds, [signal.recommendation.id]);
+  assert.ok(attachedGroup.records.some((record) => record.workspaceType === "BNL Signal"));
+  assert.ok(attachedGroup.records.some((record) => record.workspaceType === "Case File"));
+  assert.ok(seedGroup);
+  assert.deepEqual(seedGroup.archiveCandidateIds, [seed.candidate.id]);
+  assert.equal(before.candidates.find((candidate) => candidate.id === seed.candidate.id).status, "candidate_intake");
+  assert.ok(seedGroup.records.some((record) => record.workspaceType === "Dossier Seed"));
+  assert.ok(seedGroup.records.some((record) => record.workspaceType === "Case File"));
+
+  const after = await (await authedGet()).json();
+  assert.equal(after.candidates.map((candidate) => `${candidate.id}:${candidate.status}`).join("|"), beforeCandidateStatuses);
+  assert.equal(after.recommendations.map((recommendation) => `${recommendation.id}:${recommendation.status}`).join("|"), beforeRecommendationStatuses);
+  assert.equal(after.drafts.length, 0);
+  assert.equal(databasePage.entries.some((entry) => entry.name === "Compactor Subject"), false);
+});
+
+test("record compactor dashboard copy is compact, safe, and uses PR 175 lane language", () => {
+  const dashboard = normalizedSource("src/app/admin/dossiers/page.tsx");
+  const duplicatePage = normalizedSource("src/app/admin/dossiers/duplicates/[groupId]/page.tsx");
+  for (const label of [
+    "Duplicate Analysis",
+    "Record Compactor",
+    "Exact duplicate groups",
+    "Possible duplicate groups",
+    "Identity-link review groups",
+    "Existing dossier overlap groups",
+    "Archive candidates",
+    "Signal Review",
+    "Dossier Seeds",
+    "Case Files",
+    "Dossier Updates",
+    "Identity Links",
+    "Proposed Dossiers",
+    "Owner Review",
+  ]) {
+    assertIncludesCopy(dashboard, label);
+  }
+  assert.match(dashboard, /does not auto-merge, auto-delete, auto-publish, auto-draft, auto-tag, or auto-confirm aliases/);
+  assert.match(duplicatePage, /does not\s+publish, auto-merge, auto-delete, auto-draft, auto-tag, or\s+auto-confirm aliases/);
+  assert.doesNotMatch(dashboard, /sourcePackage|rawProvenance|Full BNL Source Archive/);
+  assert.doesNotMatch(duplicatePage, /sourcePackage|rawProvenance|Full BNL Source Archive/);
+});
+
 test("mergeCandidates preserves sources and unions candidate review fields", async () => {
   await resetWorkflowStore();
   const first = await (

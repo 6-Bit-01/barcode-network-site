@@ -4490,6 +4490,108 @@ export async function getDossierCandidate(
   );
 }
 
+function candidateWorkspaceType(
+  candidate: DossierCandidate,
+): DossierDuplicateGroup["records"][number]["workspaceType"] {
+  if (candidate.status === "candidate_intake") return "Dossier Seed";
+  if (candidate.status === "existing_dossier_update") return "Dossier Update";
+  if (candidate.status === "archived" || candidate.status === "denied" || candidate.status === "merged") {
+    return "Archive / History";
+  }
+  return "Case File";
+}
+
+function duplicateGroupActionFor(
+  category: DossierDuplicateGroup["category"],
+): Pick<
+  DossierDuplicateGroup,
+  "recommendedAction" | "adminDecision" | "actionSafety"
+> {
+  switch (category) {
+    case "exact_same_subject":
+      return {
+        recommendedAction:
+          "Review the matching workflow records and decide whether one visible workspace should remain primary. Do not merge automatically.",
+        adminDecision:
+          "Admin must choose whether to keep separate, archive a duplicate record, or use the existing explicit merge review.",
+        actionSafety: "destructive_requires_confirmation",
+      };
+    case "possible_same_subject":
+      return {
+        recommendedAction:
+          "Compare evidence, source notes, and context before deciding whether these are separate subjects or overlapping records.",
+        adminDecision:
+          "Admin must decide whether names are genuinely the same subject or should stay separate.",
+        actionSafety: "review_only",
+      };
+    case "existing_public_dossier_overlap":
+      return {
+        recommendedAction:
+          "Treat as Dossier Update material for the existing public dossier unless admin confirms this is a separate subject.",
+        adminDecision:
+          "Admin must confirm the existing public dossier target or keep the internal record separate. No public content changes here.",
+        actionSafety: "identity_sensitive_recommendation",
+      };
+    case "identity_link_review_needed":
+      return {
+        recommendedAction:
+          "Review confirmed matching aliases and identity-link evidence before using them for cleanup decisions.",
+        adminDecision:
+          "Admin must decide whether the identity relationship is enough to archive/link/merge records. Aliases are not auto-confirmed.",
+        actionSafety: "identity_sensitive_recommendation",
+      };
+    case "signal_already_attached":
+      return {
+        recommendedAction:
+          "Signal is already attached to a Case File. It can be archived from the Signal Review lane after review.",
+        adminDecision:
+          "Admin must confirm the attached signal no longer needs to stay visible as new work.",
+        actionSafety: "safe_cleanup_recommendation",
+      };
+    case "dossier_seed_can_be_promoted":
+      return {
+        recommendedAction:
+          "Dossier Seed appears to have enough signal to promote later, but this analysis does not promote it.",
+        adminDecision:
+          "Admin must decide whether to promote the seed to a Case File or keep collecting evidence.",
+        actionSafety: "review_only",
+      };
+    case "dossier_seed_likely_duplicate_of_case_file":
+      return {
+        recommendedAction:
+          "Keep the active Case File as the workspace and consider archiving the matching Dossier Seed after review.",
+        adminDecision:
+          "Admin must confirm the Dossier Seed does not contain unique information before archiving it.",
+        actionSafety: "safe_cleanup_recommendation",
+      };
+    case "dossier_update_duplicate":
+      return {
+        recommendedAction:
+          "Consolidate review attention around the existing Dossier Update target and archive duplicate update records only after explicit review.",
+        adminDecision:
+          "Admin must decide which update record remains visible and confirm no public copy changes are being made.",
+        actionSafety: "safe_cleanup_recommendation",
+      };
+    case "low_value_junk_test_extraction_candidate":
+      return {
+        recommendedAction:
+          "Consider explicit archive if this is junk, test, or low-value extraction noise.",
+        adminDecision:
+          "Admin must confirm archive manually. Permanent delete remains behind existing explicit confirmation.",
+        actionSafety: "safe_cleanup_recommendation",
+      };
+    case "keep_separate":
+    default:
+      return {
+        recommendedAction:
+          "Keep records separate unless stronger evidence appears.",
+        adminDecision:
+          "Admin should document why these records remain separate if reviewed.",
+        actionSafety: "review_only",
+      };
+  }
+}
+
 export function buildDossierDuplicateGroups(
   state: DossierWorkflowState,
 ): DossierDuplicateGroup[] {
@@ -4498,6 +4600,134 @@ export function buildDossierDuplicateGroups(
     const list = draftsByCandidate.get(draft.candidateId) ?? [];
     list.push(draft);
     draftsByCandidate.set(draft.candidateId, list);
+  }
+  const candidatesById = new Map(
+    state.candidates.map((candidate) => [candidate.id, candidate]),
+  );
+  const recommendationsById = new Map(
+    state.recommendations.map((recommendation) => [recommendation.id, recommendation]),
+  );
+
+  type DraftGroup = {
+    key: string;
+    normalizedName: string;
+    category: DossierDuplicateGroup["category"];
+    candidateIds: Set<string>;
+    draftIds: Set<string>;
+    recommendationIds: Set<string>;
+    records: DossierDuplicateGroup["records"];
+    reasons: Set<string>;
+    risk: DossierDuplicateGroup["risk"];
+    existingPublishedDossierMatch?: DossierDuplicateGroup["existingPublishedDossierMatch"];
+    archiveCandidateIds: Set<string>;
+    archiveRecommendationIds: Set<string>;
+  };
+
+  const groups = new Map<string, DraftGroup>();
+
+  function addRecord(group: DraftGroup, record: DossierDuplicateGroup["records"][number]) {
+    if (group.records.some((item) => item.id === record.id && item.kind === record.kind)) return;
+    group.records.push(record);
+  }
+
+  function ensureGroup(
+    category: DossierDuplicateGroup["category"],
+    key: string,
+    risk: DossierDuplicateGroup["risk"],
+    reason: string,
+  ): DraftGroup {
+    const groupKey = `${category}:${key}`;
+    const existing = groups.get(groupKey);
+    if (existing) {
+      existing.risk = riskRank(risk) > riskRank(existing.risk) ? risk : existing.risk;
+      existing.reasons.add(reason);
+      return existing;
+    }
+    const group: DraftGroup = {
+      key: groupKey,
+      normalizedName: key,
+      category,
+      candidateIds: new Set(),
+      draftIds: new Set(),
+      recommendationIds: new Set(),
+      records: [],
+      reasons: new Set([reason]),
+      risk,
+      archiveCandidateIds: new Set(),
+      archiveRecommendationIds: new Set(),
+    };
+    groups.set(groupKey, group);
+    return group;
+  }
+
+  function addCandidate(group: DraftGroup, candidate: DossierCandidate) {
+    group.candidateIds.add(candidate.id);
+    addRecord(group, {
+      id: candidate.id,
+      kind: "candidate",
+      workspaceType: candidateWorkspaceType(candidate),
+      label: candidate.name,
+      status: candidate.status,
+      candidateId: candidate.id,
+    });
+    for (const draft of draftsByCandidate.get(candidate.id) ?? []) {
+      group.draftIds.add(draft.id);
+      addRecord(group, {
+        id: draft.id,
+        kind: "draft",
+        workspaceType: "Proposed Dossier",
+        label: draft.fields.name,
+        status: draft.status,
+        candidateId: candidate.id,
+        draftId: draft.id,
+      });
+    }
+    if (candidate.existingDossierMatch) {
+      group.existingPublishedDossierMatch = candidate.existingDossierMatch;
+      addRecord(group, {
+        id: candidate.existingDossierMatch.id,
+        kind: "publicDossier",
+        workspaceType: "Existing Public Dossier",
+        label: candidate.existingDossierMatch.name,
+        status: candidate.existingDossierMatch.confidence,
+        publicDossierId: candidate.existingDossierMatch.id,
+      });
+    }
+  }
+
+  function addRecommendation(group: DraftGroup, recommendation: DossierRecommendation) {
+    group.recommendationIds.add(recommendation.id);
+    addRecord(group, {
+      id: recommendation.id,
+      kind: "recommendation",
+      workspaceType: recommendation.status === "archived" ? "Archive / History" : "BNL Signal",
+      label: recommendation.subjectName,
+      status: recommendation.status,
+      recommendationId: recommendation.id,
+      candidateId: recommendation.targetCandidateId,
+    });
+    if (recommendation.targetDossierId) {
+      const entry = databasePage.entries.find((item) => item.id === recommendation.targetDossierId);
+      addRecord(group, {
+        id: recommendation.targetDossierId,
+        kind: "publicDossier",
+        workspaceType: "Existing Public Dossier",
+        label: entry?.name ?? recommendation.targetDossierId,
+        status: "targeted",
+        publicDossierId: recommendation.targetDossierId,
+      });
+    }
+  }
+
+  function addIdentityLink(group: DraftGroup, candidate: DossierCandidate, link: DossierIdentityLink) {
+    addRecord(group, {
+      id: link.id,
+      kind: "identityLink",
+      workspaceType: "Identity Link",
+      label: link.label,
+      status: `${link.status}${link.useForMatching ? " / matching" : ""}`,
+      candidateId: candidate.id,
+    });
   }
 
   const eligible = state.candidates.filter((candidate) => {
@@ -4511,29 +4741,6 @@ export function buildDossierDuplicateGroups(
     return true;
   });
 
-  const candidateIdsByGroupKey = new Map<string, Set<string>>();
-  const groupRiskByKey = new Map<string, DossierDuplicateGroup["risk"]>();
-  const groupReasonByKey = new Map<string, string>();
-
-  function addPair(
-    key: string,
-    a: DossierCandidate,
-    b: DossierCandidate,
-    risk: DossierDuplicateGroup["risk"],
-    reason: string,
-  ) {
-    const ids = candidateIdsByGroupKey.get(key) ?? new Set<string>();
-    ids.add(a.id);
-    ids.add(b.id);
-    candidateIdsByGroupKey.set(key, ids);
-    const currentRisk = groupRiskByKey.get(key) ?? "low";
-    groupRiskByKey.set(
-      key,
-      riskRank(risk) > riskRank(currentRisk) ? risk : currentRisk,
-    );
-    if (!groupReasonByKey.has(key)) groupReasonByKey.set(key, reason);
-  }
-
   for (let i = 0; i < eligible.length; i += 1) {
     for (let j = i + 1; j < eligible.length; j += 1) {
       const a = eligible[i];
@@ -4543,24 +4750,36 @@ export function buildDossierDuplicateGroups(
       const compactA = compactName(a.name);
       const compactB = compactName(b.name);
       if (!normalizedA || !normalizedB) continue;
-      if (normalizedA === normalizedB) {
-        addPair(
-          normalizedA,
-          a,
-          b,
+      if (normalizedA === normalizedB || (compactA && compactA === compactB)) {
+        const lightweightStatuses = new Set<DossierCandidateStatus>([
+          "candidate_intake",
+          "suggested",
+          "needs_review",
+        ]);
+        const seedCasePair = [a, b].some((candidate) =>
+          lightweightStatuses.has(candidate.status),
+        ) && [a, b].some((candidate) => candidate.status === "active_source_file");
+        const updatePair = a.status === "existing_dossier_update" && b.status === "existing_dossier_update";
+        const category: DossierDuplicateGroup["category"] = updatePair
+          ? "dossier_update_duplicate"
+          : seedCasePair
+            ? "dossier_seed_likely_duplicate_of_case_file"
+            : "exact_same_subject";
+        const group = ensureGroup(
+          category,
+          normalizedA || compactA,
           "high",
-          "Exact normalized candidate name match inside workflow store.",
+          normalizedA === normalizedB
+            ? "Exact normalized subject name match."
+            : "Compact subject names match after removing punctuation and spaces.",
         );
-        continue;
-      }
-      if (compactA && compactA === compactB) {
-        addPair(
-          compactA,
-          a,
-          b,
-          "high",
-          "Compact candidate names match after removing punctuation and spaces.",
-        );
+        addCandidate(group, a);
+        addCandidate(group, b);
+        if (seedCasePair) {
+          for (const candidate of [a, b]) {
+            if (lightweightStatuses.has(candidate.status)) group.archiveCandidateIds.add(candidate.id);
+          }
+        }
         continue;
       }
       if (
@@ -4569,69 +4788,215 @@ export function buildDossierDuplicateGroups(
         (normalizedA.includes(normalizedB) || normalizedB.includes(normalizedA))
       ) {
         const key = compactA.length <= compactB.length ? compactA : compactB;
-        addPair(
+        const group = ensureGroup(
+          "possible_same_subject",
           key,
-          a,
-          b,
           "medium",
           "Candidate names appear to contain or closely overlap each other.",
         );
+        addCandidate(group, a);
+        addCandidate(group, b);
       }
     }
   }
 
-  return [...candidateIdsByGroupKey.entries()]
-    .map(([key, ids]) => {
-      const groupCandidates = [...ids]
-        .map((id) => eligible.find((candidate) => candidate.id === id))
-        .filter((candidate): candidate is DossierCandidate =>
-          Boolean(candidate),
-        )
-        .sort(
-          (a, b) =>
-            a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+  const byExistingDossier = new Map<string, DossierCandidate[]>();
+  for (const candidate of eligible) {
+    if (!candidate.existingDossierMatch?.id) continue;
+    const list = byExistingDossier.get(candidate.existingDossierMatch.id) ?? [];
+    list.push(candidate);
+    byExistingDossier.set(candidate.existingDossierMatch.id, list);
+  }
+  for (const [dossierId, items] of byExistingDossier.entries()) {
+    const match = items[0]?.existingDossierMatch;
+    if (!match) continue;
+    const group = ensureGroup(
+      items.length > 1 && items.every((item) => item.status === "existing_dossier_update")
+        ? "dossier_update_duplicate"
+        : "existing_public_dossier_overlap",
+      dossierId,
+      match.confidence === "high" ? "high" : "medium",
+      "Existing public dossier match overlaps with internal workflow record(s).",
+    );
+    group.existingPublishedDossierMatch = match;
+    for (const candidate of items) addCandidate(group, candidate);
+  }
+
+  for (const recommendation of state.recommendations) {
+    if (recommendation.targetDossierId) {
+      const group = ensureGroup(
+        "existing_public_dossier_overlap",
+        recommendation.targetDossierId,
+        recommendation.confidence === "high" ? "high" : "medium",
+        "BNL Signal targets an existing public dossier.",
+      );
+      addRecommendation(group, recommendation);
+      for (const candidate of byExistingDossier.get(recommendation.targetDossierId) ?? []) addCandidate(group, candidate);
+    }
+    if (recommendation.targetCandidateId) {
+      const candidate = candidatesById.get(recommendation.targetCandidateId);
+      if (candidate) {
+        const exactSubject = normalizeName(recommendation.subjectName) === normalizeName(candidate.name) ||
+          compactName(recommendation.subjectName) === compactName(candidate.name);
+        const attachedStatus = [
+          "attached_to_source_file",
+          "attached_to_candidate_intake",
+          "attached_to_existing_dossier_update",
+        ].includes(recommendation.status);
+        const group = ensureGroup(
+          attachedStatus ? "signal_already_attached" : exactSubject ? "exact_same_subject" : "possible_same_subject",
+          `${recommendation.targetCandidateId}:${compactName(recommendation.subjectName)}`,
+          attachedStatus ? "low" : exactSubject ? "high" : "medium",
+          attachedStatus
+            ? "BNL Signal is already attached to an internal workspace."
+            : "BNL Signal subject and candidate subject point at the same internal workspace.",
         );
-      const draftIds = groupCandidates
-        .flatMap((candidate) => draftsByCandidate.get(candidate.id) ?? [])
-        .map((draft) => draft.id)
-        .sort();
+        addRecommendation(group, recommendation);
+        addCandidate(group, candidate);
+        if (attachedStatus) group.archiveRecommendationIds.add(recommendation.id);
+      }
+    }
+  }
+
+  for (const candidate of eligible) {
+    if (!candidate.createdFromRecommendationId) continue;
+    const recommendation = recommendationsById.get(candidate.createdFromRecommendationId);
+    if (!recommendation) continue;
+    const group = ensureGroup(
+      recommendation.status === "converted_to_source_file" ? "signal_already_attached" : "exact_same_subject",
+      `${candidate.id}:${recommendation.id}`,
+      recommendation.status === "converted_to_source_file" ? "low" : "medium",
+      "Candidate was created from this BNL Signal.",
+    );
+    addCandidate(group, candidate);
+    addRecommendation(group, recommendation);
+    if (recommendation.status === "converted_to_source_file") group.archiveRecommendationIds.add(recommendation.id);
+  }
+
+  const aliasOwnersByKey = new Map<string, Array<{ candidate: DossierCandidate; link: DossierIdentityLink }>>();
+  for (const candidate of eligible) {
+    for (const link of candidate.identityLinks ?? []) {
+      if (link.status !== "confirmed" || link.useForMatching !== true) continue;
+      const key = normalizeName(link.normalizedLabel || link.label);
+      if (!key) continue;
+      const list = aliasOwnersByKey.get(key) ?? [];
+      list.push({ candidate, link });
+      aliasOwnersByKey.set(key, list);
+    }
+  }
+  for (const [aliasKey, owners] of aliasOwnersByKey.entries()) {
+    const namedMatches = eligible.filter((candidate) => normalizeName(candidate.name) === aliasKey || compactName(candidate.name) === aliasKey.replace(/\s+/g, ""));
+    const uniqueCandidates = new Map<string, DossierCandidate>();
+    for (const { candidate } of owners) uniqueCandidates.set(candidate.id, candidate);
+    for (const candidate of namedMatches) uniqueCandidates.set(candidate.id, candidate);
+    if (uniqueCandidates.size < 2) continue;
+    const group = ensureGroup(
+      "identity_link_review_needed",
+      aliasKey,
+      "high",
+      "Confirmed identity alias marked useForMatching=true overlaps another workflow subject.",
+    );
+    for (const candidate of uniqueCandidates.values()) addCandidate(group, candidate);
+    for (const { candidate, link } of owners) addIdentityLink(group, candidate, link);
+  }
+
+  const archiveDigestGroups = new Map<string, DossierCandidate[]>();
+  for (const candidate of eligible) {
+    const key = candidate.latestSourceFileArchiveDigest?.trim();
+    if (!key) continue;
+    const list = archiveDigestGroups.get(key) ?? [];
+    list.push(candidate);
+    archiveDigestGroups.set(key, list);
+  }
+  for (const [digest, items] of archiveDigestGroups.entries()) {
+    if (items.length < 2) continue;
+    const group = ensureGroup(
+      "exact_same_subject",
+      `archive-${digest.slice(0, 16)}`,
+      "high",
+      "Source archive digest/latest archive metadata match across records.",
+    );
+    for (const candidate of items) addCandidate(group, candidate);
+  }
+
+  const lowValueSignals = ["test", "junk", "ignore", "discard", "low value"];
+  for (const candidate of eligible) {
+    const haystack = `${candidate.name} ${candidate.reason} ${candidate.evidenceSummary}`.toLowerCase();
+    if (!lowValueSignals.some((signal) => haystack.includes(signal))) continue;
+    const group = ensureGroup(
+      "low_value_junk_test_extraction_candidate",
+      candidate.id,
+      "low",
+      "Record text contains low-value/junk/test extraction language.",
+    );
+    addCandidate(group, candidate);
+    group.archiveCandidateIds.add(candidate.id);
+  }
+
+  for (const candidate of eligible) {
+    if (candidate.status !== "candidate_intake") continue;
+    const hasSignalDepth = candidate.score >= 70 || (candidate.evidenceItems?.length ?? 0) > 0 || (candidate.knownFacts?.length ?? 0) > 0;
+    if (!hasSignalDepth) continue;
+    const alreadyGroupedAsDuplicate = [...groups.values()].some(
+      (group) => group.category === "dossier_seed_likely_duplicate_of_case_file" && group.candidateIds.has(candidate.id),
+    );
+    if (alreadyGroupedAsDuplicate) continue;
+    const group = ensureGroup(
+      "dossier_seed_can_be_promoted",
+      candidate.id,
+      "low",
+      "Dossier Seed has enough reviewed signal to consider manual promotion.",
+    );
+    addCandidate(group, candidate);
+  }
+
+  return [...groups.values()]
+    .map((group) => {
+      const groupCandidates = [...group.candidateIds]
+        .map((id) => candidatesById.get(id))
+        .filter((candidate): candidate is DossierCandidate => Boolean(candidate))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+      const candidateDraftIds = groupCandidates.flatMap((candidate) => draftsByCandidate.get(candidate.id) ?? []).map((draft) => draft.id);
+      for (const draftId of candidateDraftIds) group.draftIds.add(draftId);
+      const names = uniqueStrings(
+        group.records.map((record) => record.label),
+        groupCandidates.map((candidate) => candidate.name),
+      ).sort((a, b) => a.localeCompare(b));
+      const action = duplicateGroupActionFor(group.category);
       const existingPublishedDossierMatch =
+        group.existingPublishedDossierMatch ??
         groupCandidates
           .map((candidate) => candidate.existingDossierMatch)
-          .filter(
-            (
-              match,
-            ): match is NonNullable<DossierCandidate["existingDossierMatch"]> =>
-              Boolean(match),
-          )
-          .sort(
-            (a, b) =>
-              confidenceRank(b.confidence) - confidenceRank(a.confidence) ||
-              a.id.localeCompare(b.id),
-          )[0] ?? null;
+          .filter((match): match is NonNullable<DossierCandidate["existingDossierMatch"]> => Boolean(match))
+          .sort((a, b) => confidenceRank(b.confidence) - confidenceRank(a.confidence) || a.id.localeCompare(b.id))[0] ??
+        null;
       return {
-        id: `workflow-duplicate-${key}`,
-        normalizedName: key,
-        candidateIds: groupCandidates.map((candidate) => candidate.id),
-        draftIds,
-        names: uniqueStrings(
-          groupCandidates.map((candidate) => candidate.name),
-        ).sort((a, b) => a.localeCompare(b)),
-        risk: groupRiskByKey.get(key) ?? "low",
-        reason:
-          groupReasonByKey.get(key) ??
-          "Possible workflow duplicate candidate names.",
+        id: `workflow-duplicate-${group.key.replace(/[^a-z0-9:_-]+/gi, "-")}`,
+        normalizedName: group.normalizedName,
+        candidateIds: [...group.candidateIds].sort(),
+        draftIds: [...group.draftIds].sort(),
+        recommendationIds: [...group.recommendationIds].sort(),
+        names,
+        risk: group.risk,
+        category: group.category,
+        records: group.records.sort((a, b) => a.workspaceType.localeCompare(b.workspaceType) || a.label.localeCompare(b.label)),
+        reasons: [...group.reasons].sort(),
+        reason: [...group.reasons].sort()[0] ?? "Possible workflow duplicate or overlap.",
+        ...action,
+        archiveCandidateIds: [...group.archiveCandidateIds].sort(),
+        archiveRecommendationIds: [...group.archiveRecommendationIds].sort(),
         suggestedMasterCandidateId: groupCandidates[0]?.id,
         existingPublishedDossierMatch,
       } satisfies DossierDuplicateGroup;
     })
-    .filter((group) => group.candidateIds.length > 1)
+    .filter((group) => group.records.length > 1 || group.category === "dossier_seed_can_be_promoted" || group.category === "low_value_junk_test_extraction_candidate")
     .sort(
       (a, b) =>
         riskRank(b.risk) - riskRank(a.risk) ||
+        a.category.localeCompare(b.category) ||
         a.normalizedName.localeCompare(b.normalizedName),
     )
-    .slice(0, 25);
+    .slice(0, 50);
 }
 
 function mergeEvidenceItems(

@@ -356,14 +356,63 @@ export type CreateExistingDossierUpdateTargetInput = {
   createdBy?: string;
 };
 
+export type DossierDuplicateAnalysisCategory =
+  | "exact_same_subject"
+  | "possible_same_subject"
+  | "existing_public_dossier_overlap"
+  | "identity_link_review_needed"
+  | "signal_already_attached"
+  | "dossier_seed_can_be_promoted"
+  | "dossier_seed_likely_duplicate_of_case_file"
+  | "dossier_update_duplicate"
+  | "low_value_junk_test_extraction_candidate"
+  | "keep_separate";
+
+export type DossierDuplicateRecordWorkspaceType =
+  | "BNL Signal"
+  | "Dossier Seed"
+  | "Case File"
+  | "Dossier Update"
+  | "Proposed Dossier"
+  | "Identity Link"
+  | "Existing Public Dossier"
+  | "Archive / History";
+
+export type DossierDuplicateAnalysisRecord = {
+  id: string;
+  kind: "candidate" | "recommendation" | "draft" | "identityLink" | "publicDossier";
+  workspaceType: DossierDuplicateRecordWorkspaceType;
+  label: string;
+  status?: string;
+  candidateId?: string;
+  recommendationId?: string;
+  draftId?: string;
+  publicDossierId?: string;
+};
+
+export type DossierDuplicateActionSafety =
+  | "safe_cleanup_recommendation"
+  | "identity_sensitive_recommendation"
+  | "destructive_requires_confirmation"
+  | "review_only";
+
 export type DossierDuplicateGroup = {
   id: string;
   normalizedName: string;
   candidateIds: string[];
   draftIds: string[];
+  recommendationIds: string[];
   names: string[];
   risk: "low" | "medium" | "high";
+  category: DossierDuplicateAnalysisCategory;
+  records: DossierDuplicateAnalysisRecord[];
+  reasons: string[];
   reason: string;
+  recommendedAction: string;
+  adminDecision: string;
+  actionSafety: DossierDuplicateActionSafety;
+  archiveCandidateIds?: string[];
+  archiveRecommendationIds?: string[];
   suggestedMasterCandidateId?: string;
   existingPublishedDossierMatch?: {
     id: string;

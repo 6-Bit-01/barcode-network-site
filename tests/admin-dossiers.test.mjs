@@ -1000,7 +1000,7 @@ test("admin dossier dashboard is a Control Center overview instead of an all-in-
   assert.match(page, /href="\/admin\/dossiers\/owner-review"/);
   assert.match(page, /href=\{`\/admin\/dossiers\/candidates\/\$\{candidate\.id\}`\}/);
   assert.match(page, /href=\{`\/admin\/dossiers\/drafts\/\$\{openDraftId\}`\}/);
-  assert.match(page, /href=\{`\/admin\/dossiers\/duplicates\/\$\{group\.id\}`\}/);
+  assert.match(page, /recordCompactorHref/);
   assert.match(page, /candidateAction\(candidate\.id, "archiveCandidate"\)/);
   assert.match(page, /candidateAction\(\s*candidate\.id,\s*"permanentlyDeleteCandidate"/);
   assert.match(page, /markCandidateAsExistingDossierUpdate/);
@@ -1528,7 +1528,7 @@ test("dashboard uses actual workflow ids, source metrics, and overview filtering
   const page = source("src/app/admin/dossiers/page.tsx");
   assert.match(page, /href=\{`\/admin\/dossiers\/candidates\/\$\{candidate\.id\}`\}/);
   assert.match(page, /href=\{`\/admin\/dossiers\/drafts\/\$\{openDraftId\}`\}/);
-  assert.match(page, /href=\{`\/admin\/dossiers\/duplicates\/\$\{group\.id\}`\}/);
+  assert.match(page, /recordCompactorHref/);
   assert.match(page, /activeCandidateStatuses/);
   assert.match(page, /activeCandidates = candidates\.filter/);
   assert.match(page, /activeDraftStatuses/);
@@ -1545,7 +1545,7 @@ test("dashboard uses actual workflow ids, source metrics, and overview filtering
   assert.match(page, /Create Proposed Dossier/);
   assert.match(page, /Mark Needs Info/);
   assert.match(page, /Archive \/ History/);
-  assert.match(page, /View Warning \/ Open Merge Review/);
+  assert.match(page, /Open Record Compactor/);
   assert.doesNotMatch(page, />Deny<|>Deny<\/button>/);
 });
 
@@ -2623,17 +2623,17 @@ test("record compactor flags attached signals and seed duplicates without automa
   assert.equal(databasePage.entries.some((entry) => entry.name === "Compactor Subject"), false);
 });
 
-test("record compactor dashboard copy is compact, safe, and uses PR 175 lane language", () => {
+test("record compactor dashboard uses a compact maintenance strip", () => {
   const dashboard = normalizedSource("src/app/admin/dossiers/page.tsx");
   const duplicatePage = normalizedSource("src/app/admin/dossiers/duplicates/[groupId]/page.tsx");
   for (const label of [
-    "Duplicate Analysis",
+    "Maintenance",
     "Record Compactor",
-    "Exact duplicate groups",
-    "Possible duplicate groups",
-    "Identity-link review groups",
-    "Existing dossier overlap groups",
+    "Possible overlaps",
+    "High-confidence",
+    "Identity-sensitive",
     "Archive candidates",
+    "Open Record Compactor",
     "Signal Review",
     "Dossier Seeds",
     "Case Files",
@@ -2644,7 +2644,11 @@ test("record compactor dashboard copy is compact, safe, and uses PR 175 lane lan
   ]) {
     assertIncludesCopy(dashboard, label);
   }
-  assert.match(dashboard, /does not auto-merge, auto-delete, auto-publish, auto-draft, auto-tag, or auto-confirm aliases/);
+  assert.match(dashboard, /recordCompactorHref/);
+  assert.doesNotMatch(dashboard, /Duplicate Analysis groups related/);
+  assert.doesNotMatch(dashboard, /Recommended action: \{group\.recommendedAction\}/);
+  assert.doesNotMatch(dashboard, /Records involved:/);
+  assert.doesNotMatch(dashboard, /Why grouped:/);
   assert.match(duplicatePage, /does not\s+publish, auto-merge, auto-delete, auto-draft, auto-tag, or\s+auto-confirm aliases/);
   assert.doesNotMatch(dashboard, /sourcePackage|rawProvenance|Full BNL Source Archive/);
   assert.doesNotMatch(duplicatePage, /sourcePackage|rawProvenance|Full BNL Source Archive/);
@@ -2961,7 +2965,7 @@ test("admin dossiers dashboard links duplicate groups to dedicated merge review"
     "src/app/admin/dossiers/duplicates/[groupId]/page.tsx",
   );
   assert.match(page, /Identity Links/);
-  assert.match(page, /View Warning \/ Open Merge Review/);
+  assert.match(page, /Open Record Compactor/);
   assert.match(page, /\/admin\/dossiers\/duplicates\//);
   assert.doesNotMatch(page, /Merge into Master Candidate/);
   assert.doesNotMatch(page, /Create Master Draft from Merge/);

@@ -342,17 +342,21 @@ export default function DossierControlCenterPage() {
       !activeDuplicateGroups.some((activeGroup) => activeGroup.id === group.id),
   );
   const duplicateAnalysisSummary = {
-    exact: activeDuplicateGroups.filter((group) => group.category === "exact_same_subject").length,
-    possible: activeDuplicateGroups.filter((group) => group.category === "possible_same_subject").length,
-    identity: activeDuplicateGroups.filter((group) => group.category === "identity_link_review_needed").length,
-    existingDossier: activeDuplicateGroups.filter((group) => group.category === "existing_public_dossier_overlap").length,
-    archive: activeDuplicateGroups.filter(
+    total: activeDuplicateGroups.length,
+    highConfidence: activeDuplicateGroups.filter((group) => group.risk === "high").length,
+    identitySensitive: activeDuplicateGroups.filter(
+      (group) => group.actionSafety === "identity_sensitive_recommendation",
+    ).length,
+    archiveCandidates: activeDuplicateGroups.filter(
       (group) =>
         group.actionSafety === "safe_cleanup_recommendation" ||
         (group.archiveCandidateIds?.length ?? 0) > 0 ||
         (group.archiveRecommendationIds?.length ?? 0) > 0,
     ).length,
   };
+  const recordCompactorHref = activeDuplicateGroups[0]
+    ? `/admin/dossiers/duplicates/${activeDuplicateGroups[0].id}`
+    : "";
   const sourceFileMetrics = new Map(
     candidates.map((candidate) => [
       candidate.id,
@@ -700,7 +704,6 @@ export default function DossierControlCenterPage() {
             ],
             ["Signals Waiting", activeRecommendations.length],
             ["Identity Links", activeDuplicateGroups.filter((group) => group.category === "identity_link_review_needed").length],
-            ["Record Compactor", activeDuplicateGroups.length],
             ["Archive / History", closedHistoryCount],
           ].map(([label, value]) => (
             <div key={label} className="border border-border bg-surface p-4">
@@ -1318,90 +1321,43 @@ export default function DossierControlCenterPage() {
           )}
         </DashboardCard>
 
-        <DashboardCard
-          eyebrow="Duplicate Analysis"
-          title="Record Compactor"
-          aside={
-            <StatusPill>
-              {activeDuplicateGroups.length} active groups
-            </StatusPill>
-          }
-        >
-          <p className="text-sm text-muted">
-            Duplicate Analysis groups related BNL Signals, Dossier Seeds, Case Files, Dossier Updates, Identity Links, Proposed Dossiers, and existing public dossier overlaps. It recommends safe cleanup or review decisions only; it does not auto-merge, auto-delete, auto-publish, auto-draft, auto-tag, or auto-confirm aliases.
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 text-xs text-muted">
-            {[
-              ["Exact duplicate groups", duplicateAnalysisSummary.exact],
-              ["Possible duplicate groups", duplicateAnalysisSummary.possible],
-              ["Identity-link review groups", duplicateAnalysisSummary.identity],
-              ["Existing dossier overlap groups", duplicateAnalysisSummary.existingDossier],
-              ["Archive candidates", duplicateAnalysisSummary.archive],
-            ].map(([label, value]) => (
-              <div key={label} className="border border-border/70 bg-background/20 p-3">
-                <p className="uppercase tracking-[0.3em] text-accent mb-2">{label}</p>
-                <p className="text-xl font-bold text-foreground">{value}</p>
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-muted">
-            <p className="border border-border/70 bg-background/20 p-3">
-              Safe cleanup recommendation: explicit admin archive or review can reduce clutter without changing public dossier content.
-            </p>
-            <p className="border border-border/70 bg-background/20 p-3">
-              Identity-sensitive recommendation: aliases or public dossier overlap require admin identity review before linking or compacting.
-            </p>
-            <p className="border border-border/70 bg-background/20 p-3">
-              Destructive action requiring confirmation: merge/delete remains behind existing explicit controls and never runs automatically.
-            </p>
-          </div>
-          {activeDuplicateGroups.length === 0 ? (
-            <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
-              No duplicate or compactor recommendations need owner/lead review.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {activeDuplicateGroups.slice(0, 12).map((group) => (
-                <article
-                  key={group.id}
-                  className="border border-border/70 bg-background/20 p-4 text-sm text-muted"
-                >
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div className="space-y-2">
-                      <p className="font-bold text-foreground">
-                        {group.names.join(" / ")}
-                      </p>
-                      <div className="flex flex-wrap gap-2 text-[0.65rem] uppercase tracking-widest">
-                        <StatusPill>{group.category.replace(/_/g, " ")}</StatusPill>
-                        <StatusPill>Risk: {group.risk}</StatusPill>
-                        <StatusPill>{group.actionSafety.replace(/_/g, " ")}</StatusPill>
-                      </div>
-                      <p>Why grouped: {group.reasons?.join(" ") || group.reason}</p>
-                      <p>Recommended action: {group.recommendedAction}</p>
-                      <p>Admin must decide: {group.adminDecision}</p>
-                      <div>
-                        <p className="text-foreground">Records involved:</p>
-                        <ul className="mt-1 list-disc pl-5 space-y-1">
-                          {group.records.map((record) => (
-                            <li key={`${record.kind}-${record.id}`}>
-                              {record.workspaceType}: {record.label} ({record.status ?? record.kind})
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                    <Link
-                      href={`/admin/dossiers/duplicates/${group.id}`}
-                      className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
-                    >
-                      View Warning / Open Merge Review
-                    </Link>
-                  </div>
-                </article>
+        <section className="border border-border bg-surface p-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.45em] text-muted mb-2">
+                Maintenance
+              </p>
+              <h2 className="text-lg font-bold text-foreground">
+                Record Compactor
+              </h2>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-muted lg:flex lg:flex-wrap">
+              {[
+                ["Possible overlaps", duplicateAnalysisSummary.total],
+                ["High-confidence", duplicateAnalysisSummary.highConfidence],
+                ["Identity-sensitive", duplicateAnalysisSummary.identitySensitive],
+                ["Archive candidates", duplicateAnalysisSummary.archiveCandidates],
+              ].map(([label, value]) => (
+                <div key={label} className="border border-border/70 bg-background/20 px-3 py-2">
+                  <p className="uppercase tracking-[0.25em] text-accent">{label}</p>
+                  <p className="text-lg font-bold text-foreground">{value}</p>
+                </div>
               ))}
             </div>
-          )}
-        </DashboardCard>
+            {recordCompactorHref ? (
+              <Link
+                href={recordCompactorHref}
+                className="inline-flex justify-center border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
+              >
+                Open Record Compactor
+              </Link>
+            ) : (
+              <span className="inline-flex justify-center border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted opacity-70">
+                Open Record Compactor
+              </span>
+            )}
+          </div>
+        </section>
 
 
         <DashboardCard

@@ -983,6 +983,19 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
     "Ready for Owner Review",
     "Owner changes requested",
     "Approved / publish later",
+    "Review Signal",
+    "Review Candidate",
+    "Review Identity",
+    "Review Update",
+    "Review Source Update",
+    "Open Source File",
+    "Add Missing Info",
+    "Review Updates",
+    "Open Draft",
+    "Review Draft",
+    "Review Archived",
+    "Review Closed Signal",
+    "Review Trash",
   ]) {
     assertIncludesCopy(pageCopy, label);
   }
@@ -990,7 +1003,8 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
   assert.match(page, /href="\/admin\/dossiers\/owner-review"/);
   assert.match(page, /href=\{`\/admin\/dossiers\/candidates\/\$\{candidate\.id\}`\}/);
   assert.match(page, /href=\{`\/admin\/dossiers\/recommendations\/\$\{recommendation\.id\}`\}/);
-  assert.match(page, /href=\{`\/admin\/dossiers\/drafts\/\$\{openDraftId\}`\}/);
+  assert.match(page, /`\/admin\/dossiers\/drafts\/\$\{openDraftId\}`/);
+  assert.doesNotMatch(page, />\s*Open\s*</);
   assert.doesNotMatch(page, /PhaseRail|Numbered dossier phases|Workflow map|System Boundaries/);
   assert.doesNotMatch(page, /Duplicate Analysis|Record Compactor|View Warning \/ Open Merge Review/);
   assert.doesNotMatch(page, /candidateAction\(candidate\.id, "archiveCandidate"\)/);
@@ -999,8 +1013,8 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
   assert.doesNotMatch(page, /Save Draft/);
   assert.doesNotMatch(page, /Submit for Owner Review/);
   assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
-  assert.match(page, /target="_blank"/);
-  assert.match(page, /rel="noopener noreferrer"/);
+  assert.match(page, /target=\{opensDraft \? "_blank" : undefined\}/);
+  assert.match(page, /rel=\{opensDraft \? "noopener noreferrer" : undefined\}/);
   assert.match(page, /if \(loading\)/);
   assert.match(page, /if \(error \|\| !payload\)/);
 });
@@ -1521,7 +1535,11 @@ test("dashboard uses actual workflow ids, source metrics, and simplified overvie
   const page = source("src/app/admin/dossiers/page.tsx");
   assert.match(page, /href=\{`\/admin\/dossiers\/candidates\/\$\{candidate\.id\}`\}/);
   assert.match(page, /href=\{`\/admin\/dossiers\/recommendations\/\$\{recommendation\.id\}`\}/);
-  assert.match(page, /href=\{`\/admin\/dossiers\/drafts\/\$\{openDraftId\}`\}/);
+  assert.match(page, /`\/admin\/dossiers\/drafts\/\$\{openDraftId\}`/);
+  assert.match(page, /candidateActionLabel/);
+  assert.match(page, /recommendationActionLabel/);
+  assert.match(page, /dossierUpdateActionLabel/);
+  assert.match(page, /sourceFileActionLabel/);
   assert.match(page, /activeCandidateStatuses/);
   assert.match(page, /activeCandidates = candidates\.filter/);
   assert.match(page, /activeDraftStatuses/);
@@ -3968,6 +3986,9 @@ test("recommendation inbox and source note UI are present and bounded", () => {
   assert.match(dashboard, /Possible Identity Link/);
   assert.match(dashboard, /Identity confirmation needed/);
   assert.match(dashboard, /href=\{`\/admin\/dossiers\/recommendations\/\$\{recommendation\.id\}`\}/);
+  assert.match(dashboard, /Review Signal/);
+  assert.match(dashboard, /Review Candidate/);
+  assert.match(dashboard, /Review Identity/);
   assert.doesNotMatch(dashboard, /Attach to Existing Source File/);
 
   const sourceFilePage = source(

@@ -9,6 +9,7 @@ import {
   type DossierDraft,
   type DossierDuplicateGroup,
   type DossierRecommendation,
+  type DossierSourceFileMetrics,
 } from "@/lib/dossier-workflow";
 
 type WorkflowPayload = {
@@ -229,6 +230,84 @@ function firstListValue(values?: string[]) {
   return values?.find((value) => value.trim()) ?? "—";
 }
 
+function hasCandidateIdentityConcern(candidate: DossierCandidate) {
+  const pendingIdentityLinks = (candidate.identityLinks ?? []).some(
+    (link) => link.status === "proposed",
+  );
+  return Boolean(
+    pendingIdentityLinks ||
+    candidate.existingDossierMatch ||
+    candidate.duplicateRisk === "low" ||
+    candidate.duplicateRisk === "medium" ||
+    candidate.duplicateRisk === "high",
+  );
+}
+
+function candidateActionLabel(candidate: DossierCandidate) {
+  if (hasCandidateIdentityConcern(candidate)) return "Review Identity";
+  return "Review Candidate";
+}
+
+function recommendationActionLabel(
+  recommendation: DossierRecommendation,
+  matchState: { state: string; nextAction: string },
+) {
+  if (
+    recommendation.type === "identity_link" ||
+    matchState.state === "possible_identity_link"
+  ) {
+    return "Review Identity";
+  }
+  return "Review Signal";
+}
+
+function dossierUpdateActionLabel(input: {
+  candidate?: DossierCandidate;
+  recommendation?: DossierRecommendation;
+  matchState?: { state: string; nextAction: string };
+}) {
+  if (input.recommendation) {
+    if (
+      input.recommendation.type === "identity_link" ||
+      input.matchState?.state === "possible_identity_link"
+    ) {
+      return "Review Identity";
+    }
+    if (input.recommendation.targetCandidateId) return "Review Source Update";
+    return "Review Update";
+  }
+
+  if (input.candidate && hasCandidateIdentityConcern(input.candidate)) {
+    return "Review Identity";
+  }
+  return "Review Update";
+}
+
+function sourceFileActionLabel(
+  candidate: DossierCandidate,
+  draft: DossierDraft | undefined,
+  metrics: DossierSourceFileMetrics | undefined,
+) {
+  const hasPendingIdentityLink = (candidate.identityLinks ?? []).some(
+    (link) => link.status === "proposed",
+  );
+  if (hasPendingIdentityLink) return "Review Identity";
+  if ((candidate.missingInfo ?? []).length > 0) return "Add Missing Info";
+  if ((metrics?.unappliedSourceNotesCount ?? 0) > 0) return "Review Updates";
+  if (draft?.status === "ready_for_owner_review") return "Review Draft";
+  if (draft) return "Open Draft";
+  return "Open Source File";
+}
+
+function archiveActionLabel(input: {
+  candidate?: DossierCandidate;
+  recommendation?: DossierRecommendation;
+}) {
+  if (input.recommendation) return "Review Closed Signal";
+  if (input.candidate?.status === "denied") return "Review Trash";
+  return "Review Archived";
+}
+
 function DashboardCard({
   eyebrow,
   title,
@@ -318,6 +397,16 @@ export default function DossierControlCenterPage() {
   );
   const activeRecommendations = recommendations.filter((recommendation) =>
     ["new", "reviewing"].includes(recommendation.status),
+  );
+  const activeDossierUpdateRecommendations = activeRecommendations.filter(
+    (recommendation) =>
+      recommendation.type === "modify_existing_dossier" ||
+      Boolean(recommendation.targetDossierId) ||
+      Boolean(recommendation.targetCandidateId),
+  );
+  const activeCandidateRecommendations = activeRecommendations.filter(
+    (recommendation) =>
+      !activeDossierUpdateRecommendations.includes(recommendation),
   );
   const terminalRecommendations = recommendations.filter((recommendation) =>
     [
@@ -711,9 +800,14 @@ export default function DossierControlCenterPage() {
             {[
               [
                 "Candidates",
-                candidateIntakeItems.length + activeRecommendations.length,
+                candidateIntakeItems.length +
+                  activeCandidateRecommendations.length,
               ],
-              ["Dossier Updates", existingDossierUpdates.length],
+              [
+                "Dossier Updates",
+                existingDossierUpdates.length +
+                  activeDossierUpdateRecommendations.length,
+              ],
               ["Source Files", activeCandidates.length],
               ["Needs Info", sourceFilesNeedingInfo.length],
               [
@@ -748,7 +842,8 @@ export default function DossierControlCenterPage() {
           title="Candidates"
           aside={
             <StatusPill>
-              {candidateIntakeItems.length + activeRecommendations.length}{" "}
+              {candidateIntakeItems.length +
+                activeCandidateRecommendations.length}{" "}
               waiting
             </StatusPill>
           }
@@ -845,7 +940,9 @@ export default function DossierControlCenterPage() {
             </details>
           </div>
 
-          {candidateIntakeItems.length + activeRecommendations.length === 0 ? (
+          {candidateIntakeItems.length +
+            activeCandidateRecommendations.length ===
+          0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
               No candidates are waiting.
             </p>
@@ -859,11 +956,11 @@ export default function DossierControlCenterPage() {
                     <th className="py-2 pr-3">Strength / confidence</th>
                     <th className="py-2 pr-3">Identity status</th>
                     <th className="py-2 pr-3">Suggested next step</th>
-                    <th className="py-2 pr-3">Open</th>
+                    <th className="py-2 pr-3">Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {activeRecommendations.map((recommendation) => {
+                  {activeCandidateRecommendations.map((recommendation) => {
                     const matchState = recommendationMatchState(recommendation);
                     return (
                       <tr
@@ -898,7 +995,10 @@ export default function DossierControlCenterPage() {
                             href={`/admin/dossiers/recommendations/${recommendation.id}`}
                             className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
                           >
-                            Open
+                            {recommendationActionLabel(
+                              recommendation,
+                              matchState,
+                            )}
                           </Link>
                         </td>
                       </tr>
@@ -934,7 +1034,7 @@ export default function DossierControlCenterPage() {
                           href={`/admin/dossiers/candidates/${candidate.id}`}
                           className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
                         >
-                          Open
+                          {candidateActionLabel(candidate)}
                         </Link>
                       </td>
                     </tr>
@@ -949,10 +1049,16 @@ export default function DossierControlCenterPage() {
           eyebrow="Dossier Updates"
           title="Dossier Updates"
           aside={
-            <StatusPill>{existingDossierUpdates.length} updates</StatusPill>
+            <StatusPill>
+              {existingDossierUpdates.length +
+                activeDossierUpdateRecommendations.length}{" "}
+              updates
+            </StatusPill>
           }
         >
-          {existingDossierUpdates.length === 0 ? (
+          {existingDossierUpdates.length +
+            activeDossierUpdateRecommendations.length ===
+          0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
               No existing dossier updates are waiting.
             </p>
@@ -969,10 +1075,65 @@ export default function DossierControlCenterPage() {
                     <th className="py-2 pr-3">Match confidence</th>
                     <th className="py-2 pr-3">Identity status</th>
                     <th className="py-2 pr-3">Suggested next step</th>
-                    <th className="py-2 pr-3">Open</th>
+                    <th className="py-2 pr-3">Action</th>
                   </tr>
                 </thead>
                 <tbody>
+                  {activeDossierUpdateRecommendations.map((recommendation) => {
+                    const matchState = recommendationMatchState(recommendation);
+                    const targetCandidate = recommendation.targetCandidateId
+                      ? candidates.find(
+                          (candidate) =>
+                            candidate.id === recommendation.targetCandidateId,
+                        )
+                      : null;
+                    return (
+                      <tr
+                        key={recommendation.id}
+                        className="border-t border-border/70 align-top"
+                      >
+                        <td className="py-3 pr-3 font-semibold text-foreground">
+                          {targetCandidate?.name ??
+                            recommendation.targetDossierId ??
+                            recommendation.subjectName}
+                        </td>
+                        <td className="py-3 pr-3">
+                          {recommendation.subjectName}
+                        </td>
+                        <td className="py-3 pr-3">
+                          {recommendation.reason ||
+                            recommendation.evidenceSummary ||
+                            recommendationProvenance(recommendation)}
+                        </td>
+                        <td className="py-3 pr-3">
+                          {recommendation.confidence ?? "needs review"}
+                        </td>
+                        <td className="py-3 pr-3">
+                          <StatusPill>
+                            {identityBadgeForRecommendation(
+                              recommendation,
+                              matchState,
+                            )}
+                          </StatusPill>
+                        </td>
+                        <td className="py-3 pr-3">
+                          {recommendation.suggestedAction ||
+                            "Review update details before attaching anywhere public."}
+                        </td>
+                        <td className="py-3 pr-3">
+                          <Link
+                            href={`/admin/dossiers/recommendations/${recommendation.id}`}
+                            className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
+                          >
+                            {dossierUpdateActionLabel({
+                              recommendation,
+                              matchState,
+                            })}
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {existingDossierUpdates.map((candidate) => (
                     <tr
                       key={candidate.id}
@@ -1007,7 +1168,7 @@ export default function DossierControlCenterPage() {
                           href={`/admin/dossiers/candidates/${candidate.id}`}
                           className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
                         >
-                          Open
+                          {dossierUpdateActionLabel({ candidate })}
                         </Link>
                       </td>
                     </tr>
@@ -1041,7 +1202,7 @@ export default function DossierControlCenterPage() {
                     <th className="py-2 pr-3">Dossier status</th>
                     <th className="py-2 pr-3">Identity status</th>
                     <th className="py-2 pr-3">Last updated</th>
-                    <th className="py-2 pr-3">Open</th>
+                    <th className="py-2 pr-3">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1055,6 +1216,18 @@ export default function DossierControlCenterPage() {
                       candidate,
                       draft,
                     );
+                    const actionLabel = sourceFileActionLabel(
+                      candidate,
+                      draft,
+                      metrics,
+                    );
+                    const actionHref =
+                      (actionLabel === "Open Draft" ||
+                        actionLabel === "Review Draft") &&
+                      openDraftId
+                        ? `/admin/dossiers/drafts/${openDraftId}`
+                        : `/admin/dossiers/candidates/${candidate.id}`;
+                    const opensDraft = actionHref.includes("/drafts/");
                     return (
                       <tr
                         key={candidate.id}
@@ -1089,24 +1262,14 @@ export default function DossierControlCenterPage() {
                           {formatDate(candidate.updatedAt)}
                         </td>
                         <td className="py-3 pr-3">
-                          <div className="flex flex-wrap gap-2">
-                            <Link
-                              href={`/admin/dossiers/candidates/${candidate.id}`}
-                              className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
-                            >
-                              Open
-                            </Link>
-                            {openDraftId && (
-                              <Link
-                                href={`/admin/dossiers/drafts/${openDraftId}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent"
-                              >
-                                Draft
-                              </Link>
-                            )}
-                          </div>
+                          <Link
+                            href={actionHref}
+                            target={opensDraft ? "_blank" : undefined}
+                            rel={opensDraft ? "noopener noreferrer" : undefined}
+                            className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
+                          >
+                            {actionLabel}
+                          </Link>
                         </td>
                       </tr>
                     );
@@ -1151,7 +1314,32 @@ export default function DossierControlCenterPage() {
                       href={`/admin/dossiers/candidates/${candidate.id}`}
                       className="inline-flex border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent"
                     >
-                      Open
+                      {archiveActionLabel({ candidate })}
+                    </Link>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+          {terminalRecommendations.length > 0 && (
+            <div className="mt-4 space-y-2 text-sm text-muted">
+              {terminalRecommendations.slice(0, 8).map((recommendation) => (
+                <article
+                  key={recommendation.id}
+                  className="border border-border/70 bg-background/20 p-3"
+                >
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="font-semibold text-foreground">
+                        {recommendation.subjectName}
+                      </p>
+                      <p>Status: {recommendation.status}</p>
+                    </div>
+                    <Link
+                      href={`/admin/dossiers/recommendations/${recommendation.id}`}
+                      className="inline-flex border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent"
+                    >
+                      {archiveActionLabel({ recommendation })}
                     </Link>
                   </div>
                 </article>

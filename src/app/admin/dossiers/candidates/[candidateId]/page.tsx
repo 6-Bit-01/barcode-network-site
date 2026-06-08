@@ -1650,6 +1650,7 @@ export default function CandidateReviewPage() {
               sourceFileNotes={candidate.sourceFileNotes ?? []}
               currentLane={candidate.status}
               latestRecommendationTimestamp={latestRecommendationTimestamp}
+              latestSourceFileArchive={candidate.latestSourceFileArchive}
               sourceFileTargetStatus={
                 isExistingDossierUpdate
                   ? "existing dossier update"

@@ -9,7 +9,6 @@ import {
   type DossierDraft,
   type DossierDuplicateGroup,
   type DossierRecommendation,
-  type DossierSourceFileMetrics,
 } from "@/lib/dossier-workflow";
 
 type WorkflowPayload = {
@@ -174,22 +173,24 @@ function identityBadgeForCandidate(candidate: DossierCandidate) {
   ).length;
 
   if (pending > 0) {
-    return `${pending} pending identity link${pending === 1 ? "" : "s"}`;
+    return "Identity: Needs Confirmation";
   }
   if (confirmed > 0) {
-    return `${confirmed} confirmed alias${confirmed === 1 ? "" : "es"}`;
+    return "Identity: Connected to Existing Subject";
+  }
+  if (candidate.existingDossierMatch) {
+    return "Existing Dossier Match";
   }
   if (
-    candidate.existingDossierMatch ||
     candidate.duplicateRisk === "medium" ||
     candidate.duplicateRisk === "high"
   ) {
-    return "Possible Identity Link";
+    return "Possible Duplicate";
   }
   if (candidate.duplicateRisk === "low") {
-    return "Identity Needs Review";
+    return "Identity: Possible Match";
   }
-  return "Clear";
+  return "Identity: Clear";
 }
 
 function identityBadgeForRecommendation(
@@ -197,15 +198,15 @@ function identityBadgeForRecommendation(
   matchState: { state: string; nextAction: string },
 ) {
   if (recommendation.type === "identity_link") {
-    return "Identity confirmation needed";
+    return "Identity: Needs Confirmation";
   }
   if (matchState.state === "possible_identity_link") {
-    return "Possible Identity Link";
+    return "Identity: Possible Match";
   }
   if (matchState.state === "existing_candidate") {
-    return "Matched Source File";
+    return "Identity: Connected to Existing Subject";
   }
-  return "Clear";
+  return "Identity: Clear";
 }
 
 function dossierStatusForCandidate(
@@ -230,82 +231,24 @@ function firstListValue(values?: string[]) {
   return values?.find((value) => value.trim()) ?? "—";
 }
 
-function hasCandidateIdentityConcern(candidate: DossierCandidate) {
-  const pendingIdentityLinks = (candidate.identityLinks ?? []).some(
-    (link) => link.status === "proposed",
-  );
-  return Boolean(
-    pendingIdentityLinks ||
-    candidate.existingDossierMatch ||
-    candidate.duplicateRisk === "low" ||
-    candidate.duplicateRisk === "medium" ||
-    candidate.duplicateRisk === "high",
-  );
-}
-
-function candidateActionLabel(candidate: DossierCandidate) {
-  if (hasCandidateIdentityConcern(candidate)) return "Review Identity";
+function candidateActionLabel() {
   return "Review Candidate";
 }
 
-function recommendationActionLabel(
-  recommendation: DossierRecommendation,
-  matchState: { state: string; nextAction: string },
-) {
-  if (
-    recommendation.type === "identity_link" ||
-    matchState.state === "possible_identity_link"
-  ) {
-    return "Review Identity";
-  }
-  return "Review Signal";
+function recommendationActionLabel() {
+  return "Review Candidate";
 }
 
-function dossierUpdateActionLabel(input: {
-  candidate?: DossierCandidate;
-  recommendation?: DossierRecommendation;
-  matchState?: { state: string; nextAction: string };
-}) {
-  if (input.recommendation) {
-    if (
-      input.recommendation.type === "identity_link" ||
-      input.matchState?.state === "possible_identity_link"
-    ) {
-      return "Review Identity";
-    }
-    if (input.recommendation.targetCandidateId) return "Review Source Update";
-    return "Review Update";
-  }
-
-  if (input.candidate && hasCandidateIdentityConcern(input.candidate)) {
-    return "Review Identity";
-  }
+function dossierUpdateActionLabel() {
   return "Review Update";
 }
 
-function sourceFileActionLabel(
-  candidate: DossierCandidate,
-  draft: DossierDraft | undefined,
-  metrics: DossierSourceFileMetrics | undefined,
-) {
-  const hasPendingIdentityLink = (candidate.identityLinks ?? []).some(
-    (link) => link.status === "proposed",
-  );
-  if (hasPendingIdentityLink) return "Review Identity";
-  if ((candidate.missingInfo ?? []).length > 0) return "Add Missing Info";
-  if ((metrics?.unappliedSourceNotesCount ?? 0) > 0) return "Review Updates";
-  if (draft?.status === "ready_for_owner_review") return "Review Draft";
-  if (draft) return "Open Draft";
+function sourceFileActionLabel() {
   return "Open Source File";
 }
 
-function archiveActionLabel(input: {
-  candidate?: DossierCandidate;
-  recommendation?: DossierRecommendation;
-}) {
-  if (input.recommendation) return "Review Closed Signal";
-  if (input.candidate?.status === "denied") return "Review Trash";
-  return "Review Archived";
+function archiveActionLabel() {
+  return "Review Record";
 }
 
 function DashboardCard({
@@ -995,10 +938,7 @@ export default function DossierControlCenterPage() {
                             href={`/admin/dossiers/recommendations/${recommendation.id}`}
                             className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
                           >
-                            {recommendationActionLabel(
-                              recommendation,
-                              matchState,
-                            )}
+                            {recommendationActionLabel()}
                           </Link>
                         </td>
                       </tr>
@@ -1034,7 +974,7 @@ export default function DossierControlCenterPage() {
                           href={`/admin/dossiers/candidates/${candidate.id}`}
                           className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
                         >
-                          {candidateActionLabel(candidate)}
+                          {candidateActionLabel()}
                         </Link>
                       </td>
                     </tr>
@@ -1125,10 +1065,7 @@ export default function DossierControlCenterPage() {
                             href={`/admin/dossiers/recommendations/${recommendation.id}`}
                             className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
                           >
-                            {dossierUpdateActionLabel({
-                              recommendation,
-                              matchState,
-                            })}
+                            {dossierUpdateActionLabel()}
                           </Link>
                         </td>
                       </tr>
@@ -1157,7 +1094,7 @@ export default function DossierControlCenterPage() {
                         <StatusPill>
                           {candidate.existingDossierMatch
                             ? identityBadgeForCandidate(candidate)
-                            : "Identity confirmation needed"}
+                            : "Identity: Needs Confirmation"}
                         </StatusPill>
                       </td>
                       <td className="py-3 pr-3">
@@ -1168,7 +1105,7 @@ export default function DossierControlCenterPage() {
                           href={`/admin/dossiers/candidates/${candidate.id}`}
                           className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
                         >
-                          {dossierUpdateActionLabel({ candidate })}
+                          {dossierUpdateActionLabel()}
                         </Link>
                       </td>
                     </tr>
@@ -1216,18 +1153,8 @@ export default function DossierControlCenterPage() {
                       candidate,
                       draft,
                     );
-                    const actionLabel = sourceFileActionLabel(
-                      candidate,
-                      draft,
-                      metrics,
-                    );
-                    const actionHref =
-                      (actionLabel === "Open Draft" ||
-                        actionLabel === "Review Draft") &&
-                      openDraftId
-                        ? `/admin/dossiers/drafts/${openDraftId}`
-                        : `/admin/dossiers/candidates/${candidate.id}`;
-                    const opensDraft = actionHref.includes("/drafts/");
+                    const actionLabel = sourceFileActionLabel();
+                    const actionHref = `/admin/dossiers/candidates/${candidate.id}`;
                     return (
                       <tr
                         key={candidate.id}
@@ -1264,8 +1191,6 @@ export default function DossierControlCenterPage() {
                         <td className="py-3 pr-3">
                           <Link
                             href={actionHref}
-                            target={opensDraft ? "_blank" : undefined}
-                            rel={opensDraft ? "noopener noreferrer" : undefined}
                             className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
                           >
                             {actionLabel}
@@ -1314,7 +1239,7 @@ export default function DossierControlCenterPage() {
                       href={`/admin/dossiers/candidates/${candidate.id}`}
                       className="inline-flex border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent"
                     >
-                      {archiveActionLabel({ candidate })}
+                      {archiveActionLabel()}
                     </Link>
                   </div>
                 </article>
@@ -1339,7 +1264,7 @@ export default function DossierControlCenterPage() {
                       href={`/admin/dossiers/recommendations/${recommendation.id}`}
                       className="inline-flex border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent"
                     >
-                      {archiveActionLabel({ recommendation })}
+                      {archiveActionLabel()}
                     </Link>
                   </div>
                 </article>

@@ -973,8 +973,12 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
     "Strength / confidence",
     "Identity status",
     "Suggested next step",
-    "Possible Identity Link",
-    "Identity confirmation needed",
+    "Identity: Clear",
+    "Identity: Possible Match",
+    "Identity: Connected to Existing Subject",
+    "Identity: Needs Confirmation",
+    "Existing Dossier Match",
+    "Possible Duplicate",
     "Why they matter / engagement summary",
     "Dossier status",
     "No Proposed Dossier",
@@ -983,19 +987,10 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
     "Ready for Owner Review",
     "Owner changes requested",
     "Approved / publish later",
-    "Review Signal",
     "Review Candidate",
-    "Review Identity",
     "Review Update",
-    "Review Source Update",
     "Open Source File",
-    "Add Missing Info",
-    "Review Updates",
-    "Open Draft",
-    "Review Draft",
-    "Review Archived",
-    "Review Closed Signal",
-    "Review Trash",
+    "Review Record",
   ]) {
     assertIncludesCopy(pageCopy, label);
   }
@@ -1003,8 +998,9 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
   assert.match(page, /href="\/admin\/dossiers\/owner-review"/);
   assert.match(page, /href=\{`\/admin\/dossiers\/candidates\/\$\{candidate\.id\}`\}/);
   assert.match(page, /href=\{`\/admin\/dossiers\/recommendations\/\$\{recommendation\.id\}`\}/);
-  assert.match(page, /`\/admin\/dossiers\/drafts\/\$\{openDraftId\}`/);
+  assert.doesNotMatch(page, /`\/admin\/dossiers\/drafts\/\$\{openDraftId\}`/);
   assert.doesNotMatch(page, />\s*Open\s*</);
+  assert.doesNotMatch(page, /Add Missing Info|Review Identity|Review Signal|Review Source Update|Open Draft|Review Draft|Review Archived|Review Closed Signal|Review Trash/);
   assert.doesNotMatch(page, /PhaseRail|Numbered dossier phases|Workflow map|System Boundaries/);
   assert.doesNotMatch(page, /Duplicate Analysis|Record Compactor|View Warning \/ Open Merge Review/);
   assert.doesNotMatch(page, /candidateAction\(candidate\.id, "archiveCandidate"\)/);
@@ -1013,8 +1009,7 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
   assert.doesNotMatch(page, /Save Draft/);
   assert.doesNotMatch(page, /Submit for Owner Review/);
   assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
-  assert.match(page, /target=\{opensDraft \? "_blank" : undefined\}/);
-  assert.match(page, /rel=\{opensDraft \? "noopener noreferrer" : undefined\}/);
+  assert.doesNotMatch(page, /opensDraft/);
   assert.match(page, /if \(loading\)/);
   assert.match(page, /if \(error \|\| !payload\)/);
 });
@@ -1535,11 +1530,12 @@ test("dashboard uses actual workflow ids, source metrics, and simplified overvie
   const page = source("src/app/admin/dossiers/page.tsx");
   assert.match(page, /href=\{`\/admin\/dossiers\/candidates\/\$\{candidate\.id\}`\}/);
   assert.match(page, /href=\{`\/admin\/dossiers\/recommendations\/\$\{recommendation\.id\}`\}/);
-  assert.match(page, /`\/admin\/dossiers\/drafts\/\$\{openDraftId\}`/);
+  assert.doesNotMatch(page, /`\/admin\/dossiers\/drafts\/\$\{openDraftId\}`/);
   assert.match(page, /candidateActionLabel/);
   assert.match(page, /recommendationActionLabel/);
   assert.match(page, /dossierUpdateActionLabel/);
   assert.match(page, /sourceFileActionLabel/);
+  assert.match(page, /Review Record/);
   assert.match(page, /activeCandidateStatuses/);
   assert.match(page, /activeCandidates = candidates\.filter/);
   assert.match(page, /activeDraftStatuses/);
@@ -2723,7 +2719,7 @@ test("admin dossiers dashboard does not promote duplicate merge review", () => {
   const mergePage = source(
     "src/app/admin/dossiers/duplicates/[groupId]/page.tsx",
   );
-  assert.match(page, /Possible Identity Link|Identity Needs Review|pending identity link/);
+  assert.match(page, /Identity: Possible Match|Identity: Needs Confirmation|Possible Duplicate/);
   assert.doesNotMatch(page, /View Warning \/ Open Merge Review/);
   assert.doesNotMatch(page, /\/admin\/dossiers\/duplicates\//);
   assert.doesNotMatch(page, /Merge into Master Candidate/);
@@ -3191,11 +3187,11 @@ test("identity alias review UX is grouped, status-aware, and public-safe", () =>
     /Identity link retired\. It is no longer active\./,
   );
 
-  assert.match(dashboard, /confirmed alias/);
-  assert.match(dashboard, /pending identity link/);
+  assert.match(dashboard, /Identity: Connected to Existing Subject/);
+  assert.match(dashboard, /Identity: Needs Confirmation/);
   assert.match(dashboard, /link\.status === "confirmed"/);
   assert.match(dashboard, /link\.status === "proposed"/);
-  assert.doesNotMatch(dashboard, /Identity Link Actions|Create Proposed Identity Link|Confirm<|Reject<|Retire</);
+  assert.doesNotMatch(dashboard, /Review Identity|Identity Link Actions|Create Proposed Identity Link|Confirm<|Reject<|Retire</);
 
   assert.match(recommendationPage, /Matched by confirmed alias/);
   assert.match(recommendationPage, /Identity Link Actions/);
@@ -3983,13 +3979,14 @@ test("recommendation inbox and source note UI are present and bounded", () => {
   assert.match(dashboard, /Manual Signal/);
   assert.match(dashboard, /Create Manual Signal/);
   assert.match(dashboard, /Why BNL noticed/);
-  assert.match(dashboard, /Possible Identity Link/);
-  assert.match(dashboard, /Identity confirmation needed/);
+  assert.match(dashboard, /Identity: Possible Match/);
+  assert.match(dashboard, /Identity: Needs Confirmation/);
   assert.match(dashboard, /href=\{`\/admin\/dossiers\/recommendations\/\$\{recommendation\.id\}`\}/);
-  assert.match(dashboard, /Review Signal/);
   assert.match(dashboard, /Review Candidate/);
-  assert.match(dashboard, /Review Identity/);
-  assert.doesNotMatch(dashboard, /Attach to Existing Source File/);
+  assert.match(dashboard, /Review Update/);
+  assert.match(dashboard, /Open Source File/);
+  assert.match(dashboard, /Review Record/);
+  assert.doesNotMatch(dashboard, /Review Identity|Add Missing Info|Attach to Existing Source File/);
 
   const sourceFilePage = source(
     "src/app/admin/dossiers/candidates/[candidateId]/page.tsx",
@@ -5883,7 +5880,7 @@ test("admin dashboard keeps public dossier-only source lookup fallback bounded",
   assertIncludesCopy(pageCopy, "Dossier Updates");
   assertIncludesCopy(pageCopy, "No existing dossier updates are waiting.");
   assertIncludesCopy(pageCopy, "Review update details before attaching anywhere public.");
-  assertIncludesCopy(pageCopy, "Identity confirmation needed");
+  assertIncludesCopy(pageCopy, "Identity: Needs Confirmation");
 });
 
 test("Phase 2 draft workflow keeps PR 155 stacked shared preview order", () => {

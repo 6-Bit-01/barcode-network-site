@@ -125,7 +125,7 @@ const identityLinkStatusCopy: Record<DossierIdentityLinkStatus, string> = {
   proposed:
     "This alias is waiting for review. It will not affect matching until confirmed.",
   confirmed:
-    "This alias is confirmed and can route future recommendations to this BNL Source File when matching is enabled.",
+    "This alias is confirmed and can route future BNL Signals to this BNL Source File when matching is enabled.",
   rejected: "This alias was rejected and will not be used for matching.",
   retired: "This alias is retired and no longer used for matching.",
 };
@@ -471,10 +471,10 @@ function IdentityLinkCard({
       {identityLink.createdFromRecommendationId && (
         <div className="border border-border/70 bg-background/30 p-3 space-y-1">
           <p className="font-semibold text-foreground">
-            Created from recommendation
+            Created from BNL Signal
           </p>
           <p>
-            Recommendation subject:{" "}
+            BNL Signal subject:{" "}
             {identityLink.createdFromRecommendationSubject ??
               recommendation?.subjectName ??
               "—"}
@@ -660,7 +660,7 @@ function PhaseRail() {
     >
       <div className="flex flex-wrap gap-2">
         <span className="border border-accent bg-accent/10 px-3 py-2 text-accent">
-          Phase 1 — BNL Source File
+          Phase 1 — Case File / BNL Source File
         </span>
         <span className="border border-border px-3 py-2">
           Phase 2 — Proposed Dossier + BNL Edit Chat
@@ -1063,6 +1063,11 @@ export default function CandidateReviewPage() {
     selectedExistingDossierId || candidate?.existingDossierMatch?.id || "";
   const isExistingDossierUpdate =
     candidate?.status === "existing_dossier_update";
+  const workspaceType = isExistingDossierUpdate
+    ? "Dossier Update"
+    : isCandidateIntake
+      ? "Dossier Seed"
+      : "Case File / BNL Source File";
   const closedIdentityLinks = identityLinks.filter(
     (identityLink) =>
       identityLink.status === "rejected" || identityLink.status === "retired",
@@ -1238,8 +1243,8 @@ export default function CandidateReviewPage() {
               : action === "attachCandidateToExistingDossier"
                 ? "Existing public dossier target attached. Public dossier content was not changed."
                 : action === "markCandidateAsExistingDossierUpdate"
-                  ? "Workflow record moved to Existing Dossier Updates / Enrichment. Public dossier content was not changed."
-                  : "Intake item promoted to an active BNL Source File. Public dossiers were not changed.",
+                  ? "Workflow record moved to Dossier Updates. Public dossier content was not changed."
+                  : "Dossier Seed promoted to a Case File / BNL Source File. Public dossiers were not changed.",
       );
     } catch (err) {
       setNotice(
@@ -1382,23 +1387,22 @@ export default function CandidateReviewPage() {
       <section className="border-b border-border bg-surface/80">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-10">
           <p className="text-xs uppercase tracking-[0.5em] text-muted mb-4">
-            Phase 1 — BNL Source File
+            {workspaceType}
           </p>
           <h1 className="text-4xl font-bold tracking-tight text-foreground">
             {candidate.name}
           </h1>
           <p className="text-sm text-muted mt-3 max-w-3xl">
-            Source File ID: {candidate.id}. Internal working case file. This may
+            {workspaceType} ID: {candidate.id}. Internal working case file. This may
             include unverified, internal, conflicting, source-blind, or
             private-review material. Do not treat this as public copy. Admins
-            can add information to this BNL Source File, but cannot turn this
-            source file into another subject. Notes do not publish, create tags,
+            can add information to this workspace, but cannot turn this
+            record into another subject. Notes do not publish, create tags,
             or mutate public records.
           </p>
           {isExistingDossierUpdate && (
             <p className="mt-4 border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
-              This internal record is an existing dossier update / enrichment
-              target, not a new dossier proposal.
+              This internal record is a Dossier Update target, not a new dossier proposal.
             </p>
           )}
           <div className="mt-4">
@@ -1413,13 +1417,13 @@ export default function CandidateReviewPage() {
             </div>
             <div className="border border-border bg-background/30 p-3">
               <p className="uppercase tracking-widest text-accent">
-                Current draft status
+                Current Proposed Dossier status
               </p>
               <p>{primaryDraft?.status ?? "No proposed dossier"}</p>
             </div>
             <div className="border border-border bg-background/30 p-3">
               <p className="uppercase tracking-widest text-accent">
-                Recommendations
+                BNL Signals
               </p>
               <p>{sourceMetrics?.attachedRecommendationCount ?? 0}</p>
             </div>
@@ -1456,8 +1460,7 @@ export default function CandidateReviewPage() {
             primaryDraft && (
               <div className="mt-4 border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
                 <p>
-                  This source file has new info not yet applied to the proposed
-                  dossier.
+                  This Case File / BNL Source File has new info not yet applied to the Proposed Dossier.
                 </p>
                 <p className="mt-2 text-xs uppercase tracking-widest">
                   Use the primary Proposed Dossier action above to apply the new
@@ -1469,7 +1472,7 @@ export default function CandidateReviewPage() {
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-xs uppercase tracking-widest text-accent">
-                  Source File Refresh
+                  Case File Refresh
                 </p>
                 <p className="text-foreground">{refreshStatusLabel}</p>
                 <p className="mt-1">{refreshStatusDetail}</p>
@@ -1500,7 +1503,9 @@ export default function CandidateReviewPage() {
             </div>
           </div>
 
-          <div className="mt-5 flex flex-wrap gap-3 text-xs uppercase tracking-widest">
+          <div className="mt-5 space-y-3 text-xs uppercase tracking-widest">
+            <p className="text-muted">Signal / Seed Actions · Case File Actions · Identity Link Actions · Proposed Dossier Actions · Archive / Danger</p>
+            <div className="flex flex-wrap gap-3">
             <Link
               href="/admin/dossiers"
               className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent"
@@ -1511,7 +1516,7 @@ export default function CandidateReviewPage() {
               href="#add-info"
               className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background"
             >
-              Add to BNL Source File
+              Add to Case File / BNL Source File
             </a>
             {canCreateDraft && (
               <button
@@ -1566,7 +1571,7 @@ export default function CandidateReviewPage() {
               className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
               title="Reclassify this record as update/enrichment material for the attached public dossier. Does not publish or edit public content."
             >
-              Move to Existing Dossier Update
+              Move to Dossier Update
             </button>
             {isExistingDossierUpdate && (
               <button
@@ -1577,7 +1582,7 @@ export default function CandidateReviewPage() {
                 disabled={saving}
                 className="border border-border px-4 py-2 text-foreground hover:border-accent hover:text-accent disabled:opacity-50"
               >
-                Move Back to Active Source File
+                Move Back to Case File
               </button>
             )}
             {canPromoteCandidate && (
@@ -1589,7 +1594,7 @@ export default function CandidateReviewPage() {
                 disabled={saving}
                 className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
               >
-                Promote to Source File
+                Promote to Case File
               </button>
             )}
             {canArchiveCandidate && (
@@ -1600,7 +1605,7 @@ export default function CandidateReviewPage() {
                 }
                 disabled={saving}
                 className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent disabled:opacity-50"
-                title="Safe cleanup: removes this source file from active dashboard lanes without deleting public dossiers or published data."
+                title="Safe cleanup: removes this Case File from active dashboard lanes without deleting public dossiers or published data."
               >
                 Archive
               </button>
@@ -1630,6 +1635,7 @@ export default function CandidateReviewPage() {
                 Delete Permanently
               </button>
             )}
+            </div>
           </div>
           {notice && (
             <div className="mt-4 border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
@@ -1657,7 +1663,7 @@ export default function CandidateReviewPage() {
                   : "active source file"
               }
             />
-            {/* Source File Summary */}
+            {/* Case File / BNL Source File Summary */}
           </>
         )}
         <Section title="Proposed Dossier Status">
@@ -1680,7 +1686,7 @@ export default function CandidateReviewPage() {
               </p>
               <p>
                 Owner review blocked until admins separate public-safe language
-                from internal Source File context in the dedicated Proposed
+                from internal Case File context in the dedicated Proposed
                 Dossier editor.
               </p>
             </div>
@@ -1692,14 +1698,14 @@ export default function CandidateReviewPage() {
           className="border border-border bg-surface p-5 space-y-3"
         >
           <h2 className="text-2xl font-bold text-foreground">
-            Add to BNL Source File
+            Add to Case File / BNL Source File
           </h2>
           <p className="text-sm text-muted">
-            This adds information to this subject&apos;s BNL Source File. It
+            This adds information to this subject&apos;s Case File / BNL Source File. It
             does not directly edit the proposed dossier.
           </p>
           <p className="text-sm text-muted">
-            Add to BNL Source File = add a source note, correction, evidence,
+            Add to Case File / BNL Source File = add a source note, correction, evidence,
             warning, public-safe fact, or missing-info item to this subject.
             This source file remains one subject/entity. If this information
             belongs to a different subject, create or wait for a separate BNL
@@ -1790,12 +1796,12 @@ export default function CandidateReviewPage() {
           )}
         </Section>
 
-        <Section title="Identity / Alias Review">
+        <Section title="Identity Link Actions">
           <div className="space-y-5">
             <div className="space-y-2">
               <p>
-                Aliases help BNL route future recommendations to the right
-                source file. Identity recommendations create proposed review
+                Aliases help BNL route future BNL Signals to the right
+                source file. Identity Links create proposed review
                 material only, not confirmed identity. Internal aliases are not
                 public dossier text and remain admin-only. Public-safe
                 visibility does not publish anything yet.
@@ -2027,7 +2033,7 @@ export default function CandidateReviewPage() {
 
         <section className="border border-border bg-surface p-5 space-y-4">
           <h2 className="text-2xl font-bold text-foreground">
-            Existing Public Dossier Match
+            Dossier Update Actions
           </h2>
           {candidate.existingDossierMatch ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-muted">
@@ -2089,8 +2095,8 @@ export default function CandidateReviewPage() {
               className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
             >
               {isExistingDossierUpdate
-                ? "Mark as Enrichment for Existing Dossier"
-                : "Move to Existing Dossier Update"}
+                ? "Keep as Dossier Update"
+                : "Move to Dossier Update"}
             </button>
           </div>
         </section>
@@ -2100,7 +2106,7 @@ export default function CandidateReviewPage() {
           className="border border-border bg-surface p-5 text-sm text-muted"
         >
           <summary className="cursor-pointer text-xl font-bold text-foreground">
-            Operator Source Summary
+            Operator Case File Summary
           </summary>
           <p className="mt-3 text-sm text-muted max-w-4xl">
             Optional internal override for the top Source File summary. Use only
@@ -2160,10 +2166,10 @@ export default function CandidateReviewPage() {
                 disabled={saving}
                 className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent disabled:opacity-50"
               >
-                Save Operator Source Summary
+                Save Operator Case File Summary
               </button>
               <span className="text-muted self-center">
-                Optional override only; use Add to BNL Source File for normal
+                Optional override only; use Add to Case File / BNL Source File for normal
                 source updates.
               </span>
             </div>
@@ -2175,7 +2181,7 @@ export default function CandidateReviewPage() {
             Diagnostics — collapsed by default
           </summary>
           <p className="mt-3 mb-4">
-            Diagnostics only. Not Source File claims. Raw, technical, and legacy
+            Diagnostics only. Not Case File claims. Raw, technical, and legacy
             supporting fields stay here so the primary review flow remains
             concise.
           </p>
@@ -2234,7 +2240,7 @@ export default function CandidateReviewPage() {
               {meaningFirstList(candidate.knownFacts, "—", candidate.name)}
             </Section>
             <Section title="Corrections / extra notes">
-              <p>Saved notes now live in BNL Source File Notes above.</p>
+              <p>Saved notes now live in Case File / BNL Source File Notes above.</p>
             </Section>
             <Section title="Missing Info">
               {meaningFirstList(candidate.missingInfo, "—", candidate.name)}
@@ -2283,7 +2289,7 @@ export default function CandidateReviewPage() {
             </Section>
             <Section title="Conflicts / Needs Review">
               <p>Duplicate risk: {candidate.duplicateRisk ?? "none"}</p>
-              <p>Pending identity aliases: {proposedIdentityLinks.length}</p>
+              <p>Pending Identity Links: {proposedIdentityLinks.length}</p>
             </Section>
             <Section title="Public safety notes">
               {meaningFirstList(

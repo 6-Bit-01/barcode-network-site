@@ -161,7 +161,7 @@ function StatusPill({ children }: { children: React.ReactNode }) {
 }
 
 const dossierPhases = [
-  "Phase 1 — BNL Source File",
+  "Phase 1 — Case File / BNL Source File",
   "Phase 2 — Proposed Dossier + BNL Edit Chat",
   "Phase 3 — Final Admin Draft",
   "Phase 4 — Owner Review",
@@ -190,7 +190,7 @@ function PhaseRail({ currentPhase }: { currentPhase?: number }) {
       <p className="mt-3 text-xs text-muted">
         Phase 1 is the internal working case file / evidence folder; it is not
         public copy. Phase 2 is the curated public-facing draft written from
-        reviewed Source File material. Phase 3 is final admin draft
+        reviewed Case File material. Phase 3 is final admin draft
         confirmation. Phase 4 is the owner final approval gate before anything
         becomes publishable/public. Phase 5 is approved / publish later and is
         not active yet.
@@ -409,11 +409,11 @@ export default function DossierControlCenterPage() {
       });
       setRecommendationForm(emptyRecommendationForm);
       setNotice(
-        `Recommendation created: ${data.recommendation?.subjectName ?? "recommendation"}. Recommendations do not publish anything.`,
+        `BNL Signal created: ${data.recommendation?.subjectName ?? "signal"}. BNL Signals do not publish anything.`,
       );
     } catch (err) {
       setNotice(
-        err instanceof Error ? err.message : "Failed to create recommendation.",
+        err instanceof Error ? err.message : "Failed to create BNL Signal.",
       );
     }
   }
@@ -427,47 +427,47 @@ export default function DossierControlCenterPage() {
       return {
         match,
         state: target?.status === "active_source_file"
-          ? "BNL review addendum / Active Source File"
+          ? "BNL review addendum / Case File"
           : target?.status === "candidate_intake"
-            ? "BNL review addendum / Intake Item"
+            ? "BNL review addendum / Dossier Seed"
             : target?.status === "existing_dossier_update"
-              ? "BNL review addendum / Existing Dossier Update"
-              : "BNL review addendum / Recommendation Inbox",
+              ? "BNL review addendum / Dossier Update"
+              : "BNL Signal / Needs Admin Decision",
         nextAction: "Review-only internal case-file material; not public copy",
       };
     }
     if (match.exactMatchKind === "pre_targeted") {
       return {
         match,
-        state: "Pre-targeted BNL Source File",
-        nextAction: "Attach to Matched Source File",
+        state: "Matches Case File",
+        nextAction: "Attach to Matched Case File",
       };
     }
     if (match.exactCandidateId) {
       return {
         match,
-        state: "Matched existing BNL Source File",
-        nextAction: "Attach to Matched Source File",
+        state: "Matches Case File",
+        nextAction: "Attach to Matched Case File",
       };
     }
     if (match.possibleCandidateIds.length > 0) {
       return {
         match,
-        state: "Possible duplicate / identity warning",
-        nextAction: "Needs owner identity review",
+        state: "Suggests Identity Link",
+        nextAction: "Needs Admin Decision",
       };
     }
     if (recommendation.targetDossierId || recommendation.type === "modify_existing_dossier") {
       return {
         match,
-        state: "Existing Dossier Update",
-        nextAction: "Review as update to existing dossier",
+        state: "Dossier Update",
+        nextAction: "Suggests Dossier Update",
       };
     }
     return {
       match,
-      state: "No active source file match / Intake Item / Newly Discovered",
-      nextAction: "Stage for intake, then promote if accepted",
+      state: "Could Become Dossier Seed",
+      nextAction: "Could Become Dossier Seed",
     };
   }
 
@@ -527,12 +527,12 @@ export default function DossierControlCenterPage() {
       await postWorkflow({ action, recommendationId });
       setNotice(
         action === "archiveDossierRecommendation"
-          ? "Recommendation archived. It is removed from active workflow lanes without deleting public dossiers."
-          : "Recommendation dismissed. Public dossiers were not changed.",
+          ? "Signal archived. It is removed from active workflow lanes without deleting public dossiers."
+          : "Signal dismissed. Public dossiers were not changed.",
       );
     } catch (err) {
       setNotice(
-        err instanceof Error ? err.message : "Recommendation action failed.",
+        err instanceof Error ? err.message : "Signal action failed.",
       );
     }
   }
@@ -588,8 +588,8 @@ export default function DossierControlCenterPage() {
               : action === "attachCandidateToExistingDossier"
                 ? `${candidate.name} attached to an existing public dossier target. Public dossier content was not changed.`
                 : action === "markCandidateAsExistingDossierUpdate"
-                  ? `${candidate.name} moved to Existing Dossier Updates / Enrichment. Public dossier content was not changed.`
-                  : `${candidate.name} promoted to an Active BNL Source File. Public dossiers were not changed.`;
+                  ? `${candidate.name} moved to Dossier Updates / Enrichment. Public dossier content was not changed.`
+                  : `${candidate.name} promoted to a Case File / BNL Source File. Public dossiers were not changed.`;
       setNotice(actionNotice);
       if (data.candidates && data.drafts && data.workflow) {
         setPayload(data as WorkflowPayload);
@@ -634,10 +634,7 @@ export default function DossierControlCenterPage() {
             Center
           </h1>
           <p className="text-sm text-muted mt-3 max-w-3xl">
-            Overview of BNL Source Files as internal working case files, BNL
-            recommendations as evidence inputs, proposed dossiers as curated
-            public-facing drafts, and owner review status. Open a source file to
-            work on a subject.
+            Overview of Signal Review inputs, Dossier Seeds, Case Files / BNL Source Files, Proposed Dossiers, and Owner Review status. Open a workspace to continue the pipeline: Signal Review → Dossier Seeds → Case Files → Proposed Dossiers → Owner Review.
           </p>
           <div className="mt-5 flex flex-wrap gap-3 text-xs uppercase tracking-widest">
             <Link
@@ -671,22 +668,22 @@ export default function DossierControlCenterPage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 text-xs text-muted">
           {[
-            ["Total BNL Source Files", candidates.length],
-            ["Candidate Intake", candidateIntakeItems.length],
-            ["Active Source Files", activeCandidates.length],
-            ["Existing Dossier Updates", existingDossierUpdates.length],
+            ["Workflow Records", candidates.length],
+            ["Dossier Seeds", candidateIntakeItems.length],
+            ["Case Files", activeCandidates.length],
+            ["Dossier Updates", existingDossierUpdates.length],
             ["Proposed Dossiers", proposedDossiers.length],
             ["Owner Review waiting", ownerReviewDrafts.length],
             ["Archived / Trash", archivedCandidates.length],
-            ["Source Files needing info", sourceFilesNeedingInfo.length],
-            ["Source Files with proposed dossiers", sourceFilesWithDrafts.length],
+            ["Case Files Needing Info", sourceFilesNeedingInfo.length],
+            ["Case Files With Proposed Dossiers", sourceFilesWithDrafts.length],
             [
-              "Source Files with unapplied source notes",
+              "Case Files With Source Notes",
               sourceFilesWithUnappliedNotes.length,
             ],
-            ["Recommendations waiting", activeRecommendations.length],
-            ["Duplicate / identity warnings", activeDuplicateGroups.length],
-            ["Closed / history", closedHistoryCount],
+            ["Signals Waiting", activeRecommendations.length],
+            ["Identity Links", activeDuplicateGroups.length],
+            ["Archive / History", closedHistoryCount],
           ].map(([label, value]) => (
             <div key={label} className="border border-border bg-surface p-4">
               <p className="uppercase tracking-[0.35em] text-accent mb-2">
@@ -700,46 +697,36 @@ export default function DossierControlCenterPage() {
         <PhaseRail />
 
         <DashboardCard
-          eyebrow="Future BNL drafting"
-          title="BNL Dossier Workbench"
+          eyebrow="Workflow map"
+          title="Signal Review → Dossier Seeds → Case Files → Proposed Dossiers → Owner Review"
           aside={<StatusPill>overview only</StatusPill>}
         >
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-muted">
             <p className="border border-border/70 bg-background/20 p-3">
-              BNL drafting comes next.
+              Case Files / BNL Source Files are internal subject workspaces.
             </p>
             <p className="border border-border/70 bg-background/20 p-3">
-              BNL will use reviewed, public-safe material from each BNL Source
-              File to generate or revise proposed dossiers.
+              Proposed Dossiers are curated public-facing drafts written only from reviewed Case File material.
             </p>
             <p className="border border-border/70 bg-background/20 p-3">
-              For now, source files collect information and proposed dossiers
-              remain manually reviewable.
+              Owner Review is the final approval/editing lane before publishable state.
             </p>
           </div>
         </DashboardCard>
 
         <DashboardCard
-          eyebrow="Compact inbox"
-          title="Dossier Recommendation Inbox"
+          eyebrow="Signal Review"
+          title="Signal Review"
           aside={
-            <StatusPill>{activeRecommendations.length} recommendations waiting</StatusPill>
+            <StatusPill>{activeRecommendations.length} signals waiting</StatusPill>
           }
         >
           <p className="text-sm text-muted">
-            Compact Dossier Recommendation Inbox summary. BNL recommendations
-            are evidence/source-file inputs, not public copy. Review a record to
-            convert an unmatched recommendation or attach only when the system
-            confirms a same-subject BNL Source File match. No generic attach
-            dropdown is shown here. BNL dynamic discovery can create an
-            internal working case file only when no exact or possible existing
-            source-file match is found; identity and duplicate recommendations
-            create review material only.
+            BNL Signals are incoming source/recommendation inputs. Signals can become Dossier Seeds, attach to Case Files, create Dossier Updates, or suggest Identity Links. Signals are not public copy and do not publish anything.
           </p>
           {activeRecommendations.length === 0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
-              No recommendations waiting. Ignored, dismissed, converted, and
-              attached records remain preserved in history.
+              No signals waiting. Ignored, dismissed, converted, and attached records remain preserved in history.
             </p>
           ) : (
             <div className="overflow-x-auto">
@@ -782,7 +769,7 @@ export default function DossierControlCenterPage() {
                               href={`/admin/dossiers/recommendations/${recommendation.id}`}
                               className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
                             >
-                              Review Recommendation
+                              Review Signal
                             </Link>
                             <button
                               type="button"
@@ -823,11 +810,10 @@ export default function DossierControlCenterPage() {
 
         <details className="border border-border bg-surface p-5">
           <summary className="cursor-pointer text-xl font-bold text-foreground">
-            Manual Recommendation Seed
+            Manual Signal
           </summary>
           <p className="mt-3 text-sm text-muted">
-            Use this only when BNL has not suggested something yet. This creates
-            a recommendation, not a direct source file.
+            Use this only when BNL has not suggested something yet. This creates a BNL Signal, not a direct source file.
           </p>
           <form
             onSubmit={submitManualRecommendation}
@@ -904,7 +890,7 @@ export default function DossierControlCenterPage() {
                 disabled={saving}
                 className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
               >
-                Create Manual Recommendation
+                Create Manual Signal
               </button>
             </div>
           </form>
@@ -912,19 +898,16 @@ export default function DossierControlCenterPage() {
 
 
         <DashboardCard
-          eyebrow="Candidate Intake"
-          title="Intake Items / Newly Discovered"
-          aside={<StatusPill>{candidateIntakeItems.length} staged items</StatusPill>}
+          eyebrow="Dossier Seeds"
+          title="Dossier Seeds"
+          aside={<StatusPill>{candidateIntakeItems.length} seeds</StatusPill>}
         >
           <p className="text-sm text-muted mb-4">
-            BNL-discovered subjects stay here until an admin explicitly promotes
-            them to an Active BNL Source File / Working Case File. Evidence,
-            review warnings, safety notes, do-not-say notes, and open questions
-            are preserved during promotion.
+            Dossier Seeds are lightweight internal records. Admins decide when a Dossier Seed becomes a Case File / BNL Source File; evidence, review warnings, safety notes, do-not-say notes, and open questions are preserved during promotion.
           </p>
           {candidateIntakeItems.length === 0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
-              No newly discovered intake items are waiting.
+              No Dossier Seeds are waiting.
             </p>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -934,21 +917,21 @@ export default function DossierControlCenterPage() {
                     <div>
                       <p className="font-bold text-foreground">{candidate.name}</p>
                       <p>Source: {candidateProvenance(candidate)}</p>
-                      <p>Status/stage: Intake item / {candidate.status}</p>
+                      <p>Status/stage: Dossier Seed / {candidate.status}</p>
                       {(candidate.publicSafetyNotes ?? []).length > 0 && (
                         <p className="text-accent">Warning badges: source warnings present</p>
                       )}
                       {candidate.existingDossierMatch && (
                         <p>Possible public dossier match: {candidate.existingDossierMatch.name}</p>
                       )}
-                      <p>Next action: Promote to Source File or archive junk/test extraction.</p>
+                      <p>Next action: Promote to Case File / BNL Source File or archive junk/test extraction.</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Link href={`/admin/dossiers/candidates/${candidate.id}`} className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">
-                        Review Intake
+                        Review Dossier Seed
                       </Link>
                       <button type="button" disabled={saving} onClick={() => void candidateAction(candidate.id, "promoteCandidateToSourceFile")} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50">
-                        Promote to Source File
+                        Promote to Case File
                       </button>
                       <button type="button" disabled={saving} onClick={() => void candidateAction(candidate.id, "archiveCandidate")} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">
                         Archive
@@ -962,24 +945,22 @@ export default function DossierControlCenterPage() {
         </DashboardCard>
 
         <DashboardCard
-          eyebrow="Existing dossier updates"
-          title="Existing Dossier Updates / Enrichment Targets"
-          aside={<StatusPill>{existingDossierUpdates.length} update records</StatusPill>}
+          eyebrow="Dossier Updates"
+          title="Dossier Updates"
+          aside={<StatusPill>{existingDossierUpdates.length} dossier updates</StatusPill>}
         >
           <p className="text-sm text-muted mb-4">
-            Exact public dossier matches are staged as proposed updates/enrichment
-            work, not as brand-new public dossiers. Owner approval is required
-            before public changes.
+            Exact public dossier matches are staged as Dossier Updates, not as brand-new public dossiers. Owner approval is required before public changes.
           </p>
           <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-muted">
             <p className="border border-border/70 bg-background/20 p-3">
-              Existing public dossier found: protected source lookup can now
+              Dossier Update target found: protected source lookup can now
               recognize a published dossier target even when no internal update
               file exists yet.
             </p>
             <p className="border border-border/70 bg-background/20 p-3">
               No internal update file exists yet: use the protected Create
-              Existing Dossier Update action before enrichment attaches notes.
+              Dossier Update action before enrichment attaches notes.
             </p>
             <p className="border border-border/70 bg-background/20 p-3">
               Review-only; no public changes. The update lane does not approve
@@ -996,8 +977,8 @@ export default function DossierControlCenterPage() {
                 <article key={candidate.id} className="border border-border/70 bg-background/20 p-4 text-sm text-muted">
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
-                      <p className="font-bold text-foreground">Existing Dossier Update: {candidate.existingDossierMatch?.name ?? candidate.name}</p>
-                      <p>Recommendation subject: {candidate.name}</p>
+                      <p className="font-bold text-foreground">Dossier Update: {candidate.existingDossierMatch?.name ?? candidate.name}</p>
+                      <p>BNL Signal subject: {candidate.name}</p>
                       <p>Matched public dossier: {candidate.existingDossierMatch?.name ?? "—"}</p>
                       <p>Public dossier target id: {candidate.existingDossierMatch?.id ?? "—"}</p>
                       <p>Match confidence: {candidate.existingDossierMatch?.confidence ?? "—"}</p>
@@ -1010,7 +991,7 @@ export default function DossierControlCenterPage() {
                         Review Update
                       </Link>
                       <button type="button" disabled={saving} onClick={() => void candidateAction(candidate.id, "promoteCandidateToSourceFile")} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50">
-                        Convert to Source File
+                        Convert to Case File
                       </button>
                       <button type="button" disabled={saving} onClick={() => void candidateAction(candidate.id, "archiveCandidate")} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">
                         Archive / wrong match
@@ -1025,7 +1006,7 @@ export default function DossierControlCenterPage() {
 
         <DashboardCard
           eyebrow="Primary operations"
-          title="Active BNL Source Files / Working Case Files"
+          title="Active Case Files / BNL Source Files / Working Case Files"
           aside={<StatusPill>{activeCandidates.length} active working case files</StatusPill>}
         >
           <p className="text-sm text-muted">
@@ -1036,7 +1017,7 @@ export default function DossierControlCenterPage() {
           </p>
           {activeCandidates.length === 0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
-              No active BNL Source Files need review.
+              No active Case Files / BNL Source Files need review.
             </p>
           ) : (
             <div className="overflow-x-auto">
@@ -1048,7 +1029,7 @@ export default function DossierControlCenterPage() {
                     <th className="py-2 pr-3">Current phase</th>
                     <th className="py-2 pr-3">Source depth / info strength</th>
                     <th className="py-2 pr-3">Source notes count</th>
-                    <th className="py-2 pr-3">Recommendation/evidence count</th>
+                    <th className="py-2 pr-3">Signal/evidence count</th>
                     <th className="py-2 pr-3">Proposed dossier status</th>
                     <th className="py-2 pr-3">Unapplied source notes count</th>
                     <th className="py-2 pr-3">Identity links</th>
@@ -1070,7 +1051,7 @@ export default function DossierControlCenterPage() {
                     const metrics = sourceFileMetrics.get(candidate.id);
                     const currentPhase = openDraftId
                       ? "Phase 2 — Proposed Dossier + BNL Edit Chat"
-                      : "Phase 1 — BNL Source File";
+                      : "Phase 1 — Case File / BNL Source File";
                     const proposedStatus = draft
                       ? `${draft.status} / ${formatDate(draft.updatedAt)}`
                       : openDraftId
@@ -1089,7 +1070,7 @@ export default function DossierControlCenterPage() {
                         : openDraftId
                           ? "Open proposed dossier"
                           : candidate.status === "needs_more_evidence"
-                            ? "Add missing info to source file"
+                            ? "Add missing info to Case File"
                             : "Add info or create proposed dossier";
                     return (
                       <tr
@@ -1105,7 +1086,7 @@ export default function DossierControlCenterPage() {
                             <p className="text-xs">Ingest key: {candidate.ingestKey}</p>
                           )}
                           {candidate.createdFromRecommendationId && (
-                            <p className="text-xs">From recommendation: {candidate.createdFromRecommendationId}</p>
+                            <p className="text-xs">From BNL Signal: {candidate.createdFromRecommendationId}</p>
                           )}
                         </td>
                         <td className="py-3 pr-3">
@@ -1118,7 +1099,7 @@ export default function DossierControlCenterPage() {
                           Source notes: {metrics?.sourceNotesCount ?? 0}
                         </td>
                         <td className="py-3 pr-3">
-                          Recommendations: {metrics?.attachedRecommendationCount ?? 0}
+                          Signals: {metrics?.attachedRecommendationCount ?? 0}
                           <br />
                           Evidence: {metrics?.evidenceItemCount ?? 0}
                         </td>
@@ -1131,7 +1112,7 @@ export default function DossierControlCenterPage() {
                           {proposedIdentityLinks.length > 0 && (
                             <p className="text-xs text-accent">
                               Pending aliases: {proposedIdentityLinks.length} —
-                              Identity warnings
+                              Identity Links
                             </p>
                           )}
                         </td>
@@ -1155,7 +1136,7 @@ export default function DossierControlCenterPage() {
                           {!openDraftId && candidate.status !== "needs_more_evidence" && (
                             <p>ready for draft/review</p>
                           )}
-                          <p>Duplicate risk: {candidate.duplicateRisk ?? "none"}</p>
+                          <p>Identity link risk: {candidate.duplicateRisk ?? "none"}</p>
                           {candidate.existingDossierMatch && (
                             <p className="text-accent">
                               Existing public dossier match: {candidate.existingDossierMatch.name} ({candidate.existingDossierMatch.confidence})
@@ -1179,7 +1160,7 @@ export default function DossierControlCenterPage() {
                               href={`/admin/dossiers/candidates/${candidate.id}`}
                               className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
                             >
-                              Open Source File
+                              Open Case File
                             </Link>
                             {candidate.existingDossierMatch && (
                               <button
@@ -1192,9 +1173,9 @@ export default function DossierControlCenterPage() {
                                   )
                                 }
                                 className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
-                                title="Reclassify this active Source File as update/enrichment material for the matched public dossier. Does not publish or edit public content."
+                                title="Reclassify this active Case File as update/enrichment material for the matched public dossier. Does not publish or edit public content."
                               >
-                                Move to Existing Dossier Update
+                                Move to Dossier Update
                               </button>
                             )}
                             <label className="flex flex-col gap-1 text-[0.65rem] uppercase tracking-widest text-muted">
@@ -1260,7 +1241,7 @@ export default function DossierControlCenterPage() {
                                 title={
                                   canCreateDraft
                                     ? "Create proposed dossier from this BNL Source File."
-                                    : "Active draft already exists or source file was merged/denied."
+                                    : "Active Proposed Dossier already exists or Case File was merged/denied."
                                 }
                               >
                                 Create Proposed Dossier
@@ -1290,7 +1271,7 @@ export default function DossierControlCenterPage() {
                                 void candidateAction(candidate.id, "archiveCandidate")
                               }
                               className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50"
-                              title="Safe cleanup: move this source file out of active dashboard lanes without deleting public dossiers or published data."
+                              title="Safe cleanup: move this Case File out of active dashboard lanes without deleting public dossiers or published data."
                             >
                               Archive
                             </button>
@@ -1321,7 +1302,7 @@ export default function DossierControlCenterPage() {
 
         <DashboardCard
           eyebrow="Identity safety"
-          title="Duplicate / Identity Warnings"
+          title="Identity Links"
           aside={
             <StatusPill>
               {activeDuplicateGroups.length} active warnings
@@ -1401,7 +1382,7 @@ export default function DossierControlCenterPage() {
 
         <details className="border border-border bg-surface p-5">
           <summary className="cursor-pointer text-xl font-bold text-foreground">
-            Closed / History
+            Archive / History
           </summary>
           <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-muted">
             <p className="border border-border/70 bg-background/20 p-4">
@@ -1411,7 +1392,7 @@ export default function DossierControlCenterPage() {
               {closedDrafts.length} closed proposed dossier records.
             </p>
             <p className="border border-border/70 bg-background/20 p-4">
-              {terminalRecommendations.length} closed recommendation records;
+              {terminalRecommendations.length} closed signal records;
               {" "}{resolvedDuplicateGroups.length} resolved duplicate groups.
             </p>
           </div>

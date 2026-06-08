@@ -6740,6 +6740,8 @@ test("BNL Source File archive accepts large enrichment, keeps dashboard compact,
   assert.equal(first.archive.reviewOnly, true);
   assert.ok(first.archive.archiveSize > 100_000);
   assert.ok(first.archive.chunkCount > 1);
+  assert.equal(first.archive.chunkKeys.length, first.archive.chunkCount);
+  assert.ok(first.archive.chunkKeys.every((chunkKey, index) => chunkKey.endsWith(`:chunk:${index}`)));
   assert.equal(first.archive.sourcePackage, undefined);
 
   const state = await store.getDossierWorkflowState();
@@ -6751,6 +6753,7 @@ test("BNL Source File archive accepts large enrichment, keeps dashboard compact,
   assert.doesNotMatch(JSON.stringify(state), new RegExp(largePrivateMarker));
 
   const storedArchive = await store.getDossierSourceFileArchive(first.archive.id);
+  assert.deepEqual(storedArchive.sourcePackage, sourcePackage);
   assert.match(JSON.stringify(storedArchive.sourcePackage), new RegExp(largePrivateMarker));
 
   const dashboardPayload = await (await authedGet()).json();
@@ -6777,6 +6780,7 @@ test("BNL Source File archive accepts large enrichment, keeps dashboard compact,
   assert.equal(duplicate.ok, true);
   assert.equal(duplicate.duplicate, true);
   assert.equal(duplicate.archive.id, first.archive.id);
+  assert.equal(duplicate.archive.sourcePackage, undefined);
   assert.equal(duplicate.attachStatus, "deduped_existing");
 
   const changedPackage = { ...sourcePackage, changed: "BNL archive changed digest and creates history." };

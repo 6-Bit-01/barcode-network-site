@@ -67,7 +67,11 @@ const LOCK_TTL_SECONDS = 5;
 const LOCK_RETRY_DELAY_MS = 25;
 
 let memoryState: DossierWorkflowState = emptyWorkflowState();
-let memoryArchiveStore = new Map<string, DossierSourceFileEnrichmentArchive>();
+let memoryArchiveManifestStore = new Map<
+  string,
+  DossierSourceFileArchiveMetadata
+>();
+let memoryArchiveChunkStore = new Map<string, string>();
 let memoryWriteQueue: Promise<void> = Promise.resolve();
 
 function getRedis(): Redis | null {
@@ -407,13 +411,28 @@ function sourceFileArchiveDigest(value: unknown): string {
     .digest("hex");
 }
 
-function sourceFileArchiveSize(value: unknown): number {
-  return Buffer.byteLength(JSON.stringify(value), "utf8");
+const SOURCE_FILE_ARCHIVE_CHUNK_SIZE = 90_000;
+
+function serializeSourceFileArchivePackage(value: unknown): string {
+  return JSON.stringify(value);
 }
 
-function sourceFileArchiveChunkCount(size: number): number {
-  const chunkSize = 90_000;
-  return Math.max(1, Math.ceil(size / chunkSize));
+function sourceFileArchiveSize(serializedPackage: string): number {
+  return Buffer.byteLength(serializedPackage, "utf8");
+}
+
+function sourceFileArchiveChunks(serializedPackage: string): string[] {
+  const chunks: string[] = [];
+  for (
+    let index = 0;
+    index < serializedPackage.length;
+    index += SOURCE_FILE_ARCHIVE_CHUNK_SIZE
+  ) {
+    chunks.push(
+      serializedPackage.slice(index, index + SOURCE_FILE_ARCHIVE_CHUNK_SIZE),
+    );
+  }
+  return chunks.length ? chunks : [""];
 }
 
 function compactArchiveText(
@@ -496,35 +515,76 @@ function archiveAttachStatusForCandidate(
   return "attached_active_source_file";
 }
 
-async function saveSourceFileArchiveRecord(
-  archive: DossierSourceFileEnrichmentArchive,
-): Promise<void> {
+async function saveSourceFileArchiveRecord(input: {
+  metadata: DossierSourceFileArchiveMetadata;
+  chunks: string[];
+}): Promise<void> {
   const redis = getRedis();
   if (redis) {
-    await redis.set(sourceFileArchiveStorageKey(archive.id), archive);
+    await Promise.all([
+      redis.set(sourceFileArchiveStorageKey(input.metadata.id), input.metadata),
+      ...(input.metadata.chunkKeys ?? []).map((chunkKey, index) =>
+        redis.set(chunkKey, input.chunks[index] ?? ""),
+      ),
+    ]);
     return;
   }
-  memoryArchiveStore.set(archive.id, archive);
+  memoryArchiveManifestStore.set(input.metadata.id, input.metadata);
+  for (const [index, chunkKey] of (input.metadata.chunkKeys ?? []).entries()) {
+    memoryArchiveChunkStore.set(chunkKey, input.chunks[index] ?? "");
+  }
+}
+
+async function readSourceFileArchiveManifest(
+  archiveId: string,
+): Promise<DossierSourceFileArchiveMetadata | null> {
+  const redis = getRedis();
+  if (redis) {
+    const metadata = await redis.get<DossierSourceFileArchiveMetadata>(
+      sourceFileArchiveStorageKey(archiveId),
+    );
+    return metadata ?? null;
+  }
+  return memoryArchiveManifestStore.get(archiveId) ?? null;
+}
+
+async function readSourceFileArchiveChunks(
+  metadata: DossierSourceFileArchiveMetadata,
+): Promise<string[] | null> {
+  const chunkKeys = metadata.chunkKeys ?? [];
+  if (!chunkKeys.length || chunkKeys.length !== metadata.chunkCount) {
+    return null;
+  }
+  const redis = getRedis();
+  if (redis) {
+    const chunks = await Promise.all(
+      chunkKeys.map((chunkKey) => redis.get<string>(chunkKey)),
+    );
+    if (chunks.some((chunk) => typeof chunk !== "string")) return null;
+    return chunks as string[];
+  }
+  const chunks = chunkKeys.map((chunkKey) =>
+    memoryArchiveChunkStore.get(chunkKey),
+  );
+  if (chunks.some((chunk) => typeof chunk !== "string")) return null;
+  return chunks as string[];
 }
 
 async function readSourceFileArchiveRecord(
   archiveId: string,
 ): Promise<DossierSourceFileEnrichmentArchive | null> {
-  const redis = getRedis();
-  if (redis) {
-    const archive = await redis.get<DossierSourceFileEnrichmentArchive>(
-      sourceFileArchiveStorageKey(archiveId),
-    );
-    return archive ?? null;
+  const metadata = await readSourceFileArchiveManifest(archiveId);
+  if (!metadata) return null;
+  const chunks = await readSourceFileArchiveChunks(metadata);
+  if (!chunks) return null;
+  try {
+    return {
+      ...metadata,
+      sourcePackage: JSON.parse(chunks.join("")) as unknown,
+    };
+  } catch {
+    return null;
   }
-  return memoryArchiveStore.get(archiveId) ?? null;
-}
-
-function sourceFileArchiveMetadata(
-  archive: DossierSourceFileEnrichmentArchive,
-): DossierSourceFileArchiveMetadata {
-  const { sourcePackage: _sourcePackage, ...metadata } = archive;
-  return metadata;
 }
 
 function createSourceFileNoteId(): string {
@@ -568,7 +628,11 @@ export async function saveDossierWorkflowState(
     nextState.recommendations.length === 0 &&
     nextState.drafts.length === 0
   ) {
-    memoryArchiveStore = new Map<string, DossierSourceFileEnrichmentArchive>();
+    memoryArchiveManifestStore = new Map<
+      string,
+      DossierSourceFileArchiveMetadata
+    >();
+    memoryArchiveChunkStore = new Map<string, string>();
   }
 
   const redis = getRedis();
@@ -2056,7 +2120,8 @@ export async function ingestDossierSourceFileArchive(
 
   const digest = sourceFileArchiveDigest(normalized.sourcePackage);
   const now = new Date().toISOString();
-  let savedArchive: DossierSourceFileEnrichmentArchive | null = null;
+  let savedArchiveMetadata: DossierSourceFileArchiveMetadata | null = null;
+  let savedArchiveChunks: string[] | null = null;
   let duplicate = false;
   let attachStatus: DossierSourceFileArchiveAttachStatus | null = null;
   let savedCandidate: DossierCandidate | null = null;
@@ -2116,15 +2181,16 @@ export async function ingestDossierSourceFileArchive(
       return currentState;
     }
 
-    const archiveSize = sourceFileArchiveSize(normalized.sourcePackage);
+    const serializedPackage = serializeSourceFileArchivePackage(
+      normalized.sourcePackage,
+    );
+    const archiveSize = sourceFileArchiveSize(serializedPackage);
     const archiveId = createSourceFileArchiveId();
     const archiveKey = sourceFileArchiveStorageKey(archiveId);
-    const chunkCount = sourceFileArchiveChunkCount(archiveSize);
-    const chunkKeys = Array.from(
-      { length: chunkCount },
-      (_, index) => `${archiveKey}:chunk:${index}`,
-    );
-    savedArchive = {
+    const chunks = sourceFileArchiveChunks(serializedPackage);
+    const chunkCount = chunks.length;
+    const chunkKeys = chunks.map((_, index) => `${archiveKey}:chunk:${index}`);
+    savedArchiveMetadata = {
       id: archiveId,
       candidateId: candidate.id,
       subjectName: normalized.subjectName,
@@ -2146,9 +2212,9 @@ export async function ingestDossierSourceFileArchive(
       archiveKey,
       chunkKeys,
       reviewOnly: true,
-      sourcePackage: normalized.sourcePackage,
     };
-    const metadata = sourceFileArchiveMetadata(savedArchive);
+    savedArchiveChunks = chunks;
+    const metadata = savedArchiveMetadata;
     const archiveIds = uniqueStrings(
       [archiveId],
       candidate.sourceFileArchiveIds,
@@ -2175,17 +2241,23 @@ export async function ingestDossierSourceFileArchive(
     };
   });
 
-  if (savedArchive) await saveSourceFileArchiveRecord(savedArchive);
-  if (duplicate && savedCandidateLatestArchiveId) {
-    const archive = await readSourceFileArchiveRecord(
-      savedCandidateLatestArchiveId,
-    );
-    if (archive) savedArchive = archive;
+  if (savedArchiveMetadata && savedArchiveChunks) {
+    await saveSourceFileArchiveRecord({
+      metadata: savedArchiveMetadata,
+      chunks: savedArchiveChunks,
+    });
+  }
+  if (
+    duplicate &&
+    savedCandidateLatestArchiveId &&
+    !savedCandidateLatestArchiveMetadata
+  ) {
+    savedCandidateLatestArchiveMetadata =
+      (await readSourceFileArchiveManifest(savedCandidateLatestArchiveId)) ??
+      undefined;
   }
 
-  const metadata = savedArchive
-    ? sourceFileArchiveMetadata(savedArchive)
-    : savedCandidateLatestArchiveMetadata;
+  const metadata = savedArchiveMetadata ?? savedCandidateLatestArchiveMetadata;
   if (!metadata || !attachStatus || !savedCandidate) {
     throw new DossierWorkflowInputError(
       "Source File archive ingest did not attach",

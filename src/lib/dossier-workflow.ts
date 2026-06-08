@@ -131,6 +131,38 @@ export type DossierSourceFileOperatorSummary = {
   updatedBy?: string;
 };
 
+export type DossierSourceFileArchiveCompactReadout = {
+  compactSummary?: string;
+  publicSafePossibilities?: string[];
+  missingInfo?: string[];
+  publicSafetyNotes?: string[];
+  doNotSay?: string[];
+  evidenceReceiptSummary?: string[];
+};
+
+export type DossierSourceFileArchiveMetadata =
+  DossierSourceFileArchiveCompactReadout & {
+    id: string;
+    candidateId: string;
+    subjectName: string;
+    subjectKey?: string;
+    ingestKey?: string;
+    ingestSource?: DossierRecommendationIngestSource;
+    sourceDigest: string;
+    createdAt: string;
+    updatedAt: string;
+    archiveSize: number;
+    chunkCount: number;
+    archiveKey?: string;
+    chunkKeys?: string[];
+    reviewOnly: true;
+  };
+
+export type DossierSourceFileEnrichmentArchive =
+  DossierSourceFileArchiveMetadata & {
+    sourcePackage: unknown;
+  };
+
 export type DossierSourceFileNote = {
   id: string;
   candidateId: string;
@@ -236,6 +268,11 @@ export type DossierCandidate = {
   missingInfo?: string[];
   doNotSay?: string[];
   publicSafetyNotes?: string[];
+  sourceFileArchiveIds?: string[];
+  latestSourceFileArchiveId?: string;
+  latestSourceFileArchiveDigest?: string;
+  latestSourceFileArchiveUpdatedAt?: string;
+  latestSourceFileArchive?: DossierSourceFileArchiveMetadata;
   sourceFileSummary?: DossierSourceFileOperatorSummary;
   sourceFileNotes?: DossierSourceFileNote[];
   identityLinks?: DossierIdentityLink[];
@@ -371,7 +408,6 @@ export type DossierRecommendationIngestSource =
   | "bnl_source_file_enrichment"
   | "system"
   | "unknown";
-
 
 export type DossierSourceFileRefreshRequestStatus =
   | "pending"
@@ -664,18 +700,19 @@ export function isActiveSourceFileCandidate(
   );
 }
 
-const SOURCE_FILE_ENRICHMENT_ATTACHABLE_STATUSES = new Set<DossierCandidateStatus>([
-  "candidate_intake",
-  "active_source_file",
-  "existing_dossier_update",
-  "suggested",
-  "needs_review",
-  "selected",
-  "draft_requested",
-  "draft_ready",
-  "needs_revision",
-  "needs_more_evidence",
-]);
+const SOURCE_FILE_ENRICHMENT_ATTACHABLE_STATUSES =
+  new Set<DossierCandidateStatus>([
+    "candidate_intake",
+    "active_source_file",
+    "existing_dossier_update",
+    "suggested",
+    "needs_review",
+    "selected",
+    "draft_requested",
+    "draft_ready",
+    "needs_revision",
+    "needs_more_evidence",
+  ]);
 
 export function isSourceFileEnrichmentAttachableCandidate(
   candidate: Pick<DossierCandidate, "status">,
@@ -838,6 +875,22 @@ export type CreateDossierSourceFileNoteInput = {
   appliesToDraftId?: string;
   createdBy?: string;
 };
+
+export type CreateDossierSourceFileArchiveInput =
+  DossierSourceFileArchiveCompactReadout & {
+    candidateId?: string;
+    subjectName: string;
+    subjectKey?: string;
+    ingestKey?: string;
+    ingestSource?: DossierRecommendationIngestSource;
+    sourcePackage: unknown;
+  };
+
+export type DossierSourceFileArchiveAttachStatus =
+  | "attached_active_source_file"
+  | "attached_candidate_intake"
+  | "attached_existing_dossier_update"
+  | "deduped_existing";
 
 export type CreateDossierRecommendationInput = {
   type: DossierRecommendationType;

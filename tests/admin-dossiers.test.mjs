@@ -47,6 +47,7 @@ const require = createRequire(import.meta.url);
 const auth = require("../src/lib/auth.ts");
 const route = require("../src/app/api/admin/dossiers/route.ts");
 const bnlIngestRoute = require("../src/app/api/bnl/dossier-recommendations/route.ts");
+const bnlArchiveIngestRoute = require("../src/app/api/bnl/source-file-enrichments/route.ts");
 const workflow = require("../src/lib/dossier-workflow.ts");
 const store = require("../src/lib/dossier-workflow-store.ts");
 const { databasePage } = require("../src/content.ts");
@@ -297,6 +298,22 @@ async function bnlIngestPost(body, token = "test-bnl-ingest-token") {
         "content-type": "application/json",
         authorization: `Bearer ${token}`,
       },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+
+async function bnlArchivePost(body, token = "test-bnl-ingest-token") {
+  return bnlArchiveIngestRoute.POST(
+    new Request("https://example.test/api/bnl/source-file-enrichments", {
+      method: "POST",
+      headers: token
+        ? {
+            "content-type": "application/json",
+            authorization: `Bearer ${token}`,
+          }
+        : { "content-type": "application/json" },
       body: JSON.stringify(body),
     }),
   );
@@ -6674,4 +6691,169 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   const publicPayload = await (await readModel.GET(new Request("https://example.test/api/bnl/read-model"))).json();
   assert.doesNotMatch(JSON.stringify(publicPayload), /Structured Packet Subject|raw-trace-structured-packet-v2|internal contact path/);
   assert.equal(state.drafts.length, 0, "No draft existed before the explicit createDraftFromCandidate call.");
+});
+
+
+test("BNL Source File archive accepts large enrichment, keeps dashboard compact, and dedupes by digest", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const created = await (await authedPost({
+    action: "createManualCandidate",
+    input: {
+      ...manualCandidateInput,
+      name: "6-bit Archive Fixture",
+      reason: "Active Source File exists before full BNL archive ingest.",
+      evidenceSummary: "Compact admin starter evidence.",
+    },
+  })).json();
+  await authedPost({ action: "promoteCandidateToSourceFile", candidateId: created.candidate.id });
+
+  const largePrivateMarker = "PRIVATE_ARCHIVE_DETAIL_SHOULD_NOT_RENDER";
+  const sourcePackage = {
+    subject: "6-bit Archive Fixture",
+    caseFile: Array.from({ length: 220 }, (_, index) => ({
+      index,
+      observation: `${largePrivateMarker}_${index} ${"full internal BNL intelligence ".repeat(80)}`,
+      structuredEvidence: {
+        channel: `internal-${index % 7}`,
+        receipts: Array.from({ length: 5 }, (__, receipt) => `receipt-${index}-${receipt}`),
+      },
+    })),
+  };
+
+  const first = await (await bnlArchivePost({
+    candidateId: created.candidate.id,
+    subjectName: "6-bit Archive Fixture",
+    ingestKey: "archive-fixture-6-bit-v1",
+    compactSummary: "Compact archive readout: BNL has a large internal case file for review.",
+    publicSafePossibilities: ["Possible public-safe label requires owner review."],
+    missingInfo: ["Confirm public-safe language before drafting."],
+    publicSafetyNotes: ["Do not publish archive-only evidence."],
+    doNotSay: ["Do not expose private archive marker."],
+    evidenceReceiptSummary: ["Large archive receipt summary is available internally."],
+    sourcePackage,
+  })).json();
+  assert.equal(first.ok, true);
+  assert.equal(first.duplicate, false);
+  assert.equal(first.attachStatus, "attached_active_source_file");
+  assert.equal(first.archive.reviewOnly, true);
+  assert.ok(first.archive.archiveSize > 100_000);
+  assert.ok(first.archive.chunkCount > 1);
+  assert.equal(first.archive.chunkKeys.length, first.archive.chunkCount);
+  assert.ok(first.archive.chunkKeys.every((chunkKey, index) => chunkKey.endsWith(`:chunk:${index}`)));
+  assert.equal(first.archive.sourcePackage, undefined);
+
+  const state = await store.getDossierWorkflowState();
+  const sourceFile = state.candidates.find((candidate) => candidate.id === created.candidate.id);
+  assert.equal(sourceFile.latestSourceFileArchiveId, first.archive.id);
+  assert.equal(sourceFile.latestSourceFileArchiveDigest, first.archive.sourceDigest);
+  assert.deepEqual(sourceFile.sourceFileArchiveIds, [first.archive.id]);
+  assert.match(sourceFile.latestSourceFileArchive.compactSummary, /Compact archive readout/);
+  assert.doesNotMatch(JSON.stringify(state), new RegExp(largePrivateMarker));
+
+  const storedArchive = await store.getDossierSourceFileArchive(first.archive.id);
+  assert.deepEqual(storedArchive.sourcePackage, sourcePackage);
+  assert.match(JSON.stringify(storedArchive.sourcePackage), new RegExp(largePrivateMarker));
+
+  const dashboardPayload = await (await authedGet()).json();
+  assert.match(JSON.stringify(dashboardPayload), /Compact archive readout/);
+  assert.doesNotMatch(JSON.stringify(dashboardPayload), new RegExp(largePrivateMarker));
+  assert.ok(JSON.stringify(dashboardPayload).length < JSON.stringify(sourcePackage).length / 2);
+
+  const panelText = collectReactText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary: sourceFileSummary.createDossierSourceFileSummary({ candidate: sourceFile, recommendations: [] }),
+    latestSourceFileArchive: sourceFile.latestSourceFileArchive,
+  }));
+  assert.match(panelText, /Latest BNL Source Archive Readout/);
+  assert.match(panelText, /Full BNL Source Archive — admin-only \/ collapsed/);
+  assert.match(panelText, /Compact archive readout/);
+  assert.doesNotMatch(panelText, new RegExp(largePrivateMarker));
+
+  const duplicate = await (await bnlArchivePost({
+    candidateId: created.candidate.id,
+    subjectName: "6-bit Archive Fixture",
+    ingestKey: "archive-fixture-6-bit-v1-duplicate",
+    compactSummary: "Compact archive readout duplicate.",
+    sourcePackage,
+  })).json();
+  assert.equal(duplicate.ok, true);
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(duplicate.archive.id, first.archive.id);
+  assert.equal(duplicate.archive.sourcePackage, undefined);
+  assert.equal(duplicate.attachStatus, "deduped_existing");
+
+  const changedPackage = { ...sourcePackage, changed: "BNL archive changed digest and creates history." };
+  const changed = await (await bnlArchivePost({
+    candidateId: created.candidate.id,
+    subjectName: "6-bit Archive Fixture",
+    ingestKey: "archive-fixture-6-bit-v2",
+    compactSummary: "Compact archive readout: changed archive history.",
+    sourcePackage: changedPackage,
+  })).json();
+  assert.equal(changed.ok, true);
+  assert.equal(changed.duplicate, false);
+  assert.notEqual(changed.archive.id, first.archive.id);
+  assert.notEqual(changed.archive.sourceDigest, first.archive.sourceDigest);
+
+  const changedState = await store.getDossierWorkflowState();
+  const changedSourceFile = changedState.candidates.find((candidate) => candidate.id === created.candidate.id);
+  assert.deepEqual(changedSourceFile.sourceFileArchiveIds, [changed.archive.id, first.archive.id]);
+  assert.equal(changedSourceFile.latestSourceFileArchiveId, changed.archive.id);
+  assert.equal(changedState.drafts.length, 0);
+
+  const publicPayload = await (await readModel.GET(new Request("https://example.test/api/bnl/read-model"))).json();
+  assert.doesNotMatch(JSON.stringify(publicPayload), /6-bit Archive Fixture|PRIVATE_ARCHIVE_DETAIL_SHOULD_NOT_RENDER|Compact archive readout/);
+});
+
+test("BNL Source File archive ingest requires auth and safe existing target without creating candidates", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const unauthorized = await bnlArchivePost({
+    subjectName: "Unauthorized Archive",
+    sourcePackage: { secret: true },
+  }, "wrong-token");
+  assert.equal(unauthorized.status, 401);
+
+  const missingTarget = await (await bnlArchivePost({
+    subjectName: "No Existing Source File",
+    sourcePackage: { large: "archive" },
+  })).json();
+  assert.equal(missingTarget.code, "archive_target_not_found");
+
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.candidates.length, 0);
+  assert.equal(state.drafts.length, 0);
+  assert.equal(state.recommendations.length, 0);
+});
+
+test("bounded BNL recommendation ingest still rejects oversized recommendation-card fields", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const response = await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Oversized Recommendation Field",
+    reason: "This compact recommendation card should reject oversized text fields.",
+    knownContext: ["x".repeat(1001)],
+    ingestKey: "oversized-recommendation-card-field",
+  });
+  assert.equal(response.status, 400);
+  const payload = await response.json();
+  assert.equal(payload.error, "Text field is too long");
+
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.recommendations.length, 0);
+});
+
+test("Source File archive foundation does not add queue, payment, tags, identity merge, or public publishing hooks", () => {
+  const archiveRoute = source("src/app/api/bnl/source-file-enrichments/route.ts");
+  const storeSource = source("src/lib/dossier-workflow-store.ts");
+  const workflowSource = source("src/lib/dossier-workflow.ts");
+
+  assert.doesNotMatch(archiveRoute, /queue|payment|stripe|tag|draft|publish|identity|merge/i);
+  assert.doesNotMatch(archiveRoute, /createDossierRecommendation|createDraftFromCandidate|mergeDossierCandidates/);
+  assert.match(workflowSource, /latestSourceFileArchiveId/);
+  assert.match(storeSource, /DOSSIER_SOURCE_FILE_ARCHIVE_KEY_PREFIX/);
 });

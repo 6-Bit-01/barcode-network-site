@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Redis } from "@upstash/redis";
 import { databasePage, type DatabaseEntry } from "@/content";
 import {
@@ -10,6 +11,7 @@ import {
 import {
   scoreManualDossierCandidate,
   type CreateDossierRecommendationInput,
+  type CreateDossierSourceFileArchiveInput,
   type CreateDossierSourceFileNoteInput,
   type UpdateDossierSourceFileSummaryInput,
   type CreateManualDossierCandidateInput,
@@ -24,6 +26,9 @@ import {
   type DossierDraft,
   type DossierDuplicateGroup,
   type DossierRecommendation,
+  type DossierSourceFileArchiveAttachStatus,
+  type DossierSourceFileArchiveMetadata,
+  type DossierSourceFileEnrichmentArchive,
   type DossierRecommendationSourceLane,
   type DossierRecommendationStatus,
   type DossierRecommendationType,
@@ -54,12 +59,19 @@ export type DossierWorkflowState = {
 
 export const DOSSIER_WORKFLOW_STORAGE_KEY = "barcode:dossier-workflow:v1";
 export const DOSSIER_WORKFLOW_LOCK_KEY = "barcode:dossier-workflow:v1:lock";
+export const DOSSIER_SOURCE_FILE_ARCHIVE_KEY_PREFIX =
+  "barcode:dossier-source-file-archive:v1";
 
 const MAX_UPDATE_ATTEMPTS = 5;
 const LOCK_TTL_SECONDS = 5;
 const LOCK_RETRY_DELAY_MS = 25;
 
 let memoryState: DossierWorkflowState = emptyWorkflowState();
+let memoryArchiveManifestStore = new Map<
+  string,
+  DossierSourceFileArchiveMetadata
+>();
+let memoryArchiveChunkStore = new Map<string, string>();
 let memoryWriteQueue: Promise<void> = Promise.resolve();
 
 function getRedis(): Redis | null {
@@ -178,7 +190,10 @@ export function validateDossierDraftFieldsForOwnerReview(
   if (!normalized.role || isDossierPublicCopyPlaceholder(normalized.role)) {
     missing.push("role");
   }
-  if (!normalized.summary || isDossierPublicCopyPlaceholder(normalized.summary)) {
+  if (
+    !normalized.summary ||
+    isDossierPublicCopyPlaceholder(normalized.summary)
+  ) {
     missing.push("summary");
   }
   if (!normalized.tags || normalized.tags.length === 0) missing.push("tags");
@@ -332,6 +347,26 @@ function sanitizeWorkflowState(value: unknown): DossierWorkflowState {
           identityLinks: Array.isArray(candidate.identityLinks)
             ? candidate.identityLinks
             : [],
+          sourceFileArchiveIds: normalizeStringArray(
+            candidate.sourceFileArchiveIds,
+          ),
+          latestSourceFileArchiveId:
+            typeof candidate.latestSourceFileArchiveId === "string"
+              ? candidate.latestSourceFileArchiveId
+              : undefined,
+          latestSourceFileArchiveDigest:
+            typeof candidate.latestSourceFileArchiveDigest === "string"
+              ? candidate.latestSourceFileArchiveDigest
+              : undefined,
+          latestSourceFileArchiveUpdatedAt:
+            typeof candidate.latestSourceFileArchiveUpdatedAt === "string"
+              ? candidate.latestSourceFileArchiveUpdatedAt
+              : undefined,
+          latestSourceFileArchive:
+            candidate.latestSourceFileArchive &&
+            typeof candidate.latestSourceFileArchive === "object"
+              ? candidate.latestSourceFileArchive
+              : undefined,
         }))
       : [],
     drafts: Array.isArray(candidateState.drafts) ? candidateState.drafts : [],
@@ -360,6 +395,196 @@ function createEvidenceId(): string {
 
 function createRecommendationId(): string {
   return `dossier_recommendation_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createSourceFileArchiveId(): string {
+  return `source_file_archive_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function sourceFileArchiveStorageKey(id: string): string {
+  return `${DOSSIER_SOURCE_FILE_ARCHIVE_KEY_PREFIX}:${id}`;
+}
+
+function sourceFileArchiveDigest(value: unknown): string {
+  return createHash("sha256")
+    .update(JSON.stringify(stableFingerprintValue(value)))
+    .digest("hex");
+}
+
+const SOURCE_FILE_ARCHIVE_CHUNK_SIZE = 90_000;
+
+function serializeSourceFileArchivePackage(value: unknown): string {
+  return JSON.stringify(value);
+}
+
+function sourceFileArchiveSize(serializedPackage: string): number {
+  return Buffer.byteLength(serializedPackage, "utf8");
+}
+
+function sourceFileArchiveChunks(serializedPackage: string): string[] {
+  const chunks: string[] = [];
+  for (
+    let index = 0;
+    index < serializedPackage.length;
+    index += SOURCE_FILE_ARCHIVE_CHUNK_SIZE
+  ) {
+    chunks.push(
+      serializedPackage.slice(index, index + SOURCE_FILE_ARCHIVE_CHUNK_SIZE),
+    );
+  }
+  return chunks.length ? chunks : [""];
+}
+
+function compactArchiveText(
+  value: unknown,
+  maxLength = 1200,
+): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const clean = value.replace(/\s+/g, " ").trim();
+  if (!clean) return undefined;
+  return clean.slice(0, maxLength);
+}
+
+function compactArchiveList(
+  value: unknown,
+  maxItems = 8,
+  maxItemLength = 800,
+): string[] | undefined {
+  const items = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? [value]
+      : [];
+  const output: string[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    const clean = compactArchiveText(item, maxItemLength);
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(clean);
+    if (output.length >= maxItems) break;
+  }
+  return output.length ? output : undefined;
+}
+
+function normalizeSourceFileArchiveInput(
+  input: CreateDossierSourceFileArchiveInput,
+):
+  | (CreateDossierSourceFileArchiveInput & {
+      subjectName: string;
+      compactSummary?: string;
+      publicSafePossibilities?: string[];
+      missingInfo?: string[];
+      publicSafetyNotes?: string[];
+      doNotSay?: string[];
+      evidenceReceiptSummary?: string[];
+    })
+  | null {
+  const subjectName = compactArchiveText(input.subjectName, 200);
+  if (!subjectName) return null;
+  return {
+    ...input,
+    candidateId: compactArchiveText(input.candidateId, 200),
+    subjectName,
+    subjectKey: compactArchiveText(input.subjectKey, 200),
+    ingestKey: compactArchiveText(input.ingestKey, 300),
+    ingestSource: input.ingestSource,
+    compactSummary: compactArchiveText(input.compactSummary, 1600),
+    publicSafePossibilities: compactArchiveList(input.publicSafePossibilities),
+    missingInfo: compactArchiveList(input.missingInfo),
+    publicSafetyNotes: compactArchiveList(input.publicSafetyNotes),
+    doNotSay: compactArchiveList(input.doNotSay),
+    evidenceReceiptSummary: compactArchiveList(
+      input.evidenceReceiptSummary,
+      10,
+      1000,
+    ),
+  };
+}
+
+function archiveAttachStatusForCandidate(
+  candidate: DossierCandidate,
+): DossierSourceFileArchiveAttachStatus {
+  if (candidate.status === "candidate_intake")
+    return "attached_candidate_intake";
+  if (candidate.status === "existing_dossier_update") {
+    return "attached_existing_dossier_update";
+  }
+  return "attached_active_source_file";
+}
+
+async function saveSourceFileArchiveRecord(input: {
+  metadata: DossierSourceFileArchiveMetadata;
+  chunks: string[];
+}): Promise<void> {
+  const redis = getRedis();
+  if (redis) {
+    await Promise.all([
+      redis.set(sourceFileArchiveStorageKey(input.metadata.id), input.metadata),
+      ...(input.metadata.chunkKeys ?? []).map((chunkKey, index) =>
+        redis.set(chunkKey, input.chunks[index] ?? ""),
+      ),
+    ]);
+    return;
+  }
+  memoryArchiveManifestStore.set(input.metadata.id, input.metadata);
+  for (const [index, chunkKey] of (input.metadata.chunkKeys ?? []).entries()) {
+    memoryArchiveChunkStore.set(chunkKey, input.chunks[index] ?? "");
+  }
+}
+
+async function readSourceFileArchiveManifest(
+  archiveId: string,
+): Promise<DossierSourceFileArchiveMetadata | null> {
+  const redis = getRedis();
+  if (redis) {
+    const metadata = await redis.get<DossierSourceFileArchiveMetadata>(
+      sourceFileArchiveStorageKey(archiveId),
+    );
+    return metadata ?? null;
+  }
+  return memoryArchiveManifestStore.get(archiveId) ?? null;
+}
+
+async function readSourceFileArchiveChunks(
+  metadata: DossierSourceFileArchiveMetadata,
+): Promise<string[] | null> {
+  const chunkKeys = metadata.chunkKeys ?? [];
+  if (!chunkKeys.length || chunkKeys.length !== metadata.chunkCount) {
+    return null;
+  }
+  const redis = getRedis();
+  if (redis) {
+    const chunks = await Promise.all(
+      chunkKeys.map((chunkKey) => redis.get<string>(chunkKey)),
+    );
+    if (chunks.some((chunk) => typeof chunk !== "string")) return null;
+    return chunks as string[];
+  }
+  const chunks = chunkKeys.map((chunkKey) =>
+    memoryArchiveChunkStore.get(chunkKey),
+  );
+  if (chunks.some((chunk) => typeof chunk !== "string")) return null;
+  return chunks as string[];
+}
+
+async function readSourceFileArchiveRecord(
+  archiveId: string,
+): Promise<DossierSourceFileEnrichmentArchive | null> {
+  const metadata = await readSourceFileArchiveManifest(archiveId);
+  if (!metadata) return null;
+  const chunks = await readSourceFileArchiveChunks(metadata);
+  if (!chunks) return null;
+  try {
+    return {
+      ...metadata,
+      sourcePackage: JSON.parse(chunks.join("")) as unknown,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function createSourceFileNoteId(): string {
@@ -398,6 +623,17 @@ export async function saveDossierWorkflowState(
     updatedAt: state.updatedAt || new Date().toISOString(),
   });
   memoryState = nextState;
+  if (
+    nextState.candidates.length === 0 &&
+    nextState.recommendations.length === 0 &&
+    nextState.drafts.length === 0
+  ) {
+    memoryArchiveManifestStore = new Map<
+      string,
+      DossierSourceFileArchiveMetadata
+    >();
+    memoryArchiveChunkStore = new Map<string, string>();
+  }
 
   const redis = getRedis();
   if (redis) {
@@ -707,7 +943,6 @@ function normalizeSourceNoteInput(
   };
 }
 
-
 function normalizePacketStringArray(value: unknown): string[] | undefined {
   const items = normalizeStringArray(value).slice(0, 25);
   return items.length ? items : undefined;
@@ -717,12 +952,19 @@ function normalizeCoverageLabel(value: string): string {
   return value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function normalizeCoverageText(value: unknown, maxLength: number): string | undefined {
+function normalizeCoverageText(
+  value: unknown,
+  maxLength: number,
+): string | undefined {
   if (typeof value !== "string") return undefined;
   const clean = boundedText(value, maxLength);
   if (!clean) return undefined;
   if (/[{}\[\]<>]/.test(clean) || /[\\/]/.test(clean)) return undefined;
-  if (/\b(?:candidate|target|dossier|source_file|recommendation|rec|bnl)_[a-z0-9][a-z0-9_-]{8,}\b/i.test(clean)) {
+  if (
+    /\b(?:candidate|target|dossier|source_file|recommendation|rec|bnl)_[a-z0-9][a-z0-9_-]{8,}\b/i.test(
+      clean,
+    )
+  ) {
     return undefined;
   }
   return clean;
@@ -737,13 +979,18 @@ function normalizeCoverageNumber(value: unknown): number | undefined {
 function normalizeSourceCoverageItem(value: unknown): string | undefined {
   const textItem = normalizeCoverageText(value, 1000);
   if (textItem) return textItem;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined;
   const item = value as Record<string, unknown>;
   const source = normalizeCoverageText(item.source, 120);
   const status = normalizeCoverageText(item.status, 80);
   const count = normalizeCoverageNumber(item.count);
   const countParts: string[] = [];
-  if (item.counts && typeof item.counts === "object" && !Array.isArray(item.counts)) {
+  if (
+    item.counts &&
+    typeof item.counts === "object" &&
+    !Array.isArray(item.counts)
+  ) {
     for (const [key, rawCount] of Object.entries(item.counts).slice(0, 20)) {
       const cleanKey = normalizeCoverageText(key, 80);
       const cleanCount = normalizeCoverageNumber(rawCount);
@@ -760,11 +1007,17 @@ function normalizeSourceCoverageItem(value: unknown): string | undefined {
       : [label];
   if (status) pieces.push(normalizeCoverageLabel(status));
   const normalized = pieces.join(" ").trim();
-  return normalized && normalized !== "Source coverage" ? normalized : undefined;
+  return normalized && normalized !== "Source coverage"
+    ? normalized
+    : undefined;
 }
 
 function normalizeSourceCoverageInput(value: unknown): string[] | undefined {
-  const rawItems = Array.isArray(value) ? value : value === undefined ? [] : [value];
+  const rawItems = Array.isArray(value)
+    ? value
+    : value === undefined
+      ? []
+      : [value];
   const items = rawItems
     .slice(0, 25)
     .map(normalizeSourceCoverageItem)
@@ -772,30 +1025,35 @@ function normalizeSourceCoverageInput(value: unknown): string[] | undefined {
   return items.length ? items : undefined;
 }
 
-
-
 function evidenceLooksLikeClassification(value?: string) {
-  return /\b(?:automated topic|topic label|classified|classification|evidence categor(?:y|ies)|topic breakdown|topic detail|source-file|dossier|BNL\/source-file|BNL source-file|BNL\/source file|source file\/dossier)\b/i.test(value ?? "");
+  return /\b(?:automated topic|topic label|classified|classification|evidence categor(?:y|ies)|topic breakdown|topic detail|source-file|dossier|BNL\/source-file|BNL source-file|BNL\/source file|source file\/dossier)\b/i.test(
+    value ?? "",
+  );
 }
 
 function evidenceClassificationCopy(value?: string) {
   const clean = boundedText(value, 240)
     ?.replace(/\bauthored\b/gi, "")
     .replace(/\bposted\b/gi, "")
-    .replace(/\bCrow\s+(?:discussed|posted about|talked about|authored)\b/gi, "")
+    .replace(
+      /\bCrow\s+(?:discussed|posted about|talked about|authored)\b/gi,
+      "",
+    )
     .replace(/\bdiscussed\b/gi, "related to")
     .replace(/\bhandling\b/gi, "context")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/^[-:;,\s]+|[-:;,\s]+$/g, "");
   if (!clean) return undefined;
-  if (/\bclassified\b/i.test(clean) || /\bautomated topic/i.test(clean)) return clean;
+  if (/\bclassified\b/i.test(clean) || /\bautomated topic/i.test(clean))
+    return clean;
   return `Automated topic label: ${clean}. Needs human review before this becomes a subject claim.`;
 }
 
 function normalizeEvidenceReadoutItem(value: unknown): string | undefined {
   if (typeof value === "string") return boundedText(value, 1000) || undefined;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined;
   const item = value as Record<string, unknown>;
   const allowed = new Set([
     "summary",
@@ -826,19 +1084,40 @@ function normalizeEvidenceReadoutItem(value: unknown): string | undefined {
   for (const key of Object.keys(item)) {
     if (!allowed.has(key)) return undefined;
   }
-  const summary = boundedText(item.summary, 500) || boundedText(item.detail, 500) || boundedText(item.label, 500);
+  const summary =
+    boundedText(item.summary, 500) ||
+    boundedText(item.detail, 500) ||
+    boundedText(item.label, 500);
   const topic = boundedText(item.topic, 120);
-  const classificationCopy = evidenceLooksLikeClassification(topic) || evidenceLooksLikeClassification(summary)
-    ? evidenceClassificationCopy(summary) ?? evidenceClassificationCopy(topic)
-    : undefined;
-  const activityType = boundedText(item.activityType, 80) || boundedText(item.type, 80) || boundedText(item.kind, 80);
+  const classificationCopy =
+    evidenceLooksLikeClassification(topic) ||
+    evidenceLooksLikeClassification(summary)
+      ? (evidenceClassificationCopy(summary) ??
+        evidenceClassificationCopy(topic))
+      : undefined;
+  const activityType =
+    boundedText(item.activityType, 80) ||
+    boundedText(item.type, 80) ||
+    boundedText(item.kind, 80);
   const textParts = [
     classificationCopy ?? summary,
-    classificationCopy ? undefined : activityType?.replace(/^authored$/i, "posted"),
-    topic ? (classificationCopy ? `automated topic label ${normalizeCoverageLabel(topic)}` : `about ${normalizeCoverageLabel(topic)}`) : undefined,
-    boundedText(item.channel, 120) ? `in ${String(item.channel).startsWith("#") ? String(item.channel) : `#${normalizeCoverageLabel(String(item.channel))}`}` : undefined,
-    boundedText(item.context, 180) ? normalizeCoverageLabel(String(item.context)) : undefined,
-    boundedText(item.frequency, 160) || boundedText(item.recency, 160) || boundedText(item.window, 160),
+    classificationCopy
+      ? undefined
+      : activityType?.replace(/^authored$/i, "posted"),
+    topic
+      ? classificationCopy
+        ? `automated topic label ${normalizeCoverageLabel(topic)}`
+        : `about ${normalizeCoverageLabel(topic)}`
+      : undefined,
+    boundedText(item.channel, 120)
+      ? `in ${String(item.channel).startsWith("#") ? String(item.channel) : `#${normalizeCoverageLabel(String(item.channel))}`}`
+      : undefined,
+    boundedText(item.context, 180)
+      ? normalizeCoverageLabel(String(item.context))
+      : undefined,
+    boundedText(item.frequency, 160) ||
+      boundedText(item.recency, 160) ||
+      boundedText(item.window, 160),
     boundedText(item.status, 80) || boundedText(item.visibility, 80),
   ];
   const countParts: string[] = [];
@@ -852,11 +1131,16 @@ function normalizeEvidenceReadoutItem(value: unknown): string | undefined {
     const count = normalizeCoverageNumber(raw);
     if (count !== undefined) countParts.push(`${count} ${label}`);
   }
-  if (item.counts && typeof item.counts === "object" && !Array.isArray(item.counts)) {
+  if (
+    item.counts &&
+    typeof item.counts === "object" &&
+    !Array.isArray(item.counts)
+  ) {
     for (const [key, rawCount] of Object.entries(item.counts).slice(0, 12)) {
       const count = normalizeCoverageNumber(rawCount);
       const cleanKey = boundedText(key, 80);
-      if (cleanKey && count !== undefined) countParts.push(`${normalizeCoverageLabel(cleanKey)} ${count}`);
+      if (cleanKey && count !== undefined)
+        countParts.push(`${normalizeCoverageLabel(cleanKey)} ${count}`);
     }
   }
   if (countParts.length) textParts.push(countParts.join(", "));
@@ -864,7 +1148,11 @@ function normalizeEvidenceReadoutItem(value: unknown): string | undefined {
 }
 
 function normalizeEvidenceReadoutArray(value: unknown): string[] | undefined {
-  const rawItems = Array.isArray(value) ? value : value === undefined ? [] : [value];
+  const rawItems = Array.isArray(value)
+    ? value
+    : value === undefined
+      ? []
+      : [value];
   const items = rawItems
     .slice(0, 25)
     .map(normalizeEvidenceReadoutItem)
@@ -932,24 +1220,39 @@ function normalizeRecommendationInput(
     privateOnlyNotes: normalizePacketStringArray(input.privateOnlyNotes),
     notPublicYet: normalizePacketStringArray(input.notPublicYet),
     observedChannels: normalizePacketStringArray(input.observedChannels),
-    conversationHighlights: normalizePacketStringArray(input.conversationHighlights),
+    conversationHighlights: normalizePacketStringArray(
+      input.conversationHighlights,
+    ),
     topicBreakdown: normalizePacketStringArray(input.topicBreakdown),
-    bestEvidenceToReview: normalizePacketStringArray(input.bestEvidenceToReview),
-    bnlInteractionSignals: normalizePacketStringArray(input.bnlInteractionSignals),
+    bestEvidenceToReview: normalizePacketStringArray(
+      input.bestEvidenceToReview,
+    ),
+    bnlInteractionSignals: normalizePacketStringArray(
+      input.bnlInteractionSignals,
+    ),
     musicSignals: normalizePacketStringArray(input.musicSignals),
     communitySignals: normalizePacketStringArray(input.communitySignals),
     sourceCoverage: normalizeSourceCoverageInput(input.sourceCoverage),
     evidenceDetails: normalizePacketStringArray(input.evidenceDetails),
-    representativeEvidence: normalizeEvidenceReadoutArray(input.representativeEvidence),
-    activityFrequencySummary: normalizeEvidenceReadoutArray(input.activityFrequencySummary),
+    representativeEvidence: normalizeEvidenceReadoutArray(
+      input.representativeEvidence,
+    ),
+    activityFrequencySummary: normalizeEvidenceReadoutArray(
+      input.activityFrequencySummary,
+    ),
     topChannels: normalizeEvidenceReadoutArray(input.topChannels),
     topTopicDetails: normalizeEvidenceReadoutArray(input.topTopicDetails),
-    recentActivitySummary: normalizeEvidenceReadoutArray(input.recentActivitySummary),
-    authoredVsMentionedSummary: normalizeEvidenceReadoutArray(input.authoredVsMentionedSummary),
+    recentActivitySummary: normalizeEvidenceReadoutArray(
+      input.recentActivitySummary,
+    ),
+    authoredVsMentionedSummary: normalizeEvidenceReadoutArray(
+      input.authoredVsMentionedSummary,
+    ),
     publicUseCandidates: normalizePacketStringArray(input.publicUseCandidates),
     reviewOnlyEvidence: normalizePacketStringArray(input.reviewOnlyEvidence),
     queueSubmissionStatus: input.queueSubmissionStatus,
-    queueSubmissionNote: boundedText(input.queueSubmissionNote, 1000) || undefined,
+    queueSubmissionNote:
+      boundedText(input.queueSubmissionNote, 1000) || undefined,
     recommendedAction: boundedText(input.recommendedAction, 1000) || undefined,
     sourceAuthority: normalizePacketStringArray(input.sourceAuthority),
     rawProvenance: cloneJsonValue(input.rawProvenance),
@@ -1153,36 +1456,37 @@ function buildCandidateFromRecommendation(input: {
       recommendation.usefulEvidence?.join("\n") ??
       recommendation.evidenceSummary ??
       recommendation.reason,
-    evidenceItems: (recommendation.usefulEvidence?.length ?? 0) > 0
-      ? recommendation.usefulEvidence!.map((summary) => ({
-          id: createEvidenceId(),
-          type: "operator_note" as const,
-          label: "BNL structured useful evidence",
-          summary,
-          count: 1,
-          firstSeenAt: recommendation.ingestedAt ?? now,
-          lastSeenAt: now,
-          publicSafe: false,
-        }))
-      : recommendation.evidenceSummary
-      ? [
-          {
+    evidenceItems:
+      (recommendation.usefulEvidence?.length ?? 0) > 0
+        ? recommendation.usefulEvidence!.map((summary) => ({
             id: createEvidenceId(),
-            type: "operator_note",
-            label:
-              source === "bnl_dynamic_candidate_discovery"
-                ? "BNL dynamic discovery evidence"
-                : source === "bnl_source_knowledge_bridge"
-                  ? "BNL Source Knowledge Bridge evidence"
-                  : "Recommendation inbox evidence",
-            summary: recommendation.evidenceSummary,
+            type: "operator_note" as const,
+            label: "BNL structured useful evidence",
+            summary,
             count: 1,
             firstSeenAt: recommendation.ingestedAt ?? now,
             lastSeenAt: now,
             publicSafe: false,
-          },
-        ]
-      : [],
+          }))
+        : recommendation.evidenceSummary
+          ? [
+              {
+                id: createEvidenceId(),
+                type: "operator_note",
+                label:
+                  source === "bnl_dynamic_candidate_discovery"
+                    ? "BNL dynamic discovery evidence"
+                    : source === "bnl_source_knowledge_bridge"
+                      ? "BNL Source Knowledge Bridge evidence"
+                      : "Recommendation inbox evidence",
+                summary: recommendation.evidenceSummary,
+                count: 1,
+                firstSeenAt: recommendation.ingestedAt ?? now,
+                lastSeenAt: now,
+                publicSafe: false,
+              },
+            ]
+          : [],
     evidenceCount:
       recommendation.usefulEvidence?.length ??
       recommendation.bestEvidenceToReview?.length ??
@@ -1354,7 +1658,8 @@ const BNL_SOURCE_FILE_ENRICHMENT_REFRESH_NOTE =
 function sourceFileEnrichmentAttachmentStatus(
   candidate: DossierCandidate,
 ): DossierRecommendationStatus {
-  if (candidate.status === "candidate_intake") return "attached_to_candidate_intake";
+  if (candidate.status === "candidate_intake")
+    return "attached_to_candidate_intake";
   if (candidate.status === "existing_dossier_update") {
     return "attached_to_existing_dossier_update";
   }
@@ -1398,7 +1703,6 @@ function upsertSourceFileEnrichmentNote(input: {
   };
 }
 
-
 const OPEN_REFRESH_RECENT_COMPLETED_MS = 60 * 60 * 1000;
 const DEFAULT_REFRESH_STALE_MS = 24 * 60 * 60 * 1000;
 const STALE_OPEN_REFRESH_REQUEST_MS = 5 * 60 * 1000;
@@ -1406,10 +1710,8 @@ const OPEN_REQUEST_STATUSES = new Set<DossierSourceFileRefreshRequestStatus>([
   "pending",
   "claimed",
 ]);
-const COMPLETABLE_REFRESH_STATUSES = new Set<DossierSourceFileRefreshRequestStatus>([
-  "pending",
-  "claimed",
-]);
+const COMPLETABLE_REFRESH_STATUSES =
+  new Set<DossierSourceFileRefreshRequestStatus>(["pending", "claimed"]);
 
 function latestBnlSourceFileRecommendation(input: {
   candidate: DossierCandidate;
@@ -1428,7 +1730,9 @@ function latestBnlSourceFileRecommendation(input: {
     )[0];
 }
 
-function latestActiveSourceNoteTimestamp(candidate: DossierCandidate): string | undefined {
+function latestActiveSourceNoteTimestamp(
+  candidate: DossierCandidate,
+): string | undefined {
   return (candidate.sourceFileNotes ?? [])
     .filter((note) => note.status === "active")
     .map((note) => note.updatedAt ?? note.createdAt)
@@ -1444,7 +1748,9 @@ function sourceFileRefreshRequestMatchesCandidate(input: {
   if (input.request.candidateId) {
     return input.request.candidateId === input.candidate.id;
   }
-  return input.request.normalizedSubjectKey === normalizeName(input.candidate.name);
+  return (
+    input.request.normalizedSubjectKey === normalizeName(input.candidate.name)
+  );
 }
 
 function latestOpenRefreshRequest(input: {
@@ -1454,7 +1760,10 @@ function latestOpenRefreshRequest(input: {
   return input.requests.find(
     (request) =>
       OPEN_REQUEST_STATUSES.has(request.status) &&
-      sourceFileRefreshRequestMatchesCandidate({ request, candidate: input.candidate }),
+      sourceFileRefreshRequestMatchesCandidate({
+        request,
+        candidate: input.candidate,
+      }),
   );
 }
 
@@ -1465,12 +1774,18 @@ function latestCompletedRefreshRequest(input: {
   return input.requests.find(
     (request) =>
       request.status === "completed" &&
-      sourceFileRefreshRequestMatchesCandidate({ request, candidate: input.candidate }),
+      sourceFileRefreshRequestMatchesCandidate({
+        request,
+        candidate: input.candidate,
+      }),
   );
 }
 
 function sourceFileRefreshDedupeKey(
-  request: Pick<DossierSourceFileRefreshRequest, "candidateId" | "normalizedSubjectKey" | "subjectName">,
+  request: Pick<
+    DossierSourceFileRefreshRequest,
+    "candidateId" | "normalizedSubjectKey" | "subjectName"
+  >,
 ): string {
   const candidateKey = request.candidateId?.trim();
   if (candidateKey) return `candidate:${candidateKey}`;
@@ -1506,7 +1821,10 @@ function mergeActiveSourceFileRefreshRequests(
       subjectName: existing.subjectName || request.subjectName,
       normalizedSubjectKey:
         existing.normalizedSubjectKey || request.normalizedSubjectKey,
-      reason: request.updatedAt >= existing.updatedAt ? request.reason : existing.reason,
+      reason:
+        request.updatedAt >= existing.updatedAt
+          ? request.reason
+          : existing.reason,
       requestSource:
         request.updatedAt >= existing.updatedAt
           ? request.requestSource
@@ -1518,10 +1836,13 @@ function mergeActiveSourceFileRefreshRequests(
           : existing.requestedAt,
       requestedBy: request.requestedBy ?? existing.requestedBy,
       updatedAt:
-        request.updatedAt > existing.updatedAt ? request.updatedAt : existing.updatedAt,
+        request.updatedAt > existing.updatedAt
+          ? request.updatedAt
+          : existing.updatedAt,
       lastAttemptAt:
         request.lastAttemptAt &&
-        (!existing.lastAttemptAt || request.lastAttemptAt > existing.lastAttemptAt)
+        (!existing.lastAttemptAt ||
+          request.lastAttemptAt > existing.lastAttemptAt)
           ? request.lastAttemptAt
           : existing.lastAttemptAt,
     };
@@ -1544,14 +1865,20 @@ export function evaluateDossierSourceFileRefresh(input: {
   const staleAfterMs = input.staleAfterMs ?? DEFAULT_REFRESH_STALE_MS;
   const latestRecommendation = latestBnlSourceFileRecommendation(input);
   const latestRecommendationTimestamp = latestRecommendation
-    ? (latestRecommendation.ingestedAt ?? latestRecommendation.updatedAt ?? latestRecommendation.createdAt)
+    ? (latestRecommendation.ingestedAt ??
+      latestRecommendation.updatedAt ??
+      latestRecommendation.createdAt)
     : undefined;
-  const latestSourceNoteTimestamp = latestActiveSourceNoteTimestamp(input.candidate);
+  const latestSourceNoteTimestamp = latestActiveSourceNoteTimestamp(
+    input.candidate,
+  );
   const completed = latestCompletedRefreshRequest({
     requests: input.refreshRequests ?? [],
     candidate: input.candidate,
   });
-  const completedAt = completed?.completedAt ? Date.parse(completed.completedAt) : NaN;
+  const completedAt = completed?.completedAt
+    ? Date.parse(completed.completedAt)
+    : NaN;
   const nowTime = Date.parse(now);
 
   if (
@@ -1582,8 +1909,14 @@ export function evaluateDossierSourceFileRefresh(input: {
   }
 
   const recommendationTime = Date.parse(latestRecommendationTimestamp);
-  const noteTime = latestSourceNoteTimestamp ? Date.parse(latestSourceNoteTimestamp) : NaN;
-  if (!Number.isNaN(noteTime) && !Number.isNaN(recommendationTime) && noteTime > recommendationTime) {
+  const noteTime = latestSourceNoteTimestamp
+    ? Date.parse(latestSourceNoteTimestamp)
+    : NaN;
+  if (
+    !Number.isNaN(noteTime) &&
+    !Number.isNaN(recommendationTime) &&
+    noteTime > recommendationTime
+  ) {
     return {
       needed: true,
       reason: "Source file notes are newer than the latest BNL enrichment.",
@@ -1594,11 +1927,19 @@ export function evaluateDossierSourceFileRefresh(input: {
     };
   }
 
-  if (!Number.isNaN(recommendationTime) && !Number.isNaN(nowTime) && nowTime - recommendationTime > staleAfterMs) {
+  if (
+    !Number.isNaN(recommendationTime) &&
+    !Number.isNaN(nowTime) &&
+    nowTime - recommendationTime > staleAfterMs
+  ) {
     return {
       needed: true,
-      reason: "Latest BNL Source File enrichment is older than the refresh policy threshold.",
-      requestSource: input.candidate.status === "existing_dossier_update" ? "existing_dossier_update_review" : "stale_source_file",
+      reason:
+        "Latest BNL Source File enrichment is older than the refresh policy threshold.",
+      requestSource:
+        input.candidate.status === "existing_dossier_update"
+          ? "existing_dossier_update_review"
+          : "stale_source_file",
       priority: input.candidate.status === "existing_dossier_update" ? 75 : 50,
       latestRecommendationTimestamp,
       latestSourceNoteTimestamp,
@@ -1607,7 +1948,8 @@ export function evaluateDossierSourceFileRefresh(input: {
 
   return {
     needed: false,
-    reason: "Latest BNL Source File enrichment is fresh for the current source file notes.",
+    reason:
+      "Latest BNL Source File enrichment is fresh for the current source file notes.",
     requestSource: "opened_source_file",
     priority: 1,
     latestRecommendationTimestamp,
@@ -1650,18 +1992,28 @@ function upsertSourceFileRefreshRequestInState(input: {
   requestedBy?: string;
   now: string;
   force?: boolean;
-}): { state: DossierWorkflowState; request: DossierSourceFileRefreshRequest; created: boolean } {
+}): {
+  state: DossierWorkflowState;
+  request: DossierSourceFileRefreshRequest;
+  created: boolean;
+} {
   const state = {
     ...input.state,
     sourceFileRefreshRequests: mergeActiveSourceFileRefreshRequests(
-      expireStaleOpenRefreshRequests(input.state.sourceFileRefreshRequests, input.now),
+      expireStaleOpenRefreshRequests(
+        input.state.sourceFileRefreshRequests,
+        input.now,
+      ),
     ),
   };
   const normalizedSubjectKey = normalizeName(input.candidate.name);
   const existingIndex = state.sourceFileRefreshRequests.findIndex(
     (request) =>
       OPEN_REQUEST_STATUSES.has(request.status) &&
-      sourceFileRefreshRequestMatchesCandidate({ request, candidate: input.candidate }),
+      sourceFileRefreshRequestMatchesCandidate({
+        request,
+        candidate: input.candidate,
+      }),
   );
   if (existingIndex >= 0) {
     const existing = state.sourceFileRefreshRequests[existingIndex];
@@ -1669,7 +2021,8 @@ function upsertSourceFileRefreshRequestInState(input: {
       ...existing,
       candidateId: existing.candidateId ?? input.candidate.id,
       subjectName: existing.subjectName || input.candidate.name,
-      normalizedSubjectKey: existing.normalizedSubjectKey || normalizedSubjectKey,
+      normalizedSubjectKey:
+        existing.normalizedSubjectKey || normalizedSubjectKey,
       reason: input.reason || existing.reason,
       requestSource: input.requestSource,
       priority: Math.max(existing.priority ?? 0, input.priority),
@@ -1679,7 +2032,11 @@ function upsertSourceFileRefreshRequestInState(input: {
     const requests = [...state.sourceFileRefreshRequests];
     requests[existingIndex] = updated;
     return {
-      state: { ...state, sourceFileRefreshRequests: requests, updatedAt: input.now },
+      state: {
+        ...state,
+        sourceFileRefreshRequests: requests,
+        updatedAt: input.now,
+      },
       request: updated,
       created: false,
     };
@@ -1690,9 +2047,15 @@ function upsertSourceFileRefreshRequestInState(input: {
       requests: state.sourceFileRefreshRequests,
       candidate: input.candidate,
     });
-    const completedAt = recentCompleted?.completedAt ? Date.parse(recentCompleted.completedAt) : NaN;
+    const completedAt = recentCompleted?.completedAt
+      ? Date.parse(recentCompleted.completedAt)
+      : NaN;
     const nowTime = Date.parse(input.now);
-    if (!Number.isNaN(completedAt) && !Number.isNaN(nowTime) && nowTime - completedAt < OPEN_REFRESH_RECENT_COMPLETED_MS) {
+    if (
+      !Number.isNaN(completedAt) &&
+      !Number.isNaN(nowTime) &&
+      nowTime - completedAt < OPEN_REFRESH_RECENT_COMPLETED_MS
+    ) {
       return { state, request: recentCompleted!, created: false };
     }
   }
@@ -1721,18 +2084,223 @@ function upsertSourceFileRefreshRequestInState(input: {
   };
 }
 
+export async function getDossierSourceFileArchive(
+  archiveId: string,
+): Promise<DossierSourceFileEnrichmentArchive | null> {
+  if (!archiveId.trim()) return null;
+  return readSourceFileArchiveRecord(archiveId.trim());
+}
+
+export async function ingestDossierSourceFileArchive(
+  input: CreateDossierSourceFileArchiveInput,
+): Promise<{
+  archive: DossierSourceFileArchiveMetadata;
+  duplicate: boolean;
+  attachStatus: DossierSourceFileArchiveAttachStatus;
+  candidate: DossierCandidate;
+}> {
+  const normalized = normalizeSourceFileArchiveInput(input);
+  if (!normalized) {
+    throw new DossierWorkflowInputError(
+      "Source File archive ingest requires subjectName and sourcePackage",
+      400,
+      "archive_subject_required",
+    );
+  }
+  if (
+    normalized.sourcePackage === undefined ||
+    normalized.sourcePackage === null
+  ) {
+    throw new DossierWorkflowInputError(
+      "Source File archive ingest requires sourcePackage",
+      400,
+      "archive_package_required",
+    );
+  }
+
+  const digest = sourceFileArchiveDigest(normalized.sourcePackage);
+  const now = new Date().toISOString();
+  let savedArchiveMetadata: DossierSourceFileArchiveMetadata | null = null;
+  let savedArchiveChunks: string[] | null = null;
+  let duplicate = false;
+  let attachStatus: DossierSourceFileArchiveAttachStatus | null = null;
+  let savedCandidate: DossierCandidate | null = null;
+  let savedCandidateLatestArchiveId: string | undefined;
+  let savedCandidateLatestArchiveMetadata:
+    | DossierSourceFileArchiveMetadata
+    | undefined;
+
+  await updateDossierWorkflowState((currentState) => {
+    const subjectKey = normalizeName(
+      normalized.subjectKey || normalized.subjectName,
+    );
+    const candidate = normalized.candidateId
+      ? currentState.candidates.find(
+          (item) => item.id === normalized.candidateId,
+        )
+      : currentState.candidates.find(
+          (item) =>
+            normalizeName(item.name) === subjectKey ||
+            normalizeName(item.ingestKey ?? "") ===
+              normalizeName(normalized.ingestKey ?? ""),
+        );
+    if (!candidate) {
+      throw new DossierWorkflowInputError(
+        "Safe exact Source File match is required for archive ingest",
+        404,
+        "archive_target_not_found",
+      );
+    }
+    if (!isSourceFileEnrichmentAttachableCandidate(candidate)) {
+      throw new DossierWorkflowInputError(
+        "Target is not open for Source File archive attachment",
+        400,
+        "archive_target_not_attachable",
+      );
+    }
+    if (
+      !normalized.candidateId &&
+      normalizeName(candidate.name) !== subjectKey
+    ) {
+      throw new DossierWorkflowInputError(
+        "Archive ingest requires candidateId unless subjectName is an exact safe match",
+        400,
+        "archive_exact_match_required",
+      );
+    }
+
+    if (
+      candidate.latestSourceFileArchiveDigest === digest &&
+      candidate.latestSourceFileArchiveId
+    ) {
+      duplicate = true;
+      attachStatus = "deduped_existing";
+      savedCandidate = candidate;
+      savedCandidateLatestArchiveId = candidate.latestSourceFileArchiveId;
+      savedCandidateLatestArchiveMetadata = candidate.latestSourceFileArchive;
+      return currentState;
+    }
+
+    const serializedPackage = serializeSourceFileArchivePackage(
+      normalized.sourcePackage,
+    );
+    const archiveSize = sourceFileArchiveSize(serializedPackage);
+    const archiveId = createSourceFileArchiveId();
+    const archiveKey = sourceFileArchiveStorageKey(archiveId);
+    const chunks = sourceFileArchiveChunks(serializedPackage);
+    const chunkCount = chunks.length;
+    const chunkKeys = chunks.map((_, index) => `${archiveKey}:chunk:${index}`);
+    savedArchiveMetadata = {
+      id: archiveId,
+      candidateId: candidate.id,
+      subjectName: normalized.subjectName,
+      subjectKey:
+        normalized.subjectKey ?? normalizeName(normalized.subjectName),
+      ingestKey: normalized.ingestKey,
+      ingestSource: normalized.ingestSource ?? "bnl_source_file_enrichment",
+      sourceDigest: digest,
+      createdAt: now,
+      updatedAt: now,
+      archiveSize,
+      chunkCount,
+      compactSummary: normalized.compactSummary,
+      publicSafePossibilities: normalized.publicSafePossibilities,
+      missingInfo: normalized.missingInfo,
+      publicSafetyNotes: normalized.publicSafetyNotes,
+      doNotSay: normalized.doNotSay,
+      evidenceReceiptSummary: normalized.evidenceReceiptSummary,
+      archiveKey,
+      chunkKeys,
+      reviewOnly: true,
+    };
+    savedArchiveChunks = chunks;
+    const metadata = savedArchiveMetadata;
+    const archiveIds = uniqueStrings(
+      [archiveId],
+      candidate.sourceFileArchiveIds,
+    );
+    const nextCandidate: DossierCandidate = {
+      ...candidate,
+      sourceFileArchiveIds: archiveIds,
+      latestSourceFileArchiveId: archiveId,
+      latestSourceFileArchiveDigest: digest,
+      latestSourceFileArchiveUpdatedAt: now,
+      latestSourceFileArchive: metadata,
+      updatedAt: now,
+    };
+    attachStatus = archiveAttachStatusForCandidate(candidate);
+    savedCandidate = nextCandidate;
+    savedCandidateLatestArchiveId = nextCandidate.latestSourceFileArchiveId;
+    savedCandidateLatestArchiveMetadata = nextCandidate.latestSourceFileArchive;
+    return {
+      ...currentState,
+      candidates: currentState.candidates.map((item) =>
+        item.id === candidate.id ? nextCandidate : item,
+      ),
+      updatedAt: now,
+    };
+  });
+
+  if (savedArchiveMetadata && savedArchiveChunks) {
+    await saveSourceFileArchiveRecord({
+      metadata: savedArchiveMetadata,
+      chunks: savedArchiveChunks,
+    });
+  }
+  if (
+    duplicate &&
+    savedCandidateLatestArchiveId &&
+    !savedCandidateLatestArchiveMetadata
+  ) {
+    savedCandidateLatestArchiveMetadata =
+      (await readSourceFileArchiveManifest(savedCandidateLatestArchiveId)) ??
+      undefined;
+  }
+
+  const metadata = savedArchiveMetadata ?? savedCandidateLatestArchiveMetadata;
+  if (!metadata || !attachStatus || !savedCandidate) {
+    throw new DossierWorkflowInputError(
+      "Source File archive ingest did not attach",
+      400,
+      "archive_attach_failed",
+    );
+  }
+
+  return {
+    archive: metadata,
+    duplicate,
+    attachStatus,
+    candidate: savedCandidate,
+  };
+}
+
 export async function recordDossierSourceFileOpen(input: {
   candidateId: string;
   requestedBy?: string;
-}): Promise<{ request: DossierSourceFileRefreshRequest | null; decision: DossierSourceFileRefreshDecision; created: boolean }> {
+}): Promise<{
+  request: DossierSourceFileRefreshRequest | null;
+  decision: DossierSourceFileRefreshDecision;
+  created: boolean;
+}> {
   const now = new Date().toISOString();
-  let result: { request: DossierSourceFileRefreshRequest | null; decision: DossierSourceFileRefreshDecision; created: boolean } | null = null;
+  let result: {
+    request: DossierSourceFileRefreshRequest | null;
+    decision: DossierSourceFileRefreshDecision;
+    created: boolean;
+  } | null = null;
   await updateDossierWorkflowState((currentState) => {
-    const candidate = currentState.candidates.find((item) => item.id === input.candidateId);
+    const candidate = currentState.candidates.find(
+      (item) => item.id === input.candidateId,
+    );
     if (!candidate || !isSourceFileEnrichmentAttachableCandidate(candidate)) {
       result = {
         request: null,
-        decision: { needed: false, reason: "Source File candidate was not found or is closed.", requestSource: "opened_source_file", priority: 1 },
+        decision: {
+          needed: false,
+          reason: "Source File candidate was not found or is closed.",
+          requestSource: "opened_source_file",
+          priority: 1,
+        },
         created: false,
       };
       return currentState;
@@ -1749,7 +2317,10 @@ export async function recordDossierSourceFileOpen(input: {
       reason: decision.needed
         ? decision.reason
         : "Admin opened the Source File and requested an immediate BNL freshness check.",
-      requestSource: decision.requestSource === "opened_source_file" ? "opened_source_file" : decision.requestSource,
+      requestSource:
+        decision.requestSource === "opened_source_file"
+          ? "opened_source_file"
+          : decision.requestSource,
       priority: Math.max(decision.priority, 60),
       requestedBy: input.requestedBy ?? "admin_open_source_file",
       now,
@@ -1769,16 +2340,25 @@ export async function requestDossierSourceFileRefresh(input: {
   priority?: number;
 }): Promise<{ request: DossierSourceFileRefreshRequest; created: boolean }> {
   const now = new Date().toISOString();
-  let result: { request: DossierSourceFileRefreshRequest; created: boolean } | null = null;
+  let result: {
+    request: DossierSourceFileRefreshRequest;
+    created: boolean;
+  } | null = null;
   await updateDossierWorkflowState((currentState) => {
-    const candidate = currentState.candidates.find((item) => item.id === input.candidateId);
+    const candidate = currentState.candidates.find(
+      (item) => item.id === input.candidateId,
+    );
     if (!candidate || !isSourceFileEnrichmentAttachableCandidate(candidate)) {
-      throw new DossierWorkflowInputError("Source File candidate was not found or cannot be refreshed");
+      throw new DossierWorkflowInputError(
+        "Source File candidate was not found or cannot be refreshed",
+      );
     }
     const upserted = upsertSourceFileRefreshRequestInState({
       state: currentState,
       candidate,
-      reason: input.reason?.trim() || "Manual admin requested a BNL Source File refresh.",
+      reason:
+        input.reason?.trim() ||
+        "Manual admin requested a BNL Source File refresh.",
       requestSource: input.requestSource ?? "manual_admin",
       priority: input.priority ?? 90,
       requestedBy: input.requestedBy ?? "admin_manual",
@@ -1791,11 +2371,16 @@ export async function requestDossierSourceFileRefresh(input: {
   return result!;
 }
 
-export async function listPendingDossierSourceFileRefreshRequests(limit = 25): Promise<DossierSourceFileRefreshRequest[]> {
+export async function listPendingDossierSourceFileRefreshRequests(
+  limit = 25,
+): Promise<DossierSourceFileRefreshRequest[]> {
   const state = await getDossierWorkflowState();
   return state.sourceFileRefreshRequests
     .filter((request) => request.status === "pending")
-    .sort((a, b) => (b.priority - a.priority) || a.requestedAt.localeCompare(b.requestedAt))
+    .sort(
+      (a, b) =>
+        b.priority - a.priority || a.requestedAt.localeCompare(b.requestedAt),
+    )
     .slice(0, Math.max(1, Math.min(100, limit)));
 }
 
@@ -1818,13 +2403,20 @@ export async function updateDossierSourceFileRefreshRequestStatus(input: {
         status: input.status,
         updatedAt: now,
         lastAttemptAt: input.status === "claimed" ? now : request.lastAttemptAt,
-        completedAt: input.status === "completed" || input.status === "skipped" ? now : request.completedAt,
-        completedByRecommendationId: input.completedByRecommendationId ?? request.completedByRecommendationId,
+        completedAt:
+          input.status === "completed" || input.status === "skipped"
+            ? now
+            : request.completedAt,
+        completedByRecommendationId:
+          input.completedByRecommendationId ??
+          request.completedByRecommendationId,
         failureReason: input.failureReason ?? request.failureReason,
       };
       return updated;
     });
-    return updated ? { ...currentState, sourceFileRefreshRequests: requests, updatedAt: now } : currentState;
+    return updated
+      ? { ...currentState, sourceFileRefreshRequests: requests, updatedAt: now }
+      : currentState;
   });
   return updated;
 }
@@ -1834,7 +2426,8 @@ function completeMatchingRefreshRequestsInState(input: {
   recommendation: DossierRecommendation;
   now: string;
 }): DossierWorkflowState {
-  if (input.recommendation.ingestSource !== "bnl_source_file_enrichment") return input.state;
+  if (input.recommendation.ingestSource !== "bnl_source_file_enrichment")
+    return input.state;
   const normalizedSubjectKey = normalizeName(
     input.recommendation.subjectKey || input.recommendation.subjectName,
   );
@@ -1847,9 +2440,12 @@ function completeMatchingRefreshRequestsInState(input: {
     const matches =
       COMPLETABLE_REFRESH_STATUSES.has(request.status) &&
       (request.candidateId
-        ? Boolean(targetCandidateId && request.candidateId === targetCandidateId)
+        ? Boolean(
+            targetCandidateId && request.candidateId === targetCandidateId,
+          )
         : request.normalizedSubjectKey === normalizedSubjectKey ||
-          normalizeName(request.subjectName) === normalizeName(input.recommendation.subjectName));
+          normalizeName(request.subjectName) ===
+            normalizeName(input.recommendation.subjectName));
     if (!matches) return request;
     changed = true;
     return {
@@ -1860,7 +2456,13 @@ function completeMatchingRefreshRequestsInState(input: {
       updatedAt: input.now,
     };
   });
-  return changed ? { ...input.state, sourceFileRefreshRequests: requests, updatedAt: input.now } : input.state;
+  return changed
+    ? {
+        ...input.state,
+        sourceFileRefreshRequests: requests,
+        updatedAt: input.now,
+      }
+    : input.state;
 }
 
 export async function createDossierRecommendationIdempotent(
@@ -2321,14 +2923,29 @@ function recommendationSourceNoteText(
     : "";
   const actionableSummary = [
     "Actionable Summary:",
-    ...packetLines("Recurring named topic", [
-      (recommendation.usefulEvidence ?? []).find((item) => /recurring named topic/i.test(item)),
-      (recommendation.topTopicDetails ?? []).find((item) => /recurring named topic/i.test(item)),
-    ].filter(Boolean) as string[]),
-    ...packetLines("Tool/platform mention", [
-      (recommendation.musicSignals ?? []).find((item) => /tool|platform|suno|udio|ableton|bandcamp|soundcloud/i.test(item)),
-    ].filter(Boolean) as string[]),
-    ...packetLines("BNL interaction pattern", recommendation.bnlInteractionSignals),
+    ...packetLines(
+      "Recurring named topic",
+      [
+        (recommendation.usefulEvidence ?? []).find((item) =>
+          /recurring named topic/i.test(item),
+        ),
+        (recommendation.topTopicDetails ?? []).find((item) =>
+          /recurring named topic/i.test(item),
+        ),
+      ].filter(Boolean) as string[],
+    ),
+    ...packetLines(
+      "Tool/platform mention",
+      [
+        (recommendation.musicSignals ?? []).find((item) =>
+          /tool|platform|suno|udio|ableton|bandcamp|soundcloud/i.test(item),
+        ),
+      ].filter(Boolean) as string[],
+    ),
+    ...packetLines(
+      "BNL interaction pattern",
+      recommendation.bnlInteractionSignals,
+    ),
     queueStatus,
     recommendation.recommendedAction
       ? `Recommended next action: ${recommendation.recommendedAction}`
@@ -2351,17 +2968,38 @@ function recommendationSourceNoteText(
     ),
     ...packetLines("Private/internal note", recommendation.privateOnlyNotes),
     ...packetLines("Not public yet", recommendation.notPublicYet),
-    ...packetLines("Best evidence to review", recommendation.bestEvidenceToReview),
-    ...packetLines("Observed channel/activity", recommendation.observedChannels),
-    ...packetLines("Conversation highlight", recommendation.conversationHighlights),
-    ...packetLines("BNL interaction signal", recommendation.bnlInteractionSignals),
+    ...packetLines(
+      "Best evidence to review",
+      recommendation.bestEvidenceToReview,
+    ),
+    ...packetLines(
+      "Observed channel/activity",
+      recommendation.observedChannels,
+    ),
+    ...packetLines(
+      "Conversation highlight",
+      recommendation.conversationHighlights,
+    ),
+    ...packetLines(
+      "BNL interaction signal",
+      recommendation.bnlInteractionSignals,
+    ),
     ...packetLines("Music/show signal", recommendation.musicSignals),
     ...packetLines("Community signal", recommendation.communitySignals),
-    ...packetLines("Activity frequency", recommendation.activityFrequencySummary),
+    ...packetLines(
+      "Activity frequency",
+      recommendation.activityFrequencySummary,
+    ),
     ...packetLines("Top channel", recommendation.topChannels),
     ...packetLines("Recent activity", recommendation.recentActivitySummary),
-    ...packetLines("Posted/mentioned balance", recommendation.authoredVsMentionedSummary),
-    ...packetLines("Public-use candidate pending owner review", recommendation.publicUseCandidates),
+    ...packetLines(
+      "Posted/mentioned balance",
+      recommendation.authoredVsMentionedSummary,
+    ),
+    ...packetLines(
+      "Public-use candidate pending owner review",
+      recommendation.publicUseCandidates,
+    ),
     ...packetLines("Review-only evidence", recommendation.reviewOnlyEvidence),
     queueStatus,
     recommendation.queueSubmissionNote
@@ -2374,7 +3012,10 @@ function recommendationSourceNoteText(
     ...packetLines("Supporting classification", recommendation.topTopicDetails),
     ...packetLines("Source coverage", recommendation.sourceCoverage),
     ...packetLines("Evidence detail", recommendation.evidenceDetails),
-    ...packetLines("Representative evidence", recommendation.representativeEvidence),
+    ...packetLines(
+      "Representative evidence",
+      recommendation.representativeEvidence,
+    ),
     ...(recommendation.sourceAuthority ?? []).map(
       (item) => `Source authority / confidence boundary: ${item}`,
     ),
@@ -3267,7 +3908,9 @@ export async function createExistingDossierUpdateTarget(
   input: CreateExistingDossierUpdateTargetInput,
 ): Promise<DossierCandidate> {
   const now = new Date().toISOString();
-  const entry = databasePage.entries.find((item) => item.id === input.dossierId);
+  const entry = databasePage.entries.find(
+    (item) => item.id === input.dossierId,
+  );
   if (!entry) {
     throw new DossierWorkflowInputError(
       "Existing public dossier target was not found",
@@ -3314,7 +3957,9 @@ export async function createExistingDossierUpdateTarget(
       },
     ],
     evidenceCount: 1,
-    knownFacts: [`Existing public dossier target: ${entry.id} / ${entry.name}.`],
+    knownFacts: [
+      `Existing public dossier target: ${entry.id} / ${entry.name}.`,
+    ],
     confidence: "medium",
     duplicateRisk: "high",
     existingDossierMatch,
@@ -3330,9 +3975,7 @@ export async function createExistingDossierUpdateTarget(
     missingInfo: [
       "Review enrichment notes before applying anything to a proposed dossier or public content.",
     ],
-    doNotSay: [
-      "Do not treat update notes as owner-approved public copy.",
-    ],
+    doNotSay: ["Do not treat update notes as owner-approved public copy."],
     publicSafetyNotes: [
       "Review-only update material; do not publish automatically.",
       "This internal update lane does not approve public copy, aliases, identity merges, or publication.",

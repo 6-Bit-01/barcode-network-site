@@ -4,6 +4,7 @@ import type React from "react";
 import type { DossierEntityActivityReadout } from "@/lib/dossier-entity-activity-readout";
 import type {
   DossierRecommendation,
+  DossierSourceFileArchiveMetadata,
   DossierSourceFileNote,
 } from "@/lib/dossier-workflow";
 import { buildSourceFileActionableBrief } from "@/lib/dossier-source-file-actionable-brief";
@@ -567,6 +568,7 @@ export function DossierSourceFileSummaryPanel({
   currentLane,
   latestRecommendationTimestamp,
   sourceFileTargetStatus,
+  latestSourceFileArchive,
 }: {
   summary: DossierSourceFileSummary;
   entityReadout?: DossierEntityActivityReadout | null;
@@ -579,6 +581,7 @@ export function DossierSourceFileSummaryPanel({
   currentLane?: string;
   latestRecommendationTimestamp?: string;
   sourceFileTargetStatus?: string;
+  latestSourceFileArchive?: DossierSourceFileArchiveMetadata;
 }) {
   const currentRead = entityReadout?.currentRead ?? summary.currentRead;
   const publicSafePossibilities = safeReviewItems([
@@ -904,6 +907,15 @@ export function DossierSourceFileSummaryPanel({
     ],
     12,
   );
+  const archiveReadoutItems = safeReviewItems(
+    [
+      latestSourceFileArchive?.compactSummary,
+      ...(latestSourceFileArchive?.publicSafePossibilities ?? []),
+      ...(latestSourceFileArchive?.missingInfo ?? []),
+      ...(latestSourceFileArchive?.evidenceReceiptSummary ?? []),
+    ],
+    8,
+  );
   const snapshotItems = [
     ["Subject", subjectName ?? "Unknown subject"],
     ["Current lane / status", humanStatus(currentLane ?? summary.nextAction)],
@@ -928,6 +940,12 @@ export function DossierSourceFileSummaryPanel({
         : humanStatus(queueStatus),
     ],
     ["Main next action", recommendedAction],
+    [
+      "Latest archive",
+      latestSourceFileArchive
+        ? `${formatSnapshotDate(latestSourceFileArchive.updatedAt)} · ${latestSourceFileArchive.archiveSize} bytes · ${latestSourceFileArchive.chunkCount} chunk(s)`
+        : "No full archive attached",
+    ],
   ];
 
   return (
@@ -967,6 +985,40 @@ export function DossierSourceFileSummaryPanel({
           ))}
         </dl>
       </Section>
+
+
+      {latestSourceFileArchive && (
+        <Section
+          title="Latest BNL Source Archive Readout"
+          helper="Compact archive-derived fields only. The complete Source Archive stays internal and collapsed below."
+        >
+          <SummaryList
+            items={fallbackItems(
+              archiveReadoutItems,
+              "Latest archive exists, but no compact readout fields were supplied.",
+            )}
+          />
+        </Section>
+      )}
+
+      {latestSourceFileArchive && (
+        <details className="border border-border/70 bg-background/20 p-3 text-sm text-muted">
+          <summary className="cursor-pointer font-semibold text-foreground">
+            Full BNL Source Archive — admin-only / collapsed
+          </summary>
+          <p className="mt-3 text-xs uppercase tracking-widest text-accent">
+            Internal archive metadata only. Full source package content is stored outside the workflow dashboard and is not rendered here.
+          </p>
+          <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <SnapshotItem label="Archive id" value={latestSourceFileArchive.id} />
+            <SnapshotItem label="Digest" value={latestSourceFileArchive.sourceDigest.slice(0, 16)} />
+            <SnapshotItem label="Size" value={`${latestSourceFileArchive.archiveSize} bytes`} />
+            <SnapshotItem label="Chunks" value={String(latestSourceFileArchive.chunkCount)} />
+            <SnapshotItem label="Updated" value={formatSnapshotDate(latestSourceFileArchive.updatedAt)} />
+            <SnapshotItem label="Review-only" value={latestSourceFileArchive.reviewOnly ? "Yes" : "No"} />
+          </dl>
+        </details>
+      )}
 
       <Section
         title="What BNL Knows"

@@ -160,45 +160,6 @@ function StatusPill({ children }: { children: React.ReactNode }) {
   );
 }
 
-const dossierPhases = [
-  "Phase 1 — Case File / BNL Source File",
-  "Phase 2 — Proposed Dossier + BNL Edit Chat",
-  "Phase 3 — Final Admin Draft",
-  "Phase 4 — Owner Review",
-  "Phase 5 — Approved / Publish Later",
-];
-
-function PhaseRail({ currentPhase }: { currentPhase?: number }) {
-  return (
-    <section
-      className="border border-border bg-surface p-4"
-      aria-label="Dossier phase overview"
-    >
-      <p className="text-xs uppercase tracking-[0.45em] text-muted mb-3">
-        Numbered dossier phases
-      </p>
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-2 text-xs uppercase tracking-widest">
-        {dossierPhases.map((phase, index) => (
-          <span
-            key={phase}
-            className={`border px-3 py-2 ${currentPhase === index + 1 ? "border-accent text-accent bg-accent/10" : "border-border text-muted bg-background/30"}`}
-          >
-            {phase}
-          </span>
-        ))}
-      </div>
-      <p className="mt-3 text-xs text-muted">
-        Phase 1 is the internal working case file / evidence folder; it is not
-        public copy. Phase 2 is the curated public-facing draft written from
-        reviewed Case File material. Phase 3 is final admin draft
-        confirmation. Phase 4 is the owner final approval gate before anything
-        becomes publishable/public. Phase 5 is approved / publish later and is
-        not active yet.
-      </p>
-    </section>
-  );
-}
-
 function DashboardCard({
   eyebrow,
   title,
@@ -382,6 +343,86 @@ export default function DossierControlCenterPage() {
   );
   const closedHistoryCount =
     closedCandidates.length + closedDrafts.length + terminalRecommendations.length;
+  const candidateDecisionItems = candidates.filter((candidate) =>
+    ["suggested", "needs_review"].includes(candidate.status),
+  );
+  const candidateUpdateRows = [
+    ...activeRecommendations.map((recommendation) => {
+      const matchState = recommendationMatchState(recommendation);
+      return {
+        id: `recommendation-${recommendation.id}`,
+        subject: recommendation.subjectName,
+        type: "BNL Signal",
+        why: recommendation.evidenceSummary || recommendation.reason,
+        strength: recommendation.confidence ?? "Needs review",
+        nextStep: matchState.nextAction,
+        href: `/admin/dossiers/recommendations/${recommendation.id}`,
+      };
+    }),
+    ...candidateIntakeItems.map((candidate) => ({
+      id: `candidate-intake-${candidate.id}`,
+      subject: candidate.name,
+      type: "Dossier Seed",
+      why: candidate.evidenceSummary || candidate.reason || candidate.whyNow,
+      strength: `${candidate.tier} / ${candidate.score}`,
+      nextStep: "Decide whether this deserves a Source File.",
+      href: `/admin/dossiers/candidates/${candidate.id}`,
+    })),
+    ...candidateDecisionItems.map((candidate) => ({
+      id: `candidate-decision-${candidate.id}`,
+      subject: candidate.name,
+      type: "Candidate Record",
+      why: candidate.evidenceSummary || candidate.reason || candidate.whyNow,
+      strength: `${candidate.tier} / ${candidate.score}`,
+      nextStep: "Review identity, evidence, and source-file fit.",
+      href: `/admin/dossiers/candidates/${candidate.id}`,
+    })),
+    ...existingDossierUpdates.map((candidate) => ({
+      id: `dossier-update-${candidate.id}`,
+      subject: candidate.existingDossierMatch?.name ?? candidate.name,
+      type: "Dossier Update",
+      why: candidate.evidenceSummary || candidate.reason || "New information may belong on an existing public dossier.",
+      strength: candidate.existingDossierMatch?.confidence ?? candidate.confidence ?? "Needs review",
+      nextStep: "Review update material before any public edit.",
+      href: `/admin/dossiers/candidates/${candidate.id}`,
+    })),
+    ...activeDuplicateGroups
+      .filter((group) => group.category === "identity_link_review_needed")
+      .map((group) => ({
+        id: `identity-link-${group.id}`,
+        subject: group.names.join(" / "),
+        type: "Identity Link",
+        why: group.reason,
+        strength: group.risk,
+        nextStep: "Decide whether the identity relationship is real.",
+        href: `/admin/dossiers/duplicates/${group.id}`,
+      })),
+  ];
+  const sourceFileCandidates = candidates.filter((candidate) =>
+    [
+      "active_source_file",
+      "selected",
+      "draft_requested",
+      "draft_ready",
+      "needs_revision",
+      "needs_more_evidence",
+      "approved",
+    ].includes(candidate.status),
+  );
+
+  function dossierStatusForSourceFile(candidate: DossierCandidate) {
+    const candidateDrafts = drafts.filter((draft) => draft.candidateId === candidate.id);
+    const draft = candidateDrafts.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+    const metrics = sourceFileMetrics.get(candidate.id);
+    if (!draft) return "No Proposed Dossier";
+    if (draft.status === "ready_for_owner_review") return "Ready for Owner Review";
+    if (draft.status === "owner_changes_requested") return "Owner changes requested";
+    if (draft.status === "owner_approved") return "Approved / publish later";
+    if ((metrics?.unappliedSourceNotesCount ?? 0) > 0) {
+      return "Needs update from Source File";
+    }
+    return "Draft started";
+  }
 
   async function postWorkflow(body: Record<string, unknown>) {
     setSaving(true);
@@ -655,7 +696,7 @@ export default function DossierControlCenterPage() {
             Center
           </h1>
           <p className="text-sm text-muted mt-3 max-w-3xl">
-            Overview of Signal Review inputs, Dossier Seeds, Case Files / BNL Source Files, Proposed Dossiers, and Owner Review status. Open a workspace to continue the pipeline: Signal Review → Dossier Seeds → Case Files → Proposed Dossiers → Owner Review.
+            Use this page to sort subjects, decide what deserves a Source File, work active Source Files, and move important community subjects toward proposed dossiers. Candidates / Updates and Source Files are the central work areas.
           </p>
           <div className="mt-5 flex flex-wrap gap-3 text-xs uppercase tracking-widest">
             <Link
@@ -670,12 +711,6 @@ export default function DossierControlCenterPage() {
             >
               Public Database
             </Link>
-            <Link
-              href="/admin/dossiers/owner-review"
-              className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background transition-all"
-            >
-              Owner Review
-            </Link>
           </div>
         </div>
       </section>
@@ -687,24 +722,10 @@ export default function DossierControlCenterPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 text-xs text-muted">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-muted">
           {[
-            ["Workflow Records", candidates.length],
-            ["Dossier Seeds", candidateIntakeItems.length],
-            ["Case Files", activeCandidates.length],
-            ["Dossier Updates", existingDossierUpdates.length],
-            ["Proposed Dossiers", proposedDossiers.length],
-            ["Owner Review waiting", ownerReviewDrafts.length],
-            ["Archived / Trash", archivedCandidates.length],
-            ["Case Files Needing Info", sourceFilesNeedingInfo.length],
-            ["Case Files With Proposed Dossiers", sourceFilesWithDrafts.length],
-            [
-              "Case Files With Source Notes",
-              sourceFilesWithUnappliedNotes.length,
-            ],
-            ["Signals Waiting", activeRecommendations.length],
-            ["Identity Links", activeDuplicateGroups.filter((group) => group.category === "identity_link_review_needed").length],
-            ["Archive / History", closedHistoryCount],
+            ["Candidates / Updates", candidateUpdateRows.length],
+            ["Source Files", sourceFileCandidates.length],
           ].map(([label, value]) => (
             <div key={label} className="border border-border bg-surface p-4">
               <p className="uppercase tracking-[0.35em] text-accent mb-2">
@@ -715,602 +736,198 @@ export default function DossierControlCenterPage() {
           ))}
         </div>
 
-        <PhaseRail />
-
         <DashboardCard
-          eyebrow="Workflow map"
-          title="Signal Review → Dossier Seeds → Case Files → Proposed Dossiers → Owner Review"
-          aside={<StatusPill>overview only</StatusPill>}
-        >
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-muted">
-            <p className="border border-border/70 bg-background/20 p-3">
-              Case Files / BNL Source Files are internal subject workspaces.
-            </p>
-            <p className="border border-border/70 bg-background/20 p-3">
-              Proposed Dossiers are curated public-facing drafts written only from reviewed Case File material.
-            </p>
-            <p className="border border-border/70 bg-background/20 p-3">
-              Owner Review is the final approval/editing lane before publishable state.
-            </p>
-          </div>
-        </DashboardCard>
-
-        <DashboardCard
-          eyebrow="Signal Review"
-          title="Signal Review"
-          aside={
-            <StatusPill>{activeRecommendations.length} signals waiting</StatusPill>
-          }
+          eyebrow="Main work area"
+          title="Candidates / Updates"
+          aside={<StatusPill>{candidateUpdateRows.length} items</StatusPill>}
         >
           <p className="text-sm text-muted">
-            BNL Signals are incoming source/recommendation inputs. Signals can become Dossier Seeds, attach to Case Files, create Dossier Updates, or suggest Identity Links. Signals are not public copy and do not publish anything.
+            Sort BNL Signals, Dossier Seeds, Dossier Updates, Identity Link questions, and incomplete candidate records into the right next step.
           </p>
-          {activeRecommendations.length === 0 ? (
+          {candidateUpdateRows.length === 0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
-              No signals waiting. Ignored, dismissed, converted, and attached records remain preserved in history.
+              No candidate or update decisions are waiting.
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[800px] text-left text-sm text-muted">
+              <table className="w-full min-w-[900px] text-left text-sm text-muted">
                 <thead className="text-xs uppercase tracking-widest text-foreground">
                   <tr>
                     <th className="py-2 pr-3">Subject</th>
-                    <th className="py-2 pr-3">Match state</th>
-                    <th className="py-2 pr-3">Ingest</th>
-                    <th className="py-2 pr-3">Source lanes</th>
-                    <th className="py-2 pr-3">Next action</th>
-                    <th className="py-2 pr-3">Review</th>
+                    <th className="py-2 pr-3">Type</th>
+                    <th className="py-2 pr-3">Why BNL thinks this matters</th>
+                    <th className="py-2 pr-3">Strength / confidence</th>
+                    <th className="py-2 pr-3">Suggested next step</th>
+                    <th className="py-2 pr-3">Open</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {activeRecommendations.map((recommendation) => {
-                    const matchState = recommendationMatchState(recommendation);
-                    return (
-                      <tr
-                        key={recommendation.id}
-                        className="border-t border-border/70 align-top"
-                      >
-                        <td className="py-3 pr-3 text-foreground font-semibold">
-                          {recommendation.subjectName}
-                        </td>
-                        <td className="py-3 pr-3">{matchState.state}</td>
-                        <td className="py-3 pr-3">
-                          <p>{recommendationProvenance(recommendation)}</p>
-                          {recommendation.ingestedAt && (
-                            <p className="text-xs">{formatDate(recommendation.ingestedAt)}</p>
-                          )}
-                        </td>
-                        <td className="py-3 pr-3">
-                          {recommendation.sourceLanes.join(", ")}
-                        </td>
-                        <td className="py-3 pr-3">{matchState.nextAction}</td>
-                        <td className="py-3 pr-3">
-                          <div className="flex flex-wrap gap-2">
-                            <Link
-                              href={`/admin/dossiers/recommendations/${recommendation.id}`}
-                              className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
-                            >
-                              Review Signal
-                            </Link>
-                            <button
-                              type="button"
-                              disabled={saving}
-                              onClick={() =>
-                                void recommendationAction(
-                                  recommendation.id,
-                                  "archiveDossierRecommendation",
-                                )
-                              }
-                              className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50"
-                            >
-                              Archive
-                            </button>
-                            <button
-                              type="button"
-                              disabled={saving}
-                              onClick={() =>
-                                void recommendationAction(
-                                  recommendation.id,
-                                  "dismissDossierRecommendation",
-                                )
-                              }
-                              className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50"
-                            >
-                              Dismiss
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {candidateUpdateRows.slice(0, 30).map((item) => (
+                    <tr key={item.id} className="border-t border-border/70 align-top">
+                      <td className="py-3 pr-3 font-semibold text-foreground">
+                        {item.subject}
+                      </td>
+                      <td className="py-3 pr-3">{item.type}</td>
+                      <td className="py-3 pr-3">{item.why || "—"}</td>
+                      <td className="py-3 pr-3">{item.strength}</td>
+                      <td className="py-3 pr-3">{item.nextStep}</td>
+                      <td className="py-3 pr-3">
+                        <Link
+                          href={item.href}
+                          className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
+                        >
+                          Open
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
           )}
-        </DashboardCard>
-
-        <details className="border border-border bg-surface p-5">
-          <summary className="cursor-pointer text-xl font-bold text-foreground">
-            Manual Signal
-          </summary>
-          <p className="mt-3 text-sm text-muted">
-            Use this only when BNL has not suggested something yet. This creates a BNL Signal, not a direct source file.
-          </p>
-          <form
-            onSubmit={submitManualRecommendation}
-            className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3 text-xs uppercase tracking-widest text-muted"
-          >
-            <label className="space-y-2 md:col-span-1">
-              <span>Subject name</span>
-              <input
-                required
-                value={recommendationForm.subjectName}
-                onChange={(event) =>
-                  setRecommendationForm({
-                    ...recommendationForm,
-                    subjectName: event.target.value,
-                  })
-                }
-                className={textInputClass()}
-              />
-            </label>
-            <label className="space-y-2">
-              <span>Type</span>
-              <select
-                value={recommendationForm.type}
-                onChange={(event) =>
-                  setRecommendationForm({
-                    ...recommendationForm,
-                    type: event.target.value as DossierRecommendation["type"],
-                  })
-                }
-                className={textInputClass()}
-              >
-                <option value="new_subject">New Subject</option>
-                <option value="modify_existing_dossier">
-                  Modify Existing Dossier
-                </option>
-              </select>
-            </label>
-            <label className="space-y-2">
-              <span>Confidence</span>
-              <select
-                value={recommendationForm.confidence}
-                onChange={(event) =>
-                  setRecommendationForm({
-                    ...recommendationForm,
-                    confidence: event.target
-                      .value as ManualRecommendationForm["confidence"],
-                  })
-                }
-                className={textInputClass()}
-              >
-                <option value="medium">medium</option>
-                <option value="low">low</option>
-                <option value="high">high</option>
-                <option value="">unset</option>
-              </select>
-            </label>
-            <label className="space-y-2 md:col-span-2">
-              <span>Reason</span>
-              <input
-                required
-                value={recommendationForm.reason}
-                onChange={(event) =>
-                  setRecommendationForm({
-                    ...recommendationForm,
-                    reason: event.target.value,
-                  })
-                }
-                className={textInputClass()}
-              />
-            </label>
-            <div className="md:col-span-5">
-              <button
-                type="submit"
-                disabled={saving}
-                className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
-              >
-                Create Manual Signal
-              </button>
-            </div>
-          </form>
-        </details>
-
-
-        <DashboardCard
-          eyebrow="Dossier Seeds"
-          title="Dossier Seeds"
-          aside={<StatusPill>{candidateIntakeItems.length} seeds</StatusPill>}
-        >
-          <p className="text-sm text-muted mb-4">
-            Dossier Seeds are lightweight internal records. Admins decide when a Dossier Seed becomes a Case File / BNL Source File; evidence, review warnings, safety notes, do-not-say notes, and open questions are preserved during promotion.
-          </p>
-          {candidateIntakeItems.length === 0 ? (
-            <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
-              No Dossier Seeds are waiting.
+          <details className="border border-border/70 bg-background/20 p-4">
+            <summary className="cursor-pointer text-sm font-bold text-foreground">
+              Manual Signal
+            </summary>
+            <p className="mt-3 text-sm text-muted">
+              Use this only when BNL has not suggested something yet. This creates a BNL Signal, not a direct Source File.
             </p>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              {candidateIntakeItems.map((candidate) => (
-                <article key={candidate.id} className="border border-border/70 bg-background/20 p-4 text-sm text-muted">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <p className="font-bold text-foreground">{candidate.name}</p>
-                      <p>Source: {candidateProvenance(candidate)}</p>
-                      <p>Status/stage: Dossier Seed / {candidate.status}</p>
-                      {(candidate.publicSafetyNotes ?? []).length > 0 && (
-                        <p className="text-accent">Warning badges: source warnings present</p>
-                      )}
-                      {candidate.existingDossierMatch && (
-                        <p>Possible public dossier match: {candidate.existingDossierMatch.name}</p>
-                      )}
-                      <p>Next action: Promote to Case File / BNL Source File or archive junk/test extraction.</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Link href={`/admin/dossiers/candidates/${candidate.id}`} className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">
-                        Review Dossier Seed
-                      </Link>
-                      <button type="button" disabled={saving} onClick={() => void candidateAction(candidate.id, "promoteCandidateToSourceFile")} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50">
-                        Promote to Case File
-                      </button>
-                      <button type="button" disabled={saving} onClick={() => void candidateAction(candidate.id, "archiveCandidate")} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">
-                        Archive
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
+            <form
+              onSubmit={submitManualRecommendation}
+              className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3 text-xs uppercase tracking-widest text-muted"
+            >
+              <label className="space-y-2 md:col-span-1">
+                <span>Subject name</span>
+                <input
+                  required
+                  value={recommendationForm.subjectName}
+                  onChange={(event) =>
+                    setRecommendationForm({
+                      ...recommendationForm,
+                      subjectName: event.target.value,
+                    })
+                  }
+                  className={textInputClass()}
+                />
+              </label>
+              <label className="space-y-2">
+                <span>Type</span>
+                <select
+                  value={recommendationForm.type}
+                  onChange={(event) =>
+                    setRecommendationForm({
+                      ...recommendationForm,
+                      type: event.target.value as DossierRecommendation["type"],
+                    })
+                  }
+                  className={textInputClass()}
+                >
+                  <option value="new_subject">New Subject</option>
+                  <option value="modify_existing_dossier">
+                    Modify Existing Dossier
+                  </option>
+                </select>
+              </label>
+              <label className="space-y-2">
+                <span>Confidence</span>
+                <select
+                  value={recommendationForm.confidence}
+                  onChange={(event) =>
+                    setRecommendationForm({
+                      ...recommendationForm,
+                      confidence: event.target
+                        .value as ManualRecommendationForm["confidence"],
+                    })
+                  }
+                  className={textInputClass()}
+                >
+                  <option value="medium">medium</option>
+                  <option value="low">low</option>
+                  <option value="high">high</option>
+                  <option value="">unset</option>
+                </select>
+              </label>
+              <label className="space-y-2 md:col-span-2">
+                <span>Reason</span>
+                <input
+                  required
+                  value={recommendationForm.reason}
+                  onChange={(event) =>
+                    setRecommendationForm({
+                      ...recommendationForm,
+                      reason: event.target.value,
+                    })
+                  }
+                  className={textInputClass()}
+                />
+              </label>
+              <div className="md:col-span-5">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                >
+                  Create Manual Signal
+                </button>
+              </div>
+            </form>
+          </details>
         </DashboardCard>
 
         <DashboardCard
-          eyebrow="Dossier Updates"
-          title="Dossier Updates"
-          aside={<StatusPill>{existingDossierUpdates.length} dossier updates</StatusPill>}
-        >
-          <p className="text-sm text-muted mb-4">
-            Exact public dossier matches are staged as Dossier Updates, not as brand-new public dossiers. Owner approval is required before public changes.
-          </p>
-          <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-muted">
-            <p className="border border-border/70 bg-background/20 p-3">
-              Dossier Update target found: protected source lookup can now
-              recognize a published dossier target even when no internal update
-              file exists yet.
-            </p>
-            <p className="border border-border/70 bg-background/20 p-3">
-              No internal update file exists yet: use the protected Create
-              Dossier Update action before enrichment attaches notes.
-            </p>
-            <p className="border border-border/70 bg-background/20 p-3">
-              Review-only; no public changes. The update lane does not approve
-              public copy, aliases, identity merges, or publication.
-            </p>
-          </div>
-          {existingDossierUpdates.length === 0 ? (
-            <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
-              No existing public dossier update records are waiting.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {existingDossierUpdates.map((candidate) => (
-                <article key={candidate.id} className="border border-border/70 bg-background/20 p-4 text-sm text-muted">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <p className="font-bold text-foreground">Dossier Update: {candidate.existingDossierMatch?.name ?? candidate.name}</p>
-                      <p>BNL Signal subject: {candidate.name}</p>
-                      <p>Matched public dossier: {candidate.existingDossierMatch?.name ?? "—"}</p>
-                      <p>Public dossier target id: {candidate.existingDossierMatch?.id ?? "—"}</p>
-                      <p>Match confidence: {candidate.existingDossierMatch?.confidence ?? "—"}</p>
-                      <p>Evidence and notes: {(candidate.sourceFileNotes ?? []).length} notes preserved</p>
-                      <p>Review warnings: {(candidate.publicSafetyNotes ?? []).length} public-safety notes / {(candidate.doNotSay ?? []).length} do-not-say notes / {(candidate.missingInfo ?? []).length} open questions</p>
-                      <p>Proposed action: review update/enrichment; owner approval required before public changes.</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Link href={`/admin/dossiers/candidates/${candidate.id}`} className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">
-                        Review Update
-                      </Link>
-                      <button type="button" disabled={saving} onClick={() => void candidateAction(candidate.id, "promoteCandidateToSourceFile")} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50">
-                        Convert to Case File
-                      </button>
-                      <button type="button" disabled={saving} onClick={() => void candidateAction(candidate.id, "archiveCandidate")} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">
-                        Archive / wrong match
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </DashboardCard>
-
-        <DashboardCard
-          eyebrow="Primary operations"
-          title="Active Case Files / BNL Source Files / Working Case Files"
-          aside={<StatusPill>{activeCandidates.length} active working case files</StatusPill>}
+          eyebrow="Main work area"
+          title="Source Files"
+          aside={<StatusPill>{sourceFileCandidates.length} source files</StatusPill>}
         >
           <p className="text-sm text-muted">
-            Open a BNL Source File working case file to review evidence. Proposed
-            Dossiers, final admin confirmation, and owner review are shown here
-            as concise status indicators only instead of full dashboard
-            workboard lanes.
+            Work active Case Files / BNL Source Files, apply new BNL updates, fill missing information, and move important subjects toward proposed dossiers.
           </p>
-          {activeCandidates.length === 0 ? (
+          {sourceFileCandidates.length === 0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
-              No active Case Files / BNL Source Files need review.
+              No Source Files are active yet.
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1100px] text-left text-sm text-muted">
+              <table className="w-full min-w-[950px] text-left text-sm text-muted">
                 <thead className="text-xs uppercase tracking-widest text-foreground">
                   <tr>
-                    <th className="py-2 pr-3">BNL Source File</th>
-                    <th className="py-2 pr-3">Provenance</th>
-                    <th className="py-2 pr-3">Current phase</th>
-                    <th className="py-2 pr-3">Source depth / info strength</th>
-                    <th className="py-2 pr-3">Source notes count</th>
-                    <th className="py-2 pr-3">Signal/evidence count</th>
-                    <th className="py-2 pr-3">Proposed dossier status</th>
-                    <th className="py-2 pr-3">Unapplied source notes count</th>
-                    <th className="py-2 pr-3">Identity links</th>
-                    <th className="py-2 pr-3">Case file indicators</th>
+                    <th className="py-2 pr-3">Subject</th>
+                    <th className="py-2 pr-3">Why they matter / engagement summary</th>
+                    <th className="py-2 pr-3">Source strength</th>
+                    <th className="py-2 pr-3">Missing info</th>
+                    <th className="py-2 pr-3">Dossier status</th>
                     <th className="py-2 pr-3">Last updated</th>
-                    <th className="py-2 pr-3">Next recommended action</th>
-                    <th className="py-2 pr-3">Actions</th>
+                    <th className="py-2 pr-3">Open</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {activeCandidates.map((candidate) => {
-                    const draft = linkedActiveDraftFor(candidate, drafts);
-                    const createdDraftId =
-                      createdDraftIdByCandidate[candidate.id];
-                    const openDraftId = draft?.id ?? createdDraftId;
-                    const canCreateDraft =
-                      !isCandidateClosed(candidate) && !openDraftId;
-                    const canUpdateCandidate = !isCandidateClosed(candidate);
+                  {sourceFileCandidates.map((candidate) => {
                     const metrics = sourceFileMetrics.get(candidate.id);
-                    const currentPhase = openDraftId
-                      ? "Phase 2 — Proposed Dossier + BNL Edit Chat"
-                      : "Phase 1 — Case File / BNL Source File";
-                    const proposedStatus = draft
-                      ? `${draft.status} / ${formatDate(draft.updatedAt)}`
-                      : openDraftId
-                        ? "draft just created"
-                        : "No proposed dossier";
-                    const identityLinks = candidate.identityLinks ?? [];
-                    const confirmedIdentityLinks = identityLinks.filter(
-                      (identityLink) => identityLink.status === "confirmed",
-                    );
-                    const proposedIdentityLinks = identityLinks.filter(
-                      (identityLink) => identityLink.status === "proposed",
-                    );
-                    const nextAction =
-                      (metrics?.unappliedSourceNotesCount ?? 0) > 0
-                        ? "Review source updates in proposed dossier"
-                        : openDraftId
-                          ? "Open proposed dossier"
-                          : candidate.status === "needs_more_evidence"
-                            ? "Add missing info to Case File"
-                            : "Add info or create proposed dossier";
+                    const dossierStatus = dossierStatusForSourceFile(candidate);
+                    const missingInfoCount = (candidate.missingInfo ?? []).length;
                     return (
-                      <tr
-                        key={candidate.id}
-                        className="border-t border-border/70 align-top"
-                      >
-                        <td className="py-3 pr-3 text-foreground font-semibold">
+                      <tr key={candidate.id} className="border-t border-border/70 align-top">
+                        <td className="py-3 pr-3 font-semibold text-foreground">
                           {candidate.name}
                         </td>
                         <td className="py-3 pr-3">
-                          <p>{candidateProvenance(candidate)}</p>
-                          {candidate.ingestKey && (
-                            <p className="text-xs">Ingest key: {candidate.ingestKey}</p>
-                          )}
-                          {candidate.createdFromRecommendationId && (
-                            <p className="text-xs">From BNL Signal: {candidate.createdFromRecommendationId}</p>
-                          )}
+                          {candidate.sourceFileSummary?.summaryText || candidate.evidenceSummary || candidate.reason || "—"}
                         </td>
                         <td className="py-3 pr-3">
-                          <StatusPill>{currentPhase}</StatusPill>
+                          {metrics?.sourceDepth ?? "Low"}
                         </td>
                         <td className="py-3 pr-3">
-                          Source strength: {metrics?.sourceDepth ?? "Low"}
+                          {missingInfoCount > 0 ? `${missingInfoCount} open item(s)` : "None listed"}
                         </td>
+                        <td className="py-3 pr-3">{dossierStatus}</td>
+                        <td className="py-3 pr-3">{formatDate(candidate.updatedAt)}</td>
                         <td className="py-3 pr-3">
-                          Source notes: {metrics?.sourceNotesCount ?? 0}
-                        </td>
-                        <td className="py-3 pr-3">
-                          Signals: {metrics?.attachedRecommendationCount ?? 0}
-                          <br />
-                          Evidence: {metrics?.evidenceItemCount ?? 0}
-                        </td>
-                        <td className="py-3 pr-3">{proposedStatus}</td>
-                        <td className="py-3 pr-3">
-                          Unapplied notes: {metrics?.unappliedSourceNotesCount ?? 0}
-                        </td>
-                        <td className="py-3 pr-3">
-                          Aliases: {confirmedIdentityLinks.length} confirmed
-                          {proposedIdentityLinks.length > 0 && (
-                            <p className="text-xs text-accent">
-                              Pending aliases: {proposedIdentityLinks.length} —
-                              Identity Links
-                            </p>
-                          )}
-                        </td>
-                        <td className="py-3 pr-3 space-y-1">
-                          {(candidate.publicSafetyNotes ?? []).length > 0 && (
-                            <p>case file has warnings</p>
-                          )}
-                          {(candidate.sourceLanes ?? []).includes("broadcast_memory") && (
-                            <p>case file has source-blind material</p>
-                          )}
-                          {(candidate.knownFacts ?? []).length > 0 && (
-                            <p>case file has public-safe facts</p>
-                          )}
-                          {proposedIdentityLinks.length > 0 && (
-                            <p>identity review pending</p>
-                          )}
-                          {openDraftId && <p>proposed dossier exists</p>}
-                          {draft?.status === "ready_for_owner_review" && (
-                            <p>owner review pending</p>
-                          )}
-                          {!openDraftId && candidate.status !== "needs_more_evidence" && (
-                            <p>ready for draft/review</p>
-                          )}
-                          <p>Identity link risk: {candidate.duplicateRisk ?? "none"}</p>
-                          {candidate.existingDossierMatch && (
-                            <p className="text-accent">
-                              Existing public dossier match: {candidate.existingDossierMatch.name} ({candidate.existingDossierMatch.confidence})
-                            </p>
-                          )}
-                        </td>
-                        <td className="py-3 pr-3">
-                          {formatDate(candidate.updatedAt)}
-                        </td>
-                        <td className="py-3 pr-3">
-                          {nextAction}
-                          {isCandidateClosed(candidate) && (
-                            <p className="text-xs text-accent">
-                              Source file was merged or closed.
-                            </p>
-                          )}
-                        </td>
-                        <td className="py-3 pr-3">
-                          <div className="flex flex-wrap gap-2">
-                            <Link
-                              href={`/admin/dossiers/candidates/${candidate.id}`}
-                              className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
-                            >
-                              Open Case File
-                            </Link>
-                            {candidate.existingDossierMatch && (
-                              <button
-                                type="button"
-                                disabled={saving}
-                                onClick={() =>
-                                  void candidateAction(
-                                    candidate.id,
-                                    "markCandidateAsExistingDossierUpdate",
-                                  )
-                                }
-                                className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
-                                title="Reclassify this active Case File as update/enrichment material for the matched public dossier. Does not publish or edit public content."
-                              >
-                                Move to Dossier Update
-                              </button>
-                            )}
-                            <label className="flex flex-col gap-1 text-[0.65rem] uppercase tracking-widest text-muted">
-                              Attach to Existing Public Dossier
-                              <select
-                                value={
-                                  selectedDossierByCandidate[candidate.id] ??
-                                  candidate.existingDossierMatch?.id ??
-                                  ""
-                                }
-                                onChange={(event) =>
-                                  setSelectedDossierByCandidate((current) => ({
-                                    ...current,
-                                    [candidate.id]: event.target.value,
-                                  }))
-                                }
-                                className="max-w-[14rem] bg-background border border-border px-2 py-1.5 text-xs normal-case tracking-normal text-foreground"
-                              >
-                                <option value="">Choose public dossier…</option>
-                                {publicDossiers.map((dossier) => (
-                                  <option key={dossier.id} value={dossier.id}>
-                                    {dossier.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <button
-                              type="button"
-                              disabled={
-                                saving ||
-                                !(
-                                  selectedDossierByCandidate[candidate.id] ||
-                                  candidate.existingDossierMatch?.id
-                                )
-                              }
-                              onClick={() =>
-                                void candidateAction(
-                                  candidate.id,
-                                  "attachCandidateToExistingDossier",
-                                )
-                              }
-                              className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50"
-                              title="Store the confirmed existing public dossier target without publishing or changing public dossier content."
-                            >
-                              Attach
-                            </button>
-                            {openDraftId && (
-                              <Link
-                                href={`/admin/dossiers/drafts/${openDraftId}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent"
-                              >
-                                Open Proposed Dossier
-                              </Link>
-                            )}
-                            {!openDraftId && (
-                              <button
-                                type="button"
-                                disabled={saving || !canCreateDraft}
-                                onClick={() => void createDraft(candidate.id)}
-                                className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50"
-                                title={
-                                  canCreateDraft
-                                    ? "Create proposed dossier from this BNL Source File."
-                                    : "Active Proposed Dossier already exists or Case File was merged/denied."
-                                }
-                              >
-                                Create Proposed Dossier
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              disabled={
-                                saving ||
-                                !canUpdateCandidate ||
-                                candidate.status === "needs_more_evidence"
-                              }
-                              onClick={() =>
-                                void updateCandidate(
-                                  candidate.id,
-                                  "markNeedsMoreEvidence",
-                                )
-                              }
-                              className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest hover:border-accent hover:text-accent disabled:opacity-50"
-                            >
-                              Mark Needs Info
-                            </button>
-                            <button
-                              type="button"
-                              disabled={saving || !canUpdateCandidate}
-                              onClick={() =>
-                                void candidateAction(candidate.id, "archiveCandidate")
-                              }
-                              className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50"
-                              title="Safe cleanup: move this Case File out of active dashboard lanes without deleting public dossiers or published data."
-                            >
-                              Archive
-                            </button>
-                            <button
-                              type="button"
-                              disabled={saving}
-                              onClick={() =>
-                                void candidateAction(
-                                  candidate.id,
-                                  "permanentlyDeleteCandidate",
-                                )
-                              }
-                              className="border border-red-500/70 px-3 py-1.5 text-xs uppercase tracking-widest text-red-300 hover:bg-red-500/10 disabled:opacity-50"
-                              title='Requires typing "DELETE SOURCE FILE". Does not delete public dossiers or published data.'
-                            >
-                              Delete Permanently
-                            </button>
-                          </div>
+                          <Link
+                            href={`/admin/dossiers/candidates/${candidate.id}`}
+                            className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
+                          >
+                            Open
+                          </Link>
                         </td>
                       </tr>
                     );
@@ -1321,150 +938,39 @@ export default function DossierControlCenterPage() {
           )}
         </DashboardCard>
 
-        <section className="border border-border bg-surface p-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.45em] text-muted mb-2">
-                Maintenance
-              </p>
-              <h2 className="text-lg font-bold text-foreground">
-                Record Compactor
-              </h2>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-muted lg:flex lg:flex-wrap">
-              {[
-                ["Possible overlaps", duplicateAnalysisSummary.total],
-                ["High-confidence", duplicateAnalysisSummary.highConfidence],
-                ["Identity-sensitive", duplicateAnalysisSummary.identitySensitive],
-                ["Archive candidates", duplicateAnalysisSummary.archiveCandidates],
-              ].map(([label, value]) => (
-                <div key={label} className="border border-border/70 bg-background/20 px-3 py-2">
-                  <p className="uppercase tracking-[0.25em] text-accent">{label}</p>
-                  <p className="text-lg font-bold text-foreground">{value}</p>
-                </div>
-              ))}
-            </div>
+        <footer className="border border-border bg-surface p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between text-xs uppercase tracking-widest">
+            <Link
+              href="/admin/dossiers/owner-review"
+              className="inline-flex justify-center border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background"
+            >
+              Owner Review · {ownerReviewDrafts.length} waiting
+            </Link>
             {recordCompactorHref ? (
               <Link
                 href={recordCompactorHref}
-                className="inline-flex justify-center border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
+                className="inline-flex justify-center border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent"
               >
-                Open Record Compactor
+                Cleanup / Maintenance: {duplicateAnalysisSummary.total} possible overlaps · {duplicateAnalysisSummary.identitySensitive} identity-sensitive
               </Link>
             ) : (
-              <span className="inline-flex justify-center border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted opacity-70">
-                Open Record Compactor
+              <span className="inline-flex justify-center border border-border px-4 py-2 text-muted opacity-70">
+                Cleanup / Maintenance: 0 possible overlaps · 0 identity-sensitive
               </span>
             )}
+            <details className="border border-border px-4 py-2 text-muted">
+              <summary className="cursor-pointer list-none">
+                Archive / History · {closedHistoryCount}
+              </summary>
+              <div className="mt-3 normal-case tracking-normal text-sm text-muted space-y-1">
+                <p>{archivedCandidates.length} archived internal records.</p>
+                <p>{closedCandidates.length} closed Source File records.</p>
+                <p>{closedDrafts.length} closed proposed dossier records.</p>
+                <p>{terminalRecommendations.length} closed BNL Signals.</p>
+              </div>
+            </details>
           </div>
-        </section>
-
-
-        <DashboardCard
-          eyebrow="Archive / Trash"
-          title="Archived / Dismissed / Trash"
-          aside={<StatusPill>{archivedCandidates.length} archived items</StatusPill>}
-        >
-          <p className="text-sm text-muted mb-4">
-            Archive is the safe default for junk, test, error, low-confidence, or
-            source-blind extractions. Permanent delete is protected by explicit
-            confirmation text and never deletes public dossiers.
-          </p>
-          {archivedCandidates.length === 0 ? (
-            <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
-              No archived internal records.
-            </p>
-          ) : (
-            <div className="space-y-2 text-sm text-muted">
-              {archivedCandidates.slice(0, 10).map((candidate) => (
-                <article key={candidate.id} className="border border-border/70 bg-background/20 p-3">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <p className="font-semibold text-foreground">{candidate.name}</p>
-                      <p>Source: {candidateProvenance(candidate)} / status: {candidate.status}</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button type="button" disabled={saving} onClick={() => void candidateAction(candidate.id, "restoreCandidate")} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50">
-                        Restore to Intake
-                      </button>
-                      <button type="button" disabled={saving} onClick={() => void candidateAction(candidate.id, "permanentlyDeleteCandidate")} className="border border-red-500/70 px-3 py-1.5 text-xs uppercase tracking-widest text-red-300 hover:bg-red-500/10 disabled:opacity-50">
-                        Delete permanently
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </DashboardCard>
-
-        <details className="border border-border bg-surface p-5">
-          <summary className="cursor-pointer text-xl font-bold text-foreground">
-            Archive / History
-          </summary>
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-muted">
-            <p className="border border-border/70 bg-background/20 p-4">
-              {closedCandidates.length} closed BNL Source File records.
-            </p>
-            <p className="border border-border/70 bg-background/20 p-4">
-              {closedDrafts.length} closed proposed dossier records.
-            </p>
-            <p className="border border-border/70 bg-background/20 p-4">
-              {terminalRecommendations.length} closed signal records;
-              {" "}{resolvedDuplicateGroups.length} resolved duplicate groups.
-            </p>
-          </div>
-          {terminalRecommendations.length > 0 && (
-            <div className="mt-4 space-y-2 text-sm text-muted">
-              {terminalRecommendations.slice(0, 5).map((recommendation) => (
-                <article
-                  key={recommendation.id}
-                  className="border border-border/70 bg-background/20 p-3"
-                >
-                  <p className="font-semibold text-foreground">
-                    {recommendation.subjectName}
-                  </p>
-                  <p>
-                    Status: {recommendation.status === "identity_link_created"
-                      ? "Identity link created — proposed, not confirmed"
-                      : recommendation.status}
-                  </p>
-                  {recommendation.targetCandidateId && (
-                    <Link
-                      href={`/admin/dossiers/candidates/${recommendation.targetCandidateId}`}
-                      className="text-accent hover:underline"
-                    >
-                      Open related BNL Source File
-                    </Link>
-                  )}
-                </article>
-              ))}
-            </div>
-          )}
-        </details>
-
-        <DashboardCard eyebrow="Boundaries" title="System Boundaries">
-          <ul className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm text-muted">
-            <li className="border border-border/70 bg-background/20 p-3">
-              No BNL invocation.
-            </li>
-            <li className="border border-border/70 bg-background/20 p-3">
-              No publishing.
-            </li>
-            <li className="border border-border/70 bg-background/20 p-3">
-              No automatic tag creation.
-            </li>
-            <li className="border border-border/70 bg-background/20 p-3">
-              No public database mutation.
-            </li>
-          </ul>
-          <p className="text-xs text-muted">
-            Dedicated pages keep operators in one lane: internal record review,
-            focused draft editor, owner review, or merge review. Dashboard
-            buttons navigate; there is no hidden editor below unrelated sections
-            and no dashboard auto-scroll workflow.
-          </p>
-        </DashboardCard>
+        </footer>
       </section>
     </main>
   );

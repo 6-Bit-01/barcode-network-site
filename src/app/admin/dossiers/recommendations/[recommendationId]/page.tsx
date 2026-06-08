@@ -218,7 +218,7 @@ function HumanReadableRecommendationCaseFile({
             Plain-English review view
           </p>
           <h2 className="text-2xl font-bold text-foreground">
-            Recommendation Takeaway
+            BNL Signal Takeaway
           </h2>
           <p className="text-sm text-muted">{view.sourceCopy}</p>
         </div>
@@ -240,12 +240,11 @@ function HumanReadableRecommendationCaseFile({
         <p className="font-semibold">{view.summary}</p>
         <p className="text-muted">
           {addsUsefulInformation
-            ? "This recommendation may add useful internal context. Review the claims and safety notes before attaching it to a source file or drafting from it."
-            : "This recommendation is currently thin. It mainly says where the item belongs and does not add enough useful context to draft from."}
+            ? "This BNL Signal may add useful internal context. Review the claims and safety notes before attaching it to a source file or drafting from it."
+            : "This BNL Signal is currently thin. It mainly says where the item belongs and does not add enough useful context to draft from."}
         </p>
         <p className="text-muted">
-          Next step: attach it to the right BNL Source File, create a proposed
-          identity link, dismiss it, or convert it only after confirming it is a
+          Next step: attach it to the right Case File / BNL Source File, create a proposed identity link, dismiss it, or convert it only after confirming it is a
           separate subject.
         </p>
       </div>
@@ -311,25 +310,25 @@ const terminalRecommendationStatuses = new Set<DossierRecommendation["status"]>(
 
 function terminalRecommendationMessage(recommendation: DossierRecommendation) {
   if (recommendation.status === "converted_to_source_file") {
-    return "Converted to BNL Source File.";
+    return "Converted to Dossier Seed.";
   }
   if (recommendation.status === "attached_to_source_file") {
-    return "Attached to matched BNL Source File.";
+    return "Attached to matched Case File / BNL Source File.";
   }
   if (recommendation.status === "attached_to_candidate_intake") {
-    return "Attached to intake item as review-only enrichment.";
+    return "Attached to Dossier Seed as review-only enrichment.";
   }
   if (recommendation.status === "attached_to_existing_dossier_update") {
-    return "Attached to Existing Dossier Update as review-only enrichment.";
+    return "Attached to Dossier Update as review-only enrichment.";
   }
   if (recommendation.status === "identity_link_created") {
     return "Proposed identity link created. Confirm it from the BNL Source File when ready.";
   }
   if (recommendation.status === "ignored") {
-    return "Ignored. This recommendation is closed.";
+    return "Ignored. This BNL Signal is closed.";
   }
   if (recommendation.status === "dismissed") {
-    return "Dismissed. This recommendation is closed.";
+    return "Dismissed. This BNL Signal is closed.";
   }
   return "";
 }
@@ -459,12 +458,12 @@ export default function DossierRecommendationPage() {
   const enrichmentLane =
     recommendation?.ingestSource === "bnl_source_file_enrichment"
       ? targetCandidate?.status === "active_source_file"
-        ? "Active Source File"
+        ? "Case File / BNL Source File"
         : targetCandidate?.status === "candidate_intake"
-          ? "Intake Item"
+          ? "Dossier Seed"
           : targetCandidate?.status === "existing_dossier_update"
-            ? "Existing Dossier Update"
-            : "Recommendation Inbox"
+            ? "Dossier Update"
+            : "Signal Review"
       : null;
   const isEnrichmentRecommendation = enrichmentLane !== null;
   const preselectedCandidateId =
@@ -577,8 +576,8 @@ export default function DossierRecommendationPage() {
   if (loading)
     return (
       <MinimalState
-        title="Loading recommendation"
-        message="Checking the Dossier Recommendation Inbox."
+        title="Loading BNL Signal"
+        message="Checking Signal Review."
       />
     );
   if (error || !payload)
@@ -586,15 +585,15 @@ export default function DossierRecommendationPage() {
       <MinimalState
         title="Admin authentication required"
         message={
-          error ?? "Sign in through /admin before opening recommendations."
+          error ?? "Sign in through /admin before opening BNL Signals."
         }
       />
     );
   if (!recommendation)
     return (
       <MinimalState
-        title="Recommendation not found"
-        message="This recommendation is not present in the workflow store."
+        title="BNL Signal not found"
+        message="This BNL Signal is not present in the workflow store."
       />
     );
 
@@ -603,22 +602,13 @@ export default function DossierRecommendationPage() {
       <section className="border-b border-border bg-surface/80">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-10">
           <p className="text-xs uppercase tracking-[0.5em] text-muted mb-4">
-            Dossier Recommendation Inbox
+            Signal Review
           </p>
           <h1 className="text-4xl font-bold tracking-tight text-foreground">
             {recommendation.subjectName}
           </h1>
           <p className="text-sm text-muted mt-3 max-w-3xl">
-            BNL Recommendation / Evidence Cluster records are admin-only
-            evidence records and Source File inputs, not public copy. They do
-            not publish, create drafts, write content files, or create tags
-            automatically. Attach is only allowed for confirmed same-subject
-            matches; merge is owner/lead identity resolution. BNL dynamic
-            discovery can create an internal working case file only when no
-            exact or possible existing source-file match is found.
-            Identity/alias and duplicate recommendations create proposed review
-            material only; they do not confirm identity, merge identities,
-            create drafts, create tags, or create public pages automatically.
+            BNL Signals are incoming source/recommendation inputs. Signals are review-only: they are not public copy, do not publish, do not create drafts, do not create tags, and do not write public files. Signals can become Dossier Seeds, attach to Case Files, create Dossier Updates, or suggest Identity Links only through explicit admin actions.
           </p>
           {notice && (
             <div className="mt-4 border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
@@ -648,7 +638,7 @@ export default function DossierRecommendationPage() {
                 </Link>
               ) : null}
               <p className="mt-2 text-xs uppercase tracking-widest text-muted">
-                Terminal recommendation actions are closed. No reopen/retry
+                Terminal BNL Signal actions are closed. No reopen/retry
                 behavior is available in this PR.
               </p>
             </div>
@@ -708,8 +698,7 @@ export default function DossierRecommendationPage() {
               </p>
             ) : (
               <p>
-                No target candidate is set; this remains in the Recommendation
-                Inbox.
+                No target record is set; this remains in Signal Review.
               </p>
             )}
             <p>
@@ -722,11 +711,10 @@ export default function DossierRecommendationPage() {
         {!isTerminal && !isEnrichmentRecommendation && (
           <section className="border border-border bg-surface p-5 text-sm text-muted space-y-4">
             <h2 className="text-2xl font-bold text-foreground">
-              Matched BNL Source File
+              Matches Case File
             </h2>
             <p>
-              BNL Source File = internal working case file / evidence folder for
-              one subject/entity. Admins can add info to this subject, but
+              Case File / BNL Source File = internal working case file / evidence folder for one subject/entity. Admins can add info to this subject, but
               cannot freely combine unrelated recommendations with arbitrary
               source files. Public use requires review.
             </p>
@@ -749,7 +737,7 @@ export default function DossierRecommendationPage() {
                 ) : subjectMatch.exactMatchKind === "pre_targeted" ? (
                   <>
                     <p className="font-bold">
-                      Pre-targeted BNL Source File: {exactCandidate.name}
+                      Matches Case File: {exactCandidate.name}
                     </p>
                     <p>
                       This recommendation already points to an existing source
@@ -758,7 +746,7 @@ export default function DossierRecommendationPage() {
                   </>
                 ) : (
                   <p className="font-bold">
-                    Exact same-subject match: {exactCandidate.name}
+                    Matches Case File: {exactCandidate.name}
                   </p>
                 )}
                 <p>{subjectMatch.reason}</p>
@@ -768,7 +756,7 @@ export default function DossierRecommendationPage() {
                   onClick={() => void attachRecommendationToMatchedSourceFile()}
                   className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
                 >
-                  Attach to Matched BNL Source File
+                  Attach to Matched Case File
                 </button>
               </div>
             ) : possibleAliasConflictCandidates.length > 0 ? (
@@ -788,7 +776,7 @@ export default function DossierRecommendationPage() {
             ) : possibleCandidates.length > 0 ? (
               <div className="border border-accent/60 bg-accent/10 p-4 text-accent space-y-2">
                 <p className="font-bold">
-                  Possible duplicate / identity warning
+                  Suggests Identity Link
                 </p>
                 <p>{subjectMatch.reason}</p>
                 <ul className="list-disc pl-5">
@@ -811,13 +799,13 @@ export default function DossierRecommendationPage() {
                   }
                   className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
                 >
-                  Convert to New BNL Source File
+                  Convert to Dossier Seed
                 </button>
               </div>
             ) : (
               <div className="border border-border/70 bg-background/30 p-4 space-y-2">
                 <p className="font-bold text-foreground">
-                  No BNL Source File match
+                  Could Become Dossier Seed
                 </p>
                 <p>{subjectMatch.reason}</p>
                 <button
@@ -830,7 +818,7 @@ export default function DossierRecommendationPage() {
                   }
                   className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
                 >
-                  Convert to New BNL Source File
+                  Convert to Dossier Seed
                 </button>
               </div>
             )}
@@ -841,13 +829,13 @@ export default function DossierRecommendationPage() {
           <section className="border border-border bg-surface p-5 space-y-4">
             <div>
               <p className="text-xs uppercase tracking-[0.45em] text-muted mb-2">
-                Create Identity Link
+                Identity Link Actions
               </p>
               <h2 className="text-xl font-bold text-foreground">
-                Create proposed identity link
+                Suggests Identity Link
               </h2>
               <p className="text-sm text-muted mt-2">
-                Recommendation subject: {recommendation.subjectName}. This
+                BNL Signal subject: {recommendation.subjectName}. This
                 creates a proposed alias on the selected internal record only.
                 It does not confirm the alias, publish, merge source files,
                 create a draft, or create tags.
@@ -1016,7 +1004,7 @@ export default function DossierRecommendationPage() {
           />
         )}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field title="Subject">
+          <Field title="BNL Signal Subject">
             <p>{recommendation.subjectName}</p>
           </Field>
           <Field title="Type / Status">
@@ -1036,8 +1024,7 @@ export default function DossierRecommendationPage() {
           </Field>
           <Field title="Evidence Log">
             <p>
-              Recommendation detail is evidence for the internal working case
-              file, not public dossier copy.
+              BNL Signal detail is evidence for the internal working Case File, not public dossier copy.
             </p>
           </Field>
           <Field title="Known Context / Current Read">

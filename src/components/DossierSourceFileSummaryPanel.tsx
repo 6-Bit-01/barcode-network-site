@@ -921,7 +921,7 @@ export function DossierSourceFileSummaryPanel({
     ["Current lane / status", humanStatus(currentLane ?? summary.nextAction)],
     ["Last BNL refresh", formatSnapshotDate(summary.lastUpdatedAt)],
     [
-      "Latest recommendation",
+      "Latest BNL Signal",
       formatSnapshotDate(latestRecommendationTimestamp),
     ],
     ["Public dossier match", humanStatus(summary.existingPublicDossier)],
@@ -959,7 +959,7 @@ export function DossierSourceFileSummaryPanel({
           <p className="mt-2 text-sm text-muted max-w-4xl">
             Review Snapshot → What BNL Knows → Action Items → Evidence →
             Notes/Identity → Diagnostics. Internal-only review surface; it does
-            not publish, draft, merge identities, or create queue/payment
+            not publish, create Proposed Dossiers, merge identities, or create queue/payment
             behavior.
           </p>
         </div>
@@ -977,7 +977,7 @@ export function DossierSourceFileSummaryPanel({
 
       <Section
         title="Review Snapshot"
-        helper="Concise status view for deciding how to review this Source File."
+        helper="Concise status view for deciding how to review this Case File / BNL Source File."
       >
         <dl className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           {snapshotItems.map(([label, value]) => (
@@ -1093,7 +1093,7 @@ export function DossierSourceFileSummaryPanel({
           Diagnostics — collapsed by default
         </summary>
         <p className="mt-3 text-xs uppercase tracking-widest text-accent">
-          Diagnostics only. Not Source File claims.
+          Diagnostics only. Not Case File claims.
         </p>
         <div className="mt-3">
           <SummaryList

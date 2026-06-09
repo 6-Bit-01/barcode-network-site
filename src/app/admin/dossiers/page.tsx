@@ -10,6 +10,13 @@ import {
   type DossierDuplicateGroup,
   type DossierRecommendation,
 } from "@/lib/dossier-workflow";
+import {
+  buildCandidateNotifications,
+  buildRecommendationNotifications,
+  buildSourceFileNotifications,
+  type DossierWorkflowNotification,
+  type DossierWorkflowNotificationTone,
+} from "@/lib/dossier-workflow-notifications";
 
 type WorkflowPayload = {
   candidates: DossierCandidate[];
@@ -60,6 +67,7 @@ const activeCandidateStatuses = new Set<DossierCandidate["status"]>([
 const activeDraftStatuses = new Set<DossierDraft["status"]>([
   "draft",
   "owner_changes_requested",
+  "ready_for_owner_review",
 ]);
 const closedDraftStatuses = new Set<DossierDraft["status"]>([
   "denied",
@@ -160,6 +168,75 @@ function StatusPill({ children }: { children: React.ReactNode }) {
     <span className="border border-border bg-background/40 px-2 py-1 text-[0.65rem] uppercase tracking-widest text-muted">
       {children}
     </span>
+  );
+}
+
+const notificationToneClass: Record<DossierWorkflowNotificationTone, string> = {
+  info: "border-accent/50 bg-accent/10 text-accent",
+  warning: "border-yellow-400/50 bg-yellow-400/10 text-yellow-200",
+  success: "border-emerald-400/50 bg-emerald-400/10 text-emerald-200",
+  danger: "border-red-400/50 bg-red-400/10 text-red-200",
+  muted: "border-border bg-background/40 text-muted",
+};
+
+function NotificationChips({
+  notifications,
+}: {
+  notifications: DossierWorkflowNotification[];
+}) {
+  if (notifications.length === 0) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {notifications.map((notification) => (
+        <span
+          key={notification.id}
+          title={notification.reason}
+          className={`inline-flex border px-2 py-1 text-[0.62rem] uppercase tracking-widest ${notificationToneClass[notification.tone]}`}
+        >
+          {notification.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function NotificationActions({
+  notifications,
+  fallbackHref,
+  fallbackLabel,
+}: {
+  notifications: DossierWorkflowNotification[];
+  fallbackHref: string;
+  fallbackLabel: string;
+}) {
+  const actionByKey = new Map<string, { label: string; href: string }>();
+  for (const notification of notifications) {
+    if (!notification.actionLabel || !notification.actionHref) continue;
+    actionByKey.set(`${notification.actionLabel}:${notification.actionHref}`, {
+      label: notification.actionLabel,
+      href: notification.actionHref,
+    });
+  }
+  if (actionByKey.size === 0) {
+    actionByKey.set(`${fallbackLabel}:${fallbackHref}`, {
+      label: fallbackLabel,
+      href: fallbackHref,
+    });
+  }
+  return (
+    <div className="flex flex-wrap gap-2">
+      {Array.from(actionByKey.values())
+        .slice(0, 3)
+        .map((action) => (
+          <Link
+            key={`${action.label}:${action.href}`}
+            href={action.href}
+            className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
+          >
+            {action.label}
+          </Link>
+        ))}
+    </div>
   );
 }
 
@@ -384,6 +461,7 @@ export default function DossierControlCenterPage() {
   const existingDossierUpdates = candidates.filter(
     (candidate) => candidate.status === "existing_dossier_update",
   );
+  const sourceFileRows = [...activeCandidates, ...existingDossierUpdates];
   const archivedCandidates = candidates.filter(
     (candidate) => candidate.status === "archived",
   );
@@ -439,6 +517,13 @@ export default function DossierControlCenterPage() {
     closedCandidates.length +
     closedDrafts.length +
     terminalRecommendations.length;
+  const notificationContext = {
+    candidates,
+    drafts,
+    duplicateGroups,
+    recommendations,
+    publicDossiers,
+  };
 
   async function postWorkflow(body: Record<string, unknown>) {
     setSaving(true);
@@ -678,7 +763,7 @@ export default function DossierControlCenterPage() {
               : action === "attachCandidateToExistingDossier"
                 ? `${candidate.name} attached to an existing public dossier target. Public dossier content was not changed.`
                 : action === "markCandidateAsExistingDossierUpdate"
-                  ? `${candidate.name} moved to Dossier Updates / Enrichment. Public dossier content was not changed.`
+                  ? `${candidate.name} moved to live dossier update review. Public dossier content was not changed.`
                   : `${candidate.name} promoted to a Case File / BNL Source File. Public dossiers were not changed.`;
       setNotice(actionNotice);
       if (data.candidates && data.drafts && data.workflow) {
@@ -761,7 +846,7 @@ export default function DossierControlCenterPage() {
                   activeCandidateRecommendations.length,
               ],
               [
-                "Dossier Updates",
+                "Live dossier update signals",
                 existingDossierUpdates.length +
                   activeDossierUpdateRecommendations.length,
               ],
@@ -919,6 +1004,10 @@ export default function DossierControlCenterPage() {
                 <tbody>
                   {activeCandidateRecommendations.map((recommendation) => {
                     const matchState = recommendationMatchState(recommendation);
+                    const notifications = buildRecommendationNotifications(
+                      recommendation,
+                      notificationContext,
+                    );
                     return (
                       <tr
                         key={recommendation.id}
@@ -926,6 +1015,7 @@ export default function DossierControlCenterPage() {
                       >
                         <td className="py-3 pr-3 font-semibold text-foreground">
                           {recommendation.subjectName}
+                          <NotificationChips notifications={notifications} />
                         </td>
                         <td className="py-3 pr-3">
                           {recommendation.reason ||
@@ -949,183 +1039,57 @@ export default function DossierControlCenterPage() {
                             matchState.nextAction}
                         </td>
                         <td className="py-3 pr-3">
-                          <Link
-                            href={`/admin/dossiers/recommendations/${recommendation.id}`}
-                            className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
-                          >
-                            {recommendationActionLabel()}
-                          </Link>
+                          <NotificationActions
+                            notifications={notifications}
+                            fallbackHref={`/admin/dossiers/recommendations/${recommendation.id}`}
+                            fallbackLabel={recommendationActionLabel()}
+                          />
                         </td>
                       </tr>
                     );
                   })}
-                  {candidateIntakeItems.map((candidate) => (
-                    <tr
-                      key={candidate.id}
-                      className="border-t border-border/70 align-top"
-                    >
-                      <td className="py-3 pr-3 font-semibold text-foreground">
-                        {candidate.name}
-                      </td>
-                      <td className="py-3 pr-3">
-                        {candidate.whyNow ||
-                          candidate.reason ||
-                          candidateProvenance(candidate)}
-                      </td>
-                      <td className="py-3 pr-3">
-                        {candidate.confidence ?? candidate.tier} / score{" "}
-                        {candidate.score}
-                      </td>
-                      <td className="py-3 pr-3">
-                        <StatusPill>
-                          {identityBadgeForCandidate(candidate)}
-                        </StatusPill>
-                      </td>
-                      <td className="py-3 pr-3">
-                        {candidate.routingReason ||
-                          "Promote to Source File or archive from the detail page."}
-                      </td>
-                      <td className="py-3 pr-3">
-                        <Link
-                          href={`/admin/dossiers/candidates/${candidate.id}`}
-                          className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
-                        >
-                          {candidateActionLabel()}
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </DashboardCard>
-
-        <DashboardCard
-          eyebrow="Dossier Updates"
-          title="Dossier Updates"
-          aside={
-            <StatusPill>
-              {existingDossierUpdates.length +
-                activeDossierUpdateRecommendations.length}{" "}
-              updates
-            </StatusPill>
-          }
-        >
-          {existingDossierUpdates.length +
-            activeDossierUpdateRecommendations.length ===
-          0 ? (
-            <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
-              No existing dossier updates are waiting.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[820px] text-left text-sm text-muted">
-                <thead className="text-xs uppercase tracking-widest text-foreground">
-                  <tr>
-                    <th className="py-2 pr-3">
-                      Subject / public dossier target
-                    </th>
-                    <th className="py-2 pr-3">Update subject</th>
-                    <th className="py-2 pr-3">Why this update matters</th>
-                    <th className="py-2 pr-3">Match confidence</th>
-                    <th className="py-2 pr-3">Identity status</th>
-                    <th className="py-2 pr-3">Suggested next step</th>
-                    <th className="py-2 pr-3">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {activeDossierUpdateRecommendations.map((recommendation) => {
-                    const matchState = recommendationMatchState(recommendation);
-                    const targetCandidate = recommendation.targetCandidateId
-                      ? candidates.find(
-                          (candidate) =>
-                            candidate.id === recommendation.targetCandidateId,
-                        )
-                      : null;
+                  {candidateIntakeItems.map((candidate) => {
+                    const notifications = buildCandidateNotifications(
+                      candidate,
+                      notificationContext,
+                    );
                     return (
                       <tr
-                        key={recommendation.id}
+                        key={candidate.id}
                         className="border-t border-border/70 align-top"
                       >
                         <td className="py-3 pr-3 font-semibold text-foreground">
-                          {targetCandidate?.name ??
-                            recommendation.targetDossierId ??
-                            recommendation.subjectName}
+                          {candidate.name}
+                          <NotificationChips notifications={notifications} />
                         </td>
                         <td className="py-3 pr-3">
-                          {recommendation.subjectName}
+                          {candidate.whyNow ||
+                            candidate.reason ||
+                            candidateProvenance(candidate)}
                         </td>
                         <td className="py-3 pr-3">
-                          {recommendation.reason ||
-                            recommendation.evidenceSummary ||
-                            recommendationProvenance(recommendation)}
-                        </td>
-                        <td className="py-3 pr-3">
-                          {recommendation.confidence ?? "needs review"}
+                          {candidate.confidence ?? candidate.tier} / score{" "}
+                          {candidate.score}
                         </td>
                         <td className="py-3 pr-3">
                           <StatusPill>
-                            {identityBadgeForRecommendation(
-                              recommendation,
-                              matchState,
-                            )}
+                            {identityBadgeForCandidate(candidate)}
                           </StatusPill>
                         </td>
                         <td className="py-3 pr-3">
-                          {recommendation.suggestedAction ||
-                            "Review update details before attaching anywhere public."}
+                          {candidate.routingReason ||
+                            "Promote to Source File or archive from the detail page."}
                         </td>
                         <td className="py-3 pr-3">
-                          <Link
-                            href={`/admin/dossiers/recommendations/${recommendation.id}`}
-                            className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
-                          >
-                            {dossierUpdateActionLabel()}
-                          </Link>
+                          <NotificationActions
+                            notifications={notifications}
+                            fallbackHref={`/admin/dossiers/candidates/${candidate.id}`}
+                            fallbackLabel={candidateActionLabel()}
+                          />
                         </td>
                       </tr>
                     );
                   })}
-                  {existingDossierUpdates.map((candidate) => (
-                    <tr
-                      key={candidate.id}
-                      className="border-t border-border/70 align-top"
-                    >
-                      <td className="py-3 pr-3 font-semibold text-foreground">
-                        {candidate.existingDossierMatch?.name ?? candidate.name}
-                      </td>
-                      <td className="py-3 pr-3">{candidate.name}</td>
-                      <td className="py-3 pr-3">
-                        {candidate.whyNow ||
-                          candidate.reason ||
-                          firstListValue(candidate.knownFacts)}
-                      </td>
-                      <td className="py-3 pr-3">
-                        {candidate.existingDossierMatch?.confidence ??
-                          candidate.confidence ??
-                          "needs review"}
-                      </td>
-                      <td className="py-3 pr-3">
-                        <StatusPill>
-                          {candidate.existingDossierMatch
-                            ? identityBadgeForCandidate(candidate)
-                            : "Identity: Needs Confirmation"}
-                        </StatusPill>
-                      </td>
-                      <td className="py-3 pr-3">
-                        Review update details before attaching anywhere public.
-                      </td>
-                      <td className="py-3 pr-3">
-                        <Link
-                          href={`/admin/dossiers/candidates/${candidate.id}`}
-                          className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
-                        >
-                          {dossierUpdateActionLabel()}
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
                 </tbody>
               </table>
             </div>
@@ -1135,9 +1099,9 @@ export default function DossierControlCenterPage() {
         <DashboardCard
           eyebrow="Source Files"
           title="Source Files"
-          aside={<StatusPill>{activeCandidates.length} active</StatusPill>}
+          aside={<StatusPill>{sourceFileRows.length} active</StatusPill>}
         >
-          {activeCandidates.length === 0 ? (
+          {sourceFileRows.length === 0 ? (
             <p className="text-sm text-muted border border-border/70 bg-background/30 p-4">
               No active Source Files need review.
             </p>
@@ -1159,11 +1123,8 @@ export default function DossierControlCenterPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {activeCandidates.map((candidate) => {
+                  {sourceFileRows.map((candidate) => {
                     const draft = linkedActiveDraftFor(candidate, drafts);
-                    const createdDraftId =
-                      createdDraftIdByCandidate[candidate.id];
-                    const openDraftId = draft?.id ?? createdDraftId;
                     const metrics = sourceFileMetrics.get(candidate.id);
                     const dossierStatus = dossierStatusForCandidate(
                       candidate,
@@ -1171,6 +1132,10 @@ export default function DossierControlCenterPage() {
                     );
                     const actionLabel = sourceFileActionLabel();
                     const actionHref = `/admin/dossiers/candidates/${candidate.id}`;
+                    const notifications = buildSourceFileNotifications(
+                      candidate,
+                      notificationContext,
+                    );
                     return (
                       <tr
                         key={candidate.id}
@@ -1178,6 +1143,7 @@ export default function DossierControlCenterPage() {
                       >
                         <td className="py-3 pr-3 font-semibold text-foreground">
                           {candidate.name}
+                          <NotificationChips notifications={notifications} />
                         </td>
                         <td className="py-3 pr-3">
                           {candidate.sourceFileSummary?.summaryText ||
@@ -1205,12 +1171,11 @@ export default function DossierControlCenterPage() {
                           {formatDate(candidate.updatedAt)}
                         </td>
                         <td className="py-3 pr-3">
-                          <Link
-                            href={actionHref}
-                            className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
-                          >
-                            {actionLabel}
-                          </Link>
+                          <NotificationActions
+                            notifications={notifications}
+                            fallbackHref={actionHref}
+                            fallbackLabel={actionLabel}
+                          />
                         </td>
                       </tr>
                     );

@@ -62,6 +62,7 @@ const sourceSummaryPanelComponent = require("../src/components/DossierSourceFile
 const actionableBrief = require("../src/lib/dossier-source-file-actionable-brief.ts");
 const publicCopyGuard = require("../src/lib/dossier-public-copy-guard.ts");
 const dossierPageViewModel = require("../src/lib/dossier-page-view-model.ts");
+const dossierWorkflowNotifications = require("../src/lib/dossier-workflow-notifications.ts");
 
 function source(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
@@ -1057,13 +1058,13 @@ test("admin panel includes Dossier Control Center link", () => {
 
 test("admin dossier dashboard is a simplified subject sorting overview", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
-  const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
+  const pageCopy = `${normalizedSource("src/app/admin/dossiers/page.tsx")} ${normalizedSource("src/lib/dossier-workflow-notifications.ts")}`;
   for (const label of [
     "Dossier Control Center",
     "Sort noticed subjects, review updates, and open Source Files.",
     "Summary",
     "Candidates",
-    "Dossier Updates",
+    "Live dossier update signals",
     "Source Files",
     "Needs Info",
     "Ready for Dossier",
@@ -1089,8 +1090,16 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
     "Ready for Owner Review",
     "Owner changes requested",
     "Approved / publish later",
+    "Possible identity link",
+    "Existing Source File match",
+    "Existing live dossier match",
+    "New BNL signal",
+    "Missing info",
+    "BNL archive available",
+    "Owner Review ready",
+    "System record",
     "Review Candidate",
-    "Review Update",
+    "Review Updates",
     "Open Source File",
     "Review Record",
   ]) {
@@ -1102,9 +1111,10 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
   assert.match(page, /href=\{`\/admin\/dossiers\/recommendations\/\$\{recommendation\.id\}`\}/);
   assert.doesNotMatch(page, /`\/admin\/dossiers\/drafts\/\$\{openDraftId\}`/);
   assert.doesNotMatch(page, />\s*Open\s*</);
-  assert.doesNotMatch(page, /Add Missing Info|Review Identity|Review Signal|Review Source Update|Open Draft|Review Draft|Review Archived|Review Closed Signal|Review Trash/);
+  assert.doesNotMatch(page, /Add Missing Info|Review Signal|Review Source Update|Review Draft|Review Archived|Review Closed Signal|Review Trash/);
   assert.doesNotMatch(page, /PhaseRail|Numbered dossier phases|Workflow map|System Boundaries/);
   assert.doesNotMatch(page, /Duplicate Analysis|Record Compactor|View Warning \/ Open Merge Review/);
+  assert.doesNotMatch(page, /eyebrow="Dossier Updates"|title="Dossier Updates"/);
   assert.doesNotMatch(page, /candidateAction\(candidate\.id, "archiveCandidate"\)/);
   assert.doesNotMatch(page, /candidateAction\(\s*candidate\.id,\s*"permanentlyDeleteCandidate"/);
   assert.doesNotMatch(page, />Delete Permanently</);
@@ -1116,12 +1126,108 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
   assert.match(page, /if \(error \|\| !payload\)/);
 });
 
+
+function baseNotificationCandidate(overrides = {}) {
+  return {
+    id: overrides.id ?? "candidate-notification-fixture",
+    name: overrides.name ?? "Notification Fixture",
+    candidateType: overrides.candidateType ?? "artist",
+    source: overrides.source ?? "manual",
+    tier: overrides.tier ?? "review_candidate",
+    score: overrides.score ?? 5,
+    whyNow: overrides.whyNow ?? "Notification test.",
+    reason: overrides.reason ?? "Notification test.",
+    evidenceSummary: overrides.evidenceSummary ?? "Notification evidence.",
+    status: overrides.status ?? "active_source_file",
+    createdAt: overrides.createdAt ?? "2026-06-01T00:00:00.000Z",
+    updatedAt: overrides.updatedAt ?? "2026-06-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function notificationLabels(notifications) {
+  return notifications.map((notification) => notification.label);
+}
+
+test("computed dossier workflow notifications cover candidate row contexts", () => {
+  const possibleIdentity = baseNotificationCandidate({
+    identityReviewStatus: "needs_confirmation",
+    possibleMatchCandidateIds: ["candidate-peer"],
+  });
+  assert.ok(notificationLabels(dossierWorkflowNotifications.buildCandidateNotifications(possibleIdentity)).includes("Possible identity link"));
+
+  const existingLive = baseNotificationCandidate({
+    existingDossierMatch: {
+      id: "public-live-dossier",
+      name: "Public Live Dossier",
+      confidence: "high",
+    },
+  });
+  assert.ok(notificationLabels(dossierWorkflowNotifications.buildCandidateNotifications(existingLive)).includes("Existing live dossier match"));
+
+  const duplicate = baseNotificationCandidate({ duplicateRisk: "high" });
+  assert.ok(notificationLabels(dossierWorkflowNotifications.buildCandidateNotifications(duplicate)).includes("Possible duplicate"));
+});
+
+test("computed dossier workflow notifications cover source file draft, archive, missing info, and update contexts", () => {
+  const candidate = baseNotificationCandidate({
+    id: "source-file-notification-fixture",
+    missingInfo: ["Confirm public-safe role."],
+    sourceFileArchiveIds: ["archive-1"],
+    latestSourceFileArchiveId: "archive-1",
+  });
+  const activeDraft = {
+    id: "draft-active-notification-fixture",
+    candidateId: candidate.id,
+    status: "draft",
+    fields: { name: candidate.name },
+    createdAt: "2026-06-01T00:00:00.000Z",
+    updatedAt: "2026-06-01T00:00:00.000Z",
+  };
+  const activeRecommendation = {
+    id: "recommendation-active-notification-fixture",
+    type: "new_subject",
+    subjectName: candidate.name,
+    targetCandidateId: candidate.id,
+    status: "new",
+    reason: "New BNL signal fixture.",
+    sourceLanes: ["rd_context"],
+    createdAt: "2026-06-02T00:00:00.000Z",
+    updatedAt: "2026-06-02T00:00:00.000Z",
+  };
+  const labels = notificationLabels(dossierWorkflowNotifications.buildSourceFileNotifications(candidate, {
+    drafts: [activeDraft],
+    recommendations: [activeRecommendation],
+  }));
+
+  assert.ok(labels.includes("Draft in progress"));
+  assert.ok(labels.includes("Draft revision?"));
+  assert.ok(labels.includes("BNL archive available"));
+  assert.ok(labels.includes("Missing info"));
+  assert.ok(!labels.includes("Live dossier update?"));
+
+  const readyLabels = notificationLabels(dossierWorkflowNotifications.buildSourceFileNotifications(candidate, {
+    drafts: [{ ...activeDraft, status: "ready_for_owner_review" }],
+  }));
+  assert.ok(readyLabels.includes("Owner Review ready"));
+
+  const liveLabels = notificationLabels(dossierWorkflowNotifications.buildSourceFileNotifications(baseNotificationCandidate({
+    ...candidate,
+    existingDossierMatch: {
+      id: "public-live-dossier",
+      name: "Public Live Dossier",
+      confidence: "high",
+    },
+  }), { drafts: [activeDraft], recommendations: [activeRecommendation] }));
+  assert.ok(liveLabels.includes("Live dossier update?"));
+  assert.ok(!liveLabels.includes("Draft revision?"));
+});
+
 test("dossier admin pages keep dashboard simple while detail pages retain workflow controls", () => {
   const dashboard = normalizedSource("src/app/admin/dossiers/page.tsx");
   for (const label of [
     "Summary",
     "Candidates",
-    "Dossier Updates",
     "Source Files",
     "Archive / Dismissed / Trash",
     "Owner Review",
@@ -5961,11 +6067,12 @@ test("recommendation detail case-file view uses the same sanitizer", () => {
 });
 
 test("admin dashboard keeps public dossier-only source lookup fallback bounded", () => {
-  const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
-  assertIncludesCopy(pageCopy, "Dossier Updates");
-  assertIncludesCopy(pageCopy, "No existing dossier updates are waiting.");
-  assertIncludesCopy(pageCopy, "Review update details before attaching anywhere public.");
+  const pageCopy = `${normalizedSource("src/app/admin/dossiers/page.tsx")} ${normalizedSource("src/lib/dossier-workflow-notifications.ts")}`;
+  assertIncludesCopy(pageCopy, "Live dossier update signals");
+  assertIncludesCopy(pageCopy, "Live dossier update?");
+  assertIncludesCopy(pageCopy, "Existing live dossier match");
   assertIncludesCopy(pageCopy, "Identity: Needs Confirmation");
+  assert.doesNotMatch(pageCopy, /No existing dossier updates are waiting\.|eyebrow="Dossier Updates"|title="Dossier Updates"/);
 });
 
 test("Phase 2 draft workflow keeps PR 155 stacked shared preview order", () => {

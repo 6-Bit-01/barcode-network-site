@@ -172,6 +172,13 @@ function identityBadgeForCandidate(candidate: DossierCandidate) {
     (link) => link.status === "proposed",
   ).length;
 
+  if (candidate.identityReviewStatus === "needs_confirmation") {
+    return candidate.possibleMatchCandidateIds?.length
+      ? `Possible match to ${candidate.possibleMatchCandidateIds.length} subject${
+          candidate.possibleMatchCandidateIds.length === 1 ? "" : "s"
+        }`
+      : "Identity: Needs Confirmation";
+  }
   if (pending > 0) {
     return "Identity: Needs Confirmation";
   }
@@ -197,6 +204,13 @@ function identityBadgeForRecommendation(
   recommendation: DossierRecommendation,
   matchState: { state: string; nextAction: string },
 ) {
+  if (recommendation.identityReviewStatus === "needs_confirmation") {
+    return recommendation.possibleMatchCandidateIds?.length
+      ? `Possible match to ${recommendation.possibleMatchCandidateIds.length} subject${
+          recommendation.possibleMatchCandidateIds.length === 1 ? "" : "s"
+        }`
+      : "Identity: Needs Confirmation";
+  }
   if (recommendation.type === "identity_link") {
     return "Identity: Needs Confirmation";
   }
@@ -930,7 +944,8 @@ export default function DossierControlCenterPage() {
                           </StatusPill>
                         </td>
                         <td className="py-3 pr-3">
-                          {recommendation.suggestedAction ||
+                          {recommendation.routingReason ||
+                            recommendation.suggestedAction ||
                             matchState.nextAction}
                         </td>
                         <td className="py-3 pr-3">
@@ -967,7 +982,8 @@ export default function DossierControlCenterPage() {
                         </StatusPill>
                       </td>
                       <td className="py-3 pr-3">
-                        Promote to Source File or archive from the detail page.
+                        {candidate.routingReason ||
+                          "Promote to Source File or archive from the detail page."}
                       </td>
                       <td className="py-3 pr-3">
                         <Link

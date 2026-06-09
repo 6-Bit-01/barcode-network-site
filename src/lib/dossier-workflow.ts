@@ -179,6 +179,15 @@ export type DossierSourceFileNote = {
   ingestKey?: string;
   ingestedAt?: string;
   ingestSource?: DossierRecommendationIngestSource;
+  connectedCandidateId?: string;
+  connectedSourceFileCandidateId?: string;
+  connectedRecommendationIds?: string[];
+  possibleMatchCandidateIds?: string[];
+  possibleMatchDossierIds?: string[];
+  identityReviewStatus?: "not_required" | "needs_confirmation" | "confirmed";
+  routingReason?: string;
+  routedFromRecommendationId?: string;
+  sourceRecommendationIds?: string[];
 };
 
 export type DossierIdentityLinkType =
@@ -280,6 +289,15 @@ export type DossierCandidate = {
   ingestKey?: string;
   ingestSource?: DossierRecommendationIngestSource;
   createdFromRecommendationId?: string;
+  connectedCandidateId?: string;
+  connectedSourceFileCandidateId?: string;
+  connectedRecommendationIds?: string[];
+  possibleMatchCandidateIds?: string[];
+  possibleMatchDossierIds?: string[];
+  identityReviewStatus?: "not_required" | "needs_confirmation" | "confirmed";
+  routingReason?: string;
+  routedFromRecommendationId?: string;
+  sourceRecommendationIds?: string[];
   mergedIntoCandidateId?: string;
   mergedAt?: string;
   mergeNote?: string;
@@ -559,6 +577,15 @@ export type DossierRecommendation = {
   ingestKey?: string;
   ingestedAt?: string;
   ingestSource?: DossierRecommendationIngestSource;
+  connectedCandidateId?: string;
+  connectedSourceFileCandidateId?: string;
+  connectedRecommendationIds?: string[];
+  possibleMatchCandidateIds?: string[];
+  possibleMatchDossierIds?: string[];
+  identityReviewStatus?: "not_required" | "needs_confirmation" | "confirmed";
+  routingReason?: string;
+  routedFromRecommendationId?: string;
+  sourceRecommendationIds?: string[];
 };
 
 export type DossierSourceDepthLabel = "Low" | "Medium" | "Strong";
@@ -721,7 +748,23 @@ export function isSourceFileEnrichmentAttachableCandidate(
 }
 
 function isActiveSubjectCandidate(candidate: DossierCandidate): boolean {
-  return isActiveSourceFileCandidate(candidate);
+  return isSourceFileEnrichmentAttachableCandidate(candidate);
+}
+
+function subjectMatchPriority(candidate: DossierCandidate): number {
+  if (isActiveSourceFileCandidate(candidate)) return 0;
+  if (candidate.status === "existing_dossier_update") return 1;
+  return 2;
+}
+
+function sortedSubjectCandidates(
+  candidates: DossierCandidate[],
+): DossierCandidate[] {
+  return [...candidates].sort((left, right) => {
+    const priority = subjectMatchPriority(left) - subjectMatchPriority(right);
+    if (priority !== 0) return priority;
+    return right.updatedAt.localeCompare(left.updatedAt);
+  });
 }
 
 function hasPossibleSubjectOverlap(
@@ -757,7 +800,9 @@ export function matchDossierRecommendationSubject(input: {
   >;
   candidates: DossierCandidate[];
 }): DossierSubjectMatchResult {
-  const activeCandidates = input.candidates.filter(isActiveSubjectCandidate);
+  const activeCandidates = sortedSubjectCandidates(
+    input.candidates.filter(isActiveSubjectCandidate),
+  );
   const subjectName = input.recommendation.subjectName;
   const normalizedSubject = normalizeDossierSubjectName(subjectName);
   const compactSubject = compactDossierSubjectName(subjectName);

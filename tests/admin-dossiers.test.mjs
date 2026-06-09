@@ -1115,6 +1115,8 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
   assert.doesNotMatch(page, /PhaseRail|Numbered dossier phases|Workflow map|System Boundaries/);
   assert.doesNotMatch(page, /Duplicate Analysis|Record Compactor|View Warning \/ Open Merge Review/);
   assert.doesNotMatch(page, /eyebrow="Dossier Updates"|title="Dossier Updates"/);
+  assert.match(page, /isLiveDossierUpdateRecommendation\(recommendation/);
+  assert.doesNotMatch(page, /Boolean\(recommendation\.targetCandidateId\)/);
   assert.doesNotMatch(page, /candidateAction\(candidate\.id, "archiveCandidate"\)/);
   assert.doesNotMatch(page, /candidateAction\(\s*candidate\.id,\s*"permanentlyDeleteCandidate"/);
   assert.doesNotMatch(page, />Delete Permanently</);
@@ -1205,22 +1207,55 @@ test("computed dossier workflow notifications cover source file draft, archive, 
   assert.ok(labels.includes("BNL archive available"));
   assert.ok(labels.includes("Missing info"));
   assert.ok(!labels.includes("Live dossier update?"));
+  assert.equal(
+    dossierWorkflowNotifications.isLiveDossierUpdateRecommendation(activeRecommendation, { candidates: [candidate] }),
+    false,
+  );
 
   const readyLabels = notificationLabels(dossierWorkflowNotifications.buildSourceFileNotifications(candidate, {
     drafts: [{ ...activeDraft, status: "ready_for_owner_review" }],
   }));
   assert.ok(readyLabels.includes("Owner Review ready"));
 
-  const liveLabels = notificationLabels(dossierWorkflowNotifications.buildSourceFileNotifications(baseNotificationCandidate({
+  const liveCandidate = baseNotificationCandidate({
     ...candidate,
     existingDossierMatch: {
       id: "public-live-dossier",
       name: "Public Live Dossier",
       confidence: "high",
     },
-  }), { drafts: [activeDraft], recommendations: [activeRecommendation] }));
+  });
+  const liveLabels = notificationLabels(dossierWorkflowNotifications.buildSourceFileNotifications(
+    liveCandidate,
+    { drafts: [activeDraft], recommendations: [activeRecommendation] },
+  ));
   assert.ok(liveLabels.includes("Live dossier update?"));
   assert.ok(!liveLabels.includes("Draft revision?"));
+  assert.equal(
+    dossierWorkflowNotifications.isLiveDossierUpdateRecommendation(activeRecommendation, { candidates: [liveCandidate] }),
+    true,
+  );
+});
+
+test("computed source file notifications only mark explicit system records", () => {
+  const enrichedArtist = baseNotificationCandidate({
+    source: "bnl_source_file_enrichment",
+    candidateType: "artist",
+    name: "Normal Artist Source File",
+  });
+  assert.ok(!notificationLabels(
+    dossierWorkflowNotifications.buildSourceFileNotifications(enrichedArtist),
+  ).includes("System record"));
+
+  for (const systemCandidate of [
+    baseNotificationCandidate({ name: "BNL-01", candidateType: "entity" }),
+    baseNotificationCandidate({ name: "BARCODE Radio", candidateType: "production" }),
+    baseNotificationCandidate({ name: "Carl-bot Logging", candidateType: "interface" }),
+  ]) {
+    assert.ok(notificationLabels(
+      dossierWorkflowNotifications.buildSourceFileNotifications(systemCandidate),
+    ).includes("System record"));
+  }
 });
 
 test("dossier admin pages keep dashboard simple while detail pages retain workflow controls", () => {

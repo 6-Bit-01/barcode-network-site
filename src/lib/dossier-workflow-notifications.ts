@@ -155,9 +155,24 @@ function isSystemRecord(candidate: DossierCandidate) {
   return (
     candidate.candidateType === "interface" ||
     candidate.candidateType === "production" ||
-    candidate.source === "bnl_source_file_enrichment" ||
     systemRecordPatterns.some((pattern) => pattern.test(candidate.name))
   );
+}
+
+export function isLiveDossierUpdateRecommendation(
+  recommendation: DossierRecommendation,
+  context: Pick<NotificationContext, "candidates" | "publicDossiers"> = {},
+) {
+  if (recommendation.type === "modify_existing_dossier") return true;
+  if (recommendation.targetDossierId) return true;
+  if (!recommendation.targetCandidateId) return false;
+
+  const targetCandidate = context.candidates?.find(
+    (candidate) => candidate.id === recommendation.targetCandidateId,
+  );
+  return targetCandidate
+    ? hasLiveDossierMatch(targetCandidate, context.publicDossiers)
+    : false;
 }
 
 export function buildCandidateNotifications(
@@ -282,12 +297,12 @@ export function buildRecommendationNotifications(
     });
   }
 
-  const hasPublicTarget =
-    Boolean(recommendation.targetDossierId) ||
+  if (
+    isLiveDossierUpdateRecommendation(recommendation, context) ||
     context.publicDossiers?.some((dossier) =>
       (recommendation.possibleMatchDossierIds ?? []).includes(dossier.id),
-    );
-  if (hasPublicTarget || recommendation.type === "modify_existing_dossier") {
+    )
+  ) {
     pushUnique(notifications, {
       id: "existing-live-dossier-match",
       label: "Existing live dossier match",

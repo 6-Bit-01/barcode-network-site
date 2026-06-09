@@ -14,6 +14,7 @@ import {
   buildCandidateNotifications,
   buildRecommendationNotifications,
   buildSourceFileNotifications,
+  isLiveDossierUpdateRecommendation,
   type DossierWorkflowNotification,
   type DossierWorkflowNotificationTone,
 } from "@/lib/dossier-workflow-notifications";
@@ -434,13 +435,15 @@ export default function DossierControlCenterPage() {
   );
   const activeDossierUpdateRecommendations = activeRecommendations.filter(
     (recommendation) =>
-      recommendation.type === "modify_existing_dossier" ||
-      Boolean(recommendation.targetDossierId) ||
-      Boolean(recommendation.targetCandidateId),
+      isLiveDossierUpdateRecommendation(recommendation, {
+        candidates,
+        publicDossiers,
+      }),
   );
   const activeCandidateRecommendations = activeRecommendations.filter(
     (recommendation) =>
-      !activeDossierUpdateRecommendations.includes(recommendation),
+      !activeDossierUpdateRecommendations.includes(recommendation) &&
+      !recommendation.targetCandidateId,
   );
   const terminalRecommendations = recommendations.filter((recommendation) =>
     [

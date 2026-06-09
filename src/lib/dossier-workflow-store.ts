@@ -1703,6 +1703,143 @@ function upsertSourceFileEnrichmentNote(input: {
   };
 }
 
+function attachmentStatusForCandidate(
+  candidate: DossierCandidate,
+): DossierRecommendationStatus {
+  if (candidate.status === "candidate_intake")
+    return "attached_to_candidate_intake";
+  if (candidate.status === "existing_dossier_update") {
+    return "attached_to_existing_dossier_update";
+  }
+  return "attached_to_source_file";
+}
+
+function routingNote(input: {
+  candidateId: string;
+  text: string;
+  now: string;
+  source?: DossierSourceFileNoteSource;
+  createdBy?: string;
+  ingestKey?: string;
+  ingestedAt?: string;
+  ingestSource?: DossierRecommendation["ingestSource"];
+}): DossierSourceFileNote {
+  return {
+    id: createSourceFileNoteId(),
+    candidateId: input.candidateId,
+    type: "general_note",
+    text: input.text.slice(0, 4000),
+    source: input.source ?? "admin_manual",
+    status: "active",
+    publicSafe: false,
+    createdAt: input.now,
+    updatedAt: input.now,
+    createdBy: input.createdBy,
+    ingestKey: input.ingestKey,
+    ingestedAt: input.ingestedAt,
+    ingestSource: input.ingestSource,
+  };
+}
+
+function manualCandidateRoutingNote(input: {
+  name: string;
+  reason: string;
+  whyNow?: string;
+  evidenceSummary?: string;
+  knownFacts?: string[];
+  routingReason: string;
+}): string {
+  return [
+    `Manual signal routed into existing workflow record: ${input.name}.`,
+    `Routing reason: ${input.routingReason}`,
+    `Reason: ${input.reason}`,
+    input.whyNow ? `Why now: ${input.whyNow}` : "",
+    input.evidenceSummary ? `Evidence: ${input.evidenceSummary}` : "",
+    ...(input.knownFacts ?? []).map((fact) => `Known fact: ${fact}`),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function mergeCandidateSignal(input: {
+  candidate: DossierCandidate;
+  now: string;
+  note: DossierSourceFileNote;
+  evidenceSummary?: string;
+  knownFacts?: string[];
+  missingInfo?: string[];
+  publicSafetyNotes?: string[];
+  doNotSay?: string[];
+  connectedRecommendationId?: string;
+  possibleMatchCandidateIds?: string[];
+  routingReason: string;
+  identityReviewStatus?: DossierCandidate["identityReviewStatus"];
+}): DossierCandidate {
+  const evidenceSummary = combineTextValues([
+    input.candidate.evidenceSummary,
+    input.evidenceSummary,
+  ]);
+  const connectedRecommendationIds = uniqueStrings(
+    input.candidate.connectedRecommendationIds,
+    input.connectedRecommendationId ? [input.connectedRecommendationId] : [],
+  );
+  return {
+    ...input.candidate,
+    lastSeenAt: input.now,
+    evidenceSummary,
+    evidenceCount:
+      (input.candidate.evidenceCount ??
+        input.candidate.evidenceItems?.length ??
+        0) + (input.evidenceSummary?.trim() ? 1 : 0),
+    knownFacts: uniqueStrings(input.candidate.knownFacts, input.knownFacts),
+    missingInfo: uniqueStrings(input.candidate.missingInfo, input.missingInfo),
+    publicSafetyNotes: uniqueStrings(
+      input.candidate.publicSafetyNotes,
+      input.publicSafetyNotes,
+    ),
+    doNotSay: uniqueStrings(input.candidate.doNotSay, input.doNotSay),
+    sourceFileNotes: [input.note, ...(input.candidate.sourceFileNotes ?? [])],
+    connectedCandidateId:
+      input.candidate.connectedCandidateId ??
+      input.possibleMatchCandidateIds?.[0] ??
+      undefined,
+    connectedSourceFileCandidateId:
+      input.candidate.connectedSourceFileCandidateId ??
+      input.possibleMatchCandidateIds?.[0] ??
+      undefined,
+    connectedRecommendationIds: connectedRecommendationIds.length
+      ? connectedRecommendationIds
+      : input.candidate.connectedRecommendationIds,
+    possibleMatchCandidateIds: uniqueStrings(
+      input.candidate.possibleMatchCandidateIds,
+      input.possibleMatchCandidateIds,
+    ),
+    identityReviewStatus:
+      input.identityReviewStatus ?? input.candidate.identityReviewStatus,
+    routingReason: input.routingReason,
+    updatedAt: input.now,
+  };
+}
+
+function samePossibleMatchReview(input: {
+  candidate: DossierCandidate;
+  subjectName: string;
+  possibleCandidateIds: string[];
+}): boolean {
+  const existingPossible = input.candidate.possibleMatchCandidateIds ?? [];
+  if (existingPossible.length === 0) return false;
+  const sameSubject =
+    normalizeName(input.candidate.name) === normalizeName(input.subjectName);
+  const left = [...existingPossible].sort().join("|");
+  const right = [...input.possibleCandidateIds].sort().join("|");
+  return sameSubject && left === right;
+}
+
+function matchingPublicDossierForSubject(subjectName: string) {
+  const duplicate = findExistingDossierMatch(subjectName);
+  return duplicate.match?.confidence === "high" ? duplicate.match : null;
+}
+
 const OPEN_REFRESH_RECENT_COMPLETED_MS = 60 * 60 * 1000;
 const DEFAULT_REFRESH_STALE_MS = 24 * 60 * 60 * 1000;
 const STALE_OPEN_REFRESH_REQUEST_MS = 5 * 60 * 1000;
@@ -2749,7 +2886,7 @@ export async function createDossierRecommendationIdempotent(
         };
         const updatedRecommendation: DossierRecommendation = {
           ...recommendation,
-          status: "attached_to_source_file",
+          status: attachmentStatusForCandidate(ingestKeyCandidate),
           targetCandidateId: ingestKeyCandidate.id,
           publicSafetyNotes: [
             ...(recommendation.publicSafetyNotes ?? []),
@@ -2801,11 +2938,15 @@ export async function createDossierRecommendationIdempotent(
         };
         const updatedRecommendation: DossierRecommendation = {
           ...recommendation,
-          status: "attached_to_source_file",
+          status: attachmentStatusForCandidate(
+            currentState.candidates.find(
+              (candidate) => candidate.id === match.exactCandidateId,
+            )!,
+          ),
           targetCandidateId: match.exactCandidateId,
           publicSafetyNotes: [
             ...(recommendation.publicSafetyNotes ?? []),
-            `${bnlIngestLabel(recommendation)} matched an existing exact same-subject source file and was attached without creating a duplicate candidate.`,
+            `${bnlIngestLabel(recommendation)} matched an existing exact same-subject workflow record and was attached without creating a duplicate candidate.`,
           ],
           updatedAt: now,
         };
@@ -2866,12 +3007,63 @@ export async function createDossierRecommendationIdempotent(
         };
       }
 
+      const possibleMatchRecommendation = currentState.recommendations.find(
+        (item) =>
+          isActiveRecommendation(item) &&
+          item.identityReviewStatus === "needs_confirmation" &&
+          normalizeName(item.subjectName) ===
+            normalizeName(recommendation.subjectName) &&
+          [...(item.possibleMatchCandidateIds ?? [])].sort().join("|") ===
+            [...match.possibleCandidateIds].sort().join("|"),
+      );
+      const possibleSafetyNote = `${bnlIngestLabel(recommendation)} found possible existing source files; left in Recommendation Inbox for owner/lead duplicate or identity review.`;
+      if (possibleMatchRecommendation) {
+        savedRecommendation = {
+          ...possibleMatchRecommendation,
+          reason: recommendation.reason || possibleMatchRecommendation.reason,
+          evidenceSummary:
+            recommendation.evidenceSummary ??
+            possibleMatchRecommendation.evidenceSummary,
+          publicSafetyNotes: uniqueStrings(
+            possibleMatchRecommendation.publicSafetyNotes,
+            recommendation.publicSafetyNotes,
+            [possibleSafetyNote],
+          ),
+          connectedRecommendationIds: uniqueStrings(
+            possibleMatchRecommendation.connectedRecommendationIds,
+            [recommendation.id],
+          ),
+          sourceRecommendationIds: uniqueStrings(
+            possibleMatchRecommendation.sourceRecommendationIds,
+            [recommendation.id],
+          ),
+          routingReason: match.reason,
+          updatedAt: now,
+        };
+        duplicate = true;
+        autoAction = "left_for_review";
+        return {
+          ...currentState,
+          recommendations: currentState.recommendations.map((item) =>
+            item.id === possibleMatchRecommendation.id
+              ? savedRecommendation
+              : item,
+          ),
+          updatedAt: now,
+        };
+      }
+
       savedRecommendation = {
         ...recommendation,
-        publicSafetyNotes: [
-          ...(recommendation.publicSafetyNotes ?? []),
-          `${bnlIngestLabel(recommendation)} found possible existing source files; left in Recommendation Inbox for owner/lead duplicate or identity review.`,
-        ],
+        type: "possible_connection_review",
+        publicSafetyNotes: uniqueStrings(recommendation.publicSafetyNotes, [
+          possibleSafetyNote,
+        ]),
+        possibleMatchCandidateIds: match.possibleCandidateIds,
+        connectedCandidateId: match.possibleCandidateIds[0],
+        connectedSourceFileCandidateId: match.possibleCandidateIds[0],
+        identityReviewStatus: "needs_confirmation",
+        routingReason: match.reason,
       };
       autoAction = "left_for_review";
       return {
@@ -3784,17 +3976,56 @@ export async function convertRecommendationToCandidate(
       candidates: currentState.candidates,
     });
     if (match.exactCandidateId) {
-      throw new DossierWorkflowInputError(
-        "An exact same-subject BNL Source File already exists for this recommendation",
-        400,
-        "recommendation_existing_source_file_match",
-        {
-          exactCandidateId: match.exactCandidateId,
-          exactMatchKind: match.exactMatchKind,
-          possibleCandidateIds: match.possibleCandidateIds,
-          reason: match.reason,
-        },
+      const existingCandidate = currentState.candidates.find(
+        (item) => item.id === match.exactCandidateId,
       );
+      if (existingCandidate) {
+        const updatedRecommendation: DossierRecommendation = {
+          ...recommendation,
+          status: attachmentStatusForCandidate(existingCandidate),
+          targetCandidateId: existingCandidate.id,
+          connectedCandidateId: existingCandidate.id,
+          connectedSourceFileCandidateId: existingCandidate.id,
+          identityReviewStatus: "not_required",
+          routingReason: match.reason,
+          updatedAt: now,
+        };
+        const note = routingNote({
+          candidateId: existingCandidate.id,
+          now,
+          text: recommendation.ingestSource?.startsWith("bnl")
+            ? bnlAutoCandidateNoteText(updatedRecommendation)
+            : recommendationSourceNoteText(updatedRecommendation),
+          source: "bnl_recommendation",
+          createdBy: recommendation.createdBy,
+          ingestKey: recommendation.ingestKey,
+          ingestedAt: recommendation.ingestedAt,
+          ingestSource: recommendation.ingestSource,
+        });
+        const updatedCandidate = mergeCandidateSignal({
+          candidate: existingCandidate,
+          now,
+          note,
+          evidenceSummary: recommendation.evidenceSummary,
+          connectedRecommendationId: recommendation.id,
+          routingReason: match.reason,
+          identityReviewStatus: "not_required",
+        });
+        result = {
+          recommendation: updatedRecommendation,
+          candidate: updatedCandidate,
+        };
+        return {
+          ...currentState,
+          recommendations: currentState.recommendations.map((item) =>
+            item.id === recommendation.id ? updatedRecommendation : item,
+          ),
+          candidates: currentState.candidates.map((item) =>
+            item.id === existingCandidate.id ? updatedCandidate : item,
+          ),
+          updatedAt: now,
+        };
+      }
     }
     const candidate = buildCandidateFromRecommendation({
       recommendation,
@@ -4097,13 +4328,193 @@ export async function createManualDossierCandidate(
     updatedAt: now,
   };
 
-  await updateDossierWorkflowState((currentState) => ({
-    ...currentState,
-    candidates: [candidate, ...currentState.candidates],
-    updatedAt: now,
-  }));
+  let savedCandidate: DossierCandidate = candidate;
 
-  return candidate;
+  await updateDossierWorkflowState((currentState) => {
+    const subjectMatch = matchDossierRecommendationSubject({
+      recommendation: {
+        subjectName: name,
+        subjectKey: undefined,
+        targetCandidateId: undefined,
+      },
+      candidates: currentState.candidates,
+    });
+
+    if (subjectMatch.exactCandidateId) {
+      const routingReason = `Manual signal reused existing record: ${subjectMatch.reason}`;
+      const note = routingNote({
+        candidateId: subjectMatch.exactCandidateId,
+        now,
+        text: manualCandidateRoutingNote({
+          name,
+          reason,
+          whyNow: input.whyNow,
+          evidenceSummary: input.evidenceSummary,
+          knownFacts,
+          routingReason,
+        }),
+        source: "admin_manual",
+      });
+      return {
+        ...currentState,
+        candidates: currentState.candidates.map((item) => {
+          if (item.id !== subjectMatch.exactCandidateId) return item;
+          savedCandidate = mergeCandidateSignal({
+            candidate: item,
+            now,
+            note,
+            evidenceSummary: input.evidenceSummary?.trim(),
+            knownFacts,
+            missingInfo: missingInfoInput,
+            publicSafetyNotes: publicSafetyNotesInput,
+            doNotSay,
+            routingReason,
+            identityReviewStatus:
+              item.identityReviewStatus === "needs_confirmation"
+                ? "needs_confirmation"
+                : "not_required",
+          });
+          return savedCandidate;
+        }),
+        updatedAt: now,
+      };
+    }
+
+    const publicDossierMatch = matchingPublicDossierForSubject(name);
+    if (publicDossierMatch) {
+      const existingUpdate = currentState.candidates.find(
+        (item) =>
+          item.status === "existing_dossier_update" &&
+          item.existingDossierMatch?.id === publicDossierMatch.id,
+      );
+      const routingReason = `Manual signal matched existing public dossier ${publicDossierMatch.id} / ${publicDossierMatch.name}; routed to Dossier Updates.`;
+      if (existingUpdate) {
+        const note = routingNote({
+          candidateId: existingUpdate.id,
+          now,
+          text: manualCandidateRoutingNote({
+            name,
+            reason,
+            whyNow: input.whyNow,
+            evidenceSummary: input.evidenceSummary,
+            knownFacts,
+            routingReason,
+          }),
+          source: "admin_manual",
+        });
+        return {
+          ...currentState,
+          candidates: currentState.candidates.map((item) => {
+            if (item.id !== existingUpdate.id) return item;
+            savedCandidate = mergeCandidateSignal({
+              candidate: item,
+              now,
+              note,
+              evidenceSummary: input.evidenceSummary?.trim(),
+              knownFacts,
+              missingInfo: missingInfoInput,
+              publicSafetyNotes: publicSafetyNotesInput,
+              doNotSay,
+              routingReason,
+              identityReviewStatus: "not_required",
+            });
+            return savedCandidate;
+          }),
+          updatedAt: now,
+        };
+      }
+      savedCandidate = {
+        ...candidate,
+        name: publicDossierMatch.name,
+        status: "existing_dossier_update",
+        existingDossierMatch: publicDossierMatch,
+        duplicateRisk: "high",
+        routingReason,
+        identityReviewStatus: "not_required",
+      };
+      return {
+        ...currentState,
+        candidates: [savedCandidate, ...currentState.candidates],
+        updatedAt: now,
+      };
+    }
+
+    if (subjectMatch.possibleCandidateIds.length > 0) {
+      const routingReason = subjectMatch.reason;
+      const existingReview = currentState.candidates.find((item) =>
+        samePossibleMatchReview({
+          candidate: item,
+          subjectName: name,
+          possibleCandidateIds: subjectMatch.possibleCandidateIds,
+        }),
+      );
+      if (existingReview) {
+        const note = routingNote({
+          candidateId: existingReview.id,
+          now,
+          text: manualCandidateRoutingNote({
+            name,
+            reason,
+            whyNow: input.whyNow,
+            evidenceSummary: input.evidenceSummary,
+            knownFacts,
+            routingReason,
+          }),
+          source: "admin_manual",
+        });
+        return {
+          ...currentState,
+          candidates: currentState.candidates.map((item) => {
+            if (item.id !== existingReview.id) return item;
+            savedCandidate = mergeCandidateSignal({
+              candidate: item,
+              now,
+              note,
+              evidenceSummary: input.evidenceSummary?.trim(),
+              knownFacts,
+              missingInfo: missingInfoInput,
+              publicSafetyNotes: publicSafetyNotesInput,
+              doNotSay,
+              possibleMatchCandidateIds: subjectMatch.possibleCandidateIds,
+              routingReason,
+              identityReviewStatus: "needs_confirmation",
+            });
+            return savedCandidate;
+          }),
+          updatedAt: now,
+        };
+      }
+      savedCandidate = {
+        ...candidate,
+        duplicateRisk:
+          riskRank(candidate.duplicateRisk ?? "none") >= riskRank("medium")
+            ? candidate.duplicateRisk
+            : "medium",
+        possibleMatchCandidateIds: subjectMatch.possibleCandidateIds,
+        connectedCandidateId: subjectMatch.possibleCandidateIds[0],
+        connectedSourceFileCandidateId: subjectMatch.possibleCandidateIds[0],
+        identityReviewStatus: "needs_confirmation",
+        routingReason,
+        missingInfo: uniqueStrings(candidate.missingInfo, [
+          `Possible match to existing subject ${subjectMatch.possibleCandidateIds.join(", ")}. Identity needs confirmation before merge or attach.`,
+        ]),
+      };
+      return {
+        ...currentState,
+        candidates: [savedCandidate, ...currentState.candidates],
+        updatedAt: now,
+      };
+    }
+
+    savedCandidate = candidate;
+    return {
+      ...currentState,
+      candidates: [candidate, ...currentState.candidates],
+      updatedAt: now,
+    };
+  });
+
+  return savedCandidate;
 }
 
 export async function promoteCandidateToSourceFile(

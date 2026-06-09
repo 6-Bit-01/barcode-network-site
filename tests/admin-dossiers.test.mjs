@@ -303,6 +303,21 @@ async function bnlIngestPost(body, token = "test-bnl-ingest-token") {
   );
 }
 
+async function cloneCandidateForTest(candidate, overrides = {}) {
+  const state = await store.getDossierWorkflowState();
+  const clone = {
+    ...candidate,
+    id: overrides.id ?? `${candidate.id}-duplicate`,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+  await store.saveDossierWorkflowState({
+    ...state,
+    candidates: [clone, ...state.candidates],
+  });
+  return clone;
+}
 
 async function bnlArchivePost(body, token = "test-bnl-ingest-token") {
   return bnlArchiveIngestRoute.POST(
@@ -532,6 +547,93 @@ test("Source File open and retry call BNL refresh-now server-side with safe stat
   }
 });
 
+
+test("routing guard prevents exact duplicate manual candidates and preserves new info", async () => {
+  await resetWorkflowStore();
+
+  const first = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Hellcat", evidenceSummary: "First Hellcat signal." } })).json();
+  const second = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Hellcat", evidenceSummary: "Second Hellcat signal." } })).json();
+
+  assert.equal(second.candidate.id, first.candidate.id);
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.candidates.filter((candidate) => workflow.compactDossierSubjectName(candidate.name) === "hellcat").length, 1);
+  assert.match(state.candidates[0].sourceFileNotes.map((note) => note.text).join("\n"), /Second Hellcat signal/);
+});
+
+test("routing guard treats safe compact and case-insensitive subjects as one active record", async () => {
+  await resetWorkflowStore();
+
+  const first = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Hellcat" } })).json();
+  const lower = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "hellcat", evidenceSummary: "Lowercase signal." } })).json();
+  const spaced = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Hell Cat", evidenceSummary: "Compact-name signal." } })).json();
+
+  assert.equal(lower.candidate.id, first.candidate.id);
+  assert.equal(spaced.candidate.id, first.candidate.id);
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.candidates.length, 1);
+  assert.match(state.candidates[0].sourceFileNotes.map((note) => note.text).join("\n"), /Lowercase signal|Compact-name signal/);
+});
+
+test("routing guard prioritizes an active Source File over creating a new Candidate", async () => {
+  await resetWorkflowStore();
+
+  const created = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Hellcat" } })).json();
+  await authedPost({ action: "promoteCandidateToSourceFile", candidateId: created.candidate.id });
+  const routed = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Hellcat", evidenceSummary: "Source File follow-up." } })).json();
+
+  assert.equal(routed.candidate.id, created.candidate.id);
+  assert.equal(routed.candidate.status, "active_source_file");
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.candidates.length, 1);
+  assert.match(state.candidates[0].sourceFileNotes[0].text, /Source File follow-up/);
+});
+
+test("routing guard sends exact public dossier signals to Dossier Updates instead of Candidates", async () => {
+  await resetWorkflowStore();
+
+  const routed = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "6 Bit", evidenceSummary: "Existing dossier update signal." } })).json();
+
+  assert.equal(routed.candidate.status, "existing_dossier_update");
+  assert.equal(routed.candidate.existingDossierMatch.name, "6 Bit");
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.candidates.length, 1);
+  assert.equal(state.candidates[0].status, "existing_dossier_update");
+});
+
+test("routing guard reuses one connected uncertain identity review record", async () => {
+  await resetWorkflowStore();
+
+  const existing = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Hellcat" } })).json();
+  const possible = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Hellcat Annex", evidenceSummary: "Possible annex signal." } })).json();
+  const repeat = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Hellcat Annex", evidenceSummary: "Repeated possible annex signal." } })).json();
+
+  assert.notEqual(possible.candidate.id, existing.candidate.id);
+  assert.equal(repeat.candidate.id, possible.candidate.id);
+  assert.equal(repeat.candidate.identityReviewStatus, "needs_confirmation");
+  assert.deepEqual(repeat.candidate.possibleMatchCandidateIds, [existing.candidate.id]);
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.candidates.length, 2);
+  assert.match(state.candidates.find((candidate) => candidate.id === possible.candidate.id).sourceFileNotes[0].text, /Repeated possible annex signal/);
+});
+
+test("confirmed aliases are safe matches, but proposed/rejected/retired aliases are not", async () => {
+  await resetWorkflowStore();
+
+  const sourceFile = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Hellcat" } })).json();
+  await authedPost({ action: "promoteCandidateToSourceFile", candidateId: sourceFile.candidate.id });
+  const proposed = await store.addDossierIdentityLink({ candidateId: sourceFile.candidate.id, label: "Hell Kitty", type: "alias", visibility: "internal_only", source: "admin_manual", useForMatching: true });
+  await store.confirmDossierIdentityLink({ candidateId: sourceFile.candidate.id, identityLinkId: proposed.id });
+
+  const alias = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Hell Kitty", evidenceSummary: "Confirmed alias signal." } })).json();
+  assert.equal(alias.candidate.id, sourceFile.candidate.id);
+
+  const proposedOnly = await store.addDossierIdentityLink({ candidateId: sourceFile.candidate.id, label: "Hell Kitten", type: "alias", visibility: "internal_only", source: "admin_manual", useForMatching: true });
+  const proposedAlias = await (await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Hell Kitten" } })).json();
+  assert.notEqual(proposedAlias.candidate.id, sourceFile.candidate.id);
+  assert.equal(proposedAlias.candidate.possibleMatchCandidateIds, undefined);
+  await store.rejectDossierIdentityLink({ candidateId: sourceFile.candidate.id, identityLinkId: proposedOnly.id });
+});
+
 test("Source File immediate refresh timeout/unavailable and stale open requests do not trap retries or cross-file matching", async () => {
   await resetWorkflowStore();
   process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL = "https://bnl.example.test/internal/source-files/refresh-now";
@@ -554,7 +656,7 @@ test("Source File immediate refresh timeout/unavailable and stale open requests 
     })).json();
     const second = await (await authedPost({
       action: "createManualCandidate",
-      input: { ...manualCandidateInput, name: "Candidate Match Alpha" },
+      input: { ...manualCandidateInput, name: "Candidate Match Beta" },
     })).json();
     await authedPost({ action: "promoteCandidateToSourceFile", candidateId: first.candidate.id });
     await authedPost({ action: "promoteCandidateToSourceFile", candidateId: second.candidate.id });
@@ -2349,16 +2451,12 @@ test("workflow duplicate group detection returns deterministic high-risk groups"
       input: { ...manualCandidateInput, name: "Signal Witch" },
     })
   ).json();
-  const second = await (
-    await authedPost({
-      action: "createManualCandidate",
-      input: {
-        ...manualCandidateInput,
-        name: "Signal Witch",
-        reason: "Queue/session context.",
-      },
-    })
-  ).json();
+  const second = {
+    candidate: await cloneCandidateForTest(first.candidate, {
+      id: `${first.candidate.id}-queue`,
+      reason: "Queue/session context.",
+    }),
+  };
 
   const payload = await (await authedGet()).json();
   assert.equal(payload.duplicateGroups.length, 1);
@@ -2379,12 +2477,12 @@ test("workflow duplicate group detection catches compact near duplicates", async
       input: { ...manualCandidateInput, name: "Signal Witch" },
     })
   ).json();
-  const second = await (
-    await authedPost({
-      action: "createManualCandidate",
-      input: { ...manualCandidateInput, name: "signalwitch" },
-    })
-  ).json();
+  const second = {
+    candidate: await cloneCandidateForTest(first.candidate, {
+      id: `${first.candidate.id}-compact`,
+      name: "signalwitch",
+    }),
+  };
 
   const payload = await (await authedGet()).json();
   assert.equal(payload.duplicateGroups.length, 1);
@@ -2426,22 +2524,18 @@ test("mergeCandidates preserves sources and unions candidate review fields", asy
       },
     })
   ).json();
-  const second = await (
-    await authedPost({
-      action: "createManualCandidate",
-      input: {
-        ...manualCandidateInput,
-        name: "Signal Witch",
-        reason: "Queue/session context.",
-        knownFacts: ["Fact B", "Fact A"],
-        missingInfo: ["Missing B"],
-        doNotSay: ["Do not say B"],
-        publicSafetyNotes: ["Safety B"],
-        recommendedTags: ["queue"],
-        proposedTags: ["draft-b"],
-      },
-    })
-  ).json();
+  const second = {
+    candidate: await cloneCandidateForTest(first.candidate, {
+      id: `${first.candidate.id}-merge`,
+      reason: "Queue/session context.",
+      knownFacts: ["Fact B", "Fact A"],
+      missingInfo: ["Missing B"],
+      doNotSay: ["Do not say B"],
+      publicSafetyNotes: ["Safety B"],
+      recommendedTags: ["queue"],
+      proposedTags: ["draft-b"],
+    }),
+  };
 
   const response = await authedPost({
     action: "mergeCandidates",
@@ -2501,19 +2595,15 @@ test("mergeCandidates prefers primary taxonomy and fills missing taxonomy from s
       },
     })
   ).json();
-  const second = await (
-    await authedPost({
-      action: "createManualCandidate",
-      input: {
-        ...manualCandidateInput,
-        name: "Taxonomy Merge Subject",
-        recommendedCategory: "Entity",
-        recommendedKind: "radio_entity",
-        recommendedEcosystemLane: "community_artist",
-        recommendedIdentityAuthority: "community_owned",
-      },
-    })
-  ).json();
+  const second = {
+    candidate: await cloneCandidateForTest(first.candidate, {
+      id: `${first.candidate.id}-taxonomy`,
+      recommendedCategory: "Entity",
+      recommendedKind: "radio_entity",
+      recommendedEcosystemLane: "community_artist",
+      recommendedIdentityAuthority: "community_owned",
+    }),
+  };
 
   const payload = await (
     await authedPost({
@@ -2539,16 +2629,12 @@ test("mergeCandidates can create/update a master draft and supersede secondary d
       input: { ...manualCandidateInput, name: "Draft Merge Subject" },
     })
   ).json();
-  const second = await (
-    await authedPost({
-      action: "createManualCandidate",
-      input: {
-        ...manualCandidateInput,
-        name: "Draft Merge Subject",
-        recommendedKind: "radio_entity",
-      },
-    })
-  ).json();
+  const second = {
+    candidate: await cloneCandidateForTest(first.candidate, {
+      id: `${first.candidate.id}-draft`,
+      recommendedKind: "radio_entity",
+    }),
+  };
   const firstDraft = await (
     await authedPost({
       action: "createDraftFromCandidate",
@@ -3280,10 +3366,10 @@ test("confirmed alias match allows attach and blocks duplicate conversion", asyn
     action: "convertRecommendationToCandidate",
     recommendationId: secondRec.recommendation.id,
   });
-  assert.equal(convertResponse.status, 400);
-  const errorPayload = await convertResponse.json();
-  assert.equal(errorPayload.code, "recommendation_existing_source_file_match");
-  assert.equal(errorPayload.exactMatchKind, "confirmed_alias");
+  assert.equal(convertResponse.status, 200);
+  const routedPayload = await convertResponse.json();
+  assert.equal(routedPayload.recommendation.status, "attached_to_source_file");
+  assert.equal(routedPayload.recommendation.targetCandidateId, candidateId);
 });
 
 test("unapplied source notes count after draft creation without mutating draft fields", async () => {
@@ -3656,7 +3742,7 @@ test("arbitrary recommendation attach is blocked by same-subject guardrails", as
     createSourceNote: true,
   });
   assert.equal(response.status, 400);
-  assert.equal((await response.json()).code, "recommendation_subject_mismatch");
+  assert.equal((await response.json()).code, "candidate_not_attachable");
 
   const finalPayload = await (await authedGet()).json();
   const macModem = finalPayload.candidates.find(
@@ -3743,7 +3829,7 @@ test("pre-targeted recommendation cannot attach to a different source file", asy
     createSourceNote: true,
   });
   assert.equal(response.status, 400);
-  assert.equal((await response.json()).code, "recommendation_subject_mismatch");
+  assert.equal((await response.json()).code, "candidate_not_attachable");
 
   const finalPayload = await (await authedGet()).json();
   const other = finalPayload.candidates.find(
@@ -3781,11 +3867,10 @@ test("pre-targeted recommendation cannot convert to duplicate source file", asyn
     action: "convertRecommendationToCandidate",
     recommendationId: recPayload.recommendation.id,
   });
-  assert.equal(response.status, 400);
-  const errorPayload = await response.json();
-  assert.equal(errorPayload.code, "recommendation_existing_source_file_match");
-  assert.equal(errorPayload.exactCandidateId, targetPayload.candidate.id);
-  assert.equal(errorPayload.exactMatchKind, "pre_targeted");
+  assert.equal(response.status, 200);
+  const routedPayload = await response.json();
+  assert.equal(routedPayload.recommendation.targetCandidateId, targetPayload.candidate.id);
+  assert.equal(routedPayload.candidates.length, 1);
 
   const finalPayload = await (await authedGet()).json();
   assert.equal(finalPayload.candidates.length, 1);
@@ -3826,7 +3911,7 @@ test("pre-targeted recommendation target must be active", async () => {
   assert.equal((await response.json()).code, "candidate_not_attachable");
 });
 
-test("convert recommendation is blocked when exact source file match exists", async () => {
+test("convert recommendation routes when exact workflow match exists", async () => {
   await resetWorkflowStore();
   await authedPost({
     action: "createManualCandidate",
@@ -3848,10 +3933,10 @@ test("convert recommendation is blocked when exact source file match exists", as
     action: "convertRecommendationToCandidate",
     recommendationId: recPayload.recommendation.id,
   });
-  assert.equal(response.status, 400);
-  const errorPayload = await response.json();
-  assert.equal(errorPayload.code, "recommendation_existing_source_file_match");
-  assert.ok(errorPayload.exactCandidateId);
+  assert.equal(response.status, 200);
+  const routedPayload = await response.json();
+  assert.equal(routedPayload.recommendation.status, "attached_to_source_file");
+  assert.ok(routedPayload.recommendation.targetCandidateId);
 
   const finalPayload = await (await authedGet()).json();
   assert.equal(finalPayload.candidates.length, 1);

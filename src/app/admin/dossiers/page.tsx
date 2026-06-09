@@ -16,7 +16,6 @@ import {
   buildSourceFileNotifications,
   isLiveDossierUpdateRecommendation,
   type DossierWorkflowNotification,
-  type DossierWorkflowNotificationTone,
 } from "@/lib/dossier-workflow-notifications";
 
 type WorkflowPayload = {
@@ -172,45 +171,47 @@ function StatusPill({ children }: { children: React.ReactNode }) {
   );
 }
 
-const notificationToneClass: Record<DossierWorkflowNotificationTone, string> = {
-  info: "border-accent/50 bg-accent/10 text-accent",
-  warning: "border-yellow-400/50 bg-yellow-400/10 text-yellow-200",
-  success: "border-emerald-400/50 bg-emerald-400/10 text-emerald-200",
-  danger: "border-red-400/50 bg-red-400/10 text-red-200",
-  muted: "border-border bg-background/40 text-muted",
-};
+function uniqueStatusLabels(
+  notifications: DossierWorkflowNotification[],
+  ids: string[],
+  fallback: string,
+) {
+  const idSet = new Set(ids);
+  const labels = notifications
+    .filter((notification) => idSet.has(notification.id))
+    .map((notification) => notification.label);
+  return Array.from(new Set(labels.length > 0 ? labels : [fallback]));
+}
 
-function NotificationChips({
-  notifications,
-}: {
-  notifications: DossierWorkflowNotification[];
-}) {
-  if (notifications.length === 0) return null;
+function RowStatusList({ labels }: { labels: string[] }) {
   return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
-      {notifications.map((notification) => (
+    <div className="flex flex-col gap-1.5">
+      {labels.map((label) => (
         <span
-          key={notification.id}
-          title={notification.reason}
-          className={`inline-flex border px-2 py-1 text-[0.62rem] uppercase tracking-widest ${notificationToneClass[notification.tone]}`}
+          key={label}
+          className="inline-flex w-fit border border-border bg-background/40 px-2 py-1 text-[0.65rem] uppercase tracking-widest text-muted"
         >
-          {notification.label}
+          {label}
         </span>
       ))}
     </div>
   );
 }
 
-function NotificationActions({
+function RowActions({
   notifications,
-  fallbackHref,
-  fallbackLabel,
+  primaryHref,
+  primaryLabel,
 }: {
   notifications: DossierWorkflowNotification[];
-  fallbackHref: string;
-  fallbackLabel: string;
+  primaryHref: string;
+  primaryLabel: string;
 }) {
   const actionByKey = new Map<string, { label: string; href: string }>();
+  actionByKey.set(`${primaryLabel}:${primaryHref}`, {
+    label: primaryLabel,
+    href: primaryHref,
+  });
   for (const notification of notifications) {
     if (!notification.actionLabel || !notification.actionHref) continue;
     actionByKey.set(`${notification.actionLabel}:${notification.actionHref}`, {
@@ -218,16 +219,10 @@ function NotificationActions({
       href: notification.actionHref,
     });
   }
-  if (actionByKey.size === 0) {
-    actionByKey.set(`${fallbackLabel}:${fallbackHref}`, {
-      label: fallbackLabel,
-      href: fallbackHref,
-    });
-  }
   return (
     <div className="flex flex-wrap gap-2">
       {Array.from(actionByKey.values())
-        .slice(0, 3)
+        .slice(0, 4)
         .map((action) => (
           <Link
             key={`${action.label}:${action.href}`}
@@ -241,82 +236,12 @@ function NotificationActions({
   );
 }
 
-function identityBadgeForCandidate(candidate: DossierCandidate) {
-  const identityLinks = candidate.identityLinks ?? [];
-  const confirmed = identityLinks.filter(
+function confirmedAliasStatus(candidate: DossierCandidate) {
+  return (candidate.identityLinks ?? []).some(
     (link) => link.status === "confirmed",
-  ).length;
-  const pending = identityLinks.filter(
-    (link) => link.status === "proposed",
-  ).length;
-
-  if (candidate.identityReviewStatus === "needs_confirmation") {
-    return candidate.possibleMatchCandidateIds?.length
-      ? `Possible match to ${candidate.possibleMatchCandidateIds.length} subject${
-          candidate.possibleMatchCandidateIds.length === 1 ? "" : "s"
-        }`
-      : "Identity: Needs Confirmation";
-  }
-  if (pending > 0) {
-    return "Identity: Needs Confirmation";
-  }
-  if (confirmed > 0) {
-    return "Identity: Connected to Existing Subject";
-  }
-  if (candidate.existingDossierMatch) {
-    return "Existing Dossier Match";
-  }
-  if (
-    candidate.duplicateRisk === "medium" ||
-    candidate.duplicateRisk === "high"
-  ) {
-    return "Possible Duplicate";
-  }
-  if (candidate.duplicateRisk === "low") {
-    return "Identity: Possible Match";
-  }
-  return "Identity: Clear";
-}
-
-function identityBadgeForRecommendation(
-  recommendation: DossierRecommendation,
-  matchState: { state: string; nextAction: string },
-) {
-  if (recommendation.identityReviewStatus === "needs_confirmation") {
-    return recommendation.possibleMatchCandidateIds?.length
-      ? `Possible match to ${recommendation.possibleMatchCandidateIds.length} subject${
-          recommendation.possibleMatchCandidateIds.length === 1 ? "" : "s"
-        }`
-      : "Identity: Needs Confirmation";
-  }
-  if (recommendation.type === "identity_link") {
-    return "Identity: Needs Confirmation";
-  }
-  if (matchState.state === "possible_identity_link") {
-    return "Identity: Possible Match";
-  }
-  if (matchState.state === "existing_candidate") {
-    return "Identity: Connected to Existing Subject";
-  }
-  return "Identity: Clear";
-}
-
-function dossierStatusForCandidate(
-  candidate: DossierCandidate,
-  draft?: DossierDraft,
-) {
-  if (draft?.status === "ready_for_owner_review")
-    return "Ready for Owner Review";
-  if (draft?.status === "owner_changes_requested")
-    return "Owner changes requested";
-  if (draft?.status === "owner_approved") return "Approved / publish later";
-  if (draft) return "Draft started";
-  if (
-    (candidate.sourceFileNotes ?? []).some((note) => note.status === "active")
-  ) {
-    return "Needs update from Source File";
-  }
-  return "No Proposed Dossier";
+  )
+    ? "Confirmed aliases"
+    : "No known match";
 }
 
 function firstListValue(values?: string[]) {
@@ -331,16 +256,12 @@ function recommendationActionLabel() {
   return "Review Candidate";
 }
 
-function dossierUpdateActionLabel() {
-  return "Review Update";
-}
-
 function sourceFileActionLabel() {
   return "Open Source File";
 }
 
 function archiveActionLabel() {
-  return "Review Record";
+  return "Open Source File";
 }
 
 function DashboardCard({
@@ -997,16 +918,14 @@ export default function DossierControlCenterPage() {
                 <thead className="text-xs uppercase tracking-widest text-foreground">
                   <tr>
                     <th className="py-2 pr-3">Subject</th>
-                    <th className="py-2 pr-3">Why BNL noticed</th>
-                    <th className="py-2 pr-3">Strength / confidence</th>
-                    <th className="py-2 pr-3">Identity status</th>
-                    <th className="py-2 pr-3">Suggested next step</th>
-                    <th className="py-2 pr-3">Action</th>
+                    <th className="py-2 pr-3">Signal</th>
+                    <th className="py-2 pr-3">Identity / Match</th>
+                    <th className="py-2 pr-3">Dossier / Source Status</th>
+                    <th className="py-2 pr-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {activeCandidateRecommendations.map((recommendation) => {
-                    const matchState = recommendationMatchState(recommendation);
                     const notifications = buildRecommendationNotifications(
                       recommendation,
                       notificationContext,
@@ -1018,7 +937,6 @@ export default function DossierControlCenterPage() {
                       >
                         <td className="py-3 pr-3 font-semibold text-foreground">
                           {recommendation.subjectName}
-                          <NotificationChips notifications={notifications} />
                         </td>
                         <td className="py-3 pr-3">
                           {recommendation.reason ||
@@ -1026,26 +944,31 @@ export default function DossierControlCenterPage() {
                             recommendationProvenance(recommendation)}
                         </td>
                         <td className="py-3 pr-3">
-                          {recommendation.confidence ?? "unset"}
-                        </td>
-                        <td className="py-3 pr-3">
-                          <StatusPill>
-                            {identityBadgeForRecommendation(
-                              recommendation,
-                              matchState,
+                          <RowStatusList
+                            labels={uniqueStatusLabels(
+                              notifications,
+                              [
+                                "possible-identity-link",
+                                "existing-source-file-match",
+                              ],
+                              "No known match",
                             )}
-                          </StatusPill>
+                          />
                         </td>
                         <td className="py-3 pr-3">
-                          {recommendation.routingReason ||
-                            recommendation.suggestedAction ||
-                            matchState.nextAction}
+                          <RowStatusList
+                            labels={uniqueStatusLabels(
+                              notifications,
+                              ["existing-live-dossier-match"],
+                              "No Proposed Dossier",
+                            )}
+                          />
                         </td>
                         <td className="py-3 pr-3">
-                          <NotificationActions
+                          <RowActions
                             notifications={notifications}
-                            fallbackHref={`/admin/dossiers/recommendations/${recommendation.id}`}
-                            fallbackLabel={recommendationActionLabel()}
+                            primaryHref={`/admin/dossiers/recommendations/${recommendation.id}`}
+                            primaryLabel={recommendationActionLabel()}
                           />
                         </td>
                       </tr>
@@ -1063,7 +986,6 @@ export default function DossierControlCenterPage() {
                       >
                         <td className="py-3 pr-3 font-semibold text-foreground">
                           {candidate.name}
-                          <NotificationChips notifications={notifications} />
                         </td>
                         <td className="py-3 pr-3">
                           {candidate.whyNow ||
@@ -1071,23 +993,34 @@ export default function DossierControlCenterPage() {
                             candidateProvenance(candidate)}
                         </td>
                         <td className="py-3 pr-3">
-                          {candidate.confidence ?? candidate.tier} / score{" "}
-                          {candidate.score}
+                          <RowStatusList
+                            labels={uniqueStatusLabels(
+                              notifications,
+                              [
+                                "possible-identity-link",
+                                "existing-source-file-match",
+                              ],
+                              confirmedAliasStatus(candidate),
+                            )}
+                          />
                         </td>
                         <td className="py-3 pr-3">
-                          <StatusPill>
-                            {identityBadgeForCandidate(candidate)}
-                          </StatusPill>
+                          <RowStatusList
+                            labels={uniqueStatusLabels(
+                              notifications,
+                              [
+                                "existing-live-dossier-match",
+                                "bnl-signal-attached",
+                              ],
+                              "No Proposed Dossier",
+                            )}
+                          />
                         </td>
                         <td className="py-3 pr-3">
-                          {candidate.routingReason ||
-                            "Promote to Source File or archive from the detail page."}
-                        </td>
-                        <td className="py-3 pr-3">
-                          <NotificationActions
+                          <RowActions
                             notifications={notifications}
-                            fallbackHref={`/admin/dossiers/candidates/${candidate.id}`}
-                            fallbackLabel={candidateActionLabel()}
+                            primaryHref={`/admin/dossiers/candidates/${candidate.id}`}
+                            primaryLabel={candidateActionLabel()}
                           />
                         </td>
                       </tr>
@@ -1114,26 +1047,14 @@ export default function DossierControlCenterPage() {
                 <thead className="text-xs uppercase tracking-widest text-foreground">
                   <tr>
                     <th className="py-2 pr-3">Subject</th>
-                    <th className="py-2 pr-3">
-                      Why they matter / engagement summary
-                    </th>
-                    <th className="py-2 pr-3">Source strength</th>
-                    <th className="py-2 pr-3">Missing info</th>
-                    <th className="py-2 pr-3">Dossier status</th>
-                    <th className="py-2 pr-3">Identity status</th>
-                    <th className="py-2 pr-3">Last updated</th>
-                    <th className="py-2 pr-3">Action</th>
+                    <th className="py-2 pr-3">Source File Status</th>
+                    <th className="py-2 pr-3">Dossier Status</th>
+                    <th className="py-2 pr-3">Identity / Match</th>
+                    <th className="py-2 pr-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sourceFileRows.map((candidate) => {
-                    const draft = linkedActiveDraftFor(candidate, drafts);
-                    const metrics = sourceFileMetrics.get(candidate.id);
-                    const dossierStatus = dossierStatusForCandidate(
-                      candidate,
-                      draft,
-                    );
-                    const actionLabel = sourceFileActionLabel();
                     const actionHref = `/admin/dossiers/candidates/${candidate.id}`;
                     const notifications = buildSourceFileNotifications(
                       candidate,
@@ -1146,38 +1067,53 @@ export default function DossierControlCenterPage() {
                       >
                         <td className="py-3 pr-3 font-semibold text-foreground">
                           {candidate.name}
-                          <NotificationChips notifications={notifications} />
                         </td>
                         <td className="py-3 pr-3">
-                          {candidate.sourceFileSummary?.summaryText ||
-                            candidate.evidenceSummary ||
-                            candidate.reason ||
-                            "—"}
+                          <RowStatusList
+                            labels={uniqueStatusLabels(
+                              notifications,
+                              [
+                                "system-record",
+                                "bnl-archive-available",
+                                "missing-info",
+                                "new-bnl-signal",
+                              ],
+                              "Active Source File",
+                            )}
+                          />
                         </td>
                         <td className="py-3 pr-3">
-                          {metrics?.sourceDepth ??
-                            candidate.confidence ??
-                            "Low"}
+                          <RowStatusList
+                            labels={uniqueStatusLabels(
+                              notifications,
+                              [
+                                "live-dossier-exists",
+                                "owner-review-ready",
+                                "draft-in-progress",
+                                "draft-revision",
+                              ],
+                              "No Proposed Dossier",
+                            )}
+                          />
                         </td>
                         <td className="py-3 pr-3">
-                          {(candidate.missingInfo ?? []).length > 0
-                            ? candidate.missingInfo?.join("; ")
-                            : "—"}
+                          <RowStatusList
+                            labels={uniqueStatusLabels(
+                              notifications,
+                              [
+                                "possible-identity-link",
+                                "identity-review-pending",
+                                "existing-source-file-match",
+                              ],
+                              confirmedAliasStatus(candidate),
+                            )}
+                          />
                         </td>
-                        <td className="py-3 pr-3">{dossierStatus}</td>
                         <td className="py-3 pr-3">
-                          <StatusPill>
-                            {identityBadgeForCandidate(candidate)}
-                          </StatusPill>
-                        </td>
-                        <td className="py-3 pr-3">
-                          {formatDate(candidate.updatedAt)}
-                        </td>
-                        <td className="py-3 pr-3">
-                          <NotificationActions
+                          <RowActions
                             notifications={notifications}
-                            fallbackHref={actionHref}
-                            fallbackLabel={actionLabel}
+                            primaryHref={actionHref}
+                            primaryLabel={sourceFileActionLabel()}
                           />
                         </td>
                       </tr>

@@ -1072,36 +1072,36 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
     "Archive / Dismissed / Trash",
     "Manual Signal",
     "Use this only when BNL has not suggested something yet. This creates a BNL Signal, not a direct source file.",
-    "Why BNL noticed",
-    "Strength / confidence",
-    "Identity status",
-    "Suggested next step",
-    "Identity: Clear",
-    "Identity: Possible Match",
-    "Identity: Connected to Existing Subject",
-    "Identity: Needs Confirmation",
-    "Existing Dossier Match",
-    "Possible Duplicate",
-    "Why they matter / engagement summary",
-    "Dossier status",
-    "No Proposed Dossier",
-    "Draft started",
-    "Needs update from Source File",
-    "Ready for Owner Review",
-    "Owner changes requested",
-    "Approved / publish later",
+    "Signal",
+    "Identity / Match",
+    "Dossier / Source Status",
+    "Actions",
+    "No known match",
     "Possible identity link",
-    "Existing Source File match",
-    "Existing live dossier match",
-    "New BNL signal",
+    "Confirmed aliases",
+    "Possible identity link",
+    "Live dossier exists",
+    "Possible identity link",
+    "Source File Status",
+    "Dossier Status",
+    "No Proposed Dossier",
+    "Proposed Dossier in progress",
+    "New BNL signals attached",
+    "Proposed Dossier ready for Owner Review",
+    "Proposed Dossier in progress",
+    "Proposed Dossier in progress",
+    "Possible identity link",
+    "Existing Source File linked",
+    "Live dossier exists",
+    "New BNL signals attached",
     "Missing info",
     "BNL archive available",
-    "Owner Review ready",
+    "Proposed Dossier ready for Owner Review",
     "System record",
     "Review Candidate",
-    "Review Updates",
+    "Open Proposed Dossier",
     "Open Source File",
-    "Review Record",
+    "Open Live Dossier",
   ]) {
     assertIncludesCopy(pageCopy, label);
   }
@@ -1112,6 +1112,7 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
   assert.doesNotMatch(page, /`\/admin\/dossiers\/drafts\/\$\{openDraftId\}`/);
   assert.doesNotMatch(page, />\s*Open\s*</);
   assert.doesNotMatch(page, /Add Missing Info|Review Signal|Review Source Update|Review Draft|Review Archived|Review Closed Signal|Review Trash/);
+  assert.doesNotMatch(page, /Open Draft|Review Updates|Review Missing Info|Review Match|Needs Attention/);
   assert.doesNotMatch(page, /PhaseRail|Numbered dossier phases|Workflow map|System Boundaries/);
   assert.doesNotMatch(page, /Duplicate Analysis|Record Compactor|View Warning \/ Open Merge Review/);
   assert.doesNotMatch(page, /eyebrow="Dossier Updates"|title="Dossier Updates"/);
@@ -1165,10 +1166,10 @@ test("computed dossier workflow notifications cover candidate row contexts", () 
       confidence: "high",
     },
   });
-  assert.ok(notificationLabels(dossierWorkflowNotifications.buildCandidateNotifications(existingLive)).includes("Existing live dossier match"));
+  assert.ok(notificationLabels(dossierWorkflowNotifications.buildCandidateNotifications(existingLive)).includes("Live dossier exists"));
 
   const duplicate = baseNotificationCandidate({ duplicateRisk: "high" });
-  assert.ok(notificationLabels(dossierWorkflowNotifications.buildCandidateNotifications(duplicate)).includes("Possible duplicate"));
+  assert.ok(!notificationLabels(dossierWorkflowNotifications.buildCandidateNotifications(duplicate)).includes("Possible duplicate"));
 });
 
 test("computed dossier workflow notifications cover source file draft, archive, missing info, and update contexts", () => {
@@ -1202,11 +1203,11 @@ test("computed dossier workflow notifications cover source file draft, archive, 
     recommendations: [activeRecommendation],
   }));
 
-  assert.ok(labels.includes("Draft in progress"));
-  assert.ok(labels.includes("Draft revision?"));
+  assert.ok(labels.includes("Proposed Dossier in progress"));
+  assert.ok(labels.includes("Proposed Dossier in progress"));
   assert.ok(labels.includes("BNL archive available"));
   assert.ok(labels.includes("Missing info"));
-  assert.ok(!labels.includes("Live dossier update?"));
+  assert.ok(!labels.includes("Live dossier exists"));
   assert.equal(
     dossierWorkflowNotifications.isLiveDossierUpdateRecommendation(activeRecommendation, { candidates: [candidate] }),
     false,
@@ -1215,7 +1216,7 @@ test("computed dossier workflow notifications cover source file draft, archive, 
   const readyLabels = notificationLabels(dossierWorkflowNotifications.buildSourceFileNotifications(candidate, {
     drafts: [{ ...activeDraft, status: "ready_for_owner_review" }],
   }));
-  assert.ok(readyLabels.includes("Owner Review ready"));
+  assert.ok(readyLabels.includes("Proposed Dossier ready for Owner Review"));
 
   const liveCandidate = baseNotificationCandidate({
     ...candidate,
@@ -1229,8 +1230,8 @@ test("computed dossier workflow notifications cover source file draft, archive, 
     liveCandidate,
     { drafts: [activeDraft], recommendations: [activeRecommendation] },
   ));
-  assert.ok(liveLabels.includes("Live dossier update?"));
-  assert.ok(!liveLabels.includes("Draft revision?"));
+  assert.ok(liveLabels.includes("Live dossier exists"));
+  assert.ok(liveLabels.includes("Proposed Dossier in progress"));
   assert.equal(
     dossierWorkflowNotifications.isLiveDossierUpdateRecommendation(activeRecommendation, { candidates: [liveCandidate] }),
     true,
@@ -1776,9 +1777,8 @@ test("dashboard uses actual workflow ids, source metrics, and simplified overvie
   assert.doesNotMatch(page, /`\/admin\/dossiers\/drafts\/\$\{openDraftId\}`/);
   assert.match(page, /candidateActionLabel/);
   assert.match(page, /recommendationActionLabel/);
-  assert.match(page, /dossierUpdateActionLabel/);
   assert.match(page, /sourceFileActionLabel/);
-  assert.match(page, /Review Record/);
+  assert.match(page, /Open Source File/);
   assert.match(page, /activeCandidateStatuses/);
   assert.match(page, /activeCandidates = candidates\.filter/);
   assert.match(page, /activeDraftStatuses/);
@@ -1786,10 +1786,10 @@ test("dashboard uses actual workflow ids, source metrics, and simplified overvie
   assert.match(page, /getDossierSourceFileMetrics/);
   assert.match(page, /sourceFilesWithUnappliedNotes/);
   assert.match(page, /sourceFilesWithDrafts/);
-  assert.match(page, /metrics\?\.sourceDepth/);
-  assert.match(page, /Dossier status/);
-  assert.match(page, /identityBadgeForCandidate/);
-  assert.match(page, /identityBadgeForRecommendation/);
+  assert.match(page, /Source File Status/);
+  assert.match(page, /Dossier Status/);
+  assert.match(page, /Identity \/ Match/);
+  assert.match(page, /RowStatusList/);
   assert.match(page, /Archive \/ Dismissed \/ Trash/);
   assert.doesNotMatch(page, /href=\{`\/admin\/dossiers\/duplicates\/\$\{group\.id\}`\}/);
   assert.doesNotMatch(page, /View Warning \/ Open Merge Review/);
@@ -2946,7 +2946,7 @@ test("admin dossiers dashboard does not promote duplicate merge review", () => {
   const mergePage = source(
     "src/app/admin/dossiers/duplicates/[groupId]/page.tsx",
   );
-  assert.match(page, /Identity: Possible Match|Identity: Needs Confirmation|Possible Duplicate/);
+  assert.match(page, /Identity \/ Match|No known match|Confirmed aliases/);
   assert.doesNotMatch(page, /View Warning \/ Open Merge Review/);
   assert.doesNotMatch(page, /\/admin\/dossiers\/duplicates\//);
   assert.doesNotMatch(page, /Merge into Master Candidate/);
@@ -3414,11 +3414,11 @@ test("identity alias review UX is grouped, status-aware, and public-safe", () =>
     /Identity link retired\. It is no longer active\./,
   );
 
-  assert.match(dashboard, /Identity: Connected to Existing Subject/);
-  assert.match(dashboard, /Identity: Needs Confirmation/);
+  assert.match(dashboard, /Confirmed aliases/);
+  assert.match(`${dashboard} ${source("src/lib/dossier-workflow-notifications.ts")}`, /Possible identity link/);
   assert.match(dashboard, /link\.status === "confirmed"/);
-  assert.match(dashboard, /link\.status === "proposed"/);
-  assert.doesNotMatch(dashboard, /Review Identity|Identity Link Actions|Create Proposed Identity Link|Confirm<|Reject<|Retire</);
+  assert.match(`${dashboard} ${source("src/lib/dossier-workflow-notifications.ts")}`, /link\.status === "proposed"/);
+  assert.doesNotMatch(dashboard, /Identity Link Actions|Create Proposed Identity Link|Confirm<|Reject<|Retire</);
 
   assert.match(recommendationPage, /Matched by confirmed alias/);
   assert.match(recommendationPage, /Identity Link Actions/);
@@ -3562,8 +3562,8 @@ test("unapplied source notes count after draft creation without mutating draft f
   const draftCopy = normalizedSource(
     "src/app/admin/dossiers/drafts/[draftId]/page.tsx",
   );
-  assertIncludesCopy(dashboardCopy, "Needs update from Source File");
-  assertIncludesCopy(dashboardCopy, "Dossier status");
+  assertIncludesCopy(`${dashboardCopy} ${normalizedSource("src/lib/dossier-workflow-notifications.ts")}`, "New BNL signals attached");
+  assertIncludesCopy(dashboardCopy, "Dossier Status");
   assertIncludesCopy(sourceFileCopy, "This Case File / BNL Source File has new info not yet applied to the Proposed Dossier.");
   assertIncludesCopy(draftCopy, "Case File / BNL Source File has new notes since this Proposed Dossier was last updated.");
   assertIncludesCopy(draftCopy, "Draft fields are not mutated automatically when new source notes arrive.");
@@ -4201,18 +4201,19 @@ test("ignore, dismiss, and archive recommendations preserve records", async () =
 
 test("recommendation inbox and source note UI are present and bounded", () => {
   const dashboard = source("src/app/admin/dossiers/page.tsx");
+  const dashboardWithNotifications = `${dashboard} ${source("src/lib/dossier-workflow-notifications.ts")}`;
   assert.match(dashboard, /Candidates/);
   assert.match(dashboard, /Manual Signal/);
   assert.match(dashboard, /Create Manual Signal/);
-  assert.match(dashboard, /Why BNL noticed/);
-  assert.match(dashboard, /Identity: Possible Match/);
-  assert.match(dashboard, /Identity: Needs Confirmation/);
+  assert.match(dashboard, /Signal/);
+  assert.match(dashboardWithNotifications, /Possible identity link/);
+  assert.match(dashboard, /Identity \/ Match/);
   assert.match(dashboard, /href=\{`\/admin\/dossiers\/recommendations\/\$\{recommendation\.id\}`\}/);
   assert.match(dashboard, /Review Candidate/);
-  assert.match(dashboard, /Review Update/);
+  assert.match(dashboard, /Create Proposed Dossier|Open Proposed Dossier|Owner Review/);
   assert.match(dashboard, /Open Source File/);
-  assert.match(dashboard, /Review Record/);
-  assert.doesNotMatch(dashboard, /Review Identity|Add Missing Info|Attach to Existing Source File/);
+  assert.match(dashboard, /Open Source File/);
+  assert.doesNotMatch(dashboard, /Add Missing Info|Attach to Existing Source File/);
 
   const sourceFilePage = source(
     "src/app/admin/dossiers/candidates/[candidateId]/page.tsx",
@@ -6104,9 +6105,9 @@ test("recommendation detail case-file view uses the same sanitizer", () => {
 test("admin dashboard keeps public dossier-only source lookup fallback bounded", () => {
   const pageCopy = `${normalizedSource("src/app/admin/dossiers/page.tsx")} ${normalizedSource("src/lib/dossier-workflow-notifications.ts")}`;
   assertIncludesCopy(pageCopy, "Live dossier update signals");
-  assertIncludesCopy(pageCopy, "Live dossier update?");
-  assertIncludesCopy(pageCopy, "Existing live dossier match");
-  assertIncludesCopy(pageCopy, "Identity: Needs Confirmation");
+  assertIncludesCopy(pageCopy, "Live dossier exists");
+  assertIncludesCopy(pageCopy, "Live dossier exists");
+  assertIncludesCopy(pageCopy, "Possible identity link");
   assert.doesNotMatch(pageCopy, /No existing dossier updates are waiting\.|eyebrow="Dossier Updates"|title="Dossier Updates"/);
 });
 

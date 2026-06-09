@@ -188,7 +188,7 @@ export function buildCandidateNotifications(
       label: "Possible identity link",
       tone: "warning",
       reason: "Review before confirming aliases or routing future signals.",
-      actionLabel: "Review Match",
+      actionLabel: "Review Identity Links",
       actionHref: candidateHref,
     });
   }
@@ -196,9 +196,9 @@ export function buildCandidateNotifications(
   if (candidate.connectedSourceFileCandidateId) {
     pushUnique(notifications, {
       id: "existing-source-file-match",
-      label: "Existing Source File match",
+      label: "Existing Source File linked",
       tone: "info",
-      actionLabel: "Open Matched Source File",
+      actionLabel: "Open Source File",
       actionHref: `/admin/dossiers/candidates/${candidate.connectedSourceFileCandidateId}`,
     });
   }
@@ -206,40 +206,11 @@ export function buildCandidateNotifications(
   if (hasLiveDossierMatch(candidate, context.publicDossiers)) {
     pushUnique(notifications, {
       id: "existing-live-dossier-match",
-      label: "Existing live dossier match",
+      label: "Live dossier exists",
       tone: "info",
-      actionLabel: "Review as Live Dossier Update",
-      actionHref: candidateHref,
-    });
-  }
-
-  if (
-    candidate.duplicateRisk === "medium" ||
-    candidate.duplicateRisk === "high" ||
-    hasActiveDuplicateGroup(
-      candidate,
-      context.candidates,
-      context.duplicateGroups,
-    )
-  ) {
-    pushUnique(notifications, {
-      id: "possible-duplicate",
-      label: "Possible duplicate",
-      tone: candidate.duplicateRisk === "high" ? "danger" : "warning",
-      actionLabel: "Review Match",
-      actionHref: candidateHref,
-    });
-  }
-
-  if (isReviewOnlySignal(candidate)) {
-    pushUnique(notifications, {
-      id: "low-confidence-review-only",
-      label: "Low confidence / review-only",
-      tone: "muted",
-      reason:
-        "Keep evidence in admin review until public-safe material is selected.",
-      actionLabel: "Review Candidate",
-      actionHref: candidateHref,
+      actionLabel: "Open Live Dossier",
+      actionHref:
+        liveDossierHref(candidate, context.publicDossiers) ?? candidateHref,
     });
   }
 
@@ -249,7 +220,7 @@ export function buildCandidateNotifications(
   ) {
     pushUnique(notifications, {
       id: "bnl-signal-attached",
-      label: "BNL signal attached",
+      label: "New BNL signals attached",
       tone: "info",
       reason:
         "Review-only signal; it does not publish or create drafts by itself.",
@@ -276,7 +247,7 @@ export function buildRecommendationNotifications(
       id: "possible-identity-link",
       label: "Possible identity link",
       tone: "warning",
-      actionLabel: "Review Match",
+      actionLabel: "Review Identity Links",
       actionHref: recommendationHref,
     });
   }
@@ -290,9 +261,9 @@ export function buildRecommendationNotifications(
       recommendation.targetCandidateId;
     pushUnique(notifications, {
       id: "existing-source-file-match",
-      label: "Existing Source File match",
+      label: "Existing Source File linked",
       tone: "info",
-      actionLabel: "Open Matched Source File",
+      actionLabel: "Open Source File",
       actionHref: `/admin/dossiers/candidates/${candidateId}`,
     });
   }
@@ -305,23 +276,9 @@ export function buildRecommendationNotifications(
   ) {
     pushUnique(notifications, {
       id: "existing-live-dossier-match",
-      label: "Existing live dossier match",
+      label: "Live dossier exists",
       tone: "info",
-      actionLabel: "Review as Live Dossier Update",
-      actionHref: recommendationHref,
-    });
-  }
-
-  if (
-    recommendation.confidence === "low" ||
-    (recommendation.publicSafetyNotes ?? []).length > 0
-  ) {
-    pushUnique(notifications, {
-      id: "low-confidence-review-only",
-      label: "Low confidence / review-only",
-      tone: "muted",
-      reason: "BNL recommendations are review-only and do not publish.",
-      actionLabel: "Review Candidate",
+      actionLabel: "Open Live Dossier",
       actionHref: recommendationHref,
     });
   }
@@ -380,9 +337,9 @@ export function buildSourceFileNotifications(
   if (activeDraft && !readyDraft) {
     pushUnique(notifications, {
       id: "draft-in-progress",
-      label: "Draft in progress",
+      label: "Proposed Dossier in progress",
       tone: "info",
-      actionLabel: "Open Draft",
+      actionLabel: "Open Proposed Dossier",
       actionHref: `/admin/dossiers/drafts/${activeDraft.id}`,
     });
   }
@@ -390,7 +347,7 @@ export function buildSourceFileNotifications(
   if (readyDraft) {
     pushUnique(notifications, {
       id: "owner-review-ready",
-      label: "Owner Review ready",
+      label: "Proposed Dossier ready for Owner Review",
       tone: "success",
       actionLabel: "Owner Review",
       actionHref: "/admin/dossiers/owner-review",
@@ -400,11 +357,11 @@ export function buildSourceFileNotifications(
   if (hasNewSignal) {
     pushUnique(notifications, {
       id: "new-bnl-signal",
-      label: "New BNL signal",
+      label: "New BNL signals attached",
       tone: "info",
       reason:
         "Review-only signal; it does not publish or create Source Files automatically.",
-      actionLabel: "Review Updates",
+      actionLabel: "Open Source File",
       actionHref: candidateHref,
     });
   }
@@ -412,20 +369,20 @@ export function buildSourceFileNotifications(
   if (hasNewSignal && liveDossierExists) {
     pushUnique(notifications, {
       id: "live-dossier-update",
-      label: "Live dossier update?",
+      label: "Live dossier exists",
       tone: "warning",
       reason:
         "Only use for potential updates to an existing live/public dossier.",
-      actionLabel: "Review Updates",
+      actionLabel: "Open Source File",
       actionHref: candidateHref,
     });
   } else if (hasNewSignal && activeDraft) {
     pushUnique(notifications, {
       id: "draft-revision",
-      label: "Draft revision?",
+      label: "Proposed Dossier in progress",
       tone: "warning",
       reason: "Active Proposed Dossier change; not a live dossier update.",
-      actionLabel: "Open Draft",
+      actionLabel: "Open Proposed Dossier",
       actionHref: `/admin/dossiers/drafts/${activeDraft.id}`,
     });
   }
@@ -433,9 +390,9 @@ export function buildSourceFileNotifications(
   if (hasPossibleIdentityLink(candidate) || hasPendingIdentityLink(candidate)) {
     pushUnique(notifications, {
       id: "identity-review-pending",
-      label: "Identity review pending",
+      label: "Possible identity link",
       tone: "warning",
-      actionLabel: "Review Identity",
+      actionLabel: "Review Identity Links",
       actionHref: candidateHref,
     });
   }
@@ -448,7 +405,7 @@ export function buildSourceFileNotifications(
       id: "missing-info",
       label: "Missing info",
       tone: "warning",
-      actionLabel: "Review Missing Info",
+      actionLabel: "Open Source File",
       actionHref: candidateHref,
     });
   }

@@ -5,15 +5,21 @@ import type { DossierEntityActivityReadout } from "@/lib/dossier-entity-activity
 import type {
   DossierRecommendation,
   DossierSourceFileArchiveMetadata,
+  DossierSourceFileCaseReportV1,
   DossierSourceFileNote,
 } from "@/lib/dossier-workflow";
-import { buildSourceFileActionableBrief } from "@/lib/dossier-source-file-actionable-brief";
-import { containsDossierBackendJunk } from "@/lib/dossier-note-display";
 import {
   formatDossierSummaryBadge,
   type DossierSourceFileSummary,
 } from "@/lib/dossier-source-file-summary";
-import { isRawSourceMemoryDebugText } from "@/lib/dossier-source-memory-meaning";
+
+type UnknownRecord = Record<string, unknown>;
+
+type ReportSection = {
+  title: string;
+  value: unknown;
+  optional?: boolean;
+};
 
 function StatusBadge({ children }: { children: React.ReactNode }) {
   return (
@@ -49,259 +55,6 @@ function Section({
   );
 }
 
-function SummaryList({ items }: { items: string[] }) {
-  return items.length === 1 ? (
-    <p>{items[0]}</p>
-  ) : (
-    <ul className="list-disc pl-5 space-y-1">
-      {items.map((item) => (
-        <li key={item}>{item}</li>
-      ))}
-    </ul>
-  );
-}
-
-function ActivityGroup({
-  title,
-  items,
-  empty,
-  receipts = [],
-}: {
-  title: string;
-  items: string[];
-  empty: string;
-  receipts?: string[];
-}) {
-  return (
-    <div className="border border-border/50 bg-background/20 p-2">
-      <h4 className="mb-1 text-xs font-bold uppercase tracking-widest text-foreground">
-        {title}
-      </h4>
-      <SummaryList items={fallbackItems(items, empty)} />
-      {receipts.length > 0 && (
-        <details className="mt-3 border border-border/50 bg-background/30 p-2 text-xs text-muted">
-          <summary className="cursor-pointer font-semibold text-foreground">
-            Show evidence / Evidence receipts — collapsed by default
-          </summary>
-          <ul className="mt-2 list-disc space-y-1 pl-4">
-            {receipts.map((receipt) => (
-              <li key={receipt}>{receipt}</li>
-            ))}
-          </ul>
-        </details>
-      )}
-    </div>
-  );
-}
-
-function isClassificationText(value: string) {
-  return /\b(?:automated topic|topic label|classified|classification|evidence categor(?:y|ies)|topic breakdown|topic detail)\b/i.test(
-    value,
-  );
-}
-
-function classificationLabel(value: string) {
-  const clean = value
-    .replace(/\bauthored\b/gi, "")
-    .replace(/\bposted\b/gi, "")
-    .replace(
-      /\bCrow\s+(?:discussed|posted about|talked about|authored)\b/gi,
-      "",
-    )
-    .replace(/\bdiscussed\b/gi, "related to")
-    .replace(/\bhandling\b/gi, "context")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/^[-:;,\s]+|[-:;,\s]+$/g, "");
-  if (/\bclassified\b/i.test(clean) || /\bautomated topic/i.test(clean)) {
-    return clean;
-  }
-  return `Automated topic label: ${clean}. Needs human review before this becomes a subject claim.`;
-}
-
-function displaySafeText(value?: string | null) {
-  const clean = value?.replace(/\s+/g, " ").trim();
-  if (!clean) return undefined;
-  if (/\[object Object\]/i.test(clean)) return undefined;
-  if (/\b(?:authored_public_conversation|profile_match)\b/i.test(clean))
-    return undefined;
-  if (
-    /\b(?:user_profiles|conversations|relationship_journal|source_memory_packet|source table|table name)\b/i.test(
-      clean,
-    )
-  ) {
-    return undefined;
-  }
-  if (isClassificationText(clean)) {
-    return classificationLabel(clean)
-      .replace(/\bpublic-side\b/gi, "approved public context")
-      .replace(/\brow\(s\)\b/gi, "items");
-  }
-  if (containsDossierBackendJunk(clean) || isRawSourceMemoryDebugText(clean)) {
-    return undefined;
-  }
-  return stripRawUrls(clean)
-    .replace(
-      /\bauthored public-side row\(s\)\b/gi,
-      "approved public context item",
-    )
-    .replace(/\bpublic-side row\(s\)\b/gi, "approved public context item")
-    .replace(/\brow\(s\)\b/gi, "items")
-    .replace(/\bpublic-side\b/gi, "approved public context")
-    .replace(/\bReview candidate\b/g, "Review item")
-    .replace(/\bidentity matching context\b/gi, "identity review context")
-    .replace(/\blocal context\b/gi, "BNL review context")
-    .replace(/\bprofile_match\b/gi, "local profile match");
-}
-
-function safeReviewItems(items: Array<string | undefined | null>, limit = 6) {
-  const output: string[] = [];
-  const seenKeys = new Set<string>();
-  for (const item of items) {
-    const clean = displaySafeText(item);
-    if (!clean) continue;
-    const key = duplicateMeaningKey(clean);
-    if (seenKeys.has(key)) continue;
-    seenKeys.add(key);
-    output.push(clean);
-    if (output.length >= limit) break;
-  }
-  return output;
-}
-
-function duplicateMeaningKey(item: string) {
-  const lower = item.toLowerCase();
-  if (lower.includes("profile match") || lower.includes("local profile")) {
-    return "profile-match";
-  }
-  if (
-    lower.includes("relationship/context") ||
-    lower.includes("relationship context") ||
-    lower.includes("relationship signal") ||
-    lower.includes("relationship trace") ||
-    lower.includes("prior relationship")
-  ) {
-    return "relationship-context";
-  }
-  return lower.replace(/[^a-z0-9]+/g, " ").trim();
-}
-
-function fallbackItems(items: string[], empty: string) {
-  return items.length ? items : [empty];
-}
-
-function visibleDedupeKey(item: string) {
-  return item
-    .toLowerCase()
-    .replace(
-      /^(?:music\/platform signal|supporting evidence|supporting classification|source coverage|evidence detail):\s*/i,
-      "",
-    )
-    .replace(/[^a-z0-9#]+/g, " ")
-    .trim();
-}
-
-function withoutVisibleRepeats(items: string[], seen: Set<string>) {
-  const output: string[] = [];
-  for (const item of items) {
-    const key = visibleDedupeKey(item);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    output.push(item);
-  }
-  return output;
-}
-
-function markVisible(items: string[], seen: Set<string>) {
-  const output: string[] = [];
-  const localSeen = new Set<string>();
-  for (const item of items) {
-    const key = visibleDedupeKey(item);
-    if (!key || localSeen.has(key)) continue;
-    localSeen.add(key);
-    seen.add(key);
-    output.push(item);
-  }
-  return output;
-}
-
-function queueStatusItems(status?: string, note?: string) {
-  const items: string[] = [];
-  if (status === "not_connected") {
-    items.push("Queue/submission history is not connected yet.");
-  } else if (status) {
-    items.push(`Queue/submission status: ${status.replace(/_/g, " ")}.`);
-  }
-  if (note) items.push(note);
-  return safeReviewItems(items, 3);
-}
-
-function evidenceDepthLabel(level: DossierSourceFileSummary["substanceLevel"]) {
-  return {
-    thin: "Thin",
-    partial: "Partial",
-    useful: "Useful",
-    strong: "Strong",
-  }[level];
-}
-
-function readinessLabel(
-  readiness: DossierSourceFileSummary["publicReadiness"],
-) {
-  return {
-    not_ready: "Not Ready",
-    needs_review: "Needs Review",
-    draftable: "Draftable",
-    owner_approved: "Owner Approved",
-  }[readiness];
-}
-
-function identityCertaintyLabel(summary: DossierSourceFileSummary) {
-  if (summary.existingPublicDossier === "linked_update_target")
-    return "Confirmed";
-  if (summary.existingPublicDossier === "yes") return "Needs Review";
-  return "Unconfirmed";
-}
-
-function sourceConfidenceLabel(value?: string) {
-  const values = (value ?? "")
-    .split(",")
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean);
-  if (!values.length) return "Mixed / review required";
-  const uniqueValues = Array.from(new Set(values));
-  if (uniqueValues.length !== 1) return "Mixed / review required";
-  if (uniqueValues[0] === "low") return "Low";
-  if (uniqueValues[0] === "medium") return "Medium";
-  if (uniqueValues[0] === "high") return "High";
-  return "Mixed / review required";
-}
-
-function missingChecklist(items: string[]) {
-  return safeReviewItems(
-    [
-      ...items,
-      "Confirm public-safe display name.",
-      "Confirm public role/description.",
-      "Add public links.",
-      "Connect queue/submission identity when that bridge exists.",
-      "Confirm whether this subject should have a public dossier at all.",
-    ],
-    8,
-  );
-}
-
-function formatSnapshotDate(value?: string) {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString();
-}
-
-function humanStatus(value?: string) {
-  return value ? value.replace(/_/g, " ") : "—";
-}
-
 function SnapshotItem({
   label,
   value,
@@ -319,243 +72,270 @@ function SnapshotItem({
   );
 }
 
-function categoryItems(label: string, items: string[], fallback?: string) {
-  const values = safeReviewItems(items, 4);
-  if (!values.length && !fallback) return [];
-  return [`${label}: ${values.length ? values.join("; ") : fallback}`];
+function asRecord(value: unknown): UnknownRecord | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as UnknownRecord)
+    : undefined;
 }
 
-function linkPlatformCategories(items: string[]) {
-  const all = safeReviewItems(items, 40).filter(
-    (item) => !isClassificationText(item),
-  );
-  const pick = (pattern: RegExp) => all.filter((item) => pattern.test(item));
-  return [
-    ...categoryItems(
-      "Actual music platform links",
-      pick(
-        /actual music platform links?|music platform links?|bandcamp|soundcloud|spotify|suno|udio/i,
-      ),
-    ),
-    ...categoryItems(
-      "Video platform links",
-      pick(/video platform links?|youtube|youtu\.be|vimeo|twitch/i),
-    ),
-    ...categoryItems(
-      "Event/contest links",
-      pick(/event\/contest links?|event links?|contest links?|competition/i),
-    ),
-    ...categoryItems(
-      "Community/server links",
-      pick(/community\/server links?|server links?|discord|community server/i),
-    ),
-    ...categoryItems(
-      "Generic links",
-      pick(/generic links?|link evidence|website|url/i),
-    ),
-    ...categoryItems(
-      "Platform references",
-      pick(
-        /platform references?|tool\/platform|platform mention|platform signal/i,
-      ),
-    ),
-    ...categoryItems(
-      "Music discussion",
-      pick(
-        /music discussion|collaboration|music-making|songwriting|producer|production/i,
-      ),
-    ),
-    ...categoryItems(
-      "Song/track/demo/WIP mentions",
-      pick(/song\/track\/demo\/WIP mentions?|track|demo|wip|song mention/i),
-    ),
-    ...categoryItems(
-      "Derived duplicate link references suppressed",
-      pick(
-        /derived duplicate .*suppressed|duplicate link references suppressed/i,
-      ),
-    ),
-  ];
+function textValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : undefined;
 }
 
-function takeWithoutRepeats(items: string[], seen: Set<string>, limit = 6) {
-  return withoutVisibleRepeats(safeReviewItems(items, limit * 2), seen).slice(
-    0,
-    limit,
-  );
-}
-
-
-type EvidenceReceiptGroup =
-  | "role"
-  | "relationship"
-  | "creative"
-  | "eventCommunity"
-  | "bnl"
-  | "activity";
-
-type EvidenceReceipt = {
-  group: EvidenceReceiptGroup;
-  specificity: number;
-  text: string;
-  key: string;
-};
-
-function stripRawUrls(value: string) {
-  return value.replace(/https?:\/\/[^\s)\]]+/gi, (url) => {
-    try {
-      const parsed = new URL(url);
-      return platformLabelFromDomain(parsed.hostname) ?? parsed.hostname.replace(/^www\./i, "");
-    } catch {
-      return "linked platform";
-    }
+function stringItems(value: unknown): string[] {
+  if (typeof value === "string") return value.trim() ? [value.trim()] : [];
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item === "string") return item.trim() ? [item.trim()] : [];
+    return [];
   });
 }
 
-function platformLabelFromDomain(domain: string) {
-  const host = domain.toLowerCase().replace(/^www\./, "");
-  if (host.includes("youtu.be") || host.includes("youtube.com")) return "YouTube/youtu.be";
-  if (host.includes("soundcloud.com")) return "SoundCloud";
-  if (host.includes("bandcamp.com")) return "Bandcamp";
-  if (host.includes("spotify.com")) return "Spotify";
-  if (host.includes("discord.gg") || host.includes("discord.com")) return "Discord";
-  if (host.includes("twitch.tv")) return "Twitch";
-  if (host.includes("vimeo.com")) return "Vimeo";
-  return undefined;
+function hasReportShape(value: unknown): value is DossierSourceFileCaseReportV1 {
+  const report = asRecord(value);
+  if (!report) return false;
+  return [
+    "caseSummary",
+    "dossierUse",
+    "publicSafeClaims",
+    "evidenceSummary",
+    "reviewBlockers",
+    "recommendedNextSteps",
+    "confidenceNotes",
+    "memoryCoverage",
+  ].some((key) => report[key] !== undefined);
 }
 
-function safeReceiptSummary(value: string) {
-  if (/legacy recurring-subject|rawRefJson|source table|row IDs?|source lane mapping|\[object Object\]/i.test(value)) {
-    return undefined;
-  }
-  const clean = displaySafeText(stripRawUrls(value));
-  if (!clean) return undefined;
-  return clean
-    .replace(/\brawRefJson\b/gi, "raw diagnostic detail")
-    .replace(/\brow IDs?\b/gi, "source item identifiers")
-    .replace(/\bsource table names?\b/gi, "source diagnostics")
-    .replace(/relationship\/context/gi, "relationship notes")
-    .replace(/\s+/g, " ")
-    .trim();
+function normalizeCaseReport(
+  latestSourceFileArchive?: DossierSourceFileArchiveMetadata,
+): DossierSourceFileCaseReportV1 | undefined {
+  const archive = asRecord(latestSourceFileArchive);
+  if (!archive) return undefined;
+  const sourcePackage = asRecord(archive.sourcePackage);
+  const brief = asRecord(archive.sourceFileBriefV2);
+  const candidates = [
+    archive.sourceFileCaseReportV1,
+    sourcePackage?.sourceFileCaseReportV1,
+    brief?.sourceFileCaseReportV1,
+    brief?.caseFileReport,
+  ];
+  return candidates.find(hasReportShape);
 }
 
-function receiptContext(value: string) {
-  const channel = value.match(/#[a-z0-9][\w-]*/i)?.[0];
-  if (channel) return ` in ${channel}`;
-  if (/approved public context|public-safe|public context/i.test(value)) {
-    return " in approved public context";
-  }
-  if (/discord/i.test(value)) return " in Discord context";
-  return "";
+function normalizeInterimBrief(latestSourceFileArchive?: DossierSourceFileArchiveMetadata) {
+  const archive = asRecord(latestSourceFileArchive);
+  if (!archive) return undefined;
+  return asRecord(archive.sourceFileBriefV2) ?? asRecord(asRecord(archive.sourcePackage)?.sourceFileBriefV2);
 }
 
-function receiptDate(value: string) {
-  const iso = value.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
-  if (iso) {
-    const date = new Date(`${iso[1]}-${iso[2]}-${iso[3]}T00:00:00.000Z`);
-    if (!Number.isNaN(date.getTime())) {
-      return `, ${date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}`;
-    }
-  }
-  const month = value.match(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}\b/i)?.[0];
-  return month ? `, ${month}` : "";
+function firstCompleteSentence(value: string) {
+  const clean = value.replace(/\s+/g, " ").trim();
+  const sentence = clean.match(/^.{1,260}?[.!?](?:\s|$)/)?.[0]?.trim();
+  return sentence ?? clean;
 }
 
-function receiptVisibility(value: string, group: EvidenceReceiptGroup) {
-  if (/private|internal|review-only|owner review|not public|do not use publicly/i.test(value)) {
-    return "Owner review required before public copy.";
-  }
-  if (group === "relationship") return "Owner review required before public copy.";
-  if (group === "eventCommunity") return "Review event/community details before public use.";
-  return "Review before public use.";
+function ReportItem({ item }: { item: string }) {
+  const preview = firstCompleteSentence(item);
+  if (preview.length >= item.length) return <li>{item}</li>;
+  return (
+    <li>
+      <span>{preview}</span>
+      <details className="mt-2 border border-border/50 bg-background/30 p-2 text-xs text-muted">
+        <summary className="cursor-pointer font-semibold text-foreground">
+          Show full BNL-authored item
+        </summary>
+        <p className="mt-2 whitespace-pre-wrap">{item}</p>
+      </details>
+    </li>
+  );
 }
 
-function receiptTypeAndGroup(value: string): Pick<EvidenceReceipt, "group" | "specificity"> & { label: string } | undefined {
-  if (/derived duplicate .*suppressed|duplicate link references suppressed/i.test(value)) {
-    return { group: "creative", specificity: 90, label: "Derived duplicate references suppressed" };
-  }
-  if (/video platform links?|youtube|youtu\.be|vimeo|twitch/i.test(value)) {
-    return { group: "creative", specificity: 100, label: "Video platform link evidence" };
-  }
-  if (/event\/contest links?|event links?|contest links?|competition|contest announcement|discord event/i.test(value)) {
-    return { group: "eventCommunity", specificity: 100, label: "Event/contest link evidence" };
-  }
-  if (/actual music platform links?|music platform links?|bandcamp|soundcloud|spotify|suno|udio/i.test(value)) {
-    return { group: "creative", specificity: 95, label: "Actual music platform link evidence" };
-  }
-  if (/community\/server links?|server links?|discord|community server/i.test(value)) {
-    return { group: "eventCommunity", specificity: 80, label: "Community/server link evidence" };
-  }
-  if (/platform references?|tool\/platform|platform mention|platform signal/i.test(value)) {
-    return { group: "creative", specificity: 70, label: "Platform reference evidence" };
-  }
-  if (/song\/track\/demo\/WIP mentions?|track|demo|wip|song mention/i.test(value)) {
-    return { group: "creative", specificity: 65, label: "Song/track/demo/WIP mention evidence" };
-  }
-  if (/music discussion|collaboration|music-making|songwriting|producer|production/i.test(value)) {
-    return { group: "creative", specificity: 60, label: "Music discussion evidence" };
-  }
-  if (/generic links?|link evidence|website|url/i.test(value)) {
-    return { group: "creative", specificity: 40, label: "Generic link evidence" };
-  }
-  if (/relationship\/context|relationship context|relationship signal|relationship trace|prior relationship|collaborator|appears in reviewed evidence/i.test(value)) {
-    return { group: "relationship", specificity: 85, label: "Relationship evidence" };
-  }
-  if (/BNL interaction|source-file|dossier|challenging|antagonistic|boundary|boundaries/i.test(value)) {
-    return { group: "bnl", specificity: 75, label: "BNL-facing interaction evidence" };
-  }
-  if (/role signal|known context|current read|why tracked/i.test(value)) {
-    return { group: "role", specificity: 30, label: "Role signal evidence" };
-  }
-  if (/activity|conversation|recurring|recent|posted|mentioned|theme|topic/i.test(value)) {
-    return { group: "activity", specificity: 50, label: "Activity/theme evidence" };
-  }
-  return undefined;
+function ReportSectionView({ title, value }: { title: string; value: unknown }) {
+  const items = stringItems(value).slice(0, 12);
+  if (!items.length) return null;
+  return (
+    <section className="border border-border/50 bg-background/20 p-3">
+      <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">
+        {title}
+      </h4>
+      {items.length === 1 ? (
+        <div className="whitespace-pre-wrap text-foreground">
+          <ReportItem item={items[0]} />
+        </div>
+      ) : (
+        <ul className="list-disc space-y-2 pl-5 text-foreground">
+          {items.map((item, index) => (
+            <ReportItem key={`${title}-${index}-${item.slice(0, 30)}`} item={item} />
+          ))}
+        </ul>
+      )}
+      {stringItems(value).length > items.length && (
+        <details className="mt-3 border border-border/50 bg-background/30 p-2 text-xs text-muted">
+          <summary className="cursor-pointer font-semibold text-foreground">
+            Show remaining BNL-authored items
+          </summary>
+          <ul className="mt-2 list-disc space-y-2 pl-4">
+            {stringItems(value)
+              .slice(items.length)
+              .map((item, index) => (
+                <li key={`${title}-remaining-${index}`}>{item}</li>
+              ))}
+          </ul>
+        </details>
+      )}
+    </section>
+  );
 }
 
-function evidenceReceiptKey(value: string) {
-  return stripRawUrls(value)
-    .toLowerCase()
-    .replace(/^(?:actual music platform links?|video platform links?|event\/contest links?|community\/server links?|generic links?|platform references?|music discussion|song\/track\/demo\/wip mentions?):\s*/i, "")
-    .replace(/[^a-z0-9#]+/g, " ")
-    .trim();
+function CaseReportView({ report }: { report?: DossierSourceFileCaseReportV1 }) {
+  if (!report) {
+    return (
+      <Section title="BNL Case File Report" tone="review">
+        <div className="space-y-2 text-foreground">
+          <p>
+            BNL has not generated a dossier-ready Case File Report for this Source File yet. The raw archive is preserved below, but it has not been translated into a conversational case report.
+          </p>
+          <p>Refresh this Source File after the bot report generator is deployed.</p>
+        </div>
+      </Section>
+    );
+  }
+
+  const confidenceAndCoverage = [
+    ...stringItems(report.confidenceNotes),
+    ...stringItems(report.memoryCoverage),
+  ];
+  const sections: ReportSection[] = [
+    { title: "Case Summary", value: report.caseSummary },
+    { title: "Dossier Use", value: report.dossierUse },
+    { title: "Public-Safe Claims", value: report.publicSafeClaims },
+    { title: "Evidence Summary", value: report.evidenceSummary },
+    { title: "Community Context", value: report.communityContext },
+    { title: "Creative / Music Context", value: report.creativeMusicContext, optional: true },
+    { title: "Relationship Context", value: report.relationshipContext, optional: true },
+    { title: "Queue / Submission Context", value: report.queueSubmissionContext, optional: true },
+    { title: "Identity Context", value: report.identityContext, optional: true },
+    { title: "Review Blockers", value: report.reviewBlockers },
+    { title: "Internal-Only / Do Not Say", value: report.internalOnlyNotes },
+    { title: "Recommended Next Steps", value: report.recommendedNextSteps },
+    { title: "Confidence / Memory Coverage", value: confidenceAndCoverage },
+  ];
+
+  return (
+    <Section title="BNL Case File Report" tone="review">
+      <div className="mb-3 flex flex-wrap gap-2 text-xs uppercase tracking-widest">
+        {report.reportStatus && <StatusBadge>Status: {report.reportStatus}</StatusBadge>}
+        {report.generatedAt && <StatusBadge>Generated: {formatSnapshotDate(report.generatedAt)}</StatusBadge>}
+        {report.version && <StatusBadge>Version: {report.version}</StatusBadge>}
+      </div>
+      <div className="space-y-3">
+        {sections.map((section) => (
+          <ReportSectionView key={section.title} title={section.title} value={section.value} />
+        ))}
+      </div>
+    </Section>
+  );
 }
 
-function buildEvidenceReceipts(items: Array<string | undefined | null>, limit = 4) {
-  const byKey = new Map<string, EvidenceReceipt>();
-  for (const item of items) {
-    const clean = safeReceiptSummary(item ?? "");
-    if (!clean || isClassificationText(clean)) continue;
-    const type = receiptTypeAndGroup(clean);
-    if (!type) continue;
-    const key = evidenceReceiptKey(clean);
-    if (!key) continue;
-    const receipt: EvidenceReceipt = {
-      group: type.group,
-      specificity: type.specificity,
-      key,
-      text: `${type.label}: ${clean}${receiptContext(clean)}${receiptDate(clean)}. ${receiptVisibility(clean, type.group)}`,
-    };
-    const existing = byKey.get(key);
-    if (!existing || receipt.specificity > existing.specificity) byKey.set(key, receipt);
-  }
+function InterimBriefView({ brief, hasReport }: { brief?: UnknownRecord; hasReport: boolean }) {
+  if (!brief || hasReport) return null;
+  const items = [
+    ["One-line summary", textValue(brief.oneLineSummary)],
+    ["Admin summary", textValue(brief.adminSummary)],
+    ["Recommended next action", textValue(brief.recommendedNextAction)],
+  ].filter(([, value]) => value);
+  if (!items.length) return null;
+  return (
+    <Section title="Interim BNL Brief" helper="Limited brief only. This is not expanded into a Case File Report.">
+      <dl className="space-y-2">
+        {items.map(([label, value]) => (
+          <div key={label} className="border border-border/50 bg-background/20 p-2">
+            <dt className="text-xs uppercase tracking-widest text-accent">{label}</dt>
+            <dd className="mt-1 text-foreground">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </Section>
+  );
+}
 
-  const used = new Set<string>();
-  const grouped: Record<EvidenceReceiptGroup, string[]> = {
-    role: [],
-    relationship: [],
-    creative: [],
-    eventCommunity: [],
-    bnl: [],
-    activity: [],
-  };
-  for (const receipt of Array.from(byKey.values()).sort((a, b) => b.specificity - a.specificity)) {
-    const visibleKey = visibleDedupeKey(receipt.text);
-    if (used.has(visibleKey)) continue;
-    used.add(visibleKey);
-    if (grouped[receipt.group].length < limit) grouped[receipt.group].push(receipt.text);
-  }
-  return grouped;
+export function DossierSourceFileArchiveRawData({ latestSourceFileArchive }: { latestSourceFileArchive?: DossierSourceFileArchiveMetadata }) {
+  if (!latestSourceFileArchive) return null;
+  const rawGroups = [
+    ["compactSummary", stringItems(latestSourceFileArchive.compactSummary)],
+    ["sourceFileBriefV2", [textValue(asRecord(latestSourceFileArchive.sourceFileBriefV2)?.oneLineSummary), textValue(asRecord(latestSourceFileArchive.sourceFileBriefV2)?.adminSummary), textValue(asRecord(latestSourceFileArchive.sourceFileBriefV2)?.recommendedNextAction)].filter(Boolean) as string[]],
+    ["evidenceReceiptSummary", stringItems(latestSourceFileArchive.evidenceReceiptSummary)],
+    ["missingInfo raw values", stringItems(latestSourceFileArchive.missingInfo)],
+    ["publicSafetyNotes raw values", stringItems(latestSourceFileArchive.publicSafetyNotes)],
+    ["doNotSay raw values", stringItems(latestSourceFileArchive.doNotSay)],
+  ].filter(([, items]) => (items as string[]).length > 0) as Array<[string, string[]]>;
+
+  return (
+    <details className="border border-border/70 bg-background/20 p-3 text-sm text-muted">
+      <summary className="cursor-pointer font-semibold text-foreground">
+        Archive / Raw Source File Data
+      </summary>
+      <p className="mt-3 text-xs uppercase tracking-widest text-accent">
+        Raw BNL archive material is preserved here for audit/debugging. It is not dossier copy.
+      </p>
+      <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <SnapshotItem label="Archive id" value={latestSourceFileArchive.id} />
+        <SnapshotItem label="Digest" value={latestSourceFileArchive.sourceDigest.slice(0, 16)} />
+        <SnapshotItem label="Size" value={`${latestSourceFileArchive.archiveSize} bytes`} />
+        <SnapshotItem label="Chunks" value={String(latestSourceFileArchive.chunkCount)} />
+        <SnapshotItem label="Updated" value={formatSnapshotDate(latestSourceFileArchive.updatedAt)} />
+        <SnapshotItem label="Review-only" value={latestSourceFileArchive.reviewOnly ? "Yes" : "No"} />
+      </dl>
+      {rawGroups.length > 0 && (
+        <div className="mt-3 space-y-3">
+          {rawGroups.map(([label, items]) => (
+            <section key={label} className="border border-border/50 bg-background/30 p-2">
+              <h4 className="text-xs font-bold uppercase tracking-widest text-foreground">{label}</h4>
+              <ul className="mt-2 list-disc space-y-1 pl-4">
+                {items.slice(0, 8).map((item, index) => (
+                  <li key={`${label}-${index}`}>{item}</li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      )}
+    </details>
+  );
+}
+
+function formatSnapshotDate(value?: string) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString();
+}
+
+function humanStatus(value?: string) {
+  return value ? value.replace(/_/g, " ") : "—";
+}
+
+function evidenceDepthLabel(value: DossierSourceFileSummary["substanceLevel"]) {
+  return { thin: "Thin", partial: "Partial", useful: "Useful", strong: "Strong" }[value];
+}
+
+function readinessLabel(value: DossierSourceFileSummary["publicReadiness"]) {
+  return {
+    not_ready: "Not Ready",
+    needs_review: "Needs Review",
+    draftable: "Draftable",
+    owner_approved: "Owner Approved",
+  }[value];
+}
+
+function identityCertaintyLabel(summary: DossierSourceFileSummary) {
+  if (summary.existingPublicDossier === "linked_update_target") return "Confirmed";
+  if (summary.existingPublicDossier === "yes") return "Needs Review";
+  return "Unconfirmed";
+}
+
+function noteText(note: Pick<DossierSourceFileNote, "text"> | string | null | undefined) {
+  return typeof note === "string" ? note : note?.text;
 }
 
 export function DossierSourceFileSummaryPanel({
@@ -564,7 +344,7 @@ export function DossierSourceFileSummaryPanel({
   subjectName,
   recommendations = [],
   sourceFileNotes = [],
-  title = "Entity Intelligence Review Console",
+  title = "Source File",
   currentLane,
   latestRecommendationTimestamp,
   sourceFileTargetStatus,
@@ -574,378 +354,27 @@ export function DossierSourceFileSummaryPanel({
   entityReadout?: DossierEntityActivityReadout | null;
   subjectName?: string;
   recommendations?: Array<Partial<DossierRecommendation>>;
-  sourceFileNotes?: Array<
-    Pick<DossierSourceFileNote, "text"> | string | null | undefined
-  >;
+  sourceFileNotes?: Array<Pick<DossierSourceFileNote, "text"> | string | null | undefined>;
   title?: string;
   currentLane?: string;
   latestRecommendationTimestamp?: string;
   sourceFileTargetStatus?: string;
   latestSourceFileArchive?: DossierSourceFileArchiveMetadata;
 }) {
-  const currentRead = entityReadout?.currentRead ?? summary.currentRead;
-  const publicSafePossibilities = safeReviewItems([
-    ...(entityReadout?.publicSafePossibilities ?? []),
-    ...summary.publicSafePossibilities,
-  ]);
-  const missingInfo = safeReviewItems([
-    ...(entityReadout?.missingInfo ?? []),
-    ...summary.missingInfo,
-  ]);
-  const observedChannels = safeReviewItems([
-    ...(entityReadout?.observedChannels ?? []),
-    ...summary.observedChannels,
-  ]);
-  const conversationHighlights = safeReviewItems([
-    ...(entityReadout?.conversationHighlights ?? []),
-    ...(summary.conversationHighlights ?? []),
-  ]);
-  const publicUseCandidates = safeReviewItems([
-    ...(entityReadout?.publicUseCandidates ?? []),
-    ...(summary.publicUseCandidates ?? []),
-  ]);
-  const representativeEvidence = safeReviewItems(
-    [
-      ...(entityReadout?.representativeEvidence ?? []),
-      ...(summary.representativeEvidence ?? []),
-    ],
-    8,
-  );
-  const activityFrequencySummary = safeReviewItems(
-    [
-      ...(entityReadout?.activityFrequencySummary ?? []),
-      ...(summary.activityFrequencySummary ?? []),
-    ],
-    4,
-  );
-  const topChannels = safeReviewItems([
-    ...(entityReadout?.topChannels ?? []),
-    ...(summary.topChannels ?? []),
-  ]);
-  const recentActivitySummary = safeReviewItems(
-    [
-      ...(entityReadout?.recentActivitySummary ?? []),
-      ...(summary.recentActivitySummary ?? []),
-    ],
-    4,
-  );
-  const authoredVsMentionedSummary = safeReviewItems(
-    [
-      ...(entityReadout?.authoredVsMentionedSummary ?? []),
-      ...(summary.authoredVsMentionedSummary ?? []),
-    ],
-    4,
-  );
-  const queueItems = queueStatusItems(
-    entityReadout?.queueSubmissionStatus ?? summary.queueSubmissionStatus,
-    entityReadout?.queueSubmissionNote ?? summary.queueSubmissionNote,
-  );
-  const sourceAuthority = safeReviewItems([
-    ...(entityReadout?.sourceAuthority ?? []),
-    ...summary.sourceAuthority,
-  ]);
-  const recommendedAction =
-    entityReadout?.recommendedAction ?? summary.recommendedNextAction;
-  const evidenceStatus = [
-    `Evidence depth: ${evidenceDepthLabel(summary.substanceLevel)}.`,
-    `Public readiness: ${readinessLabel(summary.publicReadiness)}.`,
-    `Identity certainty: ${identityCertaintyLabel(summary)}.`,
-    `Source confidence: ${sourceConfidenceLabel(entityReadout?.confidence)}.`,
-  ];
-  const actionableBrief = buildSourceFileActionableBrief({
-    entityReadout,
-    summary,
-    subjectName,
-    recommendations,
-    sourceFileNotes,
-  });
-  const visibleFacts = new Set<string>();
-  const allSignals = safeReviewItems(
-    [
-      ...actionableBrief.keyFindings,
-      ...actionableBrief.namedTopics,
-      ...actionableBrief.bnlInteractionPatterns,
-      ...actionableBrief.platformSignals,
-      ...actionableBrief.musicSignals,
-      ...actionableBrief.communityActivity,
-      ...(summary.knownContext ?? []),
-      ...(summary.usefulEvidence ?? []),
-      ...(summary.privateRelationshipContext ?? []),
-      ...(summary.conversationHighlights ?? []),
-      ...(summary.topicBreakdown ?? []),
-      ...(summary.bnlInteractionSignals ?? []),
-      ...(summary.musicSignals ?? []),
-      ...(summary.communitySignals ?? []),
-      ...(summary.sourceCoverage ?? []),
-      ...(summary.evidenceDetails ?? []),
-      ...(summary.representativeEvidence ?? []),
-      ...recommendations.flatMap((recommendation) => [
-        ...(recommendation.knownContext ?? []),
-        ...(recommendation.usefulEvidence ?? []),
-        ...(recommendation.relationshipSignals ?? []),
-        ...(recommendation.conversationHighlights ?? []),
-        ...(recommendation.topicBreakdown ?? []),
-        ...(recommendation.bnlInteractionSignals ?? []),
-        ...(recommendation.musicSignals ?? []),
-        ...(recommendation.communitySignals ?? []),
-        ...(recommendation.sourceCoverage ?? []),
-        ...(recommendation.evidenceDetails ?? []),
-        ...(recommendation.representativeEvidence ?? []),
-      ]),
-      ...(sourceFileNotes ?? []).map((note) =>
-        typeof note === "string" ? note : note?.text,
-      ),
-    ],
-    60,
-  );
-  const linkEvidence = linkPlatformCategories(allSignals);
-  const linkEvidenceWithoutDuplicateCaution = linkEvidence.filter(
-    (item) => !/^Derived duplicate link references suppressed:/i.test(item),
-  );
-  const duplicateSuppression = linkEvidence.find((item) =>
-    /^Derived duplicate link references suppressed:/i.test(item),
-  );
-  const evidenceReceipts = buildEvidenceReceipts([
-    currentRead,
-    summary.whyTracked,
-    ...allSignals,
-    ...publicSafePossibilities,
-    ...publicUseCandidates,
-    ...representativeEvidence,
-    ...activityFrequencySummary,
-    ...topChannels,
-    ...recentActivitySummary,
-    ...authoredVsMentionedSummary,
-    ...sourceAuthority,
-    ...actionableBrief.supportingEvidence,
-    ...actionableBrief.reviewOnlyCautions,
-  ]);
-  const whatBnlKnows = [
-    {
-      title: "Role Signals",
-      items: takeWithoutRepeats(
-        [currentRead, summary.whyTracked, ...actionableBrief.keyFindings],
-        visibleFacts,
-        4,
-      ),
-      empty: "No clear role signal has been extracted yet.",
-      receiptGroup: "role" as EvidenceReceiptGroup,
-    },
-    {
-      title: "Relationships / People / Projects",
-      items: takeWithoutRepeats(
-        [
-          ...(summary.privateRelationshipContext ?? []),
-          ...(entityReadout?.relationshipSignals ?? []),
-          ...actionableBrief.namedTopics,
-        ],
-        visibleFacts,
-        4,
-      ),
-      empty:
-        "No relationship, people, or project signal has been separated yet.",
-      receiptGroup: "relationship" as EvidenceReceiptGroup,
-    },
-    {
-      title: "BNL Interaction",
-      items: takeWithoutRepeats(
-        actionableBrief.bnlInteractionPatterns,
-        visibleFacts,
-        4,
-      ),
-      empty: "No BNL interaction pattern has been extracted yet.",
-      receiptGroup: "bnl" as EvidenceReceiptGroup,
-    },
-    {
-      title: "Creative / Music / Platform Signals",
-      items: takeWithoutRepeats(
-        [
-          ...actionableBrief.musicSignals,
-          ...actionableBrief.platformSignals,
-          ...linkEvidenceWithoutDuplicateCaution,
-        ],
-        visibleFacts,
-        6,
-      ),
-      empty:
-        "No creative, music, platform, or link signal has been extracted yet.",
-      receiptGroup: "creative" as EvidenceReceiptGroup,
-    },
-    {
-      title: "Event / Contest / Community Signals",
-      items: takeWithoutRepeats(
-        [
-          ...actionableBrief.communityActivity,
-          ...(summary.communitySignals ?? []),
-          ...(entityReadout?.communitySignals ?? []),
-          ...observedChannels,
-          ...topChannels,
-        ],
-        visibleFacts,
-        6,
-      ),
-      empty:
-        "No event, contest, channel, or community signal has been separated yet.",
-      receiptGroup: "eventCommunity" as EvidenceReceiptGroup,
-    },
-    {
-      title: "Activity & Themes",
-      items: takeWithoutRepeats(
-        [
-          ...conversationHighlights,
-          ...activityFrequencySummary,
-          ...recentActivitySummary,
-          ...authoredVsMentionedSummary,
-        ],
-        visibleFacts,
-        6,
-      ),
-      empty: "No conversation theme or activity rhythm has been extracted yet.",
-      receiptGroup: "activity" as EvidenceReceiptGroup,
-    },
-  ];
-  const queueStatus =
-    entityReadout?.queueSubmissionStatus ?? summary.queueSubmissionStatus;
-  const queueBridgeWarning =
-    queueStatus === "not_connected" || !queueStatus
-      ? "Queue/submission history is not connected yet. Do not claim submissions, play counts, source type, payment, or Priority history from Discord/platform links."
-      : undefined;
-  const actionItems = markVisible(
-    [
-      ...missingChecklist([...missingInfo, ...actionableBrief.missingInfo]),
-      ...actionableBrief.recommendedNextActions,
-      queueBridgeWarning,
-      "Public-safe checklist: confirm public link, public role, and public display name before drafting.",
-    ].filter(Boolean) as string[],
-    visibleFacts,
-  );
-  const evidenceSeen = new Set<string>();
-  const strongEvidence = takeWithoutRepeats(
-    [
-      ...(summary.confirmedStrong ?? []),
-      ...(summary.usefulEvidence ?? []),
-      ...actionableBrief.keyFindings,
-    ],
-    evidenceSeen,
-    5,
-  );
-  const publicSafeEvidence = takeWithoutRepeats(
-    [
-      ...publicSafePossibilities,
-      ...publicUseCandidates,
-      ...(summary.publicUseCandidates ?? []),
-    ],
-    evidenceSeen,
-    5,
-  );
-  const reviewOnlyEvidence = takeWithoutRepeats(
-    [
-      ...actionableBrief.reviewOnlyCautions,
-      ...(summary.reviewOnlyEvidence ?? []),
-      ...(summary.privateOnlyNotes ?? []),
-      ...(summary.notPublicYet ?? []),
-    ],
-    evidenceSeen,
-    5,
-  );
-  const sourceCoverageEvidence = takeWithoutRepeats(
-    [
-      ...(summary.sourceCoverage ?? []),
-      ...sourceAuthority,
-      ...actionableBrief.supportingEvidence.filter((item) =>
-        /^Source coverage:/i.test(item),
-      ),
-    ],
-    evidenceSeen,
-    5,
-  );
-  const channelActivityEvidence = takeWithoutRepeats(
-    [
-      ...observedChannels,
-      ...topChannels,
-      ...representativeEvidence,
-      ...conversationHighlights,
-    ],
-    evidenceSeen,
-    5,
-  );
-  const linkPlatformEvidence = takeWithoutRepeats(
-    [
-      ...linkEvidence,
-      ...actionableBrief.platformSignals,
-      ...actionableBrief.musicSignals,
-    ],
-    evidenceSeen,
-    8,
-  );
-  const diagnostics = safeReviewItems(
-    [
-      duplicateSuppression,
-      ...(summary.sourceCoverage ?? []).map(
-        (item) => `Source counts / coverage: ${item}`,
-      ),
-      ...(summary.evidenceDetails ?? []).map(
-        (item) => `Validation or evidence detail: ${item}`,
-      ),
-      ...(summary.topicBreakdown ?? [])
-        .filter(isClassificationText)
-        .map((item) => `Legacy recurring-subject diagnostic: ${item}`),
-      ...(summary.topTopicDetails ?? [])
-        .filter(isClassificationText)
-        .map((item) => `Legacy recurring-subject diagnostic: ${item}`),
-      ...recommendations.flatMap((recommendation) => [
-        recommendation.ingestSource
-          ? `Site ingest metadata: ${recommendation.ingestSource}`
-          : undefined,
-        recommendation.ingestedAt
-          ? `Site ingest metadata: ${recommendation.ingestedAt}`
-          : undefined,
-        recommendation[("raw" + "Provenance") as keyof typeof recommendation]
-          ? "Raw provenance is present and intentionally hidden from normal review sections."
-          : undefined,
-      ]),
-    ],
-    12,
-  );
-  const archiveReadoutItems = safeReviewItems(
-    [
-      latestSourceFileArchive?.compactSummary,
-      ...(latestSourceFileArchive?.publicSafePossibilities ?? []),
-      ...(latestSourceFileArchive?.missingInfo ?? []),
-      ...(latestSourceFileArchive?.evidenceReceiptSummary ?? []),
-    ],
-    8,
-  );
+  const report = normalizeCaseReport(latestSourceFileArchive);
+  const interimBrief = normalizeInterimBrief(latestSourceFileArchive);
   const snapshotItems = [
-    ["Subject", subjectName ?? "Unknown subject"],
-    ["Current lane / status", humanStatus(currentLane ?? summary.nextAction)],
-    ["Last BNL refresh", formatSnapshotDate(summary.lastUpdatedAt)],
-    [
-      "Latest BNL Signal",
-      formatSnapshotDate(latestRecommendationTimestamp),
-    ],
-    ["Public dossier match", humanStatus(summary.existingPublicDossier)],
-    [
-      "Source file target",
-      humanStatus(sourceFileTargetStatus ?? summary.nextAction),
-    ],
+    ["Subject", subjectName ?? latestSourceFileArchive?.subjectName ?? "Unknown subject"],
+    ["Current state", humanStatus(currentLane ?? summary.nextAction)],
+    ["Refresh status", formatSnapshotDate(summary.lastUpdatedAt)],
+    ["Latest BNL refresh", formatSnapshotDate(latestRecommendationTimestamp)],
+    ["Source file target", humanStatus(sourceFileTargetStatus ?? summary.nextAction)],
     ["Evidence depth", evidenceDepthLabel(summary.substanceLevel)],
     ["Public readiness", readinessLabel(summary.publicReadiness)],
     ["Identity certainty", identityCertaintyLabel(summary)],
-    ["Source confidence:", sourceConfidenceLabel(entityReadout?.confidence)],
-    [
-      "Queue / submission",
-      queueStatus === "not_connected" || !queueStatus
-        ? "Not connected yet"
-        : humanStatus(queueStatus),
-    ],
-    ["Main next action", recommendedAction],
-    [
-      "Latest archive",
-      latestSourceFileArchive
-        ? `${formatSnapshotDate(latestSourceFileArchive.updatedAt)} · ${latestSourceFileArchive.archiveSize} bytes · ${latestSourceFileArchive.chunkCount} chunk(s)`
-        : "No full archive attached",
-    ],
+    ["BNL report", report ? "Generated" : "Not generated yet"],
+    ["Source File notes", String(sourceFileNotes.map(noteText).filter(Boolean).length)],
+    ["BNL recommendation cards", String(recommendations.length)],
   ];
 
   return (
@@ -953,163 +382,35 @@ export function DossierSourceFileSummaryPanel({
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.45em] text-accent mb-2">
-            Entity Intelligence Review Console
+            BNL Source File Display Layer
           </p>
           <h2 className="text-2xl font-bold text-foreground">{title}</h2>
           <p className="mt-2 text-sm text-muted max-w-4xl">
-            Review Snapshot → What BNL Knows → Action Items → Evidence →
-            Notes/Identity → Diagnostics. Internal-only review surface; it does
-            not publish, create Proposed Dossiers, merge identities, or create queue/payment
-            behavior.
+            Source File header / refresh status → BNL Case File Report → Dossier Workbench / Proposed Dossier Status → Source Notes / Admin Addendums → Archive / Raw Source File Data → Advanced Tools → Diagnostics. BNL thinks; the site displays; admins decide.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
           <StatusBadge>Review-only</StatusBadge>
-          <StatusBadge>Public-safe candidate labels stay separated</StatusBadge>
+          <StatusBadge>Display-only</StatusBadge>
           <StatusBadge>
-            Source:{" "}
-            {entityReadout?.readoutSource === "structured"
-              ? "Structured packet"
-              : "Safe fallback"}
+            Source: {entityReadout?.readoutSource === "structured" ? "Structured packet" : "Safe fallback"}
           </StatusBadge>
         </div>
       </div>
 
-      <Section
-        title="Review Snapshot"
-        helper="Concise status view for deciding how to review this Case File / BNL Source File."
-      >
+      <Section title="Source File header / refresh status" helper="Status only. This section does not create dossier copy.">
         <dl className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           {snapshotItems.map(([label, value]) => (
             <SnapshotItem key={label} label={label} value={value} />
           ))}
         </dl>
-      </Section>
-
-
-      {latestSourceFileArchive && (
-        <Section
-          title="Latest BNL Source Archive Readout"
-          helper="Compact archive-derived fields only. The complete Source Archive stays internal and collapsed below."
-        >
-          <SummaryList
-            items={fallbackItems(
-              archiveReadoutItems,
-              "Latest archive exists, but no compact readout fields were supplied.",
-            )}
-          />
-        </Section>
-      )}
-
-      {latestSourceFileArchive && (
-        <details className="border border-border/70 bg-background/20 p-3 text-sm text-muted">
-          <summary className="cursor-pointer font-semibold text-foreground">
-            Full BNL Source Archive — admin-only / collapsed
-          </summary>
-          <p className="mt-3 text-xs uppercase tracking-widest text-accent">
-            Internal archive metadata only. Full source package content is stored outside the workflow dashboard and is not rendered here.
-          </p>
-          <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <SnapshotItem label="Archive id" value={latestSourceFileArchive.id} />
-            <SnapshotItem label="Digest" value={latestSourceFileArchive.sourceDigest.slice(0, 16)} />
-            <SnapshotItem label="Size" value={`${latestSourceFileArchive.archiveSize} bytes`} />
-            <SnapshotItem label="Chunks" value={String(latestSourceFileArchive.chunkCount)} />
-            <SnapshotItem label="Updated" value={formatSnapshotDate(latestSourceFileArchive.updatedAt)} />
-            <SnapshotItem label="Review-only" value={latestSourceFileArchive.reviewOnly ? "Yes" : "No"} />
-          </dl>
-        </details>
-      )}
-
-      <Section
-        title="What BNL Knows"
-        helper="Primary intelligence summary. Review-only material is labeled and is not public dossier copy."
-      >
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {whatBnlKnows.map((group) => (
-            <ActivityGroup
-              key={group.title}
-              title={group.title}
-              items={group.items}
-              empty={group.empty}
-              receipts={evidenceReceipts[group.receiptGroup]}
-            />
-          ))}
-        </div>
-      </Section>
-
-      <Section
-        title="Admin Action Items / Missing Info"
-        tone="caution"
-        helper="What needs to happen next before public copy, owner review, identity matching, or submission claims."
-      >
-        <SummaryList
-          items={fallbackItems(
-            actionItems,
-            "No action item has been extracted yet; continue human review before public use.",
-          )}
-        />
-      </Section>
-
-      <Section
-        title="Evidence by Category"
-        helper="Why BNL thinks this. Evidence is grouped, deduped, and kept separate from raw diagnostics."
-      >
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          <ActivityGroup
-            title="Strong Evidence"
-            items={strongEvidence}
-            empty="No strong evidence has been separated yet."
-          />
-          <ActivityGroup
-            title="Public-safe Evidence"
-            items={publicSafeEvidence}
-            empty="No public-safe candidate evidence has been separated yet."
-          />
-          <ActivityGroup
-            title="Review-only Evidence"
-            items={reviewOnlyEvidence}
-            empty="No review-only evidence has been separated yet."
-          />
-          <ActivityGroup
-            title="Source Coverage"
-            items={sourceCoverageEvidence}
-            empty="No source coverage summary is available yet."
-          />
-          <ActivityGroup
-            title="Channel / Activity Evidence"
-            items={channelActivityEvidence}
-            empty="No channel or activity evidence is available yet."
-          />
-          <ActivityGroup
-            title="Music / Platform / Link Evidence"
-            items={linkPlatformEvidence}
-            empty="No link or platform evidence has been separated yet."
-          />
-        </div>
-      </Section>
-
-      <details className="border border-border/70 bg-background/20 p-3 text-sm text-muted">
-        <summary className="cursor-pointer font-semibold text-foreground">
-          Diagnostics — collapsed by default
-        </summary>
-        <p className="mt-3 text-xs uppercase tracking-widest text-accent">
-          Diagnostics only. Not Case File claims.
+        <p className="mt-3 text-xs text-muted">
+          Summary badge: {formatDossierSummaryBadge(summary.summarySource)}.
         </p>
-        <div className="mt-3">
-          <SummaryList
-            items={fallbackItems(
-              diagnostics,
-              "No secondary diagnostics are available for this readout.",
-            )}
-          />
-        </div>
-      </details>
+      </Section>
 
-      <p className="text-xs text-muted">
-        Public-safe candidate, Review-only, Internal-only, Needs owner review,
-        Not connected yet, and Source-blind / diagnostic-only material remain
-        separated.
-      </p>
+      <CaseReportView report={report} />
+      <InterimBriefView brief={interimBrief} hasReport={Boolean(report)} />
     </section>
   );
 }

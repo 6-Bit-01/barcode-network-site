@@ -131,6 +131,37 @@ export type DossierSourceFileOperatorSummary = {
   updatedBy?: string;
 };
 
+
+export type DossierSourceFileCaseReportV1 = {
+  version?: string;
+  generatedAt?: string;
+  subjectName?: string;
+  subjectKey?: string;
+  reportStatus?: string;
+  caseSummary?: string | string[];
+  dossierUse?: string | string[];
+  publicSafeClaims?: string | string[];
+  evidenceSummary?: string | string[];
+  communityContext?: string | string[];
+  creativeMusicContext?: string | string[];
+  relationshipContext?: string | string[];
+  queueSubmissionContext?: string | string[];
+  identityContext?: string | string[];
+  reviewBlockers?: string | string[];
+  internalOnlyNotes?: string | string[];
+  recommendedNextSteps?: string | string[];
+  confidenceNotes?: string | string[];
+  memoryCoverage?: string | string[];
+};
+
+export type DossierSourceFileBriefV2 = {
+  oneLineSummary?: string;
+  adminSummary?: string;
+  recommendedNextAction?: string;
+  sourceFileCaseReportV1?: DossierSourceFileCaseReportV1;
+  caseFileReport?: unknown;
+};
+
 export type DossierSourceFileArchiveCompactReadout = {
   compactSummary?: string;
   publicSafePossibilities?: string[];
@@ -138,6 +169,8 @@ export type DossierSourceFileArchiveCompactReadout = {
   publicSafetyNotes?: string[];
   doNotSay?: string[];
   evidenceReceiptSummary?: string[];
+  sourceFileCaseReportV1?: DossierSourceFileCaseReportV1;
+  sourceFileBriefV2?: DossierSourceFileBriefV2;
 };
 
 export type DossierSourceFileArchiveMetadata =

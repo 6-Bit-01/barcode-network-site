@@ -1109,13 +1109,15 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
   }
 
   assert.match(page, /href="\/admin\/dossiers\/owner-review"/);
-  assert.match(page, /href=\{`\/admin\/dossiers\/candidates\/\$\{candidate\.id\}`\}/);
+  assert.match(page, /sourceFileFocusHref\(candidate\.id, "overview"\)/);
   assert.match(page, /href=\{`\/admin\/dossiers\/recommendations\/\$\{recommendation\.id\}`\}/);
   assert.doesNotMatch(page, /`\/admin\/dossiers\/drafts\/\$\{openDraftId\}`/);
   assert.doesNotMatch(page, />\s*Open\s*</);
   assert.doesNotMatch(page, /Add Missing Info|Review Signal|Review Source Update|Review Draft|Review Archived|Review Closed Signal|Review Trash/);
-  assert.doesNotMatch(page, /Open Draft|Review Updates|Review Missing Info|Review Match|Needs Attention/);
-  assert.match(page, /primaryLabel=\{sourceFileActionLabel\(\)\}/);
+  assert.doesNotMatch(page, /Open Draft|Review Updates|Review Match|Needs Attention/);
+  assert.match(pageCopy, /Review Missing Info/);
+  assert.match(pageCopy, /missing-info/);
+  assert.match(page, /destinationKey: "source-file-overview"/);
   assert.match(page, /archivedCandidateActionLabel\(\)/);
   assert.match(page, /archivedSignalActionLabel\(\)/);
   assert.doesNotMatch(page, /function archiveActionLabel/);
@@ -1266,6 +1268,135 @@ test("computed dossier workflow notifications cover source file draft, archive, 
     dossierWorkflowNotifications.isLiveDossierUpdateRecommendation(activeRecommendation, { candidates: [liveCandidate] }),
     true,
   );
+});
+
+
+test("dossier dashboard actions use distinct Source File focus destinations", () => {
+  const candidate = baseNotificationCandidate({
+    id: "focus-action-source-file",
+    identityReviewStatus: "needs_confirmation",
+    missingInfo: ["Confirm public-safe details."],
+    sourceFileArchiveIds: ["archive-focus"],
+    latestSourceFileArchiveId: "archive-focus",
+  });
+  const draft = {
+    id: "draft-focus-action",
+    candidateId: candidate.id,
+    status: "draft",
+    fields: { name: candidate.name },
+    createdAt: "2026-06-01T00:00:00.000Z",
+    updatedAt: "2026-06-01T00:00:00.000Z",
+  };
+  const signal = {
+    id: "signal-focus-action",
+    type: "new_subject",
+    subjectName: candidate.name,
+    targetCandidateId: candidate.id,
+    status: "new",
+    reason: "Attached BNL signal.",
+    createdAt: "2026-06-01T00:00:00.000Z",
+    updatedAt: "2026-06-01T00:00:00.000Z",
+  };
+  const refresh = {
+    id: "refresh-focus-action",
+    candidateId: candidate.id,
+    subjectName: candidate.name,
+    normalizedSubjectKey: workflow.normalizeDossierSubjectName(candidate.name),
+    status: "failed",
+    reason: "Refresh did not complete.",
+    requestedAt: "2026-06-01T00:00:00.000Z",
+    updatedAt: "2026-06-01T00:00:00.000Z",
+    requestSource: "manual_admin",
+    priority: 3,
+  };
+  const liveCandidate = {
+    ...candidate,
+    existingDossierMatch: {
+      id: "live-focus-dossier",
+      name: "Live Focus Dossier",
+      confidence: "high",
+    },
+  };
+  const notifications = dossierWorkflowNotifications.buildSourceFileNotifications(liveCandidate, {
+    drafts: [draft],
+    recommendations: [signal],
+    sourceFileRefreshRequests: [refresh],
+  });
+  const actions = dossierWorkflowNotifications.dedupeDossierDashboardActions([
+    {
+      label: "Open Source File",
+      href: dossierWorkflowNotifications.sourceFileFocusHref(candidate.id, "overview"),
+      destinationKey: "source-file-overview",
+    },
+    ...notifications
+      .filter((notification) => notification.actionLabel && notification.actionHref && notification.actionDestinationKey)
+      .map((notification) => ({
+        label: notification.actionLabel,
+        href: notification.actionHref,
+        destinationKey: notification.actionDestinationKey,
+      })),
+  ]);
+  const hrefs = actions.map((action) => action.href);
+
+  assert.equal(new Set(hrefs).size, hrefs.length);
+  assert.ok(actions.some((action) => action.label === "Open Source File" && action.href.endsWith("?focus=overview")));
+  assert.ok(actions.some((action) => action.label === "Review Identity Links" && action.href.endsWith("?focus=identity")));
+  assert.ok(actions.some((action) => action.label === "Review Missing Info" && action.href.endsWith("?focus=missing-info")));
+  assert.ok(actions.some((action) => action.label === "Review BNL Signals" && action.href.endsWith("?focus=signals")));
+  assert.ok(actions.some((action) => action.label === "Open BNL Archive" && action.href.endsWith("?focus=archive")));
+  assert.ok(actions.some((action) => action.label === "View Refresh Status" && action.href.endsWith("?focus=refresh")));
+  assert.ok(actions.some((action) => action.label === "Open Proposed Dossier" && action.href === `/admin/dossiers/drafts/${draft.id}`));
+  assert.ok(actions.some((action) => action.label === "Open Live Dossier" && action.href === "/database/live-focus-dossier"));
+
+  const readyActions = dossierWorkflowNotifications.buildSourceFileNotifications(candidate, {
+    drafts: [{ ...draft, status: "ready_for_owner_review" }],
+  });
+  assert.ok(readyActions.some((notification) => notification.actionLabel === "Owner Review" && notification.actionHref === "/admin/dossiers/owner-review"));
+});
+
+test("candidate dashboard actions point matching and identity states to focused Source File sections", () => {
+  const candidate = baseNotificationCandidate({
+    id: "candidate-focus-action",
+    identityReviewStatus: "needs_confirmation",
+    connectedSourceFileCandidateId: "matched-source-file-focus",
+  });
+  const notifications = dossierWorkflowNotifications.buildCandidateNotifications(candidate);
+
+  assert.ok(notifications.some((notification) => notification.actionLabel === "Review Identity Links" && notification.actionHref.endsWith("?focus=identity")));
+  assert.ok(notifications.some((notification) => notification.actionLabel === "Open Matched Source File" && notification.actionHref === "/admin/dossiers/candidates/matched-source-file-focus?focus=overview"));
+});
+
+test("source file detail page exposes focus section ids and workspace status map", () => {
+  const page = `${normalizedSource("src/app/admin/dossiers/candidates/[candidateId]/page.tsx")} ${normalizedSource("src/lib/dossier-workflow-notifications.ts")}`;
+  for (const sectionId of [
+    "source-file-overview",
+    "source-file-identity",
+    "source-file-missing-info",
+    "source-file-signals",
+    "source-file-archive",
+    "source-file-dossier",
+    "source-file-refresh",
+  ]) {
+    assertIncludesCopy(page, sectionId);
+  }
+  for (const label of [
+    "Source File Status Map",
+    "Workspace Map",
+    "Possible identity link",
+    "Possible duplicate",
+    "New BNL signals attached",
+    "Missing info",
+    "BNL archive available",
+    "Proposed Dossier in progress",
+    "Proposed Dossier ready for Owner Review",
+    "Live dossier exists",
+    "FILE UPDATED",
+    "FILE NOT UPDATED",
+  ]) {
+    assertIncludesCopy(page, label);
+  }
+  assert.match(page, /useSearchParams/);
+  assert.match(page, /scrollIntoView/);
 });
 
 test("computed source file notifications only mark explicit system records", () => {

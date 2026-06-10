@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   getDossierSourceFileMetrics,
@@ -31,6 +31,12 @@ import {
   sourceFileReasonMeaning,
   sourceFileWhyNowMeaning,
 } from "@/lib/dossier-source-memory-meaning";
+import {
+  buildSourceFileNotifications,
+  dossierSourceFileFocusSectionIds,
+  sourceFileFocusHref,
+  type DossierSourceFileFocus,
+} from "@/lib/dossier-workflow-notifications";
 
 type WorkflowPayload = {
   candidates: DossierCandidate[];
@@ -341,14 +347,116 @@ function recommendationEvidenceItems(recommendation: DossierRecommendation) {
 function Section({
   title,
   children,
+  id,
+  focused,
 }: {
   title: string;
   children: React.ReactNode;
+  id?: string;
+  focused?: boolean;
 }) {
   return (
-    <section className="border border-border/70 bg-background/20 p-4 text-sm text-muted">
+    <section
+      id={id}
+      className={`border p-4 text-sm text-muted scroll-mt-24 ${
+        focused
+          ? "border-accent bg-accent/10"
+          : "border-border/70 bg-background/20"
+      }`}
+    >
       <h2 className="font-bold text-foreground mb-2">{title}</h2>
       {children}
+    </section>
+  );
+}
+
+
+const sourceFileFocusValues: DossierSourceFileFocus[] = [
+  "overview",
+  "identity",
+  "missing-info",
+  "signals",
+  "archive",
+  "dossier",
+  "refresh",
+];
+
+function validSourceFileFocus(
+  value: string | null,
+): DossierSourceFileFocus | null {
+  return sourceFileFocusValues.includes(value as DossierSourceFileFocus)
+    ? (value as DossierSourceFileFocus)
+    : null;
+}
+
+function hasNotification(
+  notifications: ReturnType<typeof buildSourceFileNotifications>,
+  id: string,
+) {
+  return notifications.some((notification) => notification.id === id);
+}
+
+function sourceFileSectionId(focus: DossierSourceFileFocus) {
+  return dossierSourceFileFocusSectionIds[focus];
+}
+
+function focusSectionClass(focused: boolean) {
+  return `scroll-mt-24 border ${
+    focused ? "border-accent bg-accent/10" : "border-border bg-surface"
+  }`;
+}
+
+
+type SourceFileStatusMapSection = {
+  title: string;
+  focus: DossierSourceFileFocus;
+  statuses: string[];
+};
+
+function SourceFileStatusMap({
+  candidateId,
+  sections,
+  focusedSection,
+}: {
+  candidateId: string;
+  sections: SourceFileStatusMapSection[];
+  focusedSection: DossierSourceFileFocus | null;
+}) {
+  return (
+    <section
+      id={sourceFileSectionId("overview")}
+      className="border border-border bg-surface p-5 space-y-4 scroll-mt-24"
+    >
+      <div>
+        <p className="text-xs uppercase tracking-[0.4em] text-muted mb-2">
+          Workspace Map
+        </p>
+        <h2 className="text-2xl font-bold text-foreground">
+          Source File Status Map
+        </h2>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
+        {sections.map((section) => (
+          <Link
+            key={section.focus}
+            href={sourceFileFocusHref(candidateId, section.focus)}
+            className={`border p-3 transition-all ${
+              focusedSection === section.focus
+                ? "border-accent bg-accent/10"
+                : "border-border/70 bg-background/20 hover:border-accent"
+            }`}
+          >
+            <p className="text-xs uppercase tracking-widest text-accent">
+              {section.title}
+            </p>
+            <ul className="mt-2 space-y-1 text-muted">
+              {uniqueLabels(section.statuses).map((status) => (
+                <li key={status}>{status}</li>
+              ))}
+            </ul>
+          </Link>
+        ))}
+      </div>
     </section>
   );
 }
@@ -682,7 +790,11 @@ function PhaseRail() {
 export default function CandidateReviewPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const candidateId = routeParam(params?.candidateId);
+  const focusedSourceFileSection = validSourceFileFocus(
+    searchParams.get("focus"),
+  );
   const [payload, setPayload] = useState<WorkflowPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -784,6 +896,20 @@ export default function CandidateReviewPage() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [candidateId]);
+
+  useEffect(() => {
+    if (!focusedSourceFileSection || loading) return;
+    const sectionId = sourceFileSectionId(focusedSourceFileSection);
+    const element = document.getElementById(sectionId);
+    if (!element) return;
+    const details = element.closest("details");
+    if (details instanceof HTMLDetailsElement) {
+      details.open = true;
+    }
+    window.requestAnimationFrame(() => {
+      element.scrollIntoView({ block: "start" });
+    });
+  }, [focusedSourceFileSection, loading, candidateId]);
 
   useEffect(() => {
     const candidate = payload?.candidates.find((item) => item.id === candidateId);
@@ -1068,6 +1194,95 @@ export default function CandidateReviewPage() {
     : isCandidateIntake
       ? "Dossier Seed"
       : "Case File / BNL Source File";
+  const sourceFileNotifications = candidate
+    ? buildSourceFileNotifications(candidate, {
+        candidates: payload?.candidates ?? [],
+        drafts: payload?.drafts ?? [],
+        duplicateGroups: payload?.duplicateGroups ?? [],
+        recommendations: payload?.recommendations ?? [],
+        publicDossiers,
+        sourceFileRefreshRequests: payload?.sourceFileRefreshRequests ?? [],
+      })
+    : [];
+  const sourceFileStatusMapSections: SourceFileStatusMapSection[] = candidate
+    ? [
+        {
+          title: "Overview",
+          focus: "overview",
+          statuses: [
+            isCandidateIntake ? "Candidate intake / Dossier Seed" : "Active Source File",
+            isExistingDossierUpdate ? "Existing live dossier update record" : "",
+            hasNotification(sourceFileNotifications, "system-record")
+              ? "System record"
+              : "",
+          ],
+        },
+        {
+          title: "Identity",
+          focus: "identity",
+          statuses: [
+            confirmedIdentityLinks.length > 0 ? "Confirmed aliases" : "",
+            hasNotification(sourceFileNotifications, "identity-review-pending")
+              ? "Possible identity link"
+              : "",
+            hasNotification(sourceFileNotifications, "possible-duplicate")
+              ? "Possible duplicate"
+              : "",
+            confirmedIdentityLinks.length === 0 &&
+            !hasNotification(sourceFileNotifications, "identity-review-pending") &&
+            !hasNotification(sourceFileNotifications, "possible-duplicate")
+              ? "No known match"
+              : "",
+          ],
+        },
+        {
+          title: "BNL Signals",
+          focus: "signals",
+          statuses: [
+            hasNotification(sourceFileNotifications, "new-bnl-signal")
+              ? "New BNL signals attached"
+              : "No active BNL signals",
+          ],
+        },
+        {
+          title: "Missing Info",
+          focus: "missing-info",
+          statuses: [
+            hasNotification(sourceFileNotifications, "missing-info")
+              ? "Missing info"
+              : "No missing info",
+          ],
+        },
+        {
+          title: "Archive",
+          focus: "archive",
+          statuses: [
+            hasNotification(sourceFileNotifications, "bnl-archive-available")
+              ? "BNL archive available"
+              : "No BNL archive",
+          ],
+        },
+        {
+          title: "Dossier",
+          focus: "dossier",
+          statuses: [
+            hasOwnerReviewDraft
+              ? "Proposed Dossier ready for Owner Review"
+              : primaryDraft
+                ? "Proposed Dossier in progress"
+                : "No Proposed Dossier",
+            hasNotification(sourceFileNotifications, "live-dossier-exists")
+              ? "Live dossier exists"
+              : "",
+          ],
+        },
+        {
+          title: "Refresh",
+          focus: "refresh",
+          statuses: [refreshStatusLabel],
+        },
+      ]
+    : [];
   const closedIdentityLinks = identityLinks.filter(
     (identityLink) =>
       identityLink.status === "rejected" || identityLink.status === "retired",
@@ -1468,7 +1683,12 @@ export default function CandidateReviewPage() {
                 </p>
               </div>
             )}
-          <div className="mt-4 border border-border bg-background/30 p-3 text-sm text-muted">
+          <div
+            id={sourceFileSectionId("refresh")}
+            className={`mt-4 p-3 text-sm text-muted ${focusSectionClass(
+              focusedSourceFileSection === "refresh",
+            )}`}
+          >
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-xs uppercase tracking-widest text-accent">
@@ -1646,8 +1866,16 @@ export default function CandidateReviewPage() {
       </section>
 
       <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-4">
+        <SourceFileStatusMap
+          candidateId={candidate.id}
+          sections={sourceFileStatusMapSections}
+          focusedSection={focusedSourceFileSection}
+        />
         {sourceFileSummary && (
-          <>
+          <section
+            id={sourceFileSectionId("archive")}
+            className={focusSectionClass(focusedSourceFileSection === "archive")}
+          >
             <DossierSourceFileSummaryPanel
               summary={sourceFileSummary}
               entityReadout={entityActivityReadout}
@@ -1664,9 +1892,13 @@ export default function CandidateReviewPage() {
               }
             />
             {/* Case File / BNL Source File Summary */}
-          </>
+          </section>
         )}
-        <Section title="Proposed Dossier Status">
+        <Section
+          id={sourceFileSectionId("dossier")}
+          focused={focusedSourceFileSection === "dossier"}
+          title="Proposed Dossier Status"
+        >
           {!primaryDraft ? (
             <div className="space-y-2">
               <p>No Proposed Dossier exists yet.</p>
@@ -1775,7 +2007,11 @@ export default function CandidateReviewPage() {
           </form>
         </section>
 
-        <Section title="Source Notes / Admin Addendums">
+        <Section
+          id={sourceFileSectionId("signals")}
+          focused={focusedSourceFileSection === "signals"}
+          title="Source Notes / Admin Addendums"
+        >
           {sourceNotes.length === 0 ? (
             <p>No saved source notes yet.</p>
           ) : (
@@ -1796,7 +2032,11 @@ export default function CandidateReviewPage() {
           )}
         </Section>
 
-        <Section title="Identity Link Actions">
+        <Section
+          id={sourceFileSectionId("identity")}
+          focused={focusedSourceFileSection === "identity"}
+          title="Identity Link Actions"
+        >
           <div className="space-y-5">
             <div className="space-y-2">
               <p>
@@ -2242,7 +2482,11 @@ export default function CandidateReviewPage() {
             <Section title="Corrections / extra notes">
               <p>Saved notes now live in Case File / BNL Source File Notes above.</p>
             </Section>
-            <Section title="Missing Info">
+            <Section
+              id={sourceFileSectionId("missing-info")}
+              focused={focusedSourceFileSection === "missing-info"}
+              title="Missing Info"
+            >
               {meaningFirstList(candidate.missingInfo, "—", candidate.name)}
             </Section>
             <Section title="Do Not Say">

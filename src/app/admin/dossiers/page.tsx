@@ -9,12 +9,16 @@ import {
   type DossierDraft,
   type DossierDuplicateGroup,
   type DossierRecommendation,
+  type DossierSourceFileRefreshRequest,
 } from "@/lib/dossier-workflow";
 import {
   buildCandidateNotifications,
   buildRecommendationNotifications,
   buildSourceFileNotifications,
+  dedupeDossierDashboardActions,
   isLiveDossierUpdateRecommendation,
+  sourceFileFocusHref,
+  type DossierDashboardAction,
   type DossierWorkflowNotification,
 } from "@/lib/dossier-workflow-notifications";
 
@@ -37,6 +41,7 @@ type WorkflowPayload = {
   authoringGuide?: { version: string };
   tagRegistry?: { totalUniqueTags: number; totalTagAssignments: number };
   publicDossiers?: Array<{ id: string; name: string }>;
+  sourceFileRefreshRequests?: DossierSourceFileRefreshRequest[];
 };
 
 type ManualRecommendationForm = {
@@ -198,40 +203,37 @@ function RowStatusList({ labels }: { labels: string[] }) {
   );
 }
 
-function RowActions({
-  notifications,
-  primaryHref,
-  primaryLabel,
-}: {
-  notifications: DossierWorkflowNotification[];
-  primaryHref: string;
-  primaryLabel: string;
-}) {
-  const actionByKey = new Map<string, { label: string; href: string }>();
-  actionByKey.set(`${primaryLabel}:${primaryHref}`, {
-    label: primaryLabel,
-    href: primaryHref,
-  });
-  for (const notification of notifications) {
-    if (!notification.actionLabel || !notification.actionHref) continue;
-    actionByKey.set(`${notification.actionLabel}:${notification.actionHref}`, {
-      label: notification.actionLabel,
-      href: notification.actionHref,
-    });
-  }
+function notificationActions(
+  notifications: DossierWorkflowNotification[],
+): DossierDashboardAction[] {
+  return notifications
+    .filter(
+      (notification) =>
+        notification.actionLabel &&
+        notification.actionHref &&
+        notification.actionDestinationKey,
+    )
+    .map((notification) => ({
+      label: notification.actionLabel ?? "Open Source File",
+      href: notification.actionHref ?? "#",
+      destinationKey: notification.actionDestinationKey ?? notification.id,
+      group: notification.actionGroup,
+    }));
+}
+
+function RowActions({ actions }: { actions: DossierDashboardAction[] }) {
+  const dedupedActions = dedupeDossierDashboardActions(actions);
   return (
     <div className="flex flex-wrap gap-2">
-      {Array.from(actionByKey.values())
-        .slice(0, 4)
-        .map((action) => (
-          <Link
-            key={`${action.label}:${action.href}`}
-            href={action.href}
-            className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
-          >
-            {action.label}
-          </Link>
-        ))}
+      {dedupedActions.map((action) => (
+        <Link
+          key={`${action.destinationKey}:${action.href}`}
+          href={action.href}
+          className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
+        >
+          {action.label}
+        </Link>
+      ))}
     </div>
   );
 }
@@ -451,6 +453,7 @@ export default function DossierControlCenterPage() {
     duplicateGroups,
     recommendations,
     publicDossiers,
+    sourceFileRefreshRequests: payload?.sourceFileRefreshRequests ?? [],
   };
 
   async function postWorkflow(body: Record<string, unknown>) {
@@ -971,9 +974,15 @@ export default function DossierControlCenterPage() {
                         </td>
                         <td className="py-3 pr-3">
                           <RowActions
-                            notifications={notifications}
-                            primaryHref={`/admin/dossiers/recommendations/${recommendation.id}`}
-                            primaryLabel={recommendationActionLabel()}
+                            actions={[
+                              {
+                                label: recommendationActionLabel(),
+                                href: `/admin/dossiers/recommendations/${recommendation.id}`,
+                                destinationKey: "candidate-signal",
+                                group: "primary",
+                              },
+                              ...notificationActions(notifications),
+                            ]}
                           />
                         </td>
                       </tr>
@@ -1024,9 +1033,15 @@ export default function DossierControlCenterPage() {
                         </td>
                         <td className="py-3 pr-3">
                           <RowActions
-                            notifications={notifications}
-                            primaryHref={`/admin/dossiers/candidates/${candidate.id}`}
-                            primaryLabel={candidateActionLabel()}
+                            actions={[
+                              {
+                                label: candidateActionLabel(),
+                                href: sourceFileFocusHref(candidate.id, "overview"),
+                                destinationKey: "source-file-overview",
+                                group: "primary",
+                              },
+                              ...notificationActions(notifications),
+                            ]}
                           />
                         </td>
                       </tr>
@@ -1061,7 +1076,7 @@ export default function DossierControlCenterPage() {
                 </thead>
                 <tbody>
                   {sourceFileRows.map((candidate) => {
-                    const actionHref = `/admin/dossiers/candidates/${candidate.id}`;
+                    const actionHref = sourceFileFocusHref(candidate.id, "overview");
                     const notifications = buildSourceFileNotifications(
                       candidate,
                       notificationContext,
@@ -1118,9 +1133,15 @@ export default function DossierControlCenterPage() {
                         </td>
                         <td className="py-3 pr-3">
                           <RowActions
-                            notifications={notifications}
-                            primaryHref={actionHref}
-                            primaryLabel={sourceFileActionLabel()}
+                            actions={[
+                              {
+                                label: sourceFileActionLabel(),
+                                href: actionHref,
+                                destinationKey: "source-file-overview",
+                                group: "primary",
+                              },
+                              ...notificationActions(notifications),
+                            ]}
                           />
                         </td>
                       </tr>

@@ -1,8 +1,10 @@
-import type {
-  DossierCandidate,
-  DossierDraft,
-  DossierDuplicateGroup,
-  DossierRecommendation,
+import {
+  normalizeDossierSubjectName,
+  type DossierCandidate,
+  type DossierDraft,
+  type DossierDuplicateGroup,
+  type DossierRecommendation,
+  type DossierSourceFileRefreshRequest,
 } from "@/lib/dossier-workflow";
 
 export type DossierWorkflowNotificationTone =
@@ -19,7 +21,59 @@ export type DossierWorkflowNotification = {
   reason?: string;
   actionLabel?: string;
   actionHref?: string;
+  actionDestinationKey?: string;
+  actionGroup?: DossierDashboardAction["group"];
 };
+
+export type DossierSourceFileFocus =
+  | "overview"
+  | "identity"
+  | "missing-info"
+  | "signals"
+  | "archive"
+  | "dossier"
+  | "refresh";
+
+export const dossierSourceFileFocusSectionIds: Record<
+  DossierSourceFileFocus,
+  string
+> = {
+  overview: "source-file-overview",
+  identity: "source-file-identity",
+  "missing-info": "source-file-missing-info",
+  signals: "source-file-signals",
+  archive: "source-file-archive",
+  dossier: "source-file-dossier",
+  refresh: "source-file-refresh",
+};
+
+export type DossierDashboardAction = {
+  label: string;
+  href: string;
+  destinationKey: string;
+  group?: "primary" | "source-file" | "external" | "archive";
+};
+
+export function sourceFileFocusHref(
+  candidateId: string,
+  focus: DossierSourceFileFocus,
+) {
+  return `/admin/dossiers/candidates/${candidateId}?focus=${focus}`;
+}
+
+export function dedupeDossierDashboardActions(
+  actions: DossierDashboardAction[],
+) {
+  const byDestination = new Map<string, DossierDashboardAction>();
+  const exactHrefs = new Set<string>();
+  for (const action of actions) {
+    if (!action.href || exactHrefs.has(action.href)) continue;
+    if (byDestination.has(action.destinationKey)) continue;
+    byDestination.set(action.destinationKey, action);
+    exactHrefs.add(action.href);
+  }
+  return Array.from(byDestination.values());
+}
 
 export type DossierWorkflowPublicDossierRef = {
   id: string;
@@ -32,6 +86,7 @@ type NotificationContext = {
   drafts?: DossierDraft[];
   duplicateGroups?: DossierDuplicateGroup[];
   publicDossiers?: DossierWorkflowPublicDossierRef[];
+  sourceFileRefreshRequests?: DossierSourceFileRefreshRequest[];
 };
 
 const activeRecommendationStatuses = new Set<DossierRecommendation["status"]>([
@@ -52,6 +107,48 @@ const systemRecordPatterns = [
   /carl-bot logging/i,
   /bnl-01_member_log/i,
 ];
+
+
+function focusAction(
+  candidateId: string,
+  focus: DossierSourceFileFocus,
+  label: string,
+): Pick<
+  DossierWorkflowNotification,
+  "actionLabel" | "actionHref" | "actionDestinationKey" | "actionGroup"
+> {
+  return {
+    actionLabel: label,
+    actionHref: sourceFileFocusHref(candidateId, focus),
+    actionDestinationKey: dossierSourceFileFocusSectionIds[focus],
+    actionGroup: "source-file",
+  };
+}
+
+function latestRefreshRequestForCandidate(
+  candidate: DossierCandidate,
+  requests: DossierSourceFileRefreshRequest[] = [],
+) {
+  const normalizedSubjectKey = normalizeDossierSubjectName(candidate.name);
+  return requests
+    .filter(
+      (request) =>
+        request.candidateId === candidate.id ||
+        request.normalizedSubjectKey === normalizedSubjectKey,
+    )
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+}
+
+function hasRefreshStatusForDashboard(
+  candidate: DossierCandidate,
+  requests: DossierSourceFileRefreshRequest[] = [],
+) {
+  const latestRequest = latestRefreshRequestForCandidate(candidate, requests);
+  return Boolean(
+    latestRequest &&
+      (latestRequest.status === "failed" || latestRequest.status === "skipped"),
+  );
+}
 
 function pushUnique(
   notifications: DossierWorkflowNotification[],
@@ -195,7 +292,7 @@ export function buildCandidateNotifications(
   context: NotificationContext = {},
 ): DossierWorkflowNotification[] {
   const notifications: DossierWorkflowNotification[] = [];
-  const candidateHref = `/admin/dossiers/candidates/${candidate.id}`;
+  const candidateHref = sourceFileFocusHref(candidate.id, "overview");
 
   if (hasPossibleIdentityLink(candidate) || hasPendingIdentityLink(candidate)) {
     pushUnique(notifications, {
@@ -203,8 +300,7 @@ export function buildCandidateNotifications(
       label: "Possible identity link",
       tone: "warning",
       reason: "Review before confirming aliases or routing future signals.",
-      actionLabel: "Review Identity Links",
-      actionHref: candidateHref,
+      ...focusAction(candidate.id, "identity", "Review Identity Links"),
     });
   }
 
@@ -213,8 +309,7 @@ export function buildCandidateNotifications(
       id: "possible-duplicate",
       label: "Possible duplicate",
       tone: "warning",
-      actionLabel: "Review Identity Links",
-      actionHref: candidateHref,
+      ...focusAction(candidate.id, "identity", "Review Identity Links"),
     });
   }
 
@@ -223,8 +318,13 @@ export function buildCandidateNotifications(
       id: "existing-source-file-match",
       label: "Existing Source File linked",
       tone: "info",
-      actionLabel: "Open Source File",
-      actionHref: `/admin/dossiers/candidates/${candidate.connectedSourceFileCandidateId}`,
+      actionLabel: "Open Matched Source File",
+      actionHref: sourceFileFocusHref(
+        candidate.connectedSourceFileCandidateId,
+        "overview",
+      ),
+      actionDestinationKey: "source-file-overview",
+      actionGroup: "source-file",
     });
   }
 
@@ -236,6 +336,8 @@ export function buildCandidateNotifications(
       actionLabel: "Open Live Dossier",
       actionHref:
         liveDossierHref(candidate, context.publicDossiers) ?? candidateHref,
+      actionDestinationKey: "live-dossier",
+      actionGroup: "external",
     });
   }
 
@@ -249,8 +351,7 @@ export function buildCandidateNotifications(
       tone: "info",
       reason:
         "Review-only signal; it does not publish or create drafts by itself.",
-      actionLabel: "Review Candidate",
-      actionHref: candidateHref,
+      ...focusAction(candidate.id, "signals", "Review BNL Signals"),
     });
   }
 
@@ -289,7 +390,9 @@ export function buildRecommendationNotifications(
       label: "Existing Source File linked",
       tone: "info",
       actionLabel: "Open Source File",
-      actionHref: `/admin/dossiers/candidates/${candidateId}`,
+      actionHref: sourceFileFocusHref(candidateId ?? "", "overview"),
+      actionDestinationKey: "source-file-overview",
+      actionGroup: "source-file",
     });
   }
 
@@ -304,7 +407,11 @@ export function buildRecommendationNotifications(
       label: "Live dossier exists",
       tone: "info",
       actionLabel: "Open Live Dossier",
-      actionHref: recommendationHref,
+      actionHref: recommendation.targetDossierId
+        ? `/database/${recommendation.targetDossierId}`
+        : recommendationHref,
+      actionDestinationKey: "live-dossier",
+      actionGroup: "external",
     });
   }
 
@@ -316,7 +423,6 @@ export function buildSourceFileNotifications(
   context: NotificationContext = {},
 ): DossierWorkflowNotification[] {
   const notifications: DossierWorkflowNotification[] = [];
-  const candidateHref = `/admin/dossiers/candidates/${candidate.id}`;
   const liveDossierExists = hasLiveDossierMatch(
     candidate,
     context.publicDossiers,
@@ -344,8 +450,7 @@ export function buildSourceFileNotifications(
       tone: "muted",
       reason:
         "Special/system Source File; do not treat as a normal person/community candidate.",
-      actionLabel: "Open Source File",
-      actionHref: candidateHref,
+      ...focusAction(candidate.id, "overview", "Open Source File"),
     });
   }
 
@@ -356,6 +461,8 @@ export function buildSourceFileNotifications(
       tone: "success",
       actionLabel: "Open Live Dossier",
       actionHref: liveDossierHref(candidate, context.publicDossiers),
+      actionDestinationKey: "live-dossier",
+      actionGroup: "external",
     });
   }
 
@@ -366,6 +473,8 @@ export function buildSourceFileNotifications(
       tone: "info",
       actionLabel: "Open Proposed Dossier",
       actionHref: `/admin/dossiers/drafts/${activeDraft.id}`,
+      actionDestinationKey: "proposed-dossier",
+      actionGroup: "external",
     });
   }
 
@@ -376,6 +485,8 @@ export function buildSourceFileNotifications(
       tone: "success",
       actionLabel: "Owner Review",
       actionHref: "/admin/dossiers/owner-review",
+      actionDestinationKey: "owner-review",
+      actionGroup: "external",
     });
   }
 
@@ -386,8 +497,7 @@ export function buildSourceFileNotifications(
       tone: "info",
       reason:
         "Review-only signal; it does not publish or create Source Files automatically.",
-      actionLabel: "Open Source File",
-      actionHref: candidateHref,
+      ...focusAction(candidate.id, "signals", "Review BNL Signals"),
     });
   }
 
@@ -398,8 +508,6 @@ export function buildSourceFileNotifications(
       tone: "warning",
       reason:
         "Only use for potential updates to an existing live/public dossier.",
-      actionLabel: "Open Source File",
-      actionHref: candidateHref,
     });
   } else if (hasNewSignal && activeDraft) {
     pushUnique(notifications, {
@@ -409,6 +517,8 @@ export function buildSourceFileNotifications(
       reason: "Active Proposed Dossier change; not a live dossier update.",
       actionLabel: "Open Proposed Dossier",
       actionHref: `/admin/dossiers/drafts/${activeDraft.id}`,
+      actionDestinationKey: "proposed-dossier",
+      actionGroup: "external",
     });
   }
 
@@ -417,8 +527,7 @@ export function buildSourceFileNotifications(
       id: "identity-review-pending",
       label: "Possible identity link",
       tone: "warning",
-      actionLabel: "Review Identity Links",
-      actionHref: candidateHref,
+      ...focusAction(candidate.id, "identity", "Review Identity Links"),
     });
   }
 
@@ -427,8 +536,7 @@ export function buildSourceFileNotifications(
       id: "possible-duplicate",
       label: "Possible duplicate",
       tone: "warning",
-      actionLabel: "Review Identity Links",
-      actionHref: candidateHref,
+      ...focusAction(candidate.id, "identity", "Review Identity Links"),
     });
   }
 
@@ -440,8 +548,7 @@ export function buildSourceFileNotifications(
       id: "missing-info",
       label: "Missing info",
       tone: "warning",
-      actionLabel: "Open Source File",
-      actionHref: candidateHref,
+      ...focusAction(candidate.id, "missing-info", "Review Missing Info"),
     });
   }
 
@@ -454,8 +561,19 @@ export function buildSourceFileNotifications(
       id: "bnl-archive-available",
       label: "BNL archive available",
       tone: "info",
-      actionLabel: "Open Source File",
-      actionHref: candidateHref,
+      ...focusAction(candidate.id, "archive", "Open BNL Archive"),
+    });
+  }
+
+
+  if (
+    hasRefreshStatusForDashboard(candidate, context.sourceFileRefreshRequests)
+  ) {
+    pushUnique(notifications, {
+      id: "refresh-status",
+      label: "FILE NOT UPDATED",
+      tone: "warning",
+      ...focusAction(candidate.id, "refresh", "View Refresh Status"),
     });
   }
 

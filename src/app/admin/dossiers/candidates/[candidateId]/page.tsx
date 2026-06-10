@@ -130,17 +130,15 @@ const identityLinkStatusCopy: Record<DossierIdentityLinkStatus, string> = {
   retired: "This alias is retired and no longer used for matching.",
 };
 
-const identityReviewNotice: Record<
-  | "confirmDossierIdentityLink"
-  | "rejectDossierIdentityLink"
-  | "retireDossierIdentityLink",
-  string
-> = {
-  confirmDossierIdentityLink:
-    "Identity link confirmed. Future recommendations can now match this alias if matching is enabled; it is still not public identity proof.",
+const identityReviewNotice = {
+  confirmForMatching:
+    "Identity link confirmed for matching. Future BNL Signals using this label can route to this Source File. This does not publish identity or merge Source Files.",
+  confirmReferenceOnly:
+    "Identity link confirmed as reference-only. It remains internal context and will not route future BNL Signals automatically.",
   rejectDossierIdentityLink:
     "Identity link rejected. It will not be used for matching.",
-  retireDossierIdentityLink: "Identity link retired. It is no longer active.",
+  retireDossierIdentityLink:
+    "Identity link retired. It remains in history and will no longer be used for matching.",
 };
 
 const openRefreshStatuses = new Set<DossierSourceFileRefreshRequest["status"]>([
@@ -406,6 +404,77 @@ function sourceWarningLabels(input: {
   ]);
 }
 
+function IdentityLinkDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border border-border/60 bg-background/10 p-2">
+      <p className="text-[0.65rem] uppercase tracking-widest text-muted">
+        {label}
+      </p>
+      <p className="mt-1 text-sm text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function CreatedFromBnlSignalBlock({
+  identityLink,
+  recommendation,
+}: {
+  identityLink: DossierIdentityLink;
+  recommendation?: DossierRecommendation;
+}) {
+  if (!identityLink.createdFromRecommendationId) return null;
+
+  const evidenceItems = recommendation
+    ? recommendationEvidenceItems(recommendation)
+    : [];
+
+  return (
+    <div className="border border-border/70 bg-background/30 p-3 space-y-2">
+      <p className="font-semibold text-foreground">Created from BNL Signal</p>
+      <div className="grid gap-2 md:grid-cols-2">
+        <IdentityLinkDetail
+          label="BNL Signal subject"
+          value={
+            identityLink.createdFromRecommendationSubject ??
+            recommendation?.subjectName ??
+            "—"
+          }
+        />
+        <IdentityLinkDetail
+          label="Confidence"
+          value={recommendation?.confidence ?? identityLink.confidence ?? "—"}
+        />
+      </div>
+      {evidenceItems.length > 0 ? (
+        <div>
+          <p className="text-[0.65rem] uppercase tracking-widest text-muted">
+            Reason / evidence summary
+          </p>
+          <ul className="mt-1 list-disc pl-5 space-y-1">
+            {evidenceItems.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p>Review-only recommendation context is attached.</p>
+      )}
+      {(recommendation?.sourceLanes ?? []).length > 0 && (
+        <IdentityLinkDetail
+          label="Source lanes"
+          value={(recommendation?.sourceLanes ?? []).join(", ")}
+        />
+      )}
+      <Link
+        href={`/admin/dossiers/recommendations/${identityLink.createdFromRecommendationId}`}
+        className="inline-flex text-accent hover:underline"
+      >
+        Open recommendation
+      </Link>
+    </div>
+  );
+}
+
 function IdentityLinkCard({
   identityLink,
   saving,
@@ -416,17 +485,16 @@ function IdentityLinkCard({
   saving: boolean;
   recommendation?: DossierRecommendation;
   onReview: (
-    identityLinkId: string,
+    identityLink: DossierIdentityLink,
     action:
       | "confirmDossierIdentityLink"
       | "rejectDossierIdentityLink"
       | "retireDossierIdentityLink",
-    useForMatching?: boolean,
+    options?: { useForMatching?: boolean; useInPublicDossier?: boolean },
   ) => void;
 }) {
   const isProposed = identityLink.status === "proposed";
   const isConfirmed = identityLink.status === "confirmed";
-  const isRetired = identityLink.status === "retired";
 
   return (
     <article className="border border-border/70 bg-background/20 p-3 space-y-3">
@@ -436,15 +504,13 @@ function IdentityLinkCard({
           <p className="mt-1">{identityLinkStatusCopy[identityLink.status]}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <StatusBadge>
-            {identityLinkStatusLabels[identityLink.status]}
-          </StatusBadge>
+          <StatusBadge>{identityLinkStatusLabels[identityLink.status]}</StatusBadge>
           {isConfirmed && (
             <>
               <StatusBadge>
                 {identityLink.useForMatching
                   ? "Active for matching"
-                  : "Not used for matching"}
+                  : "Reference only / Not used for matching"}
               </StatusBadge>
               <StatusBadge>
                 {identityLink.visibility === "public_safe"
@@ -458,89 +524,151 @@ function IdentityLinkCard({
               </StatusBadge>
             </>
           )}
-          {!isConfirmed && !isRetired && (
-            <StatusBadge>Not used for matching</StatusBadge>
-          )}
+          {isProposed && <StatusBadge>Not used for matching</StatusBadge>}
         </div>
       </div>
-      <p>
-        Identity-link review metadata is admin-only and does not publish, merge,
-        or prove a public identity.
-      </p>
-      <p>Confidence: {identityLink.confidence ?? "—"}</p>
-      {identityLink.createdFromRecommendationId && (
-        <div className="border border-border/70 bg-background/30 p-3 space-y-1">
-          <p className="font-semibold text-foreground">
-            Created from BNL Signal
-          </p>
-          <p>
-            BNL Signal subject:{" "}
-            {identityLink.createdFromRecommendationSubject ??
-              recommendation?.subjectName ??
-              "—"}
-          </p>
-          {recommendation ? (
-            <ul className="list-disc pl-5 space-y-1">
-              {recommendationEvidenceItems(recommendation).map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          ) : (
-            <p>Review-only recommendation context is attached.</p>
-          )}
-          <Link
-            href={`/admin/dossiers/recommendations/${identityLink.createdFromRecommendationId}`}
-            className="inline-flex text-accent hover:underline"
-          >
-            Open recommendation
-          </Link>
+
+      {isProposed && (
+        <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-4">
+          <IdentityLinkDetail label="Type" value={identityLink.type} />
+          <IdentityLinkDetail label="Source" value={identityLink.source} />
+          <IdentityLinkDetail
+            label="Confidence"
+            value={identityLink.confidence ?? "—"}
+          />
+          <IdentityLinkDetail
+            label="Visibility"
+            value={
+              identityLink.visibility === "public_safe"
+                ? "Public-safe label"
+                : "Internal only"
+            }
+          />
+          <IdentityLinkDetail
+            label="Created from BNL Signal"
+            value={identityLink.createdFromRecommendationId ? "Yes" : "No"}
+          />
+          <IdentityLinkDetail
+            label="Currently used for matching"
+            value={identityLink.useForMatching ? "Yes" : "No"}
+          />
+          <IdentityLinkDetail
+            label="Public-safe"
+            value={identityLink.visibility === "public_safe" ? "Yes" : "No"}
+          />
+          <IdentityLinkDetail
+            label="Allowed in public dossier text"
+            value={identityLink.useInPublicDossier ? "Yes" : "No"}
+          />
         </div>
       )}
+
+      {isConfirmed && (
+        <div className="grid gap-2 md:grid-cols-3">
+          <IdentityLinkDetail
+            label="Matching"
+            value={
+              identityLink.useForMatching
+                ? "Active for matching"
+                : "Reference only / Not used for matching"
+            }
+          />
+          <IdentityLinkDetail
+            label="Visibility"
+            value={
+              identityLink.visibility === "public_safe"
+                ? "Public-safe label"
+                : "Internal only"
+            }
+          />
+          <IdentityLinkDetail
+            label="Public dossier text"
+            value={
+              identityLink.useInPublicDossier
+                ? "Approved for public dossier text"
+                : "Not public dossier text"
+            }
+          />
+        </div>
+      )}
+
+      <CreatedFromBnlSignalBlock
+        identityLink={identityLink}
+        recommendation={recommendation}
+      />
+
       <p className="whitespace-pre-wrap">Note: {identityLink.note ?? "—"}</p>
       <p>
-        Created: {formatDate(identityLink.createdAt)} by{" "}
-        {identityLink.createdBy ?? "—"} / Confirmed:{" "}
-        {formatDate(identityLink.confirmedAt)} by{" "}
-        {identityLink.confirmedBy ?? "—"}
+        Created by {identityLink.createdBy ?? "—"} at {" "}
+        {formatDate(identityLink.createdAt)}
+        {isConfirmed && (
+          <>
+            {" "}/ Confirmed by {identityLink.confirmedBy ?? "—"} at {" "}
+            {formatDate(identityLink.confirmedAt)}
+          </>
+        )}
       </p>
-      {(isProposed || isConfirmed) && (
-        <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
-          {isProposed && (
-            <>
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() =>
-                  onReview(identityLink.id, "confirmDossierIdentityLink", true)
-                }
-                className="border border-accent px-3 py-1.5 text-accent hover:bg-accent hover:text-background disabled:pointer-events-none disabled:opacity-50"
-              >
-                Confirm
-              </button>
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() =>
-                  onReview(identityLink.id, "rejectDossierIdentityLink")
-                }
-                className="border border-border px-3 py-1.5 hover:border-accent hover:text-accent disabled:pointer-events-none disabled:opacity-50"
-              >
-                Reject
-              </button>
-            </>
-          )}
-          {isConfirmed && (
+
+      {isProposed && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
             <button
               type="button"
               disabled={saving}
               onClick={() =>
-                onReview(identityLink.id, "retireDossierIdentityLink")
+                onReview(identityLink, "confirmDossierIdentityLink", {
+                  useForMatching: true,
+                  useInPublicDossier:
+                    identityLink.useInPublicDossier === true,
+                })
+              }
+              className="border border-accent px-3 py-1.5 text-accent hover:bg-accent hover:text-background disabled:pointer-events-none disabled:opacity-50"
+            >
+              Confirm for matching
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() =>
+                onReview(identityLink, "confirmDossierIdentityLink", {
+                  useForMatching: false,
+                  useInPublicDossier: false,
+                })
               }
               className="border border-border px-3 py-1.5 hover:border-accent hover:text-accent disabled:pointer-events-none disabled:opacity-50"
             >
-              Retire
+              Confirm reference only
             </button>
-          )}
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() =>
+                onReview(identityLink, "rejectDossierIdentityLink")
+              }
+              className="border border-border px-3 py-1.5 hover:border-accent hover:text-accent disabled:pointer-events-none disabled:opacity-50"
+            >
+              Reject
+            </button>
+          </div>
+          <p>
+            Keep proposed: Leave unresolved. This stays proposed and will not
+            affect matching.
+          </p>
+        </div>
+      )}
+
+      {isConfirmed && (
+        <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() =>
+              onReview(identityLink, "retireDossierIdentityLink")
+            }
+            className="border border-border px-3 py-1.5 hover:border-accent hover:text-accent disabled:pointer-events-none disabled:opacity-50"
+          >
+            Retire
+          </button>
         </div>
       )}
     </article>
@@ -1336,21 +1464,28 @@ export default function CandidateReviewPage() {
   }
 
   async function reviewIdentityLink(
-    identityLinkId: string,
+    identityLink: DossierIdentityLink,
     action:
       | "confirmDossierIdentityLink"
       | "rejectDossierIdentityLink"
       | "retireDossierIdentityLink",
-    useForMatching = false,
+    options: { useForMatching?: boolean; useInPublicDossier?: boolean } = {},
   ) {
     try {
       await postWorkflow({
         action,
         candidateId,
-        identityLinkId,
-        useForMatching,
+        identityLinkId: identityLink.id,
+        useForMatching: options.useForMatching === true,
+        useInPublicDossier: options.useInPublicDossier === true,
       });
-      setNotice(identityReviewNotice[action]);
+      setNotice(
+        action === "confirmDossierIdentityLink"
+          ? options.useForMatching
+            ? identityReviewNotice.confirmForMatching
+            : identityReviewNotice.confirmReferenceOnly
+          : identityReviewNotice[action],
+      );
     } catch (err) {
       setNotice(
         err instanceof Error ? err.message : "Failed to update identity link.",
@@ -1819,34 +1954,46 @@ export default function CandidateReviewPage() {
               <div className="space-y-4">
                 {[
                   {
-                    title: "Pending Review",
-                    empty: "No pending aliases.",
+                    title: "Proposed Identity Links",
+                    empty: "No proposed identity links.",
                     links: proposedIdentityLinks,
+                    quiet: false,
+                    intro:
+                      "Identity links are internal routing/context tools. Confirming a link can help future BNL Signals route to this Source File, but it does not merge Source Files, publish identity, or place the label in a public dossier.",
                   },
                   {
-                    title: "Confirmed Aliases",
-                    empty: "No confirmed aliases.",
+                    title: "Confirmed Identity Links",
+                    empty: "No confirmed identity links.",
                     links: confirmedIdentityLinks,
+                    quiet: false,
                   },
                   {
-                    title: "Closed / Inactive",
-                    empty: "No closed aliases.",
+                    title: "Rejected / Retired Identity History",
+                    empty: "No rejected or retired identity history.",
                     links: closedIdentityLinks,
+                    quiet: true,
                   },
                 ].map((group) => (
                   <section
                     key={group.title}
-                    className="border border-border/60 bg-background/10 p-3 space-y-3"
+                    className={`border border-border/60 bg-background/10 p-3 space-y-3 ${
+                      group.quiet ? "opacity-80" : ""
+                    }`}
                   >
                     <div className="flex items-center justify-between gap-3">
                       <h3 className="text-sm font-bold uppercase tracking-widest text-foreground">
                         {group.title}
                       </h3>
                       <span className="text-xs text-muted">
-                        {group.links.length} alias
-                        {group.links.length === 1 ? "" : "es"}
+                        {group.links.length} link
+                        {group.links.length === 1 ? "" : "s"}
                       </span>
                     </div>
+                    {group.intro && (
+                      <p className="border border-border/70 bg-background/20 p-3">
+                        {group.intro}
+                      </p>
+                    )}
                     {group.links.length === 0 ? (
                       <p className="text-xs">{group.empty}</p>
                     ) : (
@@ -1863,15 +2010,11 @@ export default function CandidateReviewPage() {
                                   )
                                 : undefined
                             }
-                            onReview={(
-                              identityLinkId,
-                              action,
-                              useForMatching,
-                            ) =>
+                            onReview={(identityLink, action, options) =>
                               void reviewIdentityLink(
-                                identityLinkId,
+                                identityLink,
                                 action,
-                                useForMatching,
+                                options,
                               )
                             }
                           />

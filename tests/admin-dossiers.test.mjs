@@ -1182,7 +1182,7 @@ test("dossier workflow boundary copy separates case files, drafts, owner review,
     "Identity Check",
     "Advanced: Add Identity Link Manually",
     "Do Not Say",
-    "Missing Info",
+    "Dossier Questions",
     "Proposed Dossier Status",
     "Review-only memory context",
     "Internal/private review required",
@@ -1342,7 +1342,7 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     "Create Proposed Dossier",
     "Open Proposed Dossier",
     "Save Info",
-    "Mark Needs Info",
+    "Mark Needs Dossier Questions",
     "Internal working case file",
     "Do not treat this as public copy",
         "Source Notes / Admin Addendums",
@@ -1355,7 +1355,7 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     "Identity Check",
     "Advanced: Add Identity Link Manually",
     "Do Not Say",
-    "Missing Info",
+    "Dossier Questions",
     "Review-only memory context",
     "Internal/private review required",
     "Public use not allowed until review",
@@ -3232,6 +3232,58 @@ test("identity link recommendation duplicate, invalid, and target mismatch cases
   });
   assert.equal(mismatch.status, 400);
   assert.equal((await mismatch.json()).code, "recommendation_target_mismatch");
+});
+
+
+
+test("admin Source File workspace renders BNL brief v2 and preserves safe ordering", () => {
+  const sourceFilePage = source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+  const normalized = normalizedSource("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+
+  assert.match(sourceFilePage, /sourceFileBriefV2/);
+  assert.match(sourceFilePage, /function BnlSourceFileBrief/);
+  for (const heading of [
+    "BNL Brief",
+    "One-Line Summary",
+    "Admin Summary",
+    "What BNL Knows",
+    "Why This Matters",
+    "Evidence to Review",
+    "Identity Context",
+    "Public-Safe Drafting Notes",
+    "Internal-Only Notes",
+    "Dossier Questions",
+    "Recommended Next Action",
+    "Quality Warnings",
+    "Archive References",
+  ]) {
+    assertIncludesCopy(normalized, heading);
+  }
+
+  assert.match(sourceFilePage, /if \(items\.length === 0\) return null/);
+  assert.match(sourceFilePage, /sourceFileBriefV2 \? \(/);
+  assert.match(sourceFilePage, /DossierSourceFileSummaryPanel/);
+  assert.doesNotMatch(normalized, /Missing Info/);
+
+  const workspace = sourceFilePage.slice(sourceFilePage.indexOf('<Section title="Identity Check">'));
+  assert.ok(workspace.indexOf("Identity Check") < workspace.indexOf("BnlSourceFileBrief"));
+  assert.ok(workspace.indexOf("BnlSourceFileBrief") < workspace.indexOf("EvidenceReview"));
+  assert.ok(workspace.indexOf("EvidenceReview") < workspace.indexOf("Dossier Workbench / Proposed Dossier Status"));
+  assert.ok(workspace.indexOf("Dossier Workbench / Proposed Dossier Status") < workspace.indexOf("Source Notes / Admin Addendums"));
+  assert.ok(workspace.indexOf("Source Notes / Admin Addendums") < workspace.indexOf("Archive / Raw Source File Data"));
+  assert.ok(workspace.indexOf("Archive / Raw Source File Data") < workspace.indexOf("Advanced Tools — collapsed manual controls"));
+  assert.ok(workspace.indexOf("Advanced Tools — collapsed manual controls") < workspace.indexOf("Diagnostics — collapsed by default"));
+
+  assert.match(sourceFilePage, /identityLinks\.length > 0 &&/);
+  assert.match(sourceFilePage, /\.filter\(\(group\) => group\.links\.length > 0\)/);
+  assert.doesNotMatch(sourceFilePage, /No identity links saved yet/);
+  const identityCheckStart = sourceFilePage.indexOf('<Section title="Identity Check">');
+  const manualAddStart = sourceFilePage.indexOf("Advanced Tools — collapsed manual controls");
+  assert.ok(manualAddStart > identityCheckStart);
+  assert.ok(sourceFilePage.indexOf("Add Identity Link", manualAddStart) > manualAddStart);
+
+  assert.match(sourceFilePage, /<details className="border border-border bg-surface p-5 text-sm text-muted">[\s\S]*Diagnostics — collapsed by default/);
+  assert.doesNotMatch(normalized, /Record Compactor|Duplicate Analysis|auto-confirm|auto confirm|Merge Source Files|Public Publish|Publish Now/);
 });
 
 test("identity alias review UX is grouped, status-aware, and public-safe", () => {

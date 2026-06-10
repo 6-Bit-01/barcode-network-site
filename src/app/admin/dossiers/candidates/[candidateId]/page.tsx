@@ -17,6 +17,7 @@ import {
   type DossierRecommendation,
   type DossierSourceFileRefreshRequest,
   type DossierSourceFileNoteType,
+  type DossierSourceFileBriefV2,
 } from "@/lib/dossier-workflow";
 import { DossierSourceFileSummaryPanel } from "@/components/DossierSourceFileSummaryPanel";
 import { createHumanReadableSourceFileNoteView } from "@/lib/dossier-note-display";
@@ -704,7 +705,7 @@ function HumanReadableNoteView({
           <StatusBadge>Created {formatDate(createdAt)}</StatusBadge>
           {workflowLane && <StatusBadge>Review-only</StatusBadge>}
           <StatusBadge>{view.warningCount} warnings</StatusBadge>
-          <StatusBadge>{view.missingInfoCount} missing info</StatusBadge>
+          <StatusBadge>{view.missingInfoCount} dossier questions</StatusBadge>
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -766,6 +767,200 @@ function HumanReadableNoteView({
       </details>
     </article>
   );
+}
+
+
+function briefItems(value: string | string[] | undefined, limit = 5) {
+  const values = Array.isArray(value) ? value : value ? [value] : [];
+  return values.map((item) => item.trim()).filter(Boolean).slice(0, limit);
+}
+
+function BriefBlock({
+  title,
+  value,
+  tone = "default",
+}: {
+  title: string;
+  value: string | string[] | undefined;
+  tone?: "default" | "public" | "internal" | "warning";
+}) {
+  const items = briefItems(value);
+  if (items.length === 0) return null;
+  const toneClass =
+    tone === "public"
+      ? "border-accent/50 bg-accent/10"
+      : tone === "internal"
+        ? "border-red-500/40 bg-red-500/10"
+        : tone === "warning"
+          ? "border-yellow-500/50 bg-yellow-500/10"
+          : "border-border/60 bg-background/20";
+  return (
+    <section className={`border p-3 text-sm text-muted ${toneClass}`}>
+      <h3 className="font-bold text-foreground mb-2">{title}</h3>
+      {items.length === 1 ? (
+        <p className="whitespace-pre-wrap">{items[0]}</p>
+      ) : (
+        <ul className="list-disc pl-5 space-y-1">
+          {items.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function BnlSourceFileBrief({ brief }: { brief?: DossierSourceFileBriefV2 }) {
+  if (!brief) return null;
+  const hasBrief = [
+    brief.oneLineSummary,
+    brief.adminSummary,
+    brief.whatBnlKnows,
+    brief.whyThisMatters,
+    brief.evidenceToReview,
+    brief.identityContext,
+    brief.publicSafeDraftingNotes,
+    brief.internalOnlyNotes,
+    brief.dossierQuestions,
+    brief.recommendedNextAction,
+    brief.qualityWarnings,
+    brief.archiveReferences,
+  ].some((value) => briefItems(value as string | string[] | undefined).length > 0);
+  if (!hasBrief) return null;
+
+  return (
+    <Section title="BNL Brief">
+      <div className="space-y-3">
+        <BriefBlock title="One-Line Summary" value={brief.oneLineSummary} />
+        <BriefBlock title="Admin Summary" value={brief.adminSummary} />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <BriefBlock title="What BNL Knows" value={brief.whatBnlKnows} />
+          <BriefBlock title="Why This Matters" value={brief.whyThisMatters} />
+          <BriefBlock title="Evidence to Review" value={brief.evidenceToReview} />
+          <BriefBlock title="Identity Context" value={brief.identityContext} />
+          <BriefBlock
+            title="Public-Safe Drafting Notes"
+            value={brief.publicSafeDraftingNotes}
+            tone="public"
+          />
+          <BriefBlock
+            title="Internal-Only Notes"
+            value={brief.internalOnlyNotes}
+            tone="internal"
+          />
+          <BriefBlock title="Dossier Questions" value={brief.dossierQuestions} />
+          <BriefBlock
+            title="Recommended Next Action"
+            value={brief.recommendedNextAction}
+          />
+          <BriefBlock
+            title="Quality Warnings"
+            value={brief.qualityWarnings}
+            tone="warning"
+          />
+          <BriefBlock title="Archive References" value={brief.archiveReferences} />
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+function EvidenceReview({
+  brief,
+  candidate,
+  recommendations,
+}: {
+  brief?: DossierSourceFileBriefV2;
+  candidate: DossierCandidate;
+  recommendations: DossierRecommendation[];
+}) {
+  const bestEvidence = briefItems(brief?.evidenceToReview, 5);
+  const receiptEvidence = sanitizeMeaningFirstItems(
+    [
+      ...(candidate.latestSourceFileArchive?.evidenceReceiptSummary ?? []),
+      ...(candidate.evidenceItems ?? []).map((item) => item.summary || item.label),
+    ],
+    { subjectName: candidate.name, includePublicDiscord: true },
+  ).slice(0, 5);
+  const supportingEvidence = sanitizeMeaningFirstItems(
+    recommendations.flatMap((recommendation) => recommendationEvidenceItems(recommendation)),
+    { subjectName: candidate.name, includePublicDiscord: true },
+  ).slice(0, 8);
+  const publicSafeNotes = briefItems(brief?.publicSafeDraftingNotes, 5);
+  const internalOnlyNotes = [
+    ...briefItems(brief?.internalOnlyNotes, 5),
+    ...sanitizeMeaningFirstItems(candidate.publicSafetyNotes ?? [], {
+      subjectName: candidate.name,
+    }),
+  ].slice(0, 6);
+
+  return (
+    <Section title="Evidence Review">
+      <div className="space-y-3">
+        <BriefBlock
+          title="Best Evidence First"
+          value={bestEvidence.length ? bestEvidence : receiptEvidence}
+        />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <BriefBlock
+            title="Public-Safe Notes"
+            value={publicSafeNotes}
+            tone="public"
+          />
+          <BriefBlock
+            title="Internal-Only Notes"
+            value={internalOnlyNotes}
+            tone="internal"
+          />
+        </div>
+        <details className="border border-border/70 bg-background/20 p-3">
+          <summary className="cursor-pointer font-semibold text-foreground">
+            Supporting Evidence — collapsed
+          </summary>
+          <div className="mt-3">
+            {list(supportingEvidence, "No supporting evidence summaries saved yet.")}
+          </div>
+        </details>
+        <details className="border border-border/70 bg-background/20 p-3">
+          <summary className="cursor-pointer font-semibold text-foreground">
+            Raw Evidence — collapsed
+          </summary>
+          <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words border border-border/50 bg-background/30 p-3 text-xs">
+            {JSON.stringify(
+              {
+                evidenceItems: candidate.evidenceItems ?? [],
+                latestArchiveEvidence:
+                  candidate.latestSourceFileArchive?.evidenceReceiptSummary ?? [],
+              },
+              null,
+              2,
+            )}
+          </pre>
+        </details>
+      </div>
+    </Section>
+  );
+}
+
+function dossierWorkbenchCopy(input: {
+  primaryDraft?: DossierDraft;
+  unappliedSourceNotesCount: number;
+  isExistingDossierUpdate: boolean;
+  existingDossierName?: string;
+}) {
+  if (input.isExistingDossierUpdate) {
+    return input.primaryDraft
+      ? "Live dossier exists / update candidate. Use the draft editor for proposed update text only."
+      : "Live dossier exists / update candidate. No Proposed Dossier update draft exists yet.";
+  }
+  if (!input.primaryDraft) return "No Proposed Dossier yet.";
+  if (input.primaryDraft.status === "ready_for_owner_review") {
+    return "Ready for Owner Review.";
+  }
+  if (input.unappliedSourceNotesCount > 0) {
+    return "Proposed Dossier needs review.";
+  }
+  return "Proposed Dossier exists.";
 }
 
 function isCandidateClosed(candidate: DossierCandidate) {
@@ -1169,6 +1364,7 @@ export default function CandidateReviewPage() {
         subjectName: candidate.name,
       })
     : null;
+  const sourceFileBriefV2 = candidate?.latestSourceFileArchive?.sourceFileBriefV2;
   const hasSavedOperatorSourceSummary = Boolean(
     candidate?.sourceFileSummary?.summaryText?.trim() ||
     candidate?.sourceFileSummary?.knownContext?.length ||
@@ -1211,7 +1407,7 @@ export default function CandidateReviewPage() {
     : primaryDraft
       ? "Open Proposed Dossier"
       : candidate?.status === "needs_more_evidence"
-        ? "Add missing info"
+        ? "Add dossier drafting questions"
         : "Create Proposed Dossier";
 
   async function postWorkflow(body: Record<string, unknown>) {
@@ -1691,7 +1887,7 @@ export default function CandidateReviewPage() {
               onClick={() => void update("markNeedsMoreEvidence")}
               className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent disabled:opacity-50"
             >
-              Mark Needs Info
+              Mark Needs Dossier Questions
             </button>
             <button
               type="button"
@@ -1856,30 +2052,41 @@ export default function CandidateReviewPage() {
             </div>
           </Section>
         )}
-        {sourceFileSummary && (
-          <>
-            <DossierSourceFileSummaryPanel
-              summary={sourceFileSummary}
-              entityReadout={entityActivityReadout}
-              subjectName={candidate.name}
-              recommendations={attachedRecommendations}
-              sourceFileNotes={candidate.sourceFileNotes ?? []}
-              currentLane={candidate.status}
-              latestRecommendationTimestamp={latestRecommendationTimestamp}
-              latestSourceFileArchive={candidate.latestSourceFileArchive}
-              sourceFileTargetStatus={
-                isExistingDossierUpdate
-                  ? "existing dossier update"
-                  : "active source file"
-              }
-            />
-            {/* Case File / BNL Source File Summary */}
-          </>
+        {sourceFileBriefV2 ? (
+          <BnlSourceFileBrief brief={sourceFileBriefV2} />
+        ) : (
+          sourceFileSummary && (
+            <>
+              <DossierSourceFileSummaryPanel
+                summary={sourceFileSummary}
+                entityReadout={entityActivityReadout}
+                subjectName={candidate.name}
+                recommendations={attachedRecommendations}
+                sourceFileNotes={candidate.sourceFileNotes ?? []}
+                currentLane={candidate.status}
+                latestRecommendationTimestamp={latestRecommendationTimestamp}
+                latestSourceFileArchive={candidate.latestSourceFileArchive}
+                sourceFileTargetStatus={
+                  isExistingDossierUpdate
+                    ? "existing dossier update"
+                    : "active source file"
+                }
+              />
+              {/* Case File / BNL Source File Summary */}
+            </>
+          )
         )}
-        <Section title="Proposed Dossier Status">
+
+        <EvidenceReview
+          brief={sourceFileBriefV2}
+          candidate={candidate}
+          recommendations={attachedRecommendations}
+        />
+
+        <Section title="Dossier Workbench / Proposed Dossier Status">
           {!primaryDraft ? (
             <div className="space-y-2">
-              <p>No Proposed Dossier exists yet.</p>
+              <p>{dossierWorkbenchCopy({ primaryDraft, unappliedSourceNotesCount: sourceMetrics?.unappliedSourceNotesCount ?? 0, isExistingDossierUpdate, existingDossierName: candidate.existingDossierMatch?.name })}</p>
               <p>
                 Create one only from reviewed, public-safe Source File material.
                 The primary Create Proposed Dossier action lives in the page
@@ -1888,6 +2095,7 @@ export default function CandidateReviewPage() {
             </div>
           ) : (
             <div className="space-y-2">
+              <p>{dossierWorkbenchCopy({ primaryDraft, unappliedSourceNotesCount: sourceMetrics?.unappliedSourceNotesCount ?? 0, isExistingDossierUpdate, existingDossierName: candidate.existingDossierMatch?.name })}</p>
               <p>Status: {primaryDraft.status}</p>
               <p>Updated: {formatDate(primaryDraft.updatedAt)}</p>
               <p>
@@ -1916,7 +2124,7 @@ export default function CandidateReviewPage() {
           </p>
           <p className="text-sm text-muted">
             Add to Case File / BNL Source File = add a source note, correction, evidence,
-            warning, public-safe fact, or missing-info item to this subject.
+            warning, public-safe fact, or dossier-question item to this subject.
             This source file remains one subject/entity. If this information
             belongs to a different subject, create or wait for a separate BNL
             recommendation.
@@ -1959,7 +2167,7 @@ export default function CandidateReviewPage() {
                 onChange={(event) =>
                   setNoteForm({ ...noteForm, text: event.target.value })
                 }
-                placeholder="Add one concise fact, correction, link note, missing-info note, do-not-say guidance, public-safety context, or general note."
+                placeholder="Add one concise fact, correction, link note, dossier-question note, do-not-say guidance, public-safety context, or general note."
                 className="w-full min-h-24 bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
               />
             </label>
@@ -2006,11 +2214,46 @@ export default function CandidateReviewPage() {
           )}
         </Section>
 
+        {candidate.latestSourceFileArchive && (
+          <details className="border border-border bg-surface p-5 text-sm text-muted">
+            <summary className="cursor-pointer text-2xl font-bold text-foreground">
+              Archive / Raw Source File Data
+            </summary>
+            <p className="mt-3 text-sm text-muted">
+              Collapsed admin archive metadata. Full source package content stays in archive storage and is not rendered on the main screen.
+            </p>
+            <dl className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <IdentityLinkDetail label="Archive id" value={candidate.latestSourceFileArchive.id} />
+              <IdentityLinkDetail
+                label="Digest"
+                value={candidate.latestSourceFileArchive.sourceDigest.slice(0, 16)}
+              />
+              <IdentityLinkDetail
+                label="Size"
+                value={`${candidate.latestSourceFileArchive.archiveSize} bytes`}
+              />
+              <IdentityLinkDetail
+                label="Chunks"
+                value={String(candidate.latestSourceFileArchive.chunkCount)}
+              />
+              <IdentityLinkDetail
+                label="Updated"
+                value={formatDate(candidate.latestSourceFileArchive.updatedAt)}
+              />
+              <IdentityLinkDetail
+                label="Review-only"
+                value={candidate.latestSourceFileArchive.reviewOnly ? "Yes" : "No"}
+              />
+            </dl>
+          </details>
+        )}
+
         <details className="border border-border bg-surface p-5 space-y-4">
           <summary className="cursor-pointer text-2xl font-bold text-foreground">
-            Advanced: Add Identity Link Manually
+            Advanced Tools — collapsed manual controls
           </summary>
           <div className="space-y-5 pt-4">
+            <h3 className="text-xl font-bold text-foreground">Advanced: Add Identity Link Manually</h3>
             <div className="space-y-2 text-sm text-muted">
               <p>
                 Aliases help BNL route future BNL Signals to the right source file.
@@ -2384,7 +2627,7 @@ export default function CandidateReviewPage() {
             <Section title="Corrections / extra notes">
               <p>Saved notes now live in Case File / BNL Source File Notes above.</p>
             </Section>
-            <Section title="Missing Info">
+            <Section title="Dossier Questions">
               {meaningFirstList(candidate.missingInfo, "—", candidate.name)}
             </Section>
             <Section title="Do Not Say">

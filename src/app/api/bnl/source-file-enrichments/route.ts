@@ -86,6 +86,8 @@ function normalizePayload(value: unknown): CreateDossierSourceFileArchiveInput {
       10,
       1000,
     ),
+    sourceFileBriefV2:
+      payload.sourceFileBriefV2 as CreateDossierSourceFileArchiveInput["sourceFileBriefV2"],
   };
 }
 

@@ -28,6 +28,7 @@ import {
   type DossierRecommendation,
   type DossierSourceFileArchiveAttachStatus,
   type DossierSourceFileArchiveMetadata,
+  type DossierSourceFileBriefV2,
   type DossierSourceFileEnrichmentArchive,
   type DossierRecommendationSourceLane,
   type DossierRecommendationStatus,
@@ -469,6 +470,42 @@ function compactArchiveList(
   return output.length ? output : undefined;
 }
 
+
+function compactArchiveBriefV2(value: unknown): DossierSourceFileBriefV2 | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const input = value as Record<string, unknown>;
+  const brief: DossierSourceFileBriefV2 = {};
+  const textField = (key: keyof DossierSourceFileBriefV2, max = 1600) => {
+    const raw = input[key];
+    if (Array.isArray(raw)) {
+      const list = compactArchiveList(raw, 6, max);
+      if (list?.length) (brief[key] as string[]) = list;
+      return;
+    }
+    const clean = compactArchiveText(raw, max);
+    if (clean) (brief[key] as string) = clean;
+  };
+  const listField = (key: keyof DossierSourceFileBriefV2, maxItems = 6, maxItemLength = 1000) => {
+    const list = compactArchiveList(input[key], maxItems, maxItemLength);
+    if (list?.length) (brief[key] as string[]) = list;
+  };
+
+  textField("oneLineSummary", 500);
+  textField("adminSummary", 1600);
+  listField("whatBnlKnows");
+  textField("whyThisMatters", 1200);
+  listField("evidenceToReview");
+  textField("identityContext", 1200);
+  listField("publicSafeDraftingNotes");
+  listField("internalOnlyNotes");
+  listField("dossierQuestions");
+  textField("recommendedNextAction", 800);
+  listField("qualityWarnings");
+  listField("archiveReferences", 8, 500);
+
+  return Object.keys(brief).length ? brief : undefined;
+}
+
 function normalizeSourceFileArchiveInput(
   input: CreateDossierSourceFileArchiveInput,
 ):
@@ -480,6 +517,7 @@ function normalizeSourceFileArchiveInput(
       publicSafetyNotes?: string[];
       doNotSay?: string[];
       evidenceReceiptSummary?: string[];
+      sourceFileBriefV2?: DossierSourceFileBriefV2;
     })
   | null {
   const subjectName = compactArchiveText(input.subjectName, 200);
@@ -500,6 +538,14 @@ function normalizeSourceFileArchiveInput(
       input.evidenceReceiptSummary,
       10,
       1000,
+    ),
+    sourceFileBriefV2: compactArchiveBriefV2(
+      input.sourceFileBriefV2 ??
+        (input.sourcePackage &&
+        typeof input.sourcePackage === "object" &&
+        !Array.isArray(input.sourcePackage)
+          ? (input.sourcePackage as Record<string, unknown>).sourceFileBriefV2
+          : undefined),
     ),
   };
 }
@@ -2346,6 +2392,7 @@ export async function ingestDossierSourceFileArchive(
       publicSafetyNotes: normalized.publicSafetyNotes,
       doNotSay: normalized.doNotSay,
       evidenceReceiptSummary: normalized.evidenceReceiptSummary,
+      sourceFileBriefV2: normalized.sourceFileBriefV2,
       archiveKey,
       chunkKeys,
       reviewOnly: true,

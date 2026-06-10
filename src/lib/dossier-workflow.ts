@@ -131,6 +131,22 @@ export type DossierSourceFileOperatorSummary = {
   updatedBy?: string;
 };
 
+
+export type DossierSourceFileBriefV2 = {
+  oneLineSummary?: string;
+  adminSummary?: string | string[];
+  whatBnlKnows?: string[];
+  whyThisMatters?: string | string[];
+  evidenceToReview?: string[];
+  identityContext?: string | string[];
+  publicSafeDraftingNotes?: string[];
+  internalOnlyNotes?: string[];
+  dossierQuestions?: string[];
+  recommendedNextAction?: string | string[];
+  qualityWarnings?: string[];
+  archiveReferences?: string[];
+};
+
 export type DossierSourceFileArchiveCompactReadout = {
   compactSummary?: string;
   publicSafePossibilities?: string[];
@@ -138,6 +154,7 @@ export type DossierSourceFileArchiveCompactReadout = {
   publicSafetyNotes?: string[];
   doNotSay?: string[];
   evidenceReceiptSummary?: string[];
+  sourceFileBriefV2?: DossierSourceFileBriefV2;
 };
 
 export type DossierSourceFileArchiveMetadata =

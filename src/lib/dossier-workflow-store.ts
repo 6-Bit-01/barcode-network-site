@@ -1914,6 +1914,26 @@ const OPEN_REQUEST_STATUSES = new Set<DossierSourceFileRefreshRequestStatus>([
 const COMPLETABLE_REFRESH_STATUSES =
   new Set<DossierSourceFileRefreshRequestStatus>(["pending", "claimed"]);
 
+
+export function latestArchiveMissingCaseReport(candidate: DossierCandidate): boolean {
+  const latestArchive = candidate.latestSourceFileArchive;
+  const hasLatestSourceData = Boolean(
+    latestArchive ??
+      candidate.latestSourceFileArchiveId ??
+      candidate.latestSourceFileArchiveDigest ??
+      candidate.latestSourceFileArchiveUpdatedAt ??
+      (candidate.sourceFileArchiveIds?.length ?? 0) > 0,
+  );
+  if (!hasLatestSourceData) return false;
+  return !latestArchive?.sourceFileCaseReportV1;
+}
+
+export const candidateMissingCaseReport = latestArchiveMissingCaseReport;
+
+export function sourceFileNeedsCaseReportBackfill(candidate: DossierCandidate): boolean {
+  return latestArchiveMissingCaseReport(candidate);
+}
+
 function latestBnlSourceFileRecommendation(input: {
   candidate: DossierCandidate;
   recommendations: DossierRecommendation[];
@@ -2046,6 +2066,11 @@ function mergeActiveSourceFileRefreshRequests(
           request.lastAttemptAt > existing.lastAttemptAt)
           ? request.lastAttemptAt
           : existing.lastAttemptAt,
+      caseReportMissing:
+        request.caseReportMissing ?? existing.caseReportMissing,
+      requiresCaseReportBackfill:
+        request.requiresCaseReportBackfill ??
+        existing.requiresCaseReportBackfill,
     };
     merged.set(key, mergedRequest);
     const outputIndex = output.findIndex((item) => item.id === existing.id);
@@ -2081,6 +2106,17 @@ export function evaluateDossierSourceFileRefresh(input: {
     ? Date.parse(completed.completedAt)
     : NaN;
   const nowTime = Date.parse(now);
+
+  if (sourceFileNeedsCaseReportBackfill(input.candidate)) {
+    return {
+      needed: true,
+      reason: "case_report_missing",
+      requestSource: "case_report_missing",
+      priority: input.candidate.status === "existing_dossier_update" ? 85 : 80,
+      latestRecommendationTimestamp,
+      latestSourceNoteTimestamp,
+    };
+  }
 
   if (
     completed &&
@@ -2193,6 +2229,8 @@ function upsertSourceFileRefreshRequestInState(input: {
   requestedBy?: string;
   now: string;
   force?: boolean;
+  caseReportMissing?: boolean;
+  requiresCaseReportBackfill?: boolean;
 }): {
   state: DossierWorkflowState;
   request: DossierSourceFileRefreshRequest;
@@ -2229,6 +2267,9 @@ function upsertSourceFileRefreshRequestInState(input: {
       priority: Math.max(existing.priority ?? 0, input.priority),
       requestedBy: input.requestedBy ?? existing.requestedBy,
       updatedAt: input.now,
+      caseReportMissing: input.caseReportMissing ?? existing.caseReportMissing,
+      requiresCaseReportBackfill:
+        input.requiresCaseReportBackfill ?? existing.requiresCaseReportBackfill,
     };
     const requests = [...state.sourceFileRefreshRequests];
     requests[existingIndex] = updated;
@@ -2273,6 +2314,8 @@ function upsertSourceFileRefreshRequestInState(input: {
     updatedAt: input.now,
     requestSource: input.requestSource,
     priority: input.priority,
+    caseReportMissing: input.caseReportMissing,
+    requiresCaseReportBackfill: input.requiresCaseReportBackfill,
   };
   return {
     state: {
@@ -2514,20 +2557,26 @@ export async function recordDossierSourceFileOpen(input: {
       refreshRequests: currentState.sourceFileRefreshRequests,
       now,
     });
+    const missingCaseReport = sourceFileNeedsCaseReportBackfill(candidate);
     const upserted = upsertSourceFileRefreshRequestInState({
       state: currentState,
       candidate,
-      reason: decision.needed
+      reason: missingCaseReport
+        ? "case_report_missing"
+        : decision.needed
         ? decision.reason
         : "Admin opened the Source File and requested an immediate BNL freshness check.",
-      requestSource:
-        decision.requestSource === "opened_source_file"
+      requestSource: missingCaseReport
+        ? "case_report_missing"
+        : decision.requestSource === "opened_source_file"
           ? "opened_source_file"
           : decision.requestSource,
-      priority: Math.max(decision.priority, 60),
+      priority: Math.max(decision.priority, missingCaseReport ? 80 : 60),
       requestedBy: input.requestedBy ?? "admin_open_source_file",
       now,
       force: true,
+      caseReportMissing: missingCaseReport || undefined,
+      requiresCaseReportBackfill: missingCaseReport || undefined,
     });
     result = { request: upserted.request, decision, created: upserted.created };
     return upserted.state;
@@ -2556,17 +2605,23 @@ export async function requestDossierSourceFileRefresh(input: {
         "Source File candidate was not found or cannot be refreshed",
       );
     }
+    const missingCaseReport = sourceFileNeedsCaseReportBackfill(candidate);
     const upserted = upsertSourceFileRefreshRequestInState({
       state: currentState,
       candidate,
-      reason:
-        input.reason?.trim() ||
-        "Manual admin requested a BNL Source File refresh.",
-      requestSource: input.requestSource ?? "manual_admin",
-      priority: input.priority ?? 90,
+      reason: missingCaseReport
+        ? "case_report_missing"
+        : input.reason?.trim() ||
+          "Manual admin requested a BNL Source File refresh.",
+      requestSource: missingCaseReport
+        ? "case_report_missing"
+        : input.requestSource ?? "manual_admin",
+      priority: input.priority ?? (missingCaseReport ? 95 : 90),
       requestedBy: input.requestedBy ?? "admin_manual",
       now,
       force: true,
+      caseReportMissing: missingCaseReport || undefined,
+      requiresCaseReportBackfill: missingCaseReport || undefined,
     });
     result = { request: upserted.request, created: upserted.created };
     return upserted.state;

@@ -363,11 +363,12 @@ export function DossierSourceFileSummaryPanel({
 }) {
   const report = normalizeCaseReport(latestSourceFileArchive);
   const interimBrief = normalizeInterimBrief(latestSourceFileArchive);
+  const latestArchiveMissingReport = Boolean(latestSourceFileArchive && !report);
   const snapshotItems = [
     ["Subject", subjectName ?? latestSourceFileArchive?.subjectName ?? "Unknown subject"],
     ["Current state", humanStatus(currentLane ?? summary.nextAction)],
-    ["Refresh status", formatSnapshotDate(summary.lastUpdatedAt)],
-    ["Latest BNL refresh", formatSnapshotDate(latestRecommendationTimestamp)],
+    ["Refresh status", latestArchiveMissingReport ? "Case report missing" : formatSnapshotDate(summary.lastUpdatedAt)],
+    ["Latest BNL refresh", latestArchiveMissingReport ? "Report backfill required" : formatSnapshotDate(latestRecommendationTimestamp)],
     ["Source file target", humanStatus(sourceFileTargetStatus ?? summary.nextAction)],
     ["Evidence depth", evidenceDepthLabel(summary.substanceLevel)],
     ["Public readiness", readinessLabel(summary.publicReadiness)],

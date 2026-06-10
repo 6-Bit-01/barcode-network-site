@@ -244,6 +244,19 @@ function latestBnlSourceFileEnrichment(input: {
   );
 }
 
+
+function candidateLatestArchiveMissingCaseReport(candidate?: DossierCandidate | null) {
+  if (!candidate) return false;
+  const hasLatestSourceData = Boolean(
+    candidate.latestSourceFileArchive ??
+      candidate.latestSourceFileArchiveId ??
+      candidate.latestSourceFileArchiveDigest ??
+      candidate.latestSourceFileArchiveUpdatedAt ??
+      (candidate.sourceFileArchiveIds?.length ?? 0) > 0,
+  );
+  return hasLatestSourceData && !candidate.latestSourceFileArchive?.sourceFileCaseReportV1;
+}
+
 function requestResolvedByNewerEnrichment(input: {
   request?: DossierSourceFileRefreshRequest;
   recommendation?: DossierRecommendation;
@@ -1109,6 +1122,7 @@ export default function CandidateReviewPage() {
       (request) => isOpenRefreshRequest(request) && !isStaleOpenRefreshRequest(request),
     )
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  const caseReportMissingForLatestArchive = candidateLatestArchiveMissingCaseReport(candidate);
   const activeRefreshResolvedByEnrichment = requestResolvedByNewerEnrichment({
     request: nonStaleActiveRefreshRequest,
     recommendation: latestEnrichmentForRefreshStatus,
@@ -1135,25 +1149,36 @@ export default function CandidateReviewPage() {
       ),
   );
   const sourceFileFreshForOpen = Boolean(
-    latestEnrichmentNewerThanOpen ||
-      (sourceFileOpenState.immediateRefresh?.ok && immediateRecommendationVisible),
+    !caseReportMissingForLatestArchive &&
+      (latestEnrichmentNewerThanOpen ||
+        (sourceFileOpenState.immediateRefresh?.ok && immediateRecommendationVisible)),
   );
   const refreshStatusLabel = sourceFileOpenState.running
     ? "UPDATING SOURCE FILE"
-    : sourceFileFreshForOpen
-      ? "FILE UPDATED"
-      : "FILE NOT UPDATED";
+    : caseReportMissingForLatestArchive
+      ? latestRefreshRequest?.status === "pending" || latestRefreshRequest?.status === "claimed"
+        ? "CASE REPORT QUEUED"
+        : latestRefreshRequest?.status === "failed"
+          ? "CASE REPORT FAILED"
+          : "CASE REPORT MISSING"
+      : sourceFileFreshForOpen
+        ? "FILE UPDATED"
+        : "FILE NOT UPDATED";
   const refreshStatusDetail = sourceFileOpenState.running
     ? "BNL is updating this Source File now through the server-side immediate refresh endpoint."
-    : sourceFileFreshForOpen
-      ? "Latest BNL enrichment is fresh for this page open."
-      : "This page is not treating older BNL Source File data as current. Use FILE NOT UPDATED to retry the immediate update.";
+    : caseReportMissingForLatestArchive
+      ? "Latest archive exists, but BNL has not generated the Case File Report yet. Refresh requests ask BNL for case-report backfill."
+      : sourceFileFreshForOpen
+        ? "Latest BNL enrichment is fresh for this page open."
+        : "This page is not treating older BNL Source File data as current. Use FILE NOT UPDATED to retry the immediate update.";
   const refreshFailureReason =
     sourceFileOpenState.immediateRefresh?.failureReason ??
     latestRefreshRequest?.failureReason ??
-    (!sourceFileFreshForOpen && !sourceFileOpenState.running
-      ? "No fresh BNL enrichment is visible for this page open."
-      : undefined);
+    (caseReportMissingForLatestArchive
+      ? "case_report_missing_after_refresh"
+      : !sourceFileFreshForOpen && !sourceFileOpenState.running
+        ? "No fresh BNL enrichment is visible for this page open."
+        : undefined);
   const manualRefreshDisabled = saving || !candidate || sourceFileOpenState.running || sourceFileFreshForOpen;
   const manualRefreshButtonLabel = sourceFileOpenState.running
     ? sourceFileOpenState.immediateRefresh
@@ -1268,7 +1293,9 @@ export default function CandidateReviewPage() {
       const data = await postWorkflow({
         action: "requestSourceFileRefresh",
         candidateId,
-        reason: "Manual admin requested a BNL Source File immediate update retry.",
+        reason: caseReportMissingForLatestArchive
+          ? "case_report_missing"
+          : "Manual admin requested a BNL Source File immediate update retry.",
       });
       const refresh = data.refresh;
       if (refresh?.request && isOpenRefreshRequest(refresh.request)) {

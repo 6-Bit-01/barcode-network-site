@@ -3007,6 +3007,7 @@ test("identity link review statuses control alias matching", async () => {
   assert.equal(confirmed.identityLink.confidence, "confirmed");
   assert.ok(confirmed.identityLink.confirmedAt);
   assert.equal(confirmed.identityLink.useForMatching, true);
+  assert.equal(confirmed.identityLink.useInPublicDossier, false);
 
   const confirmedMatch = workflow.matchDossierRecommendationSubject({
     recommendation: { subjectName: "ShadowsPit" },
@@ -3030,6 +3031,31 @@ test("identity link review statuses control alias matching", async () => {
   });
   assert.equal(retired.identityLink.status, "retired");
   assert.equal(retiredMatch.exactCandidateId, undefined);
+
+  const referenceOnlyLink = await (
+    await authedPost({
+      action: "addDossierIdentityLink",
+      candidateId,
+      input: { label: "Ashley Reference", type: "alias" },
+    })
+  ).json();
+  const referenceOnly = await (
+    await authedPost({
+      action: "confirmDossierIdentityLink",
+      candidateId,
+      identityLinkId: referenceOnlyLink.identityLink.id,
+      useForMatching: false,
+      useInPublicDossier: false,
+    })
+  ).json();
+  const referenceOnlyMatch = workflow.matchDossierRecommendationSubject({
+    recommendation: { subjectName: "Ashley Reference" },
+    candidates: referenceOnly.candidates,
+  });
+  assert.equal(referenceOnly.identityLink.status, "confirmed");
+  assert.equal(referenceOnly.identityLink.useForMatching, false);
+  assert.equal(referenceOnly.identityLink.useInPublicDossier, false);
+  assert.equal(referenceOnlyMatch.exactCandidateId, undefined);
 
   const rejectedLink = await (
     await authedPost({
@@ -3216,9 +3242,9 @@ test("identity alias review UX is grouped, status-aware, and public-safe", () =>
     assert.match(sourceFilePage, new RegExp(label));
   }
   for (const group of [
-    "Pending Review",
-    "Confirmed Aliases",
-    "Closed / Inactive",
+    "Proposed Identity Links",
+    "Confirmed Identity Links",
+    "Rejected / Retired Identity History",
   ]) {
     assert.match(sourceFilePage, new RegExp(group));
   }
@@ -3239,30 +3265,40 @@ test("identity alias review UX is grouped, status-aware, and public-safe", () =>
     /This alias is retired and no longer used for matching\./,
   );
   assert.match(sourceFilePage, /Active for matching/);
+  assert.match(sourceFilePage, /Reference only \/ Not used for matching/);
   assert.match(sourceFilePage, /Not used for matching/);
   assert.match(sourceFilePage, /Internal only/);
   assert.match(sourceFilePage, /Public-safe label/);
   assert.match(sourceFilePage, /Not public dossier text/);
   assert.match(
     sourceFilePage,
-    /Adding an alias does not make it public and does not affect\s+matching until confirmed/,
+    /Identity links are internal routing\/context tools\. Confirming a link can help future BNL Signals route to this Source File, but it does not merge Source Files, publish identity, or place the label in a public dossier\./,
   );
   assert.match(sourceFilePage, /Use for future matching after confirmation/);
   assert.match(sourceFilePage, /identityLink\.status === "proposed"/);
   assert.match(sourceFilePage, /identityLink\.status === "confirmed"/);
   assert.match(sourceFilePage, /identityLink\.status === "rejected" \|\| identityLink\.status === "retired"/);
   assert.match(sourceFilePage, /\{isProposed && \(/);
-  assert.match(sourceFilePage, /Confirm/);
+  assert.match(sourceFilePage, /Confirm for matching/);
+  assert.match(sourceFilePage, /Confirm reference only/);
   assert.match(sourceFilePage, /Reject/);
+  assert.match(sourceFilePage, /Keep proposed/);
+  assert.match(sourceFilePage, /Leave unresolved\. This stays proposed and will not\s+affect matching\./);
   assert.match(sourceFilePage, /\{isConfirmed && \(/);
   assert.match(sourceFilePage, /Retire/);
   assert.match(sourceFilePage, /Created from BNL Signal/);
-  assert.match(sourceFilePage, /BNL Signal subject:/);
+  assert.match(sourceFilePage, /BNL Signal subject/);
+  assert.match(sourceFilePage, /Reason \/ evidence summary/);
+  assert.match(sourceFilePage, /Source lanes/);
   assert.match(sourceFilePage, /Open recommendation/);
   assert.match(sourceFilePage, /disabled:pointer-events-none/);
   assert.match(
     sourceFilePage,
-    /Identity link confirmed\. Future recommendations can now match this alias if matching is enabled; it is still not public identity proof\./,
+    /Identity link confirmed for matching\. Future BNL Signals using this label can route to this Source File\. This does not publish identity or merge Source Files\./,
+  );
+  assert.match(
+    sourceFilePage,
+    /Identity link confirmed as reference-only\. It remains internal context and will not route future BNL Signals automatically\./,
   );
   assert.match(
     sourceFilePage,
@@ -3270,14 +3306,18 @@ test("identity alias review UX is grouped, status-aware, and public-safe", () =>
   );
   assert.match(
     sourceFilePage,
-    /Identity link retired\. It is no longer active\./,
+    /Identity link retired\. It remains in history and will no longer be used for matching\./,
   );
+  assert.match(sourceFilePage, /useForMatching: true/);
+  assert.match(sourceFilePage, /useInPublicDossier:\s*identityLink\.useInPublicDossier === true/);
+  assert.match(sourceFilePage, /useForMatching: false/);
+  assert.match(sourceFilePage, /useInPublicDossier: false/);
 
   assert.match(dashboard, /Identity: Connected to Existing Subject/);
   assert.match(dashboard, /Identity: Needs Confirmation/);
   assert.match(dashboard, /link\.status === "confirmed"/);
   assert.match(dashboard, /link\.status === "proposed"/);
-  assert.doesNotMatch(dashboard, /Review Identity|Identity Link Actions|Create Proposed Identity Link|Confirm<|Reject<|Retire</);
+  assert.doesNotMatch(dashboard, /Review Identity|Identity Link Actions|Create Proposed Identity Link|Confirm<|Reject<|Retire|notification|chip/i);
 
   assert.match(recommendationPage, /Matched by confirmed alias/);
   assert.match(recommendationPage, /Identity Link Actions/);
@@ -3302,6 +3342,7 @@ test("identity alias review UX is grouped, status-aware, and public-safe", () =>
       source("src/app/database/[slug]/page.tsx"),
     /identityLinks|publishDraft|automatic merge/i,
   );
+  assert.doesNotMatch(sourceFilePage, /publishDraft|mergeDossierCandidates|merge Source Files button|public publishing action/i);
 });
 
 test("confirmed alias match allows attach and blocks duplicate conversion", async () => {

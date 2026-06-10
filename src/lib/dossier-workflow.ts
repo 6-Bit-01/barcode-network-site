@@ -132,6 +132,20 @@ export type DossierSourceFileOperatorSummary = {
 };
 
 
+export type DossierSubjectIntelligenceBriefV1 = {
+  subjectRead?: unknown;
+  bnlTake?: unknown;
+  activitySnapshot?: unknown;
+  topicBuckets?: unknown;
+  namedAnchors?: unknown;
+  musicAndLinkSignals?: unknown;
+  relationshipSignals?: unknown;
+  queueSubmissionRead?: unknown;
+  sourceFileGaps?: unknown;
+  recommendedAdminActions?: unknown;
+  doNotSayPubliclyYet?: unknown;
+};
+
 export type DossierSourceFileCaseReportV1 = {
   version?: string;
   generatedAt?: string;
@@ -152,6 +166,7 @@ export type DossierSourceFileCaseReportV1 = {
   recommendedNextSteps?: string | string[];
   confidenceNotes?: string | string[];
   memoryCoverage?: string | string[];
+  subjectIntelligenceBriefV1?: DossierSubjectIntelligenceBriefV1;
 };
 
 export type DossierSourceFileBriefV2 = {

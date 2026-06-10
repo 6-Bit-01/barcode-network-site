@@ -95,6 +95,7 @@ function hasReportShape(value: unknown): value is DossierSourceFileCaseReportV1 
   const report = asRecord(value);
   if (!report) return false;
   return [
+    "subjectIntelligenceBriefV1",
     "caseSummary",
     "dossierUse",
     "publicSafeClaims",
@@ -148,6 +149,223 @@ function normalizeInterimBrief(latestSourceFileArchive?: DossierSourceFileArchiv
     if (brief) return brief;
   }
   return undefined;
+}
+
+function valueByKeys(record: UnknownRecord | undefined, keys: string[]) {
+  if (!record) return undefined;
+  return keys
+    .map((key) => record[key])
+    .find((value) => value !== undefined && value !== null && value !== "");
+}
+
+function displayValue(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim() || undefined;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  const record = asRecord(value);
+  if (!record) return undefined;
+  return (
+    textValue(record.text) ??
+    textValue(record.summary) ??
+    textValue(record.note) ??
+    textValue(record.explanation) ??
+    textValue(record.read)
+  );
+}
+
+function scalarLabel(value: unknown) {
+  return displayValue(value) ?? "—";
+}
+
+function listRecords(value: unknown): UnknownRecord[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) =>
+      asRecord(item) ? [asRecord(item) as UnknownRecord] : [],
+    );
+  }
+  const record = asRecord(value);
+  return record ? [record] : [];
+}
+
+function listValues(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  return value === undefined || value === null || value === "" ? [] : [value];
+}
+
+function BriefParagraphs({ value }: { value: unknown }) {
+  const record = asRecord(value);
+  const parts = record
+    ? [
+        record.summary,
+        record.read,
+        record.text,
+        record.note,
+        record.confirmedFact,
+        record.bnlInterpretation,
+        record.uncertainty,
+      ]
+    : listValues(value);
+  const paragraphs = parts.flatMap((part) => {
+    const items = stringItems(part);
+    if (items.length) return items;
+    const displayed = displayValue(part);
+    return displayed ? [displayed] : [];
+  });
+  if (!paragraphs.length) return <p className="text-muted">—</p>;
+  return (
+    <div className="space-y-2 text-foreground">
+      {paragraphs.map((paragraph, index) => (
+        <p key={`${index}-${paragraph.slice(0, 24)}`}>{paragraph}</p>
+      ))}
+    </div>
+  );
+}
+
+function SignalList({
+  value,
+  empty = "No signals recorded in this brief.",
+}: {
+  value: unknown;
+  empty?: string;
+}) {
+  const items: Array<{ label: string; record?: UnknownRecord }> = listValues(value).flatMap((item) => {
+    const record = asRecord(item);
+    if (!record) {
+      const displayed = displayValue(item);
+      return displayed ? [{ label: displayed }] : [];
+    }
+    const label =
+      displayValue(record.signal) ??
+      displayValue(record.summary) ??
+      displayValue(record.note) ??
+      displayValue(record.text) ??
+      displayValue(record.url) ??
+      JSON.stringify(record);
+    return [{ label, record }];
+  });
+  if (!items.length) return <p className="text-muted">{empty}</p>;
+  return (
+    <ul className="list-disc space-y-2 pl-5 text-foreground">
+      {items.map((item, index) => (
+        <li key={`${index}-${item.label.slice(0, 24)}`}>
+          {item.label}
+          {item.record &&
+            (displayValue(item.record.strength) || displayValue(item.record.status)) && (
+            <span className="ml-2 text-xs uppercase tracking-widest text-accent">
+              {displayValue(item.record.strength) ?? displayValue(item.record.status)}
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SubjectIntelligenceBriefView({
+  report,
+}: {
+  report: DossierSourceFileCaseReportV1;
+}) {
+  const brief = asRecord(report.subjectIntelligenceBriefV1);
+  if (!brief) return null;
+  const activity = asRecord(brief.activitySnapshot) ?? brief;
+  const snapshot: Array<[string, unknown]> = [
+    ["Approved authored items", valueByKeys(activity, ["totalApprovedPublicAuthoredItems", "approvedPublicAuthoredItems", "totalApprovedAuthoredItems"])],
+    ["Public mentions", valueByKeys(activity, ["totalPublicMentions", "publicMentions"])],
+    ["Review-only evidence", valueByKeys(activity, ["reviewOnlyEvidenceCount", "reviewOnlyCount"])],
+    ["Evidence scanned", valueByKeys(activity, ["totalEvidenceScanned", "evidenceScanned", "totalScanned"])],
+    ["Latest observed", valueByKeys(activity, ["latestObserved", "latestObservedAt", "latestActivityAt"])],
+    ["Activity level", valueByKeys(activity, ["activityLevel", "level"])],
+    ["Top channels", stringItems(valueByKeys(activity, ["topChannels", "channels"])).join(", ") || valueByKeys(activity, ["topChannels", "channels"])],
+  ];
+  const topicBuckets = listRecords(brief.topicBuckets);
+  const anchors = listRecords(brief.namedAnchors).filter((anchor) => {
+    const name = scalarLabel(valueByKeys(anchor, ["name", "label"]));
+    const strength = scalarLabel(anchor.strength).toLowerCase();
+    return name !== "—" && !/^(noise|unknown|n\/a|null)$/i.test(name) && strength !== "noise";
+  });
+  const bnlTake = asRecord(brief.bnlTake);
+  const sourceFileGaps = listValues(brief.sourceFileGaps);
+  const adminActions = listValues(brief.recommendedAdminActions);
+
+  return (
+    <Section title="BNL Subject Intelligence Brief" tone="review" helper="Primary review-only BNL readout. Use this as admin context, not public copy.">
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <div className="border border-border/50 bg-background/20 p-3">
+            <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-accent">Subject read</h4>
+            <BriefParagraphs value={brief.subjectRead} />
+          </div>
+          <div className="border border-border/50 bg-background/20 p-3">
+            <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-accent">BNL take</h4>
+            <BriefParagraphs value={brief.bnlTake} />
+          </div>
+        </div>
+
+        <section className="border border-border/50 bg-background/20 p-3">
+          <h4 className="mb-3 text-xs font-bold uppercase tracking-widest text-foreground">Activity Snapshot</h4>
+          <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {snapshot.map(([label, value]) => <SnapshotItem key={label} label={label} value={scalarLabel(value)} />)}
+          </dl>
+        </section>
+
+        <section className="border border-border/50 bg-background/20 p-3">
+          <h4 className="mb-3 text-xs font-bold uppercase tracking-widest text-foreground">What They Talk About</h4>
+          {topicBuckets.length ? (
+            <ul className="space-y-3">
+              {topicBuckets.map((topic, index) => (
+                <li key={`${index}-${scalarLabel(topic.topic).slice(0, 24)}`} className="border border-border/50 bg-background/30 p-3">
+                  <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest text-accent">
+                    <span>{scalarLabel(valueByKeys(topic, ["topic", "name", "label"]))}</span>
+                    <span>Strength: {scalarLabel(topic.strength)}</span>
+                    {valueByKeys(topic, ["evidenceCount", "count"]) !== undefined && <span>Evidence: {scalarLabel(valueByKeys(topic, ["evidenceCount", "count"]))}</span>}
+                  </div>
+                  <BriefParagraphs value={valueByKeys(topic, ["explanation", "summary", "note"])} />
+                  {stringItems(valueByKeys(topic, ["exampleSignals", "signals", "examples"])).length > 0 && (
+                    <ul className="mt-2 list-disc pl-5 text-xs text-muted">
+                      {stringItems(valueByKeys(topic, ["exampleSignals", "signals", "examples"])).map((signal, signalIndex) => <li key={`${signalIndex}-${signal.slice(0, 16)}`}>{signal}</li>)}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : <p className="text-muted">No topic buckets recorded in this brief.</p>}
+        </section>
+
+        <section className="border border-border/50 bg-background/20 p-3">
+          <h4 className="mb-3 text-xs font-bold uppercase tracking-widest text-foreground">Named Anchors / Connections</h4>
+          {anchors.length ? (
+            <ul className="space-y-2">
+              {anchors.map((anchor, index) => (
+                <li key={`${index}-${scalarLabel(anchor.name).slice(0, 24)}`} className="border border-border/50 bg-background/30 p-3">
+                  <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest text-accent">
+                    <span>{scalarLabel(valueByKeys(anchor, ["name", "label"]))}</span>
+                    <span>Type: {scalarLabel(anchor.type)}</span>
+                    <span>Strength: {scalarLabel(anchor.strength)}</span>
+                  </div>
+                  <p className="mt-2 text-foreground">{scalarLabel(valueByKeys(anchor, ["note", "summary", "explanation"]))}</p>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="text-muted">No meaningful named anchors recorded in this brief.</p>}
+        </section>
+
+        <section className="border border-border/50 bg-background/20 p-3">
+          <h4 className="mb-3 text-xs font-bold uppercase tracking-widest text-foreground">BNL’s Current Take</h4>
+          <dl className="space-y-2">
+            <div><dt className="text-xs uppercase tracking-widest text-accent">Confirmed fact</dt><dd className="text-foreground">{scalarLabel(valueByKeys(bnlTake, ["confirmedFact", "confirmedFacts", "confirmed"]))}</dd></div>
+            <div><dt className="text-xs uppercase tracking-widest text-accent">BNL interpretation</dt><dd className="text-foreground">{scalarLabel(valueByKeys(bnlTake, ["bnlInterpretation", "interpretation", "take"]) ?? brief.bnlTake)}</dd></div>
+            <div><dt className="text-xs uppercase tracking-widest text-accent">Uncertainty</dt><dd className="text-foreground">{scalarLabel(valueByKeys(bnlTake, ["uncertainty", "uncertainties", "unknowns"]))}</dd></div>
+          </dl>
+        </section>
+
+        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-3 text-xs font-bold uppercase tracking-widest text-foreground">Music / Link Signals</h4><SignalList value={brief.musicAndLinkSignals} /></section>
+        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-1 text-xs font-bold uppercase tracking-widest text-foreground">Relationship / Context Signals</h4><p className="mb-3 text-xs text-muted">Review-only unless separately confirmed.</p><SignalList value={brief.relationshipSignals} /></section>
+        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-3 text-xs font-bold uppercase tracking-widest text-foreground">Queue / Submission Read</h4><BriefParagraphs value={brief.queueSubmissionRead} /></section>
+        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-3 text-xs font-bold uppercase tracking-widest text-foreground">What To Add To This Source File</h4><div className="grid grid-cols-1 gap-3 lg:grid-cols-2"><div><h5 className="mb-2 text-xs uppercase tracking-widest text-accent">Source file gaps</h5><SignalList value={sourceFileGaps} empty="No source file gaps recorded." /></div><div><h5 className="mb-2 text-xs uppercase tracking-widest text-accent">Recommended admin actions</h5><SignalList value={adminActions} empty="No recommended admin actions recorded." /></div></div></section>
+        <section className="border border-accent/60 bg-accent/10 p-3"><h4 className="mb-3 text-xs font-bold uppercase tracking-widest text-foreground">Do Not Say Publicly Yet</h4><SignalList value={brief.doNotSayPubliclyYet} empty="No do-not-say items recorded." /></section>
+      </div>
+    </Section>
+  );
 }
 
 function firstCompleteSentence(value: string) {
@@ -210,6 +428,10 @@ function ReportSectionView({ title, value }: { title: string; value: unknown }) 
 }
 
 function CaseReportView({ report }: { report?: DossierSourceFileCaseReportV1 }) {
+  if (asRecord(report?.subjectIntelligenceBriefV1)) {
+    return <SubjectIntelligenceBriefView report={report as DossierSourceFileCaseReportV1} />;
+  }
+
   if (!report) {
     return (
       <Section title="BNL Case File Report" tone="review">
@@ -283,6 +505,7 @@ function InterimBriefView({ brief, hasReport }: { brief?: UnknownRecord; hasRepo
 
 export function DossierSourceFileArchiveRawData({ latestSourceFileArchive }: { latestSourceFileArchive?: DossierSourceFileArchiveMetadata }) {
   if (!latestSourceFileArchive) return null;
+  const report = normalizeCaseReport(latestSourceFileArchive);
   const rawGroups = [
     ["compactSummary", stringItems(latestSourceFileArchive.compactSummary)],
     ["sourceFileBriefV2", [textValue(asRecord(latestSourceFileArchive.sourceFileBriefV2)?.oneLineSummary), textValue(asRecord(latestSourceFileArchive.sourceFileBriefV2)?.adminSummary), textValue(asRecord(latestSourceFileArchive.sourceFileBriefV2)?.recommendedNextAction)].filter(Boolean) as string[]],
@@ -291,14 +514,29 @@ export function DossierSourceFileArchiveRawData({ latestSourceFileArchive }: { l
     ["publicSafetyNotes raw values", stringItems(latestSourceFileArchive.publicSafetyNotes)],
     ["doNotSay raw values", stringItems(latestSourceFileArchive.doNotSay)],
   ].filter(([, items]) => (items as string[]).length > 0) as Array<[string, string[]]>;
+  const oldReportSections: ReportSection[] = report ? [
+    { title: "Case Summary", value: report.caseSummary },
+    { title: "Dossier Use", value: report.dossierUse },
+    { title: "Public-Safe Claims", value: report.publicSafeClaims },
+    { title: "Evidence Summary", value: report.evidenceSummary },
+    { title: "Community Context", value: report.communityContext },
+    { title: "Creative / Music Context", value: report.creativeMusicContext, optional: true },
+    { title: "Relationship Context", value: report.relationshipContext, optional: true },
+    { title: "Queue / Submission Context", value: report.queueSubmissionContext, optional: true },
+    { title: "Identity Context", value: report.identityContext, optional: true },
+    { title: "Review Blockers", value: report.reviewBlockers },
+    { title: "Internal-Only / Do Not Say", value: report.internalOnlyNotes },
+    { title: "Recommended Next Steps", value: report.recommendedNextSteps },
+    { title: "Confidence / Memory Coverage", value: [...stringItems(report.confidenceNotes), ...stringItems(report.memoryCoverage)] },
+  ] : [];
 
   return (
     <details className="border border-border/70 bg-background/20 p-3 text-sm text-muted">
       <summary className="cursor-pointer font-semibold text-foreground">
-        Archive / Raw Source File Data
+        Raw Report / Debug (Archive / Raw Source File Data)
       </summary>
       <p className="mt-3 text-xs uppercase tracking-widest text-accent">
-        Raw BNL archive material is preserved here for audit/debugging. It is not dossier copy.
+        Admin-only collapsed debug. Raw BNL archive material and legacy sectioned report data are preserved for audit; they are not dossier copy.
       </p>
       <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <SnapshotItem label="Archive id" value={latestSourceFileArchive.id} />
@@ -308,6 +546,14 @@ export function DossierSourceFileArchiveRawData({ latestSourceFileArchive }: { l
         <SnapshotItem label="Updated" value={formatSnapshotDate(latestSourceFileArchive.updatedAt)} />
         <SnapshotItem label="Review-only" value={latestSourceFileArchive.reviewOnly ? "Yes" : "No"} />
       </dl>
+      {oldReportSections.length > 0 && (
+        <section className="mt-3 border border-border/50 bg-background/30 p-2">
+          <h4 className="text-xs font-bold uppercase tracking-widest text-foreground">Legacy sectioned Case File Report</h4>
+          <div className="mt-2 space-y-3">
+            {oldReportSections.map((section) => <ReportSectionView key={section.title} title={section.title} value={section.value} />)}
+          </div>
+        </section>
+      )}
       {rawGroups.length > 0 && (
         <div className="mt-3 space-y-3">
           {rawGroups.map(([label, items]) => (
@@ -322,6 +568,12 @@ export function DossierSourceFileArchiveRawData({ latestSourceFileArchive }: { l
           ))}
         </div>
       )}
+      <section className="mt-3 border border-border/50 bg-background/30 p-2">
+        <h4 className="text-xs font-bold uppercase tracking-widest text-foreground">Raw archive JSON</h4>
+        <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap text-xs text-muted">
+          {JSON.stringify(latestSourceFileArchive, null, 2)}
+        </pre>
+      </section>
     </details>
   );
 }

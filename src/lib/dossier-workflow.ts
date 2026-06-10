@@ -171,6 +171,10 @@ export type DossierSourceFileArchiveCompactReadout = {
   evidenceReceiptSummary?: string[];
   sourceFileCaseReportV1?: DossierSourceFileCaseReportV1;
   sourceFileBriefV2?: DossierSourceFileBriefV2;
+  archivePayload?: unknown;
+  archive?: unknown;
+  payload?: unknown;
+  sourceFileArchive?: unknown;
 };
 
 export type DossierSourceFileArchiveMetadata =
@@ -189,6 +193,10 @@ export type DossierSourceFileArchiveMetadata =
     archiveKey?: string;
     chunkKeys?: string[];
     reviewOnly: true;
+    caseReportPresent?: boolean;
+    subjectMemoryPacketPresent?: boolean;
+    caseReportExtractedFrom?: string;
+    sourceFileBriefExtractedFrom?: string;
   };
 
 export type DossierSourceFileEnrichmentArchive =

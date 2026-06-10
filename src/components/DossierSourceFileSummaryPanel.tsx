@@ -106,26 +106,48 @@ function hasReportShape(value: unknown): value is DossierSourceFileCaseReportV1 
   ].some((key) => report[key] !== undefined);
 }
 
+function archivePayloadCandidates(latestSourceFileArchive?: DossierSourceFileArchiveMetadata) {
+  const archive = asRecord(latestSourceFileArchive);
+  if (!archive) return [];
+  const candidates: UnknownRecord[] = [];
+  const seen = new Set<UnknownRecord>();
+  const add = (value: unknown) => {
+    const object = asRecord(value);
+    if (!object || seen.has(object)) return;
+    seen.add(object);
+    candidates.push(object);
+  };
+  add(archive);
+  for (const key of ["sourcePackage", "archivePayload", "archive", "payload", "sourceFileArchive"] as const) {
+    const wrapped = archive[key];
+    add(wrapped);
+    add(asRecord(wrapped)?.sourcePackage);
+  }
+  return candidates;
+}
+
 function normalizeCaseReport(
   latestSourceFileArchive?: DossierSourceFileArchiveMetadata,
 ): DossierSourceFileCaseReportV1 | undefined {
-  const archive = asRecord(latestSourceFileArchive);
-  if (!archive) return undefined;
-  const sourcePackage = asRecord(archive.sourcePackage);
-  const brief = asRecord(archive.sourceFileBriefV2);
-  const candidates = [
-    archive.sourceFileCaseReportV1,
-    sourcePackage?.sourceFileCaseReportV1,
-    brief?.sourceFileCaseReportV1,
-    brief?.caseFileReport,
-  ];
-  return candidates.find(hasReportShape);
+  for (const candidate of archivePayloadCandidates(latestSourceFileArchive)) {
+    const brief = asRecord(candidate.sourceFileBriefV2);
+    const report = [
+      candidate.sourceFileCaseReportV1,
+      brief?.sourceFileCaseReportV1,
+      brief?.caseFileReport,
+      candidate.caseFileReport,
+    ].find(hasReportShape);
+    if (report) return report;
+  }
+  return undefined;
 }
 
 function normalizeInterimBrief(latestSourceFileArchive?: DossierSourceFileArchiveMetadata) {
-  const archive = asRecord(latestSourceFileArchive);
-  if (!archive) return undefined;
-  return asRecord(archive.sourceFileBriefV2) ?? asRecord(asRecord(archive.sourcePackage)?.sourceFileBriefV2);
+  for (const candidate of archivePayloadCandidates(latestSourceFileArchive)) {
+    const brief = asRecord(candidate.sourceFileBriefV2);
+    if (brief) return brief;
+  }
+  return undefined;
 }
 
 function firstCompleteSentence(value: string) {
@@ -364,6 +386,9 @@ export function DossierSourceFileSummaryPanel({
   const report = normalizeCaseReport(latestSourceFileArchive);
   const interimBrief = normalizeInterimBrief(latestSourceFileArchive);
   const latestArchiveMissingReport = Boolean(latestSourceFileArchive && !report);
+  const hasArchiveDiagnostics =
+    latestSourceFileArchive?.caseReportPresent !== undefined ||
+    latestSourceFileArchive?.caseReportExtractedFrom !== undefined;
   const snapshotItems = [
     ["Subject", subjectName ?? latestSourceFileArchive?.subjectName ?? "Unknown subject"],
     ["Current state", humanStatus(currentLane ?? summary.nextAction)],
@@ -409,6 +434,21 @@ export function DossierSourceFileSummaryPanel({
           Summary badge: {formatDossierSummaryBadge(summary.summarySource)}.
         </p>
       </Section>
+
+      {hasArchiveDiagnostics && (
+        <Section title="Archive ingest diagnostics" helper="Admin-only preservation check. These fields are safe booleans and path labels, not raw archive secrets.">
+          <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <SnapshotItem
+              label="caseReportPresent"
+              value={latestSourceFileArchive?.caseReportPresent ? "true" : "false"}
+            />
+            <SnapshotItem
+              label="caseReportExtractedFrom"
+              value={latestSourceFileArchive?.caseReportExtractedFrom ?? "—"}
+            />
+          </dl>
+        </Section>
+      )}
 
       <CaseReportView report={report} />
       <InterimBriefView brief={interimBrief} hasReport={Boolean(report)} />

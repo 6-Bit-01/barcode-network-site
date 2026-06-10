@@ -260,8 +260,12 @@ function sourceFileActionLabel() {
   return "Open Source File";
 }
 
-function archiveActionLabel() {
+function archivedCandidateActionLabel() {
   return "Open Source File";
+}
+
+function archivedSignalActionLabel() {
+  return "Open Archived Signal";
 }
 
 function DashboardCard({
@@ -1159,7 +1163,7 @@ export default function DossierControlCenterPage() {
                       href={`/admin/dossiers/candidates/${candidate.id}`}
                       className="inline-flex border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent"
                     >
-                      {archiveActionLabel()}
+                      {archivedCandidateActionLabel()}
                     </Link>
                   </div>
                 </article>
@@ -1184,7 +1188,7 @@ export default function DossierControlCenterPage() {
                       href={`/admin/dossiers/recommendations/${recommendation.id}`}
                       className="inline-flex border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent"
                     >
-                      {archiveActionLabel()}
+                      {archivedSignalActionLabel()}
                     </Link>
                   </div>
                 </article>

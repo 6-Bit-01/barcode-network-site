@@ -1101,6 +1101,7 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
     "Review Candidate",
     "Open Proposed Dossier",
     "Open Source File",
+    "Open Archived Signal",
     "Open Live Dossier",
   ]) {
     assertIncludesCopy(pageCopy, label);
@@ -1113,6 +1114,9 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
   assert.doesNotMatch(page, />\s*Open\s*</);
   assert.doesNotMatch(page, /Add Missing Info|Review Signal|Review Source Update|Review Draft|Review Archived|Review Closed Signal|Review Trash/);
   assert.doesNotMatch(page, /Open Draft|Review Updates|Review Missing Info|Review Match|Needs Attention/);
+  assert.match(page, /archivedCandidateActionLabel\(\)/);
+  assert.match(page, /archivedSignalActionLabel\(\)/);
+  assert.doesNotMatch(page, /function archiveActionLabel/);
   assert.doesNotMatch(page, /PhaseRail|Numbered dossier phases|Workflow map|System Boundaries/);
   assert.doesNotMatch(page, /Duplicate Analysis|Record Compactor|View Warning \/ Open Merge Review/);
   assert.doesNotMatch(page, /eyebrow="Dossier Updates"|title="Dossier Updates"/);
@@ -4197,6 +4201,13 @@ test("ignore, dismiss, and archive recommendations preserve records", async () =
   assert.match(dashboard, /terminalRecommendations/);
   assertIncludesCopy(dashboardCopy, "Archive / Dismissed / Trash");
   assertIncludesCopy(dashboardCopy, "dismissed or archived signals");
+  assertIncludesCopy(dashboardCopy, "Open Source File");
+  assertIncludesCopy(dashboardCopy, "Open Archived Signal");
+  assert.match(dashboard, /function archivedCandidateActionLabel\(\) \{\s*return "Open Source File";/);
+  assert.match(dashboard, /function archivedSignalActionLabel\(\) \{\s*return "Open Archived Signal";/);
+  assert.match(dashboard, /terminalRecommendations[\s\S]*archivedSignalActionLabel\(\)/);
+  assert.doesNotMatch(dashboard, /function archivedSignalActionLabel\(\) \{\s*return "Open Source File";/);
+  assert.doesNotMatch(dashboard, /terminalRecommendations[\s\S]*archiveActionLabel\(\)/);
 });
 
 test("recommendation inbox and source note UI are present and bounded", () => {

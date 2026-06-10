@@ -780,6 +780,17 @@ function formatDate(value?: string) {
   return value ? new Date(value).toLocaleString() : "—";
 }
 
+function SnapshotItem({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="border border-border/60 bg-background/30 p-3">
+      <dt className="text-[0.65rem] uppercase tracking-widest text-accent">
+        {label}
+      </dt>
+      <dd className="mt-1 text-sm text-foreground">{value}</dd>
+    </div>
+  );
+}
+
 function PhaseRail() {
   return (
     <section
@@ -1985,26 +1996,65 @@ export default function CandidateReviewPage() {
           </form>
         </section>
 
-        <Section title="Source Notes / Admin Addendums">
-          {sourceNotes.length === 0 ? (
-            <p>No saved source notes yet.</p>
-          ) : (
-            <div className="space-y-3">
-              {sourceNotes.map((note) => (
-                <HumanReadableNoteView
-                  key={note.id}
-                  view={createHumanReadableSourceFileNoteView({
-                    ...note,
-                    subjectName: candidate.name,
-                  })}
-                  createdAt={note.createdAt}
-                  workflowLane={candidate.status}
-                  appliedDraftId={note.appliesToDraftId}
-                />
-              ))}
-            </div>
-          )}
-        </Section>
+        <details className="border border-border bg-surface p-5 text-sm text-muted">
+          <summary className="cursor-pointer text-2xl font-bold text-foreground">
+            Source Notes / Admin Addendums — collapsed summary
+          </summary>
+          <div className="space-y-4 pt-4">
+            <dl className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <SnapshotItem label="Notes" value={String(sourceNotes.length)} />
+              <SnapshotItem
+                label="Warnings"
+                value={String(
+                  sourceNotes.filter((note) =>
+                    /warn|caution|do not|not public|internal|review-only/i.test(note.text),
+                  ).length,
+                )}
+              />
+              <SnapshotItem
+                label="Dossier questions"
+                value={String(
+                  sourceNotes.filter((note) =>
+                    /\?|missing|confirm|needs? review|question/i.test(note.text),
+                  ).length,
+                )}
+              />
+              <SnapshotItem
+                label="Latest updated"
+                value={sourceNotes[0]?.updatedAt ? formatDate(sourceNotes[0].updatedAt) : "—"}
+              />
+            </dl>
+            {sourceNotes.length === 0 ? (
+              <p>No saved source notes yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {sourceNotes.map((note) => (
+                  <details key={note.id} className="border border-border/70 bg-background/20 p-3">
+                    <summary className="cursor-pointer font-semibold text-foreground">
+                      {
+                        createHumanReadableSourceFileNoteView({
+                          ...note,
+                          subjectName: candidate.name,
+                        }).summary
+                      }
+                    </summary>
+                    <div className="pt-3">
+                      <HumanReadableNoteView
+                        view={createHumanReadableSourceFileNoteView({
+                          ...note,
+                          subjectName: candidate.name,
+                        })}
+                        createdAt={note.createdAt}
+                        workflowLane={candidate.status}
+                        appliedDraftId={note.appliesToDraftId}
+                      />
+                    </div>
+                  </details>
+                ))}
+              </div>
+            )}
+          </div>
+        </details>
 
         <details className="border border-border bg-surface p-5 space-y-4">
           <summary className="cursor-pointer text-2xl font-bold text-foreground">

@@ -940,7 +940,7 @@ test("admin Source File page uses immediate refresh status/retry UI and preserve
 
   for (const label of [
     "Review Snapshot",
-    "What BNL Knows",
+    "BNL Case File Report",
     "Evidence receipts",
     "Source Notes / Admin Addendums",
     "Identity Check",
@@ -1559,12 +1559,12 @@ test("admin Source File and recommendation pages render readable sections with c
     "HumanReadableNoteView",
     "Case File / BNL Source File Summary",
     "Review Snapshot",
-    "What BNL Knows",
+    "BNL Case File Report",
     "Relationships / People / Projects",
-    "Primary intelligence summary",
-    "Evidence by Category",
-    "Action Items",
-    "Admin Action Items / Missing Info",
+    "Readable BNL case-file report",
+    "Evidence-Backed Claims",
+    "Dossier Workbench / Proposed Dossier Status",
+    "Review Blockers",
     "Subject",
     "Public readiness:",
     "Public dossier match",
@@ -1575,9 +1575,9 @@ test("admin Source File and recommendation pages render readable sections with c
     "Review-only context connected to this subject",
     "Diagnostics only. Not Case File claims.",
     "warnings",
-    "Action Items",
-    "Review-only Evidence",
-    "What BNL Knows",
+    "Dossier Workbench / Proposed Dossier Status",
+    "Internal-Only / Do Not Say",
+    "BNL Case File Report",
     "Review-only",
   ]) {
     assertIncludesCopy(candidatePage, label);
@@ -6165,17 +6165,18 @@ test("Source File page renders Entity Intelligence Review Console sections", () 
   );
   assert.match(summaryPanel, /Entity Intelligence Review Console/);
   assertIncludesCopy(summaryPanel, "Review Snapshot");
-  assertIncludesCopy(summaryPanel, "What BNL Knows");
-  assertIncludesCopy(summaryPanel, "Admin Action Items / Missing Info");
+  assertIncludesCopy(summaryPanel, "BNL Case File Report");
+  assert.doesNotMatch(summaryPanel, /BNL Brief/);
+  assertIncludesCopy(summaryPanel, "Review Blockers");
   assertIncludesCopy(summaryPanel, "Queue/submission history is not connected yet");
   assertIncludesCopy(summaryPanel, "Review-only");
   assertIncludesCopy(summaryPanel, "Structured packet");
   assertIncludesCopy(summaryPanel, "Safe fallback");
-  assertIncludesCopy(summaryPanel, "Evidence by Category");
-  assertIncludesCopy(summaryPanel, "Relationships / People / Projects");
-  assertIncludesCopy(summaryPanel, "BNL Interaction");
-  assertIncludesCopy(summaryPanel, "Music / Platform / Link Evidence");
-  assertIncludesCopy(summaryPanel, "Event / Contest / Community Signals");
+  assertIncludesCopy(summaryPanel, "Evidence-Backed Claims");
+  assertIncludesCopy(summaryPanel, "Community / Relationship Context");
+  assertIncludesCopy(summaryPanel, "Dossier Workbench / Proposed Dossier Status");
+  assertIncludesCopy(summaryPanel, "Music / Platform / Link Context");
+  assertIncludesCopy(summaryPanel, "Archive / Raw Source File Data — collapsed");
   assertIncludesCopy(summaryPanel, "Diagnostics — collapsed by default");
   assertIncludesCopy(summaryPanel, "Diagnostics only. Not Case File claims.");
   assert.doesNotMatch(summaryPanel, /rawProvenance/);
@@ -6183,6 +6184,64 @@ test("Source File page renders Entity Intelligence Review Console sections", () 
   assert.match(recommendationPage, /createDossierEntityActivityReadoutFromRecommendation/);
   assert.match(recommendationPage, /DossierEntityActivityReadoutPanel/);
   assertIncludesCopy(readoutPanel, "BNL Entity Readout / Entity Activity Summary");
+});
+
+
+
+test("BNL Case File Report renders from brief and legacy archive data with display cleanup", () => {
+  const baseSummary = {
+    currentRead: "Crow appears to be a recurring BARCODE community member with repeated BNL-related conversations.",
+    knownContext: [], whyTracked: "Source file review.", usefulEvidence: [], patterns: [], confirmedStrong: [], claimedNeedsReview: [], privateRelationshipContext: [],
+    publicSafePossibilities: [], privateOnlyNotes: [], uncertainties: [], missingInfo: ["Missing Info: confirm public links."], notPublicYet: [], observedChannels: [], conversationHighlights: [], topicBreakdown: [], bestEvidenceToReview: [], bnlInteractionSignals: [], musicSignals: [], communitySignals: [], sourceCoverage: [], evidenceDetails: [], representativeEvidence: [], activityFrequencySummary: [], topChannels: [], topTopicDetails: [], recentActivitySummary: [], authoredVsMentionedSummary: [], publicUseCandidates: [], reviewOnlyEvidence: [], queueSubmissionStatus: "not_connected", queueSubmissionNote: "No queue bridge.", sourceAuthority: [], recommendedNextAction: "Keep as Source File and resolve review blockers before public dossier drafting.", substanceLevel: "useful", publicReadiness: "needs_review", existingPublicDossier: "no", nextAction: "owner_review", lastUpdatedAt: "2026-06-03T00:00:00.000Z", summarySource: "structured",
+  };
+  const archiveBase = {
+    id: "archive-test", candidateId: "candidate-test", subjectName: "Crow", sourceDigest: "abc1234567890def", createdAt: "2026-06-03T00:00:00.000Z", updatedAt: "2026-06-03T00:00:00.000Z", archiveSize: 1234, chunkCount: 1, reviewOnly: true,
+  };
+  const withBrief = collectReactText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary: baseSummary,
+    subjectName: "Crow",
+    latestSourceFileArchive: {
+      ...archiveBase,
+      sourceFileBriefV2: {
+        summary: "Crow appears in approved approved community context without global_mixed debug labels.",
+        dossierUse: "Use as dossier input after review.",
+        publicSafeFacts: ["Crow appears in public-safe BNL community context.", "Crow appears in public-safe BNL community context."],
+        evidenceBackedClaims: ["conversation evidence: 49 source row(s) found."],
+        reviewBlockers: ["Missing Info: confirm public role."],
+        internalOnlyNotes: ["source_blind relationship context stays internal."],
+        nextAction: "Resolve review blockers before public drafting.",
+      },
+    },
+  }));
+  const briefReport = withBrief.slice(withBrief.indexOf("BNL Case File Report"), withBrief.indexOf("Archive / Raw Source File Data — collapsed"));
+  assert.match(withBrief, /BNL Case File Report/);
+  assert.doesNotMatch(withBrief, /BNL Brief/);
+  assert.match(briefReport, /Crow appears in approved community context/);
+  assert.equal((briefReport.match(/Crow appears in public-safe BNL community context/g) ?? []).length, 1);
+  assert.doesNotMatch(briefReport, /approved approved|global_mixed|source_blind|automated topic label|internal classification|source row\(s\)|Missing Info/);
+  assert.match(briefReport, /Review Blockers/);
+
+  const legacy = collectReactText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary: { ...baseSummary, currentRead: undefined },
+    subjectName: "Crow",
+    latestSourceFileArchive: {
+      ...archiveBase,
+      compactSummary: "Crow appears to be a recurring BARCODE community-adjacent subject with repeated BNL-related discussion.",
+      publicSafePossibilities: ["Crow may be described as a recurring community participant after review."],
+      evidenceReceiptSummary: ["Evidence supports community interaction and review-only context."],
+      missingInfo: ["Public role, display wording, public links, and queue/submission status still need review."],
+      publicSafetyNotes: ["Suno appears in the archive, but queue/submission history is not confirmed yet."],
+      doNotSay: ["Orion relationship context should stay internal until confirmed."],
+    },
+  }));
+  assert.match(legacy, /recurring BARCODE community-adjacent subject/);
+  assert.doesNotMatch(legacy, /Refresh BNL to generate a readable report/);
+
+  const empty = collectReactText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary: { ...baseSummary, currentRead: undefined, whyTracked: undefined, missingInfo: [], recommendedNextAction: undefined },
+    subjectName: "Empty Fixture",
+  }));
+  assert.match(empty, /Refresh BNL to generate a readable report/);
 });
 
 test("Entity Intelligence Review Console collapses duplicate safe bullets and keeps raw labels diagnostic-only", () => {
@@ -6260,12 +6319,12 @@ test("Entity Intelligence Review Console collapses duplicate safe bullets and ke
 
   assert.match(text, /Entity Intelligence Review Console/);
   assert.match(text, /BNL found an internal local profile match for Crow/);
-  assert.match(text, /BNL found prior relationship\/context notes connected to Crow/);
+  assert.match(text, /BNL found prior relationship context notes connected to Crow/);
   assert.match(text, /Source confidence:\s+High/);
   assert.match(text, /Review-only/);
   assert.match(text, /Queue\/submission history is not connected yet/);
   assert.ok((text.match(/profile match/gi) ?? []).length <= 2);
-  assert.ok((text.match(/relationship\/context/gi) ?? []).length <= 2);
+  assert.equal((text.match(/relationship\/context/gi) ?? []).length, 0);
   assert.doesNotMatch(
     text,
     /rawProvenance|user_profiles\/local_profile_observed|relationship_journal\/local_relationship_trace|conversations\/public_discord_observed|memory_tiers\/source_blind_memory_trace|source lane mapping|unknown -> unknown|help_signal|EDGE_SESSION/,
@@ -6345,21 +6404,21 @@ test("Entity Intelligence Review Console promotes actionable Crow intelligence a
     recommendations: [attachedRecommendation],
     sourceFileNotes,
   }));
-  const knowsStart = text.indexOf("What BNL Knows");
+  const knowsStart = text.indexOf("BNL Case File Report");
   const diagnosticsStart = text.indexOf("Diagnostics — collapsed by default");
 
-  assert.match(text, /What BNL Knows/);
-  assert.match(text, /Orion appears in reviewed evidence connected to Crow/);
-  assert.match(text, /Suno appears in reviewed evidence/);
+  assert.match(text, /BNL Case File Report/);
+  assert.match(text, /Recurring named topic: Orion appears across reviewed messages/);
+  assert.match(text, /Suno appears in reviewed evidence|Tool\/platform mention: Suno/);
   assert.match(text, /Crow has repeated BNL interaction evidence in approved review context/);
   assert.match(text, /Queue\/submission history is not connected yet/);
-  assert.match(text, /submitted song counts, (?:play history|played tracks), source type, or Priority\/payment history/);
-  assert.match(text, /Admin Action Items \/ Missing Info/);
+  assert.match(text, /submitted songs|submissions, play counts, source type, payment, or Priority history/);
+  assert.match(text, /Review Blockers/);
   assert.match(text, /Confirm public-safe display name|Display name is not owner-confirmed/);
   assert.match(text, /Confirm public role\/description|Role is not owner-confirmed/);
   assert.match(text, /Add public links|Public links are missing/);
   assert.match(text, /Connect queue\/submission identity/);
-  assert.match(text, /Review-only Evidence/);
+  assert.match(text, /Internal-Only \/ Do Not Say/);
   assert.match(text, /Orion appears in review-only\/internal context/);
   assert.match(text, /Legacy recurring-subject diagnostic: Automated topic label/);
   assert.ok(knowsStart >= 0 && diagnosticsStart > knowsStart);
@@ -6388,26 +6447,26 @@ test("Entity Intelligence Review Console displays #238 link categories and one q
   };
 
   const text = collectReactText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, subjectName: "Antigrain", currentLane: "active_source_file", latestRecommendationTimestamp: "2026-06-03T01:00:00.000Z" }));
-  const normalReviewText = text.slice(0, text.indexOf("Diagnostics — collapsed by default"));
+  const normalReviewText = text.slice(0, text.indexOf("Archive / Raw Source File Data — collapsed"));
 
   assert.match(text, /Review Snapshot/);
-  assert.match(text, /What BNL Knows/);
-  assert.match(text, /Admin Action Items \/ Missing Info/);
-  assert.match(text, /Evidence by Category/);
+  assert.match(text, /BNL Case File Report/);
+  assert.match(text, /Review Blockers/);
+  assert.match(text, /Evidence-Backed Claims/);
   assert.match(text, /Diagnostics — collapsed by default/);
-  assert.match(text, /Video platform links/);
-  assert.match(text, /Event\/contest links/);
-  assert.match(text, /Music discussion/);
-  assert.match(text, /Show evidence \/ Evidence receipts — collapsed by default/);
-  assert.match(text, /Video platform link evidence:.*YouTube\/youtu\.be|Video platform link evidence:.*video platform links/i);
+  assert.match(text, /video platform links/i);
+  assert.match(text, /event\/contest links/i);
+  assert.match(text, /music discussion/i);
+  assert.match(text, /Archive \/ Raw Source File Data — collapsed/);
+  assert.match(text, /video platform links|Video platform link evidence/i);
   assert.doesNotMatch(text, /Actual music platform link evidence:[^\.]*YouTube/i);
   assert.doesNotMatch(text, /https:\/\/youtu\.be\/example123/);
   assert.match(text, /Derived duplicate link references suppressed/);
   assert.equal((text.match(/Queue\/submission history is not connected yet\. Do not claim submissions/g) ?? []).length, 1);
   assert.doesNotMatch(normalReviewText, /Legacy recurring-subject candidate dump|rawRefJson|source table|row IDs?|\[object Object\]|source lane mapping/);
   assert.doesNotMatch(normalReviewText, /knownContext|usefulEvidence|rawProvenance|sourceCoverage|evidenceDetails|representativeEvidence/);
-  assert.match(text, /Public-safe Evidence/);
-  assert.match(text, /Review-only Evidence/);
+  assert.match(text, /Public-Safe Facts/);
+  assert.match(text, /Internal-Only \/ Do Not Say/);
 });
 
 
@@ -6433,10 +6492,10 @@ test("Entity Intelligence Review Console separates Hellcat-style Discord event r
   };
 
   const text = collectReactText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, subjectName: "HellcatNZ" }));
-  const normalReviewText = text.slice(0, text.indexOf("Diagnostics — collapsed by default"));
+  const normalReviewText = text.slice(0, text.indexOf("Archive / Raw Source File Data — collapsed"));
 
-  assert.match(text, /Show evidence \/ Evidence receipts — collapsed by default/);
-  assert.match(text, /Event\/contest link evidence:.*Discord event link.*#hellcat-nz/i);
+  assert.match(text, /Archive \/ Raw Source File Data — collapsed/);
+  assert.match(text, /event\/contest links: Discord event link in #hellcat-nz/i);
   assert.doesNotMatch(text, /Actual music platform link evidence:.*Discord event/i);
   assert.doesNotMatch(text, /https:\/\/discord\.com\/events\/123\/456/);
   assert.doesNotMatch(normalReviewText, /rawRefJson|source table names|\[object Object\]|row IDs?|source lane mapping/);
@@ -6784,7 +6843,7 @@ test("BNL structured source packet v2 is ingested, summarized, and kept review-o
   assert.match(panelText, /Legacy recurring-subject diagnostic|Automated topic label/);
   assert.doesNotMatch(panelText, /Main evidence categories/);
   assert.match(panelText, /Diagnostics only\. Not Case File claims\./);
-  assert.match(panelText, /subject explicitly shared a show-planning update/);
+  assert.match(panelText, /recurring set-support work|show-planning update/);
   assert.doesNotMatch(panelText, /Crow discussed source-file handling|Crow posted about source-file handling|Crow posted about BNL\/source-file|Crow authored BNL\/source-file|Crow talked about dossier/);
 
   const view = noteDisplay.createHumanReadableRecommendationView(savedRecommendation);
@@ -6891,8 +6950,9 @@ test("BNL Source File archive accepts large enrichment, keeps dashboard compact,
     summary: sourceFileSummary.createDossierSourceFileSummary({ candidate: sourceFile, recommendations: [] }),
     latestSourceFileArchive: sourceFile.latestSourceFileArchive,
   }));
+  assert.match(panelText, /Archive \/ Raw Source File Data — collapsed/);
   assert.match(panelText, /Latest BNL Source Archive Readout/);
-  assert.match(panelText, /Full BNL Source Archive — admin-only \/ collapsed/);
+  assert.match(panelText, /Archive \/ Raw Source File Data — collapsed/);
   assert.match(panelText, /Compact archive readout/);
   assert.doesNotMatch(panelText, new RegExp(largePrivateMarker));
 

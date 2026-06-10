@@ -61,6 +61,281 @@ function SummaryList({ items }: { items: string[] }) {
   );
 }
 
+
+
+type BnlCaseFileReport = {
+  reportTitle: string;
+  statusLabel: string;
+  summary: string;
+  dossierUse: string;
+  publicSafeFacts: string[];
+  evidenceBackedClaims: string[];
+  communityContext: string[];
+  musicPlatformContext: string[];
+  reviewBlockers: string[];
+  internalOnlyNotes: string[];
+  nextAction: string;
+  hasUsableSourceData: boolean;
+};
+
+type SourceFileBriefLike = Partial<BnlCaseFileReport> & {
+  title?: string;
+  currentUnderstanding?: string;
+  whatBnlUnderstands?: string;
+  safeDossierUse?: string;
+  publicSafeClaims?: string[];
+  evidence?: string[];
+  claims?: string[];
+  blockers?: string[];
+  doNotSay?: string[];
+};
+
+const DEFAULT_REPORT_EMPTY_MESSAGE =
+  "Refresh BNL to generate a readable report once source notes, archive fields, or recommendations are available.";
+
+function textFromBrief(value: unknown, keys: string[]) {
+  if (!value) return undefined;
+  if (typeof value === "string") return value;
+  if (typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  for (const key of keys) {
+    const item = record[key];
+    if (typeof item === "string" && item.trim()) return item;
+    if (Array.isArray(item)) {
+      const joined = item.filter((entry) => typeof entry === "string" && entry.trim()).join(" ");
+      if (joined.trim()) return joined;
+    }
+  }
+  return undefined;
+}
+
+function listFromBrief(value: unknown, keys: string[]) {
+  if (!value || typeof value !== "object") return [];
+  const record = value as Record<string, unknown>;
+  const items: string[] = [];
+  for (const key of keys) {
+    const item = record[key];
+    if (typeof item === "string") items.push(item);
+    if (Array.isArray(item)) {
+      for (const entry of item) if (typeof entry === "string") items.push(entry);
+    }
+  }
+  return items;
+}
+
+function cleanVisibleReportText(value?: string | null, maxLength = 220) {
+  if (/rawRefJson|source table|row IDs?|source lane mapping|\[object Object\]/i.test(value ?? "")) return undefined;
+  const base = displaySafeText(value);
+  if (!base) return undefined;
+  let clean = base
+    .replace(/\bapproved\s+approved\b/gi, "approved")
+    .replace(/\b(?:global_mixed|source_blind)\b/gi, "")
+    .replace(/\bautomated topic labels?\b[:\s-]*/gi, "")
+    .replace(/\binternal classification\b[:\s-]*/gi, "")
+    .replace(/\bconversation evidence:\s*\d+\s*source row\(s\) found\.?/gi, "repeated conversation evidence is available.")
+    .replace(/\b\d+\s*source row\(s\) found\b/gi, "source evidence is available")
+    .replace(/\bsource row\(s\)\b/gi, "source items")
+    .replace(/\bsource[-\s]?lane\b[:\s-]*/gi, "")
+    .replace(/\bMissing Info\b/gi, "Review blockers")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.;:])/g, "$1")
+    .trim();
+  if (!clean || /^(?:review blockers?|debug|diagnostic)[:\s-]*$/i.test(clean)) return undefined;
+  if (clean.length > maxLength) {
+    const trimmed = clean.slice(0, maxLength).replace(/\s+\S*$/, "").trim();
+    clean = `${trimmed.replace(/[.;,:-]+$/, "")}…`;
+  }
+  return clean;
+}
+
+function cleanReportItems(items: Array<string | undefined | null>, limit: number) {
+  const output: string[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    const clean = cleanVisibleReportText(item);
+    if (!clean) continue;
+    if (/\b(?:global_mixed|source_blind|automated topic label|internal classification|source row\(s\)|Missing Info)\b/i.test(clean)) continue;
+    const key = visibleDedupeKey(clean.replace(/owner\/admin|admin\/owner/gi, "review"));
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(clean);
+    if (output.length >= limit) break;
+  }
+  return output;
+}
+
+function sourceNotesText(sourceFileNotes: Array<Pick<DossierSourceFileNote, "text"> | string | null | undefined>) {
+  return sourceFileNotes.map((note) => (typeof note === "string" ? note : note?.text)).filter(Boolean) as string[];
+}
+
+function hasUsableReportData(items: string[]) {
+  return cleanReportItems(items, 1).length > 0;
+}
+
+export function buildBnlCaseFileReport({
+  summary,
+  entityReadout,
+  subjectName,
+  recommendations = [],
+  sourceFileNotes = [],
+  latestSourceFileArchive,
+  actionableBrief,
+}: {
+  summary: DossierSourceFileSummary;
+  entityReadout?: DossierEntityActivityReadout | null;
+  subjectName?: string;
+  recommendations?: Array<Partial<DossierRecommendation>>;
+  sourceFileNotes?: Array<Pick<DossierSourceFileNote, "text"> | string | null | undefined>;
+  latestSourceFileArchive?: DossierSourceFileArchiveMetadata & { sourceFileBriefV2?: unknown };
+  actionableBrief: ReturnType<typeof buildSourceFileActionableBrief>;
+}): BnlCaseFileReport {
+  const subject = subjectName ?? latestSourceFileArchive?.subjectName ?? "This subject";
+  const brief = latestSourceFileArchive?.sourceFileBriefV2 as SourceFileBriefLike | string | undefined;
+  const noteTexts = sourceNotesText(sourceFileNotes);
+  const recommendationSignals = recommendations.flatMap((recommendation) => [
+    (recommendation as { summary?: string }).summary,
+    ...(recommendation.knownContext ?? []),
+    ...(recommendation.usefulEvidence ?? []),
+    ...(recommendation.relationshipSignals ?? []),
+    ...(recommendation.conversationHighlights ?? []),
+    ...(recommendation.bnlInteractionSignals ?? []),
+    ...(recommendation.musicSignals ?? []),
+    ...(recommendation.communitySignals ?? []),
+    ...(recommendation.publicUseCandidates ?? []),
+  ]);
+  const archivePriority = [
+    textFromBrief(brief, ["summary", "currentUnderstanding", "whatBnlUnderstands"]),
+    latestSourceFileArchive?.compactSummary,
+    ...(latestSourceFileArchive?.publicSafePossibilities ?? []),
+    ...(latestSourceFileArchive?.evidenceReceiptSummary ?? []),
+    ...(latestSourceFileArchive?.missingInfo ?? []),
+    ...(latestSourceFileArchive?.publicSafetyNotes ?? []),
+    ...(latestSourceFileArchive?.doNotSay ?? []),
+  ];
+  const sourceDataPool = [
+    ...archivePriority,
+    ...((summary as DossierSourceFileSummary & { evidenceItems?: string[] }).evidenceItems ?? []),
+    ...noteTexts,
+    ...recommendationSignals,
+    summary.currentRead,
+    summary.whyTracked,
+    ...(summary.knownContext ?? []),
+    ...(summary.usefulEvidence ?? []),
+    ...(summary.publicSafePossibilities ?? []),
+    ...(summary.publicUseCandidates ?? []),
+    ...(entityReadout?.publicSafePossibilities ?? []),
+    ...(entityReadout?.representativeEvidence ?? []),
+  ].filter(Boolean) as string[];
+  const hasUsableSourceData = hasUsableReportData(sourceDataPool);
+
+  const summaryText = cleanVisibleReportText(
+    textFromBrief(brief, ["summary", "currentUnderstanding", "whatBnlUnderstands"]) ??
+      latestSourceFileArchive?.compactSummary ??
+      entityReadout?.currentRead ??
+      summary.currentRead ??
+      `${subject} has source-file material available for BNL review.`,
+    420,
+  );
+  const publicSafeFacts = cleanReportItems(
+    [
+      ...listFromBrief(brief, ["publicSafeFacts", "publicSafeClaims", "publicSafePossibilities"]),
+      ...(latestSourceFileArchive?.publicSafePossibilities ?? []),
+      ...(entityReadout?.publicSafePossibilities ?? []),
+      ...summary.publicSafePossibilities,
+      ...(summary.publicUseCandidates ?? []),
+    ],
+    5,
+  );
+  const evidenceBackedClaims = cleanReportItems(
+    [
+      ...listFromBrief(brief, ["evidenceBackedClaims", "evidence", "claims"]),
+      ...(latestSourceFileArchive?.evidenceReceiptSummary ?? []),
+      ...(summary.usefulEvidence ?? []),
+      ...(summary.confirmedStrong ?? []),
+      ...(entityReadout?.representativeEvidence ?? []),
+      ...actionableBrief.supportingEvidence,
+    ],
+    5,
+  );
+  const communityContext = cleanReportItems(
+    [
+      ...listFromBrief(brief, ["communityContext", "relationshipContext"]),
+      ...(summary.communitySignals ?? []),
+      ...(summary.privateRelationshipContext ?? []),
+      ...(entityReadout?.relationshipSignals ?? []),
+      ...actionableBrief.bnlInteractionPatterns,
+      ...actionableBrief.communityActivity,
+    ],
+    4,
+  );
+  const musicPlatformContext = cleanReportItems(
+    [
+      ...listFromBrief(brief, ["musicPlatformContext", "platformContext"]),
+      ...(summary.musicSignals ?? []),
+      ...actionableBrief.musicSignals,
+      ...actionableBrief.platformSignals,
+    ],
+    4,
+  );
+  const blockerItems = [
+    ...listFromBrief(brief, ["reviewBlockers", "blockers", "dossierQuestions"]),
+    ...(latestSourceFileArchive?.missingInfo ?? []),
+    ...summary.missingInfo,
+    ...(entityReadout?.missingInfo ?? []),
+    ...actionableBrief.missingInfo,
+  ];
+  const reviewBlockers = cleanReportItems(
+    [
+      ...blockerItems,
+      "Confirm public-safe role, display wording, public links, and identity details before public dossier drafting.",
+      (entityReadout?.queueSubmissionStatus ?? summary.queueSubmissionStatus) === "not_connected" || !(entityReadout?.queueSubmissionStatus ?? summary.queueSubmissionStatus)
+        ? "Queue/submission history is not confirmed yet; do not claim submitted songs, play history, source type, or Priority/payment history."
+        : undefined,
+    ],
+    5,
+  );
+  const internalOnlyNotes = cleanReportItems(
+    [
+      ...listFromBrief(brief, ["internalOnlyNotes", "doNotSay"]),
+      ...(latestSourceFileArchive?.doNotSay ?? []),
+      ...(latestSourceFileArchive?.publicSafetyNotes ?? []),
+      ...(summary.privateOnlyNotes ?? []),
+      ...(summary.notPublicYet ?? []),
+      ...actionableBrief.reviewOnlyCautions,
+    ],
+    5,
+  );
+  const dossierUse = cleanVisibleReportText(
+    textFromBrief(brief, ["dossierUse", "safeDossierUse"]) ??
+      (publicSafeFacts.length
+        ? "Use these notes as source-file material for dossier drafting only after owner/admin review confirms public-safe wording."
+        : "Use this as a Source File now, but hold public dossier wording until review blockers are resolved."),
+    420,
+  ) ?? DEFAULT_REPORT_EMPTY_MESSAGE;
+  const nextAction = cleanVisibleReportText(
+    textFromBrief(brief, ["nextAction"]) ??
+      summary.recommendedNextAction ??
+      entityReadout?.recommendedAction ??
+      "Keep as Source File and resolve review blockers before public dossier drafting.",
+    260,
+  ) ?? "Keep as Source File and resolve review blockers before public dossier drafting.";
+
+  return {
+    reportTitle: cleanVisibleReportText(textFromBrief(brief, ["reportTitle", "title"]), 120) ?? "BNL Case File Report",
+    statusLabel: readinessLabel(summary.publicReadiness),
+    summary: hasUsableSourceData ? summaryText ?? `${subject} has usable BNL source-file material for review.` : DEFAULT_REPORT_EMPTY_MESSAGE,
+    dossierUse,
+    publicSafeFacts,
+    evidenceBackedClaims,
+    communityContext,
+    musicPlatformContext,
+    reviewBlockers,
+    internalOnlyNotes,
+    nextAction,
+    hasUsableSourceData,
+  };
+}
+
 function ActivityGroup({
   title,
   items,
@@ -149,6 +424,7 @@ function displaySafeText(value?: string | null) {
     .replace(/\brow\(s\)\b/gi, "items")
     .replace(/\bpublic-side\b/gi, "approved public context")
     .replace(/\bReview candidate\b/g, "Review item")
+    .replace(/relationship\/context/gi, "relationship context")
     .replace(/\bidentity matching context\b/gi, "identity review context")
     .replace(/\blocal context\b/gi, "BNL review context")
     .replace(/\bprofile_match\b/gi, "local profile match");
@@ -659,6 +935,18 @@ export function DossierSourceFileSummaryPanel({
     recommendations,
     sourceFileNotes,
   });
+  const caseFileReport = buildBnlCaseFileReport({
+    summary,
+    entityReadout,
+    subjectName,
+    recommendations,
+    sourceFileNotes,
+    latestSourceFileArchive,
+    actionableBrief,
+  });
+  const sourceNoteTexts = sourceNotesText(sourceFileNotes);
+  const sourceNoteWarningCount = sourceNoteTexts.filter((note) => /warn|caution|do not|not public|internal|review-only/i.test(note)).length;
+  const sourceNoteQuestionCount = sourceNoteTexts.filter((note) => /\?|missing|confirm|needs? review|question/i.test(note)).length;
   const visibleFacts = new Set<string>();
   const allSignals = safeReviewItems(
     [
@@ -819,6 +1107,7 @@ export function DossierSourceFileSummaryPanel({
     ].filter(Boolean) as string[],
     visibleFacts,
   );
+  const displayActionItems = cleanReportItems(actionItems, 12);
   const evidenceSeen = new Set<string>();
   const strongEvidence = takeWithoutRepeats(
     [
@@ -957,10 +1246,10 @@ export function DossierSourceFileSummaryPanel({
           </p>
           <h2 className="text-2xl font-bold text-foreground">{title}</h2>
           <p className="mt-2 text-sm text-muted max-w-4xl">
-            Review Snapshot → What BNL Knows → Action Items → Evidence →
-            Notes/Identity → Diagnostics. Internal-only review surface; it does
-            not publish, create Proposed Dossiers, merge identities, or create queue/payment
-            behavior.
+            BNL Case File Report → Public-Safe Facts → Evidence-Backed Claims →
+            Review Blockers → Workbench → collapsed raw archive and diagnostics.
+            Internal-only review surface; it does not publish, auto-confirm identity,
+            merge source files, or create queue/payment behavior.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
@@ -987,106 +1276,157 @@ export function DossierSourceFileSummaryPanel({
       </Section>
 
 
-      {latestSourceFileArchive && (
-        <Section
-          title="Latest BNL Source Archive Readout"
-          helper="Compact archive-derived fields only. The complete Source Archive stays internal and collapsed below."
-        >
-          <SummaryList
-            items={fallbackItems(
-              archiveReadoutItems,
-              "Latest archive exists, but no compact readout fields were supplied.",
-            )}
-          />
-        </Section>
-      )}
-
-      {latestSourceFileArchive && (
-        <details className="border border-border/70 bg-background/20 p-3 text-sm text-muted">
-          <summary className="cursor-pointer font-semibold text-foreground">
-            Full BNL Source Archive — admin-only / collapsed
-          </summary>
-          <p className="mt-3 text-xs uppercase tracking-widest text-accent">
-            Internal archive metadata only. Full source package content is stored outside the workflow dashboard and is not rendered here.
-          </p>
-          <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <SnapshotItem label="Archive id" value={latestSourceFileArchive.id} />
-            <SnapshotItem label="Digest" value={latestSourceFileArchive.sourceDigest.slice(0, 16)} />
-            <SnapshotItem label="Size" value={`${latestSourceFileArchive.archiveSize} bytes`} />
-            <SnapshotItem label="Chunks" value={String(latestSourceFileArchive.chunkCount)} />
-            <SnapshotItem label="Updated" value={formatSnapshotDate(latestSourceFileArchive.updatedAt)} />
-            <SnapshotItem label="Review-only" value={latestSourceFileArchive.reviewOnly ? "Yes" : "No"} />
-          </dl>
-        </details>
-      )}
-
       <Section
-        title="What BNL Knows"
-        helper="Primary intelligence summary. Review-only material is labeled and is not public dossier copy."
+        title="BNL Case File Report"
+        helper="Readable BNL case-file report for dossier creation and update decisions."
       >
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {whatBnlKnows.map((group) => (
-            <ActivityGroup
-              key={group.title}
-              title={group.title}
-              items={group.items}
-              empty={group.empty}
-              receipts={evidenceReceipts[group.receiptGroup]}
-            />
-          ))}
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
+            <StatusBadge>{caseFileReport.statusLabel}</StatusBadge>
+            <StatusBadge>{caseFileReport.hasUsableSourceData ? "Usable Source File" : "Needs BNL refresh"}</StatusBadge>
+          </div>
+          <p className="text-foreground">{caseFileReport.summary}</p>
+          <p>{caseFileReport.dossierUse}</p>
+          <p className="border border-border/60 bg-background/30 p-3">
+            <span className="font-bold text-foreground">Next action: </span>
+            {caseFileReport.nextAction}
+          </p>
         </div>
       </Section>
 
       <Section
-        title="Admin Action Items / Missing Info"
-        tone="caution"
-        helper="What needs to happen next before public copy, owner review, identity matching, or submission claims."
+        title="Public-Safe Facts"
+        helper="Candidate facts that may become dossier wording only after owner/admin review."
       >
         <SummaryList
           items={fallbackItems(
-            actionItems,
-            "No action item has been extracted yet; continue human review before public use.",
+            caseFileReport.publicSafeFacts,
+            "No public-safe facts are ready for wording yet; keep this as review material.",
           )}
         />
       </Section>
 
       <Section
-        title="Evidence by Category"
-        helper="Why BNL thinks this. Evidence is grouped, deduped, and kept separate from raw diagnostics."
+        title="Evidence-Backed Claims"
+        helper="What the existing evidence supports, stated without raw source labels."
       >
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          <ActivityGroup
-            title="Strong Evidence"
-            items={strongEvidence}
-            empty="No strong evidence has been separated yet."
-          />
-          <ActivityGroup
-            title="Public-safe Evidence"
-            items={publicSafeEvidence}
-            empty="No public-safe candidate evidence has been separated yet."
-          />
-          <ActivityGroup
-            title="Review-only Evidence"
-            items={reviewOnlyEvidence}
-            empty="No review-only evidence has been separated yet."
-          />
-          <ActivityGroup
-            title="Source Coverage"
-            items={sourceCoverageEvidence}
-            empty="No source coverage summary is available yet."
-          />
-          <ActivityGroup
-            title="Channel / Activity Evidence"
-            items={channelActivityEvidence}
-            empty="No channel or activity evidence is available yet."
-          />
-          <ActivityGroup
-            title="Music / Platform / Link Evidence"
-            items={linkPlatformEvidence}
-            empty="No link or platform evidence has been separated yet."
-          />
-        </div>
+        <SummaryList
+          items={fallbackItems(
+            caseFileReport.evidenceBackedClaims,
+            "Evidence is weak or not summarized yet; use the collapsed archive and notes for review.",
+          )}
+        />
       </Section>
+
+      <Section
+        title="Community / Relationship Context"
+        helper="Useful community role, relationship, and repeated interaction context; uncertain relationships remain review-only."
+      >
+        <SummaryList
+          items={fallbackItems(
+            caseFileReport.communityContext,
+            "No community or relationship context is ready for visible review yet.",
+          )}
+        />
+      </Section>
+
+      {caseFileReport.musicPlatformContext.length > 0 && (
+        <Section
+          title="Music / Platform / Link Context"
+          helper="Music and platform context only; this does not confirm submissions or artist status unless evidence says so."
+        >
+          <SummaryList items={caseFileReport.musicPlatformContext} />
+        </Section>
+      )}
+
+      <Section
+        title="Review Blockers"
+        tone="caution"
+        helper="Dossier questions to resolve before public wording or stronger identity/role claims."
+      >
+        <SummaryList
+          items={fallbackItems(
+            caseFileReport.reviewBlockers,
+            "Confirm public-safe role, display wording, public links, and identity details before public dossier drafting.",
+          )}
+        />
+      </Section>
+
+      <Section
+        title="Internal-Only / Do Not Say"
+        tone="review"
+        helper="Material that must remain internal unless owner/admin review explicitly clears it."
+      >
+        <SummaryList
+          items={fallbackItems(
+            caseFileReport.internalOnlyNotes,
+            "No internal-only warnings are summarized for the visible report yet.",
+          )}
+        />
+      </Section>
+
+      <Section
+        title="Dossier Workbench / Proposed Dossier Status"
+        helper="This panel supports dossier decisions but does not publish, merge, or auto-confirm anything."
+      >
+        <SummaryList
+          items={fallbackItems(
+            displayActionItems,
+            "No action item has been extracted yet; continue human review before public use.",
+          )}
+        />
+      </Section>
+
+      <details className="border border-border/70 bg-background/20 p-3 text-sm text-muted">
+        <summary className="cursor-pointer font-semibold text-foreground">
+          Source Notes / Admin Addendums — collapsed summary
+        </summary>
+        <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-4">
+          <SnapshotItem label="Notes" value={String(sourceNoteTexts.length)} />
+          <SnapshotItem label="Warnings" value={String(sourceNoteWarningCount)} />
+          <SnapshotItem label="Dossier questions" value={String(sourceNoteQuestionCount)} />
+          <SnapshotItem label="Latest updated" value={formatSnapshotDate(summary.lastUpdatedAt)} />
+        </dl>
+        {sourceNoteTexts.length > 0 && (
+          <div className="mt-3">
+            <SummaryList items={cleanReportItems(sourceNoteTexts, 5)} />
+          </div>
+        )}
+      </details>
+
+      <details className="border border-border/70 bg-background/20 p-3 text-sm text-muted">
+        <summary className="cursor-pointer font-semibold text-foreground">
+          Archive / Raw Source File Data — collapsed
+        </summary>
+        {latestSourceFileArchive ? (
+          <div className="mt-3 space-y-4">
+            <Section
+              title="Latest BNL Source Archive Readout"
+              helper="Compact archive-derived fields only. Full raw archive remains internal."
+            >
+              <SummaryList
+                items={fallbackItems(
+                  archiveReadoutItems,
+                  "Latest archive exists, but no compact readout fields were supplied.",
+                )}
+              />
+            </Section>
+            <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <SnapshotItem label="Archive id" value={latestSourceFileArchive.id} />
+              <SnapshotItem label="Digest" value={latestSourceFileArchive.sourceDigest.slice(0, 16)} />
+              <SnapshotItem label="Size" value={`${latestSourceFileArchive.archiveSize} bytes`} />
+              <SnapshotItem label="Chunks" value={String(latestSourceFileArchive.chunkCount)} />
+              <SnapshotItem label="Updated" value={formatSnapshotDate(latestSourceFileArchive.updatedAt)} />
+              <SnapshotItem label="Review-only" value={latestSourceFileArchive.reviewOnly ? "Yes" : "No"} />
+            </dl>
+            <Section title="Raw evidence receipts" helper="Collapsed receipt summaries; not public dossier copy.">
+              <SummaryList items={fallbackItems([...strongEvidence, ...publicSafeEvidence, ...reviewOnlyEvidence], "No raw evidence receipt summaries are available.")} />
+            </Section>
+          </div>
+        ) : (
+          <p className="mt-3">No full BNL source archive is attached yet.</p>
+        )}
+      </details>
 
       <details className="border border-border/70 bg-background/20 p-3 text-sm text-muted">
         <summary className="cursor-pointer font-semibold text-foreground">
@@ -1107,8 +1447,7 @@ export function DossierSourceFileSummaryPanel({
 
       <p className="text-xs text-muted">
         Public-safe candidate, Review-only, Internal-only, Needs owner review,
-        Not connected yet, and Source-blind / diagnostic-only material remain
-        separated.
+        and Not connected yet material remain separated.
       </p>
     </section>
   );

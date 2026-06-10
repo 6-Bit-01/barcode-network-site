@@ -245,6 +245,56 @@ function latestBnlSourceFileEnrichment(input: {
 }
 
 
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function hasCaseReportShape(value: unknown) {
+  const report = recordValue(value);
+  if (!report) return false;
+  return [
+    "caseSummary",
+    "dossierUse",
+    "publicSafeClaims",
+    "evidenceSummary",
+    "reviewBlockers",
+    "recommendedNextSteps",
+    "confidenceNotes",
+    "memoryCoverage",
+  ].some((key) => report[key] !== undefined);
+}
+
+function latestArchiveHasCaseReport(candidate: DossierCandidate) {
+  const root = recordValue(candidate.latestSourceFileArchive);
+  if (!root) return false;
+  const candidates: Record<string, unknown>[] = [];
+  const seen = new Set<Record<string, unknown>>();
+  const add = (value: unknown) => {
+    const object = recordValue(value);
+    if (!object || seen.has(object)) return;
+    seen.add(object);
+    candidates.push(object);
+  };
+  add(root);
+  for (const key of ["sourcePackage", "archivePayload", "archive", "payload", "sourceFileArchive"] as const) {
+    const wrapped = root[key];
+    add(wrapped);
+    add(recordValue(wrapped)?.sourcePackage);
+  }
+  return candidates.some((candidateValue) => {
+    const brief = recordValue(candidateValue.sourceFileBriefV2);
+    return [
+      candidateValue.sourceFileCaseReportV1,
+      brief?.sourceFileCaseReportV1,
+      brief?.caseFileReport,
+      candidateValue.caseFileReport,
+    ].some(hasCaseReportShape);
+  });
+}
+
 function candidateLatestArchiveMissingCaseReport(candidate?: DossierCandidate | null) {
   if (!candidate) return false;
   const hasLatestSourceData = Boolean(
@@ -254,7 +304,7 @@ function candidateLatestArchiveMissingCaseReport(candidate?: DossierCandidate | 
       candidate.latestSourceFileArchiveUpdatedAt ??
       (candidate.sourceFileArchiveIds?.length ?? 0) > 0,
   );
-  return hasLatestSourceData && !candidate.latestSourceFileArchive?.sourceFileCaseReportV1;
+  return hasLatestSourceData && !latestArchiveHasCaseReport(candidate);
 }
 
 function requestResolvedByNewerEnrichment(input: {

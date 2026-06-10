@@ -477,6 +477,35 @@ function sourceArchiveObject(value: unknown): Record<string, unknown> | undefine
     : undefined;
 }
 
+type SourceArchivePayloadCandidate = {
+  value: Record<string, unknown>;
+  path: string;
+};
+
+export function sourceArchivePayloadCandidates(input: unknown): SourceArchivePayloadCandidate[] {
+  const root = sourceArchiveObject(input);
+  if (!root) return [];
+  const candidates: SourceArchivePayloadCandidate[] = [];
+  const seen = new Set<Record<string, unknown>>();
+  const add = (value: unknown, path: string) => {
+    const object = sourceArchiveObject(value);
+    if (!object || seen.has(object)) return;
+    seen.add(object);
+    candidates.push({ value: object, path });
+  };
+
+  add(root, "input");
+  for (const key of ["sourcePackage", "archivePayload", "archive", "payload", "sourceFileArchive"] as const) {
+    const wrapped = root[key];
+    add(wrapped, `input.${key}`);
+    const wrappedObject = sourceArchiveObject(wrapped);
+    if (wrappedObject) {
+      add(wrappedObject.sourcePackage, `input.${key}.sourcePackage`);
+    }
+  }
+  return candidates;
+}
+
 function isSourceFileCaseReportShape(value: unknown) {
   const report = sourceArchiveObject(value);
   if (!report) return false;
@@ -506,26 +535,52 @@ function normalizeSourceArchiveBrief(value: unknown) {
   };
 }
 
+function findSourceFileCaseReportV1(input: unknown) {
+  for (const candidate of sourceArchivePayloadCandidates(input)) {
+    const brief = normalizeSourceArchiveBrief(candidate.value.sourceFileBriefV2);
+    const checks: Array<{ value: unknown; path: string }> = [
+      { value: candidate.value.sourceFileCaseReportV1, path: `${candidate.path}.sourceFileCaseReportV1` },
+      { value: brief?.sourceFileCaseReportV1, path: `${candidate.path}.sourceFileBriefV2.sourceFileCaseReportV1` },
+      { value: brief?.caseFileReport, path: `${candidate.path}.sourceFileBriefV2.caseFileReport` },
+      { value: candidate.value.caseFileReport, path: `${candidate.path}.caseFileReport` },
+    ];
+    const match = checks.find((check) => isSourceFileCaseReportShape(check.value));
+    if (match) {
+      return {
+        report: match.value as DossierSourceFileCaseReportV1,
+        path: match.path,
+      };
+    }
+  }
+  return { report: undefined, path: undefined };
+}
+
 function extractSourceFileCaseReportV1(input: CreateDossierSourceFileArchiveInput) {
-  const inputObject = sourceArchiveObject(input);
-  const sourcePackage = sourceArchiveObject(input.sourcePackage);
-  const brief = normalizeSourceArchiveBrief(
-    inputObject?.sourceFileBriefV2 ?? sourcePackage?.sourceFileBriefV2,
-  );
-  const candidates = [
-    inputObject?.sourceFileCaseReportV1,
-    sourcePackage?.sourceFileCaseReportV1,
-    brief?.sourceFileCaseReportV1,
-    brief?.caseFileReport,
-  ];
-  return candidates.find(isSourceFileCaseReportShape) as DossierSourceFileCaseReportV1 | undefined;
+  return findSourceFileCaseReportV1(input).report;
+}
+
+function findSourceFileBriefV2(input: unknown) {
+  for (const candidate of sourceArchivePayloadCandidates(input)) {
+    const brief = normalizeSourceArchiveBrief(candidate.value.sourceFileBriefV2);
+    if (brief) return { brief, path: `${candidate.path}.sourceFileBriefV2` };
+  }
+  return { brief: undefined, path: undefined };
 }
 
 function extractSourceFileBriefV2(input: CreateDossierSourceFileArchiveInput) {
-  const inputObject = sourceArchiveObject(input);
-  const sourcePackage = sourceArchiveObject(input.sourcePackage);
-  return normalizeSourceArchiveBrief(
-    inputObject?.sourceFileBriefV2 ?? sourcePackage?.sourceFileBriefV2,
+  return findSourceFileBriefV2(input).brief;
+}
+
+function sourceArchiveHasSubjectMemoryPacket(input: unknown) {
+  return sourceArchivePayloadCandidates(input).some(({ value }) =>
+    [
+      "subjectMemoryPacket",
+      "subjectMemoryPacketV1",
+      "subjectMemoryPacketV2",
+      "sourceMemoryPacket",
+      "sourceMemoryPacketV1",
+      "sourceMemoryPacketV2",
+    ].some((key) => value[key] !== undefined),
   );
 }
 
@@ -542,10 +597,16 @@ function normalizeSourceFileArchiveInput(
       evidenceReceiptSummary?: string[];
       sourceFileCaseReportV1?: unknown;
       sourceFileBriefV2?: unknown;
+      caseReportPresent: boolean;
+      subjectMemoryPacketPresent: boolean;
+      caseReportExtractedFrom?: string;
+      sourceFileBriefExtractedFrom?: string;
     })
   | null {
   const subjectName = compactArchiveText(input.subjectName, 200);
   if (!subjectName) return null;
+  const caseReport = findSourceFileCaseReportV1(input);
+  const sourceFileBrief = findSourceFileBriefV2(input);
   return {
     ...input,
     candidateId: compactArchiveText(input.candidateId, 200),
@@ -563,8 +624,12 @@ function normalizeSourceFileArchiveInput(
       10,
       1000,
     ),
-    sourceFileCaseReportV1: extractSourceFileCaseReportV1(input),
-    sourceFileBriefV2: extractSourceFileBriefV2(input),
+    sourceFileCaseReportV1: caseReport.report,
+    sourceFileBriefV2: sourceFileBrief.brief,
+    caseReportPresent: Boolean(caseReport.report),
+    subjectMemoryPacketPresent: sourceArchiveHasSubjectMemoryPacket(input),
+    caseReportExtractedFrom: caseReport.path,
+    sourceFileBriefExtractedFrom: sourceFileBrief.path,
   };
 }
 
@@ -1925,7 +1990,7 @@ export function latestArchiveMissingCaseReport(candidate: DossierCandidate): boo
       (candidate.sourceFileArchiveIds?.length ?? 0) > 0,
   );
   if (!hasLatestSourceData) return false;
-  return !latestArchive?.sourceFileCaseReportV1;
+  return !findSourceFileCaseReportV1(latestArchive).report;
 }
 
 export const candidateMissingCaseReport = latestArchiveMissingCaseReport;
@@ -2455,6 +2520,10 @@ export async function ingestDossierSourceFileArchive(
       evidenceReceiptSummary: normalized.evidenceReceiptSummary,
       sourceFileCaseReportV1: normalized.sourceFileCaseReportV1,
       sourceFileBriefV2: normalized.sourceFileBriefV2,
+      caseReportPresent: normalized.caseReportPresent,
+      subjectMemoryPacketPresent: normalized.subjectMemoryPacketPresent,
+      caseReportExtractedFrom: normalized.caseReportExtractedFrom,
+      sourceFileBriefExtractedFrom: normalized.sourceFileBriefExtractedFrom,
       archiveKey,
       chunkKeys,
       reviewOnly: true,

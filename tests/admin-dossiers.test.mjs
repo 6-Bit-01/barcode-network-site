@@ -824,6 +824,159 @@ test("Source File refresh requests case-report backfill and refuses false comple
   }
 });
 
+
+
+function bnlCaseReportFixture(label) {
+  return {
+    version: "1",
+    generatedAt: "2026-06-10T00:00:00.000Z",
+    reportStatus: "dossier_ready",
+    caseSummary: `BNL-authored case report from ${label}.`,
+    dossierUse: `Use preserved ${label} report for owner review only.`,
+    publicSafeClaims: [`Public-safe claim from ${label}.`],
+  };
+}
+
+test("Source File archive ingest preserves BNL Case File Reports from accepted wrapper shapes", async () => {
+  await resetWorkflowStore();
+
+  const created = await (await authedPost({
+    action: "createManualCandidate",
+    input: {
+      name: "Wrapped Case Report Fixture",
+      candidateType: "artist",
+      reason: "Operator wants wrapper archive coverage.",
+      whyNow: "BNL archive callback shape changed.",
+      evidenceSummary: "Admin fixture evidence.",
+    },
+  })).json();
+  const candidateId = created.candidate.id;
+  await authedPost({ action: "promoteCandidateToSourceFile", candidateId });
+
+  const cases = [
+    {
+      label: "top-level sourceFileCaseReportV1",
+      expectedPath: "input.sourceFileCaseReportV1",
+      input: (report) => ({ sourceFileCaseReportV1: report }),
+    },
+    {
+      label: "sourcePackage.sourceFileCaseReportV1",
+      expectedPath: "input.sourcePackage.sourceFileCaseReportV1",
+      input: (report) => ({ sourcePackagePatch: { sourceFileCaseReportV1: report } }),
+    },
+    {
+      label: "archivePayload.sourceFileCaseReportV1",
+      expectedPath: "input.archivePayload.sourceFileCaseReportV1",
+      input: (report) => ({ archivePayload: { sourceFileCaseReportV1: report } }),
+    },
+    {
+      label: "archivePayload.sourcePackage.sourceFileCaseReportV1",
+      expectedPath: "input.archivePayload.sourcePackage.sourceFileCaseReportV1",
+      input: (report) => ({ archivePayload: { sourcePackage: { sourceFileCaseReportV1: report } } }),
+    },
+    {
+      label: "payload.sourceFileBriefV2.caseFileReport",
+      expectedPath: "input.payload.sourceFileBriefV2.caseFileReport",
+      input: (report) => ({ payload: { sourceFileBriefV2: { oneLineSummary: "Wrapped interim brief.", caseFileReport: report } } }),
+    },
+  ];
+
+  for (const [index, item] of cases.entries()) {
+    const report = bnlCaseReportFixture(item.label);
+    const shape = item.input(report);
+    const sourcePackage = {
+      archiveOrdinal: index,
+      compactSummary: `COMPACT_SUMMARY_MUST_NOT_SYNTHESIZE_${index}`,
+      ...(shape.sourcePackagePatch ?? {}),
+    };
+    delete shape.sourcePackagePatch;
+
+    const result = await store.ingestDossierSourceFileArchive({
+      candidateId,
+      subjectName: "Wrapped Case Report Fixture",
+      subjectKey: "wrapped-case-report-fixture",
+      ingestKey: `wrapped-case-report-${index}`,
+      sourcePackage,
+      compactSummary: `COMPACT_SUMMARY_MUST_NOT_SYNTHESIZE_${index}`,
+      ...shape,
+    });
+
+    assert.equal(result.archive.sourceFileCaseReportV1.caseSummary, report.caseSummary);
+    assert.equal(result.archive.caseReportPresent, true);
+    assert.equal(result.archive.caseReportExtractedFrom, item.expectedPath);
+    assert.equal(store.latestArchiveMissingCaseReport(result.candidate), false);
+
+    const panelText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+      summary: sourceFileReportTestSummary(),
+      subjectName: "Wrapped Case Report Fixture",
+      latestSourceFileArchive: result.archive,
+    }));
+    assert.match(panelText, /BNL Case File Report/);
+    assert.match(panelText, new RegExp(item.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(panelText, /caseReportPresent/);
+    assert.match(panelText, new RegExp(item.expectedPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.doesNotMatch(panelText, /COMPACT_SUMMARY_MUST_NOT_SYNTHESIZE/);
+  }
+});
+
+test("Source File case-report missing detection uses normalized archive extraction without compact-summary synthesis", () => {
+  const report = bnlCaseReportFixture("nested preserved archive");
+  const candidateBase = {
+    id: "candidate-wrapper-detection",
+    name: "Wrapper Detection",
+    status: "source_file_open",
+    latestSourceFileArchiveId: "archive-wrapper-detection",
+    latestSourceFileArchiveDigest: "digest-wrapper-detection",
+    latestSourceFileArchiveUpdatedAt: "2026-06-10T00:00:00.000Z",
+    sourceFileArchiveIds: ["archive-wrapper-detection"],
+  };
+
+  for (const latestSourceFileArchive of [
+    { archivePayload: { sourceFileCaseReportV1: report } },
+    { archivePayload: { sourcePackage: { sourceFileCaseReportV1: report } } },
+    { payload: { sourceFileBriefV2: { caseFileReport: report } } },
+    { archive: { sourceFileCaseReportV1: report } },
+    { sourceFileArchive: { sourceFileCaseReportV1: report } },
+  ]) {
+    assert.equal(
+      store.latestArchiveMissingCaseReport({ ...candidateBase, latestSourceFileArchive }),
+      false,
+    );
+  }
+
+  const compactOnlyCandidate = {
+    ...candidateBase,
+    latestSourceFileArchive: {
+      id: "archive-wrapper-detection",
+      candidateId: "candidate-wrapper-detection",
+      subjectName: "Wrapper Detection",
+      subjectKey: "wrapper-detection",
+      sourceDigest: "digest-wrapper-detection",
+      createdAt: "2026-06-10T00:00:00.000Z",
+      updatedAt: "2026-06-10T00:00:00.000Z",
+      archiveSize: 100,
+      chunkCount: 1,
+      reviewOnly: true,
+      compactSummary: "COMPACT_SUMMARY_SHOULD_NOT_BECOME_REPORT",
+      sourceFileBriefV2: { oneLineSummary: "Brief only is not a report." },
+    },
+  };
+  assert.equal(store.latestArchiveMissingCaseReport(compactOnlyCandidate), true);
+
+  const visibleText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary: sourceFileReportTestSummary(),
+    latestSourceFileArchive: compactOnlyCandidate.latestSourceFileArchive,
+  }));
+  assert.match(visibleText, /BNL has not generated a dossier-ready Case File Report/);
+  assert.doesNotMatch(visibleText, /COMPACT_SUMMARY_SHOULD_NOT_BECOME_REPORT/);
+
+  const rawArchiveText = collectReactText(sourceSummaryPanelComponent.DossierSourceFileArchiveRawData({
+    latestSourceFileArchive: compactOnlyCandidate.latestSourceFileArchive,
+  }));
+  assert.match(rawArchiveText, /Archive \/ Raw Source File Data/);
+  assert.match(rawArchiveText, /COMPACT_SUMMARY_SHOULD_NOT_BECOME_REPORT/);
+});
+
 test("Source File immediate refresh timeout/unavailable and stale open requests do not trap retries or cross-file matching", async () => {
   await resetWorkflowStore();
   process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL = "https://bnl.example.test/internal/source-files/refresh-now";

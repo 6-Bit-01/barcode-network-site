@@ -943,7 +943,8 @@ test("admin Source File page uses immediate refresh status/retry UI and preserve
     "What BNL Knows",
     "Evidence receipts",
     "Source Notes / Admin Addendums",
-    "Identity Link Actions",
+    "Identity Check",
+    "Advanced: Add Identity Link Manually",
     "Phase 4 — Owner Review",
     "Diagnostics — collapsed by default",
   ]) {
@@ -1178,7 +1179,8 @@ test("dossier workflow boundary copy separates case files, drafts, owner review,
     "Internal-Only Notes",
     "Source Warnings",
     "Conflicts / Needs Review",
-    "Identity Link Actions",
+    "Identity Check",
+    "Advanced: Add Identity Link Manually",
     "Do Not Say",
     "Missing Info",
     "Proposed Dossier Status",
@@ -1350,7 +1352,8 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     "Internal-Only Notes",
     "Source Warnings",
     "Conflicts / Needs Review",
-    "Identity Link Actions",
+    "Identity Check",
+    "Advanced: Add Identity Link Manually",
     "Do Not Say",
     "Missing Info",
     "Review-only memory context",
@@ -1372,14 +1375,16 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
   assert.doesNotMatch(pageCopy, /Internal Operator Summary/);
   assert.doesNotMatch(pageCopy, /Save Internal Summary/);
   assert.match(pageCopy, /Operator Case File Summary/);
-  const workspace = page.slice(page.indexOf("<DossierSourceFileSummaryPanel"));
+  const workspace = page.slice(page.indexOf('<Section title="Identity Check"'));
+  assert.ok(workspace.indexOf("Identity Check") < workspace.indexOf("DossierSourceFileSummaryPanel"));
+  assert.ok(workspace.indexOf("Identity Check") < workspace.indexOf("Proposed Dossier Status"));
   assert.ok(
     workspace.indexOf("DossierSourceFileSummaryPanel") < workspace.indexOf("Proposed Dossier Status"),
   );
   assert.ok(workspace.indexOf("Proposed Dossier Status") < workspace.indexOf("Add to Case File / BNL Source File"));
   assert.ok(workspace.indexOf("Add to Case File / BNL Source File") < workspace.indexOf("Source Notes / Admin Addendums"));
-  assert.ok(workspace.indexOf("Source Notes / Admin Addendums") < workspace.indexOf("Identity Link Actions"));
-  assert.ok(workspace.indexOf("Identity Link Actions") < workspace.indexOf("Operator Case File Summary"));
+  assert.ok(workspace.indexOf("Source Notes / Admin Addendums") < workspace.indexOf("Advanced: Add Identity Link Manually"));
+  assert.ok(workspace.indexOf("Advanced: Add Identity Link Manually") < workspace.indexOf("Operator Case File Summary"));
   assert.ok(workspace.indexOf("Operator Case File Summary") < workspace.indexOf("Diagnostics — collapsed by default"));
   assert.equal((page.match(/>\s*Open Proposed Dossier\s*</g) ?? []).length, 1);
   assert.equal((page.match(/>\s*Create Proposed Dossier\s*</g) ?? []).length, 1);
@@ -3248,6 +3253,22 @@ test("identity alias review UX is grouped, status-aware, and public-safe", () =>
   ]) {
     assert.match(sourceFilePage, new RegExp(group));
   }
+  assert.match(sourceFilePage, /<Section title="Identity Check">/);
+  assert.doesNotMatch(sourceFilePage, /<Section title="Identity Link Actions">/);
+  assert.match(sourceFilePage, /identityLinks\.length > 0 &&/);
+  assert.doesNotMatch(sourceFilePage, /No identity links saved yet/);
+  assert.match(sourceFilePage, /title: "Proposed Identity Links",[\s\S]*links: proposedIdentityLinks/);
+  assert.match(sourceFilePage, /title: "Confirmed Identity Links",[\s\S]*links: confirmedIdentityLinks/);
+  assert.match(sourceFilePage, /title: "Rejected \/ Retired Identity History",[\s\S]*links: closedIdentityLinks/);
+  assert.match(sourceFilePage, /\.filter\(\(group\) => group\.links\.length > 0\)/);
+  const identityCheckStart = sourceFilePage.indexOf('<Section title="Identity Check">');
+  const identityCheckEnd = sourceFilePage.indexOf('</Section>', identityCheckStart);
+  const identityCheckSection = sourceFilePage.slice(identityCheckStart, identityCheckEnd);
+  assert.ok(identityCheckStart >= 0);
+  assert.ok(identityCheckStart < sourceFilePage.indexOf('Source Notes / Admin Addendums'));
+  assert.ok(identityCheckStart < sourceFilePage.indexOf('Proposed Dossier Status'));
+  assert.match(sourceFilePage, /Advanced: Add Identity Link Manually/);
+  assert.doesNotMatch(identityCheckSection, /Add Identity Link/);
   assert.match(
     sourceFilePage,
     /This alias is waiting for review\. It will not affect matching until confirmed\./,
@@ -3272,7 +3293,7 @@ test("identity alias review UX is grouped, status-aware, and public-safe", () =>
   assert.match(sourceFilePage, /Not public dossier text/);
   assert.match(
     sourceFilePage,
-    /Identity links are internal routing\/context tools\. Confirming a link can help future BNL Signals route to this Source File, but it does not merge Source Files, publish identity, or place the label in a public dossier\./,
+    /Identity links are internal routing\/context tools\.[\s\S]*Resolve these before[\s\S]*using this Source File for dossier drafting\.[\s\S]*Confirming a link can[\s\S]*help future BNL Signals route to this Source File, but it does not[\s\S]*merge Source Files, publish identity, or place the label in a[\s\S]*public dossier\./,
   );
   assert.match(sourceFilePage, /Use for future matching after confirmation/);
   assert.match(sourceFilePage, /identityLink\.status === "proposed"/);
@@ -4122,7 +4143,9 @@ test("recommendation inbox and source note UI are present and bounded", () => {
   assert.match(sourceFilePage, /This source file[\s\S]*remains one subject\/entity/);
   assert.match(sourceFilePage, /create or wait for a separate BNL\s+recommendation/);
   assert.match(sourceFilePage, /Save Info/);
-  assert.match(sourceFilePage, /Identity Link Actions/);
+  assert.match(sourceFilePage, /Identity Check/);
+  assert.doesNotMatch(sourceFilePage, /<Section title="Identity Link Actions">/);
+  assert.match(sourceFilePage, /Advanced: Add Identity Link Manually/);
   assert.match(sourceFilePage, /Aliases help BNL route future BNL Signals/);
   assert.match(sourceFilePage, /Internal aliases are not\s+public dossier text/);
   assert.match(sourceFilePage, /Add Identity Link/);

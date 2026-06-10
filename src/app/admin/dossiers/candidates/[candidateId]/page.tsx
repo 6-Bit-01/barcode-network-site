@@ -770,22 +770,64 @@ function HumanReadableNoteView({
 }
 
 
-function briefItems(value: string | string[] | undefined, limit = 5) {
-  const values = Array.isArray(value) ? value : value ? [value] : [];
-  return values.map((item) => item.trim()).filter(Boolean).slice(0, limit);
+const internalVisiblePatterns = [
+  /\bglobal_mixed\b/i,
+  /\bsource_blind\b/i,
+  /\bbroadcast_memory\b/i,
+  /\bbnl_source/i,
+  /\breview-only\b/i,
+  /\binternal classification\b/i,
+  /\bsource lane/i,
+  /\bautomated topic/i,
+];
+
+function cleanDossierText(value: string, maxLength = 220) {
+  return value
+    .replace(/approved\s+approved/gi, "approved")
+    .replace(/owner\/admin review must confirm wording[.;]?/gi, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength)
+    .trim();
 }
 
-function BriefBlock({
+function dossierItems(
+  value: Array<string | undefined> | string | string[] | undefined,
+  options: { limit?: number; allowInternal?: boolean; subjectName?: string } = {},
+) {
+  const rawValues = Array.isArray(value) ? value : value ? [value] : [];
+  const sanitized = sanitizeMeaningFirstItems(rawValues, {
+    subjectName: options.subjectName,
+    includePublicDiscord: true,
+  });
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const raw of sanitized) {
+    const item = cleanDossierText(raw);
+    if (!item) continue;
+    if (!options.allowInternal && internalVisiblePatterns.some((pattern) => pattern.test(item))) {
+      continue;
+    }
+    const key = item.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(item);
+    if (output.length >= (options.limit ?? 5)) break;
+  }
+  return output;
+}
+
+function DossierBulletSection({
   title,
-  value,
+  items,
+  empty,
   tone = "default",
 }: {
   title: string;
-  value: string | string[] | undefined;
+  items: string[];
+  empty: string;
   tone?: "default" | "public" | "internal" | "warning";
 }) {
-  const items = briefItems(value);
-  if (items.length === 0) return null;
   const toneClass =
     tone === "public"
       ? "border-accent/50 bg-accent/10"
@@ -793,150 +835,270 @@ function BriefBlock({
         ? "border-red-500/40 bg-red-500/10"
         : tone === "warning"
           ? "border-yellow-500/50 bg-yellow-500/10"
-          : "border-border/60 bg-background/20";
+          : "border-border/70 bg-background/20";
   return (
-    <section className={`border p-3 text-sm text-muted ${toneClass}`}>
-      <h3 className="font-bold text-foreground mb-2">{title}</h3>
-      {items.length === 1 ? (
-        <p className="whitespace-pre-wrap">{items[0]}</p>
-      ) : (
-        <ul className="list-disc pl-5 space-y-1">
-          {items.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function BnlSourceFileBrief({ brief }: { brief?: DossierSourceFileBriefV2 }) {
-  if (!brief) return null;
-  const hasBrief = [
-    brief.oneLineSummary,
-    brief.adminSummary,
-    brief.whatBnlKnows,
-    brief.whyThisMatters,
-    brief.evidenceToReview,
-    brief.identityContext,
-    brief.publicSafeDraftingNotes,
-    brief.internalOnlyNotes,
-    brief.dossierQuestions,
-    brief.recommendedNextAction,
-    brief.qualityWarnings,
-    brief.archiveReferences,
-  ].some((value) => briefItems(value as string | string[] | undefined).length > 0);
-  if (!hasBrief) return null;
-
-  return (
-    <Section title="BNL Brief">
-      <div className="space-y-3">
-        <BriefBlock title="One-Line Summary" value={brief.oneLineSummary} />
-        <BriefBlock title="Admin Summary" value={brief.adminSummary} />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <BriefBlock title="What BNL Knows" value={brief.whatBnlKnows} />
-          <BriefBlock title="Why This Matters" value={brief.whyThisMatters} />
-          <BriefBlock title="Evidence to Review" value={brief.evidenceToReview} />
-          <BriefBlock title="Identity Context" value={brief.identityContext} />
-          <BriefBlock
-            title="Public-Safe Drafting Notes"
-            value={brief.publicSafeDraftingNotes}
-            tone="public"
-          />
-          <BriefBlock
-            title="Internal-Only Notes"
-            value={brief.internalOnlyNotes}
-            tone="internal"
-          />
-          <BriefBlock title="Dossier Questions" value={brief.dossierQuestions} />
-          <BriefBlock
-            title="Recommended Next Action"
-            value={brief.recommendedNextAction}
-          />
-          <BriefBlock
-            title="Quality Warnings"
-            value={brief.qualityWarnings}
-            tone="warning"
-          />
-          <BriefBlock title="Archive References" value={brief.archiveReferences} />
-        </div>
+    <Section title={title}>
+      <div className={`border p-3 ${toneClass}`}>
+        {items.length ? (
+          <ul className="list-disc pl-5 space-y-1">
+            {items.slice(0, 5).map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        ) : (
+          <p>{empty}</p>
+        )}
       </div>
     </Section>
   );
 }
 
-function EvidenceReview({
-  brief,
-  candidate,
-  recommendations,
-}: {
+function sourceNoteSummaries(
+  sourceNotes: NonNullable<DossierCandidate["sourceFileNotes"]>,
+  subjectName: string,
+) {
+  return sourceNotes.map((note) => ({
+    note,
+    view: createHumanReadableSourceFileNoteView({ ...note, subjectName }),
+  }));
+}
+
+function publicSafeFactItems(input: {
+  brief?: DossierSourceFileBriefV2;
+  candidate: DossierCandidate;
+  sourceNotes: NonNullable<DossierCandidate["sourceFileNotes"]>;
+}) {
+  return dossierItems(
+    [
+      ...(input.brief?.publicSafeDraftingNotes ?? []),
+      ...(input.candidate.latestSourceFileArchive?.publicSafePossibilities ?? []),
+      ...input.sourceNotes
+        .filter((note) => note.publicSafe === true)
+        .map((note) =>
+          createHumanReadableSourceFileNoteView({
+            ...note,
+            subjectName: input.candidate.name,
+          }).summary,
+        ),
+    ],
+    { limit: 5, subjectName: input.candidate.name },
+  );
+}
+
+function evidenceToUseItems(input: {
   brief?: DossierSourceFileBriefV2;
   candidate: DossierCandidate;
   recommendations: DossierRecommendation[];
 }) {
-  const bestEvidence = briefItems(brief?.evidenceToReview, 5);
-  const receiptEvidence = sanitizeMeaningFirstItems(
+  const preferred = dossierItems(input.brief?.evidenceToReview, {
+    limit: 5,
+    subjectName: input.candidate.name,
+  });
+  if (preferred.length) return preferred;
+  return dossierItems(
     [
-      ...(candidate.latestSourceFileArchive?.evidenceReceiptSummary ?? []),
-      ...(candidate.evidenceItems ?? []).map((item) => item.summary || item.label),
+      ...(input.candidate.latestSourceFileArchive?.evidenceReceiptSummary ?? []),
+      ...(input.candidate.evidenceItems ?? []).map((item) => item.summary || item.label),
+      ...input.recommendations.flatMap((recommendation) => recommendationEvidenceItems(recommendation)),
     ],
-    { subjectName: candidate.name, includePublicDiscord: true },
-  ).slice(0, 5);
-  const supportingEvidence = sanitizeMeaningFirstItems(
-    recommendations.flatMap((recommendation) => recommendationEvidenceItems(recommendation)),
-    { subjectName: candidate.name, includePublicDiscord: true },
-  ).slice(0, 8);
-  const publicSafeNotes = briefItems(brief?.publicSafeDraftingNotes, 5);
-  const internalOnlyNotes = [
-    ...briefItems(brief?.internalOnlyNotes, 5),
-    ...sanitizeMeaningFirstItems(candidate.publicSafetyNotes ?? [], {
-      subjectName: candidate.name,
-    }),
-  ].slice(0, 6);
+    { limit: 5, subjectName: input.candidate.name },
+  );
+}
 
+function dossierQuestionItems(input: {
+  brief?: DossierSourceFileBriefV2;
+  candidate: DossierCandidate;
+  sourceNotes: NonNullable<DossierCandidate["sourceFileNotes"]>;
+  proposedIdentityLinks: DossierIdentityLink[];
+}) {
+  return dossierItems(
+    [
+      ...(input.brief?.dossierQuestions ?? []),
+      ...(input.candidate.latestSourceFileArchive?.missingInfo ?? []),
+      ...(input.candidate.missingInfo ?? []),
+      ...input.sourceNotes
+        .filter((note) => note.type === "missing_info")
+        .map((note) =>
+          createHumanReadableSourceFileNoteView({
+            ...note,
+            subjectName: input.candidate.name,
+          }).summary,
+        ),
+      ...(input.proposedIdentityLinks.length
+        ? ["Confirm proposed identity links before using identity-sensitive dossier copy."]
+        : []),
+    ],
+    { limit: 5, subjectName: input.candidate.name, allowInternal: true },
+  );
+}
+
+function internalOnlyItems(input: {
+  brief?: DossierSourceFileBriefV2;
+  candidate: DossierCandidate;
+}) {
+  return dossierItems(
+    [
+      ...(input.brief?.internalOnlyNotes ?? []),
+      ...(input.brief?.qualityWarnings ?? []),
+      ...(input.candidate.doNotSay ?? []),
+      ...(input.candidate.latestSourceFileArchive?.doNotSay ?? []),
+      ...(input.candidate.publicSafetyNotes ?? []),
+    ],
+    { limit: 5, subjectName: input.candidate.name, allowInternal: true },
+  );
+}
+
+function dossierReadiness(input: {
+  candidate: DossierCandidate;
+  primaryDraft?: DossierDraft;
+  isExistingDossierUpdate: boolean;
+  publicSafeFacts: string[];
+  evidenceItems: string[];
+  questions: string[];
+  internalOnly: string[];
+  proposedIdentityLinks: DossierIdentityLink[];
+}) {
+  if (input.primaryDraft?.status === "ready_for_owner_review") {
+    return {
+      label: "Ready for Owner Review",
+      why: "A Proposed Dossier is already marked ready for owner review.",
+      nextStep: "Open the Proposed Dossier and continue the owner-review handoff.",
+    };
+  }
+  if (input.isExistingDossierUpdate) {
+    return {
+      label: "Existing dossier update candidate",
+      why: "This Source File is attached to an existing public dossier target.",
+      nextStep: input.primaryDraft
+        ? "Review the Proposed Dossier update draft."
+        : "Create an update draft only after public-safe changes are separated.",
+    };
+  }
+  if (input.primaryDraft) {
+    return {
+      label: input.questions.length ? "Draftable after review" : "Ready for Proposed Dossier",
+      why: input.questions.length
+        ? "A Proposed Dossier exists, but review blockers still need owner/admin attention."
+        : "A Proposed Dossier exists and no top dossier questions are surfaced in the default view.",
+      nextStep: "Open the Proposed Dossier and apply reviewed Source File context.",
+    };
+  }
+  if (input.proposedIdentityLinks.length || input.questions.length || input.internalOnly.length) {
+    return {
+      label: "Source File only for now",
+      why: "Evidence exists, but public-safe identity, role, or wording still needs owner/admin review.",
+      nextStep: "Resolve Dossier Questions / Review Blockers before drafting.",
+    };
+  }
+  if (input.publicSafeFacts.length && input.evidenceItems.length) {
+    return {
+      label: "Ready for Proposed Dossier",
+      why: "Public-safe facts and usable evidence are separated for drafting review.",
+      nextStep: "Create a Proposed Dossier from reviewed public-safe material.",
+    };
+  }
+  return {
+    label: "Not ready for dossier",
+    why: "Public-safe facts or usable evidence are not separated yet.",
+    nextStep: "Refresh the Source File or add source notes that separate safe drafting material.",
+  };
+}
+
+function DossierReadinessSection({ readiness }: { readiness: ReturnType<typeof dossierReadiness> }) {
   return (
-    <Section title="Evidence Review">
-      <div className="space-y-3">
-        <BriefBlock
-          title="Best Evidence First"
-          value={bestEvidence.length ? bestEvidence : receiptEvidence}
-        />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <BriefBlock
-            title="Public-Safe Notes"
-            value={publicSafeNotes}
-            tone="public"
-          />
-          <BriefBlock
-            title="Internal-Only Notes"
-            value={internalOnlyNotes}
-            tone="internal"
-          />
+    <section className="border border-accent/70 bg-accent/10 p-5 text-sm text-muted space-y-3">
+      <h2 className="text-2xl font-bold text-foreground">Dossier Readiness</h2>
+      <p className="text-xl font-semibold text-accent">{readiness.label}</p>
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="border border-border/70 bg-background/20 p-3">
+          <p className="text-xs uppercase tracking-widest text-muted">Why</p>
+          <p className="mt-1 text-foreground">{readiness.why}</p>
         </div>
-        <details className="border border-border/70 bg-background/20 p-3">
-          <summary className="cursor-pointer font-semibold text-foreground">
-            Supporting Evidence — collapsed
-          </summary>
-          <div className="mt-3">
-            {list(supportingEvidence, "No supporting evidence summaries saved yet.")}
-          </div>
-        </details>
-        <details className="border border-border/70 bg-background/20 p-3">
-          <summary className="cursor-pointer font-semibold text-foreground">
-            Raw Evidence — collapsed
-          </summary>
-          <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words border border-border/50 bg-background/30 p-3 text-xs">
-            {JSON.stringify(
-              {
-                evidenceItems: candidate.evidenceItems ?? [],
-                latestArchiveEvidence:
-                  candidate.latestSourceFileArchive?.evidenceReceiptSummary ?? [],
-              },
-              null,
-              2,
-            )}
-          </pre>
-        </details>
+        <div className="border border-border/70 bg-background/20 p-3">
+          <p className="text-xs uppercase tracking-widest text-muted">Next step</p>
+          <p className="mt-1 text-foreground">{readiness.nextStep}</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DossierDraftingBrief({ brief }: { brief?: DossierSourceFileBriefV2 }) {
+  const summary = dossierItems(brief?.oneLineSummary, { limit: 1 })[0];
+  const adminSummary = dossierItems(brief?.adminSummary, { limit: 1 })[0];
+  const nextAction = dossierItems(brief?.recommendedNextAction, { limit: 1 })[0];
+  return (
+    <Section title="Dossier Drafting Brief">
+      {brief ? (
+        <div className="space-y-3">
+          {summary && <p className="text-foreground font-semibold">{summary}</p>}
+          {adminSummary && <p>{adminSummary}</p>}
+          {nextAction && (
+            <p className="border border-border/70 bg-background/20 p-3">
+              <span className="font-semibold text-foreground">Recommended next action: </span>
+              {nextAction}
+            </p>
+          )}
+        </div>
+      ) : (
+        <p>
+          Readable BNL brief is not available for this archive yet. Refresh the Source File to generate the new dossier-first brief.
+        </p>
+      )}
+    </Section>
+  );
+}
+
+function DossierWorkbench({
+  primaryDraft,
+  readiness,
+  canCreateDraft,
+  saving,
+  createDraft,
+  sourceMetrics,
+}: {
+  primaryDraft?: DossierDraft;
+  readiness: ReturnType<typeof dossierReadiness>;
+  canCreateDraft: boolean;
+  saving: boolean;
+  createDraft: () => void;
+  sourceMetrics?: ReturnType<typeof getDossierSourceFileMetrics>;
+}) {
+  return (
+    <Section title="Dossier Workbench / Proposed Dossier Status">
+      <div className="space-y-3">
+        <p>
+          <span className="font-semibold text-foreground">Current state: </span>
+          {primaryDraft ? primaryDraft.status : readiness.label}
+        </p>
+        <p>
+          <span className="font-semibold text-foreground">Next action: </span>
+          {readiness.nextStep}
+        </p>
+        {primaryDraft && <p>Updated: {formatDate(primaryDraft.updatedAt)}</p>}
+        <p>Unapplied source notes: {sourceMetrics?.unappliedSourceNotesCount ?? 0}</p>
+        <div className="flex flex-wrap gap-3 text-xs uppercase tracking-widest">
+          {primaryDraft && isDraftActive(primaryDraft) && (
+            <Link
+              href={`/admin/dossiers/drafts/${primaryDraft.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background"
+            >
+              Open Proposed Dossier
+            </Link>
+          )}
+          {!primaryDraft && canCreateDraft && (
+            <button
+              type="button"
+              onClick={createDraft}
+              disabled={saving}
+              className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+            >
+              Create Proposed Dossier
+            </button>
+          )}
+        </div>
       </div>
     </Section>
   );
@@ -1402,6 +1564,59 @@ export default function CandidateReviewPage() {
       recommendation,
     ]),
   );
+  const publicSafeFacts = candidate
+    ? publicSafeFactItems({
+        brief: sourceFileBriefV2,
+        candidate,
+        sourceNotes,
+      })
+    : [];
+  const evidenceToUse = candidate
+    ? evidenceToUseItems({
+        brief: sourceFileBriefV2,
+        candidate,
+        recommendations: attachedRecommendations,
+      })
+    : [];
+  const dossierQuestions = candidate
+    ? dossierQuestionItems({
+        brief: sourceFileBriefV2,
+        candidate,
+        sourceNotes,
+        proposedIdentityLinks,
+      })
+    : [];
+  const internalOnlyWarnings = candidate
+    ? internalOnlyItems({ brief: sourceFileBriefV2, candidate })
+    : [];
+  const sourceNoteViews = candidate
+    ? sourceNoteSummaries(sourceNotes, candidate.name)
+    : [];
+  const sourceNoteWarningCount = sourceNoteViews.reduce(
+    (total, item) => total + item.view.warningCount,
+    0,
+  );
+  const sourceNoteQuestionCount =
+    sourceNoteViews.reduce(
+      (total, item) => total + item.view.missingInfoCount,
+      0,
+    ) + sourceNotes.filter((note) => note.type === "missing_info").length;
+  const latestSourceNoteUpdatedAt = sourceNotes
+    .map((note) => note.updatedAt || note.createdAt)
+    .sort()
+    .at(-1);
+  const readiness = candidate
+    ? dossierReadiness({
+        candidate,
+        primaryDraft,
+        isExistingDossierUpdate,
+        publicSafeFacts,
+        evidenceItems: evidenceToUse,
+        questions: dossierQuestions,
+        internalOnly: internalOnlyWarnings,
+        proposedIdentityLinks,
+      })
+    : null;
   const nextRecommendedAction = sourceMetrics?.unappliedSourceNotesCount
     ? "Review source updates in proposed dossier"
     : primaryDraft
@@ -2052,11 +2267,193 @@ export default function CandidateReviewPage() {
             </div>
           </Section>
         )}
-        {sourceFileBriefV2 ? (
-          <BnlSourceFileBrief brief={sourceFileBriefV2} />
-        ) : (
-          sourceFileSummary && (
-            <>
+        {readiness && <DossierReadinessSection readiness={readiness} />}
+
+        <DossierDraftingBrief brief={sourceFileBriefV2} />
+
+        <DossierBulletSection
+          title="Public-Safe Facts"
+          items={publicSafeFacts}
+          empty="No public-safe facts separated yet."
+          tone="public"
+        />
+
+        <Section title="Evidence to Use">
+          <div className="border border-border/70 bg-background/20 p-3">
+            {evidenceToUse.length ? (
+              <ul className="list-disc pl-5 space-y-1">
+                {evidenceToUse.slice(0, 5).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            ) : (
+              <p>Evidence exists, but it is review-only or not public-safe yet.</p>
+            )}
+          </div>
+          {attachedRecommendations.length > 0 && (
+            <details className="mt-3 border border-border/70 bg-background/20 p-3">
+              <summary className="cursor-pointer font-semibold text-foreground">
+                More evidence — collapsed
+              </summary>
+              <div className="mt-3">
+                {list(
+                  dossierItems(
+                    attachedRecommendations.flatMap((recommendation) =>
+                      recommendationEvidenceItems(recommendation),
+                    ),
+                    { limit: 5, subjectName: candidate.name },
+                  ),
+                  "No additional concise evidence available.",
+                )}
+              </div>
+            </details>
+          )}
+        </Section>
+
+        <DossierBulletSection
+          title="Dossier Questions / Review Blockers"
+          items={dossierQuestions}
+          empty="No dossier questions separated yet."
+          tone="warning"
+        />
+
+        <DossierBulletSection
+          title="Internal-Only / Do Not Say"
+          items={internalOnlyWarnings}
+          empty="No internal-only guidance separated yet."
+          tone="internal"
+        />
+
+        {readiness && (
+          <DossierWorkbench
+            primaryDraft={primaryDraft}
+            readiness={readiness}
+            canCreateDraft={canCreateDraft}
+            saving={saving}
+            createDraft={() => void createDraft()}
+            sourceMetrics={sourceMetrics ?? undefined}
+          />
+        )}
+
+        <Section title="Source Notes / Admin Addendums">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <IdentityLinkDetail label="Note count" value={String(sourceNotes.length)} />
+            <IdentityLinkDetail label="Warning count" value={String(sourceNoteWarningCount)} />
+            <IdentityLinkDetail
+              label="Dossier question count"
+              value={String(sourceNoteQuestionCount)}
+            />
+            <IdentityLinkDetail
+              label="Latest updated"
+              value={formatDate(latestSourceNoteUpdatedAt)}
+            />
+          </div>
+          <details className="mt-4 border border-border/70 bg-background/20 p-3">
+            <summary className="cursor-pointer font-semibold text-foreground">
+              Add or review Source Notes / Admin Addendums — collapsed
+            </summary>
+            <div className="mt-4 space-y-5">
+              <section id="add-info" className="border border-border/70 bg-background/20 p-4 space-y-3">
+                <h3 className="text-xl font-bold text-foreground">
+                  Add to Case File / BNL Source File
+                </h3>
+                <p>
+                  Add a concise source note, correction, evidence item, dossier question,
+                  do-not-say guidance, public-safety context, or general note. This does
+                  not directly edit the proposed dossier.
+                </p>
+                {hasOwnerReviewDraft && (
+                  <p className="border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
+                    This becomes an Admin Addendum for owner review. It does not
+                    overwrite the submitted draft.
+                  </p>
+                )}
+                <form
+                  onSubmit={addSourceFileNote}
+                  className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs uppercase tracking-widest text-muted"
+                >
+                  <label className="space-y-2">
+                    <span>Info type</span>
+                    <select
+                      value={noteForm.type}
+                      onChange={(event) =>
+                        setNoteForm({
+                          ...noteForm,
+                          type: event.target.value as DossierSourceFileNoteType,
+                        })
+                      }
+                      className="w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
+                    >
+                      {noteTypes.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="md:col-span-2 space-y-2">
+                    <span>Source file note</span>
+                    <textarea
+                      required
+                      maxLength={2000}
+                      value={noteForm.text}
+                      onChange={(event) =>
+                        setNoteForm({ ...noteForm, text: event.target.value })
+                      }
+                      placeholder="Add one concise fact, correction, link note, dossier-question note, do-not-say guidance, public-safety context, or general note."
+                      className="w-full min-h-24 bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 normal-case tracking-normal text-sm">
+                    <input
+                      type="checkbox"
+                      checked={noteForm.publicSafe}
+                      onChange={(event) =>
+                        setNoteForm({ ...noteForm, publicSafe: event.target.checked })
+                      }
+                    />{" "}
+                    Public-safe source material
+                  </label>
+                  <div className="md:col-span-2">
+                    <button
+                      type="submit"
+                      disabled={saving}
+                      className={manualRefreshButtonClass}
+                    >
+                      Save Info
+                    </button>
+                  </div>
+                </form>
+              </section>
+
+              {sourceNoteViews.length === 0 ? (
+                <p>No saved source notes yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  {sourceNoteViews.map(({ note, view }) => (
+                    <HumanReadableNoteView
+                      key={note.id}
+                      view={view}
+                      createdAt={note.createdAt}
+                      workflowLane={candidate.status}
+                      appliedDraftId={note.appliesToDraftId}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </details>
+        </Section>
+
+        <details className="border border-border bg-surface p-5 text-sm text-muted">
+          <summary className="cursor-pointer text-2xl font-bold text-foreground">
+            Archive / Raw Source File Data
+          </summary>
+          <p className="mt-3 text-sm text-muted">
+            Raw BNL archive material is preserved here for audit/debugging. It is not dossier copy.
+          </p>
+          {sourceFileSummary && (
+            <div className="mt-4">
               <DossierSourceFileSummaryPanel
                 summary={sourceFileSummary}
                 entityReadout={entityActivityReadout}
@@ -2072,156 +2469,9 @@ export default function CandidateReviewPage() {
                     : "active source file"
                 }
               />
-              {/* Case File / BNL Source File Summary */}
-            </>
-          )
-        )}
-
-        <EvidenceReview
-          brief={sourceFileBriefV2}
-          candidate={candidate}
-          recommendations={attachedRecommendations}
-        />
-
-        <Section title="Dossier Workbench / Proposed Dossier Status">
-          {!primaryDraft ? (
-            <div className="space-y-2">
-              <p>{dossierWorkbenchCopy({ primaryDraft, unappliedSourceNotesCount: sourceMetrics?.unappliedSourceNotesCount ?? 0, isExistingDossierUpdate, existingDossierName: candidate.existingDossierMatch?.name })}</p>
-              <p>
-                Create one only from reviewed, public-safe Source File material.
-                The primary Create Proposed Dossier action lives in the page
-                header so drafting does not become a parallel workflow.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <p>{dossierWorkbenchCopy({ primaryDraft, unappliedSourceNotesCount: sourceMetrics?.unappliedSourceNotesCount ?? 0, isExistingDossierUpdate, existingDossierName: candidate.existingDossierMatch?.name })}</p>
-              <p>Status: {primaryDraft.status}</p>
-              <p>Updated: {formatDate(primaryDraft.updatedAt)}</p>
-              <p>
-                Unapplied source notes:{" "}
-                {sourceMetrics?.unappliedSourceNotesCount ?? 0}
-              </p>
-              <p>
-                Owner review blocked until admins separate public-safe language
-                from internal Case File context in the dedicated Proposed
-                Dossier editor.
-              </p>
             </div>
           )}
-        </Section>
-
-        <section
-          id="add-info"
-          className="border border-border bg-surface p-5 space-y-3"
-        >
-          <h2 className="text-2xl font-bold text-foreground">
-            Add to Case File / BNL Source File
-          </h2>
-          <p className="text-sm text-muted">
-            This adds information to this subject&apos;s Case File / BNL Source File. It
-            does not directly edit the proposed dossier.
-          </p>
-          <p className="text-sm text-muted">
-            Add to Case File / BNL Source File = add a source note, correction, evidence,
-            warning, public-safe fact, or dossier-question item to this subject.
-            This source file remains one subject/entity. If this information
-            belongs to a different subject, create or wait for a separate BNL
-            recommendation.
-          </p>
-          {hasOwnerReviewDraft && (
-            <p className="border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
-              This becomes an Admin Addendum for owner review. It does not
-              overwrite the submitted draft.
-            </p>
-          )}
-          <form
-            onSubmit={addSourceFileNote}
-            className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs uppercase tracking-widest text-muted"
-          >
-            <label className="space-y-2">
-              <span>Info type</span>
-              <select
-                value={noteForm.type}
-                onChange={(event) =>
-                  setNoteForm({
-                    ...noteForm,
-                    type: event.target.value as DossierSourceFileNoteType,
-                  })
-                }
-                className="w-full bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
-              >
-                {noteTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="md:col-span-2 space-y-2">
-              <span>Source file note</span>
-              <textarea
-                required
-                maxLength={2000}
-                value={noteForm.text}
-                onChange={(event) =>
-                  setNoteForm({ ...noteForm, text: event.target.value })
-                }
-                placeholder="Add one concise fact, correction, link note, dossier-question note, do-not-say guidance, public-safety context, or general note."
-                className="w-full min-h-24 bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
-              />
-            </label>
-            <label className="flex items-center gap-2 normal-case tracking-normal text-sm">
-              <input
-                type="checkbox"
-                checked={noteForm.publicSafe}
-                onChange={(event) =>
-                  setNoteForm({ ...noteForm, publicSafe: event.target.checked })
-                }
-              />{" "}
-              Public-safe source material
-            </label>
-            <div className="md:col-span-2">
-              <button
-                type="submit"
-                disabled={saving}
-                className={manualRefreshButtonClass}
-              >
-                Save Info
-              </button>
-            </div>
-          </form>
-        </section>
-
-        <Section title="Source Notes / Admin Addendums">
-          {sourceNotes.length === 0 ? (
-            <p>No saved source notes yet.</p>
-          ) : (
-            <div className="space-y-3">
-              {sourceNotes.map((note) => (
-                <HumanReadableNoteView
-                  key={note.id}
-                  view={createHumanReadableSourceFileNoteView({
-                    ...note,
-                    subjectName: candidate.name,
-                  })}
-                  createdAt={note.createdAt}
-                  workflowLane={candidate.status}
-                  appliedDraftId={note.appliesToDraftId}
-                />
-              ))}
-            </div>
-          )}
-        </Section>
-
-        {candidate.latestSourceFileArchive && (
-          <details className="border border-border bg-surface p-5 text-sm text-muted">
-            <summary className="cursor-pointer text-2xl font-bold text-foreground">
-              Archive / Raw Source File Data
-            </summary>
-            <p className="mt-3 text-sm text-muted">
-              Collapsed admin archive metadata. Full source package content stays in archive storage and is not rendered on the main screen.
-            </p>
+          {candidate.latestSourceFileArchive && (
             <dl className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
               <IdentityLinkDetail label="Archive id" value={candidate.latestSourceFileArchive.id} />
               <IdentityLinkDetail
@@ -2245,8 +2495,8 @@ export default function CandidateReviewPage() {
                 value={candidate.latestSourceFileArchive.reviewOnly ? "Yes" : "No"}
               />
             </dl>
-          </details>
-        )}
+          )}
+        </details>
 
         <details className="border border-border bg-surface p-5 space-y-4">
           <summary className="cursor-pointer text-2xl font-bold text-foreground">

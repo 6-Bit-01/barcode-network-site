@@ -939,9 +939,10 @@ test("admin Source File page uses immediate refresh status/retry UI and preserve
   assert.doesNotMatch(page, /Waiting for BNL/);
 
   for (const label of [
-    "Review Snapshot",
-    "What BNL Knows",
-    "Evidence receipts",
+    "Dossier Readiness",
+    "Dossier Drafting Brief",
+    "Public-Safe Facts",
+    "Evidence to Use",
     "Source Notes / Admin Addendums",
     "Identity Check",
     "Advanced: Add Identity Link Manually",
@@ -1141,7 +1142,7 @@ test("dossier admin pages keep dashboard simple while detail pages retain workfl
   const sourceFileCopy = normalizedSource(
     "src/app/admin/dossiers/candidates/[candidateId]/page.tsx",
   );
-  assertIncludesCopy(sourceFileCopy, "Case File / BNL Source File Summary");
+  assertIncludesCopy(sourceFileCopy, "Dossier Drafting Brief");
   assertIncludesCopy(sourceFileCopy, "Archive");
   assertIncludesCopy(sourceFileCopy, "Delete Permanently");
   assertIncludesCopy(sourceFileCopy, "Restore");
@@ -1149,7 +1150,7 @@ test("dossier admin pages keep dashboard simple while detail pages retain workfl
   assertIncludesCopy(sourceFileCopy, "DELETE SOURCE FILE");
   assertIncludesCopy(sourceFileCopy, "Public dossiers and published data are not deleted");
   assertIncludesCopy(sourceFileCopy, "Proposed Dossier Status");
-  assertIncludesCopy(sourceFileCopy, "Create one only from reviewed, public-safe Source File material.");
+  assertIncludesCopy(sourceFileCopy, "Create Proposed Dossier");
 
   const draftCopy = normalizedSource(
     "src/app/admin/dossiers/drafts/[draftId]/page.tsx",
@@ -1171,18 +1172,16 @@ test("dossier workflow boundary copy separates case files, drafts, owner review,
   for (const label of [
     "Internal working case file",
     "Do not treat this as public copy",
-    "Case File / BNL Source File Summary",
-        "Source Notes / Admin Addendums",
+    "Dossier Readiness",
+    "Dossier Drafting Brief",
+    "Public-Safe Facts",
+    "Evidence to Use",
+    "Dossier Questions / Review Blockers",
+    "Internal-Only / Do Not Say",
+    "Source Notes / Admin Addendums",
     "Diagnostics — collapsed by default",
-    "Review Context / Possible Supporting Evidence",
-    "Public-Safe Facts Pending Owner/Admin Approval",
-    "Internal-Only Notes",
-    "Source Warnings",
-    "Conflicts / Needs Review",
     "Identity Check",
     "Advanced: Add Identity Link Manually",
-    "Do Not Say",
-    "Dossier Questions",
     "Proposed Dossier Status",
     "Review-only memory context",
     "Internal/private review required",
@@ -1330,15 +1329,16 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     "Source notes",
     "Unapplied notes",
     "Next action",
-    "Case File / BNL Source File Summary",
-    "Review Boundaries",
-    "claims that need review",
-    "public-safety notes",
+    "Dossier Readiness",
+    "Dossier Drafting Brief",
+    "Public-Safe Facts",
+    "Evidence to Use",
+    "Dossier Questions / Review Blockers",
+    "Internal-Only / Do Not Say",
     "Add to Case File / BNL Source File",
-    "This adds information to this subject&apos;s Case File / BNL Source File. It does not directly edit the proposed dossier.",
+    "Add a concise source note, correction, evidence item, dossier question",
     "DossierSourceFileSummaryPanel",
     "Proposed Dossier Status",
-    "Create one only from reviewed, public-safe Source File material.",
     "Create Proposed Dossier",
     "Open Proposed Dossier",
     "Save Info",
@@ -1347,15 +1347,9 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
     "Do not treat this as public copy",
         "Source Notes / Admin Addendums",
     "Diagnostics — collapsed by default",
-    "Review Context / Possible Supporting Evidence",
-    "Public-Safe Facts Pending Owner/Admin Approval",
-    "Internal-Only Notes",
-    "Source Warnings",
-    "Conflicts / Needs Review",
     "Identity Check",
     "Advanced: Add Identity Link Manually",
-    "Do Not Say",
-    "Dossier Questions",
+    "Dossier Questions / Review Blockers",
     "Review-only memory context",
     "Internal/private review required",
     "Public use not allowed until review",
@@ -1376,18 +1370,18 @@ test("dedicated candidate review route is the BNL Source File subject hub", () =
   assert.doesNotMatch(pageCopy, /Save Internal Summary/);
   assert.match(pageCopy, /Operator Case File Summary/);
   const workspace = page.slice(page.indexOf('<Section title="Identity Check"'));
-  assert.ok(workspace.indexOf("Identity Check") < workspace.indexOf("DossierSourceFileSummaryPanel"));
-  assert.ok(workspace.indexOf("Identity Check") < workspace.indexOf("Proposed Dossier Status"));
-  assert.ok(
-    workspace.indexOf("DossierSourceFileSummaryPanel") < workspace.indexOf("Proposed Dossier Status"),
-  );
-  assert.ok(workspace.indexOf("Proposed Dossier Status") < workspace.indexOf("Add to Case File / BNL Source File"));
-  assert.ok(workspace.indexOf("Add to Case File / BNL Source File") < workspace.indexOf("Source Notes / Admin Addendums"));
-  assert.ok(workspace.indexOf("Source Notes / Admin Addendums") < workspace.indexOf("Advanced: Add Identity Link Manually"));
+  assert.ok(workspace.indexOf("Identity Check") < workspace.indexOf("DossierReadinessSection"));
+  assert.ok(workspace.indexOf("DossierReadinessSection") < workspace.indexOf("DossierDraftingBrief"));
+  assert.ok(workspace.indexOf("DossierDraftingBrief") < workspace.indexOf("Public-Safe Facts"));
+  assert.ok(workspace.indexOf("Public-Safe Facts") < workspace.indexOf("Evidence to Use"));
+  assert.ok(workspace.indexOf("Evidence to Use") < workspace.indexOf("Dossier Questions / Review Blockers"));
+  assert.ok(workspace.indexOf("Dossier Questions / Review Blockers") < workspace.indexOf("Internal-Only / Do Not Say"));
+  assert.ok(workspace.indexOf("Internal-Only / Do Not Say") < workspace.indexOf("DossierWorkbench"));
+  assert.ok(workspace.indexOf("DossierWorkbench") < workspace.indexOf("Source Notes / Admin Addendums"));
+  assert.ok(workspace.indexOf("Source Notes / Admin Addendums") < workspace.indexOf("Archive / Raw Source File Data"));
+  assert.ok(workspace.indexOf("Archive / Raw Source File Data") < workspace.indexOf("Advanced: Add Identity Link Manually"));
   assert.ok(workspace.indexOf("Advanced: Add Identity Link Manually") < workspace.indexOf("Operator Case File Summary"));
   assert.ok(workspace.indexOf("Operator Case File Summary") < workspace.indexOf("Diagnostics — collapsed by default"));
-  assert.equal((page.match(/>\s*Open Proposed Dossier\s*</g) ?? []).length, 1);
-  assert.equal((page.match(/>\s*Create Proposed Dossier\s*</g) ?? []).length, 1);
 
   for (const noteType of [
     "fact",
@@ -1557,7 +1551,12 @@ test("admin Source File and recommendation pages render readable sections with c
 
   for (const label of [
     "HumanReadableNoteView",
-    "Case File / BNL Source File Summary",
+    "Dossier Readiness",
+    "Dossier Drafting Brief",
+    "Public-Safe Facts",
+    "Evidence to Use",
+    "Dossier Questions / Review Blockers",
+    "Internal-Only / Do Not Say",
     "Review Snapshot",
     "What BNL Knows",
     "Relationships / People / Projects",
@@ -3236,40 +3235,41 @@ test("identity link recommendation duplicate, invalid, and target mismatch cases
 
 
 
-test("admin Source File workspace renders BNL brief v2 and preserves safe ordering", () => {
+test("admin Source File workspace renders dossier-first default sections and collapses raw output", () => {
   const sourceFilePage = source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
   const normalized = normalizedSource("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
 
-  assert.match(sourceFilePage, /sourceFileBriefV2/);
-  assert.match(sourceFilePage, /function BnlSourceFileBrief/);
   for (const heading of [
-    "BNL Brief",
-    "One-Line Summary",
-    "Admin Summary",
-    "What BNL Knows",
-    "Why This Matters",
-    "Evidence to Review",
-    "Identity Context",
-    "Public-Safe Drafting Notes",
-    "Internal-Only Notes",
-    "Dossier Questions",
-    "Recommended Next Action",
-    "Quality Warnings",
-    "Archive References",
+    "Dossier Readiness",
+    "Dossier Drafting Brief",
+    "Public-Safe Facts",
+    "Evidence to Use",
+    "Dossier Questions / Review Blockers",
+    "Internal-Only / Do Not Say",
+    "Dossier Workbench / Proposed Dossier Status",
+    "Archive / Raw Source File Data",
   ]) {
     assertIncludesCopy(normalized, heading);
   }
 
-  assert.match(sourceFilePage, /if \(items\.length === 0\) return null/);
-  assert.match(sourceFilePage, /sourceFileBriefV2 \? \(/);
+  assert.match(sourceFilePage, /function DossierDraftingBrief/);
+  assert.match(sourceFilePage, /Readable BNL brief is not available for this archive yet\. Refresh the Source File to generate the new dossier-first brief\./);
   assert.match(sourceFilePage, /DossierSourceFileSummaryPanel/);
-  assert.doesNotMatch(normalized, /Missing Info/);
+  assert.match(sourceFilePage, /<DossierDraftingBrief brief=\{sourceFileBriefV2\} \/>/);
+  assert.doesNotMatch(sourceFilePage, /sourceFileBriefV2 \? \([\s\S]*DossierSourceFileSummaryPanel/);
+  assert.match(sourceFilePage, /items\.slice\(0, 5\)\.map/);
+  assert.match(sourceFilePage, /cleanDossierText/);
+  assert.match(sourceFilePage, /maxLength = 220/);
 
   const workspace = sourceFilePage.slice(sourceFilePage.indexOf('<Section title="Identity Check">'));
-  assert.ok(workspace.indexOf("Identity Check") < workspace.indexOf("BnlSourceFileBrief"));
-  assert.ok(workspace.indexOf("BnlSourceFileBrief") < workspace.indexOf("EvidenceReview"));
-  assert.ok(workspace.indexOf("EvidenceReview") < workspace.indexOf("Dossier Workbench / Proposed Dossier Status"));
-  assert.ok(workspace.indexOf("Dossier Workbench / Proposed Dossier Status") < workspace.indexOf("Source Notes / Admin Addendums"));
+  assert.ok(workspace.indexOf("Identity Check") < workspace.indexOf("DossierReadinessSection"));
+  assert.ok(workspace.indexOf("DossierReadinessSection") < workspace.indexOf("DossierDraftingBrief"));
+  assert.ok(workspace.indexOf("DossierDraftingBrief") < workspace.indexOf("Public-Safe Facts"));
+  assert.ok(workspace.indexOf("Public-Safe Facts") < workspace.indexOf("Evidence to Use"));
+  assert.ok(workspace.indexOf("Evidence to Use") < workspace.indexOf("Dossier Questions / Review Blockers"));
+  assert.ok(workspace.indexOf("Dossier Questions / Review Blockers") < workspace.indexOf("Internal-Only / Do Not Say"));
+  assert.ok(workspace.indexOf("Internal-Only / Do Not Say") < workspace.indexOf("DossierWorkbench"));
+  assert.ok(workspace.indexOf("DossierWorkbench") < workspace.indexOf("Source Notes / Admin Addendums"));
   assert.ok(workspace.indexOf("Source Notes / Admin Addendums") < workspace.indexOf("Archive / Raw Source File Data"));
   assert.ok(workspace.indexOf("Archive / Raw Source File Data") < workspace.indexOf("Advanced Tools — collapsed manual controls"));
   assert.ok(workspace.indexOf("Advanced Tools — collapsed manual controls") < workspace.indexOf("Diagnostics — collapsed by default"));
@@ -3277,13 +3277,17 @@ test("admin Source File workspace renders BNL brief v2 and preserves safe orderi
   assert.match(sourceFilePage, /identityLinks\.length > 0 &&/);
   assert.match(sourceFilePage, /\.filter\(\(group\) => group\.links\.length > 0\)/);
   assert.doesNotMatch(sourceFilePage, /No identity links saved yet/);
-  const identityCheckStart = sourceFilePage.indexOf('<Section title="Identity Check">');
   const manualAddStart = sourceFilePage.indexOf("Advanced Tools — collapsed manual controls");
-  assert.ok(manualAddStart > identityCheckStart);
   assert.ok(sourceFilePage.indexOf("Add Identity Link", manualAddStart) > manualAddStart);
 
+  assert.match(sourceFilePage, /<details className="border border-border bg-surface p-5 text-sm text-muted">[\s\S]*Archive \/ Raw Source File Data/);
   assert.match(sourceFilePage, /<details className="border border-border bg-surface p-5 text-sm text-muted">[\s\S]*Diagnostics — collapsed by default/);
-  assert.doesNotMatch(normalized, /Record Compactor|Duplicate Analysis|auto-confirm|auto confirm|Merge Source Files|Public Publish|Publish Now/);
+  assert.match(sourceFilePage, /Add or review Source Notes \/ Admin Addendums — collapsed/);
+  assert.doesNotMatch(normalized, /Missing Info/);
+  assert.doesNotMatch(normalized, /BNL Brief/);
+  assert.doesNotMatch(normalized, /Evidence Review/);
+  assert.doesNotMatch(normalized, /Evidence by Category/);
+  assert.doesNotMatch(normalized, /Record Compactor|Duplicate Analysis|auto-confirm|auto confirm|Public Publish|Publish Now/);
 });
 
 test("identity alias review UX is grouped, status-aware, and public-safe", () => {
@@ -3318,7 +3322,7 @@ test("identity alias review UX is grouped, status-aware, and public-safe", () =>
   const identityCheckSection = sourceFilePage.slice(identityCheckStart, identityCheckEnd);
   assert.ok(identityCheckStart >= 0);
   assert.ok(identityCheckStart < sourceFilePage.indexOf('Source Notes / Admin Addendums'));
-  assert.ok(identityCheckStart < sourceFilePage.indexOf('Proposed Dossier Status'));
+  assert.ok(identityCheckStart < sourceFilePage.indexOf('<DossierWorkbench', identityCheckStart));
   assert.match(sourceFilePage, /Advanced: Add Identity Link Manually/);
   assert.doesNotMatch(identityCheckSection, /Add Identity Link/);
   assert.match(
@@ -4191,10 +4195,8 @@ test("recommendation inbox and source note UI are present and bounded", () => {
     "src/app/admin/dossiers/candidates/[candidateId]/page.tsx",
   );
   assert.match(sourceFilePage, /Add to Case File \/ BNL Source File/);
-  assert.match(sourceFilePage, /This adds information to this subject&apos;s Case File \/ BNL Source File/);
-  assert.match(sourceFilePage, /This source file[\s\S]*remains one subject\/entity/);
-  assert.match(sourceFilePage, /create or wait for a separate BNL\s+recommendation/);
-  assert.match(sourceFilePage, /Save Info/);
+  assert.match(sourceFilePage, /Add a concise source note, correction, evidence item, dossier question/);
+    assert.match(sourceFilePage, /Save Info/);
   assert.match(sourceFilePage, /Identity Check/);
   assert.doesNotMatch(sourceFilePage, /<Section title="Identity Link Actions">/);
   assert.match(sourceFilePage, /Advanced: Add Identity Link Manually/);

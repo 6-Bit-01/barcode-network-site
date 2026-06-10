@@ -1078,6 +1078,7 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
     "Actions",
     "No known match",
     "Possible identity link",
+    "Possible duplicate",
     "Confirmed aliases",
     "Possible identity link",
     "Live dossier exists",
@@ -1114,6 +1115,7 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
   assert.doesNotMatch(page, />\s*Open\s*</);
   assert.doesNotMatch(page, /Add Missing Info|Review Signal|Review Source Update|Review Draft|Review Archived|Review Closed Signal|Review Trash/);
   assert.doesNotMatch(page, /Open Draft|Review Updates|Review Missing Info|Review Match|Needs Attention/);
+  assert.match(page, /primaryLabel=\{sourceFileActionLabel\(\)\}/);
   assert.match(page, /archivedCandidateActionLabel\(\)/);
   assert.match(page, /archivedSignalActionLabel\(\)/);
   assert.doesNotMatch(page, /function archiveActionLabel/);
@@ -1173,7 +1175,31 @@ test("computed dossier workflow notifications cover candidate row contexts", () 
   assert.ok(notificationLabels(dossierWorkflowNotifications.buildCandidateNotifications(existingLive)).includes("Live dossier exists"));
 
   const duplicate = baseNotificationCandidate({ duplicateRisk: "high" });
-  assert.ok(!notificationLabels(dossierWorkflowNotifications.buildCandidateNotifications(duplicate)).includes("Possible duplicate"));
+  assert.ok(notificationLabels(dossierWorkflowNotifications.buildCandidateNotifications(duplicate)).includes("Possible duplicate"));
+
+  const duplicateGroupCandidate = baseNotificationCandidate({
+    id: "duplicate-group-candidate",
+    duplicateRisk: "none",
+  });
+  const duplicateGroupPeer = baseNotificationCandidate({
+    id: "duplicate-group-peer",
+    status: "active_source_file",
+  });
+  assert.ok(notificationLabels(dossierWorkflowNotifications.buildCandidateNotifications(
+    duplicateGroupCandidate,
+    {
+      candidates: [duplicateGroupCandidate, duplicateGroupPeer],
+      duplicateGroups: [{
+        id: "duplicate-group-fixture",
+        normalizedName: "duplicate fixture",
+        candidateIds: [duplicateGroupCandidate.id, duplicateGroupPeer.id],
+        draftIds: [],
+        names: [duplicateGroupCandidate.name, duplicateGroupPeer.name],
+        risk: "medium",
+        reason: "Fixture duplicate group.",
+      }],
+    },
+  )).includes("Possible duplicate"));
 });
 
 test("computed dossier workflow notifications cover source file draft, archive, missing info, and update contexts", () => {

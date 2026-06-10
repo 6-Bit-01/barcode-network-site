@@ -142,6 +142,21 @@ function hasActiveDuplicateGroup(
   });
 }
 
+function hasPossibleDuplicate(
+  candidate: DossierCandidate,
+  context: Pick<NotificationContext, "candidates" | "duplicateGroups"> = {},
+) {
+  return (
+    candidate.duplicateRisk === "medium" ||
+    candidate.duplicateRisk === "high" ||
+    hasActiveDuplicateGroup(
+      candidate,
+      context.candidates,
+      context.duplicateGroups,
+    )
+  );
+}
+
 function isReviewOnlySignal(candidate: DossierCandidate) {
   return (
     candidate.confidence === "low" ||
@@ -188,6 +203,16 @@ export function buildCandidateNotifications(
       label: "Possible identity link",
       tone: "warning",
       reason: "Review before confirming aliases or routing future signals.",
+      actionLabel: "Review Identity Links",
+      actionHref: candidateHref,
+    });
+  }
+
+  if (hasPossibleDuplicate(candidate, context)) {
+    pushUnique(notifications, {
+      id: "possible-duplicate",
+      label: "Possible duplicate",
+      tone: "warning",
       actionLabel: "Review Identity Links",
       actionHref: candidateHref,
     });
@@ -391,6 +416,16 @@ export function buildSourceFileNotifications(
     pushUnique(notifications, {
       id: "identity-review-pending",
       label: "Possible identity link",
+      tone: "warning",
+      actionLabel: "Review Identity Links",
+      actionHref: candidateHref,
+    });
+  }
+
+  if (hasPossibleDuplicate(candidate, context)) {
+    pushUnique(notifications, {
+      id: "possible-duplicate",
+      label: "Possible duplicate",
       tone: "warning",
       actionLabel: "Review Identity Links",
       actionHref: candidateHref,

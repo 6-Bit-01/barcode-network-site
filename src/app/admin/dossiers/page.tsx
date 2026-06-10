@@ -953,6 +953,7 @@ export default function DossierControlCenterPage() {
                               notifications,
                               [
                                 "possible-identity-link",
+                                "possible-duplicate",
                                 "existing-source-file-match",
                               ],
                               "No known match",
@@ -1002,6 +1003,7 @@ export default function DossierControlCenterPage() {
                               notifications,
                               [
                                 "possible-identity-link",
+                                "possible-duplicate",
                                 "existing-source-file-match",
                               ],
                               confirmedAliasStatus(candidate),
@@ -1107,6 +1109,7 @@ export default function DossierControlCenterPage() {
                               [
                                 "possible-identity-link",
                                 "identity-review-pending",
+                                "possible-duplicate",
                                 "existing-source-file-match",
                               ],
                               confirmedAliasStatus(candidate),

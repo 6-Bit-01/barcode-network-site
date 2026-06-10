@@ -1639,7 +1639,7 @@ export default function CandidateReviewPage() {
           </div>
 
           <div className="mt-5 space-y-3 text-xs uppercase tracking-widest">
-            <p className="text-muted">Signal / Seed Actions · Case File Actions · Identity Link Actions · Proposed Dossier Actions · Archive / Danger</p>
+            <p className="text-muted">Signal / Seed Actions · Case File Actions · Identity Check · Proposed Dossier Actions · Archive / Danger</p>
             <div className="flex flex-wrap gap-3">
             <Link
               href="/admin/dossiers"
@@ -1781,6 +1781,81 @@ export default function CandidateReviewPage() {
       </section>
 
       <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-4">
+        {identityLinks.length > 0 && (
+          <Section title="Identity Check">
+            <div className="space-y-5">
+              <p className="border border-border/70 bg-background/20 p-3">
+                Identity links are internal routing/context tools. Resolve these before
+                using this Source File for dossier drafting. Confirming a link can
+                help future BNL Signals route to this Source File, but it does not
+                merge Source Files, publish identity, or place the label in a
+                public dossier.
+              </p>
+
+              <div className="space-y-4">
+                {[
+                  {
+                    title: "Proposed Identity Links",
+                    links: proposedIdentityLinks,
+                    quiet: false,
+                  },
+                  {
+                    title: "Confirmed Identity Links",
+                    links: confirmedIdentityLinks,
+                    quiet: false,
+                  },
+                  {
+                    title: "Rejected / Retired Identity History",
+                    links: closedIdentityLinks,
+                    quiet: true,
+                  },
+                ]
+                  .filter((group) => group.links.length > 0)
+                  .map((group) => (
+                    <section
+                      key={group.title}
+                      className={`border border-border/60 bg-background/10 p-3 space-y-3 ${
+                        group.quiet ? "opacity-80" : ""
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 className="text-sm font-bold uppercase tracking-widest text-foreground">
+                          {group.title}
+                        </h3>
+                        <span className="text-xs text-muted">
+                          {group.links.length} link
+                          {group.links.length === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                      <div className="space-y-3">
+                        {group.links.map((identityLink) => (
+                          <IdentityLinkCard
+                            key={identityLink.id}
+                            identityLink={identityLink}
+                            saving={saving}
+                            recommendation={
+                              identityLink.createdFromRecommendationId
+                                ? recommendationById.get(
+                                    identityLink.createdFromRecommendationId,
+                                  )
+                                : undefined
+                            }
+                            onReview={(identityLink, action, options) =>
+                              void reviewIdentityLink(
+                                identityLink,
+                                action,
+                                options,
+                              )
+                            }
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+              </div>
+            </div>
+          </Section>
+        )}
         {sourceFileSummary && (
           <>
             <DossierSourceFileSummaryPanel
@@ -1931,100 +2006,24 @@ export default function CandidateReviewPage() {
           )}
         </Section>
 
-        <Section title="Identity Link Actions">
-          <div className="space-y-5">
-            <div className="space-y-2">
+        <details className="border border-border bg-surface p-5 space-y-4">
+          <summary className="cursor-pointer text-2xl font-bold text-foreground">
+            Advanced: Add Identity Link Manually
+          </summary>
+          <div className="space-y-5 pt-4">
+            <div className="space-y-2 text-sm text-muted">
               <p>
-                Aliases help BNL route future BNL Signals to the right
-                source file. Identity Links create proposed review
-                material only, not confirmed identity. Internal aliases are not
-                public dossier text and remain admin-only. Public-safe
-                visibility does not publish anything yet.
+                Aliases help BNL route future BNL Signals to the right source file.
+                Identity Links create proposed review material only, not confirmed
+                identity. Internal aliases are not public dossier text and remain
+                admin-only. Public-safe visibility does not publish anything yet.
               </p>
               <p className="border border-border/70 bg-background/20 p-3">
-                Adding an alias does not make it public and does not affect
-                matching until confirmed. If an alias is created as proposed,
-                matching is not active yet.
+                Adding an alias does not make it public and does not affect matching
+                until confirmed. If an alias is created as proposed, matching is not
+                active yet.
               </p>
             </div>
-
-            {identityLinks.length === 0 ? (
-              <p>No identity links saved yet.</p>
-            ) : (
-              <div className="space-y-4">
-                {[
-                  {
-                    title: "Proposed Identity Links",
-                    empty: "No proposed identity links.",
-                    links: proposedIdentityLinks,
-                    quiet: false,
-                    intro:
-                      "Identity links are internal routing/context tools. Confirming a link can help future BNL Signals route to this Source File, but it does not merge Source Files, publish identity, or place the label in a public dossier.",
-                  },
-                  {
-                    title: "Confirmed Identity Links",
-                    empty: "No confirmed identity links.",
-                    links: confirmedIdentityLinks,
-                    quiet: false,
-                  },
-                  {
-                    title: "Rejected / Retired Identity History",
-                    empty: "No rejected or retired identity history.",
-                    links: closedIdentityLinks,
-                    quiet: true,
-                  },
-                ].map((group) => (
-                  <section
-                    key={group.title}
-                    className={`border border-border/60 bg-background/10 p-3 space-y-3 ${
-                      group.quiet ? "opacity-80" : ""
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <h3 className="text-sm font-bold uppercase tracking-widest text-foreground">
-                        {group.title}
-                      </h3>
-                      <span className="text-xs text-muted">
-                        {group.links.length} link
-                        {group.links.length === 1 ? "" : "s"}
-                      </span>
-                    </div>
-                    {group.intro && (
-                      <p className="border border-border/70 bg-background/20 p-3">
-                        {group.intro}
-                      </p>
-                    )}
-                    {group.links.length === 0 ? (
-                      <p className="text-xs">{group.empty}</p>
-                    ) : (
-                      <div className="space-y-3">
-                        {group.links.map((identityLink) => (
-                          <IdentityLinkCard
-                            key={identityLink.id}
-                            identityLink={identityLink}
-                            saving={saving}
-                            recommendation={
-                              identityLink.createdFromRecommendationId
-                                ? recommendationById.get(
-                                    identityLink.createdFromRecommendationId,
-                                  )
-                                : undefined
-                            }
-                            onReview={(identityLink, action, options) =>
-                              void reviewIdentityLink(
-                                identityLink,
-                                action,
-                                options,
-                              )
-                            }
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </section>
-                ))}
-              </div>
-            )}
             <form
               onSubmit={addIdentityLink}
               className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs uppercase tracking-widest text-muted"
@@ -2152,7 +2151,7 @@ export default function CandidateReviewPage() {
               </div>
             </form>
           </div>
-        </Section>
+        </details>
 
         <section className="border border-border bg-surface p-5 space-y-4">
           <h2 className="text-2xl font-bold text-foreground">

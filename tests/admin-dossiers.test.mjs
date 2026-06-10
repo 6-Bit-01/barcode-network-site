@@ -6589,6 +6589,101 @@ function sourceFileReportTestSummary() {
   };
 }
 
+
+
+test("Source File page renders subjectIntelligenceBriefV1 as the primary report with one collapsed debug fallback", () => {
+  const summary = sourceFileReportTestSummary();
+  const archive = {
+    id: "archive-subject-brief-v1",
+    candidateId: "candidate-subject-brief-v1",
+    subjectName: "Crow Brief Subject",
+    subjectKey: "crow-brief-subject",
+    sourceDigest: "abcdef1234567890",
+    createdAt: "2026-06-10T00:00:00.000Z",
+    updatedAt: "2026-06-10T00:00:00.000Z",
+    archiveSize: 256,
+    chunkCount: 2,
+    reviewOnly: true,
+    compactSummary: "RAW_COMPACT_BRIEF_SHOULD_STAY_COLLAPSED",
+    sourceFileCaseReportV1: {
+      version: "1",
+      generatedAt: "2026-06-10T00:00:00.000Z",
+      reportStatus: "dossier_ready",
+      caseSummary: "OLD_CATEGORY_CASE_SUMMARY_SHOULD_NOT_BE_PRIMARY",
+      dossierUse: "OLD_CATEGORY_DOSSIER_USE_SHOULD_NOT_BE_PRIMARY",
+      publicSafeClaims: ["OLD_CATEGORY_PUBLIC_SAFE_CLAIM_SHOULD_NOT_BE_PRIMARY"],
+      subjectIntelligenceBriefV1: {
+        subjectRead: "Crow is a high-signal community participant with recurring public creative activity.",
+        bnlTake: {
+          confirmedFact: "Approved public authored items are present in the scan.",
+          bnlInterpretation: "BNL reads Crow as active enough for a useful Source File, but not public-copy-ready.",
+          uncertainty: "Identity and relationship context still need admin review.",
+        },
+        activitySnapshot: {
+          totalApprovedPublicAuthoredItems: 7,
+          totalPublicMentions: 11,
+          reviewOnlyEvidenceCount: 3,
+          totalEvidenceScanned: 21,
+          latestObserved: "2026-06-09T20:30:00.000Z",
+          activityLevel: "active",
+          topChannels: ["Discord", "Suno"],
+        },
+        topicBuckets: [
+          {
+            topic: "music experiments",
+            strength: "strong",
+            evidenceCount: 4,
+            explanation: "Repeated public discussion of generated tracks and mix revisions.",
+            exampleSignals: ["shared a Suno link", "asked for mix feedback"],
+          },
+        ],
+        namedAnchors: [
+          { name: "Orion", type: "person", strength: "medium", note: "Appears as a recurring public conversation anchor." },
+          { name: "noise", type: "noise", strength: "noise", note: "Should be hidden." },
+        ],
+        musicAndLinkSignals: ["Suno link appears in public-safe evidence."],
+        relationshipSignals: ["Possible collaborator context; review-only unless confirmed."],
+        queueSubmissionRead: "No queue submission connection is stated in this brief.",
+        sourceFileGaps: ["Confirm whether the Suno link is theirs."],
+        recommendedAdminActions: ["Ask admins to verify identity-safe phrasing."],
+        doNotSayPubliclyYet: ["Do not state collaborator relationships publicly yet."],
+      },
+    },
+  };
+
+  const visibleText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary,
+    subjectName: "Crow Brief Subject",
+    latestSourceFileArchive: archive,
+  }));
+  assert.match(visibleText, /BNL Subject Intelligence Brief/);
+  assert.match(visibleText, /Activity Snapshot/);
+  assert.match(visibleText, /What They Talk About/);
+  assert.match(visibleText, /Named Anchors \/ Connections/);
+  assert.match(visibleText, /BNL’s Current Take/);
+  assert.match(visibleText, /Music \/ Link Signals/);
+  assert.match(visibleText, /Relationship \/ Context Signals/);
+  assert.match(visibleText, /Queue \/ Submission Read/);
+  assert.match(visibleText, /What To Add To This Source File/);
+  assert.match(visibleText, /Do Not Say Publicly Yet/);
+  assert.match(visibleText, /Crow is a high-signal community participant/);
+  assert.match(visibleText, /BNL reads Crow as active enough/);
+  assert.match(visibleText, /music experiments/);
+  assert.match(visibleText, /Orion/);
+  assert.doesNotMatch(visibleText, /OLD_CATEGORY_CASE_SUMMARY_SHOULD_NOT_BE_PRIMARY|OLD_CATEGORY_DOSSIER_USE_SHOULD_NOT_BE_PRIMARY|OLD_CATEGORY_PUBLIC_SAFE_CLAIM_SHOULD_NOT_BE_PRIMARY/);
+  assert.doesNotMatch(visibleText, /Case Summary|Dossier Use|Public-Safe Claims/);
+
+  const debugElement = sourceSummaryPanelComponent.DossierSourceFileArchiveRawData({ latestSourceFileArchive: archive });
+  const defaultDebugText = collectDefaultVisibleText(debugElement);
+  assert.match(defaultDebugText, /Raw Report \/ Debug/);
+  assert.doesNotMatch(defaultDebugText, /OLD_CATEGORY_CASE_SUMMARY_SHOULD_NOT_BE_PRIMARY|RAW_COMPACT_BRIEF_SHOULD_STAY_COLLAPSED/);
+  const fullDebugText = collectReactText(debugElement);
+  assert.match(fullDebugText, /Legacy sectioned Case File Report/);
+  assert.match(fullDebugText, /OLD_CATEGORY_CASE_SUMMARY_SHOULD_NOT_BE_PRIMARY/);
+  assert.match(fullDebugText, /RAW_COMPACT_BRIEF_SHOULD_STAY_COLLAPSED/);
+  assert.match(fullDebugText, /Raw archive JSON/);
+});
+
 test("Source File page renders only BNL-authored Case File Reports and keeps raw archive collapsed", () => {
   const summary = sourceFileReportTestSummary();
   const archive = {

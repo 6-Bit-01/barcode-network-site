@@ -510,6 +510,7 @@ function isSourceFileCaseReportShape(value: unknown) {
   const report = sourceArchiveObject(value);
   if (!report) return false;
   return [
+    "subjectIntelligenceBriefV1",
     "caseSummary",
     "dossierUse",
     "publicSafeClaims",

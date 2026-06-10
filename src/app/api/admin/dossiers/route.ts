@@ -3,6 +3,7 @@ import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
 import { databasePage } from "@/content";
 import { dossierAuthoringGuide } from "@/lib/dossier-authoring-guide";
 import { refreshBnlSourceFileNow } from "@/lib/bnl-source-file-refresh-now";
+import { trustedRequestingSiteOrigin } from "@/lib/trusted-requesting-site-origin";
 import { buildDossierTagRegistry } from "@/lib/dossier-tags";
 import {
   DOSSIER_CANDIDATE_SCORING_POLICY,
@@ -490,6 +491,7 @@ export async function POST(req: Request) {
         );
       }
       const openedAt = new Date().toISOString();
+      const requestingSiteOrigin = trustedRequestingSiteOrigin(req);
       const refresh = await recordDossierSourceFileOpen({
         candidateId,
         requestedBy: "admin_open_source_file",
@@ -498,11 +500,13 @@ export async function POST(req: Request) {
         ? await refreshBnlSourceFileNow({
             request: refresh.request,
             source: "admin_open_source_file",
+            requestingSiteOrigin,
           })
         : {
             ok: false,
             status: "skipped" as const,
             failureReason: refresh.decision.reason,
+            callbackBaseSent: false,
           };
       const immediateRefresh = refresh.request
         ? await verifySourceFileCaseReportAfterImmediateRefresh({
@@ -543,6 +547,7 @@ export async function POST(req: Request) {
           { status: 400 },
         );
       }
+      const requestingSiteOrigin = trustedRequestingSiteOrigin(req);
       const refresh = await requestDossierSourceFileRefresh({
         candidateId,
         reason: typeof body.reason === "string" ? body.reason : undefined,
@@ -552,6 +557,7 @@ export async function POST(req: Request) {
       const immediateRefreshRaw = await refreshBnlSourceFileNow({
         request: refresh.request,
         source: "admin_manual",
+        requestingSiteOrigin,
       });
       const immediateRefresh = await verifySourceFileCaseReportAfterImmediateRefresh({
         request: refresh.request,

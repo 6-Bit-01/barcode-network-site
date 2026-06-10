@@ -1,4 +1,5 @@
 import type { DossierSourceFileRefreshRequest } from "@/lib/dossier-workflow";
+import { safeOriginHost } from "@/lib/trusted-requesting-site-origin";
 
 export type BnlSourceFileImmediateRefreshStatus =
   | "success"
@@ -12,12 +13,15 @@ export type BnlSourceFileImmediateRefreshResult = {
   status: BnlSourceFileImmediateRefreshStatus;
   recommendationId?: string;
   failureReason?: string;
+  callbackBaseSent?: boolean;
+  callbackBaseHost?: string;
 };
 
 export type BnlSourceFileImmediateRefreshInput = {
   request: DossierSourceFileRefreshRequest;
   source?: string;
   timeoutMs?: number;
+  requestingSiteOrigin?: string;
 };
 
 const DEFAULT_REFRESH_NOW_TIMEOUT_MS = 25_000;
@@ -67,8 +71,17 @@ export async function refreshBnlSourceFileNow(
       ok: false,
       status: "unavailable",
       failureReason: "BNL immediate refresh is not configured.",
+      callbackBaseSent: false,
     };
   }
+
+  const callbackBaseUrl = stringValue(input.requestingSiteOrigin);
+  const callbackDiagnostics = {
+    callbackBaseSent: Boolean(callbackBaseUrl),
+    ...(callbackBaseUrl
+      ? { callbackBaseHost: safeOriginHost(callbackBaseUrl) }
+      : {}),
+  };
 
   const controller = new AbortController();
   const timeout = setTimeout(
@@ -93,6 +106,13 @@ export async function refreshBnlSourceFileNow(
         requiresCaseReportBackfill:
           input.request.requiresCaseReportBackfill === true,
         source: input.source ?? input.request.requestSource,
+        ...(callbackBaseUrl
+          ? {
+              siteCallbackBaseUrl: callbackBaseUrl,
+              requestingSiteOrigin: callbackBaseUrl,
+              sourceFileArchiveCallbackBaseUrl: callbackBaseUrl,
+            }
+          : {}),
       }),
       cache: "no-store",
       signal: controller.signal,
@@ -109,6 +129,7 @@ export async function refreshBnlSourceFileNow(
         recommendationId,
         failureReason:
           failureReason ?? `BNL immediate refresh returned HTTP ${response.status}.`,
+        ...callbackDiagnostics,
       };
     }
 
@@ -117,10 +138,22 @@ export async function refreshBnlSourceFileNow(
         ? stringValue((payload as Record<string, unknown>).status)
         : undefined;
     if (payloadStatus === "skipped") {
-      return { ok: false, status: "skipped", recommendationId, failureReason };
+      return {
+        ok: false,
+        status: "skipped",
+        recommendationId,
+        failureReason,
+        ...callbackDiagnostics,
+      };
     }
     if (payloadStatus === "failed") {
-      return { ok: false, status: "failed", recommendationId, failureReason };
+      return {
+        ok: false,
+        status: "failed",
+        recommendationId,
+        failureReason,
+        ...callbackDiagnostics,
+      };
     }
 
     return {
@@ -128,6 +161,7 @@ export async function refreshBnlSourceFileNow(
       status: "success",
       recommendationId,
       failureReason,
+      ...callbackDiagnostics,
     };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
@@ -135,6 +169,7 @@ export async function refreshBnlSourceFileNow(
         ok: false,
         status: "timeout",
         failureReason: "BNL immediate refresh timed out.",
+        ...callbackDiagnostics,
       };
     }
     return {
@@ -144,6 +179,7 @@ export async function refreshBnlSourceFileNow(
         error instanceof Error
           ? error.message
           : "BNL immediate refresh could not be reached.",
+      ...callbackDiagnostics,
     };
   } finally {
     clearTimeout(timeout);

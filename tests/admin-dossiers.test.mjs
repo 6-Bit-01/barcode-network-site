@@ -246,13 +246,14 @@ async function authedGet() {
   );
 }
 
-async function authedPost(body) {
+async function authedPost(body, options = {}) {
   return route.POST(
-    new Request("https://example.test/api/admin/dossiers", {
+    new Request(options.url ?? "https://example.test/api/admin/dossiers", {
       method: "POST",
       headers: {
         "content-type": "application/json",
         cookie: await adminCookie(),
+        ...(options.headers ?? {}),
       },
       body: JSON.stringify(body),
     }),
@@ -492,6 +493,7 @@ test("Source File open and retry call BNL refresh-now server-side with safe stat
   process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL = "https://bnl.example.test/internal/source-files/refresh-now";
   process.env.BNL_SOURCE_FILE_REFRESH_TOKEN = "test-refresh-token";
   process.env.BNL_SOURCE_FILE_REFRESH_NOW_TIMEOUT_MS = "1000";
+  process.env.NEXT_PUBLIC_SITE_URL = "https://example.test";
 
   const originalFetch = global.fetch;
   const calls = [];
@@ -501,6 +503,9 @@ test("Source File open and retry call BNL refresh-now server-side with safe stat
     assert.equal(options.headers["X-BNL-REFRESH-TOKEN"], "test-refresh-token");
     const body = JSON.parse(options.body);
     assert.equal(body.source, calls.length === 1 ? "admin_open_source_file" : "admin_manual");
+    assert.equal(body.siteCallbackBaseUrl, "https://example.test");
+    assert.equal(body.requestingSiteOrigin, "https://example.test");
+    assert.equal(body.sourceFileArchiveCallbackBaseUrl, "https://example.test");
     assert.ok(body.requestId);
     assert.equal(body.candidateId, body.candidateId);
     if (calls.length === 1) {
@@ -527,6 +532,8 @@ test("Source File open and retry call BNL refresh-now server-side with safe stat
     assert.equal(opened.immediateRefresh.ok, true);
     assert.equal(opened.immediateRefresh.status, "success");
     assert.equal(opened.immediateRefresh.recommendationId, "fresh-rec-id");
+    assert.equal(opened.immediateRefresh.callbackBaseSent, true);
+    assert.equal(opened.immediateRefresh.callbackBaseHost, "example.test");
     assert.equal(opened.sourceFileRefreshRequests[0].status, "completed");
     assert.equal(opened.sourceFileRefreshRequests[0].completedByRecommendationId, "fresh-rec-id");
 
@@ -538,7 +545,62 @@ test("Source File open and retry call BNL refresh-now server-side with safe stat
     assert.equal(retry.immediateRefresh.ok, false);
     assert.equal(retry.immediateRefresh.status, "failed");
     assert.equal(retry.immediateRefresh.failureReason, "BNL fixture failure");
+    assert.equal(retry.immediateRefresh.callbackBaseSent, true);
+    assert.equal(retry.immediateRefresh.callbackBaseHost, "example.test");
     assert.equal(calls.length, 2);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL;
+    delete process.env.BNL_SOURCE_FILE_REFRESH_TOKEN;
+    delete process.env.BNL_SOURCE_FILE_REFRESH_NOW_TIMEOUT_MS;
+    delete process.env.NEXT_PUBLIC_SITE_URL;
+  }
+});
+
+
+test("Source File refresh does not forward untrusted callback origins", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL = "https://bnl.example.test/internal/source-files/refresh-now";
+  process.env.BNL_SOURCE_FILE_REFRESH_TOKEN = "test-refresh-token";
+  process.env.BNL_SOURCE_FILE_REFRESH_NOW_TIMEOUT_MS = "1000";
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  delete process.env.VERCEL;
+  delete process.env.VERCEL_URL;
+
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), body: JSON.parse(options.body) });
+    return Response.json({ ok: true, status: "success", recommendationId: "untrusted-refresh" });
+  };
+
+  try {
+    const created = await (await authedPost({
+      action: "createManualCandidate",
+      input: {
+        name: "Untrusted Origin Fixture",
+        candidateType: "artist",
+        reason: "Operator wants callback origin safety coverage.",
+        whyNow: "The source file should not trust hostile hosts.",
+        evidenceSummary: "Admin fixture evidence.",
+      },
+      siteCallbackBaseUrl: "https://evil.example.test",
+    }, { url: "https://evil.example.test/api/admin/dossiers" })).json();
+    const candidateId = created.candidate.id;
+    await authedPost({ action: "promoteCandidateToSourceFile", candidateId }, { url: "https://evil.example.test/api/admin/dossiers" });
+
+    const opened = await (await authedPost({
+      action: "recordSourceFileOpen",
+      candidateId,
+      siteCallbackBaseUrl: "https://evil.example.test",
+    }, { url: "https://evil.example.test/api/admin/dossiers" })).json();
+
+    assert.equal(opened.immediateRefresh.callbackBaseSent, false);
+    assert.equal(opened.immediateRefresh.callbackBaseHost, undefined);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].body.siteCallbackBaseUrl, undefined);
+    assert.equal(calls[0].body.requestingSiteOrigin, undefined);
+    assert.equal(calls[0].body.sourceFileArchiveCallbackBaseUrl, undefined);
   } finally {
     global.fetch = originalFetch;
     delete process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL;
@@ -640,6 +702,7 @@ test("Source File refresh requests case-report backfill and refuses false comple
   process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL = "https://bnl.example.test/internal/source-files/refresh-now";
   process.env.BNL_SOURCE_FILE_REFRESH_TOKEN = "test-refresh-token";
   process.env.BNL_SOURCE_FILE_REFRESH_NOW_TIMEOUT_MS = "1000";
+  process.env.NEXT_PUBLIC_SITE_URL = "https://example.test";
 
   const created = await (await authedPost({
     action: "createManualCandidate",
@@ -711,6 +774,11 @@ test("Source File refresh requests case-report backfill and refuses false comple
     assert.equal(calls[0].body.reason, "case_report_missing");
     assert.equal(calls[0].body.caseReportMissing, true);
     assert.equal(calls[0].body.requiresCaseReportBackfill, true);
+    assert.equal(calls[0].body.siteCallbackBaseUrl, "https://example.test");
+    assert.equal(calls[0].body.requestingSiteOrigin, "https://example.test");
+    assert.equal(calls[0].body.sourceFileArchiveCallbackBaseUrl, "https://example.test");
+    assert.equal(opened.immediateRefresh.callbackBaseSent, true);
+    assert.equal(opened.immediateRefresh.callbackBaseHost, "example.test");
 
     const manual = await (await authedPost({
       action: "requestSourceFileRefresh",
@@ -725,6 +793,15 @@ test("Source File refresh requests case-report backfill and refuses false comple
     assert.equal(calls[1].body.reason, "case_report_missing");
     assert.equal(calls[1].body.caseReportMissing, true);
     assert.equal(calls[1].body.requiresCaseReportBackfill, true);
+    assert.equal(calls[1].body.siteCallbackBaseUrl, "https://example.test");
+    assert.equal(calls[1].body.requestingSiteOrigin, "https://example.test");
+    assert.equal(calls[1].body.sourceFileArchiveCallbackBaseUrl, "https://example.test");
+    assert.equal(manual.immediateRefresh.callbackBaseSent, true);
+    assert.equal(manual.immediateRefresh.callbackBaseHost, "example.test");
+    const afterRefreshState = await store.getDossierWorkflowState();
+    const afterRefreshCandidate = afterRefreshState.candidates.find((item) => item.id === candidateId);
+    assert.equal(afterRefreshCandidate.latestSourceFileArchive.sourceFileCaseReportV1, undefined);
+    assert.equal(afterRefreshCandidate.latestSourceFileArchive.compactSummary, "COMPACT_SUMMARY_SHOULD_NOT_BECOME_REPORT");
 
     const withReport = {
       ...missingCandidate,
@@ -743,6 +820,7 @@ test("Source File refresh requests case-report backfill and refuses false comple
     delete process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL;
     delete process.env.BNL_SOURCE_FILE_REFRESH_TOKEN;
     delete process.env.BNL_SOURCE_FILE_REFRESH_NOW_TIMEOUT_MS;
+    delete process.env.NEXT_PUBLIC_SITE_URL;
   }
 });
 

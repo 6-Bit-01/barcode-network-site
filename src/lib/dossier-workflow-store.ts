@@ -28,6 +28,7 @@ import {
   type DossierRecommendation,
   type DossierSourceFileArchiveAttachStatus,
   type DossierSourceFileArchiveMetadata,
+  type DossierSourceFileCaseReportV1,
   type DossierSourceFileEnrichmentArchive,
   type DossierRecommendationSourceLane,
   type DossierRecommendationStatus,
@@ -469,6 +470,65 @@ function compactArchiveList(
   return output.length ? output : undefined;
 }
 
+
+function sourceArchiveObject(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function isSourceFileCaseReportShape(value: unknown) {
+  const report = sourceArchiveObject(value);
+  if (!report) return false;
+  return [
+    "caseSummary",
+    "dossierUse",
+    "publicSafeClaims",
+    "evidenceSummary",
+    "reviewBlockers",
+    "recommendedNextSteps",
+    "confidenceNotes",
+    "memoryCoverage",
+  ].some((key) => report[key] !== undefined);
+}
+
+function normalizeSourceArchiveBrief(value: unknown) {
+  const brief = sourceArchiveObject(value);
+  if (!brief) return undefined;
+  return {
+    ...brief,
+    sourceFileCaseReportV1: isSourceFileCaseReportShape(brief.sourceFileCaseReportV1)
+      ? (brief.sourceFileCaseReportV1 as DossierSourceFileCaseReportV1)
+      : undefined,
+    caseFileReport: isSourceFileCaseReportShape(brief.caseFileReport)
+      ? (brief.caseFileReport as DossierSourceFileCaseReportV1)
+      : undefined,
+  };
+}
+
+function extractSourceFileCaseReportV1(input: CreateDossierSourceFileArchiveInput) {
+  const inputObject = sourceArchiveObject(input);
+  const sourcePackage = sourceArchiveObject(input.sourcePackage);
+  const brief = normalizeSourceArchiveBrief(
+    inputObject?.sourceFileBriefV2 ?? sourcePackage?.sourceFileBriefV2,
+  );
+  const candidates = [
+    inputObject?.sourceFileCaseReportV1,
+    sourcePackage?.sourceFileCaseReportV1,
+    brief?.sourceFileCaseReportV1,
+    brief?.caseFileReport,
+  ];
+  return candidates.find(isSourceFileCaseReportShape) as DossierSourceFileCaseReportV1 | undefined;
+}
+
+function extractSourceFileBriefV2(input: CreateDossierSourceFileArchiveInput) {
+  const inputObject = sourceArchiveObject(input);
+  const sourcePackage = sourceArchiveObject(input.sourcePackage);
+  return normalizeSourceArchiveBrief(
+    inputObject?.sourceFileBriefV2 ?? sourcePackage?.sourceFileBriefV2,
+  );
+}
+
 function normalizeSourceFileArchiveInput(
   input: CreateDossierSourceFileArchiveInput,
 ):
@@ -480,6 +540,8 @@ function normalizeSourceFileArchiveInput(
       publicSafetyNotes?: string[];
       doNotSay?: string[];
       evidenceReceiptSummary?: string[];
+      sourceFileCaseReportV1?: unknown;
+      sourceFileBriefV2?: unknown;
     })
   | null {
   const subjectName = compactArchiveText(input.subjectName, 200);
@@ -501,6 +563,8 @@ function normalizeSourceFileArchiveInput(
       10,
       1000,
     ),
+    sourceFileCaseReportV1: extractSourceFileCaseReportV1(input),
+    sourceFileBriefV2: extractSourceFileBriefV2(input),
   };
 }
 
@@ -2346,6 +2410,8 @@ export async function ingestDossierSourceFileArchive(
       publicSafetyNotes: normalized.publicSafetyNotes,
       doNotSay: normalized.doNotSay,
       evidenceReceiptSummary: normalized.evidenceReceiptSummary,
+      sourceFileCaseReportV1: normalized.sourceFileCaseReportV1,
+      sourceFileBriefV2: normalized.sourceFileBriefV2,
       archiveKey,
       chunkKeys,
       reviewOnly: true,

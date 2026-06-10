@@ -18,7 +18,10 @@ import {
   type DossierSourceFileRefreshRequest,
   type DossierSourceFileNoteType,
 } from "@/lib/dossier-workflow";
-import { DossierSourceFileSummaryPanel } from "@/components/DossierSourceFileSummaryPanel";
+import {
+  DossierSourceFileArchiveRawData,
+  DossierSourceFileSummaryPanel,
+} from "@/components/DossierSourceFileSummaryPanel";
 import { createHumanReadableSourceFileNoteView } from "@/lib/dossier-note-display";
 import {
   createDossierSourceFileSummary,
@@ -1031,6 +1034,14 @@ export default function CandidateReviewPage() {
       (a.status === "active" ? -1 : 1) - (b.status === "active" ? -1 : 1) ||
       b.createdAt.localeCompare(a.createdAt),
   );
+  const sourceNotesSummary = {
+    noteCount: sourceNotes.length,
+    warningCount: sourceNotes.filter((note) =>
+      ["public_safety", "do_not_say", "correction"].includes(note.type),
+    ).length,
+    dossierQuestionCount: sourceNotes.filter((note) => note.type === "missing_info").length,
+    latestUpdatedAt: sourceNotes[0]?.updatedAt ?? sourceNotes[0]?.createdAt,
+  };
   const hasOwnerReviewDraft = linkedDrafts.some(
     (draft) => draft.status === "ready_for_owner_review",
   );
@@ -1552,7 +1563,7 @@ export default function CandidateReviewPage() {
             </div>
             <div className="border border-border bg-background/30 p-3">
               <p className="uppercase tracking-widest text-accent">
-                Current Proposed Dossier status
+                Current state
               </p>
               <p>{primaryDraft?.status ?? "No proposed dossier"}</p>
             </div>
@@ -1586,7 +1597,7 @@ export default function CandidateReviewPage() {
             </div>
             <div className="border border-border bg-background/30 p-3">
               <p className="uppercase tracking-widest text-accent">
-                Next action
+                Recommended next step
               </p>
               <p>{nextRecommendedAction}</p>
             </div>
@@ -1873,10 +1884,10 @@ export default function CandidateReviewPage() {
                   : "active source file"
               }
             />
-            {/* Case File / BNL Source File Summary */}
+            {/* BNL Case File Report display lives inside DossierSourceFileSummaryPanel. */}
           </>
         )}
-        <Section title="Proposed Dossier Status">
+        <Section title="Dossier Workbench / Proposed Dossier Status">
           {!primaryDraft ? (
             <div className="space-y-2">
               <p>No Proposed Dossier exists yet.</p>
@@ -1986,29 +1997,62 @@ export default function CandidateReviewPage() {
         </section>
 
         <Section title="Source Notes / Admin Addendums">
-          {sourceNotes.length === 0 ? (
-            <p>No saved source notes yet.</p>
-          ) : (
-            <div className="space-y-3">
-              {sourceNotes.map((note) => (
-                <HumanReadableNoteView
-                  key={note.id}
-                  view={createHumanReadableSourceFileNoteView({
-                    ...note,
-                    subjectName: candidate.name,
-                  })}
-                  createdAt={note.createdAt}
-                  workflowLane={candidate.status}
-                  appliedDraftId={note.appliesToDraftId}
-                />
-              ))}
+          <details>
+            <summary className="cursor-pointer font-semibold text-foreground">
+              {sourceNotesSummary.noteCount} note{sourceNotesSummary.noteCount === 1 ? "" : "s"} · {sourceNotesSummary.warningCount} warning{sourceNotesSummary.warningCount === 1 ? "" : "s"} · {sourceNotesSummary.dossierQuestionCount} dossier question{sourceNotesSummary.dossierQuestionCount === 1 ? "" : "s"} · latest updated {sourceNotesSummary.latestUpdatedAt ? formatDate(sourceNotesSummary.latestUpdatedAt) : "—"}
+            </summary>
+            <div className="mt-3 space-y-3">
+              {sourceNotes.length === 0 ? (
+                <p>No saved source notes yet.</p>
+              ) : (
+                sourceNotes.map((note) => (
+                  <details key={note.id} className="border border-border/60 bg-background/20 p-3">
+                    <summary className="cursor-pointer font-semibold text-foreground">
+                      {note.type} · {formatDate(note.updatedAt)}
+                    </summary>
+                    <div className="mt-3">
+                      <HumanReadableNoteView
+                        view={createHumanReadableSourceFileNoteView({
+                          ...note,
+                          subjectName: candidate.name,
+                        })}
+                        createdAt={note.createdAt}
+                        workflowLane={candidate.status}
+                        appliedDraftId={note.appliesToDraftId}
+                      />
+                    </div>
+                  </details>
+                ))
+              )}
             </div>
-          )}
+          </details>
         </Section>
+
+
+
+        <DossierSourceFileArchiveRawData latestSourceFileArchive={candidate.latestSourceFileArchive} />
 
         <details className="border border-border bg-surface p-5 space-y-4">
           <summary className="cursor-pointer text-2xl font-bold text-foreground">
-            Advanced: Add Identity Link Manually
+            Advanced Tools
+          </summary>
+          <div className="pt-4 text-sm text-muted">
+            Advanced controls stay collapsed by default and do not generate reports.
+          </div>
+        </details>
+
+        <details className="border border-border bg-surface p-5 space-y-4">
+          <summary className="cursor-pointer text-2xl font-bold text-foreground">
+            Diagnostics
+          </summary>
+          <div className="pt-4 text-sm text-muted">
+            Diagnostics only. Not Case File claims.
+          </div>
+        </details>
+
+        <details className="border border-border bg-surface p-5 space-y-4">
+          <summary className="cursor-pointer text-2xl font-bold text-foreground">
+            Advanced Tools: Add Identity Link Manually
           </summary>
           <div className="space-y-5 pt-4">
             <div className="space-y-2 text-sm text-muted">
@@ -2294,7 +2338,7 @@ export default function CandidateReviewPage() {
               />
             </label>
             <label className="md:col-span-2 space-y-2 text-xs uppercase tracking-widest text-muted">
-              Next action
+              Recommended next step
               <input
                 name="nextAction"
                 defaultValue={candidate.sourceFileSummary?.nextAction ?? ""}

@@ -634,6 +634,118 @@ test("confirmed aliases are safe matches, but proposed/rejected/retired aliases 
   await store.rejectDossierIdentityLink({ candidateId: sourceFile.candidate.id, identityLinkId: proposedOnly.id });
 });
 
+
+test("Source File refresh requests case-report backfill and refuses false completion when latest archive lacks report", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL = "https://bnl.example.test/internal/source-files/refresh-now";
+  process.env.BNL_SOURCE_FILE_REFRESH_TOKEN = "test-refresh-token";
+  process.env.BNL_SOURCE_FILE_REFRESH_NOW_TIMEOUT_MS = "1000";
+
+  const created = await (await authedPost({
+    action: "createManualCandidate",
+    input: {
+      name: "Case Report Missing Fixture",
+      candidateType: "artist",
+      reason: "Operator wants case-report refresh coverage.",
+      whyNow: "The archive exists but the report is missing.",
+      evidenceSummary: "Admin fixture evidence.",
+    },
+  })).json();
+  const candidateId = created.candidate.id;
+  await authedPost({ action: "promoteCandidateToSourceFile", candidateId });
+
+  const state = await store.getDossierWorkflowState();
+  const now = "2026-06-10T00:00:00.000Z";
+  const candidate = state.candidates.find((item) => item.id === candidateId);
+  const archive = {
+    id: "archive-missing-case-report",
+    candidateId,
+    subjectName: candidate.name,
+    subjectKey: "case-report-missing-fixture",
+    sourceDigest: "abcdef1234567890",
+    createdAt: now,
+    updatedAt: now,
+    archiveSize: 123,
+    chunkCount: 1,
+    reviewOnly: true,
+    compactSummary: "COMPACT_SUMMARY_SHOULD_NOT_BECOME_REPORT",
+  };
+  await store.saveDossierWorkflowState({
+    ...state,
+    candidates: state.candidates.map((item) =>
+      item.id === candidateId
+        ? {
+            ...item,
+            latestSourceFileArchive: archive,
+            latestSourceFileArchiveId: archive.id,
+            latestSourceFileArchiveDigest: archive.sourceDigest,
+            latestSourceFileArchiveUpdatedAt: archive.updatedAt,
+            sourceFileArchiveIds: [archive.id],
+          }
+        : item,
+    ),
+    updatedAt: now,
+  });
+  const missingCandidate = (await store.getDossierWorkflowState()).candidates.find((item) => item.id === candidateId);
+  assert.equal(store.sourceFileNeedsCaseReportBackfill(missingCandidate), true);
+  assert.equal(store.candidateMissingCaseReport(missingCandidate), true);
+  assert.equal(store.latestArchiveMissingCaseReport(missingCandidate), true);
+
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), body: JSON.parse(options.body) });
+    return Response.json({ ok: true, status: "success", recommendationId: `case-report-refresh-${calls.length}` });
+  };
+
+  try {
+    const opened = await (await authedPost({ action: "recordSourceFileOpen", candidateId })).json();
+    assert.equal(opened.immediateRefresh.ok, false);
+    assert.equal(opened.immediateRefresh.status, "failed");
+    assert.equal(opened.immediateRefresh.failureReason, "case_report_missing_after_refresh");
+    assert.equal(opened.sourceFileRefreshRequests[0].status, "failed");
+    assert.equal(opened.sourceFileRefreshRequests[0].completedAt, undefined);
+    assert.equal(opened.sourceFileRefreshRequests[0].reason, "case_report_missing");
+    assert.equal(opened.sourceFileRefreshRequests[0].caseReportMissing, true);
+    assert.equal(opened.sourceFileRefreshRequests[0].requiresCaseReportBackfill, true);
+    assert.equal(calls[0].body.reason, "case_report_missing");
+    assert.equal(calls[0].body.caseReportMissing, true);
+    assert.equal(calls[0].body.requiresCaseReportBackfill, true);
+
+    const manual = await (await authedPost({
+      action: "requestSourceFileRefresh",
+      candidateId,
+      reason: "Manual generic refresh should become case report backfill.",
+    })).json();
+    assert.equal(manual.immediateRefresh.ok, false);
+    assert.equal(manual.immediateRefresh.failureReason, "case_report_missing_after_refresh");
+    assert.equal(manual.sourceFileRefreshRequests[0].status, "failed");
+    assert.equal(manual.sourceFileRefreshRequests[0].reason, "case_report_missing");
+    assert.equal(manual.sourceFileRefreshRequests[0].failureReason, "case_report_missing_after_refresh");
+    assert.equal(calls[1].body.reason, "case_report_missing");
+    assert.equal(calls[1].body.caseReportMissing, true);
+    assert.equal(calls[1].body.requiresCaseReportBackfill, true);
+
+    const withReport = {
+      ...missingCandidate,
+      latestSourceFileArchive: {
+        ...missingCandidate.latestSourceFileArchive,
+        sourceFileCaseReportV1: {
+          version: "1",
+          generatedAt: now,
+          caseSummary: "BNL-authored report now exists.",
+        },
+      },
+    };
+    assert.equal(store.sourceFileNeedsCaseReportBackfill(withReport), false);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL;
+    delete process.env.BNL_SOURCE_FILE_REFRESH_TOKEN;
+    delete process.env.BNL_SOURCE_FILE_REFRESH_NOW_TIMEOUT_MS;
+  }
+});
+
 test("Source File immediate refresh timeout/unavailable and stale open requests do not trap retries or cross-file matching", async () => {
   await resetWorkflowStore();
   process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL = "https://bnl.example.test/internal/source-files/refresh-now";

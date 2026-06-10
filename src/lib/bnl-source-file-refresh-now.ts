@@ -89,6 +89,9 @@ export async function refreshBnlSourceFileNow(
         subjectName: input.request.subjectName,
         normalizedSubjectKey: input.request.normalizedSubjectKey,
         reason: input.request.reason,
+        caseReportMissing: input.request.caseReportMissing === true,
+        requiresCaseReportBackfill:
+          input.request.requiresCaseReportBackfill === true,
         source: input.source ?? input.request.requestSource,
       }),
       cache: "no-store",

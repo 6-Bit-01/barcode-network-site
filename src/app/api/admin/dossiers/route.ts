@@ -48,6 +48,7 @@ import {
   getDossierWorkflowStorageMode,
   ignoreDossierRecommendation,
   recordDossierSourceFileOpen,
+  sourceFileNeedsCaseReportBackfill,
   rejectDossierIdentityLink,
   requestDossierSourceFileRefresh,
   retireDossierIdentityLink,
@@ -314,6 +315,29 @@ function draftFieldsFromBody(
   return draftFields;
 }
 
+
+async function verifySourceFileCaseReportAfterImmediateRefresh(input: {
+  request: DossierSourceFileRefreshRequest;
+  immediateRefresh: Awaited<ReturnType<typeof refreshBnlSourceFileNow>>;
+}): Promise<Awaited<ReturnType<typeof refreshBnlSourceFileNow>>> {
+  if (!input.immediateRefresh.ok || !input.request.candidateId) {
+    return input.immediateRefresh;
+  }
+  const state = await getDossierWorkflowState();
+  const candidate = state.candidates.find(
+    (item) => item.id === input.request.candidateId,
+  );
+  if (!candidate || !sourceFileNeedsCaseReportBackfill(candidate)) {
+    return input.immediateRefresh;
+  }
+  return {
+    ...input.immediateRefresh,
+    ok: false,
+    status: "failed",
+    failureReason: "case_report_missing_after_refresh",
+  };
+}
+
 async function workflowPayload(
   state?: DossierWorkflowState,
 ): Promise<DossierWorkflowResponse> {
@@ -470,7 +494,7 @@ export async function POST(req: Request) {
         candidateId,
         requestedBy: "admin_open_source_file",
       });
-      const immediateRefresh = refresh.request
+      const immediateRefreshRaw = refresh.request
         ? await refreshBnlSourceFileNow({
             request: refresh.request,
             source: "admin_open_source_file",
@@ -480,6 +504,12 @@ export async function POST(req: Request) {
             status: "skipped" as const,
             failureReason: refresh.decision.reason,
           };
+      const immediateRefresh = refresh.request
+        ? await verifySourceFileCaseReportAfterImmediateRefresh({
+            request: refresh.request,
+            immediateRefresh: immediateRefreshRaw,
+          })
+        : immediateRefreshRaw;
       if (refresh.request && immediateRefresh.ok) {
         await updateDossierSourceFileRefreshRequestStatus({
           requestId: refresh.request.id,
@@ -519,9 +549,13 @@ export async function POST(req: Request) {
         requestSource: "manual_admin",
         requestedBy: "admin_manual",
       });
-      const immediateRefresh = await refreshBnlSourceFileNow({
+      const immediateRefreshRaw = await refreshBnlSourceFileNow({
         request: refresh.request,
         source: "admin_manual",
+      });
+      const immediateRefresh = await verifySourceFileCaseReportAfterImmediateRefresh({
+        request: refresh.request,
+        immediateRefresh: immediateRefreshRaw,
       });
       if (immediateRefresh.ok) {
         await updateDossierSourceFileRefreshRequestStatus({

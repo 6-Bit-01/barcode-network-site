@@ -474,7 +474,8 @@ export type DossierSourceFileRefreshRequestSource =
   | "stale_source_file"
   | "missing_bnl_refresh"
   | "source_notes_newer_than_bnl"
-  | "existing_dossier_update_review";
+  | "existing_dossier_update_review"
+  | "case_report_missing";
 
 export type DossierSourceFileRefreshRequest = {
   id: string;
@@ -490,6 +491,8 @@ export type DossierSourceFileRefreshRequest = {
   completedAt?: string;
   completedByRecommendationId?: string;
   failureReason?: string;
+  caseReportMissing?: boolean;
+  requiresCaseReportBackfill?: boolean;
   requestSource: DossierSourceFileRefreshRequestSource;
   priority: number;
   notBeforeAt?: string;

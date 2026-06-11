@@ -2059,29 +2059,49 @@ test("Subject Consolidation Queue renders action summary, review cards, blocked 
     "Blocked / Needs Info",
     "Target selection unavailable:",
     "Target options",
-    "Create Source File From These Signals",
+    "Create Source File: {keptName}",
+    "Create Dossier Update: {publicDossierName}",
+    "No usable signal cluster found.",
     "Already represented",
     "Internal operation:",
     "What will not change",
     "Blocked reason:",
     "What must be fixed first:",
     "Consolidate Into Kept Source File",
-    "Create Dossier Update Workspace",
+    "Create Source File: {keptName}",
+    "Create Dossier Update: {publicDossierName}",
     "Keep Separate / Not Same Subject",
     "Select Different Target",
+    "Confirm Consolidation",
+    "Cancel",
+    "View Kept Source File",
+    "View New Source File",
+    "View Dossier Update Workspace",
     "Raw / Source Details",
+    "Confirm Consolidation",
+    "Cancel",
+    "View Kept Source File",
+    "View New Source File",
+    "View Dossier Update Workspace",
+    "Incoming cluster collapsed after completion.",
     "Consolidating…",
     "Resolved just now",
     "Consolidated into kept Source File.",
+    "Source File Created",
+    "Dossier Update Workspace Created",
+    "Marked separate.",
   ]) {
     assertIncludesCopy(pageCopy, label);
   }
 
   assert.match(page, /createDossierPopulationAudit/);
   assert.match(page, /postWorkflow\(\{ action: "runSubjectConsolidation" \}\)/);
+  assert.match(page, /setConfirmation\(\{ groupId: group\.id, kind: "consolidate"/);
+  assert.match(page, /onClick=\{\(\) => consolidateSubjectGroup\(\)\}/);
+  assert.match(page, /Incoming cluster collapsed after completion/);
   assert.match(source("src/lib/dossier-workflow.ts"), /export type SubjectConsolidationBrief/);
   assert.match(source("src/lib/dossier-workflow.ts"), /generatedBy: "BNL"/);
-  assert.doesNotMatch(pageCopy, /Source File Population Audit|Population Audit|Open Recommendation|Open Source File|Open Target|Open Incoming|Merge Into Kept Source File|Attach to Kept Source File/);
+  assert.doesNotMatch(pageCopy, /Source File Population Audit|Population Audit|Open Recommendation|Open Source File|Open Target|Open Incoming|Merge Into Kept Source File|Attach to Kept Source File|Create Source File From These Signals|Create Dossier Update Workspace without public dossier\/context/);
   const queueCopy = pageCopy.slice(pageCopy.indexOf("Subject Consolidation Queue"), pageCopy.indexOf("Candidates", pageCopy.indexOf("Subject Consolidation Queue")));
   assert.doesNotMatch(queueCopy, /recommendation\.reason|recommendation\.evidenceSummary|raw recommendation\.reason|raw recommendation\.summary/);
   assert.doesNotMatch(pageCopy, /Confirmed aliases count: \{record\.confirmedAliasCount\}/);
@@ -2749,7 +2769,8 @@ test("Subject Consolidation Queue review UI uses direct decision buttons and col
     "Incoming Cluster",
     "Kept Source File",
     "Consolidate Into Kept Source File",
-    "Create Dossier Update Workspace",
+    "Create Source File: {keptName}",
+    "Create Dossier Update: {publicDossierName}",
     "Keep Separate / Not Same Subject",
     "Select Different Target",
     "Raw / Source Details",
@@ -2763,10 +2784,18 @@ test("Subject Consolidation Queue review UI uses direct decision buttons and col
     "Blocked / Needs Info",
     "Target selection unavailable:",
     "Target options",
-    "Create Source File From These Signals",
+    "Create Source File: {keptName}",
+    "Create Dossier Update: {publicDossierName}",
+    "No usable signal cluster found.",
     "Already represented",
     "Internal operation:",
     "What will not change",
+    "Confirm Consolidation",
+    "Cancel",
+    "View Kept Source File",
+    "View New Source File",
+    "View Dossier Update Workspace",
+    "Incoming cluster collapsed after completion.",
     "Consolidating…",
     "Resolved just now",
   ]) {
@@ -2774,7 +2803,7 @@ test("Subject Consolidation Queue review UI uses direct decision buttons and col
   }
 
   assert.match(page, /<details className="mt-4 border border-border\/60 bg-background\/30 p-3">/);
-  assert.doesNotMatch(pageCopy, /Open Recommendation|Open Source File|Open Target|Open Incoming|Merge Into Kept Source File|Attach to Kept Source File|Create Dossier Update Later|Create Source File Later|Attach Later|Merge Later|Clean Later/);
+  assert.doesNotMatch(pageCopy, /Open Recommendation|Open Source File|Open Target|Open Incoming|Merge Into Kept Source File|Attach to Kept Source File|Create Source File From These Signals|Create Dossier Update Workspace without public dossier\/context|Create Dossier Update Later|Create Source File Later|Attach Later|Merge Later|Clean Later/);
   assert.doesNotMatch(page, /incoming-\$\{record\.type\}/);
   assert.doesNotMatch(pageCopy, /Confirmed aliases count: \{record\.confirmedAliasCount\}/);
   assert.doesNotMatch(pageCopy, /Proposed aliases count: \{record\.proposedAliasCount\}/);

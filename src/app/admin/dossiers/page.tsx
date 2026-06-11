@@ -323,7 +323,8 @@ export default function DossierControlCenterPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [consolidationResult, setConsolidationResult] = useState<SubjectConsolidationResult | null>(null);
   const [consolidatingGroupId, setConsolidatingGroupId] = useState<string | null>(null);
-  const [resolvedJustNow, setResolvedJustNow] = useState<{ groupId: string; subject: string; message: string } | null>(null);
+  const [confirmation, setConfirmation] = useState<{ groupId: string; kind: "consolidate" | "source_file" | "dossier_update" | "keep_separate"; subject: string; targetName: string; incomingCount: number; targetHref?: string } | null>(null);
+  const [resolvedJustNow, setResolvedJustNow] = useState<{ groupId: string; subject: string; message: string; kind: "consolidate" | "source_file" | "dossier_update" | "keep_separate"; href?: string; absorbedCount: number; notesMoved: number; archivedCount: number; refreshStatus: string } | null>(null);
   const [recommendationForm, setRecommendationForm] =
     useState<ManualRecommendationForm>(emptyRecommendationForm);
   const [createdDraftIdByCandidate, setCreatedDraftIdByCandidate] = useState<
@@ -509,16 +510,46 @@ export default function DossierControlCenterPage() {
     }
   }
 
-  async function consolidateSubjectGroup(groupId: string, subject: string) {
-    setConsolidatingGroupId(groupId);
+  async function consolidateSubjectGroup() {
+    if (!confirmation) return;
+    const pending = confirmation;
+    if (pending.kind === "keep_separate") {
+      setResolvedJustNow({
+        groupId: pending.groupId,
+        subject: pending.subject,
+        message: "Marked separate.",
+        kind: "keep_separate",
+        absorbedCount: 0,
+        notesMoved: 0,
+        archivedCount: 0,
+        refreshStatus: "not needed",
+      });
+      setConfirmation(null);
+      return;
+    }
+    setConsolidatingGroupId(pending.groupId);
     setResolvedJustNow(null);
     try {
-      await postWorkflow({ action: "consolidateSubjectGroup", groupId });
+      const data = await postWorkflow({ action: "consolidateSubjectGroup", groupId: pending.groupId });
+      const consolidation = data.consolidation;
+      const target = consolidation?.affectedTargets?.[0];
+      const refreshStatus = consolidation?.bnlRefreshes?.[0]?.status ?? "marked needed";
       setResolvedJustNow({
-        groupId,
-        subject,
-        message: "Consolidated into kept Source File.",
+        groupId: pending.groupId,
+        subject: pending.subject,
+        message: pending.kind === "source_file"
+          ? "Source File Created"
+          : pending.kind === "dossier_update"
+            ? "Dossier Update Workspace Created"
+            : "Consolidated into kept Source File.",
+        kind: pending.kind,
+        href: target?.href ?? pending.targetHref,
+        absorbedCount: consolidation?.attachedRecommendations ?? pending.incomingCount,
+        notesMoved: consolidation?.attachedRecommendations ?? 0,
+        archivedCount: consolidation?.sourceFileDuplicatesMerged ?? 0,
+        refreshStatus,
       });
+      setConfirmation(null);
     } catch (err) {
       setNotice(
         err instanceof Error ? err.message : "Failed to consolidate subject group.",
@@ -960,6 +991,45 @@ export default function DossierControlCenterPage() {
                   const possibleTargets = plan.possibleTargetRecords.slice(0, 6);
                   const brief = plan.bnlBrief;
                   const isConsolidating = consolidatingGroupId === group.id;
+                  const pendingConfirmation = confirmation?.groupId === group.id ? confirmation : null;
+                  const completed = resolvedJustNow?.groupId === group.id ? resolvedJustNow : null;
+                  const actionKind = plan.targetRecord ? "consolidate" : plan.suggestedWorkspace === "Dossier Update" ? "dossier_update" : "source_file";
+                  const publicDossierName = plan.existingPublicDossier?.name ?? plan.targetRecord?.publicDossierName ?? keptName;
+                  const subjectIsReadable = Boolean(keptName && keptName !== "Select Different Target" && keptName !== "—");
+                  const sourceFileActionAllowed = actionKind !== "source_file" || (subjectIsReadable && incomingCount > 0);
+                  const targetHref = plan.targetRecord?.href;
+                  if (completed) {
+                    const viewLabel = completed.kind === "source_file"
+                      ? "View New Source File"
+                      : completed.kind === "dossier_update"
+                        ? "View Dossier Update Workspace"
+                        : "View Kept Source File";
+                    return (
+                      <article key={group.id} className="border border-accent/70 bg-accent/10 p-4 text-sm text-muted">
+                        <div className="grid gap-3 lg:grid-cols-[1fr_1.2fr]">
+                          <div className="border border-border/60 bg-background/30 p-3 opacity-60">
+                            <p className="text-xs uppercase tracking-[0.3em] text-accent">Incoming Cluster</p>
+                            <p className="mt-2 font-semibold text-foreground">Incoming cluster collapsed after completion.</p>
+                            <p>{completed.absorbedCount} recommendations absorbed</p>
+                            <p>{completed.notesMoved} notes moved</p>
+                            <p>{completed.archivedCount} duplicate records archived/resolved</p>
+                          </div>
+                          <div className="border border-accent bg-background/40 p-3 shadow-lg">
+                            <p className="text-xs uppercase tracking-[0.3em] text-accent">Resolved just now</p>
+                            <h4 className="mt-2 text-lg font-bold text-foreground">{completed.message}</h4>
+                            <p>{completed.subject}</p>
+                            <p>BNL refresh triggered / queued / needed: {completed.refreshStatus}</p>
+                            {completed.kind === "keep_separate" && <p>This pair/group will be suppressed from future same-subject suggestions.</p>}
+                            {completed.href ? (
+                              <Link href={completed.href} className="mt-3 inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">{viewLabel}</Link>
+                            ) : (
+                              <button type="button" disabled className="mt-3 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted opacity-60">{viewLabel}</button>
+                            )}
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  }
                   return (
                     <article key={group.id} className={`border border-border/70 bg-background/20 p-4 text-sm text-muted transition-all duration-300 ${isConsolidating ? "translate-x-2 border-accent bg-accent/10 motion-safe:animate-pulse" : ""}`}>
                       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
@@ -1026,7 +1096,9 @@ export default function DossierControlCenterPage() {
                               <p className="font-semibold text-foreground">Target options</p>
                               <ul className="list-disc pl-5">
                                 {possibleTargets.map((target) => (
-                                  <li key={target.id}>{target.displayName ?? target.name} — {target.status}</li>
+                                  <li key={target.id}>
+                                    {target.displayName ?? target.name} — Source File ID: {target.candidateId ?? target.id}; status: {target.status}; public dossier match: {target.publicDossierName ?? "none"}; draft status: {target.activeDraftStatus ?? "none"}; source notes: {target.sourceNotesCount}; recommendations: {target.attachedRecommendationCount}; reason it might be kept: {target.uniqueInfo.join(", ") || "named possible target"}
+                                  </li>
                                 ))}
                               </ul>
                             </div>
@@ -1036,23 +1108,73 @@ export default function DossierControlCenterPage() {
                               <p>Target selection unavailable: at least two named target options are required.</p>
                             </div>
                           )}
+                          {actionKind === "source_file" && sourceFileActionAllowed && (
+                            <p>This will create a new internal Source File for “{keptName}” from {incomingCount} matched {incomingTypes} signals. No public page will be published.</p>
+                          )}
+                          {actionKind === "source_file" && incomingCount === 0 && <p>No usable signal cluster found.</p>}
+                          {actionKind === "dossier_update" && (
+                            <p>This will create an internal update workspace for the existing {publicDossierName} public dossier. It will not edit the public dossier text or publish anything.</p>
+                          )}
                           <p>Action: Generate BNL Consolidation Brief</p>
                           <button type="button" disabled className="mt-3 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted opacity-60">Generate BNL Consolidation Brief</button>
                           <p className="mt-2 text-xs text-muted">Requires companion BNL summary PR; raw evidence is not shown as a substitute.</p>
                           {isConsolidating && <p className="text-accent">Consolidating… incoming cluster is moving into the kept Source File.</p>}
                         </div>
                       )}
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {plan.targetRecord ? (
-                          <button type="button" disabled={saving} onClick={() => consolidateSubjectGroup(group.id, keptName)} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{isConsolidating ? "Consolidating…" : "Consolidate Into Kept Source File"}</button>
-                        ) : plan.suggestedWorkspace === "Dossier Update" ? (
-                          <button type="button" disabled={saving} onClick={() => consolidateSubjectGroup(group.id, keptName)} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Create Dossier Update Workspace</button>
-                        ) : (
-                          <button type="button" disabled={saving} onClick={() => consolidateSubjectGroup(group.id, keptName)} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Create Source File From These Signals</button>
-                        )}
-                        <button type="button" className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Keep Separate / Not Same Subject</button>
-                        <button type="button" className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Select Different Target</button>
-                      </div>
+                      {pendingConfirmation ? (
+                        <div className="mt-4 border border-accent/60 bg-accent/10 p-3">
+                          <p className="font-semibold text-foreground">Confirm subject consolidation</p>
+                          {pendingConfirmation.kind === "consolidate" && (
+                            <p>You are about to consolidate {pendingConfirmation.subject} into {pendingConfirmation.targetName}.</p>
+                          )}
+                          {pendingConfirmation.kind === "source_file" && (
+                            <p>You are about to create internal Source File “{pendingConfirmation.subject}” from {pendingConfirmation.incomingCount} signals. This will not publish a public page.</p>
+                          )}
+                          {pendingConfirmation.kind === "dossier_update" && (
+                            <p>You are about to create an internal dossier update workspace for “{pendingConfirmation.subject}.” This will not edit public dossier text.</p>
+                          )}
+                          {pendingConfirmation.kind === "keep_separate" && (
+                            <p>You are about to mark {pendingConfirmation.subject} separate. This pair/group will be suppressed from future same-subject suggestions.</p>
+                          )}
+                          <div className="mt-2 grid gap-2 md:grid-cols-2">
+                            <div>
+                              <p className="font-semibold text-foreground">This will:</p>
+                              <ul className="list-disc pl-5">
+                                <li>absorb {incomingCount} recommendations / notes / source records</li>
+                                <li>keep {pendingConfirmation.targetName} active when a kept file exists</li>
+                                <li>archive or resolve the incoming cluster when safe</li>
+                                <li>trigger or mark BNL refresh</li>
+                              </ul>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-foreground">This will not:</p>
+                              <ul className="list-disc pl-5">
+                                <li>publish a public page</li>
+                                <li>edit public dossier text</li>
+                                <li>expose internal aliases</li>
+                              </ul>
+                            </div>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button type="button" disabled={saving} onClick={() => consolidateSubjectGroup()} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Confirm Consolidation</button>
+                            <button type="button" disabled={saving} onClick={() => setConfirmation(null)} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50">Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {plan.targetRecord ? (
+                            <button type="button" disabled={saving} onClick={() => setConfirmation({ groupId: group.id, kind: "consolidate", subject: keptName, targetName: keptName, incomingCount, targetHref })} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{isConsolidating ? "Consolidating…" : "Consolidate Into Kept Source File"}</button>
+                          ) : actionKind === "dossier_update" ? (
+                            <button type="button" disabled={saving} onClick={() => setConfirmation({ groupId: group.id, kind: "dossier_update", subject: publicDossierName, targetName: publicDossierName, incomingCount })} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Create Dossier Update: {publicDossierName}</button>
+                          ) : sourceFileActionAllowed ? (
+                            <button type="button" disabled={saving} onClick={() => setConfirmation({ groupId: group.id, kind: "source_file", subject: keptName, targetName: keptName, incomingCount })} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Create Source File: {keptName}</button>
+                          ) : null}
+                          <button type="button" disabled={saving} onClick={() => setConfirmation({ groupId: group.id, kind: "keep_separate", subject: keptName, targetName: keptName, incomingCount })} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50">Keep Separate / Not Same Subject</button>
+                          {possibleTargets.length >= 2 && (
+                            <button type="button" className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Select Different Target</button>
+                          )}
+                        </div>
+                      )}
                       <details className="mt-4 border border-border/60 bg-background/30 p-3">
                         <summary className="cursor-pointer text-xs uppercase tracking-[0.3em] text-muted">Raw / Source Details</summary>
                         <div className="mt-3 flex flex-wrap gap-2">

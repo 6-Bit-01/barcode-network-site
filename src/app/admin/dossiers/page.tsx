@@ -444,10 +444,11 @@ export default function DossierControlCenterPage() {
     () =>
       createDossierPopulationAudit({
         candidates,
+        drafts,
         recommendations,
         publicDossiers,
       }),
-    [candidates, recommendations, publicDossiers],
+    [candidates, drafts, recommendations, publicDossiers],
   );
 
   async function postWorkflow(body: Record<string, unknown>) {
@@ -479,6 +480,36 @@ export default function DossierControlCenterPage() {
       return data;
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function runPopulationAutomation(input: {
+    automationAction:
+      | "auto_clean_group"
+      | "auto_merge_group"
+      | "auto_attach_recommendation"
+      | "clean_duplicate_recommendations"
+      | "bulk_safe_cleanup"
+      | "suppress_duplicate_group";
+    groupId?: string;
+    recommendationId?: string;
+    reason?: string;
+  }) {
+    try {
+      const data = await postWorkflow({
+        action: "runDossierPopulationAutomation",
+        ...input,
+      });
+      setNotice(
+        data.message ??
+          "Source File consolidation automation revalidated server-side and completed without publishing or changing public dossier copy.",
+      );
+    } catch (err) {
+      setNotice(
+        err instanceof Error
+          ? err.message
+          : "Source File consolidation automation could not run safely.",
+      );
     }
   }
 
@@ -812,9 +843,10 @@ export default function DossierControlCenterPage() {
             <p className="border border-border/70 bg-background/30 p-4 text-sm text-muted">
               The site can only audit records and recommendations already
               present in the workflow store. Active Discord members who have not
-              been ingested by BNL will not appear here yet. This panel is
-              review-only: it does not merge, delete, publish, or mutate records
-              automatically.
+              been ingested by BNL will not appear here yet. This panel now
+              classifies every item for safe automation: public dossier text is
+              never changed, internal aliases stay internal, and nothing is
+              published automatically.
             </p>
 
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 text-xs text-muted">
@@ -870,6 +902,59 @@ export default function DossierControlCenterPage() {
               ))}
             </div>
 
+            <section className="border border-accent/40 bg-background/30 p-4 text-sm text-muted">
+              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.35em] text-accent">
+                    Bulk Safe Automation
+                  </p>
+                  <h3 className="mt-1 text-lg font-bold text-foreground">
+                    Run Safe Cleanup
+                  </h3>
+                  <ul className="mt-3 list-disc space-y-1 pl-5">
+                    <li>
+                      {populationAudit.safeAutomationSummary.emptyDuplicates}{" "}
+                      empty duplicates will be archived/marked merged.
+                    </li>
+                    <li>
+                      {
+                        populationAudit.safeAutomationSummary
+                          .recommendationsToAttach
+                      }{" "}
+                      recommendations will attach to exact/confirmed matches.
+                    </li>
+                    <li>
+                      {
+                        populationAudit.safeAutomationSummary
+                          .duplicateRecommendationsToArchive
+                      }{" "}
+                      duplicate recommendations will be archived.
+                    </li>
+                    <li>0 public dossiers will be changed.</li>
+                    <li>0 public pages will be published.</li>
+                    <li>
+                      {populationAudit.safeAutomationSummary.reviewRequired}{" "}
+                      items still require review;{" "}
+                      {populationAudit.safeAutomationSummary.blocked} are
+                      blocked.
+                    </li>
+                  </ul>
+                </div>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() =>
+                    runPopulationAutomation({
+                      automationAction: "bulk_safe_cleanup",
+                    })
+                  }
+                  className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                >
+                  Run Safe Cleanup
+                </button>
+              </div>
+            </section>
+
             <section className="space-y-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.35em] text-muted">
@@ -895,11 +980,18 @@ export default function DossierControlCenterPage() {
                         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                           <div>
                             <p className="font-semibold text-foreground">
-                              Needs admin review — {group.reason}
+                              {group.automation.safeActionLabel} —{" "}
+                              {group.reason}
                             </p>
                             <p>
-                              Suggested safe action: {group.suggestedAction}
+                              Automation level:{" "}
+                              {group.automation.automationLevel}
                             </p>
+                            <p>
+                              Suggested safe action:{" "}
+                              {group.automation.recommendedAction}
+                            </p>
+                            <p>Confidence: {group.automation.confidence}</p>
                             {group.publicDossierMatch && (
                               <p>
                                 Public dossier match:{" "}
@@ -908,7 +1000,100 @@ export default function DossierControlCenterPage() {
                               </p>
                             )}
                           </div>
-                          <StatusPill>{group.matchKind}</StatusPill>
+                          <div className="flex flex-wrap gap-2">
+                            <StatusPill>{group.matchKind}</StatusPill>
+                            <StatusPill>
+                              {group.automation.dangerLevel}
+                            </StatusPill>
+                          </div>
+                        </div>
+                        {group.automation.blockedReasons.length > 0 && (
+                          <div className="mt-3 border border-red-500/40 bg-red-500/10 p-3 text-red-200">
+                            <p className="font-semibold">
+                              Blocked/manual resolution required:
+                            </p>
+                            <ul className="list-disc pl-5">
+                              {group.automation.blockedReasons.map((reason) => (
+                                <li key={reason}>{reason}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {group.automation.proposedChanges.length > 0 && (
+                          <div className="mt-3 grid gap-2 md:grid-cols-2">
+                            {group.automation.proposedChanges.map((change) => (
+                              <div
+                                key={`${group.id}-${change.label}`}
+                                className="border border-border/60 bg-background/30 p-3"
+                              >
+                                <p className="font-semibold text-foreground">
+                                  {change.label}
+                                </p>
+                                <p>{change.detail}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {group.automation.automationLevel ===
+                            "auto_clean_now" && (
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() =>
+                                runPopulationAutomation({
+                                  automationAction: "auto_clean_group",
+                                  groupId: group.id,
+                                })
+                              }
+                              className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                            >
+                              Remove Empty Duplicate
+                            </button>
+                          )}
+                          {group.automation.automationLevel ===
+                            "auto_merge_now" && (
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() =>
+                                runPopulationAutomation({
+                                  automationAction: "auto_merge_group",
+                                  groupId: group.id,
+                                })
+                              }
+                              className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                            >
+                              Auto-Merge Safe Duplicate
+                            </button>
+                          )}
+                          {group.automation.automationLevel ===
+                            "review_recommended" && (
+                            <>
+                              <Link
+                                href={`/admin/dossiers/duplicates/${group.id}`}
+                                className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
+                              >
+                                Review Merge
+                              </Link>
+                              <button
+                                type="button"
+                                disabled={saving}
+                                onClick={() =>
+                                  runPopulationAutomation({
+                                    automationAction:
+                                      "suppress_duplicate_group",
+                                    groupId: group.id,
+                                    reason:
+                                      "Not the same subject / keep separate.",
+                                  })
+                                }
+                                className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50"
+                              >
+                                Keep Separate
+                              </button>
+                            </>
+                          )}
                         </div>
                         <div className="mt-3 grid gap-2 md:grid-cols-2">
                           {group.records.map((record) => (
@@ -1026,9 +1211,30 @@ export default function DossierControlCenterPage() {
                                 : "No clear active Source File match"}
                             </td>
                             <td className="py-3 pr-3">
-                              {recommendation.safeNextAction}
+                              <p>{recommendation.safeNextAction}</p>
+                              <p className="mt-1 text-xs uppercase tracking-widest text-accent">
+                                {recommendation.automation.automationLevel} /{" "}
+                                {recommendation.automation.confidence}
+                              </p>
                             </td>
-                            <td className="py-3 pr-3">
+                            <td className="py-3 pr-3 space-y-2">
+                              {recommendation.automation.automationLevel ===
+                                "auto_attach_now" && (
+                                <button
+                                  type="button"
+                                  disabled={saving}
+                                  onClick={() =>
+                                    runPopulationAutomation({
+                                      automationAction:
+                                        "auto_attach_recommendation",
+                                      recommendationId: recommendation.id,
+                                    })
+                                  }
+                                  className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                                >
+                                  Attach Automatically
+                                </button>
+                              )}
                               <Link
                                 href={recommendation.href}
                                 className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
@@ -1043,6 +1249,56 @@ export default function DossierControlCenterPage() {
                   </table>
                 </div>
               )}
+              <section className="space-y-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.35em] text-muted">
+                    Duplicate BNL Recommendation Cleanup
+                  </p>
+                  <h3 className="text-lg font-bold text-foreground">
+                    Duplicate recommendations with no unique evidence
+                  </h3>
+                </div>
+                {populationAudit.duplicateRecommendationGroups.length === 0 ? (
+                  <p className="border border-border/70 bg-background/30 p-4 text-sm text-muted">
+                    No duplicate BNL recommendation groups were detected.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {populationAudit.duplicateRecommendationGroups.map(
+                      (group) => (
+                        <article
+                          key={group.id}
+                          className="border border-border/70 bg-background/20 p-4 text-sm text-muted"
+                        >
+                          <p className="font-semibold text-foreground">
+                            {group.automation.safeActionLabel}
+                          </p>
+                          <p>{group.automation.recommendedAction}</p>
+                          <p>Canonical: {group.canonicalRecommendationId}</p>
+                          <p>
+                            Duplicates:{" "}
+                            {group.duplicateRecommendationIds.join(", ")}
+                          </p>
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() =>
+                              runPopulationAutomation({
+                                automationAction:
+                                  "clean_duplicate_recommendations",
+                                groupId: group.id,
+                              })
+                            }
+                            className="mt-3 border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                          >
+                            Clean Duplicate Recommendations
+                          </button>
+                        </article>
+                      ),
+                    )}
+                  </div>
+                )}
+              </section>
             </section>
           </div>
         </details>

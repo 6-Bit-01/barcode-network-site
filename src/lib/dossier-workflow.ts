@@ -750,6 +750,41 @@ export type DossierPopulationAuditRecordType =
   | "recommendation"
   | "archived_or_closed";
 
+export type DossierPopulationAutomationLevel =
+  | "auto_clean_now"
+  | "auto_merge_now"
+  | "auto_attach_now"
+  | "review_recommended"
+  | "blocked_manual_resolution_required"
+  | "keep_separate_not_same_subject";
+
+export type DossierPopulationAutomationDangerLevel =
+  | "none"
+  | "low"
+  | "medium"
+  | "high"
+  | "blocked";
+
+export type DossierPopulationAutomationChange = {
+  label: string;
+  detail: string;
+};
+
+export type DossierPopulationAutomationClassification = {
+  automationLevel: DossierPopulationAutomationLevel;
+  recommendedAction: string;
+  confidence: "low" | "medium" | "high";
+  reason: string;
+  targetRecord?: DossierPopulationAuditRecord;
+  sourceRecords: DossierPopulationAuditRecord[];
+  proposedChanges: DossierPopulationAutomationChange[];
+  blockedReasons: string[];
+  canRunAutomatically: boolean;
+  requiresReview: boolean;
+  safeActionLabel: string;
+  dangerLevel: DossierPopulationAutomationDangerLevel;
+};
+
 export type DossierPopulationAuditRecord = {
   id: string;
   type: DossierPopulationAuditRecordType;
@@ -763,6 +798,14 @@ export type DossierPopulationAuditRecord = {
   confirmedAliasCount: number;
   proposedAliasCount: number;
   attachedRecommendationCount: number;
+  sourceNoteCount: number;
+  identityLinkCount: number;
+  archiveCount: number;
+  activeDraftCount: number;
+  sourceLaneCount: number;
+  hasPublicDossierLink: boolean;
+  hasActiveDraft: boolean;
+  hasUsefulUniqueData: boolean;
   missingLatestCaseReport: boolean;
 };
 
@@ -778,6 +821,24 @@ export type DossierPopulationAuditDuplicateGroup = {
   publicDossierMatch?: { id: string; name?: string };
   records: DossierPopulationAuditRecord[];
   suggestedAction: string;
+  automation: DossierPopulationAutomationClassification;
+};
+
+export type DossierPopulationAuditDuplicateRecommendationGroup = {
+  id: string;
+  canonicalRecommendationId: string;
+  duplicateRecommendationIds: string[];
+  recommendations: DossierPopulationAuditUnattachedRecommendation[];
+  automation: DossierPopulationAutomationClassification;
+};
+
+export type DossierPopulationAuditSuppression = {
+  id: string;
+  groupId: string;
+  recordIds: string[];
+  reason?: string;
+  createdAt: string;
+  createdBy?: string;
 };
 
 export type DossierPopulationAuditUnattachedRecommendation = {
@@ -794,6 +855,7 @@ export type DossierPopulationAuditUnattachedRecommendation = {
   matchBasis?: string;
   href: string;
   safeNextAction: string;
+  automation: DossierPopulationAutomationClassification;
 };
 
 export type DossierPopulationAudit = {
@@ -812,7 +874,434 @@ export type DossierPopulationAudit = {
   records: DossierPopulationAuditRecord[];
   possibleDuplicateGroups: DossierPopulationAuditDuplicateGroup[];
   unattachedBnlRecommendations: DossierPopulationAuditUnattachedRecommendation[];
+  duplicateRecommendationGroups: DossierPopulationAuditDuplicateRecommendationGroup[];
+  safeAutomationSummary: {
+    emptyDuplicates: number;
+    safeMerges: number;
+    recommendationsToAttach: number;
+    duplicateRecommendationsToArchive: number;
+    publicDossiersChanged: 0;
+    publicPagesPublished: 0;
+    reviewRequired: number;
+    blocked: number;
+  };
 };
+
+function uniqueStrings(
+  ...groups: Array<Array<string | undefined> | undefined>
+): string[] {
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const group of groups) {
+    for (const item of group ?? []) {
+      if (!item) continue;
+      const trimmed = item.trim();
+      const key = trimmed.toLowerCase();
+      if (!trimmed || seen.has(key)) continue;
+      seen.add(key);
+      output.push(trimmed);
+    }
+  }
+  return output;
+}
+
+function activeAuditDraftForCandidate(
+  drafts: DossierDraft[],
+  candidateId: string,
+): DossierDraft | undefined {
+  return drafts.find(
+    (draft) =>
+      draft.candidateId === candidateId &&
+      draft.status !== "denied" &&
+      draft.status !== "published" &&
+      draft.status !== "superseded",
+  );
+}
+
+function candidateAuditSubstance(input: {
+  candidate: DossierCandidate;
+  attachedRecommendationCount: number;
+  activeDraftCount: number;
+}): {
+  sourceNoteCount: number;
+  identityLinkCount: number;
+  archiveCount: number;
+  sourceLaneCount: number;
+  hasPublicDossierLink: boolean;
+  hasUsefulUniqueData: boolean;
+} {
+  const sourceNoteCount = (input.candidate.sourceFileNotes ?? []).filter(
+    (note) => note.status === "active" && note.text.trim(),
+  ).length;
+  const identityLinkCount = (input.candidate.identityLinks ?? []).filter(
+    (link) => link.status !== "rejected" && link.status !== "retired",
+  ).length;
+  const archiveCount = uniqueStrings(
+    input.candidate.sourceFileArchiveIds,
+    input.candidate.latestSourceFileArchiveId
+      ? [input.candidate.latestSourceFileArchiveId]
+      : [],
+  ).length;
+  const sourceLaneCount = (input.candidate.sourceLanes ?? []).length;
+  const hasPublicDossierLink = Boolean(
+    input.candidate.existingDossierMatch?.id,
+  );
+  const hasMeaningfulSummary = Boolean(
+    input.candidate.sourceFileSummary?.summaryText?.trim() ||
+    input.candidate.sourceFileSummary?.knownContext?.length ||
+    input.candidate.sourceFileSummary?.openQuestions?.length ||
+    input.candidate.latestSourceFileArchiveId ||
+    input.candidate.latestSourceFileArchiveUpdatedAt,
+  );
+  const hasUsefulUniqueData = Boolean(
+    sourceNoteCount > 0 ||
+    input.attachedRecommendationCount > 0 ||
+    identityLinkCount > 0 ||
+    archiveCount > 0 ||
+    input.activeDraftCount > 0 ||
+    hasPublicDossierLink ||
+    sourceLaneCount > 0 ||
+    (input.candidate.evidenceItems ?? []).length > 0 ||
+    (input.candidate.knownFacts ?? []).length > 0 ||
+    (input.candidate.missingInfo ?? []).length > 0 ||
+    (input.candidate.doNotSay ?? []).length > 0 ||
+    (input.candidate.publicSafetyNotes ?? []).length > 0 ||
+    hasMeaningfulSummary,
+  );
+  return {
+    sourceNoteCount,
+    identityLinkCount,
+    archiveCount,
+    sourceLaneCount,
+    hasPublicDossierLink,
+    hasUsefulUniqueData,
+  };
+}
+
+function automationClassification(input: {
+  automationLevel: DossierPopulationAutomationLevel;
+  recommendedAction: string;
+  confidence: "low" | "medium" | "high";
+  reason: string;
+  targetRecord?: DossierPopulationAuditRecord;
+  sourceRecords?: DossierPopulationAuditRecord[];
+  proposedChanges?: DossierPopulationAutomationChange[];
+  blockedReasons?: string[];
+  safeActionLabel: string;
+  dangerLevel: DossierPopulationAutomationDangerLevel;
+}): DossierPopulationAutomationClassification {
+  const blockedReasons = input.blockedReasons ?? [];
+  return {
+    automationLevel: input.automationLevel,
+    recommendedAction: input.recommendedAction,
+    confidence: input.confidence,
+    reason: input.reason,
+    targetRecord: input.targetRecord,
+    sourceRecords: input.sourceRecords ?? [],
+    proposedChanges: input.proposedChanges ?? [],
+    blockedReasons,
+    canRunAutomatically:
+      blockedReasons.length === 0 &&
+      (input.automationLevel === "auto_clean_now" ||
+        input.automationLevel === "auto_attach_now"),
+    requiresReview: input.automationLevel === "review_recommended",
+    safeActionLabel: input.safeActionLabel,
+    dangerLevel: input.dangerLevel,
+  };
+}
+
+function classifyDuplicateGroup(input: {
+  groupId: string;
+  matchKind: DossierPopulationAuditDuplicateGroup["matchKind"];
+  reason: string;
+  records: DossierPopulationAuditRecord[];
+  suppressions: DossierPopulationAuditSuppression[];
+}): DossierPopulationAutomationClassification {
+  const records = uniqueAuditRecords(input.records);
+  const candidateRecords = records.filter((record) => record.candidateId);
+  const sortedCandidates = [...candidateRecords].sort((left, right) => {
+    const rightScore =
+      (right.hasPublicDossierLink ? 10 : 0) +
+      (right.hasActiveDraft ? 5 : 0) +
+      right.sourceNoteCount +
+      right.attachedRecommendationCount +
+      right.identityLinkCount +
+      right.archiveCount;
+    const leftScore =
+      (left.hasPublicDossierLink ? 10 : 0) +
+      (left.hasActiveDraft ? 5 : 0) +
+      left.sourceNoteCount +
+      left.attachedRecommendationCount +
+      left.identityLinkCount +
+      left.archiveCount;
+    return rightScore - leftScore || left.id.localeCompare(right.id);
+  });
+  const targetRecord = sortedCandidates[0];
+  const sourceRecords = targetRecord
+    ? candidateRecords.filter((record) => record.id !== targetRecord.id)
+    : records.slice(1);
+  const recordIds = candidateRecords.map((record) => record.id).sort();
+  const suppressed = input.suppressions.some((suppression) => {
+    const suppressionIds = [...suppression.recordIds].sort();
+    return (
+      suppression.groupId === input.groupId ||
+      (suppressionIds.length === recordIds.length &&
+        suppressionIds.every((id, index) => id === recordIds[index]))
+    );
+  });
+  if (suppressed) {
+    return automationClassification({
+      automationLevel: "keep_separate_not_same_subject",
+      recommendedAction:
+        "Keep separate; this false-positive pair was suppressed by an admin.",
+      confidence: "high",
+      reason: "Admin suppression says these records are not the same subject.",
+      targetRecord,
+      sourceRecords,
+      safeActionLabel: "Kept Separate",
+      dangerLevel: "none",
+    });
+  }
+
+  const publicDossierIds = uniqueStrings(
+    candidateRecords
+      .map((record) => record.publicDossierId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const blockedReasons: string[] = [];
+  if (!targetRecord || candidateRecords.length < 2) {
+    blockedReasons.push(
+      "Source and target Source File records could not be resolved.",
+    );
+  }
+  if (publicDossierIds.length > 1) {
+    blockedReasons.push("Records point to different public dossiers.");
+  }
+  if (candidateRecords.filter((record) => record.hasActiveDraft).length > 1) {
+    blockedReasons.push("Both records have active proposed dossiers.");
+  }
+  if (candidateRecords.some((record) => record.status === "merged")) {
+    blockedReasons.push("A source record is already merged.");
+  }
+  if (blockedReasons.length > 0) {
+    return automationClassification({
+      automationLevel: "blocked_manual_resolution_required",
+      recommendedAction:
+        "Resolve the conflict manually before any merge or cleanup.",
+      confidence: "high",
+      reason: input.reason,
+      targetRecord,
+      sourceRecords,
+      blockedReasons,
+      safeActionLabel: "Manual Resolution Required",
+      dangerLevel: "blocked",
+    });
+  }
+
+  const proofIsStrong =
+    input.matchKind === "normalized_name" ||
+    input.matchKind === "confirmed_alias" ||
+    input.matchKind === "public_dossier" ||
+    input.matchKind === "recommendation_subject_key";
+  const hasProposedAlias = candidateRecords.some(
+    (record) => record.proposedAliasCount > 0,
+  );
+  if (!proofIsStrong || hasProposedAlias) {
+    return automationClassification({
+      automationLevel: "review_recommended",
+      recommendedAction:
+        "Review Merge field-by-field or mark Keep Separate before consolidation.",
+      confidence: hasProposedAlias ? "medium" : "low",
+      reason: hasProposedAlias
+        ? "A proposed alias is present and cannot be used as confirmed duplicate evidence."
+        : input.reason,
+      targetRecord,
+      sourceRecords,
+      proposedChanges: [
+        {
+          label: "Review Merge",
+          detail:
+            "Compare target and incoming records before accepting changes.",
+        },
+        {
+          label: "Keep Separate",
+          detail: "Suppress this suggestion if it is not the same subject.",
+        },
+      ],
+      safeActionLabel: "Review Merge",
+      dangerLevel: "medium",
+    });
+  }
+
+  const emptySources = sourceRecords.filter(
+    (record) => !record.hasUsefulUniqueData,
+  );
+  if (emptySources.length === sourceRecords.length && emptySources.length > 0) {
+    return automationClassification({
+      automationLevel: "auto_clean_now",
+      recommendedAction:
+        "No unique info found. This record can be safely removed from the active workflow.",
+      confidence: "high",
+      reason: `${input.reason} The duplicate has no notes, recommendations, identity links, archive, active draft, public dossier link, unique lanes, or meaningful status history.`,
+      targetRecord,
+      sourceRecords: emptySources,
+      proposedChanges: [
+        {
+          label: "Retire duplicate Source File",
+          detail: "Mark empty duplicate records as merged into the target.",
+        },
+        {
+          label: "Audit trail",
+          detail:
+            "Add internal merge metadata without changing public dossier copy.",
+        },
+      ],
+      safeActionLabel: "Remove Empty Duplicate",
+      dangerLevel: "low",
+    });
+  }
+
+  return automationClassification({
+    automationLevel: "auto_merge_now",
+    recommendedAction:
+      "Exact/confirmed duplicate records can be merged automatically after explicit admin action; useful non-conflicting internal data will be moved additively.",
+    confidence: "high",
+    reason: input.reason,
+    targetRecord,
+    sourceRecords,
+    proposedChanges: [
+      {
+        label: "Will add aliases",
+        detail:
+          "Identity links move with original visibility, status, and matching flags.",
+      },
+      {
+        label: "Will move notes",
+        detail:
+          "Source notes move with original timestamps, source, and createdBy metadata.",
+      },
+      {
+        label: "Will attach BNL recommendations",
+        detail:
+          "Recommendation IDs and source lanes are preserved while retargeting to the merged Source File.",
+      },
+      {
+        label: "Will preserve archive history",
+        detail:
+          "Archive IDs and latest enrichment are added only where the target lacks them.",
+      },
+      {
+        label: "Will retire duplicate Source File",
+        detail: "The incoming record is marked merged into the target.",
+      },
+      {
+        label: "Will not change public dossier copy",
+        detail: "No public dossier fields are edited or published.",
+      },
+      {
+        label: "Will not publish identity",
+        detail:
+          "Internal aliases remain internal and useInPublicDossier is not escalated.",
+      },
+    ],
+    safeActionLabel: "Auto-Merge Safe Duplicate",
+    dangerLevel: "medium",
+  });
+}
+
+function classifyUnattachedRecommendation(input: {
+  recommendation: DossierRecommendation;
+  matchingSourceFile?: DossierCandidate;
+  matchBasis?: string;
+}): DossierPopulationAutomationClassification {
+  const recommendationRecord: DossierPopulationAuditRecord = {
+    id: input.recommendation.id,
+    type: "recommendation",
+    name: input.recommendation.subjectName,
+    status: input.recommendation.status,
+    href: `/admin/dossiers/recommendations/${input.recommendation.id}`,
+    recommendationId: input.recommendation.id,
+    publicDossierId: input.recommendation.targetDossierId,
+    confirmedAliasCount: 0,
+    proposedAliasCount: 0,
+    attachedRecommendationCount: 1,
+    sourceNoteCount: 0,
+    identityLinkCount: 0,
+    archiveCount: 0,
+    activeDraftCount: 0,
+    sourceLaneCount: input.recommendation.sourceLanes.length,
+    hasPublicDossierLink: Boolean(input.recommendation.targetDossierId),
+    hasActiveDraft: false,
+    hasUsefulUniqueData: true,
+    missingLatestCaseReport: false,
+  };
+  if (!input.matchingSourceFile) {
+    return automationClassification({
+      automationLevel: "review_recommended",
+      recommendedAction:
+        "Review manually; decide whether this becomes a Dossier Seed, Dossier Update, or archive item.",
+      confidence: "low",
+      reason: "No exact Source File or confirmed alias match was found.",
+      sourceRecords: [recommendationRecord],
+      safeActionLabel: "Review Placement",
+      dangerLevel: "medium",
+    });
+  }
+  const targetRecord: DossierPopulationAuditRecord = {
+    id: input.matchingSourceFile.id,
+    type: "source_file",
+    name: input.matchingSourceFile.name,
+    status: input.matchingSourceFile.status,
+    href: `/admin/dossiers/candidates/${input.matchingSourceFile.id}`,
+    candidateId: input.matchingSourceFile.id,
+    publicDossierId: input.matchingSourceFile.existingDossierMatch?.id,
+    publicDossierName: input.matchingSourceFile.existingDossierMatch?.name,
+    confirmedAliasCount: (input.matchingSourceFile.identityLinks ?? []).filter(
+      (link) => link.status === "confirmed",
+    ).length,
+    proposedAliasCount: (input.matchingSourceFile.identityLinks ?? []).filter(
+      (link) => link.status === "proposed",
+    ).length,
+    attachedRecommendationCount: 0,
+    sourceNoteCount: (input.matchingSourceFile.sourceFileNotes ?? []).length,
+    identityLinkCount: (input.matchingSourceFile.identityLinks ?? []).length,
+    archiveCount: (input.matchingSourceFile.sourceFileArchiveIds ?? []).length,
+    activeDraftCount: 0,
+    sourceLaneCount: (input.matchingSourceFile.sourceLanes ?? []).length,
+    hasPublicDossierLink: Boolean(
+      input.matchingSourceFile.existingDossierMatch?.id,
+    ),
+    hasActiveDraft: false,
+    hasUsefulUniqueData: true,
+    missingLatestCaseReport: false,
+  };
+  return automationClassification({
+    automationLevel: "auto_attach_now",
+    recommendedAction:
+      "This BNL Signal matches an existing Source File by confirmed alias/exact subject key. It will be attached for review.",
+    confidence: "high",
+    reason: `Matched by ${input.matchBasis ?? "exact subject"}; attachment remains review-only and does not publish.`,
+    targetRecord,
+    sourceRecords: [recommendationRecord],
+    proposedChanges: [
+      {
+        label: "Attach to Existing Source File",
+        detail:
+          "Set the recommendation targetCandidateId to the matched Source File.",
+      },
+      {
+        label: "Review-only source note",
+        detail: "Add a non-public BNL source note for reviewer context.",
+      },
+      {
+        label: "No public change",
+        detail: "Public dossier text and publishing status stay untouched.",
+      },
+    ],
+    safeActionLabel: "Attach Automatically",
+    dangerLevel: "low",
+  });
+}
 
 function isBnlRecommendation(
   recommendation: Pick<DossierRecommendation, "ingestSource" | "createdBy">,
@@ -893,10 +1382,14 @@ function duplicateGroupAction(
 
 export function createDossierPopulationAudit(input: {
   candidates: DossierCandidate[];
+  drafts?: DossierDraft[];
   recommendations?: DossierRecommendation[];
   publicDossiers?: Array<{ id: string; name: string }>;
+  suppressions?: DossierPopulationAuditSuppression[];
 }): DossierPopulationAudit {
   const recommendations = input.recommendations ?? [];
+  const drafts = input.drafts ?? [];
+  const suppressions = input.suppressions ?? [];
   const bnlRecommendations = recommendations.filter(isBnlRecommendation);
   const candidatesById = new Map(
     input.candidates.map((candidate) => [candidate.id, candidate]),
@@ -945,6 +1438,16 @@ export function createDossierPopulationAudit(input: {
     const proposedAliasCount = (candidate.identityLinks ?? []).filter(
       (link) => link.status === "proposed",
     ).length;
+    const attachedRecommendationCount =
+      bnlRecommendationIdsByCandidate.get(candidate.id)?.size ?? 0;
+    const activeDraftCount = drafts.filter((draft) =>
+      activeAuditDraftForCandidate([draft], candidate.id),
+    ).length;
+    const substance = candidateAuditSubstance({
+      candidate,
+      attachedRecommendationCount,
+      activeDraftCount,
+    });
     return {
       id: candidate.id,
       type: candidatePopulationType(candidate),
@@ -956,8 +1459,15 @@ export function createDossierPopulationAudit(input: {
       publicDossierName: candidate.existingDossierMatch?.name,
       confirmedAliasCount,
       proposedAliasCount,
-      attachedRecommendationCount:
-        bnlRecommendationIdsByCandidate.get(candidate.id)?.size ?? 0,
+      attachedRecommendationCount,
+      sourceNoteCount: substance.sourceNoteCount,
+      identityLinkCount: substance.identityLinkCount,
+      archiveCount: substance.archiveCount,
+      activeDraftCount,
+      sourceLaneCount: substance.sourceLaneCount,
+      hasPublicDossierLink: substance.hasPublicDossierLink,
+      hasActiveDraft: activeDraftCount > 0,
+      hasUsefulUniqueData: substance.hasUsefulUniqueData,
       missingLatestCaseReport:
         candidateMissingLatestCaseReportOrEnrichment(candidate),
     } satisfies DossierPopulationAuditRecord;
@@ -1059,8 +1569,13 @@ export function createDossierPopulationAudit(input: {
         matchBasis,
         href: `/admin/dossiers/recommendations/${recommendation.id}`,
         safeNextAction: matchingSourceFile
-          ? "Review manually; attach to the matching Source File only after admin confirmation."
+          ? "Attach to the matching Source File for review; do not publish or create a new Source File."
           : "Review manually; decide whether this becomes a Dossier Seed, Dossier Update, or archive item.",
+        automation: classifyUnattachedRecommendation({
+          recommendation,
+          matchingSourceFile,
+          matchBasis,
+        }),
       } satisfies DossierPopulationAuditUnattachedRecommendation;
     })
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
@@ -1163,6 +1678,14 @@ export function createDossierPopulationAudit(input: {
       confirmedAliasCount: 0,
       proposedAliasCount: 0,
       attachedRecommendationCount: 1,
+      sourceNoteCount: 0,
+      identityLinkCount: 0,
+      archiveCount: 0,
+      activeDraftCount: 0,
+      sourceLaneCount: recommendation.sourceLanes.length,
+      hasPublicDossierLink: Boolean(recommendation.targetDossierId),
+      hasActiveDraft: false,
+      hasUsefulUniqueData: true,
       missingLatestCaseReport: false,
     };
     addBucketRecord(
@@ -1194,23 +1717,144 @@ export function createDossierPopulationAudit(input: {
   }
 
   const possibleDuplicateGroups = Array.from(duplicateBuckets.entries())
-    .map(([bucketKey, bucket]) => ({
-      id: bucketKey
+    .map(([bucketKey, bucket]) => {
+      const id = bucketKey
         .replace(/[^a-z0-9]+/gi, "-")
         .replace(/^-|-$/g, "")
-        .toLowerCase(),
-      reason: bucket.reason,
-      matchKind: bucket.matchKind,
-      publicDossierMatch: bucket.publicDossierMatch,
-      records: uniqueAuditRecords(bucket.records),
-      suggestedAction: duplicateGroupAction(bucket.matchKind, bucket.records),
-    }))
-    .filter((group) => group.records.length >= 2)
+        .toLowerCase();
+      const records = uniqueAuditRecords(bucket.records);
+      const automation = classifyDuplicateGroup({
+        groupId: id,
+        matchKind: bucket.matchKind,
+        reason: bucket.reason,
+        records,
+        suppressions,
+      });
+      return {
+        id,
+        reason: bucket.reason,
+        matchKind: bucket.matchKind,
+        publicDossierMatch: bucket.publicDossierMatch,
+        records,
+        suggestedAction:
+          automation.recommendedAction ||
+          duplicateGroupAction(bucket.matchKind, bucket.records),
+        automation,
+      };
+    })
+    .filter(
+      (group) =>
+        group.records.length >= 2 &&
+        group.automation.automationLevel !== "keep_separate_not_same_subject",
+    )
     .sort(
       (left, right) =>
         right.records.length - left.records.length ||
         left.id.localeCompare(right.id),
     );
+
+  const duplicateRecommendationGroups = Array.from(
+    bnlRecommendations.reduce((map, recommendation) => {
+      const evidenceDigest = normalizeDossierSubjectName(
+        [
+          recommendation.ingestKey,
+          recommendation.subjectKey,
+          recommendation.subjectName,
+          recommendation.sourceLanes.join(","),
+          recommendation.reason,
+          recommendation.evidenceSummary,
+        ]
+          .filter(Boolean)
+          .join("|"),
+      );
+      if (!evidenceDigest) return map;
+      const current = map.get(evidenceDigest) ?? [];
+      current.push(recommendation);
+      map.set(evidenceDigest, current);
+      return map;
+    }, new Map<string, DossierRecommendation[]>()),
+  )
+    .filter(([, group]) => group.length > 1)
+    .map(([key, group]) => {
+      const sorted = [...group].sort(
+        (left, right) =>
+          left.createdAt.localeCompare(right.createdAt) ||
+          left.id.localeCompare(right.id),
+      );
+      const canonical = sorted[0];
+      const duplicates = sorted.slice(1);
+      const recommendationRecords = sorted.map(
+        (recommendation) =>
+          ({
+            id: recommendation.id,
+            subjectName: recommendation.subjectName,
+            subjectKey: recommendation.subjectKey,
+            ingestSource: recommendation.ingestSource,
+            sourceLanes: recommendation.sourceLanes,
+            confidence: recommendation.confidence,
+            createdAt: recommendation.createdAt,
+            updatedAt: recommendation.updatedAt,
+            href: `/admin/dossiers/recommendations/${recommendation.id}`,
+            safeNextAction:
+              recommendation.id === canonical.id
+                ? "Keep as canonical duplicate recommendation."
+                : "Archive duplicate recommendation after preserving the canonical item.",
+            automation: automationClassification({
+              automationLevel:
+                recommendation.id === canonical.id
+                  ? "review_recommended"
+                  : "auto_clean_now",
+              recommendedAction:
+                recommendation.id === canonical.id
+                  ? "Keep canonical recommendation."
+                  : "Archive duplicate recommendation; no unique evidence was detected.",
+              confidence: "high",
+              reason: "Same ingest key/subject/evidence digest.",
+              sourceRecords: [],
+              safeActionLabel:
+                recommendation.id === canonical.id
+                  ? "Canonical"
+                  : "Archive Duplicate Recommendation",
+              dangerLevel: recommendation.id === canonical.id ? "none" : "low",
+            }),
+          }) satisfies DossierPopulationAuditUnattachedRecommendation,
+      );
+      return {
+        id: `duplicate-recommendations-${key}`
+          .replace(/[^a-z0-9]+/gi, "-")
+          .replace(/^-|-$/g, "")
+          .toLowerCase(),
+        canonicalRecommendationId: canonical.id,
+        duplicateRecommendationIds: duplicates.map(
+          (recommendation) => recommendation.id,
+        ),
+        recommendations: recommendationRecords,
+        automation: automationClassification({
+          automationLevel: "auto_clean_now",
+          recommendedAction:
+            "Keep one canonical recommendation and archive duplicate recommendations with no unique evidence.",
+          confidence: "high",
+          reason: "Same ingest key/subject/evidence digest.",
+          sourceRecords: [],
+          proposedChanges: [
+            { label: "Keep canonical recommendation", detail: canonical.id },
+            {
+              label: "Archive duplicate recommendations",
+              detail: duplicates
+                .map((recommendation) => recommendation.id)
+                .join(", "),
+            },
+            {
+              label: "Preserve unique evidence",
+              detail:
+                "Cleanup is only suggested when the digest proves no unique evidence.",
+            },
+          ],
+          safeActionLabel: "Clean Duplicate Recommendations",
+          dangerLevel: "low",
+        }),
+      } satisfies DossierPopulationAuditDuplicateRecommendationGroup;
+    });
 
   return {
     counts: {
@@ -1252,6 +1896,37 @@ export function createDossierPopulationAudit(input: {
     records,
     possibleDuplicateGroups,
     unattachedBnlRecommendations,
+    duplicateRecommendationGroups,
+    safeAutomationSummary: {
+      emptyDuplicates: possibleDuplicateGroups.filter(
+        (group) => group.automation.automationLevel === "auto_clean_now",
+      ).length,
+      safeMerges: possibleDuplicateGroups.filter(
+        (group) => group.automation.automationLevel === "auto_merge_now",
+      ).length,
+      recommendationsToAttach: unattachedBnlRecommendations.filter(
+        (recommendation) =>
+          recommendation.automation.automationLevel === "auto_attach_now",
+      ).length,
+      duplicateRecommendationsToArchive: duplicateRecommendationGroups.reduce(
+        (total, group) => total + group.duplicateRecommendationIds.length,
+        0,
+      ),
+      publicDossiersChanged: 0,
+      publicPagesPublished: 0,
+      reviewRequired:
+        possibleDuplicateGroups.filter(
+          (group) => group.automation.requiresReview,
+        ).length +
+        unattachedBnlRecommendations.filter(
+          (recommendation) => recommendation.automation.requiresReview,
+        ).length,
+      blocked: possibleDuplicateGroups.filter(
+        (group) =>
+          group.automation.automationLevel ===
+          "blocked_manual_resolution_required",
+      ).length,
+    },
   };
 }
 
@@ -1609,6 +2284,7 @@ export type DossierWorkflowAction =
   | "markCandidateAsExistingDossierUpdate"
   | "detectDuplicateCandidates"
   | "mergeCandidates"
+  | "runDossierPopulationAutomation"
   | "createMasterDraftFromMerge";
 
 export type DossierSourceBoundary = {
@@ -1658,6 +2334,7 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "markCandidateAsExistingDossierUpdate",
   "detectDuplicateCandidates",
   "mergeCandidates",
+  "runDossierPopulationAutomation",
   "createMasterDraftFromMerge",
 ];
 

@@ -1999,8 +1999,8 @@ test("dashboard uses actual workflow ids, source metrics, and simplified overvie
   assert.match(page, /identityBadgeForCandidate/);
   assert.match(page, /identityBadgeForRecommendation/);
   assert.match(page, /Archive \/ Dismissed \/ Trash/);
-  assert.doesNotMatch(page, /href=\{`\/admin\/dossiers\/duplicates\/\$\{group\.id\}`\}/);
-  assert.doesNotMatch(page, /View Warning \/ Open Merge Review/);
+  assert.match(page, /href=\{`\/admin\/dossiers\/duplicates\/\$\{group\.id\}`\}/);
+  assert.match(page, /Review Merge/);
   assert.doesNotMatch(page, />Deny<|>Deny<\/button>/);
 });
 
@@ -2042,7 +2042,9 @@ test("Dossier Control Center population audit maps counts, duplicate review, una
     "Records missing latest BNL case report or source enrichment",
     "Possible Duplicate / Same Subject Review",
     "Possible same-subject review",
-    "Needs admin review",
+    "Automation level:",
+    "Auto-Merge Safe Duplicate",
+    "Remove Empty Duplicate",
     "Confirmed aliases:",
     "Proposed aliases:",
     "Recommendation count:",
@@ -2050,15 +2052,22 @@ test("Dossier Control Center population audit maps counts, duplicate review, una
     "Unattached BNL Signals / Recommendations",
     "BNL recommendations that need placement review",
     "No clear active Source File match",
+    "Run Safe Cleanup",
+    "Duplicate BNL Recommendation Cleanup",
+    "Attach Automatically",
+    "Keep Separate",
+    "0 public dossiers will be changed.",
+    "0 public pages will be published.",
     "The site can only audit records and recommendations already present in the workflow store. Active Discord members who have not been ingested by BNL will not appear here yet.",
-    "it does not merge, delete, publish, or mutate records automatically",
+    "public dossier text is never changed, internal aliases stay internal, and nothing is published automatically",
   ]) {
     assertIncludesCopy(pageCopy, label);
   }
 
   assert.match(page, /<details className="border border-accent\/40 bg-surface\/70 p-5">/);
   assert.match(page, /createDossierPopulationAudit/);
-  assert.doesNotMatch(page, /Auto Merge|Merge Now|Delete Duplicate|auto-create|autoCreate|autoMerge/);
+  assert.match(page, /runDossierPopulationAutomation/);
+  assert.doesNotMatch(page, /auto-create|autoCreate/);
 });
 
 test("population audit helper uses conservative duplicate signals and leaves proposed aliases out of confirmed matching", () => {
@@ -2173,6 +2182,166 @@ test("population audit helper uses conservative duplicate signals and leaves pro
   assert.ok(audit.possibleDuplicateGroups.some((group) => group.matchKind === "recommendation_subject_key" && group.records.length === 2));
   assert.ok(!audit.possibleDuplicateGroups.some((group) => group.matchKind === "confirmed_alias" && group.records.some((record) => record.name === "Proposed Only")));
   assert.ok(audit.unattachedBnlRecommendations.some((recommendation) => recommendation.id === "rec-unattached" && recommendation.subjectName === "Loose Signal"));
+});
+
+test("population audit automation classifies and runs safe consolidation without public side effects", async () => {
+  const now = "2026-06-11T00:00:00.000Z";
+  const publicIdsBefore = databasePage.entries.map((entry) => entry.id);
+  const candidate = (overrides) => ({
+    id: overrides.id,
+    name: overrides.name,
+    candidateType: "artist",
+    source: "manual",
+    tier: "review_candidate",
+    score: 50,
+    whyNow: "Fixture",
+    reason: "Fixture",
+    evidenceSummary: "Fixture",
+    status: overrides.status ?? "active_source_file",
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  });
+  const note = (overrides) => ({
+    id: overrides.id,
+    candidateId: overrides.candidateId,
+    type: "general_note",
+    text: overrides.text ?? "Incoming source note",
+    source: "admin_manual",
+    status: "active",
+    publicSafe: false,
+    createdAt: overrides.createdAt ?? now,
+    updatedAt: overrides.updatedAt ?? now,
+    createdBy: overrides.createdBy ?? "fixture-admin",
+    ...overrides,
+  });
+  const alias = (overrides) => ({
+    id: overrides.id,
+    candidateId: overrides.candidateId,
+    label: overrides.label,
+    normalizedLabel: workflow.normalizeDossierSubjectName(overrides.label),
+    type: "alias",
+    visibility: overrides.visibility ?? "internal_only",
+    status: overrides.status ?? "confirmed",
+    source: "admin_manual",
+    confidence: "confirmed",
+    useForMatching: overrides.useForMatching ?? true,
+    useInPublicDossier: overrides.useInPublicDossier ?? false,
+    createdAt: now,
+    updatedAt: now,
+    confirmedBy: "fixture-admin",
+    confirmedAt: now,
+    ...overrides,
+  });
+  const recommendation = (overrides) => ({
+    id: overrides.id,
+    type: overrides.type ?? "new_subject",
+    subjectName: overrides.subjectName,
+    subjectKey: overrides.subjectKey,
+    targetCandidateId: overrides.targetCandidateId,
+    targetDossierId: overrides.targetDossierId,
+    status: overrides.status ?? "new",
+    reason: overrides.reason ?? "Same evidence",
+    evidenceSummary: overrides.evidenceSummary ?? "Same evidence",
+    confidence: "high",
+    sourceLanes: overrides.sourceLanes ?? ["public_discord"],
+    createdAt: overrides.createdAt ?? now,
+    updatedAt: overrides.updatedAt ?? now,
+    createdBy: "bnl",
+    ingestSource: overrides.ingestSource ?? "bnl_dynamic_candidate_discovery",
+    ingestKey: overrides.ingestKey,
+    ...overrides,
+  });
+  const baseState = {
+    version: 1,
+    revision: 0,
+    candidates: [
+      candidate({ id: "empty-target", name: "Empty Dupe" }),
+      candidate({ id: "empty-source", name: "Empty Dupe" }),
+      candidate({ id: "merge-target", name: "Merge Subject", sourceFileNotes: [note({ id: "target-note", candidateId: "merge-target", text: "Target note", createdBy: "target-admin" })] }),
+      candidate({ id: "merge-source", name: "Merge Subject", sourceFileNotes: [note({ id: "source-note", candidateId: "merge-source", text: "Source note", createdBy: "source-admin" })], identityLinks: [alias({ id: "internal-alias", candidateId: "merge-source", label: "Secret Alias", visibility: "internal_only", useInPublicDossier: false })], sourceRecommendationIds: ["source-rec"] }),
+      candidate({ id: "attach-target", name: "Attach Subject" }),
+      candidate({ id: "draft-a", name: "Blocked Draft" }),
+      candidate({ id: "draft-b", name: "Blocked Draft" }),
+      candidate({ id: "public-a", name: "Public Clash", existingDossierMatch: { id: "dossier-a", name: "Dossier A", confidence: "high" } }),
+      candidate({ id: "public-b", name: "Public Clash", existingDossierMatch: { id: "dossier-b", name: "Dossier B", confidence: "high" } }),
+      candidate({ id: "route-update", name: "Route Update", status: "existing_dossier_update", existingDossierMatch: { id: "mac-modem", name: "Mac Modem", confidence: "high" } }),
+    ],
+    drafts: [
+      { id: "draft-a-1", candidateId: "draft-a", status: "draft", fields: { name: "Blocked Draft" }, createdAt: now, updatedAt: now },
+      { id: "draft-b-1", candidateId: "draft-b", status: "draft", fields: { name: "Blocked Draft" }, createdAt: now, updatedAt: now },
+    ],
+    recommendations: [
+      recommendation({ id: "source-rec", subjectName: "Merge Subject", subjectKey: "merge-subject", targetCandidateId: "merge-source", status: "attached_to_source_file", sourceLanes: ["broadcast_memory"] }),
+      recommendation({ id: "attach-rec", subjectName: "Attach Subject", subjectKey: "attach-subject" }),
+      recommendation({ id: "dupe-rec-a", subjectName: "Duplicate Rec", subjectKey: "duplicate-rec", ingestKey: "same-ingest", reason: "Same evidence", evidenceSummary: "Same evidence" }),
+      recommendation({ id: "dupe-rec-b", subjectName: "Duplicate Rec", subjectKey: "duplicate-rec", ingestKey: "same-ingest", reason: "Same evidence", evidenceSummary: "Same evidence" }),
+      recommendation({ id: "route-rec", subjectName: "Mac Modem", subjectKey: "mac-modem", targetDossierId: "mac-modem", type: "modify_existing_dossier" }),
+    ],
+    sourceFileRefreshRequests: [],
+    populationAuditSuppressions: [],
+    updatedAt: now,
+  };
+  await store.saveDossierWorkflowState(baseState);
+  const audit = workflow.createDossierPopulationAudit({ candidates: baseState.candidates, drafts: baseState.drafts, recommendations: baseState.recommendations, publicDossiers: [{ id: "mac-modem", name: "Mac Modem" }] });
+  assert.ok(audit.possibleDuplicateGroups.some((group) => group.automation.automationLevel === "auto_clean_now"));
+  assert.ok(audit.possibleDuplicateGroups.some((group) => group.automation.automationLevel === "auto_merge_now"));
+  assert.ok(audit.unattachedBnlRecommendations.some((item) => item.id === "attach-rec" && item.automation.automationLevel === "auto_attach_now"));
+  assert.ok(audit.duplicateRecommendationGroups.some((group) => group.duplicateRecommendationIds.includes("dupe-rec-b")));
+  assert.ok(audit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.id === "draft-a") && group.automation.automationLevel === "blocked_manual_resolution_required"));
+  assert.ok(audit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.id === "public-a") && group.automation.blockedReasons.includes("Records point to different public dossiers.")));
+  assert.equal(audit.safeAutomationSummary.publicDossiersChanged, 0);
+  assert.equal(audit.safeAutomationSummary.publicPagesPublished, 0);
+  const cleanGroup = audit.possibleDuplicateGroups.find((group) => group.automation.automationLevel === "auto_clean_now" && group.records.some((record) => record.id === "empty-source"));
+  assert.ok(cleanGroup);
+  await store.runDossierPopulationAutomation({ action: "auto_clean_group", groupId: cleanGroup.id });
+  let state = await store.getDossierWorkflowState();
+  const expectedCleanSourceId = cleanGroup.automation.sourceRecords[0].candidateId;
+  const expectedCleanTargetId = cleanGroup.automation.targetRecord.candidateId;
+  assert.equal(state.candidates.find((item) => item.id === expectedCleanSourceId).status, "merged");
+  assert.equal(state.candidates.find((item) => item.id === expectedCleanSourceId).mergedIntoCandidateId, expectedCleanTargetId);
+  await assert.rejects(() => store.runDossierPopulationAutomation({ action: "auto_clean_group", groupId: cleanGroup.id }), /not found|no longer|refused/i);
+  const mergeAudit = workflow.createDossierPopulationAudit({ candidates: state.candidates, drafts: state.drafts, recommendations: state.recommendations, publicDossiers: [{ id: "mac-modem", name: "Mac Modem" }] });
+  const mergeGroup = mergeAudit.possibleDuplicateGroups.find((group) => group.automation.automationLevel === "auto_merge_now" && group.records.some((record) => record.id === "merge-source"));
+  assert.ok(mergeGroup);
+  const expectedMergeTargetId = mergeGroup.automation.targetRecord.candidateId;
+  const expectedMergeSourceId = mergeGroup.automation.sourceRecords[0].candidateId;
+  await store.runDossierPopulationAutomation({ action: "auto_merge_group", groupId: mergeGroup.id });
+  state = await store.getDossierWorkflowState();
+  const mergedTarget = state.candidates.find((item) => item.id === expectedMergeTargetId);
+  assert.ok(mergedTarget.sourceFileNotes.some((item) => item.id === "source-note" && item.createdBy === "source-admin" && item.candidateId === expectedMergeTargetId));
+  assert.ok(mergedTarget.identityLinks.some((item) => item.id === "internal-alias" && item.visibility === "internal_only" && item.useForMatching === true && item.useInPublicDossier === false));
+  assert.ok(mergedTarget.sourceRecommendationIds.includes("source-rec"));
+  assert.equal(state.recommendations.find((item) => item.id === "source-rec").targetCandidateId, expectedMergeTargetId);
+  assert.equal(state.candidates.find((item) => item.id === expectedMergeSourceId).status, "merged");
+  const attachAudit = workflow.createDossierPopulationAudit({ candidates: state.candidates, drafts: state.drafts, recommendations: state.recommendations });
+  assert.ok(attachAudit.unattachedBnlRecommendations.some((item) => item.id === "attach-rec" && item.automation.canRunAutomatically));
+  await store.runDossierPopulationAutomation({ action: "auto_attach_recommendation", recommendationId: "attach-rec" });
+  state = await store.getDossierWorkflowState();
+  assert.equal(state.recommendations.find((item) => item.id === "attach-rec").targetCandidateId, "attach-target");
+  assert.ok(state.candidates.find((item) => item.id === "attach-target").sourceFileNotes.some((item) => item.source === "bnl_recommendation" && item.publicSafe === false));
+  await store.runDossierPopulationAutomation({ action: "clean_duplicate_recommendations", groupId: audit.duplicateRecommendationGroups[0].id });
+  state = await store.getDossierWorkflowState();
+  assert.equal(state.recommendations.find((item) => item.id === "dupe-rec-b").status, "archived");
+  assert.equal(state.recommendations.find((item) => item.id === "dupe-rec-a").status, "new");
+  await store.saveDossierWorkflowState(baseState);
+  await store.runDossierPopulationAutomation({ action: "bulk_safe_cleanup" });
+  state = await store.getDossierWorkflowState();
+  assert.ok(["empty-source", "empty-target"].some((id) => state.candidates.find((item) => item.id === id).status === "merged"));
+  assert.equal(state.candidates.find((item) => item.id === "merge-source").status, "active_source_file");
+  assert.equal(state.candidates.find((item) => item.id === "draft-a").status, "active_source_file");
+  assert.equal(state.recommendations.find((item) => item.id === "attach-rec").targetCandidateId, "attach-target");
+  assert.equal(state.recommendations.find((item) => item.id === "dupe-rec-b").status, "archived");
+  await store.saveDossierWorkflowState({ ...baseState, candidates: [candidate({ id: "review-a", name: "Review Person", identityLinks: [alias({ id: "proposed", candidateId: "review-a", label: "Review Alt", status: "proposed" })] }), candidate({ id: "review-b", name: "Review Person" })], recommendations: [] });
+  state = await store.getDossierWorkflowState();
+  const reviewAudit = workflow.createDossierPopulationAudit({ candidates: state.candidates, drafts: state.drafts, recommendations: state.recommendations });
+  const reviewGroup = reviewAudit.possibleDuplicateGroups[0];
+  assert.equal(reviewGroup.automation.automationLevel, "review_recommended");
+  await store.runDossierPopulationAutomation({ action: "suppress_duplicate_group", groupId: reviewGroup.id, reason: "Not same subject" });
+  state = await store.getDossierWorkflowState();
+  const suppressedAudit = workflow.createDossierPopulationAudit({ candidates: state.candidates, drafts: state.drafts, recommendations: state.recommendations, suppressions: state.populationAuditSuppressions });
+  assert.equal(suppressedAudit.possibleDuplicateGroups.length, 0);
+  assert.deepEqual(databasePage.entries.map((entry) => entry.id), publicIdsBefore);
 });
 
 test("owner review page is a placeholder lane without publishing", () => {
@@ -3302,14 +3471,14 @@ test("mergeCandidates does not mutate public database, public read model, tag re
   );
 });
 
-test("admin dossiers dashboard does not promote duplicate merge review", () => {
+test("admin dossiers dashboard exposes automation review routing without old warning copy", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
   const mergePage = source(
     "src/app/admin/dossiers/duplicates/[groupId]/page.tsx",
   );
   assert.match(page, /Identity: Possible Match|Identity: Needs Confirmation|Possible Duplicate/);
   assert.doesNotMatch(page, /View Warning \/ Open Merge Review/);
-  assert.doesNotMatch(page, /\/admin\/dossiers\/duplicates\//);
+  assert.match(page, /\/admin\/dossiers\/duplicates\//);
   assert.doesNotMatch(page, /Merge into Master Candidate/);
   assert.doesNotMatch(page, /Create Master Draft from Merge/);
   assert.match(mergePage, /Merge is owner\/lead cleanup/);

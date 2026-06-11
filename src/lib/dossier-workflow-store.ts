@@ -25,6 +25,10 @@ import {
   type DossierIdentityLinkVisibility,
   type DossierDraft,
   type DossierDuplicateGroup,
+  type DossierPopulationAudit,
+  type DossierPopulationAuditSuppression,
+  createDossierPopulationAudit,
+  normalizeDossierSubjectName,
   type DossierRecommendation,
   type DossierSourceFileArchiveAttachStatus,
   type DossierSourceFileArchiveMetadata,
@@ -55,6 +59,7 @@ export type DossierWorkflowState = {
   drafts: DossierDraft[];
   recommendations: DossierRecommendation[];
   sourceFileRefreshRequests: DossierSourceFileRefreshRequest[];
+  populationAuditSuppressions: DossierPopulationAuditSuppression[];
   updatedAt: string;
 };
 
@@ -90,6 +95,7 @@ function emptyWorkflowState(): DossierWorkflowState {
     drafts: [],
     recommendations: [],
     sourceFileRefreshRequests: [],
+    populationAuditSuppressions: [],
     updatedAt: new Date(0).toISOString(),
   };
 }
@@ -379,6 +385,20 @@ function sanitizeWorkflowState(value: unknown): DossierWorkflowState {
         ? candidateState.sourceFileRefreshRequests
         : [],
     ),
+    populationAuditSuppressions: Array.isArray(
+      candidateState.populationAuditSuppressions,
+    )
+      ? candidateState.populationAuditSuppressions.filter(
+          (suppression): suppression is DossierPopulationAuditSuppression =>
+            Boolean(
+              suppression &&
+              typeof suppression === "object" &&
+              typeof suppression.id === "string" &&
+              typeof suppression.groupId === "string" &&
+              Array.isArray(suppression.recordIds),
+            ),
+        )
+      : [],
     updatedAt:
       typeof candidateState.updatedAt === "string"
         ? candidateState.updatedAt
@@ -470,8 +490,9 @@ function compactArchiveList(
   return output.length ? output : undefined;
 }
 
-
-function sourceArchiveObject(value: unknown): Record<string, unknown> | undefined {
+function sourceArchiveObject(
+  value: unknown,
+): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
@@ -482,7 +503,9 @@ type SourceArchivePayloadCandidate = {
   path: string;
 };
 
-export function sourceArchivePayloadCandidates(input: unknown): SourceArchivePayloadCandidate[] {
+export function sourceArchivePayloadCandidates(
+  input: unknown,
+): SourceArchivePayloadCandidate[] {
   const root = sourceArchiveObject(input);
   if (!root) return [];
   const candidates: SourceArchivePayloadCandidate[] = [];
@@ -495,7 +518,13 @@ export function sourceArchivePayloadCandidates(input: unknown): SourceArchivePay
   };
 
   add(root, "input");
-  for (const key of ["sourcePackage", "archivePayload", "archive", "payload", "sourceFileArchive"] as const) {
+  for (const key of [
+    "sourcePackage",
+    "archivePayload",
+    "archive",
+    "payload",
+    "sourceFileArchive",
+  ] as const) {
     const wrapped = root[key];
     add(wrapped, `input.${key}`);
     const wrappedObject = sourceArchiveObject(wrapped);
@@ -527,7 +556,9 @@ function normalizeSourceArchiveBrief(value: unknown) {
   if (!brief) return undefined;
   return {
     ...brief,
-    sourceFileCaseReportV1: isSourceFileCaseReportShape(brief.sourceFileCaseReportV1)
+    sourceFileCaseReportV1: isSourceFileCaseReportShape(
+      brief.sourceFileCaseReportV1,
+    )
       ? (brief.sourceFileCaseReportV1 as DossierSourceFileCaseReportV1)
       : undefined,
     caseFileReport: isSourceFileCaseReportShape(brief.caseFileReport)
@@ -538,14 +569,30 @@ function normalizeSourceArchiveBrief(value: unknown) {
 
 function findSourceFileCaseReportV1(input: unknown) {
   for (const candidate of sourceArchivePayloadCandidates(input)) {
-    const brief = normalizeSourceArchiveBrief(candidate.value.sourceFileBriefV2);
+    const brief = normalizeSourceArchiveBrief(
+      candidate.value.sourceFileBriefV2,
+    );
     const checks: Array<{ value: unknown; path: string }> = [
-      { value: candidate.value.sourceFileCaseReportV1, path: `${candidate.path}.sourceFileCaseReportV1` },
-      { value: brief?.sourceFileCaseReportV1, path: `${candidate.path}.sourceFileBriefV2.sourceFileCaseReportV1` },
-      { value: brief?.caseFileReport, path: `${candidate.path}.sourceFileBriefV2.caseFileReport` },
-      { value: candidate.value.caseFileReport, path: `${candidate.path}.caseFileReport` },
+      {
+        value: candidate.value.sourceFileCaseReportV1,
+        path: `${candidate.path}.sourceFileCaseReportV1`,
+      },
+      {
+        value: brief?.sourceFileCaseReportV1,
+        path: `${candidate.path}.sourceFileBriefV2.sourceFileCaseReportV1`,
+      },
+      {
+        value: brief?.caseFileReport,
+        path: `${candidate.path}.sourceFileBriefV2.caseFileReport`,
+      },
+      {
+        value: candidate.value.caseFileReport,
+        path: `${candidate.path}.caseFileReport`,
+      },
     ];
-    const match = checks.find((check) => isSourceFileCaseReportShape(check.value));
+    const match = checks.find((check) =>
+      isSourceFileCaseReportShape(check.value),
+    );
     if (match) {
       return {
         report: match.value as DossierSourceFileCaseReportV1,
@@ -556,13 +603,17 @@ function findSourceFileCaseReportV1(input: unknown) {
   return { report: undefined, path: undefined };
 }
 
-function extractSourceFileCaseReportV1(input: CreateDossierSourceFileArchiveInput) {
+function extractSourceFileCaseReportV1(
+  input: CreateDossierSourceFileArchiveInput,
+) {
   return findSourceFileCaseReportV1(input).report;
 }
 
 function findSourceFileBriefV2(input: unknown) {
   for (const candidate of sourceArchivePayloadCandidates(input)) {
-    const brief = normalizeSourceArchiveBrief(candidate.value.sourceFileBriefV2);
+    const brief = normalizeSourceArchiveBrief(
+      candidate.value.sourceFileBriefV2,
+    );
     if (brief) return { brief, path: `${candidate.path}.sourceFileBriefV2` };
   }
   return { brief: undefined, path: undefined };
@@ -1980,15 +2031,16 @@ const OPEN_REQUEST_STATUSES = new Set<DossierSourceFileRefreshRequestStatus>([
 const COMPLETABLE_REFRESH_STATUSES =
   new Set<DossierSourceFileRefreshRequestStatus>(["pending", "claimed"]);
 
-
-export function latestArchiveMissingCaseReport(candidate: DossierCandidate): boolean {
+export function latestArchiveMissingCaseReport(
+  candidate: DossierCandidate,
+): boolean {
   const latestArchive = candidate.latestSourceFileArchive;
   const hasLatestSourceData = Boolean(
     latestArchive ??
-      candidate.latestSourceFileArchiveId ??
-      candidate.latestSourceFileArchiveDigest ??
-      candidate.latestSourceFileArchiveUpdatedAt ??
-      (candidate.sourceFileArchiveIds?.length ?? 0) > 0,
+    candidate.latestSourceFileArchiveId ??
+    candidate.latestSourceFileArchiveDigest ??
+    candidate.latestSourceFileArchiveUpdatedAt ??
+    (candidate.sourceFileArchiveIds?.length ?? 0) > 0,
   );
   if (!hasLatestSourceData) return false;
   return !findSourceFileCaseReportV1(latestArchive).report;
@@ -1996,7 +2048,9 @@ export function latestArchiveMissingCaseReport(candidate: DossierCandidate): boo
 
 export const candidateMissingCaseReport = latestArchiveMissingCaseReport;
 
-export function sourceFileNeedsCaseReportBackfill(candidate: DossierCandidate): boolean {
+export function sourceFileNeedsCaseReportBackfill(
+  candidate: DossierCandidate,
+): boolean {
   return latestArchiveMissingCaseReport(candidate);
 }
 
@@ -2634,8 +2688,8 @@ export async function recordDossierSourceFileOpen(input: {
       reason: missingCaseReport
         ? "case_report_missing"
         : decision.needed
-        ? decision.reason
-        : "Admin opened the Source File and requested an immediate BNL freshness check.",
+          ? decision.reason
+          : "Admin opened the Source File and requested an immediate BNL freshness check.",
       requestSource: missingCaseReport
         ? "case_report_missing"
         : decision.requestSource === "opened_source_file"
@@ -2685,7 +2739,7 @@ export async function requestDossierSourceFileRefresh(input: {
           "Manual admin requested a BNL Source File refresh.",
       requestSource: missingCaseReport
         ? "case_report_missing"
-        : input.requestSource ?? "manual_admin",
+        : (input.requestSource ?? "manual_admin"),
       priority: input.priority ?? (missingCaseReport ? 95 : 90),
       requestedBy: input.requestedBy ?? "admin_manual",
       now,
@@ -5699,6 +5753,635 @@ export async function mergeDossierCandidates(
   });
 
   return result;
+}
+
+export type DossierPopulationAutomationAction =
+  | "auto_clean_group"
+  | "auto_merge_group"
+  | "auto_attach_recommendation"
+  | "clean_duplicate_recommendations"
+  | "bulk_safe_cleanup"
+  | "suppress_duplicate_group";
+
+function publicDossiersForAudit(): Array<{ id: string; name: string }> {
+  return databasePage.entries.map((entry) => ({
+    id: entry.id,
+    name: entry.name,
+  }));
+}
+
+function auditForState(state: DossierWorkflowState): DossierPopulationAudit {
+  return createDossierPopulationAudit({
+    candidates: state.candidates,
+    drafts: state.drafts,
+    recommendations: state.recommendations,
+    publicDossiers: publicDossiersForAudit(),
+    suppressions: state.populationAuditSuppressions,
+  });
+}
+
+function sameConfirmedSubject(
+  candidate: DossierCandidate,
+  recordName: string,
+): boolean {
+  const recordKey = normalizeDossierSubjectName(recordName);
+  if (normalizeDossierSubjectName(candidate.name) === recordKey) return true;
+  return (candidate.identityLinks ?? []).some(
+    (link) =>
+      link.status === "confirmed" &&
+      link.useForMatching === true &&
+      (link.normalizedLabel || normalizeDossierSubjectName(link.label)) ===
+        recordKey,
+  );
+}
+
+function hasActiveDraft(
+  state: DossierWorkflowState,
+  candidateId: string,
+): boolean {
+  return state.drafts.some(
+    (draft) =>
+      draft.candidateId === candidateId &&
+      draft.status !== "denied" &&
+      draft.status !== "published" &&
+      draft.status !== "superseded",
+  );
+}
+
+function addAutomationNote(
+  candidate: DossierCandidate,
+  text: string,
+  now: string,
+): DossierCandidate {
+  const note: DossierSourceFileNote = {
+    id: createSourceFileNoteId(),
+    candidateId: candidate.id,
+    type: "general_note",
+    text,
+    source: "admin_manual",
+    status: "active",
+    publicSafe: false,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: "source_file_consolidation_engine",
+  };
+  return {
+    ...candidate,
+    sourceFileNotes: [note, ...(candidate.sourceFileNotes ?? [])],
+  };
+}
+
+function mergeCandidateArrays<T extends { id?: string }>(
+  target: T[] | undefined,
+  incoming: T[] | undefined,
+  mapItem?: (item: T) => T,
+): T[] {
+  const output = [...(target ?? [])];
+  const seen = new Set(output.map((item) => item.id ?? JSON.stringify(item)));
+  for (const raw of incoming ?? []) {
+    const item = mapItem ? mapItem(raw) : raw;
+    const key = item.id ?? JSON.stringify(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(item);
+  }
+  return output;
+}
+
+function performSafeCandidateMerge(input: {
+  state: DossierWorkflowState;
+  targetCandidateId: string;
+  sourceCandidateIds: string[];
+  now: string;
+  reason: string;
+}): DossierWorkflowState {
+  const target = input.state.candidates.find(
+    (candidate) => candidate.id === input.targetCandidateId,
+  );
+  if (!target)
+    throw new DossierWorkflowInputError(
+      "Automation target Source File not found",
+      409,
+      "automation_target_missing",
+    );
+  const sources = input.sourceCandidateIds.map((id) =>
+    input.state.candidates.find((candidate) => candidate.id === id),
+  );
+  if (sources.some((candidate) => !candidate))
+    throw new DossierWorkflowInputError(
+      "Automation source Source File not found",
+      409,
+      "automation_source_missing",
+    );
+  const sourceCandidates = sources.filter(
+    (candidate): candidate is DossierCandidate => Boolean(candidate),
+  );
+  const publicDossierIds = uniqueStrings(
+    target.existingDossierMatch?.id ? [target.existingDossierMatch.id] : [],
+    ...sourceCandidates.map((candidate) =>
+      candidate.existingDossierMatch?.id
+        ? [candidate.existingDossierMatch.id]
+        : [],
+    ),
+  );
+  if (publicDossierIds.length > 1) {
+    throw new DossierWorkflowInputError(
+      "Automation blocked: records point to different public dossiers",
+      409,
+      "automation_public_dossier_conflict",
+    );
+  }
+  if (
+    [target, ...sourceCandidates].filter((candidate) =>
+      hasActiveDraft(input.state, candidate.id),
+    ).length > 1
+  ) {
+    throw new DossierWorkflowInputError(
+      "Automation blocked: both records have active proposed dossiers",
+      409,
+      "automation_active_draft_conflict",
+    );
+  }
+  if (
+    sourceCandidates.some(
+      (candidate) =>
+        candidate.status === "merged" || candidate.status === "denied",
+    )
+  ) {
+    throw new DossierWorkflowInputError(
+      "Automation blocked: a source record is already closed",
+      409,
+      "automation_source_closed",
+    );
+  }
+  for (const source of sourceCandidates) {
+    if (
+      !sameConfirmedSubject(target, source.name) &&
+      !sameConfirmedSubject(source, target.name) &&
+      target.existingDossierMatch?.id !== source.existingDossierMatch?.id
+    ) {
+      throw new DossierWorkflowInputError(
+        "Automation blocked: same-subject proof no longer validates server-side",
+        409,
+        "automation_subject_proof_changed",
+      );
+    }
+  }
+
+  const mergedArchiveIds = uniqueStrings(
+    target.sourceFileArchiveIds,
+    ...sourceCandidates.map((candidate) => candidate.sourceFileArchiveIds),
+    ...sourceCandidates.map((candidate) =>
+      candidate.latestSourceFileArchiveId
+        ? [candidate.latestSourceFileArchiveId]
+        : [],
+    ),
+  );
+  const mergedTarget = addAutomationNote(
+    {
+      ...target,
+      sourceFileNotes: mergeCandidateArrays(
+        target.sourceFileNotes,
+        sourceCandidates.flatMap((candidate) =>
+          (candidate.sourceFileNotes ?? []).map((note) => ({
+            ...note,
+            candidateId: target.id,
+          })),
+        ),
+      ),
+      identityLinks: mergeCandidateArrays(
+        target.identityLinks,
+        sourceCandidates.flatMap((candidate) =>
+          (candidate.identityLinks ?? []).map((link) => ({
+            ...link,
+            candidateId: target.id,
+            useInPublicDossier:
+              link.useInPublicDossier === true &&
+              link.visibility === "public_safe",
+          })),
+        ),
+      ),
+      sourceRecommendationIds: uniqueStrings(
+        target.sourceRecommendationIds,
+        target.connectedRecommendationIds,
+        ...sourceCandidates.map(
+          (candidate) => candidate.sourceRecommendationIds,
+        ),
+        ...sourceCandidates.map(
+          (candidate) => candidate.connectedRecommendationIds,
+        ),
+        ...sourceCandidates.map((candidate) =>
+          candidate.createdFromRecommendationId
+            ? [candidate.createdFromRecommendationId]
+            : [],
+        ),
+      ),
+      sourceFileArchiveIds: mergedArchiveIds,
+      latestSourceFileArchiveId:
+        target.latestSourceFileArchiveId ??
+        sourceCandidates.find(
+          (candidate) => candidate.latestSourceFileArchiveId,
+        )?.latestSourceFileArchiveId,
+      latestSourceFileArchiveDigest:
+        target.latestSourceFileArchiveDigest ??
+        sourceCandidates.find(
+          (candidate) => candidate.latestSourceFileArchiveDigest,
+        )?.latestSourceFileArchiveDigest,
+      latestSourceFileArchiveUpdatedAt:
+        target.latestSourceFileArchiveUpdatedAt ??
+        sourceCandidates.find(
+          (candidate) => candidate.latestSourceFileArchiveUpdatedAt,
+        )?.latestSourceFileArchiveUpdatedAt,
+      latestSourceFileArchive:
+        target.latestSourceFileArchive ??
+        sourceCandidates.find((candidate) => candidate.latestSourceFileArchive)
+          ?.latestSourceFileArchive,
+      missingInfo: uniqueStrings(
+        target.missingInfo,
+        ...sourceCandidates.map((candidate) => candidate.missingInfo),
+      ),
+      doNotSay: uniqueStrings(
+        target.doNotSay,
+        ...sourceCandidates.map((candidate) => candidate.doNotSay),
+      ),
+      publicSafetyNotes: uniqueStrings(
+        target.publicSafetyNotes,
+        ...sourceCandidates.map((candidate) => candidate.publicSafetyNotes),
+      ),
+      sourceLanes: uniqueStrings(
+        target.sourceLanes,
+        ...sourceCandidates.map((candidate) => candidate.sourceLanes),
+      ) as DossierRecommendationSourceLane[],
+      mergeSourceCandidateIds: uniqueStrings(
+        target.mergeSourceCandidateIds,
+        sourceCandidates.map((candidate) => candidate.id),
+      ),
+      mergeNote: input.reason,
+      updatedAt: input.now,
+    },
+    `Automated Source File consolidation: ${input.reason}. Moved review-only notes/recommendations/aliases where safe. Public dossier copy was not changed and no publishing occurred.`,
+    input.now,
+  );
+
+  return {
+    ...input.state,
+    candidates: input.state.candidates.map((candidate) => {
+      if (candidate.id === target.id) return mergedTarget;
+      if (input.sourceCandidateIds.includes(candidate.id)) {
+        return {
+          ...candidate,
+          status: "merged" as const,
+          mergedIntoCandidateId: target.id,
+          mergedAt: input.now,
+          mergeNote: input.reason,
+          mergeSourceCandidateIds: uniqueStrings(
+            [target.id],
+            input.sourceCandidateIds,
+          ),
+          updatedAt: input.now,
+        };
+      }
+      return candidate;
+    }),
+    recommendations: input.state.recommendations.map((recommendation) =>
+      input.sourceCandidateIds.some(
+        (sourceId) =>
+          recommendation.targetCandidateId === sourceId ||
+          recommendation.connectedCandidateId === sourceId ||
+          recommendation.connectedSourceFileCandidateId === sourceId,
+      )
+        ? {
+            ...recommendation,
+            targetCandidateId: target.id,
+            connectedCandidateId:
+              recommendation.connectedCandidateId &&
+              input.sourceCandidateIds.includes(
+                recommendation.connectedCandidateId,
+              )
+                ? target.id
+                : recommendation.connectedCandidateId,
+            connectedSourceFileCandidateId:
+              recommendation.connectedSourceFileCandidateId &&
+              input.sourceCandidateIds.includes(
+                recommendation.connectedSourceFileCandidateId,
+              )
+                ? target.id
+                : recommendation.connectedSourceFileCandidateId,
+            status:
+              recommendation.status === "archived" ||
+              recommendation.status === "dismissed" ||
+              recommendation.status === "ignored"
+                ? recommendation.status
+                : "attached_to_source_file",
+            updatedAt: input.now,
+          }
+        : recommendation,
+    ),
+    updatedAt: input.now,
+  };
+}
+
+export async function runDossierPopulationAutomation(input: {
+  action: DossierPopulationAutomationAction;
+  groupId?: string;
+  recommendationId?: string;
+  reason?: string;
+}): Promise<{
+  action: DossierPopulationAutomationAction;
+  audit: DossierPopulationAudit;
+  changed: string[];
+}> {
+  const now = new Date().toISOString();
+  let changed: string[] = [];
+  let finalAudit: DossierPopulationAudit | null = null;
+  await updateDossierWorkflowState((currentState) => {
+    const audit = auditForState(currentState);
+    let nextState = currentState;
+
+    const runGroup = (groupId: string, allowMerge: boolean) => {
+      const group = audit.possibleDuplicateGroups.find(
+        (item) => item.id === groupId,
+      );
+      if (!group)
+        throw new DossierWorkflowInputError(
+          "Automation group not found or no longer active",
+          409,
+          "automation_group_not_found",
+        );
+      const targetId = group.automation.targetRecord?.candidateId;
+      const sourceIds = group.automation.sourceRecords
+        .map((record) => record.candidateId)
+        .filter((id): id is string => Boolean(id));
+      if (!targetId || sourceIds.length === 0)
+        throw new DossierWorkflowInputError(
+          "Automation group no longer has a resolvable source and target",
+          409,
+          "automation_unresolved_group",
+        );
+      if (
+        group.automation.automationLevel === "auto_clean_now" ||
+        (allowMerge && group.automation.automationLevel === "auto_merge_now")
+      ) {
+        nextState = performSafeCandidateMerge({
+          state: nextState,
+          targetCandidateId: targetId,
+          sourceCandidateIds: sourceIds,
+          now,
+          reason: group.automation.reason,
+        });
+        changed.push(`${group.automation.automationLevel}:${group.id}`);
+        return;
+      }
+      throw new DossierWorkflowInputError(
+        "Automation revalidation refused this group",
+        409,
+        "automation_revalidation_refused",
+      );
+    };
+
+    if (input.action === "auto_clean_group") {
+      if (!input.groupId)
+        throw new DossierWorkflowInputError(
+          "groupId is required",
+          400,
+          "missing_group_id",
+        );
+      runGroup(input.groupId, false);
+    } else if (input.action === "auto_merge_group") {
+      if (!input.groupId)
+        throw new DossierWorkflowInputError(
+          "groupId is required",
+          400,
+          "missing_group_id",
+        );
+      runGroup(input.groupId, true);
+    } else if (input.action === "auto_attach_recommendation") {
+      if (!input.recommendationId)
+        throw new DossierWorkflowInputError(
+          "recommendationId is required",
+          400,
+          "missing_recommendation_id",
+        );
+      const item = audit.unattachedBnlRecommendations.find(
+        (recommendation) => recommendation.id === input.recommendationId,
+      );
+      if (
+        !item ||
+        item.automation.automationLevel !== "auto_attach_now" ||
+        !item.matchingSourceFileId
+      ) {
+        throw new DossierWorkflowInputError(
+          "Recommendation can no longer be safely auto-attached",
+          409,
+          "automation_attach_not_safe",
+        );
+      }
+      const recommendation = nextState.recommendations.find(
+        (rec) => rec.id === item.id,
+      );
+      const candidate = nextState.candidates.find(
+        (cand) => cand.id === item.matchingSourceFileId,
+      );
+      if (!recommendation || !candidate)
+        throw new DossierWorkflowInputError(
+          "Recommendation or Source File disappeared before attach",
+          409,
+          "automation_attach_missing_record",
+        );
+      if (
+        !sameConfirmedSubject(candidate, recommendation.subjectName) &&
+        (!recommendation.subjectKey ||
+          !sameConfirmedSubject(candidate, recommendation.subjectKey))
+      ) {
+        throw new DossierWorkflowInputError(
+          "Recommendation subject proof changed before attach",
+          409,
+          "automation_attach_proof_changed",
+        );
+      }
+      const note: DossierSourceFileNote = {
+        id: createSourceFileNoteId(),
+        candidateId: candidate.id,
+        type: "general_note",
+        text: recommendation.ingestSource?.startsWith("bnl")
+          ? bnlAutoCandidateNoteText(recommendation)
+          : recommendationSourceNoteText(recommendation),
+        source: "bnl_recommendation",
+        status: "active",
+        publicSafe: false,
+        createdAt: now,
+        updatedAt: now,
+        createdBy: recommendation.createdBy,
+        ingestKey: recommendation.ingestKey,
+        ingestedAt: recommendation.ingestedAt,
+        ingestSource: recommendation.ingestSource,
+      };
+      nextState = {
+        ...nextState,
+        recommendations: nextState.recommendations.map((rec) =>
+          rec.id === recommendation.id
+            ? {
+                ...rec,
+                status: "attached_to_source_file",
+                targetCandidateId: candidate.id,
+                updatedAt: now,
+              }
+            : rec,
+        ),
+        candidates: nextState.candidates.map((cand) =>
+          cand.id === candidate.id
+            ? {
+                ...cand,
+                sourceFileNotes: [note, ...(cand.sourceFileNotes ?? [])],
+                updatedAt: now,
+              }
+            : cand,
+        ),
+        updatedAt: now,
+      };
+      changed.push(`auto_attach_now:${recommendation.id}`);
+    } else if (input.action === "clean_duplicate_recommendations") {
+      const group = audit.duplicateRecommendationGroups.find(
+        (item) => item.id === input.groupId,
+      );
+      if (!group)
+        throw new DossierWorkflowInputError(
+          "Duplicate recommendation group not found",
+          409,
+          "automation_duplicate_recommendation_group_not_found",
+        );
+      nextState = {
+        ...nextState,
+        recommendations: nextState.recommendations.map((recommendation) =>
+          group.duplicateRecommendationIds.includes(recommendation.id)
+            ? { ...recommendation, status: "archived", updatedAt: now }
+            : recommendation,
+        ),
+        updatedAt: now,
+      };
+      changed.push(`duplicate_recommendations:${group.id}`);
+    } else if (input.action === "suppress_duplicate_group") {
+      if (!input.groupId)
+        throw new DossierWorkflowInputError(
+          "groupId is required",
+          400,
+          "missing_group_id",
+        );
+      const group = audit.possibleDuplicateGroups.find(
+        (item) => item.id === input.groupId,
+      );
+      if (!group)
+        throw new DossierWorkflowInputError(
+          "Suppression group not found",
+          409,
+          "automation_group_not_found",
+        );
+      const suppression: DossierPopulationAuditSuppression = {
+        id: `audit-suppression-${now.replace(/[^0-9]/g, "")}-${Math.random().toString(36).slice(2, 8)}`,
+        groupId: group.id,
+        recordIds: group.records.map((record) => record.id).sort(),
+        reason: input.reason?.trim() || "Not the same subject / keep separate.",
+        createdAt: now,
+        createdBy: "admin",
+      };
+      nextState = {
+        ...nextState,
+        populationAuditSuppressions: [
+          suppression,
+          ...nextState.populationAuditSuppressions,
+        ],
+        updatedAt: now,
+      };
+      changed.push(`suppressed:${group.id}`);
+    } else if (input.action === "bulk_safe_cleanup") {
+      for (const group of audit.possibleDuplicateGroups) {
+        if (group.automation.automationLevel === "auto_clean_now")
+          runGroup(group.id, false);
+      }
+      for (const item of audit.unattachedBnlRecommendations) {
+        if (
+          item.automation.automationLevel !== "auto_attach_now" ||
+          !item.matchingSourceFileId
+        )
+          continue;
+        // Re-run as a focused mutation on the current nextState by recursion would deadlock; attach minimally here.
+        const recommendation = nextState.recommendations.find(
+          (rec) => rec.id === item.id,
+        );
+        const candidate = nextState.candidates.find(
+          (cand) => cand.id === item.matchingSourceFileId,
+        );
+        if (!recommendation || !candidate) continue;
+        if (
+          !sameConfirmedSubject(candidate, recommendation.subjectName) &&
+          (!recommendation.subjectKey ||
+            !sameConfirmedSubject(candidate, recommendation.subjectKey))
+        )
+          continue;
+        const note: DossierSourceFileNote = {
+          id: createSourceFileNoteId(),
+          candidateId: candidate.id,
+          type: "general_note",
+          text: recommendation.ingestSource?.startsWith("bnl")
+            ? bnlAutoCandidateNoteText(recommendation)
+            : recommendationSourceNoteText(recommendation),
+          source: "bnl_recommendation",
+          status: "active",
+          publicSafe: false,
+          createdAt: now,
+          updatedAt: now,
+          createdBy: recommendation.createdBy,
+          ingestKey: recommendation.ingestKey,
+          ingestedAt: recommendation.ingestedAt,
+          ingestSource: recommendation.ingestSource,
+        };
+        nextState = {
+          ...nextState,
+          recommendations: nextState.recommendations.map((rec) =>
+            rec.id === recommendation.id
+              ? {
+                  ...rec,
+                  status: "attached_to_source_file",
+                  targetCandidateId: candidate.id,
+                  updatedAt: now,
+                }
+              : rec,
+          ),
+          candidates: nextState.candidates.map((cand) =>
+            cand.id === candidate.id
+              ? {
+                  ...cand,
+                  sourceFileNotes: [note, ...(cand.sourceFileNotes ?? [])],
+                  updatedAt: now,
+                }
+              : cand,
+          ),
+        };
+        changed.push(`auto_attach_now:${recommendation.id}`);
+      }
+      for (const group of audit.duplicateRecommendationGroups) {
+        nextState = {
+          ...nextState,
+          recommendations: nextState.recommendations.map((recommendation) =>
+            group.duplicateRecommendationIds.includes(recommendation.id)
+              ? { ...recommendation, status: "archived", updatedAt: now }
+              : recommendation,
+          ),
+        };
+        if (group.duplicateRecommendationIds.length > 0)
+          changed.push(`duplicate_recommendations:${group.id}`);
+      }
+      nextState = { ...nextState, updatedAt: now };
+    }
+
+    finalAudit = auditForState(nextState);
+    return nextState;
+  });
+  return {
+    action: input.action,
+    audit: finalAudit ?? auditForState(await getDossierWorkflowState()),
+    changed,
+  };
 }
 
 export function getDossierWorkflowStorageMode(): "redis" | "memory_fallback" {

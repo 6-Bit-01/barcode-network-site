@@ -55,6 +55,7 @@ import {
   retireDossierIdentityLink,
   mergeDossierCandidates,
   markCandidateAsExistingDossierUpdate,
+  runDossierPopulationAutomation,
   permanentlyDeleteDossierCandidate,
   promoteCandidateToSourceFile,
   restoreDossierCandidate,
@@ -147,6 +148,7 @@ const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "archiveDossierRecommendation",
   "attachCandidateToExistingDossier",
   "markCandidateAsExistingDossierUpdate",
+  "runDossierPopulationAutomation",
 ]);
 
 async function isAuthenticated(req: Request): Promise<boolean> {
@@ -315,7 +317,6 @@ function draftFieldsFromBody(
   if (typeof draftFields.name !== "string") return null;
   return draftFields;
 }
-
 
 async function verifySourceFileCaseReportAfterImmediateRefresh(input: {
   request: DossierSourceFileRefreshRequest;
@@ -523,8 +524,7 @@ export async function POST(req: Request) {
       } else if (refresh.request && immediateRefresh.status !== "unavailable") {
         await updateDossierSourceFileRefreshRequestStatus({
           requestId: refresh.request.id,
-          status:
-            immediateRefresh.status === "skipped" ? "skipped" : "failed",
+          status: immediateRefresh.status === "skipped" ? "skipped" : "failed",
           failureReason: immediateRefresh.failureReason,
         });
       }
@@ -559,10 +559,11 @@ export async function POST(req: Request) {
         source: "admin_manual",
         requestingSiteOrigin,
       });
-      const immediateRefresh = await verifySourceFileCaseReportAfterImmediateRefresh({
-        request: refresh.request,
-        immediateRefresh: immediateRefreshRaw,
-      });
+      const immediateRefresh =
+        await verifySourceFileCaseReportAfterImmediateRefresh({
+          request: refresh.request,
+          immediateRefresh: immediateRefreshRaw,
+        });
       if (immediateRefresh.ok) {
         await updateDossierSourceFileRefreshRequestStatus({
           requestId: refresh.request.id,
@@ -572,8 +573,7 @@ export async function POST(req: Request) {
       } else if (immediateRefresh.status !== "unavailable") {
         await updateDossierSourceFileRefreshRequestStatus({
           requestId: refresh.request.id,
-          status:
-            immediateRefresh.status === "skipped" ? "skipped" : "failed",
+          status: immediateRefresh.status === "skipped" ? "skipped" : "failed",
           failureReason: immediateRefresh.failureReason,
         });
       }
@@ -782,6 +782,57 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, action, candidate, ...payload });
     }
 
+    if (action === "runDossierPopulationAutomation") {
+      const automationAction =
+        typeof body.automationAction === "string"
+          ? body.automationAction
+          : typeof (body.input as Record<string, unknown> | undefined)
+                ?.automationAction === "string"
+            ? String((body.input as Record<string, unknown>).automationAction)
+            : "";
+      const groupId =
+        typeof body.groupId === "string"
+          ? body.groupId
+          : typeof (body.input as Record<string, unknown> | undefined)
+                ?.groupId === "string"
+            ? String((body.input as Record<string, unknown>).groupId)
+            : undefined;
+      const recommendationId =
+        typeof body.recommendationId === "string"
+          ? body.recommendationId
+          : typeof (body.input as Record<string, unknown> | undefined)
+                ?.recommendationId === "string"
+            ? String((body.input as Record<string, unknown>).recommendationId)
+            : undefined;
+      const reason =
+        typeof body.reason === "string"
+          ? body.reason
+          : typeof (body.input as Record<string, unknown> | undefined)
+                ?.reason === "string"
+            ? String((body.input as Record<string, unknown>).reason)
+            : undefined;
+      if (
+        automationAction !== "auto_clean_group" &&
+        automationAction !== "auto_merge_group" &&
+        automationAction !== "auto_attach_recommendation" &&
+        automationAction !== "clean_duplicate_recommendations" &&
+        automationAction !== "bulk_safe_cleanup" &&
+        automationAction !== "suppress_duplicate_group"
+      ) {
+        return NextResponse.json(
+          { error: "Valid dossier population automation action is required" },
+          { status: 400 },
+        );
+      }
+      const automation = await runDossierPopulationAutomation({
+        action: automationAction,
+        groupId,
+        recommendationId,
+        reason,
+      });
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, automation, ...payload });
+    }
     if (
       action === "promoteCandidateToSourceFile" ||
       action === "archiveCandidate" ||

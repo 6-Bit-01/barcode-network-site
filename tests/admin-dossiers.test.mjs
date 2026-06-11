@@ -2110,6 +2110,8 @@ test("Subject Consolidation Queue renders action summary, review cards, blocked 
   assert.match(source("src/lib/dossier-workflow.ts"), /export type SubjectConsolidationBrief/);
   assert.match(source("src/lib/dossier-workflow.ts"), /generatedBy: "BNL"/);
   assert.match(source("src/lib/dossier-workflow.ts"), /isDiagnosticTestArtifactCandidate/);
+  assert.match(source("src/lib/dossier-workflow.ts"), /isConsolidationResolvedCandidate/);
+  assert.match(page, /!isConsolidationResolvedCandidate\(candidate\)/);
   assert.match(source("src/lib/dossier-workflow-store.ts"), /bundleExactPublicDossierUpdateSignals/);
   assert.doesNotMatch(pageCopy, /Source File Population Audit|Population Audit|Open Recommendation|Open Source File|Open Target|Open Incoming|Merge Into Kept Source File|Attach to Kept Source File|Create Source File From These Signals|Create Dossier Update Workspace without public dossier\/context/);
   const queueCopy = pageCopy.slice(pageCopy.indexOf("Subject Consolidation Queue"), pageCopy.indexOf("Candidates", pageCopy.indexOf("Subject Consolidation Queue")));
@@ -2633,6 +2635,8 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
   assert.ok(updateWorkspace.sourceRecommendationIds.includes("rec-public-b"));
   assert.ok(updateWorkspace.sourceRecommendationIds.includes("rec-public-variant"));
   assert.ok(updateWorkspace.whyNow.includes(`Bundled 3 ${publicEntry.name} update signals into ${publicEntry.name} Dossier Update workspace.`));
+  assert.equal(updateWorkspace.mergeNote, "bundled_into_dossier_update");
+  assert.ok(workflow.isConsolidationResolvedCandidate(updateWorkspace));
   for (const id of ["rec-public-a", "rec-public-b", "rec-public-variant"]) {
     const publicRec = payload.recommendations.find((item) => item.id === id);
     assert.equal(publicRec.status, "attached_to_existing_dossier_update");
@@ -2645,6 +2649,11 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
   assert.ok(!activeReviewUpdateIds.includes("rec-public-a"));
   assert.ok(!activeReviewUpdateIds.includes("rec-public-b"));
   assert.ok(!activeReviewUpdateIds.includes("rec-public-variant"));
+  const activeDossierUpdateWorkspaceIds = payload.candidates
+    .filter((item) => item.status === "existing_dossier_update")
+    .filter((item) => !workflow.isConsolidationResolvedCandidate(item))
+    .map((item) => item.id);
+  assert.ok(!activeDossierUpdateWorkspaceIds.includes(updateWorkspace.id));
   const checkpointCandidate = payload.candidates.find((item) => item.id === "checkpoint-artifact");
   const checkpointRecommendation = payload.recommendations.find((item) => item.id === "rec-checkpoint");
   assert.equal(checkpointCandidate.status, "archived");

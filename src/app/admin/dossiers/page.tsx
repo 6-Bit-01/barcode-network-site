@@ -5,8 +5,10 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   createDossierPopulationAudit,
   getDossierSourceFileMetrics,
+  isConsolidationResolvedCandidate,
   isDiagnosticTestArtifactCandidate,
   isDiagnosticTestArtifactRecommendation,
+  isResolvedDossierRecommendation,
   matchDossierRecommendationSubject,
   type DossierCandidate,
   type DossierDraft,
@@ -384,9 +386,14 @@ export default function DossierControlCenterPage() {
     [payload?.publicDossiers],
   );
   const diagnosticRecommendations = recommendations.filter(isDiagnosticTestArtifactRecommendation);
+  const resolvedCandidateIds = new Set(
+    candidates.filter(isConsolidationResolvedCandidate).map((candidate) => candidate.id),
+  );
   const activeRecommendations = recommendations.filter((recommendation) =>
     ["new", "reviewing"].includes(recommendation.status) &&
-    !isDiagnosticTestArtifactRecommendation(recommendation),
+    !isResolvedDossierRecommendation(recommendation) &&
+    !isDiagnosticTestArtifactRecommendation(recommendation) &&
+    ![recommendation.targetCandidateId, recommendation.connectedCandidateId, recommendation.connectedSourceFileCandidateId].some((candidateId) => candidateId && resolvedCandidateIds.has(candidateId)),
   );
   const activeDossierUpdateRecommendations = activeRecommendations.filter(
     (recommendation) =>
@@ -418,10 +425,13 @@ export default function DossierControlCenterPage() {
   );
   const activeCandidates = candidates.filter((candidate) =>
     activeCandidateStatuses.has(candidate.status) &&
-    !isDiagnosticTestArtifactCandidate(candidate),
+    !isDiagnosticTestArtifactCandidate(candidate) &&
+    !isConsolidationResolvedCandidate(candidate),
   );
   const existingDossierUpdates = normalCandidates.filter(
-    (candidate) => candidate.status === "existing_dossier_update",
+    (candidate) =>
+      candidate.status === "existing_dossier_update" &&
+      !isConsolidationResolvedCandidate(candidate),
   );
   const archivedCandidates = candidates.filter(
     (candidate) => candidate.status === "archived",

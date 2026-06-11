@@ -1029,6 +1029,33 @@ export function isDiagnosticTestArtifactCandidate(candidate: DossierCandidate): 
   return /checkpoint|smoke test|manual endpoint smoke test|diagnostic|\bprobe\b|\btest\b/i.test(joined);
 }
 
+export function isResolvedDossierRecommendation(
+  recommendation: DossierRecommendation,
+): boolean {
+  return [
+    "attached_to_source_file",
+    "attached_to_candidate_intake",
+    "attached_to_existing_dossier_update",
+    "converted_to_source_file",
+    "identity_link_created",
+    "ignored",
+    "dismissed",
+    "archived",
+  ].includes(recommendation.status);
+}
+
+export function isConsolidationResolvedCandidate(candidate: DossierCandidate): boolean {
+  if (candidate.status === "merged" || candidate.status === "denied") return true;
+  if (isDiagnosticTestArtifactCandidate(candidate)) return true;
+  const lifecycleText = [
+    candidate.mergeNote,
+    candidate.routingReason,
+    candidate.reason,
+    candidate.whyNow,
+  ].filter(Boolean).join(" ");
+  return /bundled_into_dossier_update|Bundled .* update signals into .* Dossier Update workspace|Subject Consolidation archived diagnostic_test_artifact/i.test(lifecycleText);
+}
+
 function duplicateGroupPriority(
   matchKind: DossierPopulationAuditDuplicateGroup["matchKind"],
 ): number {

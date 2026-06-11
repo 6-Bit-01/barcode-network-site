@@ -5915,6 +5915,7 @@ export async function runSubjectConsolidation(input: { groupId?: string } = {}):
             status: "existing_dossier_update",
             sourceRecommendationIds: [],
             connectedRecommendationIds: [],
+            mergeNote: "bundled_into_dossier_update",
             createdAt: now,
             updatedAt: now,
           };
@@ -5944,6 +5945,7 @@ export async function runSubjectConsolidation(input: { groupId?: string } = {}):
           connectedRecommendationIds: uniqueStrings(workspace.connectedRecommendationIds, recommendations.map((item) => item.id)),
           sourceLanes: uniqueStrings(workspace.sourceLanes, ...recommendations.map((item) => item.sourceLanes)) as DossierRecommendationSourceLane[],
           routingReason: `Bundled ${recommendations.length} exact public dossier update signal${recommendations.length === 1 ? "" : "s"}.`,
+          mergeNote: "bundled_into_dossier_update",
           updatedAt: now,
         };
         state = {

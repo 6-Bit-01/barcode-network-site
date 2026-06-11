@@ -764,6 +764,44 @@ export type DossierPopulationAuditRecord = {
   proposedAliasCount: number;
   attachedRecommendationCount: number;
   missingLatestCaseReport: boolean;
+  activeDraftStatus?: DossierDraftStatus;
+  sourceNotesCount: number;
+  hasLatestArchiveOrReport: boolean;
+  uniqueInfo: string[];
+};
+
+export type DossierPopulationAutomationTier =
+  | "Auto-clean candidate"
+  | "Auto-merge candidate"
+  | "Auto-attach candidate"
+  | "Review required"
+  | "Blocked"
+  | "Keep separate / false positive"
+  | "Needs Source File target"
+  | "Recommendation-only duplicate group";
+
+export type DossierPopulationMergePlanSection = {
+  title: string;
+  willAddLater: string[];
+  alreadyPresent: string[];
+  needsReview: string[];
+  willNotPublish: string[];
+};
+
+export type DossierPopulationConsolidationPlan = {
+  groupId: string;
+  groupType: DossierPopulationAuditDuplicateGroup["matchKind"];
+  confidence: "high" | "medium" | "low";
+  reason: string;
+  targetRecord?: DossierPopulationAuditRecord;
+  sourceRecords: DossierPopulationAuditRecord[];
+  targetSelectionReason: string;
+  automationTier: DossierPopulationAutomationTier;
+  recommendedNextStep: string;
+  canBeAutomatedLater: boolean;
+  requiresReview: boolean;
+  blockedReasons: string[];
+  mergePlanSections: DossierPopulationMergePlanSection[];
 };
 
 export type DossierPopulationAuditDuplicateGroup = {
@@ -778,6 +816,7 @@ export type DossierPopulationAuditDuplicateGroup = {
   publicDossierMatch?: { id: string; name?: string };
   records: DossierPopulationAuditRecord[];
   suggestedAction: string;
+  consolidationPlan: DossierPopulationConsolidationPlan;
 };
 
 export type DossierPopulationAuditUnattachedRecommendation = {
@@ -794,6 +833,11 @@ export type DossierPopulationAuditUnattachedRecommendation = {
   matchBasis?: string;
   href: string;
   safeNextAction: string;
+  likelyTargetId?: string;
+  likelyTargetName?: string;
+  planClassification: DossierPopulationAutomationTier;
+  matchReason: string;
+  wouldHappenLater: string;
 };
 
 export type DossierPopulationAudit = {
@@ -891,10 +935,238 @@ function duplicateGroupAction(
   return "Review manually before drafting; confirm alias or archive stale duplicate only after owner/admin decision.";
 }
 
+
+function auditRecordUniqueInfo(input: {
+  confirmedAliasCount: number;
+  proposedAliasCount: number;
+  sourceNotesCount: number;
+  attachedRecommendationCount: number;
+  hasLatestArchiveOrReport: boolean;
+  activeDraftStatus?: DossierDraftStatus;
+  publicDossierId?: string;
+}): string[] {
+  const info: string[] = [];
+  if (input.confirmedAliasCount > 0)
+    info.push(`${input.confirmedAliasCount} confirmed alias${input.confirmedAliasCount === 1 ? "" : "es"}`);
+  if (input.proposedAliasCount > 0)
+    info.push(`${input.proposedAliasCount} proposed alias${input.proposedAliasCount === 1 ? "" : "es"}`);
+  if (input.sourceNotesCount > 0)
+    info.push(`${input.sourceNotesCount} active source note${input.sourceNotesCount === 1 ? "" : "s"}`);
+  if (input.attachedRecommendationCount > 0)
+    info.push(`${input.attachedRecommendationCount} BNL recommendation${input.attachedRecommendationCount === 1 ? "" : "s"}`);
+  if (input.hasLatestArchiveOrReport) info.push("latest BNL archive or case report");
+  if (input.activeDraftStatus) info.push(`active proposed dossier (${input.activeDraftStatus})`);
+  if (input.publicDossierId) info.push("public dossier match");
+  return info.length > 0 ? info : ["No unique useful data detected by audit."];
+}
+
+function recordHasUsefulData(record: DossierPopulationAuditRecord): boolean {
+  return (
+    record.confirmedAliasCount > 0 ||
+    record.proposedAliasCount > 0 ||
+    record.sourceNotesCount > 0 ||
+    record.attachedRecommendationCount > 0 ||
+    record.hasLatestArchiveOrReport ||
+    Boolean(record.activeDraftStatus) ||
+    Boolean(record.publicDossierId)
+  );
+}
+
+function targetScore(record: DossierPopulationAuditRecord): number {
+  let score = 0;
+  if (record.publicDossierId) score += 100;
+  if (record.activeDraftStatus) score += 80;
+  if (record.type === "source_file" || record.type === "dossier_update") score += 60;
+  if (record.type === "candidate_intake") score += 30;
+  if (record.type === "recommendation") score += 5;
+  score += record.confirmedAliasCount * 8;
+  if (record.hasLatestArchiveOrReport) score += 7;
+  score += record.sourceNotesCount * 3;
+  score += record.attachedRecommendationCount * 2;
+  return score;
+}
+
+function targetSelectionReason(record?: DossierPopulationAuditRecord): string {
+  if (!record) return "No Source File or candidate target could be resolved.";
+  if (record.publicDossierId)
+    return "Selected because it already has an existing public dossier match.";
+  if (record.activeDraftStatus)
+    return "Selected because it has an active proposed dossier draft.";
+  if (record.type === "source_file" || record.type === "dossier_update")
+    return "Selected because an active Source File / Case File is safer than candidate intake or a loose recommendation.";
+  if (record.confirmedAliasCount > 0)
+    return "Selected because it has confirmed aliases that can safely support matching.";
+  if (record.hasLatestArchiveOrReport)
+    return "Selected because it has the latest BNL Source File archive or case report evidence.";
+  if (record.sourceNotesCount > 0 || record.attachedRecommendationCount > 0)
+    return "Selected because it has more source notes, recommendations, or evidence.";
+  return "Selected as the older stable record after higher-priority target signals tied.";
+}
+
+function planSection(
+  title: string,
+  willAddLater: string[],
+  alreadyPresent: string[],
+  needsReview: string[],
+  willNotPublish: string[],
+): DossierPopulationMergePlanSection {
+  return { title, willAddLater, alreadyPresent, needsReview, willNotPublish };
+}
+
+function createConsolidationPlan(input: {
+  id: string;
+  matchKind: DossierPopulationAuditDuplicateGroup["matchKind"];
+  reason: string;
+  records: DossierPopulationAuditRecord[];
+}): DossierPopulationConsolidationPlan {
+  const records = uniqueAuditRecords(input.records);
+  const candidateRecords = records.filter((record) => record.type !== "recommendation");
+  const recommendationRecords = records.filter((record) => record.type === "recommendation");
+  const sortedCandidates = [...candidateRecords].sort(
+    (left, right) =>
+      targetScore(right) - targetScore(left) ||
+      left.status.localeCompare(right.status) ||
+      left.id.localeCompare(right.id),
+  );
+  const targetRecord = sortedCandidates[0];
+  const sourceRecords = targetRecord
+    ? records.filter((record) => recordKey(record) !== recordKey(targetRecord))
+    : records;
+  const publicTargets = new Set(records.map((record) => record.publicDossierId).filter(Boolean));
+  const activeDraftCount = records.filter((record) => record.activeDraftStatus).length;
+  const blockedReasons: string[] = [];
+  if (publicTargets.size > 1) blockedReasons.push("Different public dossier matches are present.");
+  if (activeDraftCount > 1) blockedReasons.push("Multiple records have active proposed dossiers.");
+  if (!targetRecord) blockedReasons.push("Needs Source File target: no active Source File or candidate record exists in this group.");
+  if (records.some((record) => record.status === "merged" || record.status === "deleted")) {
+    blockedReasons.push("Already merged/deleted record involved.");
+  }
+
+  let automationTier: DossierPopulationAutomationTier = "Review required";
+  if (blockedReasons.length > 0) automationTier = targetRecord ? "Blocked" : "Recommendation-only duplicate group";
+  else if (
+    sourceRecords.length > 0 &&
+    sourceRecords.every((record) => !recordHasUsefulData(record))
+  ) automationTier = "Auto-clean candidate";
+  else if (
+    recommendationRecords.length > 0 &&
+    sourceRecords.every((record) => record.type === "recommendation") &&
+    (input.matchKind === "normalized_name" || input.matchKind === "confirmed_alias" || input.matchKind === "recommendation_subject_key" || input.matchKind === "bnl_recommendation_subject_name")
+  ) automationTier = "Auto-attach candidate";
+  else if (
+    input.matchKind === "normalized_name" ||
+    input.matchKind === "confirmed_alias" ||
+    input.matchKind === "public_dossier"
+  ) automationTier = "Auto-merge candidate";
+  if (records.some((record) => record.proposedAliasCount > 0) && input.matchKind !== "confirmed_alias") {
+    automationTier = automationTier === "Blocked" ? automationTier : "Review required";
+  }
+
+  const canBeAutomatedLater = [
+    "Auto-clean candidate",
+    "Auto-merge candidate",
+    "Auto-attach candidate",
+  ].includes(automationTier);
+  const requiresReview = !canBeAutomatedLater || records.some((record) => record.proposedAliasCount > 0);
+
+  return {
+    groupId: input.id,
+    groupType: input.matchKind,
+    confidence:
+      input.matchKind === "confirmed_alias" || input.matchKind === "public_dossier"
+        ? "high"
+        : input.matchKind === "normalized_name"
+          ? "medium"
+          : "low",
+    reason: input.reason,
+    targetRecord,
+    sourceRecords,
+    targetSelectionReason: targetSelectionReason(targetRecord),
+    automationTier,
+    recommendedNextStep: canBeAutomatedLater
+      ? `${automationTier} only: verify the plan before enabling real cleanup actions in a future PR.`
+      : automationTier === "Recommendation-only duplicate group"
+        ? "Needs Source File target before any attach or merge action can be automated."
+        : "Admin review required before any future automation.",
+    canBeAutomatedLater,
+    requiresReview,
+    blockedReasons,
+    mergePlanSections: [
+      planSection(
+        "Identity / aliases",
+        sourceRecords.some((record) => record.confirmedAliasCount > 0)
+          ? ["Confirmed internal aliases could be moved later."]
+          : [],
+        targetRecord?.confirmedAliasCount ? ["Target already has confirmed aliases."] : [],
+        sourceRecords.some((record) => record.proposedAliasCount > 0)
+          ? ["Proposed aliases require human confirmation before use."]
+          : [],
+        ["Internal aliases stay internal and will not publish automatically."],
+      ),
+      planSection(
+        "Recommendations / BNL Signals",
+        sourceRecords.some((record) => record.attachedRecommendationCount > 0)
+          ? ["Would attach or preserve BNL recommendations later."]
+          : [],
+        targetRecord?.attachedRecommendationCount ? ["Target already has BNL recommendations."] : [],
+        recommendationRecords.length > 0 && !targetRecord
+          ? ["Recommendation-only duplicate group needs a Source File target."]
+          : [],
+        ["Duplicate signals will not change public dossier copy."],
+      ),
+      planSection(
+        "Source notes",
+        sourceRecords.some((record) => record.sourceNotesCount > 0)
+          ? ["Would move active source notes later."]
+          : [],
+        targetRecord?.sourceNotesCount ? ["Target already has source notes."] : [],
+        sourceRecords.some((record) => record.sourceNotesCount > 0) ? ["Review note ownership before moving."] : [],
+        ["Source notes remain internal until reviewed."],
+      ),
+      planSection(
+        "Archives / BNL reports",
+        sourceRecords.some((record) => record.hasLatestArchiveOrReport)
+          ? ["Source archive available to preserve later."]
+          : [],
+        targetRecord?.hasLatestArchiveOrReport ? ["Preserve target latest archive."] : [],
+        sourceRecords.some((record) => record.missingLatestCaseReport)
+          ? ["Source is missing latest archive/case report."]
+          : [],
+        sourceRecords.every((record) => !record.hasLatestArchiveOrReport)
+          ? ["No archive to move from source records."]
+          : [],
+      ),
+      planSection(
+        "Drafts / public dossiers",
+        [],
+        [
+          targetRecord?.activeDraftStatus ? `Target has draft (${targetRecord.activeDraftStatus}).` : "Target has no active draft.",
+          targetRecord?.publicDossierId ? "Public dossier match present on target." : "Public dossier match none on target.",
+        ],
+        [
+          ...sourceRecords.map((record) =>
+            `${record.name}: ${record.activeDraftStatus ? `source has draft (${record.activeDraftStatus})` : "source has no draft"}; ${record.publicDossierId ? "public dossier match present" : "public dossier match none"}.`,
+          ),
+          ...blockedReasons,
+        ],
+        [],
+      ),
+      planSection(
+        "Safety",
+        [],
+        ["Public dossier copy will not change.", "Nothing publishes automatically."],
+        requiresReview ? ["Human review gate remains required for unsafe or unclear data."] : [],
+        ["Internal aliases stay internal.", "No merge/delete/archive/attach action is live in this PR."],
+      ),
+    ],
+  };
+}
+
 export function createDossierPopulationAudit(input: {
   candidates: DossierCandidate[];
   recommendations?: DossierRecommendation[];
   publicDossiers?: Array<{ id: string; name: string }>;
+  drafts?: DossierDraft[];
 }): DossierPopulationAudit {
   const recommendations = input.recommendations ?? [];
   const bnlRecommendations = recommendations.filter(isBnlRecommendation);
@@ -904,6 +1176,16 @@ export function createDossierPopulationAudit(input: {
   const publicDossiersById = new Map(
     (input.publicDossiers ?? []).map((dossier) => [dossier.id, dossier]),
   );
+  const activeDraftByCandidateId = new Map<string, DossierDraft>();
+  for (const draft of input.drafts ?? []) {
+    if (
+      draft.status === "draft" ||
+      draft.status === "owner_changes_requested" ||
+      draft.status === "ready_for_owner_review"
+    ) {
+      activeDraftByCandidateId.set(draft.candidateId, draft);
+    }
+  }
 
   const bnlRecommendationIdsByCandidate = new Map<string, Set<string>>();
   for (const recommendation of bnlRecommendations) {
@@ -960,6 +1242,31 @@ export function createDossierPopulationAudit(input: {
         bnlRecommendationIdsByCandidate.get(candidate.id)?.size ?? 0,
       missingLatestCaseReport:
         candidateMissingLatestCaseReportOrEnrichment(candidate),
+      activeDraftStatus: activeDraftByCandidateId.get(candidate.id)?.status,
+      sourceNotesCount: (candidate.sourceFileNotes ?? []).filter(
+        (note) => note.status === "active",
+      ).length,
+      hasLatestArchiveOrReport: Boolean(
+        candidate.latestSourceFileArchiveUpdatedAt ||
+          candidate.latestSourceFileArchiveId ||
+          candidate.latestSourceFileArchive?.caseReportPresent,
+      ),
+      uniqueInfo: auditRecordUniqueInfo({
+        confirmedAliasCount,
+        proposedAliasCount,
+        sourceNotesCount: (candidate.sourceFileNotes ?? []).filter(
+          (note) => note.status === "active",
+        ).length,
+        attachedRecommendationCount:
+          bnlRecommendationIdsByCandidate.get(candidate.id)?.size ?? 0,
+        hasLatestArchiveOrReport: Boolean(
+          candidate.latestSourceFileArchiveUpdatedAt ||
+            candidate.latestSourceFileArchiveId ||
+            candidate.latestSourceFileArchive?.caseReportPresent,
+        ),
+        activeDraftStatus: activeDraftByCandidateId.get(candidate.id)?.status,
+        publicDossierId: candidate.existingDossierMatch?.id,
+      }),
     } satisfies DossierPopulationAuditRecord;
   });
   const recordByCandidateId = new Map(
@@ -1059,8 +1366,19 @@ export function createDossierPopulationAudit(input: {
         matchBasis,
         href: `/admin/dossiers/recommendations/${recommendation.id}`,
         safeNextAction: matchingSourceFile
-          ? "Review manually; attach to the matching Source File only after admin confirmation."
-          : "Review manually; decide whether this becomes a Dossier Seed, Dossier Update, or archive item.",
+          ? "Classification only: eligible to attach later after the classifier is approved."
+          : "Needs Source File target: decide whether this becomes a Dossier Seed, Dossier Update, or archive item.",
+        likelyTargetId: matchingSourceFile?.id,
+        likelyTargetName: matchingSourceFile?.name,
+        planClassification: matchingSourceFile
+          ? "Auto-attach candidate"
+          : "Needs Source File target",
+        matchReason: matchingSourceFile
+          ? `Exact/confirmed ${matchBasis ?? "subject"} match to active Source File.`
+          : "No exact normalized-name, subjectKey, or confirmed-alias active Source File target exists yet.",
+        wouldHappenLater: matchingSourceFile
+          ? "Later automation could attach this recommendation to the matching Source File without changing public dossier copy."
+          : "Later automation must wait until an admin selects or creates a Source File target.",
       } satisfies DossierPopulationAuditUnattachedRecommendation;
     })
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
@@ -1164,20 +1482,69 @@ export function createDossierPopulationAudit(input: {
       proposedAliasCount: 0,
       attachedRecommendationCount: 1,
       missingLatestCaseReport: false,
+      sourceNotesCount: 0,
+      hasLatestArchiveOrReport: false,
+      uniqueInfo: auditRecordUniqueInfo({
+        confirmedAliasCount: 0,
+        proposedAliasCount: 0,
+        sourceNotesCount: 0,
+        attachedRecommendationCount: 1,
+        hasLatestArchiveOrReport: false,
+        activeDraftStatus: undefined,
+        publicDossierId: recommendation.targetDossierId,
+      }),
     };
+    const recommendationSubjectKey = normalizeDossierSubjectName(
+      recommendation.subjectName,
+    );
+    const subjectKeyRecord = recommendation.subjectKey
+      ? normalizeDossierSubjectName(recommendation.subjectKey)
+      : "";
+    const matchingRecommendationSourceFile =
+      activeSourceFilesByNormalizedName.get(recommendationSubjectKey) ??
+      (subjectKeyRecord
+        ? activeSourceFilesByNormalizedName.get(subjectKeyRecord)
+        : undefined) ??
+      activeSourceFilesByConfirmedAlias.get(recommendationSubjectKey) ??
+      (subjectKeyRecord
+        ? activeSourceFilesByConfirmedAlias.get(subjectKeyRecord)
+        : undefined);
     addBucketRecord(
       "bnl_recommendation_subject_name",
-      normalizeDossierSubjectName(recommendation.subjectName),
-      "Same normalized subjectName from BNL recommendations.",
+      recommendationSubjectKey,
+      matchingRecommendationSourceFile
+        ? "BNL recommendation subject matches an active Source File target."
+        : "Same normalized subjectName from BNL recommendations.",
       record,
     );
+    const matchingRecommendationSourceFileRecord = matchingRecommendationSourceFile
+      ? recordByCandidateId.get(matchingRecommendationSourceFile.id)
+      : undefined;
+    if (matchingRecommendationSourceFileRecord) {
+      addBucketRecord(
+        "bnl_recommendation_subject_name",
+        recommendationSubjectKey,
+        "BNL recommendation subject matches an active Source File target.",
+        matchingRecommendationSourceFileRecord,
+      );
+    }
     if (recommendation.subjectKey) {
       addBucketRecord(
         "recommendation_subject_key",
-        normalizeDossierSubjectName(recommendation.subjectKey),
-        "Same recommendation subjectKey.",
+        subjectKeyRecord,
+        matchingRecommendationSourceFile
+          ? "Recommendation subjectKey matches an active Source File target."
+          : "Same recommendation subjectKey.",
         record,
       );
+      if (matchingRecommendationSourceFileRecord) {
+        addBucketRecord(
+          "recommendation_subject_key",
+          subjectKeyRecord,
+          "Recommendation subjectKey matches an active Source File target.",
+          matchingRecommendationSourceFileRecord,
+        );
+      }
     }
     if (recommendation.targetDossierId) {
       addBucketRecord(
@@ -1204,6 +1571,15 @@ export function createDossierPopulationAudit(input: {
       publicDossierMatch: bucket.publicDossierMatch,
       records: uniqueAuditRecords(bucket.records),
       suggestedAction: duplicateGroupAction(bucket.matchKind, bucket.records),
+      consolidationPlan: createConsolidationPlan({
+        id: bucketKey
+          .replace(/[^a-z0-9]+/gi, "-")
+          .replace(/^-|-$/g, "")
+          .toLowerCase(),
+        matchKind: bucket.matchKind,
+        reason: bucket.reason,
+        records: uniqueAuditRecords(bucket.records),
+      }),
     }))
     .filter((group) => group.records.length >= 2)
     .sort(

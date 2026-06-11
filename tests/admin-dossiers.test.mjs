@@ -2042,14 +2042,27 @@ test("Dossier Control Center population audit maps counts, duplicate review, una
     "Records missing latest BNL case report or source enrichment",
     "Possible Duplicate / Same Subject Review",
     "Possible same-subject review",
-    "Needs admin review",
-    "Confirmed aliases:",
-    "Proposed aliases:",
-    "Recommendation count:",
+    "Consolidation plan",
+    "Merging / Source",
+    "Merge Target / Keep",
+    "Target selection:",
+    "Automation tier",
+    "Confirmed aliases count:",
+    "Proposed aliases count:",
+    "Source notes count:",
+    "Recommendations count:",
     "Public dossier match:",
+    "Field-level merge plan",
+    "Identity / aliases",
+    "Recommendations / BNL Signals",
+    "Source notes",
+    "Archives / BNL reports",
+    "Drafts / public dossiers",
+    "Safety",
     "Unattached BNL Signals / Recommendations",
     "BNL recommendations that need placement review",
-    "No clear active Source File match",
+    "Needs Source File target",
+    "What would happen later",
     "The site can only audit records and recommendations already present in the workflow store. Active Discord members who have not been ingested by BNL will not appear here yet.",
     "it does not merge, delete, publish, or mutate records automatically",
   ]) {
@@ -2058,7 +2071,7 @@ test("Dossier Control Center population audit maps counts, duplicate review, una
 
   assert.match(page, /<details className="border border-accent\/40 bg-surface\/70 p-5">/);
   assert.match(page, /createDossierPopulationAudit/);
-  assert.doesNotMatch(page, /Auto Merge|Merge Now|Delete Duplicate|auto-create|autoCreate|autoMerge/);
+  assert.doesNotMatch(page, /Run Safe Cleanup|Remove Empty Duplicate|Attach Automatically|Merge Now|Delete Duplicate|auto-create|autoCreate|autoMerge/);
 });
 
 test("population audit helper uses conservative duplicate signals and leaves proposed aliases out of confirmed matching", () => {
@@ -2173,6 +2186,151 @@ test("population audit helper uses conservative duplicate signals and leaves pro
   assert.ok(audit.possibleDuplicateGroups.some((group) => group.matchKind === "recommendation_subject_key" && group.records.length === 2));
   assert.ok(!audit.possibleDuplicateGroups.some((group) => group.matchKind === "confirmed_alias" && group.records.some((record) => record.name === "Proposed Only")));
   assert.ok(audit.unattachedBnlRecommendations.some((recommendation) => recommendation.id === "rec-unattached" && recommendation.subjectName === "Loose Signal"));
+});
+
+
+test("population audit consolidation plans classify target/source records without mutation actions", () => {
+  const now = "2026-06-11T00:00:00.000Z";
+  const candidate = (overrides) => ({
+    id: overrides.id,
+    name: overrides.name,
+    candidateType: "artist",
+    source: "manual",
+    tier: "review_candidate",
+    score: 5,
+    whyNow: "Fixture",
+    reason: "Fixture",
+    evidenceSummary: "Fixture",
+    status: overrides.status ?? "active_source_file",
+    createdAt: overrides.createdAt ?? now,
+    updatedAt: overrides.updatedAt ?? now,
+    ...overrides,
+  });
+  const recommendation = (overrides) => ({
+    id: overrides.id,
+    type: overrides.type ?? "new_subject",
+    subjectName: overrides.subjectName,
+    subjectKey: overrides.subjectKey,
+    targetDossierId: overrides.targetDossierId,
+    targetCandidateId: overrides.targetCandidateId,
+    status: overrides.status ?? "new",
+    reason: "BNL fixture",
+    confidence: overrides.confidence ?? "medium",
+    sourceLanes: overrides.sourceLanes ?? ["public_discord"],
+    createdAt: now,
+    updatedAt: overrides.updatedAt ?? now,
+    createdBy: "bnl",
+    ingestSource: overrides.ingestSource ?? "bnl_dynamic_candidate_discovery",
+    ...overrides,
+  });
+  const alias = (candidateId, label, status = "confirmed") => ({
+    id: `${candidateId}-${label}-${status}`,
+    candidateId,
+    label,
+    normalizedLabel: workflow.normalizeDossierSubjectName(label),
+    type: "alias",
+    visibility: "internal_only",
+    status,
+    source: "admin_manual",
+    useForMatching: true,
+    useInPublicDossier: false,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  const audit = workflow.createDossierPopulationAudit({
+    publicDossiers: [
+      { id: "public-keep", name: "Public Keep" },
+      { id: "public-other", name: "Public Other" },
+    ],
+    drafts: [
+      {
+        id: "draft-target",
+        candidateId: "active-with-draft",
+        status: "draft",
+        fields: { name: "Draft Target", files: [] },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    candidates: [
+      candidate({
+        id: "public-target",
+        name: "Public Keep",
+        status: "existing_dossier_update",
+        existingDossierMatch: { id: "public-keep", name: "Public Keep", confidence: "high" },
+      }),
+      candidate({ id: "public-loose", name: "Public Keep", status: "candidate_intake" }),
+      candidate({
+        id: "active-with-draft",
+        name: "Active Source",
+        identityLinks: [alias("active-with-draft", "Active Alias")],
+        sourceFileNotes: [{ id: "note-1", candidateId: "active-with-draft", type: "fact", text: "Useful note", source: "admin_manual", status: "active", createdAt: now, updatedAt: now }],
+        latestSourceFileArchiveUpdatedAt: now,
+      }),
+      candidate({ id: "active-empty-duplicate", name: "Active Source", status: "candidate_intake", reason: "", whyNow: "", evidenceSummary: "" }),
+      candidate({ id: "clean-target", name: "Empty Clean", latestSourceFileArchiveUpdatedAt: now }),
+      candidate({ id: "clean-duplicate", name: "Empty Clean", status: "candidate_intake", reason: "", whyNow: "", evidenceSummary: "" }),
+      candidate({ id: "confirmed-target", name: "Confirmed Primary", identityLinks: [alias("confirmed-target", "Confirmed Secondary")] }),
+      candidate({ id: "confirmed-secondary", name: "Confirmed Secondary", sourceFileNotes: [{ id: "note-2", candidateId: "confirmed-secondary", type: "fact", text: "Additive note", source: "admin_manual", status: "active", createdAt: now, updatedAt: now }] }),
+      candidate({ id: "proposed-a", name: "Proposed Review", identityLinks: [alias("proposed-a", "Proposed Maybe", "proposed")] }),
+      candidate({ id: "proposed-b", name: "Proposed Review" }),
+      candidate({ id: "blocked-a", name: "Blocked Same", existingDossierMatch: { id: "public-keep", name: "Public Keep", confidence: "high" } }),
+      candidate({ id: "blocked-b", name: "Blocked Same", existingDossierMatch: { id: "public-other", name: "Public Other", confidence: "high" } }),
+      candidate({ id: "attach-target", name: "Attach Me", identityLinks: [alias("attach-target", "Attach Alias")] }),
+    ],
+    recommendations: [
+      recommendation({ id: "rec-public-loose", subjectName: "Public Keep", targetDossierId: "public-keep" }),
+      recommendation({ id: "rec-active", subjectName: "Active Source" }),
+      recommendation({ id: "rec-attach", subjectName: "Attach Alias" }),
+      recommendation({ id: "rec-only-a", subjectName: "Only Signal A", subjectKey: "only-signal" }),
+      recommendation({ id: "rec-only-b", subjectName: "Only Signal B", subjectKey: "only-signal" }),
+    ],
+  });
+
+  const plans = audit.possibleDuplicateGroups.map((group) => group.consolidationPlan);
+  assert.ok(plans.every((plan) => plan.groupId && plan.groupType && plan.confidence && plan.reason && plan.automationTier && plan.recommendedNextStep));
+
+  const publicPlan = plans.find((plan) => plan.groupId.includes("public-dossier-public-keep"));
+  assert.equal(publicPlan?.targetRecord?.type !== "recommendation", true);
+  assert.equal(publicPlan?.targetRecord?.publicDossierId, "public-keep");
+  assert.match(publicPlan.targetSelectionReason, /public dossier match/);
+
+  const activePlan = plans.find((plan) => plan.groupType === "bnl_recommendation_subject_name" && plan.targetRecord?.id === "active-with-draft");
+  assert.equal(activePlan?.targetRecord?.type, "source_file");
+  assert.ok(activePlan.sourceRecords.some((record) => record.type === "recommendation"));
+
+  const cleanPlan = plans.find((plan) => plan.groupType === "normalized_name" && plan.targetRecord?.id === "clean-target");
+  assert.equal(cleanPlan?.automationTier, "Auto-clean candidate");
+
+  const mergePlan = plans.find((plan) => plan.groupType === "confirmed_alias" && plan.targetRecord?.id === "confirmed-target");
+  assert.equal(mergePlan?.automationTier, "Auto-merge candidate");
+
+  const attachPlan = audit.unattachedBnlRecommendations.find((item) => item.id === "rec-attach");
+  assert.equal(attachPlan?.planClassification, "Auto-attach candidate");
+  assert.equal(attachPlan?.likelyTargetId, "attach-target");
+
+  const reviewPlan = plans.find((plan) => plan.targetRecord?.id === "proposed-a" || plan.sourceRecords.some((record) => record.id === "proposed-a"));
+  assert.equal(reviewPlan?.automationTier, "Review required");
+
+  const blockedPlan = plans.find((plan) => plan.groupType === "normalized_name" && plan.targetRecord?.name === "Blocked Same");
+  assert.equal(blockedPlan?.automationTier, "Blocked");
+  assert.match(blockedPlan?.blockedReasons.join(" ") ?? "", /Different public dossier matches/);
+
+  const recommendationOnlyPlan = plans.find((plan) => plan.automationTier === "Recommendation-only duplicate group");
+  assert.ok(recommendationOnlyPlan);
+  assert.match(recommendationOnlyPlan.recommendedNextStep, /Needs Source File target/);
+  assert.doesNotMatch(recommendationOnlyPlan.targetSelectionReason, /source and target records could not be resolved/i);
+
+  const sectionNames = activePlan?.mergePlanSections.map((section) => section.title) ?? [];
+  assert.deepEqual(sectionNames, [
+    "Identity / aliases",
+    "Recommendations / BNL Signals",
+    "Source notes",
+    "Archives / BNL reports",
+    "Drafts / public dossiers",
+    "Safety",
+  ]);
 });
 
 test("owner review page is a placeholder lane without publishing", () => {

@@ -42,9 +42,12 @@ import {
   type DossierSourceFileNoteType,
   type DossierDuplicateRisk,
   type DossierWorkflowLink,
+  createDossierPopulationAudit,
   isActiveSourceFileCandidate,
   isSourceFileEnrichmentAttachableCandidate,
   matchDossierRecommendationSubject,
+  type DossierPopulationAutomationTier,
+  type DossierPopulationConsolidationPlan,
   type MergeDossierCandidatesInput,
 } from "@/lib/dossier-workflow";
 
@@ -5562,6 +5565,14 @@ export async function mergeDossierCandidates(
       publicSafetyNotes: uniqueStrings(
         ...primaryFirstSources.map((candidate) => candidate.publicSafetyNotes),
       ),
+      sourceFileNotes: primaryFirstSources.flatMap((candidate) => candidate.sourceFileNotes ?? []),
+      identityLinks: primaryFirstSources.flatMap((candidate) => candidate.identityLinks ?? []),
+      sourceRecommendationIds: uniqueStrings(
+        ...primaryFirstSources.map((candidate) => candidate.sourceRecommendationIds),
+      ),
+      connectedRecommendationIds: uniqueStrings(
+        ...primaryFirstSources.map((candidate) => candidate.connectedRecommendationIds),
+      ),
       status:
         primary.status === "draft_ready" || primary.status === "draft_requested"
           ? "draft_ready"
@@ -5698,6 +5709,431 @@ export async function mergeDossierCandidates(
     };
   });
 
+  return result;
+}
+
+export type DossierConsolidationActionResult = {
+  ok: true;
+  actionType: string;
+  groupId?: string;
+  targetId?: string;
+  targetHref?: string;
+  sourceIds: string[];
+  recommendationIds: string[];
+  attachedRecommendationCount: number;
+  mergedRecordCount: number;
+  cleanedDuplicateCount: number;
+  createdWorkspaces: Array<{ id: string; href: string; type: string; name: string }>;
+  skipped: Array<{ id: string; reason: string }>;
+  blocked: Array<{ id: string; reason: string }>;
+  message: string;
+};
+
+function publicDossierRefsFor(candidate: DossierCandidate): string[] {
+  return candidate.existingDossierMatch?.id ? [candidate.existingDossierMatch.id] : [];
+}
+
+function activeDraftsForCandidate(state: DossierWorkflowState, candidateId: string): DossierDraft[] {
+  return state.drafts.filter(
+    (draft) =>
+      draft.candidateId === candidateId &&
+      (draft.status === "draft" ||
+        draft.status === "owner_changes_requested" ||
+        draft.status === "ready_for_owner_review"),
+  );
+}
+
+function candidateHasMeaningfulConsolidationData(state: DossierWorkflowState, candidate: DossierCandidate): boolean {
+  return Boolean(
+    (candidate.sourceFileNotes ?? []).some((note) => note.status === "active" && note.text.trim()) ||
+      (candidate.identityLinks ?? []).length > 0 ||
+      (candidate.sourceRecommendationIds ?? []).length > 0 ||
+      (candidate.connectedRecommendationIds ?? []).length > 0 ||
+      state.recommendations.some(
+        (recommendation) =>
+          recommendation.targetCandidateId === candidate.id ||
+          recommendation.connectedCandidateId === candidate.id ||
+          recommendation.connectedSourceFileCandidateId === candidate.id,
+      ) ||
+      candidate.latestSourceFileArchiveId ||
+      candidate.latestSourceFileArchiveUpdatedAt ||
+      candidate.latestSourceFileArchive?.caseReportPresent ||
+      activeDraftsForCandidate(state, candidate.id).length > 0 ||
+      candidate.existingDossierMatch,
+  );
+}
+
+function attachRecommendationToWorkspace(input: {
+  recommendation: DossierRecommendation;
+  candidate: DossierCandidate;
+  now: string;
+  auditText: string;
+}): { recommendation: DossierRecommendation; candidate: DossierCandidate } {
+  assertRecommendationIsOpen(input.recommendation);
+  const note = routingNote({
+    candidateId: input.candidate.id,
+    now: input.now,
+    text: `${input.auditText}\n\n${input.recommendation.ingestSource?.startsWith("bnl") ? bnlAutoCandidateNoteText(input.recommendation) : recommendationSourceNoteText(input.recommendation)}`,
+    source: "bnl_recommendation",
+    createdBy: input.recommendation.createdBy,
+    ingestKey: input.recommendation.ingestKey,
+    ingestedAt: input.recommendation.ingestedAt,
+    ingestSource: input.recommendation.ingestSource,
+  });
+  return {
+    recommendation: {
+      ...input.recommendation,
+      status: attachmentStatusForCandidate(input.candidate),
+      targetCandidateId: input.candidate.id,
+      connectedCandidateId: input.candidate.id,
+      connectedSourceFileCandidateId: input.candidate.id,
+      routingReason: input.auditText,
+      updatedAt: input.now,
+    },
+    candidate: mergeCandidateSignal({
+      candidate: input.candidate,
+      now: input.now,
+      note,
+      evidenceSummary: input.recommendation.evidenceSummary,
+      connectedRecommendationId: input.recommendation.id,
+      routingReason: input.auditText,
+      identityReviewStatus: "not_required",
+    }),
+  };
+}
+
+function consolidationPlanForGroup(state: DossierWorkflowState, groupId: string): DossierPopulationConsolidationPlan {
+  const audit = createDossierPopulationAudit({
+    candidates: state.candidates,
+    recommendations: state.recommendations,
+    publicDossiers: databasePage.entries.map((entry) => ({ id: entry.id, name: entry.name })),
+    drafts: state.drafts,
+  });
+  const plan = audit.possibleDuplicateGroups.find((group) => group.id === groupId)?.consolidationPlan;
+  if (!plan) {
+    throw new DossierWorkflowInputError(
+      "Consolidation group no longer exists after server-side revalidation. Refresh the audit and review the current plan.",
+      409,
+      "consolidation_group_not_found",
+    );
+  }
+  return plan;
+}
+
+function assertConsolidationTier(plan: DossierPopulationConsolidationPlan, allowed: DossierPopulationAutomationTier[]): void {
+  if (allowed.includes(plan.automationTier)) return;
+  throw new DossierWorkflowInputError(
+    `Server-side revalidation classified this group as ${plan.automationTier}; refresh the audit before mutating anything.`,
+    409,
+    "consolidation_tier_changed",
+    { automationTier: plan.automationTier, allowedTiers: allowed },
+  );
+}
+
+function resultBase(actionType: string, groupId?: string): DossierConsolidationActionResult {
+  return {
+    ok: true,
+    actionType,
+    groupId,
+    sourceIds: [],
+    recommendationIds: [],
+    attachedRecommendationCount: 0,
+    mergedRecordCount: 0,
+    cleanedDuplicateCount: 0,
+    createdWorkspaces: [],
+    skipped: [],
+    blocked: [],
+    message: "No public dossier text changed. No public pages were published. Internal aliases remain internal.",
+  };
+}
+
+export async function attachIncomingRecommendationsFromConsolidation(input: {
+  groupId: string;
+  actor?: string;
+}): Promise<DossierConsolidationActionResult> {
+  const now = new Date().toISOString();
+  const result = resultBase("attach_incoming_recommendations", input.groupId);
+  await updateDossierWorkflowState((currentState) => {
+    const plan = consolidationPlanForGroup(currentState, input.groupId);
+    assertConsolidationTier(plan, ["Attach to Existing Source File candidate"]);
+    const targetId = plan.targetRecord?.candidateId;
+    const recommendationIds = plan.sourceRecords.filter((record) => record.type === "recommendation" && record.recommendationId).map((record) => record.recommendationId!);
+    if (!targetId || recommendationIds.length === 0) {
+      throw new DossierWorkflowInputError("No target Source File and incoming recommendations remained after revalidation.", 409, "consolidation_attach_empty");
+    }
+    let target = currentState.candidates.find((candidate) => candidate.id === targetId);
+    if (!target || !isActiveSourceFileCandidate(target)) {
+      throw new DossierWorkflowInputError("Target is no longer an active Source File after revalidation.", 409, "consolidation_target_changed");
+    }
+    const recommendations = currentState.recommendations.map((recommendation) => {
+      if (!recommendationIds.includes(recommendation.id)) return recommendation;
+      const attached = attachRecommendationToWorkspace({
+        recommendation,
+        candidate: target!,
+        now,
+        auditText: `Consolidation attach by ${input.actor ?? "admin"} at ${now}; group ${input.groupId}; no public dossier text changed.`,
+      });
+      target = attached.candidate;
+      result.recommendationIds.push(recommendation.id);
+      result.attachedRecommendationCount += 1;
+      return attached.recommendation;
+    });
+    result.targetId = target.id;
+    result.targetHref = `/admin/dossiers/candidates/${target.id}`;
+    result.sourceIds = recommendationIds;
+    result.message = `Attached ${result.attachedRecommendationCount} incoming recommendation(s) to ${target.name}. No public dossier text changed. No public pages were published.`;
+    return {
+      ...currentState,
+      recommendations,
+      candidates: currentState.candidates.map((candidate) => candidate.id === target!.id ? target! : candidate),
+      updatedAt: now,
+    };
+  });
+  return result;
+}
+
+export async function createDossierUpdateWorkspaceFromConsolidation(input: {
+  groupId: string;
+  actor?: string;
+}): Promise<DossierConsolidationActionResult> {
+  const now = new Date().toISOString();
+  const result = resultBase("create_dossier_update_workspace", input.groupId);
+  await updateDossierWorkflowState((currentState) => {
+    const plan = consolidationPlanForGroup(currentState, input.groupId);
+    assertConsolidationTier(plan, ["Create Dossier Update workspace candidate"]);
+    const dossierId = plan.existingPublicDossier?.id;
+    if (!dossierId) throw new DossierWorkflowInputError("No exact public dossier match remained after revalidation.", 409, "consolidation_public_target_missing");
+    const entry = databasePage.entries.find((item) => item.id === dossierId);
+    if (!entry) throw new DossierWorkflowInputError("Existing public dossier target was not found.", 400, "existing_dossier_not_found");
+    const existing = currentState.candidates.find((candidate) => candidate.status === "existing_dossier_update" && candidate.existingDossierMatch?.id === dossierId);
+    const recommendationIds = plan.sourceRecords.filter((record) => record.type === "recommendation" && record.recommendationId).map((record) => record.recommendationId!);
+    if (existing) throw new DossierWorkflowInputError("A Dossier Update workspace now exists; refresh and use Attach Incoming Recommendations.", 409, "consolidation_workspace_now_exists", { targetId: existing.id });
+    let workspace: DossierCandidate = {
+      id: createCandidateId(),
+      name: entry.name,
+      candidateType: candidateTypeFromPublicDossierEntry(entry),
+      source: "website_read_model",
+      tier: "review_candidate",
+      score: 58,
+      whyNow: "Admin created a review-only Dossier Update workspace from a safe consolidation plan.",
+      reason: `Consolidation workspace for existing public dossier ${entry.id} / ${entry.name}.`,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      evidenceSummary: `Review-only update workspace created from consolidation group ${input.groupId}; no public dossier text changed.`,
+      evidenceItems: [],
+      evidenceCount: 0,
+      knownFacts: [`Existing public dossier target: ${entry.id} / ${entry.name}.`],
+      confidence: "medium",
+      duplicateRisk: "high",
+      existingDossierMatch: { id: entry.id, name: entry.name, confidence: "high" },
+      recommendedCategory: entry.category,
+      recommendedKind: entry.kind,
+      recommendedEcosystemLane: entry.ecosystemLane,
+      recommendedIdentityAuthority: entry.identityAuthority,
+      recommendedStatus: entry.status,
+      recommendedClearance: entry.clearance,
+      recommendedOrigin: entry.origin,
+      recommendedTags: entry.tags,
+      proposedTags: [],
+      missingInfo: ["Review incoming recommendations before applying any public dossier update."],
+      doNotSay: ["Do not treat update recommendations as public copy."],
+      publicSafetyNotes: ["No public dossier text changed during consolidation."],
+      sourceFileNotes: [],
+      identityLinks: [],
+      sourceLanes: ["website_dossier"],
+      status: "existing_dossier_update",
+      createdAt: now,
+      updatedAt: now,
+    };
+    const recommendations = currentState.recommendations.map((recommendation) => {
+      if (!recommendationIds.includes(recommendation.id)) return recommendation;
+      const attached = attachRecommendationToWorkspace({
+        recommendation,
+        candidate: workspace,
+        now,
+        auditText: `Consolidation dossier-update workspace created by ${input.actor ?? "admin"} at ${now}; group ${input.groupId}; no public dossier text changed.`,
+      });
+      workspace = attached.candidate;
+      result.recommendationIds.push(recommendation.id);
+      result.attachedRecommendationCount += 1;
+      return attached.recommendation;
+    });
+    result.targetId = workspace.id;
+    result.targetHref = `/admin/dossiers/candidates/${workspace.id}`;
+    result.createdWorkspaces.push({ id: workspace.id, href: `/admin/dossiers/candidates/${workspace.id}`, type: "Dossier Update", name: workspace.name });
+    result.message = `Created Dossier Update workspace ${workspace.id} and attached ${result.attachedRecommendationCount} recommendation(s). No public dossier text changed. No public pages were published.`;
+    return { ...currentState, candidates: [workspace, ...currentState.candidates], recommendations, updatedAt: now };
+  });
+  return result;
+}
+
+export async function createSourceFileFromIncomingConsolidation(input: {
+  groupId: string;
+  actor?: string;
+}): Promise<DossierConsolidationActionResult> {
+  const now = new Date().toISOString();
+  const result = resultBase("create_source_file_from_incoming", input.groupId);
+  await updateDossierWorkflowState((currentState) => {
+    const plan = consolidationPlanForGroup(currentState, input.groupId);
+    assertConsolidationTier(plan, ["Create Source File candidate"]);
+    const recommendationIds = plan.sourceRecords.filter((record) => record.type === "recommendation" && record.recommendationId).map((record) => record.recommendationId!);
+    if (plan.possibleTargetRecords.length > 0 || plan.existingPublicDossier) {
+      throw new DossierWorkflowInputError("A possible existing target appeared during revalidation; refresh before creating a new Source File.", 409, "consolidation_possible_target_changed");
+    }
+    const firstRecommendation = currentState.recommendations.find((recommendation) => recommendationIds.includes(recommendation.id));
+    if (!firstRecommendation) throw new DossierWorkflowInputError("No open incoming recommendations remained after revalidation.", 409, "consolidation_recommendations_missing");
+    let candidate = buildCandidateFromRecommendation({
+      recommendation: firstRecommendation,
+      now,
+      source: firstRecommendation.ingestSource === "bnl_source_knowledge_bridge" ? "bnl_source_knowledge_bridge" : "bnl_dynamic_candidate_discovery",
+      noteText: `Consolidation-created Source File by ${input.actor ?? "admin"} at ${now}; group ${input.groupId}; no public dossier text changed.\n\n${bnlAutoCandidateNoteText(firstRecommendation)}`,
+    });
+    candidate = { ...candidate, status: "active_source_file", updatedAt: now };
+    const recommendations = currentState.recommendations.map((recommendation) => {
+      if (!recommendationIds.includes(recommendation.id)) return recommendation;
+      if (recommendation.id === firstRecommendation.id) {
+        result.recommendationIds.push(recommendation.id);
+        result.attachedRecommendationCount += 1;
+        return { ...recommendation, status: "converted_to_source_file" as const, targetCandidateId: candidate.id, connectedCandidateId: candidate.id, connectedSourceFileCandidateId: candidate.id, routingReason: `Consolidation-created Source File from group ${input.groupId}.`, updatedAt: now };
+      }
+      const attached = attachRecommendationToWorkspace({
+        recommendation,
+        candidate,
+        now,
+        auditText: `Consolidation attach to newly created Source File by ${input.actor ?? "admin"} at ${now}; group ${input.groupId}; no public dossier text changed.`,
+      });
+      candidate = attached.candidate;
+      result.recommendationIds.push(recommendation.id);
+      result.attachedRecommendationCount += 1;
+      return attached.recommendation;
+    });
+    result.targetId = candidate.id;
+    result.targetHref = `/admin/dossiers/candidates/${candidate.id}`;
+    result.createdWorkspaces.push({ id: candidate.id, href: `/admin/dossiers/candidates/${candidate.id}`, type: "Source File / Candidate", name: candidate.name });
+    result.message = `Created Source File ${candidate.id} and attached ${result.attachedRecommendationCount} recommendation(s). No public dossier text changed. No public pages were published.`;
+    return { ...currentState, candidates: [candidate, ...currentState.candidates], recommendations, updatedAt: now };
+  });
+  return result;
+}
+
+export async function cleanDuplicateFromConsolidation(input: {
+  groupId: string;
+  actor?: string;
+}): Promise<DossierConsolidationActionResult> {
+  const now = new Date().toISOString();
+  const result = resultBase("clean_duplicate", input.groupId);
+  await updateDossierWorkflowState((currentState) => {
+    const plan = consolidationPlanForGroup(currentState, input.groupId);
+    assertConsolidationTier(plan, ["Empty duplicate cleanup candidate"]);
+    const sourceIds = plan.sourceRecords.filter((record) => record.candidateId).map((record) => record.candidateId!);
+    if (!plan.targetRecord?.candidateId || sourceIds.length === 0) {
+      throw new DossierWorkflowInputError("No duplicate cleanup source remained after revalidation.", 409, "consolidation_cleanup_empty");
+    }
+    const blocked = sourceIds.filter((id) => {
+      const candidate = currentState.candidates.find((item) => item.id === id);
+      return !candidate || candidateHasMeaningfulConsolidationData(currentState, candidate);
+    });
+    if (blocked.length > 0) {
+      throw new DossierWorkflowInputError("Duplicate cleanup refused because a source now has meaningful linked data.", 409, "consolidation_cleanup_refused", { blocked });
+    }
+    const candidates = currentState.candidates.map((candidate) =>
+      sourceIds.includes(candidate.id)
+        ? {
+            ...candidate,
+            status: "merged" as const,
+            mergedIntoCandidateId: plan.targetRecord!.candidateId,
+            mergedAt: now,
+            mergeNote: `Empty duplicate cleaned by ${input.actor ?? "admin"} from consolidation group ${input.groupId}; no meaningful linked data was present.`,
+            updatedAt: now,
+          }
+        : candidate,
+    );
+    result.targetId = plan.targetRecord.candidateId;
+    result.targetHref = `/admin/dossiers/candidates/${plan.targetRecord.candidateId}`;
+    result.sourceIds = sourceIds;
+    result.cleanedDuplicateCount = sourceIds.length;
+    result.message = `Cleaned ${sourceIds.length} empty duplicate record(s) by marking them merged. No public dossier text changed. No public pages were published.`;
+    return { ...currentState, candidates, updatedAt: now };
+  });
+  return result;
+}
+
+export async function mergeConsolidationIntoTarget(input: {
+  groupId: string;
+  actor?: string;
+}): Promise<DossierConsolidationActionResult> {
+  const state = await getDossierWorkflowState();
+  const plan = consolidationPlanForGroup(state, input.groupId);
+  assertConsolidationTier(plan, ["Source File merge candidate"]);
+  if (!plan.targetRecord?.candidateId) throw new DossierWorkflowInputError("No merge target remained after revalidation.", 409, "consolidation_target_missing");
+  const sourceIds = plan.sourceRecords.filter((record) => record.candidateId).map((record) => record.candidateId!);
+  const candidates = [plan.targetRecord.candidateId, ...sourceIds].map((id) => state.candidates.find((candidate) => candidate.id === id)).filter((candidate): candidate is DossierCandidate => Boolean(candidate));
+  const publicMatches = new Set(candidates.flatMap(publicDossierRefsFor));
+  if (publicMatches.size > 1) throw new DossierWorkflowInputError("Merge blocked because different public dossier matches are present.", 409, "consolidation_public_dossier_conflict");
+  if (candidates.filter((candidate) => activeDraftsForCandidate(state, candidate.id).length > 0).length > 1) throw new DossierWorkflowInputError("Merge blocked because competing active proposed dossiers are present.", 409, "consolidation_active_draft_conflict");
+  const mergeResult = await mergeDossierCandidates({
+    primaryCandidateId: plan.targetRecord.candidateId,
+    sourceCandidateIds: sourceIds,
+    createMasterDraft: false,
+    mergeNote: `Source File consolidation by ${input.actor ?? "admin"} at ${new Date().toISOString()}; group ${input.groupId}; no public dossier text changed and no public pages were published.`,
+  });
+  const result = resultBase("merge_into_target", input.groupId);
+  result.targetId = mergeResult?.masterCandidate.id;
+  result.targetHref = mergeResult?.masterCandidate.id ? `/admin/dossiers/candidates/${mergeResult.masterCandidate.id}` : undefined;
+  result.sourceIds = sourceIds;
+  result.mergedRecordCount = mergeResult?.mergedCandidateIds.length ?? 0;
+  result.message = `Merged ${result.mergedRecordCount} Source File record(s) into ${mergeResult?.masterCandidate.name ?? plan.targetRecord.name}. No public dossier text changed. No public pages were published.`;
+  return result;
+}
+
+export async function keepConsolidationSeparate(input: {
+  groupId: string;
+  actor?: string;
+}): Promise<DossierConsolidationActionResult> {
+  const state = await getDossierWorkflowState();
+  const plan = consolidationPlanForGroup(state, input.groupId);
+  const result = resultBase("keep_separate", input.groupId);
+  result.skipped.push({ id: input.groupId, reason: "Suppression markers are not supported by the current workflow store, so no records were mutated." });
+  result.message = `Reviewed ${plan.groupId} as keep separate. The current workflow store has no durable suppression marker, so no records were mutated.`;
+  return result;
+}
+
+export async function runSafeConsolidation(input: { actor?: string }): Promise<DossierConsolidationActionResult> {
+  const state = await getDossierWorkflowState();
+  const audit = createDossierPopulationAudit({
+    candidates: state.candidates,
+    recommendations: state.recommendations,
+    publicDossiers: databasePage.entries.map((entry) => ({ id: entry.id, name: entry.name })),
+    drafts: state.drafts,
+  });
+  const result = resultBase("run_safe_consolidation");
+  for (const group of audit.possibleDuplicateGroups) {
+    const tier = group.consolidationPlan.automationTier;
+    try {
+      if (tier === "Attach to Existing Source File candidate") {
+        const partial = await attachIncomingRecommendationsFromConsolidation({ groupId: group.id, actor: input.actor });
+        result.attachedRecommendationCount += partial.attachedRecommendationCount;
+        result.recommendationIds.push(...partial.recommendationIds);
+      } else if (tier === "Create Dossier Update workspace candidate") {
+        const partial = await createDossierUpdateWorkspaceFromConsolidation({ groupId: group.id, actor: input.actor });
+        result.attachedRecommendationCount += partial.attachedRecommendationCount;
+        result.createdWorkspaces.push(...partial.createdWorkspaces);
+      } else if (tier === "Create Source File candidate") {
+        const partial = await createSourceFileFromIncomingConsolidation({ groupId: group.id, actor: input.actor });
+        result.attachedRecommendationCount += partial.attachedRecommendationCount;
+        result.createdWorkspaces.push(...partial.createdWorkspaces);
+      } else if (tier === "Empty duplicate cleanup candidate") {
+        const partial = await cleanDuplicateFromConsolidation({ groupId: group.id, actor: input.actor });
+        result.cleanedDuplicateCount += partial.cleanedDuplicateCount;
+        result.sourceIds.push(...partial.sourceIds);
+      } else {
+        result.skipped.push({ id: group.id, reason: `${tier} is not a zero-conflict bulk action.` });
+      }
+    } catch (error) {
+      result.blocked.push({ id: group.id, reason: error instanceof Error ? error.message : "Action blocked during server-side revalidation." });
+    }
+  }
+  result.message = `Safe consolidation complete: ${result.attachedRecommendationCount} recommendation(s) attached, ${result.cleanedDuplicateCount} duplicate(s) cleaned, ${result.createdWorkspaces.length} workspace(s) created, ${result.skipped.length} skipped, ${result.blocked.length} blocked. No public dossier text changed. No public pages were published.`;
   return result;
 }
 

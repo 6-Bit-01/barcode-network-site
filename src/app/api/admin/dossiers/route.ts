@@ -35,6 +35,13 @@ import {
   archiveDossierRecommendation,
   attachCandidateToExistingDossier,
   attachRecommendationToCandidate,
+  attachIncomingRecommendationsFromConsolidation,
+  cleanDuplicateFromConsolidation,
+  createDossierUpdateWorkspaceFromConsolidation,
+  createSourceFileFromIncomingConsolidation,
+  keepConsolidationSeparate,
+  mergeConsolidationIntoTarget,
+  runSafeConsolidation,
   createIdentityLinkFromRecommendation,
   confirmDossierIdentityLink,
   buildDossierDuplicateGroups,
@@ -147,6 +154,13 @@ const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "archiveDossierRecommendation",
   "attachCandidateToExistingDossier",
   "markCandidateAsExistingDossierUpdate",
+  "consolidateAttachIncomingRecommendations",
+  "createDossierUpdateWorkspace",
+  "createSourceFileFromIncomingInfo",
+  "mergeConsolidationIntoTarget",
+  "cleanDuplicateConsolidation",
+  "keepConsolidationSeparate",
+  "runSafeConsolidation",
 ]);
 
 async function isAuthenticated(req: Request): Promise<boolean> {
@@ -453,6 +467,41 @@ export async function POST(req: Request) {
   }
 
   try {
+    if (
+      action === "consolidateAttachIncomingRecommendations" ||
+      action === "createDossierUpdateWorkspace" ||
+      action === "createSourceFileFromIncomingInfo" ||
+      action === "mergeConsolidationIntoTarget" ||
+      action === "cleanDuplicateConsolidation" ||
+      action === "keepConsolidationSeparate" ||
+      action === "runSafeConsolidation"
+    ) {
+      const groupId = typeof body.groupId === "string" ? body.groupId.trim() : "";
+      const actor = typeof body.actor === "string" ? body.actor : undefined;
+      if (action !== "runSafeConsolidation" && !groupId) {
+        return NextResponse.json(
+          { error: "groupId is required for consolidation actions" },
+          { status: 400 },
+        );
+      }
+      const consolidation =
+        action === "consolidateAttachIncomingRecommendations"
+          ? await attachIncomingRecommendationsFromConsolidation({ groupId, actor })
+          : action === "createDossierUpdateWorkspace"
+            ? await createDossierUpdateWorkspaceFromConsolidation({ groupId, actor })
+            : action === "createSourceFileFromIncomingInfo"
+              ? await createSourceFileFromIncomingConsolidation({ groupId, actor })
+              : action === "mergeConsolidationIntoTarget"
+                ? await mergeConsolidationIntoTarget({ groupId, actor })
+                : action === "cleanDuplicateConsolidation"
+                  ? await cleanDuplicateFromConsolidation({ groupId, actor })
+                  : action === "keepConsolidationSeparate"
+                    ? await keepConsolidationSeparate({ groupId, actor })
+                    : await runSafeConsolidation({ actor });
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, consolidation, ...payload });
+    }
+
     if (action === "updateSourceFileSummary") {
       const input = sourceFileSummaryInputFromBody(body);
       if (!input) {
@@ -858,6 +907,12 @@ export async function POST(req: Request) {
     if (error instanceof DossierWorkflowInputError) {
       return NextResponse.json(
         { error: error.message, code: error.code, ...error.details },
+        { status: error.status },
+      );
+    }
+    if (error instanceof DossierMergeError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
         { status: error.status },
       );
     }

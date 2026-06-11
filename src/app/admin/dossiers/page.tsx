@@ -33,6 +33,20 @@ type WorkflowPayload = {
   publicDossiers?: Array<{ id: string; name: string }>;
 };
 
+type ConsolidationResult = {
+  actionType: string;
+  groupId?: string;
+  targetId?: string;
+  targetHref?: string;
+  attachedRecommendationCount: number;
+  mergedRecordCount: number;
+  cleanedDuplicateCount: number;
+  createdWorkspaces: Array<{ id: string; href: string; type: string; name: string }>;
+  skipped: Array<{ id: string; reason: string }>;
+  blocked: Array<{ id: string; reason: string }>;
+  message: string;
+};
+
 type ManualRecommendationForm = {
   subjectName: string;
   type: DossierRecommendation["type"];
@@ -154,6 +168,28 @@ function candidateProvenance(candidate: DossierCandidate) {
   }
   if (candidate.source === "manual") return "Added by an operator";
   return "Internal note";
+}
+
+function consolidationActionForTier(tier: string): { action: string; label: string } | null {
+  if (tier === "Attach to Existing Source File candidate") {
+    return { action: "consolidateAttachIncomingRecommendations", label: "Attach Incoming Recommendations" };
+  }
+  if (tier === "Create Dossier Update workspace candidate") {
+    return { action: "createDossierUpdateWorkspace", label: "Create Dossier Update Workspace" };
+  }
+  if (tier === "Create Source File candidate") {
+    return { action: "createSourceFileFromIncomingInfo", label: "Create Source File from Incoming Info" };
+  }
+  if (tier === "Source File merge candidate") {
+    return { action: "mergeConsolidationIntoTarget", label: "Merge Into Target" };
+  }
+  if (tier === "Empty duplicate cleanup candidate") {
+    return { action: "cleanDuplicateConsolidation", label: "Clean Duplicate" };
+  }
+  if (tier === "Select Target Manually" || tier === "Review required" || tier === "Blocked") {
+    return { action: "keepConsolidationSeparate", label: "Keep Separate / Not Same Subject" };
+  }
+  return null;
 }
 
 function StatusPill({ children }: { children: React.ReactNode }) {
@@ -307,6 +343,8 @@ export default function DossierControlCenterPage() {
   const [selectedDossierByCandidate, setSelectedDossierByCandidate] = useState<
     Record<string, string>
   >({});
+  const [consolidationResult, setConsolidationResult] =
+    useState<ConsolidationResult | null>(null);
 
   async function loadWorkflow() {
     setError(null);
@@ -466,6 +504,7 @@ export default function DossierControlCenterPage() {
         candidate?: DossierCandidate;
         draft?: DossierDraft;
         recommendation?: DossierRecommendation;
+        consolidation?: ConsolidationResult;
         error?: string;
         message?: string;
       };
@@ -480,6 +519,34 @@ export default function DossierControlCenterPage() {
       return data;
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function runConsolidationAction(action: string, groupId?: string) {
+    try {
+      const data = await postWorkflow({ action, groupId });
+      if (data.consolidation) {
+        setConsolidationResult(data.consolidation);
+        setNotice(data.consolidation.message);
+      }
+      if (data.candidates && data.drafts && data.workflow) {
+        setPayload(data as WorkflowPayload);
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Consolidation action failed.";
+      setConsolidationResult({
+        actionType: action,
+        groupId,
+        attachedRecommendationCount: 0,
+        mergedRecordCount: 0,
+        cleanedDuplicateCount: 0,
+        createdWorkspaces: [],
+        skipped: [],
+        blocked: [{ id: groupId ?? action, reason: message }],
+        message,
+      });
+      setNotice(message);
     }
   }
 
@@ -814,9 +881,28 @@ export default function DossierControlCenterPage() {
               The site can only audit records and recommendations already
               present in the workflow store. Active Discord members who have not
               been ingested by BNL will not appear here yet. This panel is
-              review-only: it does not merge, delete, publish, or mutate records
-              automatically.
+              admin-triggered only: it never mutates on page load, never publishes,
+              and every action is revalidated server-side before mutation.
             </p>
+
+            {consolidationResult && (
+              <div className={`border p-4 text-sm ${consolidationResult.blocked.length > 0 ? "border-red-400/70 bg-red-950/20 text-red-200" : "border-accent/70 bg-accent/10 text-accent"}`}>
+                <p className="font-semibold text-foreground">Consolidation result</p>
+                <p>{consolidationResult.message}</p>
+                {consolidationResult.createdWorkspaces.length > 0 && (
+                  <p>Created workspace(s): {consolidationResult.createdWorkspaces.map((workspace) => `${workspace.type} ${workspace.id}`).join(", ")}</p>
+                )}
+                <p>Attached recommendations: {consolidationResult.attachedRecommendationCount}</p>
+                <p>Merged records: {consolidationResult.mergedRecordCount}</p>
+                <p>Cleaned duplicates: {consolidationResult.cleanedDuplicateCount}</p>
+                {consolidationResult.skipped.length > 0 && (
+                  <p>Skipped: {consolidationResult.skipped.map((item) => `${item.id}: ${item.reason}`).join("; ")}</p>
+                )}
+                {consolidationResult.blocked.length > 0 && (
+                  <p>Blocked: {consolidationResult.blocked.map((item) => `${item.id}: ${item.reason}`).join("; ")}</p>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 text-xs text-muted">
               {[
@@ -871,6 +957,19 @@ export default function DossierControlCenterPage() {
               ))}
             </div>
 
+            <div className="border border-border/70 bg-background/30 p-4 text-sm text-muted">
+              <p className="font-semibold text-foreground">Run Safe Consolidation</p>
+              <p>Bulk safe action summary: {populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Attach to Existing Source File candidate").reduce((total, group) => total + group.consolidationPlan.sourceRecords.filter((record) => record.type === "recommendation").length, 0)} recommendations will attach; {populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Empty duplicate cleanup candidate").length} empty duplicate group(s) will clean; {populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Create Dossier Update workspace candidate").length} dossier update workspace(s) will be created; {populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Create Source File candidate").length} new Source File(s) will be created; 0 public dossiers will be changed; 0 public pages will be published; {populationAudit.possibleDuplicateGroups.filter((group) => !["Attach to Existing Source File candidate", "Empty duplicate cleanup candidate", "Create Dossier Update workspace candidate", "Create Source File candidate"].includes(group.consolidationPlan.automationTier)).length} item(s) will remain blocked/review-required.</p>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => runConsolidationAction("runSafeConsolidation")}
+                className="mt-3 border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+              >
+                Run Safe Consolidation
+              </button>
+            </div>
+
             <section className="space-y-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.35em] text-muted">
@@ -890,10 +989,12 @@ export default function DossierControlCenterPage() {
                     .slice(0, 10)
                     .map((group) => {
                       const plan = group.consolidationPlan;
+                      const consolidationAction = consolidationActionForTier(plan.automationTier);
+                      const justResolved = consolidationResult?.groupId === group.id;
                       return (
                       <article
                         key={group.id}
-                        className="border border-border/70 bg-background/20 p-4 text-sm text-muted"
+                        className={justResolved ? "border border-accent bg-accent/10 p-4 text-sm text-muted" : "border border-border/70 bg-background/20 p-4 text-sm text-muted"}
                       >
                         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                           <div>
@@ -939,14 +1040,21 @@ export default function DossierControlCenterPage() {
                                     {(record.publicDossierName || record.publicDossierId) && (
                                       <p>Public dossier match: {record.publicDossierName ?? record.publicDossierId}</p>
                                     )}
+                                    <p>Why included: {group.reason}</p>
                                     {record.incomingInfo.length > 0 && (
-                                      <p>What this would add: {record.incomingInfo.join("; ")}</p>
+                                      <p>What new info this adds: {record.incomingInfo.join("; ")}</p>
                                     )}
                                     {record.duplicateInfo.length > 0 && (
-                                      <p>Already represented / duplicate: {record.duplicateInfo.join("; ")}</p>
+                                      <p>Already represented: {record.duplicateInfo.join("; ")}</p>
+                                    )}
+                                    {record.uniqueInfo.length === 0 && record.incomingInfo.length === 0 && (
+                                      <p>Duplicate / no-new-info: no meaningful incoming fields detected.</p>
+                                    )}
+                                    {plan.mergePlanSections.flatMap((section) => section.irrelevantToKeptEntry).length > 0 && (
+                                      <p>Irrelevant/no-action: {plan.mergePlanSections.flatMap((section) => section.irrelevantToKeptEntry).join("; ")}</p>
                                     )}
                                     {!plan.targetRecord && (
-                                      <p>Needs Source File target before any future action.</p>
+                                      <p>Needs Source File or Dossier Update workspace target before attach/merge.</p>
                                     )}
                                     {record.href && (
                                       <Link href={record.href} className="mt-2 inline-flex border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">
@@ -982,7 +1090,12 @@ export default function DossierControlCenterPage() {
                                 {plan.targetRecord.uniqueInfo.length > 0 && (
                                   <p>Target already has: {plan.targetRecord.uniqueInfo.join("; ")}</p>
                                 )}
-                                <p>What would be updated later: {plan.automationTier}</p>
+                                {plan.targetRecord.candidateId && (
+                                  <p>Target Source File ID: {plan.targetRecord.candidateId}</p>
+                                )}
+                                <p>What will be added to it: {plan.mergePlanSections.flatMap((section) => section.newInfoToAdd).join("; ") || "No new info detected."}</p>
+                                <p>What will not change: public dossier text, public publishing state, and internal alias visibility.</p>
+                                <p>Action available: {plan.automationTier}</p>
                                 {plan.targetRecord.href && (
                                   <Link href={plan.targetRecord.href} className="mt-2 inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">
                                     Open target Source File
@@ -1023,21 +1136,30 @@ export default function DossierControlCenterPage() {
                               </div>
                             ))}
                           </div>
-                          <button disabled className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted opacity-60">
-                            {plan.automationTier === "Create Dossier Update workspace candidate"
-                              ? "Create Dossier Update Later"
-                              : plan.automationTier === "Create Source File candidate"
-                                ? "Create Source File Later"
-                                : plan.automationTier === "Attach to Existing Source File candidate"
-                                  ? "Attach Later"
-                                  : plan.automationTier === "Select Target Manually"
-                                    ? "Select Target Later"
-                                    : plan.automationTier === "Source File merge candidate"
-                                      ? "Merge Later"
-                                      : plan.automationTier === "Empty duplicate cleanup candidate"
-                                        ? "Clean Later"
-                                        : "Needs Source File Target"}
-                          </button>
+                          <div className="flex flex-wrap gap-2">
+                            {consolidationAction ? (
+                              <button
+                                type="button"
+                                disabled={saving}
+                                onClick={() => runConsolidationAction(consolidationAction.action, group.id)}
+                                className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                              >
+                                {consolidationAction.label}
+                              </button>
+                            ) : (
+                              <button disabled className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted opacity-60">
+                                No Safe Action
+                              </button>
+                            )}
+                            {plan.automationTier === "Select Target Manually" && (
+                              <select disabled className="bg-background border border-border px-3 py-1.5 text-xs text-muted">
+                                <option>Select target manually (read-only)</option>
+                                {plan.possibleTargetRecords.map((record) => (
+                                  <option key={record.id}>{record.displayName ?? record.name}</option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
                         </div>
                       </article>
                       );

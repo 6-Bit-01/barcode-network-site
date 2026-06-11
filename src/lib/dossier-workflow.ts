@@ -1152,8 +1152,8 @@ function createConsolidationPlan(input: {
   ].includes(automationTier);
   const requiresReview = !canBeAutomatedLater || records.some((record) => record.proposedAliasCount > 0);
   const noTargetExplanation = sharedPublicTarget
-    ? `These are duplicate or related BNL recommendations for an existing public dossier, but no Dossier Update workspace exists in this group yet. The next action is to create/select a Dossier Update workspace later.`
-    : "These are duplicate or related BNL recommendations, but no Source File target exists in this group yet. The next action is to attach them to an existing Source File if one matches, or create/select a Source File target later.";
+    ? `These are duplicate or related BNL recommendations for an existing public dossier, but no Dossier Update workspace exists in this group yet. The next action is to create/select a Dossier Update workspace.`
+    : "These are duplicate or related BNL recommendations, but no Source File target exists in this group yet. The next action is to attach them to an existing Source File if one matches, or create/select a Source File target.";
   const publicDossierUpdateExplanation =
     (targetRecord?.publicDossierId || (hasOnlyRecommendations && sharedPublicTarget)) &&
     hasRecommendationSources
@@ -1190,8 +1190,8 @@ function createConsolidationPlan(input: {
       : hasOnlyRecommendations
         ? noTargetExplanation
         : canBeAutomatedLater
-          ? `${automationTier}: review the deltas below before enabling any real action in a future PR.`
-          : "Admin review required before any future automation.",
+          ? `${automationTier}: review the deltas below, then run the matching admin action after server-side revalidation.`
+          : "Admin review required before any consolidation action.",
     canBeAutomatedLater,
     requiresReview,
     blockedReasons: hasOnlyRecommendations && !sharedPublicTarget
@@ -1247,7 +1247,7 @@ function createConsolidationPlan(input: {
           "Public dossier copy will not change.",
           "Internal aliases stay internal.",
           "Nothing publishes automatically.",
-          "No merge/delete/archive/attach/create action is live in this PR.",
+          "Consolidation actions are admin-triggered only and revalidated server-side before mutation.",
         ],
       }),
     ],
@@ -2126,6 +2126,13 @@ export type DossierWorkflowAction =
   | "markCandidateAsExistingDossierUpdate"
   | "detectDuplicateCandidates"
   | "mergeCandidates"
+  | "consolidateAttachIncomingRecommendations"
+  | "createDossierUpdateWorkspace"
+  | "createSourceFileFromIncomingInfo"
+  | "mergeConsolidationIntoTarget"
+  | "cleanDuplicateConsolidation"
+  | "keepConsolidationSeparate"
+  | "runSafeConsolidation"
   | "createMasterDraftFromMerge";
 
 export type DossierSourceBoundary = {
@@ -2175,6 +2182,13 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "markCandidateAsExistingDossierUpdate",
   "detectDuplicateCandidates",
   "mergeCandidates",
+  "consolidateAttachIncomingRecommendations",
+  "createDossierUpdateWorkspace",
+  "createSourceFileFromIncomingInfo",
+  "mergeConsolidationIntoTarget",
+  "cleanDuplicateConsolidation",
+  "keepConsolidationSeparate",
+  "runSafeConsolidation",
   "createMasterDraftFromMerge",
 ];
 

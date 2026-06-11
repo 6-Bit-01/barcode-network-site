@@ -2048,8 +2048,8 @@ test("Dossier Control Center population audit maps counts, duplicate review, una
     "Target selection:",
     "Automation tier",
     "Incoming recommendation subject:",
-    "What this would add:",
-    "Already represented / duplicate:",
+    "What new info this adds:",
+    "Already represented:",
     "Public dossier match:",
     "Field-level plan",
     "New info to add",
@@ -2063,14 +2063,16 @@ test("Dossier Control Center population audit maps counts, duplicate review, una
     "Needs Source File target",
     "What would happen later",
     "The site can only audit records and recommendations already present in the workflow store. Active Discord members who have not been ingested by BNL will not appear here yet.",
-    "it does not merge, delete, publish, or mutate records automatically",
+    "admin-triggered only: it never mutates on page load",
+    "Run Safe Consolidation",
+    "Attach Incoming Recommendations",
   ]) {
     assertIncludesCopy(pageCopy, label);
   }
 
   assert.match(page, /<details className="border border-accent\/40 bg-surface\/70 p-5">/);
   assert.match(page, /createDossierPopulationAudit/);
-  assert.doesNotMatch(page, /Run Safe Cleanup|Remove Empty Duplicate|Attach Automatically|Merge Now|Delete Duplicate|auto-create|autoCreate|autoMerge/);
+  assert.doesNotMatch(page, /Run Safe Cleanup|Attach Automatically|Delete Duplicate|auto-create|autoCreate|autoMerge/);
   assert.doesNotMatch(pageCopy, /Confirmed aliases count: \{record\.confirmedAliasCount\}/);
   assert.doesNotMatch(pageCopy, /source notes count 0/i);
 });
@@ -2369,7 +2371,7 @@ test("population audit consolidation plans classify target/source records withou
     "No action needed",
   ]);
   assert.ok(activePlan?.mergePlanSections.some((section) => section.newInfoToAdd.length > 0));
-  assert.ok(activePlan?.mergePlanSections.some((section) => section.noActionNeeded.join(" ").includes("Nothing publishes automatically")));
+  assert.ok(activePlan?.mergePlanSections.some((section) => section.noActionNeeded.join(" ").includes("Nothing publishes automatically") || section.noActionNeeded.join(" ").includes("server-side")));
   assert.ok(blockedPlan?.mergePlanSections.some((section) => section.blockedReason.join(" ").includes("Different public dossier matches")));
 
   const publicDossierBefore = JSON.stringify(databasePage.entries.find((entry) => entry.name === "6 Bit"));
@@ -2381,7 +2383,7 @@ test("population audit consolidation plans classify target/source records withou
   assert.equal(JSON.stringify(databasePage.entries.find((entry) => entry.name === "6 Bit")), publicDossierBefore);
 });
 
-test("population audit planning UI uses incoming/target columns and disabled future action labels", () => {
+test("population audit planning UI uses incoming/target columns and live safe action labels", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
   const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
 
@@ -2393,19 +2395,19 @@ test("population audit planning UI uses incoming/target columns and disabled fut
     "Suggested workspace to create",
     "Recommended workspace:",
     "Existing public dossier:",
-    "Create Dossier Update Later",
-    "Create Source File Later",
-    "Attach Later",
-    "Select Target Later",
-    "Merge Later",
-    "Clean Later",
-    "Needs Source File Target",
+    "Create Dossier Update Workspace",
+    "Create Source File from Incoming Info",
+    "Attach Incoming Recommendations",
+    "Select target manually (read-only)",
+    "Merge Into Target",
+    "Clean Duplicate",
+    "Keep Separate / Not Same Subject",
   ]) {
     assertIncludesCopy(pageCopy, label);
   }
 
-  assert.match(page, /<button disabled/);
-  assert.doesNotMatch(pageCopy, /Run Safe Cleanup|Attach Automatically|Remove Empty Duplicate|Auto-Merge Safe Duplicate/);
+  assert.match(page, /runConsolidationAction/);
+  assert.doesNotMatch(pageCopy, /Run Safe Cleanup|Attach Automatically|Auto-Merge Safe Duplicate/);
   assert.doesNotMatch(pageCopy, /Confirmed aliases count: \{record\.confirmedAliasCount\}/);
   assert.doesNotMatch(pageCopy, /Proposed aliases count: \{record\.proposedAliasCount\}/);
   assert.doesNotMatch(pageCopy, /Archive\/report status: \{record\.hasLatestArchiveOrReport/);
@@ -5233,6 +5235,241 @@ test("BNL dynamic discovery dedupes by ingestKey and exact subject candidate", a
   assert.equal(state.recommendations.length, 2);
   assert.equal(state.candidates[0].sourceFileNotes.length, 2);
   assert.equal(state.drafts.length, 0);
+});
+
+function consolidationFixtureCandidate(overrides) {
+  const now = "2026-06-11T00:00:00.000Z";
+  return {
+    id: overrides.id,
+    name: overrides.name,
+    candidateType: "artist",
+    source: "manual",
+    tier: "review_candidate",
+    score: overrides.score ?? 60,
+    whyNow: overrides.whyNow ?? "Fixture",
+    reason: overrides.reason ?? "Fixture",
+    evidenceSummary: overrides.evidenceSummary ?? "Fixture evidence",
+    status: overrides.status ?? "active_source_file",
+    sourceFileNotes: overrides.sourceFileNotes ?? [],
+    identityLinks: overrides.identityLinks ?? [],
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+function consolidationFixtureRecommendation(overrides) {
+  const now = "2026-06-11T00:00:00.000Z";
+  return {
+    id: overrides.id,
+    type: overrides.type ?? "new_subject",
+    subjectName: overrides.subjectName,
+    subjectKey: overrides.subjectKey,
+    targetDossierId: overrides.targetDossierId,
+    status: overrides.status ?? "new",
+    reason: overrides.reason ?? "BNL fixture reason",
+    evidenceSummary: overrides.evidenceSummary ?? "BNL evidence summary",
+    confidence: overrides.confidence ?? "high",
+    sourceLanes: overrides.sourceLanes ?? ["public_discord"],
+    createdAt: now,
+    updatedAt: now,
+    createdBy: "bnl",
+    ingestSource: overrides.ingestSource ?? "bnl_dynamic_candidate_discovery",
+    ingestKey: overrides.ingestKey ?? overrides.id,
+    ...overrides,
+  };
+}
+
+function consolidationFixtureAlias(candidateId, label, status = "confirmed") {
+  const now = "2026-06-11T00:00:00.000Z";
+  return {
+    id: `${candidateId}-${label}`,
+    candidateId,
+    label,
+    normalizedLabel: workflow.normalizeDossierSubjectName(label),
+    type: "alias",
+    visibility: "internal_only",
+    status,
+    source: "admin_manual",
+    useForMatching: true,
+    useInPublicDossier: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+async function seedConsolidationWorkflow({ candidates = [], recommendations = [], drafts = [] }) {
+  await store.saveDossierWorkflowState({
+    version: 1,
+    revision: 0,
+    candidates,
+    recommendations,
+    drafts,
+    sourceFileRefreshRequests: [],
+    updatedAt: new Date(0).toISOString(),
+  });
+}
+
+function groupForTier(state, tier) {
+  return workflow.createDossierPopulationAudit({
+    candidates: state.candidates,
+    recommendations: state.recommendations,
+    publicDossiers: databasePage.entries.map((entry) => ({ id: entry.id, name: entry.name })),
+    drafts: state.drafts,
+  }).possibleDuplicateGroups.find((group) => group.consolidationPlan.automationTier === tier);
+}
+
+test("live consolidation attaches incoming recommendations after server-side revalidation without publishing", async () => {
+  await seedConsolidationWorkflow({
+    candidates: [consolidationFixtureCandidate({ id: "target-attach", name: "Attach Subject" })],
+    recommendations: [consolidationFixtureRecommendation({ id: "rec-attach-live", subjectName: "Attach Subject" })],
+  });
+  const beforePublic = JSON.stringify(databasePage.entries);
+  const group = groupForTier(await store.getDossierWorkflowState(), "Attach to Existing Source File candidate");
+  assert.ok(group, "expected attach candidate group");
+  const response = await authedPost({ action: "consolidateAttachIncomingRecommendations", groupId: group.id });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.consolidation.attachedRecommendationCount, 1);
+  assert.match(payload.consolidation.message, /No public dossier text changed/);
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.recommendations.find((item) => item.id === "rec-attach-live").targetCandidateId, "target-attach");
+  assert.equal(state.recommendations.find((item) => item.id === "rec-attach-live").status, "attached_to_source_file");
+  assert.equal(JSON.stringify(databasePage.entries), beforePublic);
+});
+
+test("live consolidation creates dossier update workspace and source file workspaces from recommendation clusters", async () => {
+  await seedConsolidationWorkflow({
+    recommendations: [
+      consolidationFixtureRecommendation({ id: "rec-update-a", subjectName: "6 Bit", targetDossierId: "EN-001" }),
+      consolidationFixtureRecommendation({ id: "rec-update-b", subjectName: "6 Bit", targetDossierId: "EN-001" }),
+    ],
+  });
+  let group = groupForTier(await store.getDossierWorkflowState(), "Create Dossier Update workspace candidate");
+  assert.ok(group, "expected dossier update workspace candidate");
+  let response = await authedPost({ action: "createDossierUpdateWorkspace", groupId: group.id });
+  assert.equal(response.status, 200);
+  let payload = await response.json();
+  assert.equal(payload.consolidation.createdWorkspaces[0].type, "Dossier Update");
+  assert.equal(payload.candidates.find((candidate) => candidate.id === payload.consolidation.targetId).status, "existing_dossier_update");
+  assert.equal(payload.recommendations.filter((recommendation) => recommendation.status === "attached_to_existing_dossier_update").length, 2);
+
+  await seedConsolidationWorkflow({
+    recommendations: [
+      consolidationFixtureRecommendation({ id: "rec-source-a", subjectName: "New Cluster A", subjectKey: "new-cluster" }),
+      consolidationFixtureRecommendation({ id: "rec-source-b", subjectName: "New Cluster B", subjectKey: "new-cluster" }),
+    ],
+  });
+  group = groupForTier(await store.getDossierWorkflowState(), "Create Source File candidate");
+  assert.ok(group, "expected source file creation candidate");
+  response = await authedPost({ action: "createSourceFileFromIncomingInfo", groupId: group.id });
+  assert.equal(response.status, 200);
+  payload = await response.json();
+  assert.equal(payload.consolidation.createdWorkspaces[0].type, "Source File / Candidate");
+  assert.equal(payload.candidates.find((candidate) => candidate.id === payload.consolidation.targetId).status, "active_source_file");
+  assert.equal(payload.recommendations.filter((recommendation) => ["converted_to_source_file", "attached_to_source_file"].includes(recommendation.status)).length, 2);
+});
+
+test("live consolidation merge moves notes and internal aliases but blocks public/draft conflicts", async () => {
+  const note = { id: "note-source", candidateId: "merge-source", type: "fact", text: "Additive source note", source: "admin_manual", status: "active", createdAt: "2026-06-11T00:00:00.000Z", updatedAt: "2026-06-11T00:00:00.000Z" };
+  await seedConsolidationWorkflow({
+    candidates: [
+      consolidationFixtureCandidate({ id: "merge-target", name: "Merge Subject", latestSourceFileArchiveUpdatedAt: "2026-06-11T00:00:00.000Z" }),
+      consolidationFixtureCandidate({ id: "merge-source", name: "Merge Subject", sourceFileNotes: [note], identityLinks: [consolidationFixtureAlias("merge-source", "Secret Internal Alias")] }),
+    ],
+  });
+  const group = groupForTier(await store.getDossierWorkflowState(), "Source File merge candidate");
+  assert.ok(group, "expected safe merge candidate");
+  const response = await authedPost({ action: "mergeConsolidationIntoTarget", groupId: group.id });
+  assert.equal(response.status, 200);
+  const state = await store.getDossierWorkflowState();
+  const target = state.candidates.find((candidate) => candidate.id === "merge-target");
+  assert.ok(target.sourceFileNotes.some((item) => item.text === "Additive source note"));
+  assert.ok(target.identityLinks.some((item) => item.label === "Secret Internal Alias" && item.visibility === "internal_only"));
+  assert.equal(state.candidates.find((candidate) => candidate.id === "merge-source").status, "merged");
+
+  await seedConsolidationWorkflow({
+    candidates: [
+      consolidationFixtureCandidate({ id: "conflict-a", name: "Conflict", existingDossierMatch: { id: "EN-001", name: "6 Bit", confidence: "high" } }),
+      consolidationFixtureCandidate({ id: "conflict-b", name: "Conflict", existingDossierMatch: { id: "EN-003", name: "Mac Modem", confidence: "high" } }),
+    ],
+  });
+  const blocked = workflow.createDossierPopulationAudit({ candidates: (await store.getDossierWorkflowState()).candidates, recommendations: [], publicDossiers: databasePage.entries.map((entry) => ({ id: entry.id, name: entry.name })), drafts: [] }).possibleDuplicateGroups[0];
+  const blockedResponse = await authedPost({ action: "mergeConsolidationIntoTarget", groupId: blocked.id });
+  assert.equal(blockedResponse.status, 409);
+
+  await seedConsolidationWorkflow({
+    candidates: [
+      consolidationFixtureCandidate({ id: "draft-a", name: "Draft Conflict" }),
+      consolidationFixtureCandidate({ id: "draft-b", name: "Draft Conflict" }),
+    ],
+    drafts: [
+      { id: "draft-a-open", candidateId: "draft-a", status: "draft", fields: { name: "Draft A", files: [] }, createdAt: "2026-06-11T00:00:00.000Z", updatedAt: "2026-06-11T00:00:00.000Z" },
+      { id: "draft-b-open", candidateId: "draft-b", status: "draft", fields: { name: "Draft B", files: [] }, createdAt: "2026-06-11T00:00:00.000Z", updatedAt: "2026-06-11T00:00:00.000Z" },
+    ],
+  });
+  const draftBlocked = workflow.createDossierPopulationAudit({ candidates: (await store.getDossierWorkflowState()).candidates, recommendations: [], publicDossiers: databasePage.entries.map((entry) => ({ id: entry.id, name: entry.name })), drafts: (await store.getDossierWorkflowState()).drafts }).possibleDuplicateGroups[0];
+  const draftBlockedResponse = await authedPost({ action: "mergeConsolidationIntoTarget", groupId: draftBlocked.id });
+  assert.equal(draftBlockedResponse.status, 409);
+});
+
+test("clean duplicate refuses meaningful data and bulk skips review-required groups", async () => {
+  await seedConsolidationWorkflow({
+    candidates: [
+      consolidationFixtureCandidate({ id: "clean-target-live", name: "Clean Live", latestSourceFileArchiveUpdatedAt: "2026-06-11T00:00:00.000Z" }),
+      consolidationFixtureCandidate({ id: "clean-source-live", name: "Clean Live", status: "candidate_intake", reason: "", whyNow: "", evidenceSummary: "" }),
+      consolidationFixtureCandidate({ id: "review-a", name: "Review Alias", identityLinks: [consolidationFixtureAlias("review-a", "Maybe Alias", "proposed")] }),
+      consolidationFixtureCandidate({ id: "review-b", name: "Review Alias" }),
+    ],
+  });
+  const group = groupForTier(await store.getDossierWorkflowState(), "Empty duplicate cleanup candidate");
+  assert.ok(group, "expected empty duplicate cleanup candidate");
+  let response = await authedPost({ action: "cleanDuplicateConsolidation", groupId: group.id });
+  assert.equal(response.status, 200);
+  let payload = await response.json();
+  assert.equal(payload.consolidation.cleanedDuplicateCount, 1);
+  assert.equal(payload.candidates.find((candidate) => candidate.id === "clean-source-live").status, "merged");
+
+  await seedConsolidationWorkflow({
+    candidates: [
+      consolidationFixtureCandidate({ id: "meaning-target", name: "Meaningful", latestSourceFileArchiveUpdatedAt: "2026-06-11T00:00:00.000Z" }),
+      consolidationFixtureCandidate({ id: "meaning-source", name: "Meaningful", status: "candidate_intake", reason: "", whyNow: "", evidenceSummary: "", sourceFileNotes: [{ id: "meaning-note", candidateId: "meaning-source", type: "fact", text: "Do not delete", source: "admin_manual", status: "active", createdAt: "2026-06-11T00:00:00.000Z", updatedAt: "2026-06-11T00:00:00.000Z" }] }),
+    ],
+  });
+  const unsafeGroup = workflow.createDossierPopulationAudit({ candidates: (await store.getDossierWorkflowState()).candidates, recommendations: [], publicDossiers: databasePage.entries.map((entry) => ({ id: entry.id, name: entry.name })), drafts: [] }).possibleDuplicateGroups[0];
+  response = await authedPost({ action: "cleanDuplicateConsolidation", groupId: unsafeGroup.id });
+  assert.equal(response.status, 409);
+
+  await seedConsolidationWorkflow({
+    candidates: [
+      consolidationFixtureCandidate({ id: "bulk-target", name: "Bulk Attach" }),
+      consolidationFixtureCandidate({ id: "bulk-review-a", name: "Bulk Review", identityLinks: [consolidationFixtureAlias("bulk-review-a", "Bulk Maybe", "proposed")] }),
+      consolidationFixtureCandidate({ id: "bulk-review-b", name: "Bulk Review" }),
+    ],
+    recommendations: [consolidationFixtureRecommendation({ id: "bulk-rec", subjectName: "Bulk Attach" })],
+  });
+  response = await authedPost({ action: "runSafeConsolidation" });
+  assert.equal(response.status, 200);
+  payload = await response.json();
+  assert.equal(payload.consolidation.attachedRecommendationCount, 1);
+  assert.ok(payload.consolidation.skipped.some((item) => /Review required/.test(item.reason)));
+});
+
+test("keep separate reports unsupported suppression without mutating records", async () => {
+  await seedConsolidationWorkflow({
+    candidates: [
+      consolidationFixtureCandidate({ id: "separate-a", name: "Separate Maybe", identityLinks: [consolidationFixtureAlias("separate-a", "Separate Proposed", "proposed")] }),
+      consolidationFixtureCandidate({ id: "separate-b", name: "Separate Maybe" }),
+    ],
+  });
+  const before = await store.getDossierWorkflowState();
+  const group = workflow.createDossierPopulationAudit({ candidates: before.candidates, recommendations: [], publicDossiers: databasePage.entries.map((entry) => ({ id: entry.id, name: entry.name })), drafts: [] }).possibleDuplicateGroups[0];
+  const response = await authedPost({ action: "keepConsolidationSeparate", groupId: group.id });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.match(payload.consolidation.message, /no records were mutated/i);
+  const after = await store.getDossierWorkflowState();
+  assert.deepEqual(after.candidates, before.candidates);
 });
 
 test("BNL dynamic identity and possible duplicate recommendations remain review-only", async () => {

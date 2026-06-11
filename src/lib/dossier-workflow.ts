@@ -758,12 +758,64 @@ export type DossierPopulationAuditRecord = {
   href?: string;
   candidateId?: string;
   recommendationId?: string;
+  displayName?: string;
   publicDossierId?: string;
   publicDossierName?: string;
   confirmedAliasCount: number;
   proposedAliasCount: number;
   attachedRecommendationCount: number;
   missingLatestCaseReport: boolean;
+  activeDraftStatus?: DossierDraftStatus;
+  sourceNotesCount: number;
+  hasLatestArchiveOrReport: boolean;
+  uniqueInfo: string[];
+  incomingInfo: string[];
+  duplicateInfo: string[];
+  sourceLanes?: DossierRecommendationSourceLane[];
+};
+
+export type DossierPopulationAutomationTier =
+  | "Create Source File candidate"
+  | "Create Dossier Update workspace candidate"
+  | "Attach to Existing Source File candidate"
+  | "Select Target Manually"
+  | "Source File merge candidate"
+  | "Empty duplicate cleanup candidate"
+  | "Recommendation-only duplicate group"
+  | "Review required"
+  | "Blocked"
+  | "Needs Source File target";
+
+export type DossierPopulationMergePlanSection = {
+  title: string;
+  newInfoToAdd: string[];
+  alreadyRepresented: string[];
+  irrelevantToKeptEntry: string[];
+  needsReview: string[];
+  blockedReason: string[];
+  noActionNeeded: string[];
+};
+
+export type DossierPopulationConsolidationPlan = {
+  groupId: string;
+  groupType: DossierPopulationAuditDuplicateGroup["matchKind"];
+  confidence: "high" | "medium" | "low";
+  reason: string;
+  targetRecord?: DossierPopulationAuditRecord;
+  sourceRecords: DossierPopulationAuditRecord[];
+  targetDisplayName?: string;
+  targetSourceFileLabel?: string;
+  targetDisplayReason?: string;
+  suggestedWorkspace?: "Dossier Update" | "New Source File / Candidate" | "Existing Source File";
+  existingPublicDossier?: { id: string; name?: string };
+  possibleTargetRecords: DossierPopulationAuditRecord[];
+  targetSelectionReason: string;
+  automationTier: DossierPopulationAutomationTier;
+  recommendedNextStep: string;
+  canBeAutomatedLater: boolean;
+  requiresReview: boolean;
+  blockedReasons: string[];
+  mergePlanSections: DossierPopulationMergePlanSection[];
 };
 
 export type DossierPopulationAuditDuplicateGroup = {
@@ -778,6 +830,7 @@ export type DossierPopulationAuditDuplicateGroup = {
   publicDossierMatch?: { id: string; name?: string };
   records: DossierPopulationAuditRecord[];
   suggestedAction: string;
+  consolidationPlan: DossierPopulationConsolidationPlan;
 };
 
 export type DossierPopulationAuditUnattachedRecommendation = {
@@ -794,6 +847,11 @@ export type DossierPopulationAuditUnattachedRecommendation = {
   matchBasis?: string;
   href: string;
   safeNextAction: string;
+  likelyTargetId?: string;
+  likelyTargetName?: string;
+  planClassification: DossierPopulationAutomationTier;
+  matchReason: string;
+  wouldHappenLater: string;
 };
 
 export type DossierPopulationAudit = {
@@ -891,10 +949,316 @@ function duplicateGroupAction(
   return "Review manually before drafting; confirm alias or archive stale duplicate only after owner/admin decision.";
 }
 
+
+function auditRecordUniqueInfo(input: {
+  confirmedAliasCount: number;
+  proposedAliasCount: number;
+  sourceNotesCount: number;
+  attachedRecommendationCount: number;
+  hasLatestArchiveOrReport: boolean;
+  activeDraftStatus?: DossierDraftStatus;
+  publicDossierId?: string;
+}): string[] {
+  const info: string[] = [];
+  if (input.confirmedAliasCount > 0)
+    info.push(`${input.confirmedAliasCount} confirmed alias${input.confirmedAliasCount === 1 ? "" : "es"}`);
+  if (input.proposedAliasCount > 0)
+    info.push(`${input.proposedAliasCount} proposed alias${input.proposedAliasCount === 1 ? "" : "es"}`);
+  if (input.sourceNotesCount > 0)
+    info.push(`${input.sourceNotesCount} active source note${input.sourceNotesCount === 1 ? "" : "s"}`);
+  if (input.attachedRecommendationCount > 0)
+    info.push(`${input.attachedRecommendationCount} BNL recommendation${input.attachedRecommendationCount === 1 ? "" : "s"}`);
+  if (input.hasLatestArchiveOrReport) info.push("latest BNL archive or case report");
+  if (input.activeDraftStatus) info.push(`active proposed dossier (${input.activeDraftStatus})`);
+  if (input.publicDossierId) info.push("public dossier match");
+  return info.length > 0 ? info : ["No unique useful data detected by audit."];
+}
+
+function recordHasUsefulData(record: DossierPopulationAuditRecord): boolean {
+  return (
+    record.confirmedAliasCount > 0 ||
+    record.proposedAliasCount > 0 ||
+    record.sourceNotesCount > 0 ||
+    record.attachedRecommendationCount > 0 ||
+    record.hasLatestArchiveOrReport ||
+    Boolean(record.activeDraftStatus) ||
+    Boolean(record.publicDossierId) ||
+    record.incomingInfo.length > 0
+  );
+}
+
+function realTargetPriority(record: DossierPopulationAuditRecord): number {
+  if (record.type === "recommendation") return -1;
+  let score = 0;
+  if (record.publicDossierId) score += 1000;
+  if (record.type === "source_file" || record.type === "dossier_update") score += 800;
+  if (record.activeDraftStatus) score += 300;
+  if (record.hasLatestArchiveOrReport) score += 150;
+  if (record.confirmedAliasCount > 0) score += 100;
+  if (record.type === "candidate_intake") score += 50;
+  score += Math.min(record.sourceNotesCount, 20);
+  score += Math.min(record.attachedRecommendationCount, 20);
+  return score;
+}
+
+function targetSelectionReason(record?: DossierPopulationAuditRecord): string {
+  if (!record)
+    return "No Source File target resolved. A real Source File/candidate target is missing from this group.";
+  if (record.publicDossierId)
+    return "Selected because it is backed by an existing public dossier match.";
+  if (record.type === "source_file" || record.type === "dossier_update")
+    return "Selected because an active Source File / Case File is safer than candidate intake or loose recommendations.";
+  if (record.activeDraftStatus)
+    return "Selected because it has an active proposed dossier draft.";
+  if (record.hasLatestArchiveOrReport)
+    return "Selected because it has the latest BNL Source File archive or case report evidence.";
+  if (record.confirmedAliasCount > 0)
+    return "Selected because it has confirmed aliases that can safely support matching.";
+  return "Selected because it is the real candidate record available for this group; recommendations cannot be merge targets.";
+}
+
+function planSection(
+  title: string,
+  input: Partial<DossierPopulationMergePlanSection>,
+): DossierPopulationMergePlanSection {
+  return {
+    title,
+    newInfoToAdd: input.newInfoToAdd ?? [],
+    alreadyRepresented: input.alreadyRepresented ?? [],
+    irrelevantToKeptEntry: input.irrelevantToKeptEntry ?? [],
+    needsReview: input.needsReview ?? [],
+    blockedReason: input.blockedReason ?? [],
+    noActionNeeded: input.noActionNeeded ?? [],
+  };
+}
+
+function targetDisplayName(record?: DossierPopulationAuditRecord): string | undefined {
+  return record?.publicDossierName || record?.publicDossierId || record?.name;
+}
+
+function targetDisplayReason(record?: DossierPopulationAuditRecord): string | undefined {
+  if (!record) return undefined;
+  if (record.publicDossierName && record.publicDossierName !== record.name) {
+    return "Target display is using the public dossier match.";
+  }
+  return undefined;
+}
+
+function createConsolidationPlan(input: {
+  id: string;
+  matchKind: DossierPopulationAuditDuplicateGroup["matchKind"];
+  reason: string;
+  records: DossierPopulationAuditRecord[];
+}): DossierPopulationConsolidationPlan {
+  const records = uniqueAuditRecords(input.records);
+  const realRecords = records.filter((record) => record.type !== "recommendation");
+  const recommendationRecords = records.filter((record) => record.type === "recommendation");
+  const sortedTargets = [...realRecords].sort(
+    (left, right) =>
+      realTargetPriority(right) - realTargetPriority(left) ||
+      left.status.localeCompare(right.status) ||
+      left.id.localeCompare(right.id),
+  );
+  const publicDossierRecords = records.filter((record) => record.publicDossierId);
+  const publicTargets = new Map<string, string | undefined>();
+  for (const record of publicDossierRecords) {
+    if (record.publicDossierId) {
+      publicTargets.set(record.publicDossierId, record.publicDossierName);
+    }
+  }
+  const possibleTargetRecords = sortedTargets;
+  const topTargetScore = sortedTargets[0]
+    ? realTargetPriority(sortedTargets[0])
+    : undefined;
+  const ambiguousTargetRecords =
+    sortedTargets.length > 1 &&
+    topTargetScore !== undefined &&
+    realTargetPriority(sortedTargets[1]) === topTargetScore;
+  const hasOnlyRecommendations = realRecords.length === 0;
+  const selectedTargetRecord = ambiguousTargetRecords ? undefined : sortedTargets[0];
+  const sourceRecords = selectedTargetRecord
+    ? records.filter((record) => recordKey(record) !== recordKey(selectedTargetRecord))
+    : records;
+  const realSourceRecords = sourceRecords.filter(
+    (record) => record.type !== "recommendation",
+  );
+  const activeDraftCount = realRecords.filter(
+    (record) => record.activeDraftStatus,
+  ).length;
+  const blockedReasons: string[] = [];
+  if (publicTargets.size > 1)
+    blockedReasons.push("Different public dossier matches are present.");
+  if (activeDraftCount > 1)
+    blockedReasons.push("Multiple real records have active proposed dossiers.");
+  if (records.some((record) => record.status === "merged" || record.status === "deleted")) {
+    blockedReasons.push("Already merged/deleted record involved.");
+  }
+
+  const hasRecommendationSources = recommendationRecords.length > 0;
+  const hasRealDuplicateSources = realSourceRecords.length > 0;
+  const allRealSourcesEmpty =
+    hasRealDuplicateSources && realSourceRecords.every((record) => !recordHasUsefulData(record));
+  const sharedPublicTarget = publicTargets.size === 1;
+  const existingPublicDossier = sharedPublicTarget
+    ? {
+        id: Array.from(publicTargets.keys())[0],
+        name: Array.from(publicTargets.values())[0],
+      }
+    : undefined;
+  const targetRecord = selectedTargetRecord;
+  const existingWorkspaceTarget = Boolean(targetRecord);
+  const suggestedWorkspace: DossierPopulationConsolidationPlan["suggestedWorkspace"] =
+    targetRecord
+      ? "Existing Source File"
+      : sharedPublicTarget
+        ? "Dossier Update"
+        : hasOnlyRecommendations
+          ? "New Source File / Candidate"
+          : undefined;
+
+  let automationTier: DossierPopulationAutomationTier = "Review required";
+  if (blockedReasons.length > 0) {
+    automationTier = "Blocked";
+  } else if (ambiguousTargetRecords) {
+    automationTier = "Select Target Manually";
+  } else if (hasOnlyRecommendations && sharedPublicTarget) {
+    automationTier = "Create Dossier Update workspace candidate";
+  } else if (hasOnlyRecommendations) {
+    automationTier = "Create Source File candidate";
+  } else if (hasRecommendationSources && existingWorkspaceTarget && !hasRealDuplicateSources) {
+    automationTier = "Attach to Existing Source File candidate";
+  } else if (allRealSourcesEmpty) {
+    automationTier = "Empty duplicate cleanup candidate";
+  } else if (
+    hasRealDuplicateSources &&
+    (input.matchKind === "normalized_name" || input.matchKind === "confirmed_alias")
+  ) {
+    automationTier = "Source File merge candidate";
+  }
+  if (
+    automationTier !== "Blocked" &&
+    records.some((record) => record.proposedAliasCount > 0) &&
+    input.matchKind !== "confirmed_alias"
+  ) {
+    automationTier = "Review required";
+  }
+
+  const canBeAutomatedLater = [
+    "Create Source File candidate",
+    "Create Dossier Update workspace candidate",
+    "Attach to Existing Source File candidate",
+    "Source File merge candidate",
+    "Empty duplicate cleanup candidate",
+  ].includes(automationTier);
+  const requiresReview = !canBeAutomatedLater || records.some((record) => record.proposedAliasCount > 0);
+  const noTargetExplanation = sharedPublicTarget
+    ? `These are duplicate or related BNL recommendations for an existing public dossier, but no Dossier Update workspace exists in this group yet. The next action is to create/select a Dossier Update workspace later.`
+    : "These are duplicate or related BNL recommendations, but no Source File target exists in this group yet. The next action is to attach them to an existing Source File if one matches, or create/select a Source File target later.";
+  const publicDossierUpdateExplanation =
+    (targetRecord?.publicDossierId || (hasOnlyRecommendations && sharedPublicTarget)) &&
+    hasRecommendationSources
+      ? `Existing public dossier match found. This should be reviewed as an update/attachment to the canonical ${targetDisplayName(targetRecord) ?? existingPublicDossier?.name ?? existingPublicDossier?.id} record, not merged into a separate duplicate Source File.`
+      : undefined;
+  const manualTargetExplanation = ambiguousTargetRecords
+    ? "Several possible Source File targets have equal priority. Select the correct target manually before any future action."
+    : undefined;
+
+  return {
+    groupId: input.id,
+    groupType: input.matchKind,
+    confidence:
+      input.matchKind === "confirmed_alias" || input.matchKind === "public_dossier"
+        ? "high"
+        : input.matchKind === "normalized_name"
+          ? "medium"
+          : "low",
+    reason: publicDossierUpdateExplanation ?? manualTargetExplanation ?? input.reason,
+    targetRecord,
+    sourceRecords,
+    targetDisplayName: targetDisplayName(targetRecord),
+    targetSourceFileLabel: targetRecord?.name,
+    targetDisplayReason: targetDisplayReason(targetRecord),
+    suggestedWorkspace,
+    existingPublicDossier,
+    possibleTargetRecords,
+    targetSelectionReason: ambiguousTargetRecords
+      ? "No single Source File target was selected because multiple possible targets have the same priority."
+      : targetSelectionReason(targetRecord),
+    automationTier,
+    recommendedNextStep: ambiguousTargetRecords
+      ? manualTargetExplanation ?? "Select the target manually before any future automation."
+      : hasOnlyRecommendations
+        ? noTargetExplanation
+        : canBeAutomatedLater
+          ? `${automationTier}: review the deltas below before enabling any real action in a future PR.`
+          : "Admin review required before any future automation.",
+    canBeAutomatedLater,
+    requiresReview,
+    blockedReasons: hasOnlyRecommendations && !sharedPublicTarget
+      ? ["No Source File target resolved."]
+      : blockedReasons,
+    mergePlanSections: [
+      planSection("New info to add", {
+        newInfoToAdd: sourceRecords.flatMap((record) => record.incomingInfo),
+        noActionNeeded: sourceRecords.flatMap((record) => record.incomingInfo).length
+          ? []
+          : ["No new incoming information detected."],
+      }),
+      planSection("Already represented / duplicate info", {
+        alreadyRepresented: [
+          ...sourceRecords.flatMap((record) => record.duplicateInfo),
+          ...(targetRecord?.publicDossierId && hasRecommendationSources
+            ? ["Incoming recommendation already points at the same public dossier target."]
+            : []),
+        ],
+        noActionNeeded: sourceRecords.every((record) => record.duplicateInfo.length === 0)
+          ? ["No duplicate facts were identified by this audit."]
+          : [],
+      }),
+      planSection("Irrelevant to kept entry", {
+        irrelevantToKeptEntry: sourceRecords
+          .filter((record) => record.type === "recommendation" && !targetRecord)
+          .map((record) =>
+            suggestedWorkspace
+              ? `${record.name} is incoming recommendation material for a ${suggestedWorkspace} workspace, not a Source File merge target.`
+              : `${record.name} cannot be merged until a Source File target exists.`,
+          ),
+      }),
+      planSection("Needs review", {
+        needsReview: [
+          ...(sourceRecords.some((record) => record.proposedAliasCount > 0)
+            ? ["Proposed aliases require human confirmation before matching."]
+            : []),
+          ...(publicDossierUpdateExplanation ? [publicDossierUpdateExplanation] : []),
+          ...(hasOnlyRecommendations ? [noTargetExplanation] : []),
+          ...(manualTargetExplanation ? [manualTargetExplanation] : []),
+        ],
+      }),
+      planSection("Blocked reason", {
+        blockedReason: hasOnlyRecommendations && !sharedPublicTarget
+          ? ["No Source File target resolved."]
+          : blockedReasons,
+        noActionNeeded: blockedReasons.length === 0 && !(hasOnlyRecommendations && !sharedPublicTarget)
+          ? ["No blocker detected by this planning pass."]
+          : [],
+      }),
+      planSection("No action needed", {
+        noActionNeeded: [
+          "Public dossier copy will not change.",
+          "Internal aliases stay internal.",
+          "Nothing publishes automatically.",
+          "No merge/delete/archive/attach/create action is live in this PR.",
+        ],
+      }),
+    ],
+  };
+}
+
 export function createDossierPopulationAudit(input: {
   candidates: DossierCandidate[];
   recommendations?: DossierRecommendation[];
   publicDossiers?: Array<{ id: string; name: string }>;
+  drafts?: DossierDraft[];
 }): DossierPopulationAudit {
   const recommendations = input.recommendations ?? [];
   const bnlRecommendations = recommendations.filter(isBnlRecommendation);
@@ -904,6 +1268,16 @@ export function createDossierPopulationAudit(input: {
   const publicDossiersById = new Map(
     (input.publicDossiers ?? []).map((dossier) => [dossier.id, dossier]),
   );
+  const activeDraftByCandidateId = new Map<string, DossierDraft>();
+  for (const draft of input.drafts ?? []) {
+    if (
+      draft.status === "draft" ||
+      draft.status === "owner_changes_requested" ||
+      draft.status === "ready_for_owner_review"
+    ) {
+      activeDraftByCandidateId.set(draft.candidateId, draft);
+    }
+  }
 
   const bnlRecommendationIdsByCandidate = new Map<string, Set<string>>();
   for (const recommendation of bnlRecommendations) {
@@ -952,6 +1326,7 @@ export function createDossierPopulationAudit(input: {
       status: candidate.status,
       href: `/admin/dossiers/candidates/${candidate.id}`,
       candidateId: candidate.id,
+      displayName: candidate.existingDossierMatch?.name ?? candidate.name,
       publicDossierId: candidate.existingDossierMatch?.id,
       publicDossierName: candidate.existingDossierMatch?.name,
       confirmedAliasCount,
@@ -960,6 +1335,42 @@ export function createDossierPopulationAudit(input: {
         bnlRecommendationIdsByCandidate.get(candidate.id)?.size ?? 0,
       missingLatestCaseReport:
         candidateMissingLatestCaseReportOrEnrichment(candidate),
+      activeDraftStatus: activeDraftByCandidateId.get(candidate.id)?.status,
+      sourceNotesCount: (candidate.sourceFileNotes ?? []).filter(
+        (note) => note.status === "active",
+      ).length,
+      hasLatestArchiveOrReport: Boolean(
+        candidate.latestSourceFileArchiveUpdatedAt ||
+          candidate.latestSourceFileArchiveId ||
+          candidate.latestSourceFileArchive?.caseReportPresent,
+      ),
+      incomingInfo: [
+        ...(candidate.evidenceSummary ? [`Source evidence: ${candidate.evidenceSummary}`] : []),
+        ...((candidate.sourceFileNotes ?? [])
+          .filter((note) => note.status === "active" && note.text)
+          .slice(0, 2)
+          .map((note) => `Source note: ${note.text}`)),
+      ],
+      duplicateInfo: candidate.existingDossierMatch?.name
+        ? [`Already connected to public dossier ${candidate.existingDossierMatch.name}.`]
+        : [],
+      sourceLanes: candidate.sourceLanes,
+      uniqueInfo: auditRecordUniqueInfo({
+        confirmedAliasCount,
+        proposedAliasCount,
+        sourceNotesCount: (candidate.sourceFileNotes ?? []).filter(
+          (note) => note.status === "active",
+        ).length,
+        attachedRecommendationCount:
+          bnlRecommendationIdsByCandidate.get(candidate.id)?.size ?? 0,
+        hasLatestArchiveOrReport: Boolean(
+          candidate.latestSourceFileArchiveUpdatedAt ||
+            candidate.latestSourceFileArchiveId ||
+            candidate.latestSourceFileArchive?.caseReportPresent,
+        ),
+        activeDraftStatus: activeDraftByCandidateId.get(candidate.id)?.status,
+        publicDossierId: candidate.existingDossierMatch?.id,
+      }),
     } satisfies DossierPopulationAuditRecord;
   });
   const recordByCandidateId = new Map(
@@ -1059,8 +1470,27 @@ export function createDossierPopulationAudit(input: {
         matchBasis,
         href: `/admin/dossiers/recommendations/${recommendation.id}`,
         safeNextAction: matchingSourceFile
-          ? "Review manually; attach to the matching Source File only after admin confirmation."
-          : "Review manually; decide whether this becomes a Dossier Seed, Dossier Update, or archive item.",
+          ? "Classification only: eligible to attach later after the classifier is approved."
+          : "Needs Source File target: decide whether this becomes a Dossier Seed, Dossier Update, or archive item.",
+        likelyTargetId: matchingSourceFile?.id,
+        likelyTargetName: matchingSourceFile?.existingDossierMatch?.name ?? matchingSourceFile?.name,
+        planClassification: matchingSourceFile
+          ? "Attach to Existing Source File candidate"
+          : recommendation.targetDossierId
+            ? "Create Dossier Update workspace candidate"
+            : "Create Source File candidate",
+        matchReason: matchingSourceFile
+          ? matchingSourceFile.existingDossierMatch?.name
+            ? `Existing public dossier match found for ${matchingSourceFile.existingDossierMatch.name}; route as update/attachment, not a Source File merge.`
+            : `Exact/confirmed ${matchBasis ?? "subject"} match to active Source File.`
+          : recommendation.targetDossierId
+            ? "Existing public dossier match found, but no Source File/Dossier Update workspace target exists yet."
+            : "No exact normalized-name, subjectKey, or confirmed-alias active Source File target exists yet.",
+        wouldHappenLater: matchingSourceFile
+          ? "Later automation could attach this recommendation to the existing Source File without changing public dossier copy."
+          : recommendation.targetDossierId
+            ? "Later automation could create a Dossier Update workspace for the existing public dossier without changing public copy."
+            : "Later automation could create a new Source File / Candidate workspace after review.",
       } satisfies DossierPopulationAuditUnattachedRecommendation;
     })
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
@@ -1156,6 +1586,10 @@ export function createDossierPopulationAudit(input: {
       status: recommendation.status,
       href: `/admin/dossiers/recommendations/${recommendation.id}`,
       recommendationId: recommendation.id,
+      displayName: recommendation.targetDossierId
+        ? publicDossiersById.get(recommendation.targetDossierId)?.name ??
+          recommendation.subjectName
+        : recommendation.subjectName,
       publicDossierId: recommendation.targetDossierId,
       publicDossierName: recommendation.targetDossierId
         ? publicDossiersById.get(recommendation.targetDossierId)?.name
@@ -1164,20 +1598,94 @@ export function createDossierPopulationAudit(input: {
       proposedAliasCount: 0,
       attachedRecommendationCount: 1,
       missingLatestCaseReport: false,
+      sourceNotesCount: 0,
+      hasLatestArchiveOrReport: false,
+      incomingInfo: [
+        `Incoming recommendation subject: ${recommendation.subjectName}`,
+        ...(recommendation.reason ? [`Recommendation reason: ${recommendation.reason}`] : []),
+        ...(recommendation.evidenceSummary ? [`Recommendation summary: ${recommendation.evidenceSummary}`] : []),
+        ...(recommendation.sourceLanes.length > 0
+          ? [`Source lanes: ${recommendation.sourceLanes.join(", ")}`]
+          : []),
+        ...(recommendation.targetDossierId
+          ? [
+              `Public dossier match: ${
+                publicDossiersById.get(recommendation.targetDossierId)?.name ??
+                recommendation.targetDossierId
+              }`,
+            ]
+          : []),
+      ],
+      duplicateInfo: recommendation.targetDossierId
+        ? [
+            `Recommendation already points at public dossier ${
+              publicDossiersById.get(recommendation.targetDossierId)?.name ??
+              recommendation.targetDossierId
+            }.`,
+          ]
+        : [],
+      sourceLanes: recommendation.sourceLanes,
+      uniqueInfo: auditRecordUniqueInfo({
+        confirmedAliasCount: 0,
+        proposedAliasCount: 0,
+        sourceNotesCount: 0,
+        attachedRecommendationCount: 1,
+        hasLatestArchiveOrReport: false,
+        activeDraftStatus: undefined,
+        publicDossierId: recommendation.targetDossierId,
+      }),
     };
+    const recommendationSubjectKey = normalizeDossierSubjectName(
+      recommendation.subjectName,
+    );
+    const subjectKeyRecord = recommendation.subjectKey
+      ? normalizeDossierSubjectName(recommendation.subjectKey)
+      : "";
+    const matchingRecommendationSourceFile =
+      activeSourceFilesByNormalizedName.get(recommendationSubjectKey) ??
+      (subjectKeyRecord
+        ? activeSourceFilesByNormalizedName.get(subjectKeyRecord)
+        : undefined) ??
+      activeSourceFilesByConfirmedAlias.get(recommendationSubjectKey) ??
+      (subjectKeyRecord
+        ? activeSourceFilesByConfirmedAlias.get(subjectKeyRecord)
+        : undefined);
     addBucketRecord(
       "bnl_recommendation_subject_name",
-      normalizeDossierSubjectName(recommendation.subjectName),
-      "Same normalized subjectName from BNL recommendations.",
+      recommendationSubjectKey,
+      matchingRecommendationSourceFile
+        ? "BNL recommendation subject matches an active Source File target."
+        : "Same normalized subjectName from BNL recommendations.",
       record,
     );
+    const matchingRecommendationSourceFileRecord = matchingRecommendationSourceFile
+      ? recordByCandidateId.get(matchingRecommendationSourceFile.id)
+      : undefined;
+    if (matchingRecommendationSourceFileRecord) {
+      addBucketRecord(
+        "bnl_recommendation_subject_name",
+        recommendationSubjectKey,
+        "BNL recommendation subject matches an active Source File target.",
+        matchingRecommendationSourceFileRecord,
+      );
+    }
     if (recommendation.subjectKey) {
       addBucketRecord(
         "recommendation_subject_key",
-        normalizeDossierSubjectName(recommendation.subjectKey),
-        "Same recommendation subjectKey.",
+        subjectKeyRecord,
+        matchingRecommendationSourceFile
+          ? "Recommendation subjectKey matches an active Source File target."
+          : "Same recommendation subjectKey.",
         record,
       );
+      if (matchingRecommendationSourceFileRecord) {
+        addBucketRecord(
+          "recommendation_subject_key",
+          subjectKeyRecord,
+          "Recommendation subjectKey matches an active Source File target.",
+          matchingRecommendationSourceFileRecord,
+        );
+      }
     }
     if (recommendation.targetDossierId) {
       addBucketRecord(
@@ -1204,6 +1712,15 @@ export function createDossierPopulationAudit(input: {
       publicDossierMatch: bucket.publicDossierMatch,
       records: uniqueAuditRecords(bucket.records),
       suggestedAction: duplicateGroupAction(bucket.matchKind, bucket.records),
+      consolidationPlan: createConsolidationPlan({
+        id: bucketKey
+          .replace(/[^a-z0-9]+/gi, "-")
+          .replace(/^-|-$/g, "")
+          .toLowerCase(),
+        matchKind: bucket.matchKind,
+        reason: bucket.reason,
+        records: uniqueAuditRecords(bucket.records),
+      }),
     }))
     .filter((group) => group.records.length >= 2)
     .sort(

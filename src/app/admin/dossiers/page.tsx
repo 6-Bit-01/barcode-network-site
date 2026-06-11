@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
+  createDossierPopulationAudit,
   getDossierSourceFileMetrics,
   matchDossierRecommendationSubject,
   type DossierCandidate,
@@ -439,6 +440,15 @@ export default function DossierControlCenterPage() {
     closedCandidates.length +
     closedDrafts.length +
     terminalRecommendations.length;
+  const populationAudit = useMemo(
+    () =>
+      createDossierPopulationAudit({
+        candidates,
+        recommendations,
+        publicDossiers,
+      }),
+    [candidates, recommendations, publicDossiers],
+  );
 
   async function postWorkflow(body: Record<string, unknown>) {
     setSaving(true);
@@ -793,6 +803,249 @@ export default function DossierControlCenterPage() {
             ))}
           </div>
         </DashboardCard>
+
+        <details className="border border-accent/40 bg-surface/70 p-5">
+          <summary className="cursor-pointer text-xl font-bold text-foreground">
+            Source File Population Audit
+          </summary>
+          <div className="mt-4 space-y-5">
+            <p className="border border-border/70 bg-background/30 p-4 text-sm text-muted">
+              The site can only audit records and recommendations already
+              present in the workflow store. Active Discord members who have not
+              been ingested by BNL will not appear here yet. This panel is
+              review-only: it does not merge, delete, publish, or mutate records
+              automatically.
+            </p>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 text-xs text-muted">
+              {[
+                [
+                  "Active Source Files / Case Files",
+                  populationAudit.counts.activeSourceFiles,
+                ],
+                [
+                  "Candidate Intake / Dossier Seeds",
+                  populationAudit.counts.candidateIntake,
+                ],
+                [
+                  "Existing Dossier Updates",
+                  populationAudit.counts.existingDossierUpdates,
+                ],
+                ["Public Dossiers", populationAudit.counts.publicDossiers],
+                [
+                  "Archived / closed records",
+                  populationAudit.counts.archivedClosedRecords,
+                ],
+                [
+                  "Records with proposed identity links",
+                  populationAudit.counts.proposedIdentityLinks,
+                ],
+                [
+                  "Records with confirmed identity links",
+                  populationAudit.counts.confirmedIdentityLinks,
+                ],
+                [
+                  "Records with attached BNL recommendations",
+                  populationAudit.counts.recordsWithAttachedBnlRecommendations,
+                ],
+                [
+                  "BNL recommendations not clearly attached to an active Source File",
+                  populationAudit.counts.unattachedBnlRecommendations,
+                ],
+                [
+                  "Records missing latest BNL case report or source enrichment",
+                  populationAudit.counts
+                    .recordsMissingLatestCaseReportOrEnrichment,
+                ],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className="border border-border/70 bg-background/30 p-3"
+                >
+                  <p className="uppercase tracking-[0.25em] text-accent mb-2">
+                    {label}
+                  </p>
+                  <p className="text-2xl font-bold text-foreground">{value}</p>
+                </div>
+              ))}
+            </div>
+
+            <section className="space-y-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-muted">
+                  Possible Duplicate / Same Subject Review
+                </p>
+                <h3 className="text-lg font-bold text-foreground">
+                  Possible same-subject review
+                </h3>
+              </div>
+              {populationAudit.possibleDuplicateGroups.length === 0 ? (
+                <p className="border border-border/70 bg-background/30 p-4 text-sm text-muted">
+                  No conservative possible duplicate groups were detected.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {populationAudit.possibleDuplicateGroups
+                    .slice(0, 10)
+                    .map((group) => (
+                      <article
+                        key={group.id}
+                        className="border border-border/70 bg-background/20 p-4 text-sm text-muted"
+                      >
+                        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                          <div>
+                            <p className="font-semibold text-foreground">
+                              Needs admin review — {group.reason}
+                            </p>
+                            <p>
+                              Suggested safe action: {group.suggestedAction}
+                            </p>
+                            {group.publicDossierMatch && (
+                              <p>
+                                Public dossier match:{" "}
+                                {group.publicDossierMatch.name ??
+                                  group.publicDossierMatch.id}
+                              </p>
+                            )}
+                          </div>
+                          <StatusPill>{group.matchKind}</StatusPill>
+                        </div>
+                        <div className="mt-3 grid gap-2 md:grid-cols-2">
+                          {group.records.map((record) => (
+                            <div
+                              key={`${group.id}-${record.type}-${record.id}`}
+                              className="border border-border/60 bg-background/30 p-3"
+                            >
+                              <p className="font-semibold text-foreground">
+                                {record.name}
+                              </p>
+                              <p>
+                                Type/status: {record.type} / {record.status}
+                              </p>
+                              <p>
+                                Candidate/source file ID:{" "}
+                                {record.candidateId ?? "—"}
+                              </p>
+                              <p>
+                                Recommendation ID:{" "}
+                                {record.recommendationId ?? "—"}
+                              </p>
+                              <p>
+                                Confirmed aliases: {record.confirmedAliasCount}
+                              </p>
+                              <p>
+                                Proposed aliases: {record.proposedAliasCount}
+                              </p>
+                              <p>
+                                Recommendation count:{" "}
+                                {record.attachedRecommendationCount}
+                              </p>
+                              {record.publicDossierId && (
+                                <p>
+                                  Public dossier target:{" "}
+                                  {record.publicDossierName ??
+                                    record.publicDossierId}
+                                </p>
+                              )}
+                              {record.href && (
+                                <Link
+                                  href={record.href}
+                                  className="mt-2 inline-flex border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent"
+                                >
+                                  {record.type === "recommendation"
+                                    ? "Open recommendation"
+                                    : "Open Source File"}
+                                </Link>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </article>
+                    ))}
+                </div>
+              )}
+            </section>
+
+            <section className="space-y-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-muted">
+                  Unattached BNL Signals / Recommendations
+                </p>
+                <h3 className="text-lg font-bold text-foreground">
+                  BNL recommendations that need placement review
+                </h3>
+              </div>
+              {populationAudit.unattachedBnlRecommendations.length === 0 ? (
+                <p className="border border-border/70 bg-background/30 p-4 text-sm text-muted">
+                  No unattached BNL recommendations were detected.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[900px] text-left text-sm text-muted">
+                    <thead className="text-xs uppercase tracking-widest text-foreground">
+                      <tr>
+                        <th className="py-2 pr-3">Subject</th>
+                        <th className="py-2 pr-3">subjectKey</th>
+                        <th className="py-2 pr-3">
+                          ingestSource / sourceLanes
+                        </th>
+                        <th className="py-2 pr-3">Confidence</th>
+                        <th className="py-2 pr-3">Created / updated</th>
+                        <th className="py-2 pr-3">Matching Source File?</th>
+                        <th className="py-2 pr-3">Safe next action</th>
+                        <th className="py-2 pr-3">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {populationAudit.unattachedBnlRecommendations.map(
+                        (recommendation) => (
+                          <tr
+                            key={recommendation.id}
+                            className="border-t border-border/70 align-top"
+                          >
+                            <td className="py-3 pr-3 font-semibold text-foreground">
+                              {recommendation.subjectName}
+                            </td>
+                            <td className="py-3 pr-3">
+                              {recommendation.subjectKey ?? "—"}
+                            </td>
+                            <td className="py-3 pr-3">
+                              {recommendation.ingestSource ?? "unknown"} /{" "}
+                              {recommendation.sourceLanes.join(", ")}
+                            </td>
+                            <td className="py-3 pr-3">
+                              {recommendation.confidence ?? "unset"}
+                            </td>
+                            <td className="py-3 pr-3">
+                              {formatDate(recommendation.createdAt)} /{" "}
+                              {formatDate(recommendation.updatedAt)}
+                            </td>
+                            <td className="py-3 pr-3">
+                              {recommendation.matchingSourceFileName
+                                ? `${recommendation.matchingSourceFileName} (${recommendation.matchBasis})`
+                                : "No clear active Source File match"}
+                            </td>
+                            <td className="py-3 pr-3">
+                              {recommendation.safeNextAction}
+                            </td>
+                            <td className="py-3 pr-3">
+                              <Link
+                                href={recommendation.href}
+                                className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
+                              >
+                                Open recommendation
+                              </Link>
+                            </td>
+                          </tr>
+                        ),
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </div>
+        </details>
 
         <DashboardCard
           eyebrow="Candidates"

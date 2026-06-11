@@ -2043,22 +2043,21 @@ test("Dossier Control Center population audit maps counts, duplicate review, una
     "Possible Duplicate / Same Subject Review",
     "Possible same-subject review",
     "Consolidation plan",
-    "Merging / Source",
-    "Merge Target / Keep",
+    "Merging / Incoming Info",
+    "Target / Keep",
     "Target selection:",
     "Automation tier",
-    "Confirmed aliases count:",
-    "Proposed aliases count:",
-    "Source notes count:",
-    "Recommendations count:",
+    "Incoming recommendation subject:",
+    "What this would add:",
+    "Already represented / duplicate:",
     "Public dossier match:",
-    "Field-level merge plan",
-    "Identity / aliases",
-    "Recommendations / BNL Signals",
-    "Source notes",
-    "Archives / BNL reports",
-    "Drafts / public dossiers",
-    "Safety",
+    "Field-level plan",
+    "New info to add",
+    "Already represented / duplicate info",
+    "Irrelevant to kept entry",
+    "Needs review",
+    "Blocked reason",
+    "No action needed",
     "Unattached BNL Signals / Recommendations",
     "BNL recommendations that need placement review",
     "Needs Source File target",
@@ -2072,6 +2071,8 @@ test("Dossier Control Center population audit maps counts, duplicate review, una
   assert.match(page, /<details className="border border-accent\/40 bg-surface\/70 p-5">/);
   assert.match(page, /createDossierPopulationAudit/);
   assert.doesNotMatch(page, /Run Safe Cleanup|Remove Empty Duplicate|Attach Automatically|Merge Now|Delete Duplicate|auto-create|autoCreate|autoMerge/);
+  assert.doesNotMatch(pageCopy, /Confirmed aliases count: \{record\.confirmedAliasCount\}/);
+  assert.doesNotMatch(pageCopy, /source notes count 0/i);
 });
 
 test("population audit helper uses conservative duplicate signals and leaves proposed aliases out of confirmed matching", () => {
@@ -2242,6 +2243,7 @@ test("population audit consolidation plans classify target/source records withou
     publicDossiers: [
       { id: "public-keep", name: "Public Keep" },
       { id: "public-other", name: "Public Other" },
+      { id: "six-bit", name: "6 Bit" },
     ],
     drafts: [
       {
@@ -2278,6 +2280,7 @@ test("population audit consolidation plans classify target/source records withou
       candidate({ id: "blocked-a", name: "Blocked Same", existingDossierMatch: { id: "public-keep", name: "Public Keep", confidence: "high" } }),
       candidate({ id: "blocked-b", name: "Blocked Same", existingDossierMatch: { id: "public-other", name: "Public Other", confidence: "high" } }),
       candidate({ id: "attach-target", name: "Attach Me", identityLinks: [alias("attach-target", "Attach Alias")] }),
+      candidate({ id: "six-bit-source", name: "6 Bit’s", existingDossierMatch: { id: "six-bit", name: "6 Bit", confidence: "high" } }),
     ],
     recommendations: [
       recommendation({ id: "rec-public-loose", subjectName: "Public Keep", targetDossierId: "public-keep" }),
@@ -2285,6 +2288,7 @@ test("population audit consolidation plans classify target/source records withou
       recommendation({ id: "rec-attach", subjectName: "Attach Alias" }),
       recommendation({ id: "rec-only-a", subjectName: "Only Signal A", subjectKey: "only-signal" }),
       recommendation({ id: "rec-only-b", subjectName: "Only Signal B", subjectKey: "only-signal" }),
+      recommendation({ id: "rec-six-bit", subjectName: "6 Bit", targetDossierId: "six-bit", evidenceSummary: "Canonical update signal." }),
     ],
   });
 
@@ -2301,14 +2305,24 @@ test("population audit consolidation plans classify target/source records withou
   assert.ok(activePlan.sourceRecords.some((record) => record.type === "recommendation"));
 
   const cleanPlan = plans.find((plan) => plan.groupType === "normalized_name" && plan.targetRecord?.id === "clean-target");
-  assert.equal(cleanPlan?.automationTier, "Auto-clean candidate");
+  assert.equal(cleanPlan?.automationTier, "Empty duplicate cleanup candidate");
 
   const mergePlan = plans.find((plan) => plan.groupType === "confirmed_alias" && plan.targetRecord?.id === "confirmed-target");
-  assert.equal(mergePlan?.automationTier, "Auto-merge candidate");
+  assert.equal(mergePlan?.automationTier, "Source File merge candidate");
 
   const attachPlan = audit.unattachedBnlRecommendations.find((item) => item.id === "rec-attach");
-  assert.equal(attachPlan?.planClassification, "Auto-attach candidate");
+  assert.equal(attachPlan?.planClassification, "Recommendation attach candidate");
   assert.equal(attachPlan?.likelyTargetId, "attach-target");
+
+  const sixBitPlan = plans.find((plan) => plan.groupId.includes("public-dossier-six-bit"));
+  assert.equal(sixBitPlan?.automationTier, "Dossier update candidate");
+  assert.equal(sixBitPlan?.targetRecord?.id, "six-bit-source");
+  assert.equal(sixBitPlan?.targetDisplayName, "6 Bit");
+  assert.equal(sixBitPlan?.targetSourceFileLabel, "6 Bit’s");
+  assert.match(sixBitPlan?.targetDisplayReason ?? "", /public dossier match/);
+  assert.notEqual(sixBitPlan?.automationTier, "Source File merge candidate");
+  assert.ok(sixBitPlan?.sourceRecords.every((record) => record.type === "recommendation"));
+  assert.match(sixBitPlan?.reason ?? "", /not merged into a separate duplicate Source File/);
 
   const reviewPlan = plans.find((plan) => plan.targetRecord?.id === "proposed-a" || plan.sourceRecords.some((record) => record.id === "proposed-a"));
   assert.equal(reviewPlan?.automationTier, "Review required");
@@ -2319,18 +2333,51 @@ test("population audit consolidation plans classify target/source records withou
 
   const recommendationOnlyPlan = plans.find((plan) => plan.automationTier === "Recommendation-only duplicate group");
   assert.ok(recommendationOnlyPlan);
-  assert.match(recommendationOnlyPlan.recommendedNextStep, /Needs Source File target/);
+  assert.equal(recommendationOnlyPlan.targetRecord, undefined);
+  assert.match(recommendationOnlyPlan.recommendedNextStep, /no Source File target exists/i);
+  assert.match(recommendationOnlyPlan.blockedReasons.join(" "), /No Source File target resolved/);
   assert.doesNotMatch(recommendationOnlyPlan.targetSelectionReason, /source and target records could not be resolved/i);
+
+  assert.ok(activePlan?.sourceRecords.some((record) => record.type === "recommendation"));
+  assert.notEqual(activePlan?.targetRecord?.type, "recommendation");
 
   const sectionNames = activePlan?.mergePlanSections.map((section) => section.title) ?? [];
   assert.deepEqual(sectionNames, [
-    "Identity / aliases",
-    "Recommendations / BNL Signals",
-    "Source notes",
-    "Archives / BNL reports",
-    "Drafts / public dossiers",
-    "Safety",
+    "New info to add",
+    "Already represented / duplicate info",
+    "Irrelevant to kept entry",
+    "Needs review",
+    "Blocked reason",
+    "No action needed",
   ]);
+  assert.ok(activePlan?.mergePlanSections.some((section) => section.newInfoToAdd.length > 0));
+  assert.ok(activePlan?.mergePlanSections.some((section) => section.noActionNeeded.join(" ").includes("Nothing publishes automatically")));
+  assert.ok(blockedPlan?.mergePlanSections.some((section) => section.blockedReason.join(" ").includes("Different public dossier matches")));
+});
+
+test("population audit planning UI uses incoming/target columns and disabled future action labels", () => {
+  const page = source("src/app/admin/dossiers/page.tsx");
+  const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
+
+  for (const label of [
+    "Merging / Incoming Info",
+    "Target / Keep",
+    "No Source File target resolved",
+    "targetDisplayReason",
+    "Dossier Update Later",
+    "Attach Later",
+    "Merge Later",
+    "Clean Later",
+    "Needs Source File Target",
+  ]) {
+    assertIncludesCopy(pageCopy, label);
+  }
+
+  assert.match(page, /<button disabled/);
+  assert.doesNotMatch(pageCopy, /Run Safe Cleanup|Attach Automatically|Remove Empty Duplicate|Auto-Merge Safe Duplicate/);
+  assert.doesNotMatch(pageCopy, /Confirmed aliases count: \{record\.confirmedAliasCount\}/);
+  assert.doesNotMatch(pageCopy, /Proposed aliases count: \{record\.proposedAliasCount\}/);
+  assert.doesNotMatch(pageCopy, /Archive\/report status: \{record\.hasLatestArchiveOrReport/);
 });
 
 test("owner review page is a placeholder lane without publishing", () => {

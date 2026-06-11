@@ -919,29 +919,38 @@ export default function DossierControlCenterPage() {
                         <div className="mt-3 grid gap-3 lg:grid-cols-2">
                           <div className="border border-border/60 bg-background/30 p-3">
                             <p className="text-xs uppercase tracking-[0.3em] text-accent">
-                              Merging / Source
+                              Merging / Incoming Info
                             </p>
                             {plan.sourceRecords.length === 0 ? (
-                              <p className="mt-2">No source record selected yet.</p>
+                              <p className="mt-2">No incoming information selected yet.</p>
                             ) : (
                               <div className="mt-2 space-y-3">
                                 {plan.sourceRecords.map((record) => (
                                   <div key={`${group.id}-source-${record.type}-${record.id}`}>
-                                    <p className="font-semibold text-foreground">{record.name}</p>
-                                    <p>Record type/status: {record.type} / {record.status}</p>
-                                    <p>Candidate/source file ID: {record.candidateId ?? "—"}</p>
-                                    <p>Recommendation ID: {record.recommendationId ?? "—"}</p>
-                                    <p>Public dossier match: {record.publicDossierName ?? record.publicDossierId ?? "none"}</p>
-                                    <p>Active draft status: {record.activeDraftStatus ?? "no active draft"}</p>
-                                    <p>Confirmed aliases count: {record.confirmedAliasCount}</p>
-                                    <p>Proposed aliases count: {record.proposedAliasCount}</p>
-                                    <p>Source notes count: {record.sourceNotesCount}</p>
-                                    <p>Recommendations count: {record.attachedRecommendationCount}</p>
-                                    <p>Archive/report status: {record.hasLatestArchiveOrReport ? "archive/report present" : "no archive/report detected"}</p>
-                                    <p>Unique info: {record.uniqueInfo.join("; ")}</p>
+                                    <p className="font-semibold text-foreground">{record.displayName ?? record.name}</p>
+                                    {record.type === "recommendation" ? (
+                                      <p>Incoming recommendation subject: {record.name}</p>
+                                    ) : (
+                                      <p>Incoming record: {record.type} / {record.status}</p>
+                                    )}
+                                    {record.sourceLanes && record.sourceLanes.length > 0 && (
+                                      <p>Source lanes: {record.sourceLanes.join(", ")}</p>
+                                    )}
+                                    {(record.publicDossierName || record.publicDossierId) && (
+                                      <p>Public dossier match: {record.publicDossierName ?? record.publicDossierId}</p>
+                                    )}
+                                    {record.incomingInfo.length > 0 && (
+                                      <p>What this would add: {record.incomingInfo.join("; ")}</p>
+                                    )}
+                                    {record.duplicateInfo.length > 0 && (
+                                      <p>Already represented / duplicate: {record.duplicateInfo.join("; ")}</p>
+                                    )}
+                                    {!plan.targetRecord && (
+                                      <p>Needs Source File target before any future action.</p>
+                                    )}
                                     {record.href && (
                                       <Link href={record.href} className="mt-2 inline-flex border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">
-                                        {record.type === "recommendation" ? "Open recommendation" : "Open source Source File"}
+                                        {record.type === "recommendation" ? "Open incoming recommendation" : "Open source Source File"}
                                       </Link>
                                     )}
                                   </div>
@@ -949,25 +958,31 @@ export default function DossierControlCenterPage() {
                               </div>
                             )}
                           </div>
-                          <div className="border border-accent/50 bg-accent/5 p-3">
+                          <div className={plan.targetRecord ? "border border-accent/50 bg-accent/5 p-3" : "border border-border/60 bg-background/30 p-3"}>
                             <p className="text-xs uppercase tracking-[0.3em] text-accent">
-                              Merge Target / Keep
+                              Target / Keep
                             </p>
                             {plan.targetRecord ? (
                               <div className="mt-2">
-                                <p className="font-semibold text-foreground">{plan.targetRecord.name}</p>
-                                <p>Record type/status: {plan.targetRecord.type} / {plan.targetRecord.status}</p>
-                                <p>Candidate/source file ID: {plan.targetRecord.candidateId ?? "—"}</p>
-                                <p>Recommendation ID: {plan.targetRecord.recommendationId ?? "—"}</p>
-                                <p>Public dossier match: {plan.targetRecord.publicDossierName ?? plan.targetRecord.publicDossierId ?? "none"}</p>
-                                <p>Active draft status: {plan.targetRecord.activeDraftStatus ?? "no active draft"}</p>
-                                <p>Confirmed aliases count: {plan.targetRecord.confirmedAliasCount}</p>
-                                <p>Proposed aliases count: {plan.targetRecord.proposedAliasCount}</p>
-                                <p>Source notes count: {plan.targetRecord.sourceNotesCount}</p>
-                                <p>Recommendations count: {plan.targetRecord.attachedRecommendationCount}</p>
-                                <p>Archive/report status: {plan.targetRecord.hasLatestArchiveOrReport ? "archive/report present" : "no archive/report detected"}</p>
-                                <p>Unique info: {plan.targetRecord.uniqueInfo.join("; ")}</p>
-                                <p className="mt-2 text-foreground">Why this target: {plan.targetSelectionReason}</p>
+                                <p className="font-semibold text-foreground">{plan.targetDisplayName ?? plan.targetRecord.displayName ?? plan.targetRecord.name}</p>
+                                {plan.targetDisplayReason && (
+                                  <p>{plan.targetDisplayReason}</p>
+                                )}
+                                {plan.targetSourceFileLabel && plan.targetDisplayName !== plan.targetSourceFileLabel && (
+                                  <p>Source File label: {plan.targetSourceFileLabel}</p>
+                                )}
+                                <p>Target type/status: {plan.targetRecord.type} / {plan.targetRecord.status}</p>
+                                <p>Why selected: {plan.targetSelectionReason}</p>
+                                {(plan.targetRecord.publicDossierName || plan.targetRecord.publicDossierId) && (
+                                  <p>Dossier status: public dossier match {plan.targetRecord.publicDossierName ?? plan.targetRecord.publicDossierId}</p>
+                                )}
+                                {plan.targetRecord.activeDraftStatus && (
+                                  <p>Draft status: {plan.targetRecord.activeDraftStatus}</p>
+                                )}
+                                {plan.targetRecord.uniqueInfo.length > 0 && (
+                                  <p>Target already has: {plan.targetRecord.uniqueInfo.join("; ")}</p>
+                                )}
+                                <p>What would be updated later: {plan.automationTier}</p>
                                 {plan.targetRecord.href && (
                                   <Link href={plan.targetRecord.href} className="mt-2 inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">
                                     Open target Source File
@@ -975,26 +990,39 @@ export default function DossierControlCenterPage() {
                                 )}
                               </div>
                             ) : (
-                              <p className="mt-2">Needs Source File target before any future action.</p>
+                              <div className="mt-2">
+                                <p className="font-semibold text-foreground">No Source File target resolved</p>
+                                <p>{plan.recommendedNextStep}</p>
+                              </div>
                             )}
                           </div>
                         </div>
                         <div className="mt-4 space-y-2">
-                          <p className="text-xs uppercase tracking-[0.3em] text-accent">Field-level merge plan</p>
-                          <p className="sr-only">Identity / aliases Recommendations / BNL Signals Source notes Archives / BNL reports Drafts / public dossiers Safety</p>
+                          <p className="text-xs uppercase tracking-[0.3em] text-accent">Field-level plan</p>
+                          <p className="sr-only">New info to add Already represented / duplicate info Irrelevant to kept entry Needs review Blocked reason No action needed</p>
                           <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
                             {plan.mergePlanSections.map((section) => (
                               <div key={`${group.id}-${section.title}`} className="border border-border/60 bg-background/30 p-3">
                                 <p className="font-semibold text-foreground">{section.title}</p>
-                                <p>Will add later: {section.willAddLater.join("; ") || "—"}</p>
-                                <p>Already present: {section.alreadyPresent.join("; ") || "—"}</p>
+                                <p>New info to add: {section.newInfoToAdd.join("; ") || "—"}</p>
+                                <p>Already represented / duplicate info: {section.alreadyRepresented.join("; ") || "—"}</p>
+                                <p>Irrelevant to kept entry: {section.irrelevantToKeptEntry.join("; ") || "—"}</p>
                                 <p>Needs review: {section.needsReview.join("; ") || "—"}</p>
-                                <p>Will not publish: {section.willNotPublish.join("; ") || "—"}</p>
+                                <p>Blocked reason: {section.blockedReason.join("; ") || "—"}</p>
+                                <p>No action needed: {section.noActionNeeded.join("; ") || "—"}</p>
                               </div>
                             ))}
                           </div>
                           <button disabled className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted opacity-60">
-                            {plan.automationTier === "Auto-clean candidate" ? "Clean Later" : "Auto-Merge Later"}
+                            {plan.automationTier === "Dossier update candidate"
+                              ? "Dossier Update Later"
+                              : plan.automationTier === "Recommendation attach candidate"
+                                ? "Attach Later"
+                                : plan.automationTier === "Source File merge candidate"
+                                  ? "Merge Later"
+                                  : plan.automationTier === "Empty duplicate cleanup candidate"
+                                    ? "Clean Later"
+                                    : "Needs Source File Target"}
                           </button>
                         </div>
                       </article>
@@ -1079,7 +1107,7 @@ export default function DossierControlCenterPage() {
                                 href={recommendation.href}
                                 className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
                               >
-                                Open recommendation
+                                Open incoming recommendation
                               </Link>
                             </td>
                           </tr>

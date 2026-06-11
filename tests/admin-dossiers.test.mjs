@@ -2022,6 +2022,159 @@ test("dashboard frames manual recommendation seed as collapsed fallback", () => 
   assert.doesNotMatch(page, /fetch\("\/api\/bnl/);
 });
 
+
+
+test("Dossier Control Center population audit maps counts, duplicate review, unattached BNL signals, and safe copy", () => {
+  const page = source("src/app/admin/dossiers/page.tsx");
+  const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
+
+  for (const label of [
+    "Source File Population Audit",
+    "Active Source Files / Case Files",
+    "Candidate Intake / Dossier Seeds",
+    "Existing Dossier Updates",
+    "Public Dossiers",
+    "Archived / closed records",
+    "Records with proposed identity links",
+    "Records with confirmed identity links",
+    "Records with attached BNL recommendations",
+    "BNL recommendations not clearly attached to an active Source File",
+    "Records missing latest BNL case report or source enrichment",
+    "Possible Duplicate / Same Subject Review",
+    "Possible same-subject review",
+    "Needs admin review",
+    "Confirmed aliases:",
+    "Proposed aliases:",
+    "Recommendation count:",
+    "Public dossier match:",
+    "Unattached BNL Signals / Recommendations",
+    "BNL recommendations that need placement review",
+    "No clear active Source File match",
+    "The site can only audit records and recommendations already present in the workflow store. Active Discord members who have not been ingested by BNL will not appear here yet.",
+    "it does not merge, delete, publish, or mutate records automatically",
+  ]) {
+    assertIncludesCopy(pageCopy, label);
+  }
+
+  assert.match(page, /<details className="border border-accent\/40 bg-surface\/70 p-5">/);
+  assert.match(page, /createDossierPopulationAudit/);
+  assert.doesNotMatch(page, /Auto Merge|Merge Now|Delete Duplicate|auto-create|autoCreate|autoMerge/);
+});
+
+test("population audit helper uses conservative duplicate signals and leaves proposed aliases out of confirmed matching", () => {
+  const now = "2026-06-11T00:00:00.000Z";
+  const baseCandidate = (overrides) => ({
+    id: overrides.id,
+    name: overrides.name,
+    candidateType: "artist",
+    source: "manual",
+    tier: "review_candidate",
+    score: 5,
+    whyNow: "Fixture",
+    reason: "Fixture",
+    evidenceSummary: "Fixture",
+    status: overrides.status ?? "active_source_file",
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  });
+  const baseRecommendation = (overrides) => ({
+    id: overrides.id,
+    type: overrides.type ?? "new_subject",
+    subjectName: overrides.subjectName,
+    subjectKey: overrides.subjectKey,
+    targetDossierId: overrides.targetDossierId,
+    targetCandidateId: overrides.targetCandidateId,
+    status: overrides.status ?? "new",
+    reason: "BNL fixture",
+    confidence: overrides.confidence ?? "medium",
+    sourceLanes: overrides.sourceLanes ?? ["public_discord"],
+    createdAt: now,
+    updatedAt: overrides.updatedAt ?? now,
+    createdBy: "bnl",
+    ingestSource: overrides.ingestSource ?? "bnl_dynamic_candidate_discovery",
+    ...overrides,
+  });
+
+  const audit = workflow.createDossierPopulationAudit({
+    publicDossiers: [{ id: "mac-modem", name: "Mac Modem" }],
+    candidates: [
+      baseCandidate({
+        id: "candidate-active",
+        name: "Echo Trace",
+        sourceRecommendationIds: ["rec-attached"],
+        latestSourceFileArchiveUpdatedAt: now,
+        identityLinks: [
+          {
+            id: "alias-confirmed",
+            candidateId: "candidate-active",
+            label: "Trace Echo",
+            normalizedLabel: "trace echo",
+            type: "alias",
+            visibility: "internal_only",
+            status: "confirmed",
+            source: "admin_manual",
+            useForMatching: true,
+            useInPublicDossier: false,
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            id: "alias-proposed",
+            candidateId: "candidate-active",
+            label: "Proposed Only",
+            normalizedLabel: "proposed only",
+            type: "alias",
+            visibility: "internal_only",
+            status: "proposed",
+            source: "bnl_recommendation",
+            useForMatching: true,
+            useInPublicDossier: false,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+      }),
+      baseCandidate({ id: "candidate-name-dupe", name: "Echo Trace" }),
+      baseCandidate({ id: "candidate-alias-dupe", name: "Trace Echo" }),
+      baseCandidate({
+        id: "candidate-public-target",
+        name: "Mac Update A",
+        status: "existing_dossier_update",
+        existingDossierMatch: { id: "mac-modem", name: "Mac Modem", confidence: "high" },
+      }),
+      baseCandidate({ id: "candidate-intake", name: "Seed Person", status: "candidate_intake" }),
+      baseCandidate({ id: "candidate-archived", name: "Old Person", status: "archived" }),
+      baseCandidate({ id: "candidate-missing-report", name: "Missing Report" }),
+    ],
+    recommendations: [
+      baseRecommendation({ id: "rec-attached", subjectName: "Echo Trace", targetCandidateId: "candidate-active", status: "attached_to_source_file" }),
+      baseRecommendation({ id: "rec-unattached", subjectName: "Loose Signal", subjectKey: "loose-signal" }),
+      baseRecommendation({ id: "rec-shared-key-a", subjectName: "Key Alpha", subjectKey: "shared-key" }),
+      baseRecommendation({ id: "rec-shared-key-b", subjectName: "Key Beta", subjectKey: "shared-key" }),
+      baseRecommendation({ id: "rec-public-target", subjectName: "Mac Update B", targetDossierId: "mac-modem", type: "modify_existing_dossier" }),
+    ],
+  });
+
+  assert.equal(audit.counts.activeSourceFiles, 4);
+  assert.equal(audit.counts.candidateIntake, 1);
+  assert.equal(audit.counts.existingDossierUpdates, 1);
+  assert.equal(audit.counts.publicDossiers, 1);
+  assert.equal(audit.counts.archivedClosedRecords, 1);
+  assert.equal(audit.counts.proposedIdentityLinks, 1);
+  assert.equal(audit.counts.confirmedIdentityLinks, 1);
+  assert.equal(audit.counts.recordsWithAttachedBnlRecommendations, 1);
+  assert.equal(audit.counts.unattachedBnlRecommendations, 4);
+  assert.equal(audit.counts.recordsMissingLatestCaseReportOrEnrichment, 3);
+
+  assert.ok(audit.possibleDuplicateGroups.some((group) => group.matchKind === "normalized_name" && group.records.some((record) => record.id === "candidate-active") && group.records.some((record) => record.id === "candidate-name-dupe")));
+  assert.ok(audit.possibleDuplicateGroups.some((group) => group.matchKind === "confirmed_alias" && group.records.some((record) => record.id === "candidate-active") && group.records.some((record) => record.id === "candidate-alias-dupe")));
+  assert.ok(audit.possibleDuplicateGroups.some((group) => group.matchKind === "public_dossier" && group.publicDossierMatch?.id === "mac-modem"));
+  assert.ok(audit.possibleDuplicateGroups.some((group) => group.matchKind === "recommendation_subject_key" && group.records.length === 2));
+  assert.ok(!audit.possibleDuplicateGroups.some((group) => group.matchKind === "confirmed_alias" && group.records.some((record) => record.name === "Proposed Only")));
+  assert.ok(audit.unattachedBnlRecommendations.some((recommendation) => recommendation.id === "rec-unattached" && recommendation.subjectName === "Loose Signal"));
+});
+
 test("owner review page is a placeholder lane without publishing", () => {
   const routePath = "src/app/admin/dossiers/owner-review/page.tsx";
   assert.equal(fs.existsSync(path.join(projectRoot, routePath)), true);

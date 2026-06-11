@@ -131,7 +131,6 @@ export type DossierSourceFileOperatorSummary = {
   updatedBy?: string;
 };
 
-
 export type DossierSubjectIntelligenceBriefV1 = {
   subjectRead?: unknown;
   bnlTake?: unknown;
@@ -741,6 +740,518 @@ export function getDossierSourceFileMetrics(input: {
     sourceDepthScore: score,
     unappliedSourceNotesCount: unappliedSourceNotes.length,
     unappliedSourceNotes,
+  };
+}
+
+export type DossierPopulationAuditRecordType =
+  | "source_file"
+  | "candidate_intake"
+  | "dossier_update"
+  | "recommendation"
+  | "archived_or_closed";
+
+export type DossierPopulationAuditRecord = {
+  id: string;
+  type: DossierPopulationAuditRecordType;
+  name: string;
+  status: string;
+  href?: string;
+  candidateId?: string;
+  recommendationId?: string;
+  publicDossierId?: string;
+  publicDossierName?: string;
+  confirmedAliasCount: number;
+  proposedAliasCount: number;
+  attachedRecommendationCount: number;
+  missingLatestCaseReport: boolean;
+};
+
+export type DossierPopulationAuditDuplicateGroup = {
+  id: string;
+  reason: string;
+  matchKind:
+    | "normalized_name"
+    | "confirmed_alias"
+    | "public_dossier"
+    | "recommendation_subject_key"
+    | "bnl_recommendation_subject_name";
+  publicDossierMatch?: { id: string; name?: string };
+  records: DossierPopulationAuditRecord[];
+  suggestedAction: string;
+};
+
+export type DossierPopulationAuditUnattachedRecommendation = {
+  id: string;
+  subjectName: string;
+  subjectKey?: string;
+  ingestSource?: DossierRecommendationIngestSource;
+  sourceLanes: DossierRecommendationSourceLane[];
+  confidence?: DossierRecommendation["confidence"];
+  createdAt: string;
+  updatedAt: string;
+  matchingSourceFileId?: string;
+  matchingSourceFileName?: string;
+  matchBasis?: string;
+  href: string;
+  safeNextAction: string;
+};
+
+export type DossierPopulationAudit = {
+  counts: {
+    activeSourceFiles: number;
+    candidateIntake: number;
+    existingDossierUpdates: number;
+    publicDossiers: number;
+    archivedClosedRecords: number;
+    proposedIdentityLinks: number;
+    confirmedIdentityLinks: number;
+    recordsWithAttachedBnlRecommendations: number;
+    unattachedBnlRecommendations: number;
+    recordsMissingLatestCaseReportOrEnrichment: number;
+  };
+  records: DossierPopulationAuditRecord[];
+  possibleDuplicateGroups: DossierPopulationAuditDuplicateGroup[];
+  unattachedBnlRecommendations: DossierPopulationAuditUnattachedRecommendation[];
+};
+
+function isBnlRecommendation(
+  recommendation: Pick<DossierRecommendation, "ingestSource" | "createdBy">,
+): boolean {
+  return (
+    recommendation.createdBy === "bnl" ||
+    recommendation.ingestSource === "bnl" ||
+    recommendation.ingestSource === "bnl_dynamic_candidate_discovery" ||
+    recommendation.ingestSource === "bnl_source_knowledge_bridge" ||
+    recommendation.ingestSource === "bnl_source_file_enrichment"
+  );
+}
+
+function isClosedPopulationCandidate(
+  candidate: Pick<DossierCandidate, "status">,
+): boolean {
+  return (
+    candidate.status === "archived" ||
+    candidate.status === "denied" ||
+    candidate.status === "merged"
+  );
+}
+
+function candidatePopulationType(
+  candidate: DossierCandidate,
+): DossierPopulationAuditRecordType {
+  if (isClosedPopulationCandidate(candidate)) return "archived_or_closed";
+  if (candidate.status === "candidate_intake") return "candidate_intake";
+  if (candidate.status === "existing_dossier_update") return "dossier_update";
+  return "source_file";
+}
+
+function candidateMissingLatestCaseReportOrEnrichment(
+  candidate: DossierCandidate,
+): boolean {
+  if (!isActiveSourceFileCandidate(candidate)) return false;
+  const archive = candidate.latestSourceFileArchive;
+  if (archive?.caseReportPresent === false) return true;
+  return !Boolean(
+    candidate.latestSourceFileArchiveUpdatedAt ||
+    candidate.latestSourceFileArchiveId ||
+    archive?.updatedAt ||
+    candidate.sourceFileSummary?.updatedAt,
+  );
+}
+
+function recordKey(
+  record: Pick<DossierPopulationAuditRecord, "type" | "id">,
+): string {
+  return `${record.type}:${record.id}`;
+}
+
+function uniqueAuditRecords(
+  records: DossierPopulationAuditRecord[],
+): DossierPopulationAuditRecord[] {
+  const seen = new Set<string>();
+  return records.filter((record) => {
+    const key = recordKey(record);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function duplicateGroupAction(
+  matchKind: DossierPopulationAuditDuplicateGroup["matchKind"],
+  records: DossierPopulationAuditRecord[],
+): string {
+  if (matchKind === "confirmed_alias")
+    return "Review manually; confirmed aliases may justify moving stale records out of the active lane.";
+  if (matchKind === "public_dossier")
+    return "Review manually; consider moving one record to Dossier Updates if it targets an existing public dossier.";
+  if (records.some((record) => record.proposedAliasCount > 0)) {
+    return "Review manually; proposed aliases need confirmation before they are used as duplicate evidence.";
+  }
+  return "Review manually before drafting; confirm alias or archive stale duplicate only after owner/admin decision.";
+}
+
+export function createDossierPopulationAudit(input: {
+  candidates: DossierCandidate[];
+  recommendations?: DossierRecommendation[];
+  publicDossiers?: Array<{ id: string; name: string }>;
+}): DossierPopulationAudit {
+  const recommendations = input.recommendations ?? [];
+  const bnlRecommendations = recommendations.filter(isBnlRecommendation);
+  const candidatesById = new Map(
+    input.candidates.map((candidate) => [candidate.id, candidate]),
+  );
+  const publicDossiersById = new Map(
+    (input.publicDossiers ?? []).map((dossier) => [dossier.id, dossier]),
+  );
+
+  const bnlRecommendationIdsByCandidate = new Map<string, Set<string>>();
+  for (const recommendation of bnlRecommendations) {
+    for (const candidateId of [
+      recommendation.targetCandidateId,
+      recommendation.connectedCandidateId,
+      recommendation.connectedSourceFileCandidateId,
+    ]) {
+      if (!candidateId) continue;
+      const current =
+        bnlRecommendationIdsByCandidate.get(candidateId) ?? new Set<string>();
+      current.add(recommendation.id);
+      bnlRecommendationIdsByCandidate.set(candidateId, current);
+    }
+  }
+  for (const candidate of input.candidates) {
+    for (const recommendationId of [
+      ...(candidate.sourceRecommendationIds ?? []),
+      ...(candidate.connectedRecommendationIds ?? []),
+      candidate.createdFromRecommendationId,
+      candidate.routedFromRecommendationId,
+    ]) {
+      if (!recommendationId) continue;
+      const recommendation = bnlRecommendations.find(
+        (item) => item.id === recommendationId,
+      );
+      if (!recommendation) continue;
+      const current =
+        bnlRecommendationIdsByCandidate.get(candidate.id) ?? new Set<string>();
+      current.add(recommendation.id);
+      bnlRecommendationIdsByCandidate.set(candidate.id, current);
+    }
+  }
+
+  const records = input.candidates.map((candidate) => {
+    const confirmedAliasCount = (candidate.identityLinks ?? []).filter(
+      (link) => link.status === "confirmed",
+    ).length;
+    const proposedAliasCount = (candidate.identityLinks ?? []).filter(
+      (link) => link.status === "proposed",
+    ).length;
+    return {
+      id: candidate.id,
+      type: candidatePopulationType(candidate),
+      name: candidate.name,
+      status: candidate.status,
+      href: `/admin/dossiers/candidates/${candidate.id}`,
+      candidateId: candidate.id,
+      publicDossierId: candidate.existingDossierMatch?.id,
+      publicDossierName: candidate.existingDossierMatch?.name,
+      confirmedAliasCount,
+      proposedAliasCount,
+      attachedRecommendationCount:
+        bnlRecommendationIdsByCandidate.get(candidate.id)?.size ?? 0,
+      missingLatestCaseReport:
+        candidateMissingLatestCaseReportOrEnrichment(candidate),
+    } satisfies DossierPopulationAuditRecord;
+  });
+  const recordByCandidateId = new Map(
+    records.map((record) => [record.id, record]),
+  );
+
+  const clearlyAttachedRecommendationIds = new Set<string>();
+  for (const recommendation of bnlRecommendations) {
+    const targetCandidate = recommendation.targetCandidateId
+      ? candidatesById.get(recommendation.targetCandidateId)
+      : undefined;
+    const connectedCandidate = recommendation.connectedCandidateId
+      ? candidatesById.get(recommendation.connectedCandidateId)
+      : undefined;
+    const connectedSourceFile = recommendation.connectedSourceFileCandidateId
+      ? candidatesById.get(recommendation.connectedSourceFileCandidateId)
+      : undefined;
+    if (
+      [targetCandidate, connectedCandidate, connectedSourceFile].some(
+        (candidate) =>
+          candidate &&
+          (candidate.status === "active_source_file" ||
+            candidate.status === "existing_dossier_update" ||
+            isActiveSourceFileCandidate(candidate)),
+      ) ||
+      recommendation.status === "attached_to_source_file" ||
+      recommendation.status === "attached_to_existing_dossier_update" ||
+      recommendation.status === "converted_to_source_file"
+    ) {
+      clearlyAttachedRecommendationIds.add(recommendation.id);
+    }
+  }
+
+  const activeSourceFiles = input.candidates.filter(
+    (candidate) =>
+      !isClosedPopulationCandidate(candidate) &&
+      isActiveSourceFileCandidate(candidate),
+  );
+  const activeSourceFilesByNormalizedName = new Map(
+    activeSourceFiles.map((candidate) => [
+      normalizeDossierSubjectName(candidate.name),
+      candidate,
+    ]),
+  );
+  const activeSourceFilesByConfirmedAlias = new Map<string, DossierCandidate>();
+  for (const candidate of activeSourceFiles) {
+    for (const link of candidate.identityLinks ?? []) {
+      if (link.status !== "confirmed" || link.useForMatching !== true) continue;
+      activeSourceFilesByConfirmedAlias.set(
+        link.normalizedLabel || normalizeDossierSubjectName(link.label),
+        candidate,
+      );
+    }
+  }
+
+  const unattachedBnlRecommendations = bnlRecommendations
+    .filter(
+      (recommendation) =>
+        !clearlyAttachedRecommendationIds.has(recommendation.id),
+    )
+    .map((recommendation) => {
+      const normalizedSubject = normalizeDossierSubjectName(
+        recommendation.subjectName,
+      );
+      const normalizedSubjectKey = recommendation.subjectKey
+        ? normalizeDossierSubjectName(recommendation.subjectKey)
+        : "";
+      const matchingSourceFile =
+        activeSourceFilesByNormalizedName.get(normalizedSubject) ??
+        (normalizedSubjectKey
+          ? activeSourceFilesByNormalizedName.get(normalizedSubjectKey)
+          : undefined) ??
+        activeSourceFilesByConfirmedAlias.get(normalizedSubject) ??
+        (normalizedSubjectKey
+          ? activeSourceFilesByConfirmedAlias.get(normalizedSubjectKey)
+          : undefined);
+      const matchBasis = matchingSourceFile
+        ? activeSourceFilesByConfirmedAlias.get(normalizedSubject) ===
+            matchingSourceFile ||
+          (normalizedSubjectKey &&
+            activeSourceFilesByConfirmedAlias.get(normalizedSubjectKey) ===
+              matchingSourceFile)
+          ? "confirmed alias"
+          : "normalized name"
+        : undefined;
+      return {
+        id: recommendation.id,
+        subjectName: recommendation.subjectName,
+        subjectKey: recommendation.subjectKey,
+        ingestSource: recommendation.ingestSource,
+        sourceLanes: recommendation.sourceLanes,
+        confidence: recommendation.confidence,
+        createdAt: recommendation.createdAt,
+        updatedAt: recommendation.updatedAt,
+        matchingSourceFileId: matchingSourceFile?.id,
+        matchingSourceFileName: matchingSourceFile?.name,
+        matchBasis,
+        href: `/admin/dossiers/recommendations/${recommendation.id}`,
+        safeNextAction: matchingSourceFile
+          ? "Review manually; attach to the matching Source File only after admin confirmation."
+          : "Review manually; decide whether this becomes a Dossier Seed, Dossier Update, or archive item.",
+      } satisfies DossierPopulationAuditUnattachedRecommendation;
+    })
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+
+  const duplicateBuckets = new Map<
+    string,
+    {
+      matchKind: DossierPopulationAuditDuplicateGroup["matchKind"];
+      reason: string;
+      publicDossierMatch?: { id: string; name?: string };
+      records: DossierPopulationAuditRecord[];
+    }
+  >();
+
+  function addBucketRecord(
+    matchKind: DossierPopulationAuditDuplicateGroup["matchKind"],
+    key: string,
+    reason: string,
+    record: DossierPopulationAuditRecord,
+    publicDossierMatch?: { id: string; name?: string },
+  ) {
+    if (!key) return;
+    const bucketKey = `${matchKind}:${key}`;
+    const bucket = duplicateBuckets.get(bucketKey) ?? {
+      matchKind,
+      reason,
+      publicDossierMatch,
+      records: [],
+    };
+    bucket.records.push(record);
+    duplicateBuckets.set(bucketKey, bucket);
+  }
+
+  for (const candidate of input.candidates) {
+    const record = recordByCandidateId.get(candidate.id);
+    if (!record || record.type === "archived_or_closed") continue;
+    addBucketRecord(
+      "normalized_name",
+      normalizeDossierSubjectName(candidate.name),
+      "Normalized exact name match.",
+      record,
+    );
+    if (candidate.existingDossierMatch?.id) {
+      addBucketRecord(
+        "public_dossier",
+        candidate.existingDossierMatch.id,
+        "Shared public dossier target.",
+        record,
+        {
+          id: candidate.existingDossierMatch.id,
+          name: candidate.existingDossierMatch.name,
+        },
+      );
+    }
+    for (const link of candidate.identityLinks ?? []) {
+      if (link.status !== "confirmed" || link.useForMatching !== true) continue;
+      const aliasKey =
+        link.normalizedLabel || normalizeDossierSubjectName(link.label);
+      addBucketRecord(
+        "confirmed_alias",
+        aliasKey,
+        "Confirmed alias match.",
+        record,
+      );
+      for (const possibleAliasTarget of input.candidates) {
+        if (possibleAliasTarget.id === candidate.id) continue;
+        if (isClosedPopulationCandidate(possibleAliasTarget)) continue;
+        if (
+          normalizeDossierSubjectName(possibleAliasTarget.name) !== aliasKey
+        ) {
+          continue;
+        }
+        const possibleAliasTargetRecord = recordByCandidateId.get(
+          possibleAliasTarget.id,
+        );
+        if (possibleAliasTargetRecord) {
+          addBucketRecord(
+            "confirmed_alias",
+            aliasKey,
+            "Confirmed alias match.",
+            possibleAliasTargetRecord,
+          );
+        }
+      }
+    }
+  }
+
+  for (const recommendation of bnlRecommendations) {
+    const record: DossierPopulationAuditRecord = {
+      id: recommendation.id,
+      type: "recommendation",
+      name: recommendation.subjectName,
+      status: recommendation.status,
+      href: `/admin/dossiers/recommendations/${recommendation.id}`,
+      recommendationId: recommendation.id,
+      publicDossierId: recommendation.targetDossierId,
+      publicDossierName: recommendation.targetDossierId
+        ? publicDossiersById.get(recommendation.targetDossierId)?.name
+        : undefined,
+      confirmedAliasCount: 0,
+      proposedAliasCount: 0,
+      attachedRecommendationCount: 1,
+      missingLatestCaseReport: false,
+    };
+    addBucketRecord(
+      "bnl_recommendation_subject_name",
+      normalizeDossierSubjectName(recommendation.subjectName),
+      "Same normalized subjectName from BNL recommendations.",
+      record,
+    );
+    if (recommendation.subjectKey) {
+      addBucketRecord(
+        "recommendation_subject_key",
+        normalizeDossierSubjectName(recommendation.subjectKey),
+        "Same recommendation subjectKey.",
+        record,
+      );
+    }
+    if (recommendation.targetDossierId) {
+      addBucketRecord(
+        "public_dossier",
+        recommendation.targetDossierId,
+        "Shared public dossier target.",
+        record,
+        {
+          id: recommendation.targetDossierId,
+          name: publicDossiersById.get(recommendation.targetDossierId)?.name,
+        },
+      );
+    }
+  }
+
+  const possibleDuplicateGroups = Array.from(duplicateBuckets.entries())
+    .map(([bucketKey, bucket]) => ({
+      id: bucketKey
+        .replace(/[^a-z0-9]+/gi, "-")
+        .replace(/^-|-$/g, "")
+        .toLowerCase(),
+      reason: bucket.reason,
+      matchKind: bucket.matchKind,
+      publicDossierMatch: bucket.publicDossierMatch,
+      records: uniqueAuditRecords(bucket.records),
+      suggestedAction: duplicateGroupAction(bucket.matchKind, bucket.records),
+    }))
+    .filter((group) => group.records.length >= 2)
+    .sort(
+      (left, right) =>
+        right.records.length - left.records.length ||
+        left.id.localeCompare(right.id),
+    );
+
+  return {
+    counts: {
+      activeSourceFiles: activeSourceFiles.length,
+      candidateIntake: input.candidates.filter(
+        (candidate) => candidate.status === "candidate_intake",
+      ).length,
+      existingDossierUpdates: input.candidates.filter(
+        (candidate) => candidate.status === "existing_dossier_update",
+      ).length,
+      publicDossiers: input.publicDossiers?.length ?? 0,
+      archivedClosedRecords: input.candidates.filter(
+        isClosedPopulationCandidate,
+      ).length,
+      proposedIdentityLinks: input.candidates.reduce(
+        (total, candidate) =>
+          total +
+          (candidate.identityLinks ?? []).filter(
+            (link) => link.status === "proposed",
+          ).length,
+        0,
+      ),
+      confirmedIdentityLinks: input.candidates.reduce(
+        (total, candidate) =>
+          total +
+          (candidate.identityLinks ?? []).filter(
+            (link) => link.status === "confirmed",
+          ).length,
+        0,
+      ),
+      recordsWithAttachedBnlRecommendations: Array.from(
+        bnlRecommendationIdsByCandidate.values(),
+      ).filter((recommendationIds) => recommendationIds.size > 0).length,
+      unattachedBnlRecommendations: unattachedBnlRecommendations.length,
+      recordsMissingLatestCaseReportOrEnrichment: records.filter(
+        (record) => record.missingLatestCaseReport,
+      ).length,
+    },
+    records,
+    possibleDuplicateGroups,
+    unattachedBnlRecommendations,
   };
 }
 

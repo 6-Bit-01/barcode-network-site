@@ -2072,6 +2072,7 @@ test("Subject Consolidation Queue renders action summary, review cards, blocked 
     "Blocked reason:",
     "What must be fixed first:",
     "Consolidate Into Kept Source File",
+    "Consolidate Into ${keptName}",
     "Create Source File: {keptName}",
     "Create Dossier Update: {publicDossierName}",
     "Keep Separate / Not Same Subject",
@@ -2126,6 +2127,14 @@ test("canonical subject clustering collapses public-dossier variants into one su
   const publicEntry =
     databasePage.entries.find((entry) => entry.name === "6 Bit") ??
     databasePage.entries[0];
+  assert.equal(
+    workflow.normalizeDossierPossessiveVariantName("6 Bit’s"),
+    workflow.normalizeDossierSubjectName("6 Bit"),
+  );
+  assert.equal(
+    workflow.normalizeDossierPossessiveVariantName("Crow’s"),
+    workflow.normalizeDossierSubjectName("Crow"),
+  );
   const candidate = (overrides) => ({
     id: overrides.id,
     name: overrides.name,
@@ -2191,12 +2200,51 @@ test("canonical subject clustering collapses public-dossier variants into one su
   const [group] = canonicalGroups;
   assert.equal(group.publicDossierMatch.name, publicEntry.name);
   assert.equal(group.consolidationPlan.targetDisplayName, publicEntry.name);
+  assert.notEqual(group.consolidationPlan.targetDisplayName, `${publicEntry.name}’s`);
   assert.ok(group.records.some((record) => record.id === "six-bit-kept"));
   assert.ok(group.records.some((record) => record.id === "six-bit-fragment"));
   assert.ok(group.records.some((record) => record.recommendationId === "six-bit-rec-a"));
   assert.ok(group.records.some((record) => record.recommendationId === "six-bit-rec-b"));
   assert.ok(group.records.some((record) => record.recommendationId === "six-bit-rec-c"));
   assert.equal(new Set(group.records.map((record) => `${record.type}:${record.id}`)).size, group.records.length);
+});
+
+test("possessive variants need a strong anchor before auto-folding", () => {
+  const now = "2026-06-11T00:00:00.000Z";
+  const candidate = (overrides) => ({
+    id: overrides.id,
+    name: overrides.name,
+    candidateType: "artist",
+    source: "manual",
+    tier: "review_candidate",
+    score: 5,
+    whyNow: "Fixture",
+    reason: "Fixture",
+    evidenceSummary: "Fixture",
+    status: "active_source_file",
+    sourceFileNotes: overrides.sourceFileNotes ?? [],
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  });
+
+  const audit = workflow.createDossierPopulationAudit({
+    publicDossiers: [],
+    drafts: [],
+    candidates: [
+      candidate({ id: "six-bit-variant", name: "6 Bit’s" }),
+      candidate({ id: "six-bit-canonical", name: "6 Bit" }),
+    ],
+    recommendations: [],
+  });
+
+  const variantGroups = audit.possibleDuplicateGroups.filter((group) =>
+    group.reason === "Variant needs review: 6 Bit’s / 6 Bit",
+  );
+  assert.equal(variantGroups.length, 1);
+  assert.equal(variantGroups[0].matchKind, "similar_name");
+  assert.equal(variantGroups[0].consolidationPlan.requiresReview, true);
+  assert.notEqual(variantGroups[0].consolidationPlan.automationTier, "Source File merge candidate");
 });
 
 test("subject consolidation helper uses conservative duplicate signals and leaves proposed aliases out of confirmed matching", () => {
@@ -2574,6 +2622,7 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
       candidate({ id: "similar-b", name: "Crowe", latestSourceFileArchiveUpdatedAt: now }),
       candidate({ id: "blocked-a", name: "Blocked Subject", existingDossierMatch: { id: blockedEntry.id, name: blockedEntry.name, confidence: "high" } }),
       candidate({ id: "blocked-b", name: "Blocked Subject", existingDossierMatch: { id: "different-public", name: "Different Public", confidence: "high" } }),
+      candidate({ id: "public-variant-candidate", name: `${publicEntry.name}’s`, sourceFileNotes: [{ id: "variant-note", candidateId: "public-variant-candidate", type: "fact", text: "variant metadata", source: "admin_manual", status: "active", createdAt: now, updatedAt: now }], connectedRecommendationIds: ["variant-connected-rec"] }),
       candidate({ id: "checkpoint-artifact", name: "Checkpoint BNL Ingest Alpha", reason: "Manual endpoint smoke test", evidenceSummary: "diagnostic probe", status: "active_source_file" }),
     ],
     drafts: [],
@@ -2634,9 +2683,18 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
   assert.equal(updateWorkspace.existingDossierMatch.name, publicEntry.name);
   assert.ok(updateWorkspace.sourceRecommendationIds.includes("rec-public-b"));
   assert.ok(updateWorkspace.sourceRecommendationIds.includes("rec-public-variant"));
+  assert.ok(updateWorkspace.sourceRecommendationIds.includes("variant-connected-rec"));
+  assert.ok(updateWorkspace.connectedRecommendationIds.includes("variant-connected-rec"));
+  assert.ok(updateWorkspace.sourceFileNotes.some((note) => note.text === "variant metadata" && note.candidateId === updateWorkspace.id));
   assert.ok(updateWorkspace.whyNow.includes(`Bundled 3 ${publicEntry.name} update signals into ${publicEntry.name} Dossier Update workspace.`));
   assert.equal(updateWorkspace.mergeNote, "bundled_into_dossier_update");
   assert.ok(workflow.isConsolidationResolvedCandidate(updateWorkspace));
+  const foldedVariant = payload.candidates.find((item) => item.id === "public-variant-candidate");
+  assert.equal(foldedVariant.status, "merged");
+  assert.equal(foldedVariant.mergedIntoCandidateId, updateWorkspace.id);
+  assert.equal(foldedVariant.mergeNote, `variant_of_canonical:${publicEntry.id}`);
+  assert.ok(workflow.isConsolidationResolvedCandidate(foldedVariant));
+  assert.ok(payload.consolidation.skippedItems.some((item) => item.subject === `${publicEntry.name}’s` && item.reason.includes("Resolved variant")));
   for (const id of ["rec-public-a", "rec-public-b", "rec-public-variant"]) {
     const publicRec = payload.recommendations.find((item) => item.id === id);
     assert.equal(publicRec.status, "attached_to_existing_dossier_update");
@@ -2654,6 +2712,11 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
     .filter((item) => !workflow.isConsolidationResolvedCandidate(item))
     .map((item) => item.id);
   assert.ok(!activeDossierUpdateWorkspaceIds.includes(updateWorkspace.id));
+  const activeSourceReviewIds = payload.candidates
+    .filter((item) => ["active_source_file", "candidate_intake", "existing_dossier_update"].includes(item.status))
+    .filter((item) => !workflow.isConsolidationResolvedCandidate(item))
+    .map((item) => item.id);
+  assert.ok(!activeSourceReviewIds.includes("public-variant-candidate"));
   const checkpointCandidate = payload.candidates.find((item) => item.id === "checkpoint-artifact");
   const checkpointRecommendation = payload.recommendations.find((item) => item.id === "rec-checkpoint");
   assert.equal(checkpointCandidate.status, "archived");
@@ -2694,6 +2757,7 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
   assert.ok(rebuiltAudit.possibleDuplicateGroups.every((group) => group.consolidationPlan.requiresReview || group.consolidationPlan.automationTier === "Blocked"));
   assert.ok(!rebuiltAudit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.recommendationId === "rec-new-a" || record.recommendationId === "rec-new-b")));
   assert.ok(!rebuiltAudit.possibleDuplicateGroups.some((group) => group.records.some((record) => ["rec-public-a", "rec-public-b", "rec-public-variant", "rec-checkpoint"].includes(record.recommendationId))));
+  assert.ok(!rebuiltAudit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.id === "public-variant-candidate")));
   assert.ok(!rebuiltAudit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.id === "checkpoint-artifact")));
 
   const secondResponse = await authedPost({ action: "runSubjectConsolidation" });
@@ -2820,6 +2884,7 @@ test("Subject Consolidation Queue review UI uses direct decision buttons and col
     "Incoming Cluster",
     "Kept Source File",
     "Consolidate Into Kept Source File",
+    "Consolidate Into ${keptName}",
     "Create Source File: {keptName}",
     "Create Dossier Update: {publicDossierName}",
     "Keep Separate / Not Same Subject",

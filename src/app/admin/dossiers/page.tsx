@@ -1040,6 +1040,10 @@ export default function DossierControlCenterPage() {
                   const actionKind = plan.targetRecord ? "consolidate" : plan.suggestedWorkspace === "Dossier Update" ? "dossier_update" : "source_file";
                   const publicDossierName = plan.existingPublicDossier?.name ?? plan.targetRecord?.publicDossierName ?? keptName;
                   const subjectIsReadable = Boolean(keptName && keptName !== "Select Different Target" && keptName !== "—");
+                  const defaultConsolidateActionLabel = "Consolidate Into Kept Source File";
+                  const consolidateActionLabel = group.reason.startsWith("Variant needs review:")
+                    ? `Consolidate Into ${keptName}`
+                    : defaultConsolidateActionLabel;
                   const sourceFileActionAllowed = actionKind !== "source_file" || (subjectIsReadable && incomingCount > 0);
                   const targetHref = plan.targetRecord?.href;
                   if (completed) {
@@ -1207,7 +1211,7 @@ export default function DossierControlCenterPage() {
                       ) : (
                         <div className="mt-4 flex flex-wrap gap-2">
                           {plan.targetRecord ? (
-                            <button type="button" disabled={saving} onClick={() => setConfirmation({ groupId: group.id, kind: "consolidate", subject: keptName, targetName: keptName, incomingCount, targetHref })} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{isConsolidating ? "Consolidating…" : "Consolidate Into Kept Source File"}</button>
+                            <button type="button" disabled={saving} onClick={() => setConfirmation({ groupId: group.id, kind: "consolidate", subject: keptName, targetName: keptName, incomingCount, targetHref })} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{isConsolidating ? "Consolidating…" : consolidateActionLabel}</button>
                           ) : actionKind === "dossier_update" ? (
                             <button type="button" disabled={saving} onClick={() => setConfirmation({ groupId: group.id, kind: "dossier_update", subject: publicDossierName, targetName: publicDossierName, incomingCount })} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Create Dossier Update: {publicDossierName}</button>
                           ) : sourceFileActionAllowed ? (

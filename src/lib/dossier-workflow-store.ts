@@ -47,6 +47,8 @@ import {
   isDiagnosticTestArtifactCandidate,
   isDiagnosticTestArtifactRecommendation,
   isSourceFileEnrichmentAttachableCandidate,
+  normalizeDossierPossessiveVariantName,
+  normalizeDossierSubjectName,
   matchDossierRecommendationSubject,
   type MergeDossierCandidatesInput,
 } from "@/lib/dossier-workflow";
@@ -5923,6 +5925,34 @@ export async function runSubjectConsolidation(input: { groupId?: string } = {}):
           result.dossierUpdateWorkspacesCreated += 1;
         }
 
+        const variantCandidates = state.candidates.filter((candidate) => {
+          if (candidate.id === workspace.id) return false;
+          if (candidate.status === "archived" || candidate.status === "denied" || candidate.status === "merged") return false;
+          if (isDiagnosticTestArtifactCandidate(candidate)) return false;
+          const sharesPublicDossier = candidate.existingDossierMatch?.id === entry.id;
+          const normalizedName = normalizeDossierSubjectName(candidate.name);
+          const possessiveName = normalizeDossierPossessiveVariantName(candidate.name);
+          const canonicalName = normalizeDossierPossessiveVariantName(entry.name);
+          const isPossessiveVariant = Boolean(
+            normalizedName &&
+              possessiveName &&
+              normalizedName !== possessiveName &&
+              possessiveName === canonicalName,
+          );
+          return sharesPublicDossier || isPossessiveVariant;
+        });
+        const variantNotes = variantCandidates.flatMap((candidate) =>
+          (candidate.sourceFileNotes ?? []).map((note) => ({
+            ...note,
+            candidateId: workspace.id,
+            updatedAt: now,
+          })),
+        );
+        const variantRecommendationIds = variantCandidates.flatMap((candidate) => [
+          ...(candidate.sourceRecommendationIds ?? []),
+          ...(candidate.connectedRecommendationIds ?? []),
+        ]);
+
         const notes = recommendations.map((recommendation) =>
           routingNote({
             candidateId: workspace.id,
@@ -5940,9 +5970,9 @@ export async function runSubjectConsolidation(input: { groupId?: string } = {}):
         const updatedWorkspace: DossierCandidate = {
           ...workspace,
           whyNow: `Bundled ${recommendations.length} ${entry.name} update signals into ${entry.name} Dossier Update workspace.`,
-          sourceFileNotes: [...(workspace.sourceFileNotes ?? []), ...notes],
-          sourceRecommendationIds: uniqueStrings(workspace.sourceRecommendationIds, recommendations.map((item) => item.id)),
-          connectedRecommendationIds: uniqueStrings(workspace.connectedRecommendationIds, recommendations.map((item) => item.id)),
+          sourceFileNotes: [...(workspace.sourceFileNotes ?? []), ...variantNotes, ...notes],
+          sourceRecommendationIds: uniqueStrings(workspace.sourceRecommendationIds, variantRecommendationIds, recommendations.map((item) => item.id)),
+          connectedRecommendationIds: uniqueStrings(workspace.connectedRecommendationIds, variantRecommendationIds, recommendations.map((item) => item.id)),
           sourceLanes: uniqueStrings(workspace.sourceLanes, ...recommendations.map((item) => item.sourceLanes)) as DossierRecommendationSourceLane[],
           routingReason: `Bundled ${recommendations.length} exact public dossier update signal${recommendations.length === 1 ? "" : "s"}.`,
           mergeNote: "bundled_into_dossier_update",
@@ -5950,7 +5980,22 @@ export async function runSubjectConsolidation(input: { groupId?: string } = {}):
         };
         state = {
           ...state,
-          candidates: state.candidates.map((candidate) => candidate.id === updatedWorkspace.id ? updatedWorkspace : candidate),
+          candidates: state.candidates.map((candidate) => {
+            if (candidate.id === updatedWorkspace.id) return updatedWorkspace;
+            const variant = variantCandidates.find((item) => item.id === candidate.id);
+            if (variant) {
+              return {
+                ...candidate,
+                status: "merged",
+                mergedIntoCandidateId: updatedWorkspace.id,
+                mergedAt: now,
+                mergeNote: `variant_of_canonical:${entry.id}`,
+                routingReason: `Resolved variant '${candidate.name}' into canonical subject '${entry.name}'.`,
+                updatedAt: now,
+              };
+            }
+            return candidate;
+          }),
           recommendations: state.recommendations.map((item) =>
             recommendations.some((recommendation) => recommendation.id === item.id)
               ? { ...item, status: "attached_to_existing_dossier_update", targetCandidateId: updatedWorkspace.id, connectedCandidateId: updatedWorkspace.id, connectedSourceFileCandidateId: updatedWorkspace.id, routingReason: `Bundled into ${entry.name} Dossier Update workspace by Subject Consolidation.`, updatedAt: now }
@@ -5960,7 +6005,11 @@ export async function runSubjectConsolidation(input: { groupId?: string } = {}):
         };
         recommendations.forEach((item) => consumedRecommendations.add(item.id));
         result.bundledPublicDossierUpdateSignals += recommendations.length;
+        result.sourceFileDuplicatesMerged += variantCandidates.length;
         result.skippedItems.push({ subject: entry.name, reason: `Bundled ${recommendations.length} ${entry.name} update signals into ${entry.name} Dossier Update workspace.` });
+        for (const variant of variantCandidates) {
+          result.skippedItems.push({ subject: variant.name, reason: `Resolved variant '${variant.name}' into canonical subject '${entry.name}'.` });
+        }
         const refresh = refreshOutcomeForState({ state, candidate: updatedWorkspace, now, reason: "Subject Consolidation bundled exact public dossier update signals." });
         state = refresh.state;
         result.bnlRefreshes.push(refresh.outcome);

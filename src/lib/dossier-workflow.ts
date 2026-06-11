@@ -1053,7 +1053,7 @@ export function isConsolidationResolvedCandidate(candidate: DossierCandidate): b
     candidate.reason,
     candidate.whyNow,
   ].filter(Boolean).join(" ");
-  return /bundled_into_dossier_update|Bundled .* update signals into .* Dossier Update workspace|Subject Consolidation archived diagnostic_test_artifact/i.test(lifecycleText);
+  return /variant_of_canonical|bundled_into_dossier_update|Bundled .* update signals into .* Dossier Update workspace|Subject Consolidation archived diagnostic_test_artifact/i.test(lifecycleText);
 }
 
 function duplicateGroupPriority(
@@ -1504,6 +1504,12 @@ export function createDossierPopulationAudit(input: {
   const publicDossiersById = new Map(
     (input.publicDossiers ?? []).map((dossier) => [dossier.id, dossier]),
   );
+  const publicDossiersByPossessiveName = new Map(
+    (input.publicDossiers ?? []).map((dossier) => [
+      normalizeDossierPossessiveVariantName(dossier.name),
+      dossier,
+    ]),
+  );
   const activeDraftByCandidateId = new Map<string, DossierDraft>();
   for (const draft of input.drafts ?? []) {
     if (
@@ -1555,6 +1561,8 @@ export function createDossierPopulationAudit(input: {
     const proposedAliasCount = (candidate.identityLinks ?? []).filter(
       (link) => link.status === "proposed",
     ).length;
+    const canonicalPublicDossier = candidate.existingDossierMatch ??
+      publicDossiersByPossessiveName.get(normalizeDossierPossessiveVariantName(candidate.name));
     return {
       id: candidate.id,
       type: candidatePopulationType(candidate),
@@ -1562,9 +1570,9 @@ export function createDossierPopulationAudit(input: {
       status: candidate.status,
       href: `/admin/dossiers/candidates/${candidate.id}`,
       candidateId: candidate.id,
-      displayName: candidate.existingDossierMatch?.name ?? candidate.name,
-      publicDossierId: candidate.existingDossierMatch?.id,
-      publicDossierName: candidate.existingDossierMatch?.name,
+      displayName: canonicalPublicDossier?.name ?? candidate.name,
+      publicDossierId: canonicalPublicDossier?.id,
+      publicDossierName: canonicalPublicDossier?.name,
       confirmedAliasCount,
       proposedAliasCount,
       attachedRecommendationCount:
@@ -1772,15 +1780,17 @@ export function createDossierPopulationAudit(input: {
       "Normalized exact name match.",
       record,
     );
-    if (candidate.existingDossierMatch?.id) {
+    const canonicalPublicDossier = candidate.existingDossierMatch ??
+      publicDossiersByPossessiveName.get(normalizeDossierPossessiveVariantName(candidate.name));
+    if (canonicalPublicDossier?.id) {
       addBucketRecord(
         "public_dossier",
-        candidate.existingDossierMatch.id,
+        canonicalPublicDossier.id,
         "Shared public dossier target.",
         record,
         {
-          id: candidate.existingDossierMatch.id,
-          name: candidate.existingDossierMatch.name,
+          id: canonicalPublicDossier.id,
+          name: canonicalPublicDossier.name,
         },
       );
     }
@@ -1831,16 +1841,19 @@ export function createDossierPopulationAudit(input: {
       const rightRecord = recordByCandidateId.get(right.id);
       if (!rightRecord) continue;
       const key = [leftKey, rightKey].sort().join(":");
+      const variantReason = hasPossessiveVariantSubjectName(left.name, right.name)
+        ? `Variant needs review: ${left.name} / ${right.name}`
+        : "Similar names only; admin must decide whether these are the same subject.";
       addBucketRecord(
         "similar_name",
         key,
-        "Similar names only; admin must decide whether these are the same subject.",
+        variantReason,
         leftRecord,
       );
       addBucketRecord(
         "similar_name",
         key,
-        "Similar names only; admin must decide whether these are the same subject.",
+        variantReason,
         rightRecord,
       );
     }
@@ -1955,15 +1968,21 @@ export function createDossierPopulationAudit(input: {
         );
       }
     }
-    if (recommendation.targetDossierId) {
+    const recommendationPublicDossier = recommendation.targetDossierId
+      ? publicDossiersById.get(recommendation.targetDossierId)
+      : recommendation.subjectKey
+        ? publicDossiersById.get(recommendation.subjectKey) ??
+          publicDossiersByPossessiveName.get(normalizeDossierPossessiveVariantName(recommendation.subjectKey))
+        : publicDossiersByPossessiveName.get(normalizeDossierPossessiveVariantName(recommendation.subjectName));
+    if (recommendationPublicDossier?.id) {
       addBucketRecord(
         "public_dossier",
-        recommendation.targetDossierId,
+        recommendationPublicDossier.id,
         "Shared public dossier target.",
         record,
         {
-          id: recommendation.targetDossierId,
-          name: publicDossiersById.get(recommendation.targetDossierId)?.name,
+          id: recommendationPublicDossier.id,
+          name: recommendationPublicDossier.name,
         },
       );
     }
@@ -2068,8 +2087,28 @@ export function normalizeDossierSubjectName(value: string): string {
     .trim();
 }
 
+export function normalizeDossierPossessiveVariantName(value: string): string {
+  const normalized = normalizeDossierSubjectName(value);
+  if (!normalized) return normalized;
+  return normalized.replace(/\s+s$/i, "").trim();
+}
+
 export function compactDossierSubjectName(value: string): string {
   return normalizeDossierSubjectName(value).replace(/\s+/g, "");
+}
+
+function hasPossessiveVariantSubjectName(left: string, right: string): boolean {
+  const normalizedLeft = normalizeDossierSubjectName(left);
+  const normalizedRight = normalizeDossierSubjectName(right);
+  const possessiveLeft = normalizeDossierPossessiveVariantName(left);
+  const possessiveRight = normalizeDossierPossessiveVariantName(right);
+  return Boolean(
+    normalizedLeft &&
+      normalizedRight &&
+      normalizedLeft !== normalizedRight &&
+      possessiveLeft &&
+      possessiveLeft === possessiveRight,
+  );
 }
 
 function hasSimilarDossierSubjectName(left: string, right: string): boolean {

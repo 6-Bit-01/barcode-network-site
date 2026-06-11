@@ -290,16 +290,10 @@ function SubjectIntelligenceBriefView({
   return (
     <Section title="BNL Subject Intelligence Brief" tone="review" helper="Primary review-only BNL readout. Use this as admin context, not public copy.">
       <div className="space-y-4">
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <div className="border border-border/50 bg-background/20 p-3">
-            <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-accent">Subject read</h4>
-            <BriefParagraphs value={brief.subjectRead} />
-          </div>
-          <div className="border border-border/50 bg-background/20 p-3">
-            <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-accent">BNL take</h4>
-            <BriefParagraphs value={brief.bnlTake} />
-          </div>
-        </div>
+        <section className="border border-accent/60 bg-background/30 p-4">
+          <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-accent">Subject Read</h4>
+          <BriefParagraphs value={brief.subjectRead} />
+        </section>
 
         <section className="border border-border/50 bg-background/20 p-3">
           <h4 className="mb-3 text-xs font-bold uppercase tracking-widest text-foreground">Activity Snapshot</h4>
@@ -350,7 +344,7 @@ function SubjectIntelligenceBriefView({
         </section>
 
         <section className="border border-border/50 bg-background/20 p-3">
-          <h4 className="mb-3 text-xs font-bold uppercase tracking-widest text-foreground">BNL’s Current Take</h4>
+          <h4 className="mb-3 text-xs font-bold uppercase tracking-widest text-foreground">Current Take / Admin Guidance</h4>
           <dl className="space-y-2">
             <div><dt className="text-xs uppercase tracking-widest text-accent">Confirmed fact</dt><dd className="text-foreground">{scalarLabel(valueByKeys(bnlTake, ["confirmedFact", "confirmedFacts", "confirmed"]))}</dd></div>
             <div><dt className="text-xs uppercase tracking-widest text-accent">BNL interpretation</dt><dd className="text-foreground">{scalarLabel(valueByKeys(bnlTake, ["bnlInterpretation", "interpretation", "take"]) ?? brief.bnlTake)}</dd></div>
@@ -664,7 +658,7 @@ export function DossierSourceFileSummaryPanel({
           </p>
           <h2 className="text-2xl font-bold text-foreground">{title}</h2>
           <p className="mt-2 text-sm text-muted max-w-4xl">
-            Source File header / refresh status → BNL Case File Report → Dossier Workbench / Proposed Dossier Status → Source Notes / Admin Addendums → Archive / Raw Source File Data → Advanced Tools → Diagnostics. BNL thinks; the site displays; admins decide.
+            Primary BNL readout for this internal Source File. BNL thinks; the site displays; admins decide.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">

@@ -802,6 +802,54 @@ export type DossierPopulationMergePlanSection = {
   noActionNeeded: string[];
 };
 
+
+export type SubjectConsolidationBrief = {
+  briefId: string;
+  subjectDisplayName: string;
+  canonicalSubjectKey: string;
+  confidence: "high" | "medium" | "low";
+  relationshipVerdict:
+    | "same_subject"
+    | "likely_same_subject"
+    | "possible_same_subject"
+    | "separate_subjects"
+    | "needs_target_selection"
+    | "blocked";
+  operatorSummary: string;
+  incomingSummaryBullets: string[];
+  keptTargetSummaryBullets: string[];
+  whatWillBeAbsorbed: string[];
+  alreadyRepresented: string[];
+  whatWillNotChange: string[];
+  whyReviewIsNeeded: string[];
+  recommendedAction:
+    | "consolidate_into_kept_source_file"
+    | "create_source_file_from_signals"
+    | "create_dossier_update_workspace"
+    | "select_target"
+    | "keep_separate"
+    | "blocked";
+  targetOptions: Array<{
+    candidateId: string;
+    displayName: string;
+    status: string;
+    publicDossierMatch?: string;
+    draftStatus?: string;
+    reasonToKeep: string;
+  }>;
+  blockedReasons: string[];
+  rawReferenceIds: {
+    recommendationIds: string[];
+    candidateIds: string[];
+    archiveIds: string[];
+  };
+  generatedBy: "BNL";
+  generatedAt: string;
+  inputHash: string;
+  clusterHash: string;
+  stale: boolean;
+};
+
 export type DossierPopulationConsolidationPlan = {
   groupId: string;
   groupType: DossierPopulationAuditDuplicateGroup["matchKind"];
@@ -822,6 +870,9 @@ export type DossierPopulationConsolidationPlan = {
   requiresReview: boolean;
   blockedReasons: string[];
   mergePlanSections: DossierPopulationMergePlanSection[];
+  bnlBrief?: SubjectConsolidationBrief;
+  bnlBriefStatus: "needed" | "requested" | "ready" | "stale";
+  bnlBriefRequestReason: string;
 };
 
 export type DossierPopulationAuditDuplicateGroup = {
@@ -1309,6 +1360,9 @@ function createConsolidationPlan(input: {
     blockedReasons: hasOnlyRecommendations && !sharedPublicTarget
       ? ["No Source File target resolved."]
       : blockedReasons,
+    bnlBrief: undefined,
+    bnlBriefStatus: "needed",
+    bnlBriefRequestReason: "BNL consolidation brief needed before review.",
     mergePlanSections: [
       planSection("New info to add", {
         newInfoToAdd: sourceRecords.flatMap((record) => record.incomingInfo),

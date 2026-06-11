@@ -957,9 +957,8 @@ export default function DossierControlCenterPage() {
                   const keptName = plan.targetDisplayName ?? plan.targetRecord?.displayName ?? plan.targetRecord?.name ?? "Select Different Target";
                   const incomingCount = plan.sourceRecords.length;
                   const incomingTypes = Array.from(new Set(plan.sourceRecords.map((record) => record.type))).join(", ") || "—";
-                  const incomingNames = Array.from(new Set(plan.sourceRecords.map((record) => record.displayName ?? record.name))).slice(0, 6);
-                  const usefulData = Array.from(new Set(plan.sourceRecords.flatMap((record) => record.incomingInfo))).slice(0, 5);
-                  const alreadyRepresented = Array.from(new Set(plan.sourceRecords.flatMap((record) => record.duplicateInfo))).slice(0, 5);
+                  const possibleTargets = plan.possibleTargetRecords.slice(0, 6);
+                  const brief = plan.bnlBrief;
                   const isConsolidating = consolidatingGroupId === group.id;
                   return (
                     <article key={group.id} className={`border border-border/70 bg-background/20 p-4 text-sm text-muted transition-all duration-300 ${isConsolidating ? "translate-x-2 border-accent bg-accent/10 motion-safe:animate-pulse" : ""}`}>
@@ -975,38 +974,74 @@ export default function DossierControlCenterPage() {
                         </div>
                         <StatusPill>{plan.confidence} confidence</StatusPill>
                       </div>
-                      <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                        <div className={`border border-border/60 bg-background/30 p-3 transition-all duration-300 ${isConsolidating ? "opacity-50 scale-95" : ""}`}>
-                          <p className="text-xs uppercase tracking-[0.3em] text-accent">Incoming Cluster</p>
-                          <div className="mt-2 space-y-1">
-                            <p className="font-semibold text-foreground">{keptName}</p>
-                            <p>Incoming item count: {incomingCount}</p>
-                            <p>Item types summarized: {incomingTypes}</p>
-                            <p>Source files/candidates/recommendations included: {incomingNames.join("; ")}{plan.sourceRecords.length > incomingNames.length ? "…" : ""}</p>
-                            <p>What useful data can be absorbed: {usefulData.join("; ") || "safe source notes, recommendation metadata, aliases, archive references, or evidence where supported"}</p>
-                            <p>What is already represented: {alreadyRepresented.join("; ") || "same canonical subject cluster"}</p>
-                            <p>What will not change: public dossier text, public pages, and internal alias visibility</p>
+                      {brief ? (
+                        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                          <div className={`border border-border/60 bg-background/30 p-3 transition-all duration-300 ${isConsolidating ? "opacity-50 scale-95" : ""}`}>
+                            <p className="text-xs uppercase tracking-[0.3em] text-accent">Incoming Cluster</p>
+                            <p className="mt-2 font-semibold text-foreground">BNL operator summary</p>
+                            <p>{brief.operatorSummary}</p>
+                            <p className="mt-2 font-semibold text-foreground">Incoming summary bullets</p>
+                            <ul className="list-disc pl-5">
+                              {brief.incomingSummaryBullets.map((bullet) => <li key={bullet}>{bullet}</li>)}
+                            </ul>
+                            <p className="mt-2 font-semibold text-foreground">What will be absorbed</p>
+                            <ul className="list-disc pl-5">
+                              {brief.whatWillBeAbsorbed.map((bullet) => <li key={bullet}>{bullet}</li>)}
+                            </ul>
+                            <p className="mt-2 font-semibold text-foreground">Already represented</p>
+                            <ul className="list-disc pl-5">
+                              {brief.alreadyRepresented.map((bullet) => <li key={bullet}>{bullet}</li>)}
+                            </ul>
                             {isConsolidating && <p className="text-accent">Consolidating… incoming cluster is moving into the kept Source File.</p>}
                           </div>
+                          <div className={`border border-accent/50 bg-accent/5 p-3 transition-all duration-300 ${isConsolidating ? "ring-2 ring-accent shadow-lg" : ""}`}>
+                            <p className="text-xs uppercase tracking-[0.3em] text-accent">Kept Source File</p>
+                            <p className="mt-2 font-semibold text-foreground">{brief.subjectDisplayName}</p>
+                            <p>Recommended action: {brief.recommendedAction}</p>
+                            <p>Relationship verdict: {brief.relationshipVerdict}</p>
+                            <p className="mt-2 font-semibold text-foreground">Kept target summary bullets</p>
+                            <ul className="list-disc pl-5">
+                              {brief.keptTargetSummaryBullets.map((bullet) => <li key={bullet}>{bullet}</li>)}
+                            </ul>
+                            <p className="mt-2 font-semibold text-foreground">What will not change</p>
+                            <ul className="list-disc pl-5">
+                              {brief.whatWillNotChange.map((bullet) => <li key={bullet}>{bullet}</li>)}
+                            </ul>
+                            <p className="mt-2 font-semibold text-foreground">Why review is needed</p>
+                            <ul className="list-disc pl-5">
+                              {brief.whyReviewIsNeeded.map((bullet) => <li key={bullet}>{bullet}</li>)}
+                            </ul>
+                          </div>
                         </div>
-                        <div className={`border border-accent/50 bg-accent/5 p-3 transition-all duration-300 ${isConsolidating ? "ring-2 ring-accent shadow-lg" : ""}`}>
-                          <p className="text-xs uppercase tracking-[0.3em] text-accent">Kept Source File</p>
-                          {plan.targetRecord ? (
+                      ) : (
+                        <div className="mt-3 border border-border/60 bg-background/30 p-3">
+                          <p className="text-xs uppercase tracking-[0.3em] text-accent">BNL consolidation brief needed</p>
+                          <p className="mt-2 font-semibold text-foreground">BNL consolidation brief needed before review.</p>
+                          <p>Subject cluster detected: {keptName}</p>
+                          <p>Incoming item count: {incomingCount}</p>
+                          <p>Item types summarized: {incomingTypes}</p>
+                          <p>Possible kept targets: {possibleTargets.length}</p>
+                          {possibleTargets.length >= 2 ? (
                             <div className="mt-2">
-                              <p className="font-semibold text-foreground">{keptName}</p>
-                              <p>Why this target is being kept: {plan.targetSelectionReason}</p>
-                              <p>Already represented: {plan.targetRecord.uniqueInfo.join("; ")}</p>
-                              <p>Why this needs review: {plan.mergePlanSections.flatMap((section) => section.needsReview).join("; ") || "confirm whether these are the same subject"}</p>
+                              <p className="font-semibold text-foreground">Target options</p>
+                              <ul className="list-disc pl-5">
+                                {possibleTargets.map((target) => (
+                                  <li key={target.id}>{target.displayName ?? target.name} — {target.status}</li>
+                                ))}
+                              </ul>
                             </div>
                           ) : (
                             <div className="mt-2">
-                              <p className="font-semibold text-foreground">Select Different Target</p>
-                              <p>Why this needs review: choose the kept Source File or keep separate.</p>
-                              <p>Consolidation Plan: {plan.suggestedWorkspace ?? "nothing until a target is selected"}</p>
+                              <p className="font-semibold text-foreground">Blocked / Needs Info</p>
+                              <p>Target selection unavailable: at least two named target options are required.</p>
                             </div>
                           )}
+                          <p>Action: Generate BNL Consolidation Brief</p>
+                          <button type="button" disabled className="mt-3 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted opacity-60">Generate BNL Consolidation Brief</button>
+                          <p className="mt-2 text-xs text-muted">Requires companion BNL summary PR; raw evidence is not shown as a substitute.</p>
+                          {isConsolidating && <p className="text-accent">Consolidating… incoming cluster is moving into the kept Source File.</p>}
                         </div>
-                      </div>
+                      )}
                       <div className="mt-4 flex flex-wrap gap-2">
                         {plan.targetRecord ? (
                           <button type="button" disabled={saving} onClick={() => consolidateSubjectGroup(group.id, keptName)} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{isConsolidating ? "Consolidating…" : "Consolidate Into Kept Source File"}</button>
@@ -1019,7 +1054,7 @@ export default function DossierControlCenterPage() {
                         <button type="button" className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Select Different Target</button>
                       </div>
                       <details className="mt-4 border border-border/60 bg-background/30 p-3">
-                        <summary className="cursor-pointer text-xs uppercase tracking-[0.3em] text-muted">Raw / Source Links</summary>
+                        <summary className="cursor-pointer text-xs uppercase tracking-[0.3em] text-muted">Raw / Source Details</summary>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {plan.sourceRecords.map((record) => record.href ? (
                             <Link key={`${group.id}-raw-${record.type}-${record.id}`} href={record.href} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Source link: {record.displayName ?? record.name}</Link>
@@ -1051,7 +1086,7 @@ export default function DossierControlCenterPage() {
                     <p>Blocked reason: {group.consolidationPlan.blockedReasons.join(" ")}</p>
                     <p>What must be fixed first: resolve conflicting public dossier matches, active drafts, unsupported data shapes, or identity risk before running consolidation.</p>
                     <details className="mt-4 border border-border/60 bg-background/30 p-3">
-                      <summary className="cursor-pointer text-xs uppercase tracking-[0.3em] text-muted">Raw / Source Links</summary>
+                      <summary className="cursor-pointer text-xs uppercase tracking-[0.3em] text-muted">Raw / Source Details</summary>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {group.records.map((record) => record.href ? (
                           <Link key={`blocked-raw-${record.type}-${record.id}`} href={record.href} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Source link: {record.displayName ?? record.name}</Link>

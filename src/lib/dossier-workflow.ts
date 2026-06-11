@@ -775,8 +775,10 @@ export type DossierPopulationAuditRecord = {
 };
 
 export type DossierPopulationAutomationTier =
-  | "Dossier update candidate"
-  | "Recommendation attach candidate"
+  | "Create Source File candidate"
+  | "Create Dossier Update workspace candidate"
+  | "Attach to Existing Source File candidate"
+  | "Select Target Manually"
   | "Source File merge candidate"
   | "Empty duplicate cleanup candidate"
   | "Recommendation-only duplicate group"
@@ -804,6 +806,9 @@ export type DossierPopulationConsolidationPlan = {
   targetDisplayName?: string;
   targetSourceFileLabel?: string;
   targetDisplayReason?: string;
+  suggestedWorkspace?: "Dossier Update" | "New Source File / Candidate" | "Existing Source File";
+  existingPublicDossier?: { id: string; name?: string };
+  possibleTargetRecords: DossierPopulationAuditRecord[];
   targetSelectionReason: string;
   automationTier: DossierPopulationAutomationTier;
   recommendedNextStep: string;
@@ -1054,15 +1059,28 @@ function createConsolidationPlan(input: {
       left.status.localeCompare(right.status) ||
       left.id.localeCompare(right.id),
   );
-  const targetRecord = sortedTargets[0];
-  const sourceRecords = targetRecord
-    ? records.filter((record) => recordKey(record) !== recordKey(targetRecord))
+  const publicDossierRecords = records.filter((record) => record.publicDossierId);
+  const publicTargets = new Map<string, string | undefined>();
+  for (const record of publicDossierRecords) {
+    if (record.publicDossierId) {
+      publicTargets.set(record.publicDossierId, record.publicDossierName);
+    }
+  }
+  const possibleTargetRecords = sortedTargets;
+  const topTargetScore = sortedTargets[0]
+    ? realTargetPriority(sortedTargets[0])
+    : undefined;
+  const ambiguousTargetRecords =
+    sortedTargets.length > 1 &&
+    topTargetScore !== undefined &&
+    realTargetPriority(sortedTargets[1]) === topTargetScore;
+  const hasOnlyRecommendations = realRecords.length === 0;
+  const selectedTargetRecord = ambiguousTargetRecords ? undefined : sortedTargets[0];
+  const sourceRecords = selectedTargetRecord
+    ? records.filter((record) => recordKey(record) !== recordKey(selectedTargetRecord))
     : records;
   const realSourceRecords = sourceRecords.filter(
     (record) => record.type !== "recommendation",
-  );
-  const publicTargets = new Set(
-    records.map((record) => record.publicDossierId).filter(Boolean),
   );
   const activeDraftCount = realRecords.filter(
     (record) => record.activeDraftStatus,
@@ -1076,22 +1094,39 @@ function createConsolidationPlan(input: {
     blockedReasons.push("Already merged/deleted record involved.");
   }
 
-  const hasOnlyRecommendations = realRecords.length === 0;
   const hasRecommendationSources = recommendationRecords.length > 0;
   const hasRealDuplicateSources = realSourceRecords.length > 0;
   const allRealSourcesEmpty =
     hasRealDuplicateSources && realSourceRecords.every((record) => !recordHasUsefulData(record));
-  const sharedPublicTarget = publicTargets.size === 1 && Boolean(targetRecord?.publicDossierId);
+  const sharedPublicTarget = publicTargets.size === 1;
+  const existingPublicDossier = sharedPublicTarget
+    ? {
+        id: Array.from(publicTargets.keys())[0],
+        name: Array.from(publicTargets.values())[0],
+      }
+    : undefined;
+  const targetRecord = selectedTargetRecord;
+  const existingWorkspaceTarget = Boolean(targetRecord);
+  const suggestedWorkspace: DossierPopulationConsolidationPlan["suggestedWorkspace"] =
+    targetRecord
+      ? "Existing Source File"
+      : sharedPublicTarget
+        ? "Dossier Update"
+        : hasOnlyRecommendations
+          ? "New Source File / Candidate"
+          : undefined;
 
   let automationTier: DossierPopulationAutomationTier = "Review required";
-  if (hasOnlyRecommendations) {
-    automationTier = "Recommendation-only duplicate group";
-  } else if (blockedReasons.length > 0) {
+  if (blockedReasons.length > 0) {
     automationTier = "Blocked";
-  } else if (sharedPublicTarget && hasRecommendationSources && !hasRealDuplicateSources) {
-    automationTier = "Dossier update candidate";
-  } else if (hasRecommendationSources && !hasRealDuplicateSources) {
-    automationTier = "Recommendation attach candidate";
+  } else if (ambiguousTargetRecords) {
+    automationTier = "Select Target Manually";
+  } else if (hasOnlyRecommendations && sharedPublicTarget) {
+    automationTier = "Create Dossier Update workspace candidate";
+  } else if (hasOnlyRecommendations) {
+    automationTier = "Create Source File candidate";
+  } else if (hasRecommendationSources && existingWorkspaceTarget && !hasRealDuplicateSources) {
+    automationTier = "Attach to Existing Source File candidate";
   } else if (allRealSourcesEmpty) {
     automationTier = "Empty duplicate cleanup candidate";
   } else if (
@@ -1102,7 +1137,6 @@ function createConsolidationPlan(input: {
   }
   if (
     automationTier !== "Blocked" &&
-    automationTier !== "Recommendation-only duplicate group" &&
     records.some((record) => record.proposedAliasCount > 0) &&
     input.matchKind !== "confirmed_alias"
   ) {
@@ -1110,18 +1144,24 @@ function createConsolidationPlan(input: {
   }
 
   const canBeAutomatedLater = [
-    "Dossier update candidate",
-    "Recommendation attach candidate",
+    "Create Source File candidate",
+    "Create Dossier Update workspace candidate",
+    "Attach to Existing Source File candidate",
     "Source File merge candidate",
     "Empty duplicate cleanup candidate",
   ].includes(automationTier);
   const requiresReview = !canBeAutomatedLater || records.some((record) => record.proposedAliasCount > 0);
-  const noTargetExplanation =
-    "These are duplicate or related BNL recommendations, but no Source File target exists in this group yet. The next action is to attach them to an existing Source File if one matches, or create/select a Source File target later.";
+  const noTargetExplanation = sharedPublicTarget
+    ? `These are duplicate or related BNL recommendations for an existing public dossier, but no Dossier Update workspace exists in this group yet. The next action is to create/select a Dossier Update workspace later.`
+    : "These are duplicate or related BNL recommendations, but no Source File target exists in this group yet. The next action is to attach them to an existing Source File if one matches, or create/select a Source File target later.";
   const publicDossierUpdateExplanation =
-    targetRecord?.publicDossierId && hasRecommendationSources
-      ? `Existing public dossier match found. This should be reviewed as an update/attachment to the canonical ${targetDisplayName(targetRecord)} record, not merged into a separate duplicate Source File.`
+    (targetRecord?.publicDossierId || (hasOnlyRecommendations && sharedPublicTarget)) &&
+    hasRecommendationSources
+      ? `Existing public dossier match found. This should be reviewed as an update/attachment to the canonical ${targetDisplayName(targetRecord) ?? existingPublicDossier?.name ?? existingPublicDossier?.id} record, not merged into a separate duplicate Source File.`
       : undefined;
+  const manualTargetExplanation = ambiguousTargetRecords
+    ? "Several possible Source File targets have equal priority. Select the correct target manually before any future action."
+    : undefined;
 
   return {
     groupId: input.id,
@@ -1132,22 +1172,29 @@ function createConsolidationPlan(input: {
         : input.matchKind === "normalized_name"
           ? "medium"
           : "low",
-    reason: publicDossierUpdateExplanation ?? input.reason,
+    reason: publicDossierUpdateExplanation ?? manualTargetExplanation ?? input.reason,
     targetRecord,
     sourceRecords,
     targetDisplayName: targetDisplayName(targetRecord),
     targetSourceFileLabel: targetRecord?.name,
     targetDisplayReason: targetDisplayReason(targetRecord),
-    targetSelectionReason: targetSelectionReason(targetRecord),
+    suggestedWorkspace,
+    existingPublicDossier,
+    possibleTargetRecords,
+    targetSelectionReason: ambiguousTargetRecords
+      ? "No single Source File target was selected because multiple possible targets have the same priority."
+      : targetSelectionReason(targetRecord),
     automationTier,
-    recommendedNextStep: hasOnlyRecommendations
-      ? noTargetExplanation
-      : canBeAutomatedLater
-        ? `${automationTier}: review the deltas below before enabling any real action in a future PR.`
-        : "Admin review required before any future automation.",
+    recommendedNextStep: ambiguousTargetRecords
+      ? manualTargetExplanation ?? "Select the target manually before any future automation."
+      : hasOnlyRecommendations
+        ? noTargetExplanation
+        : canBeAutomatedLater
+          ? `${automationTier}: review the deltas below before enabling any real action in a future PR.`
+          : "Admin review required before any future automation.",
     canBeAutomatedLater,
     requiresReview,
-    blockedReasons: hasOnlyRecommendations
+    blockedReasons: hasOnlyRecommendations && !sharedPublicTarget
       ? ["No Source File target resolved."]
       : blockedReasons,
     mergePlanSections: [
@@ -1171,7 +1218,11 @@ function createConsolidationPlan(input: {
       planSection("Irrelevant to kept entry", {
         irrelevantToKeptEntry: sourceRecords
           .filter((record) => record.type === "recommendation" && !targetRecord)
-          .map((record) => `${record.name} cannot be merged until a Source File target exists.`),
+          .map((record) =>
+            suggestedWorkspace
+              ? `${record.name} is incoming recommendation material for a ${suggestedWorkspace} workspace, not a Source File merge target.`
+              : `${record.name} cannot be merged until a Source File target exists.`,
+          ),
       }),
       planSection("Needs review", {
         needsReview: [
@@ -1180,13 +1231,14 @@ function createConsolidationPlan(input: {
             : []),
           ...(publicDossierUpdateExplanation ? [publicDossierUpdateExplanation] : []),
           ...(hasOnlyRecommendations ? [noTargetExplanation] : []),
+          ...(manualTargetExplanation ? [manualTargetExplanation] : []),
         ],
       }),
       planSection("Blocked reason", {
-        blockedReason: hasOnlyRecommendations
+        blockedReason: hasOnlyRecommendations && !sharedPublicTarget
           ? ["No Source File target resolved."]
           : blockedReasons,
-        noActionNeeded: blockedReasons.length === 0 && !hasOnlyRecommendations
+        noActionNeeded: blockedReasons.length === 0 && !(hasOnlyRecommendations && !sharedPublicTarget)
           ? ["No blocker detected by this planning pass."]
           : [],
       }),
@@ -1195,7 +1247,7 @@ function createConsolidationPlan(input: {
           "Public dossier copy will not change.",
           "Internal aliases stay internal.",
           "Nothing publishes automatically.",
-          "No merge/delete/archive/attach action is live in this PR.",
+          "No merge/delete/archive/attach/create action is live in this PR.",
         ],
       }),
     ],
@@ -1423,18 +1475,22 @@ export function createDossierPopulationAudit(input: {
         likelyTargetId: matchingSourceFile?.id,
         likelyTargetName: matchingSourceFile?.existingDossierMatch?.name ?? matchingSourceFile?.name,
         planClassification: matchingSourceFile
-          ? matchingSourceFile.existingDossierMatch?.id || recommendation.targetDossierId
-            ? "Dossier update candidate"
-            : "Recommendation attach candidate"
-          : "Needs Source File target",
+          ? "Attach to Existing Source File candidate"
+          : recommendation.targetDossierId
+            ? "Create Dossier Update workspace candidate"
+            : "Create Source File candidate",
         matchReason: matchingSourceFile
           ? matchingSourceFile.existingDossierMatch?.name
             ? `Existing public dossier match found for ${matchingSourceFile.existingDossierMatch.name}; route as update/attachment, not a Source File merge.`
             : `Exact/confirmed ${matchBasis ?? "subject"} match to active Source File.`
-          : "No exact normalized-name, subjectKey, or confirmed-alias active Source File target exists yet.",
+          : recommendation.targetDossierId
+            ? "Existing public dossier match found, but no Source File/Dossier Update workspace target exists yet."
+            : "No exact normalized-name, subjectKey, or confirmed-alias active Source File target exists yet.",
         wouldHappenLater: matchingSourceFile
-          ? "Later automation could attach this recommendation or route it as a dossier update without changing public dossier copy."
-          : "Later automation must wait until an admin selects or creates a Source File target.",
+          ? "Later automation could attach this recommendation to the existing Source File without changing public dossier copy."
+          : recommendation.targetDossierId
+            ? "Later automation could create a Dossier Update workspace for the existing public dossier without changing public copy."
+            : "Later automation could create a new Source File / Candidate workspace after review.",
       } satisfies DossierPopulationAuditUnattachedRecommendation;
     })
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));

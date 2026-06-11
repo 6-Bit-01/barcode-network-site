@@ -2243,7 +2243,9 @@ test("population audit consolidation plans classify target/source records withou
     publicDossiers: [
       { id: "public-keep", name: "Public Keep" },
       { id: "public-other", name: "Public Other" },
+      { id: "blocked-public-a", name: "Blocked Public A" },
       { id: "six-bit", name: "6 Bit" },
+      { id: "public-only", name: "Public Only" },
     ],
     drafts: [
       {
@@ -2277,10 +2279,12 @@ test("population audit consolidation plans classify target/source records withou
       candidate({ id: "confirmed-secondary", name: "Confirmed Secondary", sourceFileNotes: [{ id: "note-2", candidateId: "confirmed-secondary", type: "fact", text: "Additive note", source: "admin_manual", status: "active", createdAt: now, updatedAt: now }] }),
       candidate({ id: "proposed-a", name: "Proposed Review", identityLinks: [alias("proposed-a", "Proposed Maybe", "proposed")] }),
       candidate({ id: "proposed-b", name: "Proposed Review" }),
-      candidate({ id: "blocked-a", name: "Blocked Same", existingDossierMatch: { id: "public-keep", name: "Public Keep", confidence: "high" } }),
+      candidate({ id: "blocked-a", name: "Blocked Same", existingDossierMatch: { id: "blocked-public-a", name: "Blocked Public A", confidence: "high" } }),
       candidate({ id: "blocked-b", name: "Blocked Same", existingDossierMatch: { id: "public-other", name: "Public Other", confidence: "high" } }),
       candidate({ id: "attach-target", name: "Attach Me", identityLinks: [alias("attach-target", "Attach Alias")] }),
       candidate({ id: "six-bit-source", name: "6 Bit’s", existingDossierMatch: { id: "six-bit", name: "6 Bit", confidence: "high" } }),
+      candidate({ id: "ambiguous-a", name: "Ambiguous Target" }),
+      candidate({ id: "ambiguous-b", name: "Ambiguous Target" }),
     ],
     recommendations: [
       recommendation({ id: "rec-public-loose", subjectName: "Public Keep", targetDossierId: "public-keep" }),
@@ -2289,6 +2293,8 @@ test("population audit consolidation plans classify target/source records withou
       recommendation({ id: "rec-only-a", subjectName: "Only Signal A", subjectKey: "only-signal" }),
       recommendation({ id: "rec-only-b", subjectName: "Only Signal B", subjectKey: "only-signal" }),
       recommendation({ id: "rec-six-bit", subjectName: "6 Bit", targetDossierId: "six-bit", evidenceSummary: "Canonical update signal." }),
+      recommendation({ id: "rec-public-only-a", subjectName: "Public Only", targetDossierId: "public-only" }),
+      recommendation({ id: "rec-public-only-b", subjectName: "Public Only", targetDossierId: "public-only" }),
     ],
   });
 
@@ -2311,11 +2317,11 @@ test("population audit consolidation plans classify target/source records withou
   assert.equal(mergePlan?.automationTier, "Source File merge candidate");
 
   const attachPlan = audit.unattachedBnlRecommendations.find((item) => item.id === "rec-attach");
-  assert.equal(attachPlan?.planClassification, "Recommendation attach candidate");
+  assert.equal(attachPlan?.planClassification, "Attach to Existing Source File candidate");
   assert.equal(attachPlan?.likelyTargetId, "attach-target");
 
   const sixBitPlan = plans.find((plan) => plan.groupId.includes("public-dossier-six-bit"));
-  assert.equal(sixBitPlan?.automationTier, "Dossier update candidate");
+  assert.equal(sixBitPlan?.automationTier, "Attach to Existing Source File candidate");
   assert.equal(sixBitPlan?.targetRecord?.id, "six-bit-source");
   assert.equal(sixBitPlan?.targetDisplayName, "6 Bit");
   assert.equal(sixBitPlan?.targetSourceFileLabel, "6 Bit’s");
@@ -2327,16 +2333,28 @@ test("population audit consolidation plans classify target/source records withou
   const reviewPlan = plans.find((plan) => plan.targetRecord?.id === "proposed-a" || plan.sourceRecords.some((record) => record.id === "proposed-a"));
   assert.equal(reviewPlan?.automationTier, "Review required");
 
-  const blockedPlan = plans.find((plan) => plan.groupType === "normalized_name" && plan.targetRecord?.name === "Blocked Same");
+  const blockedPlan = plans.find((plan) => plan.groupId.includes("normalized-name-blocked-same"));
   assert.equal(blockedPlan?.automationTier, "Blocked");
   assert.match(blockedPlan?.blockedReasons.join(" ") ?? "", /Different public dossier matches/);
 
-  const recommendationOnlyPlan = plans.find((plan) => plan.automationTier === "Recommendation-only duplicate group");
-  assert.ok(recommendationOnlyPlan);
-  assert.equal(recommendationOnlyPlan.targetRecord, undefined);
-  assert.match(recommendationOnlyPlan.recommendedNextStep, /no Source File target exists/i);
-  assert.match(recommendationOnlyPlan.blockedReasons.join(" "), /No Source File target resolved/);
-  assert.doesNotMatch(recommendationOnlyPlan.targetSelectionReason, /source and target records could not be resolved/i);
+  const sourceFileCreationPlan = plans.find((plan) => plan.groupId.includes("recommendation-subject-key-only-signal"));
+  assert.equal(sourceFileCreationPlan?.automationTier, "Create Source File candidate");
+  assert.equal(sourceFileCreationPlan?.targetRecord, undefined);
+  assert.equal(sourceFileCreationPlan?.suggestedWorkspace, "New Source File / Candidate");
+  assert.match(sourceFileCreationPlan?.recommendedNextStep ?? "", /no Source File target exists/i);
+  assert.match(sourceFileCreationPlan?.blockedReasons.join(" ") ?? "", /No Source File target resolved/);
+  assert.doesNotMatch(sourceFileCreationPlan?.targetSelectionReason ?? "", /source and target records could not be resolved/i);
+
+  const updateWorkspacePlan = plans.find((plan) => plan.groupId.includes("public-dossier-public-only"));
+  assert.equal(updateWorkspacePlan?.automationTier, "Create Dossier Update workspace candidate");
+  assert.equal(updateWorkspacePlan?.targetRecord, undefined);
+  assert.equal(updateWorkspacePlan?.suggestedWorkspace, "Dossier Update");
+  assert.equal(updateWorkspacePlan?.existingPublicDossier?.name, "Public Only");
+
+  const ambiguousPlan = plans.find((plan) => plan.groupId.includes("normalized-name-ambiguous-target"));
+  assert.equal(ambiguousPlan?.automationTier, "Select Target Manually");
+  assert.equal(ambiguousPlan?.targetRecord, undefined);
+  assert.equal(ambiguousPlan?.possibleTargetRecords.length, 2);
 
   assert.ok(activePlan?.sourceRecords.some((record) => record.type === "recommendation"));
   assert.notEqual(activePlan?.targetRecord?.type, "recommendation");
@@ -2353,6 +2371,14 @@ test("population audit consolidation plans classify target/source records withou
   assert.ok(activePlan?.mergePlanSections.some((section) => section.newInfoToAdd.length > 0));
   assert.ok(activePlan?.mergePlanSections.some((section) => section.noActionNeeded.join(" ").includes("Nothing publishes automatically")));
   assert.ok(blockedPlan?.mergePlanSections.some((section) => section.blockedReason.join(" ").includes("Different public dossier matches")));
+
+  const publicDossierBefore = JSON.stringify(databasePage.entries.find((entry) => entry.name === "6 Bit"));
+  workflow.createDossierPopulationAudit({
+    publicDossiers: [{ id: "six-bit", name: "6 Bit" }],
+    candidates: [],
+    recommendations: [recommendation({ id: "rec-public-readonly", subjectName: "6 Bit", targetDossierId: "six-bit" })],
+  });
+  assert.equal(JSON.stringify(databasePage.entries.find((entry) => entry.name === "6 Bit")), publicDossierBefore);
 });
 
 test("population audit planning UI uses incoming/target columns and disabled future action labels", () => {
@@ -2364,8 +2390,13 @@ test("population audit planning UI uses incoming/target columns and disabled fut
     "Target / Keep",
     "No Source File target resolved",
     "targetDisplayReason",
-    "Dossier Update Later",
+    "Suggested workspace to create",
+    "Recommended workspace:",
+    "Existing public dossier:",
+    "Create Dossier Update Later",
+    "Create Source File Later",
     "Attach Later",
+    "Select Target Later",
     "Merge Later",
     "Clean Later",
     "Needs Source File Target",
@@ -4837,7 +4868,7 @@ test("recommendation inbox and source note UI are present and bounded", () => {
   assert.match(dashboard, /Review Update/);
   assert.match(dashboard, /Open Source File/);
   assert.match(dashboard, /Review Record/);
-  assert.doesNotMatch(dashboard, /Review Identity|Add Missing Info|Attach to Existing Source File/);
+  assert.doesNotMatch(dashboard, /Review Identity|Add Missing Info|>Attach to Existing Source File<|Attach to Existing Source File<\/button>/);
 
   const sourceFilePage = source(
     "src/app/admin/dossiers/candidates/[candidateId]/page.tsx",

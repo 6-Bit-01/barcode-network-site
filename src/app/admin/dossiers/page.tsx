@@ -991,7 +991,17 @@ export default function DossierControlCenterPage() {
                               </div>
                             ) : (
                               <div className="mt-2">
-                                <p className="font-semibold text-foreground">No Source File target resolved</p>
+                                <p className="font-semibold text-foreground">Suggested workspace to create</p>
+                                {plan.existingPublicDossier && (
+                                  <p>Existing public dossier: {plan.existingPublicDossier.name ?? plan.existingPublicDossier.id}</p>
+                                )}
+                                {plan.suggestedWorkspace && (
+                                  <p>Recommended workspace: {plan.suggestedWorkspace}</p>
+                                )}
+                                {plan.possibleTargetRecords.length > 0 && (
+                                  <p>Possible targets: {plan.possibleTargetRecords.map((record) => record.displayName ?? record.name).join("; ")}</p>
+                                )}
+                                <p>No Source File target resolved</p>
                                 <p>{plan.recommendedNextStep}</p>
                               </div>
                             )}
@@ -1014,15 +1024,19 @@ export default function DossierControlCenterPage() {
                             ))}
                           </div>
                           <button disabled className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted opacity-60">
-                            {plan.automationTier === "Dossier update candidate"
-                              ? "Dossier Update Later"
-                              : plan.automationTier === "Recommendation attach candidate"
-                                ? "Attach Later"
-                                : plan.automationTier === "Source File merge candidate"
-                                  ? "Merge Later"
-                                  : plan.automationTier === "Empty duplicate cleanup candidate"
-                                    ? "Clean Later"
-                                    : "Needs Source File Target"}
+                            {plan.automationTier === "Create Dossier Update workspace candidate"
+                              ? "Create Dossier Update Later"
+                              : plan.automationTier === "Create Source File candidate"
+                                ? "Create Source File Later"
+                                : plan.automationTier === "Attach to Existing Source File candidate"
+                                  ? "Attach Later"
+                                  : plan.automationTier === "Select Target Manually"
+                                    ? "Select Target Later"
+                                    : plan.automationTier === "Source File merge candidate"
+                                      ? "Merge Later"
+                                      : plan.automationTier === "Empty duplicate cleanup candidate"
+                                        ? "Clean Later"
+                                        : "Needs Source File Target"}
                           </button>
                         </div>
                       </article>

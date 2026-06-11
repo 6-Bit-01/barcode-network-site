@@ -2042,26 +2042,25 @@ test("Dossier Control Center population audit maps counts, duplicate review, una
     "Records missing latest BNL case report or source enrichment",
     "Possible Duplicate / Same Subject Review",
     "Possible same-subject review",
-    "Consolidation plan",
-    "Merging / Incoming Info",
-    "Target / Keep",
-    "Target selection:",
-    "Automation tier",
-    "Incoming recommendation subject:",
-    "What new info this adds:",
+    "Consolidation Task",
+    "Incoming Info / Will Transfer",
+    "Kept Source File / Target",
+    "Why this target:",
+    "Classification:",
+    "Incoming subjects:",
+    "New extractable info:",
     "Already represented:",
-    "Public dossier match:",
-    "Field-level plan",
-    "New info to add",
-    "Already represented / duplicate info",
-    "Irrelevant to kept entry",
-    "Needs review",
+    "Existing public dossier match:",
+    "Transfer Plan",
+    "Will attach",
+    "Will merge",
+    "Will create",
+    "Needs admin review",
     "Blocked reason",
-    "No action needed",
+    "Needs BNL review / refresh",
     "Unattached BNL Signals / Recommendations",
     "BNL recommendations that need placement review",
-    "Needs Source File target",
-    "What would happen later",
+    "BNL Refresh After Consolidation",
     "The site can only audit records and recommendations already present in the workflow store. Active Discord members who have not been ingested by BNL will not appear here yet.",
     "admin-triggered only: it never mutates on page load",
     "Run Safe Consolidation",
@@ -2388,18 +2387,17 @@ test("population audit planning UI uses incoming/target columns and live safe ac
   const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
 
   for (const label of [
-    "Merging / Incoming Info",
-    "Target / Keep",
-    "No Source File target resolved",
-    "targetDisplayReason",
-    "Suggested workspace to create",
-    "Recommended workspace:",
-    "Existing public dossier:",
+    "Incoming Info / Will Transfer",
+    "Kept Source File / Target",
+    "Kept Source File:",
+    "workspace will be created",
+    "Will create:",
+    "Existing public dossier match:",
     "Create Dossier Update Workspace",
-    "Create Source File from Incoming Info",
+    "Create Source File from These Signals",
     "Attach Incoming Recommendations",
-    "Select target manually (read-only)",
-    "Merge Into Target",
+    "Select Target Manually (read-only)",
+    "Merge Into Kept Source File",
     "Clean Duplicate",
     "Keep Separate / Not Same Subject",
   ]) {
@@ -2411,6 +2409,13 @@ test("population audit planning UI uses incoming/target columns and live safe ac
   assert.doesNotMatch(pageCopy, /Confirmed aliases count: \{record\.confirmedAliasCount\}/);
   assert.doesNotMatch(pageCopy, /Proposed aliases count: \{record\.proposedAliasCount\}/);
   assert.doesNotMatch(pageCopy, /Archive\/report status: \{record\.hasLatestArchiveOrReport/);
+  assert.match(page, /<details className="mt-3 border border-border\/50 bg-background\/40 p-3">/);
+  assertIncludesCopy(pageCopy, "Raw recommendation details / debug details");
+  assertIncludesCopy(pageCopy, "Raw transfer notes:");
+  assert.ok(page.indexOf("[...record.incomingInfo") > page.indexOf("Raw transfer notes:"));
+  assertIncludesCopy(pageCopy, "Open Recommendation");
+  assert.ok(pageCopy.indexOf("Open Recommendation") > pageCopy.indexOf("Raw recommendation details / debug details"));
+  assertIncludesCopy(pageCopy, "BNL refresh status:");
 });
 
 test("owner review page is a placeholder lane without publishing", () => {
@@ -5332,6 +5337,7 @@ test("live consolidation attaches incoming recommendations after server-side rev
   const payload = await response.json();
   assert.equal(payload.consolidation.attachedRecommendationCount, 1);
   assert.match(payload.consolidation.message, /No public dossier text changed/);
+  assert.ok(payload.consolidation.bnlRefreshes.some((refresh) => ["queued", "already_pending"].includes(refresh.status)));
   const state = await store.getDossierWorkflowState();
   assert.equal(state.recommendations.find((item) => item.id === "rec-attach-live").targetCandidateId, "target-attach");
   assert.equal(state.recommendations.find((item) => item.id === "rec-attach-live").status, "attached_to_source_file");
@@ -5351,6 +5357,7 @@ test("live consolidation creates dossier update workspace and source file worksp
   assert.equal(response.status, 200);
   let payload = await response.json();
   assert.equal(payload.consolidation.createdWorkspaces[0].type, "Dossier Update");
+  assert.ok(payload.consolidation.bnlRefreshes.some((refresh) => ["queued", "already_pending"].includes(refresh.status)));
   assert.equal(payload.candidates.find((candidate) => candidate.id === payload.consolidation.targetId).status, "existing_dossier_update");
   assert.equal(payload.recommendations.filter((recommendation) => recommendation.status === "attached_to_existing_dossier_update").length, 2);
 
@@ -5366,6 +5373,7 @@ test("live consolidation creates dossier update workspace and source file worksp
   assert.equal(response.status, 200);
   payload = await response.json();
   assert.equal(payload.consolidation.createdWorkspaces[0].type, "Source File / Candidate");
+  assert.ok(payload.consolidation.bnlRefreshes.some((refresh) => ["queued", "already_pending"].includes(refresh.status)));
   assert.equal(payload.candidates.find((candidate) => candidate.id === payload.consolidation.targetId).status, "active_source_file");
   assert.equal(payload.recommendations.filter((recommendation) => ["converted_to_source_file", "attached_to_source_file"].includes(recommendation.status)).length, 2);
 });
@@ -5382,6 +5390,8 @@ test("live consolidation merge moves notes and internal aliases but blocks publi
   assert.ok(group, "expected safe merge candidate");
   const response = await authedPost({ action: "mergeConsolidationIntoTarget", groupId: group.id });
   assert.equal(response.status, 200);
+  const mergePayload = await response.json();
+  assert.ok(mergePayload.consolidation.bnlRefreshes.some((refresh) => ["queued", "already_pending"].includes(refresh.status)));
   const state = await store.getDossierWorkflowState();
   const target = state.candidates.find((candidate) => candidate.id === "merge-target");
   assert.ok(target.sourceFileNotes.some((item) => item.text === "Additive source note"));
@@ -5452,6 +5462,7 @@ test("clean duplicate refuses meaningful data and bulk skips review-required gro
   assert.equal(response.status, 200);
   payload = await response.json();
   assert.equal(payload.consolidation.attachedRecommendationCount, 1);
+  assert.ok(payload.consolidation.bnlRefreshes.length >= 1);
   assert.ok(payload.consolidation.skipped.some((item) => /Review required/.test(item.reason)));
 });
 

@@ -5712,6 +5712,14 @@ export async function mergeDossierCandidates(
   return result;
 }
 
+export type DossierConsolidationRefreshStatus = {
+  targetId: string;
+  targetName?: string;
+  status: "queued" | "already_pending" | "needed" | "unavailable";
+  requestId?: string;
+  message: string;
+};
+
 export type DossierConsolidationActionResult = {
   ok: true;
   actionType: string;
@@ -5724,10 +5732,54 @@ export type DossierConsolidationActionResult = {
   mergedRecordCount: number;
   cleanedDuplicateCount: number;
   createdWorkspaces: Array<{ id: string; href: string; type: string; name: string }>;
+  bnlRefreshes: DossierConsolidationRefreshStatus[];
   skipped: Array<{ id: string; reason: string }>;
   blocked: Array<{ id: string; reason: string }>;
   message: string;
 };
+
+function queueConsolidationBnlRefresh(input: {
+  state: DossierWorkflowState;
+  candidate: DossierCandidate;
+  now: string;
+  actionType: string;
+  actor?: string;
+}): { state: DossierWorkflowState; refresh: DossierConsolidationRefreshStatus } {
+  if (!isSourceFileEnrichmentAttachableCandidate(input.candidate)) {
+    return {
+      state: input.state,
+      refresh: {
+        targetId: input.candidate.id,
+        targetName: input.candidate.name,
+        status: "needed",
+        message:
+          "BNL refresh required, but this workspace is not currently eligible for the existing Source File refresh queue. Use the Source File refresh action after review.",
+      },
+    };
+  }
+  const upserted = upsertSourceFileRefreshRequestInState({
+    state: input.state,
+    candidate: input.candidate,
+    reason: `Consolidation ${input.actionType} added new review-only source material; BNL should recompile this Source File.`,
+    requestSource: "manual_admin",
+    priority: 92,
+    requestedBy: input.actor ?? "admin_consolidation",
+    now: input.now,
+    force: true,
+  });
+  return {
+    state: upserted.state,
+    refresh: {
+      targetId: input.candidate.id,
+      targetName: input.candidate.name,
+      status: upserted.created ? "queued" : "already_pending",
+      requestId: upserted.request.id,
+      message: upserted.created
+        ? "BNL Source File refresh queued after consolidation."
+        : "BNL Source File refresh already pending; consolidation updated the request priority/reason.",
+    },
+  };
+}
 
 function publicDossierRefsFor(candidate: DossierCandidate): string[] {
   return candidate.existingDossierMatch?.id ? [candidate.existingDossierMatch.id] : [];
@@ -5841,6 +5893,7 @@ function resultBase(actionType: string, groupId?: string): DossierConsolidationA
     mergedRecordCount: 0,
     cleanedDuplicateCount: 0,
     createdWorkspaces: [],
+    bnlRefreshes: [],
     skipped: [],
     blocked: [],
     message: "No public dossier text changed. No public pages were published. Internal aliases remain internal.",
@@ -5881,13 +5934,22 @@ export async function attachIncomingRecommendationsFromConsolidation(input: {
     result.targetId = target.id;
     result.targetHref = `/admin/dossiers/candidates/${target.id}`;
     result.sourceIds = recommendationIds;
-    result.message = `Attached ${result.attachedRecommendationCount} incoming recommendation(s) to ${target.name}. No public dossier text changed. No public pages were published.`;
-    return {
+    const stateWithAttachment = {
       ...currentState,
       recommendations,
       candidates: currentState.candidates.map((candidate) => candidate.id === target!.id ? target! : candidate),
       updatedAt: now,
     };
+    const refresh = queueConsolidationBnlRefresh({
+      state: stateWithAttachment,
+      candidate: target,
+      now,
+      actionType: "attach incoming recommendations",
+      actor: input.actor,
+    });
+    result.bnlRefreshes.push(refresh.refresh);
+    result.message = `Attached ${result.attachedRecommendationCount} incoming recommendation(s) to ${target.name}. ${refresh.refresh.message} No public dossier text changed. No public pages were published.`;
+    return refresh.state;
   });
   return result;
 }
@@ -5961,8 +6023,17 @@ export async function createDossierUpdateWorkspaceFromConsolidation(input: {
     result.targetId = workspace.id;
     result.targetHref = `/admin/dossiers/candidates/${workspace.id}`;
     result.createdWorkspaces.push({ id: workspace.id, href: `/admin/dossiers/candidates/${workspace.id}`, type: "Dossier Update", name: workspace.name });
-    result.message = `Created Dossier Update workspace ${workspace.id} and attached ${result.attachedRecommendationCount} recommendation(s). No public dossier text changed. No public pages were published.`;
-    return { ...currentState, candidates: [workspace, ...currentState.candidates], recommendations, updatedAt: now };
+    const stateWithWorkspace = { ...currentState, candidates: [workspace, ...currentState.candidates], recommendations, updatedAt: now };
+    const refresh = queueConsolidationBnlRefresh({
+      state: stateWithWorkspace,
+      candidate: workspace,
+      now,
+      actionType: "create dossier update workspace",
+      actor: input.actor,
+    });
+    result.bnlRefreshes.push(refresh.refresh);
+    result.message = `Created Dossier Update workspace ${workspace.id} and attached ${result.attachedRecommendationCount} recommendation(s). ${refresh.refresh.message} No public dossier text changed. No public pages were published.`;
+    return refresh.state;
   });
   return result;
 }
@@ -6010,8 +6081,17 @@ export async function createSourceFileFromIncomingConsolidation(input: {
     result.targetId = candidate.id;
     result.targetHref = `/admin/dossiers/candidates/${candidate.id}`;
     result.createdWorkspaces.push({ id: candidate.id, href: `/admin/dossiers/candidates/${candidate.id}`, type: "Source File / Candidate", name: candidate.name });
-    result.message = `Created Source File ${candidate.id} and attached ${result.attachedRecommendationCount} recommendation(s). No public dossier text changed. No public pages were published.`;
-    return { ...currentState, candidates: [candidate, ...currentState.candidates], recommendations, updatedAt: now };
+    const stateWithSourceFile = { ...currentState, candidates: [candidate, ...currentState.candidates], recommendations, updatedAt: now };
+    const refresh = queueConsolidationBnlRefresh({
+      state: stateWithSourceFile,
+      candidate,
+      now,
+      actionType: "create source file from signals",
+      actor: input.actor,
+    });
+    result.bnlRefreshes.push(refresh.refresh);
+    result.message = `Created Source File ${candidate.id} and attached ${result.attachedRecommendationCount} recommendation(s). ${refresh.refresh.message} No public dossier text changed. No public pages were published.`;
+    return refresh.state;
   });
   return result;
 }
@@ -6082,7 +6162,25 @@ export async function mergeConsolidationIntoTarget(input: {
   result.targetHref = mergeResult?.masterCandidate.id ? `/admin/dossiers/candidates/${mergeResult.masterCandidate.id}` : undefined;
   result.sourceIds = sourceIds;
   result.mergedRecordCount = mergeResult?.mergedCandidateIds.length ?? 0;
-  result.message = `Merged ${result.mergedRecordCount} Source File record(s) into ${mergeResult?.masterCandidate.name ?? plan.targetRecord.name}. No public dossier text changed. No public pages were published.`;
+  if (mergeResult?.masterCandidate.id) {
+    const refresh = await requestDossierSourceFileRefresh({
+      candidateId: mergeResult.masterCandidate.id,
+      reason: "Consolidation merge added source material; BNL should recompile this kept Source File.",
+      requestSource: "manual_admin",
+      requestedBy: input.actor ?? "admin_consolidation",
+      priority: 92,
+    });
+    result.bnlRefreshes.push({
+      targetId: mergeResult.masterCandidate.id,
+      targetName: mergeResult.masterCandidate.name,
+      status: refresh.created ? "queued" : "already_pending",
+      requestId: refresh.request.id,
+      message: refresh.created
+        ? "BNL Source File refresh queued after consolidation."
+        : "BNL Source File refresh already pending; consolidation updated the request priority/reason.",
+    });
+  }
+  result.message = `Merged ${result.mergedRecordCount} Source File record(s) into ${mergeResult?.masterCandidate.name ?? plan.targetRecord.name}. ${result.bnlRefreshes[0]?.message ?? "BNL refresh required for the kept Source File."} No public dossier text changed. No public pages were published.`;
   return result;
 }
 
@@ -6114,14 +6212,17 @@ export async function runSafeConsolidation(input: { actor?: string }): Promise<D
         const partial = await attachIncomingRecommendationsFromConsolidation({ groupId: group.id, actor: input.actor });
         result.attachedRecommendationCount += partial.attachedRecommendationCount;
         result.recommendationIds.push(...partial.recommendationIds);
+        result.bnlRefreshes.push(...partial.bnlRefreshes);
       } else if (tier === "Create Dossier Update workspace candidate") {
         const partial = await createDossierUpdateWorkspaceFromConsolidation({ groupId: group.id, actor: input.actor });
         result.attachedRecommendationCount += partial.attachedRecommendationCount;
         result.createdWorkspaces.push(...partial.createdWorkspaces);
+        result.bnlRefreshes.push(...partial.bnlRefreshes);
       } else if (tier === "Create Source File candidate") {
         const partial = await createSourceFileFromIncomingConsolidation({ groupId: group.id, actor: input.actor });
         result.attachedRecommendationCount += partial.attachedRecommendationCount;
         result.createdWorkspaces.push(...partial.createdWorkspaces);
+        result.bnlRefreshes.push(...partial.bnlRefreshes);
       } else if (tier === "Empty duplicate cleanup candidate") {
         const partial = await cleanDuplicateFromConsolidation({ groupId: group.id, actor: input.actor });
         result.cleanedDuplicateCount += partial.cleanedDuplicateCount;
@@ -6133,7 +6234,7 @@ export async function runSafeConsolidation(input: { actor?: string }): Promise<D
       result.blocked.push({ id: group.id, reason: error instanceof Error ? error.message : "Action blocked during server-side revalidation." });
     }
   }
-  result.message = `Safe consolidation complete: ${result.attachedRecommendationCount} recommendation(s) attached, ${result.cleanedDuplicateCount} duplicate(s) cleaned, ${result.createdWorkspaces.length} workspace(s) created, ${result.skipped.length} skipped, ${result.blocked.length} blocked. No public dossier text changed. No public pages were published.`;
+  result.message = `Safe consolidation complete: ${result.attachedRecommendationCount} recommendation(s) attached, ${result.cleanedDuplicateCount} duplicate(s) cleaned, ${result.createdWorkspaces.length} workspace(s) created, ${result.bnlRefreshes.length} BNL refresh(es) queued/marked, ${result.skipped.length} skipped, ${result.blocked.length} blocked. No public dossier text changed. No public pages were published.`;
   return result;
 }
 

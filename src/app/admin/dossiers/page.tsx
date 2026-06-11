@@ -9,6 +9,8 @@ import {
   type DossierCandidate,
   type DossierDraft,
   type DossierDuplicateGroup,
+  type DossierPopulationAuditRecord,
+  type DossierPopulationConsolidationPlan,
   type DossierRecommendation,
 } from "@/lib/dossier-workflow";
 
@@ -42,6 +44,13 @@ type ConsolidationResult = {
   mergedRecordCount: number;
   cleanedDuplicateCount: number;
   createdWorkspaces: Array<{ id: string; href: string; type: string; name: string }>;
+  bnlRefreshes: Array<{
+    targetId: string;
+    targetName?: string;
+    status: "queued" | "already_pending" | "needed" | "unavailable";
+    requestId?: string;
+    message: string;
+  }>;
   skipped: Array<{ id: string; reason: string }>;
   blocked: Array<{ id: string; reason: string }>;
   message: string;
@@ -190,6 +199,75 @@ function consolidationActionForTier(tier: string): { action: string; label: stri
     return { action: "keepConsolidationSeparate", label: "Keep Separate / Not Same Subject" };
   }
   return null;
+}
+
+function cleanTransferDeltaText(value: string): string | null {
+  const text = value.replace(/\s+/g, " ").trim();
+  if (!text) return null;
+  if (/bridge source lane mapping|source_blind_memory_trace|local_knowledge_store|unknown\s*[-→>]+\s*unknown|archive key|chunk key|source digest|ingest key/i.test(text)) {
+    return null;
+  }
+  return text.length > 150 ? `${text.slice(0, 147)}…` : text;
+}
+
+function cleanTransferDeltas(values: string[]): string[] {
+  const cleaned = values
+    .map(cleanTransferDeltaText)
+    .filter((value): value is string => Boolean(value));
+  return Array.from(new Set(cleaned)).slice(0, 4);
+}
+
+function summarizeIncomingRecords(records: DossierPopulationAuditRecord[]) {
+  const recommendationRecords = records.filter((record) => record.type === "recommendation");
+  const candidateRecords = records.filter((record) => record.type !== "recommendation");
+  const lanes = Array.from(new Set(records.flatMap((record) => record.sourceLanes ?? []))).slice(0, 6);
+  const newInfo = cleanTransferDeltas(records.flatMap((record) => record.incomingInfo));
+  const duplicateInfo = cleanTransferDeltas(records.flatMap((record) => record.duplicateInfo));
+  return { recommendationRecords, candidateRecords, lanes, newInfo, duplicateInfo };
+}
+
+function countLabel(count: number, singular: string, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function actionNounForTier(tier: string) {
+  if (tier === "Attach to Existing Source File candidate") return "attach";
+  if (tier === "Source File merge candidate") return "merge";
+  if (tier === "Create Dossier Update workspace candidate" || tier === "Create Source File candidate") return "create";
+  if (tier === "Empty duplicate cleanup candidate") return "clean";
+  return "review";
+}
+
+function transferPlanRows(plan: DossierPopulationConsolidationPlan) {
+  const incoming = summarizeIncomingRecords(plan.sourceRecords);
+  const targetName = plan.targetDisplayName ?? plan.targetRecord?.displayName ?? plan.targetRecord?.name ?? plan.existingPublicDossier?.name ?? "the kept workspace";
+  const recommendationCount = incoming.recommendationRecords.length;
+  const candidateCount = incoming.candidateRecords.length;
+  const willAttach = recommendationCount > 0
+    ? [`${countLabel(recommendationCount, "BNL recommendation")} will be attached to ${targetName} as review-only Source File material.`, "Original recommendation IDs, source lanes, ingest metadata, and review-only status will be preserved."]
+    : [];
+  const willMerge = plan.automationTier === "Source File merge candidate"
+    ? [`${countLabel(candidateCount, "Source File/candidate record")} will merge into ${targetName}.`, "Source notes, recommendation links, identity links, and supported history move to the kept Source File."]
+    : [];
+  const willCreate = plan.automationTier === "Create Dossier Update workspace candidate"
+    ? [`Create an internal Dossier Update workspace for ${plan.existingPublicDossier?.name ?? plan.existingPublicDossier?.id}.`]
+    : plan.automationTier === "Create Source File candidate"
+      ? ["Create a new internal Source File / Candidate workspace from these coherent incoming signals."]
+      : [];
+  const needsAdmin = [
+    ...plan.mergePlanSections.flatMap((section) => cleanTransferDeltas(section.needsReview)),
+    ...(plan.requiresReview ? [plan.recommendedNextStep] : []),
+  ];
+  return [
+    { title: "Will attach", items: willAttach },
+    { title: "Will merge", items: willMerge },
+    { title: "Will create", items: willCreate },
+    { title: "Already represented", items: incoming.duplicateInfo.length ? incoming.duplicateInfo : ["No duplicate facts were identified by the clean transfer pass."] },
+    { title: "Needs BNL review / refresh", items: plan.automationTier === "Empty duplicate cleanup candidate" ? ["No BNL refresh needed for empty duplicate cleanup."] : ["BNL Source File refresh will be queued or marked required after this consolidation so the kept Source File can be recompiled."] },
+    { title: "Needs admin review", items: needsAdmin.length ? needsAdmin : ["No extra admin review blocker detected for this action tier."] },
+    { title: "Will not change", items: ["Public dossier text", "Published database page", "Existing proposed dossier copy", "Internal alias visibility", "Publishing state"] },
+    { title: "Blocked reason", items: plan.blockedReasons.length ? plan.blockedReasons : ["No blocker detected by the current server-side plan."] },
+  ];
 }
 
 function StatusPill({ children }: { children: React.ReactNode }) {
@@ -542,6 +620,7 @@ export default function DossierControlCenterPage() {
         mergedRecordCount: 0,
         cleanedDuplicateCount: 0,
         createdWorkspaces: [],
+        bnlRefreshes: [],
         skipped: [],
         blocked: [{ id: groupId ?? action, reason: message }],
         message,
@@ -895,6 +974,12 @@ export default function DossierControlCenterPage() {
                 <p>Attached recommendations: {consolidationResult.attachedRecommendationCount}</p>
                 <p>Merged records: {consolidationResult.mergedRecordCount}</p>
                 <p>Cleaned duplicates: {consolidationResult.cleanedDuplicateCount}</p>
+                {consolidationResult.targetHref && (
+                  <p><Link href={consolidationResult.targetHref} className="underline">Open updated target</Link></p>
+                )}
+                {consolidationResult.bnlRefreshes.length > 0 && (
+                  <p>BNL refresh status: {consolidationResult.bnlRefreshes.map((refresh) => `${refresh.targetName ?? refresh.targetId}: ${refresh.status} — ${refresh.message}`).join("; ")}</p>
+                )}
                 {consolidationResult.skipped.length > 0 && (
                   <p>Skipped: {consolidationResult.skipped.map((item) => `${item.id}: ${item.reason}`).join("; ")}</p>
                 )}
@@ -991,169 +1076,171 @@ export default function DossierControlCenterPage() {
                       const plan = group.consolidationPlan;
                       const consolidationAction = consolidationActionForTier(plan.automationTier);
                       const justResolved = consolidationResult?.groupId === group.id;
+                      const incomingSummary = summarizeIncomingRecords(plan.sourceRecords);
+                      const targetName = plan.targetDisplayName ?? plan.targetRecord?.displayName ?? plan.targetRecord?.name ?? plan.existingPublicDossier?.name ?? "New workspace";
+                      const primaryActionLabel = plan.automationTier === "Source File merge candidate"
+                        ? "Merge Into Kept Source File"
+                        : plan.automationTier === "Create Source File candidate"
+                          ? "Create Source File from These Signals"
+                          : consolidationAction?.label;
                       return (
                       <article
                         key={group.id}
                         className={justResolved ? "border border-accent bg-accent/10 p-4 text-sm text-muted" : "border border-border/70 bg-background/20 p-4 text-sm text-muted"}
                       >
-                        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                          <div>
-                            <p className="font-semibold text-foreground">
-                              Consolidation plan — Automation tier: {plan.automationTier}
-                            </p>
-                            <p>Match reason: {plan.reason}</p>
-                            <p>Target selection: {plan.targetSelectionReason}</p>
-                            <p>Recommended next step: {plan.recommendedNextStep}</p>
+                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                          <div className="space-y-1">
+                            <p className="text-xs uppercase tracking-[0.35em] text-accent">Consolidation Task</p>
+                            <h4 className="text-lg font-bold text-foreground">{targetName}</h4>
+                            <p>System is trying to {actionNounForTier(plan.automationTier)} {countLabel(plan.sourceRecords.length, "incoming item")} into the kept Source File/workspace.</p>
+                            <p>Classification: {plan.automationTier}</p>
+                            <p>Why grouped: {group.reason}</p>
                             {plan.blockedReasons.length > 0 && (
-                              <p>Blocked because: {plan.blockedReasons.join(" ")}</p>
-                            )}
-                            {group.publicDossierMatch && (
-                              <p>
-                                Public dossier match: {" "}
-                                {group.publicDossierMatch.name ??
-                                  group.publicDossierMatch.id}
-                              </p>
+                              <p>Blocked reason: {plan.blockedReasons.join(" ")}</p>
                             )}
                           </div>
-                          <StatusPill>{plan.confidence} confidence</StatusPill>
+                          <div className="flex flex-col items-start gap-2 md:items-end">
+                            <StatusPill>{plan.confidence} confidence</StatusPill>
+                            {consolidationAction && plan.automationTier !== "Blocked" ? (
+                              <button
+                                type="button"
+                                disabled={saving}
+                                onClick={() => runConsolidationAction(consolidationAction.action, group.id)}
+                                className="border border-accent bg-accent px-4 py-2 text-xs uppercase tracking-widest text-background hover:bg-background hover:text-accent disabled:opacity-50"
+                              >
+                                {primaryActionLabel}
+                              </button>
+                            ) : (
+                              <span className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">No mutation available</span>
+                            )}
+                          </div>
                         </div>
+
                         <div className="mt-3 grid gap-3 lg:grid-cols-2">
                           <div className="border border-border/60 bg-background/30 p-3">
                             <p className="text-xs uppercase tracking-[0.3em] text-accent">
-                              Merging / Incoming Info
+                              Incoming Info / Will Transfer
                             </p>
                             {plan.sourceRecords.length === 0 ? (
                               <p className="mt-2">No incoming information selected yet.</p>
                             ) : (
-                              <div className="mt-2 space-y-3">
+                              <div className="mt-2 space-y-2">
+                                {incomingSummary.recommendationRecords.length > 0 && (
+                                  <p>{countLabel(incomingSummary.recommendationRecords.length, "BNL recommendation")} will be attached as review-only Source File material.</p>
+                                )}
+                                {incomingSummary.candidateRecords.length > 0 && (
+                                  <p>{countLabel(incomingSummary.candidateRecords.length, "candidate/Source File record")} will be evaluated for merge or cleanup.</p>
+                                )}
+                                <p>Incoming subjects: {plan.sourceRecords.map((record) => record.displayName ?? record.name).join("; ")}</p>
+                                {incomingSummary.lanes.length > 0 && (
+                                  <p>Source lanes summarized: {incomingSummary.lanes.join(", ")}</p>
+                                )}
+                                {incomingSummary.recommendationRecords.length > 0 && (
+                                  <p>Recommendation IDs: {incomingSummary.recommendationRecords.map((record) => record.recommendationId ?? record.id).join(", ")}</p>
+                                )}
+                                <p>New extractable info: {incomingSummary.newInfo.join("; ") || "No clean public fact extracted yet."}</p>
+                                <p>Already represented: {incomingSummary.duplicateInfo.join("; ") || "No duplicate facts were identified by the clean transfer pass."}</p>
+                                <p>Not useful enough to transfer as a clean fact: {plan.mergePlanSections.flatMap((section) => cleanTransferDeltas(section.irrelevantToKeptEntry)).join("; ") || "None flagged by this pass."}</p>
+                                <p>Review-only material: yes — BNL refresh will recompile this into the target Source File after attach/merge/create where supported.</p>
+                              </div>
+                            )}
+                            <details className="mt-3 border border-border/50 bg-background/40 p-3">
+                              <summary className="cursor-pointer text-xs uppercase tracking-widest text-muted">Raw recommendation details / debug details</summary>
+                              <div className="mt-2 space-y-2">
                                 {plan.sourceRecords.map((record) => (
-                                  <div key={`${group.id}-source-${record.type}-${record.id}`}>
-                                    <p className="font-semibold text-foreground">{record.displayName ?? record.name}</p>
-                                    {record.type === "recommendation" ? (
-                                      <p>Incoming recommendation subject: {record.name}</p>
-                                    ) : (
-                                      <p>Incoming record: {record.type} / {record.status}</p>
-                                    )}
-                                    {record.sourceLanes && record.sourceLanes.length > 0 && (
-                                      <p>Source lanes: {record.sourceLanes.join(", ")}</p>
-                                    )}
-                                    {(record.publicDossierName || record.publicDossierId) && (
-                                      <p>Public dossier match: {record.publicDossierName ?? record.publicDossierId}</p>
-                                    )}
-                                    <p>Why included: {group.reason}</p>
-                                    {record.incomingInfo.length > 0 && (
-                                      <p>What new info this adds: {record.incomingInfo.join("; ")}</p>
-                                    )}
-                                    {record.duplicateInfo.length > 0 && (
-                                      <p>Already represented: {record.duplicateInfo.join("; ")}</p>
-                                    )}
-                                    {record.uniqueInfo.length === 0 && record.incomingInfo.length === 0 && (
-                                      <p>Duplicate / no-new-info: no meaningful incoming fields detected.</p>
-                                    )}
-                                    {plan.mergePlanSections.flatMap((section) => section.irrelevantToKeptEntry).length > 0 && (
-                                      <p>Irrelevant/no-action: {plan.mergePlanSections.flatMap((section) => section.irrelevantToKeptEntry).join("; ")}</p>
-                                    )}
-                                    {!plan.targetRecord && (
-                                      <p>Needs Source File or Dossier Update workspace target before attach/merge.</p>
-                                    )}
+                                  <div key={`${group.id}-raw-${record.type}-${record.id}`}>
+                                    <p>{record.type}: {record.displayName ?? record.name}</p>
+                                    <p>Raw transfer notes: {[...record.incomingInfo, ...record.duplicateInfo].join("; ") || "—"}</p>
                                     {record.href && (
-                                      <Link href={record.href} className="mt-2 inline-flex border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">
-                                        {record.type === "recommendation" ? "Open incoming recommendation" : "Open source Source File"}
+                                      <Link href={record.href} className="inline-flex border border-border px-2 py-1 text-[0.65rem] uppercase tracking-widest text-muted hover:border-accent hover:text-accent">
+                                        {record.type === "recommendation" ? "Open Recommendation" : "Open Source File"}
                                       </Link>
                                     )}
                                   </div>
                                 ))}
                               </div>
-                            )}
+                            </details>
                           </div>
+
                           <div className={plan.targetRecord ? "border border-accent/50 bg-accent/5 p-3" : "border border-border/60 bg-background/30 p-3"}>
                             <p className="text-xs uppercase tracking-[0.3em] text-accent">
-                              Target / Keep
+                              Kept Source File / Target
                             </p>
                             {plan.targetRecord ? (
-                              <div className="mt-2">
-                                <p className="font-semibold text-foreground">{plan.targetDisplayName ?? plan.targetRecord.displayName ?? plan.targetRecord.name}</p>
-                                {plan.targetDisplayReason && (
-                                  <p>{plan.targetDisplayReason}</p>
-                                )}
-                                {plan.targetSourceFileLabel && plan.targetDisplayName !== plan.targetSourceFileLabel && (
-                                  <p>Source File label: {plan.targetSourceFileLabel}</p>
+                              <div className="mt-2 space-y-1">
+                                <p className="font-semibold text-foreground">Kept Source File: {targetName}</p>
+                                {plan.targetRecord.candidateId && (
+                                  <p>Target ID: {plan.targetRecord.candidateId}</p>
                                 )}
                                 <p>Target type/status: {plan.targetRecord.type} / {plan.targetRecord.status}</p>
-                                <p>Why selected: {plan.targetSelectionReason}</p>
                                 {(plan.targetRecord.publicDossierName || plan.targetRecord.publicDossierId) && (
-                                  <p>Dossier status: public dossier match {plan.targetRecord.publicDossierName ?? plan.targetRecord.publicDossierId}</p>
+                                  <p>Existing public dossier match: {plan.targetRecord.publicDossierName ?? plan.targetRecord.publicDossierId}</p>
                                 )}
                                 {plan.targetRecord.activeDraftStatus && (
-                                  <p>Draft status: {plan.targetRecord.activeDraftStatus}</p>
+                                  <p>Proposed dossier/draft status: {plan.targetRecord.activeDraftStatus}</p>
                                 )}
-                                {plan.targetRecord.uniqueInfo.length > 0 && (
-                                  <p>Target already has: {plan.targetRecord.uniqueInfo.join("; ")}</p>
-                                )}
-                                {plan.targetRecord.candidateId && (
-                                  <p>Target Source File ID: {plan.targetRecord.candidateId}</p>
-                                )}
-                                <p>What will be added to it: {plan.mergePlanSections.flatMap((section) => section.newInfoToAdd).join("; ") || "No new info detected."}</p>
-                                <p>What will not change: public dossier text, public publishing state, and internal alias visibility.</p>
-                                <p>Action available: {plan.automationTier}</p>
+                                <p>Why this target: {plan.targetSelectionReason}</p>
+                                <p>Already has: {plan.targetRecord.uniqueInfo.join("; ") || "No populated target fields detected."}</p>
+                                <p>Will add: {incomingSummary.recommendationRecords.length > 0 ? `${countLabel(incomingSummary.recommendationRecords.length, "incoming recommendation")} as review-only source material` : incomingSummary.newInfo.join("; ") || "No clean transfer delta detected."}</p>
+                                <p>BNL Refresh After Consolidation: {plan.automationTier === "Empty duplicate cleanup candidate" ? "not needed for empty cleanup" : "queue or mark Source File refresh for this kept target"}</p>
                                 {plan.targetRecord.href && (
                                   <Link href={plan.targetRecord.href} className="mt-2 inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">
-                                    Open target Source File
+                                    Open kept Source File
                                   </Link>
                                 )}
                               </div>
                             ) : (
-                              <div className="mt-2">
-                                <p className="font-semibold text-foreground">Suggested workspace to create</p>
+                              <div className="mt-2 space-y-1">
+                                <p className="font-semibold text-foreground">Kept Source File / Target: workspace will be created</p>
                                 {plan.existingPublicDossier && (
-                                  <p>Existing public dossier: {plan.existingPublicDossier.name ?? plan.existingPublicDossier.id}</p>
+                                  <p>Existing public dossier match: {plan.existingPublicDossier.name ?? plan.existingPublicDossier.id}</p>
                                 )}
                                 {plan.suggestedWorkspace && (
-                                  <p>Recommended workspace: {plan.suggestedWorkspace}</p>
+                                  <p>Will create: {plan.suggestedWorkspace}</p>
                                 )}
                                 {plan.possibleTargetRecords.length > 0 && (
-                                  <p>Possible targets: {plan.possibleTargetRecords.map((record) => record.displayName ?? record.name).join("; ")}</p>
+                                  <p>Possible targets needing admin choice: {plan.possibleTargetRecords.map((record) => record.displayName ?? record.name).join("; ")}</p>
                                 )}
-                                <p>No Source File target resolved</p>
-                                <p>{plan.recommendedNextStep}</p>
+                                <p>Why this target: {plan.targetSelectionReason}</p>
+                                <p>Will add: {incomingSummary.recommendationRecords.length > 0 ? `${countLabel(incomingSummary.recommendationRecords.length, "incoming recommendation")} as review-only source material` : "incoming source material"}</p>
+                                <p>BNL Refresh After Consolidation: queue or mark refresh for the created workspace if supported.</p>
                               </div>
                             )}
                           </div>
                         </div>
+
                         <div className="mt-4 space-y-2">
-                          <p className="text-xs uppercase tracking-[0.3em] text-accent">Field-level plan</p>
-                          <p className="sr-only">New info to add Already represented / duplicate info Irrelevant to kept entry Needs review Blocked reason No action needed</p>
-                          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                            {plan.mergePlanSections.map((section) => (
+                          <p className="text-xs uppercase tracking-[0.3em] text-accent">Transfer Plan</p>
+                          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                            {transferPlanRows(plan).map((section) => (
                               <div key={`${group.id}-${section.title}`} className="border border-border/60 bg-background/30 p-3">
                                 <p className="font-semibold text-foreground">{section.title}</p>
-                                <p>New info to add: {section.newInfoToAdd.join("; ") || "—"}</p>
-                                <p>Already represented / duplicate info: {section.alreadyRepresented.join("; ") || "—"}</p>
-                                <p>Irrelevant to kept entry: {section.irrelevantToKeptEntry.join("; ") || "—"}</p>
-                                <p>Needs review: {section.needsReview.join("; ") || "—"}</p>
-                                <p>Blocked reason: {section.blockedReason.join("; ") || "—"}</p>
-                                <p>No action needed: {section.noActionNeeded.join("; ") || "—"}</p>
+                                <ul className="mt-2 list-disc space-y-1 pl-4">
+                                  {section.items.map((item) => (
+                                    <li key={`${group.id}-${section.title}-${item}`}>{item}</li>
+                                  ))}
+                                </ul>
                               </div>
                             ))}
                           </div>
                           <div className="flex flex-wrap gap-2">
-                            {consolidationAction ? (
+                            {consolidationAction && plan.automationTier !== "Blocked" ? (
                               <button
                                 type="button"
                                 disabled={saving}
                                 onClick={() => runConsolidationAction(consolidationAction.action, group.id)}
                                 className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
                               >
-                                {consolidationAction.label}
+                                {primaryActionLabel}
                               </button>
                             ) : (
                               <button disabled className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted opacity-60">
-                                No Safe Action
+                                Blocked — No Safe Mutation
                               </button>
                             )}
                             {plan.automationTier === "Select Target Manually" && (
                               <select disabled className="bg-background border border-border px-3 py-1.5 text-xs text-muted">
-                                <option>Select target manually (read-only)</option>
+                                <option>Select Target Manually (read-only)</option>
                                 {plan.possibleTargetRecords.map((record) => (
                                   <option key={record.id}>{record.displayName ?? record.name}</option>
                                 ))}

@@ -2030,6 +2030,8 @@ test("Subject Consolidation Queue renders action summary, review cards, blocked 
 
   for (const label of [
     "Subject Consolidation Queue",
+    "Subject Consolidation: clear",
+    "Show consolidation details",
     "Run Subject Consolidation",
     "Auto-consolidation summary",
     "Run Subject Consolidation will:",
@@ -2101,6 +2103,7 @@ test("Subject Consolidation Queue renders action summary, review cards, blocked 
 
   assert.match(page, /createDossierPopulationAudit/);
   assert.match(page, /postWorkflow\(\{ action: "runSubjectConsolidation" \}\)/);
+  assert.match(page, /isSubjectConsolidationClear && !consolidationResult/);
   assert.match(page, /setConfirmation\(\{ groupId: group\.id, kind: "consolidate"/);
   assert.match(page, /onClick=\{\(\) => consolidateSubjectGroup\(\)\}/);
   assert.match(page, /Incoming cluster collapsed after completion/);
@@ -2635,6 +2638,13 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
     assert.equal(publicRec.status, "attached_to_existing_dossier_update");
     assert.equal(publicRec.targetCandidateId, updateWorkspace.id);
   }
+  const activeReviewUpdateIds = payload.recommendations
+    .filter((item) => ["new", "reviewing"].includes(item.status))
+    .filter((item) => item.type === "modify_existing_dossier" || item.targetDossierId || item.targetCandidateId)
+    .map((item) => item.id);
+  assert.ok(!activeReviewUpdateIds.includes("rec-public-a"));
+  assert.ok(!activeReviewUpdateIds.includes("rec-public-b"));
+  assert.ok(!activeReviewUpdateIds.includes("rec-public-variant"));
   const checkpointCandidate = payload.candidates.find((item) => item.id === "checkpoint-artifact");
   const checkpointRecommendation = payload.recommendations.find((item) => item.id === "rec-checkpoint");
   assert.equal(checkpointCandidate.status, "archived");

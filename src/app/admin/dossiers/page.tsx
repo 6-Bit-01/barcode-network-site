@@ -401,6 +401,7 @@ export default function DossierControlCenterPage() {
   const terminalRecommendations = recommendations.filter((recommendation) =>
     [
       "attached_to_source_file",
+      "attached_to_existing_dossier_update",
       "converted_to_source_file",
       "identity_link_created",
       "ignored",
@@ -487,6 +488,19 @@ export default function DossierControlCenterPage() {
       }),
     [candidates, recommendations, publicDossiers, drafts],
   );
+  const consolidationAttachGroups = populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Attach to Existing Source File candidate");
+  const consolidationCleanGroups = populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Empty duplicate cleanup candidate");
+  const consolidationDossierUpdateGroups = populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Create Dossier Update workspace candidate");
+  const consolidationSourceFileGroups = populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Create Source File candidate");
+  const consolidationReviewGroups = populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.requiresReview && group.consolidationPlan.automationTier !== "Blocked");
+  const consolidationBlockedGroups = populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Blocked");
+  const isSubjectConsolidationClear =
+    consolidationAttachGroups.length === 0 &&
+    consolidationCleanGroups.length === 0 &&
+    consolidationDossierUpdateGroups.length === 0 &&
+    consolidationSourceFileGroups.length === 0 &&
+    consolidationReviewGroups.length === 0 &&
+    consolidationBlockedGroups.length === 0;
 
   async function postWorkflow(body: Record<string, unknown>) {
     setSaving(true);
@@ -892,6 +906,13 @@ export default function DossierControlCenterPage() {
           </div>
         </DashboardCard>
 
+        {isSubjectConsolidationClear && !consolidationResult ? (
+          <details className="border border-accent/40 bg-surface/70 p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-foreground">Subject Consolidation: clear</summary>
+            <p className="mt-2 text-sm text-muted">No pending exact matches, possible matches, or blocked subject clusters are waiting. Show consolidation details if you need to inspect the empty queue.</p>
+            <button type="button" disabled={saving} onClick={() => postWorkflow({ action: "runSubjectConsolidation" })} className="mt-3 inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Run Subject Consolidation</button>
+          </details>
+        ) : (
         <section className="border border-accent/40 bg-surface/70 p-5 space-y-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
@@ -908,12 +929,12 @@ export default function DossierControlCenterPage() {
             <h3 className="font-semibold text-foreground">Auto-consolidation summary</h3>
             <p className="mt-2">Run Subject Consolidation will:</p>
             <ul className="mt-2 list-disc space-y-1 pl-5">
-              <li>attach {populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Attach to Existing Source File candidate").length} recommendations to existing Source Files</li>
-              <li>clean {populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Empty duplicate cleanup candidate").length} empty duplicates</li>
-              <li>create {populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Create Dossier Update workspace candidate").length} Dossier Update workspace</li>
-              <li>create {populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Create Source File candidate").length} new Source File from matched signals</li>
-              <li>leave {populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.requiresReview || group.consolidationPlan.automationTier === "Select Target Manually").length} possible matches for review</li>
-              <li>block {populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Blocked").length} conflicted items</li>
+              <li>attach {consolidationAttachGroups.length} recommendations to existing Source Files</li>
+              <li>clean {consolidationCleanGroups.length} empty duplicates</li>
+              <li>create {consolidationDossierUpdateGroups.length} Dossier Update workspace</li>
+              <li>create {consolidationSourceFileGroups.length} new Source File from matched signals</li>
+              <li>leave {consolidationReviewGroups.length} possible matches for review</li>
+              <li>block {consolidationBlockedGroups.length} conflicted items</li>
               <li>publish 0 public pages</li>
               <li>change 0 public dossier text</li>
               <li>keep internal aliases internal</li>
@@ -992,11 +1013,11 @@ export default function DossierControlCenterPage() {
               <p className="text-xs uppercase tracking-[0.35em] text-muted">Needs Review</p>
               <h3 className="text-lg font-bold text-foreground">Similar or ambiguous subjects requiring admin judgment</h3>
             </div>
-            {populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.requiresReview && group.consolidationPlan.automationTier !== "Blocked").length === 0 ? (
+            {consolidationReviewGroups.length === 0 ? (
               <p className="border border-border/70 bg-background/30 p-4 text-sm text-muted">No similar or ambiguous same-subject items currently need admin review.</p>
             ) : (
               <div className="space-y-3">
-                {populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.requiresReview && group.consolidationPlan.automationTier !== "Blocked").slice(0, 10).map((group) => {
+                {consolidationReviewGroups.slice(0, 10).map((group) => {
                   const plan = group.consolidationPlan;
                   const keptName = plan.targetDisplayName ?? plan.targetRecord?.displayName ?? plan.targetRecord?.name ?? "Select Different Target";
                   const incomingCount = plan.sourceRecords.length;
@@ -1211,11 +1232,11 @@ export default function DossierControlCenterPage() {
               <p className="text-xs uppercase tracking-[0.35em] text-muted">Blocked</p>
               <h3 className="text-lg font-bold text-foreground">Conflicts that require a data fix before mutation</h3>
             </div>
-            {populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Blocked").length === 0 ? (
+            {consolidationBlockedGroups.length === 0 ? (
               <p className="border border-border/70 bg-background/30 p-4 text-sm text-muted">No blocked conflicts were detected.</p>
             ) : (
               <div className="space-y-3">
-                {populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Blocked").map((group) => (
+                {consolidationBlockedGroups.map((group) => (
                   <article key={`blocked-${group.id}`} className="border border-red-500/40 bg-background/20 p-4 text-sm text-muted">
                     <p className="font-semibold text-foreground">{group.reason}</p>
                     <p>Blocked reason: {group.consolidationPlan.blockedReasons.join(" ")}</p>
@@ -1234,6 +1255,7 @@ export default function DossierControlCenterPage() {
             )}
           </section>
         </section>
+        )}
 
         <DashboardCard
           eyebrow="Candidates"

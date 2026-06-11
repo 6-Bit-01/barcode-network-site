@@ -5,6 +5,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   createDossierPopulationAudit,
   getDossierSourceFileMetrics,
+  isDiagnosticTestArtifactCandidate,
+  isDiagnosticTestArtifactRecommendation,
   matchDossierRecommendationSubject,
   type DossierCandidate,
   type DossierDraft,
@@ -42,6 +44,8 @@ type SubjectConsolidationResult = {
   emptyDuplicatesCleaned: number;
   duplicateRecommendationsCleaned: number;
   dossierUpdateWorkspacesCreated: number;
+  bundledPublicDossierUpdateSignals: number;
+  diagnosticArtifactsArchived: number;
   sourceFilesCreated: number;
   sourceFileDuplicatesMerged: number;
   bnlRefreshes: Array<{ candidateId: string; subjectName: string; status: string; requestId?: string; reason?: string }>;
@@ -379,8 +383,10 @@ export default function DossierControlCenterPage() {
     () => payload?.publicDossiers ?? [],
     [payload?.publicDossiers],
   );
+  const diagnosticRecommendations = recommendations.filter(isDiagnosticTestArtifactRecommendation);
   const activeRecommendations = recommendations.filter((recommendation) =>
-    ["new", "reviewing"].includes(recommendation.status),
+    ["new", "reviewing"].includes(recommendation.status) &&
+    !isDiagnosticTestArtifactRecommendation(recommendation),
   );
   const activeDossierUpdateRecommendations = activeRecommendations.filter(
     (recommendation) =>
@@ -402,13 +408,18 @@ export default function DossierControlCenterPage() {
       "archived",
     ].includes(recommendation.status),
   );
-  const candidateIntakeItems = candidates.filter(
+  const diagnosticCandidates = candidates.filter(isDiagnosticTestArtifactCandidate);
+  const normalCandidates = candidates.filter(
+    (candidate) => !isDiagnosticTestArtifactCandidate(candidate),
+  );
+  const candidateIntakeItems = normalCandidates.filter(
     (candidate) => candidate.status === "candidate_intake",
   );
   const activeCandidates = candidates.filter((candidate) =>
-    activeCandidateStatuses.has(candidate.status),
+    activeCandidateStatuses.has(candidate.status) &&
+    !isDiagnosticTestArtifactCandidate(candidate),
   );
-  const existingDossierUpdates = candidates.filter(
+  const existingDossierUpdates = normalCandidates.filter(
     (candidate) => candidate.status === "existing_dossier_update",
   );
   const archivedCandidates = candidates.filter(
@@ -914,7 +925,9 @@ export default function DossierControlCenterPage() {
                   <li>Consolidated {consolidationResult.attachedRecommendations + consolidationResult.sourceFileDuplicatesMerged} incoming items into kept Source Files.</li>
                   <li>Created {consolidationResult.sourceFilesCreated} Source Files.</li>
                   <li>Created {consolidationResult.dossierUpdateWorkspacesCreated} Dossier Update workspaces.</li>
+                  <li>Bundled {consolidationResult.bundledPublicDossierUpdateSignals} public dossier update signals.</li>
                   <li>Cleaned {consolidationResult.emptyDuplicatesCleaned + consolidationResult.duplicateRecommendationsCleaned} empty duplicates.</li>
+                  <li>{consolidationResult.diagnosticArtifactsArchived} diagnostic artifacts archived/hidden</li>
                   <li>{consolidationResult.sourceFileDuplicatesMerged} records merged</li>
                   <li>{consolidationResult.bnlRefreshes.length} BNL refresh triggered / queued / needed</li>
                   <li>{consolidationResult.skippedItems.length} skipped items with reasons</li>
@@ -949,7 +962,7 @@ export default function DossierControlCenterPage() {
                     <p className="text-xs uppercase tracking-[0.3em] text-accent">Affected kept Source Files / workspaces</p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {consolidationResult.affectedTargets.map((target) => (
-                        <Link key={target.candidateId} href={target.href} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">{target.name}</Link>
+                        <Link key={target.candidateId} href={target.href} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">View {target.name} Dossier Update Workspace</Link>
                       ))}
                     </div>
                   </div>
@@ -1559,6 +1572,27 @@ export default function DossierControlCenterPage() {
             </div>
           )}
         </DashboardCard>
+
+        {(diagnosticCandidates.length > 0 || diagnosticRecommendations.length > 0) && (
+          <DashboardCard
+            eyebrow="Diagnostics/Test Artifacts"
+            title="Diagnostics/Test Artifacts"
+            aside={<StatusPill>{diagnosticCandidates.length + diagnosticRecommendations.length} hidden</StatusPill>}
+          >
+            <details className="border border-border/70 bg-background/30 p-4">
+              <summary className="cursor-pointer text-sm font-semibold text-foreground">Diagnostics/Test Artifacts — collapsed by default</summary>
+              <p className="mt-3 text-sm text-muted">These diagnostic_test_artifact records are hidden from normal Source File and Subject Consolidation workflows. They can be archived safely from their detail pages when needed.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {diagnosticCandidates.map((candidate) => (
+                  <Link key={`diagnostic-candidate-${candidate.id}`} href={`/admin/dossiers/candidates/${candidate.id}`} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Archive Diagnostic Artifact: {candidate.name}</Link>
+                ))}
+                {diagnosticRecommendations.map((recommendation) => (
+                  <Link key={`diagnostic-recommendation-${recommendation.id}`} href={`/admin/dossiers/recommendations/${recommendation.id}`} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Archive Diagnostic Artifact: {recommendation.subjectName}</Link>
+                ))}
+              </div>
+            </details>
+          </DashboardCard>
+        )}
 
         <DashboardCard
           eyebrow="Source Files"

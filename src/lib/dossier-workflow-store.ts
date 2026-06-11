@@ -44,6 +44,8 @@ import {
   type DossierWorkflowLink,
   createDossierPopulationAudit,
   isActiveSourceFileCandidate,
+  isDiagnosticTestArtifactCandidate,
+  isDiagnosticTestArtifactRecommendation,
   isSourceFileEnrichmentAttachableCandidate,
   matchDossierRecommendationSubject,
   type MergeDossierCandidatesInput,
@@ -5726,6 +5728,8 @@ export type SubjectConsolidationResult = {
   emptyDuplicatesCleaned: number;
   duplicateRecommendationsCleaned: number;
   dossierUpdateWorkspacesCreated: number;
+  bundledPublicDossierUpdateSignals: number;
+  diagnosticArtifactsArchived: number;
   sourceFilesCreated: number;
   sourceFileDuplicatesMerged: number;
   bnlRefreshes: SubjectConsolidationRefreshOutcome[];
@@ -5815,6 +5819,8 @@ export async function runSubjectConsolidation(input: { groupId?: string } = {}):
     emptyDuplicatesCleaned: 0,
     duplicateRecommendationsCleaned: 0,
     dossierUpdateWorkspacesCreated: 0,
+    bundledPublicDossierUpdateSignals: 0,
+    diagnosticArtifactsArchived: 0,
     sourceFilesCreated: 0,
     sourceFileDuplicatesMerged: 0,
     bnlRefreshes: [],
@@ -5845,6 +5851,156 @@ export async function runSubjectConsolidation(input: { groupId?: string } = {}):
 
     function rememberTarget(candidate: DossierCandidate) {
       affectedTargetIds.add(candidate.id);
+    }
+
+    function bundleExactPublicDossierUpdateSignals() {
+      const byPublicDossier = new Map<string, DossierRecommendation[]>();
+      for (const recommendation of state.recommendations) {
+        if (recommendation.status !== "new" && recommendation.status !== "reviewing") continue;
+        if (isDiagnosticTestArtifactRecommendation(recommendation)) continue;
+        if (!recommendation.targetDossierId) continue;
+        if (recommendation.type !== "modify_existing_dossier") continue;
+        const entry = databasePage.entries.find((item) => item.id === recommendation.targetDossierId);
+        if (!entry) continue;
+        const current = byPublicDossier.get(entry.id) ?? [];
+        current.push(recommendation);
+        byPublicDossier.set(entry.id, current);
+      }
+
+      for (const [publicDossierId, recommendations] of byPublicDossier) {
+        if (recommendations.length === 0) continue;
+        const entry = databasePage.entries.find((item) => item.id === publicDossierId);
+        if (!entry) continue;
+        let workspace = state.candidates.find(
+          (candidate) =>
+            candidate.status === "existing_dossier_update" &&
+            candidate.existingDossierMatch?.id === entry.id &&
+            !isDiagnosticTestArtifactCandidate(candidate),
+        );
+        if (!workspace) {
+          const candidateId = createCandidateId();
+          workspace = {
+            id: candidateId,
+            name: entry.name,
+            candidateType: candidateTypeFromPublicDossierEntry(entry),
+            source: "website_read_model",
+            tier: "review_candidate",
+            score: 58,
+            whyNow: `Bundled ${recommendations.length} ${entry.name} update signals into ${entry.name} Dossier Update workspace.`,
+            reason: "Internal Dossier Update workspace created for review-only consolidation.",
+            firstSeenAt: now,
+            lastSeenAt: now,
+            evidenceSummary: `Existing public dossier ${entry.id} / ${entry.name} matched exact public dossier update signals.`,
+            evidenceItems: [],
+            evidenceCount: 0,
+            knownFacts: [`Existing public dossier target: ${entry.id} / ${entry.name}.`],
+            confidence: "high",
+            duplicateRisk: "high",
+            existingDossierMatch: { id: entry.id, name: entry.name, confidence: "high" },
+            recommendedCategory: entry.category,
+            recommendedKind: entry.kind,
+            recommendedEcosystemLane: entry.ecosystemLane,
+            recommendedIdentityAuthority: entry.identityAuthority,
+            recommendedStatus: entry.status,
+            recommendedClearance: entry.clearance,
+            recommendedOrigin: entry.origin,
+            recommendedTags: entry.tags,
+            proposedTags: [],
+            missingInfo: ["Review update notes before applying anything to public content."],
+            doNotSay: ["Do not publish update material automatically."],
+            publicSafetyNotes: ["Internal update lane only; no public dossier text changed."],
+            sourceFileNotes: [],
+            identityLinks: [],
+            sourceLanes: [],
+            status: "existing_dossier_update",
+            sourceRecommendationIds: [],
+            connectedRecommendationIds: [],
+            createdAt: now,
+            updatedAt: now,
+          };
+          state = { ...state, candidates: [workspace, ...state.candidates], updatedAt: now };
+          result.dossierUpdateWorkspacesCreated += 1;
+        }
+
+        const notes = recommendations.map((recommendation) =>
+          routingNote({
+            candidateId: workspace.id,
+            now,
+            text: recommendation.ingestSource?.startsWith("bnl")
+              ? bnlAutoCandidateNoteText(recommendation)
+              : recommendationSourceNoteText(recommendation),
+            source: "bnl_recommendation",
+            createdBy: recommendation.createdBy,
+            ingestKey: recommendation.ingestKey,
+            ingestedAt: recommendation.ingestedAt,
+            ingestSource: recommendation.ingestSource,
+          }),
+        );
+        const updatedWorkspace: DossierCandidate = {
+          ...workspace,
+          whyNow: `Bundled ${recommendations.length} ${entry.name} update signals into ${entry.name} Dossier Update workspace.`,
+          sourceFileNotes: [...(workspace.sourceFileNotes ?? []), ...notes],
+          sourceRecommendationIds: uniqueStrings(workspace.sourceRecommendationIds, recommendations.map((item) => item.id)),
+          connectedRecommendationIds: uniqueStrings(workspace.connectedRecommendationIds, recommendations.map((item) => item.id)),
+          sourceLanes: uniqueStrings(workspace.sourceLanes, ...recommendations.map((item) => item.sourceLanes)) as DossierRecommendationSourceLane[],
+          routingReason: `Bundled ${recommendations.length} exact public dossier update signal${recommendations.length === 1 ? "" : "s"}.`,
+          updatedAt: now,
+        };
+        state = {
+          ...state,
+          candidates: state.candidates.map((candidate) => candidate.id === updatedWorkspace.id ? updatedWorkspace : candidate),
+          recommendations: state.recommendations.map((item) =>
+            recommendations.some((recommendation) => recommendation.id === item.id)
+              ? { ...item, status: "attached_to_existing_dossier_update", targetCandidateId: updatedWorkspace.id, connectedCandidateId: updatedWorkspace.id, connectedSourceFileCandidateId: updatedWorkspace.id, routingReason: `Bundled into ${entry.name} Dossier Update workspace by Subject Consolidation.`, updatedAt: now }
+              : item,
+          ),
+          updatedAt: now,
+        };
+        recommendations.forEach((item) => consumedRecommendations.add(item.id));
+        result.bundledPublicDossierUpdateSignals += recommendations.length;
+        result.skippedItems.push({ subject: entry.name, reason: `Bundled ${recommendations.length} ${entry.name} update signals into ${entry.name} Dossier Update workspace.` });
+        const refresh = refreshOutcomeForState({ state, candidate: updatedWorkspace, now, reason: "Subject Consolidation bundled exact public dossier update signals." });
+        state = refresh.state;
+        result.bnlRefreshes.push(refresh.outcome);
+        rememberTarget(updatedWorkspace);
+      }
+    }
+
+    function archiveDiagnosticArtifacts() {
+      const diagnosticCandidateIds = new Set(
+        state.candidates
+          .filter((candidate) => candidate.status !== "archived" && candidate.status !== "denied" && candidate.status !== "merged" && isDiagnosticTestArtifactCandidate(candidate))
+          .map((candidate) => candidate.id),
+      );
+      const diagnosticRecommendationIds = new Set(
+        state.recommendations
+          .filter((recommendation) =>
+            (recommendation.status === "new" || recommendation.status === "reviewing") &&
+            isDiagnosticTestArtifactRecommendation(recommendation),
+          )
+          .map((recommendation) => recommendation.id),
+      );
+      if (diagnosticCandidateIds.size === 0 && diagnosticRecommendationIds.size === 0) return;
+      state = {
+        ...state,
+        candidates: state.candidates.map((candidate) =>
+          diagnosticCandidateIds.has(candidate.id)
+            ? { ...candidate, status: "archived", routingReason: "Subject Consolidation archived diagnostic_test_artifact smoke-test record.", mergeNote: "diagnostic_test_artifact", updatedAt: now }
+            : candidate,
+        ),
+        recommendations: state.recommendations.map((recommendation) =>
+          diagnosticRecommendationIds.has(recommendation.id)
+            ? { ...recommendation, status: "archived", routingReason: "Subject Consolidation archived diagnostic_test_artifact smoke-test signal.", updatedAt: now }
+            : recommendation,
+        ),
+        updatedAt: now,
+      };
+      result.diagnosticArtifactsArchived += diagnosticCandidateIds.size + diagnosticRecommendationIds.size;
+    }
+
+    if (!input.groupId) {
+      bundleExactPublicDossierUpdateSignals();
+      archiveDiagnosticArtifacts();
     }
 
     function attachRecommendationRecord(
@@ -5945,7 +6101,11 @@ export async function runSubjectConsolidation(input: { groupId?: string } = {}):
       const sourceRecommendations = plan.sourceRecords
         .filter((record) => record.type === "recommendation" && record.recommendationId)
         .map((record) => state.recommendations.find((item) => item.id === record.recommendationId))
-        .filter((item): item is DossierRecommendation => Boolean(item));
+        .filter((item): item is DossierRecommendation => Boolean(item))
+        .filter((item) =>
+          (item.status === "new" || item.status === "reviewing") &&
+          !consumedRecommendations.has(item.id),
+        );
 
       if (plan.automationTier === "Attach to Existing Source File candidate" && target) {
         for (const recommendation of sourceRecommendations) {

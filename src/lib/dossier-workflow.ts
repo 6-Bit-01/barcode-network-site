@@ -994,6 +994,41 @@ function uniqueAuditRecords(
 }
 
 
+
+
+export function isDiagnosticTestArtifactRecommendation(
+  recommendation: DossierRecommendation,
+): boolean {
+  const joined = [
+    recommendation.subjectName,
+    recommendation.subjectKey,
+    recommendation.reason,
+    recommendation.evidenceSummary,
+    recommendation.ingestKey,
+    recommendation.ingestSource,
+    recommendation.createdBy,
+    ...(recommendation.sourceTypes ?? []),
+    ...(recommendation.knownContext ?? []),
+    ...(recommendation.usefulEvidence ?? []),
+  ].filter(Boolean).join(" ");
+  return /checkpoint|smoke test|manual endpoint smoke test|diagnostic|\bprobe\b|\btest\b/i.test(joined);
+}
+
+export function isDiagnosticTestArtifactCandidate(candidate: DossierCandidate): boolean {
+  const joined = [
+    candidate.name,
+    candidate.reason,
+    candidate.whyNow,
+    candidate.evidenceSummary,
+    candidate.source,
+    candidate.routingReason,
+    ...(candidate.knownFacts ?? []),
+    ...(candidate.evidenceItems ?? []),
+    ...(candidate.sourceFileNotes ?? []).flatMap((note) => [note.text, note.ingestKey, note.ingestSource, note.createdBy]),
+  ].filter(Boolean).join(" ");
+  return /checkpoint|smoke test|manual endpoint smoke test|diagnostic|\bprobe\b|\btest\b/i.test(joined);
+}
+
 function duplicateGroupPriority(
   matchKind: DossierPopulationAuditDuplicateGroup["matchKind"],
 ): number {
@@ -1292,7 +1327,9 @@ function createConsolidationPlan(input: {
     automationTier = "Empty duplicate cleanup candidate";
   } else if (
     hasRealDuplicateSources &&
-    (input.matchKind === "normalized_name" || input.matchKind === "confirmed_alias")
+    (input.matchKind === "normalized_name" ||
+      input.matchKind === "confirmed_alias" ||
+      input.matchKind === "public_dossier")
   ) {
     automationTier = "Source File merge candidate";
   }
@@ -1427,9 +1464,15 @@ export function createDossierPopulationAudit(input: {
   drafts?: DossierDraft[];
 }): DossierPopulationAudit {
   const recommendations = input.recommendations ?? [];
-  const bnlRecommendations = recommendations.filter(isBnlRecommendation);
+  const bnlRecommendations = recommendations.filter((recommendation) =>
+    isBnlRecommendation(recommendation) &&
+    !isDiagnosticTestArtifactRecommendation(recommendation),
+  );
+  const workflowCandidates = input.candidates.filter(
+    (candidate) => !isDiagnosticTestArtifactCandidate(candidate),
+  );
   const candidatesById = new Map(
-    input.candidates.map((candidate) => [candidate.id, candidate]),
+    workflowCandidates.map((candidate) => [candidate.id, candidate]),
   );
   const publicDossiersById = new Map(
     (input.publicDossiers ?? []).map((dossier) => [dossier.id, dossier]),
@@ -1459,7 +1502,7 @@ export function createDossierPopulationAudit(input: {
       bnlRecommendationIdsByCandidate.set(candidateId, current);
     }
   }
-  for (const candidate of input.candidates) {
+  for (const candidate of workflowCandidates) {
     for (const recommendationId of [
       ...(candidate.sourceRecommendationIds ?? []),
       ...(candidate.connectedRecommendationIds ?? []),
@@ -1478,7 +1521,7 @@ export function createDossierPopulationAudit(input: {
     }
   }
 
-  const records = input.candidates.map((candidate) => {
+  const records = workflowCandidates.map((candidate) => {
     const confirmedAliasCount = (candidate.identityLinks ?? []).filter(
       (link) => link.status === "confirmed",
     ).length;
@@ -1573,6 +1616,7 @@ export function createDossierPopulationAudit(input: {
   const activeSourceFiles = input.candidates.filter(
     (candidate) =>
       !isClosedPopulationCandidate(candidate) &&
+      !isDiagnosticTestArtifactCandidate(candidate) &&
       isActiveSourceFileCandidate(candidate),
   );
   const activeSourceFilesByNormalizedName = new Map(
@@ -1692,7 +1736,7 @@ export function createDossierPopulationAudit(input: {
     duplicateBuckets.set(bucketKey, bucket);
   }
 
-  for (const candidate of input.candidates) {
+  for (const candidate of workflowCandidates) {
     const record = recordByCandidateId.get(candidate.id);
     if (!record || record.type === "archived_or_closed") continue;
     addBucketRecord(
@@ -1723,7 +1767,7 @@ export function createDossierPopulationAudit(input: {
         "Confirmed alias match.",
         record,
       );
-      for (const possibleAliasTarget of input.candidates) {
+      for (const possibleAliasTarget of workflowCandidates) {
         if (possibleAliasTarget.id === candidate.id) continue;
         if (isClosedPopulationCandidate(possibleAliasTarget)) continue;
         if (
@@ -1746,12 +1790,12 @@ export function createDossierPopulationAudit(input: {
     }
   }
 
-  for (let leftIndex = 0; leftIndex < input.candidates.length; leftIndex += 1) {
-    const left = input.candidates[leftIndex];
+  for (let leftIndex = 0; leftIndex < workflowCandidates.length; leftIndex += 1) {
+    const left = workflowCandidates[leftIndex];
     if (isClosedPopulationCandidate(left)) continue;
     const leftRecord = recordByCandidateId.get(left.id);
     if (!leftRecord) continue;
-    for (const right of input.candidates.slice(leftIndex + 1)) {
+    for (const right of workflowCandidates.slice(leftIndex + 1)) {
       if (isClosedPopulationCandidate(right)) continue;
       if (!hasSimilarDossierSubjectName(left.name, right.name)) continue;
       const leftKey = normalizeDossierSubjectName(left.name);
@@ -1931,17 +1975,17 @@ export function createDossierPopulationAudit(input: {
   return {
     counts: {
       activeSourceFiles: activeSourceFiles.length,
-      candidateIntake: input.candidates.filter(
+      candidateIntake: workflowCandidates.filter(
         (candidate) => candidate.status === "candidate_intake",
       ).length,
-      existingDossierUpdates: input.candidates.filter(
+      existingDossierUpdates: workflowCandidates.filter(
         (candidate) => candidate.status === "existing_dossier_update",
       ).length,
       publicDossiers: input.publicDossiers?.length ?? 0,
-      archivedClosedRecords: input.candidates.filter(
+      archivedClosedRecords: workflowCandidates.filter(
         isClosedPopulationCandidate,
       ).length,
-      proposedIdentityLinks: input.candidates.reduce(
+      proposedIdentityLinks: workflowCandidates.reduce(
         (total, candidate) =>
           total +
           (candidate.identityLinks ?? []).filter(
@@ -1949,7 +1993,7 @@ export function createDossierPopulationAudit(input: {
           ).length,
         0,
       ),
-      confirmedIdentityLinks: input.candidates.reduce(
+      confirmedIdentityLinks: workflowCandidates.reduce(
         (total, candidate) =>
           total +
           (candidate.identityLinks ?? []).filter(

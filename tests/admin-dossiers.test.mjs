@@ -2036,6 +2036,8 @@ test("Subject Consolidation Queue renders action summary, review cards, blocked 
     "Needs Review",
     "Blocked",
     "Subject Consolidation Complete",
+    "Bundled {consolidationResult.bundledPublicDossierUpdateSignals} public dossier update signals.",
+    "diagnostic artifacts archived/hidden",
     "BNL refresh triggered / queued / needed",
     "skipped items with reasons",
     "blocked items with reasons",
@@ -2078,6 +2080,9 @@ test("Subject Consolidation Queue renders action summary, review cards, blocked 
     "View New Source File",
     "View Dossier Update Workspace",
     "Raw / Source Details",
+    "Diagnostics/Test Artifacts",
+    "Diagnostics/Test Artifacts — collapsed by default",
+    "Archive Diagnostic Artifact:",
     "Confirm Consolidation",
     "Cancel",
     "View Kept Source File",
@@ -2101,6 +2106,8 @@ test("Subject Consolidation Queue renders action summary, review cards, blocked 
   assert.match(page, /Incoming cluster collapsed after completion/);
   assert.match(source("src/lib/dossier-workflow.ts"), /export type SubjectConsolidationBrief/);
   assert.match(source("src/lib/dossier-workflow.ts"), /generatedBy: "BNL"/);
+  assert.match(source("src/lib/dossier-workflow.ts"), /isDiagnosticTestArtifactCandidate/);
+  assert.match(source("src/lib/dossier-workflow-store.ts"), /bundleExactPublicDossierUpdateSignals/);
   assert.doesNotMatch(pageCopy, /Source File Population Audit|Population Audit|Open Recommendation|Open Source File|Open Target|Open Incoming|Merge Into Kept Source File|Attach to Kept Source File|Create Source File From These Signals|Create Dossier Update Workspace without public dossier\/context/);
   const queueCopy = pageCopy.slice(pageCopy.indexOf("Subject Consolidation Queue"), pageCopy.indexOf("Candidates", pageCopy.indexOf("Subject Consolidation Queue")));
   assert.doesNotMatch(queueCopy, /recommendation\.reason|recommendation\.evidenceSummary|raw recommendation\.reason|raw recommendation\.summary/);
@@ -2497,7 +2504,7 @@ test("subject consolidation plans classify target/source records for automation 
 test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, preserves metadata, and avoids public side effects", async () => {
   await resetWorkflowStore();
   const now = "2026-06-11T00:00:00.000Z";
-  const publicEntry = databasePage.entries[1] ?? databasePage.entries[0];
+  const publicEntry = databasePage.entries.find((entry) => entry.name === "6 Bit") ?? databasePage.entries[1] ?? databasePage.entries[0];
   const blockedEntry = databasePage.entries[0];
   const candidate = (overrides) => ({
     id: overrides.id,
@@ -2562,6 +2569,7 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
       candidate({ id: "similar-b", name: "Crowe", latestSourceFileArchiveUpdatedAt: now }),
       candidate({ id: "blocked-a", name: "Blocked Subject", existingDossierMatch: { id: blockedEntry.id, name: blockedEntry.name, confidence: "high" } }),
       candidate({ id: "blocked-b", name: "Blocked Subject", existingDossierMatch: { id: "different-public", name: "Different Public", confidence: "high" } }),
+      candidate({ id: "checkpoint-artifact", name: "Checkpoint BNL Ingest Alpha", reason: "Manual endpoint smoke test", evidenceSummary: "diagnostic probe", status: "active_source_file" }),
     ],
     drafts: [],
     recommendations: [
@@ -2572,6 +2580,8 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
       recommendation({ id: "rec-new-b", subjectName: "New Cluster B", subjectKey: "new-cluster", reason: "cluster info B" }),
       recommendation({ id: "rec-public-a", subjectName: publicEntry.name, targetDossierId: publicEntry.id, type: "modify_existing_dossier", reason: "public update A" }),
       recommendation({ id: "rec-public-b", subjectName: publicEntry.name, targetDossierId: publicEntry.id, type: "modify_existing_dossier", reason: "public update B" }),
+      recommendation({ id: "rec-public-variant", subjectName: `${publicEntry.name}'s`, subjectKey: publicEntry.id, targetDossierId: publicEntry.id, type: "modify_existing_dossier", reason: "public update variant" }),
+      recommendation({ id: "rec-checkpoint", subjectName: "Checkpoint BNL Ingest Alpha", type: "new_subject", reason: "Manual endpoint smoke test", evidenceSummary: "diagnostic probe" }),
     ],
     sourceFileRefreshRequests: [],
     updatedAt: now,
@@ -2587,6 +2597,8 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
   assert.ok(payload.consolidation.emptyDuplicatesCleaned >= 1);
   assert.ok(payload.consolidation.sourceFilesCreated >= 1);
   assert.ok(payload.consolidation.dossierUpdateWorkspacesCreated >= 1);
+  assert.ok(payload.consolidation.bundledPublicDossierUpdateSignals >= 3);
+  assert.ok(payload.consolidation.diagnosticArtifactsArchived >= 2);
   assert.ok(payload.consolidation.sourceFileDuplicatesMerged >= 1);
   assert.ok(payload.consolidation.bnlRefreshes.length >= 4);
   assert.ok(payload.consolidation.needsReview >= 1);
@@ -2614,6 +2626,22 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
   assert.equal(recNewB.targetCandidateId, createdSource.id);
   const updateWorkspace = payload.candidates.find((item) => item.status === "existing_dossier_update" && item.existingDossierMatch?.id === publicEntry.id && item.sourceRecommendationIds?.includes("rec-public-a"));
   assert.ok(updateWorkspace);
+  assert.equal(updateWorkspace.existingDossierMatch.name, publicEntry.name);
+  assert.ok(updateWorkspace.sourceRecommendationIds.includes("rec-public-b"));
+  assert.ok(updateWorkspace.sourceRecommendationIds.includes("rec-public-variant"));
+  assert.ok(updateWorkspace.whyNow.includes(`Bundled 3 ${publicEntry.name} update signals into ${publicEntry.name} Dossier Update workspace.`));
+  for (const id of ["rec-public-a", "rec-public-b", "rec-public-variant"]) {
+    const publicRec = payload.recommendations.find((item) => item.id === id);
+    assert.equal(publicRec.status, "attached_to_existing_dossier_update");
+    assert.equal(publicRec.targetCandidateId, updateWorkspace.id);
+  }
+  const checkpointCandidate = payload.candidates.find((item) => item.id === "checkpoint-artifact");
+  const checkpointRecommendation = payload.recommendations.find((item) => item.id === "rec-checkpoint");
+  assert.equal(checkpointCandidate.status, "archived");
+  assert.equal(checkpointCandidate.mergeNote, "diagnostic_test_artifact");
+  assert.equal(checkpointRecommendation.status, "archived");
+  assert.ok(workflow.isDiagnosticTestArtifactCandidate(checkpointCandidate));
+  assert.ok(workflow.isDiagnosticTestArtifactRecommendation(checkpointRecommendation));
 
   const mergeKeep = payload.candidates.find((item) => item.id === "merge-keep");
   const mergeLesser = payload.candidates.find((item) => item.id === "merge-lesser");
@@ -2646,6 +2674,8 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
   assert.equal(remainingAutoGroups.length, 0);
   assert.ok(rebuiltAudit.possibleDuplicateGroups.every((group) => group.consolidationPlan.requiresReview || group.consolidationPlan.automationTier === "Blocked"));
   assert.ok(!rebuiltAudit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.recommendationId === "rec-new-a" || record.recommendationId === "rec-new-b")));
+  assert.ok(!rebuiltAudit.possibleDuplicateGroups.some((group) => group.records.some((record) => ["rec-public-a", "rec-public-b", "rec-public-variant", "rec-checkpoint"].includes(record.recommendationId))));
+  assert.ok(!rebuiltAudit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.id === "checkpoint-artifact")));
 
   const secondResponse = await authedPost({ action: "runSubjectConsolidation" });
   assert.equal(secondResponse.status, 200);
@@ -2654,6 +2684,8 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
   assert.equal(secondPayload.consolidation.attachedRecommendations, 0);
   assert.equal(secondPayload.consolidation.sourceFilesCreated, 0);
   assert.equal(secondPayload.consolidation.dossierUpdateWorkspacesCreated, 0);
+  assert.equal(secondPayload.consolidation.bundledPublicDossierUpdateSignals, 0);
+  assert.equal(secondPayload.consolidation.diagnosticArtifactsArchived, 0);
   assert.equal(secondPayload.consolidation.emptyDuplicatesCleaned, 0);
   assert.equal(secondPayload.consolidation.duplicateRecommendationsCleaned, 0);
   assert.equal(secondPayload.consolidation.sourceFileDuplicatesMerged, 0);
@@ -2774,6 +2806,8 @@ test("Subject Consolidation Queue review UI uses direct decision buttons and col
     "Keep Separate / Not Same Subject",
     "Select Different Target",
     "Raw / Source Details",
+    "Diagnostics/Test Artifacts",
+    "Archive Diagnostic Artifact:",
     "Incoming item count:",
     "Item types summarized:",
     "BNL consolidation brief needed",
@@ -2804,6 +2838,7 @@ test("Subject Consolidation Queue review UI uses direct decision buttons and col
 
   assert.match(page, /<details className="mt-4 border border-border\/60 bg-background\/30 p-3">/);
   assert.doesNotMatch(pageCopy, /Open Recommendation|Open Source File|Open Target|Open Incoming|Merge Into Kept Source File|Attach to Kept Source File|Create Source File From These Signals|Create Dossier Update Workspace without public dossier\/context|Create Dossier Update Later|Create Source File Later|Attach Later|Merge Later|Clean Later/);
+  assert.doesNotMatch(pageCopy, /Create Source File: Checkpoint BNL Ingest Alpha/);
   assert.doesNotMatch(page, /incoming-\$\{record\.type\}/);
   assert.doesNotMatch(pageCopy, /Confirmed aliases count: \{record\.confirmedAliasCount\}/);
   assert.doesNotMatch(pageCopy, /Proposed aliases count: \{record\.proposedAliasCount\}/);

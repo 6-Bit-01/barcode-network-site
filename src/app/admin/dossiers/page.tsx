@@ -34,7 +34,10 @@ type WorkflowPayload = {
   consolidation?: SubjectConsolidationResult;
 };
 
+type SubjectConsolidationIssue = { groupId?: string; subject: string; reason: string };
+
 type SubjectConsolidationResult = {
+  statusLabel: "Subject Consolidation Complete";
   attachedRecommendations: number;
   emptyDuplicatesCleaned: number;
   duplicateRecommendationsCleaned: number;
@@ -44,6 +47,8 @@ type SubjectConsolidationResult = {
   bnlRefreshes: Array<{ candidateId: string; subjectName: string; status: string; requestId?: string; reason?: string }>;
   needsReview: number;
   blocked: number;
+  skippedItems: SubjectConsolidationIssue[];
+  blockedItems: SubjectConsolidationIssue[];
   affectedTargets: Array<{ candidateId: string; name: string; href: string }>;
   publicPagesPublished: 0;
   publicDossierTextChanged: 0;
@@ -851,19 +856,41 @@ export default function DossierControlCenterPage() {
             </ul>
             {consolidationResult && (
               <div className="mt-4 border border-accent/40 bg-accent/5 p-3">
-                <p className="font-semibold text-foreground">Subject Consolidation complete:</p>
+                <p className="font-semibold text-foreground">Subject Consolidation Complete</p>
                 <ul className="mt-2 list-disc space-y-1 pl-5">
                   <li>Consolidated {consolidationResult.attachedRecommendations + consolidationResult.sourceFileDuplicatesMerged} incoming items into kept Source Files.</li>
                   <li>Created {consolidationResult.sourceFilesCreated} Source Files.</li>
                   <li>Created {consolidationResult.dossierUpdateWorkspacesCreated} Dossier Update workspaces.</li>
                   <li>Cleaned {consolidationResult.emptyDuplicatesCleaned + consolidationResult.duplicateRecommendationsCleaned} empty duplicates.</li>
-                  <li>{consolidationResult.bnlRefreshes.length} BNL refreshes triggered / queued / marked needed</li>
-                  <li>{consolidationResult.needsReview} items still need review</li>
-                  <li>{consolidationResult.blocked} blocked</li>
+                  <li>{consolidationResult.sourceFileDuplicatesMerged} records merged</li>
+                  <li>{consolidationResult.bnlRefreshes.length} BNL refresh triggered / queued / needed</li>
+                  <li>{consolidationResult.skippedItems.length} skipped items with reasons</li>
+                  <li>{consolidationResult.blocked} blocked items with reasons</li>
+                  <li>{consolidationResult.needsReview} remaining review-needed count</li>
                   <li>{consolidationResult.publicPagesPublished} public pages published</li>
                   <li>{consolidationResult.publicDossierTextChanged} public dossier text changed</li>
                   <li>{consolidationResult.internalAliasesExposed} internal aliases exposed</li>
                 </ul>
+                {consolidationResult.skippedItems.length > 0 && (
+                  <div className="mt-3 text-xs">
+                    <p className="uppercase tracking-[0.3em] text-accent">Skipped items with reasons</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5">
+                      {consolidationResult.skippedItems.map((item) => (
+                        <li key={`${item.groupId ?? item.subject}-skipped`}>{item.subject}: {item.reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {consolidationResult.blockedItems.length > 0 && (
+                  <div className="mt-3 text-xs">
+                    <p className="uppercase tracking-[0.3em] text-accent">Blocked items with reasons</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5">
+                      {consolidationResult.blockedItems.map((item) => (
+                        <li key={`${item.groupId ?? item.subject}-blocked`}>{item.subject}: {item.reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {consolidationResult.affectedTargets.length > 0 && (
                   <div className="mt-3">
                     <p className="text-xs uppercase tracking-[0.3em] text-accent">Affected kept Source Files / workspaces</p>

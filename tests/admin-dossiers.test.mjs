@@ -2035,8 +2035,11 @@ test("Subject Consolidation Queue renders action summary, review cards, blocked 
     "Run Subject Consolidation will:",
     "Needs Review",
     "Blocked",
-    "Subject Consolidation complete:",
-    "BNL refreshes triggered / queued / marked needed",
+    "Subject Consolidation Complete",
+    "BNL refresh triggered / queued / needed",
+    "skipped items with reasons",
+    "blocked items with reasons",
+    "remaining review-needed count",
     "publish 0 public pages",
     "change 0 public dossier text",
     "keep internal aliases internal",
@@ -2490,6 +2493,12 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
 
   const createdSource = payload.candidates.find((item) => item.createdFromRecommendationId === "rec-new-a" || item.sourceRecommendationIds?.includes("rec-new-a"));
   assert.equal(createdSource.status, "active_source_file");
+  const recNewA = payload.recommendations.find((item) => item.id === "rec-new-a");
+  const recNewB = payload.recommendations.find((item) => item.id === "rec-new-b");
+  assert.equal(recNewA.status, "converted_to_source_file");
+  assert.equal(recNewB.status, "converted_to_source_file");
+  assert.equal(recNewA.targetCandidateId, createdSource.id);
+  assert.equal(recNewB.targetCandidateId, createdSource.id);
   const updateWorkspace = payload.candidates.find((item) => item.status === "existing_dossier_update" && item.existingDossierMatch?.id === publicEntry.id && item.sourceRecommendationIds?.includes("rec-public-a"));
   assert.ok(updateWorkspace);
 
@@ -2505,6 +2514,38 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
 
   assert.ok(payload.sourceFileRefreshRequests.some((request) => request.candidateId === "exact-target" && request.status === "pending"));
   assert.ok(payload.sourceFileRefreshRequests.some((request) => request.candidateId === "alias-target" && request.status === "pending"));
+
+  const rebuiltAudit = workflow.createDossierPopulationAudit({
+    candidates: payload.candidates,
+    recommendations: payload.recommendations,
+    publicDossiers: [{ id: publicEntry.id, name: publicEntry.name }],
+    drafts: payload.drafts,
+  });
+  const remainingAutoGroups = rebuiltAudit.possibleDuplicateGroups.filter((group) =>
+    [
+      "Attach to Existing Source File candidate",
+      "Empty duplicate cleanup candidate",
+      "Source File merge candidate",
+      "Create Source File candidate",
+      "Create Dossier Update workspace candidate",
+    ].includes(group.consolidationPlan.automationTier),
+  );
+  assert.equal(remainingAutoGroups.length, 0);
+  assert.ok(rebuiltAudit.possibleDuplicateGroups.every((group) => group.consolidationPlan.requiresReview || group.consolidationPlan.automationTier === "Blocked"));
+  assert.ok(!rebuiltAudit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.recommendationId === "rec-new-a" || record.recommendationId === "rec-new-b")));
+
+  const secondResponse = await authedPost({ action: "runSubjectConsolidation" });
+  assert.equal(secondResponse.status, 200);
+  const secondPayload = await secondResponse.json();
+  assert.equal(secondPayload.consolidation.statusLabel, "Subject Consolidation Complete");
+  assert.equal(secondPayload.consolidation.attachedRecommendations, 0);
+  assert.equal(secondPayload.consolidation.sourceFilesCreated, 0);
+  assert.equal(secondPayload.consolidation.dossierUpdateWorkspacesCreated, 0);
+  assert.equal(secondPayload.consolidation.emptyDuplicatesCleaned, 0);
+  assert.equal(secondPayload.consolidation.duplicateRecommendationsCleaned, 0);
+  assert.equal(secondPayload.consolidation.sourceFileDuplicatesMerged, 0);
+  assert.equal(JSON.stringify(secondPayload.recommendations), JSON.stringify(payload.recommendations));
+  assert.equal(JSON.stringify(secondPayload.candidates), JSON.stringify(payload.candidates));
   assert.equal(JSON.stringify(databasePage.entries), publicBefore);
 });
 

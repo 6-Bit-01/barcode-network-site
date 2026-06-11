@@ -1435,11 +1435,13 @@ export function createDossierPopulationAudit(input: {
     }
   }
 
-  const unattachedBnlRecommendations = bnlRecommendations
-    .filter(
-      (recommendation) =>
-        !clearlyAttachedRecommendationIds.has(recommendation.id),
-    )
+  const openBnlRecommendationsForConsolidation = bnlRecommendations.filter(
+    (recommendation) =>
+      (recommendation.status === "new" || recommendation.status === "reviewing") &&
+      !clearlyAttachedRecommendationIds.has(recommendation.id),
+  );
+
+  const unattachedBnlRecommendations = openBnlRecommendationsForConsolidation
     .map((recommendation) => {
       const normalizedSubject = normalizeDossierSubjectName(
         recommendation.subjectName,
@@ -1616,7 +1618,7 @@ export function createDossierPopulationAudit(input: {
     }
   }
 
-  for (const recommendation of bnlRecommendations) {
+  for (const recommendation of openBnlRecommendationsForConsolidation) {
     const record: DossierPopulationAuditRecord = {
       id: recommendation.id,
       type: "recommendation",

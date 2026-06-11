@@ -5714,7 +5714,14 @@ export type SubjectConsolidationRefreshOutcome = {
   reason?: string;
 };
 
+export type SubjectConsolidationIssue = {
+  groupId?: string;
+  subject: string;
+  reason: string;
+};
+
 export type SubjectConsolidationResult = {
+  statusLabel: "Subject Consolidation Complete";
   attachedRecommendations: number;
   emptyDuplicatesCleaned: number;
   duplicateRecommendationsCleaned: number;
@@ -5724,6 +5731,8 @@ export type SubjectConsolidationResult = {
   bnlRefreshes: SubjectConsolidationRefreshOutcome[];
   needsReview: number;
   blocked: number;
+  skippedItems: SubjectConsolidationIssue[];
+  blockedItems: SubjectConsolidationIssue[];
   affectedTargets: Array<{ candidateId: string; name: string; href: string }>;
   publicPagesPublished: 0;
   publicDossierTextChanged: 0;
@@ -5801,6 +5810,7 @@ function refreshOutcomeForState(input: {
 export async function runSubjectConsolidation(input: { groupId?: string } = {}): Promise<SubjectConsolidationResult> {
   const now = new Date().toISOString();
   const result: SubjectConsolidationResult = {
+    statusLabel: "Subject Consolidation Complete",
     attachedRecommendations: 0,
     emptyDuplicatesCleaned: 0,
     duplicateRecommendationsCleaned: 0,
@@ -5810,6 +5820,8 @@ export async function runSubjectConsolidation(input: { groupId?: string } = {}):
     bnlRefreshes: [],
     needsReview: 0,
     blocked: 0,
+    skippedItems: [],
+    blockedItems: [],
     affectedTargets: [],
     publicPagesPublished: 0,
     publicDossierTextChanged: 0,
@@ -5902,13 +5914,28 @@ export async function runSubjectConsolidation(input: { groupId?: string } = {}):
       const plan = group.consolidationPlan;
       if (plan.automationTier === "Blocked") {
         result.blocked += 1;
+        result.blockedItems.push({
+          groupId: group.id,
+          subject: plan.targetDisplayName ?? group.records.map((record) => record.displayName ?? record.name).join(" / "),
+          reason: plan.blockedReasons.join(" ") || group.reason,
+        });
         continue;
       }
       if (plan.requiresReview || plan.automationTier === "Select Target Manually") {
         if (input.groupId) {
           result.blocked += 1;
+          result.blockedItems.push({
+            groupId: group.id,
+            subject: plan.targetDisplayName ?? group.records.map((record) => record.displayName ?? record.name).join(" / "),
+            reason: plan.recommendedNextStep || plan.reason,
+          });
         } else {
           result.needsReview += 1;
+          result.skippedItems.push({
+            groupId: group.id,
+            subject: plan.targetDisplayName ?? group.records.map((record) => record.displayName ?? record.name).join(" / "),
+            reason: plan.recommendedNextStep || plan.reason,
+          });
         }
         continue;
       }
@@ -5945,6 +5972,11 @@ export async function runSubjectConsolidation(input: { groupId?: string } = {}):
           if (!candidate || consumedCandidates.has(candidate.id)) continue;
           if (candidateHasMeaningfulConsolidationInfo(candidate)) {
             result.needsReview += 1;
+            result.skippedItems.push({
+              groupId: group.id,
+              subject: candidate.name,
+              reason: "Candidate has meaningful information and cannot be cleaned automatically.",
+            });
             continue;
           }
           state = {
@@ -5969,6 +6001,11 @@ export async function runSubjectConsolidation(input: { groupId?: string } = {}):
           .filter((candidate): candidate is DossierCandidate => Boolean(candidate));
         if (sources.some((source) => source.existingDossierMatch?.id && target.existingDossierMatch?.id && source.existingDossierMatch.id !== target.existingDossierMatch.id)) {
           result.blocked += 1;
+          result.blockedItems.push({
+            groupId: group.id,
+            subject: target.name,
+            reason: "Different public dossier matches are present.",
+          });
           continue;
         }
         const sourceNotes = sources.flatMap((source) => source.sourceFileNotes ?? []);
@@ -6034,6 +6071,11 @@ export async function runSubjectConsolidation(input: { groupId?: string } = {}):
         const entry = databasePage.entries.find((item) => item.id === plan.existingPublicDossier?.id);
         if (!entry) {
           result.blocked += 1;
+          result.blockedItems.push({
+            groupId: group.id,
+            subject: plan.existingPublicDossier.id,
+            reason: "Existing public dossier target was not found.",
+          });
           continue;
         }
         const candidateId = createCandidateId();

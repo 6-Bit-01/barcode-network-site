@@ -53,6 +53,7 @@ import {
   rejectDossierIdentityLink,
   requestDossierSourceFileRefresh,
   retireDossierIdentityLink,
+  runSubjectConsolidation,
   mergeDossierCandidates,
   markCandidateAsExistingDossierUpdate,
   permanentlyDeleteDossierCandidate,
@@ -147,6 +148,7 @@ const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "archiveDossierRecommendation",
   "attachCandidateToExistingDossier",
   "markCandidateAsExistingDossierUpdate",
+  "runSubjectConsolidation",
 ]);
 
 async function isAuthenticated(req: Request): Promise<boolean> {
@@ -643,6 +645,17 @@ export async function POST(req: Request) {
             : await retireDossierIdentityLink(input);
       const payload = await workflowPayload();
       return NextResponse.json({ ok: true, action, identityLink, ...payload });
+    }
+
+    if (action === "runSubjectConsolidation") {
+      const consolidation = await runSubjectConsolidation();
+      const payload = await workflowPayload();
+      return NextResponse.json({
+        ok: true,
+        action,
+        consolidation,
+        ...payload,
+      });
     }
 
     if (action === "createDossierRecommendation") {

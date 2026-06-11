@@ -775,6 +775,12 @@ export type DossierPopulationAuditRecord = {
 };
 
 export type DossierPopulationAutomationTier =
+  | "Auto attach to kept Source File"
+  | "Auto create Dossier Update workspace"
+  | "Auto create Source File"
+  | "Auto merge safe duplicate"
+  | "Auto clean empty duplicate"
+  | "Clean no-new-info duplicate recommendation"
   | "Create Source File candidate"
   | "Create Dossier Update workspace candidate"
   | "Attach to Existing Source File candidate"
@@ -826,7 +832,8 @@ export type DossierPopulationAuditDuplicateGroup = {
     | "confirmed_alias"
     | "public_dossier"
     | "recommendation_subject_key"
-    | "bnl_recommendation_subject_name";
+    | "bnl_recommendation_subject_name"
+    | "similar_name";
   publicDossierMatch?: { id: string; name?: string };
   records: DossierPopulationAuditRecord[];
   suggestedAction: string;
@@ -971,7 +978,7 @@ function auditRecordUniqueInfo(input: {
   if (input.hasLatestArchiveOrReport) info.push("latest BNL archive or case report");
   if (input.activeDraftStatus) info.push(`active proposed dossier (${input.activeDraftStatus})`);
   if (input.publicDossierId) info.push("public dossier match");
-  return info.length > 0 ? info : ["No unique useful data detected by audit."];
+  return info.length > 0 ? info : ["No unique useful data detected by consolidation scan."];
 }
 
 function recordHasUsefulData(record: DossierPopulationAuditRecord): boolean {
@@ -1169,6 +1176,8 @@ function createConsolidationPlan(input: {
     confidence:
       input.matchKind === "confirmed_alias" || input.matchKind === "public_dossier"
         ? "high"
+        : input.matchKind === "similar_name"
+          ? "low"
         : input.matchKind === "normalized_name"
           ? "medium"
           : "low",
@@ -1190,8 +1199,8 @@ function createConsolidationPlan(input: {
       : hasOnlyRecommendations
         ? noTargetExplanation
         : canBeAutomatedLater
-          ? `${automationTier}: review the deltas below before enabling any real action in a future PR.`
-          : "Admin review required before any future automation.",
+          ? `${automationTier}: server-side consolidation can process this after the admin runs Subject Consolidation.`
+          : "Admin review required before consolidation can mutate records.",
     canBeAutomatedLater,
     requiresReview,
     blockedReasons: hasOnlyRecommendations && !sharedPublicTarget
@@ -1212,7 +1221,7 @@ function createConsolidationPlan(input: {
             : []),
         ],
         noActionNeeded: sourceRecords.every((record) => record.duplicateInfo.length === 0)
-          ? ["No duplicate facts were identified by this audit."]
+          ? ["No duplicate facts were identified by this consolidation scan."]
           : [],
       }),
       planSection("Irrelevant to kept entry", {
@@ -1247,7 +1256,7 @@ function createConsolidationPlan(input: {
           "Public dossier copy will not change.",
           "Internal aliases stay internal.",
           "Nothing publishes automatically.",
-          "No merge/delete/archive/attach/create action is live in this PR.",
+          "Consolidation does not publish public pages.",
         ],
       }),
     ],
@@ -1578,6 +1587,35 @@ export function createDossierPopulationAudit(input: {
     }
   }
 
+  for (let leftIndex = 0; leftIndex < input.candidates.length; leftIndex += 1) {
+    const left = input.candidates[leftIndex];
+    if (isClosedPopulationCandidate(left)) continue;
+    const leftRecord = recordByCandidateId.get(left.id);
+    if (!leftRecord) continue;
+    for (const right of input.candidates.slice(leftIndex + 1)) {
+      if (isClosedPopulationCandidate(right)) continue;
+      if (!hasSimilarDossierSubjectName(left.name, right.name)) continue;
+      const leftKey = normalizeDossierSubjectName(left.name);
+      const rightKey = normalizeDossierSubjectName(right.name);
+      if (leftKey === rightKey || compactDossierSubjectName(left.name) === compactDossierSubjectName(right.name)) continue;
+      const rightRecord = recordByCandidateId.get(right.id);
+      if (!rightRecord) continue;
+      const key = [leftKey, rightKey].sort().join(":");
+      addBucketRecord(
+        "similar_name",
+        key,
+        "Similar names only; admin must decide whether these are the same subject.",
+        leftRecord,
+      );
+      addBucketRecord(
+        "similar_name",
+        key,
+        "Similar names only; admin must decide whether these are the same subject.",
+        rightRecord,
+      );
+    }
+  }
+
   for (const recommendation of bnlRecommendations) {
     const record: DossierPopulationAuditRecord = {
       id: recommendation.id,
@@ -1800,6 +1838,24 @@ export function normalizeDossierSubjectName(value: string): string {
 
 export function compactDossierSubjectName(value: string): string {
   return normalizeDossierSubjectName(value).replace(/\s+/g, "");
+}
+
+function hasSimilarDossierSubjectName(left: string, right: string): boolean {
+  const normalizedLeft = normalizeDossierSubjectName(left);
+  const normalizedRight = normalizeDossierSubjectName(right);
+  const compactLeft = compactDossierSubjectName(left);
+  const compactRight = compactDossierSubjectName(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  if (normalizedLeft === normalizedRight || compactLeft === compactRight) {
+    return false;
+  }
+  if (normalizedLeft.length < 4 || normalizedRight.length < 4) return false;
+  return (
+    normalizedLeft.includes(normalizedRight) ||
+    normalizedRight.includes(normalizedLeft) ||
+    compactLeft.includes(compactRight) ||
+    compactRight.includes(compactLeft)
+  );
 }
 
 export function isActiveSourceFileCandidate(
@@ -2124,6 +2180,7 @@ export type DossierWorkflowAction =
   | "archiveDossierRecommendation"
   | "attachCandidateToExistingDossier"
   | "markCandidateAsExistingDossierUpdate"
+  | "runSubjectConsolidation"
   | "detectDuplicateCandidates"
   | "mergeCandidates"
   | "createMasterDraftFromMerge";
@@ -2173,6 +2230,7 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "archiveDossierRecommendation",
   "attachCandidateToExistingDossier",
   "markCandidateAsExistingDossierUpdate",
+  "runSubjectConsolidation",
   "detectDuplicateCandidates",
   "mergeCandidates",
   "createMasterDraftFromMerge",

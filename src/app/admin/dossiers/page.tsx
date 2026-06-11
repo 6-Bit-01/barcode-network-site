@@ -322,6 +322,8 @@ export default function DossierControlCenterPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [consolidationResult, setConsolidationResult] = useState<SubjectConsolidationResult | null>(null);
+  const [consolidatingGroupId, setConsolidatingGroupId] = useState<string | null>(null);
+  const [resolvedJustNow, setResolvedJustNow] = useState<{ groupId: string; subject: string; message: string } | null>(null);
   const [recommendationForm, setRecommendationForm] =
     useState<ManualRecommendationForm>(emptyRecommendationForm);
   const [createdDraftIdByCandidate, setCreatedDraftIdByCandidate] = useState<
@@ -498,11 +500,31 @@ export default function DossierControlCenterPage() {
             data.message ??
             `Workflow API returned ${response.status}.`,
         );
+      if (data.consolidation) setConsolidationResult(data.consolidation);
       if (data.candidates && data.drafts && data.workflow)
         setPayload(data as WorkflowPayload);
       return data;
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function consolidateSubjectGroup(groupId: string, subject: string) {
+    setConsolidatingGroupId(groupId);
+    setResolvedJustNow(null);
+    try {
+      await postWorkflow({ action: "consolidateSubjectGroup", groupId });
+      setResolvedJustNow({
+        groupId,
+        subject,
+        message: "Consolidated into kept Source File.",
+      });
+    } catch (err) {
+      setNotice(
+        err instanceof Error ? err.message : "Failed to consolidate subject group.",
+      );
+    } finally {
+      setConsolidatingGroupId(null);
     }
   }
 
@@ -911,6 +933,12 @@ export default function DossierControlCenterPage() {
                     </ul>
                   </div>
                 )}
+                {resolvedJustNow && (
+                  <div className="mt-3 border border-accent/50 bg-background/40 p-3 text-xs">
+                    <p className="uppercase tracking-[0.3em] text-accent">Resolved just now</p>
+                    <p className="mt-2 text-foreground">{resolvedJustNow.subject}: {resolvedJustNow.message}</p>
+                  </div>
+                )}
               </div>
             )}
           </section>
@@ -927,8 +955,14 @@ export default function DossierControlCenterPage() {
                 {populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.requiresReview && group.consolidationPlan.automationTier !== "Blocked").slice(0, 10).map((group) => {
                   const plan = group.consolidationPlan;
                   const keptName = plan.targetDisplayName ?? plan.targetRecord?.displayName ?? plan.targetRecord?.name ?? "Select Different Target";
+                  const incomingCount = plan.sourceRecords.length;
+                  const incomingTypes = Array.from(new Set(plan.sourceRecords.map((record) => record.type))).join(", ") || "—";
+                  const incomingNames = Array.from(new Set(plan.sourceRecords.map((record) => record.displayName ?? record.name))).slice(0, 6);
+                  const usefulData = Array.from(new Set(plan.sourceRecords.flatMap((record) => record.incomingInfo))).slice(0, 5);
+                  const alreadyRepresented = Array.from(new Set(plan.sourceRecords.flatMap((record) => record.duplicateInfo))).slice(0, 5);
+                  const isConsolidating = consolidatingGroupId === group.id;
                   return (
-                    <article key={group.id} className="border border-border/70 bg-background/20 p-4 text-sm text-muted">
+                    <article key={group.id} className={`border border-border/70 bg-background/20 p-4 text-sm text-muted transition-all duration-300 ${isConsolidating ? "translate-x-2 border-accent bg-accent/10 motion-safe:animate-pulse" : ""}`}>
                       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                         <div>
                           <p className="text-xs uppercase tracking-[0.3em] text-accent">Subject</p>
@@ -942,19 +976,20 @@ export default function DossierControlCenterPage() {
                         <StatusPill>{plan.confidence} confidence</StatusPill>
                       </div>
                       <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                        <div className="border border-border/60 bg-background/30 p-3">
-                          <p className="text-xs uppercase tracking-[0.3em] text-accent">Incoming Info</p>
-                          {plan.sourceRecords.map((record) => (
-                            <div key={`${group.id}-incoming-${record.type}-${record.id}`} className="mt-2">
-                              <p className="font-semibold text-foreground">{record.displayName ?? record.name}</p>
-                              <p>What will be absorbed: {record.type === "recommendation" ? "recommendation signal, source lanes, IDs, and review-only metadata" : "safe notes, recommendations, aliases, archive references, and metadata where supported"}</p>
-                              <p>Consolidation Plan: {record.type === "recommendation" ? "attach recommendations internally" : "merge duplicate Source File internally when safe"}</p>
-                              <p>Already represented: {record.duplicateInfo.length ? record.duplicateInfo.join("; ") : "same-subject signal detected"}</p>
-                              <p>What will not change: public dossier text, public pages, and internal alias visibility</p>
-                            </div>
-                          ))}
+                        <div className={`border border-border/60 bg-background/30 p-3 transition-all duration-300 ${isConsolidating ? "opacity-50 scale-95" : ""}`}>
+                          <p className="text-xs uppercase tracking-[0.3em] text-accent">Incoming Cluster</p>
+                          <div className="mt-2 space-y-1">
+                            <p className="font-semibold text-foreground">{keptName}</p>
+                            <p>Incoming item count: {incomingCount}</p>
+                            <p>Item types summarized: {incomingTypes}</p>
+                            <p>Source files/candidates/recommendations included: {incomingNames.join("; ")}{plan.sourceRecords.length > incomingNames.length ? "…" : ""}</p>
+                            <p>What useful data can be absorbed: {usefulData.join("; ") || "safe source notes, recommendation metadata, aliases, archive references, or evidence where supported"}</p>
+                            <p>What is already represented: {alreadyRepresented.join("; ") || "same canonical subject cluster"}</p>
+                            <p>What will not change: public dossier text, public pages, and internal alias visibility</p>
+                            {isConsolidating && <p className="text-accent">Consolidating… incoming cluster is moving into the kept Source File.</p>}
+                          </div>
                         </div>
-                        <div className="border border-accent/50 bg-accent/5 p-3">
+                        <div className={`border border-accent/50 bg-accent/5 p-3 transition-all duration-300 ${isConsolidating ? "ring-2 ring-accent shadow-lg" : ""}`}>
                           <p className="text-xs uppercase tracking-[0.3em] text-accent">Kept Source File</p>
                           {plan.targetRecord ? (
                             <div className="mt-2">
@@ -974,11 +1009,11 @@ export default function DossierControlCenterPage() {
                       </div>
                       <div className="mt-4 flex flex-wrap gap-2">
                         {plan.targetRecord ? (
-                          <button type="button" disabled={saving} onClick={() => postWorkflow({ action: "consolidateSubjectGroup", groupId: group.id })} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Consolidate Into Kept Source File</button>
+                          <button type="button" disabled={saving} onClick={() => consolidateSubjectGroup(group.id, keptName)} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{isConsolidating ? "Consolidating…" : "Consolidate Into Kept Source File"}</button>
                         ) : plan.suggestedWorkspace === "Dossier Update" ? (
-                          <button type="button" disabled={saving} onClick={() => postWorkflow({ action: "consolidateSubjectGroup", groupId: group.id })} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Create Dossier Update Workspace</button>
+                          <button type="button" disabled={saving} onClick={() => consolidateSubjectGroup(group.id, keptName)} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Create Dossier Update Workspace</button>
                         ) : (
-                          <button type="button" disabled={saving} onClick={() => postWorkflow({ action: "consolidateSubjectGroup", groupId: group.id })} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Create Source File From These Signals</button>
+                          <button type="button" disabled={saving} onClick={() => consolidateSubjectGroup(group.id, keptName)} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Create Source File From These Signals</button>
                         )}
                         <button type="button" className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Keep Separate / Not Same Subject</button>
                         <button type="button" className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Select Different Target</button>

@@ -942,6 +942,109 @@ function uniqueAuditRecords(
   });
 }
 
+
+function duplicateGroupPriority(
+  matchKind: DossierPopulationAuditDuplicateGroup["matchKind"],
+): number {
+  if (matchKind === "public_dossier") return 6;
+  if (matchKind === "confirmed_alias") return 5;
+  if (matchKind === "bnl_recommendation_subject_name") return 4;
+  if (matchKind === "recommendation_subject_key") return 3;
+  if (matchKind === "normalized_name") return 2;
+  if (matchKind === "similar_name") return 1;
+  return 0;
+}
+
+function mergeCanonicalDuplicateGroups(
+  groups: Array<{
+    id: string;
+    reason: string;
+    matchKind: DossierPopulationAuditDuplicateGroup["matchKind"];
+    publicDossierMatch?: { id: string; name?: string };
+    records: DossierPopulationAuditRecord[];
+  }>,
+): Array<{
+  id: string;
+  reason: string;
+  matchKind: DossierPopulationAuditDuplicateGroup["matchKind"];
+  publicDossierMatch?: { id: string; name?: string };
+  records: DossierPopulationAuditRecord[];
+}> {
+  const remaining = [...groups];
+  const merged: typeof groups = [];
+
+  while (remaining.length > 0) {
+    const seed = remaining.shift()!;
+    const component = [seed];
+    const recordKeys = new Set(seed.records.map(recordKey));
+    const publicDossierIds = new Set(
+      seed.publicDossierMatch?.id ? [seed.publicDossierMatch.id] : [],
+    );
+    for (const record of seed.records) {
+      if (record.publicDossierId) publicDossierIds.add(record.publicDossierId);
+    }
+
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (let index = remaining.length - 1; index >= 0; index -= 1) {
+        const candidate = remaining[index];
+        const candidateRecordKeys = candidate.records.map(recordKey);
+        const candidatePublicIds = new Set(
+          candidate.publicDossierMatch?.id ? [candidate.publicDossierMatch.id] : [],
+        );
+        for (const record of candidate.records) {
+          if (record.publicDossierId) candidatePublicIds.add(record.publicDossierId);
+        }
+        const sharesRecord = candidateRecordKeys.some((key) => recordKeys.has(key));
+        const sharesPublicDossier = Array.from(candidatePublicIds).some((id) =>
+          publicDossierIds.has(id),
+        );
+        if (!sharesRecord && !sharesPublicDossier) continue;
+        remaining.splice(index, 1);
+        component.push(candidate);
+        for (const key of candidateRecordKeys) recordKeys.add(key);
+        for (const id of candidatePublicIds) publicDossierIds.add(id);
+        changed = true;
+      }
+    }
+
+    const records = uniqueAuditRecords(component.flatMap((group) => group.records));
+    const primary = [...component].sort(
+      (left, right) =>
+        duplicateGroupPriority(right.matchKind) - duplicateGroupPriority(left.matchKind) ||
+        left.id.localeCompare(right.id),
+    )[0];
+    const publicDossierMatch =
+      component.find((group) => group.publicDossierMatch)?.publicDossierMatch ??
+      records
+        .map((record) =>
+          record.publicDossierId
+            ? { id: record.publicDossierId, name: record.publicDossierName }
+            : undefined,
+        )
+        .find(Boolean);
+    const idBase = publicDossierMatch
+      ? `${primary.matchKind}:${publicDossierMatch.id}`
+      : `${primary.matchKind}:${records.map((record) => recordKey(record)).sort().join(":")}`;
+    merged.push({
+      id: idBase
+        .replace(/[^a-z0-9]+/gi, "-")
+        .replace(/^-|-$/g, "")
+        .toLowerCase(),
+      reason:
+        publicDossierMatch?.name
+          ? `Canonical subject cluster for ${publicDossierMatch.name}.`
+          : primary.reason,
+      matchKind: primary.matchKind,
+      publicDossierMatch,
+      records,
+    });
+  }
+
+  return merged;
+}
+
 function duplicateGroupAction(
   matchKind: DossierPopulationAuditDuplicateGroup["matchKind"],
   records: DossierPopulationAuditRecord[],
@@ -1741,28 +1844,30 @@ export function createDossierPopulationAudit(input: {
     }
   }
 
-  const possibleDuplicateGroups = Array.from(duplicateBuckets.entries())
-    .map(([bucketKey, bucket]) => ({
-      id: bucketKey
-        .replace(/[^a-z0-9]+/gi, "-")
-        .replace(/^-|-$/g, "")
-        .toLowerCase(),
-      reason: bucket.reason,
-      matchKind: bucket.matchKind,
-      publicDossierMatch: bucket.publicDossierMatch,
-      records: uniqueAuditRecords(bucket.records),
-      suggestedAction: duplicateGroupAction(bucket.matchKind, bucket.records),
-      consolidationPlan: createConsolidationPlan({
+  const possibleDuplicateGroups = mergeCanonicalDuplicateGroups(
+    Array.from(duplicateBuckets.entries())
+      .map(([bucketKey, bucket]) => ({
         id: bucketKey
           .replace(/[^a-z0-9]+/gi, "-")
           .replace(/^-|-$/g, "")
           .toLowerCase(),
-        matchKind: bucket.matchKind,
         reason: bucket.reason,
+        matchKind: bucket.matchKind,
+        publicDossierMatch: bucket.publicDossierMatch,
         records: uniqueAuditRecords(bucket.records),
+      }))
+      .filter((group) => group.records.length >= 2),
+  )
+    .map((group) => ({
+      ...group,
+      suggestedAction: duplicateGroupAction(group.matchKind, group.records),
+      consolidationPlan: createConsolidationPlan({
+        id: group.id,
+        matchKind: group.matchKind,
+        reason: group.reason,
+        records: group.records,
       }),
     }))
-    .filter((group) => group.records.length >= 2)
     .sort(
       (left, right) =>
         right.records.length - left.records.length ||

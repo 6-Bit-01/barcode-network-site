@@ -2186,7 +2186,7 @@ test("population audit helper uses conservative duplicate signals and leaves pro
 
 test("population audit automation classifies and runs safe consolidation without public side effects", async () => {
   const now = "2026-06-11T00:00:00.000Z";
-  const publicIdsBefore = databasePage.entries.map((entry) => entry.id);
+  const publicDatabaseBefore = JSON.stringify(databasePage.entries);
   const candidate = (overrides) => ({
     id: overrides.id,
     name: overrides.name,
@@ -2288,8 +2288,8 @@ test("population audit automation classifies and runs safe consolidation without
   assert.ok(audit.possibleDuplicateGroups.some((group) => group.automation.automationLevel === "auto_merge_now"));
   assert.ok(audit.unattachedBnlRecommendations.some((item) => item.id === "attach-rec" && item.automation.automationLevel === "auto_attach_now"));
   assert.ok(audit.duplicateRecommendationGroups.some((group) => group.duplicateRecommendationIds.includes("dupe-rec-b")));
-  assert.ok(audit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.id === "draft-a") && group.automation.automationLevel === "blocked_manual_resolution_required"));
-  assert.ok(audit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.id === "public-a") && group.automation.blockedReasons.includes("Records point to different public dossiers.")));
+  assert.ok(audit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.id === "draft-a") && group.automation.automationLevel === "blocked_manual_resolution_required" && group.automation.blockedReasons.includes("Both records have active proposed dossiers.")));
+  assert.ok(audit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.id === "public-a") && group.automation.automationLevel === "blocked_manual_resolution_required" && group.automation.blockedReasons.includes("Records point to different public dossiers.")));
   assert.equal(audit.safeAutomationSummary.publicDossiersChanged, 0);
   assert.equal(audit.safeAutomationSummary.publicPagesPublished, 0);
   const cleanGroup = audit.possibleDuplicateGroups.find((group) => group.automation.automationLevel === "auto_clean_now" && group.records.some((record) => record.id === "empty-source"));
@@ -2341,7 +2341,7 @@ test("population audit automation classifies and runs safe consolidation without
   state = await store.getDossierWorkflowState();
   const suppressedAudit = workflow.createDossierPopulationAudit({ candidates: state.candidates, drafts: state.drafts, recommendations: state.recommendations, suppressions: state.populationAuditSuppressions });
   assert.equal(suppressedAudit.possibleDuplicateGroups.length, 0);
-  assert.deepEqual(databasePage.entries.map((entry) => entry.id), publicIdsBefore);
+  assert.equal(JSON.stringify(databasePage.entries), publicDatabaseBefore);
 });
 
 test("owner review page is a placeholder lane without publishing", () => {

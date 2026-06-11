@@ -2041,23 +2041,23 @@ test("Subject Consolidation Queue renders action summary, review cards, blocked 
     "change 0 public dossier text",
     "keep internal aliases internal",
     "Similar or ambiguous subjects requiring admin judgment",
-    "Incoming / Lesser Record",
-    "Kept / Better Record",
-    "Why review is needed:",
+    "Incoming Info",
+    "Kept Source File",
+    "Why this needs review:",
     "Recommended action:",
-    "Why keep this one:",
-    "Will attach:",
-    "Will merge:",
-    "Will create:",
+    "Why this target is being kept:",
+    "What will be absorbed:",
+    "Consolidation Plan:",
+    "Create Source File From These Signals",
     "Already represented:",
-    "Needs admin decision:",
-    "Will not change:",
+    "Internal operation:",
+    "What will not change:",
     "Blocked reason:",
     "What must be fixed first:",
-    "Merge Into Kept Source File",
-    "Attach to Kept Source File",
+    "Consolidate Into Kept Source File",
+    "Create Dossier Update Workspace",
     "Keep Separate / Not Same Subject",
-    "Select Target",
+    "Select Different Target",
     "Raw / Source Links",
   ]) {
     assertIncludesCopy(pageCopy, label);
@@ -2065,7 +2065,7 @@ test("Subject Consolidation Queue renders action summary, review cards, blocked 
 
   assert.match(page, /createDossierPopulationAudit/);
   assert.match(page, /postWorkflow\(\{ action: "runSubjectConsolidation" \}\)/);
-  assert.doesNotMatch(pageCopy, /Source File Population Audit|Population Audit|Open Recommendation|Open Source File|Open Target|Open Incoming/);
+  assert.doesNotMatch(pageCopy, /Source File Population Audit|Population Audit|Open Recommendation|Open Source File|Open Target|Open Incoming|Merge Into Kept Source File|Attach to Kept Source File/);
   const queueCopy = pageCopy.slice(pageCopy.indexOf("Subject Consolidation Queue"), pageCopy.indexOf("Candidates", pageCopy.indexOf("Subject Consolidation Queue")));
   assert.doesNotMatch(queueCopy, /recommendation\.reason|recommendation\.evidenceSummary|raw recommendation\.reason|raw recommendation\.summary/);
   assert.doesNotMatch(pageCopy, /Confirmed aliases count: \{record\.confirmedAliasCount\}/);
@@ -2508,30 +2508,129 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
   assert.equal(JSON.stringify(databasePage.entries), publicBefore);
 });
 
+
+test("Consolidate Into Kept Source File dispatches attach, merge, and block behavior safely", async () => {
+  await resetWorkflowStore();
+  const now = "2026-06-11T00:00:00.000Z";
+  const candidate = (overrides) => ({
+    id: overrides.id,
+    name: overrides.name,
+    candidateType: "artist",
+    source: "manual",
+    tier: "review_candidate",
+    score: 5,
+    whyNow: overrides.whyNow ?? "Fixture",
+    reason: overrides.reason ?? "Fixture",
+    evidenceSummary: overrides.evidenceSummary ?? "Fixture",
+    status: overrides.status ?? "active_source_file",
+    createdAt: overrides.createdAt ?? now,
+    updatedAt: overrides.updatedAt ?? now,
+    ...overrides,
+  });
+  const recommendation = (overrides) => ({
+    id: overrides.id,
+    type: overrides.type ?? "new_subject",
+    subjectName: overrides.subjectName,
+    subjectKey: overrides.subjectKey,
+    status: overrides.status ?? "new",
+    reason: overrides.reason ?? "BNL fixture",
+    evidenceSummary: overrides.evidenceSummary,
+    confidence: overrides.confidence ?? "medium",
+    sourceLanes: overrides.sourceLanes ?? ["public_discord"],
+    sourceTypes: overrides.sourceTypes ?? ["source_file_note"],
+    createdAt: now,
+    updatedAt: overrides.updatedAt ?? now,
+    createdBy: "bnl",
+    ingestSource: overrides.ingestSource ?? "bnl_dynamic_candidate_discovery",
+    ingestKey: overrides.ingestKey,
+    ...overrides,
+  });
+
+  const baseState = {
+    version: 1,
+    revision: 0,
+    candidates: [
+      candidate({ id: "attach-target", name: "Attach Subject", sourceFileNotes: [] }),
+      candidate({ id: "merge-target", name: "Merge Action", latestSourceFileArchiveUpdatedAt: now, sourceFileNotes: [{ id: "target-note", candidateId: "merge-target", type: "fact", text: "target metadata", source: "admin_manual", status: "active", createdAt: now, updatedAt: now }] }),
+      candidate({ id: "merge-lesser", name: "Merge Action", sourceFileNotes: [{ id: "lesser-note", candidateId: "merge-lesser", type: "fact", text: "lesser metadata", source: "admin_manual", status: "active", createdAt: now, updatedAt: now }], connectedRecommendationIds: ["lesser-rec"] }),
+      candidate({ id: "ambiguous-a", name: "Crow" }),
+      candidate({ id: "ambiguous-b", name: "Crowe" }),
+    ],
+    drafts: [],
+    recommendations: [
+      recommendation({ id: "rec-attach-action", subjectName: "Attach Subject", reason: "attach action info", sourceLanes: ["rd_context"], ingestKey: "attach-action-key" }),
+    ],
+    sourceFileRefreshRequests: [],
+    updatedAt: now,
+  };
+  await store.saveDossierWorkflowState(baseState);
+
+  const attachAudit = workflow.createDossierPopulationAudit({ candidates: baseState.candidates, recommendations: baseState.recommendations, publicDossiers: [], drafts: [] });
+  const attachGroup = attachAudit.possibleDuplicateGroups.find((group) => group.consolidationPlan.targetRecord?.id === "attach-target" && group.records.some((record) => record.recommendationId === "rec-attach-action"));
+  assert.ok(attachGroup);
+  const attachResponse = await authedPost({ action: "consolidateSubjectGroup", groupId: attachGroup.id });
+  assert.equal(attachResponse.status, 200);
+  const attached = await attachResponse.json();
+  const attachedRecommendation = attached.recommendations.find((item) => item.id === "rec-attach-action");
+  const attachTarget = attached.candidates.find((item) => item.id === "attach-target");
+  assert.equal(attachedRecommendation.status, "attached_to_source_file");
+  assert.equal(attachedRecommendation.targetCandidateId, "attach-target");
+  assert.deepEqual(attachedRecommendation.sourceLanes, ["rd_context"]);
+  assert.equal(attachedRecommendation.ingestKey, "attach-action-key");
+  assert.ok(attachTarget.connectedRecommendationIds.includes("rec-attach-action"));
+  assert.ok(attachTarget.sourceFileNotes.some((note) => note.publicSafe === false && note.ingestKey === "attach-action-key"));
+  assert.ok(attached.sourceFileRefreshRequests.some((request) => request.candidateId === "attach-target" && request.status === "pending"));
+
+  const mergeAudit = workflow.createDossierPopulationAudit({ candidates: attached.candidates, recommendations: attached.recommendations, publicDossiers: [], drafts: [] });
+  const mergeGroup = mergeAudit.possibleDuplicateGroups.find((group) => group.consolidationPlan.targetRecord?.id === "merge-target" && group.records.some((record) => record.candidateId === "merge-lesser"));
+  assert.ok(mergeGroup);
+  const mergeResponse = await authedPost({ action: "consolidateSubjectGroup", groupId: mergeGroup.id });
+  assert.equal(mergeResponse.status, 200);
+  const merged = await mergeResponse.json();
+  const mergeTarget = merged.candidates.find((item) => item.id === "merge-target");
+  const lesser = merged.candidates.find((item) => item.id === "merge-lesser");
+  assert.ok(mergeTarget.sourceFileNotes.some((note) => note.text === "target metadata"));
+  assert.ok(mergeTarget.sourceFileNotes.some((note) => note.text === "lesser metadata"));
+  assert.ok(mergeTarget.connectedRecommendationIds.includes("lesser-rec"));
+  assert.equal(lesser.status, "merged");
+  assert.equal(lesser.mergedIntoCandidateId, "merge-target");
+  assert.ok(merged.sourceFileRefreshRequests.some((request) => request.candidateId === "merge-target" && request.status === "pending"));
+
+  const blockedBefore = JSON.stringify(merged.candidates.filter((item) => item.id === "ambiguous-a" || item.id === "ambiguous-b"));
+  const blockAudit = workflow.createDossierPopulationAudit({ candidates: merged.candidates, recommendations: merged.recommendations, publicDossiers: [], drafts: [] });
+  const blockGroup = blockAudit.possibleDuplicateGroups.find((group) => group.matchKind === "similar_name");
+  assert.ok(blockGroup);
+  const blockResponse = await authedPost({ action: "consolidateSubjectGroup", groupId: blockGroup.id });
+  assert.equal(blockResponse.status, 200);
+  const blocked = await blockResponse.json();
+  assert.equal(blocked.consolidation.blocked, 1);
+  assert.equal(JSON.stringify(blocked.candidates.filter((item) => item.id === "ambiguous-a" || item.id === "ambiguous-b")), blockedBefore);
+});
+
 test("Subject Consolidation Queue review UI uses direct decision buttons and collapsed raw links", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
   const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
 
   for (const label of [
-    "Incoming / Lesser Record",
-    "Kept / Better Record",
-    "Merge Into Kept Source File",
-    "Attach to Kept Source File",
+    "Incoming Info",
+    "Kept Source File",
+    "Consolidate Into Kept Source File",
+    "Create Dossier Update Workspace",
     "Keep Separate / Not Same Subject",
-    "Select Target",
+    "Select Different Target",
     "Raw / Source Links",
-    "Will attach:",
-    "Will merge:",
-    "Will create:",
+    "What will be absorbed:",
+    "Consolidation Plan:",
+    "Create Source File From These Signals",
     "Already represented:",
-    "Needs admin decision:",
-    "Will not change:",
+    "Internal operation:",
+    "What will not change:",
   ]) {
     assertIncludesCopy(pageCopy, label);
   }
 
   assert.match(page, /<details className="mt-4 border border-border\/60 bg-background\/30 p-3">/);
-  assert.doesNotMatch(pageCopy, /Open Recommendation|Open Source File|Open Target|Open Incoming|Create Dossier Update Later|Create Source File Later|Attach Later|Merge Later|Clean Later/);
+  assert.doesNotMatch(pageCopy, /Open Recommendation|Open Source File|Open Target|Open Incoming|Merge Into Kept Source File|Attach to Kept Source File|Create Dossier Update Later|Create Source File Later|Attach Later|Merge Later|Clean Later/);
   assert.doesNotMatch(pageCopy, /Confirmed aliases count: \{record\.confirmedAliasCount\}/);
   assert.doesNotMatch(pageCopy, /Proposed aliases count: \{record\.proposedAliasCount\}/);
   assert.doesNotMatch(pageCopy, /Archive\/report status: \{record\.hasLatestArchiveOrReport/);

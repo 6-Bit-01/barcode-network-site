@@ -853,12 +853,10 @@ export default function DossierControlCenterPage() {
               <div className="mt-4 border border-accent/40 bg-accent/5 p-3">
                 <p className="font-semibold text-foreground">Subject Consolidation complete:</p>
                 <ul className="mt-2 list-disc space-y-1 pl-5">
-                  <li>{consolidationResult.attachedRecommendations} recommendations attached</li>
-                  <li>{consolidationResult.emptyDuplicatesCleaned} empty duplicates cleaned</li>
-                  <li>{consolidationResult.duplicateRecommendationsCleaned} no-new-info duplicate recommendations cleaned</li>
-                  <li>{consolidationResult.dossierUpdateWorkspacesCreated} Dossier Update workspace created</li>
-                  <li>{consolidationResult.sourceFilesCreated} Source File created</li>
-                  <li>{consolidationResult.sourceFileDuplicatesMerged} safe duplicate Source Files merged</li>
+                  <li>Consolidated {consolidationResult.attachedRecommendations + consolidationResult.sourceFileDuplicatesMerged} incoming items into kept Source Files.</li>
+                  <li>Created {consolidationResult.sourceFilesCreated} Source Files.</li>
+                  <li>Created {consolidationResult.dossierUpdateWorkspacesCreated} Dossier Update workspaces.</li>
+                  <li>Cleaned {consolidationResult.emptyDuplicatesCleaned + consolidationResult.duplicateRecommendationsCleaned} empty duplicates.</li>
                   <li>{consolidationResult.bnlRefreshes.length} BNL refreshes triggered / queued / marked needed</li>
                   <li>{consolidationResult.needsReview} items still need review</li>
                   <li>{consolidationResult.blocked} blocked</li>
@@ -901,56 +899,62 @@ export default function DossierControlCenterPage() {
               <div className="space-y-3">
                 {populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.requiresReview && group.consolidationPlan.automationTier !== "Blocked").slice(0, 10).map((group) => {
                   const plan = group.consolidationPlan;
-                  const keptName = plan.targetDisplayName ?? plan.targetRecord?.displayName ?? plan.targetRecord?.name ?? "Select Target";
+                  const keptName = plan.targetDisplayName ?? plan.targetRecord?.displayName ?? plan.targetRecord?.name ?? "Select Different Target";
                   return (
                     <article key={group.id} className="border border-border/70 bg-background/20 p-4 text-sm text-muted">
                       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                         <div>
                           <p className="text-xs uppercase tracking-[0.3em] text-accent">Subject</p>
                           <h4 className="text-lg font-bold text-foreground">{keptName}</h4>
-                          <p>Why review is needed: {plan.reason}</p>
+                          <p>Why this needs review: {plan.reason}</p>
                           <p>Recommended action: {plan.recommendedNextStep}</p>
-                          <p className="mt-2 font-semibold text-foreground">Why keep this one:</p>
+                          <p className="mt-2 font-semibold text-foreground">Why this target is being kept:</p>
                           <p>{plan.targetSelectionReason}</p>
+                          <p>Internal operation: {plan.automationTier === "Attach to Existing Source File candidate" ? "attach recommendations" : plan.automationTier === "Source File merge candidate" ? "merge duplicate Source File" : plan.automationTier === "Empty duplicate cleanup candidate" ? "clean empty duplicate" : "blocked pending review"}</p>
                         </div>
                         <StatusPill>{plan.confidence} confidence</StatusPill>
                       </div>
                       <div className="mt-3 grid gap-3 lg:grid-cols-2">
                         <div className="border border-border/60 bg-background/30 p-3">
-                          <p className="text-xs uppercase tracking-[0.3em] text-accent">Incoming / Lesser Record</p>
+                          <p className="text-xs uppercase tracking-[0.3em] text-accent">Incoming Info</p>
                           {plan.sourceRecords.map((record) => (
                             <div key={`${group.id}-incoming-${record.type}-${record.id}`} className="mt-2">
                               <p className="font-semibold text-foreground">{record.displayName ?? record.name}</p>
-                              <p>Will attach: {record.type === "recommendation" ? "recommendation signal and source lanes" : "safe notes, recommendations, aliases, and archive references where supported"}</p>
-                              <p>Will merge: {record.type === "recommendation" ? "nothing; it attaches as review-only source information" : "record metadata into the kept Source File"}</p>
+                              <p>What will be absorbed: {record.type === "recommendation" ? "recommendation signal, source lanes, IDs, and review-only metadata" : "safe notes, recommendations, aliases, archive references, and metadata where supported"}</p>
+                              <p>Consolidation Plan: {record.type === "recommendation" ? "attach recommendations internally" : "merge duplicate Source File internally when safe"}</p>
                               <p>Already represented: {record.duplicateInfo.length ? record.duplicateInfo.join("; ") : "same-subject signal detected"}</p>
-                              <p>Will not change: public dossier text, public pages, and internal alias visibility</p>
+                              <p>What will not change: public dossier text, public pages, and internal alias visibility</p>
                             </div>
                           ))}
                         </div>
                         <div className="border border-accent/50 bg-accent/5 p-3">
-                          <p className="text-xs uppercase tracking-[0.3em] text-accent">Kept / Better Record</p>
+                          <p className="text-xs uppercase tracking-[0.3em] text-accent">Kept Source File</p>
                           {plan.targetRecord ? (
                             <div className="mt-2">
                               <p className="font-semibold text-foreground">{keptName}</p>
-                              <p>Why keep this one: {plan.targetSelectionReason}</p>
+                              <p>Why this target is being kept: {plan.targetSelectionReason}</p>
                               <p>Already represented: {plan.targetRecord.uniqueInfo.join("; ")}</p>
-                              <p>Needs admin decision: {plan.mergePlanSections.flatMap((section) => section.needsReview).join("; ") || "confirm whether these are the same subject"}</p>
+                              <p>Why this needs review: {plan.mergePlanSections.flatMap((section) => section.needsReview).join("; ") || "confirm whether these are the same subject"}</p>
                             </div>
                           ) : (
                             <div className="mt-2">
-                              <p className="font-semibold text-foreground">Select Target</p>
-                              <p>Needs admin decision: choose the kept Source File or keep separate.</p>
-                              <p>Will create: {plan.suggestedWorkspace ?? "nothing until a target is selected"}</p>
+                              <p className="font-semibold text-foreground">Select Different Target</p>
+                              <p>Why this needs review: choose the kept Source File or keep separate.</p>
+                              <p>Consolidation Plan: {plan.suggestedWorkspace ?? "nothing until a target is selected"}</p>
                             </div>
                           )}
                         </div>
                       </div>
                       <div className="mt-4 flex flex-wrap gap-2">
-                        <button type="button" className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Merge Into Kept Source File</button>
-                        <button type="button" className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Attach to Kept Source File</button>
+                        {plan.targetRecord ? (
+                          <button type="button" disabled={saving} onClick={() => postWorkflow({ action: "consolidateSubjectGroup", groupId: group.id })} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Consolidate Into Kept Source File</button>
+                        ) : plan.suggestedWorkspace === "Dossier Update" ? (
+                          <button type="button" disabled={saving} onClick={() => postWorkflow({ action: "consolidateSubjectGroup", groupId: group.id })} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Create Dossier Update Workspace</button>
+                        ) : (
+                          <button type="button" disabled={saving} onClick={() => postWorkflow({ action: "consolidateSubjectGroup", groupId: group.id })} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Create Source File From These Signals</button>
+                        )}
                         <button type="button" className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Keep Separate / Not Same Subject</button>
-                        <button type="button" className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Select Target</button>
+                        <button type="button" className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Select Different Target</button>
                       </div>
                       <details className="mt-4 border border-border/60 bg-background/30 p-3">
                         <summary className="cursor-pointer text-xs uppercase tracking-[0.3em] text-muted">Raw / Source Links</summary>

@@ -5798,7 +5798,7 @@ function refreshOutcomeForState(input: {
   };
 }
 
-export async function runSubjectConsolidation(): Promise<SubjectConsolidationResult> {
+export async function runSubjectConsolidation(input: { groupId?: string } = {}): Promise<SubjectConsolidationResult> {
   const now = new Date().toISOString();
   const result: SubjectConsolidationResult = {
     attachedRecommendations: 0,
@@ -5898,13 +5898,18 @@ export async function runSubjectConsolidation(): Promise<SubjectConsolidationRes
     }
 
     for (const group of audit.possibleDuplicateGroups) {
+      if (input.groupId && group.id !== input.groupId) continue;
       const plan = group.consolidationPlan;
       if (plan.automationTier === "Blocked") {
         result.blocked += 1;
         continue;
       }
       if (plan.requiresReview || plan.automationTier === "Select Target Manually") {
-        result.needsReview += 1;
+        if (input.groupId) {
+          result.blocked += 1;
+        } else {
+          result.needsReview += 1;
+        }
         continue;
       }
       const target = plan.targetRecord?.candidateId

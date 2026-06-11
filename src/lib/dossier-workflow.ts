@@ -2181,6 +2181,7 @@ export type DossierWorkflowAction =
   | "attachCandidateToExistingDossier"
   | "markCandidateAsExistingDossierUpdate"
   | "runSubjectConsolidation"
+  | "consolidateSubjectGroup"
   | "detectDuplicateCandidates"
   | "mergeCandidates"
   | "createMasterDraftFromMerge";
@@ -2231,6 +2232,7 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "attachCandidateToExistingDossier",
   "markCandidateAsExistingDossierUpdate",
   "runSubjectConsolidation",
+  "consolidateSubjectGroup",
   "detectDuplicateCandidates",
   "mergeCandidates",
   "createMasterDraftFromMerge",

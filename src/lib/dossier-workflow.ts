@@ -357,6 +357,17 @@ export type DossierDraft = {
   id: string;
   candidateId: string;
   status: DossierDraftStatus;
+  sourceFileDraftMetadata?: {
+    sourceCandidateId: string;
+    sourceCandidateUpdatedAt?: string;
+    sourceFileNoteIds: string[];
+    recommendationIds: string[];
+    assembledAt: string;
+    publicSafeDraft: true;
+    reviewOnlyEvidence: true;
+    autoConfirmedIdentityLinks: false;
+    publicPagesMutated: false;
+  };
   fields: {
     id?: string;
     name: string;
@@ -2919,6 +2930,7 @@ export type DossierWorkflowAction =
   | "selectCandidate"
   | "requestDraft"
   | "createDraftFromCandidate"
+  | "updateDraftFromSourceFile"
   | "saveDraft"
   | "saveDraftEdit"
   | "submitDraftForOwnerReview"
@@ -2980,6 +2992,7 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "selectCandidate",
   "requestDraft",
   "createDraftFromCandidate",
+  "updateDraftFromSourceFile",
   "saveDraft",
   "saveDraftEdit",
   "submitDraftForOwnerReview",

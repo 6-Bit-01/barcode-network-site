@@ -43,6 +43,7 @@ import {
   convertRecommendationToCandidate,
   createDossierRecommendation,
   createDraftFromCandidate,
+  updateDraftFromSourceFile,
   createManualDossierCandidate,
   dismissDossierRecommendation,
   DossierMergeError,
@@ -124,6 +125,7 @@ type DossierWorkflowResponse = {
 const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "createManualCandidate",
   "createDraftFromCandidate",
+  "updateDraftFromSourceFile",
   "saveDraft",
   "submitDraftForOwnerReview",
   "denyCandidate",
@@ -1011,6 +1013,27 @@ export async function POST(req: Request) {
     if (!draft) {
       return NextResponse.json(
         { error: "Candidate not found" },
+        { status: 404 },
+      );
+    }
+
+    const payload = await workflowPayload();
+    return NextResponse.json({ ok: true, action, draft, ...payload });
+  }
+
+  if (action === "updateDraftFromSourceFile") {
+    const draftId = draftIdFromBody(body);
+    if (!draftId) {
+      return NextResponse.json(
+        { error: "draftId is required" },
+        { status: 400 },
+      );
+    }
+
+    const draft = await updateDraftFromSourceFile(draftId);
+    if (!draft) {
+      return NextResponse.json(
+        { error: "Draft not found or cannot be updated from Source File" },
         { status: 404 },
       );
     }

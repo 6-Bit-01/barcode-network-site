@@ -2184,7 +2184,7 @@ test("Population Method Audit renders read-only admin intake map states", () => 
 
   const auditCopy = pageCopy.slice(
     pageCopy.indexOf("Population Method Audit"),
-    pageCopy.indexOf("BNL Signal Reconcile", pageCopy.indexOf("Population Method Audit")),
+    pageCopy.indexOf("Incoming BNL Signals", pageCopy.indexOf("Population Method Audit")),
   );
   assert.doesNotMatch(auditCopy, /fix automatically|Fix Automatically|Run Subject Consolidation|Confirm Consolidation|Consolidate Into|Create Source File|Create Dossier Update|Keep Separate|Select Different Target|merge candidates|Merge button|publish public pages|change public dossier text/i);
 });
@@ -2197,7 +2197,7 @@ test("Population Method Audit renders independently of Subject Consolidation sta
   const consolidationResultIndex = page.indexOf("consolidationResult &&");
   const subjectConditionalCloseIndex = page.indexOf("open={!populationMethodHealthy}", subjectConditionalIndex);
   const populationAuditIndex = page.indexOf("Population Method Audit");
-  const candidatesIndex = page.indexOf("BNL Signal Reconcile", populationAuditIndex);
+  const candidatesIndex = page.indexOf("Incoming BNL Signals", populationAuditIndex);
   const clearBranch = page.slice(subjectConditionalIndex, subjectQueueIndex);
   const fullQueueBranch = page.slice(subjectQueueIndex, subjectConditionalCloseIndex);
 
@@ -9096,24 +9096,26 @@ test("BNL population context endpoint is authenticated, compact, and routing-saf
   delete process.env.BNL_API_KEY;
 });
 
-test("BNL Signal Reconcile renders summary, unresolved cards, and safe admin actions", () => {
+test("Incoming BNL Signals renders filing summary, unresolved exceptions, and safe admin actions", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
   const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
 
   for (const label of [
-    "BNL Signal Reconcile",
-    "Source of recommendation: BNL Signal Reconcile",
-    "Reconcile BNL Signals",
+    "Incoming BNL Signals",
+    "BNL Signal Filing",
+    "Unresolved BNL Signals",
+    "Source of recommendation: Incoming BNL Signals",
     "Signals reviewed",
     "Filed automatically",
-    "Needs Review",
+    "New candidates created",
+    "Attached to existing records",
+    "Already represented",
+    "Unresolved",
+    "Public pages published",
+    "Public dossier text changed",
+    "Internal aliases exposed",
     "Filed / Already Represented",
     "Non-dossier Signals",
-    "Open Source File",
-    "Attach evidence",
-    "Open Candidate",
-    "Mark not dossier subject",
-    "Mark no-new-info",
     "Dismiss",
     "No action needed. Filed automatically.",
     "raw/private evidence is not shown",
@@ -9121,6 +9123,9 @@ test("BNL Signal Reconcile renders summary, unresolved cards, and safe admin act
   ]) {
     assertIncludesCopy(pageCopy, label);
   }
+
+  assert.doesNotMatch(pageCopy, /BNL Signal Reconcile|Reconcile BNL Signals|Population Reconcile|reconcile queue/i);
+  assert.match(source("src/app/api/admin/dossiers/route.ts"), /reconcile_population_signals/);
 
   for (const action of [
     "attach_to_existing_source_file",
@@ -9138,7 +9143,7 @@ test("BNL Signal Reconcile renders summary, unresolved cards, and safe admin act
   }
 
   assert.doesNotMatch(source("src/app/database/[slug]/page.tsx"), /Population Review Queue|BNL Population Scan|rawEvidenceRefs|Internal refs/);
-  assertIncludesCopy(pageCopy, "Open existing record");
+  assertIncludesCopy(pageCopy, "Review");
   assertIncludesCopy(pageCopy, "data-primary-population-actions={primaryActions.length}");
   assert.match(page, /primaryActions\.slice\(0, 2\)\.map/);
   assert.doesNotMatch(pageCopy, /Advanced actions/);
@@ -9544,15 +9549,9 @@ test("Population Review Queue actions update internal workflow records without p
   assert.equal(attachPayload.recommendation.status, "attached_to_source_file");
   assert.equal(attachPayload.candidates.find((item) => item.id === "existing-source-file-pop").sourceFileNotes.length, 1);
 
-  const ignoreResponse = await authedPost({
-    action: "mark_not_population_subject",
-    recommendationId: "pop-rec-nonsubject",
-    actionBy: "admin-test",
-  });
-  assert.equal(ignoreResponse.status, 200);
-  const ignorePayload = await ignoreResponse.json();
-  assert.equal(ignorePayload.recommendation.status, "not_population_subject");
-  assert.equal(ignorePayload.candidates.length, 1);
+  const filedState = await store.getDossierWorkflowState();
+  assert.equal(filedState.recommendations.find((item) => item.id === "pop-rec-nonsubject")?.status, "not_population_subject");
+  assert.equal(filedState.candidates.length, 1);
 
   const contextResponse = await populationContextGet("test-population-context-token");
   assert.equal(contextResponse.status, 200);
@@ -9561,7 +9560,7 @@ test("Population Review Queue actions update internal workflow records without p
   assert.equal(JSON.stringify(context).includes("relationship_journal:private-row"), false);
 });
 
-test("BNL Signal Reconcile search includes matched candidate names and Review stays navigational", () => {
+test("Incoming BNL Signals search includes matched candidate names and Review stays navigational", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
   const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
   assert.match(page, /populationRecommendationSearchText\(recommendation, candidates\)/);
@@ -9717,6 +9716,10 @@ test("Population Review Queue create and attach actions route to existing intern
         reason: "Dismiss only.",
         recommendedLane: "needs_population_review",
         recommendedAction: "admin_review_required",
+        possibleTargets: [
+          { id: "candidate-a", kind: "candidate", name: "Candidate A", confidence: "medium" },
+          { id: "candidate-b", kind: "candidate", name: "Candidate B", confidence: "medium" },
+        ],
         sourceLanes: ["broadcast_memory"],
         createdAt: now,
         updatedAt: now,
@@ -9730,8 +9733,12 @@ test("Population Review Queue create and attach actions route to existing intern
         subjectName: "Needs Info Subject",
         status: "new",
         reason: "Needs info only.",
-        recommendedLane: "candidate_intake",
-        recommendedAction: "create_source_file_candidate",
+        recommendedLane: "needs_population_review",
+        recommendedAction: "admin_review_required",
+        possibleTargets: [
+          { id: "candidate-a", kind: "candidate", name: "Candidate A", confidence: "medium" },
+          { id: "candidate-b", kind: "candidate", name: "Candidate B", confidence: "medium" },
+        ],
         sourceLanes: ["broadcast_memory"],
         createdAt: now,
         updatedAt: now,
@@ -9741,15 +9748,6 @@ test("Population Review Queue create and attach actions route to existing intern
     updatedAt: now,
   });
 
-  const candidatePayload = await (await authedPost({
-    action: "create_source_file_candidate",
-    recommendationId: "pop-create-candidate",
-    actionBy: "admin-test",
-  })).json();
-  assert.equal(candidatePayload.recommendation.status, "attached_to_candidate_intake");
-  assert.equal(candidatePayload.candidate.status, "candidate_intake");
-  assert.equal(candidatePayload.candidate.name, "Brand New Population Subject");
-
   const workspacePayload = await (await authedPost({
     action: "create_dossier_update_workspace",
     recommendationId: "pop-create-workspace",
@@ -9758,16 +9756,19 @@ test("Population Review Queue create and attach actions route to existing intern
   })).json();
   assert.equal(workspacePayload.recommendation.status, "attached_to_existing_dossier_update");
   assert.equal(workspacePayload.candidate.status, "existing_dossier_update");
-  assert.equal(workspacePayload.candidate.existingDossierMatch.id, "EN-001");
 
-  const attachPayload = await (await authedPost({
-    action: "attach_to_existing_dossier_update",
-    recommendationId: "pop-attach-update",
-    candidateId: "existing-update-pop",
-    actionBy: "admin-test",
-  })).json();
-  assert.equal(attachPayload.recommendation.status, "attached_to_existing_dossier_update");
-  assert.equal(attachPayload.recommendation.connectedCandidateId, "existing-update-pop");
+  const filingResponse = await authedGet();
+  assert.equal(filingResponse.status, 200);
+  const filingPayload = await filingResponse.json();
+  const candidateRecommendation = filingPayload.recommendations.find((item) => item.id === "pop-create-candidate");
+  assert.equal(candidateRecommendation.status, "attached_to_candidate_intake");
+  assert.equal(filingPayload.candidates.find((item) => item.name === "Brand New Population Subject")?.status, "candidate_intake");
+
+  const filedState = await store.getDossierWorkflowState();
+
+  const attachRecommendation = filedState.recommendations.find((item) => item.id === "pop-attach-update");
+  assert.equal(attachRecommendation.status, "attached_to_existing_dossier_update");
+  assert.equal(attachRecommendation.connectedCandidateId, "existing-update-pop");
 
   const dismissPayload = await (await authedPost({
     action: "dismiss_population_recommendation",
@@ -9840,7 +9841,7 @@ test("reconcile_population_signals returns safe counts and files Mind Fanatic pu
         populationRecommendation: true,
         createdBy: "bnl_population_recommender",
         ingestSource: "bnl_population_recommender",
-        subjectName: "Unknown Reconcile Subject",
+        subjectName: "Unknown Filing Subject",
         status: "new",
         reason: "No destination exists.",
         recommendedLane: "needs_population_review",
@@ -9862,10 +9863,10 @@ test("reconcile_population_signals returns safe counts and files Mind Fanatic pu
   assert.equal(payload.populationReconcile.publicPagesPublished, 0);
   assert.equal(payload.populationReconcile.publicDossierTextChanged, 0);
   assert.equal(payload.populationReconcile.internalAliasesExposed, 0);
-  assert.equal(payload.populationReconcile.createdSourceFileCandidates, 0);
+  assert.equal(payload.populationReconcile.createdSourceFileCandidates, 1);
   assert.equal(payload.populationReconcile.markedNoNewInfo >= 1, true);
   assert.equal(payload.populationReconcile.duplicatesCollapsed >= 1, true);
-  assert.equal(payload.populationReconcile.unresolvedNeedsReview, 1);
+  assert.equal(payload.populationReconcile.unresolvedNeedsReview, 0);
 
   const state = await store.getDossierWorkflowState();
   const mindVisible = state.recommendations.filter((item) =>
@@ -9874,7 +9875,7 @@ test("reconcile_population_signals returns safe counts and files Mind Fanatic pu
     item.recommendedAction === "admin_review_required"
   );
   assert.equal(mindVisible.length, 0);
-  assert.equal(state.candidates.length, 0);
+  assert.equal(state.candidates.length, 1);
 });
 
 test("population context exposes reconcile destinations and diagnostics", async () => {

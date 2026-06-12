@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { databasePage, type DatabaseEntry } from "@/content";
 import {
   isActiveSourceFileCandidate,
+  isDiagnosticTestArtifactRecommendation,
+  isResolvedDossierRecommendation,
   normalizeDossierSubjectName,
   type DossierCandidate,
   type DossierIdentityLink,
@@ -21,6 +23,7 @@ type RouteLane =
   | "source_file"
   | "candidate_intake"
   | "dossier_update_workspace"
+  | "candidate_recommendation"
   | "resolved_record";
 
 function bearerToken(req: Request): string {
@@ -58,7 +61,10 @@ function tokenMatches(providedToken: string): boolean {
 }
 
 function slugifyPublicDossierName(name: string) {
-  return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+  return name
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "");
 }
 
 function publicDossierPath(entry: DatabaseEntry) {
@@ -128,7 +134,8 @@ function latestRefreshStatus(
     .filter(
       (request) =>
         request.candidateId === candidate.id ||
-        request.normalizedSubjectKey === normalizeDossierSubjectName(candidate.name),
+        request.normalizedSubjectKey ===
+          normalizeDossierSubjectName(candidate.name),
     )
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   const latest = related[0];
@@ -211,8 +218,12 @@ function privateIdentityKey(candidateId: string, link: DossierIdentityLink) {
   return `internal_identity_key:${digest}`;
 }
 
-function identityLinkItem(candidate: DossierCandidate, link: DossierIdentityLink) {
-  const publicSafe = link.visibility === "public_safe" && link.useInPublicDossier;
+function identityLinkItem(
+  candidate: DossierCandidate,
+  link: DossierIdentityLink,
+) {
+  const publicSafe =
+    link.visibility === "public_safe" && link.useInPublicDossier;
   return {
     sourceCandidateId: link.candidateId || candidate.id,
     targetCandidateId: candidate.id,
@@ -248,12 +259,17 @@ function resolvedCandidateItem(
     subjectName: candidate.name,
     normalizedSubjectKey: normalizeDossierSubjectName(candidate.name),
     status: candidate.status,
-    resolvedReason: candidate.mergeNote ?? candidate.routingReason ?? candidate.status,
+    resolvedReason:
+      candidate.mergeNote ?? candidate.routingReason ?? candidate.status,
     destinationCandidateId: candidate.mergedIntoCandidateId ?? null,
     destinationSubjectName: destination?.name ?? null,
     destinationLane: destinationLane(destination),
     publicDossierId: candidate.existingDossierMatch?.id ?? null,
   };
+}
+
+function recommendationRoute(recommendationId: string) {
+  return `/admin/dossiers/recommendations/${encodeURIComponent(recommendationId)}`;
 }
 
 function resolvedRecommendationItem(
@@ -280,7 +296,73 @@ function resolvedRecommendationItem(
     destinationSubjectName: destination?.name ?? null,
     destinationLane: destinationLane(destination),
     publicDossierId: recommendation.targetDossierId ?? null,
+    recommendationId: recommendation.id,
+    route: recommendationRoute(recommendation.id),
   };
+}
+
+function pendingCandidateRecommendationItem(
+  recommendation: DossierRecommendation,
+) {
+  const subjectName = recommendation.subjectName.trim();
+  const normalizedSubjectKey =
+    recommendation.subjectKey?.trim() ||
+    normalizeDossierSubjectName(subjectName);
+  return {
+    recordId: recommendation.id,
+    subjectName,
+    normalizedSubjectKey,
+    status: recommendation.status,
+    resolvedReason: "pending_candidate_recommendation",
+    destinationCandidateId: null,
+    destinationSubjectName: subjectName,
+    destinationLane: "candidate_recommendation" as const,
+    publicDossierId: recommendation.targetDossierId ?? null,
+    recommendationId: recommendation.id,
+    route: recommendationRoute(recommendation.id),
+  };
+}
+
+function isActiveCandidateRecommendation(
+  recommendation: DossierRecommendation,
+  resolvedCandidateIds: Set<string>,
+) {
+  const subjectName = recommendation.subjectName?.trim();
+  const normalizedSubjectKey =
+    recommendation.subjectKey?.trim() ||
+    (subjectName ? normalizeDossierSubjectName(subjectName) : "");
+  if (!subjectName || !normalizedSubjectKey) return false;
+  if (!["new", "reviewing"].includes(recommendation.status)) return false;
+  if (isResolvedDossierRecommendation(recommendation)) return false;
+  if (isDiagnosticTestArtifactRecommendation(recommendation)) return false;
+  if (
+    [
+      recommendation.targetCandidateId,
+      recommendation.connectedCandidateId,
+      recommendation.connectedSourceFileCandidateId,
+    ].some(
+      (candidateId) => candidateId && resolvedCandidateIds.has(candidateId),
+    )
+  ) {
+    return false;
+  }
+  if (
+    recommendation.type === "modify_existing_dossier" ||
+    Boolean(recommendation.targetDossierId) ||
+    Boolean(recommendation.targetCandidateId)
+  ) {
+    return false;
+  }
+  if (
+    recommendation.populationRecommendation &&
+    (recommendation.recommendedLane === "already_represented" ||
+      recommendation.recommendedAction === "mark_duplicate_no_new_info" ||
+      recommendation.recommendedAction === "mark_no_new_info" ||
+      recommendation.recommendedAction === "dismiss_population_recommendation")
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function isResolvedRecommendation(recommendation: DossierRecommendation) {
@@ -317,6 +399,22 @@ export async function GET(req: Request) {
     .map((candidate) =>
       dossierUpdateWorkspaceItem(candidate, state.sourceFileRefreshRequests),
     );
+  const resolvedCandidateIds = new Set(
+    state.candidates
+      .filter(
+        (candidate) =>
+          candidate.status === "merged" ||
+          candidate.status === "archived" ||
+          candidate.status === "denied" ||
+          Boolean(candidate.mergedIntoCandidateId),
+      )
+      .map((candidate) => candidate.id),
+  );
+  const pendingRecommendationCandidateRecords = state.recommendations
+    .filter((recommendation) =>
+      isActiveCandidateRecommendation(recommendation, resolvedCandidateIds),
+    )
+    .map(pendingCandidateRecommendationItem);
   const identityLinks = state.candidates.flatMap((candidate) =>
     (candidate.identityLinks ?? []).map((identityLink) =>
       identityLinkItem(candidate, identityLink),
@@ -336,6 +434,7 @@ export async function GET(req: Request) {
       .map((recommendation) =>
         resolvedRecommendationItem(recommendation, candidatesById),
       ),
+    ...pendingRecommendationCandidateRecords,
   ];
 
   return NextResponse.json(
@@ -353,6 +452,8 @@ export async function GET(req: Request) {
         publicDossierCount: publicDossiers.length,
         sourceFileCount: sourceFiles.length,
         candidateCount: candidates.length,
+        pendingRecommendationCandidateCount:
+          pendingRecommendationCandidateRecords.length,
         dossierUpdateWorkspaceCount: dossierUpdateWorkspaces.length,
         identityLinkCount: identityLinks.length,
         resolvedRecordCount: resolvedRecords.length,

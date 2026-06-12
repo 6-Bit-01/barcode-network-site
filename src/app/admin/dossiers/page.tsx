@@ -1719,8 +1719,8 @@ export default function DossierControlCenterPage() {
         </DashboardCard>
 
         <DashboardCard
-          eyebrow="Candidates"
-          title="Candidates"
+          eyebrow="Candidates & Recommendation Intake"
+          title="Candidates & Recommendation Intake"
           aside={
             <StatusPill>
               {candidateIntakeItems.length +
@@ -1729,6 +1729,9 @@ export default function DossierControlCenterPage() {
             </StatusPill>
           }
         >
+          <p className="mb-4 text-sm text-muted">
+            This section includes real Candidate Intake records and recommendation-backed subjects that still need review.
+          </p>
           <div className="mb-4">
             <details className="border border-border/70 bg-background/20 p-4">
               <summary className="cursor-pointer text-sm font-semibold text-foreground">
@@ -1832,6 +1835,7 @@ export default function DossierControlCenterPage() {
               <table className="w-full min-w-[820px] text-left text-sm text-muted">
                 <thead className="text-xs uppercase tracking-widest text-foreground">
                   <tr>
+                    <th className="py-2 pr-3">Review lane</th>
                     <th className="py-2 pr-3">Subject</th>
                     <th className="py-2 pr-3">Why BNL noticed</th>
                     <th className="py-2 pr-3">Strength / confidence</th>
@@ -1848,6 +1852,9 @@ export default function DossierControlCenterPage() {
                         key={recommendation.id}
                         className="border-t border-border/70 align-top"
                       >
+                        <td className="py-3 pr-3">
+                          <StatusPill>Recommendation</StatusPill>
+                        </td>
                         <td className="py-3 pr-3 font-semibold text-foreground">
                           {recommendation.subjectName}
                         </td>
@@ -1888,6 +1895,9 @@ export default function DossierControlCenterPage() {
                       key={candidate.id}
                       className="border-t border-border/70 align-top"
                     >
+                      <td className="py-3 pr-3">
+                        <StatusPill>Candidate Intake</StatusPill>
+                      </td>
                       <td className="py-3 pr-3 font-semibold text-foreground">
                         {candidate.name}
                       </td>

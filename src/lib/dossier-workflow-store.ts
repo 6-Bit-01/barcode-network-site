@@ -41,6 +41,7 @@ import {
   type DossierSourceFileNoteSource,
   type DossierSourceFileNoteType,
   type DossierDuplicateRisk,
+  type DossierPopulationRecommendedAction,
   type DossierWorkflowLink,
   createDossierPopulationAudit,
   isActiveSourceFileCandidate,
@@ -907,6 +908,7 @@ const RECOMMENDATION_TYPES: DossierRecommendationType[] = [
   "modify_existing_dossier",
   "identity_link",
   "possible_connection_review",
+  "population_recommendation",
 ];
 const RECOMMENDATION_SOURCE_LANES: DossierRecommendationSourceLane[] = [
   "public_discord",
@@ -1407,10 +1409,42 @@ function normalizeRecommendationInput(
       input.ingestSource === "bnl_dynamic_candidate_discovery" ||
       input.ingestSource === "bnl_source_knowledge_bridge" ||
       input.ingestSource === "bnl_source_file_enrichment" ||
+      input.ingestSource === "bnl_population_recommender" ||
       input.ingestSource === "system" ||
       input.ingestSource === "unknown"
         ? input.ingestSource
         : undefined,
+    populationRecommendation:
+      input.populationRecommendation === true ||
+      input.type === "population_recommendation" ||
+      input.createdBy === "bnl_population_recommender" ||
+      input.ingestSource === "bnl_population_recommender"
+        ? true
+        : undefined,
+    recommendedLane: input.recommendedLane,
+    matchedExistingCandidateId: boundedText(input.matchedExistingCandidateId, 200) || undefined,
+    matchedPublicDossierId: boundedText(input.matchedPublicDossierId, 200) || undefined,
+    matchedPublicDossierName: boundedText(input.matchedPublicDossierName, 200) || undefined,
+    matchedDossierUpdateCandidateId: boundedText(input.matchedDossierUpdateCandidateId, 200) || undefined,
+    possibleTargets: Array.isArray(input.possibleTargets)
+      ? input.possibleTargets.slice(0, 8).map((target) => ({
+          id: boundedText(target?.id, 200),
+          name: boundedText(target?.name, 200),
+          lane: boundedText(target?.lane, 100),
+          confidence: boundedText(target?.confidence, 50),
+        })).filter((target) => target.id || target.name)
+      : undefined,
+    duplicateRisk: input.duplicateRisk,
+    identityRisk: input.identityRisk,
+    publicSafetyLevel: input.publicSafetyLevel,
+    adminSummary: boundedText(input.adminSummary, 1200) || undefined,
+    recommendedNextStep: boundedText(input.recommendedNextStep, 1000) || undefined,
+    doNotPublishReason: boundedText(input.doNotPublishReason, 1000) || undefined,
+    rawEvidenceRefs: normalizeStringArray(input.rawEvidenceRefs).slice(0, 100),
+    rawEvidenceRefCount: normalizeStringArray(input.rawEvidenceRefs).length,
+    inputHash: boundedText(input.inputHash, 300) || undefined,
+    stale: input.stale === true,
+    generatedAt: boundedText(input.generatedAt, 80) || undefined,
   };
 }
 
@@ -1427,6 +1461,9 @@ function isAutoConvertibleBnlSourceRecommendation(
 function bnlIngestLabel(
   recommendation: Pick<DossierRecommendation, "ingestSource">,
 ): string {
+  if (recommendation.ingestSource === "bnl_population_recommender") {
+    return "BNL Population Scan";
+  }
   if (recommendation.ingestSource === "bnl_source_file_enrichment") {
     return "BNL Source File Enrichment";
   }
@@ -1486,6 +1523,13 @@ function bnlAutoCandidateSourceNotes(
       "Source Knowledge Bridge origin: BNL local knowledge stores.",
       "Public use requires review before any public dossier copy is written.",
       "Internal/private review required for bridge-derived context.",
+    ];
+  }
+  if (recommendation.ingestSource === "bnl_population_recommender") {
+    return [
+      "BNL Population Scan origin: BNL-generated population routing recommendation.",
+      "Review-only internal queue material; not public copy.",
+      "Admin action is required before any Source File or Dossier Update workflow change.",
     ];
   }
   if (recommendation.ingestSource === "bnl_source_file_enrichment") {
@@ -2856,12 +2900,24 @@ export async function createDossierRecommendationIdempotent(
       ? currentState.recommendations.find(
           (item) => item.ingestKey === recommendation.ingestKey,
         )
-      : currentState.recommendations.find(
-          (item) =>
-            isActiveRecommendation(item) &&
-            fallbackRecommendationDedupeKey(item) ===
-              fallbackRecommendationDedupeKey(recommendation),
-        );
+      : recommendation.inputHash
+        ? currentState.recommendations.find(
+            (item) => item.inputHash === recommendation.inputHash,
+          )
+        : recommendation.populationRecommendation
+          ? currentState.recommendations.find(
+              (item) =>
+                item.populationRecommendation &&
+                recommendationDedupeSubject(item.subjectName) ===
+                  recommendationDedupeSubject(recommendation.subjectName) &&
+                item.recommendedAction === recommendation.recommendedAction,
+            )
+          : currentState.recommendations.find(
+              (item) =>
+                isActiveRecommendation(item) &&
+                fallbackRecommendationDedupeKey(item) ===
+                  fallbackRecommendationDedupeKey(recommendation),
+            );
 
     if (existing) {
       if (
@@ -2960,6 +3016,30 @@ export async function createDossierRecommendationIdempotent(
         };
       }
 
+      if (recommendation.populationRecommendation && existing.populationRecommendation) {
+        savedRecommendation = {
+          ...existing,
+          ...recommendation,
+          id: existing.id,
+          status: existing.status,
+          createdAt: existing.createdAt,
+          firstSeenAt: existing.firstSeenAt ?? existing.createdAt,
+          lastSeenAt: now,
+          seenCount: (existing.seenCount ?? 1) + 1,
+          rawEvidenceRefs: uniqueStrings(existing.rawEvidenceRefs, recommendation.rawEvidenceRefs),
+          rawEvidenceRefCount: uniqueStrings(existing.rawEvidenceRefs, recommendation.rawEvidenceRefs).length,
+          populationReviewActions: existing.populationReviewActions,
+          updatedAt: now,
+        };
+        duplicate = true;
+        return {
+          ...currentState,
+          recommendations: currentState.recommendations.map((item) =>
+            item.id === existing.id ? savedRecommendation : item,
+          ),
+          updatedAt: now,
+        };
+      }
       savedRecommendation = existing;
       duplicate = true;
       return currentState;
@@ -4298,6 +4378,194 @@ async function setRecommendationStatus(
   });
   return updatedRecommendation!;
 }
+
+export type PopulationReviewRecommendationActionInput = {
+  recommendationId: string;
+  action: DossierPopulationRecommendedAction | "mark_needs_more_info";
+  candidateId?: string;
+  dossierId?: string;
+  actionBy?: string;
+  actionReason?: string;
+};
+
+function populationActionStatus(
+  action: PopulationReviewRecommendationActionInput["action"],
+  candidate?: DossierCandidate,
+): DossierRecommendationStatus {
+  if (action === "dismiss_population_recommendation") return "dismissed";
+  if (action === "mark_no_new_info") return "no_new_info";
+  if (action === "mark_not_population_subject") return "not_population_subject";
+  if (action === "mark_needs_more_info") return "needs_more_info";
+  if (action === "attach_to_existing_dossier_update") return "attached_to_existing_dossier_update";
+  if (action === "attach_to_existing_source_file") return "attached_to_source_file";
+  if (action === "create_dossier_update_workspace") return "attached_to_existing_dossier_update";
+  if (action === "create_source_file_candidate") return "attached_to_candidate_intake";
+  return candidate ? attachmentStatusForCandidate(candidate) : "reviewing";
+}
+
+function populationActionNoteText(recommendation: DossierRecommendation, action: string): string {
+  return [
+    `Population Review Queue action: ${action}.`,
+    recommendation.adminSummary ? `Admin summary: ${recommendation.adminSummary}` : undefined,
+    recommendation.evidenceSummary ? `Evidence summary: ${recommendation.evidenceSummary}` : undefined,
+    recommendation.recommendedNextStep ? `Recommended next step: ${recommendation.recommendedNextStep}` : undefined,
+    recommendation.rawEvidenceRefCount || recommendation.rawEvidenceRefs?.length
+      ? `Internal evidence refs preserved: ${recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0}.`
+      : undefined,
+    "No public dossier text was changed and no public page was published by this action.",
+  ].filter(Boolean).join("\n\n").slice(0, 4000);
+}
+
+export async function applyPopulationReviewRecommendationAction(
+  input: PopulationReviewRecommendationActionInput,
+): Promise<{ recommendation: DossierRecommendation; candidate?: DossierCandidate }> {
+  if (input.action === "reopen_population_recommendation") {
+    const now = new Date().toISOString();
+    let updated: DossierRecommendation | null = null;
+    await updateDossierWorkflowState((currentState) => ({
+      ...currentState,
+      recommendations: currentState.recommendations.map((recommendation) => {
+        if (recommendation.id !== input.recommendationId) return recommendation;
+        updated = {
+          ...recommendation,
+          status: "reviewing",
+          routingReason: input.actionReason || "Reopened from Population Review Queue.",
+          populationReviewActions: [
+            ...(recommendation.populationReviewActions ?? []),
+            { action: input.action, actionAt: now, actionBy: input.actionBy, actionReason: input.actionReason },
+          ],
+          updatedAt: now,
+        };
+        return updated;
+      }),
+      updatedAt: now,
+    }));
+    if (!updated) throw new DossierWorkflowInputError("Recommendation not found", 404, "recommendation_not_found");
+    return { recommendation: updated };
+  }
+
+  const now = new Date().toISOString();
+  let result: { recommendation: DossierRecommendation; candidate?: DossierCandidate } | null = null;
+
+  await updateDossierWorkflowState((currentState) => {
+    const recommendation = currentState.recommendations.find((item) => item.id === input.recommendationId);
+    if (!recommendation) throw new DossierWorkflowInputError("Recommendation not found", 404, "recommendation_not_found");
+    assertRecommendationIsOpen(recommendation);
+
+    let candidates = currentState.candidates;
+    let targetCandidate = input.candidateId
+      ? candidates.find((candidate) => candidate.id === input.candidateId)
+      : undefined;
+    if (!targetCandidate && recommendation.matchedExistingCandidateId) {
+      targetCandidate = candidates.find((candidate) => candidate.id === recommendation.matchedExistingCandidateId);
+    }
+    if (!targetCandidate && recommendation.matchedDossierUpdateCandidateId) {
+      targetCandidate = candidates.find((candidate) => candidate.id === recommendation.matchedDossierUpdateCandidateId);
+    }
+    if (!targetCandidate && recommendation.targetCandidateId) {
+      targetCandidate = candidates.find((candidate) => candidate.id === recommendation.targetCandidateId);
+    }
+
+    if (input.action === "create_source_file_candidate") {
+      const existingMatch = matchDossierRecommendationSubject({ recommendation, candidates });
+      targetCandidate = existingMatch.exactCandidateId
+        ? candidates.find((candidate) => candidate.id === existingMatch.exactCandidateId)
+        : undefined;
+      if (!targetCandidate) {
+        targetCandidate = buildCandidateFromRecommendation({
+          recommendation,
+          now,
+          source: recommendation.ingestSource === "bnl_population_recommender" ? "bnl_dynamic_candidate_discovery" : bnlIngestCandidateSource(recommendation),
+          noteText: populationActionNoteText(recommendation, input.action),
+        });
+        targetCandidate = { ...targetCandidate, status: "candidate_intake" };
+        candidates = [targetCandidate, ...candidates];
+      }
+    }
+
+    if (input.action === "create_dossier_update_workspace") {
+      const dossierId = input.dossierId || recommendation.matchedPublicDossierId || recommendation.targetDossierId;
+      const entry = databasePage.entries.find((item) => item.id === dossierId);
+      if (!entry) throw new DossierWorkflowInputError("dossierId is required", 400, "dossier_id_required");
+      targetCandidate = candidates.find((candidate) => candidate.status === "existing_dossier_update" && candidate.existingDossierMatch?.id === entry.id);
+      if (!targetCandidate) {
+        targetCandidate = buildCandidateFromRecommendation({
+          recommendation: { ...recommendation, subjectName: entry.name, targetDossierId: entry.id },
+          now,
+          source: "website_read_model",
+          noteText: populationActionNoteText(recommendation, input.action),
+        });
+        targetCandidate = {
+          ...targetCandidate,
+          name: entry.name,
+          status: "existing_dossier_update",
+          existingDossierMatch: { id: entry.id, name: entry.name, confidence: "high" as const },
+        };
+        candidates = [targetCandidate, ...candidates];
+      }
+    }
+
+    if ((input.action === "attach_to_existing_source_file" || input.action === "attach_to_existing_dossier_update") && !targetCandidate) {
+      throw new DossierWorkflowInputError("Target workflow record not found", 404, "target_candidate_not_found");
+    }
+
+    const nextStatus = populationActionStatus(input.action, targetCandidate);
+    const updatedRecommendation: DossierRecommendation = {
+      ...recommendation,
+      status: nextStatus,
+      targetCandidateId: targetCandidate?.id ?? recommendation.targetCandidateId,
+      targetDossierId: input.dossierId ?? recommendation.matchedPublicDossierId ?? recommendation.targetDossierId,
+      connectedCandidateId: targetCandidate?.id ?? recommendation.connectedCandidateId,
+      connectedSourceFileCandidateId: targetCandidate?.id ?? recommendation.connectedSourceFileCandidateId,
+      routingReason: input.actionReason || `Population Review Queue action: ${input.action}`,
+      populationReviewActions: [
+        ...(recommendation.populationReviewActions ?? []),
+        {
+          action: input.action,
+          actionAt: now,
+          actionBy: input.actionBy,
+          actionReason: input.actionReason,
+          targetCandidateId: targetCandidate?.id,
+          targetDossierId: input.dossierId ?? recommendation.matchedPublicDossierId ?? recommendation.targetDossierId,
+        },
+      ],
+      updatedAt: now,
+    };
+
+    if (targetCandidate && ["attach_to_existing_source_file", "attach_to_existing_dossier_update", "create_dossier_update_workspace", "create_source_file_candidate"].includes(input.action)) {
+      const note = routingNote({
+        candidateId: targetCandidate.id,
+        now,
+        text: populationActionNoteText(recommendation, input.action),
+        source: "bnl_recommendation",
+        createdBy: recommendation.createdBy,
+        ingestKey: recommendation.ingestKey,
+        ingestedAt: recommendation.ingestedAt,
+        ingestSource: recommendation.ingestSource,
+      });
+      candidates = candidates.map((candidate) => candidate.id === targetCandidate!.id ? {
+        ...candidate,
+        sourceFileNotes: [note, ...(candidate.sourceFileNotes ?? [])],
+        connectedRecommendationIds: uniqueStrings(candidate.connectedRecommendationIds, [recommendation.id]),
+        sourceRecommendationIds: uniqueStrings(candidate.sourceRecommendationIds, [recommendation.id]),
+        updatedAt: now,
+      } : candidate);
+      targetCandidate = candidates.find((candidate) => candidate.id === targetCandidate!.id) ?? targetCandidate;
+    }
+
+    result = { recommendation: updatedRecommendation, candidate: targetCandidate };
+    return {
+      ...currentState,
+      recommendations: currentState.recommendations.map((item) => item.id === recommendation.id ? updatedRecommendation : item),
+      candidates,
+      updatedAt: now,
+    };
+  });
+
+  if (!result) throw new DossierWorkflowInputError("Recommendation not found", 404, "recommendation_not_found");
+  return result;
+}
+
 
 export function ignoreDossierRecommendation(
   recommendationId: string,

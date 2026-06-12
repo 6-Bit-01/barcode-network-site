@@ -29,6 +29,7 @@ import {
 } from "@/lib/dossier-workflow";
 import {
   addDossierIdentityLink,
+  applyPopulationReviewRecommendationAction,
   addDossierSourceFileNote,
   updateDossierSourceFileSummary,
   archiveDossierCandidate,
@@ -150,6 +151,15 @@ const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "markCandidateAsExistingDossierUpdate",
   "runSubjectConsolidation",
   "consolidateSubjectGroup",
+  "attach_to_existing_source_file",
+  "attach_to_existing_dossier_update",
+  "create_dossier_update_workspace",
+  "create_source_file_candidate",
+  "mark_no_new_info",
+  "mark_not_population_subject",
+  "dismiss_population_recommendation",
+  "reopen_population_recommendation",
+  "mark_needs_more_info",
 ]);
 
 async function isAuthenticated(req: Request): Promise<boolean> {
@@ -684,6 +694,37 @@ export async function POST(req: Request) {
         recommendation,
         ...payload,
       });
+    }
+
+
+    if (
+      action === "attach_to_existing_source_file" ||
+      action === "attach_to_existing_dossier_update" ||
+      action === "create_dossier_update_workspace" ||
+      action === "create_source_file_candidate" ||
+      action === "mark_no_new_info" ||
+      action === "mark_not_population_subject" ||
+      action === "dismiss_population_recommendation" ||
+      action === "reopen_population_recommendation" ||
+      action === "mark_needs_more_info"
+    ) {
+      const recommendationId = recommendationIdFromBody(body);
+      if (!recommendationId) {
+        return NextResponse.json(
+          { error: "recommendationId is required" },
+          { status: 400 },
+        );
+      }
+      const result = await applyPopulationReviewRecommendationAction({
+        recommendationId,
+        action,
+        candidateId: candidateIdFromBody(body) || undefined,
+        dossierId: typeof body.dossierId === "string" ? body.dossierId : undefined,
+        actionBy: typeof body.actionBy === "string" ? body.actionBy : "admin",
+        actionReason: typeof body.actionReason === "string" ? body.actionReason : undefined,
+      });
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, ...result, ...payload });
     }
 
     if (action === "createIdentityLinkFromRecommendation") {

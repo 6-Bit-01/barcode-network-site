@@ -429,6 +429,152 @@ function uniqueLabels(labels: string[]) {
   return Array.from(new Set(labels.filter(Boolean)));
 }
 
+type DossierReadinessLabel =
+  | "Ready for Proposed Dossier"
+  | "Almost Ready"
+  | "Internal Source File Only"
+  | "Needs Identity Review"
+  | "Needs More Public Evidence";
+
+type MainSourceFileAction =
+  | "add_to_source_file"
+  | "add_missing_evidence"
+  | "create_draft"
+  | "open_draft"
+  | "update_draft"
+  | "open_update_workspace";
+
+function safeCompleteText(value?: string | null) {
+  const clean = value?.replace(/\s+/g, " ").trim();
+  if (!clean) return undefined;
+  return clean.replace(/(\.\.\.|…)+$/g, "").trim();
+}
+
+function firstMeaningful(items: Array<string | undefined | null>, fallback: string) {
+  return safeCompleteText(items.find((item) => safeCompleteText(item))) ?? fallback;
+}
+
+function readableCoverageLabel(value: string) {
+  const key = value.toLowerCase();
+  if (key.includes("queue") || key.includes("submission") || key.includes("played")) return "queue evidence";
+  if (key.includes("discord") || key.includes("conversation")) return "public Discord activity";
+  if (key.includes("relationship")) return "review-only internal context";
+  if (key.includes("memory") || key.includes("broadcast")) return "BNL memory";
+  if (key.includes("entity_activity")) return "community presence";
+  if (key.includes("dossier")) return "public dossier match";
+  if (key.includes("note")) return "source notes";
+  return value
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function uniqueReadable(items: Array<string | undefined | null>, limit = 5) {
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const item of items) {
+    const clean = safeCompleteText(item);
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(clean);
+    if (output.length >= limit) break;
+  }
+  return output;
+}
+
+function inferEntityType(input: {
+  candidate: DossierCandidate;
+  activitySignals: string[];
+  musicSignals: string[];
+}) {
+  const text = [
+    input.candidate.recommendedKind,
+    input.candidate.recommendedCategory,
+    ...(input.candidate.recommendedTags ?? []),
+    ...(input.candidate.proposedTags ?? []),
+    ...input.activitySignals,
+    ...input.musicSignals,
+  ]
+    .join(" ")
+    .toLowerCase();
+  if (/sponsor|brand|partner/.test(text)) return "sponsor";
+  if (/moderator|mod\b/.test(text)) return "moderator";
+  if (/artist|music|track|song|producer|dj/.test(text)) return "artist";
+  if (/collaborator|guest|contributor/.test(text)) return "collaborator";
+  if (/supporter|donor|boost/.test(text)) return "supporter";
+  if (/lore|anomaly|character/.test(text)) return "lore/anomaly figure";
+  if (/technical|internal|system|interface/.test(text)) return "technical/internal entity";
+  if (/viewer|community|discord|chat/.test(text)) return "viewer/community member";
+  return "unknown / not enough evidence";
+}
+
+function readinessForSourceFile(input: {
+  sourceFileExists: boolean;
+  identityNeedsReview: boolean;
+  publicSafeFactCount: number;
+  activityEvidenceCount: number;
+  roleKnown: boolean;
+  missingInfoCount: number;
+  reviewOnlyEvidenceCount: number;
+}): { label: DossierReadinessLabel; reasons: string[]; blockers: string[] } {
+  const reasons: string[] = [];
+  const blockers: string[] = [];
+  if (!input.sourceFileExists) {
+    return {
+      label: "Internal Source File Only",
+      reasons: ["This record has not been added to a BNL Source File yet."],
+      blockers: ["Add it to a Source File before drafting."],
+    };
+  }
+  if (input.identityNeedsReview) blockers.push("Identity links or aliases still need review.");
+  if (input.publicSafeFactCount === 0) blockers.push("Public-safe facts have not been separated yet.");
+  if (!input.roleKnown) blockers.push("Public-safe identity / role / activity evidence is incomplete.");
+  if (input.activityEvidenceCount === 0) blockers.push("Community activity evidence is missing or only internal.");
+  if (input.reviewOnlyEvidenceCount > 0) reasons.push("Review-only evidence exists and must stay out of public copy.");
+  if (input.publicSafeFactCount > 0) reasons.push("Public-safe facts are available for admin drafting.");
+  if (input.activityEvidenceCount > 0) reasons.push("BNL has activity evidence to review.");
+
+  if (input.identityNeedsReview) return { label: "Needs Identity Review", reasons, blockers };
+  if (input.publicSafeFactCount === 0 || !input.roleKnown) {
+    return { label: "Needs More Public Evidence", reasons, blockers };
+  }
+  if (input.activityEvidenceCount === 0) {
+    return { label: "Internal Source File Only", reasons, blockers };
+  }
+  if (input.missingInfoCount > 0 || input.reviewOnlyEvidenceCount > 0) {
+    return { label: "Almost Ready", reasons, blockers };
+  }
+  return { label: "Ready for Proposed Dossier", reasons, blockers };
+}
+
+function primaryActionForSourceFile(input: {
+  sourceFileExists: boolean;
+  hasPublicDossier: boolean;
+  isExistingDossierUpdate: boolean;
+  hasDraft: boolean;
+  sourceFileChangedSinceDraft: boolean;
+  readyForDraft: boolean;
+}): MainSourceFileAction {
+  if (!input.sourceFileExists) return "add_to_source_file";
+  if (input.hasPublicDossier && !input.isExistingDossierUpdate) return "open_update_workspace";
+  if (input.hasDraft && input.sourceFileChangedSinceDraft) return "update_draft";
+  if (input.hasDraft) return "open_draft";
+  if (input.readyForDraft) return "create_draft";
+  return "add_missing_evidence";
+}
+
+function actionExplanation(action: MainSourceFileAction, readinessLabel: DossierReadinessLabel) {
+  if (action === "add_to_source_file") return "This record needs to become a BNL Source File before drafting is available.";
+  if (action === "create_draft") return "The Source File has enough public-safe dossier intelligence to create a reviewable Proposed Dossier draft.";
+  if (action === "open_draft") return "The Proposed Dossier draft is current with the Source File.";
+  if (action === "update_draft") return "The Source File has changed since the current draft was created or updated.";
+  if (action === "open_update_workspace") return "A public dossier is already linked, so this should move through the Dossier Update workspace instead of a new Proposed Dossier.";
+  return `Draft blocked: missing public-safe identity / role / activity evidence. Current readiness: ${readinessLabel}.`;
+}
+
 function sourceWarningLabels(input: {
   candidate: DossierCandidate;
   recommendations: DossierRecommendation[];
@@ -1288,8 +1434,17 @@ export default function CandidateReviewPage() {
       recommendation,
     ]),
   );
+  const draftSourceReferenceAt =
+    primaryDraft?.sourceFileDraftMetadata?.assembledAt ?? primaryDraft?.updatedAt;
   const sourceFileChangedSinceDraft = Boolean(
-    primaryDraft && (sourceMetrics?.unappliedSourceNotesCount ?? 0) > 0,
+    primaryDraft &&
+      ((sourceMetrics?.unappliedSourceNotesCount ?? 0) > 0 ||
+        (draftSourceReferenceAt &&
+          candidate?.updatedAt &&
+          Date.parse(candidate.updatedAt) > Date.parse(draftSourceReferenceAt)) ||
+        (draftSourceReferenceAt &&
+          latestRecommendationTimestamp &&
+          Date.parse(latestRecommendationTimestamp) > Date.parse(draftSourceReferenceAt))),
   );
   const nextRecommendedAction = sourceFileChangedSinceDraft
     ? "Update Draft From Source File"
@@ -1655,6 +1810,128 @@ export default function CandidateReviewPage() {
     ],
     { subjectName: candidate.name, fallback: "No review-only evidence notes recorded." },
   );
+  const rawPublicSafeFacts = uniqueReadable([
+    ...(candidate.knownFacts ?? []),
+    ...(candidate.sourceFileNotes ?? [])
+      .filter((note) => note.status === "active" && note.publicSafe === true)
+      .map((note) => note.text),
+    ...(entityActivityReadout?.publicUseCandidates ?? []),
+  ]);
+  const activitySignals = uniqueReadable([
+    ...(entityActivityReadout?.activityFrequencySummary ?? []),
+    ...(entityActivityReadout?.recentActivitySummary ?? []),
+    ...(entityActivityReadout?.communitySignals ?? []),
+    ...(entityActivityReadout?.conversationHighlights ?? []),
+    ...(sourceFileSummary?.activityFrequencySummary ?? []),
+    ...(sourceFileSummary?.recentActivitySummary ?? []),
+    ...(sourceFileSummary?.communitySignals ?? []),
+  ], 6);
+  const topicSignals = uniqueReadable([
+    ...(entityActivityReadout?.topicBreakdown ?? []),
+    ...(entityActivityReadout?.topTopicDetails ?? []),
+    ...(sourceFileSummary?.topicBreakdown ?? []),
+    ...(sourceFileSummary?.topTopicDetails ?? []),
+    ...(sourceFileSummary?.patterns ?? []),
+  ], 5);
+  const authoredVsMentioned = uniqueReadable([
+    ...(entityActivityReadout?.authoredVsMentionedSummary ?? []),
+    ...(sourceFileSummary?.authoredVsMentionedSummary ?? []),
+  ], 3);
+  const musicSignals = uniqueReadable([
+    ...(entityActivityReadout?.musicSignals ?? []),
+    ...(sourceFileSummary?.musicSignals ?? []),
+  ], 5);
+  const queueStatus = safeCompleteText(
+    entityActivityReadout?.queueSubmissionStatus ?? sourceFileSummary?.queueSubmissionStatus,
+  );
+  const queueNote = safeCompleteText(
+    entityActivityReadout?.queueSubmissionNote ?? sourceFileSummary?.queueSubmissionNote,
+  );
+  const hasConfirmedQueueFootprint = Boolean(queueStatus || queueNote);
+  const readableCoverage = uniqueReadable(
+    [
+      ...(sourceFileSummary?.sourceCoverage ?? []),
+      ...(entityActivityReadout?.sourceCoverage ?? []),
+      ...evidenceReceiptLanes,
+    ].map(readableCoverageLabel),
+    6,
+  );
+  const roleKnown = Boolean(
+    candidate.recommendedKind ||
+      candidate.recommendedCategory ||
+      rawPublicSafeFacts.some((item) => /artist|moderator|collaborator|supporter|viewer|sponsor|community|music/i.test(item)),
+  );
+  const sourceFileExists = !isCandidateIntake && !isArchivedCandidate && !isCandidateClosed(candidate);
+  const identityNeedsReview =
+    proposedIdentityLinks.length > 0 || candidate.identityReviewStatus === "needs_confirmation";
+  const readiness = readinessForSourceFile({
+    sourceFileExists,
+    identityNeedsReview,
+    publicSafeFactCount: rawPublicSafeFacts.length,
+    activityEvidenceCount: activitySignals.length + rawPublicSafeFacts.length,
+    roleKnown,
+    missingInfoCount: (candidate.missingInfo ?? []).length + (sourceFileSummary?.missingInfo ?? []).length,
+    reviewOnlyEvidenceCount: reviewOnlyNotes[0] === "No review-only evidence notes recorded." ? 0 : reviewOnlyNotes.length,
+  });
+  const readyForDraft = readiness.label === "Ready for Proposed Dossier";
+  const mainAction = primaryActionForSourceFile({
+    sourceFileExists,
+    hasPublicDossier: Boolean(candidate.existingDossierMatch),
+    isExistingDossierUpdate,
+    hasDraft: Boolean(primaryDraft),
+    sourceFileChangedSinceDraft,
+    readyForDraft,
+  });
+  const entityType = inferEntityType({ candidate, activitySignals, musicSignals });
+  const activityLevel =
+    sourceFileSummary?.substanceLevel === "strong"
+      ? "high"
+      : sourceFileSummary?.substanceLevel === "useful"
+        ? "medium"
+        : sourceFileSummary?.substanceLevel === "partial"
+          ? "low"
+          : activitySignals.length > 0
+            ? "low"
+            : "unknown";
+  const dossierIntelligenceSummary = firstMeaningful([
+    sourceFileSummary?.currentRead,
+    entityActivityReadout?.currentRead,
+    `${candidate.name} is classified as ${entityType}. Dossier readiness is ${readiness.label.toLowerCase()} based on ${rawPublicSafeFacts.length} public-safe fact${rawPublicSafeFacts.length === 1 ? "" : "s"} and ${activitySignals.length} activity signal${activitySignals.length === 1 ? "" : "s"}.`,
+  ], `${candidate.name} needs more BNL dossier intelligence before public drafting.`);
+  const whatToAddGroups = [
+    {
+      title: "Identity",
+      items: [
+        identityNeedsReview ? "Resolve proposed aliases or identity links before public drafting." : undefined,
+        !roleKnown ? "Confirm a public display name and role that can be used safely." : undefined,
+      ],
+    },
+    {
+      title: "Community role",
+      items: [
+        activitySignals.length === 0 ? "Add authored community activity or repeated public participation evidence." : undefined,
+        topicSignals.length === 0 ? "Add recurring topics or context that explains why this subject matters." : undefined,
+      ],
+    },
+    {
+      title: "Queue/music",
+      items: [
+        !hasConfirmedQueueFootprint ? "No confirmed queue submissions, played-track history, or owned music links are connected yet." : undefined,
+        musicSignals.length === 0 ? "Add owned music links only if they are confirmed and public-safe." : undefined,
+      ],
+    },
+    {
+      title: "Public-safe evidence",
+      items: [
+        rawPublicSafeFacts.length === 0 ? "Separate public-safe facts from review-only/internal evidence." : undefined,
+        reviewOnlyNotes[0] !== "No review-only evidence notes recorded." ? "Review-only/private/internal evidence cannot be used publicly yet." : undefined,
+      ],
+    },
+    {
+      title: "Dossier decision",
+      items: [actionExplanation(mainAction, readiness.label)],
+    },
+  ].map((group) => ({ ...group, items: group.items.filter(Boolean) as string[] }));
 
   return (
     <main className="pt-14 min-h-screen bg-background">
@@ -1777,8 +2054,11 @@ export default function CandidateReviewPage() {
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-3 text-xs uppercase tracking-widest lg:grid-cols-3">
-            <div className="border border-border bg-background/20 p-3">
+            <div className="border border-border bg-background/20 p-3 lg:col-span-2">
               <p className="mb-3 text-accent">Main actions</p>
+              <p className="mb-3 text-sm normal-case tracking-normal text-muted">
+                {actionExplanation(mainAction, readiness.label)}
+              </p>
               <div className="flex flex-wrap gap-3">
                 <Link
                   href="/admin/dossiers"
@@ -1786,13 +2066,25 @@ export default function CandidateReviewPage() {
                 >
                   Back to Dossier Control Center
                 </Link>
-                <a
-                  href="#add-info"
-                  className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background"
-                >
-                  Add to Source File
-                </a>
-                {canCreateDraft && (
+                {mainAction === "add_to_source_file" && (
+                  <button
+                    type="button"
+                    onClick={() => void candidateLifecycleAction("promoteCandidateToSourceFile")}
+                    disabled={saving || !canPromoteCandidate}
+                    className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                  >
+                    Add to Source File
+                  </button>
+                )}
+                {mainAction === "add_missing_evidence" && (
+                  <a
+                    href="#what-to-add"
+                    className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background"
+                  >
+                    Add Missing Evidence
+                  </a>
+                )}
+                {mainAction === "create_draft" && (
                   <button
                     type="button"
                     onClick={() => void createDraft()}
@@ -1802,7 +2094,7 @@ export default function CandidateReviewPage() {
                     Create Proposed Dossier Draft
                   </button>
                 )}
-                {primaryDraft && sourceFileChangedSinceDraft && (
+                {mainAction === "update_draft" && primaryDraft && (
                   <button
                     type="button"
                     onClick={() => void updateDraftFromSourceFile()}
@@ -1812,15 +2104,37 @@ export default function CandidateReviewPage() {
                     Update Draft From Source File
                   </button>
                 )}
-                {primaryDraft && isDraftActive(primaryDraft) && (
-                  <Link
-                    href={`/admin/dossiers/drafts/${primaryDraft.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background"
+                {(mainAction === "open_draft" || mainAction === "update_draft") &&
+                  primaryDraft &&
+                  isDraftActive(primaryDraft) && (
+                    <Link
+                      href={`/admin/dossiers/drafts/${primaryDraft.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`${mainAction === "open_draft" ? "border-accent text-accent hover:bg-accent hover:text-background" : "border-border text-muted hover:border-accent hover:text-accent"} border px-4 py-2`}
+                    >
+                      Open Proposed Dossier Draft
+                    </Link>
+                  )}
+                {mainAction === "open_update_workspace" && (
+                  <button
+                    type="button"
+                    onClick={() => void candidateLifecycleAction("markCandidateAsExistingDossierUpdate")}
+                    disabled={saving || !canUpdateCandidate || !existingDossierSelection}
+                    className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
                   >
-                    Open Proposed Dossier Draft
-                  </Link>
+                    Open Dossier Update Workspace
+                  </button>
+                )}
+                {!readyForDraft && !primaryDraft && sourceFileExists && mainAction !== "open_update_workspace" && (
+                  <button
+                    type="button"
+                    disabled
+                    className="border border-border px-4 py-2 text-muted opacity-60"
+                    title={actionExplanation(mainAction, readiness.label)}
+                  >
+                    Draft blocked: missing public-safe identity / role / activity evidence
+                  </button>
                 )}
               </div>
             </div>
@@ -1959,6 +2273,118 @@ export default function CandidateReviewPage() {
           </div>
         </section>
 
+        <Section title="BNL Dossier Intelligence">
+          <div className="space-y-3">
+            <p className="text-foreground">{dossierIntelligenceSummary}</p>
+            <dl className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="border border-border/60 bg-background/30 p-3">
+                <dt className="text-xs uppercase tracking-widest text-accent">Entity type</dt>
+                <dd className="mt-1">{entityType}</dd>
+              </div>
+              <div className="border border-border/60 bg-background/30 p-3">
+                <dt className="text-xs uppercase tracking-widest text-accent">Activity level</dt>
+                <dd className="mt-1">{activityLevel}</dd>
+              </div>
+              <div className="border border-border/60 bg-background/30 p-3">
+                <dt className="text-xs uppercase tracking-widest text-accent">Dossier decision</dt>
+                <dd className="mt-1">{readiness.label}</dd>
+              </div>
+            </dl>
+            <div>
+              <h3 className="font-semibold text-foreground">Evidence supporting dossier value</h3>
+              {meaningFirstList(
+                [
+                  ...rawPublicSafeFacts,
+                  ...activitySignals,
+                  ...musicSignals,
+                  ...(hasConfirmedQueueFootprint ? [queueStatus, queueNote] : []),
+                ],
+                "No public-safe dossier evidence has been separated yet.",
+                candidate.name,
+              )}
+            </div>
+            <div>
+              <h3 className="font-semibold text-foreground">Missing before public use</h3>
+              {meaningFirstList(
+                [...readiness.blockers, ...(sourceFileSummary?.missingInfo ?? [])],
+                "No blockers recorded beyond Owner Review.",
+                candidate.name,
+              )}
+            </div>
+          </div>
+        </Section>
+
+        <Section title="Community Activity Profile">
+          <div className="space-y-3">
+            <dl className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="border border-border/60 bg-background/30 p-3">
+                <dt className="text-xs uppercase tracking-widest text-accent">Recent activity</dt>
+                <dd className="mt-1">{firstMeaningful(entityActivityReadout?.recentActivitySummary ?? sourceFileSummary?.recentActivitySummary ?? [], "No recent activity summary connected yet.")}</dd>
+              </div>
+              <div className="border border-border/60 bg-background/30 p-3">
+                <dt className="text-xs uppercase tracking-widest text-accent">Authored or mentioned</dt>
+                <dd className="mt-1">{firstMeaningful(authoredVsMentioned, "BNL has not separated authored activity from mentions yet.")}</dd>
+              </div>
+              <div className="border border-border/60 bg-background/30 p-3">
+                <dt className="text-xs uppercase tracking-widest text-accent">Confidence</dt>
+                <dd className="mt-1">{entityActivityReadout?.confidence ?? candidate.confidence ?? "unknown"}</dd>
+              </div>
+            </dl>
+            <div>
+              <h3 className="font-semibold text-foreground">Recurring topics</h3>
+              {meaningFirstList(topicSignals, "No recurring public-safe topics connected yet.", candidate.name)}
+            </div>
+            <div>
+              <h3 className="font-semibold text-foreground">Readable source context</h3>
+              {meaningFirstList(readableCoverage, "No readable source coverage connected yet.", candidate.name)}
+            </div>
+            <p className="border border-border/60 bg-background/20 p-3">
+              Public-safe status: {rawPublicSafeFacts.length > 0 ? "public-safe facts are available for drafting" : "public-safe facts are still missing"}. Review-only status: {reviewOnlyNotes[0] === "No review-only evidence notes recorded." ? "no review-only notes recorded" : "review-only evidence exists and must stay internal"}.
+            </p>
+          </div>
+        </Section>
+
+        <Section title="Queue / Music Footprint">
+          <div className="space-y-3">
+            {hasConfirmedQueueFootprint ? (
+              <>
+                <p>{queueStatus ?? "Queue connection present."}</p>
+                {queueNote && <p>{queueNote}</p>}
+              </>
+            ) : (
+              <p>No confirmed queue footprint connected yet.</p>
+            )}
+            <div>
+              <h3 className="font-semibold text-foreground">Music connection</h3>
+              {meaningFirstList(
+                musicSignals,
+                hasConfirmedQueueFootprint
+                  ? "Queue evidence is present, but no owned public music link has been separated yet."
+                  : "Music connection is missing or unverified.",
+                candidate.name,
+              )}
+            </div>
+            <p>
+              Public-safe use: {hasConfirmedQueueFootprint || musicSignals.length > 0 ? "review the listed public-safe evidence before mentioning music or queue activity" : "do not mention queue or music activity publicly yet"}.
+            </p>
+          </div>
+        </Section>
+
+        <Section title="Dossier Readiness">
+          <div className="space-y-3">
+            <p className="text-xl font-bold text-foreground">{readiness.label}</p>
+            <div>
+              <h3 className="font-semibold text-foreground">Readiness reasons</h3>
+              {meaningFirstList(readiness.reasons, "No positive readiness reasons recorded yet.", candidate.name)}
+            </div>
+            <div>
+              <h3 className="font-semibold text-foreground">Blockers</h3>
+              {meaningFirstList(readiness.blockers, "No blockers recorded beyond Owner Review.", candidate.name)}
+            </div>
+            <p>Recommended next action: {actionExplanation(mainAction, readiness.label)}</p>
+          </div>
+        </Section>
+
         <Section title="BNL take / why this file matters">
           <p>
             {sourceFileSummary?.currentRead ??
@@ -1977,15 +2403,21 @@ export default function CandidateReviewPage() {
         <Section title="Evidence receipts / source lanes">
           <div className="space-y-3">
             <p>
-              Review-only evidence stays internal. Primary copy shows source lanes
-              and receipt counts instead of raw/private evidence refs.
+              Review-only evidence stays internal. Primary copy translates source
+              coverage into readable meaning instead of exposing raw/private refs.
             </p>
-            <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
-              {(evidenceReceiptLanes.length ? evidenceReceiptLanes : ["Review-only evidence"]).map((lane) => (
-                <StatusBadge key={lane}>{lane}</StatusBadge>
-              ))}
-            </div>
+            {meaningFirstList(readableCoverage, "No readable source coverage connected yet.", candidate.name)}
             <p>{attachedRecommendations.length} BNL Signal receipt{attachedRecommendations.length === 1 ? "" : "s"} attached.</p>
+            <details className="border border-border/60 bg-background/20 p-3">
+              <summary className="cursor-pointer font-semibold text-foreground">
+                Technical Source Coverage
+              </summary>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs uppercase tracking-widest">
+                {(evidenceReceiptLanes.length ? evidenceReceiptLanes : ["Review-only evidence"]).map((lane) => (
+                  <StatusBadge key={lane}>{lane}</StatusBadge>
+                ))}
+              </div>
+            </details>
           </div>
         </Section>
 
@@ -2195,7 +2627,7 @@ export default function CandidateReviewPage() {
               }
               className="w-full max-w-xl bg-background border border-border px-3 py-2.5 text-sm normal-case tracking-normal text-foreground"
             >
-              <option value="">Choose public dossier…</option>
+              <option value="">Choose public dossier</option>
               {publicDossiers.map((dossier) => (
                 <option key={dossier.id} value={dossier.id}>
                   {dossier.name} ({dossier.id})
@@ -2245,15 +2677,30 @@ export default function CandidateReviewPage() {
           </h2>
           <p className="text-sm text-muted">
             This adds information to this subject&apos;s BNL Source File. It
-            does not directly edit the proposed dossier.
+            does not directly edit the Proposed Dossier.
           </p>
           <p className="text-sm text-muted">
-            Add to BNL Source File = add a source note, correction, evidence,
-            warning, public-safe fact, or missing-info item to this subject.
-            This source file remains one subject/entity. If this information
-            belongs to a different subject, create or wait for a separate BNL
-            recommendation.
+            This source file remains one subject/entity. If the information
+            belongs to a different person or entity, keep it out of this file
+            and create or wait for a separate BNL recommendation.
           </p>
+          <section id="what-to-add" className="border border-border/70 bg-background/20 p-4">
+            <h3 className="text-lg font-bold text-foreground">
+              What to add to this Source File
+            </h3>
+            <p className="mt-2 text-sm text-muted">
+              These gaps are generated from dossier readiness, identity review,
+              activity evidence, queue/music evidence, and public-safe facts.
+            </p>
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+              {whatToAddGroups.map((group) => (
+                <section key={group.title} className="border border-border/60 bg-background/30 p-3 text-sm text-muted">
+                  <h4 className="font-semibold text-foreground">{group.title}</h4>
+                  {group.items.length ? list(group.items) : <p>No gap recorded for this category.</p>}
+                </section>
+              ))}
+            </div>
+          </section>
           {hasOwnerReviewDraft && (
             <p className="border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
               This becomes an Admin Addendum for owner review. It does not
@@ -2375,7 +2822,7 @@ export default function CandidateReviewPage() {
                 defaultValue={candidate.sourceFileSummary?.summaryText ?? ""}
                 rows={3}
                 className="w-full bg-background border border-border px-3 py-2 text-sm normal-case tracking-normal text-foreground"
-                placeholder="Plain-English internal correction to BNL's current read…"
+                placeholder="Plain-English internal correction to BNL's current read."
               />
             </label>
             <label className="space-y-2 text-xs uppercase tracking-widest text-muted">

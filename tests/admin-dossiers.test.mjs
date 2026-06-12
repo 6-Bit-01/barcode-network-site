@@ -10059,6 +10059,7 @@ test("Draft from Source File creates and updates public-safe Proposed Dossier dr
   assert.equal(draft.status, "draft");
   assert.equal(draft.fields.name, "Bridge Subject");
   assert.match(draft.fields.summary, /Public-safe summary/);
+  assert.match(draft.fields.notes, /BNL Dossier Intelligence:/);
   assert.match(draft.fields.notes, /Public-safe facts:/);
   assert.match(draft.fields.notes, /Connection to BARCODE Network:/);
   assert.match(draft.fields.notes, /Boundaries \/ what not to claim:/);
@@ -10116,4 +10117,55 @@ test("Draft from Source File creates and updates public-safe Proposed Dossier dr
   const stateAfterUpdate = await store.getDossierWorkflowState();
   assert.equal(stateAfterUpdate.candidates[0].identityLinks[0].status, "proposed");
   assert.equal(databasePage.entries.some((entry) => entry.name === "Bridge Subject"), false);
+});
+
+test("Source File intelligence and dynamic main actions are readiness-driven", () => {
+  const page = source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+  const pageCopy = normalizedSource("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+
+  for (const label of [
+    "BNL Dossier Intelligence",
+    "Community Activity Profile",
+    "Queue / Music Footprint",
+    "Dossier Readiness",
+    "Technical Source Coverage",
+    "What to add to this Source File",
+    "Identity",
+    "Community role",
+    "Queue/music",
+    "Public-safe evidence",
+    "Dossier decision",
+    "Draft blocked: missing public-safe identity / role / activity evidence",
+    "No confirmed queue footprint connected yet.",
+    "Ready for Proposed Dossier",
+    "Almost Ready",
+    "Internal Source File Only",
+    "Needs Identity Review",
+    "Needs More Public Evidence",
+  ]) {
+    assertIncludesCopy(pageCopy, label);
+  }
+
+  assert.match(page, /primaryActionForSourceFile/);
+  assert.match(page, /mainAction === "add_to_source_file"[\s\S]*Add to Source File/);
+  assert.match(page, /mainAction === "create_draft"[\s\S]*Create Proposed Dossier Draft/);
+  assert.match(page, /mainAction === "open_draft" \|\| mainAction === "update_draft"/);
+  assert.match(page, /mainAction === "update_draft"[\s\S]*Update Draft From Source File/);
+  assert.match(page, /mainAction === "open_update_workspace"[\s\S]*Open Dossier Update Workspace/);
+  assert.match(page, /!readyForDraft && !primaryDraft && sourceFileExists/);
+  assert.match(page, /identityNeedsReview[\s\S]*Needs Identity Review/);
+  assert.match(page, /readableCoverageLabel/);
+  assert.match(page, /queue evidence|public Discord activity|community presence|BNL memory|review-only internal context/);
+
+  const mainActions = page.slice(page.indexOf("<p className=\"mb-3 text-accent\">Main actions</p>"), page.indexOf("<p className=\"mb-3 text-accent\">Review state</p>"));
+  assert.doesNotMatch(mainActions, /Create Proposed Dossier Draft[\s\S]*Open Proposed Dossier Draft[\s\S]*Update Draft From Source File[\s\S]*Add to Source File/);
+  assert.match(mainActions, /actionExplanation\(mainAction, readiness\.label\)/);
+
+  const technicalCoverageIndex = page.indexOf("Technical Source Coverage");
+  const dossierIntelligenceIndex = page.indexOf("BNL Dossier Intelligence");
+  assert.ok(dossierIntelligenceIndex >= 0);
+  assert.ok(technicalCoverageIndex > dossierIntelligenceIndex);
+  assert.match(page, /No confirmed queue footprint connected yet\./);
+  assert.doesNotMatch(pageCopy, /Review source context and decide whether to attach or convert into a BNL Source File/);
+  assert.doesNotMatch(pageCopy, /RELATIONSHIP_JOURNAL[\s\S]{0,200}BNL Dossier Intelligence/);
 });

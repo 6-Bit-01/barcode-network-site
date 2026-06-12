@@ -6081,13 +6081,40 @@ function assemblePublicSafeDraftFromSourceFile(input: {
     candidate.whyNow,
     ...recommendations.map((recommendation) => recommendation.reason),
   ], 2);
-  const summary = uniqueDraftSeedLines([
+  const activityProfile = uniqueDraftSeedLines([
+    ...recommendations.flatMap((recommendation) => recommendation.activityFrequencySummary ?? []),
+    ...recommendations.flatMap((recommendation) => recommendation.recentActivitySummary ?? []),
+    ...recommendations.flatMap((recommendation) => recommendation.communitySignals ?? []),
+    ...recommendations.flatMap((recommendation) => recommendation.conversationHighlights ?? []),
+  ], 5);
+  const confirmedQueueFootprint = uniqueDraftSeedLines([
+    ...recommendations.map((recommendation) => recommendation.queueSubmissionStatus),
+    ...recommendations.map((recommendation) => recommendation.queueSubmissionNote),
+  ], 4);
+  const musicFootprint = confirmedQueueFootprint.length > 0
+    ? uniqueDraftSeedLines([
+        ...confirmedQueueFootprint,
+        ...recommendations.flatMap((recommendation) => recommendation.musicSignals ?? []),
+      ], 5)
+    : [];
+  const dossierIntelligence = uniqueDraftSeedLines([
     candidate.sourceFileSummary?.summaryText,
     candidate.evidenceSummary,
+    activityProfile[0],
     publicSafeFacts[0],
-  ], 1)[0];
+  ], 2);
+  const summary = dossierIntelligence[0];
   const role = DOSSIER_PUBLIC_ROLE_PLACEHOLDER;
   const notesSections = [
+    dossierIntelligence.length
+      ? `BNL Dossier Intelligence:\n${dossierIntelligence.map((item) => `- ${item}`).join("\n")}`
+      : undefined,
+    activityProfile.length
+      ? `Community Activity Profile:\n${activityProfile.map((item) => `- ${item}`).join("\n")}`
+      : undefined,
+    musicFootprint.length
+      ? `Queue / Music Footprint:\n${musicFootprint.map((item) => `- ${item}`).join("\n")}`
+      : undefined,
     publicSafeFacts.length
       ? `Public-safe facts:\n${publicSafeFacts.map((item) => `- ${item}`).join("\n")}`
       : undefined,

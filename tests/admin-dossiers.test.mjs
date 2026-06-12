@@ -63,6 +63,8 @@ const sourceSummaryPanelComponent = require("../src/components/DossierSourceFile
 const actionableBrief = require("../src/lib/dossier-source-file-actionable-brief.ts");
 const publicCopyGuard = require("../src/lib/dossier-public-copy-guard.ts");
 const dossierPageViewModel = require("../src/lib/dossier-page-view-model.ts");
+const dossierTaxonomy = require("../src/lib/dossier-taxonomy.ts");
+const dossierClassification = require("../src/lib/dossier-classification.ts");
 
 function source(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
@@ -78,6 +80,184 @@ function assertIncludesCopy(text, expected) {
     `Expected normalized source to include: ${expected}`,
   );
 }
+
+
+test("Dossier taxonomy expansion supports first-class artist, collaborator, and community routing", () => {
+  assert.ok(dossierTaxonomy.DOSSIER_CATEGORY_OPTIONS.includes("Artist"));
+  assert.ok(dossierTaxonomy.DOSSIER_CATEGORY_OPTIONS.includes("Collaborator"));
+  assert.ok(dossierTaxonomy.DOSSIER_CATEGORY_OPTIONS.includes("Community"));
+  assert.ok(dossierTaxonomy.DOSSIER_CATEGORY_OPTIONS.includes("Personnel"));
+  assert.equal(workflow.DOSSIER_CATEGORY_PREFIXES.Artist, "AR");
+  assert.equal(workflow.DOSSIER_CATEGORY_PREFIXES.Collaborator, "CO");
+  assert.equal(workflow.DOSSIER_CATEGORY_PREFIXES.Community, "CM");
+  assert.equal(databasePage.entries[0].id.startsWith("EN-") || databasePage.entries[0].id.startsWith("PE-") || databasePage.entries[0].id.startsWith("PD-") || databasePage.entries[0].id.startsWith("IF-") || databasePage.entries[0].id.startsWith("SP-"), true);
+
+  assert.deepEqual(dossierClassification.routeDossierCandidateType("artist"), {
+    category: "Artist",
+    kind: "artist",
+    ecosystemLane: "artist",
+    identityAuthority: "community_owned",
+    reason: "Candidate type identifies music/performance relevance.",
+  });
+  assert.equal(dossierClassification.routeDossierCandidateType("collaborator").category, "Collaborator");
+  assert.equal(dossierClassification.routeDossierCandidateType("community_member").category, "Community");
+  assert.equal(dossierClassification.routeDossierCandidateType("personnel").category, "Personnel");
+});
+
+test("Dossier classification blueprint separates category, evidence, readiness, and admin-only identity data", () => {
+  const now = "2026-06-12T00:00:00.000Z";
+  const base = {
+    id: "classification-fixture",
+    name: "Fixture Subject",
+    source: "manual",
+    tier: "review_candidate",
+    score: 50,
+    whyNow: "Fixture review.",
+    reason: "Fixture reason.",
+    evidenceSummary: "Fixture public-safe summary.",
+    status: "active_source_file",
+    createdAt: now,
+    updatedAt: now,
+  };
+  const classify = (candidate) => dossierClassification.createDossierDraftBlueprint({
+    candidate: { ...base, ...candidate },
+    recommendations: candidate.recommendations ?? [],
+  });
+
+  const artist = classify({
+    candidateType: "artist",
+    evidenceSummary: "Rapper submitted music through Auxchord.",
+    knownFacts: ["Public music submission evidence exists."],
+    recommendedTags: ["artist"],
+    identityReviewStatus: "not_required",
+  });
+  assert.equal(artist.classification.category, "Artist");
+  assert.equal(artist.classification.kind, "artist");
+  assert.equal(artist.classification.ecosystemLane, "artist");
+  assert.equal(artist.classification.identityAuthority, "community_owned");
+  assert.notEqual(artist.classification.category, "Personnel");
+  assert.ok(artist.classification.reasons.length > 0);
+  assert.ok(Array.isArray(artist.classification.blockers));
+  assert.ok(Array.isArray(artist.classification.alternatePossibilities));
+  assert.equal(artist.suggestedTags.tags.some((tag) => tag.tag === "artist"), true);
+
+  const collaborator = classify({
+    candidateType: "collaborator",
+    evidenceSummary: "Made a BARCODE playlist and contributes a planned radio segment.",
+    knownFacts: ["Public playlist contribution was approved."],
+  });
+  assert.equal(collaborator.classification.category, "Collaborator");
+  assert.equal(collaborator.classification.kind, "collaborator");
+  assert.notEqual(collaborator.classification.category, "Personnel");
+
+  const community = classify({
+    candidateType: "community_member",
+    evidenceSummary: "Recurring chat regular with strong community presence.",
+    knownFacts: ["Public community presence is visible."],
+  });
+  assert.equal(community.classification.category, "Community");
+  assert.equal(community.classification.kind, "community_member");
+  assert.notEqual(community.classification.category, "Personnel");
+
+  const moderator = classify({
+    candidateType: "personnel",
+    evidenceSummary: "Official Discord moderator role.",
+    recommendedKind: "moderator",
+    knownFacts: ["Public moderator role confirmed."],
+  });
+  assert.equal(moderator.classification.category, "Personnel");
+  assert.equal(moderator.classification.kind, "moderator");
+
+  const entity = classify({
+    candidateType: "entity",
+    evidenceSummary: "BARCODE-created network operator character.",
+    recommendedKind: "network_operator",
+    knownFacts: ["BARCODE-created entity record."],
+  });
+  assert.equal(entity.classification.category, "Entity");
+  assert.equal(entity.classification.identityAuthority, "barcode_controlled");
+
+  const uncertain = dossierClassification.createDossierDraftBlueprint({
+    candidate: {
+      ...base,
+      candidateType: "artist",
+      evidenceSummary: "Possible artist with unverified private alias and music rumor.",
+      proposedTags: ["new-uncertain-tag"],
+      identityReviewStatus: "needs_confirmation",
+      identityLinks: [{
+        id: "alias-1",
+        candidateId: base.id,
+        label: "Internal Alias",
+        normalizedLabel: "internal alias",
+        type: "alias",
+        visibility: "internal_only",
+        source: "admin_manual",
+        status: "proposed",
+        useInPublicDossier: false,
+        createdAt: now,
+        updatedAt: now,
+      }],
+      sourceFileNotes: [{
+        id: "review-note",
+        candidateId: base.id,
+        type: "do_not_say",
+        text: "Private admin-only alias evidence.",
+        source: "admin_manual",
+        status: "active",
+        publicSafe: false,
+        createdAt: now,
+        updatedAt: now,
+      }],
+    },
+    recommendations: [{
+      id: "rec-1",
+      type: "new_subject",
+      subjectName: base.name,
+      status: "new",
+      reason: "Music rumor only.",
+      sourceLanes: ["broadcast_memory"],
+      musicSignals: ["Rumored track mention without connected queue record."],
+      createdAt: now,
+      updatedAt: now,
+    }],
+  });
+  assert.equal(uncertain.suggestedTags.proposedTags.some((tag) => tag.tag === "new-uncertain-tag"), true);
+  assert.equal(uncertain.publicSafeFacts.publicQueueMusicEvidence.length, 0);
+  assert.match(uncertain.queueMusicFootprintStatus, /No queue\/music footprint/);
+  assert.ok(uncertain.adminOnlyProvenance.reviewOnlyEvidence.internalAliases.includes("Internal Alias"));
+  assert.ok(uncertain.adminOnlyProvenance.reviewOnlyEvidence.internalNotes.some((item) => /Private admin-only/.test(item)));
+  assert.equal(uncertain.readiness.label, "Needs Identity Review");
+  assert.match(uncertain.readiness.recommendedNextAction, /identity\/alias review/i);
+  assert.ok(uncertain.ownerReviewWarnings.some((item) => /Owner Review remains required/.test(item)));
+  assert.equal(uncertain.classification.blockers.some((item) => /Identity/.test(item)), true);
+});
+
+test("Dossier blueprint generation does not mutate Source File truth or public dossier content", () => {
+  const beforePublic = JSON.stringify(databasePage.entries);
+  const candidate = {
+    id: "mutation-fixture",
+    name: "Mutation Fixture",
+    candidateType: "community_member",
+    source: "manual",
+    tier: "review_candidate",
+    score: 45,
+    whyNow: "Community activity review.",
+    reason: "Recurring viewer.",
+    evidenceSummary: "Recurring viewer with public chat presence.",
+    knownFacts: ["Public chat presence is visible."],
+    identityReviewStatus: "needs_confirmation",
+    identityLinks: [],
+    status: "active_source_file",
+    createdAt: "2026-06-12T00:00:00.000Z",
+    updatedAt: "2026-06-12T00:00:00.000Z",
+  };
+  const beforeCandidate = JSON.stringify(candidate);
+  const blueprint = dossierClassification.createDossierDraftBlueprint({ candidate, recommendations: [] });
+  assert.equal(JSON.stringify(candidate), beforeCandidate);
+  assert.equal(JSON.stringify(databasePage.entries), beforePublic);
+  assert.equal(blueprint.classification.category, "Community");
+  assert.equal(blueprint.adminOnlyProvenance.reviewOnlyEvidence.uncertainIdentityLinks.length, 0);
+});
 
 test("public database dossiers render through shared dossier page view", () => {
   const publicPageSource = normalizedSource("src/app/database/[slug]/page.tsx");

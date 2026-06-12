@@ -17,7 +17,9 @@ export type DossierCandidateSource =
 
 export type DossierCandidateType =
   | "artist"
+  | "collaborator"
   | "community_member"
+  | "personnel"
   | "entity"
   | "production"
   | "interface"
@@ -82,9 +84,24 @@ export type DossierDraftStatus =
 export type DossierCategory =
   | "Entity"
   | "Personnel"
+  | "Artist"
+  | "Collaborator"
+  | "Community"
   | "Sponsor"
   | "Interface"
   | "Production";
+
+export const DOSSIER_CATEGORY_PREFIXES = {
+  Entity: "EN",
+  Personnel: "PE",
+  Artist: "AR",
+  Collaborator: "CO",
+  Community: "CM",
+  Sponsor: "SP",
+  Interface: "IF",
+  Production: "PD",
+} as const satisfies Record<DossierCategory, string>;
+
 export type DossierPublicStatus =
   | "ACTIVE"
   | "INACTIVE"
@@ -3258,6 +3275,7 @@ export const DOSSIER_WORKFLOW_RULES = [
   "Drafting requires operator selection.",
   "Proposed tags are proposal-only until an operator or site content update creates them.",
   "AI/human/unknown nature tags do not organize dossiers; category, kind, ecosystem lane, and identity authority come first.",
+  "Artist, Collaborator, and Community are first-class categories; Personnel is reserved for official/formal BARCODE roles and is not the person catch-all.",
   "Sheila/Cliff-style Network characters are BARCODE-controlled records, while mods are community-owned identities.",
   "Loose intake, strict drafting/publishing: BNL discoveries enter Candidate Intake first, active Source Files require admin promotion, and drafting/publishing require evidence, duplicate checks, public-safety review, and owner approval.",
 ] as const;

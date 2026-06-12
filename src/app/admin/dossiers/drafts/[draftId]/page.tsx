@@ -21,7 +21,9 @@ import {
   type DossierDraftFieldWarning,
 } from "@/lib/dossier-public-copy-guard";
 import { createDossierSourceFileSummary } from "@/lib/dossier-source-file-summary";
+import { createDossierDraftBlueprint } from "@/lib/dossier-classification";
 import {
+  DOSSIER_CATEGORY_OPTIONS,
   DOSSIER_ECOSYSTEM_LANE_OPTIONS,
   DOSSIER_IDENTITY_AUTHORITY_OPTIONS,
   DOSSIER_KIND_OPTIONS,
@@ -53,14 +55,7 @@ type DraftForm = {
   selectedBy: "operator" | "subject" | "legacy";
 };
 
-const categoryOptions = [
-  "",
-  "Entity",
-  "Personnel",
-  "Sponsor",
-  "Interface",
-  "Production",
-];
+const categoryOptions = ["", ...DOSSIER_CATEGORY_OPTIONS];
 const statusOptions = [
   "",
   "ACTIVE",
@@ -368,6 +363,9 @@ export default function DossierDraftEditorPage() {
     ? getUnappliedSourceNotes({ candidate: candidate ?? {}, draft })
     : [];
   const sourceNoteCount = candidate?.sourceFileNotes?.length ?? 0;
+  const blueprint = candidate
+    ? createDossierDraftBlueprint({ candidate, recommendations: [], publicDossiers: [] })
+    : null;
   const sourceFileSummary = candidate
     ? createDossierSourceFileSummary({
         candidate,
@@ -798,7 +796,15 @@ export default function DossierDraftEditorPage() {
       </section>
       <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-6">
         {sourceFileSummary && (
-          <DossierSourceFileSummaryPanel summary={sourceFileSummary} />
+          <DossierSourceFileSummaryPanel
+            summary={sourceFileSummary}
+            subjectName={candidate?.name}
+            sourceFileNotes={candidate?.sourceFileNotes ?? []}
+            latestSourceFileArchive={candidate?.latestSourceFileArchive}
+            currentLane={candidate?.status}
+            sourceFileTargetStatus="proposed dossier source"
+            blueprint={blueprint ?? undefined}
+          />
         )}
         {!sourceFileSummary && (
           <section className="border border-border bg-surface p-5 text-sm text-muted">
@@ -807,6 +813,30 @@ export default function DossierDraftEditorPage() {
             </h2>
             <p>No source file could be loaded for this draft.</p>
           </section>
+        )}
+
+        {blueprint && (
+          <details className="border border-border bg-surface p-5 text-sm text-muted">
+            <summary className="cursor-pointer text-xl font-bold text-foreground">
+              Related Dossier Blueprint — admin-only
+            </summary>
+            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <section className="border border-border/60 bg-background/30 p-3">
+                <h3 className="font-bold text-foreground">Classification</h3>
+                <p>{blueprint.classification.category} / {blueprint.classification.kind} / {blueprint.classification.ecosystemLane}</p>
+                <p>Identity authority: {blueprint.classification.identityAuthority}</p>
+                <p>Confidence: {blueprint.classification.confidence}</p>
+              </section>
+              <section className="border border-border/60 bg-background/30 p-3">
+                <h3 className="font-bold text-foreground">Readiness</h3>
+                <p>{blueprint.readiness.label} ({blueprint.readiness.score}/100)</p>
+                <p>{blueprint.readiness.recommendedNextAction}</p>
+              </section>
+            </div>
+            <p className="mt-3 text-xs uppercase tracking-widest text-accent">
+              Blueprint material is not public dossier prose and is not displayed in the public preview text fields.
+            </p>
+          </details>
         )}
         <details className="border border-border bg-surface p-5 text-sm text-muted">
           <summary className="cursor-pointer text-xl font-bold text-foreground">

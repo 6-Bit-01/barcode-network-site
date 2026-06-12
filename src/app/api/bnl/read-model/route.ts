@@ -420,6 +420,8 @@ const DOSSIER_RULES = [
   "Public-page-visible dossiers are not automatic broadcast memory.",
   "Public-page-visible dossiers are not automatic dossier seeds.",
   "Queue-derived artists are still not dossier records unless manually promoted through a future approved workflow.",
+  "Artist, Collaborator, and Community are first-class public categories and must not collapse into Personnel by default.",
+  "Personnel is reserved for official/formal BARCODE staff, operator, moderator, admin, or personnel roles.",
   "Research classifier dossier seeds are not public dossiers until a future approved site workflow publishes them.",
   "BNL should classify dossiers in order: category, kind, ecosystem lane, identity authority, then tags.",
   "AI, human, hybrid, and unknown nature are tags/traits, not primary dossier organization.",
@@ -444,6 +446,10 @@ function inferPublicDossierKind(entry: DatabaseEntry): PublicDossierKind {
   if (name === "discord community") return "interface";
   if (name === "auxchord" || name === "tiktok live") return "platform";
   if (name.includes("bnl-01")) return "system";
+  if (category === "artist") return "artist";
+  if (category === "collaborator") return "collaborator";
+  if (category === "community") return "community_member";
+  if (category === "personnel") return "moderator";
   if (category === "production") return "program";
   if (category === "interface") return "interface";
   if (category === "sponsor") return "sponsor_character";

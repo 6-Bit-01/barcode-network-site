@@ -10,13 +10,13 @@ export const dossierAuthoringGuide = {
     "Terminal Readout: generated route/query/status/category/origin lines",
   ],
   fieldGuide: {
-    id: "Stable dossier designation using the current prefix pattern, such as EN-###, PE-###, SP-###, IF-###, or PD-###.",
+    id: "Stable dossier designation using the current prefix pattern, such as EN-###, PE-###, AR-###, CO-###, CM-###, SP-###, IF-###, or PD-###.",
     name: "Public display name for the person, entity, production, interface, sponsor, or anomaly.",
     category:
-      "Pick the structural record type first: Entity, Personnel, Sponsor, Interface, or Production.",
+      "Pick the structural record type first: Entity, Personnel, Artist, Collaborator, Community, Sponsor, Interface, or Production. Personnel is not the human catch-all; artists, collaborators, and active community members stay first-class categories when their evidence supports those routes.",
     kind: "Pick the dossier form after category, using the taxonomy guide; keep legacy values compatible and use expanded values such as core_entity, network_operator, network_staff, moderator, or radio_entity where appropriate.",
     ecosystemLane:
-      "Pick where the subject sits in the BARCODE ecosystem, such as core_team, network_operator, community_mod, infrastructure, production, or unknown.",
+      "Pick where the subject sits in the BARCODE ecosystem, such as core_team, network_operator, community_mod, artist, collaborator, community_member, infrastructure, production, external_platform, or unknown.",
     identityAuthority:
       "Pick who controls or owns the identity: barcode_controlled, community_owned, external_system, sponsor_controlled, or mixed_or_unclear. This is about authority/control, not AI/human nature.",
     status:
@@ -68,7 +68,7 @@ export const dossierAuthoringGuide = {
     "Use existing page structure.",
     "Classify in order: category, kind, ecosystem lane, identity authority, then tags.",
     "Do not use AI, human, hybrid, or unknown nature as the primary organization; those are tags/traits only.",
-    "Separate BARCODE-controlled characters/entities such as Sheila or Cliff from community-owned mods and helpers.",
+    "Separate BARCODE-controlled characters/entities such as Sheila or Cliff from community-owned mods and helpers, and do not collapse artists, collaborators, or active community members into Personnel by default.",
     "Match current dossier tone and length.",
     "Use public-page-safe facts only.",
     "Preserve clearance/status/origin uncertainty.",

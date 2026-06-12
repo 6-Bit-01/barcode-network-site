@@ -2038,7 +2038,7 @@ test("Subject Consolidation Queue renders action summary, review cards, blocked 
     "Needs Review",
     "Blocked",
     "Subject Consolidation Complete",
-    "Bundled {consolidationResult.bundledPublicDossierUpdateSignals} public dossier update signals.",
+    "public dossier update signals.",
     "diagnostic artifacts archived/hidden",
     "BNL refresh triggered / queued / needed",
     "skipped items with reasons",
@@ -2105,7 +2105,7 @@ test("Subject Consolidation Queue renders action summary, review cards, blocked 
   assert.match(page, /createDossierPopulationAudit/);
   assert.match(page, /postWorkflow\(\{ action: "runSubjectConsolidation" \}\)/);
   assert.match(page, /isSubjectConsolidationClear && !consolidationResult/);
-  assert.match(page, /setConfirmation\(\{ groupId: group\.id, kind: "consolidate"/);
+  assert.match(page, /setConfirmation\(\{[\s\S]*?groupId: group\.id,[\s\S]*?kind: "consolidate"/);
   assert.match(page, /onClick=\{\(\) => consolidateSubjectGroup\(\)\}/);
   assert.match(page, /Incoming cluster collapsed after completion/);
   assert.match(source("src/lib/dossier-workflow.ts"), /export type SubjectConsolidationBrief/);
@@ -2129,7 +2129,8 @@ test("Population Method Audit renders read-only admin intake map states", () => 
 
   for (const label of [
     "Population Method Audit",
-    "Population Method: {populationMethodHealthy ? \"healthy\" : \"needs review\"}",
+    "Population Method:",
+    "populationMethodHealthy ? \"healthy\" : \"needs review\"",
     "Population Method Audit / Intake Map",
     "All resolved records have visible destinations or valid archive/diagnostic status. No orphaned intake records detected.",
     "intake records need population review.",
@@ -2169,13 +2170,44 @@ test("Population Method Audit renders read-only admin intake map states", () => 
   }
 
   assert.match(page, /createDossierPopulationMethodAudit/);
+  assert.match(page, /open=\{!populationMethodHealthy\}/);
   assert.doesNotMatch(source("src/app/database/[slug]/page.tsx"), /Population Method Audit|Intake Map|Copy Record IDs/);
 
   const auditCopy = pageCopy.slice(
     pageCopy.indexOf("Population Method Audit"),
-    pageCopy.indexOf("Similar or ambiguous subjects requiring admin judgment"),
+    pageCopy.indexOf("Candidates", pageCopy.indexOf("Population Method Audit")),
   );
-  assert.doesNotMatch(auditCopy, /fix automatically|Fix Automatically|Run Subject Consolidation|Confirm Consolidation|merge candidates|Merge button|publish public pages|change public dossier text/i);
+  assert.doesNotMatch(auditCopy, /fix automatically|Fix Automatically|Run Subject Consolidation|Confirm Consolidation|Consolidate Into|Create Source File|Create Dossier Update|Keep Separate|Select Different Target|merge candidates|Merge button|publish public pages|change public dossier text/i);
+});
+
+test("Population Method Audit renders independently of Subject Consolidation state", () => {
+  const page = source("src/app/admin/dossiers/page.tsx");
+  const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
+  const subjectConditionalIndex = page.indexOf("isSubjectConsolidationClear && !consolidationResult");
+  const subjectQueueIndex = page.indexOf("Subject Consolidation Queue");
+  const consolidationResultIndex = page.indexOf("consolidationResult &&");
+  const subjectConditionalCloseIndex = page.indexOf("open={!populationMethodHealthy}", subjectConditionalIndex);
+  const populationAuditIndex = page.indexOf("Population Method Audit");
+  const candidatesIndex = page.indexOf("<DashboardCard", populationAuditIndex);
+  const clearBranch = page.slice(subjectConditionalIndex, subjectQueueIndex);
+  const fullQueueBranch = page.slice(subjectQueueIndex, subjectConditionalCloseIndex);
+
+  assert.ok(subjectConditionalIndex >= 0, "Subject Consolidation clear conditional exists");
+  assert.ok(subjectQueueIndex > subjectConditionalIndex, "Subject Consolidation queue state still renders");
+  assert.ok(consolidationResultIndex > subjectQueueIndex, "consolidationResult state still renders inside the queue state");
+  assert.ok(populationAuditIndex > subjectConditionalCloseIndex, "Population Method Audit renders after the Subject Consolidation conditional");
+  assert.ok(candidatesIndex > populationAuditIndex, "Population Method Audit renders before the Candidates section");
+  assert.doesNotMatch(clearBranch, /Population Method Audit|Population Method:/);
+  assert.doesNotMatch(fullQueueBranch, /Population Method Audit|Population Method:/);
+  assertIncludesCopy(pageCopy, "Subject Consolidation: clear");
+  assertIncludesCopy(pageCopy, "Subject Consolidation Queue");
+  assertIncludesCopy(pageCopy, "Subject Consolidation Complete");
+  assertIncludesCopy(pageCopy, "Population Method:");
+  assertIncludesCopy(pageCopy, "healthy");
+  assertIncludesCopy(pageCopy, "needs review");
+  assertIncludesCopy(pageCopy, "public pages published");
+  assertIncludesCopy(pageCopy, "public dossier text changed");
+  assert.doesNotMatch(source("src/app/database/[slug]/page.tsx"), /Population Method Audit|Intake Map|Copy Record IDs/);
 });
 
 test("Population Method Audit classifies origins, lanes, visibility, destinations, and warnings", () => {

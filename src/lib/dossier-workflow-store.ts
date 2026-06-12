@@ -1741,7 +1741,6 @@ function activeNonPopulationRecommendationForSubject(
   return recommendations.find((item) => {
     if (item.populationRecommendation || item.type === "population_recommendation") return false;
     if (!["new", "reviewing"].includes(item.status)) return false;
-    if (!isActiveRecommendation(item)) return false;
     const itemSubjectKey = recommendationDedupeSubject(
       item.subjectKey || item.subjectName,
     );
@@ -1761,15 +1760,10 @@ function populationRecommendationForSubjectAndAction(
     if (!item.populationRecommendation && item.type !== "population_recommendation") {
       return false;
     }
-    if (!isActiveRecommendation(item)) return false;
     const itemSubjectKey = recommendationDedupeSubject(
       item.subjectKey || item.subjectName,
     );
-    return (
-      itemSubjectKey === subjectKey &&
-      item.recommendedAction === recommendation.recommendedAction &&
-      item.recommendedLane === recommendation.recommendedLane
-    );
+    return itemSubjectKey === subjectKey;
   });
 }
 
@@ -4875,15 +4869,23 @@ export function resolvePopulationSignalDestination({
   }
 
   const ambiguous = (recommendation.possibleTargets ?? []).length > 1;
+  if (!ambiguous) {
+    return {
+      destinationKind: "candidate_intake",
+      destinationHref: recommendationHref(recommendation.id),
+      recommendedInternalAction: "create_source_file_candidate",
+      shouldAutoResolve: true,
+      shouldShowToAdmin: false,
+      reason: "No existing internal destination was found; BNL Signal Filing created Candidate Intake for this new subject.",
+    };
+  }
   return {
-    destinationKind: ambiguous ? "ambiguous" : "no_destination",
+    destinationKind: "ambiguous",
     destinationHref: recommendationHref(recommendation.id),
     recommendedInternalAction: "admin_review_required",
     shouldAutoResolve: false,
     shouldShowToAdmin: true,
-    reason: ambiguous
-      ? "Multiple plausible destinations remain; admin review is required."
-      : "No existing internal destination was found; admin review is required.",
+    reason: "Multiple plausible destinations remain; admin review is required.",
   };
 }
 
@@ -4938,11 +4940,11 @@ function mergePopulationRecommendationEvidence(
 
 function populationAttachedNoteText(recommendation: DossierRecommendation, destination: PopulationSignalDestination): string {
   return [
-    `BNL Signal Reconcile filed this population signal into ${destination.destinationKind}.`,
+    `BNL Signal Filing filed this population signal into ${destination.destinationKind}.`,
     recommendation.adminSummary ? `Admin summary: ${recommendation.adminSummary}` : undefined,
     recommendation.evidenceSummary ? `Evidence summary: ${recommendation.evidenceSummary}` : undefined,
     `Internal evidence refs preserved: ${recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0}.`,
-    "No public dossier text was changed and no public page was published by this reconcile action.",
+    "No public dossier text was changed and no public page was published by this filing action.",
   ].filter(Boolean).join("\n\n").slice(0, 4000);
 }
 
@@ -4953,6 +4955,7 @@ export async function reconcilePopulationSignals(input: { actionBy?: string } = 
   await updateDossierWorkflowState((currentState) => {
     let candidates = currentState.candidates;
     let recommendations = currentState.recommendations;
+    let stateChanged = false;
     const visibleByIdentity = new Map<string, DossierRecommendation>();
 
     for (const recommendation of currentState.recommendations) {
@@ -4970,6 +4973,7 @@ export async function reconcilePopulationSignals(input: { actionBy?: string } = 
       const visibleExisting = visibleByIdentity.get(duplicateKey);
       if (visibleExisting) {
         const merged = mergePopulationRecommendationEvidence(visibleExisting, recommendation, now);
+        stateChanged = true;
         recommendations = recommendations.map((item) => {
           if (item.id === visibleExisting.id) return merged;
           if (item.id === recommendation.id) {
@@ -4998,6 +5002,19 @@ export async function reconcilePopulationSignals(input: { actionBy?: string } = 
       let nextStatus: DossierRecommendationStatus | undefined;
       let nextLane: DossierPopulationRecommendedLane | undefined;
       let nextAction: DossierPopulationRecommendedAction | undefined;
+
+      if (destination.destinationKind === "candidate_intake" && !targetCandidate) {
+        targetCandidate = buildCandidateFromRecommendation({
+          recommendation,
+          now,
+          source: recommendation.ingestSource === "bnl_population_recommender" ? "bnl_dynamic_candidate_discovery" : bnlIngestCandidateSource(recommendation),
+          noteText: populationAttachedNoteText(recommendation, destination),
+        });
+        targetCandidate = { ...targetCandidate, status: "candidate_intake" };
+        candidates = [targetCandidate, ...candidates];
+        stateChanged = true;
+        summary.createdSourceFileCandidates += 1;
+      }
 
       if (!destination.shouldAutoResolve) {
         nextLane = "needs_population_review";
@@ -5056,6 +5073,15 @@ export async function reconcilePopulationSignals(input: { actionBy?: string } = 
         nextAction = "mark_not_population_subject";
       }
 
+      if (
+        !destination.shouldAutoResolve &&
+        recommendation.recommendedLane === "needs_population_review" &&
+        recommendation.recommendedAction === "admin_review_required" &&
+        recommendation.routingReason === destination.reason
+      ) {
+        continue;
+      }
+
       nextRecommendation = {
         ...recommendation,
         status: nextStatus ?? recommendation.status,
@@ -5077,7 +5103,7 @@ export async function reconcilePopulationSignals(input: { actionBy?: string } = 
                 action: nextAction ?? "mark_no_new_info",
                 actionAt: now,
                 actionBy: input.actionBy,
-                actionReason: `BNL Signal Reconcile: ${destination.reason}`,
+                actionReason: `BNL Signal Filing: ${destination.reason}`,
                 targetCandidateId: targetCandidate?.id,
                 targetDossierId: destination.destinationKind === "public_dossier" ? destination.destinationId : recommendation.targetDossierId,
               },
@@ -5090,6 +5116,7 @@ export async function reconcilePopulationSignals(input: { actionBy?: string } = 
       };
 
       recommendations = recommendations.map((item) => item.id === recommendation.id ? nextRecommendation : item);
+      stateChanged = true;
 
       if (targetCandidate && ["active_source_file", "dossier_update_workspace", "candidate_intake", "dossier_draft"].includes(destination.destinationKind)) {
         const note = routingNote({
@@ -5102,6 +5129,7 @@ export async function reconcilePopulationSignals(input: { actionBy?: string } = 
           ingestedAt: recommendation.ingestedAt,
           ingestSource: recommendation.ingestSource,
         });
+        stateChanged = true;
         candidates = candidates.map((candidate) => candidate.id === targetCandidate!.id ? {
           ...candidate,
           sourceFileNotes: [note, ...(candidate.sourceFileNotes ?? [])],
@@ -5119,17 +5147,20 @@ export async function reconcilePopulationSignals(input: { actionBy?: string } = 
         item.recommendedAction === "admin_review_required" &&
         publicDossierForPopulationSubject(item, databasePage.entries.map((entry) => ({ id: entry.id, name: entry.name })))
       ) {
+        stateChanged = true;
         return {
           ...item,
           status: "no_new_info",
           recommendedLane: "already_represented",
           recommendedAction: "mark_no_new_info",
-          routingReason: "BNL Signal Reconcile found an existing public dossier during final duplicate cleanup.",
+          routingReason: "BNL Signal Filing found an existing public dossier during final duplicate cleanup.",
           updatedAt: now,
         };
       }
       return item;
     });
+
+    if (!stateChanged) return currentState;
 
     return {
       ...currentState,
@@ -5169,7 +5200,7 @@ function populationActionStatus(
 
 function populationActionNoteText(recommendation: DossierRecommendation, action: string): string {
   return [
-    `Population Review Queue action: ${action}.`,
+    `BNL Signal Filing action: ${action}.`,
     recommendation.adminSummary ? `Admin summary: ${recommendation.adminSummary}` : undefined,
     recommendation.evidenceSummary ? `Evidence summary: ${recommendation.evidenceSummary}` : undefined,
     recommendation.recommendedNextStep ? `Recommended next step: ${recommendation.recommendedNextStep}` : undefined,
@@ -5193,7 +5224,7 @@ export async function applyPopulationReviewRecommendationAction(
         updated = {
           ...recommendation,
           status: "reviewing",
-          routingReason: input.actionReason || "Reopened from Population Review Queue.",
+          routingReason: input.actionReason || "Reopened from BNL Signal Filing.",
           populationReviewActions: [
             ...(recommendation.populationReviewActions ?? []),
             { action: input.action, actionAt: now, actionBy: input.actionBy, actionReason: input.actionReason },
@@ -5281,7 +5312,7 @@ export async function applyPopulationReviewRecommendationAction(
       targetDossierId: input.dossierId ?? recommendation.matchedPublicDossierId ?? recommendation.targetDossierId,
       connectedCandidateId: targetCandidate?.id ?? recommendation.connectedCandidateId,
       connectedSourceFileCandidateId: targetCandidate?.id ?? recommendation.connectedSourceFileCandidateId,
-      routingReason: input.actionReason || `Population Review Queue action: ${input.action}`,
+      routingReason: input.actionReason || `BNL Signal Filing action: ${input.action}`,
       populationReviewActions: [
         ...(recommendation.populationReviewActions ?? []),
         {

@@ -15,6 +15,7 @@ import {
 import {
   createDossierRecommendationIdempotent,
   DossierWorkflowInputError,
+  reconcilePopulationSignals,
 } from "@/lib/dossier-workflow-store";
 
 export const dynamic = "force-dynamic";
@@ -690,7 +691,10 @@ export async function POST(req: Request) {
 
   try {
     const result = await createDossierRecommendationIdempotent(input);
-    return NextResponse.json({ ok: true, ...result });
+    const populationReconcile = input.type === "population_recommendation" || input.ingestSource === "bnl_population_recommender"
+      ? await reconcilePopulationSignals({ actionBy: "system:bnl_ingest" })
+      : undefined;
+    return NextResponse.json({ ok: true, ...result, populationReconcile });
   } catch (error) {
     if (error instanceof DossierWorkflowInputError) {
       return NextResponse.json(

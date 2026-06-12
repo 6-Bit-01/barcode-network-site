@@ -37,6 +37,7 @@ type WorkflowPayload = {
   tagRegistry?: { totalUniqueTags: number; totalTagAssignments: number };
   publicDossiers?: Array<{ id: string; name: string }>;
   consolidation?: SubjectConsolidationResult;
+  populationReconcile?: PopulationReconcileSummary;
 };
 
 type SubjectConsolidationIssue = { groupId?: string; subject: string; reason: string };
@@ -523,7 +524,9 @@ export default function DossierControlCenterPage() {
           : `Workflow API returned ${response.status}.`,
       );
     }
-    setPayload((await response.json()) as WorkflowPayload);
+    const next = (await response.json()) as WorkflowPayload;
+    setPayload(next);
+    setPopulationReconcileResult(next.populationReconcile ?? null);
   }
 
   useEffect(() => {
@@ -1091,7 +1094,7 @@ export default function DossierControlCenterPage() {
           recommendation.targetCandidateId,
         dossierId: recommendation.matchedPublicDossierId ?? recommendation.targetDossierId,
         actionBy: "admin",
-        actionReason: `Population Review Queue: ${action}`,
+        actionReason: `BNL Signal Filing: ${action}`,
       });
       setNotice("Population recommendation updated internally. No public dossier text changed and no public page was published.");
     } catch (err) {
@@ -1099,27 +1102,6 @@ export default function DossierControlCenterPage() {
     }
   }
 
-  async function reconcilePopulationSignals() {
-    setSaving(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const response = await fetch("/api/admin/dossiers", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "reconcile_population_signals" }),
-      });
-      const next = (await response.json()) as WorkflowPayload & { populationReconcile?: PopulationReconcileSummary; error?: string };
-      if (!response.ok) throw new Error(next.error ?? `Reconcile failed with ${response.status}.`);
-      setPayload(next);
-      setPopulationReconcileResult(next.populationReconcile ?? null);
-      setNotice("BNL signals reconciled into internal workflow destinations.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Population reconcile failed.");
-    } finally {
-      setSaving(false);
-    }
-  }
 
 
   if (loading) {
@@ -1695,23 +1677,24 @@ export default function DossierControlCenterPage() {
           </details>
 
         <DashboardCard
-          eyebrow="BNL Signal Reconcile"
-          title="BNL Signal Reconcile"
-          aside={<StatusPill>{unresolvedPopulationSignals.length} needs review</StatusPill>}
+          eyebrow="Incoming BNL Signals"
+          title="Incoming BNL Signals"
+          aside={<StatusPill>{unresolvedPopulationSignals.length} unresolved</StatusPill>}
         >
           <p className="text-sm text-muted">
-            BNL files new subject signals into existing Source Files, candidates, drafts, and dossier update workspaces. Only unresolved signals stay here.
+            BNL files new subject signals into existing candidates, Source Files, dossier drafts, and update workspaces. Only unresolved signals appear here.
           </p>
           <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3 text-xs text-muted">
             {[
               ["Signals reviewed", populationReconcileResult?.signalsReviewed ?? populationRecommendations.length],
               ["Filed automatically", filedAutomaticallyCount],
-              ["Needs Review", populationReconcileResult?.unresolvedNeedsReview ?? unresolvedPopulationSignals.length],
-              ["Source Files", populationReconcileResult?.attachedToSourceFiles ?? populationRecommendations.filter((item) => item.status === "attached_to_source_file").length],
-              ["Dossier Updates", populationReconcileResult?.attachedToDossierUpdates ?? populationRecommendations.filter((item) => item.status === "attached_to_existing_dossier_update").length],
-              ["Candidate Intake", populationReconcileResult?.attachedToCandidateIntake ?? populationRecommendations.filter((item) => item.status === "attached_to_candidate_intake").length],
-              ["Duplicates collapsed", populationReconcileResult?.duplicatesCollapsed ?? Math.max(0, populationRecommendations.length - visiblePopulationRecommendations.length)],
-              ["Public pages", populationReconcileResult?.publicPagesPublished ?? 0],
+              ["New candidates created", populationReconcileResult?.createdSourceFileCandidates ?? candidates.filter((item) => item.source === "bnl_dynamic_candidate_discovery" && item.status === "candidate_intake").length],
+              ["Attached to existing records", (populationReconcileResult?.attachedToSourceFiles ?? populationRecommendations.filter((item) => item.status === "attached_to_source_file").length) + (populationReconcileResult?.attachedToDossierUpdates ?? populationRecommendations.filter((item) => item.status === "attached_to_existing_dossier_update").length) + (populationReconcileResult?.attachedToCandidateIntake ?? populationRecommendations.filter((item) => item.status === "attached_to_candidate_intake").length) + (populationReconcileResult?.attachedToExistingRecommendations ?? 0)],
+              ["Already represented", populationReconcileResult?.markedAlreadyRepresented ?? populationRecommendations.filter(isAlreadyRepresentedPopulationSignal).length],
+              ["Unresolved", populationReconcileResult?.unresolvedNeedsReview ?? unresolvedPopulationSignals.length],
+              ["Public pages published", populationReconcileResult?.publicPagesPublished ?? 0],
+              ["Public dossier text changed", populationReconcileResult?.publicDossierTextChanged ?? 0],
+              ["Internal aliases exposed", populationReconcileResult?.internalAliasesExposed ?? 0],
             ].map(([label, value]) => (
               <div key={label} className="border border-border/70 bg-background/30 p-3">
                 <p className="uppercase tracking-[0.25em] text-accent mb-2">{label}</p>
@@ -1719,83 +1702,64 @@ export default function DossierControlCenterPage() {
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-muted">
-            <div className="border border-border/70 bg-background/30 p-3">
-              <p className="uppercase tracking-[0.25em] text-accent mb-2">Public dossier text changed</p>
-              <p className="text-2xl font-bold text-foreground">{populationReconcileResult?.publicDossierTextChanged ?? 0}</p>
-            </div>
-            <div className="border border-border/70 bg-background/30 p-3">
-              <p className="uppercase tracking-[0.25em] text-accent mb-2">Internal aliases exposed</p>
-              <p className="text-2xl font-bold text-foreground">{populationReconcileResult?.internalAliasesExposed ?? 0}</p>
-            </div>
-            <div className="border border-border/70 bg-background/30 p-3">
-              <p className="uppercase tracking-[0.25em] text-accent mb-2">Evidence refs merged</p>
-              <p className="text-2xl font-bold text-foreground">{populationReconcileResult?.evidenceRefsMerged ?? 0}</p>
-            </div>
-          </div>
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between text-xs uppercase tracking-widest text-muted">
-            <p>Source of recommendation: BNL Signal Reconcile · Last updated / generatedAt: {formatDate(populationLastUpdated)}</p>
-            <div className="flex flex-col gap-3 md:flex-row md:items-end">
-              <label className="space-y-2 md:min-w-72">
-                <span>Search unresolved signal, dossier, candidate, or Source File</span>
-                <input value={populationSearch} onChange={(event) => setPopulationSearch(event.target.value)} className={textInputClass()} />
-              </label>
-              <button type="button" disabled={saving} onClick={() => void reconcilePopulationSignals()} className="border border-accent px-4 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">
-                Reconcile BNL Signals
-              </button>
-            </div>
+            <p>Source of recommendation: Incoming BNL Signals · Last updated / generatedAt: {formatDate(populationLastUpdated)}</p>
+            {unresolvedPopulationSignals.length > 0 ? (
+              <div className="flex flex-col gap-3 md:flex-row md:items-end">
+                <label className="space-y-2 md:min-w-72">
+                  <span>Search unresolved signal, dossier, candidate, or Source File</span>
+                  <input value={populationSearch} onChange={(event) => setPopulationSearch(event.target.value)} className={textInputClass()} />
+                </label>
+              </div>
+            ) : null}
           </div>
-          <p className="text-sm text-muted">This internal reconcile action only changes private workflow state. It publishes 0 public pages, changes 0 public dossier text, exposes 0 internal aliases, and preserves raw evidence references internally without displaying private evidence.</p>
+          <p className="text-sm text-muted">BNL Signal Filing only changes private workflow state. It publishes 0 public pages, changes 0 public dossier text, exposes 0 internal aliases, and preserves raw evidence references internally without displaying private evidence.</p>
 
           <div className="space-y-5">
-            {populationQueueGroups.map((group) => (
-              <section key={group.id} className="border border-border/70 bg-background/20 p-4 space-y-3">
+            {unresolvedPopulationSignals.length > 0 ? (
+              <section className="border border-border/70 bg-background/20 p-4 space-y-3">
                 <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
                   <div>
-                    <h3 className="text-lg font-bold text-foreground">{group.title}</h3>
-                    <p className="text-sm text-muted">{group.description}</p>
+                    <h3 className="text-lg font-bold text-foreground">Unresolved BNL Signals</h3>
+                    <p className="text-sm text-muted">Only ambiguous or unresolved BNL signals stay visible here.</p>
                   </div>
-                  <StatusPill>{group.items.length} signal{group.items.length === 1 ? "" : "s"}</StatusPill>
+                  <StatusPill>{unresolvedPopulationSignals.length} signal{unresolvedPopulationSignals.length === 1 ? "" : "s"}</StatusPill>
                 </div>
-                {group.items.length === 0 ? (
-                  <p className="text-sm text-muted">No action needed. Filed automatically.</p>
-                ) : (
-                  <div className="grid gap-3 lg:grid-cols-2">
-                    {group.items.map((recommendation) => {
-                      const targetHref = recommendation.targetCandidateId || recommendation.matchedExistingCandidateId || recommendation.matchedDossierUpdateCandidateId ? `/admin/dossiers/candidates/${recommendation.targetCandidateId ?? recommendation.matchedExistingCandidateId ?? recommendation.matchedDossierUpdateCandidateId}` : undefined;
-                      const publicHref = populationPublicDossierHref(recommendation, publicDossiers);
-                      const primaryActions = populationPrimaryActions({ groupId: group.id, recommendation, targetHref, publicHref });
-                      return (
-                        <article key={recommendation.id} className="border border-border bg-surface p-4 text-sm text-muted space-y-3">
-                          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                            <div>
-                              <h4 className="text-xl font-bold text-foreground">{recommendation.subjectName}</h4>
-                              <p>{recommendation.recommendedNextStep ?? recommendation.routingReason ?? "Needs one admin decision because no deterministic destination was found."}</p>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              <StatusPill>{recommendation.confidence ?? "confidence unset"}</StatusPill>
-                              <StatusPill>{recommendation.status}</StatusPill>
-                            </div>
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {unresolvedPopulationSignals.map((recommendation) => {
+                    const targetHref = recommendation.targetCandidateId || recommendation.matchedExistingCandidateId || recommendation.matchedDossierUpdateCandidateId ? `/admin/dossiers/candidates/${recommendation.targetCandidateId ?? recommendation.matchedExistingCandidateId ?? recommendation.matchedDossierUpdateCandidateId}` : undefined;
+                    const publicHref = populationPublicDossierHref(recommendation, publicDossiers);
+                    const primaryActions = populationPrimaryActions({ groupId: "admin-review", recommendation, targetHref, publicHref });
+                    return (
+                      <article key={recommendation.id} className="border border-border bg-surface p-4 text-sm text-muted space-y-3">
+                        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                          <div>
+                            <h4 className="text-xl font-bold text-foreground">{recommendation.subjectName}</h4>
+                            <p>{recommendation.recommendedNextStep ?? recommendation.routingReason ?? "Needs one admin decision because no deterministic destination was found."}</p>
                           </div>
-                          <p><span className="text-foreground">Destination:</span> {populationDestinationLabel(recommendation, candidates)}</p>
-                          <p><span className="text-foreground">Why:</span> {recommendation.adminSummary ?? recommendation.evidenceSummary ?? recommendation.reason}</p>
-                          {recommendation.missingInfo?.length ? <p><span className="text-foreground">Missing info:</span> {recommendation.missingInfo.join("; ")}</p> : null}
-                          <p><span className="text-foreground">Evidence refs:</span> {recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0} private refs preserved internally; raw/private evidence is not shown.</p>
-                          <p><span className="text-foreground">What to click next:</span> {primaryActions.map((action) => action.label).join(" or ")}</p>
-                          <div className="flex flex-wrap gap-2" data-primary-population-actions={primaryActions.length}>
-                            {primaryActions.slice(0, 2).map((action) => action.kind === "link" ? (
-                              <Link key={`${recommendation.id}-${action.label}`} href={action.href} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">{action.label}</Link>
-                            ) : (
-                              <PopulationActionButton key={`${recommendation.id}-${action.key}`} disabled={saving} onClick={() => populationRecommendationAction(recommendation, action.key)}>{action.label}</PopulationActionButton>
-                            ))}
+                          <div className="flex flex-wrap gap-2">
+                            <StatusPill>{recommendation.confidence ?? "confidence unset"}</StatusPill>
+                            <StatusPill>{recommendation.status}</StatusPill>
                           </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                )}
+                        </div>
+                        <p><span className="text-foreground">Destination:</span> {populationDestinationLabel(recommendation, candidates)}</p>
+                        <p><span className="text-foreground">Why:</span> {recommendation.adminSummary ?? recommendation.evidenceSummary ?? recommendation.reason}</p>
+                        {recommendation.missingInfo?.length ? <p><span className="text-foreground">Missing info:</span> {recommendation.missingInfo.join("; ")}</p> : null}
+                        <p><span className="text-foreground">Evidence refs:</span> {recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0} private refs preserved internally; raw/private evidence is not shown.</p>
+                        <p><span className="text-foreground">What to click next:</span> {primaryActions.map((action) => action.label).join(" or ")}</p>
+                        <div className="flex flex-wrap gap-2" data-primary-population-actions={primaryActions.length}>
+                          {primaryActions.slice(0, 2).map((action) => action.kind === "link" ? (
+                            <Link key={`${recommendation.id}-${action.label}`} href={action.href} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">{action.label}</Link>
+                          ) : (
+                            <PopulationActionButton key={`${recommendation.id}-${action.key}`} disabled={saving} onClick={() => populationRecommendationAction(recommendation, action.key)}>{action.label}</PopulationActionButton>
+                          ))}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
               </section>
-            ))}
+            ) : null}
             <details className="border border-border/70 bg-background/20 p-4">
               <summary className="cursor-pointer text-lg font-bold text-foreground">Filed / Already Represented ({filedPopulationSignals.length})</summary>
               <p className="mt-2 text-sm text-muted">Audit view for signals already attached, merged, marked no-new-info, or represented elsewhere. These do not clutter the default work queue.</p>
@@ -1819,10 +1783,6 @@ export default function DossierControlCenterPage() {
                       <h4 className="text-lg font-bold text-foreground">{recommendation.subjectName}</h4>
                       <p>{recommendation.adminSummary ?? recommendation.recommendedNextStep ?? recommendation.reason}</p>
                       <p>Private evidence refs preserved internally; raw/private content hidden.</p>
-                      <div className="flex flex-wrap gap-2" data-primary-population-actions="2">
-                        <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "mark_not_population_subject")}>Mark not dossier subject</PopulationActionButton>
-                        <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "dismiss_population_recommendation")}>Dismiss</PopulationActionButton>
-                      </div>
                     </article>
                   ))}
                 </div>

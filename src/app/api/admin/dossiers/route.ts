@@ -68,6 +68,7 @@ import {
   updateDossierSourceFileRefreshRequestStatus,
   validateDossierDraftFieldsForOwnerReview,
   type DossierWorkflowState,
+  type PopulationReconcileSummary,
 } from "@/lib/dossier-workflow-store";
 
 export const dynamic = "force-dynamic";
@@ -117,6 +118,7 @@ type DossierWorkflowResponse = {
     >["creationPolicy"];
   };
   publicDossiers: Array<{ id: string; name: string }>;
+  populationReconcile?: PopulationReconcileSummary;
 };
 
 const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
@@ -356,8 +358,10 @@ async function verifySourceFileCaseReportAfterImmediateRefresh(input: {
 
 async function workflowPayload(
   state?: DossierWorkflowState,
+  populationReconcile?: PopulationReconcileSummary,
 ): Promise<DossierWorkflowResponse> {
   const tagRegistry = buildDossierTagRegistry(databasePage.entries);
+  const autoPopulationReconcile = state ? populationReconcile : populationReconcile ?? await reconcilePopulationSignals({ actionBy: "system:auto_filing" });
   const workflowState = state ?? (await getDossierWorkflowState());
 
   const waitingForOwnerReview = workflowState.drafts.filter(
@@ -422,6 +426,7 @@ async function workflowPayload(
       id: entry.id,
       name: entry.name,
     })),
+    populationReconcile: autoPopulationReconcile,
   };
 }
 
@@ -682,11 +687,10 @@ export async function POST(req: Request) {
 
     if (action === "reconcile_population_signals") {
       const populationReconcile = await reconcilePopulationSignals({ actionBy: typeof body.actionBy === "string" ? body.actionBy : "admin" });
-      const payload = await workflowPayload();
+      const payload = await workflowPayload(undefined, populationReconcile);
       return NextResponse.json({
         ok: true,
         action,
-        populationReconcile,
         ...payload,
       });
     }

@@ -42,6 +42,7 @@ import {
   type DossierSourceFileNoteType,
   type DossierDuplicateRisk,
   type DossierPopulationRecommendedAction,
+  type DossierPopulationRecommendedLane,
   type DossierWorkflowLink,
   createDossierPopulationAudit,
   isActiveSourceFileCandidate,
@@ -1731,15 +1732,71 @@ function activeNonPopulationRecommendationForSubject(
   recommendations: DossierRecommendation[],
   recommendation: DossierRecommendation,
 ): DossierRecommendation | undefined {
-  const subjectKey = recommendationDedupeSubject(recommendation.subjectKey || recommendation.subjectName);
+  const subjectKey = recommendationDedupeSubject(
+    recommendation.subjectKey || recommendation.subjectName,
+  );
   if (!subjectKey) return undefined;
   return recommendations.find((item) => {
     if (item.populationRecommendation || item.type === "population_recommendation") return false;
     if (!["new", "reviewing"].includes(item.status)) return false;
     if (!isActiveRecommendation(item)) return false;
-    const itemSubjectKey = recommendationDedupeSubject(item.subjectKey || item.subjectName);
+    const itemSubjectKey = recommendationDedupeSubject(
+      item.subjectKey || item.subjectName,
+    );
     return itemSubjectKey === subjectKey;
   });
+}
+
+function populationRecommendationForSubjectAndAction(
+  recommendations: DossierRecommendation[],
+  recommendation: DossierRecommendation,
+): DossierRecommendation | undefined {
+  const subjectKey = recommendationDedupeSubject(
+    recommendation.subjectKey || recommendation.subjectName,
+  );
+  if (!subjectKey) return undefined;
+  return recommendations.find((item) => {
+    if (!item.populationRecommendation && item.type !== "population_recommendation") {
+      return false;
+    }
+    if (!isActiveRecommendation(item)) return false;
+    const itemSubjectKey = recommendationDedupeSubject(
+      item.subjectKey || item.subjectName,
+    );
+    return (
+      itemSubjectKey === subjectKey &&
+      item.recommendedAction === recommendation.recommendedAction &&
+      item.recommendedLane === recommendation.recommendedLane
+    );
+  });
+}
+
+function candidateDestinationForPopulationSubject(
+  candidates: DossierCandidate[],
+  recommendation: DossierRecommendation,
+): DossierCandidate | undefined {
+  const subjectKey = recommendationDedupeSubject(
+    recommendation.subjectKey || recommendation.subjectName,
+  );
+  if (!subjectKey) return undefined;
+  return candidates.find((candidate) => {
+    if (["archived", "denied", "merged"].includes(candidate.status)) return false;
+    const candidateSubjectKey = recommendationDedupeSubject(candidate.name);
+    return candidateSubjectKey === subjectKey;
+  });
+}
+
+function isRecommendationBackedCandidate(candidate: DossierCandidate): boolean {
+  return Boolean(
+    candidate.createdFromRecommendationId ||
+      (candidate.connectedRecommendationIds ?? []).length > 0 ||
+      (candidate.sourceRecommendationIds ?? []).length > 0 ||
+      candidate.source === "bnl_dynamic_candidate_discovery" ||
+      candidate.source === "bnl_source_knowledge_bridge" ||
+      candidate.ingestSource === "bnl" ||
+      candidate.ingestSource === "bnl_dynamic_candidate_discovery" ||
+      candidate.ingestSource === "bnl_source_knowledge_bridge",
+  );
 }
 
 function fallbackRecommendationDedupeKey(
@@ -2912,28 +2969,28 @@ export async function createDossierRecommendationIdempotent(
       }
     }
 
-    const existing = recommendation.ingestKey
-      ? currentState.recommendations.find(
-          (item) => item.ingestKey === recommendation.ingestKey,
-        )
-      : recommendation.inputHash
+    const existing =
+      (recommendation.ingestKey
+        ? currentState.recommendations.find(
+            (item) => item.ingestKey === recommendation.ingestKey,
+          )
+        : undefined) ??
+      (recommendation.inputHash
         ? currentState.recommendations.find(
             (item) => item.inputHash === recommendation.inputHash,
           )
-        : recommendation.populationRecommendation
-          ? currentState.recommendations.find(
-              (item) =>
-                item.populationRecommendation &&
-                recommendationDedupeSubject(item.subjectName) ===
-                  recommendationDedupeSubject(recommendation.subjectName) &&
-                item.recommendedAction === recommendation.recommendedAction,
-            )
-          : currentState.recommendations.find(
-              (item) =>
-                isActiveRecommendation(item) &&
-                fallbackRecommendationDedupeKey(item) ===
-                  fallbackRecommendationDedupeKey(recommendation),
-            );
+        : undefined) ??
+      (recommendation.populationRecommendation
+        ? populationRecommendationForSubjectAndAction(
+            currentState.recommendations,
+            recommendation,
+          )
+        : currentState.recommendations.find(
+            (item) =>
+              isActiveRecommendation(item) &&
+              fallbackRecommendationDedupeKey(item) ===
+                fallbackRecommendationDedupeKey(recommendation),
+          ));
 
     if (existing) {
       if (
@@ -3059,6 +3116,76 @@ export async function createDossierRecommendationIdempotent(
       savedRecommendation = existing;
       duplicate = true;
       return currentState;
+    }
+
+    const matchingCandidateDestination = recommendation.populationRecommendation
+      ? candidateDestinationForPopulationSubject(currentState.candidates, recommendation)
+      : undefined;
+    if (matchingCandidateDestination) {
+      const recommendationBacked = isRecommendationBackedCandidate(
+        matchingCandidateDestination,
+      );
+      const updatedLane: DossierPopulationRecommendedLane =
+        matchingCandidateDestination.status === "active_source_file"
+          ? "active_source_file"
+          : matchingCandidateDestination.status === "existing_dossier_update"
+            ? "existing_dossier_update"
+            : recommendationBacked
+              ? "already_represented"
+              : "candidate_intake";
+      const updatedAction: DossierPopulationRecommendedAction =
+        matchingCandidateDestination.status === "active_source_file"
+          ? "attach_to_existing_source_file"
+          : matchingCandidateDestination.status === "existing_dossier_update"
+            ? "attach_to_existing_dossier_update"
+            : recommendationBacked
+              ? "mark_duplicate_no_new_info"
+              : "create_source_file_candidate";
+      savedRecommendation = {
+        ...recommendation,
+        recommendedLane: updatedLane,
+        recommendedAction: updatedAction,
+        matchedExistingCandidateId:
+          matchingCandidateDestination.status === "active_source_file"
+            ? matchingCandidateDestination.id
+            : recommendation.matchedExistingCandidateId,
+        matchedDossierUpdateCandidateId:
+          matchingCandidateDestination.status === "existing_dossier_update"
+            ? matchingCandidateDestination.id
+            : recommendation.matchedDossierUpdateCandidateId,
+        targetCandidateId: matchingCandidateDestination.id,
+        connectedCandidateId: matchingCandidateDestination.id,
+        connectedRecommendationIds: uniqueStrings(
+          recommendation.connectedRecommendationIds,
+          matchingCandidateDestination.createdFromRecommendationId
+            ? [matchingCandidateDestination.createdFromRecommendationId]
+            : matchingCandidateDestination.connectedRecommendationIds,
+        ),
+        sourceRecommendationIds: uniqueStrings(
+          recommendation.sourceRecommendationIds,
+          matchingCandidateDestination.sourceRecommendationIds,
+        ),
+        duplicateRisk: recommendationBacked ? "high" : recommendation.duplicateRisk,
+        routingReason:
+          matchingCandidateDestination.status === "active_source_file"
+            ? `Already represented by active Source File ${matchingCandidateDestination.id}; route to Source File instead of creating an Admin Review Required card.`
+            : matchingCandidateDestination.status === "existing_dossier_update"
+              ? `Already represented by Dossier Update workspace ${matchingCandidateDestination.id}; route to the workspace instead of creating an Admin Review Required card.`
+              : recommendationBacked
+                ? `Already waiting in Recommendation Intake as ${matchingCandidateDestination.id}; preserved population evidence refs internally without creating another Admin Review Required card.`
+                : `Already represented by Candidate Intake ${matchingCandidateDestination.id}; route there instead of creating another Admin Review Required card.`,
+        publicSafetyNotes: uniqueStrings(recommendation.publicSafetyNotes, [
+          "Population recommendation matched an existing private workflow destination. Raw/private evidence refs remain internal and no public content was changed.",
+        ]),
+        rawEvidenceRefCount: recommendation.rawEvidenceRefs?.length ?? 0,
+        updatedAt: now,
+      };
+      duplicate = recommendationBacked;
+      return {
+        ...currentState,
+        recommendations: [savedRecommendation, ...currentState.recommendations],
+        updatedAt: now,
+      };
     }
 
     const matchingActiveRecommendation = recommendation.populationRecommendation

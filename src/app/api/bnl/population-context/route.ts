@@ -301,6 +301,31 @@ function resolvedRecommendationItem(
   };
 }
 
+function pendingCandidateRecommendationDestination(
+  recommendation: DossierRecommendation,
+) {
+  const item = pendingCandidateRecommendationItem(recommendation);
+  return {
+    candidateId: item.recordId,
+    subjectName: item.subjectName,
+    normalizedSubjectKey: item.normalizedSubjectKey,
+    candidateType: "unknown" as const,
+    status: "candidate_intake" as const,
+    score: null,
+    tier: "review_candidate" as const,
+    source: "bnl_dynamic_candidate_discovery" as const,
+    ingestSource: recommendation.ingestSource ?? null,
+    publicDossierMatch: null,
+    createdFromRecommendationId: recommendation.id,
+    connectedRecommendationIds: [recommendation.id],
+    sourceRecommendationIds: [recommendation.id],
+    isRecommendationBacked: true,
+    recommendationBacked: true,
+    destinationLane: "candidate_recommendation" as const,
+    route: recommendationRoute(recommendation.id),
+  };
+}
+
 function pendingCandidateRecommendationItem(
   recommendation: DossierRecommendation,
 ) {
@@ -391,7 +416,7 @@ export async function GET(req: Request) {
   const sourceFiles = state.candidates
     .filter(isActiveSourceFileCandidate)
     .map(sourceFileItem);
-  const candidates = state.candidates
+  const trueCandidateIntakeRecords = state.candidates
     .filter((candidate) => candidate.status === "candidate_intake")
     .map(candidateIntakeItem);
   const dossierUpdateWorkspaces = state.candidates
@@ -410,11 +435,18 @@ export async function GET(req: Request) {
       )
       .map((candidate) => candidate.id),
   );
-  const pendingRecommendationCandidateRecords = state.recommendations
-    .filter((recommendation) =>
+  const pendingRecommendationCandidates = state.recommendations.filter(
+    (recommendation) =>
       isActiveCandidateRecommendation(recommendation, resolvedCandidateIds),
-    )
-    .map(pendingCandidateRecommendationItem);
+  );
+  const pendingRecommendationCandidateRecords =
+    pendingRecommendationCandidates.map(pendingCandidateRecommendationItem);
+  const candidates = [
+    ...trueCandidateIntakeRecords,
+    ...pendingRecommendationCandidates.map(
+      pendingCandidateRecommendationDestination,
+    ),
+  ];
   const identityLinks = state.candidates.flatMap((candidate) =>
     (candidate.identityLinks ?? []).map((identityLink) =>
       identityLinkItem(candidate, identityLink),
@@ -451,7 +483,8 @@ export async function GET(req: Request) {
       diagnostics: {
         publicDossierCount: publicDossiers.length,
         sourceFileCount: sourceFiles.length,
-        candidateCount: candidates.length,
+        candidateCount: trueCandidateIntakeRecords.length,
+        candidateDestinationCount: candidates.length,
         pendingRecommendationCandidateCount:
           pendingRecommendationCandidateRecords.length,
         dossierUpdateWorkspaceCount: dossierUpdateWorkspaces.length,

@@ -2123,7 +2123,7 @@ test("Subject Consolidation Queue renders action summary, review cards, blocked 
   assert.match(source("src/lib/dossier-workflow.ts"), /isConsolidationResolvedCandidate/);
   assert.match(page, /!isConsolidationResolvedCandidate\(candidate\)/);
   assert.match(source("src/lib/dossier-workflow-store.ts"), /bundleExactPublicDossierUpdateSignals/);
-  assert.doesNotMatch(pageCopy, /Source File Population Audit|Population Audit|Open Recommendation|Open Source File|Open Target|Open Incoming|Merge Into Kept Source File|Attach to Kept Source File|Create Source File From These Signals|Create Dossier Update Workspace without public dossier\/context/);
+  assert.doesNotMatch(pageCopy, /Source File Population Audit|Population Audit|Open Recommendation|Open Target|Open Incoming|Merge Into Kept Source File|Attach to Kept Source File|Create Source File From These Signals|Create Dossier Update Workspace without public dossier\/context/);
   const queueCopy = pageCopy.slice(pageCopy.indexOf("Subject Consolidation Queue"), pageCopy.indexOf("Population Method Audit", pageCopy.indexOf("Subject Consolidation Queue")));
   assert.doesNotMatch(queueCopy, /recommendation\.reason|recommendation\.evidenceSummary|raw recommendation\.reason|raw recommendation\.summary/);
   assert.doesNotMatch(pageCopy, /Confirmed aliases count: \{record\.confirmedAliasCount\}/);
@@ -3162,7 +3162,7 @@ test("Subject Consolidation Queue review UI uses direct decision buttons and col
   }
 
   assert.match(page, /<details className="mt-4 border border-border\/60 bg-background\/30 p-3">/);
-  assert.doesNotMatch(pageCopy, /Open Recommendation|Open Source File|Open Target|Open Incoming|Merge Into Kept Source File|Attach to Kept Source File|Create Source File From These Signals|Create Dossier Update Workspace without public dossier\/context|Create Dossier Update Later|Create Source File Later|Attach Later|Merge Later|Clean Later/);
+  assert.doesNotMatch(pageCopy, /Open Recommendation|Open Target|Open Incoming|Merge Into Kept Source File|Attach to Kept Source File|Create Source File From These Signals|Create Dossier Update Workspace without public dossier\/context|Create Dossier Update Later|Create Source File Later|Attach Later|Merge Later|Clean Later/);
   assert.doesNotMatch(pageCopy, /Create Source File: Checkpoint BNL Ingest Alpha/);
   assert.doesNotMatch(page, /incoming-\$\{record\.type\}/);
   assert.doesNotMatch(pageCopy, /Confirmed aliases count: \{record\.confirmedAliasCount\}/);
@@ -9021,9 +9021,10 @@ test("BNL population context endpoint is authenticated, compact, and routing-saf
   assert.ok(Array.isArray(payload.resolvedRecords));
   assert.equal(payload.diagnostics.publicDossierCount, payload.publicDossiers.length);
   assert.equal(payload.diagnostics.sourceFileCount, payload.sourceFiles.length);
-  assert.equal(payload.diagnostics.candidateCount, payload.candidates.length);
+  assert.equal(payload.diagnostics.candidateDestinationCount, payload.candidates.length);
   assert.equal(payload.diagnostics.candidateCount, 1);
   assert.equal(payload.diagnostics.pendingRecommendationCandidateCount, 2);
+  assert.equal(payload.candidates.filter((item) => item.isRecommendationBacked).length, 2);
   assert.equal(payload.diagnostics.dossierUpdateWorkspaceCount, payload.dossierUpdateWorkspaces.length);
   assert.equal(payload.diagnostics.identityLinkCount, payload.identityLinks.length);
   assert.equal(payload.diagnostics.resolvedRecordCount, payload.resolvedRecords.length);
@@ -9109,15 +9110,15 @@ test("Population Review Queue renders grouped sections and safe admin actions", 
     "Admin Review Required",
     "Already Represented / Duplicate",
     "Non-dossier signals",
-    "Attach evidence to Source File",
-    "View Source File",
-    "Attach to existing update workspace",
-    "Open workspace",
+    "Attach to Source File",
+    "Open Source File",
+    "Attach to Update Workspace",
+    "Open Workspace",
     "Create Source File Candidate",
     "Convert to Source File Candidate",
-    "Mark not a dossier subject",
+    "Mark not dossier subject",
     "Mark no-new-info",
-    "Ignore for dossier work",
+    "Advanced actions",
     "Dismiss",
     "Raw evidence references are preserved internally but hidden from normal card copy.",
     "No public dossier text changed and no public page was published.",
@@ -9141,6 +9142,11 @@ test("Population Review Queue renders grouped sections and safe admin actions", 
   }
 
   assert.doesNotMatch(source("src/app/database/[slug]/page.tsx"), /Population Review Queue|BNL Population Scan|rawEvidenceRefs|Internal refs/);
+  assertIncludesCopy(pageCopy, "Open existing record");
+  assertIncludesCopy(pageCopy, "Review existing candidate/recommendation");
+  assertIncludesCopy(pageCopy, "data-primary-population-actions={primaryActions.length}");
+  assert.match(page, /primaryActions\.map/);
+  assert.doesNotMatch(page, /<details[^>]*open[^>]*>\s*<summary[^>]*>Advanced actions/);
   assert.doesNotMatch(pageCopy, /raw Discord message|relationship_journal|private relationship journal|internal alias label/i);
 });
 
@@ -9387,6 +9393,84 @@ test("Population recommendation ingest marks matching active recommendations alr
   );
 });
 
+
+test("Mind Fanatic-style recommendation-backed candidate is a population destination, not a repeated admin-review card", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+  const now = new Date().toISOString();
+
+  await store.saveDossierWorkflowState({
+    version: 1,
+    revision: 1,
+    candidates: [
+      {
+        id: "candidate-mind-fanatic-intake",
+        name: "Mind Fanatic [Barcode_Network]",
+        candidateType: "community_member",
+        source: "bnl_dynamic_candidate_discovery",
+        tier: "review_candidate",
+        score: 66,
+        whyNow: "Already visible in Candidates & Recommendation Intake.",
+        reason: "Recommendation-backed intake row exists.",
+        status: "candidate_intake",
+        createdFromRecommendationId: "rec-mind-fanatic-intake",
+        connectedRecommendationIds: ["rec-mind-fanatic-intake"],
+        sourceRecommendationIds: ["rec-mind-fanatic-intake"],
+        sourceLanes: ["broadcast_memory"],
+        createdAt: now,
+        updatedAt: now,
+        sourceFileNotes: [],
+      },
+    ],
+    drafts: [],
+    recommendations: [],
+    sourceFileRefreshRequests: [],
+    updatedAt: now,
+  });
+
+  const response = await bnlIngestPost({
+    type: "population_recommendation",
+    createdBy: "bnl_population_recommender",
+    ingestSource: "bnl_population_recommender",
+    subjectName: "Mind Fanatic [Barcode_Network]",
+    subjectKey: "mind fanatic barcode network",
+    adminSummary: "BNL found new evidence for a subject already waiting in Recommendation Intake.",
+    recommendedLane: "needs_population_review",
+    recommendedAction: "admin_review_required",
+    confidence: "high",
+    inputHash: "population-mind-fanatic-candidate-fixture",
+    rawEvidenceRefs: ["discord:private-evidence-hidden"],
+    sourceLanes: ["broadcast_memory"],
+  });
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.duplicate, true);
+  assert.equal(payload.recommendation.recommendedLane, "already_represented");
+  assert.equal(payload.recommendation.recommendedAction, "mark_duplicate_no_new_info");
+  assert.equal(payload.recommendation.targetCandidateId, "candidate-mind-fanatic-intake");
+
+  const state = await store.getDossierWorkflowState();
+  assert.equal(
+    state.recommendations.filter(
+      (item) =>
+        item.populationRecommendation &&
+        item.subjectName === "Mind Fanatic [Barcode_Network]" &&
+        item.recommendedLane === "needs_population_review" &&
+        item.recommendedAction === "admin_review_required",
+    ).length,
+    0,
+  );
+  assert.equal(
+    state.recommendations.filter(
+      (item) =>
+        item.populationRecommendation &&
+        item.subjectName === "Mind Fanatic [Barcode_Network]",
+    ).length,
+    1,
+  );
+});
+
 test("Population Review Queue actions update internal workflow records without publishing", async () => {
   await resetWorkflowStore();
   process.env.BNL_API_KEY = "test-population-context-token";
@@ -9490,7 +9574,7 @@ test("Population Review Queue search includes matched candidate names and review
   assert.match(page, /candidate\.name/);
   assert.match(page, /return \["new", "reviewing"\]\.includes\(recommendation\.status\)/);
   assertIncludesCopy(pageCopy, "Search subject, normalized key, dossier, or Source File");
-  assertIncludesCopy(pageCopy, "Mark needs more info");
+  assertIncludesCopy(pageCopy, "Review");
 });
 
 test("Population recommendation ingest dedupes by recommendationId and by subject plus action", async () => {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   createDossierPopulationAudit,
+  createDossierPopulationMethodAudit,
   getDossierSourceFileMetrics,
   isConsolidationResolvedCandidate,
   isDiagnosticTestArtifactCandidate,
@@ -498,6 +499,17 @@ export default function DossierControlCenterPage() {
       }),
     [candidates, recommendations, publicDossiers, drafts],
   );
+  const populationMethodAudit = useMemo(
+    () =>
+      createDossierPopulationMethodAudit({
+        candidates,
+        recommendations,
+        publicDossiers,
+        drafts,
+      }),
+    [candidates, recommendations, publicDossiers, drafts],
+  );
+  const populationMethodHealthy = populationMethodAudit.warnings.length === 0;
   const consolidationAttachGroups = populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Attach to Existing Source File candidate");
   const consolidationCleanGroups = populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Empty duplicate cleanup candidate");
   const consolidationDossierUpdateGroups = populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Create Dossier Update workspace candidate");
@@ -1017,6 +1029,120 @@ export default function DossierControlCenterPage() {
               </div>
             )}
           </section>
+
+          <details className="border border-border bg-background/30 p-4" open={!populationMethodHealthy}>
+            <summary className="cursor-pointer text-sm font-semibold text-foreground">
+              Population Method: {populationMethodHealthy ? "healthy" : "needs review"}
+              {!populationMethodHealthy ? ` — ${populationMethodAudit.warnings.length} intake records need population review.` : ""}
+            </summary>
+            <div className="mt-4 space-y-5">
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-muted">Population Method Audit</p>
+                <h2 className="text-xl font-bold text-foreground">Population Method Audit / Intake Map</h2>
+                <p className="mt-2 text-sm text-muted">Admin-only read-only diagnostic map for how Source Files, Dossier Updates, recommendations, diagnostics, and public dossier update signals entered the system, which lane they belong in, and whether hidden records have destinations.</p>
+                {populationMethodHealthy && (
+                  <p className="mt-3 border border-accent/40 bg-accent/10 p-3 text-sm text-accent">All resolved records have visible destinations or valid archive/diagnostic status. No orphaned intake records detected.</p>
+                )}
+              </div>
+
+              <section className="grid gap-3 md:grid-cols-2">
+                <div className="border border-border/70 bg-surface/60 p-4">
+                  <h3 className="font-semibold text-foreground">Intake Summary</h3>
+                  <dl className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted">
+                    <dt>BNL recommendations</dt><dd className="text-right text-foreground">{populationMethodAudit.countsByOrigin["BNL recommendation"] + populationMethodAudit.countsByOrigin["BNL source knowledge bridge"] + populationMethodAudit.countsByOrigin["BNL dynamic candidate discovery"]}</dd>
+                    <dt>manual admin records</dt><dd className="text-right text-foreground">{populationMethodAudit.countsByOrigin["manual admin creation"]}</dd>
+                    <dt>public dossier update signals</dt><dd className="text-right text-foreground">{populationMethodAudit.countsByOrigin["public dossier update signal"]}</dd>
+                    <dt>source file refresh/archive records</dt><dd className="text-right text-foreground">{populationMethodAudit.countsByOrigin["source file refresh"] + populationMethodAudit.countsByOrigin["source file archive"]}</dd>
+                    <dt>diagnostic/test artifacts</dt><dd className="text-right text-foreground">{populationMethodAudit.countsByOrigin["diagnostic/test artifact"]}</dd>
+                    <dt>unknown origin records</dt><dd className="text-right text-foreground">{populationMethodAudit.countsByOrigin["unknown / insufficient metadata"]}</dd>
+                  </dl>
+                </div>
+                <div className="border border-border/70 bg-surface/60 p-4">
+                  <h3 className="font-semibold text-foreground">Lane Map</h3>
+                  <dl className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted">
+                    <dt>Active Source Files</dt><dd className="text-right text-foreground">{populationMethodAudit.countsByLane["Active Source File"]}</dd>
+                    <dt>Candidate Intake</dt><dd className="text-right text-foreground">{populationMethodAudit.countsByLane["Candidate Intake"]}</dd>
+                    <dt>Dossier Update Workspaces</dt><dd className="text-right text-foreground">{populationMethodAudit.countsByLane["Dossier Update Workspace"]}</dd>
+                    <dt>Public Dossier Update Signals</dt><dd className="text-right text-foreground">{populationMethodAudit.countsByLane["Public Dossier Update Signal"]}</dd>
+                    <dt>Resolved Incoming Records</dt><dd className="text-right text-foreground">{populationMethodAudit.countsByLane["Resolved Incoming Record"] + populationMethodAudit.countsByLane["Merged Source Record"]}</dd>
+                    <dt>Diagnostics</dt><dd className="text-right text-foreground">{populationMethodAudit.countsByLane["Diagnostic/Test Artifact"]}</dd>
+                    <dt>Archived/Closed</dt><dd className="text-right text-foreground">{populationMethodAudit.countsByLane["Archived / Closed"]}</dd>
+                    <dt>Needs Population Review</dt><dd className="text-right text-foreground">{populationMethodAudit.countsByLane["Needs Population Review"]}</dd>
+                  </dl>
+                </div>
+              </section>
+
+              {populationMethodAudit.warnings.length > 0 && (
+                <section className="space-y-3">
+                  <h3 className="font-semibold text-foreground">Warnings / Problems</h3>
+                  {populationMethodAudit.warnings.slice(0, 8).map((warning) => (
+                    <article key={warning.id} className="border border-accent/50 bg-accent/10 p-4 text-sm">
+                      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                        <div>
+                          <p className="font-semibold text-accent">{warning.issueTitle}</p>
+                          <p className="mt-1 text-foreground">Affected subject: {warning.affectedSubject}</p>
+                        </div>
+                        <button type="button" onClick={() => navigator.clipboard?.writeText(warning.affectedIds.join(", "))} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Copy Record IDs</button>
+                      </div>
+                      <dl className="mt-3 grid gap-2 text-xs text-muted md:grid-cols-2">
+                        <div><dt>Affected IDs</dt><dd className="text-foreground">{warning.affectedIds.join(", ") || "—"}</dd></div>
+                        <div><dt>Source type</dt><dd className="text-foreground">{warning.sourceType}</dd></div>
+                        <div><dt>Current status</dt><dd className="text-foreground">{warning.currentStatus}</dd></div>
+                        <div><dt>Expected lane</dt><dd className="text-foreground">{warning.expectedLane}</dd></div>
+                        <div><dt>Detected destination</dt><dd className="text-foreground">{warning.detectedDestination ?? "—"}</dd></div>
+                        <div><dt>Recommended admin next step</dt><dd className="text-foreground">{warning.recommendedAdminNextStep}</dd></div>
+                      </dl>
+                    </article>
+                  ))}
+                </section>
+              )}
+
+              <details className="border border-border/70 bg-surface/40 p-3">
+                <summary className="cursor-pointer text-sm font-semibold text-foreground">Hidden Records With Destinations ({populationMethodAudit.hiddenWithDestinations.length})</summary>
+                <div className="mt-3 space-y-2 text-sm">
+                  {populationMethodAudit.hiddenWithDestinations.slice(0, 8).map((record) => (
+                    <div key={`hidden-destination-${record.id}`} className="border border-border/60 p-3">
+                      <p className="font-semibold text-foreground">{record.subject}</p>
+                      <p className="text-xs text-muted">{record.origin} → {record.destinationSubject ?? "destination"}</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {record.href && <Link href={record.href} className="border border-border px-3 py-1 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">View Source Record</Link>}
+                        {record.destinationHref && <Link href={record.destinationHref} className="border border-border px-3 py-1 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">View Destination Workspace</Link>}
+                        {record.publicDossierId && <Link href={`/database/${record.publicDossierId}`} className="border border-border px-3 py-1 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">View Public Dossier Match</Link>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </details>
+
+              {populationMethodAudit.hiddenWithoutDestination.length > 0 && (
+                <section className="border border-accent/50 bg-accent/10 p-4">
+                  <h3 className="font-semibold text-accent">Hidden Records Without Destinations</h3>
+                  <div className="mt-3 space-y-2 text-sm">
+                    {populationMethodAudit.hiddenWithoutDestination.slice(0, 8).map((record) => (
+                      <div key={`hidden-orphan-${record.id}`} className="border border-border/60 bg-background/30 p-3">
+                        <p className="font-semibold text-foreground">{record.subject}</p>
+                        <p className="text-xs text-muted">{record.origin} · {record.currentStatus} · expected lane: {record.intendedLane}</p>
+                        {record.href && <Link href={record.href} className="mt-2 inline-flex border border-border px-3 py-1 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">View Source Record</Link>}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              <details className="border border-border/70 bg-surface/40 p-3" open={!populationMethodHealthy}>
+                <summary className="cursor-pointer text-sm font-semibold text-foreground">Destination Workspaces ({populationMethodAudit.visibleDestinationWorkspaces.length})</summary>
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  {populationMethodAudit.visibleDestinationWorkspaces.slice(0, 10).map((record) => (
+                    <div key={`destination-${record.id}`} className="border border-border/60 p-3 text-sm">
+                      <p className="font-semibold text-foreground">{record.subject}</p>
+                      <p className="text-xs text-muted">{record.intendedLane} · received records: {populationMethodAudit.intakeFlows.filter((flow) => flow.destinationId === record.id).length}</p>
+                      {record.href && <Link href={record.href} className="mt-2 inline-flex border border-border px-3 py-1 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">View Destination Workspace</Link>}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            </div>
+          </details>
 
           <section className="space-y-3">
             <div>

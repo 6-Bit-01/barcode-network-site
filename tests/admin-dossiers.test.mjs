@@ -2122,6 +2122,182 @@ test("Subject Consolidation Queue renders action summary, review cards, blocked 
 });
 
 
+
+test("Population Method Audit renders read-only admin intake map states", () => {
+  const page = source("src/app/admin/dossiers/page.tsx");
+  const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
+
+  for (const label of [
+    "Population Method Audit",
+    "Population Method: {populationMethodHealthy ? \"healthy\" : \"needs review\"}",
+    "Population Method Audit / Intake Map",
+    "All resolved records have visible destinations or valid archive/diagnostic status. No orphaned intake records detected.",
+    "intake records need population review.",
+    "Intake Summary",
+    "BNL recommendations",
+    "manual admin records",
+    "public dossier update signals",
+    "source file refresh/archive records",
+    "diagnostic/test artifacts",
+    "unknown origin records",
+    "Lane Map",
+    "Active Source Files",
+    "Candidate Intake",
+    "Dossier Update Workspaces",
+    "Public Dossier Update Signals",
+    "Resolved Incoming Records",
+    "Diagnostics",
+    "Archived/Closed",
+    "Needs Population Review",
+    "Warnings / Problems",
+    "Affected subject:",
+    "Affected IDs",
+    "Source type",
+    "Current status",
+    "Expected lane",
+    "Detected destination",
+    "Recommended admin next step",
+    "Hidden Records With Destinations",
+    "Hidden Records Without Destinations",
+    "Destination Workspaces",
+    "View Source Record",
+    "View Destination Workspace",
+    "View Public Dossier Match",
+    "Copy Record IDs",
+  ]) {
+    assertIncludesCopy(pageCopy, label);
+  }
+
+  assert.match(page, /createDossierPopulationMethodAudit/);
+  assert.doesNotMatch(source("src/app/database/[slug]/page.tsx"), /Population Method Audit|Intake Map|Copy Record IDs/);
+
+  const auditCopy = pageCopy.slice(
+    pageCopy.indexOf("Population Method Audit"),
+    pageCopy.indexOf("Similar or ambiguous subjects requiring admin judgment"),
+  );
+  assert.doesNotMatch(auditCopy, /fix automatically|Fix Automatically|Run Subject Consolidation|Confirm Consolidation|merge candidates|Merge button|publish public pages|change public dossier text/i);
+});
+
+test("Population Method Audit classifies origins, lanes, visibility, destinations, and warnings", () => {
+  const now = "2026-06-12T00:00:00.000Z";
+  const candidate = (overrides) => ({
+    id: overrides.id,
+    name: overrides.name,
+    candidateType: "artist",
+    source: "manual",
+    tier: "review_candidate",
+    score: 5,
+    whyNow: "Population audit fixture",
+    reason: "Population audit fixture",
+    evidenceSummary: "Population audit fixture",
+    status: "active_source_file",
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  });
+  const recommendation = (overrides) => ({
+    id: overrides.id,
+    type: "new_subject",
+    subjectName: overrides.subjectName,
+    status: "new",
+    reason: "Population audit fixture",
+    confidence: "medium",
+    sourceLanes: ["public_discord"],
+    createdAt: now,
+    updatedAt: now,
+    createdBy: "bnl",
+    ingestSource: "bnl",
+    ...overrides,
+  });
+
+  const publicDossiers = [{ id: "PUB-196", name: "Public Subject" }];
+  const candidates = [
+    candidate({ id: "active-source", name: "Active Source", status: "active_source_file", source: "bnl_dynamic_candidate_discovery", latestSourceFileArchiveUpdatedAt: now }),
+    candidate({ id: "candidate-intake", name: "Candidate Intake", status: "candidate_intake", source: "manual" }),
+    candidate({ id: "dossier-update", name: "Public Subject", status: "existing_dossier_update", source: "manual", existingDossierMatch: { id: "PUB-196", name: "Public Subject", confidence: "high" }, sourceRecommendationIds: ["resolved-public-signal"] }),
+    candidate({ id: "archived-source", name: "Archived Source", status: "archived", source: "manual" }),
+    candidate({ id: "merged-valid", name: "Merged Valid", status: "merged", source: "manual", mergedIntoCandidateId: "active-source" }),
+    candidate({ id: "merged-missing", name: "Merged Missing", status: "merged", source: "manual", mergedIntoCandidateId: "missing-target" }),
+    candidate({ id: "hidden-public-signal", name: "Public Subject", status: "candidate_intake", source: "manual", existingDossierMatch: { id: "PUB-196", name: "Public Subject", confidence: "high" }, routingReason: "bundled_into_dossier_update" }),
+    candidate({ id: "hidden-public-orphan", name: "Orphan Public", status: "candidate_intake", source: "manual", existingDossierMatch: { id: "PUB-MISSING", name: "Orphan Public", confidence: "high" }, routingReason: "bundled_into_dossier_update" }),
+    candidate({ id: "hidden-workspace", name: "Hidden Workspace", status: "existing_dossier_update", source: "manual", existingDossierMatch: { id: "PUB-HIDDEN", name: "Hidden Workspace", confidence: "high" }, routingReason: "bundled_into_dossier_update" }),
+    candidate({ id: "diagnostic-active", name: "Diagnostic Probe", status: "active_source_file", source: "manual", reason: "manual endpoint smoke test" }),
+    candidate({ id: "source-refresh", name: "Refresh Source", status: "active_source_file", source: "bnl_source_file_enrichment", ingestSource: "bnl_source_file_enrichment" }),
+    candidate({ id: "source-archive", name: "Archive Source", status: "active_source_file", source: "manual", latestSourceFileArchiveId: "archive-1" }),
+    candidate({ id: "alias-link", name: "Alias Source", status: "active_source_file", source: "manual", identityLinks: [{ id: "alias-1", label: "Alias", normalizedLabel: "alias", status: "confirmed", useForMatching: true, createdAt: now, updatedAt: now }] }),
+    candidate({ id: "website-read", name: "Website Read", status: "candidate_intake", source: "website_read_model" }),
+    candidate({ id: "unknown-origin", name: "Unknown Origin", status: "active_source_file", source: "combined" }),
+  ];
+  const recommendations = [
+    recommendation({ id: "bnl-recommendation", subjectName: "BNL Subject", ingestSource: "bnl" }),
+    recommendation({ id: "bnl-bridge", subjectName: "Bridge Subject", ingestSource: "bnl_source_knowledge_bridge" }),
+    recommendation({ id: "bnl-discovery", subjectName: "Discovery Subject", ingestSource: "bnl_dynamic_candidate_discovery" }),
+    recommendation({ id: "manual-recommendation", subjectName: "Manual Recommendation", createdBy: "admin", ingestSource: "system", sourceLanes: ["admin_manual"] }),
+    recommendation({ id: "resolved-public-signal", subjectName: "Public Subject", type: "modify_existing_dossier", status: "attached_to_existing_dossier_update", targetDossierId: "PUB-196", ingestSource: "bnl" }),
+    recommendation({ id: "orphan-public-signal", subjectName: "Missing Public", type: "modify_existing_dossier", status: "attached_to_existing_dossier_update", targetDossierId: "PUB-MISSING", ingestSource: "bnl" }),
+    recommendation({ id: "missing-target-recommendation", subjectName: "Missing Target", status: "new", targetCandidateId: "missing-target", ingestSource: "bnl" }),
+    recommendation({ id: "diagnostic-recommendation", subjectName: "Diagnostic Test", status: "new", reason: "diagnostic probe", ingestSource: "bnl" }),
+    recommendation({ id: "unknown-recommendation", subjectName: "Unknown Recommendation", status: "new", createdBy: undefined, ingestSource: "unknown", sourceLanes: ["unknown"] }),
+  ];
+
+  const audit = workflow.createDossierPopulationMethodAudit({
+    candidates,
+    recommendations,
+    publicDossiers,
+    drafts: [{ id: "draft-update", candidateId: "dossier-update", status: "draft", fields: { name: "Public Subject" }, createdAt: now, updatedAt: now }],
+    sourceFileRefreshRequests: [{ id: "refresh-request", candidateId: "source-refresh", subjectName: "Refresh Source", normalizedSubjectKey: "refresh-source", status: "completed", reason: "case report missing", requestSource: "case_report_missing", requestedAt: now, updatedAt: now, priority: 1 }],
+  });
+
+  assert.equal(audit.countsByOrigin["BNL recommendation"], 2);
+  assert.equal(audit.countsByOrigin["BNL source knowledge bridge"], 1);
+  assert.equal(audit.countsByOrigin["BNL dynamic candidate discovery"], 2);
+  assert.equal(audit.countsByOrigin["manual admin creation"] >= 2, true);
+  assert.equal(audit.countsByOrigin["public dossier update signal"] >= 4, true);
+  assert.equal(audit.countsByOrigin["diagnostic/test artifact"], 2);
+  assert.equal(audit.countsByOrigin["source file refresh"], 2);
+  assert.equal(audit.countsByOrigin["source file archive"], 1);
+  assert.equal(audit.countsByOrigin["website read model"], 1);
+  assert.equal(audit.countsByOrigin["identity/alias link"], 1);
+  assert.equal(audit.countsByOrigin["unknown / insufficient metadata"], 2);
+
+  assert.equal(audit.intakeFlows.find((record) => record.id === "active-source").intendedLane, "Active Source File");
+  assert.equal(audit.intakeFlows.find((record) => record.id === "candidate-intake").intendedLane, "Candidate Intake");
+  assert.equal(audit.intakeFlows.find((record) => record.id === "dossier-update").intendedLane, "Dossier Update Workspace");
+  assert.equal(audit.intakeFlows.find((record) => record.id === "archived-source").intendedLane, "Archived / Closed");
+  assert.equal(audit.intakeFlows.find((record) => record.id === "merged-valid").intendedLane, "Merged Source Record");
+
+  assert.ok(audit.hiddenWithDestinations.some((record) => record.id === "merged-valid" && record.destinationId === "active-source"));
+  assert.ok(audit.hiddenWithoutDestination.some((record) => record.id === "merged-missing"));
+  assert.ok(audit.hiddenWithoutDestination.some((record) => record.id === "orphan-public-signal"));
+  assert.ok(audit.visibleDestinationWorkspaces.some((record) => record.id === "dossier-update"));
+  assert.ok(audit.diagnosticArtifacts.some((record) => record.id === "diagnostic-active"));
+  assert.ok(audit.publicDossierUpdateSignals.some((record) => record.id === "resolved-public-signal"));
+  assert.ok(audit.sourceFileRefreshLinks.some((record) => record.id === "source-refresh"));
+  assert.ok(audit.recordsNeedingPopulationReview.some((record) => record.id === "unknown-origin"));
+
+  const warningTitles = audit.warnings.map((warning) => warning.issueTitle).join("\n");
+  assert.match(warningTitles, /Merged source record points nowhere/);
+  assert.match(warningTitles, /Recommendation points to a missing candidate destination/);
+  assert.match(warningTitles, /Diagnostic\/test artifact is visible in a normal lane/);
+  assert.match(warningTitles, /Public dossier update signals for Missing Public were resolved, but no visible Missing Public Dossier Update workspace was found\./);
+  assert.match(warningTitles, /Destination workspace for Hidden Workspace exists but is currently hidden by resolved-candidate filtering\./);
+  assert.match(warningTitles, /Visible destination missing for canonical public dossier target/);
+});
+
+test("Population Method Audit preserves existing dossier admin and public boundaries", () => {
+  const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
+  const sourceFilePage = normalizedSource("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+  const publicPage = normalizedSource("src/app/database/[slug]/page.tsx");
+  const publicView = normalizedSource("src/components/DossierPageView.tsx");
+
+  assertIncludesCopy(pageCopy, "Dossier Control Center");
+  assertIncludesCopy(pageCopy, "Subject Consolidation Queue");
+  assertIncludesCopy(sourceFilePage, "Case File / BNL Source File");
+  assertIncludesCopy(publicPage, "<DossierPageView dossier={databaseEntryToDossierPageViewModel(entry)} />");
+  assert.doesNotMatch(publicPage + publicView, /Population Method Audit|Intake Map|internal aliases|Copy Record IDs/);
+  assert.doesNotMatch(pageCopy, /publicPagesPublished: [1-9]|publicDossierTextChanged: [1-9]/);
+});
+
 test("canonical subject clustering collapses public-dossier variants into one subject cluster", () => {
   const now = "2026-06-11T00:00:00.000Z";
   const publicEntry =

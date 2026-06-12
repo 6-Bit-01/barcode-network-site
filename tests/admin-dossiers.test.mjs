@@ -2124,7 +2124,7 @@ test("Subject Consolidation Queue renders action summary, review cards, blocked 
   assert.match(page, /!isConsolidationResolvedCandidate\(candidate\)/);
   assert.match(source("src/lib/dossier-workflow-store.ts"), /bundleExactPublicDossierUpdateSignals/);
   assert.doesNotMatch(pageCopy, /Source File Population Audit|Population Audit|Open Recommendation|Open Source File|Open Target|Open Incoming|Merge Into Kept Source File|Attach to Kept Source File|Create Source File From These Signals|Create Dossier Update Workspace without public dossier\/context/);
-  const queueCopy = pageCopy.slice(pageCopy.indexOf("Subject Consolidation Queue"), pageCopy.indexOf("Candidates", pageCopy.indexOf("Subject Consolidation Queue")));
+  const queueCopy = pageCopy.slice(pageCopy.indexOf("Subject Consolidation Queue"), pageCopy.indexOf("Population Method Audit", pageCopy.indexOf("Subject Consolidation Queue")));
   assert.doesNotMatch(queueCopy, /recommendation\.reason|recommendation\.evidenceSummary|raw recommendation\.reason|raw recommendation\.summary/);
   assert.doesNotMatch(pageCopy, /Confirmed aliases count: \{record\.confirmedAliasCount\}/);
   assert.doesNotMatch(pageCopy, /source notes count 0/i);
@@ -2184,7 +2184,7 @@ test("Population Method Audit renders read-only admin intake map states", () => 
 
   const auditCopy = pageCopy.slice(
     pageCopy.indexOf("Population Method Audit"),
-    pageCopy.indexOf("Candidates", pageCopy.indexOf("Population Method Audit")),
+    pageCopy.indexOf("Population Review Queue", pageCopy.indexOf("Population Method Audit")),
   );
   assert.doesNotMatch(auditCopy, /fix automatically|Fix Automatically|Run Subject Consolidation|Confirm Consolidation|Consolidate Into|Create Source File|Create Dossier Update|Keep Separate|Select Different Target|merge candidates|Merge button|publish public pages|change public dossier text/i);
 });
@@ -2197,7 +2197,7 @@ test("Population Method Audit renders independently of Subject Consolidation sta
   const consolidationResultIndex = page.indexOf("consolidationResult &&");
   const subjectConditionalCloseIndex = page.indexOf("open={!populationMethodHealthy}", subjectConditionalIndex);
   const populationAuditIndex = page.indexOf("Population Method Audit");
-  const candidatesIndex = page.indexOf("<DashboardCard", populationAuditIndex);
+  const candidatesIndex = page.indexOf("Population Review Queue", populationAuditIndex);
   const clearBranch = page.slice(subjectConditionalIndex, subjectQueueIndex);
   const fullQueueBranch = page.slice(subjectQueueIndex, subjectConditionalCloseIndex);
 
@@ -2205,7 +2205,7 @@ test("Population Method Audit renders independently of Subject Consolidation sta
   assert.ok(subjectQueueIndex > subjectConditionalIndex, "Subject Consolidation queue state still renders");
   assert.ok(consolidationResultIndex > subjectQueueIndex, "consolidationResult state still renders inside the queue state");
   assert.ok(populationAuditIndex > subjectConditionalCloseIndex, "Population Method Audit renders after the Subject Consolidation conditional");
-  assert.ok(candidatesIndex > populationAuditIndex, "Population Method Audit renders before the Candidates section");
+  assert.ok(candidatesIndex > populationAuditIndex, "Population Method Audit renders before the Population Review Queue section");
   assert.doesNotMatch(clearBranch, /Population Method Audit|Population Method:/);
   assert.doesNotMatch(fullQueueBranch, /Population Method Audit|Population Method:/);
   assertIncludesCopy(pageCopy, "Subject Consolidation: clear");
@@ -5627,7 +5627,7 @@ test("recommendation inbox and source note UI are present and bounded", () => {
   assert.match(dashboard, /Review Update/);
   assert.match(dashboard, /Review Source File/);
   assert.match(dashboard, /Review Record/);
-  assert.doesNotMatch(dashboard, /Review Identity|Add Missing Info|>Attach to Existing Source File<|Attach to Existing Source File<\/button>/);
+  assert.doesNotMatch(dashboard, /Review Identity|Add Missing Info/);
 
   const sourceFilePage = source(
     "src/app/admin/dossiers/candidates/[candidateId]/page.tsx",
@@ -9040,4 +9040,187 @@ test("BNL population context endpoint is authenticated, compact, and routing-saf
   assert.match(source("src/lib/dossier-workflow-store.ts"), /Subject Consolidation/);
 
   delete process.env.BNL_API_KEY;
+});
+
+test("Population Review Queue renders grouped sections and safe admin actions", () => {
+  const page = source("src/app/admin/dossiers/page.tsx");
+  const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
+
+  for (const label of [
+    "Population Review Queue",
+    "Source of recommendation: BNL Population Scan",
+    "Attach to Existing Source File",
+    "Dossier Update Workspace",
+    "Create Dossier Update Workspace",
+    "Candidate Intake / New Source File",
+    "Admin Review Required",
+    "Already Represented / Duplicate",
+    "Non-dossier signals",
+    "Attach evidence to Source File",
+    "View Source File",
+    "Attach to existing update workspace",
+    "Open workspace",
+    "Create Source File Candidate",
+    "Convert to Source File Candidate",
+    "Mark not a dossier subject",
+    "Mark no-new-info",
+    "Ignore for dossier work",
+    "Dismiss",
+    "Raw evidence references are preserved internally but hidden from normal card copy.",
+    "No public dossier text changed and no public page was published.",
+  ]) {
+    assertIncludesCopy(pageCopy, label);
+  }
+
+  for (const action of [
+    "attach_to_existing_source_file",
+    "attach_to_existing_dossier_update",
+    "create_dossier_update_workspace",
+    "create_source_file_candidate",
+    "mark_no_new_info",
+    "mark_not_population_subject",
+    "dismiss_population_recommendation",
+    "reopen_population_recommendation",
+  ]) {
+    assert.match(page, new RegExp(action));
+    assert.match(source("src/app/api/admin/dossiers/route.ts"), new RegExp(action));
+    assert.match(source("src/lib/dossier-workflow-store.ts"), new RegExp(action));
+  }
+
+  assert.doesNotMatch(source("src/app/database/[slug]/page.tsx"), /Population Review Queue|BNL Population Scan|rawEvidenceRefs|Internal refs/);
+  assert.doesNotMatch(pageCopy, /raw Discord message|relationship_journal|private relationship journal|internal alias label/i);
+});
+
+test("Population recommendation ingest dedupes by input hash and preserves raw refs internally", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const first = await bnlIngestPost({
+    type: "population_recommendation",
+    createdBy: "bnl_population_recommender",
+    subjectName: "Population Queue Subject",
+    adminSummary: "BNL sees one safe routing signal.",
+    recommendedLane: "candidate_intake",
+    recommendedAction: "create_source_file_candidate",
+    confidence: "high",
+    inputHash: "population-hash-1",
+    rawEvidenceRefs: ["discord:private-message-1"],
+    sourceLanes: ["broadcast_memory"],
+  });
+  assert.equal(first.status, 200);
+  const second = await bnlIngestPost({
+    type: "population_recommendation",
+    createdBy: "bnl_population_recommender",
+    subjectName: "Population Queue Subject",
+    adminSummary: "BNL sees one safe routing signal, refreshed.",
+    recommendedLane: "candidate_intake",
+    recommendedAction: "create_source_file_candidate",
+    confidence: "high",
+    inputHash: "population-hash-1",
+    rawEvidenceRefs: ["discord:private-message-2"],
+    sourceLanes: ["broadcast_memory"],
+  });
+  assert.equal(second.status, 200);
+  const duplicatePayload = await second.json();
+  assert.equal(duplicatePayload.duplicate, true);
+
+  const state = await store.getDossierWorkflowState();
+  const populationRecommendations = state.recommendations.filter((item) => item.type === "population_recommendation");
+  assert.equal(populationRecommendations.length, 1);
+  assert.equal(populationRecommendations[0].rawEvidenceRefs.length, 2);
+  assert.equal(populationRecommendations[0].seenCount, 2);
+});
+
+test("Population Review Queue actions update internal workflow records without publishing", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_API_KEY = "test-population-context-token";
+  const now = new Date().toISOString();
+  await store.saveDossierWorkflowState({
+    version: 1,
+    revision: 1,
+    candidates: [
+      {
+        id: "existing-source-file-pop",
+        name: "Existing Population Source",
+        candidateType: "artist",
+        source: "manual",
+        tier: "review_candidate",
+        score: 70,
+        whyNow: "Existing source file.",
+        reason: "Existing source file.",
+        status: "active_source_file",
+        createdAt: now,
+        updatedAt: now,
+        sourceFileNotes: [],
+      },
+    ],
+    drafts: [],
+    recommendations: [
+      {
+        id: "pop-rec-attach",
+        type: "population_recommendation",
+        populationRecommendation: true,
+        createdBy: "bnl_population_recommender",
+        ingestSource: "bnl_population_recommender",
+        subjectName: "Existing Population Source",
+        status: "new",
+        reason: "Attach safe summary only.",
+        adminSummary: "Attach this to the existing Source File.",
+        recommendedLane: "active_source_file",
+        recommendedAction: "attach_to_existing_source_file",
+        matchedExistingCandidateId: "existing-source-file-pop",
+        confidence: "high",
+        sourceLanes: ["broadcast_memory"],
+        rawEvidenceRefs: ["relationship_journal:private-row"],
+        rawEvidenceRefCount: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "pop-rec-nonsubject",
+        type: "population_recommendation",
+        populationRecommendation: true,
+        createdBy: "bnl_population_recommender",
+        ingestSource: "bnl_population_recommender",
+        subjectName: "Show State Note",
+        status: "new",
+        reason: "Broadcast memory note only.",
+        recommendedLane: "broadcast_memory_note",
+        recommendedAction: "broadcast_memory_note",
+        sourceLanes: ["broadcast_memory"],
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    sourceFileRefreshRequests: [],
+    updatedAt: now,
+  });
+
+  const attachResponse = await authedPost({
+    action: "attach_to_existing_source_file",
+    recommendationId: "pop-rec-attach",
+    candidateId: "existing-source-file-pop",
+    actionBy: "admin-test",
+    actionReason: "Attach from population queue.",
+  });
+  assert.equal(attachResponse.status, 200);
+  const attachPayload = await attachResponse.json();
+  assert.equal(attachPayload.recommendation.status, "attached_to_source_file");
+  assert.equal(attachPayload.candidates.find((item) => item.id === "existing-source-file-pop").sourceFileNotes.length, 1);
+
+  const ignoreResponse = await authedPost({
+    action: "mark_not_population_subject",
+    recommendationId: "pop-rec-nonsubject",
+    actionBy: "admin-test",
+  });
+  assert.equal(ignoreResponse.status, 200);
+  const ignorePayload = await ignoreResponse.json();
+  assert.equal(ignorePayload.recommendation.status, "not_population_subject");
+  assert.equal(ignorePayload.candidates.length, 1);
+
+  const contextResponse = await populationContextGet("test-population-context-token");
+  assert.equal(contextResponse.status, 200);
+  const context = await contextResponse.json();
+  assert.equal(JSON.stringify(context).includes("existing-source-file-pop"), true);
+  assert.equal(JSON.stringify(context).includes("relationship_journal:private-row"), false);
 });

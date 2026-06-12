@@ -24,6 +24,7 @@ const RECOMMENDATION_TYPES = [
   "modify_existing_dossier",
   "identity_link",
   "possible_connection_review",
+  "population_recommendation",
 ] as const satisfies readonly DossierRecommendationType[];
 const SOURCE_LANES = [
   "public_discord",
@@ -412,7 +413,8 @@ function supportedIngestSource(value: unknown): CreateDossierRecommendationInput
   if (
     normalized === "bnl_dynamic_candidate_discovery" ||
     normalized === "bnl_source_knowledge_bridge" ||
-    normalized === "bnl_source_file_enrichment"
+    normalized === "bnl_source_file_enrichment" ||
+    normalized === "bnl_population_recommender"
   ) {
     return normalized;
   }
@@ -460,8 +462,9 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
   const payload = value as Record<string, unknown>;
   if (Object.keys(payload).length === 0) throw new Error("Invalid payload");
 
-  const ingestSource = supportedIngestSource(payload.ingestSource);
+  const ingestSource = supportedIngestSource(payload.ingestSource ?? (payload.createdBy === "bnl_population_recommender" ? "bnl_population_recommender" : undefined));
   const isBridgeIngest = ingestSource === "bnl_source_knowledge_bridge";
+  const isPopulationIngest = ingestSource === "bnl_population_recommender" || payload.type === "population_recommendation";
   const isStructuredBnlSourceIngest =
     isBridgeIngest || ingestSource === "bnl_source_file_enrichment";
   const sourceLanesInput = payload.sourceLanes;
@@ -537,6 +540,8 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
     bestEvidenceToReview?.[0] ??
     usefulEvidence?.[0] ??
     conversationHighlights?.[0] ??
+    text(payload.adminSummary, 1200) ??
+    text(payload.recommendedNextStep, 1000) ??
     recommendedAction;
   const evidenceSummary =
     payload.evidenceSummary &&
@@ -559,7 +564,7 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
   }
 
   return {
-    type: enumValue(payload.type ?? "new_subject", RECOMMENDATION_TYPES, "type") ?? "new_subject",
+    type: enumValue(payload.type ?? (isPopulationIngest ? "population_recommendation" : "new_subject"), RECOMMENDATION_TYPES, "type") ?? (isPopulationIngest ? "population_recommendation" : "new_subject"),
     subjectName,
     subjectKey: text(payload.subjectKey, 200),
     targetCandidateId: text(payload.targetCandidateId, 200),
@@ -596,6 +601,23 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
     queueSubmissionStatus,
     queueSubmissionNote,
     recommendedAction,
+    recommendedLane: text(payload.recommendedLane, 120) as CreateDossierRecommendationInput["recommendedLane"],
+    matchedExistingCandidateId: text(payload.matchedExistingCandidateId, 200),
+    matchedPublicDossierId: text(payload.matchedPublicDossierId, 200),
+    matchedPublicDossierName: text(payload.matchedPublicDossierName, 200),
+    matchedDossierUpdateCandidateId: text(payload.matchedDossierUpdateCandidateId, 200),
+    possibleTargets: Array.isArray(payload.possibleTargets) ? payload.possibleTargets as CreateDossierRecommendationInput["possibleTargets"] : undefined,
+    duplicateRisk: text(payload.duplicateRisk, 40) as CreateDossierRecommendationInput["duplicateRisk"],
+    identityRisk: text(payload.identityRisk, 40) as CreateDossierRecommendationInput["identityRisk"],
+    publicSafetyLevel: text(payload.publicSafetyLevel, 40) as CreateDossierRecommendationInput["publicSafetyLevel"],
+    adminSummary: text(payload.adminSummary, 1200),
+    recommendedNextStep: text(payload.recommendedNextStep, 1000),
+    doNotPublishReason: text(payload.doNotPublishReason, 1000),
+    rawEvidenceRefs: stringList(payload.rawEvidenceRefs, 500),
+    inputHash: text(payload.inputHash, 300),
+    stale: payload.stale === true,
+    generatedAt: text(payload.generatedAt, 80),
+    populationRecommendation: isPopulationIngest ? true : undefined,
     sourceAuthority,
     rawProvenance,
     missingInfo: stringList(payload.missingInfo),
@@ -614,7 +636,7 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
       IDENTITY_AUTHORITIES,
       "taxonomy",
     ),
-    createdBy: text(payload.createdBy, 200) ?? "bnl",
+    createdBy: text(payload.createdBy, 200) ?? (isPopulationIngest ? "bnl_population_recommender" : "bnl"),
     ingestKey: text(payload.ingestKey, 300),
     ingestedAt: new Date().toISOString(),
     ingestSource,

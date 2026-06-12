@@ -234,15 +234,6 @@ export type DossierSourceFileNote = {
   ingestKey?: string;
   ingestedAt?: string;
   ingestSource?: DossierRecommendationIngestSource;
-  connectedCandidateId?: string;
-  connectedSourceFileCandidateId?: string;
-  connectedRecommendationIds?: string[];
-  possibleMatchCandidateIds?: string[];
-  possibleMatchDossierIds?: string[];
-  identityReviewStatus?: "not_required" | "needs_confirmation" | "confirmed";
-  routingReason?: string;
-  routedFromRecommendationId?: string;
-  sourceRecommendationIds?: string[];
 };
 
 export type DossierIdentityLinkType =
@@ -449,7 +440,8 @@ export type DossierRecommendationType =
   | "new_subject"
   | "modify_existing_dossier"
   | "identity_link"
-  | "possible_connection_review";
+  | "possible_connection_review"
+  | "population_recommendation";
 
 export type DossierRecommendationStatus =
   | "new"
@@ -461,6 +453,9 @@ export type DossierRecommendationStatus =
   | "identity_link_created"
   | "ignored"
   | "dismissed"
+  | "no_new_info"
+  | "not_population_subject"
+  | "needs_more_info"
   | "archived";
 
 export type DossierRecommendationSourceLane =
@@ -479,8 +474,47 @@ export type DossierRecommendationIngestSource =
   | "bnl_dynamic_candidate_discovery"
   | "bnl_source_knowledge_bridge"
   | "bnl_source_file_enrichment"
+  | "bnl_population_recommender"
   | "system"
   | "unknown";
+
+
+export type DossierPopulationRecommendedLane =
+  | "active_source_file"
+  | "existing_dossier_update"
+  | "public_dossier_update_signal"
+  | "candidate_intake"
+  | "needs_population_review"
+  | "already_represented"
+  | "show_state_note"
+  | "broadcast_memory_note"
+  | "not_population_subject"
+  | "unknown";
+
+export type DossierPopulationRecommendedAction =
+  | "attach_to_existing_source_file"
+  | "attach_to_existing_dossier_update"
+  | "create_dossier_update_workspace"
+  | "create_source_file_candidate"
+  | "admin_review_required"
+  | "mark_duplicate_no_new_info"
+  | "mark_no_new_info"
+  | "mark_not_population_subject"
+  | "show_state_note"
+  | "broadcast_memory_note"
+  | "not_population_subject"
+  | "dismiss_population_recommendation"
+  | "reopen_population_recommendation"
+  | "unknown";
+
+export type DossierPopulationReviewAction = {
+  action: DossierPopulationRecommendedAction | "mark_needs_more_info";
+  actionAt: string;
+  actionBy?: string;
+  actionReason?: string;
+  targetCandidateId?: string;
+  targetDossierId?: string;
+};
 
 export type DossierSourceFileRefreshRequestStatus =
   | "pending"
@@ -644,6 +678,28 @@ export type DossierRecommendation = {
   routingReason?: string;
   routedFromRecommendationId?: string;
   sourceRecommendationIds?: string[];
+  populationRecommendation?: boolean;
+  recommendedLane?: DossierPopulationRecommendedLane;
+  matchedExistingCandidateId?: string;
+  matchedPublicDossierId?: string;
+  matchedPublicDossierName?: string;
+  matchedDossierUpdateCandidateId?: string;
+  possibleTargets?: Array<{ id?: string; name?: string; lane?: string; confidence?: string }>;
+  duplicateRisk?: DossierDuplicateRisk | "blocked";
+  identityRisk?: DossierDuplicateRisk | "blocked";
+  publicSafetyLevel?: "low" | "medium" | "high" | "blocked";
+  adminSummary?: string;
+  recommendedNextStep?: string;
+  doNotPublishReason?: string;
+  rawEvidenceRefs?: string[];
+  rawEvidenceRefCount?: number;
+  inputHash?: string;
+  stale?: boolean;
+  generatedAt?: string;
+  firstSeenAt?: string;
+  lastSeenAt?: string;
+  seenCount?: number;
+  populationReviewActions?: DossierPopulationReviewAction[];
 };
 
 export type DossierSourceDepthLabel = "Low" | "Medium" | "Strong";
@@ -1118,7 +1174,7 @@ function candidatePopulationMethodLane(candidate: DossierCandidate, origin: Doss
 
 function recommendationPopulationMethodLane(recommendation: DossierRecommendation, origin: DossierPopulationMethodOrigin): DossierPopulationMethodLane {
   if (origin === "diagnostic/test artifact") return "Diagnostic/Test Artifact";
-  if (recommendation.status === "archived" || recommendation.status === "dismissed" || recommendation.status === "ignored") return "Archived / Closed";
+  if (["archived", "dismissed", "ignored", "no_new_info", "not_population_subject"].includes(recommendation.status)) return "Archived / Closed";
   if (isResolvedDossierRecommendation(recommendation)) return "Resolved Incoming Record";
   if (origin === "public dossier update signal") return "Public Dossier Update Signal";
   if (origin === "unknown / insufficient metadata") return "Needs Population Review";
@@ -1248,7 +1304,7 @@ export function createDossierPopulationMethodAudit(input: {
     const origin = recommendationPopulationMethodOrigin(recommendation);
     const lane = recommendationPopulationMethodLane(recommendation, origin);
     const destination = recommendationDestination(recommendation);
-    const hidden = isResolvedDossierRecommendation(recommendation) || recommendation.status === "archived" || recommendation.status === "dismissed" || recommendation.status === "ignored";
+    const hidden = isResolvedDossierRecommendation(recommendation) || ["archived", "dismissed", "ignored", "no_new_info", "not_population_subject"].includes(recommendation.status);
     const destinationVisible = visibleDestinationCandidate(destination);
     const publicMatch = recommendation.targetDossierId ? publicDossiersById.get(recommendation.targetDossierId) : publicDossiersByName.get(publicDossierKey(recommendation.subjectName));
     const visibility: DossierPopulationMethodVisibility = hidden
@@ -1256,7 +1312,7 @@ export function createDossierPopulationMethodAudit(input: {
         ? destinationVisible
           ? "hidden_with_destination"
           : "hidden_without_destination"
-        : origin === "diagnostic/test artifact" || recommendation.status === "archived" || recommendation.status === "dismissed" || recommendation.status === "ignored"
+        : origin === "diagnostic/test artifact" || ["archived", "dismissed", "ignored", "no_new_info", "not_population_subject"].includes(recommendation.status)
           ? "hidden_valid_archive_or_diagnostic"
           : "hidden_without_destination"
       : "visible";
@@ -1454,6 +1510,8 @@ export function isResolvedDossierRecommendation(
     "identity_link_created",
     "ignored",
     "dismissed",
+    "no_new_info",
+    "not_population_subject",
     "archived",
   ].includes(recommendation.status);
 }
@@ -2827,6 +2885,23 @@ export type CreateDossierRecommendationInput = {
   ingestKey?: string;
   ingestedAt?: string;
   ingestSource?: DossierRecommendationIngestSource;
+  populationRecommendation?: boolean;
+  recommendedLane?: DossierPopulationRecommendedLane;
+  matchedExistingCandidateId?: string;
+  matchedPublicDossierId?: string;
+  matchedPublicDossierName?: string;
+  matchedDossierUpdateCandidateId?: string;
+  possibleTargets?: Array<{ id?: string; name?: string; lane?: string; confidence?: string }>;
+  duplicateRisk?: DossierDuplicateRisk | "blocked";
+  identityRisk?: DossierDuplicateRisk | "blocked";
+  publicSafetyLevel?: "low" | "medium" | "high" | "blocked";
+  adminSummary?: string;
+  recommendedNextStep?: string;
+  doNotPublishReason?: string;
+  rawEvidenceRefs?: string[];
+  inputHash?: string;
+  stale?: boolean;
+  generatedAt?: string;
 };
 
 export type MergeDossierCandidatesInput = {
@@ -2879,7 +2954,16 @@ export type DossierWorkflowAction =
   | "consolidateSubjectGroup"
   | "detectDuplicateCandidates"
   | "mergeCandidates"
-  | "createMasterDraftFromMerge";
+  | "createMasterDraftFromMerge"
+  | "attach_to_existing_source_file"
+  | "attach_to_existing_dossier_update"
+  | "create_dossier_update_workspace"
+  | "create_source_file_candidate"
+  | "mark_no_new_info"
+  | "mark_not_population_subject"
+  | "dismiss_population_recommendation"
+  | "reopen_population_recommendation"
+  | "mark_needs_more_info";
 
 export type DossierSourceBoundary = {
   source: DossierCandidateSource;
@@ -2931,6 +3015,15 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "detectDuplicateCandidates",
   "mergeCandidates",
   "createMasterDraftFromMerge",
+  "attach_to_existing_source_file",
+  "attach_to_existing_dossier_update",
+  "create_dossier_update_workspace",
+  "create_source_file_candidate",
+  "mark_no_new_info",
+  "mark_not_population_subject",
+  "dismiss_population_recommendation",
+  "reopen_population_recommendation",
+  "mark_needs_more_info",
 ];
 
 export const DOSSIER_CANDIDATE_SCORING_POLICY = {

@@ -2558,6 +2558,7 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
   await resetWorkflowStore();
   const now = "2026-06-11T00:00:00.000Z";
   const publicEntry = databasePage.entries.find((entry) => entry.name === "6 Bit") ?? databasePage.entries[1] ?? databasePage.entries[0];
+  const genericPublicEntry = databasePage.entries.find((entry) => entry.id !== publicEntry.id) ?? publicEntry;
   const blockedEntry = databasePage.entries[0];
   const candidate = (overrides) => ({
     id: overrides.id,
@@ -2635,6 +2636,8 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
       recommendation({ id: "rec-public-a", subjectName: publicEntry.name, targetDossierId: publicEntry.id, type: "modify_existing_dossier", reason: "public update A" }),
       recommendation({ id: "rec-public-b", subjectName: publicEntry.name, targetDossierId: publicEntry.id, type: "modify_existing_dossier", reason: "public update B" }),
       recommendation({ id: "rec-public-variant", subjectName: `${publicEntry.name}'s`, subjectKey: publicEntry.id, targetDossierId: publicEntry.id, type: "modify_existing_dossier", reason: "public update variant" }),
+      recommendation({ id: "rec-generic-public-a", subjectName: genericPublicEntry.name, targetDossierId: genericPublicEntry.id, type: "modify_existing_dossier", reason: "generic public update A" }),
+      recommendation({ id: "rec-generic-public-b", subjectName: genericPublicEntry.name, targetDossierId: genericPublicEntry.id, type: "modify_existing_dossier", reason: "generic public update B" }),
       recommendation({ id: "rec-checkpoint", subjectName: "Checkpoint BNL Ingest Alpha", type: "new_subject", reason: "Manual endpoint smoke test", evidenceSummary: "diagnostic probe" }),
     ],
     sourceFileRefreshRequests: [],
@@ -2651,7 +2654,7 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
   assert.ok(payload.consolidation.emptyDuplicatesCleaned >= 1);
   assert.ok(payload.consolidation.sourceFilesCreated >= 1);
   assert.ok(payload.consolidation.dossierUpdateWorkspacesCreated >= 1);
-  assert.ok(payload.consolidation.bundledPublicDossierUpdateSignals >= 3);
+  assert.ok(payload.consolidation.bundledPublicDossierUpdateSignals >= 5);
   assert.ok(payload.consolidation.diagnosticArtifactsArchived >= 2);
   assert.ok(payload.consolidation.sourceFileDuplicatesMerged >= 1);
   assert.ok(payload.consolidation.bnlRefreshes.length >= 4);
@@ -2680,15 +2683,33 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
   assert.equal(recNewB.targetCandidateId, createdSource.id);
   const updateWorkspace = payload.candidates.find((item) => item.status === "existing_dossier_update" && item.existingDossierMatch?.id === publicEntry.id && item.sourceRecommendationIds?.includes("rec-public-a"));
   assert.ok(updateWorkspace);
+  assert.equal(updateWorkspace.status, "existing_dossier_update");
   assert.equal(updateWorkspace.existingDossierMatch.name, publicEntry.name);
+  assert.ok(updateWorkspace.sourceRecommendationIds.includes("rec-public-a"));
   assert.ok(updateWorkspace.sourceRecommendationIds.includes("rec-public-b"));
   assert.ok(updateWorkspace.sourceRecommendationIds.includes("rec-public-variant"));
   assert.ok(updateWorkspace.sourceRecommendationIds.includes("variant-connected-rec"));
+  assert.ok(updateWorkspace.connectedRecommendationIds.includes("rec-public-a"));
+  assert.ok(updateWorkspace.connectedRecommendationIds.includes("rec-public-b"));
+  assert.ok(updateWorkspace.connectedRecommendationIds.includes("rec-public-variant"));
   assert.ok(updateWorkspace.connectedRecommendationIds.includes("variant-connected-rec"));
   assert.ok(updateWorkspace.sourceFileNotes.some((note) => note.text === "variant metadata" && note.candidateId === updateWorkspace.id));
+  assert.ok(updateWorkspace.sourceFileNotes.some((note) => note.candidateId === updateWorkspace.id && /public update A|public update B|public update variant/.test(note.text)));
   assert.ok(updateWorkspace.whyNow.includes(`Bundled 3 ${publicEntry.name} update signals into ${publicEntry.name} Dossier Update workspace.`));
   assert.equal(updateWorkspace.mergeNote, "bundled_into_dossier_update");
-  assert.ok(workflow.isConsolidationResolvedCandidate(updateWorkspace));
+  assert.equal(workflow.isConsolidationResolvedCandidate(updateWorkspace), false);
+  const sixBitAffectedTarget = payload.consolidation.affectedTargets.find((target) => target.candidateId === updateWorkspace.id);
+  assert.ok(sixBitAffectedTarget);
+  assert.equal(sixBitAffectedTarget.name, publicEntry.name);
+  assert.equal(sixBitAffectedTarget.href, `/admin/dossiers/candidates/${updateWorkspace.id}`);
+  const genericWorkspace = payload.candidates.find((item) => item.status === "existing_dossier_update" && item.existingDossierMatch?.id === genericPublicEntry.id && item.sourceRecommendationIds?.includes("rec-generic-public-a"));
+  assert.ok(genericWorkspace);
+  assert.equal(genericWorkspace.existingDossierMatch.name, genericPublicEntry.name);
+  assert.ok(genericWorkspace.sourceRecommendationIds.includes("rec-generic-public-b"));
+  assert.ok(genericWorkspace.connectedRecommendationIds.includes("rec-generic-public-a"));
+  assert.ok(genericWorkspace.sourceFileNotes.some((note) => note.candidateId === genericWorkspace.id && /generic public update/.test(note.text)));
+  assert.equal(workflow.isConsolidationResolvedCandidate(genericWorkspace), false);
+  assert.ok(payload.consolidation.affectedTargets.some((target) => target.candidateId === genericWorkspace.id && target.href === `/admin/dossiers/candidates/${genericWorkspace.id}`));
   const foldedVariant = payload.candidates.find((item) => item.id === "public-variant-candidate");
   assert.equal(foldedVariant.status, "merged");
   assert.equal(foldedVariant.mergedIntoCandidateId, updateWorkspace.id);
@@ -2707,11 +2728,14 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
   assert.ok(!activeReviewUpdateIds.includes("rec-public-a"));
   assert.ok(!activeReviewUpdateIds.includes("rec-public-b"));
   assert.ok(!activeReviewUpdateIds.includes("rec-public-variant"));
+  assert.ok(!activeReviewUpdateIds.includes("rec-generic-public-a"));
+  assert.ok(!activeReviewUpdateIds.includes("rec-generic-public-b"));
   const activeDossierUpdateWorkspaceIds = payload.candidates
     .filter((item) => item.status === "existing_dossier_update")
     .filter((item) => !workflow.isConsolidationResolvedCandidate(item))
     .map((item) => item.id);
-  assert.ok(!activeDossierUpdateWorkspaceIds.includes(updateWorkspace.id));
+  assert.ok(activeDossierUpdateWorkspaceIds.includes(updateWorkspace.id));
+  assert.ok(activeDossierUpdateWorkspaceIds.includes(genericWorkspace.id));
   const activeSourceReviewIds = payload.candidates
     .filter((item) => ["active_source_file", "candidate_intake", "existing_dossier_update"].includes(item.status))
     .filter((item) => !workflow.isConsolidationResolvedCandidate(item))
@@ -2741,7 +2765,7 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
   const rebuiltAudit = workflow.createDossierPopulationAudit({
     candidates: payload.candidates,
     recommendations: payload.recommendations,
-    publicDossiers: [{ id: publicEntry.id, name: publicEntry.name }],
+    publicDossiers: [{ id: publicEntry.id, name: publicEntry.name }, { id: genericPublicEntry.id, name: genericPublicEntry.name }],
     drafts: payload.drafts,
   });
   const remainingAutoGroups = rebuiltAudit.possibleDuplicateGroups.filter((group) =>
@@ -2756,7 +2780,7 @@ test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, pres
   assert.equal(remainingAutoGroups.length, 0);
   assert.ok(rebuiltAudit.possibleDuplicateGroups.every((group) => group.consolidationPlan.requiresReview || group.consolidationPlan.automationTier === "Blocked"));
   assert.ok(!rebuiltAudit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.recommendationId === "rec-new-a" || record.recommendationId === "rec-new-b")));
-  assert.ok(!rebuiltAudit.possibleDuplicateGroups.some((group) => group.records.some((record) => ["rec-public-a", "rec-public-b", "rec-public-variant", "rec-checkpoint"].includes(record.recommendationId))));
+  assert.ok(!rebuiltAudit.possibleDuplicateGroups.some((group) => group.records.some((record) => ["rec-public-a", "rec-public-b", "rec-public-variant", "rec-generic-public-a", "rec-generic-public-b", "rec-checkpoint"].includes(record.recommendationId))));
   assert.ok(!rebuiltAudit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.id === "public-variant-candidate")));
   assert.ok(!rebuiltAudit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.id === "checkpoint-artifact")));
 

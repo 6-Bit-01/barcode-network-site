@@ -1045,15 +1045,25 @@ export function isResolvedDossierRecommendation(
 }
 
 export function isConsolidationResolvedCandidate(candidate: DossierCandidate): boolean {
-  if (candidate.status === "merged" || candidate.status === "denied") return true;
+  if (candidate.status === "merged" || candidate.status === "archived" || candidate.status === "denied") return true;
+  if (candidate.mergedIntoCandidateId) return true;
   if (isDiagnosticTestArtifactCandidate(candidate)) return true;
+  const isDestinationDossierUpdateWorkspace = Boolean(
+    candidate.status === "existing_dossier_update" &&
+      candidate.existingDossierMatch &&
+      !candidate.mergedIntoCandidateId &&
+      ((candidate.sourceRecommendationIds ?? []).length > 0 ||
+        (candidate.connectedRecommendationIds ?? []).length > 0 ||
+        (candidate.sourceFileNotes ?? []).length > 0),
+  );
+  if (isDestinationDossierUpdateWorkspace) return false;
   const lifecycleText = [
     candidate.mergeNote,
     candidate.routingReason,
     candidate.reason,
     candidate.whyNow,
   ].filter(Boolean).join(" ");
-  return /variant_of_canonical|bundled_into_dossier_update|Bundled .* update signals into .* Dossier Update workspace|Subject Consolidation archived diagnostic_test_artifact/i.test(lifecycleText);
+  return /variant_of_canonical|keep_separate_suppressed|bundled_into_dossier_update|Bundled .* update signals into .* Dossier Update workspace|Subject Consolidation archived diagnostic_test_artifact/i.test(lifecycleText);
 }
 
 function duplicateGroupPriority(

@@ -374,17 +374,105 @@ function populationRecommendationSearchText(
     .toLowerCase();
 }
 
+function normalizedPopulationSubjectKey(recommendation: DossierRecommendation) {
+  return (recommendation.subjectKey || recommendation.subjectName)
+    .toLowerCase()
+    .replace(/\[[^\]]+\]/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
 function populationDestinationLabel(recommendation: DossierRecommendation, candidates: DossierCandidate[]) {
-  const candidateId = recommendation.matchedExistingCandidateId ?? recommendation.matchedDossierUpdateCandidateId ?? recommendation.targetCandidateId;
+  const candidateId = recommendation.matchedExistingCandidateId ?? recommendation.matchedDossierUpdateCandidateId ?? recommendation.targetCandidateId ?? recommendation.connectedCandidateId;
   const candidate = candidateId ? candidates.find((item) => item.id === candidateId) : undefined;
-  if (candidate) return candidate.name;
-  return recommendation.matchedPublicDossierName ?? recommendation.targetDossierId ?? "Needs admin target";
+  if (candidate?.status === "candidate_intake") return `Already waiting in Recommendation Intake: ${candidate.name}`;
+  if (candidate?.status === "existing_dossier_update") return `Existing Dossier Update workspace: ${candidate.name}`;
+  if (candidate?.status === "active_source_file") return `Matched active Source File: ${candidate.name}`;
+  if (candidate) return `Existing internal record: ${candidate.name}`;
+  if (recommendation.connectedRecommendationIds?.length) return "Already waiting in Recommendation Intake";
+  if (recommendation.matchedPublicDossierName) return `Public dossier match: ${recommendation.matchedPublicDossierName}`;
+  if (recommendation.targetDossierId) return `Public dossier target: ${recommendation.targetDossierId}`;
+  return "No existing destination found";
 }
 
 function populationPublicDossierHref(recommendation: DossierRecommendation, publicDossiers: Array<{ id: string; name: string }>) {
   const dossier = publicDossiers.find((item) => item.id === (recommendation.matchedPublicDossierId ?? recommendation.targetDossierId));
   if (!dossier) return undefined;
   return `/database/${dossier.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+}
+
+type PopulationReviewQueueAction =
+  | "attach_to_existing_source_file"
+  | "attach_to_existing_dossier_update"
+  | "create_dossier_update_workspace"
+  | "create_source_file_candidate"
+  | "mark_no_new_info"
+  | "mark_not_population_subject"
+  | "dismiss_population_recommendation"
+  | "reopen_population_recommendation"
+  | "mark_needs_more_info";
+
+type PopulationPrimaryAction =
+  | { kind: "action"; key: PopulationReviewQueueAction; label: string }
+  | { kind: "link"; href: string; label: string };
+
+function populationPrimaryActions(input: {
+  groupId: string;
+  recommendation: DossierRecommendation;
+  targetHref?: string;
+  publicHref?: string;
+}): PopulationPrimaryAction[] {
+  const { groupId, recommendation, targetHref, publicHref } = input;
+  if (groupId === "already-represented") {
+    return [
+      targetHref
+        ? { kind: "link", href: targetHref, label: recommendation.targetCandidateId ? "Review existing candidate/recommendation" : "Open existing record" }
+        : { kind: "link", href: `/admin/dossiers/recommendations/${recommendation.connectedRecommendationIds?.[0] ?? recommendation.id}`, label: "Open existing record" },
+      { kind: "action", key: "mark_no_new_info", label: "Mark no-new-info" },
+    ];
+  }
+  if (groupId === "existing-source-file") {
+    return [
+      { kind: "action" as const, key: "attach_to_existing_source_file" as const, label: "Attach to Source File" },
+      ...(targetHref ? [{ kind: "link" as const, href: targetHref, label: "Open Source File" }] : []),
+    ].slice(0, 2);
+  }
+  if (groupId === "existing-dossier-update") {
+    return [
+      { kind: "action" as const, key: "attach_to_existing_dossier_update" as const, label: "Attach to Update Workspace" },
+      ...(targetHref ? [{ kind: "link" as const, href: targetHref, label: "Open Workspace" }] : []),
+    ].slice(0, 2);
+  }
+  if (groupId === "create-dossier-update") {
+    return [
+      { kind: "action", key: "create_dossier_update_workspace", label: "Create Update Workspace" },
+      { kind: "action", key: "dismiss_population_recommendation", label: "Dismiss" },
+    ];
+  }
+  if (groupId === "candidate-intake") {
+    return [
+      targetHref
+        ? { kind: "link", href: targetHref, label: "Review existing candidate/recommendation" }
+        : { kind: "action", key: "create_source_file_candidate", label: "Create Source File Candidate" },
+      { kind: "action", key: "dismiss_population_recommendation", label: "Dismiss" },
+    ];
+  }
+  if (groupId === "admin-review") {
+    return [
+      { kind: "action", key: "mark_needs_more_info", label: "Review" },
+      { kind: "action", key: "dismiss_population_recommendation", label: "Dismiss" },
+    ];
+  }
+  if (groupId === "non-dossier") {
+    return [
+      { kind: "action", key: "mark_not_population_subject", label: "Mark not dossier subject" },
+      { kind: "action", key: "dismiss_population_recommendation", label: "Dismiss" },
+    ];
+  }
+  return publicHref
+    ? [{ kind: "link", href: publicHref, label: "Open existing record" }]
+    : [{ kind: "action", key: "dismiss_population_recommendation", label: "Dismiss" }];
 }
 
 function PopulationActionButton({ children, onClick, disabled }: { children: React.ReactNode; onClick: () => void; disabled?: boolean }) {
@@ -490,11 +578,40 @@ export default function DossierControlCenterPage() {
     [payload?.publicDossiers],
   );
   const populationRecommendations = recommendations.filter(isPopulationRecommendation);
+  const visiblePopulationRecommendations = Array.from(
+    populationRecommendations
+      .reduce((deduped, recommendation) => {
+        const key = [
+          normalizedPopulationSubjectKey(recommendation),
+          recommendation.recommendedLane ?? "",
+          recommendation.recommendedAction ?? "",
+          recommendation.status,
+        ].join("|");
+        const existing = deduped.get(key);
+        if (!existing) {
+          deduped.set(key, recommendation);
+          return deduped;
+        }
+        const existingSeen = existing.seenCount ?? 1;
+        const recommendationSeen = recommendation.seenCount ?? 1;
+        deduped.set(
+          key,
+          recommendationSeen > existingSeen ||
+            (recommendation.lastSeenAt ?? recommendation.updatedAt).localeCompare(
+              existing.lastSeenAt ?? existing.updatedAt,
+            ) > 0
+            ? recommendation
+            : existing,
+        );
+        return deduped;
+      }, new Map<string, DossierRecommendation>())
+      .values(),
+  );
   const populationLastUpdated = populationRecommendations
     .map((recommendation) => recommendation.generatedAt ?? recommendation.lastSeenAt ?? recommendation.updatedAt)
     .sort()
     .at(-1);
-  const filteredPopulationRecommendations = populationRecommendations.filter((recommendation) => {
+  const filteredPopulationRecommendations = visiblePopulationRecommendations.filter((recommendation) => {
     const query = populationSearch.trim().toLowerCase();
     const matchesSearch = !query || populationRecommendationSearchText(recommendation, candidates).includes(query);
     const matchesFilter =
@@ -540,7 +657,7 @@ export default function DossierControlCenterPage() {
       id: "admin-review",
       title: "Admin Review Required",
       description: "BNL is unsure; choose the safe internal route manually.",
-      items: filteredPopulationRecommendations.filter((recommendation) => recommendation.recommendedLane === "needs_population_review" || recommendation.recommendedAction === "admin_review_required"),
+      items: filteredPopulationRecommendations.filter((recommendation) => !isAlreadyRepresentedPopulationSignal(recommendation) && !isNonDossierPopulationSignal(recommendation) && (recommendation.recommendedLane === "needs_population_review" || recommendation.recommendedAction === "admin_review_required")),
     },
     {
       id: "already-represented",
@@ -1651,6 +1768,7 @@ export default function DossierControlCenterPage() {
                     {group.items.map((recommendation) => {
                       const targetHref = recommendation.targetCandidateId || recommendation.matchedExistingCandidateId || recommendation.matchedDossierUpdateCandidateId ? `/admin/dossiers/candidates/${recommendation.targetCandidateId ?? recommendation.matchedExistingCandidateId ?? recommendation.matchedDossierUpdateCandidateId}` : undefined;
                       const publicHref = populationPublicDossierHref(recommendation, publicDossiers);
+                      const primaryActions = populationPrimaryActions({ groupId: group.id, recommendation, targetHref, publicHref });
                       return (
                         <article key={recommendation.id} className="border border-border bg-surface p-4 text-sm text-muted space-y-3">
                           <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
@@ -1673,23 +1791,29 @@ export default function DossierControlCenterPage() {
                             <summary className="cursor-pointer text-xs uppercase tracking-widest text-muted">Internal refs</summary>
                             <p className="mt-2 text-xs text-muted">Raw evidence references are preserved internally but hidden from normal card copy. Count: {recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0}.</p>
                           </details>
-                          <div className="flex flex-wrap gap-2">
-                            {group.id === "existing-source-file" && <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "attach_to_existing_source_file")}>Attach evidence to Source File</PopulationActionButton>}
-                            {group.id === "existing-dossier-update" && <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "attach_to_existing_dossier_update")}>Attach to existing update workspace</PopulationActionButton>}
-                            {group.id === "create-dossier-update" && <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "create_dossier_update_workspace")}>Create Dossier Update Workspace</PopulationActionButton>}
-                            {group.id === "candidate-intake" && <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "create_source_file_candidate")}>Create Source File Candidate</PopulationActionButton>}
-                            {group.id === "candidate-intake" && <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "mark_needs_more_info")}>Mark needs more info</PopulationActionButton>}
-                            {group.id === "admin-review" && <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "create_source_file_candidate")}>Convert to Source File Candidate</PopulationActionButton>}
-                            {group.id === "admin-review" && <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "attach_to_existing_source_file")}>Attach to Existing Source File</PopulationActionButton>}
-                            {group.id === "admin-review" && <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "create_dossier_update_workspace")}>Create Dossier Update Workspace</PopulationActionButton>}
-                            {group.id === "admin-review" && <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "mark_not_population_subject")}>Mark not a dossier subject</PopulationActionButton>}
-                            {group.id === "already-represented" && <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "mark_no_new_info")}>Mark no-new-info</PopulationActionButton>}
-                            {group.id === "already-represented" && <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "reopen_population_recommendation")}>Reopen as review</PopulationActionButton>}
-                            {targetHref && <Link href={targetHref} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">{group.id === "existing-source-file" ? "View Source File" : "Open workspace"}</Link>}
-                            {publicHref && <Link href={publicHref} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">View public dossier</Link>}
-                            <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "mark_no_new_info")}>Mark no-new-info</PopulationActionButton>
-                            <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "dismiss_population_recommendation")}>Dismiss</PopulationActionButton>
+                          {(recommendation.seenCount ?? 1) > 1 || (recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0) > 0 ? (
+                            <p><span className="text-foreground">Repeated signal:</span> Seen {recommendation.seenCount ?? 1} time{(recommendation.seenCount ?? 1) === 1 ? "" : "s"} · Evidence refs: {recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0}</p>
+                          ) : null}
+                          <p><span className="text-foreground">What to click next:</span> {primaryActions.map((action) => action.label).join(" or ")}</p>
+                          <div className="flex flex-wrap gap-2" data-primary-population-actions={primaryActions.length}>
+                            {primaryActions.map((action) => action.kind === "link" ? (
+                              <Link key={`${recommendation.id}-${action.label}`} href={action.href} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">{action.label}</Link>
+                            ) : (
+                              <PopulationActionButton key={`${recommendation.id}-${action.key}`} disabled={saving} onClick={() => populationRecommendationAction(recommendation, action.key)}>{action.label}</PopulationActionButton>
+                            ))}
                           </div>
+                          <details className="border border-border/70 bg-background/30 p-3">
+                            <summary className="cursor-pointer text-xs uppercase tracking-widest text-muted">Advanced actions</summary>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "create_source_file_candidate")}>Convert to Source File Candidate</PopulationActionButton>
+                              <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "attach_to_existing_source_file")}>Attach to Existing Source File</PopulationActionButton>
+                              <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "create_dossier_update_workspace")}>Create Dossier Update Workspace</PopulationActionButton>
+                              <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "mark_not_population_subject")}>Mark Not a Dossier Subject</PopulationActionButton>
+                              <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "mark_no_new_info")}>Mark No-New-Info</PopulationActionButton>
+                              <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "dismiss_population_recommendation")}>Dismiss</PopulationActionButton>
+                              <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "reopen_population_recommendation")}>Reopen</PopulationActionButton>
+                            </div>
+                          </details>
                         </article>
                       );
                     })}
@@ -1706,11 +1830,15 @@ export default function DossierControlCenterPage() {
                     <h4 className="text-lg font-bold text-foreground">{recommendation.subjectName}</h4>
                     <p>{recommendation.adminSummary ?? recommendation.recommendedNextStep ?? recommendation.reason}</p>
                     <p>Internal refs: {recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0} preserved; raw/private content hidden.</p>
-                    <div className="flex flex-wrap gap-2">
-                      <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "mark_not_population_subject")}>Ignore for dossier work</PopulationActionButton>
-                      <button type="button" disabled className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted opacity-60">Send to broadcast memory review</button>
+                    <p><span className="text-foreground">What to click next:</span> Mark not dossier subject or Dismiss</p>
+                    <div className="flex flex-wrap gap-2" data-primary-population-actions="2">
+                      <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "mark_not_population_subject")}>Mark not dossier subject</PopulationActionButton>
                       <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "dismiss_population_recommendation")}>Dismiss</PopulationActionButton>
                     </div>
+                    <details className="border border-border/70 bg-background/30 p-3">
+                      <summary className="cursor-pointer text-xs uppercase tracking-widest text-muted">Advanced actions</summary>
+                      <p className="mt-2 text-xs text-muted">Broadcast/show-state handling stays internal; this card does not expose raw/private evidence.</p>
+                    </details>
                   </article>
                 ))}
               </div>

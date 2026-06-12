@@ -7,6 +7,7 @@ import {
   isResolvedDossierRecommendation,
   normalizeDossierSubjectName,
   type DossierCandidate,
+  type DossierDraft,
   type DossierIdentityLink,
   type DossierRecommendation,
   type DossierSourceFileRefreshRequest,
@@ -23,6 +24,7 @@ type RouteLane =
   | "source_file"
   | "candidate_intake"
   | "dossier_update_workspace"
+  | "dossier_draft"
   | "candidate_recommendation"
   | "resolved_record";
 
@@ -301,6 +303,39 @@ function resolvedRecommendationItem(
   };
 }
 
+
+function draftDestinationItem(draft: DossierDraft, candidatesById: Map<string, DossierCandidate>) {
+  const candidate = candidatesById.get(draft.candidateId);
+  const subjectName = draft.fields?.name ?? candidate?.name ?? draft.candidateId;
+  return {
+    draftId: draft.id,
+    candidateId: draft.candidateId,
+    subjectName,
+    normalizedSubjectKey: normalizeDossierSubjectName(subjectName),
+    status: draft.status,
+    route: { path: `/admin/dossiers/drafts/${encodeURIComponent(draft.id)}`, lane: "dossier_draft" as const },
+    candidateRoute: candidate ? adminRoute(candidate.id, "dossier_draft") : null,
+  };
+}
+
+function existingPopulationRecommendationMapping(recommendation: DossierRecommendation) {
+  const subjectName = recommendation.subjectName.trim();
+  const normalizedSubjectKey = recommendation.subjectKey?.trim() || normalizeDossierSubjectName(subjectName);
+  return {
+    recommendationId: recommendation.id,
+    subjectName,
+    normalizedSubjectKey,
+    status: recommendation.status,
+    recommendedLane: recommendation.recommendedLane ?? null,
+    recommendedAction: recommendation.recommendedAction ?? null,
+    targetCandidateId: recommendation.targetCandidateId ?? recommendation.connectedCandidateId ?? null,
+    targetDossierId: recommendation.targetDossierId ?? recommendation.matchedPublicDossierId ?? null,
+    seenCount: recommendation.seenCount ?? 1,
+    rawEvidenceRefCount: recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0,
+    route: recommendationRoute(recommendation.id),
+  };
+}
+
 function pendingCandidateRecommendationDestination(
   recommendation: DossierRecommendation,
 ) {
@@ -424,6 +459,12 @@ export async function GET(req: Request) {
     .map((candidate) =>
       dossierUpdateWorkspaceItem(candidate, state.sourceFileRefreshRequests),
     );
+  const draftDestinations = state.drafts
+    .filter((draft) => !["denied", "superseded", "published"].includes(draft.status))
+    .map((draft) => draftDestinationItem(draft, candidatesById));
+  const existingPopulationRecommendations = state.recommendations
+    .filter((recommendation) => recommendation.populationRecommendation || recommendation.type === "population_recommendation")
+    .map(existingPopulationRecommendationMapping);
   const resolvedCandidateIds = new Set(
     state.candidates
       .filter(
@@ -478,16 +519,23 @@ export async function GET(req: Request) {
       sourceFiles,
       candidates,
       dossierUpdateWorkspaces,
+      draftDestinations,
+      recommendationBackedIntakeRecords: pendingRecommendationCandidates.map(pendingCandidateRecommendationDestination),
+      existingPopulationRecommendations,
       identityLinks,
       resolvedRecords,
       diagnostics: {
         publicDossierCount: publicDossiers.length,
+        draftDestinationCount: draftDestinations.length,
         sourceFileCount: sourceFiles.length,
         candidateCount: trueCandidateIntakeRecords.length,
         candidateDestinationCount: candidates.length,
+        recommendationBackedIntakeCount:
+          pendingRecommendationCandidateRecords.length,
         pendingRecommendationCandidateCount:
           pendingRecommendationCandidateRecords.length,
         dossierUpdateWorkspaceCount: dossierUpdateWorkspaces.length,
+        existingPopulationRecommendationCount: existingPopulationRecommendations.length,
         identityLinkCount: identityLinks.length,
         resolvedRecordCount: resolvedRecords.length,
       },

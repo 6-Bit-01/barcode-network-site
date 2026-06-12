@@ -62,6 +62,24 @@ type SubjectConsolidationResult = {
   internalAliasesExposed: 0;
 };
 
+type PopulationReconcileSummary = {
+  signalsReviewed: number;
+  attachedToSourceFiles: number;
+  attachedToDossierUpdates: number;
+  attachedToCandidateIntake: number;
+  attachedToExistingRecommendations: number;
+  markedAlreadyRepresented: number;
+  markedNoNewInfo: number;
+  createdDossierUpdateWorkspaces: number;
+  createdSourceFileCandidates: number;
+  unresolvedNeedsReview: number;
+  duplicatesCollapsed: number;
+  evidenceRefsMerged: number;
+  publicPagesPublished: 0;
+  publicDossierTextChanged: 0;
+  internalAliasesExposed: 0;
+};
+
 type ManualRecommendationForm = {
   subjectName: string;
   type: DossierRecommendation["type"];
@@ -295,31 +313,6 @@ function archiveActionLabel() {
   return "Review Record";
 }
 
-type PopulationQueueFilter =
-  | "all"
-  | "new"
-  | "high"
-  | "needs_review"
-  | "existing_source_file"
-  | "dossier_update"
-  | "candidate_intake"
-  | "already_represented"
-  | "non_dossier"
-  | "dismissed";
-
-const populationQueueFilters: Array<{ id: PopulationQueueFilter; label: string }> = [
-  { id: "all", label: "All" },
-  { id: "new", label: "New" },
-  { id: "high", label: "High confidence" },
-  { id: "needs_review", label: "Needs review" },
-  { id: "existing_source_file", label: "Existing Source File" },
-  { id: "dossier_update", label: "Dossier Update" },
-  { id: "candidate_intake", label: "Candidate Intake" },
-  { id: "already_represented", label: "Already Represented" },
-  { id: "non_dossier", label: "Non-dossier signals" },
-  { id: "dismissed", label: "Dismissed" },
-];
-
 function isPopulationRecommendation(recommendation: DossierRecommendation) {
   return (
     recommendation.type === "population_recommendation" ||
@@ -402,6 +395,14 @@ function populationPublicDossierHref(recommendation: DossierRecommendation, publ
   return `/database/${dossier.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
 }
 
+function populationReviewHref(recommendation: DossierRecommendation) {
+  if (recommendation.targetCandidateId) return `/admin/dossiers/candidates/${recommendation.targetCandidateId}`;
+  if (recommendation.matchedExistingCandidateId) return `/admin/dossiers/candidates/${recommendation.matchedExistingCandidateId}`;
+  if (recommendation.matchedDossierUpdateCandidateId) return `/admin/dossiers/candidates/${recommendation.matchedDossierUpdateCandidateId}`;
+  if (recommendation.connectedRecommendationIds?.length) return `/admin/dossiers/recommendations/${recommendation.connectedRecommendationIds[0]}`;
+  return `/admin/dossiers/recommendations/${recommendation.id}`;
+}
+
 type PopulationReviewQueueAction =
   | "attach_to_existing_source_file"
   | "attach_to_existing_dossier_update"
@@ -424,44 +425,23 @@ function populationPrimaryActions(input: {
   publicHref?: string;
 }): PopulationPrimaryAction[] {
   const { groupId, recommendation, targetHref, publicHref } = input;
-  if (groupId === "already-represented") {
+  const reviewHref = targetHref ?? populationReviewHref(recommendation);
+  if (groupId === "admin-review") {
     return [
-      targetHref
-        ? { kind: "link", href: targetHref, label: recommendation.targetCandidateId ? "Review existing candidate/recommendation" : "Open existing record" }
-        : { kind: "link", href: `/admin/dossiers/recommendations/${recommendation.connectedRecommendationIds?.[0] ?? recommendation.id}`, label: "Open existing record" },
-      { kind: "action", key: "mark_no_new_info", label: "Mark no-new-info" },
+      { kind: "link", href: reviewHref, label: "Review" },
+      { kind: "action", key: "dismiss_population_recommendation", label: "Dismiss" },
     ];
   }
   if (groupId === "existing-source-file") {
     return [
-      { kind: "action" as const, key: "attach_to_existing_source_file" as const, label: "Attach to Source File" },
-      ...(targetHref ? [{ kind: "link" as const, href: targetHref, label: "Open Source File" }] : []),
+      targetHref ? { kind: "link" as const, href: targetHref, label: "Open Source File" } : { kind: "link" as const, href: reviewHref, label: "Review" },
+      { kind: "action" as const, key: "attach_to_existing_source_file" as const, label: "Attach evidence" },
     ].slice(0, 2);
-  }
-  if (groupId === "existing-dossier-update") {
-    return [
-      { kind: "action" as const, key: "attach_to_existing_dossier_update" as const, label: "Attach to Update Workspace" },
-      ...(targetHref ? [{ kind: "link" as const, href: targetHref, label: "Open Workspace" }] : []),
-    ].slice(0, 2);
-  }
-  if (groupId === "create-dossier-update") {
-    return [
-      { kind: "action", key: "create_dossier_update_workspace", label: "Create Update Workspace" },
-      { kind: "action", key: "dismiss_population_recommendation", label: "Dismiss" },
-    ];
   }
   if (groupId === "candidate-intake") {
     return [
-      targetHref
-        ? { kind: "link", href: targetHref, label: "Review existing candidate/recommendation" }
-        : { kind: "action", key: "create_source_file_candidate", label: "Create Source File Candidate" },
-      { kind: "action", key: "dismiss_population_recommendation", label: "Dismiss" },
-    ];
-  }
-  if (groupId === "admin-review") {
-    return [
-      { kind: "action", key: "mark_needs_more_info", label: "Review" },
-      { kind: "action", key: "dismiss_population_recommendation", label: "Dismiss" },
+      targetHref ? { kind: "link" as const, href: targetHref, label: "Open Candidate" } : { kind: "link" as const, href: reviewHref, label: "Review" },
+      { kind: "action" as const, key: "mark_no_new_info" as const, label: "Mark no-new-info" },
     ];
   }
   if (groupId === "non-dossier") {
@@ -470,9 +450,10 @@ function populationPrimaryActions(input: {
       { kind: "action", key: "dismiss_population_recommendation", label: "Dismiss" },
     ];
   }
-  return publicHref
-    ? [{ kind: "link", href: publicHref, label: "Open existing record" }]
-    : [{ kind: "action", key: "dismiss_population_recommendation", label: "Dismiss" }];
+  if (targetHref || publicHref) {
+    return [{ kind: "link", href: targetHref ?? publicHref!, label: "Open existing record" }];
+  }
+  return [{ kind: "link", href: reviewHref, label: "Review" }];
 }
 
 function PopulationActionButton({ children, onClick, disabled }: { children: React.ReactNode; onClick: () => void; disabled?: boolean }) {
@@ -523,8 +504,8 @@ export default function DossierControlCenterPage() {
   const [resolvedJustNow, setResolvedJustNow] = useState<{ groupId: string; subject: string; message: string; kind: "consolidate" | "source_file" | "dossier_update" | "keep_separate"; href?: string; absorbedCount: number; notesMoved: number; archivedCount: number; refreshStatus: string } | null>(null);
   const [recommendationForm, setRecommendationForm] =
     useState<ManualRecommendationForm>(emptyRecommendationForm);
-  const [populationFilter, setPopulationFilter] = useState<PopulationQueueFilter>("all");
   const [populationSearch, setPopulationSearch] = useState("");
+  const [populationReconcileResult, setPopulationReconcileResult] = useState<PopulationReconcileSummary | null>(null);
   const [createdDraftIdByCandidate, setCreatedDraftIdByCandidate] = useState<
     Record<string, string>
   >({});
@@ -613,60 +594,37 @@ export default function DossierControlCenterPage() {
     .at(-1);
   const filteredPopulationRecommendations = visiblePopulationRecommendations.filter((recommendation) => {
     const query = populationSearch.trim().toLowerCase();
-    const matchesSearch = !query || populationRecommendationSearchText(recommendation, candidates).includes(query);
-    const matchesFilter =
-      populationFilter === "all" ? true :
-      populationFilter === "new" ? isPopulationOpen(recommendation) :
-      populationFilter === "high" ? recommendation.confidence === "high" :
-      populationFilter === "needs_review" ? recommendation.recommendedLane === "needs_population_review" || recommendation.recommendedAction === "admin_review_required" :
-      populationFilter === "existing_source_file" ? recommendation.recommendedLane === "active_source_file" || recommendation.recommendedAction === "attach_to_existing_source_file" :
-      populationFilter === "dossier_update" ? ["existing_dossier_update", "public_dossier_update_signal"].includes(recommendation.recommendedLane ?? "") || ["attach_to_existing_dossier_update", "create_dossier_update_workspace"].includes(recommendation.recommendedAction ?? "") :
-      populationFilter === "candidate_intake" ? recommendation.recommendedLane === "candidate_intake" || recommendation.recommendedAction === "create_source_file_candidate" :
-      populationFilter === "already_represented" ? isAlreadyRepresentedPopulationSignal(recommendation) :
-      populationFilter === "non_dossier" ? isNonDossierPopulationSignal(recommendation) :
-      populationFilter === "dismissed" ? ["dismissed", "ignored", "archived", "no_new_info", "not_population_subject"].includes(recommendation.status) :
-      true;
-    return matchesSearch && matchesFilter;
+    return !query || populationRecommendationSearchText(recommendation, candidates).includes(query);
   });
+  const unresolvedPopulationSignals = filteredPopulationRecommendations.filter(
+    (recommendation) =>
+      isPopulationOpen(recommendation) &&
+      !isAlreadyRepresentedPopulationSignal(recommendation) &&
+      !isNonDossierPopulationSignal(recommendation) &&
+      (recommendation.recommendedLane === "needs_population_review" ||
+        recommendation.recommendedAction === "admin_review_required" ||
+        !recommendation.targetCandidateId &&
+          !recommendation.matchedExistingCandidateId &&
+          !recommendation.matchedDossierUpdateCandidateId &&
+          !recommendation.connectedRecommendationIds?.length &&
+          !recommendation.matchedPublicDossierId &&
+          !recommendation.targetDossierId),
+  );
+  const filedPopulationSignals = filteredPopulationRecommendations.filter(
+    (recommendation) =>
+      !unresolvedPopulationSignals.some((item) => item.id === recommendation.id) &&
+      !isNonDossierPopulationSignal(recommendation),
+  );
+  const nonDossierPopulationSignals = filteredPopulationRecommendations.filter(isNonDossierPopulationSignal);
+  const filedAutomaticallyCount = filedPopulationSignals.length + nonDossierPopulationSignals.length;
   const populationQueueGroups = [
     {
-      id: "existing-source-file",
-      title: "Attach to Existing Source File",
-      description: "BNL thinks this evidence belongs on an already active Source File.",
-      items: filteredPopulationRecommendations.filter((recommendation) => recommendation.recommendedLane === "active_source_file" || recommendation.recommendedAction === "attach_to_existing_source_file"),
-    },
-    {
-      id: "existing-dossier-update",
-      title: "Dossier Update Workspace",
-      description: "BNL found an existing internal update workspace for a public dossier subject.",
-      items: filteredPopulationRecommendations.filter((recommendation) => recommendation.recommendedLane === "existing_dossier_update" || recommendation.recommendedAction === "attach_to_existing_dossier_update"),
-    },
-    {
-      id: "create-dossier-update",
-      title: "Create Dossier Update Workspace",
-      description: "BNL sees a public dossier update signal, but no workspace is linked yet.",
-      items: filteredPopulationRecommendations.filter((recommendation) => recommendation.recommendedLane === "public_dossier_update_signal" || recommendation.recommendedAction === "create_dossier_update_workspace"),
-    },
-    {
-      id: "candidate-intake",
-      title: "Candidate Intake / New Source File",
-      description: "BNL thinks this should start as a private candidate/source-file workflow record.",
-      items: filteredPopulationRecommendations.filter((recommendation) => recommendation.recommendedLane === "candidate_intake" || recommendation.recommendedAction === "create_source_file_candidate"),
-    },
-    {
       id: "admin-review",
-      title: "Admin Review Required",
-      description: "BNL is unsure; choose the safe internal route manually.",
-      items: filteredPopulationRecommendations.filter((recommendation) => !isAlreadyRepresentedPopulationSignal(recommendation) && !isNonDossierPopulationSignal(recommendation) && (recommendation.recommendedLane === "needs_population_review" || recommendation.recommendedAction === "admin_review_required")),
-    },
-    {
-      id: "already-represented",
-      title: "Already Represented / Duplicate",
-      description: "BNL believes the subject is already represented or no new dossier work is needed.",
-      items: filteredPopulationRecommendations.filter(isAlreadyRepresentedPopulationSignal),
+      title: "Needs Review",
+      description: "Only ambiguous or unresolved BNL signals stay visible here.",
+      items: unresolvedPopulationSignals,
     },
   ];
-  const nonDossierPopulationSignals = filteredPopulationRecommendations.filter(isNonDossierPopulationSignal);
 
   const diagnosticRecommendations = recommendations.filter(isDiagnosticTestArtifactRecommendation);
   const resolvedCandidateIds = new Set(
@@ -1140,6 +1098,29 @@ export default function DossierControlCenterPage() {
       setNotice(err instanceof Error ? err.message : "Population recommendation action failed.");
     }
   }
+
+  async function reconcilePopulationSignals() {
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/admin/dossiers", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "reconcile_population_signals" }),
+      });
+      const next = (await response.json()) as WorkflowPayload & { populationReconcile?: PopulationReconcileSummary; error?: string };
+      if (!response.ok) throw new Error(next.error ?? `Reconcile failed with ${response.status}.`);
+      setPayload(next);
+      setPopulationReconcileResult(next.populationReconcile ?? null);
+      setNotice("BNL signals reconciled into internal workflow destinations.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Population reconcile failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
 
   if (loading) {
     return (
@@ -1714,20 +1695,23 @@ export default function DossierControlCenterPage() {
           </details>
 
         <DashboardCard
-          eyebrow="BNL Population Scan"
-          title="Population Review Queue"
-          aside={<StatusPill>{populationRecommendations.filter(isPopulationOpen).length} new / unreviewed</StatusPill>}
+          eyebrow="BNL Signal Reconcile"
+          title="BNL Signal Reconcile"
+          aside={<StatusPill>{unresolvedPopulationSignals.length} needs review</StatusPill>}
         >
+          <p className="text-sm text-muted">
+            BNL files new subject signals into existing Source Files, candidates, drafts, and dossier update workspaces. Only unresolved signals stay here.
+          </p>
           <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3 text-xs text-muted">
             {[
-              ["Total", populationRecommendations.length],
-              ["New / unreviewed", populationRecommendations.filter(isPopulationOpen).length],
-              ["High", populationRecommendations.filter((item) => item.confidence === "high").length],
-              ["Medium", populationRecommendations.filter((item) => item.confidence === "medium").length],
-              ["Low", populationRecommendations.filter((item) => item.confidence === "low").length],
-              ["Blocked", populationRecommendations.filter((item) => item.publicSafetyLevel === "blocked" || item.identityRisk === "blocked").length],
-              ["Already represented", populationRecommendations.filter(isAlreadyRepresentedPopulationSignal).length],
-              ["Non-subject skipped", populationRecommendations.filter(isNonDossierPopulationSignal).length],
+              ["Signals reviewed", populationReconcileResult?.signalsReviewed ?? populationRecommendations.length],
+              ["Filed automatically", filedAutomaticallyCount],
+              ["Needs Review", populationReconcileResult?.unresolvedNeedsReview ?? unresolvedPopulationSignals.length],
+              ["Source Files", populationReconcileResult?.attachedToSourceFiles ?? populationRecommendations.filter((item) => item.status === "attached_to_source_file").length],
+              ["Dossier Updates", populationReconcileResult?.attachedToDossierUpdates ?? populationRecommendations.filter((item) => item.status === "attached_to_existing_dossier_update").length],
+              ["Candidate Intake", populationReconcileResult?.attachedToCandidateIntake ?? populationRecommendations.filter((item) => item.status === "attached_to_candidate_intake").length],
+              ["Duplicates collapsed", populationReconcileResult?.duplicatesCollapsed ?? Math.max(0, populationRecommendations.length - visiblePopulationRecommendations.length)],
+              ["Public pages", populationReconcileResult?.publicPagesPublished ?? 0],
             ].map(([label, value]) => (
               <div key={label} className="border border-border/70 bg-background/30 p-3">
                 <p className="uppercase tracking-[0.25em] text-accent mb-2">{label}</p>
@@ -1735,21 +1719,33 @@ export default function DossierControlCenterPage() {
               </div>
             ))}
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-muted">
+            <div className="border border-border/70 bg-background/30 p-3">
+              <p className="uppercase tracking-[0.25em] text-accent mb-2">Public dossier text changed</p>
+              <p className="text-2xl font-bold text-foreground">{populationReconcileResult?.publicDossierTextChanged ?? 0}</p>
+            </div>
+            <div className="border border-border/70 bg-background/30 p-3">
+              <p className="uppercase tracking-[0.25em] text-accent mb-2">Internal aliases exposed</p>
+              <p className="text-2xl font-bold text-foreground">{populationReconcileResult?.internalAliasesExposed ?? 0}</p>
+            </div>
+            <div className="border border-border/70 bg-background/30 p-3">
+              <p className="uppercase tracking-[0.25em] text-accent mb-2">Evidence refs merged</p>
+              <p className="text-2xl font-bold text-foreground">{populationReconcileResult?.evidenceRefsMerged ?? 0}</p>
+            </div>
+          </div>
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between text-xs uppercase tracking-widest text-muted">
-            <p>Source of recommendation: BNL Population Scan · Last updated / generatedAt: {formatDate(populationLastUpdated)}</p>
-            <label className="space-y-2 md:min-w-72">
-              <span>Search subject, normalized key, dossier, or Source File</span>
-              <input value={populationSearch} onChange={(event) => setPopulationSearch(event.target.value)} className={textInputClass()} />
-            </label>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {populationQueueFilters.map((filter) => (
-              <button key={filter.id} type="button" onClick={() => setPopulationFilter(filter.id)} className={`border px-3 py-1.5 text-xs uppercase tracking-widest ${populationFilter === filter.id ? "border-accent text-accent" : "border-border text-muted hover:border-accent hover:text-accent"}`}>
-                {filter.label}
+            <p>Source of recommendation: BNL Signal Reconcile · Last updated / generatedAt: {formatDate(populationLastUpdated)}</p>
+            <div className="flex flex-col gap-3 md:flex-row md:items-end">
+              <label className="space-y-2 md:min-w-72">
+                <span>Search unresolved signal, dossier, candidate, or Source File</span>
+                <input value={populationSearch} onChange={(event) => setPopulationSearch(event.target.value)} className={textInputClass()} />
+              </label>
+              <button type="button" disabled={saving} onClick={() => void reconcilePopulationSignals()} className="border border-accent px-4 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">
+                Reconcile BNL Signals
               </button>
-            ))}
+            </div>
           </div>
-          <p className="text-sm text-muted">This queue only changes private workflow records. It does not publish public pages, does not edit public dossier text, does not auto-approve recommendations, and keeps raw/private evidence plus internal aliases out of public display.</p>
+          <p className="text-sm text-muted">This internal reconcile action only changes private workflow state. It publishes 0 public pages, changes 0 public dossier text, exposes 0 internal aliases, and preserves raw evidence references internally without displaying private evidence.</p>
 
           <div className="space-y-5">
             {populationQueueGroups.map((group) => (
@@ -1759,10 +1755,10 @@ export default function DossierControlCenterPage() {
                     <h3 className="text-lg font-bold text-foreground">{group.title}</h3>
                     <p className="text-sm text-muted">{group.description}</p>
                   </div>
-                  <StatusPill>{group.items.length} recommendation{group.items.length === 1 ? "" : "s"}</StatusPill>
+                  <StatusPill>{group.items.length} signal{group.items.length === 1 ? "" : "s"}</StatusPill>
                 </div>
                 {group.items.length === 0 ? (
-                  <p className="text-sm text-muted">No matching population recommendations in this lane.</p>
+                  <p className="text-sm text-muted">No action needed. Filed automatically.</p>
                 ) : (
                   <div className="grid gap-3 lg:grid-cols-2">
                     {group.items.map((recommendation) => {
@@ -1774,7 +1770,7 @@ export default function DossierControlCenterPage() {
                           <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                             <div>
                               <h4 className="text-xl font-bold text-foreground">{recommendation.subjectName}</h4>
-                              <p>BNL thinks: {recommendation.recommendedNextStep ?? recommendation.recommendedAction ?? recommendation.suggestedAction ?? "Needs admin review"}</p>
+                              <p>{recommendation.recommendedNextStep ?? recommendation.routingReason ?? "Needs one admin decision because no deterministic destination was found."}</p>
                             </div>
                             <div className="flex flex-wrap gap-2">
                               <StatusPill>{recommendation.confidence ?? "confidence unset"}</StatusPill>
@@ -1784,36 +1780,15 @@ export default function DossierControlCenterPage() {
                           <p><span className="text-foreground">Destination:</span> {populationDestinationLabel(recommendation, candidates)}</p>
                           <p><span className="text-foreground">Why:</span> {recommendation.adminSummary ?? recommendation.evidenceSummary ?? recommendation.reason}</p>
                           {recommendation.missingInfo?.length ? <p><span className="text-foreground">Missing info:</span> {recommendation.missingInfo.join("; ")}</p> : null}
-                          {recommendation.publicSafetyNotes?.length || recommendation.doNotPublishReason ? <p><span className="text-foreground">Public safety notes:</span> {[recommendation.doNotPublishReason, ...(recommendation.publicSafetyNotes ?? [])].filter(Boolean).join("; ")}</p> : null}
-                          {recommendation.possibleTargets?.length ? <p><span className="text-foreground">Possible targets:</span> {recommendation.possibleTargets.map((target) => target.name ?? target.id).filter(Boolean).join(", ")}</p> : null}
-                          <p><span className="text-foreground">Risk:</span> duplicate {recommendation.duplicateRisk ?? "unset"} · identity {recommendation.identityRisk ?? "unset"} · internal evidence refs {recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0}</p>
-                          <details className="border border-border/70 bg-background/30 p-3">
-                            <summary className="cursor-pointer text-xs uppercase tracking-widest text-muted">Internal refs</summary>
-                            <p className="mt-2 text-xs text-muted">Raw evidence references are preserved internally but hidden from normal card copy. Count: {recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0}.</p>
-                          </details>
-                          {(recommendation.seenCount ?? 1) > 1 || (recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0) > 0 ? (
-                            <p><span className="text-foreground">Repeated signal:</span> Seen {recommendation.seenCount ?? 1} time{(recommendation.seenCount ?? 1) === 1 ? "" : "s"} · Evidence refs: {recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0}</p>
-                          ) : null}
+                          <p><span className="text-foreground">Evidence refs:</span> {recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0} private refs preserved internally; raw/private evidence is not shown.</p>
                           <p><span className="text-foreground">What to click next:</span> {primaryActions.map((action) => action.label).join(" or ")}</p>
                           <div className="flex flex-wrap gap-2" data-primary-population-actions={primaryActions.length}>
-                            {primaryActions.map((action) => action.kind === "link" ? (
-                              <Link key={`${recommendation.id}-${action.label}`} href={action.href} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">{action.label}</Link>
+                            {primaryActions.slice(0, 2).map((action) => action.kind === "link" ? (
+                              <Link key={`${recommendation.id}-${action.label}`} href={action.href} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">{action.label}</Link>
                             ) : (
                               <PopulationActionButton key={`${recommendation.id}-${action.key}`} disabled={saving} onClick={() => populationRecommendationAction(recommendation, action.key)}>{action.label}</PopulationActionButton>
                             ))}
                           </div>
-                          <details className="border border-border/70 bg-background/30 p-3">
-                            <summary className="cursor-pointer text-xs uppercase tracking-widest text-muted">Advanced actions</summary>
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "create_source_file_candidate")}>Convert to Source File Candidate</PopulationActionButton>
-                              <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "attach_to_existing_source_file")}>Attach to Existing Source File</PopulationActionButton>
-                              <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "create_dossier_update_workspace")}>Create Dossier Update Workspace</PopulationActionButton>
-                              <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "mark_not_population_subject")}>Mark Not a Dossier Subject</PopulationActionButton>
-                              <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "mark_no_new_info")}>Mark No-New-Info</PopulationActionButton>
-                              <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "dismiss_population_recommendation")}>Dismiss</PopulationActionButton>
-                              <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "reopen_population_recommendation")}>Reopen</PopulationActionButton>
-                            </div>
-                          </details>
                         </article>
                       );
                     })}
@@ -1822,27 +1797,37 @@ export default function DossierControlCenterPage() {
               </section>
             ))}
             <details className="border border-border/70 bg-background/20 p-4">
-              <summary className="cursor-pointer text-lg font-bold text-foreground">Non-dossier signals ({nonDossierPopulationSignals.length})</summary>
-              <p className="mt-2 text-sm text-muted">Show-state notes, broadcast memory notes, and not-population-subject items stay out of the main dossier work queue.</p>
+              <summary className="cursor-pointer text-lg font-bold text-foreground">Filed / Already Represented ({filedPopulationSignals.length})</summary>
+              <p className="mt-2 text-sm text-muted">Audit view for signals already attached, merged, marked no-new-info, or represented elsewhere. These do not clutter the default work queue.</p>
               <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                {nonDossierPopulationSignals.map((recommendation) => (
-                  <article key={recommendation.id} className="border border-border bg-surface p-4 text-sm text-muted space-y-3">
+                {filedPopulationSignals.map((recommendation) => (
+                  <article key={recommendation.id} className="border border-border bg-surface p-4 text-sm text-muted space-y-2">
                     <h4 className="text-lg font-bold text-foreground">{recommendation.subjectName}</h4>
-                    <p>{recommendation.adminSummary ?? recommendation.recommendedNextStep ?? recommendation.reason}</p>
-                    <p>Internal refs: {recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0} preserved; raw/private content hidden.</p>
-                    <p><span className="text-foreground">What to click next:</span> Mark not dossier subject or Dismiss</p>
-                    <div className="flex flex-wrap gap-2" data-primary-population-actions="2">
-                      <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "mark_not_population_subject")}>Mark not dossier subject</PopulationActionButton>
-                      <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "dismiss_population_recommendation")}>Dismiss</PopulationActionButton>
-                    </div>
-                    <details className="border border-border/70 bg-background/30 p-3">
-                      <summary className="cursor-pointer text-xs uppercase tracking-widest text-muted">Advanced actions</summary>
-                      <p className="mt-2 text-xs text-muted">Broadcast/show-state handling stays internal; this card does not expose raw/private evidence.</p>
-                    </details>
+                    <p>{populationDestinationLabel(recommendation, candidates)}</p>
+                    <p>No action needed. Filed automatically.</p>
                   </article>
                 ))}
               </div>
             </details>
+            {nonDossierPopulationSignals.length > 0 ? (
+              <details className="border border-border/70 bg-background/20 p-4">
+                <summary className="cursor-pointer text-lg font-bold text-foreground">Non-dossier Signals ({nonDossierPopulationSignals.length})</summary>
+                <p className="mt-2 text-sm text-muted">Show-state notes, broadcast memory notes, and not-population-subject items stay out of the main dossier work queue.</p>
+                <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                  {nonDossierPopulationSignals.map((recommendation) => (
+                    <article key={recommendation.id} className="border border-border bg-surface p-4 text-sm text-muted space-y-3">
+                      <h4 className="text-lg font-bold text-foreground">{recommendation.subjectName}</h4>
+                      <p>{recommendation.adminSummary ?? recommendation.recommendedNextStep ?? recommendation.reason}</p>
+                      <p>Private evidence refs preserved internally; raw/private content hidden.</p>
+                      <div className="flex flex-wrap gap-2" data-primary-population-actions="2">
+                        <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "mark_not_population_subject")}>Mark not dossier subject</PopulationActionButton>
+                        <PopulationActionButton disabled={saving} onClick={() => populationRecommendationAction(recommendation, "dismiss_population_recommendation")}>Dismiss</PopulationActionButton>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </details>
+            ) : null}
           </div>
         </DashboardCard>
 

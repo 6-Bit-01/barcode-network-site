@@ -8951,6 +8951,40 @@ test("BNL population context endpoint is authenticated, compact, and routing-saf
         connectedCandidateId: "dossier-update-workspace",
         connectedSourceFileCandidateId: "dossier-update-workspace",
       }),
+      baseRecommendation({
+        id: "rec-pending-candidate",
+        type: "new_subject",
+        subjectName: "Recommendation Backed Subject",
+        subjectKey: "recommendation backed subject",
+        status: "new",
+        ingestSource: "bnl",
+        recommendedKind: "community_member",
+      }),
+      baseRecommendation({
+        id: "rec-mind-fanatic",
+        type: "new_subject",
+        subjectName: "Mind Fanatic [Barcode_Network]",
+        subjectKey: "mind fanatic barcode network",
+        status: "reviewing",
+        ingestSource: "bnl",
+        reason: "BNL-01_MEMBER_LOG / Orion candidate recommendation fixture.",
+        recommendedKind: "community_member",
+      }),
+      baseRecommendation({
+        id: "rec-diagnostic-artifact",
+        type: "new_subject",
+        subjectName: "Diagnostic Probe Candidate",
+        status: "new",
+        reason: "diagnostic test artifact should stay hidden",
+        ingestSource: "system",
+      }),
+      baseRecommendation({
+        id: "rec-terminal-candidate",
+        type: "new_subject",
+        subjectName: "Terminal Candidate",
+        status: "dismissed",
+        reason: "Resolved terminal recommendation should stay hidden",
+      }),
     ],
     sourceFileRefreshRequests: [
       {
@@ -8988,6 +9022,8 @@ test("BNL population context endpoint is authenticated, compact, and routing-saf
   assert.equal(payload.diagnostics.publicDossierCount, payload.publicDossiers.length);
   assert.equal(payload.diagnostics.sourceFileCount, payload.sourceFiles.length);
   assert.equal(payload.diagnostics.candidateCount, payload.candidates.length);
+  assert.equal(payload.diagnostics.candidateCount, 1);
+  assert.equal(payload.diagnostics.pendingRecommendationCandidateCount, 2);
   assert.equal(payload.diagnostics.dossierUpdateWorkspaceCount, payload.dossierUpdateWorkspaces.length);
   assert.equal(payload.diagnostics.identityLinkCount, payload.identityLinks.length);
   assert.equal(payload.diagnostics.resolvedRecordCount, payload.resolvedRecords.length);
@@ -9024,6 +9060,22 @@ test("BNL population context endpoint is authenticated, compact, and routing-saf
   assert.equal(mergedRecord.destinationSubjectName, "Active Subject");
   assert.equal(mergedRecord.destinationLane, "source_file");
 
+  const pendingRecommendation = payload.resolvedRecords.find((item) => item.recordId === "rec-pending-candidate");
+  assert.equal(pendingRecommendation.resolvedReason, "pending_candidate_recommendation");
+  assert.equal(pendingRecommendation.destinationLane, "candidate_recommendation");
+  assert.equal(pendingRecommendation.destinationSubjectName, "Recommendation Backed Subject");
+  assert.equal(pendingRecommendation.normalizedSubjectKey, "recommendation backed subject");
+  assert.equal(pendingRecommendation.recommendationId, "rec-pending-candidate");
+  assert.equal(pendingRecommendation.route, "/admin/dossiers/recommendations/rec-pending-candidate");
+
+  const mindFanaticRecord = payload.resolvedRecords.find((item) => item.recordId === "rec-mind-fanatic");
+  assert.equal(mindFanaticRecord.resolvedReason, "pending_candidate_recommendation");
+  assert.equal(mindFanaticRecord.normalizedSubjectKey, "mind fanatic barcode network");
+  assert.equal(mindFanaticRecord.destinationLane, "candidate_recommendation");
+
+  assert.equal(payload.resolvedRecords.some((item) => item.recordId === "rec-diagnostic-artifact"), false);
+  assert.equal(payload.resolvedRecords.some((item) => item.recordId === "rec-terminal-candidate" && item.resolvedReason === "pending_candidate_recommendation"), false);
+
   const serialized = JSON.stringify(payload);
   assert.doesNotMatch(serialized, /relationship_journal|raw Discord message|raw discord message/i);
   assert.doesNotMatch(serialized, /protected_system|private_admin|internal_controlled/i);
@@ -9036,6 +9088,7 @@ test("BNL population context endpoint is authenticated, compact, and routing-saf
   assert.doesNotMatch(routeSource, /databasePage\.entries\s*=|summary:\s*|notes:\s*|role:\s*/);
   assert.match(source("src/app/api/bnl/read-model/route.ts"), /export async function GET/);
   assert.match(source("src/app/admin/dossiers/page.tsx"), /Dossier Control Center/);
+  assert.match(source("src/app/admin/dossiers/page.tsx"), /Candidates & Recommendation Intake/);
   assert.match(source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx"), /Source File/);
   assert.match(source("src/lib/dossier-workflow-store.ts"), /Subject Consolidation/);
 
@@ -9268,6 +9321,72 @@ test("Population recommendation ingest dedupes by input hash and preserves raw r
   assert.equal(populationRecommendations[0].seenCount, 2);
 });
 
+test("Population recommendation ingest marks matching active recommendations already represented", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+  const now = new Date().toISOString();
+
+  await store.saveDossierWorkflowState({
+    version: 1,
+    revision: 1,
+    candidates: [],
+    drafts: [],
+    recommendations: [
+      {
+        id: "rec-active-mind-fanatic",
+        type: "new_subject",
+        subjectName: "Mind Fanatic [Barcode_Network]",
+        subjectKey: "mind fanatic barcode network",
+        status: "new",
+        reason: "BNL-01_MEMBER_LOG / Orion candidate recommendation fixture.",
+        sourceLanes: ["broadcast_memory"],
+        createdAt: now,
+        updatedAt: now,
+        createdBy: "bnl",
+        ingestSource: "bnl",
+      },
+    ],
+    sourceFileRefreshRequests: [],
+    updatedAt: now,
+  });
+
+  const response = await bnlIngestPost({
+    type: "population_recommendation",
+    createdBy: "bnl_population_recommender",
+    subjectName: "Mind Fanatic [Barcode_Network]",
+    subjectKey: "mind fanatic barcode network",
+    adminSummary: "BNL sees a safe routing signal already queued elsewhere.",
+    recommendedLane: "needs_population_review",
+    recommendedAction: "admin_review_required",
+    confidence: "high",
+    inputHash: "population-mind-fanatic-duplicate",
+    rawEvidenceRefs: ["discord:private-relationship-row"],
+    sourceLanes: ["broadcast_memory"],
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.duplicate, true);
+  assert.equal(payload.recommendation.recommendedLane, "already_represented");
+  assert.equal(payload.recommendation.recommendedAction, "mark_duplicate_no_new_info");
+  assert.deepEqual(payload.recommendation.connectedRecommendationIds, ["rec-active-mind-fanatic"]);
+
+  const state = await store.getDossierWorkflowState();
+  const populationRecommendations = state.recommendations.filter((item) => item.populationRecommendation);
+  assert.equal(populationRecommendations.length, 1);
+  assert.equal(populationRecommendations[0].rawEvidenceRefs.length, 1);
+  assert.equal(populationRecommendations[0].recommendedLane, "already_represented");
+  assert.equal(populationRecommendations[0].recommendedAction, "mark_duplicate_no_new_info");
+  assert.equal(
+    state.recommendations.filter(
+      (item) =>
+        item.populationRecommendation &&
+        item.recommendedLane === "needs_population_review" &&
+        item.recommendedAction === "admin_review_required",
+    ).length,
+    0,
+  );
+});
+
 test("Population Review Queue actions update internal workflow records without publishing", async () => {
   await resetWorkflowStore();
   process.env.BNL_API_KEY = "test-population-context-token";
@@ -9367,6 +9486,7 @@ test("Population Review Queue search includes matched candidate names and review
   const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
   assert.match(page, /populationRecommendationSearchText\(recommendation, candidates\)/);
   assert.match(page, /matchedCandidateNames/);
+  assert.match(page, /Already Represented \/ Duplicate/);
   assert.match(page, /candidate\.name/);
   assert.match(page, /return \["new", "reviewing"\]\.includes\(recommendation\.status\)/);
   assertIncludesCopy(pageCopy, "Search subject, normalized key, dossier, or Source File");

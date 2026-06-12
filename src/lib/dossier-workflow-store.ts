@@ -1727,6 +1727,21 @@ function recommendationDedupeText(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+function activeNonPopulationRecommendationForSubject(
+  recommendations: DossierRecommendation[],
+  recommendation: DossierRecommendation,
+): DossierRecommendation | undefined {
+  const subjectKey = recommendationDedupeSubject(recommendation.subjectKey || recommendation.subjectName);
+  if (!subjectKey) return undefined;
+  return recommendations.find((item) => {
+    if (item.populationRecommendation || item.type === "population_recommendation") return false;
+    if (!["new", "reviewing"].includes(item.status)) return false;
+    if (!isActiveRecommendation(item)) return false;
+    const itemSubjectKey = recommendationDedupeSubject(item.subjectKey || item.subjectName);
+    return itemSubjectKey === subjectKey;
+  });
+}
+
 function fallbackRecommendationDedupeKey(
   recommendation: Pick<
     DossierRecommendation,
@@ -3044,6 +3059,33 @@ export async function createDossierRecommendationIdempotent(
       savedRecommendation = existing;
       duplicate = true;
       return currentState;
+    }
+
+    const matchingActiveRecommendation = recommendation.populationRecommendation
+      ? activeNonPopulationRecommendationForSubject(currentState.recommendations, recommendation)
+      : undefined;
+    if (matchingActiveRecommendation) {
+      savedRecommendation = {
+        ...recommendation,
+        status: "new",
+        recommendedLane: "already_represented",
+        recommendedAction: "mark_duplicate_no_new_info",
+        duplicateRisk: "high",
+        connectedRecommendationIds: uniqueStrings(recommendation.connectedRecommendationIds, [matchingActiveRecommendation.id]),
+        sourceRecommendationIds: uniqueStrings(recommendation.sourceRecommendationIds, [matchingActiveRecommendation.id]),
+        routingReason: `Already represented by active recommendation ${matchingActiveRecommendation.id}. Preserved population evidence refs internally; no extra Admin Review Required card is needed.`,
+        publicSafetyNotes: uniqueStrings(recommendation.publicSafetyNotes, [
+          "Population recommendation matched an unresolved recommendation-backed candidate/intake subject. Raw/private evidence refs remain internal and no public content was changed.",
+        ]),
+        rawEvidenceRefCount: recommendation.rawEvidenceRefs?.length ?? 0,
+        updatedAt: now,
+      };
+      duplicate = true;
+      return {
+        ...currentState,
+        recommendations: [savedRecommendation, ...currentState.recommendations],
+        updatedAt: now,
+      };
     }
 
     if (isEnrichmentIngest) {

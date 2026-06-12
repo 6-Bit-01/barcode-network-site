@@ -760,27 +760,27 @@ export default function DossierDraftEditorPage() {
           )}
           <p className="text-sm text-muted mt-2 max-w-4xl">
             This is the curated public-facing draft. It should be
-            generated/written from reviewed Case File / BNL Source File material, not copied
+            generated/written from reviewed BNL Source File material, not copied
             wholesale from the internal working case file. The source file may
             contain unverified, internal, conflicting, source-blind, or
             private-review material; this page contains only the curated draft
             that may become public after owner review.
           </p>
           <p className="text-sm text-muted mt-2 max-w-4xl">
-            BNL will eventually generate the proposed dossier from the Case File / BNL Source File and approved sources. Admins will direct changes
+            BNL will eventually generate the proposed dossier from the BNL Source File and approved sources. Admins will direct changes
             conversationally. BNL should ask only for missing specifics. Draft
             fields are not mutated automatically when new source notes arrive.
           </p>
           <div className="mt-4">
             <PhaseRail currentPhase={currentPhase} />
-            {/* Case File / BNL Source File Summary / Source File Summary */}
+            {/* BNL Source File Summary / Source File Summary */}
           </div>
           <div className="mt-5 flex flex-wrap gap-3 text-xs uppercase tracking-widest">
             <Link
               href={`/admin/dossiers/candidates/${draft.candidateId}`}
               className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent"
             >
-              Back to Case File / BNL Source File
+              Back to BNL Source File
             </Link>
             <Link
               href="/admin/dossiers"
@@ -838,7 +838,7 @@ export default function DossierDraftEditorPage() {
             href={`/admin/dossiers/candidates/${draft.candidateId}`}
             className="mt-4 inline-flex text-accent hover:underline"
           >
-            Open full Case File / BNL Source File
+            Open full BNL Source File
           </Link>
         </details>
         <form onSubmit={saveDraft} className="space-y-5">
@@ -849,7 +849,7 @@ export default function DossierDraftEditorPage() {
             {unappliedSourceNotes.length > 0 ? (
               <>
                 <p className="border border-accent/60 bg-accent/10 p-3 text-accent">
-                  Case File / BNL Source File has new notes since this Proposed Dossier was last
+                  BNL Source File has new notes since this Proposed Dossier was last
                   updated.
                 </p>
                 <div className="space-y-3">
@@ -895,7 +895,7 @@ export default function DossierDraftEditorPage() {
               other collaborator dossiers.”
             </p>
             <p>
-              Future BNL source packet: Case File / BNL Source File, website read model,
+              Future BNL source packet: BNL Source File, website read model,
               dossier taxonomy guide, authoring guide, tag registry,
               queue/public show context, broadcast memory references,
               R&amp;D/operator-approved notes, Discord-safe/mod-approved
@@ -1183,7 +1183,7 @@ export default function DossierDraftEditorPage() {
               href={`/admin/dossiers/candidates/${draft.candidateId}`}
               className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent"
             >
-              Back to Case File / BNL Source File
+              Back to BNL Source File
             </Link>
             <Link
               href="/admin/dossiers"

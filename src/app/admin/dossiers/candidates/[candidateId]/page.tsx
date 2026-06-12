@@ -854,7 +854,7 @@ function PhaseRail() {
     >
       <div className="flex flex-wrap gap-2">
         <span className="border border-accent bg-accent/10 px-3 py-2 text-accent">
-          Phase 1 — Case File / BNL Source File
+          Phase 1 — BNL Source File
         </span>
         <span className="border border-border px-3 py-2">
           Phase 2 — Proposed Dossier + BNL Edit Chat
@@ -1204,22 +1204,18 @@ export default function CandidateReviewPage() {
         (sourceFileOpenState.immediateRefresh?.ok && immediateRecommendationVisible)),
   );
   const refreshStatusLabel = sourceFileOpenState.running
-    ? "UPDATING SOURCE FILE"
-    : caseReportMissingForLatestArchive
-      ? latestRefreshRequest?.status === "pending" || latestRefreshRequest?.status === "claimed"
-        ? "CASE REPORT QUEUED"
-        : latestRefreshRequest?.status === "failed"
-          ? "CASE REPORT FAILED"
-          : "CASE REPORT MISSING"
-      : sourceFileFreshForOpen
-        ? "FILE UPDATED"
-        : "FILE NOT UPDATED";
+    ? sourceFileOpenState.immediateRefresh
+      ? "RETRYING UPDATE"
+      : "UPDATING SOURCE FILE"
+    : sourceFileFreshForOpen
+      ? "FILE UPDATED"
+      : "FILE NOT UPDATED";
   const refreshStatusDetail = sourceFileOpenState.running
     ? "BNL is updating this Source File now through the server-side immediate refresh endpoint."
     : caseReportMissingForLatestArchive
-      ? "Latest archive exists, but BNL has not generated the Case File Report yet. Refresh requests ask BNL for case-report backfill."
+      ? "Latest archive exists, but BNL has not generated the Source File report yet. Refresh requests ask BNL for report backfill."
       : sourceFileFreshForOpen
-        ? "Latest BNL enrichment is fresh for this page open."
+        ? "Source File updated for this page open."
         : "This page is not treating older BNL Source File data as current. Use FILE NOT UPDATED to retry the immediate update.";
   const refreshFailureReason =
     sourceFileOpenState.immediateRefresh?.failureReason ??
@@ -1281,7 +1277,7 @@ export default function CandidateReviewPage() {
     ? "Dossier Update"
     : isCandidateIntake
       ? "Dossier Seed"
-      : "Case File / BNL Source File";
+      : "BNL Source File";
   const closedIdentityLinks = identityLinks.filter(
     (identityLink) =>
       identityLink.status === "rejected" || identityLink.status === "retired",
@@ -1292,13 +1288,16 @@ export default function CandidateReviewPage() {
       recommendation,
     ]),
   );
-  const nextRecommendedAction = sourceMetrics?.unappliedSourceNotesCount
-    ? "Review source updates in proposed dossier"
+  const sourceFileChangedSinceDraft = Boolean(
+    primaryDraft && (sourceMetrics?.unappliedSourceNotesCount ?? 0) > 0,
+  );
+  const nextRecommendedAction = sourceFileChangedSinceDraft
+    ? "Update Draft From Source File"
     : primaryDraft
-      ? "Open Proposed Dossier"
+      ? "Open Proposed Dossier Draft"
       : candidate?.status === "needs_more_evidence"
         ? "Add missing info"
-        : "Create Proposed Dossier";
+        : "Create Proposed Dossier Draft";
 
   async function postWorkflow(body: Record<string, unknown>) {
     setSaving(true);
@@ -1391,10 +1390,29 @@ export default function CandidateReviewPage() {
         candidateId,
       });
       setNotice(
-        `Draft created: ${data.draft?.fields.name ?? "draft"}. Open Proposed Dossier in the dedicated editor.`,
+        `Draft from Source File created: ${data.draft?.fields.name ?? "draft"}. Open Proposed Dossier Draft in the dedicated editor.`,
       );
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Failed to create draft.");
+    }
+  }
+
+  async function updateDraftFromSourceFile() {
+    if (!primaryDraft || !sourceFileChangedSinceDraft) return;
+    try {
+      const data = await postWorkflow({
+        action: "updateDraftFromSourceFile",
+        draftId: primaryDraft.id,
+      });
+      setNotice(
+        `Draft from Source File updated: ${data.draft?.fields.name ?? "draft"}. Public-safe draft remains unpublished for admin and Owner Review.`,
+      );
+    } catch (err) {
+      setNotice(
+        err instanceof Error
+          ? err.message
+          : "Failed to update draft from Source File.",
+      );
     }
   }
 
@@ -1460,7 +1478,7 @@ export default function CandidateReviewPage() {
                 ? "Existing public dossier target attached. Public dossier content was not changed."
                 : action === "markCandidateAsExistingDossierUpdate"
                   ? "Workflow record moved to Dossier Updates. Public dossier content was not changed."
-                  : "Dossier Seed promoted to a Case File / BNL Source File. Public dossiers were not changed.",
+                  : "Dossier Seed promoted to a BNL Source File. Public dossiers were not changed.",
       );
     } catch (err) {
       setNotice(
@@ -1605,6 +1623,39 @@ export default function CandidateReviewPage() {
       />
     );
 
+  const evidenceReceiptLanes = uniqueLabels([
+    ...(candidate.sourceLanes ?? []),
+    ...attachedRecommendations.flatMap((recommendation) => [
+      ...(recommendation.sourceLanes ?? []),
+      ...(recommendation.sourceTypes ?? []),
+    ]),
+  ]);
+  const publicSafeFactItems = sanitizeMeaningFirstItems(
+    [
+      ...(candidate.knownFacts ?? []),
+      ...(candidate.sourceFileNotes ?? [])
+        .filter((note) => note.status === "active" && note.publicSafe === true)
+        .map((note) => note.text),
+    ],
+    { subjectName: candidate.name, fallback: "No public-safe facts separated yet." },
+  );
+  const reviewOnlyNotes = sanitizeMeaningFirstItems(
+    [
+      ...(candidate.doNotSay ?? []),
+      ...(candidate.publicSafetyNotes ?? []),
+      ...(candidate.sourceFileNotes ?? [])
+        .filter(
+          (note) =>
+            note.status === "active" &&
+            (note.publicSafe === false ||
+              note.type === "do_not_say" ||
+              note.type === "public_safety"),
+        )
+        .map((note) => note.text),
+    ],
+    { subjectName: candidate.name, fallback: "No review-only evidence notes recorded." },
+  );
+
   return (
     <main className="pt-14 min-h-screen bg-background">
       <section className="border-b border-border bg-surface/80">
@@ -1689,7 +1740,7 @@ export default function CandidateReviewPage() {
             primaryDraft && (
               <div className="mt-4 border border-accent/60 bg-accent/10 p-3 text-sm text-accent">
                 <p>
-                  This Case File / BNL Source File has new info not yet applied to the Proposed Dossier.
+                  This BNL Source File has new info not yet applied to the Proposed Dossier.
                 </p>
                 <p className="mt-2 text-xs uppercase tracking-widest">
                   Use the primary Proposed Dossier action above to apply the new
@@ -1701,7 +1752,7 @@ export default function CandidateReviewPage() {
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-xs uppercase tracking-widest text-accent">
-                  Case File Refresh
+                  Source File status / refresh state
                 </p>
                 <p className="text-foreground">{refreshStatusLabel}</p>
                 <p className="mt-1">{refreshStatusDetail}</p>
@@ -1748,7 +1799,17 @@ export default function CandidateReviewPage() {
                     disabled={saving}
                     className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
                   >
-                    Create Proposed Dossier
+                    Create Proposed Dossier Draft
+                  </button>
+                )}
+                {primaryDraft && sourceFileChangedSinceDraft && (
+                  <button
+                    type="button"
+                    onClick={() => void updateDraftFromSourceFile()}
+                    disabled={saving}
+                    className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                  >
+                    Update Draft From Source File
                   </button>
                 )}
                 {primaryDraft && isDraftActive(primaryDraft) && (
@@ -1758,7 +1819,7 @@ export default function CandidateReviewPage() {
                     rel="noopener noreferrer"
                     className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background"
                   >
-                    Open Proposed Dossier
+                    Open Proposed Dossier Draft
                   </Link>
                 )}
               </div>
@@ -1810,7 +1871,7 @@ export default function CandidateReviewPage() {
                     disabled={saving}
                     className="border border-border px-4 py-2 text-foreground hover:border-accent hover:text-accent disabled:opacity-50"
                   >
-                    Move Back to Case File
+                    Move Back to BNL Source File
                   </button>
                 )}
                 {canPromoteCandidate && (
@@ -1822,7 +1883,7 @@ export default function CandidateReviewPage() {
                     disabled={saving}
                     className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
                   >
-                    Promote to Case File
+                    Promote to BNL Source File
                   </button>
                 )}
               </div>
@@ -1838,7 +1899,7 @@ export default function CandidateReviewPage() {
                     }
                     disabled={saving}
                     className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent disabled:opacity-50"
-                    title="Safe cleanup: removes this Case File from active dashboard lanes without deleting public dossiers or published data."
+                    title="Safe cleanup: removes this BNL Source File from active dashboard lanes without deleting public dossiers or published data."
                   >
                     Archive
                   </button>
@@ -1897,7 +1958,76 @@ export default function CandidateReviewPage() {
             ))}
           </div>
         </section>
-        <Section title="Identity Check">
+
+        <Section title="BNL take / why this file matters">
+          <p>
+            {sourceFileSummary?.currentRead ??
+              sourceFileReasonMeaning(candidate.reason, candidate.name)}
+          </p>
+          <p className="mt-2">
+            {sourceFileSummary?.whyTracked ??
+              sourceFileWhyNowMeaning(candidate.whyNow)}
+          </p>
+        </Section>
+
+        <Section title="Known facts">
+          {meaningFirstList(publicSafeFactItems, "No public-safe facts separated yet.", candidate.name)}
+        </Section>
+
+        <Section title="Evidence receipts / source lanes">
+          <div className="space-y-3">
+            <p>
+              Review-only evidence stays internal. Primary copy shows source lanes
+              and receipt counts instead of raw/private evidence refs.
+            </p>
+            <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
+              {(evidenceReceiptLanes.length ? evidenceReceiptLanes : ["Review-only evidence"]).map((lane) => (
+                <StatusBadge key={lane}>{lane}</StatusBadge>
+              ))}
+            </div>
+            <p>{attachedRecommendations.length} BNL Signal receipt{attachedRecommendations.length === 1 ? "" : "s"} attached.</p>
+          </div>
+        </Section>
+
+        <Section title="Source notes">
+          <p>
+            {sourceNotesSummary.noteCount} saved Source File note{sourceNotesSummary.noteCount === 1 ? "" : "s"}; {sourceNotesSummary.warningCount} review-only warning{sourceNotesSummary.warningCount === 1 ? "" : "s"}.
+          </p>
+          <p className="mt-2">
+            Source notes remain internal until an admin rewrites them into a
+            Public-safe draft.
+          </p>
+        </Section>
+
+        <Section title="Missing info / open questions">
+          {meaningFirstList(
+            [
+              ...(candidate.sourceFileSummary?.openQuestions ?? []),
+              ...(candidate.missingInfo ?? []),
+              ...attachedRecommendations.flatMap((recommendation) => recommendation.missingInfo ?? []),
+            ],
+            "No open questions recorded.",
+            candidate.name,
+          )}
+        </Section>
+
+        <Section title="Public-safety notes">
+          {meaningFirstList(
+            [
+              ...(candidate.publicSafetyNotes ?? []),
+              ...attachedRecommendations.flatMap((recommendation) => recommendation.publicSafetyNotes ?? []),
+            ],
+            "No public-safety notes recorded.",
+            candidate.name,
+          )}
+        </Section>
+
+        <Section title="Do-not-say / review-only notes">
+          {meaningFirstList(reviewOnlyNotes, "No review-only evidence notes recorded.", candidate.name)}
+        </Section>
+
+
+        <Section title="Identity links / aliases">
             <div className="space-y-5">
               <p className="border border-border/70 bg-background/20 p-3">
                 Identity links are internal routing/context tools. Resolve these before
@@ -1995,7 +2125,7 @@ export default function CandidateReviewPage() {
             {/* BNL Case File Report display lives inside DossierSourceFileSummaryPanel. */}
           </>
         )}
-        <Section title="Dossier Workbench / Proposed Dossier Status">
+        <Section title="Proposed Dossier status">
           {!primaryDraft ? (
             <div className="space-y-2">
               <p>No Proposed Dossier exists yet.</p>
@@ -2015,11 +2145,20 @@ export default function CandidateReviewPage() {
               </p>
               <p>
                 Owner review blocked until admins separate public-safe language
-                from internal Case File context in the dedicated Proposed
+                from internal BNL Source File context in the dedicated Proposed
                 Dossier editor.
               </p>
             </div>
           )}
+        </Section>
+
+        <Section title="Next recommended action">
+          <p className="text-foreground">{nextRecommendedAction}</p>
+          <p className="mt-2">
+            Draft from Source File actions create or update a Public-safe draft
+            only. They do not publish, confirm aliases, merge identities, or
+            mutate public dossier pages. Owner Review remains the final approval lane.
+          </p>
         </Section>
 
         <details
@@ -2102,14 +2241,14 @@ export default function CandidateReviewPage() {
           className="border border-border bg-surface p-5 space-y-3"
         >
           <h2 className="text-2xl font-bold text-foreground">
-            Add to Case File / BNL Source File
+            Add to BNL Source File
           </h2>
           <p className="text-sm text-muted">
-            This adds information to this subject&apos;s Case File / BNL Source File. It
+            This adds information to this subject&apos;s BNL Source File. It
             does not directly edit the proposed dossier.
           </p>
           <p className="text-sm text-muted">
-            Add to Case File / BNL Source File = add a source note, correction, evidence,
+            Add to BNL Source File = add a source note, correction, evidence,
             warning, public-safe fact, or missing-info item to this subject.
             This source file remains one subject/entity. If this information
             belongs to a different subject, create or wait for a separate BNL
@@ -2213,18 +2352,12 @@ export default function CandidateReviewPage() {
 
 
 
-        <DossierSourceFileArchiveRawData latestSourceFileArchive={candidate.latestSourceFileArchive} />
-
-
-
-
-
         <details
           open={hasSavedOperatorSourceSummary}
           className="border border-border bg-surface p-5 text-sm text-muted"
         >
           <summary className="cursor-pointer text-xl font-bold text-foreground">
-            Operator Case File Summary
+            Operator Source File Summary
           </summary>
           <p className="mt-3 text-sm text-muted max-w-4xl">
             Optional internal override for the top Source File summary. Use only
@@ -2284,10 +2417,10 @@ export default function CandidateReviewPage() {
                 disabled={saving}
                 className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent disabled:opacity-50"
               >
-                Save Operator Case File Summary
+                Save Operator Source File Summary
               </button>
               <span className="text-muted self-center">
-                Optional override only; use Add to Case File / BNL Source File for normal
+                Optional override only; use Add to BNL Source File for normal
                 source updates.
               </span>
             </div>
@@ -2448,11 +2581,13 @@ export default function CandidateReviewPage() {
             Diagnostics — collapsed by default
           </summary>
           <p className="mt-3 mb-4">
-            Diagnostics only. Not Case File claims. Raw, technical, and legacy
+            Diagnostics only. Not BNL Source File claims. Raw, technical, and legacy
             supporting fields stay here so the primary review flow remains
             concise.
           </p>
-          <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Raw Source File Data stays inside collapsed diagnostics. */}
+          <DossierSourceFileArchiveRawData latestSourceFileArchive={candidate.latestSourceFileArchive} />
+          <section className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
             <Section title="Reason">
               <p>{sourceFileReasonMeaning(candidate.reason, candidate.name)}</p>
             </Section>
@@ -2507,7 +2642,7 @@ export default function CandidateReviewPage() {
               {meaningFirstList(candidate.knownFacts, "—", candidate.name)}
             </Section>
             <Section title="Corrections / extra notes">
-              <p>Saved notes now live in Case File / BNL Source File Notes above.</p>
+              <p>Saved notes now live in BNL Source File Notes above.</p>
             </Section>
             <Section title="Missing Info">
               {meaningFirstList(candidate.missingInfo, "—", candidate.name)}

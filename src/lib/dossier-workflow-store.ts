@@ -4,6 +4,7 @@ import { databasePage, type DatabaseEntry } from "@/content";
 import {
   DOSSIER_PUBLIC_ROLE_PLACEHOLDER,
   DOSSIER_PUBLIC_SUMMARY_PLACEHOLDER,
+  containsDossierPublicCopyJunk,
   isDossierPublicCopyPlaceholder,
   sanitizeDossierPublicCopy,
   validateDossierPublicDraftFields,
@@ -6014,11 +6015,124 @@ function cleanDraftSeedTags(values: string[] | undefined): string[] {
 function cleanDraftSeedPrimaryLink(
   link: DossierWorkflowLink | undefined,
 ): DossierWorkflowLink | undefined {
-  if (!link?.url) return undefined;
+  if (!link?.url || link.publicSafe === false) return undefined;
   const label = sanitizeDossierPublicCopy(link.label);
   return {
     ...link,
     label: label || "Featured link",
+    publicSafe: true,
+  };
+}
+
+function uniqueDraftSeedLines(values: Array<string | undefined>, limit = 6): string[] {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const value of values) {
+    const clean = cleanDraftSeedText(value);
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    lines.push(clean);
+    if (lines.length >= limit) break;
+  }
+  return lines;
+}
+
+function assemblePublicSafeDraftFromSourceFile(input: {
+  candidate: DossierCandidate;
+  recommendations: DossierRecommendation[];
+  now: string;
+}): Pick<DossierDraft, "fields" | "sourceFileDraftMetadata"> {
+  const { candidate, recommendations, now } = input;
+  const publicSafeNotes = (candidate.sourceFileNotes ?? []).filter(
+    (note) => note.status === "active" && note.publicSafe === true,
+  );
+  const publicSafeFacts = uniqueDraftSeedLines([
+    ...(candidate.knownFacts ?? []),
+    ...publicSafeNotes
+      .filter((note) => note.type === "fact" || note.type === "correction")
+      .map((note) => note.text),
+    ...recommendations.flatMap((recommendation) => recommendation.publicUseCandidates ?? []),
+  ], 5);
+  const privateBoundaryCount =
+    (candidate.doNotSay ?? []).length +
+    (candidate.publicSafetyNotes ?? []).length +
+    (candidate.sourceFileNotes ?? []).filter(
+      (note) => note.status === "active" && note.publicSafe === false,
+    ).length;
+  const ownerReviewNotes = uniqueDraftSeedLines([
+    privateBoundaryCount > 0
+      ? `${privateBoundaryCount} review-only evidence note${privateBoundaryCount === 1 ? "" : "s"} must stay in admin metadata.`
+      : undefined,
+    "Owner Review should verify every public-facing claim before approval.",
+  ], 5);
+  const boundaries = uniqueDraftSeedLines([
+    ...(candidate.missingInfo ?? [])
+      .filter((item) => !containsDossierPublicCopyJunk(item) && !/owner-approved public copy|public-safe wording/i.test(item))
+      .map((item) => `Needs review before claiming: ${item}`),
+    privateBoundaryCount > 0
+      ? "Internal admin metadata exists and must not be copied into public text."
+      : undefined,
+    "Owner Review must approve this Proposed Dossier before any public use.",
+  ], 6);
+  const connection = uniqueDraftSeedLines([
+    candidate.reason,
+    candidate.whyNow,
+    ...recommendations.map((recommendation) => recommendation.reason),
+  ], 2);
+  const summary = uniqueDraftSeedLines([
+    candidate.sourceFileSummary?.summaryText,
+    candidate.evidenceSummary,
+    publicSafeFacts[0],
+  ], 1)[0];
+  const role = DOSSIER_PUBLIC_ROLE_PLACEHOLDER;
+  const notesSections = [
+    publicSafeFacts.length
+      ? `Public-safe facts:\n${publicSafeFacts.map((item) => `- ${item}`).join("\n")}`
+      : undefined,
+    connection.length
+      ? `Connection to BARCODE Network:\n${connection.map((item) => `- ${item}`).join("\n")}`
+      : undefined,
+    boundaries.length
+      ? `Boundaries / what not to claim:\n${boundaries.map((item) => `- ${item}`).join("\n")}`
+      : undefined,
+    ownerReviewNotes.length
+      ? `Owner-review notes:\n${ownerReviewNotes.map((item) => `- ${item}`).join("\n")}`
+      : undefined,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  return {
+    fields: normalizeDraftFields({
+      name: cleanDraftSeedText(candidate.name) ?? candidate.name,
+      category: candidate.recommendedCategory,
+      kind: candidate.recommendedKind,
+      ecosystemLane: candidate.recommendedEcosystemLane,
+      identityAuthority: candidate.recommendedIdentityAuthority,
+      status: candidate.recommendedStatus ?? "PENDING",
+      clearance: candidate.recommendedClearance ?? "PUBLIC",
+      origin: candidate.recommendedOrigin ?? "UNVERIFIED",
+      role: role ?? DOSSIER_PUBLIC_ROLE_PLACEHOLDER,
+      summary: summary ?? DOSSIER_PUBLIC_SUMMARY_PLACEHOLDER,
+      notes: notesSections,
+      tags: cleanDraftSeedTags(candidate.recommendedTags),
+      proposedTags: cleanDraftSeedTags(candidate.proposedTags),
+      primaryLink: cleanDraftSeedPrimaryLink(candidate.primaryLink),
+      files: [],
+    }),
+    sourceFileDraftMetadata: {
+      sourceCandidateId: candidate.id,
+      sourceCandidateUpdatedAt: candidate.updatedAt,
+      sourceFileNoteIds: publicSafeNotes.map((note) => note.id),
+      recommendationIds: recommendations.map((recommendation) => recommendation.id),
+      assembledAt: now,
+      publicSafeDraft: true,
+      reviewOnlyEvidence: true,
+      autoConfirmedIdentityLinks: false,
+      publicPagesMutated: false,
+    },
   };
 }
 
@@ -6045,32 +6159,19 @@ export async function createDraftFromCandidate(
       return currentState;
     }
 
-    const publicSummary = cleanDraftSeedText(candidate.evidenceSummary);
-    const publicTags = cleanDraftSeedTags(candidate.recommendedTags);
-    const publicProposedTags = cleanDraftSeedTags(candidate.proposedTags);
-    const publicPrimaryLink = cleanDraftSeedPrimaryLink(candidate.primaryLink);
+    const assembledDraft = assemblePublicSafeDraftFromSourceFile({
+      candidate,
+      recommendations: currentState.recommendations.filter(
+        (recommendation) => recommendation.targetCandidateId === candidate.id,
+      ),
+      now,
+    });
 
     draft = {
       id: createDraftId(),
       candidateId: candidate.id,
       status: "draft",
-      fields: normalizeDraftFields({
-        name: candidate.name,
-        category: candidate.recommendedCategory,
-        kind: candidate.recommendedKind,
-        ecosystemLane: candidate.recommendedEcosystemLane,
-        identityAuthority: candidate.recommendedIdentityAuthority,
-        status: candidate.recommendedStatus ?? "PENDING",
-        clearance: candidate.recommendedClearance ?? "PUBLIC",
-        origin: candidate.recommendedOrigin ?? "UNVERIFIED",
-        role: DOSSIER_PUBLIC_ROLE_PLACEHOLDER,
-        summary: publicSummary ?? DOSSIER_PUBLIC_SUMMARY_PLACEHOLDER,
-        notes: "",
-        tags: publicTags,
-        proposedTags: publicProposedTags,
-        primaryLink: publicPrimaryLink,
-        files: [],
-      }),
+      ...assembledDraft,
       createdAt: now,
       updatedAt: now,
     };
@@ -6083,6 +6184,50 @@ export async function createDraftFromCandidate(
   });
 
   return draft;
+}
+
+export async function updateDraftFromSourceFile(
+  draftId: string,
+): Promise<DossierDraft | null> {
+  const now = new Date().toISOString();
+  let updatedDraft: DossierDraft | null = null;
+
+  await updateDossierWorkflowState((currentState) => {
+    const draft = currentState.drafts.find((item) => item.id === draftId);
+    if (!draft || draft.status === "published" || draft.status === "owner_approved") {
+      return currentState;
+    }
+    const candidate = currentState.candidates.find(
+      (item) => item.id === draft.candidateId,
+    );
+    if (!candidate) return currentState;
+
+    const assembledDraft = assemblePublicSafeDraftFromSourceFile({
+      candidate,
+      recommendations: currentState.recommendations.filter(
+        (recommendation) => recommendation.targetCandidateId === candidate.id,
+      ),
+      now,
+    });
+
+    const drafts = currentState.drafts.map((item) => {
+      if (item.id !== draftId) return item;
+      updatedDraft = {
+        ...item,
+        ...assembledDraft,
+        updatedAt: now,
+      };
+      return updatedDraft;
+    });
+
+    return {
+      ...currentState,
+      drafts,
+      updatedAt: now,
+    };
+  });
+
+  return updatedDraft;
 }
 
 export async function saveDossierDraft(

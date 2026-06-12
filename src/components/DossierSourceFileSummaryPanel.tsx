@@ -8,6 +8,7 @@ import type {
   DossierSourceFileCaseReportV1,
   DossierSourceFileNote,
 } from "@/lib/dossier-workflow";
+import type { DossierDraftBlueprint } from "@/lib/dossier-classification";
 import {
   formatDossierSummaryBadge,
   type DossierSourceFileSummary,
@@ -572,6 +573,78 @@ export function DossierSourceFileArchiveRawData({ latestSourceFileArchive }: { l
   );
 }
 
+
+function BlueprintList({ items, empty = "—" }: { items?: string[]; empty?: string }) {
+  const safeItems = (items ?? []).filter(Boolean);
+  if (!safeItems.length) return <p className="text-muted">{empty}</p>;
+  return (
+    <ul className="list-disc space-y-1 pl-5 text-foreground">
+      {safeItems.slice(0, 6).map((item, index) => (
+        <li key={`${index}-${item.slice(0, 24)}`}>{item}</li>
+      ))}
+    </ul>
+  );
+}
+
+function DossierBlueprintView({ blueprint }: { blueprint: DossierDraftBlueprint }) {
+  return (
+    <Section
+      title="Dossier Blueprint"
+      tone="caution"
+      helper="Classification and readiness foundation only. This is not public dossier prose and does not confirm identities or merge aliases."
+    >
+      <div className="space-y-4">
+        <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <SnapshotItem label="Category" value={blueprint.classification.category} />
+          <SnapshotItem label="Kind" value={blueprint.classification.kind} />
+          <SnapshotItem label="Ecosystem lane" value={blueprint.classification.ecosystemLane} />
+          <SnapshotItem label="Identity authority" value={blueprint.classification.identityAuthority} />
+          <SnapshotItem label="Confidence" value={blueprint.classification.confidence} />
+          <SnapshotItem label="Future prefix" value={`${blueprint.classification.recommendedDesignationPrefix}-###`} />
+          <SnapshotItem label="Readiness" value={`${blueprint.readiness.label} (${blueprint.readiness.score}/100)`} />
+          <SnapshotItem label="Evidence counts" value={`${blueprint.evidenceCounts.publicSafeFacts} public-safe / ${blueprint.evidenceCounts.reviewOnlyItems} review-only`} />
+        </dl>
+        <section className="border border-border/50 bg-background/30 p-3">
+          <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Recommended next action</h4>
+          <p className="text-foreground">{blueprint.readiness.recommendedNextAction}</p>
+        </section>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <section className="border border-border/50 bg-background/30 p-3">
+            <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Why this classification</h4>
+            <BlueprintList items={blueprint.classification.reasons} />
+          </section>
+          <section className="border border-border/50 bg-background/30 p-3">
+            <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Blockers / missing info</h4>
+            <BlueprintList items={[...blueprint.readiness.blockers, ...blueprint.missingInfoQuestions]} empty="No blockers recorded." />
+          </section>
+          <section className="border border-border/50 bg-background/30 p-3">
+            <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Suggested tags</h4>
+            <BlueprintList items={blueprint.suggestedTags.tags.map((item) => `${item.tag} (${item.confidence})`)} />
+          </section>
+          <section className="border border-border/50 bg-background/30 p-3">
+            <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Proposed tags</h4>
+            <BlueprintList items={blueprint.suggestedTags.proposedTags.map((item) => `${item.tag} — ${item.reason}`)} empty="No new/proposed tags." />
+          </section>
+          <section className="border border-border/50 bg-background/30 p-3">
+            <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Public-safe ingredients</h4>
+            <BlueprintList items={blueprint.safeSummaryIngredients} empty="No public-safe summary ingredients yet." />
+          </section>
+          <section className="border border-border/50 bg-background/30 p-3">
+            <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Queue / music footprint</h4>
+            <p className="text-foreground">{blueprint.queueMusicFootprintStatus}</p>
+          </section>
+        </div>
+        <details className="border border-border/50 bg-background/20 p-3 text-xs text-muted">
+          <summary className="cursor-pointer font-semibold text-foreground">Technical provenance</summary>
+          <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap">
+            {JSON.stringify(blueprint.adminOnlyProvenance, null, 2)}
+          </pre>
+        </details>
+      </div>
+    </Section>
+  );
+}
+
 function formatSnapshotDate(value?: string) {
   if (!value) return "—";
   const parsed = new Date(value);
@@ -617,6 +690,7 @@ export function DossierSourceFileSummaryPanel({
   latestRecommendationTimestamp,
   sourceFileTargetStatus,
   latestSourceFileArchive,
+  blueprint,
 }: {
   summary: DossierSourceFileSummary;
   entityReadout?: DossierEntityActivityReadout | null;
@@ -628,6 +702,7 @@ export function DossierSourceFileSummaryPanel({
   latestRecommendationTimestamp?: string;
   sourceFileTargetStatus?: string;
   latestSourceFileArchive?: DossierSourceFileArchiveMetadata;
+  blueprint?: DossierDraftBlueprint;
 }) {
   const report = normalizeCaseReport(latestSourceFileArchive);
   const interimBrief = normalizeInterimBrief(latestSourceFileArchive);
@@ -680,6 +755,8 @@ export function DossierSourceFileSummaryPanel({
           Summary badge: {formatDossierSummaryBadge(summary.summarySource)}.
         </p>
       </Section>
+
+      {blueprint && <DossierBlueprintView blueprint={blueprint} />}
 
       {hasArchiveDiagnostics && (
         <Section title="Archive ingest diagnostics" helper="Admin-only preservation check. These fields are safe booleans and path labels, not raw archive secrets.">

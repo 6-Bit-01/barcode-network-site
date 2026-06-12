@@ -3,6 +3,18 @@ import type {
   DossierIdentityAuthority,
   PublicDossierKind,
 } from "@/content";
+import type { DossierCategory } from "@/lib/dossier-workflow";
+
+export const DOSSIER_CATEGORY_OPTIONS = [
+  "Entity",
+  "Personnel",
+  "Artist",
+  "Collaborator",
+  "Community",
+  "Sponsor",
+  "Interface",
+  "Production",
+] as const satisfies readonly DossierCategory[];
 
 export const DOSSIER_IDENTITY_AUTHORITY_OPTIONS = [
   "barcode_controlled",
@@ -19,6 +31,7 @@ export const DOSSIER_ECOSYSTEM_LANE_OPTIONS = [
   "community_mod",
   "radio_support",
   "technical_operator",
+  "artist",
   "collaborator",
   "community_member",
   "radio_regular",
@@ -26,6 +39,7 @@ export const DOSSIER_ECOSYSTEM_LANE_OPTIONS = [
   "radio_entity",
   "infrastructure",
   "production",
+  "external_platform",
   "unknown",
 ] as const satisfies readonly DossierEcosystemLane[];
 
@@ -48,6 +62,7 @@ export const DOSSIER_KIND_OPTIONS = [
   "community_member",
   "radio_regular",
   "radio_entity",
+  "unknown",
 ] as const satisfies readonly PublicDossierKind[];
 
 export const DOSSIER_KIND_GUIDE = {
@@ -74,6 +89,7 @@ export const DOSSIER_KIND_GUIDE = {
   community_member: "Recurring or active community member dossier form.",
   radio_regular: "Recurring BARCODE Radio participant dossier form.",
   radio_entity: "BARCODE Radio-created entity/anomaly such as Studio Rats.",
+  unknown: "Unclassified dossier form pending operator review.",
 } as const satisfies Record<PublicDossierKind, string>;
 
 export const DOSSIER_TAXONOMY_GUIDE = {
@@ -88,7 +104,13 @@ export const DOSSIER_TAXONOMY_GUIDE = {
   categoryGuide: {
     Entity: "BARCODE entities, characters, anomalies, and entity-like systems.",
     Personnel:
-      "Community-owned people, personas, moderators, collaborators, or operators represented as personnel records.",
+      "Official BARCODE staff, operators, moderators, admin roles, or known personnel where the formal role matters more than general community activity.",
+    Artist:
+      "Music artists, performers, submitters, producers, rappers, singers, bands, or music identities whose main relevance is music, submissions, releases, or performance.",
+    Collaborator:
+      "People or identities directly contributing to BARCODE projects, creative assets, playlists, features, production, events, graphics, radio segments, tech, or special initiatives.",
+    Community:
+      "Active community members, recurring viewers, supporters, chat regulars, fan/support identities, and people whose dossier value is participation/presence rather than formal staff, music, or direct collaboration.",
     Sponsor: "Sponsor or commercial-relationship records.",
     Interface:
       "Platforms, community surfaces, submission surfaces, and other interaction layers.",
@@ -103,6 +125,7 @@ export const DOSSIER_TAXONOMY_GUIDE = {
     community_mod: "Community-owned moderators/helpers.",
     radio_support: "Support roles around BARCODE Radio.",
     technical_operator: "Site, bot, or infrastructure helpers.",
+    artist: "Artists, performers, submitters, producers, or music identities.",
     collaborator: "Musical or creative collaborators.",
     community_member: "Recurring/active BARCODE Network members.",
     radio_regular: "Recurring BARCODE Radio participants.",
@@ -110,6 +133,7 @@ export const DOSSIER_TAXONOMY_GUIDE = {
     radio_entity: "BARCODE Radio-created entities/anomalies like Studio Rats.",
     infrastructure: "Platforms, interfaces, systems, and tools.",
     production: "Shows, albums, arcs, and programs.",
+    external_platform: "Third-party or external platform surfaces.",
     unknown: "Not classified yet.",
   } satisfies Record<DossierEcosystemLane, string>,
   identityAuthorityGuide: {

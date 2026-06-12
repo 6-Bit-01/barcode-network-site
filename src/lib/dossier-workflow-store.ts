@@ -9,6 +9,7 @@ import {
   sanitizeDossierPublicCopy,
   validateDossierPublicDraftFields,
 } from "@/lib/dossier-public-copy-guard";
+import { createDossierDraftBlueprint } from "@/lib/dossier-classification";
 import {
   scoreManualDossierCandidate,
   type CreateDossierRecommendationInput,
@@ -1499,8 +1500,10 @@ function candidateTypeFromRecommendation(
     "recommendedCategory" | "recommendedKind"
   >,
 ): DossierCandidate["candidateType"] {
-  if (recommendation.recommendedKind === "artist") return "artist";
-  if (recommendation.recommendedKind === "community_member") {
+  if (recommendation.recommendedKind === "artist" || recommendation.recommendedCategory === "Artist") return "artist";
+  if (recommendation.recommendedKind === "collaborator" || recommendation.recommendedCategory === "Collaborator") return "collaborator";
+  if (recommendation.recommendedKind === "moderator") return "personnel";
+  if (recommendation.recommendedKind === "community_member" || recommendation.recommendedKind === "radio_regular" || recommendation.recommendedCategory === "Community") {
     return "community_member";
   }
   if (recommendation.recommendedCategory === "Production") return "production";
@@ -5384,8 +5387,10 @@ export function archiveDossierRecommendation(
 function candidateTypeFromPublicDossierEntry(
   entry: DatabaseEntry,
 ): DossierCandidate["candidateType"] {
-  if (entry.kind === "artist") return "artist";
-  if (entry.kind === "community_member" || entry.category === "Personnel") {
+  if (entry.kind === "artist" || entry.category === "Artist") return "artist";
+  if (entry.kind === "collaborator" || entry.category === "Collaborator") return "collaborator";
+  if (entry.kind === "moderator" || entry.category === "Personnel") return "personnel";
+  if (entry.kind === "community_member" || entry.kind === "radio_regular" || entry.category === "Community") {
     return "community_member";
   }
   if (entry.category === "Production") return "production";
@@ -6045,107 +6050,61 @@ function assemblePublicSafeDraftFromSourceFile(input: {
   now: string;
 }): Pick<DossierDraft, "fields" | "sourceFileDraftMetadata"> {
   const { candidate, recommendations, now } = input;
+  const blueprint = createDossierDraftBlueprint({ candidate, recommendations });
   const publicSafeNotes = (candidate.sourceFileNotes ?? []).filter(
     (note) => note.status === "active" && note.publicSafe === true,
   );
   const publicSafeFacts = uniqueDraftSeedLines([
-    ...(candidate.knownFacts ?? []),
-    ...publicSafeNotes
-      .filter((note) => note.type === "fact" || note.type === "correction")
-      .map((note) => note.text),
-    ...recommendations.flatMap((recommendation) => recommendation.publicUseCandidates ?? []),
+    ...blueprint.publicSafeFacts.confirmedPublicFacts,
+    ...blueprint.publicSafeFacts.publicRoleHints,
   ], 5);
-  const privateBoundaryCount =
-    (candidate.doNotSay ?? []).length +
-    (candidate.publicSafetyNotes ?? []).length +
-    (candidate.sourceFileNotes ?? []).filter(
-      (note) => note.status === "active" && note.publicSafe === false,
-    ).length;
-  const ownerReviewNotes = uniqueDraftSeedLines([
-    privateBoundaryCount > 0
-      ? `${privateBoundaryCount} review-only evidence note${privateBoundaryCount === 1 ? "" : "s"} must stay in admin metadata.`
+  const readinessNote = `Dossier Blueprint readiness: ${blueprint.readiness.label}. ${blueprint.readiness.recommendedNextAction}`;
+  const boundaryLines = uniqueDraftSeedLines([
+    readinessNote,
+    blueprint.evidenceCounts.reviewOnlyItems > 0
+      ? "Admin-only evidence exists and must not be copied into public text."
       : undefined,
-    "Owner Review should verify every public-facing claim before approval.",
-  ], 5);
-  const boundaries = uniqueDraftSeedLines([
-    ...(candidate.missingInfo ?? [])
-      .filter((item) => !containsDossierPublicCopyJunk(item) && !/owner-approved public copy|public-safe wording/i.test(item))
+    ...blueprint.missingInfoQuestions
+      .filter((item) => !/owner-approved public copy|public-safe wording/i.test(item))
       .map((item) => `Needs review before claiming: ${item}`),
-    privateBoundaryCount > 0
-      ? "Internal admin metadata exists and must not be copied into public text."
-      : undefined,
-    "Owner Review must approve this Proposed Dossier before any public use.",
-  ], 6);
-  const connection = uniqueDraftSeedLines([
-    candidate.reason,
-    candidate.whyNow,
-    ...recommendations.map((recommendation) => recommendation.reason),
-  ], 2);
-  const activityProfile = uniqueDraftSeedLines([
-    ...recommendations.flatMap((recommendation) => recommendation.activityFrequencySummary ?? []),
-    ...recommendations.flatMap((recommendation) => recommendation.recentActivitySummary ?? []),
-    ...recommendations.flatMap((recommendation) => recommendation.communitySignals ?? []),
-    ...recommendations.flatMap((recommendation) => recommendation.conversationHighlights ?? []),
-  ], 5);
-  const confirmedQueueFootprint = uniqueDraftSeedLines([
-    ...recommendations.map((recommendation) => recommendation.queueSubmissionStatus),
-    ...recommendations.map((recommendation) => recommendation.queueSubmissionNote),
-  ], 4);
-  const musicFootprint = confirmedQueueFootprint.length > 0
-    ? uniqueDraftSeedLines([
-        ...confirmedQueueFootprint,
-        ...recommendations.flatMap((recommendation) => recommendation.musicSignals ?? []),
-      ], 5)
-    : [];
+  ], 8);
   const dossierIntelligence = uniqueDraftSeedLines([
     candidate.sourceFileSummary?.summaryText,
     candidate.evidenceSummary,
-    activityProfile[0],
-    publicSafeFacts[0],
-  ], 2);
-  const summary = dossierIntelligence[0];
-  const role = DOSSIER_PUBLIC_ROLE_PLACEHOLDER;
-  const notesSections = [
-    dossierIntelligence.length
-      ? `BNL Dossier Intelligence:\n${dossierIntelligence.map((item) => `- ${item}`).join("\n")}`
-      : undefined,
-    activityProfile.length
-      ? `Community Activity Profile:\n${activityProfile.map((item) => `- ${item}`).join("\n")}`
-      : undefined,
-    musicFootprint.length
-      ? `Queue / Music Footprint:\n${musicFootprint.map((item) => `- ${item}`).join("\n")}`
-      : undefined,
-    publicSafeFacts.length
-      ? `Public-safe facts:\n${publicSafeFacts.map((item) => `- ${item}`).join("\n")}`
-      : undefined,
-    connection.length
-      ? `Connection to BARCODE Network:\n${connection.map((item) => `- ${item}`).join("\n")}`
-      : undefined,
-    boundaries.length
-      ? `Boundaries / what not to claim:\n${boundaries.map((item) => `- ${item}`).join("\n")}`
-      : undefined,
-    ownerReviewNotes.length
-      ? `Owner-review notes:\n${ownerReviewNotes.map((item) => `- ${item}`).join("\n")}`
-      : undefined,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  ], 2).filter((item) => !/starter note|starter evidence/i.test(item));
+  const connection = uniqueDraftSeedLines([candidate.reason, candidate.whyNow], 2);
+  const publicFactSection = uniqueDraftSeedLines(publicSafeFacts, 5);
+  const ownerReviewLines = uniqueDraftSeedLines([
+    "Owner Review must approve this Proposed Dossier before any public use.",
+    ...blueprint.ownerReviewWarnings.map((item) => item.replace(/Review-only evidence/gi, "Admin-only evidence")),
+  ], 8);
+  const ownerReviewNotes = [
+    dossierIntelligence.length ? `BNL Dossier Intelligence:\n${dossierIntelligence.map((item) => `- ${item}`).join("\n")}` : undefined,
+    publicFactSection.length ? `Public-safe facts:\n${publicFactSection.map((item) => `- ${item}`).join("\n")}` : undefined,
+    connection.length ? `Connection to BARCODE Network:\n${connection.map((item) => `- ${item}`).join("\n")}` : undefined,
+    boundaryLines.length ? `Boundaries / what not to claim:\n${boundaryLines.map((item) => `- ${item}`).join("\n")}` : undefined,
+    ownerReviewLines.length ? `Owner-review notes:\n${ownerReviewLines.map((item) => `- ${item}`).join("\n")}` : undefined,
+  ].filter(Boolean).join("\n\n");
+  const proposedTags = uniqueDraftSeedLines([
+    ...blueprint.suggestedTags.proposedTags.map((tag) => tag.tag),
+    ...(candidate.proposedTags ?? []),
+  ], 12);
 
   return {
     fields: normalizeDraftFields({
       name: cleanDraftSeedText(candidate.name) ?? candidate.name,
-      category: candidate.recommendedCategory,
-      kind: candidate.recommendedKind,
-      ecosystemLane: candidate.recommendedEcosystemLane,
-      identityAuthority: candidate.recommendedIdentityAuthority,
+      category: candidate.recommendedCategory ?? blueprint.classification.category,
+      kind: candidate.recommendedKind ?? blueprint.classification.kind,
+      ecosystemLane: candidate.recommendedEcosystemLane ?? blueprint.classification.ecosystemLane,
+      identityAuthority: candidate.recommendedIdentityAuthority ?? blueprint.classification.identityAuthority,
       status: candidate.recommendedStatus ?? "PENDING",
       clearance: candidate.recommendedClearance ?? "PUBLIC",
       origin: candidate.recommendedOrigin ?? "UNVERIFIED",
-      role: role ?? DOSSIER_PUBLIC_ROLE_PLACEHOLDER,
-      summary: summary ?? DOSSIER_PUBLIC_SUMMARY_PLACEHOLDER,
-      notes: notesSections,
-      tags: cleanDraftSeedTags(candidate.recommendedTags),
-      proposedTags: cleanDraftSeedTags(candidate.proposedTags),
+      role: DOSSIER_PUBLIC_ROLE_PLACEHOLDER,
+      summary: dossierIntelligence[0] ?? DOSSIER_PUBLIC_SUMMARY_PLACEHOLDER,
+      notes: ownerReviewNotes,
+      tags: cleanDraftSeedTags(blueprint.suggestedTags.tags.map((tag) => tag.tag)),
+      proposedTags: cleanDraftSeedTags(proposedTags),
       primaryLink: cleanDraftSeedPrimaryLink(candidate.primaryLink),
       files: [],
     }),

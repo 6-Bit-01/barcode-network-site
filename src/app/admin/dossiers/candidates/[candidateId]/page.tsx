@@ -34,6 +34,7 @@ import {
   sourceFileReasonMeaning,
   sourceFileWhyNowMeaning,
 } from "@/lib/dossier-source-memory-meaning";
+import { createDossierDraftBlueprint } from "@/lib/dossier-classification";
 
 type WorkflowPayload = {
   candidates: DossierCandidate[];
@@ -1882,6 +1883,10 @@ export default function CandidateReviewPage() {
     sourceFileChangedSinceDraft,
     readyForDraft,
   });
+  const blueprint = createDossierDraftBlueprint({
+    candidate,
+    recommendations: attachedRecommendations,
+  });
   const entityType = inferEntityType({ candidate, activitySignals, musicSignals });
   const activityLevel =
     sourceFileSummary?.substanceLevel === "strong"
@@ -2553,6 +2558,7 @@ export default function CandidateReviewPage() {
                   ? "existing dossier update"
                   : "active source file"
               }
+              blueprint={blueprint}
             />
             {/* BNL Case File Report display lives inside DossierSourceFileSummaryPanel. */}
           </>

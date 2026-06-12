@@ -284,6 +284,7 @@ export type DossierEcosystemLane =
   | "community_mod"
   | "radio_support"
   | "technical_operator"
+  | "artist"
   | "collaborator"
   | "community_member"
   | "radio_regular"
@@ -291,6 +292,7 @@ export type DossierEcosystemLane =
   | "radio_entity"
   | "infrastructure"
   | "production"
+  | "external_platform"
   | "unknown";
 
 export type PublicDossierKind =
@@ -311,7 +313,8 @@ export type PublicDossierKind =
   | "collaborator"
   | "community_member"
   | "radio_regular"
-  | "radio_entity";
+  | "radio_entity"
+  | "unknown";
 
 export type PublicDossierLifecycle =
   | "active"
@@ -377,7 +380,7 @@ export type DatabaseEntry = {
   id: string;
   name: string;
   image: string;
-  category: "Entity" | "Personnel" | "Sponsor" | "Interface" | "Production";
+  category: "Entity" | "Personnel" | "Artist" | "Collaborator" | "Community" | "Sponsor" | "Interface" | "Production";
   status: "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN";
   clearance: "PUBLIC" | "INTERNAL" | "RESTRICTED";
   role: string;
@@ -403,8 +406,8 @@ export type DatabaseEntry = {
 };
 
 // Designation prefixes:
-//   EN-### = Entity | PE-### = Personnel | SP-### = Sponsor | IF-### = Interface | PD-### = Production
-// Categories: Entity | Personnel | Sponsor | Interface | Production
+//   EN-### = Entity | PE-### = Personnel | AR-### = Artist | CO-### = Collaborator | CM-### = Community | SP-### = Sponsor | IF-### = Interface | PD-### = Production
+// Categories: Entity | Personnel | Artist | Collaborator | Community | Sponsor | Interface | Production
 // Statuses:   ACTIVE | INACTIVE | ARCHIVED | PENDING | UNKNOWN
 // Clearance:  PUBLIC | INTERNAL | RESTRICTED
 // Origin:     KNOWN | UNKNOWN | UNVERIFIED | WITHHELD

@@ -1420,7 +1420,7 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
     "Dossier Updates",
     "Source Files",
     "Needs Info",
-    "Ready for Dossier",
+    "Proposed Dossiers",
     "Owner Review waiting",
     "Archive / Dismissed / Trash",
     "Manual Signal",
@@ -2138,11 +2138,11 @@ test("Population Method Audit renders read-only admin intake map states", () => 
 
   for (const label of [
     "Population Method Audit",
-    "Population Method:",
-    "populationMethodHealthy ? \"healthy\" : \"needs review\"",
+    "Population Method Audit: clear",
+    "populationMethodHealthy ? \"Population Method Audit: clear\" : \"Population Method Audit: needs review\"",
     "Population Method Audit / Intake Map",
     "All resolved records have visible destinations or valid archive/diagnostic status. No orphaned intake records detected.",
-    "intake records need population review.",
+    "records need attention.",
     "Intake Summary",
     "BNL recommendations",
     "manual admin records",
@@ -2180,11 +2180,12 @@ test("Population Method Audit renders read-only admin intake map states", () => 
 
   assert.match(page, /createDossierPopulationMethodAudit/);
   assert.match(page, /open=\{!populationMethodHealthy\}/);
+  assert.match(page, /populationMethodAudit\.warnings\.length === 0 &&[\s\S]*populationMethodNeedsReviewCount === 0/);
   assert.doesNotMatch(source("src/app/database/[slug]/page.tsx"), /Population Method Audit|Intake Map|Copy Record IDs/);
 
   const auditCopy = pageCopy.slice(
-    pageCopy.indexOf("Population Method Audit"),
-    pageCopy.indexOf("Incoming BNL Signals", pageCopy.indexOf("Population Method Audit")),
+    pageCopy.indexOf("Population Method Audit / Intake Map"),
+    pageCopy.indexOf("Incoming BNL Signals", pageCopy.indexOf("Population Method Audit / Intake Map")),
   );
   assert.doesNotMatch(auditCopy, /fix automatically|Fix Automatically|Run Subject Consolidation|Confirm Consolidation|Consolidate Into|Create Source File|Create Dossier Update|Keep Separate|Select Different Target|merge candidates|Merge button|publish public pages|change public dossier text/i);
 });
@@ -2196,7 +2197,7 @@ test("Population Method Audit renders independently of Subject Consolidation sta
   const subjectQueueIndex = page.indexOf("Subject Consolidation Queue");
   const consolidationResultIndex = page.indexOf("consolidationResult &&");
   const subjectConditionalCloseIndex = page.indexOf("open={!populationMethodHealthy}", subjectConditionalIndex);
-  const populationAuditIndex = page.indexOf("Population Method Audit");
+  const populationAuditIndex = page.indexOf("Population Method Audit / Intake Map");
   const candidatesIndex = page.indexOf("Incoming BNL Signals", populationAuditIndex);
   const clearBranch = page.slice(subjectConditionalIndex, subjectQueueIndex);
   const fullQueueBranch = page.slice(subjectQueueIndex, subjectConditionalCloseIndex);
@@ -2205,15 +2206,14 @@ test("Population Method Audit renders independently of Subject Consolidation sta
   assert.ok(subjectQueueIndex > subjectConditionalIndex, "Subject Consolidation queue state still renders");
   assert.ok(consolidationResultIndex > subjectQueueIndex, "consolidationResult state still renders inside the queue state");
   assert.ok(populationAuditIndex > subjectConditionalCloseIndex, "Population Method Audit renders after the Subject Consolidation conditional");
-  assert.ok(candidatesIndex > populationAuditIndex, "Population Method Audit renders before the Population Review Queue section");
+  assert.ok(candidatesIndex > populationAuditIndex, "Population Method Audit renders before the BNL signal diagnostic section");
   assert.doesNotMatch(clearBranch, /Population Method Audit|Population Method:/);
   assert.doesNotMatch(fullQueueBranch, /Population Method Audit|Population Method:/);
   assertIncludesCopy(pageCopy, "Subject Consolidation: clear");
   assertIncludesCopy(pageCopy, "Subject Consolidation Queue");
   assertIncludesCopy(pageCopy, "Subject Consolidation Complete");
-  assertIncludesCopy(pageCopy, "Population Method:");
-  assertIncludesCopy(pageCopy, "healthy");
-  assertIncludesCopy(pageCopy, "needs review");
+  assertIncludesCopy(pageCopy, "Population Method Audit: clear");
+  assertIncludesCopy(pageCopy, "Population Method Audit: needs review");
   assertIncludesCopy(pageCopy, "public pages published");
   assertIncludesCopy(pageCopy, "public dossier text changed");
   assert.doesNotMatch(source("src/app/database/[slug]/page.tsx"), /Population Method Audit|Intake Map|Copy Record IDs/);
@@ -9094,6 +9094,47 @@ test("BNL population context endpoint is authenticated, compact, and routing-saf
   assert.match(source("src/lib/dossier-workflow-store.ts"), /Subject Consolidation/);
 
   delete process.env.BNL_API_KEY;
+});
+
+test("Dossier Control Center keeps healthy diagnostics compact and preserves default workflow sections", () => {
+  const page = source("src/app/admin/dossiers/page.tsx");
+  const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
+
+  assert.match(page, /open=\{!populationMethodHealthy\}/, "Population Method Audit stays collapsed when healthy");
+  assert.match(page, /populationMethodAudit\.warnings\.length === 0 &&[\s\S]*populationMethodNeedsReviewCount === 0/, "healthy audit requires no warnings or review records");
+  assert.match(page, /Population Method Audit: needs review/, "Population Method Audit surfaces when warnings exist");
+  assert.match(page, /showIncomingBnlSignals = unresolvedPopulationSignals\.length > 0/, "Incoming BNL Signals hides when every signal is filed");
+  assert.match(page, /showIncomingBnlSignals \? \([\s\S]*Incoming BNL Signals/, "Incoming BNL Signals appears for unresolved signals");
+  assert.match(page, /unresolvedPopulationSignals\.map/, "Incoming BNL Signals renders exception cards only from unresolved signals");
+  assert.doesNotMatch(page, /No unresolved BNL Signals|No BNL signals|empty BNL/i, "Incoming BNL Signals does not render an empty card wall");
+  assert.match(page, /data-compact-diagnostic-status/, "Summary includes compact diagnostic status copy");
+  assert.match(page, /bnlSignalStatusText/, "Summary has compact BNL signal status");
+  assert.match(page, /populationMethodStatusText/, "Summary has compact Population Method Audit status");
+
+  for (const label of [
+    "Candidates & Recommendation Intake",
+    "Source Files",
+    "Dossier Updates",
+    "Proposed Dossiers",
+    "Owner Review",
+  ]) {
+    assertIncludesCopy(pageCopy, label);
+  }
+
+  assert.match(page, /optionalText\(sourceFileSummary\?\.summaryText\)[\s\S]*optionalText\(dynamicRecord\.adminSummary\)[\s\S]*optionalText\(dynamicRecord\.whyNow\)[\s\S]*optionalText\(dynamicRecord\.reason\)[\s\S]*optionalText\(dynamicRecord\.evidenceSummary\)[\s\S]*optionalText\(dynamicRecord\.recommendedNextStep\)/, "Why it matters priority order is explicit");
+  assert.match(page, /return selected \? compactUsefulSummary\(selected\) : "Needs more evidence"/, "Why it matters fallback stays concise");
+  assert.match(page, /rawEvidenceRefs\?|evidenceRefs\?|sourcePackage|relationship\[_-\]journal|private_admin|internal_controlled/, "Why it matters rejects raw JSON/evidence refs");
+  assert.match(page, /publishes\? 0 public pages|changes\? 0 public dossier text|exposes\? 0 internal aliases|raw\/private evidence/, "Why it matters rejects safety boilerplate");
+  assert.match(page, /BNL Signal Diagnostics — filed\/non-dossier details collapsed/, "Filed/already-represented BNL signals stay in collapsed diagnostics");
+  assert.match(page, /Diagnostics\/Test Artifacts — collapsed by default/, "Diagnostics/Test Artifacts remain accessible but collapsed");
+  assert.match(page, /nonDossierPopulationSignals\.length > 0/, "Non-dossier signals remain accessible only when present");
+
+  assert.doesNotMatch(source("src/app/database/[slug]/page.tsx"), /Incoming BNL Signals|Population Method Audit|rawEvidenceRefs|internal aliases/i);
+  assert.doesNotMatch(source("src/app/database/page.tsx"), /Incoming BNL Signals|Population Method Audit|rawEvidenceRefs|internal aliases/i);
+  assert.match(source("src/app/api/admin/dossiers/route.ts"), /reconcile_population_signals/);
+  assert.match(source("src/app/api/bnl/population-context/route.ts"), /export async function GET/);
+  assert.match(source("src/app/api/bnl/dossier-recommendations/route.ts"), /BNL_DOSSIER_INGEST_TOKEN|authorization/i);
+  assert.match(source("src/lib/dossier-workflow-store.ts"), /Subject Consolidation|createDossierPopulationMethodAudit|candidate_intake|active_source_file/);
 });
 
 test("Incoming BNL Signals renders filing summary, unresolved exceptions, and safe admin actions", () => {

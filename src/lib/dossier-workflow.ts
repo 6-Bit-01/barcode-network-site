@@ -2965,7 +2965,8 @@ export type DossierWorkflowAction =
   | "mark_not_population_subject"
   | "dismiss_population_recommendation"
   | "reopen_population_recommendation"
-  | "mark_needs_more_info";
+  | "mark_needs_more_info"
+  | "reconcile_population_signals";
 
 export type DossierSourceBoundary = {
   source: DossierCandidateSource;
@@ -3026,6 +3027,7 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "dismiss_population_recommendation",
   "reopen_population_recommendation",
   "mark_needs_more_info",
+  "reconcile_population_signals",
 ];
 
 export const DOSSIER_CANDIDATE_SCORING_POLICY = {

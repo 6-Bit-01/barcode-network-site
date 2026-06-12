@@ -30,6 +30,7 @@ import {
 import {
   addDossierIdentityLink,
   applyPopulationReviewRecommendationAction,
+  reconcilePopulationSignals,
   addDossierSourceFileNote,
   updateDossierSourceFileSummary,
   archiveDossierCandidate,
@@ -150,6 +151,7 @@ const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "attachCandidateToExistingDossier",
   "markCandidateAsExistingDossierUpdate",
   "runSubjectConsolidation",
+  "reconcile_population_signals",
   "consolidateSubjectGroup",
   "attach_to_existing_source_file",
   "attach_to_existing_dossier_update",
@@ -674,6 +676,17 @@ export async function POST(req: Request) {
         ok: true,
         action,
         consolidation,
+        ...payload,
+      });
+    }
+
+    if (action === "reconcile_population_signals") {
+      const populationReconcile = await reconcilePopulationSignals({ actionBy: typeof body.actionBy === "string" ? body.actionBy : "admin" });
+      const payload = await workflowPayload();
+      return NextResponse.json({
+        ok: true,
+        action,
+        populationReconcile,
         ...payload,
       });
     }

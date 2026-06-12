@@ -1005,6 +1005,8 @@ const TERMINAL_RECOMMENDATION_STATUSES = new Set<DossierRecommendationStatus>([
   "identity_link_created",
   "ignored",
   "dismissed",
+  "no_new_info",
+  "not_population_subject",
   "archived",
 ]);
 
@@ -4548,6 +4550,598 @@ async function setRecommendationStatus(
   });
   return updatedRecommendation!;
 }
+
+export type PopulationSignalDestinationKind =
+  | "public_dossier"
+  | "dossier_draft"
+  | "dossier_update_workspace"
+  | "active_source_file"
+  | "candidate_intake"
+  | "recommendation_backed_intake"
+  | "existing_population_recommendation"
+  | "resolved_or_archived_record"
+  | "non_dossier_signal"
+  | "no_destination"
+  | "ambiguous";
+
+export type PopulationSignalDestination = {
+  destinationKind: PopulationSignalDestinationKind;
+  destinationId?: string;
+  destinationName?: string;
+  destinationHref?: string;
+  recommendedInternalAction:
+    | DossierPopulationRecommendedAction
+    | "attach_to_draft_context"
+    | "mark_already_represented"
+    | "merge_population_duplicate";
+  shouldAutoResolve: boolean;
+  shouldShowToAdmin: boolean;
+  reason: string;
+};
+
+export type PopulationReconcileSummary = {
+  signalsReviewed: number;
+  attachedToSourceFiles: number;
+  attachedToDossierUpdates: number;
+  attachedToCandidateIntake: number;
+  attachedToExistingRecommendations: number;
+  markedAlreadyRepresented: number;
+  markedNoNewInfo: number;
+  createdDossierUpdateWorkspaces: number;
+  createdSourceFileCandidates: number;
+  unresolvedNeedsReview: number;
+  duplicatesCollapsed: number;
+  evidenceRefsMerged: number;
+  publicPagesPublished: 0;
+  publicDossierTextChanged: 0;
+  internalAliasesExposed: 0;
+};
+
+type PopulationSignalResolverInput = {
+  recommendation: DossierRecommendation;
+  candidates: DossierCandidate[];
+  recommendations: DossierRecommendation[];
+  drafts: DossierDraft[];
+  publicDossiers?: Array<{ id: string; name: string }>;
+};
+
+function isPopulationSignal(recommendation: DossierRecommendation): boolean {
+  return (
+    recommendation.type === "population_recommendation" ||
+    recommendation.populationRecommendation === true ||
+    recommendation.ingestSource === "bnl_population_recommender" ||
+    recommendation.createdBy === "bnl_population_recommender"
+  );
+}
+
+function populationSignalSubjectKey(recommendation: DossierRecommendation): string {
+  return recommendationDedupeSubject(
+    recommendation.subjectKey || recommendation.subjectName,
+  );
+}
+
+function populationSignalSubjectKeys(recommendation: DossierRecommendation): string[] {
+  return uniqueStrings([
+    populationSignalSubjectKey(recommendation),
+    recommendationDedupeSubject(
+      (recommendation.subjectKey || recommendation.subjectName).replace(/\[[^\]]+\]/g, " "),
+    ),
+  ]);
+}
+
+function candidateHref(candidateId: string): string {
+  return `/admin/dossiers/candidates/${encodeURIComponent(candidateId)}`;
+}
+
+function recommendationHref(recommendationId: string): string {
+  return `/admin/dossiers/recommendations/${encodeURIComponent(recommendationId)}`;
+}
+
+function publicDossierHref(name: string): string {
+  return `/database/${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+}
+
+function candidateMatchesSubject(candidate: DossierCandidate, subjectKey: string): boolean {
+  if (!subjectKey) return false;
+  if (recommendationDedupeSubject(candidate.name) === subjectKey) return true;
+  return (candidate.identityLinks ?? []).some(
+    (link) =>
+      link.useForMatching &&
+      recommendationDedupeSubject(link.label || link.normalizedLabel) === subjectKey,
+  );
+}
+
+function publicDossierForPopulationSubject(
+  recommendation: DossierRecommendation,
+  publicDossiers: Array<{ id: string; name: string }>,
+) {
+  const subjectKeys = populationSignalSubjectKeys(recommendation);
+  return publicDossiers.find(
+    (entry) =>
+      entry.id === recommendation.matchedPublicDossierId ||
+      entry.id === recommendation.targetDossierId ||
+      subjectKeys.includes(recommendationDedupeSubject(entry.name)),
+  );
+}
+
+function isDraftActiveForPopulation(draft: DossierDraft): boolean {
+  return !["denied", "superseded", "published"].includes(draft.status);
+}
+
+function draftDestinationForPopulationSubject(
+  drafts: DossierDraft[],
+  candidates: DossierCandidate[],
+  recommendation: DossierRecommendation,
+): { draft: DossierDraft; candidate?: DossierCandidate } | undefined {
+  const subjectKey = populationSignalSubjectKey(recommendation);
+  return drafts
+    .filter(isDraftActiveForPopulation)
+    .map((draft) => ({
+      draft,
+      candidate: candidates.find((candidate) => candidate.id === draft.candidateId),
+    }))
+    .find(({ draft, candidate }) => {
+      const draftName = draft.fields?.name ?? candidate?.name ?? "";
+      return (
+        recommendationDedupeSubject(draftName) === subjectKey ||
+        Boolean(candidate && candidateMatchesSubject(candidate, subjectKey))
+      );
+    });
+}
+
+function resolvedRecordForPopulationSubject(
+  candidates: DossierCandidate[],
+  recommendations: DossierRecommendation[],
+  recommendation: DossierRecommendation,
+): DossierCandidate | DossierRecommendation | undefined {
+  const subjectKey = populationSignalSubjectKey(recommendation);
+  return (
+    candidates.find(
+      (candidate) =>
+        ["archived", "denied", "merged"].includes(candidate.status) &&
+        candidateMatchesSubject(candidate, subjectKey),
+    ) ??
+    recommendations.find(
+      (item) =>
+        item.id !== recommendation.id &&
+        isPopulationSignal(item) &&
+        ["dismissed", "no_new_info", "not_population_subject", "archived"].includes(item.status) &&
+        populationSignalSubjectKey(item) === subjectKey,
+    )
+  );
+}
+
+function nonDossierPopulationSignal(recommendation: DossierRecommendation): boolean {
+  return ["show_state_note", "broadcast_memory_note", "not_population_subject"].includes(
+    recommendation.recommendedAction ?? recommendation.recommendedLane ?? "",
+  );
+}
+
+export function resolvePopulationSignalDestination({
+  recommendation,
+  candidates,
+  recommendations,
+  drafts,
+  publicDossiers = databasePage.entries.map((entry) => ({ id: entry.id, name: entry.name })),
+}: PopulationSignalResolverInput): PopulationSignalDestination {
+  const publicDossier = publicDossierForPopulationSubject(recommendation, publicDossiers);
+  if (publicDossier) {
+    const updateWorkspace = candidates.find(
+      (candidate) =>
+        candidate.status === "existing_dossier_update" &&
+        candidate.existingDossierMatch?.id === publicDossier.id,
+    );
+    if (updateWorkspace) {
+      return {
+        destinationKind: "dossier_update_workspace",
+        destinationId: updateWorkspace.id,
+        destinationName: updateWorkspace.name,
+        destinationHref: candidateHref(updateWorkspace.id),
+        recommendedInternalAction: "attach_to_existing_dossier_update",
+        shouldAutoResolve: true,
+        shouldShowToAdmin: false,
+        reason: "Existing public dossier also has an internal Dossier Update workspace.",
+      };
+    }
+    return {
+      destinationKind: "public_dossier",
+      destinationId: publicDossier.id,
+      destinationName: publicDossier.name,
+      destinationHref: publicDossierHref(publicDossier.name),
+      recommendedInternalAction: "mark_no_new_info",
+      shouldAutoResolve: true,
+      shouldShowToAdmin: false,
+      reason: "Subject already has a public dossier; no Source File Candidate should be created by default.",
+    };
+  }
+
+  const draftDestination = draftDestinationForPopulationSubject(drafts, candidates, recommendation);
+  if (draftDestination) {
+    const id = draftDestination.candidate?.id ?? draftDestination.draft.candidateId;
+    return {
+      destinationKind: "dossier_draft",
+      destinationId: draftDestination.draft.id,
+      destinationName: draftDestination.draft.fields?.name ?? draftDestination.candidate?.name,
+      destinationHref: id ? candidateHref(id) : undefined,
+      recommendedInternalAction: "attach_to_draft_context",
+      shouldAutoResolve: true,
+      shouldShowToAdmin: false,
+      reason: "Subject already has an internal dossier draft; do not create a second candidate.",
+    };
+  }
+
+  const subjectKey = populationSignalSubjectKey(recommendation);
+  const candidateDestination = candidates.find(
+    (candidate) =>
+      !["archived", "denied", "merged"].includes(candidate.status) &&
+      candidateMatchesSubject(candidate, subjectKey),
+  );
+  if (candidateDestination) {
+    const recommendationBacked = isRecommendationBackedCandidate(candidateDestination);
+    if (candidateDestination.status === "existing_dossier_update") {
+      return {
+        destinationKind: "dossier_update_workspace",
+        destinationId: candidateDestination.id,
+        destinationName: candidateDestination.name,
+        destinationHref: candidateHref(candidateDestination.id),
+        recommendedInternalAction: "attach_to_existing_dossier_update",
+        shouldAutoResolve: true,
+        shouldShowToAdmin: false,
+        reason: "Subject already has a Dossier Update workspace.",
+      };
+    }
+    if (isActiveSourceFileCandidate(candidateDestination)) {
+      return {
+        destinationKind: "active_source_file",
+        destinationId: candidateDestination.id,
+        destinationName: candidateDestination.name,
+        destinationHref: candidateHref(candidateDestination.id),
+        recommendedInternalAction: "attach_to_existing_source_file",
+        shouldAutoResolve: true,
+        shouldShowToAdmin: false,
+        reason: "Subject already has an active Source File.",
+      };
+    }
+    return {
+      destinationKind: recommendationBacked ? "recommendation_backed_intake" : "candidate_intake",
+      destinationId: candidateDestination.id,
+      destinationName: candidateDestination.name,
+      destinationHref: candidateHref(candidateDestination.id),
+      recommendedInternalAction: recommendationBacked ? "mark_duplicate_no_new_info" : "create_source_file_candidate",
+      shouldAutoResolve: true,
+      shouldShowToAdmin: false,
+      reason: recommendationBacked
+        ? "Subject is already represented by recommendation-backed intake."
+        : "Subject already has a Candidate Intake record.",
+    };
+  }
+
+  const activeNonPopulation = activeNonPopulationRecommendationForSubject(recommendations, recommendation);
+  if (activeNonPopulation) {
+    return {
+      destinationKind: "recommendation_backed_intake",
+      destinationId: activeNonPopulation.id,
+      destinationName: activeNonPopulation.subjectName,
+      destinationHref: recommendationHref(activeNonPopulation.id),
+      recommendedInternalAction: "mark_duplicate_no_new_info",
+      shouldAutoResolve: true,
+      shouldShowToAdmin: false,
+      reason: "Subject is already represented by an active non-population recommendation.",
+    };
+  }
+
+  const activePopulation = recommendations.find(
+    (item) =>
+      item.id !== recommendation.id &&
+      isPopulationSignal(item) &&
+      isActiveRecommendation(item) &&
+      populationSignalSubjectKey(item) === subjectKey,
+  );
+  if (activePopulation) {
+    return {
+      destinationKind: "existing_population_recommendation",
+      destinationId: activePopulation.id,
+      destinationName: activePopulation.subjectName,
+      destinationHref: recommendationHref(activePopulation.id),
+      recommendedInternalAction: "merge_population_duplicate",
+      shouldAutoResolve: true,
+      shouldShowToAdmin: false,
+      reason: "An active population recommendation for this subject already exists.",
+    };
+  }
+
+  const resolvedRecord = resolvedRecordForPopulationSubject(candidates, recommendations, recommendation);
+  if (resolvedRecord) {
+    return {
+      destinationKind: "resolved_or_archived_record",
+      destinationId: resolvedRecord.id,
+      destinationName: "name" in resolvedRecord ? resolvedRecord.name : resolvedRecord.subjectName,
+      destinationHref: "subjectName" in resolvedRecord ? recommendationHref(resolvedRecord.id) : candidateHref(resolvedRecord.id),
+      recommendedInternalAction: "mark_no_new_info",
+      shouldAutoResolve: true,
+      shouldShowToAdmin: false,
+      reason: "Subject matches a resolved, archived, merged, or no-new-info workflow record.",
+    };
+  }
+
+  if (nonDossierPopulationSignal(recommendation)) {
+    return {
+      destinationKind: "non_dossier_signal",
+      recommendedInternalAction: "mark_not_population_subject",
+      shouldAutoResolve: true,
+      shouldShowToAdmin: false,
+      reason: "Signal is a show-state or broadcast note, not a dossier subject.",
+    };
+  }
+
+  const ambiguous = (recommendation.possibleTargets ?? []).length > 1;
+  return {
+    destinationKind: ambiguous ? "ambiguous" : "no_destination",
+    destinationHref: recommendationHref(recommendation.id),
+    recommendedInternalAction: "admin_review_required",
+    shouldAutoResolve: false,
+    shouldShowToAdmin: true,
+    reason: ambiguous
+      ? "Multiple plausible destinations remain; admin review is required."
+      : "No existing internal destination was found; admin review is required.",
+  };
+}
+
+function initialPopulationReconcileSummary(): PopulationReconcileSummary {
+  return {
+    signalsReviewed: 0,
+    attachedToSourceFiles: 0,
+    attachedToDossierUpdates: 0,
+    attachedToCandidateIntake: 0,
+    attachedToExistingRecommendations: 0,
+    markedAlreadyRepresented: 0,
+    markedNoNewInfo: 0,
+    createdDossierUpdateWorkspaces: 0,
+    createdSourceFileCandidates: 0,
+    unresolvedNeedsReview: 0,
+    duplicatesCollapsed: 0,
+    evidenceRefsMerged: 0,
+    publicPagesPublished: 0,
+    publicDossierTextChanged: 0,
+    internalAliasesExposed: 0,
+  };
+}
+
+function populationDuplicateIdentity(
+  recommendation: DossierRecommendation,
+  destination: PopulationSignalDestination,
+): string {
+  return [
+    populationSignalSubjectKey(recommendation),
+    destination.destinationKind,
+    destination.recommendedInternalAction,
+    destination.destinationId ?? "",
+  ].join("|");
+}
+
+function mergePopulationRecommendationEvidence(
+  target: DossierRecommendation,
+  duplicate: DossierRecommendation,
+  now: string,
+): DossierRecommendation {
+  const refs = uniqueStrings(target.rawEvidenceRefs, duplicate.rawEvidenceRefs);
+  return {
+    ...target,
+    rawEvidenceRefs: refs,
+    rawEvidenceRefCount: refs.length,
+    seenCount: (target.seenCount ?? 1) + (duplicate.seenCount ?? 1),
+    firstSeenAt: target.firstSeenAt ?? target.createdAt,
+    lastSeenAt: now,
+    updatedAt: now,
+  };
+}
+
+function populationAttachedNoteText(recommendation: DossierRecommendation, destination: PopulationSignalDestination): string {
+  return [
+    `BNL Signal Reconcile filed this population signal into ${destination.destinationKind}.`,
+    recommendation.adminSummary ? `Admin summary: ${recommendation.adminSummary}` : undefined,
+    recommendation.evidenceSummary ? `Evidence summary: ${recommendation.evidenceSummary}` : undefined,
+    `Internal evidence refs preserved: ${recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0}.`,
+    "No public dossier text was changed and no public page was published by this reconcile action.",
+  ].filter(Boolean).join("\n\n").slice(0, 4000);
+}
+
+export async function reconcilePopulationSignals(input: { actionBy?: string } = {}): Promise<PopulationReconcileSummary> {
+  const summary = initialPopulationReconcileSummary();
+  const now = new Date().toISOString();
+
+  await updateDossierWorkflowState((currentState) => {
+    let candidates = currentState.candidates;
+    let recommendations = currentState.recommendations;
+    const visibleByIdentity = new Map<string, DossierRecommendation>();
+
+    for (const recommendation of currentState.recommendations) {
+      if (!isPopulationSignal(recommendation)) continue;
+      summary.signalsReviewed += 1;
+      if (!isActiveRecommendation(recommendation)) continue;
+
+      const destination = resolvePopulationSignalDestination({
+        recommendation,
+        candidates,
+        recommendations,
+        drafts: currentState.drafts,
+      });
+      const duplicateKey = populationDuplicateIdentity(recommendation, destination);
+      const visibleExisting = visibleByIdentity.get(duplicateKey);
+      if (visibleExisting) {
+        const merged = mergePopulationRecommendationEvidence(visibleExisting, recommendation, now);
+        recommendations = recommendations.map((item) => {
+          if (item.id === visibleExisting.id) return merged;
+          if (item.id === recommendation.id) {
+            return {
+              ...item,
+              status: "no_new_info",
+              recommendedLane: "already_represented",
+              recommendedAction: "mark_no_new_info",
+              routingReason: `Duplicate collapsed into population signal ${visibleExisting.id}.`,
+              updatedAt: now,
+            };
+          }
+          return item;
+        });
+        visibleByIdentity.set(duplicateKey, merged);
+        summary.duplicatesCollapsed += 1;
+        summary.evidenceRefsMerged += 1;
+        continue;
+      }
+      visibleByIdentity.set(duplicateKey, recommendation);
+
+      let targetCandidate = destination.destinationId
+        ? candidates.find((candidate) => candidate.id === destination.destinationId)
+        : undefined;
+      let nextRecommendation: DossierRecommendation = recommendation;
+      let nextStatus: DossierRecommendationStatus | undefined;
+      let nextLane: DossierPopulationRecommendedLane | undefined;
+      let nextAction: DossierPopulationRecommendedAction | undefined;
+
+      if (!destination.shouldAutoResolve) {
+        nextLane = "needs_population_review";
+        nextAction = "admin_review_required";
+        summary.unresolvedNeedsReview += 1;
+      } else if (destination.destinationKind === "active_source_file" && targetCandidate) {
+        nextStatus = "attached_to_source_file";
+        nextLane = "active_source_file";
+        nextAction = "attach_to_existing_source_file";
+        summary.attachedToSourceFiles += 1;
+      } else if (destination.destinationKind === "dossier_update_workspace" && targetCandidate) {
+        nextStatus = "attached_to_existing_dossier_update";
+        nextLane = "existing_dossier_update";
+        nextAction = "attach_to_existing_dossier_update";
+        summary.attachedToDossierUpdates += 1;
+      } else if (destination.destinationKind === "candidate_intake" && targetCandidate) {
+        nextStatus = "attached_to_candidate_intake";
+        nextLane = "candidate_intake";
+        nextAction = "create_source_file_candidate";
+        summary.attachedToCandidateIntake += 1;
+      } else if (destination.destinationKind === "dossier_draft") {
+        nextStatus = "attached_to_candidate_intake";
+        nextLane = "candidate_intake";
+        nextAction = "mark_no_new_info";
+        summary.attachedToCandidateIntake += 1;
+        if (!targetCandidate && recommendation.targetCandidateId) {
+          targetCandidate = candidates.find((candidate) => candidate.id === recommendation.targetCandidateId);
+        }
+      } else if (destination.destinationKind === "recommendation_backed_intake") {
+        nextStatus = "no_new_info";
+        nextLane = "already_represented";
+        nextAction = "mark_duplicate_no_new_info";
+        summary.attachedToExistingRecommendations += 1;
+        summary.markedAlreadyRepresented += 1;
+      } else if (destination.destinationKind === "existing_population_recommendation" && destination.destinationId) {
+        const target = recommendations.find((item) => item.id === destination.destinationId);
+        if (target) {
+          const merged = mergePopulationRecommendationEvidence(target, recommendation, now);
+          recommendations = recommendations.map((item) => item.id === target.id ? merged : item);
+          summary.evidenceRefsMerged += 1;
+        }
+        nextStatus = "no_new_info";
+        nextLane = "already_represented";
+        nextAction = "mark_no_new_info";
+        summary.attachedToExistingRecommendations += 1;
+        summary.duplicatesCollapsed += 1;
+      } else if (destination.destinationKind === "public_dossier" || destination.destinationKind === "resolved_or_archived_record") {
+        nextStatus = "no_new_info";
+        nextLane = "already_represented";
+        nextAction = "mark_no_new_info";
+        summary.markedAlreadyRepresented += 1;
+        summary.markedNoNewInfo += 1;
+      } else if (destination.destinationKind === "non_dossier_signal") {
+        nextStatus = "not_population_subject";
+        nextLane = "not_population_subject";
+        nextAction = "mark_not_population_subject";
+      }
+
+      nextRecommendation = {
+        ...recommendation,
+        status: nextStatus ?? recommendation.status,
+        recommendedLane: nextLane ?? recommendation.recommendedLane,
+        recommendedAction: nextAction ?? recommendation.recommendedAction,
+        targetCandidateId: targetCandidate?.id ?? recommendation.targetCandidateId,
+        connectedCandidateId: targetCandidate?.id ?? recommendation.connectedCandidateId,
+        connectedSourceFileCandidateId: targetCandidate?.id ?? recommendation.connectedSourceFileCandidateId,
+        targetDossierId: destination.destinationKind === "public_dossier" ? destination.destinationId : recommendation.targetDossierId,
+        matchedPublicDossierId: destination.destinationKind === "public_dossier" ? destination.destinationId : recommendation.matchedPublicDossierId,
+        matchedPublicDossierName: destination.destinationKind === "public_dossier" ? destination.destinationName : recommendation.matchedPublicDossierName,
+        matchedExistingCandidateId: destination.destinationKind === "active_source_file" ? destination.destinationId : recommendation.matchedExistingCandidateId,
+        matchedDossierUpdateCandidateId: destination.destinationKind === "dossier_update_workspace" ? destination.destinationId : recommendation.matchedDossierUpdateCandidateId,
+        routingReason: destination.reason,
+        populationReviewActions: destination.shouldAutoResolve
+          ? [
+              ...(recommendation.populationReviewActions ?? []),
+              {
+                action: nextAction ?? "mark_no_new_info",
+                actionAt: now,
+                actionBy: input.actionBy,
+                actionReason: `BNL Signal Reconcile: ${destination.reason}`,
+                targetCandidateId: targetCandidate?.id,
+                targetDossierId: destination.destinationKind === "public_dossier" ? destination.destinationId : recommendation.targetDossierId,
+              },
+            ]
+          : recommendation.populationReviewActions,
+        lastSeenAt: now,
+        seenCount: recommendation.seenCount ?? 1,
+        rawEvidenceRefCount: recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0,
+        updatedAt: now,
+      };
+
+      recommendations = recommendations.map((item) => item.id === recommendation.id ? nextRecommendation : item);
+
+      if (targetCandidate && ["active_source_file", "dossier_update_workspace", "candidate_intake", "dossier_draft"].includes(destination.destinationKind)) {
+        const note = routingNote({
+          candidateId: targetCandidate.id,
+          now,
+          text: populationAttachedNoteText(recommendation, destination),
+          source: "bnl_recommendation",
+          createdBy: recommendation.createdBy,
+          ingestKey: recommendation.ingestKey,
+          ingestedAt: recommendation.ingestedAt,
+          ingestSource: recommendation.ingestSource,
+        });
+        candidates = candidates.map((candidate) => candidate.id === targetCandidate!.id ? {
+          ...candidate,
+          sourceFileNotes: [note, ...(candidate.sourceFileNotes ?? [])],
+          connectedRecommendationIds: uniqueStrings(candidate.connectedRecommendationIds, [recommendation.id]),
+          sourceRecommendationIds: uniqueStrings(candidate.sourceRecommendationIds, [recommendation.id]),
+          updatedAt: now,
+        } : candidate);
+      }
+    }
+
+    recommendations = recommendations.map((item) => {
+      if (
+        isPopulationSignal(item) &&
+        ["new", "reviewing"].includes(item.status) &&
+        item.recommendedAction === "admin_review_required" &&
+        publicDossierForPopulationSubject(item, databasePage.entries.map((entry) => ({ id: entry.id, name: entry.name })))
+      ) {
+        return {
+          ...item,
+          status: "no_new_info",
+          recommendedLane: "already_represented",
+          recommendedAction: "mark_no_new_info",
+          routingReason: "BNL Signal Reconcile found an existing public dossier during final duplicate cleanup.",
+          updatedAt: now,
+        };
+      }
+      return item;
+    });
+
+    return {
+      ...currentState,
+      candidates,
+      recommendations,
+      updatedAt: now,
+    };
+  });
+
+  return summary;
+}
+
 
 export type PopulationReviewRecommendationActionInput = {
   recommendationId: string;

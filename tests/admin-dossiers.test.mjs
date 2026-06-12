@@ -2184,7 +2184,7 @@ test("Population Method Audit renders read-only admin intake map states", () => 
 
   const auditCopy = pageCopy.slice(
     pageCopy.indexOf("Population Method Audit"),
-    pageCopy.indexOf("Population Review Queue", pageCopy.indexOf("Population Method Audit")),
+    pageCopy.indexOf("BNL Signal Reconcile", pageCopy.indexOf("Population Method Audit")),
   );
   assert.doesNotMatch(auditCopy, /fix automatically|Fix Automatically|Run Subject Consolidation|Confirm Consolidation|Consolidate Into|Create Source File|Create Dossier Update|Keep Separate|Select Different Target|merge candidates|Merge button|publish public pages|change public dossier text/i);
 });
@@ -2197,7 +2197,7 @@ test("Population Method Audit renders independently of Subject Consolidation sta
   const consolidationResultIndex = page.indexOf("consolidationResult &&");
   const subjectConditionalCloseIndex = page.indexOf("open={!populationMethodHealthy}", subjectConditionalIndex);
   const populationAuditIndex = page.indexOf("Population Method Audit");
-  const candidatesIndex = page.indexOf("Population Review Queue", populationAuditIndex);
+  const candidatesIndex = page.indexOf("BNL Signal Reconcile", populationAuditIndex);
   const clearBranch = page.slice(subjectConditionalIndex, subjectQueueIndex);
   const fullQueueBranch = page.slice(subjectQueueIndex, subjectConditionalCloseIndex);
 
@@ -9096,32 +9096,28 @@ test("BNL population context endpoint is authenticated, compact, and routing-saf
   delete process.env.BNL_API_KEY;
 });
 
-test("Population Review Queue renders grouped sections and safe admin actions", () => {
+test("BNL Signal Reconcile renders summary, unresolved cards, and safe admin actions", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
   const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
 
   for (const label of [
-    "Population Review Queue",
-    "Source of recommendation: BNL Population Scan",
-    "Attach to Existing Source File",
-    "Dossier Update Workspace",
-    "Create Dossier Update Workspace",
-    "Candidate Intake / New Source File",
-    "Admin Review Required",
-    "Already Represented / Duplicate",
-    "Non-dossier signals",
-    "Attach to Source File",
+    "BNL Signal Reconcile",
+    "Source of recommendation: BNL Signal Reconcile",
+    "Reconcile BNL Signals",
+    "Signals reviewed",
+    "Filed automatically",
+    "Needs Review",
+    "Filed / Already Represented",
+    "Non-dossier Signals",
     "Open Source File",
-    "Attach to Update Workspace",
-    "Open Workspace",
-    "Create Source File Candidate",
-    "Convert to Source File Candidate",
+    "Attach evidence",
+    "Open Candidate",
     "Mark not dossier subject",
     "Mark no-new-info",
-    "Advanced actions",
     "Dismiss",
-    "Raw evidence references are preserved internally but hidden from normal card copy.",
-    "No public dossier text changed and no public page was published.",
+    "No action needed. Filed automatically.",
+    "raw/private evidence is not shown",
+    "publishes 0 public pages, changes 0 public dossier text, exposes 0 internal aliases",
   ]) {
     assertIncludesCopy(pageCopy, label);
   }
@@ -9143,10 +9139,10 @@ test("Population Review Queue renders grouped sections and safe admin actions", 
 
   assert.doesNotMatch(source("src/app/database/[slug]/page.tsx"), /Population Review Queue|BNL Population Scan|rawEvidenceRefs|Internal refs/);
   assertIncludesCopy(pageCopy, "Open existing record");
-  assertIncludesCopy(pageCopy, "Review existing candidate/recommendation");
   assertIncludesCopy(pageCopy, "data-primary-population-actions={primaryActions.length}");
-  assert.match(page, /primaryActions\.map/);
-  assert.doesNotMatch(page, /<details[^>]*open[^>]*>\s*<summary[^>]*>Advanced actions/);
+  assert.match(page, /primaryActions\.slice\(0, 2\)\.map/);
+  assert.doesNotMatch(pageCopy, /Advanced actions/);
+  assert.doesNotMatch(page, /mark_needs_more_info[^\n]+Review|Review[^\n]+mark_needs_more_info/);
   assert.doesNotMatch(pageCopy, /raw Discord message|relationship_journal|private relationship journal|internal alias label/i);
 });
 
@@ -9565,15 +9561,15 @@ test("Population Review Queue actions update internal workflow records without p
   assert.equal(JSON.stringify(context).includes("relationship_journal:private-row"), false);
 });
 
-test("Population Review Queue search includes matched candidate names and reviewed need-more-info leaves unreviewed count", () => {
+test("BNL Signal Reconcile search includes matched candidate names and Review stays navigational", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
   const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
   assert.match(page, /populationRecommendationSearchText\(recommendation, candidates\)/);
   assert.match(page, /matchedCandidateNames/);
-  assert.match(page, /Already Represented \/ Duplicate/);
+  assert.match(page, /Filed \/ Already Represented/);
   assert.match(page, /candidate\.name/);
   assert.match(page, /return \["new", "reviewing"\]\.includes\(recommendation\.status\)/);
-  assertIncludesCopy(pageCopy, "Search subject, normalized key, dossier, or Source File");
+  assertIncludesCopy(pageCopy, "Search unresolved signal, dossier, candidate, or Source File");
   assertIncludesCopy(pageCopy, "Review");
 });
 
@@ -9791,4 +9787,165 @@ test("Population Review Queue create and attach actions route to existing intern
   const finalState = await store.getDossierWorkflowState();
   assert.equal(finalState.drafts.length, 0);
   assert.equal(finalState.recommendations.find((item) => item.id === "pop-dismiss").status, "dismissed");
+});
+
+test("reconcile_population_signals returns safe counts and files Mind Fanatic public-dossier duplicates", async () => {
+  await resetWorkflowStore();
+  const now = new Date().toISOString();
+  await store.saveDossierWorkflowState({
+    version: 1,
+    revision: 1,
+    candidates: [],
+    drafts: [],
+    recommendations: [
+      {
+        id: "mind-pop-1",
+        type: "population_recommendation",
+        populationRecommendation: true,
+        createdBy: "bnl_population_recommender",
+        ingestSource: "bnl_population_recommender",
+        subjectName: "Mind Fanatic [Barcode_Network]",
+        status: "new",
+        reason: "Existing public dossier signal.",
+        adminSummary: "Public-safe summary only.",
+        recommendedLane: "needs_population_review",
+        recommendedAction: "admin_review_required",
+        sourceLanes: ["broadcast_memory"],
+        rawEvidenceRefs: ["private:mind:1"],
+        rawEvidenceRefCount: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "mind-pop-2",
+        type: "population_recommendation",
+        populationRecommendation: true,
+        createdBy: "bnl_population_recommender",
+        ingestSource: "bnl_population_recommender",
+        subjectName: "Mind Fanatic [Barcode_Network]",
+        status: "new",
+        reason: "Duplicate existing public dossier signal.",
+        adminSummary: "Second public-safe summary only.",
+        recommendedLane: "needs_population_review",
+        recommendedAction: "admin_review_required",
+        sourceLanes: ["broadcast_memory"],
+        rawEvidenceRefs: ["private:mind:2"],
+        rawEvidenceRefCount: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "unknown-pop-1",
+        type: "population_recommendation",
+        populationRecommendation: true,
+        createdBy: "bnl_population_recommender",
+        ingestSource: "bnl_population_recommender",
+        subjectName: "Unknown Reconcile Subject",
+        status: "new",
+        reason: "No destination exists.",
+        recommendedLane: "needs_population_review",
+        recommendedAction: "admin_review_required",
+        sourceLanes: ["broadcast_memory"],
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    sourceFileRefreshRequests: [],
+    updatedAt: now,
+  });
+
+  const response = await authedPost({ action: "reconcile_population_signals" });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.action, "reconcile_population_signals");
+  assert.equal(payload.populationReconcile.signalsReviewed, 3);
+  assert.equal(payload.populationReconcile.publicPagesPublished, 0);
+  assert.equal(payload.populationReconcile.publicDossierTextChanged, 0);
+  assert.equal(payload.populationReconcile.internalAliasesExposed, 0);
+  assert.equal(payload.populationReconcile.createdSourceFileCandidates, 0);
+  assert.equal(payload.populationReconcile.markedNoNewInfo >= 1, true);
+  assert.equal(payload.populationReconcile.duplicatesCollapsed >= 1, true);
+  assert.equal(payload.populationReconcile.unresolvedNeedsReview, 1);
+
+  const state = await store.getDossierWorkflowState();
+  const mindVisible = state.recommendations.filter((item) =>
+    item.subjectName.includes("Mind Fanatic") &&
+    ["new", "reviewing"].includes(item.status) &&
+    item.recommendedAction === "admin_review_required"
+  );
+  assert.equal(mindVisible.length, 0);
+  assert.equal(state.candidates.length, 0);
+});
+
+test("population context exposes reconcile destinations and diagnostics", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_API_KEY = "test-population-context-token";
+  const now = new Date().toISOString();
+  await store.saveDossierWorkflowState({
+    version: 1,
+    revision: 1,
+    candidates: [
+      {
+        id: "ctx-candidate-intake",
+        name: "Context Intake",
+        candidateType: "artist",
+        source: "manual",
+        tier: "review_candidate",
+        score: 55,
+        whyNow: "Context test.",
+        reason: "Context test.",
+        status: "candidate_intake",
+        createdAt: now,
+        updatedAt: now,
+        sourceFileNotes: [],
+      },
+    ],
+    drafts: [
+      {
+        id: "ctx-draft",
+        candidateId: "ctx-candidate-intake",
+        status: "draft",
+        fields: { id: "CTX", name: "Context Intake", category: "Artist", status: "DRAFT", clearance: "INTERNAL", role: "Draft", origin: "UNKNOWN", summary: "Draft.", notes: "Draft.", tags: [] },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    recommendations: [
+      {
+        id: "ctx-pop",
+        type: "population_recommendation",
+        populationRecommendation: true,
+        subjectName: "Context Intake",
+        status: "new",
+        reason: "Population mapping.",
+        sourceLanes: ["broadcast_memory"],
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "ctx-rec-backed",
+        type: "new_subject",
+        subjectName: "Recommendation Backed Intake",
+        status: "new",
+        reason: "Recommendation-backed destination.",
+        sourceLanes: ["broadcast_memory"],
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    sourceFileRefreshRequests: [],
+    updatedAt: now,
+  });
+
+  const response = await populationContextGet("test-population-context-token");
+  assert.equal(response.status, 200);
+  const context = await response.json();
+  assert.equal(context.diagnostics.draftDestinationCount, 1);
+  assert.equal(context.diagnostics.recommendationBackedIntakeCount, 2);
+  assert.equal(context.diagnostics.existingPopulationRecommendationCount, 1);
+  assert.equal(context.draftDestinations.length, 1);
+  assert.equal(context.recommendationBackedIntakeRecords.length, 2);
+  assert.equal(context.existingPopulationRecommendations.length, 1);
+  assert.equal(JSON.stringify(context).includes("private:"), false);
+  delete process.env.BNL_API_KEY;
 });

@@ -1436,7 +1436,7 @@ test("admin dossier dashboard is a simplified subject sorting overview", () => {
     "Approved / publish later",
     "Review Candidate",
     "Review Update",
-    "Open Source File",
+    "Review Source File",
     "Review Record",
   ]) {
     assertIncludesCopy(pageCopy, label);
@@ -2024,58 +2024,230 @@ test("dashboard frames manual recommendation seed as collapsed fallback", () => 
 
 
 
-test("Dossier Control Center population audit maps counts, duplicate review, unattached BNL signals, and safe copy", () => {
+test("Subject Consolidation Queue renders action summary, review cards, blocked lane, and safe copy", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
   const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
 
   for (const label of [
-    "Source File Population Audit",
-    "Active Source Files / Case Files",
-    "Candidate Intake / Dossier Seeds",
-    "Existing Dossier Updates",
-    "Public Dossiers",
-    "Archived / closed records",
-    "Records with proposed identity links",
-    "Records with confirmed identity links",
-    "Records with attached BNL recommendations",
-    "BNL recommendations not clearly attached to an active Source File",
-    "Records missing latest BNL case report or source enrichment",
-    "Possible Duplicate / Same Subject Review",
-    "Possible same-subject review",
-    "Consolidation plan",
-    "Merging / Incoming Info",
-    "Target / Keep",
-    "Target selection:",
-    "Automation tier",
-    "Incoming recommendation subject:",
-    "What this would add:",
-    "Already represented / duplicate:",
-    "Public dossier match:",
-    "Field-level plan",
-    "New info to add",
-    "Already represented / duplicate info",
-    "Irrelevant to kept entry",
-    "Needs review",
-    "Blocked reason",
-    "No action needed",
-    "Unattached BNL Signals / Recommendations",
-    "BNL recommendations that need placement review",
-    "Needs Source File target",
-    "What would happen later",
-    "The site can only audit records and recommendations already present in the workflow store. Active Discord members who have not been ingested by BNL will not appear here yet.",
-    "it does not merge, delete, publish, or mutate records automatically",
+    "Subject Consolidation Queue",
+    "Subject Consolidation: clear",
+    "Show consolidation details",
+    "Run Subject Consolidation",
+    "Auto-consolidation summary",
+    "Run Subject Consolidation will:",
+    "Needs Review",
+    "Blocked",
+    "Subject Consolidation Complete",
+    "Bundled {consolidationResult.bundledPublicDossierUpdateSignals} public dossier update signals.",
+    "diagnostic artifacts archived/hidden",
+    "BNL refresh triggered / queued / needed",
+    "skipped items with reasons",
+    "blocked items with reasons",
+    "remaining review-needed count",
+    "publish 0 public pages",
+    "change 0 public dossier text",
+    "keep internal aliases internal",
+    "Similar or ambiguous subjects requiring admin judgment",
+    "Incoming Cluster",
+    "Kept Source File",
+    "Why this needs review:",
+    "Recommended action:",
+    "Why this target is being kept:",
+    "Incoming item count:",
+    "Item types summarized:",
+    "BNL consolidation brief needed",
+    "BNL consolidation brief needed before review.",
+    "Action: Generate BNL Consolidation Brief",
+    "Generate BNL Consolidation Brief",
+    "Requires companion BNL summary PR",
+    "Blocked / Needs Info",
+    "Target selection unavailable:",
+    "Target options",
+    "Create Source File: {keptName}",
+    "Create Dossier Update: {publicDossierName}",
+    "No usable signal cluster found.",
+    "Already represented",
+    "Internal operation:",
+    "What will not change",
+    "Blocked reason:",
+    "What must be fixed first:",
+    "Consolidate Into Kept Source File",
+    "Consolidate Into ${keptName}",
+    "Create Source File: {keptName}",
+    "Create Dossier Update: {publicDossierName}",
+    "Keep Separate / Not Same Subject",
+    "Select Different Target",
+    "Confirm Consolidation",
+    "Cancel",
+    "View Kept Source File",
+    "View New Source File",
+    "View Dossier Update Workspace",
+    "Raw / Source Details",
+    "Diagnostics/Test Artifacts",
+    "Diagnostics/Test Artifacts — collapsed by default",
+    "Archive Diagnostic Artifact:",
+    "Confirm Consolidation",
+    "Cancel",
+    "View Kept Source File",
+    "View New Source File",
+    "View Dossier Update Workspace",
+    "Incoming cluster collapsed after completion.",
+    "Consolidating…",
+    "Resolved just now",
+    "Consolidated into kept Source File.",
+    "Source File Created",
+    "Dossier Update Workspace Created",
+    "Marked separate.",
   ]) {
     assertIncludesCopy(pageCopy, label);
   }
 
-  assert.match(page, /<details className="border border-accent\/40 bg-surface\/70 p-5">/);
   assert.match(page, /createDossierPopulationAudit/);
-  assert.doesNotMatch(page, /Run Safe Cleanup|Remove Empty Duplicate|Attach Automatically|Merge Now|Delete Duplicate|auto-create|autoCreate|autoMerge/);
+  assert.match(page, /postWorkflow\(\{ action: "runSubjectConsolidation" \}\)/);
+  assert.match(page, /isSubjectConsolidationClear && !consolidationResult/);
+  assert.match(page, /setConfirmation\(\{ groupId: group\.id, kind: "consolidate"/);
+  assert.match(page, /onClick=\{\(\) => consolidateSubjectGroup\(\)\}/);
+  assert.match(page, /Incoming cluster collapsed after completion/);
+  assert.match(source("src/lib/dossier-workflow.ts"), /export type SubjectConsolidationBrief/);
+  assert.match(source("src/lib/dossier-workflow.ts"), /generatedBy: "BNL"/);
+  assert.match(source("src/lib/dossier-workflow.ts"), /isDiagnosticTestArtifactCandidate/);
+  assert.match(source("src/lib/dossier-workflow.ts"), /isConsolidationResolvedCandidate/);
+  assert.match(page, /!isConsolidationResolvedCandidate\(candidate\)/);
+  assert.match(source("src/lib/dossier-workflow-store.ts"), /bundleExactPublicDossierUpdateSignals/);
+  assert.doesNotMatch(pageCopy, /Source File Population Audit|Population Audit|Open Recommendation|Open Source File|Open Target|Open Incoming|Merge Into Kept Source File|Attach to Kept Source File|Create Source File From These Signals|Create Dossier Update Workspace without public dossier\/context/);
+  const queueCopy = pageCopy.slice(pageCopy.indexOf("Subject Consolidation Queue"), pageCopy.indexOf("Candidates", pageCopy.indexOf("Subject Consolidation Queue")));
+  assert.doesNotMatch(queueCopy, /recommendation\.reason|recommendation\.evidenceSummary|raw recommendation\.reason|raw recommendation\.summary/);
   assert.doesNotMatch(pageCopy, /Confirmed aliases count: \{record\.confirmedAliasCount\}/);
   assert.doesNotMatch(pageCopy, /source notes count 0/i);
 });
 
-test("population audit helper uses conservative duplicate signals and leaves proposed aliases out of confirmed matching", () => {
+
+test("canonical subject clustering collapses public-dossier variants into one subject cluster", () => {
+  const now = "2026-06-11T00:00:00.000Z";
+  const publicEntry =
+    databasePage.entries.find((entry) => entry.name === "6 Bit") ??
+    databasePage.entries[0];
+  assert.equal(
+    workflow.normalizeDossierPossessiveVariantName("6 Bit’s"),
+    workflow.normalizeDossierSubjectName("6 Bit"),
+  );
+  assert.equal(
+    workflow.normalizeDossierPossessiveVariantName("Crow’s"),
+    workflow.normalizeDossierSubjectName("Crow"),
+  );
+  const candidate = (overrides) => ({
+    id: overrides.id,
+    name: overrides.name,
+    candidateType: "artist",
+    source: "manual",
+    tier: "review_candidate",
+    score: overrides.score ?? 5,
+    whyNow: "Fixture",
+    reason: "Fixture",
+    evidenceSummary: "Fixture",
+    status: overrides.status ?? "active_source_file",
+    existingDossierMatch: overrides.existingDossierMatch,
+    latestSourceFileArchiveUpdatedAt: overrides.latestSourceFileArchiveUpdatedAt,
+    sourceFileNotes: overrides.sourceFileNotes ?? [],
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  });
+  const recommendation = (overrides) => ({
+    id: overrides.id,
+    type: overrides.type ?? "modify_existing_dossier",
+    subjectName: overrides.subjectName,
+    subjectKey: overrides.subjectKey,
+    targetDossierId: overrides.targetDossierId,
+    status: "new",
+    reason: "BNL fixture",
+    confidence: "medium",
+    sourceLanes: ["public_discord"],
+    createdAt: now,
+    updatedAt: now,
+    createdBy: "bnl",
+    ingestSource: "bnl_dynamic_candidate_discovery",
+    ...overrides,
+  });
+
+  const audit = workflow.createDossierPopulationAudit({
+    publicDossiers: [{ id: publicEntry.id, name: publicEntry.name }],
+    drafts: [],
+    candidates: [
+      candidate({
+        id: "six-bit-kept",
+        name: `${publicEntry.name}’s`,
+        latestSourceFileArchiveUpdatedAt: now,
+        existingDossierMatch: { id: publicEntry.id, name: publicEntry.name, confidence: "high" },
+      }),
+      candidate({
+        id: "six-bit-fragment",
+        name: publicEntry.name,
+        existingDossierMatch: { id: publicEntry.id, name: publicEntry.name, confidence: "high" },
+      }),
+    ],
+    recommendations: [
+      recommendation({ id: "six-bit-rec-a", subjectName: publicEntry.name, subjectKey: publicEntry.id, targetDossierId: publicEntry.id }),
+      recommendation({ id: "six-bit-rec-b", subjectName: `${publicEntry.name}'s`, subjectKey: publicEntry.id, targetDossierId: publicEntry.id }),
+      recommendation({ id: "six-bit-rec-c", subjectName: publicEntry.name, targetDossierId: publicEntry.id }),
+    ],
+  });
+
+  const canonicalGroups = audit.possibleDuplicateGroups.filter(
+    (group) => group.publicDossierMatch?.id === publicEntry.id,
+  );
+  assert.equal(canonicalGroups.length, 1);
+  const [group] = canonicalGroups;
+  assert.equal(group.publicDossierMatch.name, publicEntry.name);
+  assert.equal(group.consolidationPlan.targetDisplayName, publicEntry.name);
+  assert.notEqual(group.consolidationPlan.targetDisplayName, `${publicEntry.name}’s`);
+  assert.ok(group.records.some((record) => record.id === "six-bit-kept"));
+  assert.ok(group.records.some((record) => record.id === "six-bit-fragment"));
+  assert.ok(group.records.some((record) => record.recommendationId === "six-bit-rec-a"));
+  assert.ok(group.records.some((record) => record.recommendationId === "six-bit-rec-b"));
+  assert.ok(group.records.some((record) => record.recommendationId === "six-bit-rec-c"));
+  assert.equal(new Set(group.records.map((record) => `${record.type}:${record.id}`)).size, group.records.length);
+});
+
+test("possessive variants need a strong anchor before auto-folding", () => {
+  const now = "2026-06-11T00:00:00.000Z";
+  const candidate = (overrides) => ({
+    id: overrides.id,
+    name: overrides.name,
+    candidateType: "artist",
+    source: "manual",
+    tier: "review_candidate",
+    score: 5,
+    whyNow: "Fixture",
+    reason: "Fixture",
+    evidenceSummary: "Fixture",
+    status: "active_source_file",
+    sourceFileNotes: overrides.sourceFileNotes ?? [],
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  });
+
+  const audit = workflow.createDossierPopulationAudit({
+    publicDossiers: [],
+    drafts: [],
+    candidates: [
+      candidate({ id: "six-bit-variant", name: "6 Bit’s" }),
+      candidate({ id: "six-bit-canonical", name: "6 Bit" }),
+    ],
+    recommendations: [],
+  });
+
+  const variantGroups = audit.possibleDuplicateGroups.filter((group) =>
+    group.reason === "Variant needs review: 6 Bit’s / 6 Bit",
+  );
+  assert.equal(variantGroups.length, 1);
+  assert.equal(variantGroups[0].matchKind, "similar_name");
+  assert.equal(variantGroups[0].consolidationPlan.requiresReview, true);
+  assert.notEqual(variantGroups[0].consolidationPlan.automationTier, "Source File merge candidate");
+});
+
+test("subject consolidation helper uses conservative duplicate signals and leaves proposed aliases out of confirmed matching", () => {
   const now = "2026-06-11T00:00:00.000Z";
   const baseCandidate = (overrides) => ({
     id: overrides.id,
@@ -2181,8 +2353,8 @@ test("population audit helper uses conservative duplicate signals and leaves pro
   assert.equal(audit.counts.unattachedBnlRecommendations, 4);
   assert.equal(audit.counts.recordsMissingLatestCaseReportOrEnrichment, 3);
 
-  assert.ok(audit.possibleDuplicateGroups.some((group) => group.matchKind === "normalized_name" && group.records.some((record) => record.id === "candidate-active") && group.records.some((record) => record.id === "candidate-name-dupe")));
-  assert.ok(audit.possibleDuplicateGroups.some((group) => group.matchKind === "confirmed_alias" && group.records.some((record) => record.id === "candidate-active") && group.records.some((record) => record.id === "candidate-alias-dupe")));
+  assert.ok(audit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.id === "candidate-active") && group.records.some((record) => record.id === "candidate-name-dupe")));
+  assert.ok(audit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.id === "candidate-active") && group.records.some((record) => record.id === "candidate-alias-dupe")));
   assert.ok(audit.possibleDuplicateGroups.some((group) => group.matchKind === "public_dossier" && group.publicDossierMatch?.id === "mac-modem"));
   assert.ok(audit.possibleDuplicateGroups.some((group) => group.matchKind === "recommendation_subject_key" && group.records.length === 2));
   assert.ok(!audit.possibleDuplicateGroups.some((group) => group.matchKind === "confirmed_alias" && group.records.some((record) => record.name === "Proposed Only")));
@@ -2190,7 +2362,7 @@ test("population audit helper uses conservative duplicate signals and leaves pro
 });
 
 
-test("population audit consolidation plans classify target/source records without mutation actions", () => {
+test("subject consolidation plans classify target/source records for automation and review", () => {
   const now = "2026-06-11T00:00:00.000Z";
   const candidate = (overrides) => ({
     id: overrides.id,
@@ -2333,11 +2505,11 @@ test("population audit consolidation plans classify target/source records withou
   const reviewPlan = plans.find((plan) => plan.targetRecord?.id === "proposed-a" || plan.sourceRecords.some((record) => record.id === "proposed-a"));
   assert.equal(reviewPlan?.automationTier, "Review required");
 
-  const blockedPlan = plans.find((plan) => plan.groupId.includes("normalized-name-blocked-same"));
+  const blockedPlan = plans.find((plan) => plan.sourceRecords.some((record) => record.id === "blocked-b") || plan.targetRecord?.id === "blocked-b");
   assert.equal(blockedPlan?.automationTier, "Blocked");
   assert.match(blockedPlan?.blockedReasons.join(" ") ?? "", /Different public dossier matches/);
 
-  const sourceFileCreationPlan = plans.find((plan) => plan.groupId.includes("recommendation-subject-key-only-signal"));
+  const sourceFileCreationPlan = plans.find((plan) => plan.sourceRecords.some((record) => record.recommendationId === "rec-only-a") && plan.sourceRecords.some((record) => record.recommendationId === "rec-only-b"));
   assert.equal(sourceFileCreationPlan?.automationTier, "Create Source File candidate");
   assert.equal(sourceFileCreationPlan?.targetRecord, undefined);
   assert.equal(sourceFileCreationPlan?.suggestedWorkspace, "New Source File / Candidate");
@@ -2345,13 +2517,13 @@ test("population audit consolidation plans classify target/source records withou
   assert.match(sourceFileCreationPlan?.blockedReasons.join(" ") ?? "", /No Source File target resolved/);
   assert.doesNotMatch(sourceFileCreationPlan?.targetSelectionReason ?? "", /source and target records could not be resolved/i);
 
-  const updateWorkspacePlan = plans.find((plan) => plan.groupId.includes("public-dossier-public-only"));
+  const updateWorkspacePlan = plans.find((plan) => plan.sourceRecords.some((record) => record.recommendationId === "rec-public-only-a") && plan.sourceRecords.some((record) => record.recommendationId === "rec-public-only-b"));
   assert.equal(updateWorkspacePlan?.automationTier, "Create Dossier Update workspace candidate");
   assert.equal(updateWorkspacePlan?.targetRecord, undefined);
   assert.equal(updateWorkspacePlan?.suggestedWorkspace, "Dossier Update");
   assert.equal(updateWorkspacePlan?.existingPublicDossier?.name, "Public Only");
 
-  const ambiguousPlan = plans.find((plan) => plan.groupId.includes("normalized-name-ambiguous-target"));
+  const ambiguousPlan = plans.find((plan) => plan.possibleTargetRecords.some((record) => record.id === "ambiguous-a") && plan.possibleTargetRecords.some((record) => record.id === "ambiguous-b"));
   assert.equal(ambiguousPlan?.automationTier, "Select Target Manually");
   assert.equal(ambiguousPlan?.targetRecord, undefined);
   assert.equal(ambiguousPlan?.possibleTargetRecords.length, 2);
@@ -2381,31 +2553,401 @@ test("population audit consolidation plans classify target/source records withou
   assert.equal(JSON.stringify(databasePage.entries.find((entry) => entry.name === "6 Bit")), publicDossierBefore);
 });
 
-test("population audit planning UI uses incoming/target columns and disabled future action labels", () => {
+
+test("Subject Consolidation pass auto-attaches, cleans, creates workspaces, preserves metadata, and avoids public side effects", async () => {
+  await resetWorkflowStore();
+  const now = "2026-06-11T00:00:00.000Z";
+  const publicEntry = databasePage.entries.find((entry) => entry.name === "6 Bit") ?? databasePage.entries[1] ?? databasePage.entries[0];
+  const genericPublicEntry = databasePage.entries.find((entry) => entry.id !== publicEntry.id) ?? publicEntry;
+  const blockedEntry = databasePage.entries[0];
+  const candidate = (overrides) => ({
+    id: overrides.id,
+    name: overrides.name,
+    candidateType: "artist",
+    source: "manual",
+    tier: "review_candidate",
+    score: 5,
+    whyNow: overrides.whyNow ?? "Fixture",
+    reason: overrides.reason ?? "Fixture",
+    evidenceSummary: overrides.evidenceSummary ?? "Fixture",
+    status: overrides.status ?? "active_source_file",
+    createdAt: overrides.createdAt ?? now,
+    updatedAt: overrides.updatedAt ?? now,
+    ...overrides,
+  });
+  const recommendation = (overrides) => ({
+    id: overrides.id,
+    type: overrides.type ?? "new_subject",
+    subjectName: overrides.subjectName,
+    subjectKey: overrides.subjectKey,
+    targetDossierId: overrides.targetDossierId,
+    targetCandidateId: overrides.targetCandidateId,
+    status: overrides.status ?? "new",
+    reason: overrides.reason ?? "BNL fixture",
+    evidenceSummary: overrides.evidenceSummary,
+    confidence: overrides.confidence ?? "medium",
+    sourceLanes: overrides.sourceLanes ?? ["public_discord"],
+    createdAt: now,
+    updatedAt: overrides.updatedAt ?? now,
+    createdBy: "bnl",
+    ingestSource: overrides.ingestSource ?? "bnl_dynamic_candidate_discovery",
+    ...overrides,
+  });
+  const alias = (candidateId, label) => ({
+    id: `${candidateId}-${label}`,
+    candidateId,
+    label,
+    normalizedLabel: workflow.normalizeDossierSubjectName(label),
+    type: "alias",
+    visibility: "internal_only",
+    status: "confirmed",
+    source: "admin_manual",
+    useForMatching: true,
+    useInPublicDossier: false,
+    createdAt: now,
+    updatedAt: now,
+  });
+  const publicBefore = JSON.stringify(databasePage.entries);
+
+  await store.saveDossierWorkflowState({
+    version: 1,
+    revision: 0,
+    candidates: [
+      candidate({ id: "exact-target", name: "Exact Subject", sourceFileNotes: [], connectedRecommendationIds: ["existing-rec"], latestSourceFileArchiveUpdatedAt: now }),
+      candidate({ id: "alias-target", name: "Alias Keeper", identityLinks: [alias("alias-target", "Alias Incoming")], sourceFileNotes: [] }),
+      candidate({ id: "empty-keep", name: "Empty Dupe", latestSourceFileArchiveUpdatedAt: now }),
+      candidate({ id: "empty-lesser", name: "Empty Dupe", status: "candidate_intake", reason: "", whyNow: "", evidenceSummary: "" }),
+      candidate({ id: "merge-keep", name: "Merge Subject", latestSourceFileArchiveUpdatedAt: now, sourceFileNotes: [{ id: "keep-note", candidateId: "merge-keep", type: "fact", text: "keep metadata", source: "admin_manual", status: "active", createdAt: now, updatedAt: now }], connectedRecommendationIds: ["keep-rec"] }),
+      candidate({ id: "merge-lesser", name: "Merge Subject", sourceFileNotes: [{ id: "lesser-note", candidateId: "merge-lesser", type: "fact", text: "lesser metadata", source: "admin_manual", status: "active", createdAt: now, updatedAt: now }], connectedRecommendationIds: ["lesser-rec"] }),
+      candidate({ id: "similar-a", name: "Crow", latestSourceFileArchiveUpdatedAt: now }),
+      candidate({ id: "similar-b", name: "Crowe", latestSourceFileArchiveUpdatedAt: now }),
+      candidate({ id: "blocked-a", name: "Blocked Subject", existingDossierMatch: { id: blockedEntry.id, name: blockedEntry.name, confidence: "high" } }),
+      candidate({ id: "blocked-b", name: "Blocked Subject", existingDossierMatch: { id: "different-public", name: "Different Public", confidence: "high" } }),
+      candidate({ id: "public-variant-candidate", name: `${publicEntry.name}’s`, sourceFileNotes: [{ id: "variant-note", candidateId: "public-variant-candidate", type: "fact", text: "variant metadata", source: "admin_manual", status: "active", createdAt: now, updatedAt: now }], connectedRecommendationIds: ["variant-connected-rec"] }),
+      candidate({ id: "checkpoint-artifact", name: "Checkpoint BNL Ingest Alpha", reason: "Manual endpoint smoke test", evidenceSummary: "diagnostic probe", status: "active_source_file" }),
+    ],
+    drafts: [],
+    recommendations: [
+      recommendation({ id: "rec-exact", subjectName: "Exact Subject", reason: "new exact information", evidenceSummary: "exact summary", sourceLanes: ["rd_context"] }),
+      recommendation({ id: "rec-alias", subjectName: "Alias Incoming", reason: "alias information", sourceLanes: ["broadcast_memory"] }),
+      recommendation({ id: "rec-no-new", subjectName: "Exact Subject", reason: "", evidenceSummary: "", sourceTypes: [] }),
+      recommendation({ id: "rec-new-a", subjectName: "New Cluster A", subjectKey: "new-cluster", reason: "cluster info A" }),
+      recommendation({ id: "rec-new-b", subjectName: "New Cluster B", subjectKey: "new-cluster", reason: "cluster info B" }),
+      recommendation({ id: "rec-public-a", subjectName: publicEntry.name, targetDossierId: publicEntry.id, type: "modify_existing_dossier", reason: "public update A" }),
+      recommendation({ id: "rec-public-b", subjectName: publicEntry.name, targetDossierId: publicEntry.id, type: "modify_existing_dossier", reason: "public update B" }),
+      recommendation({ id: "rec-public-variant", subjectName: `${publicEntry.name}'s`, subjectKey: publicEntry.id, targetDossierId: publicEntry.id, type: "modify_existing_dossier", reason: "public update variant" }),
+      recommendation({ id: "rec-generic-public-a", subjectName: genericPublicEntry.name, targetDossierId: genericPublicEntry.id, type: "modify_existing_dossier", reason: "generic public update A" }),
+      recommendation({ id: "rec-generic-public-b", subjectName: genericPublicEntry.name, targetDossierId: genericPublicEntry.id, type: "modify_existing_dossier", reason: "generic public update B" }),
+      recommendation({ id: "rec-checkpoint", subjectName: "Checkpoint BNL Ingest Alpha", type: "new_subject", reason: "Manual endpoint smoke test", evidenceSummary: "diagnostic probe" }),
+    ],
+    sourceFileRefreshRequests: [],
+    updatedAt: now,
+  });
+
+  const response = await authedPost({ action: "runSubjectConsolidation" });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.consolidation.publicPagesPublished, 0);
+  assert.equal(payload.consolidation.publicDossierTextChanged, 0);
+  assert.equal(payload.consolidation.internalAliasesExposed, 0);
+  assert.ok(payload.consolidation.attachedRecommendations >= 2);
+  assert.ok(payload.consolidation.emptyDuplicatesCleaned >= 1);
+  assert.ok(payload.consolidation.sourceFilesCreated >= 1);
+  assert.ok(payload.consolidation.dossierUpdateWorkspacesCreated >= 1);
+  assert.ok(payload.consolidation.bundledPublicDossierUpdateSignals >= 5);
+  assert.ok(payload.consolidation.diagnosticArtifactsArchived >= 2);
+  assert.ok(payload.consolidation.sourceFileDuplicatesMerged >= 1);
+  assert.ok(payload.consolidation.bnlRefreshes.length >= 4);
+  assert.ok(payload.consolidation.needsReview >= 1);
+  assert.ok(payload.consolidation.blocked >= 1);
+
+  const exact = payload.recommendations.find((item) => item.id === "rec-exact");
+  const aliasRec = payload.recommendations.find((item) => item.id === "rec-alias");
+  const noNew = payload.recommendations.find((item) => item.id === "rec-no-new");
+  assert.equal(exact.status, "attached_to_source_file");
+  assert.equal(exact.targetCandidateId, "exact-target");
+  assert.equal(aliasRec.status, "attached_to_source_file");
+  assert.equal(aliasRec.targetCandidateId, "alias-target");
+  assert.equal(noNew.status, "archived");
+
+  const emptyLesser = payload.candidates.find((item) => item.id === "empty-lesser");
+  assert.equal(emptyLesser.status, "archived");
+
+  const createdSource = payload.candidates.find((item) => item.createdFromRecommendationId === "rec-new-a" || item.sourceRecommendationIds?.includes("rec-new-a"));
+  assert.equal(createdSource.status, "active_source_file");
+  const recNewA = payload.recommendations.find((item) => item.id === "rec-new-a");
+  const recNewB = payload.recommendations.find((item) => item.id === "rec-new-b");
+  assert.equal(recNewA.status, "converted_to_source_file");
+  assert.equal(recNewB.status, "converted_to_source_file");
+  assert.equal(recNewA.targetCandidateId, createdSource.id);
+  assert.equal(recNewB.targetCandidateId, createdSource.id);
+  const updateWorkspace = payload.candidates.find((item) => item.status === "existing_dossier_update" && item.existingDossierMatch?.id === publicEntry.id && item.sourceRecommendationIds?.includes("rec-public-a"));
+  assert.ok(updateWorkspace);
+  assert.equal(updateWorkspace.status, "existing_dossier_update");
+  assert.equal(updateWorkspace.existingDossierMatch.name, publicEntry.name);
+  assert.ok(updateWorkspace.sourceRecommendationIds.includes("rec-public-a"));
+  assert.ok(updateWorkspace.sourceRecommendationIds.includes("rec-public-b"));
+  assert.ok(updateWorkspace.sourceRecommendationIds.includes("rec-public-variant"));
+  assert.ok(updateWorkspace.sourceRecommendationIds.includes("variant-connected-rec"));
+  assert.ok(updateWorkspace.connectedRecommendationIds.includes("rec-public-a"));
+  assert.ok(updateWorkspace.connectedRecommendationIds.includes("rec-public-b"));
+  assert.ok(updateWorkspace.connectedRecommendationIds.includes("rec-public-variant"));
+  assert.ok(updateWorkspace.connectedRecommendationIds.includes("variant-connected-rec"));
+  assert.ok(updateWorkspace.sourceFileNotes.some((note) => note.text === "variant metadata" && note.candidateId === updateWorkspace.id));
+  assert.ok(updateWorkspace.sourceFileNotes.some((note) => note.candidateId === updateWorkspace.id && /public update A|public update B|public update variant/.test(note.text)));
+  assert.ok(updateWorkspace.whyNow.includes(`Bundled 3 ${publicEntry.name} update signals into ${publicEntry.name} Dossier Update workspace.`));
+  assert.equal(updateWorkspace.mergeNote, "bundled_into_dossier_update");
+  assert.equal(workflow.isConsolidationResolvedCandidate(updateWorkspace), false);
+  const sixBitAffectedTarget = payload.consolidation.affectedTargets.find((target) => target.candidateId === updateWorkspace.id);
+  assert.ok(sixBitAffectedTarget);
+  assert.equal(sixBitAffectedTarget.name, publicEntry.name);
+  assert.equal(sixBitAffectedTarget.href, `/admin/dossiers/candidates/${updateWorkspace.id}`);
+  const genericWorkspace = payload.candidates.find((item) => item.status === "existing_dossier_update" && item.existingDossierMatch?.id === genericPublicEntry.id && item.sourceRecommendationIds?.includes("rec-generic-public-a"));
+  assert.ok(genericWorkspace);
+  assert.equal(genericWorkspace.existingDossierMatch.name, genericPublicEntry.name);
+  assert.ok(genericWorkspace.sourceRecommendationIds.includes("rec-generic-public-b"));
+  assert.ok(genericWorkspace.connectedRecommendationIds.includes("rec-generic-public-a"));
+  assert.ok(genericWorkspace.sourceFileNotes.some((note) => note.candidateId === genericWorkspace.id && /generic public update/.test(note.text)));
+  assert.equal(workflow.isConsolidationResolvedCandidate(genericWorkspace), false);
+  assert.ok(payload.consolidation.affectedTargets.some((target) => target.candidateId === genericWorkspace.id && target.href === `/admin/dossiers/candidates/${genericWorkspace.id}`));
+  const foldedVariant = payload.candidates.find((item) => item.id === "public-variant-candidate");
+  assert.equal(foldedVariant.status, "merged");
+  assert.equal(foldedVariant.mergedIntoCandidateId, updateWorkspace.id);
+  assert.equal(foldedVariant.mergeNote, `variant_of_canonical:${publicEntry.id}`);
+  assert.ok(workflow.isConsolidationResolvedCandidate(foldedVariant));
+  assert.ok(payload.consolidation.skippedItems.some((item) => item.subject === `${publicEntry.name}’s` && item.reason.includes("Resolved variant")));
+  for (const id of ["rec-public-a", "rec-public-b", "rec-public-variant"]) {
+    const publicRec = payload.recommendations.find((item) => item.id === id);
+    assert.equal(publicRec.status, "attached_to_existing_dossier_update");
+    assert.equal(publicRec.targetCandidateId, updateWorkspace.id);
+  }
+  const activeReviewUpdateIds = payload.recommendations
+    .filter((item) => ["new", "reviewing"].includes(item.status))
+    .filter((item) => item.type === "modify_existing_dossier" || item.targetDossierId || item.targetCandidateId)
+    .map((item) => item.id);
+  assert.ok(!activeReviewUpdateIds.includes("rec-public-a"));
+  assert.ok(!activeReviewUpdateIds.includes("rec-public-b"));
+  assert.ok(!activeReviewUpdateIds.includes("rec-public-variant"));
+  assert.ok(!activeReviewUpdateIds.includes("rec-generic-public-a"));
+  assert.ok(!activeReviewUpdateIds.includes("rec-generic-public-b"));
+  const activeDossierUpdateWorkspaceIds = payload.candidates
+    .filter((item) => item.status === "existing_dossier_update")
+    .filter((item) => !workflow.isConsolidationResolvedCandidate(item))
+    .map((item) => item.id);
+  assert.ok(activeDossierUpdateWorkspaceIds.includes(updateWorkspace.id));
+  assert.ok(activeDossierUpdateWorkspaceIds.includes(genericWorkspace.id));
+  const activeSourceReviewIds = payload.candidates
+    .filter((item) => ["active_source_file", "candidate_intake", "existing_dossier_update"].includes(item.status))
+    .filter((item) => !workflow.isConsolidationResolvedCandidate(item))
+    .map((item) => item.id);
+  assert.ok(!activeSourceReviewIds.includes("public-variant-candidate"));
+  const checkpointCandidate = payload.candidates.find((item) => item.id === "checkpoint-artifact");
+  const checkpointRecommendation = payload.recommendations.find((item) => item.id === "rec-checkpoint");
+  assert.equal(checkpointCandidate.status, "archived");
+  assert.equal(checkpointCandidate.mergeNote, "diagnostic_test_artifact");
+  assert.equal(checkpointRecommendation.status, "archived");
+  assert.ok(workflow.isDiagnosticTestArtifactCandidate(checkpointCandidate));
+  assert.ok(workflow.isDiagnosticTestArtifactRecommendation(checkpointRecommendation));
+
+  const mergeKeep = payload.candidates.find((item) => item.id === "merge-keep");
+  const mergeLesser = payload.candidates.find((item) => item.id === "merge-lesser");
+  assert.equal(mergeKeep.status, "active_source_file");
+  assert.ok(mergeKeep.sourceFileNotes.some((note) => note.text === "keep metadata"));
+  assert.ok(mergeKeep.sourceFileNotes.some((note) => note.text === "lesser metadata"));
+  assert.ok(mergeKeep.connectedRecommendationIds.includes("keep-rec"));
+  assert.ok(mergeKeep.connectedRecommendationIds.includes("lesser-rec"));
+  assert.equal(mergeLesser.status, "merged");
+  assert.equal(mergeLesser.mergedIntoCandidateId, "merge-keep");
+
+  assert.ok(payload.sourceFileRefreshRequests.some((request) => request.candidateId === "exact-target" && request.status === "pending"));
+  assert.ok(payload.sourceFileRefreshRequests.some((request) => request.candidateId === "alias-target" && request.status === "pending"));
+
+  const rebuiltAudit = workflow.createDossierPopulationAudit({
+    candidates: payload.candidates,
+    recommendations: payload.recommendations,
+    publicDossiers: [{ id: publicEntry.id, name: publicEntry.name }, { id: genericPublicEntry.id, name: genericPublicEntry.name }],
+    drafts: payload.drafts,
+  });
+  const remainingAutoGroups = rebuiltAudit.possibleDuplicateGroups.filter((group) =>
+    [
+      "Attach to Existing Source File candidate",
+      "Empty duplicate cleanup candidate",
+      "Source File merge candidate",
+      "Create Source File candidate",
+      "Create Dossier Update workspace candidate",
+    ].includes(group.consolidationPlan.automationTier),
+  );
+  assert.equal(remainingAutoGroups.length, 0);
+  assert.ok(rebuiltAudit.possibleDuplicateGroups.every((group) => group.consolidationPlan.requiresReview || group.consolidationPlan.automationTier === "Blocked"));
+  assert.ok(!rebuiltAudit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.recommendationId === "rec-new-a" || record.recommendationId === "rec-new-b")));
+  assert.ok(!rebuiltAudit.possibleDuplicateGroups.some((group) => group.records.some((record) => ["rec-public-a", "rec-public-b", "rec-public-variant", "rec-generic-public-a", "rec-generic-public-b", "rec-checkpoint"].includes(record.recommendationId))));
+  assert.ok(!rebuiltAudit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.id === "public-variant-candidate")));
+  assert.ok(!rebuiltAudit.possibleDuplicateGroups.some((group) => group.records.some((record) => record.id === "checkpoint-artifact")));
+
+  const secondResponse = await authedPost({ action: "runSubjectConsolidation" });
+  assert.equal(secondResponse.status, 200);
+  const secondPayload = await secondResponse.json();
+  assert.equal(secondPayload.consolidation.statusLabel, "Subject Consolidation Complete");
+  assert.equal(secondPayload.consolidation.attachedRecommendations, 0);
+  assert.equal(secondPayload.consolidation.sourceFilesCreated, 0);
+  assert.equal(secondPayload.consolidation.dossierUpdateWorkspacesCreated, 0);
+  assert.equal(secondPayload.consolidation.bundledPublicDossierUpdateSignals, 0);
+  assert.equal(secondPayload.consolidation.diagnosticArtifactsArchived, 0);
+  assert.equal(secondPayload.consolidation.emptyDuplicatesCleaned, 0);
+  assert.equal(secondPayload.consolidation.duplicateRecommendationsCleaned, 0);
+  assert.equal(secondPayload.consolidation.sourceFileDuplicatesMerged, 0);
+  assert.equal(JSON.stringify(secondPayload.recommendations), JSON.stringify(payload.recommendations));
+  assert.equal(JSON.stringify(secondPayload.candidates), JSON.stringify(payload.candidates));
+  assert.equal(JSON.stringify(databasePage.entries), publicBefore);
+});
+
+
+test("Consolidate Into Kept Source File dispatches attach, merge, and block behavior safely", async () => {
+  await resetWorkflowStore();
+  const now = "2026-06-11T00:00:00.000Z";
+  const candidate = (overrides) => ({
+    id: overrides.id,
+    name: overrides.name,
+    candidateType: "artist",
+    source: "manual",
+    tier: "review_candidate",
+    score: 5,
+    whyNow: overrides.whyNow ?? "Fixture",
+    reason: overrides.reason ?? "Fixture",
+    evidenceSummary: overrides.evidenceSummary ?? "Fixture",
+    status: overrides.status ?? "active_source_file",
+    createdAt: overrides.createdAt ?? now,
+    updatedAt: overrides.updatedAt ?? now,
+    ...overrides,
+  });
+  const recommendation = (overrides) => ({
+    id: overrides.id,
+    type: overrides.type ?? "new_subject",
+    subjectName: overrides.subjectName,
+    subjectKey: overrides.subjectKey,
+    status: overrides.status ?? "new",
+    reason: overrides.reason ?? "BNL fixture",
+    evidenceSummary: overrides.evidenceSummary,
+    confidence: overrides.confidence ?? "medium",
+    sourceLanes: overrides.sourceLanes ?? ["public_discord"],
+    sourceTypes: overrides.sourceTypes ?? ["source_file_note"],
+    createdAt: now,
+    updatedAt: overrides.updatedAt ?? now,
+    createdBy: "bnl",
+    ingestSource: overrides.ingestSource ?? "bnl_dynamic_candidate_discovery",
+    ingestKey: overrides.ingestKey,
+    ...overrides,
+  });
+
+  const baseState = {
+    version: 1,
+    revision: 0,
+    candidates: [
+      candidate({ id: "attach-target", name: "Attach Subject", sourceFileNotes: [] }),
+      candidate({ id: "merge-target", name: "Merge Action", latestSourceFileArchiveUpdatedAt: now, sourceFileNotes: [{ id: "target-note", candidateId: "merge-target", type: "fact", text: "target metadata", source: "admin_manual", status: "active", createdAt: now, updatedAt: now }] }),
+      candidate({ id: "merge-lesser", name: "Merge Action", sourceFileNotes: [{ id: "lesser-note", candidateId: "merge-lesser", type: "fact", text: "lesser metadata", source: "admin_manual", status: "active", createdAt: now, updatedAt: now }], connectedRecommendationIds: ["lesser-rec"] }),
+      candidate({ id: "ambiguous-a", name: "Crow" }),
+      candidate({ id: "ambiguous-b", name: "Crowe" }),
+    ],
+    drafts: [],
+    recommendations: [
+      recommendation({ id: "rec-attach-action", subjectName: "Attach Subject", reason: "attach action info", sourceLanes: ["rd_context"], ingestKey: "attach-action-key" }),
+    ],
+    sourceFileRefreshRequests: [],
+    updatedAt: now,
+  };
+  await store.saveDossierWorkflowState(baseState);
+
+  const attachAudit = workflow.createDossierPopulationAudit({ candidates: baseState.candidates, recommendations: baseState.recommendations, publicDossiers: [], drafts: [] });
+  const attachGroup = attachAudit.possibleDuplicateGroups.find((group) => group.consolidationPlan.targetRecord?.id === "attach-target" && group.records.some((record) => record.recommendationId === "rec-attach-action"));
+  assert.ok(attachGroup);
+  const attachResponse = await authedPost({ action: "consolidateSubjectGroup", groupId: attachGroup.id });
+  assert.equal(attachResponse.status, 200);
+  const attached = await attachResponse.json();
+  const attachedRecommendation = attached.recommendations.find((item) => item.id === "rec-attach-action");
+  const attachTarget = attached.candidates.find((item) => item.id === "attach-target");
+  assert.equal(attachedRecommendation.status, "attached_to_source_file");
+  assert.equal(attachedRecommendation.targetCandidateId, "attach-target");
+  assert.deepEqual(attachedRecommendation.sourceLanes, ["rd_context"]);
+  assert.equal(attachedRecommendation.ingestKey, "attach-action-key");
+  assert.ok(attachTarget.connectedRecommendationIds.includes("rec-attach-action"));
+  assert.ok(attachTarget.sourceFileNotes.some((note) => note.publicSafe === false && note.ingestKey === "attach-action-key"));
+  assert.ok(attached.sourceFileRefreshRequests.some((request) => request.candidateId === "attach-target" && request.status === "pending"));
+
+  const mergeAudit = workflow.createDossierPopulationAudit({ candidates: attached.candidates, recommendations: attached.recommendations, publicDossiers: [], drafts: [] });
+  const mergeGroup = mergeAudit.possibleDuplicateGroups.find((group) => group.consolidationPlan.targetRecord?.id === "merge-target" && group.records.some((record) => record.candidateId === "merge-lesser"));
+  assert.ok(mergeGroup);
+  const mergeResponse = await authedPost({ action: "consolidateSubjectGroup", groupId: mergeGroup.id });
+  assert.equal(mergeResponse.status, 200);
+  const merged = await mergeResponse.json();
+  const mergeTarget = merged.candidates.find((item) => item.id === "merge-target");
+  const lesser = merged.candidates.find((item) => item.id === "merge-lesser");
+  assert.ok(mergeTarget.sourceFileNotes.some((note) => note.text === "target metadata"));
+  assert.ok(mergeTarget.sourceFileNotes.some((note) => note.text === "lesser metadata"));
+  assert.ok(mergeTarget.connectedRecommendationIds.includes("lesser-rec"));
+  assert.equal(lesser.status, "merged");
+  assert.equal(lesser.mergedIntoCandidateId, "merge-target");
+  assert.ok(merged.sourceFileRefreshRequests.some((request) => request.candidateId === "merge-target" && request.status === "pending"));
+
+  const blockedBefore = JSON.stringify(merged.candidates.filter((item) => item.id === "ambiguous-a" || item.id === "ambiguous-b"));
+  const blockAudit = workflow.createDossierPopulationAudit({ candidates: merged.candidates, recommendations: merged.recommendations, publicDossiers: [], drafts: [] });
+  const blockGroup = blockAudit.possibleDuplicateGroups.find((group) => group.matchKind === "similar_name");
+  assert.ok(blockGroup);
+  const blockResponse = await authedPost({ action: "consolidateSubjectGroup", groupId: blockGroup.id });
+  assert.equal(blockResponse.status, 200);
+  const blocked = await blockResponse.json();
+  assert.equal(blocked.consolidation.blocked, 1);
+  assert.equal(JSON.stringify(blocked.candidates.filter((item) => item.id === "ambiguous-a" || item.id === "ambiguous-b")), blockedBefore);
+});
+
+test("Subject Consolidation Queue review UI uses direct decision buttons and collapsed raw links", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
   const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
 
   for (const label of [
-    "Merging / Incoming Info",
-    "Target / Keep",
-    "No Source File target resolved",
-    "targetDisplayReason",
-    "Suggested workspace to create",
-    "Recommended workspace:",
-    "Existing public dossier:",
-    "Create Dossier Update Later",
-    "Create Source File Later",
-    "Attach Later",
-    "Select Target Later",
-    "Merge Later",
-    "Clean Later",
-    "Needs Source File Target",
+    "Incoming Cluster",
+    "Kept Source File",
+    "Consolidate Into Kept Source File",
+    "Consolidate Into ${keptName}",
+    "Create Source File: {keptName}",
+    "Create Dossier Update: {publicDossierName}",
+    "Keep Separate / Not Same Subject",
+    "Select Different Target",
+    "Raw / Source Details",
+    "Diagnostics/Test Artifacts",
+    "Archive Diagnostic Artifact:",
+    "Incoming item count:",
+    "Item types summarized:",
+    "BNL consolidation brief needed",
+    "BNL consolidation brief needed before review.",
+    "Action: Generate BNL Consolidation Brief",
+    "Generate BNL Consolidation Brief",
+    "Requires companion BNL summary PR",
+    "Blocked / Needs Info",
+    "Target selection unavailable:",
+    "Target options",
+    "Create Source File: {keptName}",
+    "Create Dossier Update: {publicDossierName}",
+    "No usable signal cluster found.",
+    "Already represented",
+    "Internal operation:",
+    "What will not change",
+    "Confirm Consolidation",
+    "Cancel",
+    "View Kept Source File",
+    "View New Source File",
+    "View Dossier Update Workspace",
+    "Incoming cluster collapsed after completion.",
+    "Consolidating…",
+    "Resolved just now",
   ]) {
     assertIncludesCopy(pageCopy, label);
   }
 
-  assert.match(page, /<button disabled/);
-  assert.doesNotMatch(pageCopy, /Run Safe Cleanup|Attach Automatically|Remove Empty Duplicate|Auto-Merge Safe Duplicate/);
+  assert.match(page, /<details className="mt-4 border border-border\/60 bg-background\/30 p-3">/);
+  assert.doesNotMatch(pageCopy, /Open Recommendation|Open Source File|Open Target|Open Incoming|Merge Into Kept Source File|Attach to Kept Source File|Create Source File From These Signals|Create Dossier Update Workspace without public dossier\/context|Create Dossier Update Later|Create Source File Later|Attach Later|Merge Later|Clean Later/);
+  assert.doesNotMatch(pageCopy, /Create Source File: Checkpoint BNL Ingest Alpha/);
+  assert.doesNotMatch(page, /incoming-\$\{record\.type\}/);
   assert.doesNotMatch(pageCopy, /Confirmed aliases count: \{record\.confirmedAliasCount\}/);
   assert.doesNotMatch(pageCopy, /Proposed aliases count: \{record\.proposedAliasCount\}/);
   assert.doesNotMatch(pageCopy, /Archive\/report status: \{record\.hasLatestArchiveOrReport/);
@@ -4866,7 +5408,7 @@ test("recommendation inbox and source note UI are present and bounded", () => {
   assert.match(dashboard, /href=\{`\/admin\/dossiers\/recommendations\/\$\{recommendation\.id\}`\}/);
   assert.match(dashboard, /Review Candidate/);
   assert.match(dashboard, /Review Update/);
-  assert.match(dashboard, /Open Source File/);
+  assert.match(dashboard, /Review Source File/);
   assert.match(dashboard, /Review Record/);
   assert.doesNotMatch(dashboard, /Review Identity|Add Missing Info|>Attach to Existing Source File<|Attach to Existing Source File<\/button>/);
 

@@ -5,6 +5,10 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   createDossierPopulationAudit,
   getDossierSourceFileMetrics,
+  isConsolidationResolvedCandidate,
+  isDiagnosticTestArtifactCandidate,
+  isDiagnosticTestArtifactRecommendation,
+  isResolvedDossierRecommendation,
   matchDossierRecommendationSubject,
   type DossierCandidate,
   type DossierDraft,
@@ -31,6 +35,30 @@ type WorkflowPayload = {
   authoringGuide?: { version: string };
   tagRegistry?: { totalUniqueTags: number; totalTagAssignments: number };
   publicDossiers?: Array<{ id: string; name: string }>;
+  consolidation?: SubjectConsolidationResult;
+};
+
+type SubjectConsolidationIssue = { groupId?: string; subject: string; reason: string };
+
+type SubjectConsolidationResult = {
+  statusLabel: "Subject Consolidation Complete";
+  attachedRecommendations: number;
+  emptyDuplicatesCleaned: number;
+  duplicateRecommendationsCleaned: number;
+  dossierUpdateWorkspacesCreated: number;
+  bundledPublicDossierUpdateSignals: number;
+  diagnosticArtifactsArchived: number;
+  sourceFilesCreated: number;
+  sourceFileDuplicatesMerged: number;
+  bnlRefreshes: Array<{ candidateId: string; subjectName: string; status: string; requestId?: string; reason?: string }>;
+  needsReview: number;
+  blocked: number;
+  skippedItems: SubjectConsolidationIssue[];
+  blockedItems: SubjectConsolidationIssue[];
+  affectedTargets: Array<{ candidateId: string; name: string; href: string }>;
+  publicPagesPublished: 0;
+  publicDossierTextChanged: 0;
+  internalAliasesExposed: 0;
 };
 
 type ManualRecommendationForm = {
@@ -259,7 +287,7 @@ function dossierUpdateActionLabel() {
 }
 
 function sourceFileActionLabel() {
-  return "Open Source File";
+  return "Review Source File";
 }
 
 function archiveActionLabel() {
@@ -299,6 +327,10 @@ export default function DossierControlCenterPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [consolidationResult, setConsolidationResult] = useState<SubjectConsolidationResult | null>(null);
+  const [consolidatingGroupId, setConsolidatingGroupId] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<{ groupId: string; kind: "consolidate" | "source_file" | "dossier_update" | "keep_separate"; subject: string; targetName: string; incomingCount: number; targetHref?: string } | null>(null);
+  const [resolvedJustNow, setResolvedJustNow] = useState<{ groupId: string; subject: string; message: string; kind: "consolidate" | "source_file" | "dossier_update" | "keep_separate"; href?: string; absorbedCount: number; notesMoved: number; archivedCount: number; refreshStatus: string } | null>(null);
   const [recommendationForm, setRecommendationForm] =
     useState<ManualRecommendationForm>(emptyRecommendationForm);
   const [createdDraftIdByCandidate, setCreatedDraftIdByCandidate] = useState<
@@ -353,8 +385,15 @@ export default function DossierControlCenterPage() {
     () => payload?.publicDossiers ?? [],
     [payload?.publicDossiers],
   );
+  const diagnosticRecommendations = recommendations.filter(isDiagnosticTestArtifactRecommendation);
+  const resolvedCandidateIds = new Set(
+    candidates.filter(isConsolidationResolvedCandidate).map((candidate) => candidate.id),
+  );
   const activeRecommendations = recommendations.filter((recommendation) =>
-    ["new", "reviewing"].includes(recommendation.status),
+    ["new", "reviewing"].includes(recommendation.status) &&
+    !isResolvedDossierRecommendation(recommendation) &&
+    !isDiagnosticTestArtifactRecommendation(recommendation) &&
+    ![recommendation.targetCandidateId, recommendation.connectedCandidateId, recommendation.connectedSourceFileCandidateId].some((candidateId) => candidateId && resolvedCandidateIds.has(candidateId)),
   );
   const activeDossierUpdateRecommendations = activeRecommendations.filter(
     (recommendation) =>
@@ -369,6 +408,7 @@ export default function DossierControlCenterPage() {
   const terminalRecommendations = recommendations.filter((recommendation) =>
     [
       "attached_to_source_file",
+      "attached_to_existing_dossier_update",
       "converted_to_source_file",
       "identity_link_created",
       "ignored",
@@ -376,14 +416,22 @@ export default function DossierControlCenterPage() {
       "archived",
     ].includes(recommendation.status),
   );
-  const candidateIntakeItems = candidates.filter(
+  const diagnosticCandidates = candidates.filter(isDiagnosticTestArtifactCandidate);
+  const normalCandidates = candidates.filter(
+    (candidate) => !isDiagnosticTestArtifactCandidate(candidate),
+  );
+  const candidateIntakeItems = normalCandidates.filter(
     (candidate) => candidate.status === "candidate_intake",
   );
   const activeCandidates = candidates.filter((candidate) =>
-    activeCandidateStatuses.has(candidate.status),
+    activeCandidateStatuses.has(candidate.status) &&
+    !isDiagnosticTestArtifactCandidate(candidate) &&
+    !isConsolidationResolvedCandidate(candidate),
   );
-  const existingDossierUpdates = candidates.filter(
-    (candidate) => candidate.status === "existing_dossier_update",
+  const existingDossierUpdates = normalCandidates.filter(
+    (candidate) =>
+      candidate.status === "existing_dossier_update" &&
+      !isConsolidationResolvedCandidate(candidate),
   );
   const archivedCandidates = candidates.filter(
     (candidate) => candidate.status === "archived",
@@ -450,6 +498,19 @@ export default function DossierControlCenterPage() {
       }),
     [candidates, recommendations, publicDossiers, drafts],
   );
+  const consolidationAttachGroups = populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Attach to Existing Source File candidate");
+  const consolidationCleanGroups = populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Empty duplicate cleanup candidate");
+  const consolidationDossierUpdateGroups = populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Create Dossier Update workspace candidate");
+  const consolidationSourceFileGroups = populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Create Source File candidate");
+  const consolidationReviewGroups = populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.requiresReview && group.consolidationPlan.automationTier !== "Blocked");
+  const consolidationBlockedGroups = populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Blocked");
+  const isSubjectConsolidationClear =
+    consolidationAttachGroups.length === 0 &&
+    consolidationCleanGroups.length === 0 &&
+    consolidationDossierUpdateGroups.length === 0 &&
+    consolidationSourceFileGroups.length === 0 &&
+    consolidationReviewGroups.length === 0 &&
+    consolidationBlockedGroups.length === 0;
 
   async function postWorkflow(body: Record<string, unknown>) {
     setSaving(true);
@@ -475,11 +536,61 @@ export default function DossierControlCenterPage() {
             data.message ??
             `Workflow API returned ${response.status}.`,
         );
+      if (data.consolidation) setConsolidationResult(data.consolidation);
       if (data.candidates && data.drafts && data.workflow)
         setPayload(data as WorkflowPayload);
       return data;
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function consolidateSubjectGroup() {
+    if (!confirmation) return;
+    const pending = confirmation;
+    if (pending.kind === "keep_separate") {
+      setResolvedJustNow({
+        groupId: pending.groupId,
+        subject: pending.subject,
+        message: "Marked separate.",
+        kind: "keep_separate",
+        absorbedCount: 0,
+        notesMoved: 0,
+        archivedCount: 0,
+        refreshStatus: "not needed",
+      });
+      setConfirmation(null);
+      return;
+    }
+    setConsolidatingGroupId(pending.groupId);
+    setResolvedJustNow(null);
+    try {
+      const data = await postWorkflow({ action: "consolidateSubjectGroup", groupId: pending.groupId });
+      const consolidation = data.consolidation;
+      const target = consolidation?.affectedTargets?.[0];
+      const refreshStatus = consolidation?.bnlRefreshes?.[0]?.status ?? "marked needed";
+      setResolvedJustNow({
+        groupId: pending.groupId,
+        subject: pending.subject,
+        message: pending.kind === "source_file"
+          ? "Source File Created"
+          : pending.kind === "dossier_update"
+            ? "Dossier Update Workspace Created"
+            : "Consolidated into kept Source File.",
+        kind: pending.kind,
+        href: target?.href ?? pending.targetHref,
+        absorbedCount: consolidation?.attachedRecommendations ?? pending.incomingCount,
+        notesMoved: consolidation?.attachedRecommendations ?? 0,
+        archivedCount: consolidation?.sourceFileDuplicatesMerged ?? 0,
+        refreshStatus,
+      });
+      setConfirmation(null);
+    } catch (err) {
+      setNotice(
+        err instanceof Error ? err.message : "Failed to consolidate subject group.",
+      );
+    } finally {
+      setConsolidatingGroupId(null);
     }
   }
 
@@ -805,335 +916,360 @@ export default function DossierControlCenterPage() {
           </div>
         </DashboardCard>
 
-        <details className="border border-accent/40 bg-surface/70 p-5">
-          <summary className="cursor-pointer text-xl font-bold text-foreground">
-            Source File Population Audit
-          </summary>
-          <div className="mt-4 space-y-5">
-            <p className="border border-border/70 bg-background/30 p-4 text-sm text-muted">
-              The site can only audit records and recommendations already
-              present in the workflow store. Active Discord members who have not
-              been ingested by BNL will not appear here yet. This panel is
-              review-only: it does not merge, delete, publish, or mutate records
-              automatically.
-            </p>
-
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 text-xs text-muted">
-              {[
-                [
-                  "Active Source Files / Case Files",
-                  populationAudit.counts.activeSourceFiles,
-                ],
-                [
-                  "Candidate Intake / Dossier Seeds",
-                  populationAudit.counts.candidateIntake,
-                ],
-                [
-                  "Existing Dossier Updates",
-                  populationAudit.counts.existingDossierUpdates,
-                ],
-                ["Public Dossiers", populationAudit.counts.publicDossiers],
-                [
-                  "Archived / closed records",
-                  populationAudit.counts.archivedClosedRecords,
-                ],
-                [
-                  "Records with proposed identity links",
-                  populationAudit.counts.proposedIdentityLinks,
-                ],
-                [
-                  "Records with confirmed identity links",
-                  populationAudit.counts.confirmedIdentityLinks,
-                ],
-                [
-                  "Records with attached BNL recommendations",
-                  populationAudit.counts.recordsWithAttachedBnlRecommendations,
-                ],
-                [
-                  "BNL recommendations not clearly attached to an active Source File",
-                  populationAudit.counts.unattachedBnlRecommendations,
-                ],
-                [
-                  "Records missing latest BNL case report or source enrichment",
-                  populationAudit.counts
-                    .recordsMissingLatestCaseReportOrEnrichment,
-                ],
-              ].map(([label, value]) => (
-                <div
-                  key={label}
-                  className="border border-border/70 bg-background/30 p-3"
-                >
-                  <p className="uppercase tracking-[0.25em] text-accent mb-2">
-                    {label}
-                  </p>
-                  <p className="text-2xl font-bold text-foreground">{value}</p>
-                </div>
-              ))}
+        {isSubjectConsolidationClear && !consolidationResult ? (
+          <details className="border border-accent/40 bg-surface/70 p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-foreground">Subject Consolidation: clear</summary>
+            <p className="mt-2 text-sm text-muted">No pending exact matches, possible matches, or blocked subject clusters are waiting. Show consolidation details if you need to inspect the empty queue.</p>
+            <button type="button" disabled={saving} onClick={() => postWorkflow({ action: "runSubjectConsolidation" })} className="mt-3 inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Run Subject Consolidation</button>
+          </details>
+        ) : (
+        <section className="border border-accent/40 bg-surface/70 p-5 space-y-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.45em] text-muted mb-2">SUBJECT CONSOLIDATION</p>
+              <h2 className="text-xl font-bold text-foreground">Subject Consolidation Queue</h2>
+              <p className="mt-2 text-sm text-muted">Safe exact matches are handled by an admin-triggered server pass. Similar, ambiguous, or conflicted subjects stay here for review.</p>
             </div>
+            <button type="button" disabled={saving} onClick={() => postWorkflow({ action: "runSubjectConsolidation" })} className="inline-flex border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">
+              Run Subject Consolidation
+            </button>
+          </div>
 
-            <section className="space-y-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.35em] text-muted">
-                  Possible Duplicate / Same Subject Review
-                </p>
-                <h3 className="text-lg font-bold text-foreground">
-                  Possible same-subject review
-                </h3>
+          <section className="border border-border/70 bg-background/30 p-4 text-sm text-muted">
+            <h3 className="font-semibold text-foreground">Auto-consolidation summary</h3>
+            <p className="mt-2">Run Subject Consolidation will:</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              <li>attach {consolidationAttachGroups.length} recommendations to existing Source Files</li>
+              <li>clean {consolidationCleanGroups.length} empty duplicates</li>
+              <li>create {consolidationDossierUpdateGroups.length} Dossier Update workspace</li>
+              <li>create {consolidationSourceFileGroups.length} new Source File from matched signals</li>
+              <li>leave {consolidationReviewGroups.length} possible matches for review</li>
+              <li>block {consolidationBlockedGroups.length} conflicted items</li>
+              <li>publish 0 public pages</li>
+              <li>change 0 public dossier text</li>
+              <li>keep internal aliases internal</li>
+            </ul>
+            {consolidationResult && (
+              <div className="mt-4 border border-accent/40 bg-accent/5 p-3">
+                <p className="font-semibold text-foreground">Subject Consolidation Complete</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  <li>Consolidated {consolidationResult.attachedRecommendations + consolidationResult.sourceFileDuplicatesMerged} incoming items into kept Source Files.</li>
+                  <li>Created {consolidationResult.sourceFilesCreated} Source Files.</li>
+                  <li>Created {consolidationResult.dossierUpdateWorkspacesCreated} Dossier Update workspaces.</li>
+                  <li>Bundled {consolidationResult.bundledPublicDossierUpdateSignals} public dossier update signals.</li>
+                  <li>Cleaned {consolidationResult.emptyDuplicatesCleaned + consolidationResult.duplicateRecommendationsCleaned} empty duplicates.</li>
+                  <li>{consolidationResult.diagnosticArtifactsArchived} diagnostic artifacts archived/hidden</li>
+                  <li>{consolidationResult.sourceFileDuplicatesMerged} records merged</li>
+                  <li>{consolidationResult.bnlRefreshes.length} BNL refresh triggered / queued / needed</li>
+                  <li>{consolidationResult.skippedItems.length} skipped items with reasons</li>
+                  <li>{consolidationResult.blocked} blocked items with reasons</li>
+                  <li>{consolidationResult.needsReview} remaining review-needed count</li>
+                  <li>{consolidationResult.publicPagesPublished} public pages published</li>
+                  <li>{consolidationResult.publicDossierTextChanged} public dossier text changed</li>
+                  <li>{consolidationResult.internalAliasesExposed} internal aliases exposed</li>
+                </ul>
+                {consolidationResult.skippedItems.length > 0 && (
+                  <div className="mt-3 text-xs">
+                    <p className="uppercase tracking-[0.3em] text-accent">Skipped items with reasons</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5">
+                      {consolidationResult.skippedItems.map((item) => (
+                        <li key={`${item.groupId ?? item.subject}-skipped`}>{item.subject}: {item.reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {consolidationResult.blockedItems.length > 0 && (
+                  <div className="mt-3 text-xs">
+                    <p className="uppercase tracking-[0.3em] text-accent">Blocked items with reasons</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5">
+                      {consolidationResult.blockedItems.map((item) => (
+                        <li key={`${item.groupId ?? item.subject}-blocked`}>{item.subject}: {item.reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {consolidationResult.affectedTargets.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs uppercase tracking-[0.3em] text-accent">Affected kept Source Files / workspaces</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {consolidationResult.affectedTargets.map((target) => (
+                        <Link key={target.candidateId} href={target.href} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">View {target.name} Dossier Update Workspace</Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {consolidationResult.bnlRefreshes.length > 0 && (
+                  <div className="mt-3 text-xs">
+                    <p className="uppercase tracking-[0.3em] text-accent">BNL refresh status</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5">
+                      {consolidationResult.bnlRefreshes.map((refresh) => (
+                        <li key={`${refresh.candidateId}-${refresh.requestId ?? refresh.status}`}>{refresh.subjectName}: {refresh.status}{refresh.reason ? ` — ${refresh.reason}` : ""}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {resolvedJustNow && (
+                  <div className="mt-3 border border-accent/50 bg-background/40 p-3 text-xs">
+                    <p className="uppercase tracking-[0.3em] text-accent">Resolved just now</p>
+                    <p className="mt-2 text-foreground">{resolvedJustNow.subject}: {resolvedJustNow.message}</p>
+                  </div>
+                )}
               </div>
-              {populationAudit.possibleDuplicateGroups.length === 0 ? (
-                <p className="border border-border/70 bg-background/30 p-4 text-sm text-muted">
-                  No conservative possible duplicate groups were detected.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {populationAudit.possibleDuplicateGroups
-                    .slice(0, 10)
-                    .map((group) => {
-                      const plan = group.consolidationPlan;
-                      return (
-                      <article
-                        key={group.id}
-                        className="border border-border/70 bg-background/20 p-4 text-sm text-muted"
-                      >
-                        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                          <div>
-                            <p className="font-semibold text-foreground">
-                              Consolidation plan — Automation tier: {plan.automationTier}
-                            </p>
-                            <p>Match reason: {plan.reason}</p>
-                            <p>Target selection: {plan.targetSelectionReason}</p>
-                            <p>Recommended next step: {plan.recommendedNextStep}</p>
-                            {plan.blockedReasons.length > 0 && (
-                              <p>Blocked because: {plan.blockedReasons.join(" ")}</p>
-                            )}
-                            {group.publicDossierMatch && (
-                              <p>
-                                Public dossier match: {" "}
-                                {group.publicDossierMatch.name ??
-                                  group.publicDossierMatch.id}
-                              </p>
-                            )}
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.35em] text-muted">Needs Review</p>
+              <h3 className="text-lg font-bold text-foreground">Similar or ambiguous subjects requiring admin judgment</h3>
+            </div>
+            {consolidationReviewGroups.length === 0 ? (
+              <p className="border border-border/70 bg-background/30 p-4 text-sm text-muted">No similar or ambiguous same-subject items currently need admin review.</p>
+            ) : (
+              <div className="space-y-3">
+                {consolidationReviewGroups.slice(0, 10).map((group) => {
+                  const plan = group.consolidationPlan;
+                  const keptName = plan.targetDisplayName ?? plan.targetRecord?.displayName ?? plan.targetRecord?.name ?? "Select Different Target";
+                  const incomingCount = plan.sourceRecords.length;
+                  const incomingTypes = Array.from(new Set(plan.sourceRecords.map((record) => record.type))).join(", ") || "—";
+                  const possibleTargets = plan.possibleTargetRecords.slice(0, 6);
+                  const brief = plan.bnlBrief;
+                  const isConsolidating = consolidatingGroupId === group.id;
+                  const pendingConfirmation = confirmation?.groupId === group.id ? confirmation : null;
+                  const completed = resolvedJustNow?.groupId === group.id ? resolvedJustNow : null;
+                  const actionKind = plan.targetRecord ? "consolidate" : plan.suggestedWorkspace === "Dossier Update" ? "dossier_update" : "source_file";
+                  const publicDossierName = plan.existingPublicDossier?.name ?? plan.targetRecord?.publicDossierName ?? keptName;
+                  const subjectIsReadable = Boolean(keptName && keptName !== "Select Different Target" && keptName !== "—");
+                  const defaultConsolidateActionLabel = "Consolidate Into Kept Source File";
+                  const consolidateActionLabel = group.reason.startsWith("Variant needs review:")
+                    ? `Consolidate Into ${keptName}`
+                    : defaultConsolidateActionLabel;
+                  const sourceFileActionAllowed = actionKind !== "source_file" || (subjectIsReadable && incomingCount > 0);
+                  const targetHref = plan.targetRecord?.href;
+                  if (completed) {
+                    const viewLabel = completed.kind === "source_file"
+                      ? "View New Source File"
+                      : completed.kind === "dossier_update"
+                        ? "View Dossier Update Workspace"
+                        : "View Kept Source File";
+                    return (
+                      <article key={group.id} className="border border-accent/70 bg-accent/10 p-4 text-sm text-muted">
+                        <div className="grid gap-3 lg:grid-cols-[1fr_1.2fr]">
+                          <div className="border border-border/60 bg-background/30 p-3 opacity-60">
+                            <p className="text-xs uppercase tracking-[0.3em] text-accent">Incoming Cluster</p>
+                            <p className="mt-2 font-semibold text-foreground">Incoming cluster collapsed after completion.</p>
+                            <p>{completed.absorbedCount} recommendations absorbed</p>
+                            <p>{completed.notesMoved} notes moved</p>
+                            <p>{completed.archivedCount} duplicate records archived/resolved</p>
                           </div>
-                          <StatusPill>{plan.confidence} confidence</StatusPill>
-                        </div>
-                        <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                          <div className="border border-border/60 bg-background/30 p-3">
-                            <p className="text-xs uppercase tracking-[0.3em] text-accent">
-                              Merging / Incoming Info
-                            </p>
-                            {plan.sourceRecords.length === 0 ? (
-                              <p className="mt-2">No incoming information selected yet.</p>
+                          <div className="border border-accent bg-background/40 p-3 shadow-lg">
+                            <p className="text-xs uppercase tracking-[0.3em] text-accent">Resolved just now</p>
+                            <h4 className="mt-2 text-lg font-bold text-foreground">{completed.message}</h4>
+                            <p>{completed.subject}</p>
+                            <p>BNL refresh triggered / queued / needed: {completed.refreshStatus}</p>
+                            {completed.kind === "keep_separate" && <p>This pair/group will be suppressed from future same-subject suggestions.</p>}
+                            {completed.href ? (
+                              <Link href={completed.href} className="mt-3 inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">{viewLabel}</Link>
                             ) : (
-                              <div className="mt-2 space-y-3">
-                                {plan.sourceRecords.map((record) => (
-                                  <div key={`${group.id}-source-${record.type}-${record.id}`}>
-                                    <p className="font-semibold text-foreground">{record.displayName ?? record.name}</p>
-                                    {record.type === "recommendation" ? (
-                                      <p>Incoming recommendation subject: {record.name}</p>
-                                    ) : (
-                                      <p>Incoming record: {record.type} / {record.status}</p>
-                                    )}
-                                    {record.sourceLanes && record.sourceLanes.length > 0 && (
-                                      <p>Source lanes: {record.sourceLanes.join(", ")}</p>
-                                    )}
-                                    {(record.publicDossierName || record.publicDossierId) && (
-                                      <p>Public dossier match: {record.publicDossierName ?? record.publicDossierId}</p>
-                                    )}
-                                    {record.incomingInfo.length > 0 && (
-                                      <p>What this would add: {record.incomingInfo.join("; ")}</p>
-                                    )}
-                                    {record.duplicateInfo.length > 0 && (
-                                      <p>Already represented / duplicate: {record.duplicateInfo.join("; ")}</p>
-                                    )}
-                                    {!plan.targetRecord && (
-                                      <p>Needs Source File target before any future action.</p>
-                                    )}
-                                    {record.href && (
-                                      <Link href={record.href} className="mt-2 inline-flex border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">
-                                        {record.type === "recommendation" ? "Open incoming recommendation" : "Open source Source File"}
-                                      </Link>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
+                              <button type="button" disabled className="mt-3 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted opacity-60">{viewLabel}</button>
                             )}
                           </div>
-                          <div className={plan.targetRecord ? "border border-accent/50 bg-accent/5 p-3" : "border border-border/60 bg-background/30 p-3"}>
-                            <p className="text-xs uppercase tracking-[0.3em] text-accent">
-                              Target / Keep
-                            </p>
-                            {plan.targetRecord ? (
-                              <div className="mt-2">
-                                <p className="font-semibold text-foreground">{plan.targetDisplayName ?? plan.targetRecord.displayName ?? plan.targetRecord.name}</p>
-                                {plan.targetDisplayReason && (
-                                  <p>{plan.targetDisplayReason}</p>
-                                )}
-                                {plan.targetSourceFileLabel && plan.targetDisplayName !== plan.targetSourceFileLabel && (
-                                  <p>Source File label: {plan.targetSourceFileLabel}</p>
-                                )}
-                                <p>Target type/status: {plan.targetRecord.type} / {plan.targetRecord.status}</p>
-                                <p>Why selected: {plan.targetSelectionReason}</p>
-                                {(plan.targetRecord.publicDossierName || plan.targetRecord.publicDossierId) && (
-                                  <p>Dossier status: public dossier match {plan.targetRecord.publicDossierName ?? plan.targetRecord.publicDossierId}</p>
-                                )}
-                                {plan.targetRecord.activeDraftStatus && (
-                                  <p>Draft status: {plan.targetRecord.activeDraftStatus}</p>
-                                )}
-                                {plan.targetRecord.uniqueInfo.length > 0 && (
-                                  <p>Target already has: {plan.targetRecord.uniqueInfo.join("; ")}</p>
-                                )}
-                                <p>What would be updated later: {plan.automationTier}</p>
-                                {plan.targetRecord.href && (
-                                  <Link href={plan.targetRecord.href} className="mt-2 inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">
-                                    Open target Source File
-                                  </Link>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="mt-2">
-                                <p className="font-semibold text-foreground">Suggested workspace to create</p>
-                                {plan.existingPublicDossier && (
-                                  <p>Existing public dossier: {plan.existingPublicDossier.name ?? plan.existingPublicDossier.id}</p>
-                                )}
-                                {plan.suggestedWorkspace && (
-                                  <p>Recommended workspace: {plan.suggestedWorkspace}</p>
-                                )}
-                                {plan.possibleTargetRecords.length > 0 && (
-                                  <p>Possible targets: {plan.possibleTargetRecords.map((record) => record.displayName ?? record.name).join("; ")}</p>
-                                )}
-                                <p>No Source File target resolved</p>
-                                <p>{plan.recommendedNextStep}</p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="mt-4 space-y-2">
-                          <p className="text-xs uppercase tracking-[0.3em] text-accent">Field-level plan</p>
-                          <p className="sr-only">New info to add Already represented / duplicate info Irrelevant to kept entry Needs review Blocked reason No action needed</p>
-                          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                            {plan.mergePlanSections.map((section) => (
-                              <div key={`${group.id}-${section.title}`} className="border border-border/60 bg-background/30 p-3">
-                                <p className="font-semibold text-foreground">{section.title}</p>
-                                <p>New info to add: {section.newInfoToAdd.join("; ") || "—"}</p>
-                                <p>Already represented / duplicate info: {section.alreadyRepresented.join("; ") || "—"}</p>
-                                <p>Irrelevant to kept entry: {section.irrelevantToKeptEntry.join("; ") || "—"}</p>
-                                <p>Needs review: {section.needsReview.join("; ") || "—"}</p>
-                                <p>Blocked reason: {section.blockedReason.join("; ") || "—"}</p>
-                                <p>No action needed: {section.noActionNeeded.join("; ") || "—"}</p>
-                              </div>
-                            ))}
-                          </div>
-                          <button disabled className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted opacity-60">
-                            {plan.automationTier === "Create Dossier Update workspace candidate"
-                              ? "Create Dossier Update Later"
-                              : plan.automationTier === "Create Source File candidate"
-                                ? "Create Source File Later"
-                                : plan.automationTier === "Attach to Existing Source File candidate"
-                                  ? "Attach Later"
-                                  : plan.automationTier === "Select Target Manually"
-                                    ? "Select Target Later"
-                                    : plan.automationTier === "Source File merge candidate"
-                                      ? "Merge Later"
-                                      : plan.automationTier === "Empty duplicate cleanup candidate"
-                                        ? "Clean Later"
-                                        : "Needs Source File Target"}
-                          </button>
                         </div>
                       </article>
-                      );
-                    })}
-                </div>
-              )}
-            </section>
-
-            <section className="space-y-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.35em] text-muted">
-                  Unattached BNL Signals / Recommendations
-                </p>
-                <h3 className="text-lg font-bold text-foreground">
-                  BNL recommendations that need placement review
-                </h3>
-              </div>
-              {populationAudit.unattachedBnlRecommendations.length === 0 ? (
-                <p className="border border-border/70 bg-background/30 p-4 text-sm text-muted">
-                  No unattached BNL recommendations were detected.
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[900px] text-left text-sm text-muted">
-                    <thead className="text-xs uppercase tracking-widest text-foreground">
-                      <tr>
-                        <th className="py-2 pr-3">Subject</th>
-                        <th className="py-2 pr-3">subjectKey</th>
-                        <th className="py-2 pr-3">
-                          ingestSource / sourceLanes
-                        </th>
-                        <th className="py-2 pr-3">Confidence</th>
-                        <th className="py-2 pr-3">Created / updated</th>
-                        <th className="py-2 pr-3">Likely target</th>
-                        <th className="py-2 pr-3">Match reason</th>
-                        <th className="py-2 pr-3">Classification</th>
-                        <th className="py-2 pr-3">What would happen later</th>
-                        <th className="py-2 pr-3">Review link</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {populationAudit.unattachedBnlRecommendations.map(
-                        (recommendation) => (
-                          <tr
-                            key={recommendation.id}
-                            className="border-t border-border/70 align-top"
-                          >
-                            <td className="py-3 pr-3 font-semibold text-foreground">
-                              {recommendation.subjectName}
-                            </td>
-                            <td className="py-3 pr-3">
-                              {recommendation.subjectKey ?? "—"}
-                            </td>
-                            <td className="py-3 pr-3">
-                              {recommendation.ingestSource ?? "unknown"} /{" "}
-                              {recommendation.sourceLanes.join(", ")}
-                            </td>
-                            <td className="py-3 pr-3">
-                              {recommendation.confidence ?? "unset"}
-                            </td>
-                            <td className="py-3 pr-3">
-                              {formatDate(recommendation.createdAt)} /{" "}
-                              {formatDate(recommendation.updatedAt)}
-                            </td>
-                            <td className="py-3 pr-3">
-                              {recommendation.likelyTargetName
-                                ? `${recommendation.likelyTargetName} (${recommendation.matchBasis})`
-                                : "Needs Source File target"}
-                            </td>
-                            <td className="py-3 pr-3">
-                              {recommendation.matchReason}
-                            </td>
-                            <td className="py-3 pr-3">
-                              {recommendation.planClassification}
-                            </td>
-                            <td className="py-3 pr-3">
-                              {recommendation.wouldHappenLater}
-                            </td>
-                            <td className="py-3 pr-3">
-                              <Link
-                                href={recommendation.href}
-                                className="inline-flex border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background"
-                              >
-                                Open incoming recommendation
-                              </Link>
-                            </td>
-                          </tr>
-                        ),
+                    );
+                  }
+                  return (
+                    <article key={group.id} className={`border border-border/70 bg-background/20 p-4 text-sm text-muted transition-all duration-300 ${isConsolidating ? "translate-x-2 border-accent bg-accent/10 motion-safe:animate-pulse" : ""}`}>
+                      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.3em] text-accent">Subject</p>
+                          <h4 className="text-lg font-bold text-foreground">{keptName}</h4>
+                          <p>Why this needs review: {plan.reason}</p>
+                          <p>Recommended action: {plan.recommendedNextStep}</p>
+                          <p className="mt-2 font-semibold text-foreground">Why this target is being kept:</p>
+                          <p>{plan.targetSelectionReason}</p>
+                          <p>Internal operation: {plan.automationTier === "Attach to Existing Source File candidate" ? "attach recommendations" : plan.automationTier === "Source File merge candidate" ? "merge duplicate Source File" : plan.automationTier === "Empty duplicate cleanup candidate" ? "clean empty duplicate" : "blocked pending review"}</p>
+                        </div>
+                        <StatusPill>{plan.confidence} confidence</StatusPill>
+                      </div>
+                      {brief ? (
+                        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                          <div className={`border border-border/60 bg-background/30 p-3 transition-all duration-300 ${isConsolidating ? "opacity-50 scale-95" : ""}`}>
+                            <p className="text-xs uppercase tracking-[0.3em] text-accent">Incoming Cluster</p>
+                            <p className="mt-2 font-semibold text-foreground">BNL operator summary</p>
+                            <p>{brief.operatorSummary}</p>
+                            <p className="mt-2 font-semibold text-foreground">Incoming summary bullets</p>
+                            <ul className="list-disc pl-5">
+                              {brief.incomingSummaryBullets.map((bullet) => <li key={bullet}>{bullet}</li>)}
+                            </ul>
+                            <p className="mt-2 font-semibold text-foreground">What will be absorbed</p>
+                            <ul className="list-disc pl-5">
+                              {brief.whatWillBeAbsorbed.map((bullet) => <li key={bullet}>{bullet}</li>)}
+                            </ul>
+                            <p className="mt-2 font-semibold text-foreground">Already represented</p>
+                            <ul className="list-disc pl-5">
+                              {brief.alreadyRepresented.map((bullet) => <li key={bullet}>{bullet}</li>)}
+                            </ul>
+                            {isConsolidating && <p className="text-accent">Consolidating… incoming cluster is moving into the kept Source File.</p>}
+                          </div>
+                          <div className={`border border-accent/50 bg-accent/5 p-3 transition-all duration-300 ${isConsolidating ? "ring-2 ring-accent shadow-lg" : ""}`}>
+                            <p className="text-xs uppercase tracking-[0.3em] text-accent">Kept Source File</p>
+                            <p className="mt-2 font-semibold text-foreground">{brief.subjectDisplayName}</p>
+                            <p>Recommended action: {brief.recommendedAction}</p>
+                            <p>Relationship verdict: {brief.relationshipVerdict}</p>
+                            <p className="mt-2 font-semibold text-foreground">Kept target summary bullets</p>
+                            <ul className="list-disc pl-5">
+                              {brief.keptTargetSummaryBullets.map((bullet) => <li key={bullet}>{bullet}</li>)}
+                            </ul>
+                            <p className="mt-2 font-semibold text-foreground">What will not change</p>
+                            <ul className="list-disc pl-5">
+                              {brief.whatWillNotChange.map((bullet) => <li key={bullet}>{bullet}</li>)}
+                            </ul>
+                            <p className="mt-2 font-semibold text-foreground">Why review is needed</p>
+                            <ul className="list-disc pl-5">
+                              {brief.whyReviewIsNeeded.map((bullet) => <li key={bullet}>{bullet}</li>)}
+                            </ul>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-3 border border-border/60 bg-background/30 p-3">
+                          <p className="text-xs uppercase tracking-[0.3em] text-accent">BNL consolidation brief needed</p>
+                          <p className="mt-2 font-semibold text-foreground">BNL consolidation brief needed before review.</p>
+                          <p>Subject cluster detected: {keptName}</p>
+                          <p>Incoming item count: {incomingCount}</p>
+                          <p>Item types summarized: {incomingTypes}</p>
+                          <p>Possible kept targets: {possibleTargets.length}</p>
+                          {possibleTargets.length >= 2 ? (
+                            <div className="mt-2">
+                              <p className="font-semibold text-foreground">Target options</p>
+                              <ul className="list-disc pl-5">
+                                {possibleTargets.map((target) => (
+                                  <li key={target.id}>
+                                    {target.displayName ?? target.name} — Source File ID: {target.candidateId ?? target.id}; status: {target.status}; public dossier match: {target.publicDossierName ?? "none"}; draft status: {target.activeDraftStatus ?? "none"}; source notes: {target.sourceNotesCount}; recommendations: {target.attachedRecommendationCount}; reason it might be kept: {target.uniqueInfo.join(", ") || "named possible target"}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : (
+                            <div className="mt-2">
+                              <p className="font-semibold text-foreground">Blocked / Needs Info</p>
+                              <p>Target selection unavailable: at least two named target options are required.</p>
+                            </div>
+                          )}
+                          {actionKind === "source_file" && sourceFileActionAllowed && (
+                            <p>This will create a new internal Source File for “{keptName}” from {incomingCount} matched {incomingTypes} signals. No public page will be published.</p>
+                          )}
+                          {actionKind === "source_file" && incomingCount === 0 && <p>No usable signal cluster found.</p>}
+                          {actionKind === "dossier_update" && (
+                            <p>This will create an internal update workspace for the existing {publicDossierName} public dossier. It will not edit the public dossier text or publish anything.</p>
+                          )}
+                          <p>Action: Generate BNL Consolidation Brief</p>
+                          <button type="button" disabled className="mt-3 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted opacity-60">Generate BNL Consolidation Brief</button>
+                          <p className="mt-2 text-xs text-muted">Requires companion BNL summary PR; raw evidence is not shown as a substitute.</p>
+                          {isConsolidating && <p className="text-accent">Consolidating… incoming cluster is moving into the kept Source File.</p>}
+                        </div>
                       )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-          </div>
-        </details>
+                      {pendingConfirmation ? (
+                        <div className="mt-4 border border-accent/60 bg-accent/10 p-3">
+                          <p className="font-semibold text-foreground">Confirm subject consolidation</p>
+                          {pendingConfirmation.kind === "consolidate" && (
+                            <p>You are about to consolidate {pendingConfirmation.subject} into {pendingConfirmation.targetName}.</p>
+                          )}
+                          {pendingConfirmation.kind === "source_file" && (
+                            <p>You are about to create internal Source File “{pendingConfirmation.subject}” from {pendingConfirmation.incomingCount} signals. This will not publish a public page.</p>
+                          )}
+                          {pendingConfirmation.kind === "dossier_update" && (
+                            <p>You are about to create an internal dossier update workspace for “{pendingConfirmation.subject}.” This will not edit public dossier text.</p>
+                          )}
+                          {pendingConfirmation.kind === "keep_separate" && (
+                            <p>You are about to mark {pendingConfirmation.subject} separate. This pair/group will be suppressed from future same-subject suggestions.</p>
+                          )}
+                          <div className="mt-2 grid gap-2 md:grid-cols-2">
+                            <div>
+                              <p className="font-semibold text-foreground">This will:</p>
+                              <ul className="list-disc pl-5">
+                                <li>absorb {incomingCount} recommendations / notes / source records</li>
+                                <li>keep {pendingConfirmation.targetName} active when a kept file exists</li>
+                                <li>archive or resolve the incoming cluster when safe</li>
+                                <li>trigger or mark BNL refresh</li>
+                              </ul>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-foreground">This will not:</p>
+                              <ul className="list-disc pl-5">
+                                <li>publish a public page</li>
+                                <li>edit public dossier text</li>
+                                <li>expose internal aliases</li>
+                              </ul>
+                            </div>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button type="button" disabled={saving} onClick={() => consolidateSubjectGroup()} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Confirm Consolidation</button>
+                            <button type="button" disabled={saving} onClick={() => setConfirmation(null)} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50">Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {plan.targetRecord ? (
+                            <button type="button" disabled={saving} onClick={() => setConfirmation({ groupId: group.id, kind: "consolidate", subject: keptName, targetName: keptName, incomingCount, targetHref })} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{isConsolidating ? "Consolidating…" : consolidateActionLabel}</button>
+                          ) : actionKind === "dossier_update" ? (
+                            <button type="button" disabled={saving} onClick={() => setConfirmation({ groupId: group.id, kind: "dossier_update", subject: publicDossierName, targetName: publicDossierName, incomingCount })} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Create Dossier Update: {publicDossierName}</button>
+                          ) : sourceFileActionAllowed ? (
+                            <button type="button" disabled={saving} onClick={() => setConfirmation({ groupId: group.id, kind: "source_file", subject: keptName, targetName: keptName, incomingCount })} className="border border-accent px-3 py-1.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">Create Source File: {keptName}</button>
+                          ) : null}
+                          <button type="button" disabled={saving} onClick={() => setConfirmation({ groupId: group.id, kind: "keep_separate", subject: keptName, targetName: keptName, incomingCount })} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent disabled:opacity-50">Keep Separate / Not Same Subject</button>
+                          {possibleTargets.length >= 2 && (
+                            <button type="button" className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Select Different Target</button>
+                          )}
+                        </div>
+                      )}
+                      <details className="mt-4 border border-border/60 bg-background/30 p-3">
+                        <summary className="cursor-pointer text-xs uppercase tracking-[0.3em] text-muted">Raw / Source Details</summary>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {plan.sourceRecords.map((record) => record.href ? (
+                            <Link key={`${group.id}-raw-${record.type}-${record.id}`} href={record.href} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Source link: {record.displayName ?? record.name}</Link>
+                          ) : null)}
+                          {plan.targetRecord?.href && (
+                            <Link href={plan.targetRecord.href} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Target link: {keptName}</Link>
+                          )}
+                        </div>
+                      </details>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.35em] text-muted">Blocked</p>
+              <h3 className="text-lg font-bold text-foreground">Conflicts that require a data fix before mutation</h3>
+            </div>
+            {consolidationBlockedGroups.length === 0 ? (
+              <p className="border border-border/70 bg-background/30 p-4 text-sm text-muted">No blocked conflicts were detected.</p>
+            ) : (
+              <div className="space-y-3">
+                {consolidationBlockedGroups.map((group) => (
+                  <article key={`blocked-${group.id}`} className="border border-red-500/40 bg-background/20 p-4 text-sm text-muted">
+                    <p className="font-semibold text-foreground">{group.reason}</p>
+                    <p>Blocked reason: {group.consolidationPlan.blockedReasons.join(" ")}</p>
+                    <p>What must be fixed first: resolve conflicting public dossier matches, active drafts, unsupported data shapes, or identity risk before running consolidation.</p>
+                    <details className="mt-4 border border-border/60 bg-background/30 p-3">
+                      <summary className="cursor-pointer text-xs uppercase tracking-[0.3em] text-muted">Raw / Source Details</summary>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {group.records.map((record) => record.href ? (
+                          <Link key={`blocked-raw-${record.type}-${record.id}`} href={record.href} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Source link: {record.displayName ?? record.name}</Link>
+                        ) : null)}
+                      </div>
+                    </details>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        </section>
+        )}
 
         <DashboardCard
           eyebrow="Candidates"
@@ -1472,6 +1608,27 @@ export default function DossierControlCenterPage() {
             </div>
           )}
         </DashboardCard>
+
+        {(diagnosticCandidates.length > 0 || diagnosticRecommendations.length > 0) && (
+          <DashboardCard
+            eyebrow="Diagnostics/Test Artifacts"
+            title="Diagnostics/Test Artifacts"
+            aside={<StatusPill>{diagnosticCandidates.length + diagnosticRecommendations.length} hidden</StatusPill>}
+          >
+            <details className="border border-border/70 bg-background/30 p-4">
+              <summary className="cursor-pointer text-sm font-semibold text-foreground">Diagnostics/Test Artifacts — collapsed by default</summary>
+              <p className="mt-3 text-sm text-muted">These diagnostic_test_artifact records are hidden from normal Source File and Subject Consolidation workflows. They can be archived safely from their detail pages when needed.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {diagnosticCandidates.map((candidate) => (
+                  <Link key={`diagnostic-candidate-${candidate.id}`} href={`/admin/dossiers/candidates/${candidate.id}`} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Archive Diagnostic Artifact: {candidate.name}</Link>
+                ))}
+                {diagnosticRecommendations.map((recommendation) => (
+                  <Link key={`diagnostic-recommendation-${recommendation.id}`} href={`/admin/dossiers/recommendations/${recommendation.id}`} className="border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-foreground hover:border-accent hover:text-accent">Archive Diagnostic Artifact: {recommendation.subjectName}</Link>
+                ))}
+              </div>
+            </details>
+          </DashboardCard>
+        )}
 
         <DashboardCard
           eyebrow="Source Files"

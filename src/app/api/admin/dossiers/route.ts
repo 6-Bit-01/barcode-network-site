@@ -53,6 +53,7 @@ import {
   rejectDossierIdentityLink,
   requestDossierSourceFileRefresh,
   retireDossierIdentityLink,
+  runSubjectConsolidation,
   mergeDossierCandidates,
   markCandidateAsExistingDossierUpdate,
   permanentlyDeleteDossierCandidate,
@@ -147,6 +148,8 @@ const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "archiveDossierRecommendation",
   "attachCandidateToExistingDossier",
   "markCandidateAsExistingDossierUpdate",
+  "runSubjectConsolidation",
+  "consolidateSubjectGroup",
 ]);
 
 async function isAuthenticated(req: Request): Promise<boolean> {
@@ -643,6 +646,26 @@ export async function POST(req: Request) {
             : await retireDossierIdentityLink(input);
       const payload = await workflowPayload();
       return NextResponse.json({ ok: true, action, identityLink, ...payload });
+    }
+
+    if (action === "runSubjectConsolidation" || action === "consolidateSubjectGroup") {
+      const groupId = typeof body.groupId === "string" ? body.groupId.trim() : undefined;
+      if (action === "consolidateSubjectGroup" && !groupId) {
+        return NextResponse.json(
+          { error: "groupId is required" },
+          { status: 400 },
+        );
+      }
+      const consolidation = await runSubjectConsolidation(
+        action === "consolidateSubjectGroup" ? { groupId } : {},
+      );
+      const payload = await workflowPayload();
+      return NextResponse.json({
+        ok: true,
+        action,
+        consolidation,
+        ...payload,
+      });
     }
 
     if (action === "createDossierRecommendation") {

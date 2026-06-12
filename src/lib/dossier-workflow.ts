@@ -775,6 +775,12 @@ export type DossierPopulationAuditRecord = {
 };
 
 export type DossierPopulationAutomationTier =
+  | "Auto attach to kept Source File"
+  | "Auto create Dossier Update workspace"
+  | "Auto create Source File"
+  | "Auto merge safe duplicate"
+  | "Auto clean empty duplicate"
+  | "Clean no-new-info duplicate recommendation"
   | "Create Source File candidate"
   | "Create Dossier Update workspace candidate"
   | "Attach to Existing Source File candidate"
@@ -794,6 +800,54 @@ export type DossierPopulationMergePlanSection = {
   needsReview: string[];
   blockedReason: string[];
   noActionNeeded: string[];
+};
+
+
+export type SubjectConsolidationBrief = {
+  briefId: string;
+  subjectDisplayName: string;
+  canonicalSubjectKey: string;
+  confidence: "high" | "medium" | "low";
+  relationshipVerdict:
+    | "same_subject"
+    | "likely_same_subject"
+    | "possible_same_subject"
+    | "separate_subjects"
+    | "needs_target_selection"
+    | "blocked";
+  operatorSummary: string;
+  incomingSummaryBullets: string[];
+  keptTargetSummaryBullets: string[];
+  whatWillBeAbsorbed: string[];
+  alreadyRepresented: string[];
+  whatWillNotChange: string[];
+  whyReviewIsNeeded: string[];
+  recommendedAction:
+    | "consolidate_into_kept_source_file"
+    | "create_source_file_from_signals"
+    | "create_dossier_update_workspace"
+    | "select_target"
+    | "keep_separate"
+    | "blocked";
+  targetOptions: Array<{
+    candidateId: string;
+    displayName: string;
+    status: string;
+    publicDossierMatch?: string;
+    draftStatus?: string;
+    reasonToKeep: string;
+  }>;
+  blockedReasons: string[];
+  rawReferenceIds: {
+    recommendationIds: string[];
+    candidateIds: string[];
+    archiveIds: string[];
+  };
+  generatedBy: "BNL";
+  generatedAt: string;
+  inputHash: string;
+  clusterHash: string;
+  stale: boolean;
 };
 
 export type DossierPopulationConsolidationPlan = {
@@ -816,6 +870,9 @@ export type DossierPopulationConsolidationPlan = {
   requiresReview: boolean;
   blockedReasons: string[];
   mergePlanSections: DossierPopulationMergePlanSection[];
+  bnlBrief?: SubjectConsolidationBrief;
+  bnlBriefStatus: "needed" | "requested" | "ready" | "stale";
+  bnlBriefRequestReason: string;
 };
 
 export type DossierPopulationAuditDuplicateGroup = {
@@ -826,7 +883,8 @@ export type DossierPopulationAuditDuplicateGroup = {
     | "confirmed_alias"
     | "public_dossier"
     | "recommendation_subject_key"
-    | "bnl_recommendation_subject_name";
+    | "bnl_recommendation_subject_name"
+    | "similar_name";
   publicDossierMatch?: { id: string; name?: string };
   records: DossierPopulationAuditRecord[];
   suggestedAction: string;
@@ -935,6 +993,181 @@ function uniqueAuditRecords(
   });
 }
 
+
+
+
+export function isDiagnosticTestArtifactRecommendation(
+  recommendation: DossierRecommendation,
+): boolean {
+  const joined = [
+    recommendation.subjectName,
+    recommendation.subjectKey,
+    recommendation.reason,
+    recommendation.evidenceSummary,
+    recommendation.ingestKey,
+    recommendation.ingestSource,
+    recommendation.createdBy,
+    ...(recommendation.sourceTypes ?? []),
+    ...(recommendation.knownContext ?? []),
+    ...(recommendation.usefulEvidence ?? []),
+  ].filter(Boolean).join(" ");
+  return /checkpoint|smoke test|manual endpoint smoke test|diagnostic|\bprobe\b|\btest\b/i.test(joined);
+}
+
+export function isDiagnosticTestArtifactCandidate(candidate: DossierCandidate): boolean {
+  const joined = [
+    candidate.name,
+    candidate.reason,
+    candidate.whyNow,
+    candidate.evidenceSummary,
+    candidate.source,
+    candidate.routingReason,
+    ...(candidate.knownFacts ?? []),
+    ...(candidate.evidenceItems ?? []),
+    ...(candidate.sourceFileNotes ?? []).flatMap((note) => [note.text, note.ingestKey, note.ingestSource, note.createdBy]),
+  ].filter(Boolean).join(" ");
+  return /checkpoint|smoke test|manual endpoint smoke test|diagnostic|\bprobe\b|\btest\b/i.test(joined);
+}
+
+export function isResolvedDossierRecommendation(
+  recommendation: DossierRecommendation,
+): boolean {
+  return [
+    "attached_to_source_file",
+    "attached_to_candidate_intake",
+    "attached_to_existing_dossier_update",
+    "converted_to_source_file",
+    "identity_link_created",
+    "ignored",
+    "dismissed",
+    "archived",
+  ].includes(recommendation.status);
+}
+
+export function isConsolidationResolvedCandidate(candidate: DossierCandidate): boolean {
+  if (candidate.status === "merged" || candidate.status === "archived" || candidate.status === "denied") return true;
+  if (candidate.mergedIntoCandidateId) return true;
+  if (isDiagnosticTestArtifactCandidate(candidate)) return true;
+  const isDestinationDossierUpdateWorkspace = Boolean(
+    candidate.status === "existing_dossier_update" &&
+      candidate.existingDossierMatch &&
+      !candidate.mergedIntoCandidateId &&
+      ((candidate.sourceRecommendationIds ?? []).length > 0 ||
+        (candidate.connectedRecommendationIds ?? []).length > 0 ||
+        (candidate.sourceFileNotes ?? []).length > 0),
+  );
+  if (isDestinationDossierUpdateWorkspace) return false;
+  const lifecycleText = [
+    candidate.mergeNote,
+    candidate.routingReason,
+    candidate.reason,
+    candidate.whyNow,
+  ].filter(Boolean).join(" ");
+  return /variant_of_canonical|keep_separate_suppressed|bundled_into_dossier_update|Bundled .* update signals into .* Dossier Update workspace|Subject Consolidation archived diagnostic_test_artifact/i.test(lifecycleText);
+}
+
+function duplicateGroupPriority(
+  matchKind: DossierPopulationAuditDuplicateGroup["matchKind"],
+): number {
+  if (matchKind === "public_dossier") return 6;
+  if (matchKind === "confirmed_alias") return 5;
+  if (matchKind === "bnl_recommendation_subject_name") return 4;
+  if (matchKind === "recommendation_subject_key") return 3;
+  if (matchKind === "normalized_name") return 2;
+  if (matchKind === "similar_name") return 1;
+  return 0;
+}
+
+function mergeCanonicalDuplicateGroups(
+  groups: Array<{
+    id: string;
+    reason: string;
+    matchKind: DossierPopulationAuditDuplicateGroup["matchKind"];
+    publicDossierMatch?: { id: string; name?: string };
+    records: DossierPopulationAuditRecord[];
+  }>,
+): Array<{
+  id: string;
+  reason: string;
+  matchKind: DossierPopulationAuditDuplicateGroup["matchKind"];
+  publicDossierMatch?: { id: string; name?: string };
+  records: DossierPopulationAuditRecord[];
+}> {
+  const remaining = [...groups];
+  const merged: typeof groups = [];
+
+  while (remaining.length > 0) {
+    const seed = remaining.shift()!;
+    const component = [seed];
+    const recordKeys = new Set(seed.records.map(recordKey));
+    const publicDossierIds = new Set(
+      seed.publicDossierMatch?.id ? [seed.publicDossierMatch.id] : [],
+    );
+    for (const record of seed.records) {
+      if (record.publicDossierId) publicDossierIds.add(record.publicDossierId);
+    }
+
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (let index = remaining.length - 1; index >= 0; index -= 1) {
+        const candidate = remaining[index];
+        const candidateRecordKeys = candidate.records.map(recordKey);
+        const candidatePublicIds = new Set(
+          candidate.publicDossierMatch?.id ? [candidate.publicDossierMatch.id] : [],
+        );
+        for (const record of candidate.records) {
+          if (record.publicDossierId) candidatePublicIds.add(record.publicDossierId);
+        }
+        const sharesRecord = candidateRecordKeys.some((key) => recordKeys.has(key));
+        const sharesPublicDossier = Array.from(candidatePublicIds).some((id) =>
+          publicDossierIds.has(id),
+        );
+        if (!sharesRecord && !sharesPublicDossier) continue;
+        remaining.splice(index, 1);
+        component.push(candidate);
+        for (const key of candidateRecordKeys) recordKeys.add(key);
+        for (const id of candidatePublicIds) publicDossierIds.add(id);
+        changed = true;
+      }
+    }
+
+    const records = uniqueAuditRecords(component.flatMap((group) => group.records));
+    const primary = [...component].sort(
+      (left, right) =>
+        duplicateGroupPriority(right.matchKind) - duplicateGroupPriority(left.matchKind) ||
+        left.id.localeCompare(right.id),
+    )[0];
+    const publicDossierMatch =
+      component.find((group) => group.publicDossierMatch)?.publicDossierMatch ??
+      records
+        .map((record) =>
+          record.publicDossierId
+            ? { id: record.publicDossierId, name: record.publicDossierName }
+            : undefined,
+        )
+        .find(Boolean);
+    const idBase = publicDossierMatch
+      ? `${primary.matchKind}:${publicDossierMatch.id}`
+      : `${primary.matchKind}:${records.map((record) => recordKey(record)).sort().join(":")}`;
+    merged.push({
+      id: idBase
+        .replace(/[^a-z0-9]+/gi, "-")
+        .replace(/^-|-$/g, "")
+        .toLowerCase(),
+      reason:
+        publicDossierMatch?.name
+          ? `Canonical subject cluster for ${publicDossierMatch.name}.`
+          : primary.reason,
+      matchKind: primary.matchKind,
+      publicDossierMatch,
+      records,
+    });
+  }
+
+  return merged;
+}
+
 function duplicateGroupAction(
   matchKind: DossierPopulationAuditDuplicateGroup["matchKind"],
   records: DossierPopulationAuditRecord[],
@@ -971,7 +1204,7 @@ function auditRecordUniqueInfo(input: {
   if (input.hasLatestArchiveOrReport) info.push("latest BNL archive or case report");
   if (input.activeDraftStatus) info.push(`active proposed dossier (${input.activeDraftStatus})`);
   if (input.publicDossierId) info.push("public dossier match");
-  return info.length > 0 ? info : ["No unique useful data detected by audit."];
+  return info.length > 0 ? info : ["No unique useful data detected by consolidation scan."];
 }
 
 function recordHasUsefulData(record: DossierPopulationAuditRecord): boolean {
@@ -1131,7 +1364,9 @@ function createConsolidationPlan(input: {
     automationTier = "Empty duplicate cleanup candidate";
   } else if (
     hasRealDuplicateSources &&
-    (input.matchKind === "normalized_name" || input.matchKind === "confirmed_alias")
+    (input.matchKind === "normalized_name" ||
+      input.matchKind === "confirmed_alias" ||
+      input.matchKind === "public_dossier")
   ) {
     automationTier = "Source File merge candidate";
   }
@@ -1169,6 +1404,8 @@ function createConsolidationPlan(input: {
     confidence:
       input.matchKind === "confirmed_alias" || input.matchKind === "public_dossier"
         ? "high"
+        : input.matchKind === "similar_name"
+          ? "low"
         : input.matchKind === "normalized_name"
           ? "medium"
           : "low",
@@ -1190,13 +1427,16 @@ function createConsolidationPlan(input: {
       : hasOnlyRecommendations
         ? noTargetExplanation
         : canBeAutomatedLater
-          ? `${automationTier}: review the deltas below before enabling any real action in a future PR.`
-          : "Admin review required before any future automation.",
+          ? `${automationTier}: server-side consolidation can process this after the admin runs Subject Consolidation.`
+          : "Admin review required before consolidation can mutate records.",
     canBeAutomatedLater,
     requiresReview,
     blockedReasons: hasOnlyRecommendations && !sharedPublicTarget
       ? ["No Source File target resolved."]
       : blockedReasons,
+    bnlBrief: undefined,
+    bnlBriefStatus: "needed",
+    bnlBriefRequestReason: "BNL consolidation brief needed before review.",
     mergePlanSections: [
       planSection("New info to add", {
         newInfoToAdd: sourceRecords.flatMap((record) => record.incomingInfo),
@@ -1212,7 +1452,7 @@ function createConsolidationPlan(input: {
             : []),
         ],
         noActionNeeded: sourceRecords.every((record) => record.duplicateInfo.length === 0)
-          ? ["No duplicate facts were identified by this audit."]
+          ? ["No duplicate facts were identified by this consolidation scan."]
           : [],
       }),
       planSection("Irrelevant to kept entry", {
@@ -1247,7 +1487,7 @@ function createConsolidationPlan(input: {
           "Public dossier copy will not change.",
           "Internal aliases stay internal.",
           "Nothing publishes automatically.",
-          "No merge/delete/archive/attach/create action is live in this PR.",
+          "Consolidation does not publish public pages.",
         ],
       }),
     ],
@@ -1261,12 +1501,24 @@ export function createDossierPopulationAudit(input: {
   drafts?: DossierDraft[];
 }): DossierPopulationAudit {
   const recommendations = input.recommendations ?? [];
-  const bnlRecommendations = recommendations.filter(isBnlRecommendation);
+  const bnlRecommendations = recommendations.filter((recommendation) =>
+    isBnlRecommendation(recommendation) &&
+    !isDiagnosticTestArtifactRecommendation(recommendation),
+  );
+  const workflowCandidates = input.candidates.filter(
+    (candidate) => !isDiagnosticTestArtifactCandidate(candidate),
+  );
   const candidatesById = new Map(
-    input.candidates.map((candidate) => [candidate.id, candidate]),
+    workflowCandidates.map((candidate) => [candidate.id, candidate]),
   );
   const publicDossiersById = new Map(
     (input.publicDossiers ?? []).map((dossier) => [dossier.id, dossier]),
+  );
+  const publicDossiersByPossessiveName = new Map(
+    (input.publicDossiers ?? []).map((dossier) => [
+      normalizeDossierPossessiveVariantName(dossier.name),
+      dossier,
+    ]),
   );
   const activeDraftByCandidateId = new Map<string, DossierDraft>();
   for (const draft of input.drafts ?? []) {
@@ -1293,7 +1545,7 @@ export function createDossierPopulationAudit(input: {
       bnlRecommendationIdsByCandidate.set(candidateId, current);
     }
   }
-  for (const candidate of input.candidates) {
+  for (const candidate of workflowCandidates) {
     for (const recommendationId of [
       ...(candidate.sourceRecommendationIds ?? []),
       ...(candidate.connectedRecommendationIds ?? []),
@@ -1312,13 +1564,15 @@ export function createDossierPopulationAudit(input: {
     }
   }
 
-  const records = input.candidates.map((candidate) => {
+  const records = workflowCandidates.map((candidate) => {
     const confirmedAliasCount = (candidate.identityLinks ?? []).filter(
       (link) => link.status === "confirmed",
     ).length;
     const proposedAliasCount = (candidate.identityLinks ?? []).filter(
       (link) => link.status === "proposed",
     ).length;
+    const canonicalPublicDossier = candidate.existingDossierMatch ??
+      publicDossiersByPossessiveName.get(normalizeDossierPossessiveVariantName(candidate.name));
     return {
       id: candidate.id,
       type: candidatePopulationType(candidate),
@@ -1326,9 +1580,9 @@ export function createDossierPopulationAudit(input: {
       status: candidate.status,
       href: `/admin/dossiers/candidates/${candidate.id}`,
       candidateId: candidate.id,
-      displayName: candidate.existingDossierMatch?.name ?? candidate.name,
-      publicDossierId: candidate.existingDossierMatch?.id,
-      publicDossierName: candidate.existingDossierMatch?.name,
+      displayName: canonicalPublicDossier?.name ?? candidate.name,
+      publicDossierId: canonicalPublicDossier?.id,
+      publicDossierName: canonicalPublicDossier?.name,
       confirmedAliasCount,
       proposedAliasCount,
       attachedRecommendationCount:
@@ -1407,6 +1661,7 @@ export function createDossierPopulationAudit(input: {
   const activeSourceFiles = input.candidates.filter(
     (candidate) =>
       !isClosedPopulationCandidate(candidate) &&
+      !isDiagnosticTestArtifactCandidate(candidate) &&
       isActiveSourceFileCandidate(candidate),
   );
   const activeSourceFilesByNormalizedName = new Map(
@@ -1426,11 +1681,13 @@ export function createDossierPopulationAudit(input: {
     }
   }
 
-  const unattachedBnlRecommendations = bnlRecommendations
-    .filter(
-      (recommendation) =>
-        !clearlyAttachedRecommendationIds.has(recommendation.id),
-    )
+  const openBnlRecommendationsForConsolidation = bnlRecommendations.filter(
+    (recommendation) =>
+      (recommendation.status === "new" || recommendation.status === "reviewing") &&
+      !clearlyAttachedRecommendationIds.has(recommendation.id),
+  );
+
+  const unattachedBnlRecommendations = openBnlRecommendationsForConsolidation
     .map((recommendation) => {
       const normalizedSubject = normalizeDossierSubjectName(
         recommendation.subjectName,
@@ -1524,7 +1781,7 @@ export function createDossierPopulationAudit(input: {
     duplicateBuckets.set(bucketKey, bucket);
   }
 
-  for (const candidate of input.candidates) {
+  for (const candidate of workflowCandidates) {
     const record = recordByCandidateId.get(candidate.id);
     if (!record || record.type === "archived_or_closed") continue;
     addBucketRecord(
@@ -1533,15 +1790,17 @@ export function createDossierPopulationAudit(input: {
       "Normalized exact name match.",
       record,
     );
-    if (candidate.existingDossierMatch?.id) {
+    const canonicalPublicDossier = candidate.existingDossierMatch ??
+      publicDossiersByPossessiveName.get(normalizeDossierPossessiveVariantName(candidate.name));
+    if (canonicalPublicDossier?.id) {
       addBucketRecord(
         "public_dossier",
-        candidate.existingDossierMatch.id,
+        canonicalPublicDossier.id,
         "Shared public dossier target.",
         record,
         {
-          id: candidate.existingDossierMatch.id,
-          name: candidate.existingDossierMatch.name,
+          id: canonicalPublicDossier.id,
+          name: canonicalPublicDossier.name,
         },
       );
     }
@@ -1555,7 +1814,7 @@ export function createDossierPopulationAudit(input: {
         "Confirmed alias match.",
         record,
       );
-      for (const possibleAliasTarget of input.candidates) {
+      for (const possibleAliasTarget of workflowCandidates) {
         if (possibleAliasTarget.id === candidate.id) continue;
         if (isClosedPopulationCandidate(possibleAliasTarget)) continue;
         if (
@@ -1578,7 +1837,39 @@ export function createDossierPopulationAudit(input: {
     }
   }
 
-  for (const recommendation of bnlRecommendations) {
+  for (let leftIndex = 0; leftIndex < workflowCandidates.length; leftIndex += 1) {
+    const left = workflowCandidates[leftIndex];
+    if (isClosedPopulationCandidate(left)) continue;
+    const leftRecord = recordByCandidateId.get(left.id);
+    if (!leftRecord) continue;
+    for (const right of workflowCandidates.slice(leftIndex + 1)) {
+      if (isClosedPopulationCandidate(right)) continue;
+      if (!hasSimilarDossierSubjectName(left.name, right.name)) continue;
+      const leftKey = normalizeDossierSubjectName(left.name);
+      const rightKey = normalizeDossierSubjectName(right.name);
+      if (leftKey === rightKey || compactDossierSubjectName(left.name) === compactDossierSubjectName(right.name)) continue;
+      const rightRecord = recordByCandidateId.get(right.id);
+      if (!rightRecord) continue;
+      const key = [leftKey, rightKey].sort().join(":");
+      const variantReason = hasPossessiveVariantSubjectName(left.name, right.name)
+        ? `Variant needs review: ${left.name} / ${right.name}`
+        : "Similar names only; admin must decide whether these are the same subject.";
+      addBucketRecord(
+        "similar_name",
+        key,
+        variantReason,
+        leftRecord,
+      );
+      addBucketRecord(
+        "similar_name",
+        key,
+        variantReason,
+        rightRecord,
+      );
+    }
+  }
+
+  for (const recommendation of openBnlRecommendationsForConsolidation) {
     const record: DossierPopulationAuditRecord = {
       id: recommendation.id,
       type: "recommendation",
@@ -1687,42 +1978,50 @@ export function createDossierPopulationAudit(input: {
         );
       }
     }
-    if (recommendation.targetDossierId) {
+    const recommendationPublicDossier = recommendation.targetDossierId
+      ? publicDossiersById.get(recommendation.targetDossierId)
+      : recommendation.subjectKey
+        ? publicDossiersById.get(recommendation.subjectKey) ??
+          publicDossiersByPossessiveName.get(normalizeDossierPossessiveVariantName(recommendation.subjectKey))
+        : publicDossiersByPossessiveName.get(normalizeDossierPossessiveVariantName(recommendation.subjectName));
+    if (recommendationPublicDossier?.id) {
       addBucketRecord(
         "public_dossier",
-        recommendation.targetDossierId,
+        recommendationPublicDossier.id,
         "Shared public dossier target.",
         record,
         {
-          id: recommendation.targetDossierId,
-          name: publicDossiersById.get(recommendation.targetDossierId)?.name,
+          id: recommendationPublicDossier.id,
+          name: recommendationPublicDossier.name,
         },
       );
     }
   }
 
-  const possibleDuplicateGroups = Array.from(duplicateBuckets.entries())
-    .map(([bucketKey, bucket]) => ({
-      id: bucketKey
-        .replace(/[^a-z0-9]+/gi, "-")
-        .replace(/^-|-$/g, "")
-        .toLowerCase(),
-      reason: bucket.reason,
-      matchKind: bucket.matchKind,
-      publicDossierMatch: bucket.publicDossierMatch,
-      records: uniqueAuditRecords(bucket.records),
-      suggestedAction: duplicateGroupAction(bucket.matchKind, bucket.records),
-      consolidationPlan: createConsolidationPlan({
+  const possibleDuplicateGroups = mergeCanonicalDuplicateGroups(
+    Array.from(duplicateBuckets.entries())
+      .map(([bucketKey, bucket]) => ({
         id: bucketKey
           .replace(/[^a-z0-9]+/gi, "-")
           .replace(/^-|-$/g, "")
           .toLowerCase(),
-        matchKind: bucket.matchKind,
         reason: bucket.reason,
+        matchKind: bucket.matchKind,
+        publicDossierMatch: bucket.publicDossierMatch,
         records: uniqueAuditRecords(bucket.records),
+      }))
+      .filter((group) => group.records.length >= 2),
+  )
+    .map((group) => ({
+      ...group,
+      suggestedAction: duplicateGroupAction(group.matchKind, group.records),
+      consolidationPlan: createConsolidationPlan({
+        id: group.id,
+        matchKind: group.matchKind,
+        reason: group.reason,
+        records: group.records,
       }),
     }))
-    .filter((group) => group.records.length >= 2)
     .sort(
       (left, right) =>
         right.records.length - left.records.length ||
@@ -1732,17 +2031,17 @@ export function createDossierPopulationAudit(input: {
   return {
     counts: {
       activeSourceFiles: activeSourceFiles.length,
-      candidateIntake: input.candidates.filter(
+      candidateIntake: workflowCandidates.filter(
         (candidate) => candidate.status === "candidate_intake",
       ).length,
-      existingDossierUpdates: input.candidates.filter(
+      existingDossierUpdates: workflowCandidates.filter(
         (candidate) => candidate.status === "existing_dossier_update",
       ).length,
       publicDossiers: input.publicDossiers?.length ?? 0,
-      archivedClosedRecords: input.candidates.filter(
+      archivedClosedRecords: workflowCandidates.filter(
         isClosedPopulationCandidate,
       ).length,
-      proposedIdentityLinks: input.candidates.reduce(
+      proposedIdentityLinks: workflowCandidates.reduce(
         (total, candidate) =>
           total +
           (candidate.identityLinks ?? []).filter(
@@ -1750,7 +2049,7 @@ export function createDossierPopulationAudit(input: {
           ).length,
         0,
       ),
-      confirmedIdentityLinks: input.candidates.reduce(
+      confirmedIdentityLinks: workflowCandidates.reduce(
         (total, candidate) =>
           total +
           (candidate.identityLinks ?? []).filter(
@@ -1798,8 +2097,46 @@ export function normalizeDossierSubjectName(value: string): string {
     .trim();
 }
 
+export function normalizeDossierPossessiveVariantName(value: string): string {
+  const normalized = normalizeDossierSubjectName(value);
+  if (!normalized) return normalized;
+  return normalized.replace(/\s+s$/i, "").trim();
+}
+
 export function compactDossierSubjectName(value: string): string {
   return normalizeDossierSubjectName(value).replace(/\s+/g, "");
+}
+
+function hasPossessiveVariantSubjectName(left: string, right: string): boolean {
+  const normalizedLeft = normalizeDossierSubjectName(left);
+  const normalizedRight = normalizeDossierSubjectName(right);
+  const possessiveLeft = normalizeDossierPossessiveVariantName(left);
+  const possessiveRight = normalizeDossierPossessiveVariantName(right);
+  return Boolean(
+    normalizedLeft &&
+      normalizedRight &&
+      normalizedLeft !== normalizedRight &&
+      possessiveLeft &&
+      possessiveLeft === possessiveRight,
+  );
+}
+
+function hasSimilarDossierSubjectName(left: string, right: string): boolean {
+  const normalizedLeft = normalizeDossierSubjectName(left);
+  const normalizedRight = normalizeDossierSubjectName(right);
+  const compactLeft = compactDossierSubjectName(left);
+  const compactRight = compactDossierSubjectName(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  if (normalizedLeft === normalizedRight || compactLeft === compactRight) {
+    return false;
+  }
+  if (normalizedLeft.length < 4 || normalizedRight.length < 4) return false;
+  return (
+    normalizedLeft.includes(normalizedRight) ||
+    normalizedRight.includes(normalizedLeft) ||
+    compactLeft.includes(compactRight) ||
+    compactRight.includes(compactLeft)
+  );
 }
 
 export function isActiveSourceFileCandidate(
@@ -2124,6 +2461,8 @@ export type DossierWorkflowAction =
   | "archiveDossierRecommendation"
   | "attachCandidateToExistingDossier"
   | "markCandidateAsExistingDossierUpdate"
+  | "runSubjectConsolidation"
+  | "consolidateSubjectGroup"
   | "detectDuplicateCandidates"
   | "mergeCandidates"
   | "createMasterDraftFromMerge";
@@ -2173,6 +2512,8 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "archiveDossierRecommendation",
   "attachCandidateToExistingDossier",
   "markCandidateAsExistingDossierUpdate",
+  "runSubjectConsolidation",
+  "consolidateSubjectGroup",
   "detectDuplicateCandidates",
   "mergeCandidates",
   "createMasterDraftFromMerge",

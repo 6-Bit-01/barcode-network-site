@@ -42,8 +42,13 @@ import {
   type DossierSourceFileNoteType,
   type DossierDuplicateRisk,
   type DossierWorkflowLink,
+  createDossierPopulationAudit,
   isActiveSourceFileCandidate,
+  isDiagnosticTestArtifactCandidate,
+  isDiagnosticTestArtifactRecommendation,
   isSourceFileEnrichmentAttachableCandidate,
+  normalizeDossierPossessiveVariantName,
+  normalizeDossierSubjectName,
   matchDossierRecommendationSubject,
   type MergeDossierCandidatesInput,
 } from "@/lib/dossier-workflow";
@@ -5696,6 +5701,661 @@ export async function mergeDossierCandidates(
       drafts,
       updatedAt: now,
     };
+  });
+
+  return result;
+}
+
+
+export type SubjectConsolidationRefreshOutcome = {
+  candidateId: string;
+  subjectName: string;
+  status:
+    | "BNL refresh queued"
+    | "BNL refresh needed"
+    | "BNL refresh unavailable";
+  requestId?: string;
+  reason?: string;
+};
+
+export type SubjectConsolidationIssue = {
+  groupId?: string;
+  subject: string;
+  reason: string;
+};
+
+export type SubjectConsolidationResult = {
+  statusLabel: "Subject Consolidation Complete";
+  attachedRecommendations: number;
+  emptyDuplicatesCleaned: number;
+  duplicateRecommendationsCleaned: number;
+  dossierUpdateWorkspacesCreated: number;
+  bundledPublicDossierUpdateSignals: number;
+  diagnosticArtifactsArchived: number;
+  sourceFilesCreated: number;
+  sourceFileDuplicatesMerged: number;
+  bnlRefreshes: SubjectConsolidationRefreshOutcome[];
+  needsReview: number;
+  blocked: number;
+  skippedItems: SubjectConsolidationIssue[];
+  blockedItems: SubjectConsolidationIssue[];
+  affectedTargets: Array<{ candidateId: string; name: string; href: string }>;
+  publicPagesPublished: 0;
+  publicDossierTextChanged: 0;
+  internalAliasesExposed: 0;
+};
+
+function recommendationHasMeaningfulInfo(
+  recommendation: DossierRecommendation,
+): boolean {
+  return Boolean(
+    recommendation.reason?.trim() ||
+      recommendation.evidenceSummary?.trim() ||
+      (recommendation.knownContext ?? []).length ||
+      (recommendation.usefulEvidence ?? []).length ||
+      (recommendation.sourceTypes ?? []).length,
+  );
+}
+
+function candidateHasMeaningfulConsolidationInfo(
+  candidate: DossierCandidate,
+): boolean {
+  return Boolean(
+    candidate.reason?.trim() ||
+      candidate.whyNow?.trim() ||
+      candidate.evidenceSummary?.trim() ||
+      (candidate.sourceFileNotes ?? []).some((note) => note.status === "active") ||
+      (candidate.identityLinks ?? []).length ||
+      (candidate.sourceFileArchiveIds ?? []).length ||
+      candidate.latestSourceFileArchiveId ||
+      candidate.latestSourceFileArchiveUpdatedAt ||
+      candidate.latestSourceFileArchive ||
+      candidate.existingDossierMatch,
+  );
+}
+
+function refreshOutcomeForState(input: {
+  state: DossierWorkflowState;
+  candidate: DossierCandidate;
+  now: string;
+  reason: string;
+}): { state: DossierWorkflowState; outcome: SubjectConsolidationRefreshOutcome } {
+  if (!isSourceFileEnrichmentAttachableCandidate(input.candidate)) {
+    return {
+      state: input.state,
+      outcome: {
+        candidateId: input.candidate.id,
+        subjectName: input.candidate.name,
+        status: "BNL refresh unavailable",
+        reason: "Target is not a refreshable Source File lane.",
+      },
+    };
+  }
+  const upserted = upsertSourceFileRefreshRequestInState({
+    state: input.state,
+    candidate: input.candidate,
+    reason: input.reason,
+    requestSource: "source_notes_newer_than_bnl",
+    priority: 92,
+    requestedBy: "subject_consolidation",
+    now: input.now,
+    force: true,
+  });
+  return {
+    state: upserted.state,
+    outcome: {
+      candidateId: input.candidate.id,
+      subjectName: input.candidate.name,
+      status: upserted.created ? "BNL refresh queued" : "BNL refresh needed",
+      requestId: upserted.request.id,
+      reason: input.reason,
+    },
+  };
+}
+
+export async function runSubjectConsolidation(input: { groupId?: string } = {}): Promise<SubjectConsolidationResult> {
+  const now = new Date().toISOString();
+  const result: SubjectConsolidationResult = {
+    statusLabel: "Subject Consolidation Complete",
+    attachedRecommendations: 0,
+    emptyDuplicatesCleaned: 0,
+    duplicateRecommendationsCleaned: 0,
+    dossierUpdateWorkspacesCreated: 0,
+    bundledPublicDossierUpdateSignals: 0,
+    diagnosticArtifactsArchived: 0,
+    sourceFilesCreated: 0,
+    sourceFileDuplicatesMerged: 0,
+    bnlRefreshes: [],
+    needsReview: 0,
+    blocked: 0,
+    skippedItems: [],
+    blockedItems: [],
+    affectedTargets: [],
+    publicPagesPublished: 0,
+    publicDossierTextChanged: 0,
+    internalAliasesExposed: 0,
+  };
+  const affectedTargetIds = new Set<string>();
+
+  await updateDossierWorkflowState((currentState) => {
+    const audit = createDossierPopulationAudit({
+      candidates: currentState.candidates,
+      recommendations: currentState.recommendations,
+      publicDossiers: databasePage.entries.map((entry) => ({
+        id: entry.id,
+        name: entry.name,
+      })),
+      drafts: currentState.drafts,
+    });
+    let state: DossierWorkflowState = currentState;
+    const consumedRecommendations = new Set<string>();
+    const consumedCandidates = new Set<string>();
+
+    function rememberTarget(candidate: DossierCandidate) {
+      affectedTargetIds.add(candidate.id);
+    }
+
+    function bundleExactPublicDossierUpdateSignals() {
+      const byPublicDossier = new Map<string, DossierRecommendation[]>();
+      for (const recommendation of state.recommendations) {
+        if (recommendation.status !== "new" && recommendation.status !== "reviewing") continue;
+        if (isDiagnosticTestArtifactRecommendation(recommendation)) continue;
+        if (!recommendation.targetDossierId) continue;
+        if (recommendation.type !== "modify_existing_dossier") continue;
+        const entry = databasePage.entries.find((item) => item.id === recommendation.targetDossierId);
+        if (!entry) continue;
+        const current = byPublicDossier.get(entry.id) ?? [];
+        current.push(recommendation);
+        byPublicDossier.set(entry.id, current);
+      }
+
+      for (const [publicDossierId, recommendations] of byPublicDossier) {
+        if (recommendations.length === 0) continue;
+        const entry = databasePage.entries.find((item) => item.id === publicDossierId);
+        if (!entry) continue;
+        let workspace = state.candidates.find(
+          (candidate) =>
+            candidate.status === "existing_dossier_update" &&
+            candidate.existingDossierMatch?.id === entry.id &&
+            !isDiagnosticTestArtifactCandidate(candidate),
+        );
+        if (!workspace) {
+          const candidateId = createCandidateId();
+          workspace = {
+            id: candidateId,
+            name: entry.name,
+            candidateType: candidateTypeFromPublicDossierEntry(entry),
+            source: "website_read_model",
+            tier: "review_candidate",
+            score: 58,
+            whyNow: `Bundled ${recommendations.length} ${entry.name} update signals into ${entry.name} Dossier Update workspace.`,
+            reason: "Internal Dossier Update workspace created for review-only consolidation.",
+            firstSeenAt: now,
+            lastSeenAt: now,
+            evidenceSummary: `Existing public dossier ${entry.id} / ${entry.name} matched exact public dossier update signals.`,
+            evidenceItems: [],
+            evidenceCount: 0,
+            knownFacts: [`Existing public dossier target: ${entry.id} / ${entry.name}.`],
+            confidence: "high",
+            duplicateRisk: "high",
+            existingDossierMatch: { id: entry.id, name: entry.name, confidence: "high" },
+            recommendedCategory: entry.category,
+            recommendedKind: entry.kind,
+            recommendedEcosystemLane: entry.ecosystemLane,
+            recommendedIdentityAuthority: entry.identityAuthority,
+            recommendedStatus: entry.status,
+            recommendedClearance: entry.clearance,
+            recommendedOrigin: entry.origin,
+            recommendedTags: entry.tags,
+            proposedTags: [],
+            missingInfo: ["Review update notes before applying anything to public content."],
+            doNotSay: ["Do not publish update material automatically."],
+            publicSafetyNotes: ["Internal update lane only; no public dossier text changed."],
+            sourceFileNotes: [],
+            identityLinks: [],
+            sourceLanes: [],
+            status: "existing_dossier_update",
+            sourceRecommendationIds: [],
+            connectedRecommendationIds: [],
+            mergeNote: "bundled_into_dossier_update",
+            createdAt: now,
+            updatedAt: now,
+          };
+          state = { ...state, candidates: [workspace, ...state.candidates], updatedAt: now };
+          result.dossierUpdateWorkspacesCreated += 1;
+        }
+
+        const variantCandidates = state.candidates.filter((candidate) => {
+          if (candidate.id === workspace.id) return false;
+          if (candidate.status === "archived" || candidate.status === "denied" || candidate.status === "merged") return false;
+          if (isDiagnosticTestArtifactCandidate(candidate)) return false;
+          const sharesPublicDossier = candidate.existingDossierMatch?.id === entry.id;
+          const normalizedName = normalizeDossierSubjectName(candidate.name);
+          const possessiveName = normalizeDossierPossessiveVariantName(candidate.name);
+          const canonicalName = normalizeDossierPossessiveVariantName(entry.name);
+          const isPossessiveVariant = Boolean(
+            normalizedName &&
+              possessiveName &&
+              normalizedName !== possessiveName &&
+              possessiveName === canonicalName,
+          );
+          return sharesPublicDossier || isPossessiveVariant;
+        });
+        const variantNotes = variantCandidates.flatMap((candidate) =>
+          (candidate.sourceFileNotes ?? []).map((note) => ({
+            ...note,
+            candidateId: workspace.id,
+            updatedAt: now,
+          })),
+        );
+        const variantRecommendationIds = variantCandidates.flatMap((candidate) => [
+          ...(candidate.sourceRecommendationIds ?? []),
+          ...(candidate.connectedRecommendationIds ?? []),
+        ]);
+
+        const notes = recommendations.map((recommendation) =>
+          routingNote({
+            candidateId: workspace.id,
+            now,
+            text: recommendation.ingestSource?.startsWith("bnl")
+              ? bnlAutoCandidateNoteText(recommendation)
+              : recommendationSourceNoteText(recommendation),
+            source: "bnl_recommendation",
+            createdBy: recommendation.createdBy,
+            ingestKey: recommendation.ingestKey,
+            ingestedAt: recommendation.ingestedAt,
+            ingestSource: recommendation.ingestSource,
+          }),
+        );
+        const updatedWorkspace: DossierCandidate = {
+          ...workspace,
+          whyNow: `Bundled ${recommendations.length} ${entry.name} update signals into ${entry.name} Dossier Update workspace.`,
+          sourceFileNotes: [...(workspace.sourceFileNotes ?? []), ...variantNotes, ...notes],
+          sourceRecommendationIds: uniqueStrings(workspace.sourceRecommendationIds, variantRecommendationIds, recommendations.map((item) => item.id)),
+          connectedRecommendationIds: uniqueStrings(workspace.connectedRecommendationIds, variantRecommendationIds, recommendations.map((item) => item.id)),
+          sourceLanes: uniqueStrings(workspace.sourceLanes, ...recommendations.map((item) => item.sourceLanes)) as DossierRecommendationSourceLane[],
+          routingReason: `Bundled ${recommendations.length} exact public dossier update signal${recommendations.length === 1 ? "" : "s"}.`,
+          mergeNote: "bundled_into_dossier_update",
+          updatedAt: now,
+        };
+        state = {
+          ...state,
+          candidates: state.candidates.map((candidate) => {
+            if (candidate.id === updatedWorkspace.id) return updatedWorkspace;
+            const variant = variantCandidates.find((item) => item.id === candidate.id);
+            if (variant) {
+              return {
+                ...candidate,
+                status: "merged",
+                mergedIntoCandidateId: updatedWorkspace.id,
+                mergedAt: now,
+                mergeNote: `variant_of_canonical:${entry.id}`,
+                routingReason: `Resolved variant '${candidate.name}' into canonical subject '${entry.name}'.`,
+                updatedAt: now,
+              };
+            }
+            return candidate;
+          }),
+          recommendations: state.recommendations.map((item) =>
+            recommendations.some((recommendation) => recommendation.id === item.id)
+              ? { ...item, status: "attached_to_existing_dossier_update", targetCandidateId: updatedWorkspace.id, connectedCandidateId: updatedWorkspace.id, connectedSourceFileCandidateId: updatedWorkspace.id, routingReason: `Bundled into ${entry.name} Dossier Update workspace by Subject Consolidation.`, updatedAt: now }
+              : item,
+          ),
+          updatedAt: now,
+        };
+        recommendations.forEach((item) => consumedRecommendations.add(item.id));
+        result.bundledPublicDossierUpdateSignals += recommendations.length;
+        result.sourceFileDuplicatesMerged += variantCandidates.length;
+        result.skippedItems.push({ subject: entry.name, reason: `Bundled ${recommendations.length} ${entry.name} update signals into ${entry.name} Dossier Update workspace.` });
+        for (const variant of variantCandidates) {
+          result.skippedItems.push({ subject: variant.name, reason: `Resolved variant '${variant.name}' into canonical subject '${entry.name}'.` });
+        }
+        const refresh = refreshOutcomeForState({ state, candidate: updatedWorkspace, now, reason: "Subject Consolidation bundled exact public dossier update signals." });
+        state = refresh.state;
+        result.bnlRefreshes.push(refresh.outcome);
+        rememberTarget(updatedWorkspace);
+      }
+    }
+
+    function archiveDiagnosticArtifacts() {
+      const diagnosticCandidateIds = new Set(
+        state.candidates
+          .filter((candidate) => candidate.status !== "archived" && candidate.status !== "denied" && candidate.status !== "merged" && isDiagnosticTestArtifactCandidate(candidate))
+          .map((candidate) => candidate.id),
+      );
+      const diagnosticRecommendationIds = new Set(
+        state.recommendations
+          .filter((recommendation) =>
+            (recommendation.status === "new" || recommendation.status === "reviewing") &&
+            isDiagnosticTestArtifactRecommendation(recommendation),
+          )
+          .map((recommendation) => recommendation.id),
+      );
+      if (diagnosticCandidateIds.size === 0 && diagnosticRecommendationIds.size === 0) return;
+      state = {
+        ...state,
+        candidates: state.candidates.map((candidate) =>
+          diagnosticCandidateIds.has(candidate.id)
+            ? { ...candidate, status: "archived", routingReason: "Subject Consolidation archived diagnostic_test_artifact smoke-test record.", mergeNote: "diagnostic_test_artifact", updatedAt: now }
+            : candidate,
+        ),
+        recommendations: state.recommendations.map((recommendation) =>
+          diagnosticRecommendationIds.has(recommendation.id)
+            ? { ...recommendation, status: "archived", routingReason: "Subject Consolidation archived diagnostic_test_artifact smoke-test signal.", updatedAt: now }
+            : recommendation,
+        ),
+        updatedAt: now,
+      };
+      result.diagnosticArtifactsArchived += diagnosticCandidateIds.size + diagnosticRecommendationIds.size;
+    }
+
+    if (!input.groupId) {
+      bundleExactPublicDossierUpdateSignals();
+      archiveDiagnosticArtifacts();
+    }
+
+    function attachRecommendationRecord(
+      recommendation: DossierRecommendation,
+      target: DossierCandidate,
+      status: DossierRecommendationStatus = attachmentStatusForCandidate(target),
+    ) {
+      if (consumedRecommendations.has(recommendation.id)) return;
+      if (recommendation.status !== "new" && recommendation.status !== "reviewing") return;
+      const note = routingNote({
+        candidateId: target.id,
+        now,
+        text: recommendation.ingestSource?.startsWith("bnl")
+          ? bnlAutoCandidateNoteText(recommendation)
+          : recommendationSourceNoteText(recommendation),
+        source: "bnl_recommendation",
+        createdBy: recommendation.createdBy,
+        ingestKey: recommendation.ingestKey,
+        ingestedAt: recommendation.ingestedAt,
+        ingestSource: recommendation.ingestSource,
+      });
+      const routingReason = "Subject Consolidation attached safe exact same-subject information.";
+      const updatedRecommendation: DossierRecommendation = {
+        ...recommendation,
+        status,
+        targetCandidateId: target.id,
+        connectedCandidateId: target.id,
+        connectedSourceFileCandidateId: target.id,
+        identityReviewStatus: "not_required",
+        routingReason,
+        updatedAt: now,
+      };
+      const updatedCandidate = mergeCandidateSignal({
+        candidate: target,
+        now,
+        note,
+        evidenceSummary: recommendation.evidenceSummary,
+        connectedRecommendationId: recommendation.id,
+        routingReason,
+        identityReviewStatus: "not_required",
+      });
+      state = {
+        ...state,
+        recommendations: state.recommendations.map((item) =>
+          item.id === recommendation.id ? updatedRecommendation : item,
+        ),
+        candidates: state.candidates.map((item) =>
+          item.id === target.id ? updatedCandidate : item,
+        ),
+        updatedAt: now,
+      };
+      const refresh = refreshOutcomeForState({
+        state,
+        candidate: updatedCandidate,
+        now,
+        reason: "Subject Consolidation added source information.",
+      });
+      state = refresh.state;
+      result.bnlRefreshes.push(refresh.outcome);
+      result.attachedRecommendations += 1;
+      consumedRecommendations.add(recommendation.id);
+      rememberTarget(updatedCandidate);
+    }
+
+    for (const group of audit.possibleDuplicateGroups) {
+      if (input.groupId && group.id !== input.groupId) continue;
+      const plan = group.consolidationPlan;
+      if (plan.automationTier === "Blocked") {
+        result.blocked += 1;
+        result.blockedItems.push({
+          groupId: group.id,
+          subject: plan.targetDisplayName ?? group.records.map((record) => record.displayName ?? record.name).join(" / "),
+          reason: plan.blockedReasons.join(" ") || group.reason,
+        });
+        continue;
+      }
+      if (plan.requiresReview || plan.automationTier === "Select Target Manually") {
+        if (input.groupId) {
+          result.blocked += 1;
+          result.blockedItems.push({
+            groupId: group.id,
+            subject: plan.targetDisplayName ?? group.records.map((record) => record.displayName ?? record.name).join(" / "),
+            reason: plan.recommendedNextStep || plan.reason,
+          });
+        } else {
+          result.needsReview += 1;
+          result.skippedItems.push({
+            groupId: group.id,
+            subject: plan.targetDisplayName ?? group.records.map((record) => record.displayName ?? record.name).join(" / "),
+            reason: plan.recommendedNextStep || plan.reason,
+          });
+        }
+        continue;
+      }
+      const target = plan.targetRecord?.candidateId
+        ? state.candidates.find((candidate) => candidate.id === plan.targetRecord?.candidateId)
+        : undefined;
+      const sourceRecommendations = plan.sourceRecords
+        .filter((record) => record.type === "recommendation" && record.recommendationId)
+        .map((record) => state.recommendations.find((item) => item.id === record.recommendationId))
+        .filter((item): item is DossierRecommendation => Boolean(item))
+        .filter((item) =>
+          (item.status === "new" || item.status === "reviewing") &&
+          !consumedRecommendations.has(item.id),
+        );
+
+      if (plan.automationTier === "Attach to Existing Source File candidate" && target) {
+        for (const recommendation of sourceRecommendations) {
+          if (recommendationHasMeaningfulInfo(recommendation)) {
+            attachRecommendationRecord(recommendation, target);
+          } else if (!consumedRecommendations.has(recommendation.id)) {
+            state = {
+              ...state,
+              recommendations: state.recommendations.map((item) =>
+                item.id === recommendation.id ? { ...item, status: "archived", routingReason: "Subject Consolidation cleaned exact duplicate with no new information.", updatedAt: now } : item,
+              ),
+              updatedAt: now,
+            };
+            consumedRecommendations.add(recommendation.id);
+            result.duplicateRecommendationsCleaned += 1;
+          }
+        }
+        continue;
+      }
+
+      if (plan.automationTier === "Empty duplicate cleanup candidate") {
+        for (const record of plan.sourceRecords.filter((item) => item.candidateId)) {
+          const candidate = state.candidates.find((item) => item.id === record.candidateId);
+          if (!candidate || consumedCandidates.has(candidate.id)) continue;
+          if (candidateHasMeaningfulConsolidationInfo(candidate)) {
+            result.needsReview += 1;
+            result.skippedItems.push({
+              groupId: group.id,
+              subject: candidate.name,
+              reason: "Candidate has meaningful information and cannot be cleaned automatically.",
+            });
+            continue;
+          }
+          state = {
+            ...state,
+            candidates: state.candidates.map((item) =>
+              item.id === candidate.id
+                ? { ...item, status: "archived", mergeNote: "Subject Consolidation retired an empty duplicate record.", updatedAt: now }
+                : item,
+            ),
+            updatedAt: now,
+          };
+          consumedCandidates.add(candidate.id);
+          result.emptyDuplicatesCleaned += 1;
+        }
+        continue;
+      }
+
+      if (plan.automationTier === "Source File merge candidate" && target) {
+        const sources = plan.sourceRecords
+          .filter((record) => record.candidateId)
+          .map((record) => state.candidates.find((candidate) => candidate.id === record.candidateId))
+          .filter((candidate): candidate is DossierCandidate => Boolean(candidate));
+        if (sources.some((source) => source.existingDossierMatch?.id && target.existingDossierMatch?.id && source.existingDossierMatch.id !== target.existingDossierMatch.id)) {
+          result.blocked += 1;
+          result.blockedItems.push({
+            groupId: group.id,
+            subject: target.name,
+            reason: "Different public dossier matches are present.",
+          });
+          continue;
+        }
+        const sourceNotes = sources.flatMap((source) => source.sourceFileNotes ?? []);
+        const aliases = sources.flatMap((source) => source.identityLinks ?? []);
+        const recommendationIds = sources.flatMap((source) => source.connectedRecommendationIds ?? []);
+        const updatedTarget: DossierCandidate = {
+          ...target,
+          sourceFileNotes: [...(target.sourceFileNotes ?? []), ...sourceNotes.map((note) => ({ ...note, candidateId: target.id, updatedAt: now }))],
+          identityLinks: [...(target.identityLinks ?? []), ...aliases.map((link) => ({ ...link, candidateId: target.id, visibility: "internal_only" as const, useInPublicDossier: false, updatedAt: now }))],
+          connectedRecommendationIds: uniqueStrings(target.connectedRecommendationIds, recommendationIds),
+          mergeSourceCandidateIds: uniqueStrings(target.mergeSourceCandidateIds, sources.map((source) => source.id)),
+          mergeNote: "Subject Consolidation merged a safe exact duplicate into this kept Source File.",
+          updatedAt: now,
+        };
+        state = {
+          ...state,
+          candidates: state.candidates.map((candidate) => {
+            if (candidate.id === target.id) return updatedTarget;
+            if (sources.some((source) => source.id === candidate.id)) {
+              return { ...candidate, status: "merged", mergedIntoCandidateId: target.id, mergedAt: now, mergeNote: "Subject Consolidation merged into kept Source File.", updatedAt: now };
+            }
+            return candidate;
+          }),
+          updatedAt: now,
+        };
+        const refresh = refreshOutcomeForState({ state, candidate: updatedTarget, now, reason: "Subject Consolidation merged duplicate Source File information." });
+        state = refresh.state;
+        result.bnlRefreshes.push(refresh.outcome);
+        result.sourceFileDuplicatesMerged += sources.length;
+        rememberTarget(updatedTarget);
+        continue;
+      }
+
+      if (plan.automationTier === "Create Source File candidate" && sourceRecommendations.length > 0) {
+        const first = sourceRecommendations[0];
+        const candidate = buildCandidateFromRecommendation({
+          recommendation: first,
+          now,
+          source: first.ingestSource === "bnl_dynamic_candidate_discovery" || first.ingestSource === "bnl_source_knowledge_bridge" ? bnlIngestCandidateSource(first) : "manual",
+          noteText: first.ingestSource?.startsWith("bnl") ? bnlAutoCandidateNoteText(first) : recommendationSourceNoteText(first),
+        });
+        const sourceFile: DossierCandidate = { ...candidate, status: "active_source_file", connectedRecommendationIds: sourceRecommendations.map((item) => item.id), sourceRecommendationIds: sourceRecommendations.map((item) => item.id) };
+        state = {
+          ...state,
+          candidates: [sourceFile, ...state.candidates],
+          recommendations: state.recommendations.map((item) =>
+            sourceRecommendations.some((recommendation) => recommendation.id === item.id)
+              ? { ...item, status: "converted_to_source_file", targetCandidateId: sourceFile.id, connectedCandidateId: sourceFile.id, connectedSourceFileCandidateId: sourceFile.id, routingReason: "Subject Consolidation created a Source File from coherent same-subject signals.", updatedAt: now }
+              : item,
+          ),
+          updatedAt: now,
+        };
+        sourceRecommendations.forEach((item) => consumedRecommendations.add(item.id));
+        const refresh = refreshOutcomeForState({ state, candidate: sourceFile, now, reason: "Subject Consolidation created this Source File from matched signals." });
+        state = refresh.state;
+        result.bnlRefreshes.push(refresh.outcome);
+        result.sourceFilesCreated += 1;
+        rememberTarget(sourceFile);
+        continue;
+      }
+
+      if (plan.automationTier === "Create Dossier Update workspace candidate" && plan.existingPublicDossier && sourceRecommendations.length > 0) {
+        const entry = databasePage.entries.find((item) => item.id === plan.existingPublicDossier?.id);
+        if (!entry) {
+          result.blocked += 1;
+          result.blockedItems.push({
+            groupId: group.id,
+            subject: plan.existingPublicDossier.id,
+            reason: "Existing public dossier target was not found.",
+          });
+          continue;
+        }
+        const candidateId = createCandidateId();
+        const candidate: DossierCandidate = {
+          id: candidateId,
+          name: entry.name,
+          candidateType: candidateTypeFromPublicDossierEntry(entry),
+          source: "website_read_model",
+          tier: "review_candidate",
+          score: 58,
+          whyNow: "Subject Consolidation found exact public dossier update signals.",
+          reason: "Internal Dossier Update workspace created for review-only consolidation.",
+          firstSeenAt: now,
+          lastSeenAt: now,
+          evidenceSummary: `Existing public dossier ${entry.id} / ${entry.name} matched consolidated source signals.`,
+          evidenceItems: [],
+          evidenceCount: 0,
+          knownFacts: [`Existing public dossier target: ${entry.id} / ${entry.name}.`],
+          confidence: "medium",
+          duplicateRisk: "high",
+          existingDossierMatch: { id: entry.id, name: entry.name, confidence: "high" },
+          recommendedCategory: entry.category,
+          recommendedKind: entry.kind,
+          recommendedEcosystemLane: entry.ecosystemLane,
+          recommendedIdentityAuthority: entry.identityAuthority,
+          recommendedStatus: entry.status,
+          recommendedClearance: entry.clearance,
+          recommendedOrigin: entry.origin,
+          recommendedTags: entry.tags,
+          proposedTags: [],
+          missingInfo: ["Review update notes before applying anything to public content."],
+          doNotSay: ["Do not publish update material automatically."],
+          publicSafetyNotes: ["Internal update lane only; no public dossier text changed."],
+          sourceFileNotes: sourceRecommendations.map((recommendation) => routingNote({ candidateId: "", now, text: recommendation.ingestSource?.startsWith("bnl") ? bnlAutoCandidateNoteText(recommendation) : recommendationSourceNoteText(recommendation), source: "bnl_recommendation", createdBy: recommendation.createdBy, ingestKey: recommendation.ingestKey, ingestedAt: recommendation.ingestedAt, ingestSource: recommendation.ingestSource })).map((note) => ({ ...note, candidateId })),
+          identityLinks: [],
+          sourceLanes: uniqueStrings(...sourceRecommendations.map((recommendation) => recommendation.sourceLanes)) as DossierRecommendationSourceLane[],
+          status: "existing_dossier_update",
+          sourceRecommendationIds: sourceRecommendations.map((item) => item.id),
+          connectedRecommendationIds: sourceRecommendations.map((item) => item.id),
+          createdAt: now,
+          updatedAt: now,
+        };
+        state = {
+          ...state,
+          candidates: [candidate, ...state.candidates],
+          recommendations: state.recommendations.map((item) =>
+            sourceRecommendations.some((recommendation) => recommendation.id === item.id)
+              ? { ...item, status: "attached_to_existing_dossier_update", targetCandidateId: candidate.id, connectedCandidateId: candidate.id, connectedSourceFileCandidateId: candidate.id, routingReason: "Subject Consolidation created a Dossier Update workspace for exact public dossier signals.", updatedAt: now }
+              : item,
+          ),
+          updatedAt: now,
+        };
+        sourceRecommendations.forEach((item) => consumedRecommendations.add(item.id));
+        const refresh = refreshOutcomeForState({ state, candidate, now, reason: "Subject Consolidation created this Dossier Update workspace." });
+        state = refresh.state;
+        result.bnlRefreshes.push(refresh.outcome);
+        result.dossierUpdateWorkspacesCreated += 1;
+        rememberTarget(candidate);
+      }
+    }
+
+    result.affectedTargets = state.candidates
+      .filter((candidate) => affectedTargetIds.has(candidate.id))
+      .map((candidate) => ({
+        candidateId: candidate.id,
+        name: candidate.existingDossierMatch?.name ?? candidate.name,
+        href: `/admin/dossiers/candidates/${candidate.id}`,
+      }));
+    return state;
   });
 
   return result;

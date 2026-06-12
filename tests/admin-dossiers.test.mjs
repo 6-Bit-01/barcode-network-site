@@ -2190,25 +2190,37 @@ test("Population Method Audit renders read-only admin intake map states", () => 
   assert.doesNotMatch(auditCopy, /fix automatically|Fix Automatically|Run Subject Consolidation|Confirm Consolidation|Consolidate Into|Create Source File|Create Dossier Update|Keep Separate|Select Different Target|merge candidates|Merge button|publish public pages|change public dossier text/i);
 });
 
-test("Population Method Audit renders independently of Subject Consolidation state", () => {
+test("Population Method Audit lives in the bottom Diagnostics & Maintenance drawer", () => {
   const page = source("src/app/admin/dossiers/page.tsx");
   const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
   const subjectConditionalIndex = page.indexOf("isSubjectConsolidationClear && !consolidationResult");
   const subjectQueueIndex = page.indexOf("Subject Consolidation Queue");
   const consolidationResultIndex = page.indexOf("consolidationResult &&");
-  const subjectConditionalCloseIndex = page.indexOf("open={!populationMethodHealthy}", subjectConditionalIndex);
+  const sourceFilesIndex = page.indexOf('eyebrow="Source Files"');
+  const archiveIndex = page.indexOf("Archive / Dismissed / Trash", sourceFilesIndex);
+  const drawerIndex = page.indexOf("Diagnostics & Maintenance");
+  const ownerReviewIndex = page.indexOf("Owner Review", drawerIndex);
   const populationAuditIndex = page.indexOf("Population Method Audit / Intake Map");
-  const candidatesIndex = page.indexOf("Incoming BNL Signals", populationAuditIndex);
+  const bnlDiagnosticsIndex = page.indexOf("BNL Signal Diagnostics — filed/non-dossier details collapsed");
+  const diagnosticArtifactsIndex = page.indexOf("Diagnostics/Test Artifacts — collapsed by default");
   const clearBranch = page.slice(subjectConditionalIndex, subjectQueueIndex);
-  const fullQueueBranch = page.slice(subjectQueueIndex, subjectConditionalCloseIndex);
+  const fullQueueBranch = page.slice(subjectQueueIndex, drawerIndex);
+  const normalDashboardCopy = page.slice(0, drawerIndex);
 
   assert.ok(subjectConditionalIndex >= 0, "Subject Consolidation clear conditional exists");
   assert.ok(subjectQueueIndex > subjectConditionalIndex, "Subject Consolidation queue state still renders");
   assert.ok(consolidationResultIndex > subjectQueueIndex, "consolidationResult state still renders inside the queue state");
-  assert.ok(populationAuditIndex > subjectConditionalCloseIndex, "Population Method Audit renders after the Subject Consolidation conditional");
-  assert.ok(candidatesIndex > populationAuditIndex, "Population Method Audit renders before the BNL signal diagnostic section");
+  assert.ok(sourceFilesIndex > subjectQueueIndex, "normal Source Files section renders before maintenance diagnostics");
+  assert.ok(archiveIndex > sourceFilesIndex, "archive/trash stays near the bottom of the working dashboard");
+  assert.ok(drawerIndex > archiveIndex, "Diagnostics & Maintenance is a bottom drawer after normal work sections");
+  assert.ok(ownerReviewIndex > drawerIndex, "Owner Review link remains after the maintenance drawer");
+  assert.ok(populationAuditIndex > drawerIndex, "Population Method Audit content is inside the maintenance drawer");
+  assert.ok(bnlDiagnosticsIndex > drawerIndex, "BNL filed/non-dossier diagnostics are inside the maintenance drawer");
+  assert.ok(diagnosticArtifactsIndex > drawerIndex, "Diagnostic/test artifacts are inside the maintenance drawer");
   assert.doesNotMatch(clearBranch, /Population Method Audit|Population Method:/);
-  assert.doesNotMatch(fullQueueBranch, /Population Method Audit|Population Method:/);
+  assert.doesNotMatch(fullQueueBranch, /Population Method Audit \/ Intake Map|BNL Signal Diagnostics|Diagnostics\/Test Artifacts — collapsed by default/);
+  assert.doesNotMatch(normalDashboardCopy, /Population Method Audit \/ Intake Map|BNL Signal Diagnostics|Diagnostics\/Test Artifacts — collapsed by default/);
+  assert.match(page, /<details className="border border-border bg-surface\/70 p-5">\s*<summary className="cursor-pointer text-xl font-bold text-foreground">\s*Diagnostics & Maintenance/, "maintenance drawer is collapsed by default");
   assertIncludesCopy(pageCopy, "Subject Consolidation: clear");
   assertIncludesCopy(pageCopy, "Subject Consolidation Queue");
   assertIncludesCopy(pageCopy, "Subject Consolidation Complete");
@@ -9110,6 +9122,9 @@ test("Dossier Control Center keeps healthy diagnostics compact and preserves def
   assert.match(page, /data-compact-diagnostic-status/, "Summary includes compact diagnostic status copy");
   assert.match(page, /bnlSignalStatusText/, "Summary has compact BNL signal status");
   assert.match(page, /populationMethodStatusText/, "Summary has compact Population Method Audit status");
+  assert.match(page, /Diagnostics & Maintenance/, "Diagnostics and maintenance material lives in one bottom drawer");
+  assert.ok(page.indexOf("Diagnostics & Maintenance") > page.indexOf('eyebrow="Source Files"'), "Diagnostics & Maintenance renders after default work sections");
+  assert.doesNotMatch(page.slice(0, page.indexOf("Diagnostics & Maintenance")), /Population Method Audit \/ Intake Map|BNL Signal Diagnostics|Diagnostics\/Test Artifacts — collapsed by default/, "normal dashboard flow does not expose full diagnostic sections");
 
   for (const label of [
     "Candidates & Recommendation Intake",
@@ -9125,6 +9140,9 @@ test("Dossier Control Center keeps healthy diagnostics compact and preserves def
   assert.match(page, /return selected \? compactUsefulSummary\(selected\) : "Needs more evidence"/, "Why it matters fallback stays concise");
   assert.match(page, /rawEvidenceRefs\?|evidenceRefs\?|sourcePackage|relationship\[_-\]journal|private_admin|internal_controlled/, "Why it matters rejects raw JSON/evidence refs");
   assert.match(page, /publishes\? 0 public pages|changes\? 0 public dossier text|exposes\? 0 internal aliases|raw\/private evidence/, "Why it matters rejects safety boilerplate");
+  assert.match(page, /review source context and decide whether to attach or convert into a bnl source file/i, "Why it matters rejects generic workflow filler");
+  assert.match(page, /genericWhyItMattersPatterns/, "Why it matters rejects generic admin review phrases");
+  assert.doesNotMatch(pageCopy, /Review source context and decide whether to attach or convert into a BNL Source File\./, "generic workflow filler is not rendered as row copy");
   assert.match(page, /BNL Signal Diagnostics — filed\/non-dossier details collapsed/, "Filed/already-represented BNL signals stay in collapsed diagnostics");
   assert.match(page, /Diagnostics\/Test Artifacts — collapsed by default/, "Diagnostics/Test Artifacts remain accessible but collapsed");
   assert.match(page, /nonDossierPopulationSignals\.length > 0/, "Non-dossier signals remain accessible only when present");

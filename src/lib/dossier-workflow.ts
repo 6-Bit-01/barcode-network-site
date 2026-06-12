@@ -353,10 +353,47 @@ export type DossierCandidate = {
   updatedAt: string;
 };
 
+
+export type DossierBnlDraftRevisionStatus =
+  | "pending"
+  | "accepted"
+  | "rejected"
+  | "reverted";
+
+export type DossierBnlDraftRevisionPublicSafetyResult = {
+  passed: boolean;
+  checks: Array<{ id: string; label: string; passed: boolean; message?: string }>;
+};
+
+export type DossierBnlDraftRevision = {
+  id: string;
+  draftId: string;
+  createdAt: string;
+  updatedAt: string;
+  requestedInstruction: string;
+  previousDraftSnapshot: DossierDraft["fields"];
+  proposedChangedFields: Partial<DossierDraft["fields"]>;
+  changeSummary: string;
+  publicSafetyResult: DossierBnlDraftRevisionPublicSafetyResult;
+  provenance: {
+    candidateId: string;
+    sourceFileNoteIds: string[];
+    recommendationIds: string[];
+    sourceFileDraftMetadata?: DossierDraft["sourceFileDraftMetadata"];
+    adminOnly: true;
+  };
+  status: DossierBnlDraftRevisionStatus;
+  statusReason?: string;
+  acceptedAt?: string;
+  rejectedAt?: string;
+  revertedAt?: string;
+};
+
 export type DossierDraft = {
   id: string;
   candidateId: string;
   status: DossierDraftStatus;
+  bnlDraftRevisions?: DossierBnlDraftRevision[];
   sourceFileDraftMetadata?: {
     sourceCandidateId: string;
     sourceCandidateUpdatedAt?: string;
@@ -2931,6 +2968,10 @@ export type DossierWorkflowAction =
   | "requestDraft"
   | "createDraftFromCandidate"
   | "updateDraftFromSourceFile"
+  | "proposeBnlDraftRevision"
+  | "acceptBnlDraftRevision"
+  | "rejectBnlDraftRevision"
+  | "revertBnlDraftRevision"
   | "saveDraft"
   | "saveDraftEdit"
   | "submitDraftForOwnerReview"
@@ -2993,6 +3034,10 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "requestDraft",
   "createDraftFromCandidate",
   "updateDraftFromSourceFile",
+  "proposeBnlDraftRevision",
+  "acceptBnlDraftRevision",
+  "rejectBnlDraftRevision",
+  "revertBnlDraftRevision",
   "saveDraft",
   "saveDraftEdit",
   "submitDraftForOwnerReview",

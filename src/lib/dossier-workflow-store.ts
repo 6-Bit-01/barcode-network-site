@@ -17,6 +17,7 @@ import {
   type UpdateDossierSourceFileSummaryInput,
   type CreateManualDossierCandidateInput,
   type CreateExistingDossierUpdateTargetInput,
+  type DossierBnlDraftRevision,
   type DossierCandidate,
   type DossierCandidateStatus,
   type DossierIdentityLink,
@@ -739,6 +740,160 @@ function createIdentityLinkId(): string {
 
 function createDraftId(): string {
   return `dossier_draft_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createBnlDraftRevisionId(): string {
+  return `bnl_revision_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function textIncludesAny(value: string, terms: string[]): string | null {
+  const lower = value.toLowerCase();
+  return terms.find((term) => term && lower.includes(term.toLowerCase())) ?? null;
+}
+
+const SOURCE_LANE_JARGON_TERMS = [
+  "source lane",
+  "source-file",
+  "source file",
+  "review-only evidence",
+  "bnl source",
+  "ingest",
+  "candidateid",
+  "recommendationid",
+  "queue_frequency",
+  "rd_context",
+  "discord_context",
+  "broadcast_memory",
+  "website_read_model",
+];
+
+const UNSUPPORTED_QUEUE_MUSIC_TERMS = [
+  "queue regular",
+  "played on barcode radio",
+  "released music",
+  "official release",
+  "discography",
+  "producer credit",
+  "track by",
+];
+
+function publicDraftText(fields: Partial<DossierDraft["fields"]>): string {
+  return [
+    fields.name,
+    fields.role,
+    fields.summary,
+    fields.notes,
+    ...(fields.tags ?? []),
+    ...(fields.proposedTags ?? []),
+    fields.primaryLink?.label,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .join("\n");
+}
+
+function meaningfulSentence(value: string | undefined): boolean {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) return true;
+  if (trimmed.includes("...") || trimmed.includes("…")) return false;
+  return /[.!?)]$/.test(trimmed) || trimmed.length < 72;
+}
+
+function evaluateBnlDraftRevisionSafety(input: {
+  candidate: DossierCandidate | undefined;
+  draft: DossierDraft;
+  proposedFields: Partial<DossierDraft["fields"]>;
+}): DossierBnlDraftRevision["publicSafetyResult"] {
+  const mergedFields = normalizeDraftFields({
+    ...input.draft.fields,
+    ...input.proposedFields,
+  });
+  const text = publicDraftText(mergedFields);
+  const rawEvidenceTerms = [
+    ...(input.candidate?.evidenceItems ?? []).flatMap((item) => [
+      item.id,
+      item.label,
+      item.publicSafe === false ? item.summary : "",
+    ]),
+    ...(input.candidate?.sourceFileNotes ?? [])
+      .filter((note) => note.publicSafe === false || note.type === "do_not_say")
+      .flatMap((note) => [note.id, note.text]),
+    ...(input.candidate?.doNotSay ?? []),
+  ].filter(Boolean);
+  const internalAliases = (input.candidate?.identityLinks ?? [])
+    .filter((link) => link.visibility === "internal_only" || link.status !== "confirmed" || !link.useInPublicDossier)
+    .map((link) => link.label)
+    .filter(Boolean);
+  const publicWarnings = validateDossierPublicDraftFields(mergedFields);
+  const checks = [
+    { id: "no_raw_private_evidence", label: "No raw/private evidence refs", blocker: textIncludesAny(text, rawEvidenceTerms) },
+    { id: "no_internal_aliases", label: "No internal aliases", blocker: textIncludesAny(text, internalAliases) },
+    { id: "no_source_lane_jargon", label: "No source-lane jargon in public copy", blocker: textIncludesAny(text, SOURCE_LANE_JARGON_TERMS) },
+    { id: "no_mid_sentence_cutoff", label: "No ellipsis or mid-sentence cutoff", blocker: [mergedFields.role, mergedFields.summary, mergedFields.notes].every(meaningfulSentence) ? null : "ellipsis or cutoff" },
+    { id: "no_unsupported_queue_music_claims", label: "No unsupported queue/music claims", blocker: textIncludesAny(text, UNSUPPORTED_QUEUE_MUSIC_TERMS) },
+    { id: "no_identity_confirmation", label: "No identity confirmation if identity review is unresolved", blocker: input.candidate?.identityReviewStatus === "needs_confirmation" && /\b(confirmed identity|verified identity|same person|merged alias)\b/i.test(text) ? "identity confirmation" : null },
+    { id: "no_review_only_public_claim", label: "No public claim from review-only evidence", blocker: publicWarnings[0]?.message ?? null },
+    { id: "no_publish_action", label: "No publish action", blocker: /\b(publish|published|make public now|go live)\b/i.test(text) ? "publish language" : null },
+  ];
+  const resultChecks = checks.map((check) => ({
+    id: check.id,
+    label: check.label,
+    passed: !check.blocker,
+    message: check.blocker ? `${check.label} blocked: ${check.blocker}.` : undefined,
+  }));
+  return { passed: resultChecks.every((check) => check.passed), checks: resultChecks };
+}
+
+function concisePublicSentence(value: string | undefined, fallback: string): string {
+  const sanitized = sanitizeDossierPublicCopy(value ?? "");
+  const first = sanitized.split(/(?<=[.!?])\s+/)[0]?.trim();
+  return first || fallback;
+}
+
+function buildBnlProposedDraftFields(input: {
+  draft: DossierDraft;
+  candidate: DossierCandidate | undefined;
+  instruction: string;
+}): Partial<DossierDraft["fields"]> {
+  const fields = input.draft.fields;
+  const confirmedFacts = [
+    ...(input.candidate?.knownFacts ?? []),
+    ...(input.candidate?.sourceFileNotes ?? [])
+      .filter((note) => note.publicSafe === true && note.type !== "do_not_say")
+      .map((note) => note.text),
+  ].map(sanitizeDossierPublicCopy).filter(Boolean);
+  const safeFact = confirmedFacts[0] ?? concisePublicSentence(input.candidate?.evidenceSummary, "Public-safe BARCODE Network context is still being prepared for owner review.");
+  const missingInfo = (input.candidate?.missingInfo ?? []).map(sanitizeDossierPublicCopy).filter(Boolean);
+  const instruction = input.instruction.toLowerCase();
+  const currentSummary = concisePublicSentence(fields.summary, safeFact);
+  const currentRole = concisePublicSentence(fields.role, "Subject pending public role confirmation");
+  const proposed: Partial<DossierDraft["fields"]> = {};
+
+  if (instruction.includes("role") || instruction.includes("category")) {
+    proposed.role = currentRole.replace(/^(possible|maybe)\s+/i, "").trim();
+    proposed.category = fields.category ?? input.candidate?.recommendedCategory;
+  }
+  if (instruction.includes("missing") || instruction.includes("owner review")) {
+    proposed.notes = [
+      "Owner Review needs public-safe confirmation before this dossier can move forward.",
+      ...(missingInfo.length ? missingInfo.map((item) => `Missing info question: ${item}`) : ["Missing info question: Confirm the exact public role and any public-safe connection that can be shown."]),
+    ].join("\n");
+  } else if (instruction.includes("technical") || instruction.includes("source-lane")) {
+    proposed.notes = sanitizeDossierPublicCopy(fields.notes ?? "") || "Internal source details have been converted into public-facing review notes.";
+  } else if (instruction.includes("shorten")) {
+    proposed.summary = currentSummary.length > 180 ? `${currentSummary.slice(0, 177).replace(/\s+\S*$/, "")}.` : currentSummary;
+  } else {
+    proposed.summary = `${fields.name} is represented here with public-safe BARCODE Network context: ${safeFact}`;
+    proposed.notes = missingInfo.length
+      ? `Owner Review should confirm: ${missingInfo.join("; ")}.`
+      : sanitizeDossierPublicCopy(fields.notes ?? "") || "Owner Review should confirm the final public wording before this dossier is eligible for publishing.";
+  }
+  if (instruction.includes("less generic") && proposed.summary) {
+    proposed.summary = proposed.summary.replace("public-safe BARCODE Network context", "reviewed BARCODE Network context");
+  }
+  if (!proposed.role && (instruction.includes("tone") || instruction.includes("public") || instruction.includes("generic"))) {
+    proposed.role = currentRole;
+  }
+  return normalizeDraftFields({ ...fields, ...proposed });
 }
 
 export async function getDossierWorkflowState(): Promise<DossierWorkflowState> {
@@ -6254,6 +6409,201 @@ export async function updateDraftFromSourceFile(
     };
   });
 
+  return updatedDraft;
+}
+
+export async function proposeBnlDraftRevision(input: {
+  draftId: string;
+  instruction: string;
+}): Promise<DossierBnlDraftRevision | null> {
+  const instruction = input.instruction.trim();
+  if (!instruction) {
+    throw new DossierWorkflowInputError(
+      "BNL draft revision requires an instruction",
+      400,
+      "missing_bnl_revision_instruction",
+    );
+  }
+  const now = new Date().toISOString();
+  let createdRevision: DossierBnlDraftRevision | null = null;
+
+  await updateDossierWorkflowState((currentState) => {
+    const draft = currentState.drafts.find((item) => item.id === input.draftId);
+    if (!draft || draft.status === "published") return currentState;
+    const candidate = currentState.candidates.find(
+      (item) => item.id === draft.candidateId,
+    );
+    const proposedFields = buildBnlProposedDraftFields({
+      draft,
+      candidate,
+      instruction,
+    });
+    const safety = evaluateBnlDraftRevisionSafety({
+      candidate,
+      draft,
+      proposedFields,
+    });
+    createdRevision = {
+      id: createBnlDraftRevisionId(),
+      draftId: draft.id,
+      createdAt: now,
+      updatedAt: now,
+      requestedInstruction: instruction,
+      previousDraftSnapshot: normalizeDraftFields(draft.fields),
+      proposedChangedFields: proposedFields,
+      changeSummary: safety.passed
+        ? "BNL proposed a public-safe draft revision for admin review. Draft fields were not overwritten."
+        : "BNL proposed a revision, but public-safety checks found blockers. Draft fields were not overwritten.",
+      publicSafetyResult: safety,
+      provenance: {
+        candidateId: draft.candidateId,
+        sourceFileNoteIds: (candidate?.sourceFileNotes ?? []).map((note) => note.id),
+        recommendationIds: draft.sourceFileDraftMetadata?.recommendationIds ?? [],
+        sourceFileDraftMetadata: draft.sourceFileDraftMetadata,
+        adminOnly: true,
+      },
+      status: "pending",
+    };
+
+    return {
+      ...currentState,
+      drafts: currentState.drafts.map((item) =>
+        item.id === draft.id
+          ? {
+              ...item,
+              bnlDraftRevisions: [
+                ...(item.bnlDraftRevisions ?? []),
+                createdRevision as DossierBnlDraftRevision,
+              ],
+              updatedAt: now,
+            }
+          : item,
+      ),
+      updatedAt: now,
+    };
+  });
+
+  return createdRevision;
+}
+
+export async function acceptBnlDraftRevision(input: {
+  draftId: string;
+  revisionId: string;
+}): Promise<DossierDraft | null> {
+  const now = new Date().toISOString();
+  let updatedDraft: DossierDraft | null = null;
+
+  await updateDossierWorkflowState((currentState) => {
+    const draft = currentState.drafts.find((item) => item.id === input.draftId);
+    if (!draft || draft.status === "published") return currentState;
+    const candidate = currentState.candidates.find((item) => item.id === draft.candidateId);
+    const revision = (draft.bnlDraftRevisions ?? []).find((item) => item.id === input.revisionId);
+    if (!revision || revision.status !== "pending") return currentState;
+    const safety = evaluateBnlDraftRevisionSafety({
+      candidate,
+      draft,
+      proposedFields: revision.proposedChangedFields,
+    });
+    const nextRevision: DossierBnlDraftRevision = {
+      ...revision,
+      publicSafetyResult: safety,
+      status: safety.passed ? "accepted" : "rejected",
+      statusReason: safety.passed
+        ? "Accepted by admin into Proposed Dossier draft."
+        : "Rejected because public-safety checks failed before acceptance.",
+      acceptedAt: safety.passed ? now : undefined,
+      rejectedAt: safety.passed ? undefined : now,
+      updatedAt: now,
+    };
+    updatedDraft = {
+      ...draft,
+      fields: safety.passed
+        ? normalizeDraftFields({
+            ...draft.fields,
+            ...revision.proposedChangedFields,
+          })
+        : draft.fields,
+      bnlDraftRevisions: (draft.bnlDraftRevisions ?? []).map((item) =>
+        item.id === revision.id ? nextRevision : item,
+      ),
+      updatedAt: now,
+    };
+    return {
+      ...currentState,
+      drafts: currentState.drafts.map((item) =>
+        item.id === draft.id ? (updatedDraft as DossierDraft) : item,
+      ),
+      updatedAt: now,
+    };
+  });
+
+  return updatedDraft;
+}
+
+export async function rejectBnlDraftRevision(input: {
+  draftId: string;
+  revisionId: string;
+  reason?: string;
+}): Promise<DossierBnlDraftRevision | null> {
+  const now = new Date().toISOString();
+  let rejectedRevision: DossierBnlDraftRevision | null = null;
+  await updateDossierWorkflowState((currentState) => {
+    const drafts = currentState.drafts.map((draft) => {
+      if (draft.id !== input.draftId) return draft;
+      const revisions = (draft.bnlDraftRevisions ?? []).map((revision) => {
+        if (revision.id !== input.revisionId || revision.status !== "pending") return revision;
+        rejectedRevision = {
+          ...revision,
+          status: "rejected",
+          statusReason: input.reason?.trim() || "Rejected by admin.",
+          rejectedAt: now,
+          updatedAt: now,
+        };
+        return rejectedRevision;
+      });
+      return { ...draft, bnlDraftRevisions: revisions, updatedAt: now };
+    });
+    if (!rejectedRevision) return currentState;
+    return { ...currentState, drafts, updatedAt: now };
+  });
+  return rejectedRevision;
+}
+
+export async function revertBnlDraftRevision(input: {
+  draftId: string;
+  revisionId: string;
+}): Promise<DossierDraft | null> {
+  const now = new Date().toISOString();
+  let updatedDraft: DossierDraft | null = null;
+  await updateDossierWorkflowState((currentState) => {
+    const draft = currentState.drafts.find((item) => item.id === input.draftId);
+    if (!draft || draft.status === "published") return currentState;
+    const revision = (draft.bnlDraftRevisions ?? []).find((item) => item.id === input.revisionId);
+    if (!revision || revision.status !== "accepted") return currentState;
+    updatedDraft = {
+      ...draft,
+      fields: normalizeDraftFields(revision.previousDraftSnapshot),
+      bnlDraftRevisions: (draft.bnlDraftRevisions ?? []).map((item) =>
+        item.id === revision.id
+          ? {
+              ...item,
+              status: "reverted",
+              statusReason: "Reverted by admin to the previous accepted draft state.",
+              revertedAt: now,
+              updatedAt: now,
+            }
+          : item,
+      ),
+      updatedAt: now,
+    };
+    return {
+      ...currentState,
+      drafts: currentState.drafts.map((item) =>
+        item.id === draft.id ? (updatedDraft as DossierDraft) : item,
+      ),
+      updatedAt: now,
+    };
+  });
   return updatedDraft;
 }
 

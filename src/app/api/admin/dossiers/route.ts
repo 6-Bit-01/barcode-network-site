@@ -28,6 +28,7 @@ import {
   type MergeDossierCandidatesInput,
 } from "@/lib/dossier-workflow";
 import {
+  acceptBnlDraftRevision,
   addDossierIdentityLink,
   applyPopulationReviewRecommendationAction,
   reconcilePopulationSignals,
@@ -45,6 +46,7 @@ import {
   createDraftFromCandidate,
   updateDraftFromSourceFile,
   createManualDossierCandidate,
+  proposeBnlDraftRevision,
   dismissDossierRecommendation,
   DossierMergeError,
   DossierWorkflowInputError,
@@ -53,8 +55,10 @@ import {
   ignoreDossierRecommendation,
   recordDossierSourceFileOpen,
   sourceFileNeedsCaseReportBackfill,
+  rejectBnlDraftRevision,
   rejectDossierIdentityLink,
   requestDossierSourceFileRefresh,
+  revertBnlDraftRevision,
   retireDossierIdentityLink,
   runSubjectConsolidation,
   mergeDossierCandidates,
@@ -126,6 +130,10 @@ const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "createManualCandidate",
   "createDraftFromCandidate",
   "updateDraftFromSourceFile",
+  "proposeBnlDraftRevision",
+  "acceptBnlDraftRevision",
+  "rejectBnlDraftRevision",
+  "revertBnlDraftRevision",
   "saveDraft",
   "submitDraftForOwnerReview",
   "denyCandidate",
@@ -610,6 +618,87 @@ export async function POST(req: Request) {
           : "BNL Source File immediate update did not complete. Retry from the status button.",
         ...payload,
       });
+    }
+
+    if (action === "proposeBnlDraftRevision") {
+      const draftId = draftIdFromBody(body);
+      const instruction = typeof body.instruction === "string" ? body.instruction : "";
+      if (!draftId || !instruction.trim()) {
+        return NextResponse.json(
+          { error: "draftId and revision instruction are required" },
+          { status: 400 },
+        );
+      }
+      const revision = await proposeBnlDraftRevision({ draftId, instruction });
+      if (!revision) {
+        return NextResponse.json({ error: "Draft not found" }, { status: 404 });
+      }
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, revision, ...payload });
+    }
+
+    if (action === "acceptBnlDraftRevision") {
+      const draftId = draftIdFromBody(body);
+      const revisionId = typeof body.revisionId === "string" ? body.revisionId.trim() : "";
+      if (!draftId || !revisionId) {
+        return NextResponse.json(
+          { error: "draftId and revisionId are required" },
+          { status: 400 },
+        );
+      }
+      const draft = await acceptBnlDraftRevision({ draftId, revisionId });
+      if (!draft) {
+        return NextResponse.json(
+          { error: "Draft revision could not be accepted" },
+          { status: 400 },
+        );
+      }
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, draft, ...payload });
+    }
+
+    if (action === "rejectBnlDraftRevision") {
+      const draftId = draftIdFromBody(body);
+      const revisionId = typeof body.revisionId === "string" ? body.revisionId.trim() : "";
+      if (!draftId || !revisionId) {
+        return NextResponse.json(
+          { error: "draftId and revisionId are required" },
+          { status: 400 },
+        );
+      }
+      const revision = await rejectBnlDraftRevision({
+        draftId,
+        revisionId,
+        reason: typeof body.reason === "string" ? body.reason : undefined,
+      });
+      if (!revision) {
+        return NextResponse.json(
+          { error: "Draft revision could not be rejected" },
+          { status: 400 },
+        );
+      }
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, revision, ...payload });
+    }
+
+    if (action === "revertBnlDraftRevision") {
+      const draftId = draftIdFromBody(body);
+      const revisionId = typeof body.revisionId === "string" ? body.revisionId.trim() : "";
+      if (!draftId || !revisionId) {
+        return NextResponse.json(
+          { error: "draftId and revisionId are required" },
+          { status: 400 },
+        );
+      }
+      const draft = await revertBnlDraftRevision({ draftId, revisionId });
+      if (!draft) {
+        return NextResponse.json(
+          { error: "Draft revision could not be reverted" },
+          { status: 400 },
+        );
+      }
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, draft, ...payload });
     }
 
     if (action === "addDossierIdentityLink") {

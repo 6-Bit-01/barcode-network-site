@@ -8,6 +8,7 @@ import { useParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   getUnappliedSourceNotes,
+  type DossierBnlDraftRevision,
   type DossierCandidate,
   type DossierDraft,
   type DossierDuplicateGroup,
@@ -304,6 +305,7 @@ export default function DossierDraftEditorPage() {
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [bnlInstruction, setBnlInstruction] = useState("");
 
   const loadWorkflow = useCallback(
     async function loadWorkflow() {
@@ -387,6 +389,18 @@ export default function DossierDraftEditorPage() {
   );
   const publicCopyIsDirty =
     publicCopyWarnings.length > 0 || sourceMaterialNeedsPublicCopy;
+  const bnlDraftRevisions = draft?.bnlDraftRevisions ?? [];
+  const pendingBnlRevision = bnlDraftRevisions.find(
+    (revision) => revision.status === "pending",
+  );
+  const bnlEditSuggestions = [
+    "Make this less generic.",
+    "Rewrite public summary using only confirmed public-safe facts.",
+    "Explain why this is not ready for Owner Review.",
+    "Remove technical/source-lane language.",
+    "Strengthen role/category without inventing facts.",
+    "Convert review-only notes into safe missing-info questions.",
+  ];
 
   function draftFieldsFromForm() {
     if (!form) return {};
@@ -470,6 +484,66 @@ export default function DossierDraftEditorPage() {
     setNotice(
       "Final Admin Draft ready for review. Sending to owner does not publish.",
     );
+  }
+
+  async function proposeBnlRevision(instruction = bnlInstruction) {
+    if (!draft || !instruction.trim()) return;
+    try {
+      await postWorkflow({
+        action: "proposeBnlDraftRevision",
+        draftId: draft.id,
+        instruction,
+      });
+      setBnlInstruction("");
+      setNotice("BNL revision proposed for admin review. Draft fields were not overwritten.");
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Failed to propose BNL revision.");
+    }
+  }
+
+  async function acceptBnlRevision(revision: DossierBnlDraftRevision) {
+    if (!draft) return;
+    try {
+      await postWorkflow({
+        action: "acceptBnlDraftRevision",
+        draftId: draft.id,
+        revisionId: revision.id,
+      });
+      setNotice(revision.publicSafetyResult.passed ? "BNL revision accepted into draft. Owner Review is still required." : "BNL revision failed public-safety checks and was not accepted.");
+      await loadWorkflow();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Failed to accept BNL revision.");
+    }
+  }
+
+  async function rejectBnlRevision(revision: DossierBnlDraftRevision) {
+    if (!draft) return;
+    try {
+      await postWorkflow({
+        action: "rejectBnlDraftRevision",
+        draftId: draft.id,
+        revisionId: revision.id,
+        reason: "Rejected from draft editor.",
+      });
+      setNotice("BNL revision rejected. Draft fields were unchanged.");
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Failed to reject BNL revision.");
+    }
+  }
+
+  async function revertBnlRevision(revision: DossierBnlDraftRevision) {
+    if (!draft) return;
+    try {
+      await postWorkflow({
+        action: "revertBnlDraftRevision",
+        draftId: draft.id,
+        revisionId: revision.id,
+      });
+      setNotice("Draft reverted to the previous accepted draft state. Owner Review is still required.");
+      await loadWorkflow();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Failed to revert BNL revision.");
+    }
   }
 
   async function sendToOwnerReview() {
@@ -808,39 +882,6 @@ export default function DossierDraftEditorPage() {
             <p>No source file could be loaded for this draft.</p>
           </section>
         )}
-        <details className="border border-border bg-surface p-5 text-sm text-muted">
-          <summary className="cursor-pointer text-xl font-bold text-foreground">
-            Developer / Raw Source Audit — internal debugging only
-          </summary>
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <section>
-              <h3 className="font-bold text-foreground">Source file identifiers</h3>
-              <p>Candidate: {candidate?.name ?? draft.candidateId}</p>
-              <p>Status: {candidate?.status ?? "—"}</p>
-              <p>Source: {candidate?.source ?? "—"}</p>
-              <p>Tier/score: {candidate ? `${candidate.tier} / ${candidate.score}` : "—"}</p>
-              <p>Duplicate risk: {candidate?.duplicateRisk ?? "none"}</p>
-              <p>Source notes: {sourceNoteCount}</p>
-              <p>Unapplied source notes: {unappliedSourceNotes.length}</p>
-            </section>
-            <section>
-              <h3 className="font-bold text-foreground">Raw source fields</h3>
-              <p className="whitespace-pre-wrap">Reason: {candidate?.reason || "—"}</p>
-              <p className="whitespace-pre-wrap">Why now: {candidate?.whyNow || "—"}</p>
-              <p className="whitespace-pre-wrap">Evidence summary: {candidate?.evidenceSummary || "—"}</p>
-              <p>Known facts: {(candidate?.knownFacts ?? []).join(", ") || "—"}</p>
-              <p>Missing info: {(candidate?.missingInfo ?? []).join(", ") || "—"}</p>
-              <p>Do-not-say: {(candidate?.doNotSay ?? []).join(", ") || "—"}</p>
-              <p>Public safety notes: {(candidate?.publicSafetyNotes ?? []).join(", ") || "—"}</p>
-            </section>
-          </div>
-          <Link
-            href={`/admin/dossiers/candidates/${draft.candidateId}`}
-            className="mt-4 inline-flex text-accent hover:underline"
-          >
-            Open full BNL Source File
-          </Link>
-        </details>
         <form onSubmit={saveDraft} className="space-y-5">
           <section className="border border-border bg-surface p-5 space-y-3 text-sm text-muted">
             <h2 className="text-2xl font-bold text-foreground">
@@ -879,42 +920,144 @@ export default function DossierDraftEditorPage() {
             </p>
           </section>
 
-          <section className="border border-accent/60 bg-accent/10 p-5 text-sm text-accent space-y-3">
-            <h2 className="text-2xl font-bold">
-              BNL Edit Chat panel — Coming Next
-            </h2>
-            <p>
-              BNL edit chat comes next. This panel will help rewrite reviewed
-              source material into clean, public-safe dossier copy and revise the proposed dossier conversationally instead of
-              applying raw source notes directly.
+          <section className="border border-accent/60 bg-accent/10 p-5 text-sm text-accent space-y-4">
+            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.4em] text-accent/80 mb-2">
+                  Admin-only revision tool
+                </p>
+                <h2 className="text-2xl font-bold">
+                  BNL Edit Chat panel
+                </h2>
+              </div>
+              <span className="border border-accent/60 px-3 py-2 text-xs uppercase tracking-widest">
+                Draft revisions only
+              </span>
+            </div>
+            <p className="border border-accent/60 bg-background/30 p-3">
+              BNL can revise the Proposed Dossier draft, but cannot publish it,
+              confirm identity, expose private evidence, or change the Source
+              File record.
             </p>
-            <p>
-              This is the intended main editing flow. Example future prompts:
-              “Make this more in-universe.” “Remove that detail.” “Use this
-              chosen link.” “Ask me what you still need.” “Make this match the
-              other collaborator dossiers.”
-            </p>
-            <p>
-              Future BNL source packet: BNL Source File, website read model,
-              dossier taxonomy guide, authoring guide, tag registry,
-              queue/public show context, broadcast memory references,
-              R&amp;D/operator-approved notes, Discord-safe/mod-approved
-              context, duplicate/merge history, and existing dossier style
-              profile.
-            </p>
-            <p>
-              Future BNL output: complete proposed dossier, tags, taxonomy,
-              warnings, missing info questions, and public-safety caveats. BNL
-              must not invent facts, must ask only for missing specifics,
-              preserve dossier tone, keep community-owned identities separate
-              from BARCODE-controlled characters, and treat AI/human/unknown as
-              tags/traits, not primary organization.
-            </p>
-            <textarea
-              disabled
-              placeholder="BNL edit chat is not wired yet."
-              className={`${inputClass()} min-h-24`}
-            />
+            <label className="block space-y-2 text-xs uppercase tracking-widest">
+              <span>Request a BNL draft revision</span>
+              <textarea
+                disabled={!isEditable || saving}
+                value={bnlInstruction}
+                onChange={(event) => setBnlInstruction(event.target.value)}
+                placeholder="Ask BNL to rewrite for public dossier tone, clarify confirmed vs review-only details, shorten the summary, or explain what is missing before Owner Review."
+                className={`${inputClass()} min-h-24`}
+              />
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void proposeBnlRevision()}
+                disabled={saving || !isEditable || !bnlInstruction.trim()}
+                className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+              >
+                Create Pending BNL Revision
+              </button>
+            </div>
+            {bnlDraftRevisions.length === 0 && (
+              <div className="space-y-2">
+                <h3 className="font-bold text-foreground">BNL Edit Suggestions</h3>
+                <div className="flex flex-wrap gap-2">
+                  {bnlEditSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => void proposeBnlRevision(suggestion)}
+                      disabled={saving || !isEditable}
+                      className="border border-accent/60 bg-background/20 px-3 py-2 text-left text-xs uppercase tracking-widest hover:bg-accent hover:text-background disabled:opacity-50"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {pendingBnlRevision && (
+              <article className="border border-accent bg-background/30 p-4 space-y-3">
+                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h3 className="text-xl font-bold text-foreground">
+                      Pending revision preview
+                    </h3>
+                    <p>Instruction: {pendingBnlRevision.requestedInstruction}</p>
+                    <p>{pendingBnlRevision.changeSummary}</p>
+                  </div>
+                  <span className="border border-accent/60 px-3 py-2 text-xs uppercase tracking-widest">
+                    {pendingBnlRevision.publicSafetyResult.passed ? "Checks passed" : "Checks blocked"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-muted">
+                  {Object.entries(pendingBnlRevision.proposedChangedFields).map(([field, value]) => (
+                    <div key={field} className="border border-border/70 bg-surface p-3">
+                      <p className="font-bold text-foreground">{field}</p>
+                      <p className="whitespace-pre-wrap">{Array.isArray(value) ? value.join(", ") : typeof value === "object" && value ? JSON.stringify(value) : String(value ?? "—")}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-2">
+                  <h4 className="font-bold text-foreground">Public-safety checks</h4>
+                  {pendingBnlRevision.publicSafetyResult.checks.map((check) => (
+                    <p key={check.id} className={check.passed ? "text-muted" : "text-accent"}>
+                      {check.passed ? "✓" : "!"} {check.label}{check.message ? ` — ${check.message}` : ""}
+                    </p>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
+                  <button
+                    type="button"
+                    onClick={() => void acceptBnlRevision(pendingBnlRevision)}
+                    disabled={saving || !isEditable || !pendingBnlRevision.publicSafetyResult.passed}
+                    className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                  >
+                    Accept Revision Into Draft
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void rejectBnlRevision(pendingBnlRevision)}
+                    disabled={saving || !isEditable}
+                    className="border border-border px-4 py-2 text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+                  >
+                    Reject Revision
+                  </button>
+                </div>
+              </article>
+            )}
+            <div className="space-y-2">
+              <h3 className="font-bold text-foreground">Revision history</h3>
+              {bnlDraftRevisions.length === 0 ? (
+                <p>No BNL draft revisions yet. Suggested prompts are shown above.</p>
+              ) : (
+                <div className="space-y-2">
+                  {[...bnlDraftRevisions].reverse().map((revision) => (
+                    <article key={revision.id} className="border border-border/70 bg-background/20 p-3">
+                      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                        <div>
+                          <p className="font-bold text-foreground">{revision.status} / {new Date(revision.createdAt).toLocaleString()}</p>
+                          <p>{revision.requestedInstruction}</p>
+                          <p>{revision.statusReason ?? revision.changeSummary}</p>
+                          <p className="text-xs uppercase tracking-widest text-muted">Provenance: Source File {revision.provenance.candidateId}; {revision.provenance.sourceFileNoteIds.length} source note(s). Admin-only metadata.</p>
+                        </div>
+                        {revision.status === "accepted" && (
+                          <button
+                            type="button"
+                            onClick={() => void revertBnlRevision(revision)}
+                            disabled={saving || !isEditable}
+                            className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                          >
+                            Revert
+                          </button>
+                        )}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
           </section>
           <PublicCopyGuardWarning warnings={publicCopyWarnings} />
           <ThinSourcePublicCopyWarning show={sourceMaterialNeedsPublicCopy} />
@@ -1197,6 +1340,39 @@ export default function DossierDraftEditorPage() {
             publishing, tag creation, or src/content.ts mutation occurs here.
           </p>
         </form>
+        <details className="border border-border bg-surface p-5 text-sm text-muted">
+          <summary className="cursor-pointer text-xl font-bold text-foreground">
+            Diagnostics — collapsed by default / Developer / Raw Source Audit — internal debugging only
+          </summary>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <section>
+              <h3 className="font-bold text-foreground">Source file identifiers</h3>
+              <p>Candidate: {candidate?.name ?? draft.candidateId}</p>
+              <p>Status: {candidate?.status ?? "—"}</p>
+              <p>Source: {candidate?.source ?? "—"}</p>
+              <p>Tier/score: {candidate ? `${candidate.tier} / ${candidate.score}` : "—"}</p>
+              <p>Duplicate risk: {candidate?.duplicateRisk ?? "none"}</p>
+              <p>Source notes: {sourceNoteCount}</p>
+              <p>Unapplied source notes: {unappliedSourceNotes.length}</p>
+            </section>
+            <section>
+              <h3 className="font-bold text-foreground">Raw source fields</h3>
+              <p className="whitespace-pre-wrap">Reason: {candidate?.reason || "—"}</p>
+              <p className="whitespace-pre-wrap">Why now: {candidate?.whyNow || "—"}</p>
+              <p className="whitespace-pre-wrap">Evidence summary: {candidate?.evidenceSummary || "—"}</p>
+              <p>Known facts: {(candidate?.knownFacts ?? []).join(", ") || "—"}</p>
+              <p>Missing info: {(candidate?.missingInfo ?? []).join(", ") || "—"}</p>
+              <p>Do-not-say: {(candidate?.doNotSay ?? []).join(", ") || "—"}</p>
+              <p>Public safety notes: {(candidate?.publicSafetyNotes ?? []).join(", ") || "—"}</p>
+            </section>
+          </div>
+          <Link
+            href={`/admin/dossiers/candidates/${draft.candidateId}`}
+            className="mt-4 inline-flex text-accent hover:underline"
+          >
+            Open full BNL Source File
+          </Link>
+        </details>
       </section>
     </main>
   );

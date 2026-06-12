@@ -180,7 +180,7 @@ test("proposed dossier preview sanitizes internal starter phrases before Dossier
 test("phase 2 draft editor stacks source summary, BNL edit panel, and dossier preview full-width", () => {
   const adminPageSource = normalizedSource("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
   const sourceSummaryIndex = adminPageSource.indexOf("BNL Source File Summary");
-  const editPanelIndex = adminPageSource.indexOf("BNL Edit Chat panel — Coming Next", sourceSummaryIndex);
+  const editPanelIndex = adminPageSource.indexOf("BNL Edit Chat panel", sourceSummaryIndex);
   const previewIndex = adminPageSource.indexOf("<ProposedDossierPreview form={form} candidate={candidate ?? undefined} />", editPanelIndex);
 
   assert.notEqual(sourceSummaryIndex, -1);
@@ -1565,7 +1565,7 @@ test("admin dossier page has minimal loading and auth-required states", () => {
   assert.match(page, /MinimalDossierAdminState/);
 });
 
-test("dedicated draft editor route contains focused editing workflow and future BNL boundary", () => {
+test("dedicated draft editor route contains focused editing workflow and wired BNL boundary", () => {
   const routePath = "src/app/admin/dossiers/drafts/[draftId]/page.tsx";
   assert.equal(fs.existsSync(path.join(projectRoot, routePath)), true);
   const page = source(routePath);
@@ -1574,7 +1574,7 @@ test("dedicated draft editor route contains focused editing workflow and future 
     "Proposed Dossier + BNL Edit Chat",
     "BNL Source File",
     "Proposed Dossier Preview",
-    "BNL Edit Chat panel — Coming Next",
+    "BNL Edit Chat panel",
     "Open Advanced Manual Edit",
     "fallback/manual override",
     "Save Proposed Dossier",
@@ -1583,8 +1583,9 @@ test("dedicated draft editor route contains focused editing workflow and future 
     "Send to Owner Review",
     "Return to Editing",
     "Sending to owner does not publish",
-    "BNL edit chat comes next",
-    "revise the proposed dossier conversationally",
+    "BNL can revise the Proposed Dossier draft, but cannot publish it, confirm identity, expose private evidence, or change the Source File record.",
+    "BNL Edit Suggestions",
+    "Create Pending BNL Revision",
     "manual override",
     "category",
     "kind",
@@ -10168,4 +10169,282 @@ test("Source File intelligence and dynamic main actions are readiness-driven", (
   assert.match(page, /No confirmed queue footprint connected yet\./);
   assert.doesNotMatch(pageCopy, /Review source context and decide whether to attach or convert into a BNL Source File/);
   assert.doesNotMatch(pageCopy, /RELATIONSHIP_JOURNAL[\s\S]{0,200}BNL Dossier Intelligence/);
+});
+
+test("BNL Edit Chat is wired in the existing draft panel with suggestions and collapsed admin diagnostics", () => {
+  const page = source("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
+  const pageCopy = normalizedSource("src/app/admin/dossiers/drafts/[draftId]/page.tsx");
+  assert.equal((page.match(/BNL Edit Chat panel/g) ?? []).length, 1);
+  assert.doesNotMatch(page, /BNL Edit Chat panel — Coming Next|BNL edit chat is not wired yet/);
+  for (const suggestion of [
+    "Make this less generic.",
+    "Rewrite public summary using only confirmed public-safe facts.",
+    "Explain why this is not ready for Owner Review.",
+    "Remove technical/source-lane language.",
+    "Strengthen role/category without inventing facts.",
+    "Convert review-only notes into safe missing-info questions.",
+  ]) {
+    assertIncludesCopy(pageCopy, suggestion);
+  }
+  assert.ok(page.indexOf("BNL Edit Chat panel") < page.indexOf("<ProposedDossierPreview"));
+  assert.ok(page.indexOf("Revision history") < page.indexOf("Diagnostics — collapsed by default"));
+  assertIncludesCopy(pageCopy, "Admin-only revision tool");
+  assertIncludesCopy(pageCopy, "Draft revisions only");
+});
+
+test("BNL draft revisions preview, accept, reject, revert, and preserve owner/source/public boundaries", async () => {
+  await resetWorkflowStore();
+  const now = new Date("2026-06-12T01:00:00.000Z").toISOString();
+  const candidate = {
+    id: "bnl-revision-candidate",
+    name: "Revision Subject",
+    candidateType: "entity",
+    source: "manual",
+    tier: "draft_ready",
+    score: 90,
+    reason: "Public-safe fixture reason.",
+    whyNow: "Admin wants public-safe copy.",
+    evidenceSummary: "Revision Subject appeared in public BARCODE Network context.",
+    evidenceItems: [
+      {
+        id: "raw-private-evidence-ref",
+        label: "raw-private-ref-999",
+        summary: "Private evidence receipt with raw-private-ref-999.",
+        publicSafe: false,
+      },
+    ],
+    knownFacts: ["Revision Subject appeared in public BARCODE Network context."],
+    missingInfo: ["Confirm final public role before owner review."],
+    doNotSay: ["Private Alias"],
+    publicSafetyNotes: ["Do not expose private evidence."],
+    identityReviewStatus: "needs_confirmation",
+    identityLinks: [
+      {
+        id: "private-alias-link",
+        candidateId: "bnl-revision-candidate",
+        label: "Private Alias",
+        normalizedLabel: "private alias",
+        type: "alias",
+        visibility: "internal_only",
+        source: "admin_manual",
+        status: "proposed",
+        useForMatching: false,
+        useInPublicDossier: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    sourceFileNotes: [
+      {
+        id: "safe-note",
+        candidateId: "bnl-revision-candidate",
+        type: "fact",
+        text: "Public-safe source note for Revision Subject.",
+        source: "admin_manual",
+        publicSafe: true,
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "private-note",
+        candidateId: "bnl-revision-candidate",
+        type: "do_not_say",
+        text: "Private Alias and raw-private-ref-999 are private evidence.",
+        source: "admin_manual",
+        publicSafe: false,
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    status: "draft_ready",
+    createdAt: now,
+    updatedAt: now,
+  };
+  const draft = {
+    id: "bnl-revision-draft",
+    candidateId: candidate.id,
+    status: "draft",
+    fields: {
+      name: "Revision Subject",
+      category: "Entity",
+      kind: "lore_node",
+      ecosystemLane: "network_entity",
+      identityAuthority: "review_required",
+      status: "PENDING",
+      clearance: "PUBLIC",
+      origin: "UNVERIFIED",
+      role: "Public role pending.",
+      summary: "Original summary stays until accepted.",
+      notes: "Original notes.",
+      tags: ["review"],
+      proposedTags: [],
+      files: [],
+    },
+    sourceFileDraftMetadata: {
+      sourceCandidateId: candidate.id,
+      sourceFileNoteIds: ["safe-note", "private-note"],
+      recommendationIds: ["rec-1"],
+      assembledAt: now,
+      publicSafeDraft: true,
+      reviewOnlyEvidence: true,
+      autoConfirmedIdentityLinks: false,
+      publicPagesMutated: false,
+    },
+    createdAt: now,
+    updatedAt: now,
+  };
+  await store.saveDossierWorkflowState({
+    version: 1,
+    revision: 0,
+    candidates: [candidate],
+    drafts: [draft],
+    recommendations: [],
+    sourceFileRefreshRequests: [],
+    updatedAt: now,
+  });
+
+  const proposed = await (await authedPost({
+    action: "proposeBnlDraftRevision",
+    draftId: draft.id,
+    instruction: "Rewrite public summary using only confirmed public-safe facts.",
+  })).json();
+  assert.equal(proposed.revision.status, "pending");
+  assert.equal(proposed.revision.publicSafetyResult.passed, true);
+  assert.match(proposed.revision.changeSummary, /not overwritten/);
+  assert.equal(proposed.drafts[0].fields.summary, "Original summary stays until accepted.");
+  assert.equal(proposed.drafts[0].status, "draft");
+  assert.equal(proposed.drafts[0].sourceFileDraftMetadata.publicPagesMutated, false);
+  assert.equal(proposed.candidates[0].sourceFileNotes[1].text, "Private Alias and raw-private-ref-999 are private evidence.");
+
+  const accepted = await (await authedPost({
+    action: "acceptBnlDraftRevision",
+    draftId: draft.id,
+    revisionId: proposed.revision.id,
+  })).json();
+  assert.notEqual(accepted.draft.fields.summary, "Original summary stays until accepted.");
+  assert.equal(accepted.draft.status, "draft");
+  assert.equal(accepted.ownerReviewQueue.waitingCount, 0);
+  assert.equal(databasePage.entries.some((entry) => entry.name === "Revision Subject"), false);
+
+  const acceptedSummary = accepted.draft.fields.summary;
+  const rejectCandidateState = await store.getDossierWorkflowState();
+  const second = await (await authedPost({
+    action: "proposeBnlDraftRevision",
+    draftId: draft.id,
+    instruction: "Explain why this is not ready for Owner Review.",
+  })).json();
+  const rejected = await (await authedPost({
+    action: "rejectBnlDraftRevision",
+    draftId: draft.id,
+    revisionId: second.revision.id,
+  })).json();
+  assert.equal(rejected.revision.status, "rejected");
+  assert.equal(rejected.drafts[0].fields.summary, acceptedSummary);
+  assert.deepEqual(rejected.candidates[0].sourceFileNotes, rejectCandidateState.candidates[0].sourceFileNotes);
+
+  const reverted = await (await authedPost({
+    action: "revertBnlDraftRevision",
+    draftId: draft.id,
+    revisionId: proposed.revision.id,
+  })).json();
+  assert.equal(reverted.draft.fields.summary, "Original summary stays until accepted.");
+  assert.equal(reverted.draft.bnlDraftRevisions.find((revision) => revision.id === proposed.revision.id).status, "reverted");
+  assert.equal(reverted.draft.status, "draft");
+});
+
+test("BNL revision safety blocks private aliases, raw evidence, queue/music claims, cutoffs, and publish/identity language", async () => {
+  await resetWorkflowStore();
+  const now = new Date("2026-06-12T02:00:00.000Z").toISOString();
+  const candidate = {
+    id: "bnl-block-candidate",
+    name: "Block Subject",
+    candidateType: "entity",
+    source: "manual",
+    tier: "draft_ready",
+    score: 90,
+    reason: "Safe reason.",
+    evidenceSummary: "Safe evidence.",
+    evidenceItems: [{ id: "raw-block-ref", label: "raw-block-ref", summary: "raw-block-ref private", publicSafe: false }],
+    knownFacts: ["Block Subject has one public-safe fact."],
+    missingInfo: [],
+    doNotSay: ["Hidden Alias"],
+    publicSafetyNotes: [],
+    identityReviewStatus: "needs_confirmation",
+    identityLinks: [{
+      id: "hidden-alias-link",
+      candidateId: "bnl-block-candidate",
+      label: "Hidden Alias",
+      normalizedLabel: "hidden alias",
+      type: "alias",
+      visibility: "internal_only",
+      source: "admin_manual",
+      status: "proposed",
+      createdAt: now,
+      updatedAt: now,
+    }],
+    sourceFileNotes: [],
+    status: "draft_ready",
+    createdAt: now,
+    updatedAt: now,
+  };
+  await store.saveDossierWorkflowState({
+    version: 1,
+    revision: 0,
+    candidates: [candidate],
+    drafts: [{
+      id: "bnl-block-draft",
+      candidateId: candidate.id,
+      status: "draft",
+      fields: {
+        name: "Block Subject",
+        category: "Entity",
+        kind: "lore_node",
+        ecosystemLane: "network_entity",
+        identityAuthority: "review_required",
+        status: "PENDING",
+        clearance: "PUBLIC",
+        origin: "UNVERIFIED",
+        role: "Hidden Alias confirmed identity raw-block-ref source lane queue regular published...",
+        summary: "Block Subject was played on BARCODE Radio as an official release...",
+        notes: "This should publish now from review-only evidence.",
+        tags: ["review"],
+        proposedTags: [],
+        files: [],
+      },
+      createdAt: now,
+      updatedAt: now,
+    }],
+    recommendations: [],
+    sourceFileRefreshRequests: [],
+    updatedAt: now,
+  });
+
+  const proposed = await (await authedPost({
+    action: "proposeBnlDraftRevision",
+    draftId: "bnl-block-draft",
+    instruction: "Shorten the summary.",
+  })).json();
+  const failedChecks = proposed.revision.publicSafetyResult.checks.filter((check) => !check.passed).map((check) => check.id);
+  assert.equal(proposed.revision.status, "pending");
+  for (const id of [
+    "no_raw_private_evidence",
+    "no_internal_aliases",
+    "no_source_lane_jargon",
+    "no_mid_sentence_cutoff",
+    "no_unsupported_queue_music_claims",
+    "no_identity_confirmation",
+    "no_publish_action",
+  ]) {
+    assert.ok(failedChecks.includes(id), `${id} should fail`);
+  }
+  const accepted = await (await authedPost({
+    action: "acceptBnlDraftRevision",
+    draftId: "bnl-block-draft",
+    revisionId: proposed.revision.id,
+  })).json();
+  assert.equal(accepted.draft.bnlDraftRevisions[0].status, "rejected");
+  assert.match(accepted.draft.fields.summary, /official release/);
+  assert.equal(accepted.ownerReviewQueue.waitingCount, 0);
 });

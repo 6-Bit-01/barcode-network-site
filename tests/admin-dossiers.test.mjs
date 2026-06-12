@@ -53,6 +53,7 @@ const store = require("../src/lib/dossier-workflow-store.ts");
 const { databasePage } = require("../src/content.ts");
 const readModel = require("../src/app/api/bnl/read-model/route.ts");
 const sourceFilesReadModel = require("../src/app/api/bnl/source-files/route.ts");
+const populationContextRoute = require("../src/app/api/bnl/population-context/route.ts");
 const sourceFileRefreshRequestsRoute = require("../src/app/api/bnl/source-files/refresh-requests/route.ts");
 const noteDisplay = require("../src/lib/dossier-note-display.ts");
 const sourceFileSummary = require("../src/lib/dossier-source-file-summary.ts");
@@ -264,6 +265,14 @@ async function sourceFilesGet(query, token = "test-source-file-read-token") {
   return sourceFilesReadModel.GET(
     new Request(`https://example.test/api/bnl/source-files${query}`, {
       headers: { authorization: `Bearer ${token}` },
+    }),
+  );
+}
+
+async function populationContextGet(token) {
+  return populationContextRoute.GET(
+    new Request("https://example.test/api/bnl/population-context", {
+      headers: token ? { authorization: `Bearer ${token}` } : {},
     }),
   );
 }
@@ -8803,4 +8812,232 @@ test("Source File brief leads with Subject Read and renders Current Take once", 
 
   const panelSource = source("src/components/DossierSourceFileSummaryPanel.tsx");
   assert.doesNotMatch(panelSource, /lg:grid-cols-2[\s\S]{0,260}BNL take/i);
+});
+
+test("BNL population context endpoint is authenticated, compact, and routing-safe", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_API_KEY = "test-population-context-token";
+  const now = new Date().toISOString();
+  const older = new Date(Date.now() - 60_000).toISOString();
+  const baseCandidate = (overrides) => ({
+    id: overrides.id,
+    name: overrides.name,
+    candidateType: "artist",
+    source: "manual",
+    tier: "review_candidate",
+    score: 50,
+    whyNow: "Routing context only.",
+    reason: "Population context fixture.",
+    evidenceSummary: "Fixture evidence summary should not include raw messages.",
+    status: "needs_review",
+    createdAt: older,
+    updatedAt: now,
+    ...overrides,
+  });
+  const baseRecommendation = (overrides) => ({
+    id: overrides.id,
+    type: "modify_existing_dossier",
+    subjectName: overrides.subjectName,
+    status: "new",
+    reason: "Recommendation routing fixture.",
+    sourceLanes: ["website_dossier"],
+    createdAt: older,
+    updatedAt: now,
+    ...overrides,
+  });
+
+  await store.saveDossierWorkflowState({
+    version: 1,
+    revision: 1,
+    candidates: [
+      baseCandidate({
+        id: "active-source-file",
+        name: "Active Subject",
+        status: "active_source_file",
+        sourceLanes: ["broadcast_memory"],
+        latestSourceFileArchiveId: "archive-active-1",
+        latestSourceFileArchiveUpdatedAt: now,
+        sourceFileArchiveIds: ["archive-active-1"],
+        sourceFileSummary: { summaryText: "private admin summary text", updatedAt: older },
+        identityLinks: [
+          {
+            id: "private-alias",
+            candidateId: "active-source-file",
+            label: "Private Raw Alias Text",
+            normalizedLabel: "private raw alias text",
+            type: "alias",
+            visibility: "internal_only",
+            status: "confirmed",
+            source: "admin_manual",
+            confidence: "high",
+            useForMatching: true,
+            useInPublicDossier: false,
+            note: "private note",
+            createdAt: older,
+            updatedAt: now,
+          },
+          {
+            id: "public-alias",
+            candidateId: "active-source-file",
+            label: "Public Safe Alias",
+            normalizedLabel: "public safe alias",
+            type: "alias",
+            visibility: "public_safe",
+            status: "confirmed",
+            source: "owner_confirmed",
+            confidence: "confirmed",
+            useForMatching: true,
+            useInPublicDossier: true,
+            createdAt: older,
+            updatedAt: now,
+          },
+        ],
+      }),
+      baseCandidate({
+        id: "candidate-intake",
+        name: "Intake Subject",
+        status: "candidate_intake",
+        source: "bnl_dynamic_candidate_discovery",
+        ingestSource: "bnl",
+        createdFromRecommendationId: "rec-intake",
+        connectedRecommendationIds: ["rec-intake"],
+        sourceRecommendationIds: ["rec-intake"],
+      }),
+      baseCandidate({
+        id: "dossier-update-workspace",
+        name: "6 Bit",
+        status: "existing_dossier_update",
+        existingDossierMatch: { id: "EN-001", name: "6 Bit", confidence: "high" },
+        sourceRecommendationIds: ["rec-update"],
+        connectedRecommendationIds: ["rec-update", "rec-update-connected"],
+        sourceFileNotes: [
+          {
+            id: "workspace-note",
+            candidateId: "dossier-update-workspace",
+            type: "fact",
+            text: "private workspace note",
+            source: "bnl_recommendation",
+            status: "active",
+            createdAt: older,
+            updatedAt: now,
+          },
+        ],
+        sourceFileSummary: { summaryText: "private update summary", updatedAt: now },
+      }),
+      baseCandidate({
+        id: "merged-record",
+        name: "Merged Subject",
+        status: "merged",
+        mergedIntoCandidateId: "active-source-file",
+        mergeNote: "merged duplicate into active source file",
+      }),
+    ],
+    drafts: [],
+    recommendations: [
+      baseRecommendation({
+        id: "rec-intake",
+        subjectName: "Intake Subject",
+        status: "attached_to_candidate_intake",
+        targetCandidateId: "candidate-intake",
+        connectedCandidateId: "candidate-intake",
+        ingestSource: "bnl",
+      }),
+      baseRecommendation({
+        id: "rec-update",
+        subjectName: "6 Bit",
+        status: "attached_to_existing_dossier_update",
+        targetDossierId: "EN-001",
+        targetCandidateId: "dossier-update-workspace",
+        connectedCandidateId: "dossier-update-workspace",
+        connectedSourceFileCandidateId: "dossier-update-workspace",
+      }),
+    ],
+    sourceFileRefreshRequests: [
+      {
+        id: "refresh-update",
+        candidateId: "dossier-update-workspace",
+        subjectName: "6 Bit",
+        normalizedSubjectKey: "6 bit",
+        status: "pending",
+        reason: "Refresh workspace fixture.",
+        requestedAt: older,
+        updatedAt: now,
+        requestSource: "existing_dossier_update_review",
+        priority: 75,
+      },
+    ],
+    updatedAt: now,
+  });
+
+  const unauthorized = await populationContextGet();
+  assert.equal(unauthorized.status, 401);
+
+  const response = await populationContextGet("test-population-context-token");
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
+  const payload = await response.json();
+
+  assert.equal(payload.ok, true);
+  assert.equal(payload.version, "population_context_v1");
+  assert.ok(Array.isArray(payload.publicDossiers));
+  assert.ok(Array.isArray(payload.sourceFiles));
+  assert.ok(Array.isArray(payload.candidates));
+  assert.ok(Array.isArray(payload.dossierUpdateWorkspaces));
+  assert.ok(Array.isArray(payload.identityLinks));
+  assert.ok(Array.isArray(payload.resolvedRecords));
+  assert.equal(payload.diagnostics.publicDossierCount, payload.publicDossiers.length);
+  assert.equal(payload.diagnostics.sourceFileCount, payload.sourceFiles.length);
+  assert.equal(payload.diagnostics.candidateCount, payload.candidates.length);
+  assert.equal(payload.diagnostics.dossierUpdateWorkspaceCount, payload.dossierUpdateWorkspaces.length);
+  assert.equal(payload.diagnostics.identityLinkCount, payload.identityLinks.length);
+  assert.equal(payload.diagnostics.resolvedRecordCount, payload.resolvedRecords.length);
+
+  const sourceFile = payload.sourceFiles.find((item) => item.candidateId === "active-source-file");
+  assert.equal(sourceFile.subjectName, "Active Subject");
+  assert.equal(sourceFile.normalizedSubjectKey, "active subject");
+  assert.equal(sourceFile.status, "active_source_file");
+  assert.equal(sourceFile.route.path, "/admin/dossiers/candidates/active-source-file");
+  assert.equal(sourceFile.hasAdminSummary, true);
+  assert.equal(sourceFile.adminSummaryStale, true);
+
+  const intake = payload.candidates.find((item) => item.candidateId === "candidate-intake");
+  assert.equal(intake.source, "bnl_dynamic_candidate_discovery");
+  assert.equal(intake.ingestSource, "bnl");
+
+  const workspace = payload.dossierUpdateWorkspaces.find((item) => item.candidateId === "dossier-update-workspace");
+  assert.equal(workspace.publicDossierId, "EN-001");
+  assert.equal(workspace.publicDossierName, "6 Bit");
+  assert.deepEqual(workspace.sourceRecommendationIds, ["rec-update"]);
+  assert.deepEqual(workspace.connectedRecommendationIds, ["rec-update", "rec-update-connected"]);
+  assert.equal(workspace.sourceFileNotesCount, 1);
+  assert.equal(workspace.hasUpdateSummary, true);
+  assert.equal(workspace.bnlRefreshStatus.status, "pending");
+
+  const privateLink = payload.identityLinks.find((item) => item.publicSafe === false);
+  assert.equal(privateLink.useForMatching, true);
+  assert.match(privateLink.normalizedLabel, /^internal_identity_key:/);
+  const publicLink = payload.identityLinks.find((item) => item.publicSafe === true);
+  assert.equal(publicLink.normalizedLabel, "public safe alias");
+
+  const mergedRecord = payload.resolvedRecords.find((item) => item.recordId === "merged-record");
+  assert.equal(mergedRecord.destinationCandidateId, "active-source-file");
+  assert.equal(mergedRecord.destinationSubjectName, "Active Subject");
+  assert.equal(mergedRecord.destinationLane, "source_file");
+
+  const serialized = JSON.stringify(payload);
+  assert.doesNotMatch(serialized, /relationship_journal|raw Discord message|raw discord message/i);
+  assert.doesNotMatch(serialized, /protected_system|private_admin|internal_controlled/i);
+  assert.doesNotMatch(serialized, /token|secret/i);
+  assert.doesNotMatch(serialized, /Private Raw Alias Text|private raw alias text|private admin summary text|private update summary|private workspace note|private note/);
+  assert.doesNotMatch(serialized, /summaryText|evidenceItems|rawProvenance|sourcePackage|relationshipSignals|conversationHighlights/i);
+
+  const routeSource = source("src/app/api/bnl/population-context/route.ts");
+  assert.doesNotMatch(routeSource, /export async function POST|export async function PUT|export async function PATCH|export async function DELETE/);
+  assert.doesNotMatch(routeSource, /databasePage\.entries\s*=|summary:\s*|notes:\s*|role:\s*/);
+  assert.match(source("src/app/api/bnl/read-model/route.ts"), /export async function GET/);
+  assert.match(source("src/app/admin/dossiers/page.tsx"), /Dossier Control Center/);
+  assert.match(source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx"), /Source File/);
+  assert.match(source("src/lib/dossier-workflow-store.ts"), /Subject Consolidation/);
+
+  delete process.env.BNL_API_KEY;
 });

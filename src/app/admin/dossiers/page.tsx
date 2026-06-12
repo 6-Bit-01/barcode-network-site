@@ -294,6 +294,42 @@ function firstListValue(values?: string[]) {
   return values?.find((value) => value.trim()) ?? "—";
 }
 
+function optionalText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function isPlainUsefulSummary(value: string) {
+  if (!value) return false;
+  if (/^[\[{]/.test(value) || /[}\]]$/.test(value)) return false;
+  if (/\b(rawEvidenceRefs?|evidenceRefs?|sourcePackage|relationship[_-]journal|private_admin|internal_controlled)\b/i.test(value)) return false;
+  if (/^(ref|evidence|raw)[:#_-]/i.test(value)) return false;
+  if (/publishes? 0 public pages|changes? 0 public dossier text|exposes? 0 internal aliases|raw\/private evidence/i.test(value)) return false;
+  return true;
+}
+
+function compactUsefulSummary(value: string) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 220) return normalized;
+  return `${normalized.slice(0, 217).trim()}…`;
+}
+
+function whyItMattersCopy(record: DossierCandidate | DossierRecommendation) {
+  const dynamicRecord = record as Record<string, unknown>;
+  const sourceFileSummary = dynamicRecord.sourceFileSummary as
+    | { summaryText?: unknown }
+    | undefined;
+  const candidates = [
+    optionalText(sourceFileSummary?.summaryText),
+    optionalText(dynamicRecord.adminSummary),
+    optionalText(dynamicRecord.whyNow),
+    optionalText(dynamicRecord.reason),
+    optionalText(dynamicRecord.evidenceSummary),
+    optionalText(dynamicRecord.recommendedNextStep),
+  ];
+  const selected = candidates.find(isPlainUsefulSummary);
+  return selected ? compactUsefulSummary(selected) : "Needs more evidence";
+}
+
 function candidateActionLabel() {
   return "Review Candidate";
 }
@@ -755,7 +791,25 @@ export default function DossierControlCenterPage() {
       }),
     [candidates, recommendations, publicDossiers, drafts],
   );
-  const populationMethodHealthy = populationMethodAudit.warnings.length === 0;
+  const populationMethodNeedsReviewCount =
+    populationMethodAudit.countsByLane["Needs Population Review"] +
+    populationMethodAudit.hiddenWithoutDestination.length;
+  const populationMethodHealthy =
+    populationMethodAudit.warnings.length === 0 &&
+    populationMethodNeedsReviewCount === 0;
+  const showIncomingBnlSignals = unresolvedPopulationSignals.length > 0;
+  const showBnlSignalStatus =
+    populationRecommendations.length > 0 || Boolean(populationReconcileResult);
+  const bnlSignalStatusText = unresolvedPopulationSignals.length > 0
+    ? `BNL Signals: ${unresolvedPopulationSignals.length} unresolved`
+    : filedAutomaticallyCount > 0
+      ? `BNL Signals: ${filedAutomaticallyCount} filed automatically, 0 need review`
+      : "BNL Signals: clear";
+  const populationMethodStatusText = populationMethodHealthy
+    ? "Population Method Audit: clear"
+    : populationMethodAudit.warnings.length > 0
+      ? `Population Method Audit: ${populationMethodAudit.warnings.length} warning${populationMethodAudit.warnings.length === 1 ? "" : "s"}`
+      : `Population Method Audit: ${populationMethodNeedsReviewCount} record${populationMethodNeedsReviewCount === 1 ? "" : "s"} need review`;
   const consolidationAttachGroups = populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Attach to Existing Source File candidate");
   const consolidationCleanGroups = populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Empty duplicate cleanup candidate");
   const consolidationDossierUpdateGroups = populationAudit.possibleDuplicateGroups.filter((group) => group.consolidationPlan.automationTier === "Create Dossier Update workspace candidate");
@@ -1166,6 +1220,16 @@ export default function DossierControlCenterPage() {
         )}
 
         <DashboardCard eyebrow="Summary" title="Summary">
+          <div className="mb-4 flex flex-wrap gap-2 text-xs text-muted" data-compact-diagnostic-status>
+            {showBnlSignalStatus ? (
+              <span className="border border-border/70 bg-background/30 px-3 py-1.5">
+                {bnlSignalStatusText}
+              </span>
+            ) : null}
+            <span className="border border-border/70 bg-background/30 px-3 py-1.5">
+              {populationMethodStatusText}
+            </span>
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3 text-xs text-muted">
             {[
               [
@@ -1180,14 +1244,7 @@ export default function DossierControlCenterPage() {
               ],
               ["Source Files", activeCandidates.length],
               ["Needs Info", sourceFilesNeedingInfo.length],
-              [
-                "Ready for Dossier",
-                activeCandidates.filter(
-                  (candidate) =>
-                    !linkedActiveDraftFor(candidate, drafts) &&
-                    candidate.status !== "needs_more_evidence",
-                ).length,
-              ],
+              ["Proposed Dossiers", proposedDossiers.length],
               ["Owner Review waiting", ownerReviewDrafts.length],
               [
                 "Archive / Dismissed / Trash",
@@ -1564,8 +1621,8 @@ export default function DossierControlCenterPage() {
 
           <details className="border border-border bg-background/30 p-4" open={!populationMethodHealthy}>
             <summary className="cursor-pointer text-sm font-semibold text-foreground">
-              Population Method: {populationMethodHealthy ? "healthy" : "needs review"}
-              {!populationMethodHealthy ? ` — ${populationMethodAudit.warnings.length} intake records need population review.` : ""}
+              {populationMethodHealthy ? "Population Method Audit: clear" : "Population Method Audit: needs review"}
+              {!populationMethodHealthy ? ` — ${populationMethodAudit.warnings.length} warnings, ${populationMethodNeedsReviewCount} records need attention.` : ""}
             </summary>
             <div className="mt-4 space-y-5">
               <div>
@@ -1573,7 +1630,7 @@ export default function DossierControlCenterPage() {
                 <h2 className="text-xl font-bold text-foreground">Population Method Audit / Intake Map</h2>
                 <p className="mt-2 text-sm text-muted">Admin-only read-only diagnostic map for how Source Files, Dossier Updates, recommendations, diagnostics, and public dossier update signals entered the system, which lane they belong in, and whether hidden records have destinations.</p>
                 {populationMethodHealthy && (
-                  <p className="mt-3 border border-accent/40 bg-accent/10 p-3 text-sm text-accent">All resolved records have visible destinations or valid archive/diagnostic status. No orphaned intake records detected.</p>
+                  <p className="mt-3 border border-accent/40 bg-accent/10 p-3 text-sm text-accent">Population Method Audit: clear. All resolved records have visible destinations or valid archive/diagnostic status. No orphaned intake records detected.</p>
                 )}
               </div>
 
@@ -1676,6 +1733,7 @@ export default function DossierControlCenterPage() {
             </div>
           </details>
 
+        {showIncomingBnlSignals ? (
         <DashboardCard
           eyebrow="Incoming BNL Signals"
           title="Incoming BNL Signals"
@@ -1743,7 +1801,7 @@ export default function DossierControlCenterPage() {
                           </div>
                         </div>
                         <p><span className="text-foreground">Destination:</span> {populationDestinationLabel(recommendation, candidates)}</p>
-                        <p><span className="text-foreground">Why:</span> {recommendation.adminSummary ?? recommendation.evidenceSummary ?? recommendation.reason}</p>
+                        <p><span className="text-foreground">Why:</span> {whyItMattersCopy(recommendation)}</p>
                         {recommendation.missingInfo?.length ? <p><span className="text-foreground">Missing info:</span> {recommendation.missingInfo.join("; ")}</p> : null}
                         <p><span className="text-foreground">Evidence refs:</span> {recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0} private refs preserved internally; raw/private evidence is not shown.</p>
                         <p><span className="text-foreground">What to click next:</span> {primaryActions.map((action) => action.label).join(" or ")}</p>
@@ -1760,6 +1818,16 @@ export default function DossierControlCenterPage() {
                 </div>
               </section>
             ) : null}
+          </div>
+        </DashboardCard>
+        ) : null}
+
+
+        {(filedPopulationSignals.length > 0 || nonDossierPopulationSignals.length > 0) ? (
+          <details className="border border-border/70 bg-background/20 p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-foreground">BNL Signal Diagnostics — filed/non-dossier details collapsed ({filedPopulationSignals.length + nonDossierPopulationSignals.length})</summary>
+            <p className="mt-2 text-sm text-muted">Filed, already-represented, and non-dossier signal details remain available for debugging without crowding the working dashboard.</p>
+            <div className="mt-4 space-y-4">
             <details className="border border-border/70 bg-background/20 p-4">
               <summary className="cursor-pointer text-lg font-bold text-foreground">Filed / Already Represented ({filedPopulationSignals.length})</summary>
               <p className="mt-2 text-sm text-muted">Audit view for signals already attached, merged, marked no-new-info, or represented elsewhere. These do not clutter the default work queue.</p>
@@ -1781,15 +1849,16 @@ export default function DossierControlCenterPage() {
                   {nonDossierPopulationSignals.map((recommendation) => (
                     <article key={recommendation.id} className="border border-border bg-surface p-4 text-sm text-muted space-y-3">
                       <h4 className="text-lg font-bold text-foreground">{recommendation.subjectName}</h4>
-                      <p>{recommendation.adminSummary ?? recommendation.recommendedNextStep ?? recommendation.reason}</p>
+                      <p>{whyItMattersCopy(recommendation)}</p>
                       <p>Private evidence refs preserved internally; raw/private content hidden.</p>
                     </article>
                   ))}
                 </div>
               </details>
             ) : null}
-          </div>
-        </DashboardCard>
+            </div>
+          </details>
+        ) : null}
 
         <DashboardCard
           eyebrow="Candidates & Recommendation Intake"
@@ -1932,9 +2001,7 @@ export default function DossierControlCenterPage() {
                           {recommendation.subjectName}
                         </td>
                         <td className="py-3 pr-3">
-                          {recommendation.reason ||
-                            recommendation.evidenceSummary ||
-                            recommendationProvenance(recommendation)}
+                          {whyItMattersCopy(recommendation)}
                         </td>
                         <td className="py-3 pr-3">
                           {recommendation.confidence ?? "unset"}
@@ -1975,9 +2042,7 @@ export default function DossierControlCenterPage() {
                         {candidate.name}
                       </td>
                       <td className="py-3 pr-3">
-                        {candidate.whyNow ||
-                          candidate.reason ||
-                          candidateProvenance(candidate)}
+                        {whyItMattersCopy(candidate)}
                       </td>
                       <td className="py-3 pr-3">
                         {candidate.confidence ?? candidate.tier} / score{" "}
@@ -2064,9 +2129,7 @@ export default function DossierControlCenterPage() {
                           {recommendation.subjectName}
                         </td>
                         <td className="py-3 pr-3">
-                          {recommendation.reason ||
-                            recommendation.evidenceSummary ||
-                            recommendationProvenance(recommendation)}
+                          {whyItMattersCopy(recommendation)}
                         </td>
                         <td className="py-3 pr-3">
                           {recommendation.confidence ?? "needs review"}
@@ -2104,9 +2167,7 @@ export default function DossierControlCenterPage() {
                       </td>
                       <td className="py-3 pr-3">{candidate.name}</td>
                       <td className="py-3 pr-3">
-                        {candidate.whyNow ||
-                          candidate.reason ||
-                          firstListValue(candidate.knownFacts)}
+                        {whyItMattersCopy(candidate)}
                       </td>
                       <td className="py-3 pr-3">
                         {candidate.existingDossierMatch?.confidence ??
@@ -2208,10 +2269,7 @@ export default function DossierControlCenterPage() {
                           {candidate.name}
                         </td>
                         <td className="py-3 pr-3">
-                          {candidate.sourceFileSummary?.summaryText ||
-                            candidate.evidenceSummary ||
-                            candidate.reason ||
-                            "—"}
+                          {whyItMattersCopy(candidate)}
                         </td>
                         <td className="py-3 pr-3">
                           {metrics?.sourceDepth ??

@@ -930,6 +930,420 @@ export type DossierPopulationAudit = {
   unattachedBnlRecommendations: DossierPopulationAuditUnattachedRecommendation[];
 };
 
+
+export type DossierPopulationMethodOrigin =
+  | "BNL recommendation"
+  | "BNL source knowledge bridge"
+  | "BNL dynamic candidate discovery"
+  | "manual admin creation"
+  | "public dossier update signal"
+  | "existing public dossier workspace"
+  | "source file refresh"
+  | "source file archive"
+  | "identity/alias link"
+  | "diagnostic/test artifact"
+  | "website read model"
+  | "unknown / insufficient metadata";
+
+export type DossierPopulationMethodLane =
+  | "Active Source File"
+  | "Candidate Intake"
+  | "Dossier Update Workspace"
+  | "Public Dossier Update Signal"
+  | "BNL Recommendation Inbox"
+  | "Diagnostic/Test Artifact"
+  | "Resolved Incoming Record"
+  | "Merged Source Record"
+  | "Archived / Closed"
+  | "Needs Population Review"
+  | "Unknown / Unclassified";
+
+export type DossierPopulationMethodVisibility =
+  | "visible"
+  | "hidden_with_destination"
+  | "hidden_without_destination"
+  | "hidden_valid_archive_or_diagnostic"
+  | "hidden_destination_workspace";
+
+export type DossierPopulationMethodAuditRecord = {
+  id: string;
+  subject: string;
+  sourceType: "candidate" | "recommendation" | "draft" | "source_file_refresh_request";
+  currentStatus: string;
+  origin: DossierPopulationMethodOrigin;
+  intendedLane: DossierPopulationMethodLane;
+  visibility: DossierPopulationMethodVisibility;
+  href?: string;
+  candidateId?: string;
+  recommendationId?: string;
+  draftId?: string;
+  publicDossierId?: string;
+  publicDossierName?: string;
+  destinationId?: string;
+  destinationSubject?: string;
+  destinationLane?: DossierPopulationMethodLane;
+  destinationHref?: string;
+  destinationVisible?: boolean;
+  reason: string;
+  recommendedAdminNextStep: string;
+};
+
+export type DossierPopulationMethodAuditWarning = {
+  id: string;
+  issueTitle: string;
+  affectedSubject: string;
+  affectedIds: string[];
+  sourceType: string;
+  currentStatus: string;
+  expectedLane: DossierPopulationMethodLane;
+  detectedDestination?: string;
+  recommendedAdminNextStep: string;
+};
+
+export type DossierPopulationMethodAudit = {
+  countsByOrigin: Record<DossierPopulationMethodOrigin, number>;
+  countsByLane: Record<DossierPopulationMethodLane, number>;
+  countsByVisibility: Record<DossierPopulationMethodVisibility, number>;
+  intakeFlows: DossierPopulationMethodAuditRecord[];
+  orphanedRecords: DossierPopulationMethodAuditRecord[];
+  hiddenWithoutDestination: DossierPopulationMethodAuditRecord[];
+  hiddenWithDestinations: DossierPopulationMethodAuditRecord[];
+  visibleDestinationWorkspaces: DossierPopulationMethodAuditRecord[];
+  diagnosticArtifacts: DossierPopulationMethodAuditRecord[];
+  recordsNeedingPopulationReview: DossierPopulationMethodAuditRecord[];
+  publicDossierUpdateSignals: DossierPopulationMethodAuditRecord[];
+  sourceFileRefreshLinks: DossierPopulationMethodAuditRecord[];
+  warnings: DossierPopulationMethodAuditWarning[];
+};
+
+const populationMethodOrigins: DossierPopulationMethodOrigin[] = [
+  "BNL recommendation",
+  "BNL source knowledge bridge",
+  "BNL dynamic candidate discovery",
+  "manual admin creation",
+  "public dossier update signal",
+  "existing public dossier workspace",
+  "source file refresh",
+  "source file archive",
+  "identity/alias link",
+  "diagnostic/test artifact",
+  "website read model",
+  "unknown / insufficient metadata",
+];
+
+const populationMethodLanes: DossierPopulationMethodLane[] = [
+  "Active Source File",
+  "Candidate Intake",
+  "Dossier Update Workspace",
+  "Public Dossier Update Signal",
+  "BNL Recommendation Inbox",
+  "Diagnostic/Test Artifact",
+  "Resolved Incoming Record",
+  "Merged Source Record",
+  "Archived / Closed",
+  "Needs Population Review",
+  "Unknown / Unclassified",
+];
+
+const populationMethodVisibilities: DossierPopulationMethodVisibility[] = [
+  "visible",
+  "hidden_with_destination",
+  "hidden_without_destination",
+  "hidden_valid_archive_or_diagnostic",
+  "hidden_destination_workspace",
+];
+
+function emptyCountMap<T extends string>(labels: T[]): Record<T, number> {
+  return Object.fromEntries(labels.map((label) => [label, 0])) as Record<T, number>;
+}
+
+function publicDossierKey(value?: string) {
+  return value ? normalizeDossierPossessiveVariantName(value) : "";
+}
+
+function candidatePublicDossierMatch(
+  candidate: DossierCandidate,
+  publicDossiersById: Map<string, { id: string; name: string }>,
+  publicDossiersByName: Map<string, { id: string; name: string }>,
+) {
+  return candidate.existingDossierMatch ?? publicDossiersByName.get(publicDossierKey(candidate.name)) ?? (candidate.ingestKey ? publicDossiersById.get(candidate.ingestKey) : undefined);
+}
+
+function candidatePopulationMethodOrigin(candidate: DossierCandidate): DossierPopulationMethodOrigin {
+  const text = [
+    candidate.source,
+    candidate.ingestSource,
+    candidate.ingestKey,
+    candidate.routingReason,
+    candidate.mergeNote,
+    candidate.reason,
+    candidate.whyNow,
+    ...(candidate.sourceLanes ?? []),
+  ].filter(Boolean).join(" ");
+  if (isDiagnosticTestArtifactCandidate(candidate)) return "diagnostic/test artifact";
+  if ((candidate.identityLinks ?? []).length > 0 || candidate.connectedCandidateId || candidate.connectedSourceFileCandidateId) return "identity/alias link";
+  if (candidate.source === "bnl_source_knowledge_bridge" || candidate.ingestSource === "bnl_source_knowledge_bridge") return "BNL source knowledge bridge";
+  if (candidate.source === "bnl_dynamic_candidate_discovery" || candidate.ingestSource === "bnl_dynamic_candidate_discovery") return "BNL dynamic candidate discovery";
+  if (/source file refresh|refresh request|missing_bnl_refresh|stale_source_file/i.test(text)) return "source file refresh";
+  if (candidate.latestSourceFileArchiveId || candidate.latestSourceFileArchiveUpdatedAt || (candidate.sourceFileArchiveIds ?? []).length > 0) return "source file archive";
+  if (candidate.source === "website_read_model" || (candidate.sourceLanes ?? []).includes("website_dossier")) return "website read model";
+  if (candidate.status === "existing_dossier_update" || candidate.existingDossierMatch || /public dossier update|existing dossier update|dossier update/i.test(text)) return "public dossier update signal";
+  if (candidate.source === "manual") return "manual admin creation";
+  if (candidate.source === "bnl_source_file_enrichment" || candidate.ingestSource === "bnl_source_file_enrichment") return "source file refresh";
+  return "unknown / insufficient metadata";
+}
+
+function recommendationPopulationMethodOrigin(recommendation: DossierRecommendation): DossierPopulationMethodOrigin {
+  if (isDiagnosticTestArtifactRecommendation(recommendation)) return "diagnostic/test artifact";
+  if (recommendation.type === "identity_link" || recommendation.connectedCandidateId || recommendation.connectedSourceFileCandidateId) return "identity/alias link";
+  if (recommendation.ingestSource === "bnl_source_knowledge_bridge") return "BNL source knowledge bridge";
+  if (recommendation.ingestSource === "bnl_dynamic_candidate_discovery") return "BNL dynamic candidate discovery";
+  if (recommendation.ingestSource === "bnl_source_file_enrichment") return "source file refresh";
+  if (recommendation.targetDossierId || recommendation.type === "modify_existing_dossier" || (recommendation.sourceLanes ?? []).includes("website_dossier")) return "public dossier update signal";
+  if (recommendation.createdBy === "bnl" || recommendation.ingestSource === "bnl") return "BNL recommendation";
+  if ((recommendation.sourceLanes ?? []).includes("admin_manual") || recommendation.createdBy === "admin" || recommendation.createdBy === "operator") return "manual admin creation";
+  return "unknown / insufficient metadata";
+}
+
+function candidatePopulationMethodLane(candidate: DossierCandidate, origin: DossierPopulationMethodOrigin): DossierPopulationMethodLane {
+  if (isDiagnosticTestArtifactCandidate(candidate)) return "Diagnostic/Test Artifact";
+  if (candidate.status === "merged") return "Merged Source Record";
+  if (candidate.status === "archived" || candidate.status === "denied") return "Archived / Closed";
+  if (candidate.mergedIntoCandidateId || isConsolidationResolvedCandidate(candidate)) return "Resolved Incoming Record";
+  if (candidate.status === "candidate_intake") return "Candidate Intake";
+  if (candidate.status === "existing_dossier_update") return "Dossier Update Workspace";
+  if (origin === "unknown / insufficient metadata") return "Needs Population Review";
+  return "Active Source File";
+}
+
+function recommendationPopulationMethodLane(recommendation: DossierRecommendation, origin: DossierPopulationMethodOrigin): DossierPopulationMethodLane {
+  if (origin === "diagnostic/test artifact") return "Diagnostic/Test Artifact";
+  if (recommendation.status === "archived" || recommendation.status === "dismissed" || recommendation.status === "ignored") return "Archived / Closed";
+  if (isResolvedDossierRecommendation(recommendation)) return "Resolved Incoming Record";
+  if (origin === "public dossier update signal") return "Public Dossier Update Signal";
+  if (origin === "unknown / insufficient metadata") return "Needs Population Review";
+  return "BNL Recommendation Inbox";
+}
+
+function visibleDestinationCandidate(candidate?: DossierCandidate) {
+  return Boolean(candidate && !isDiagnosticTestArtifactCandidate(candidate) && !isConsolidationResolvedCandidate(candidate) && candidate.status !== "archived" && candidate.status !== "denied" && candidate.status !== "merged");
+}
+
+function isPublicDossierSignal(origin: DossierPopulationMethodOrigin, lane: DossierPopulationMethodLane) {
+  return origin === "public dossier update signal" || lane === "Public Dossier Update Signal";
+}
+
+export function createDossierPopulationMethodAudit(input: {
+  candidates: DossierCandidate[];
+  recommendations?: DossierRecommendation[];
+  drafts?: DossierDraft[];
+  publicDossiers?: Array<{ id: string; name: string }>;
+  sourceFileRefreshRequests?: DossierSourceFileRefreshRequest[];
+}): DossierPopulationMethodAudit {
+  const recommendations = input.recommendations ?? [];
+  const drafts = input.drafts ?? [];
+  const publicDossiers = input.publicDossiers ?? [];
+  const publicDossiersById = new Map(publicDossiers.map((dossier) => [dossier.id, dossier]));
+  const publicDossiersByName = new Map(publicDossiers.map((dossier) => [publicDossierKey(dossier.name), dossier]));
+  const candidatesById = new Map(input.candidates.map((candidate) => [candidate.id, candidate]));
+  const recommendationsById = new Map(recommendations.map((recommendation) => [recommendation.id, recommendation]));
+  const draftsByCandidateId = new Map(drafts.map((draft) => [draft.candidateId, draft]));
+  const visibleWorkspaceByPublicDossierId = new Map<string, DossierCandidate>();
+  const hiddenWorkspaceByPublicDossierId = new Map<string, DossierCandidate>();
+
+  for (const candidate of input.candidates) {
+    const match = candidatePublicDossierMatch(candidate, publicDossiersById, publicDossiersByName);
+    if (!match?.id) continue;
+    if (candidate.status !== "existing_dossier_update") continue;
+    if (visibleDestinationCandidate(candidate)) visibleWorkspaceByPublicDossierId.set(match.id, candidate);
+    else hiddenWorkspaceByPublicDossierId.set(match.id, candidate);
+  }
+
+  const records: DossierPopulationMethodAuditRecord[] = [];
+  const warnings: DossierPopulationMethodAuditWarning[] = [];
+
+  function candidateDestination(candidate: DossierCandidate, publicMatch?: { id: string; name: string } | null) {
+    const direct = candidate.mergedIntoCandidateId ? candidatesById.get(candidate.mergedIntoCandidateId) : undefined;
+    const connected = candidate.connectedSourceFileCandidateId ? candidatesById.get(candidate.connectedSourceFileCandidateId) : candidate.connectedCandidateId ? candidatesById.get(candidate.connectedCandidateId) : undefined;
+    const byPublic = publicMatch?.id ? visibleWorkspaceByPublicDossierId.get(publicMatch.id) ?? hiddenWorkspaceByPublicDossierId.get(publicMatch.id) : undefined;
+    const byRecommendation = (candidate.sourceRecommendationIds ?? []).concat(candidate.connectedRecommendationIds ?? [], candidate.createdFromRecommendationId ? [candidate.createdFromRecommendationId] : [])
+      .map((id) => recommendationsById.get(id))
+      .find((recommendation) => recommendation?.targetCandidateId || recommendation?.connectedCandidateId || recommendation?.connectedSourceFileCandidateId);
+    const byRecommendationCandidate = byRecommendation ? candidatesById.get(byRecommendation.targetCandidateId ?? byRecommendation.connectedCandidateId ?? byRecommendation.connectedSourceFileCandidateId ?? "") : undefined;
+    return direct ?? connected ?? byRecommendationCandidate ?? byPublic;
+  }
+
+  function recommendationDestination(recommendation: DossierRecommendation) {
+    const direct = candidatesById.get(recommendation.targetCandidateId ?? "") ?? candidatesById.get(recommendation.connectedCandidateId ?? "") ?? candidatesById.get(recommendation.connectedSourceFileCandidateId ?? "");
+    if (direct) return direct;
+    if (recommendation.targetDossierId) return visibleWorkspaceByPublicDossierId.get(recommendation.targetDossierId) ?? hiddenWorkspaceByPublicDossierId.get(recommendation.targetDossierId);
+    const nameMatch = publicDossiersByName.get(publicDossierKey(recommendation.subjectName));
+    return nameMatch ? visibleWorkspaceByPublicDossierId.get(nameMatch.id) ?? hiddenWorkspaceByPublicDossierId.get(nameMatch.id) : undefined;
+  }
+
+  function addWarning(record: DossierPopulationMethodAuditRecord, issueTitle: string, recommendedAdminNextStep: string) {
+    warnings.push({
+      id: `${issueTitle}:${record.id}`.replace(/[^a-z0-9]+/gi, "-").toLowerCase(),
+      issueTitle,
+      affectedSubject: record.subject,
+      affectedIds: [record.id, record.destinationId].filter(Boolean) as string[],
+      sourceType: record.sourceType,
+      currentStatus: record.currentStatus,
+      expectedLane: record.intendedLane,
+      detectedDestination: record.destinationSubject,
+      recommendedAdminNextStep,
+    });
+  }
+
+  for (const candidate of input.candidates) {
+    const origin = candidatePopulationMethodOrigin(candidate);
+    const lane = candidatePopulationMethodLane(candidate, origin);
+    const publicMatch = candidatePublicDossierMatch(candidate, publicDossiersById, publicDossiersByName);
+    const destination = candidateDestination(candidate, publicMatch);
+    const hidden = isConsolidationResolvedCandidate(candidate) || candidate.status === "archived" || candidate.status === "denied" || candidate.status === "merged";
+    const destinationVisible = visibleDestinationCandidate(destination);
+    const visibility: DossierPopulationMethodVisibility = hidden
+      ? destination
+        ? destinationVisible
+          ? "hidden_with_destination"
+          : "hidden_without_destination"
+        : origin === "diagnostic/test artifact" || candidate.status === "archived" || candidate.status === "denied"
+          ? "hidden_valid_archive_or_diagnostic"
+          : "hidden_without_destination"
+      : lane === "Dossier Update Workspace" && isConsolidationResolvedCandidate(candidate)
+        ? "hidden_destination_workspace"
+        : "visible";
+    const record: DossierPopulationMethodAuditRecord = {
+      id: candidate.id,
+      subject: candidate.name,
+      sourceType: "candidate",
+      currentStatus: candidate.status,
+      origin,
+      intendedLane: lane,
+      visibility,
+      href: `/admin/dossiers/candidates/${candidate.id}`,
+      candidateId: candidate.id,
+      publicDossierId: publicMatch?.id,
+      publicDossierName: publicMatch?.name,
+      destinationId: destination?.id,
+      destinationSubject: destination?.existingDossierMatch?.name ?? destination?.name,
+      destinationLane: destination ? candidatePopulationMethodLane(destination, candidatePopulationMethodOrigin(destination)) : undefined,
+      destinationHref: destination ? `/admin/dossiers/candidates/${destination.id}` : undefined,
+      destinationVisible,
+      reason: destination ? `Routes to ${destination.name}.` : "No destination workspace detected.",
+      recommendedAdminNextStep: destination ? "Review the destination workspace if the source record needs follow-up." : "Review origin metadata and decide whether this should become a Source File, Dossier Update workspace, archive item, or manual review item.",
+    };
+    records.push(record);
+
+    if (candidate.mergedIntoCandidateId && !candidatesById.has(candidate.mergedIntoCandidateId)) addWarning(record, "Merged source record points nowhere", "Reconnect the merged source record to a valid destination or unhide it for manual review.");
+    if (visibility === "hidden_without_destination") addWarning(record, isPublicDossierSignal(origin, lane) ? `Public dossier update signals for ${record.subject} were resolved, but no visible ${record.subject} Dossier Update workspace was found.` : "Hidden incoming record has no visible destination", "Create or attach a visible destination workspace, or mark the record as archived/diagnostic with clear metadata.");
+    if (!hidden && origin === "diagnostic/test artifact" && lane !== "Diagnostic/Test Artifact") addWarning(record, "Diagnostic/test artifact is visible in a normal lane", "Archive the diagnostic artifact or keep it isolated from normal active lanes.");
+    if (origin === "unknown / insufficient metadata") addWarning(record, "Source File record is missing clear origin metadata", "Add non-public origin metadata or move the record to population review.");
+    if (candidate.status === "existing_dossier_update" && !hidden && !(candidate.sourceRecommendationIds ?? []).length && !(candidate.connectedRecommendationIds ?? []).length && !(candidate.sourceFileNotes ?? []).length && !publicMatch?.id && !draftsByCandidateId.has(candidate.id)) addWarning(record, "Dossier Update workspace has no bundled source links", "Confirm the workspace has sourceRecommendationIds, connectedRecommendationIds, source notes, or a public dossier match.");
+    if (candidate.status === "existing_dossier_update" && hidden) addWarning(record, `Destination workspace for ${record.subject} exists but is currently hidden by resolved-candidate filtering.`, "Unhide the destination workspace or move the incoming records to a visible workspace.");
+    if (isPublicDossierSignal(origin, lane) && hidden && !destinationVisible) addWarning(record, `Visible destination missing for canonical public dossier target ${record.publicDossierName ?? record.subject}.`, "Ensure the canonical public dossier target has a visible Dossier Update workspace.");
+  }
+
+  for (const recommendation of recommendations) {
+    const origin = recommendationPopulationMethodOrigin(recommendation);
+    const lane = recommendationPopulationMethodLane(recommendation, origin);
+    const destination = recommendationDestination(recommendation);
+    const hidden = isResolvedDossierRecommendation(recommendation) || recommendation.status === "archived" || recommendation.status === "dismissed" || recommendation.status === "ignored";
+    const destinationVisible = visibleDestinationCandidate(destination);
+    const publicMatch = recommendation.targetDossierId ? publicDossiersById.get(recommendation.targetDossierId) : publicDossiersByName.get(publicDossierKey(recommendation.subjectName));
+    const visibility: DossierPopulationMethodVisibility = hidden
+      ? destination
+        ? destinationVisible
+          ? "hidden_with_destination"
+          : "hidden_without_destination"
+        : origin === "diagnostic/test artifact" || recommendation.status === "archived" || recommendation.status === "dismissed" || recommendation.status === "ignored"
+          ? "hidden_valid_archive_or_diagnostic"
+          : "hidden_without_destination"
+      : "visible";
+    const record: DossierPopulationMethodAuditRecord = {
+      id: recommendation.id,
+      subject: recommendation.subjectName,
+      sourceType: "recommendation",
+      currentStatus: recommendation.status,
+      origin,
+      intendedLane: lane,
+      visibility,
+      href: `/admin/dossiers/recommendations/${recommendation.id}`,
+      recommendationId: recommendation.id,
+      publicDossierId: publicMatch?.id,
+      publicDossierName: publicMatch?.name,
+      destinationId: destination?.id,
+      destinationSubject: destination?.existingDossierMatch?.name ?? destination?.name,
+      destinationLane: destination ? candidatePopulationMethodLane(destination, candidatePopulationMethodOrigin(destination)) : undefined,
+      destinationHref: destination ? `/admin/dossiers/candidates/${destination.id}` : undefined,
+      destinationVisible,
+      reason: destination ? `Routes to ${destination.name}.` : "No destination workspace detected.",
+      recommendedAdminNextStep: destination ? "Review the destination workspace if the source record needs follow-up." : "Review whether this inbox item should attach to a Source File, become a Dossier Update workspace, or be archived.",
+    };
+    records.push(record);
+
+    for (const targetId of [recommendation.targetCandidateId, recommendation.connectedCandidateId, recommendation.connectedSourceFileCandidateId].filter(Boolean) as string[]) {
+      if (!candidatesById.has(targetId)) addWarning(record, "Recommendation points to a missing candidate destination", "Reconnect targetCandidateId / connectedCandidateId to a valid workspace or return the recommendation to review.");
+    }
+    if (visibility === "hidden_without_destination") addWarning(record, isPublicDossierSignal(origin, lane) ? `Public dossier update signals for ${record.subject} were resolved, but no visible ${record.subject} Dossier Update workspace was found.` : "Hidden incoming record has no visible destination", "Create or attach a visible destination workspace, or mark the record as archived/diagnostic with clear metadata.");
+    if (origin === "diagnostic/test artifact" && !hidden) addWarning(record, "Diagnostic/test artifact is visible in a normal lane", "Archive the diagnostic artifact or keep it isolated from normal active lanes.");
+    if (origin === "unknown / insufficient metadata") addWarning(record, "Incoming record has unknown origin metadata", "Add source, ingestSource, source lanes, or createdBy metadata before routing.");
+    if (isPublicDossierSignal(origin, lane) && hidden && !destinationVisible) addWarning(record, `Visible destination missing for canonical public dossier target ${record.publicDossierName ?? record.subject}.`, "Ensure the canonical public dossier target has a visible Dossier Update workspace.");
+  }
+
+  for (const request of input.sourceFileRefreshRequests ?? []) {
+    const destination = request.candidateId ? candidatesById.get(request.candidateId) : undefined;
+    records.push({
+      id: request.id,
+      subject: request.subjectName,
+      sourceType: "source_file_refresh_request",
+      currentStatus: request.status,
+      origin: "source file refresh",
+      intendedLane: request.status === "completed" || request.status === "skipped" || request.status === "cancelled" ? "Resolved Incoming Record" : "Active Source File",
+      visibility: destination ? "hidden_with_destination" : request.status === "completed" ? "hidden_without_destination" : "visible",
+      href: destination ? `/admin/dossiers/candidates/${destination.id}` : undefined,
+      candidateId: request.candidateId,
+      destinationId: destination?.id,
+      destinationSubject: destination?.name,
+      destinationHref: destination ? `/admin/dossiers/candidates/${destination.id}` : undefined,
+      destinationVisible: visibleDestinationCandidate(destination),
+      reason: request.reason,
+      recommendedAdminNextStep: destination ? "Review the linked Source File refresh result." : "Find or create the Source File destination for this refresh request.",
+    });
+  }
+
+  const countsByOrigin = emptyCountMap(populationMethodOrigins);
+  const countsByLane = emptyCountMap(populationMethodLanes);
+  const countsByVisibility = emptyCountMap(populationMethodVisibilities);
+  for (const record of records) {
+    countsByOrigin[record.origin] += 1;
+    countsByLane[record.intendedLane] += 1;
+    countsByVisibility[record.visibility] += 1;
+  }
+
+  const hiddenWithoutDestination = records.filter((record) => record.visibility === "hidden_without_destination");
+  const hiddenWithDestinations = records.filter((record) => record.visibility === "hidden_with_destination");
+  const diagnosticArtifacts = records.filter((record) => record.origin === "diagnostic/test artifact" || record.intendedLane === "Diagnostic/Test Artifact");
+  const recordsNeedingPopulationReview = records.filter((record) => record.intendedLane === "Needs Population Review" || record.origin === "unknown / insufficient metadata" || warnings.some((warning) => warning.affectedIds.includes(record.id)));
+  const visibleDestinationWorkspaces = records.filter((record) => record.sourceType === "candidate" && record.destinationVisible !== false && (record.intendedLane === "Active Source File" || record.intendedLane === "Dossier Update Workspace") && record.visibility === "visible");
+
+  return {
+    countsByOrigin,
+    countsByLane,
+    countsByVisibility,
+    intakeFlows: records,
+    orphanedRecords: records.filter((record) => !record.destinationId && (record.intendedLane === "Needs Population Review" || record.visibility === "hidden_without_destination")),
+    hiddenWithoutDestination,
+    hiddenWithDestinations,
+    visibleDestinationWorkspaces,
+    diagnosticArtifacts,
+    recordsNeedingPopulationReview,
+    publicDossierUpdateSignals: records.filter((record) => isPublicDossierSignal(record.origin, record.intendedLane)),
+    sourceFileRefreshLinks: records.filter((record) => record.origin === "source file refresh" || record.origin === "source file archive"),
+    warnings,
+  };
+}
+
 function isBnlRecommendation(
   recommendation: Pick<DossierRecommendation, "ingestSource" | "createdBy">,
 ): boolean {

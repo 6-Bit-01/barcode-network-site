@@ -655,6 +655,7 @@ export type DossierRecommendation = {
   recommendedAction?: string;
   sourceAuthority?: string[];
   rawProvenance?: unknown;
+  normalizedSourceLaneDetails?: string[];
   missingInfo?: string[];
   publicSafetyNotes?: string[];
   doNotSay?: string[];
@@ -2873,6 +2874,7 @@ export type CreateDossierRecommendationInput = {
   recommendedAction?: string;
   sourceAuthority?: string[];
   rawProvenance?: unknown;
+  normalizedSourceLaneDetails?: string[];
   missingInfo?: string[];
   publicSafetyNotes?: string[];
   doNotSay?: string[];

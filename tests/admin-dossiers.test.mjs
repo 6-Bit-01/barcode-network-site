@@ -9091,6 +9091,143 @@ test("Population Review Queue renders grouped sections and safe admin actions", 
   assert.doesNotMatch(pageCopy, /raw Discord message|relationship_journal|private relationship journal|internal alias label/i);
 });
 
+test("BNL population ingest normalizes population source lanes into allowed site lanes", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const laneCases = [
+    ["relationship_state", ["admin_manual"]],
+    ["relationship_journal", ["admin_manual"]],
+    ["user_memory_facts", ["admin_manual"]],
+    ["entity_evidence_events", ["admin_manual"]],
+    ["community_presence", ["public_discord"]],
+    ["conversations", ["public_discord"]],
+    ["memory_tiers", ["admin_manual"]],
+    ["broadcast_memory_note", ["broadcast_memory"]],
+    ["show_state_note", ["broadcast_memory"]],
+    ["unmapped_safe_population_lane", ["unknown"]],
+  ];
+
+  for (const [lane, expectedSourceLanes] of laneCases) {
+    const response = await bnlIngestPost({
+      type: "population_recommendation",
+      ingestSource: "bnl_population_recommender",
+      subjectName: `Population ${lane}`,
+      adminSummary: `Safe population summary for ${lane}.`,
+      recommendedLane: "needs_population_review",
+      recommendedAction: "admin_review_required",
+      inputHash: `population-lane-${lane}`,
+      sourceLanes: [lane],
+    });
+    assert.equal(response.status, 200, `${lane} should ingest`);
+    const payload = await response.json();
+    assert.deepEqual(payload.recommendation.sourceLanes, expectedSourceLanes);
+    assert.deepEqual(
+      payload.recommendation.normalizedSourceLaneDetails,
+      [`${lane} -> ${expectedSourceLanes[0]}`],
+    );
+    assert.equal(payload.recommendation.populationRecommendation, true);
+  }
+
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.recommendations.length, laneCases.length);
+  assert.ok(
+    state.recommendations.every(
+      (recommendation) => recommendation.type === "population_recommendation",
+    ),
+    "Population Review Queue receives every ingested population recommendation",
+  );
+  assert.deepEqual(
+    state.recommendations.find(
+      (recommendation) => recommendation.subjectName === "Population relationship_state",
+    )?.normalizedSourceLaneDetails,
+    ["relationship_state -> admin_manual"],
+  );
+});
+
+test("BNL population ingest accepts population recommended lanes", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  for (const recommendedLane of [
+    "needs_population_review",
+    "active_source_file",
+    "candidate_intake",
+    "existing_dossier_update",
+    "public_dossier_update_signal",
+  ]) {
+    const response = await bnlIngestPost({
+      type: "population_recommendation",
+      ingestSource: "bnl_population_recommender",
+      subjectName: `Population recommended ${recommendedLane}`,
+      adminSummary: `Safe population summary for ${recommendedLane}.`,
+      recommendedLane,
+      recommendedAction: "admin_review_required",
+      inputHash: `population-recommended-lane-${recommendedLane}`,
+      sourceLanes: [recommendedLane],
+    });
+    assert.equal(response.status, 200, `${recommendedLane} should ingest`);
+    const payload = await response.json();
+    assert.equal(payload.recommendation.recommendedLane, recommendedLane);
+  }
+
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.recommendations.length, 5);
+});
+
+test("BNL population source lane validation fails only malformed lane payloads", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const nonString = await bnlIngestPost({
+    type: "population_recommendation",
+    ingestSource: "bnl_population_recommender",
+    subjectName: "Population Non String Lane",
+    adminSummary: "Safe population summary.",
+    sourceLanes: ["relationship_state", 42],
+  });
+  assert.equal(nonString.status, 400);
+  assert.equal(
+    (await nonString.json()).error,
+    "Invalid source lane: sourceLanes entries must be strings",
+  );
+
+  const nonArray = await bnlIngestPost({
+    type: "population_recommendation",
+    ingestSource: "bnl_population_recommender",
+    subjectName: "Population Non Array Lane",
+    adminSummary: "Safe population summary.",
+    sourceLanes: "relationship_state",
+  });
+  assert.equal(nonArray.status, 400);
+  assert.equal(
+    (await nonArray.json()).error,
+    "Invalid source lane: sourceLanes must be a list",
+  );
+});
+
+test("BNL non-population recommendations still enforce allowed source lanes", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const invalid = await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Strict Lane Subject",
+    reason: "Normal recommendations must keep strict source lanes.",
+    sourceLanes: ["relationship_state"],
+  });
+  assert.equal(invalid.status, 400);
+  assert.equal((await invalid.json()).error, "Invalid source lane");
+
+  const valid = await bnlIngestPost({
+    type: "new_subject",
+    subjectName: "Strict Lane Subject",
+    reason: "Normal recommendations may use allowed source lanes.",
+    sourceLanes: ["rd_context"],
+  });
+  assert.equal(valid.status, 200);
+});
+
 test("Population recommendation ingest dedupes by input hash and preserves raw refs internally", async () => {
   await resetWorkflowStore();
   process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";

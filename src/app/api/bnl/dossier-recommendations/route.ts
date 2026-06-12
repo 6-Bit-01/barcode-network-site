@@ -421,15 +421,18 @@ function supportedIngestSource(value: unknown): CreateDossierRecommendationInput
   return "bnl";
 }
 
-function normalizeBridgeSourceLane(value: unknown): {
+function normalizeBnlSourceLane(value: unknown): {
   lane: DossierRecommendationSourceLane;
   original?: string;
 } {
-  if (typeof value !== "string") throw new Error("Invalid source lane");
+  if (typeof value !== "string") {
+    throw new Error("Invalid source lane: sourceLanes entries must be strings");
+  }
   if (SOURCE_LANES.includes(value as DossierRecommendationSourceLane)) {
     return { lane: value as DossierRecommendationSourceLane };
   }
-  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
+  const original = value.trim();
+  const normalized = original.toLowerCase().replace(/[^a-z0-9]+/g, "_");
   const mapped: Record<string, DossierRecommendationSourceLane> = {
     source_blind_memory_trace: "broadcast_memory",
     memory_trace: "broadcast_memory",
@@ -451,8 +454,25 @@ function normalizeBridgeSourceLane(value: unknown): {
     existing_dossier_update: "website_dossier",
     local_knowledge_store: "admin_manual",
     operator_notes: "admin_manual",
+    conversations: "public_discord",
+    public_home: "public_discord",
+    public_context: "public_discord",
+    sealed_test: "admin_manual",
+    user_memory_facts: "admin_manual",
+    relationship_journal: "admin_manual",
+    relationship_state: "admin_manual",
+    broadcast_memory: "broadcast_memory",
+    memory_tiers: "admin_manual",
+    community_presence: "public_discord",
+    entity_evidence_events: "admin_manual",
+    needs_population_review: "admin_manual",
+    public_dossier_update_signal: "website_dossier",
+    already_represented: "admin_manual",
+    not_population_subject: "admin_manual",
+    broadcast_memory_note: "broadcast_memory",
+    show_state_note: "broadcast_memory",
   };
-  return { lane: mapped[normalized] ?? "unknown", original: value.trim() };
+  return { lane: mapped[normalized] ?? "unknown", original };
 }
 
 function normalizePayload(value: unknown): CreateDossierRecommendationInput {
@@ -469,17 +489,25 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
     isBridgeIngest || ingestSource === "bnl_source_file_enrichment";
   const sourceLanesInput = payload.sourceLanes;
   let sourceLanes: DossierRecommendationSourceLane[];
-  const bridgeSourceLaneDetails: string[] = [];
+  const normalizedSourceLaneDetails: string[] = [];
   if (sourceLanesInput === undefined) {
     sourceLanes = ["unknown"];
   } else {
-    if (!Array.isArray(sourceLanesInput)) throw new Error("Invalid source lane");
-    if (isStructuredBnlSourceIngest) {
-      const normalized = sourceLanesInput.map(normalizeBridgeSourceLane);
+    if (!Array.isArray(sourceLanesInput)) {
+      throw new Error("Invalid source lane: sourceLanes must be a list");
+    }
+    if (sourceLanesInput.length > 25) {
+      throw new Error("Invalid source lane: sourceLanes has too many entries");
+    }
+    if (sourceLanesInput.some((lane) => typeof lane !== "string")) {
+      throw new Error("Invalid source lane: sourceLanes entries must be strings");
+    }
+    if (isStructuredBnlSourceIngest || isPopulationIngest) {
+      const normalized = sourceLanesInput.map(normalizeBnlSourceLane);
       sourceLanes = normalized.map((item) => item.lane);
-      bridgeSourceLaneDetails.push(
+      normalizedSourceLaneDetails.push(
         ...normalized
-          .filter((item) => item.original)
+          .filter((item) => item.original && item.original !== item.lane)
           .map((item) => `${item.original} -> ${item.lane}`),
       );
     } else {
@@ -549,15 +577,16 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
     !Array.isArray(payload.evidenceSummary)
       ? JSON.stringify(payload.evidenceSummary).slice(0, 2000)
       : text(payload.evidenceSummary, 2000);
-  const bridgeEvidenceSummary = bridgeSourceLaneDetails.length
-    ? [
-        evidenceSummary,
-        `Bridge source lane mapping: ${bridgeSourceLaneDetails.join(", ")}`,
-      ]
+  const bridgeEvidenceSummary =
+    normalizedSourceLaneDetails.length && isStructuredBnlSourceIngest
+      ? [
+          evidenceSummary,
+          `Bridge source lane mapping: ${normalizedSourceLaneDetails.join(", ")}`,
+        ]
         .filter(Boolean)
         .join("\n\n")
         .slice(0, 2000)
-    : evidenceSummary;
+      : evidenceSummary;
   if (!subjectName) throw new Error("subjectName is required");
   if (!reason) {
     throw new Error("reason or structured source context is required");
@@ -620,6 +649,9 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
     populationRecommendation: isPopulationIngest ? true : undefined,
     sourceAuthority,
     rawProvenance,
+    normalizedSourceLaneDetails: normalizedSourceLaneDetails.length
+      ? normalizedSourceLaneDetails
+      : undefined,
     missingInfo: stringList(payload.missingInfo),
     publicSafetyNotes: stringList(payload.publicSafetyNotes),
     doNotSay: stringList(payload.doNotSay),

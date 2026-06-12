@@ -1393,6 +1393,7 @@ function normalizeRecommendationInput(
     recommendedAction: boundedText(input.recommendedAction, 1000) || undefined,
     sourceAuthority: normalizePacketStringArray(input.sourceAuthority),
     rawProvenance: cloneJsonValue(input.rawProvenance),
+    normalizedSourceLaneDetails: normalizeStringArray(input.normalizedSourceLaneDetails),
     missingInfo: normalizeStringArray(input.missingInfo),
     publicSafetyNotes: normalizeStringArray(input.publicSafetyNotes),
     doNotSay: normalizeStringArray(input.doNotSay),

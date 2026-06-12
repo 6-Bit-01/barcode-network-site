@@ -2904,12 +2904,20 @@ export async function createDossierRecommendationIdempotent(
         ? currentState.recommendations.find(
             (item) => item.inputHash === recommendation.inputHash,
           )
-        : currentState.recommendations.find(
-            (item) =>
-              isActiveRecommendation(item) &&
-              fallbackRecommendationDedupeKey(item) ===
-                fallbackRecommendationDedupeKey(recommendation),
-          );
+        : recommendation.populationRecommendation
+          ? currentState.recommendations.find(
+              (item) =>
+                item.populationRecommendation &&
+                recommendationDedupeSubject(item.subjectName) ===
+                  recommendationDedupeSubject(recommendation.subjectName) &&
+                item.recommendedAction === recommendation.recommendedAction,
+            )
+          : currentState.recommendations.find(
+              (item) =>
+                isActiveRecommendation(item) &&
+                fallbackRecommendationDedupeKey(item) ===
+                  fallbackRecommendationDedupeKey(recommendation),
+            );
 
     if (existing) {
       if (

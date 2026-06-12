@@ -637,7 +637,7 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
       "taxonomy",
     ),
     createdBy: text(payload.createdBy, 200) ?? (isPopulationIngest ? "bnl_population_recommender" : "bnl"),
-    ingestKey: text(payload.ingestKey, 300),
+    ingestKey: text(payload.ingestKey, 300) ?? (isPopulationIngest ? text(payload.recommendationId, 300) : undefined),
     ingestedAt: new Date().toISOString(),
     ingestSource,
   };

@@ -9224,3 +9224,230 @@ test("Population Review Queue actions update internal workflow records without p
   assert.equal(JSON.stringify(context).includes("existing-source-file-pop"), true);
   assert.equal(JSON.stringify(context).includes("relationship_journal:private-row"), false);
 });
+
+test("Population Review Queue search includes matched candidate names and reviewed need-more-info leaves unreviewed count", () => {
+  const page = source("src/app/admin/dossiers/page.tsx");
+  const pageCopy = normalizedSource("src/app/admin/dossiers/page.tsx");
+  assert.match(page, /populationRecommendationSearchText\(recommendation, candidates\)/);
+  assert.match(page, /matchedCandidateNames/);
+  assert.match(page, /candidate\.name/);
+  assert.match(page, /return \["new", "reviewing"\]\.includes\(recommendation\.status\)/);
+  assertIncludesCopy(pageCopy, "Search subject, normalized key, dossier, or Source File");
+  assertIncludesCopy(pageCopy, "Mark needs more info");
+});
+
+test("Population recommendation ingest dedupes by recommendationId and by subject plus action", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
+
+  const byId = await bnlIngestPost({
+    type: "population_recommendation",
+    recommendationId: "bnl-pop-rec-same-id",
+    createdBy: "bnl_population_recommender",
+    subjectName: "Same External Recommendation",
+    adminSummary: "First summary.",
+    recommendedLane: "candidate_intake",
+    recommendedAction: "create_source_file_candidate",
+    sourceLanes: ["broadcast_memory"],
+  });
+  assert.equal(byId.status, 200);
+  const byIdAgain = await bnlIngestPost({
+    type: "population_recommendation",
+    recommendationId: "bnl-pop-rec-same-id",
+    createdBy: "bnl_population_recommender",
+    subjectName: "Same External Recommendation",
+    adminSummary: "Refreshed summary.",
+    recommendedLane: "candidate_intake",
+    recommendedAction: "create_source_file_candidate",
+    sourceLanes: ["broadcast_memory"],
+  });
+  assert.equal(byIdAgain.status, 200);
+  assert.equal((await byIdAgain.json()).duplicate, true);
+
+  const bySubjectAction = await bnlIngestPost({
+    type: "population_recommendation",
+    createdBy: "bnl_population_recommender",
+    subjectName: "Same Subject Action",
+    adminSummary: "First subject/action summary.",
+    recommendedLane: "needs_population_review",
+    recommendedAction: "admin_review_required",
+    sourceLanes: ["broadcast_memory"],
+  });
+  assert.equal(bySubjectAction.status, 200);
+  const bySubjectActionAgain = await bnlIngestPost({
+    type: "population_recommendation",
+    createdBy: "bnl_population_recommender",
+    subjectName: "Same Subject Action",
+    adminSummary: "Updated subject/action summary.",
+    recommendedLane: "needs_population_review",
+    recommendedAction: "admin_review_required",
+    sourceLanes: ["broadcast_memory"],
+  });
+  assert.equal(bySubjectActionAgain.status, 200);
+  assert.equal((await bySubjectActionAgain.json()).duplicate, true);
+
+  const state = await store.getDossierWorkflowState();
+  assert.equal(state.recommendations.filter((item) => item.subjectName === "Same External Recommendation").length, 1);
+  assert.equal(state.recommendations.filter((item) => item.subjectName === "Same Subject Action").length, 1);
+});
+
+test("Population Review Queue create and attach actions route to existing internal workflows", async () => {
+  await resetWorkflowStore();
+  const now = new Date().toISOString();
+  await store.saveDossierWorkflowState({
+    version: 1,
+    revision: 1,
+    candidates: [
+      {
+        id: "existing-update-pop",
+        name: "6 Bit",
+        candidateType: "entity",
+        source: "website_read_model",
+        tier: "review_candidate",
+        score: 58,
+        whyNow: "Existing dossier update workspace.",
+        reason: "Existing dossier update workspace.",
+        status: "existing_dossier_update",
+        existingDossierMatch: { id: "EN-001", name: "6 Bit", confidence: "high" },
+        createdAt: now,
+        updatedAt: now,
+        sourceFileNotes: [],
+      },
+    ],
+    drafts: [],
+    recommendations: [
+      {
+        id: "pop-create-candidate",
+        type: "population_recommendation",
+        populationRecommendation: true,
+        createdBy: "bnl_population_recommender",
+        ingestSource: "bnl_population_recommender",
+        subjectName: "Brand New Population Subject",
+        status: "new",
+        reason: "Create candidate only.",
+        adminSummary: "Create an internal Source File candidate.",
+        recommendedLane: "candidate_intake",
+        recommendedAction: "create_source_file_candidate",
+        sourceLanes: ["broadcast_memory"],
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "pop-create-workspace",
+        type: "population_recommendation",
+        populationRecommendation: true,
+        createdBy: "bnl_population_recommender",
+        ingestSource: "bnl_population_recommender",
+        subjectName: "6 Bit",
+        status: "new",
+        reason: "Create update workspace only.",
+        adminSummary: "Create an internal Dossier Update workspace.",
+        recommendedLane: "public_dossier_update_signal",
+        recommendedAction: "create_dossier_update_workspace",
+        matchedPublicDossierId: "EN-001",
+        matchedPublicDossierName: "6 Bit",
+        sourceLanes: ["website_dossier"],
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "pop-attach-update",
+        type: "population_recommendation",
+        populationRecommendation: true,
+        createdBy: "bnl_population_recommender",
+        ingestSource: "bnl_population_recommender",
+        subjectName: "6 Bit",
+        status: "new",
+        reason: "Attach to update workspace only.",
+        adminSummary: "Attach to existing Dossier Update workspace.",
+        recommendedLane: "existing_dossier_update",
+        recommendedAction: "attach_to_existing_dossier_update",
+        matchedDossierUpdateCandidateId: "existing-update-pop",
+        matchedPublicDossierId: "EN-001",
+        matchedPublicDossierName: "6 Bit",
+        sourceLanes: ["website_dossier"],
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "pop-dismiss",
+        type: "population_recommendation",
+        populationRecommendation: true,
+        createdBy: "bnl_population_recommender",
+        ingestSource: "bnl_population_recommender",
+        subjectName: "Dismiss Me",
+        status: "new",
+        reason: "Dismiss only.",
+        recommendedLane: "needs_population_review",
+        recommendedAction: "admin_review_required",
+        sourceLanes: ["broadcast_memory"],
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "pop-needs-info",
+        type: "population_recommendation",
+        populationRecommendation: true,
+        createdBy: "bnl_population_recommender",
+        ingestSource: "bnl_population_recommender",
+        subjectName: "Needs Info Subject",
+        status: "new",
+        reason: "Needs info only.",
+        recommendedLane: "candidate_intake",
+        recommendedAction: "create_source_file_candidate",
+        sourceLanes: ["broadcast_memory"],
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    sourceFileRefreshRequests: [],
+    updatedAt: now,
+  });
+
+  const candidatePayload = await (await authedPost({
+    action: "create_source_file_candidate",
+    recommendationId: "pop-create-candidate",
+    actionBy: "admin-test",
+  })).json();
+  assert.equal(candidatePayload.recommendation.status, "attached_to_candidate_intake");
+  assert.equal(candidatePayload.candidate.status, "candidate_intake");
+  assert.equal(candidatePayload.candidate.name, "Brand New Population Subject");
+
+  const workspacePayload = await (await authedPost({
+    action: "create_dossier_update_workspace",
+    recommendationId: "pop-create-workspace",
+    dossierId: "EN-001",
+    actionBy: "admin-test",
+  })).json();
+  assert.equal(workspacePayload.recommendation.status, "attached_to_existing_dossier_update");
+  assert.equal(workspacePayload.candidate.status, "existing_dossier_update");
+  assert.equal(workspacePayload.candidate.existingDossierMatch.id, "EN-001");
+
+  const attachPayload = await (await authedPost({
+    action: "attach_to_existing_dossier_update",
+    recommendationId: "pop-attach-update",
+    candidateId: "existing-update-pop",
+    actionBy: "admin-test",
+  })).json();
+  assert.equal(attachPayload.recommendation.status, "attached_to_existing_dossier_update");
+  assert.equal(attachPayload.recommendation.connectedCandidateId, "existing-update-pop");
+
+  const dismissPayload = await (await authedPost({
+    action: "dismiss_population_recommendation",
+    recommendationId: "pop-dismiss",
+    actionBy: "admin-test",
+  })).json();
+  assert.equal(dismissPayload.recommendation.status, "dismissed");
+
+  const needsInfoPayload = await (await authedPost({
+    action: "mark_needs_more_info",
+    recommendationId: "pop-needs-info",
+    actionBy: "admin-test",
+  })).json();
+  assert.equal(needsInfoPayload.recommendation.status, "needs_more_info");
+  assert.ok(needsInfoPayload.recommendation.populationReviewActions[0].actionAt);
+
+  const finalState = await store.getDossierWorkflowState();
+  assert.equal(finalState.drafts.length, 0);
+  assert.equal(finalState.recommendations.find((item) => item.id === "pop-dismiss").status, "dismissed");
+});

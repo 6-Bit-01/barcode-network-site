@@ -330,7 +330,7 @@ function isPopulationRecommendation(recommendation: DossierRecommendation) {
 }
 
 function isPopulationOpen(recommendation: DossierRecommendation) {
-  return ["new", "reviewing", "needs_more_info"].includes(recommendation.status);
+  return ["new", "reviewing"].includes(recommendation.status);
 }
 
 function isNonDossierPopulationSignal(recommendation: DossierRecommendation) {
@@ -348,14 +348,26 @@ function isAlreadyRepresentedPopulationSignal(recommendation: DossierRecommendat
   );
 }
 
-function populationRecommendationSearchText(recommendation: DossierRecommendation) {
+function populationRecommendationSearchText(
+  recommendation: DossierRecommendation,
+  candidates: DossierCandidate[],
+) {
+  const candidateIds = [
+    recommendation.matchedExistingCandidateId,
+    recommendation.matchedDossierUpdateCandidateId,
+    recommendation.targetCandidateId,
+  ].filter(Boolean);
+  const matchedCandidateNames = candidateIds.flatMap((candidateId) =>
+    candidates
+      .filter((candidate) => candidate.id === candidateId)
+      .map((candidate) => candidate.name),
+  );
   return [
     recommendation.subjectName,
     recommendation.subjectKey,
     recommendation.matchedPublicDossierName,
     recommendation.matchedPublicDossierId,
-    recommendation.matchedExistingCandidateId,
-    recommendation.matchedDossierUpdateCandidateId,
+    ...matchedCandidateNames,
   ]
     .filter(Boolean)
     .join(" ")
@@ -484,7 +496,7 @@ export default function DossierControlCenterPage() {
     .at(-1);
   const filteredPopulationRecommendations = populationRecommendations.filter((recommendation) => {
     const query = populationSearch.trim().toLowerCase();
-    const matchesSearch = !query || populationRecommendationSearchText(recommendation).includes(query);
+    const matchesSearch = !query || populationRecommendationSearchText(recommendation, candidates).includes(query);
     const matchesFilter =
       populationFilter === "all" ? true :
       populationFilter === "new" ? isPopulationOpen(recommendation) :
@@ -1656,7 +1668,7 @@ export default function DossierControlCenterPage() {
                           {recommendation.missingInfo?.length ? <p><span className="text-foreground">Missing info:</span> {recommendation.missingInfo.join("; ")}</p> : null}
                           {recommendation.publicSafetyNotes?.length || recommendation.doNotPublishReason ? <p><span className="text-foreground">Public safety notes:</span> {[recommendation.doNotPublishReason, ...(recommendation.publicSafetyNotes ?? [])].filter(Boolean).join("; ")}</p> : null}
                           {recommendation.possibleTargets?.length ? <p><span className="text-foreground">Possible targets:</span> {recommendation.possibleTargets.map((target) => target.name ?? target.id).filter(Boolean).join(", ")}</p> : null}
-                          <p><span className="text-foreground">Risk:</span> duplicate {recommendation.duplicateRisk ?? "unset"} · identity {recommendation.identityRisk ?? "unset"} · rawEvidenceRefs {recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0} internal ref(s)</p>
+                          <p><span className="text-foreground">Risk:</span> duplicate {recommendation.duplicateRisk ?? "unset"} · identity {recommendation.identityRisk ?? "unset"} · internal evidence refs {recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0}</p>
                           <details className="border border-border/70 bg-background/30 p-3">
                             <summary className="cursor-pointer text-xs uppercase tracking-widest text-muted">Internal refs</summary>
                             <p className="mt-2 text-xs text-muted">Raw evidence references are preserved internally but hidden from normal card copy. Count: {recommendation.rawEvidenceRefCount ?? recommendation.rawEvidenceRefs?.length ?? 0}.</p>

@@ -55,6 +55,7 @@ const forbiddenKeys = [
   "stripeSessionId",
   "priorityUpgradePaymentId",
   "priorityUpgradeCheckoutUrl",
+  "priorityLegalAcceptance",
   "fileUrl",
   "fileName",
   "fileSize",
@@ -141,6 +142,7 @@ async function addTrack(label, options = {}) {
     suspiciousFlags: ["test-only"],
     priorityUpgradePaymentId: "pi_private_test",
     priorityUpgradeCheckoutUrl: "https://checkout.example.test/private",
+    priorityLegalAcceptance: { acceptedAt: new Date().toISOString(), priorityTermsVersion: "1.0", priorityDisclosureText: "private acknowledgement", source: "priority_checkout" },
   });
 }
 

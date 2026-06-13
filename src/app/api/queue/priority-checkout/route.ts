@@ -31,8 +31,13 @@ export async function POST(req: Request) {
     const trackId = cleanText(body.trackId);
     const sessionId = cleanText(body.sessionId);
     if (!trackId || !sessionId) return NextResponse.json({ error: "Priority Signal Upgrade is not available for this track." }, { status: 400 });
+    const priorityAcceptance = {
+      acceptedPriorityTerms: body.acceptedPriorityTerms === true,
+      priorityTermsVersion: cleanText(body.priorityTermsVersion),
+      priorityDisclosureText: cleanText(body.priorityDisclosureText),
+    };
 
-    const checkoutRequest = await requestPriorityCheckout(trackId, sessionId);
+    const checkoutRequest = await requestPriorityCheckout(trackId, sessionId, priorityAcceptance);
     if (storedCheckoutStillUsable(checkoutRequest.track)) {
       return NextResponse.json({ url: checkoutRequest.track.priorityUpgradeCheckoutUrl, sessionId: checkoutRequest.track.priorityUpgradeCheckoutSessionId, message: "Payment confirmation may take a moment." });
     }
@@ -47,7 +52,7 @@ export async function POST(req: Request) {
       currency: checkoutRequest.currency,
       label: checkoutRequest.label,
     });
-    await markPriorityUpgradeCheckoutPending(trackId, checkoutRequest.session.sessionId, { provider: "stripe", checkoutSessionId: checkout.sessionId, checkoutUrl: checkout.url, checkoutCreatedAt: checkout.createdAt, checkoutExpiresAt: checkout.expiresAt });
+    await markPriorityUpgradeCheckoutPending(trackId, checkoutRequest.session.sessionId, { provider: "stripe", checkoutSessionId: checkout.sessionId, checkoutUrl: checkout.url, checkoutCreatedAt: checkout.createdAt, checkoutExpiresAt: checkout.expiresAt, priorityAcceptance });
     return NextResponse.json({ url: checkout.url, sessionId: checkout.sessionId, message: "Payment confirmation may take a moment." });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Priority Signal checkout is unavailable.";

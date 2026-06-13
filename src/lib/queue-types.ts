@@ -14,6 +14,7 @@ export type PriorityUpgradeStatus = "none" | "requested" | "manual" | "checkout_
 export type PriorityUpgradeSource = "admin" | "public_placeholder" | "future_payment" | "stripe";
 export type SponsorBreakMode = "mid_show";
 export type SponsorBreakStatus = "not_due" | "due" | "running" | "completed" | "skipped";
+export type UploadedFileDeletionStatus = "pending" | "deleted" | "error";
 
 export const PUBLIC_QUEUE_LEGAL_TERMS_VERSION = "1.0";
 export const PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION = "1.0";
@@ -67,6 +68,10 @@ export interface QueueEntry {
   fileName?: string | null;
   fileSize?: number | null;
   mimeType?: string | null;
+  uploadedFileDeleteAfter?: string | null;
+  uploadedFileDeletedAt?: string | null;
+  uploadedFileDeletionStatus?: UploadedFileDeletionStatus | null;
+  uploadedFileDeletionError?: string | null;
   sourceType?: QueueSourceType;
   detectedDurationSeconds?: number | null;
   estimatedDurationSeconds?: number;

@@ -41,6 +41,9 @@ const DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS = "Priority Signal Upgrade is being 
 const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 1000;
 const DEFAULT_PRIORITY_UPGRADE_CURRENCY = "usd";
 const PRE_SHOW_ROUTING_DELAY_MS = (20 * 60 + 15) * 1000;
+const UPLOADED_FILE_RETENTION_MS = 24 * 60 * 60 * 1000;
+const BARCODE_QUEUE_UPLOAD_HOST_SUFFIX = ".private.blob.vercel-storage.com";
+const BARCODE_QUEUE_UPLOAD_PATH_PREFIX = "/barcode-radio-queue/";
 
 type QueueAdminAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "resolvePaidPriority" | "pausePriority" | "resumePriority" | "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
 
@@ -663,6 +666,29 @@ function normalizePriorityUpgradeSource(source: unknown): QueueEntry["priorityUp
   return null;
 }
 
+function isBarcodeQueueUploadUrl(value?: string | null): boolean {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" && parsed.hostname.endsWith(BARCODE_QUEUE_UPLOAD_HOST_SUFFIX) && parsed.pathname.startsWith(BARCODE_QUEUE_UPLOAD_PATH_PREFIX);
+  } catch {
+    return false;
+  }
+}
+
+function isUploadedAudioEntry(entry: Pick<QueueEntry, "sourceType" | "fileUrl" | "mimeType">): boolean {
+  const mime = entry.mimeType?.toLowerCase() ?? "";
+  return entry.sourceType === "upload" && isBarcodeQueueUploadUrl(entry.fileUrl) && ["audio/mpeg", "audio/mp3", "audio/wav", "audio/wave", "audio/x-wav"].includes(mime);
+}
+
+function uploadedFileDeleteAfterFor(entry: QueueEntry, sourceType: QueueSourceType): string | null {
+  if (!isUploadedAudioEntry({ ...entry, sourceType })) return null;
+  if (typeof entry.uploadedFileDeleteAfter === "string" && entry.uploadedFileDeleteAfter) return entry.uploadedFileDeleteAfter;
+  const created = new Date(entry.createdAt).getTime();
+  const base = Number.isFinite(created) ? created : Date.now();
+  return new Date(base + UPLOADED_FILE_RETENTION_MS).toISOString();
+}
+
 function normalizeEntry(entry: QueueEntry): QueueEntry {
   const { priorityOverlayDisplacedAt: legacyDisplacedFromNextInLineAt, ...entryWithoutLegacyMarker } = entry as QueueEntry & { priorityOverlayDisplacedAt?: string | null };
   const submittedArtistName = entry.submittedArtistName ?? entry.artist;
@@ -689,6 +715,10 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     detectedDurationSeconds,
     durationIsEstimate: detectedDurationSeconds === null,
     durationSource,
+    uploadedFileDeleteAfter: uploadedFileDeleteAfterFor(entry, sourceType),
+    uploadedFileDeletedAt: entry.uploadedFileDeletedAt ?? null,
+    uploadedFileDeletionStatus: entry.uploadedFileDeletionStatus === "deleted" || entry.uploadedFileDeletionStatus === "error" || entry.uploadedFileDeletionStatus === "pending" ? entry.uploadedFileDeletionStatus : (uploadedFileDeleteAfterFor(entry, sourceType) ? "pending" : null),
+    uploadedFileDeletionError: entry.uploadedFileDeletionError ?? null,
     note: entry.note ?? null,
     priorityUpgradeRequested: entry.priorityUpgradeRequested === true,
     priorityUpgradeStatus,
@@ -1168,6 +1198,10 @@ export async function createQueueTrack(input: {
     fileName: input.fileName ?? null,
     fileSize: input.fileSize ?? null,
     mimeType: input.mimeType ?? null,
+    uploadedFileDeleteAfter: sourceType === "upload" && isUploadedAudioEntry({ sourceType, fileUrl: input.fileUrl ?? null, mimeType: input.mimeType ?? null }) ? new Date(Date.now() + UPLOADED_FILE_RETENTION_MS).toISOString() : null,
+    uploadedFileDeletedAt: null,
+    uploadedFileDeletionStatus: null,
+    uploadedFileDeletionError: null,
     sourceType,
     detectedDurationSeconds,
     estimatedDurationSeconds: detectedDurationSeconds ?? INTERNAL_BUFFER_DURATION_SECONDS,
@@ -1216,6 +1250,68 @@ export async function submitRadioTrack(input: Parameters<typeof createQueueTrack
   pullNextInLine(session);
   await writeStore(replaceSession(store, session));
   return track;
+}
+
+
+export interface QueueUploadCleanupResult {
+  scanned: number;
+  deleted: number;
+  skippedActive: number;
+  failed: number;
+}
+
+function isTrackActiveForPlayback(session: QueueSession, id: string): boolean {
+  return session.loadedTrackId === id || session.loadedTrack?.id === id || session.nextInLineTrackId === id || session.nextInLineTrack?.id === id;
+}
+
+function updateEntryInSession(session: QueueSession, id: string, update: (entry: QueueEntry) => QueueEntry): void {
+  session.queue = session.queue.map((entry) => entry.id === id ? update(entry) : entry);
+  session.completed = session.completed.map((entry) => entry.id === id ? update(entry) : entry);
+  session.removed = session.removed.map((entry) => entry.id === id ? update(entry) : entry);
+  session.spotlight = session.spotlight.map((entry) => entry.id === id ? update(entry) : entry);
+  if (session.nextInLineTrack?.id === id) session.nextInLineTrack = update(session.nextInLineTrack);
+  if (session.loadedTrack?.id === id) session.loadedTrack = update(session.loadedTrack);
+}
+
+export async function cleanupExpiredQueueUploads(options: { now?: Date; deleteBlob?: (url: string) => Promise<void> } = {}): Promise<QueueUploadCleanupResult> {
+  const now = options.now ?? new Date();
+  const deleteBlob = options.deleteBlob ?? (async (url: string) => {
+    const { del } = await import("@vercel/blob");
+    await del(url);
+  });
+  const store = await readStore();
+  const result: QueueUploadCleanupResult = { scanned: 0, deleted: 0, skippedActive: 0, failed: 0 };
+  let changed = false;
+
+  for (const session of store.sessions) {
+    const entries = [session.loadedTrack, session.nextInLineTrack, ...session.queue, ...session.completed, ...session.removed, ...session.spotlight].filter((entry): entry is QueueEntry => Boolean(entry));
+    for (const entry of entries) {
+      const normalized = normalizeEntry(entry);
+      if (!isUploadedAudioEntry(normalized) || normalized.uploadedFileDeletionStatus === "deleted" || !normalized.uploadedFileDeleteAfter) continue;
+      const due = new Date(normalized.uploadedFileDeleteAfter).getTime();
+      if (!Number.isFinite(due) || due > now.getTime()) continue;
+      result.scanned += 1;
+      if (isTrackActiveForPlayback(session, normalized.id)) {
+        result.skippedActive += 1;
+        continue;
+      }
+      try {
+        await deleteBlob(normalized.fileUrl ?? "");
+        const deletedAt = now.toISOString();
+        updateEntryInSession(session, normalized.id, (item) => normalizeEntry({ ...item, uploadedFileDeletedAt: deletedAt, uploadedFileDeletionStatus: "deleted", uploadedFileDeletionError: null }));
+        result.deleted += 1;
+        changed = true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Upload deletion failed.";
+        updateEntryInSession(session, normalized.id, (item) => normalizeEntry({ ...item, uploadedFileDeletionStatus: "error", uploadedFileDeletionError: message.slice(0, 500) }));
+        result.failed += 1;
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) await writeStore(store);
+  return result;
 }
 
 export async function isTrackPersistedInSessionQueue(trackId: string, sessionId?: string): Promise<boolean> {

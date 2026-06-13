@@ -59,6 +59,10 @@ const forbiddenKeys = [
   "fileName",
   "fileSize",
   "mimeType",
+  "uploadedFileDeleteAfter",
+  "uploadedFileDeletedAt",
+  "uploadedFileDeletionStatus",
+  "uploadedFileDeletionError",
   "suspiciousFlags",
   "adminNote",
   "discordUserId",
@@ -669,10 +673,31 @@ test("BNL read model excludes simulation/test tracks from all public semantic su
 test("BNL read model excludes private queue/payment/upload keys", async () => {
   await freshReadModelSession();
   await addTrack("Private Fields", { artist: "Private Artist", stripeSessionId: "cs_private_test" });
+  await queue.addToQueue({
+    artist: "Private Upload Artist",
+    title: "Private Upload Track",
+    tiktokHandle: "@privateuploadartist",
+    link: "https://store.private.blob.vercel-storage.com/barcode-radio-queue/bnl-private-upload.mp3",
+    fileUrl: "https://store.private.blob.vercel-storage.com/barcode-radio-queue/bnl-private-upload.mp3",
+    fileName: "bnl-private-upload.mp3",
+    fileSize: 123456,
+    mimeType: "audio/mpeg",
+    uploadedFileDeleteAfter: new Date(Date.UTC(2026, 0, 2)).toISOString(),
+    uploadedFileDeletedAt: null,
+    uploadedFileDeletionStatus: "pending",
+    uploadedFileDeletionError: null,
+    sourceType: "upload",
+    tier: "free",
+    lane: "regular",
+    amount: 0,
+    stripeSessionId: null,
+    createdAt: new Date(Date.UTC(2026, 0, 1)).toISOString(),
+  });
 
   const model = await modelJson();
   assert.deepEqual(findForbiddenKeys(model), []);
   assert.deepEqual(findForbiddenStringValues(model), []);
+  assert.equal(JSON.stringify(model).includes("private.blob.vercel-storage.com"), false);
 });
 
 test("BNL read model keeps normal queue items out of broadcast memory candidates", async () => {

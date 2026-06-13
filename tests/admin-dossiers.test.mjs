@@ -65,6 +65,7 @@ const publicCopyGuard = require("../src/lib/dossier-public-copy-guard.ts");
 const dossierPageViewModel = require("../src/lib/dossier-page-view-model.ts");
 const dossierTaxonomy = require("../src/lib/dossier-taxonomy.ts");
 const dossierClassification = require("../src/lib/dossier-classification.ts");
+const dossierStylePacket = require("../src/lib/dossier-style-packet.ts");
 
 function source(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
@@ -257,6 +258,184 @@ test("Dossier blueprint generation does not mutate Source File truth or public d
   assert.equal(JSON.stringify(databasePage.entries), beforePublic);
   assert.equal(blueprint.classification.category, "Community");
   assert.equal(blueprint.adminOnlyProvenance.reviewOnlyEvidence.uncertainIdentityLinks.length, 0);
+});
+
+
+
+test("Dossier Style Packet builds site-owned examples, taxonomy, tags, and authoring rules", () => {
+  const packet = dossierStylePacket.buildDossierStylePacket({ generatedAt: "2026-06-12T00:00:00.000Z" });
+
+  assert.equal(packet.version, "1.0");
+  assert.equal(packet.generatedAt, "2026-06-12T00:00:00.000Z");
+  assert.ok(packet.representativePublicDossierExamples.length >= 5);
+  assert.ok(packet.representativePublicDossierExamples.some((entry) => entry.category === "Entity"));
+  assert.ok(packet.representativePublicDossierExamples.some((entry) => entry.category === "Personnel"));
+  assert.ok(packet.representativePublicDossierExamples.some((entry) => entry.category === "Sponsor"));
+  assert.ok(packet.representativePublicDossierExamples.some((entry) => entry.category === "Interface"));
+  assert.ok(packet.representativePublicDossierExamples.some((entry) => entry.category === "Production"));
+  assert.deepEqual(packet.taxonomyGuide.categoryGuide.Artist.includes("Music artists"), true);
+  assert.ok(packet.categorySpecificExamples.some((item) => item.category === "Artist"));
+  assert.ok(packet.categorySpecificExamples.some((item) => item.coverage === "missing"));
+  assert.ok(packet.categorySpecificExamples.filter((item) => item.coverage === "missing").every((item) => item.examples.length === 0));
+  assert.ok(packet.tagRegistryGuidance.items.some((item) => item.tag === "artist"));
+  assert.ok(packet.authoringGuideSummary.draftingRules.some((rule) => /Classify in order/.test(rule)));
+  assert.ok(packet.goodRoleLineExamples.includes("Host / Artist"));
+  assert.ok(packet.goodSummaryExamples.some((summary) => /BARCODE Radio/.test(summary)));
+  assert.ok(packet.goodNotesExamples.length > 0);
+  assert.ok(packet.forbiddenPublicCopyPatterns.includes("sourceFileSummary"));
+});
+
+test("Dossier Draft Contract exposes required structured output fields", () => {
+  const required = dossierStylePacket.DOSSIER_DRAFT_CONTRACT.requiredFields;
+  for (const field of [
+    "name",
+    "category",
+    "kind",
+    "ecosystemLane",
+    "identityAuthority",
+    "status",
+    "clearance",
+    "origin",
+    "role",
+    "summary",
+    "notes",
+    "tags",
+    "proposedTags",
+    "primaryLink",
+    "links",
+    "files",
+    "missingInfoQuestions",
+    "ownerReviewWarnings",
+    "publicSafetyWarnings",
+    "unsupportedClaimsRejected",
+    "sourceUsageSummary",
+  ]) {
+    assert.ok(required.includes(field), `missing ${field}`);
+  }
+  assert.equal(dossierStylePacket.DOSSIER_DRAFT_CONTRACT.outputMode, "structured_fields_only");
+});
+
+function cleanContractDraft(overrides = {}) {
+  return {
+    name: "Clean Fixture",
+    category: "Community",
+    kind: "community_member",
+    ecosystemLane: "community_member",
+    identityAuthority: "community_owned",
+    status: "PENDING",
+    clearance: "PUBLIC",
+    origin: "UNVERIFIED",
+    role: "Community Member",
+    summary: "Clean Fixture is a recurring BARCODE community presence with public-safe participation signals ready for operator review.",
+    notes: "Owner review is still required before this proposed dossier can be used publicly.",
+    tags: ["community"],
+    proposedTags: ["fixture-regular"],
+    primaryLink: null,
+    links: [{ label: "BARCODE", url: "https://barcode-network.com", type: "website", selectedBy: "operator", publicSafe: true }],
+    files: [],
+    missingInfoQuestions: ["Confirm preferred public role line."],
+    ownerReviewWarnings: ["Owner Review remains required."],
+    publicSafetyWarnings: [],
+    unsupportedClaimsRejected: [],
+    sourceUsageSummary: "Used public-safe source ingredients only.",
+    ...overrides,
+  };
+}
+
+test("Dossier Draft Contract validation accepts a clean dossier-style draft", () => {
+  const result = dossierStylePacket.validateDossierDraftContractOutput(cleanContractDraft(), {
+    queueMusicEvidenceAllowed: false,
+    identityConfirmed: false,
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.issues));
+});
+
+test("Dossier Draft Contract validation rejects internal reports and source-file diagnostics in public fields", () => {
+  const result = dossierStylePacket.validateDossierDraftContractOutput(cleanContractDraft({
+    summary: "BNL Dossier Intelligence: Community Activity Profile sourceFileSummary memory_tiers relationship_state.",
+    notes: "Review only evidence count: 5. Most recent observed evidence: recommendation id rec_123456.",
+  }));
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.code === "forbidden_public_pattern"));
+});
+
+test("Dossier Draft Contract validation rejects source lanes, raw IDs, timestamps, activity diagnostics, and JSON dumps", () => {
+  const result = dossierStylePacket.validateDossierDraftContractOutput(cleanContractDraft({
+    role: "Community Member",
+    summary: `source lane rd_context evidence id evidence_abc123 2026-06-12T00:00:00.000Z activity count {"sourceFileSummary":true}`,
+    notes: "public_discord source lane and recommendation id recommendation_fixture_123456.",
+  }));
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.filter((issue) => issue.code === "forbidden_public_pattern").length >= 2);
+});
+
+test("Dossier Draft Contract validation rejects unsupported queue/music claims", () => {
+  const result = dossierStylePacket.validateDossierDraftContractOutput(cleanContractDraft({
+    category: "Community",
+    kind: "community_member",
+    ecosystemLane: "community_member",
+    summary: "Clean Fixture submitted songs through the queue and is an Auxchord artist without connected evidence.",
+  }), { queueMusicEvidenceAllowed: false });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.code === "unsupported_queue_music_claim"));
+});
+
+test("Dossier Draft Contract validation rejects internal aliases and separates proposed tags", () => {
+  const result = dossierStylePacket.validateDossierDraftContractOutput(cleanContractDraft({
+    summary: "Clean Fixture is also Private Alias Alpha in internal notes.",
+    tags: ["community", "new-uncertain-tag"],
+    proposedTags: ["new-uncertain-tag"],
+  }), { internalAliases: ["Private Alias Alpha"] });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.code === "internal_alias_exposed"));
+  assert.ok(result.issues.some((issue) => issue.code === "tag_not_separated"));
+  assert.ok(result.issues.some((issue) => issue.code === "unregistered_confirmed_tag"));
+});
+
+test("Dossier Draft Contract validation blocks identity confirmation and publishing language", () => {
+  const result = dossierStylePacket.validateDossierDraftContractOutput(cleanContractDraft({
+    summary: "Clean Fixture has confirmed identity and the public page has been created.",
+  }), { identityConfirmed: false });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.code === "identity_confirmation_blocked"));
+  assert.ok(result.issues.some((issue) => issue.code === "forbidden_public_pattern"));
+});
+
+test("Style Packet + Blueprint bridge produces a future BNL authoring packet without mutation or publishing", () => {
+  const beforePublic = JSON.stringify(databasePage.entries);
+  const candidate = {
+    id: "bridge-fixture",
+    name: "Bridge Fixture",
+    candidateType: "community_member",
+    source: "manual",
+    tier: "review_candidate",
+    score: 45,
+    whyNow: "Bridge test.",
+    reason: "Recurring public-safe community presence.",
+    evidenceSummary: "Recurring public chat presence.",
+    knownFacts: ["Public chat presence is visible."],
+    status: "active_source_file",
+    createdAt: "2026-06-12T00:00:00.000Z",
+    updatedAt: "2026-06-12T00:00:00.000Z",
+  };
+  const beforeCandidate = JSON.stringify(candidate);
+  const blueprint = dossierClassification.createDossierDraftBlueprint({ candidate, recommendations: [] });
+  const beforeBlueprint = JSON.stringify(blueprint);
+  const packet = dossierStylePacket.createFutureBnlDossierAuthoringPacket({
+    sourceFileSubject: candidate,
+    draftBlueprint: blueprint,
+    stylePacket: dossierStylePacket.buildDossierStylePacket({ generatedAt: "2026-06-12T00:00:00.000Z" }),
+  });
+
+  assert.equal(packet.sourceFileSubject.candidateId, "bridge-fixture");
+  assert.equal(packet.requiredOutputContract.outputMode, "structured_fields_only");
+  assert.ok(packet.validationRules.requiredFields.includes("sourceUsageSummary"));
+  assert.ok(packet.reviewOnlyBoundaries.ownerReviewWarnings.some((warning) => /Owner Review remains required/.test(warning)));
+  assert.equal(JSON.stringify(candidate), beforeCandidate);
+  assert.equal(JSON.stringify(blueprint), beforeBlueprint);
+  assert.equal(JSON.stringify(databasePage.entries), beforePublic);
+  assert.equal(packet.draftBlueprint.readiness.label !== "Owner Approved", true);
+  assert.equal(packet.draftBlueprint.readiness.recommendedNextAction.includes("publish"), false);
 });
 
 test("public database dossiers render through shared dossier page view", () => {

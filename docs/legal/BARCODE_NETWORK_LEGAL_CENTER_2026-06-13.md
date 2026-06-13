@@ -925,30 +925,6 @@ Possible containment actions include hiding, removing, correcting, rerouting, de
 
 Containment decisions may be imperfect, delayed, or limited by third-party platforms, but they are made to protect the broadcast, the artists, the audience, and the network.
 
----
-
-# Queue Form Acceptance Text
-
-The queue submission flow should require one unchecked checkbox before final submission.
-
-Checkbox text:
-
-“I agree to the BARCODE Network Terms, Queue Submission Terms, and Privacy Policy. I confirm I am 13+ and, if under 18, have parent/guardian permission. I confirm I have the rights to submit this track, and I understand uploads are temporary and may be used for BARCODE Radio/live show-related playback, clips, recaps, platform replays, and related BARCODE Network features as described in the terms.”
-
-Suggested helper text under checkbox:
-
-“Raw uploaded MP3/WAV files are temporary and are not intended to be stored permanently. See Queue Submission Terms for upload retention and usage details.”
-
----
-
-# Priority Signal Checkout Disclosure
-
-The Priority Signal checkout flow should display this disclosure near the payment action:
-
-“Priority Signal moves an eligible submission closer to the front after payment clears. It does not guarantee approval, airplay, promotion, review, a specific stream time, permanent placement, or interruption of the track currently playing. By continuing, I confirm that I am at least 18 years old or have permission from a parent or legal guardian to make this payment.”
-
----
-
 # Contact
 
 For support, legal questions, privacy requests, copyright/takedown notices, security reports, and accessibility feedback:

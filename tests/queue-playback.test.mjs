@@ -1673,3 +1673,166 @@ test("upload submission without detected duration stays internal estimate and no
   assert.equal(track.durationIsEstimate, true);
   assert.equal(track.durationSource, "internal_estimate");
 });
+
+test("uploaded MP3/WAV queue entries get private deletion metadata about 24 hours after creation", async () => {
+  const created = new Date(Date.UTC(2026, 0, 2, 3, 4, 5));
+  await freshOpenSession("upload deletion metadata", { showStarted: false });
+
+  const track = await withFakeNow(created, () => queue.submitRadioTrack({
+    artist: "Upload Artist",
+    title: "Upload Track",
+    tiktokHandle: "@uploadartistmetadata",
+    link: "https://store.private.blob.vercel-storage.com/barcode-radio-queue/upload-track.mp3",
+    fileUrl: "https://store.private.blob.vercel-storage.com/barcode-radio-queue/upload-track.mp3",
+    fileName: "upload-track.mp3",
+    fileSize: 1234,
+    mimeType: "audio/mpeg",
+    sourceType: "upload",
+  }));
+
+  assert.equal(track.uploadedFileDeletionStatus, "pending");
+  assert.equal(track.uploadedFileDeletedAt, null);
+  assert.equal(new Date(track.uploadedFileDeleteAfter).getTime(), created.getTime() + 24 * 60 * 60 * 1000);
+});
+
+test("link-only submissions do not get raw upload deletion metadata", async () => {
+  await freshOpenSession("link deletion metadata", { showStarted: false });
+  const track = await submitTrack("Link Only Metadata");
+
+  assert.equal(track.uploadedFileDeleteAfter, null);
+  assert.equal(track.uploadedFileDeletedAt, null);
+  assert.equal(track.uploadedFileDeletionStatus, null);
+});
+
+test("public queue snapshots omit raw upload URLs and deletion metadata", async () => {
+  await freshOpenSession("public upload privacy", { showStarted: false });
+  await queue.addToQueue({
+    artist: "Public Upload Artist",
+    title: "Public Upload Track",
+    tiktokHandle: "@publicuploadprivacy",
+    link: "https://store.private.blob.vercel-storage.com/barcode-radio-queue/public-upload.wav",
+    fileUrl: "https://store.private.blob.vercel-storage.com/barcode-radio-queue/public-upload.wav",
+    fileName: "public-upload.wav",
+    fileSize: 4567,
+    mimeType: "audio/wav",
+    sourceType: "upload",
+    tier: "free",
+    lane: "regular",
+    amount: 0,
+    stripeSessionId: null,
+    createdAt: new Date(Date.UTC(2026, 0, 10)).toISOString(),
+  });
+
+  const json = JSON.stringify(await queue.getPublicQueueSnapshot());
+  assert.equal(json.includes("private.blob.vercel-storage.com"), false);
+  assert.equal(json.includes("uploadedFileDeleteAfter"), false);
+  assert.equal(json.includes("uploadedFileDeletedAt"), false);
+  assert.equal(json.includes("uploadedFileDeletionStatus"), false);
+});
+
+test("cleanup deletes expired BARCODE upload files idempotently without removing records or metadata", async () => {
+  await freshOpenSession("upload cleanup", { showStarted: false });
+  const oldCreatedAt = new Date(Date.UTC(2026, 0, 1)).toISOString();
+  const uploadUrl = "https://store.private.blob.vercel-storage.com/barcode-radio-queue/expired-upload.mp3";
+  const externalUrl = "https://example.com/external.mp3";
+  const legalAcceptance = {
+    acceptedAt: oldCreatedAt,
+    termsVersion: "1.0",
+    privacyVersion: "1.0",
+    queueTermsVersion: "1.0",
+    acceptedCheckboxText: "test acceptance text",
+    source: "public_queue_form",
+  };
+  const upload = await queue.addToQueue({
+    artist: "Cleanup Upload Artist",
+    title: "Cleanup Upload Track",
+    tiktokHandle: "@cleanupuploadartist",
+    link: uploadUrl,
+    fileUrl: uploadUrl,
+    fileName: "expired-upload.mp3",
+    fileSize: 999,
+    mimeType: "audio/mpeg",
+    sourceType: "upload",
+    tier: "free",
+    lane: "regular",
+    amount: 0,
+    stripeSessionId: "cs_preserved",
+    priorityUpgradePaymentId: "pi_preserved",
+    createdAt: oldCreatedAt,
+    legalAcceptance,
+  });
+  const linkOnly = await queue.addToQueue({
+    artist: "Cleanup Link Artist",
+    title: "Cleanup Link Track",
+    tiktokHandle: "@cleanuplinkartist",
+    link: externalUrl,
+    tier: "free",
+    lane: "regular",
+    amount: 0,
+    stripeSessionId: null,
+    sourceType: "link",
+    createdAt: oldCreatedAt,
+  });
+  const deleted = [];
+
+  const first = await queue.cleanupExpiredQueueUploads({ now: new Date(Date.UTC(2026, 0, 3)), deleteBlob: async (url) => { deleted.push(url); } });
+  const second = await queue.cleanupExpiredQueueUploads({ now: new Date(Date.UTC(2026, 0, 3, 1)), deleteBlob: async (url) => { deleted.push(url); } });
+  const state = await queue.getRadioQueueState();
+  const cleaned = state.queue.find((entry) => entry.id === upload.id);
+  const link = state.queue.find((entry) => entry.id === linkOnly.id);
+
+  assert.deepEqual(first, { scanned: 1, deleted: 1, skippedActive: 0, failed: 0 });
+  assert.deepEqual(second, { scanned: 0, deleted: 0, skippedActive: 0, failed: 0 });
+  assert.deepEqual(deleted, [uploadUrl]);
+  assert.ok(cleaned, "upload queue record should remain");
+  assert.equal(cleaned.uploadedFileDeletionStatus, "deleted");
+  assert.equal(cleaned.uploadedFileDeletedAt, new Date(Date.UTC(2026, 0, 3)).toISOString());
+  assert.equal(cleaned.legalAcceptance.acceptedAt, legalAcceptance.acceptedAt);
+  assert.equal(cleaned.priorityUpgradePaymentId, "pi_preserved");
+  assert.equal(cleaned.stripeSessionId, "cs_preserved");
+  assert.equal(cleaned.createdAt, oldCreatedAt);
+  assert.ok(link, "link-only queue record should remain");
+  assert.equal(link.uploadedFileDeletionStatus, null);
+});
+
+test("cleanup processes duplicate uploaded track appearances only once per run", async () => {
+  await freshOpenSession("duplicate upload cleanup", { showStarted: false });
+  const oldCreatedAt = new Date(Date.UTC(2026, 0, 1)).toISOString();
+  const uploadUrl = "https://store.private.blob.vercel-storage.com/barcode-radio-queue/duplicate-upload.mp3";
+  const upload = await queue.addToQueue({
+    artist: "Duplicate Upload Artist",
+    title: "Duplicate Upload Track",
+    tiktokHandle: "@duplicateuploadartist",
+    link: uploadUrl,
+    fileUrl: uploadUrl,
+    fileName: "duplicate-upload.mp3",
+    fileSize: 777,
+    mimeType: "audio/mpeg",
+    sourceType: "upload",
+    tier: "free",
+    lane: "regular",
+    amount: 0,
+    stripeSessionId: null,
+    createdAt: oldCreatedAt,
+  });
+  await queue.updateRadioTrack(upload.id, "spotlight");
+
+  const deleted = [];
+  const result = await queue.cleanupExpiredQueueUploads({
+    now: new Date(Date.UTC(2026, 0, 3)),
+    deleteBlob: async (url) => {
+      deleted.push(url);
+      if (deleted.length > 1) throw new Error("duplicate delete should not run");
+    },
+  });
+  const state = await queue.getRadioQueueState();
+  const queued = state.queue.find((entry) => entry.id === upload.id);
+  const spotlight = state.spotlight.find((entry) => entry.id === upload.id);
+
+  assert.deepEqual(result, { scanned: 1, deleted: 1, skippedActive: 0, failed: 0 });
+  assert.deepEqual(deleted, [uploadUrl]);
+  assert.equal(queued.uploadedFileDeletionStatus, "deleted");
+  assert.equal(spotlight.uploadedFileDeletionStatus, "deleted");
+  assert.equal(queued.uploadedFileDeletionError, null);
+  assert.equal(spotlight.uploadedFileDeletionError, null);
+});

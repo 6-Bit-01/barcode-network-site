@@ -15,6 +15,21 @@ export type PriorityUpgradeSource = "admin" | "public_placeholder" | "future_pay
 export type SponsorBreakMode = "mid_show";
 export type SponsorBreakStatus = "not_due" | "due" | "running" | "completed" | "skipped";
 
+export const PUBLIC_QUEUE_LEGAL_TERMS_VERSION = "1.0";
+export const PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION = "1.0";
+export const PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION = "1.0";
+export const PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT = "I agree to the BARCODE Network Terms, Queue Submission Terms, and Privacy Policy. I confirm I am 13+ and, if under 18, have parent/guardian permission. I confirm I have the rights to submit this track, and I understand uploads are temporary and may be used for BARCODE Radio/live show-related playback, clips, recaps, platform replays, and related BARCODE Network features as described in the terms.";
+
+
+export interface QueueLegalAcceptance {
+  acceptedAt: string;
+  termsVersion: string;
+  privacyVersion: string;
+  queueTermsVersion: string;
+  acceptedCheckboxText: string;
+  source: "public_queue_form";
+}
+
 export interface QueueEntry {
   id: string;
   artist: string;
@@ -77,6 +92,7 @@ export interface QueueEntry {
   priorityPausedAt?: string | null;
   priorityResumedAt?: string | null;
   priorityQueueOrderAt?: string | null;
+  legalAcceptance?: QueueLegalAcceptance | null;
   isTestTrack?: boolean;
 }
 

@@ -16,6 +16,7 @@ import {
 import type {
   QueueDurationSource,
   QueueEntry,
+  QueueLegalAcceptance,
   QueueLane,
   QueueNonPriorityLane,
   QueuePublicSnapshot,
@@ -1113,6 +1114,7 @@ export async function createQueueTrack(input: {
   providerTitle?: string | null;
   detectedDurationSeconds?: number | null;
   durationSource?: QueueDurationSource;
+  legalAcceptance?: QueueLegalAcceptance;
 }): Promise<QueueEntry> {
   const sourceType = input.sourceType ?? (input.fileUrl ? "upload" : detectQueueSourceType(input.link ?? ""));
   const submittedArtistName = input.artist.trim();
@@ -1191,6 +1193,7 @@ export async function createQueueTrack(input: {
     priorityResumedAt: null,
     priorityQueueOrderAt: null,
     stagedAsFallbackForLane: null,
+    legalAcceptance: input.legalAcceptance ?? null,
     isTestTrack: false,
   });
 }

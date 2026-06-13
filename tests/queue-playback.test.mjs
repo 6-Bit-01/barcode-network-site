@@ -1525,6 +1525,17 @@ test("wheel ceremony spin and stale confirm errors do not mutate queue", async (
 
 const queueApi = require("../src/app/api/queue/route.ts");
 const uploadApi = require("../src/app/api/queue/upload/route.ts");
+const queueTypes = require("../src/lib/queue-types.ts");
+
+function legalAcceptanceBody() {
+  return {
+    acceptedLegal: true,
+    termsVersion: queueTypes.PUBLIC_QUEUE_LEGAL_TERMS_VERSION,
+    privacyVersion: queueTypes.PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION,
+    queueTermsVersion: queueTypes.PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION,
+    acceptedCheckboxText: queueTypes.PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT,
+  };
+}
 
 function jsonOf(response) {
   return response.json();
@@ -1538,6 +1549,7 @@ test("public POST rejects missing sessionId", async () => {
     title: "Session Track",
     tiktokHandle: "@sessionartist",
     link: "https://example.com/session-required",
+    ...legalAcceptanceBody(),
   });
   const payload = await jsonOf(response);
   assert.equal(response.status, 409);
@@ -1556,10 +1568,27 @@ test("public POST rejects stale sessionId", async () => {
     title: "Stale Track",
     tiktokHandle: "@staleartist",
     link: "https://example.com/stale-track",
+    ...legalAcceptanceBody(),
   });
   const payload = await jsonOf(response);
   assert.equal(response.status, 409);
   assert.equal(payload.code, "stale_session");
+});
+
+
+test("public POST rejects missing legal acceptance", async () => {
+  const sessionId = await freshOpenSession("legal required");
+  const response = await queueApi.submitTrackFromBody({
+    sessionId,
+    mode: "link",
+    artist: "Legal Artist",
+    title: "Legal Track",
+    tiktokHandle: "@legalartist",
+    link: "https://example.com/legal-track",
+  });
+  const payload = await jsonOf(response);
+  assert.equal(response.status, 400);
+  assert.equal(payload.error, "Legal acceptance is required before submitting to the queue.");
 });
 
 test("public POST accepts current active sessionId", async () => {
@@ -1571,6 +1600,7 @@ test("public POST accepts current active sessionId", async () => {
     title: "Current Track",
     tiktokHandle: "@currentartist",
     link: "https://example.com/current-track",
+    ...legalAcceptanceBody(),
   });
   const payload = await jsonOf(response);
   assert.equal(response.status, 201);
@@ -1587,6 +1617,7 @@ test("public POST remains rejected while submissions are closed", async () => {
     title: "Closed Track",
     tiktokHandle: "@closedartist",
     link: "https://example.com/closed-track",
+    ...legalAcceptanceBody(),
   });
   const payload = await jsonOf(response);
   assert.equal(response.status, 409);

@@ -114,9 +114,19 @@ export function Footer() {
 
         {/* Bottom bar */}
         <div className="mt-8 sm:mt-12 pt-4 sm:pt-6 border-t border-border flex flex-col sm:flex-row justify-between items-center gap-2 sm:gap-4">
-          <p className="text-xs text-muted tracking-widest uppercase">
-            &copy; {currentYear} BARCODE Network. All rights reserved.
-          </p>
+          <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4">
+            <p className="text-xs text-muted tracking-widest uppercase">
+              &copy; {currentYear} BARCODE Network. All rights reserved.
+            </p>
+            <nav aria-label="Footer legal links" className="flex items-center gap-3">
+              <Link href="/legal" className="text-xs text-muted hover:text-accent tracking-widest uppercase transition-colors">
+                Legal / Privacy
+              </Link>
+              <Link href="/contact" className="text-xs text-muted hover:text-accent tracking-widest uppercase transition-colors">
+                Contact
+              </Link>
+            </nav>
+          </div>
           <p className="text-xs text-muted/50 tracking-wider font-mono animate-flicker">
             SYS.BUILD // v2.0.0 // PHASE_02
           </p>

@@ -3,6 +3,10 @@
     {
       "path": "/api/queue/reset",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/admin/queue/cleanup-uploads",
+      "schedule": "0 * * * *"
     }
   ]
 }

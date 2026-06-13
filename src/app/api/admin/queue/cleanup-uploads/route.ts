@@ -11,6 +11,17 @@ async function assertAdmin(): Promise<boolean> {
   return token ? verifyAdminToken(token) : false;
 }
 
+function isAuthorizedCronRequest(request: Request): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false;
+  return request.headers.get("authorization") === `Bearer ${secret}`;
+}
+
+export async function GET(request: Request) {
+  if (!isAuthorizedCronRequest(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  return NextResponse.json(await cleanupExpiredQueueUploads());
+}
+
 export async function POST() {
   if (!(await assertAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   return NextResponse.json(await cleanupExpiredQueueUploads());

@@ -5,7 +5,7 @@ import { upload } from "@vercel/blob/client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { buildQueueTimingDisplay, priorityDisplayFromImpact, queueTimingInputFromPublicSnapshot } from "@/lib/queue-timing-display";
-import { formatRuntime } from "@/lib/queue-types";
+import { PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, formatRuntime } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
 
 type Mode = "link" | "upload";
@@ -134,6 +134,8 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   const [readState, setReadState] = useState<ReadState>("idle");
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
+  const [legalError, setLegalError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [transmissionState, setTransmissionState] = useState<TransmissionState>("idle");
   const [warpData, setWarpData] = useState<WarpData | null>(null);
@@ -366,6 +368,11 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
     }
     finalSubmitIntent.current = false;
     setError(null);
+    setLegalError(null);
+    if (!acceptedLegal) {
+      setLegalError("You must agree to the BARCODE Network Terms, Queue Submission Terms, and Privacy Policy before submitting.");
+      return;
+    }
     setSubmitting(true);
     try {
       const refreshedBeforeSubmit = await loadStatus();
@@ -373,7 +380,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
       if (!latestSessionId) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
       const visibleSessionId = session?.sessionId ?? sessionId;
       if (visibleSessionId && latestSessionId !== visibleSessionId) throw new Error(SESSION_CHANGED_MESSAGE);
-      const body: Record<string, string | number> = {
+      const body: Record<string, string | number | boolean> = {
         mode,
         artist: artist.trim(),
         title: title.trim(),
@@ -381,6 +388,11 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
         collaboratorNames: collaboratorNames.trim(),
         contactEmail: contactEmail.trim(),
         submitterToken,
+        acceptedLegal: true,
+        termsVersion: PUBLIC_QUEUE_LEGAL_TERMS_VERSION,
+        privacyVersion: PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION,
+        queueTermsVersion: PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION,
+        acceptedCheckboxText: PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT,
       };
       body.sessionId = latestSessionId;
       if (note.trim()) body.note = note.trim();
@@ -604,6 +616,16 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
             <div className="grid gap-3 text-xs sm:grid-cols-2">
               <button type="button" onClick={() => setRouteChoice("free")} aria-pressed={selectedRoute === "free"} className={`cursor-pointer border p-4 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${selectedRoute === "free" ? "border-accent bg-accent/10 text-foreground shadow-[0_0_24px_rgba(255,0,0,0.16)]" : "border-border bg-background/40 text-muted hover:border-accent/45"}`}><span className="text-sm font-bold text-foreground">Free queue</span><span className="mt-2 block">No payment required.</span><span className="mt-3 block text-muted">{timingSummary.submitNowFreeEstimate ? `If you submit now: ${timingSummary.submitNowFreeEstimate.songsAhead} ${timingSummary.submitNowFreeEstimate.songsAhead === 1 ? "song" : "songs"} ahead · ${timingSummary.submitNowFreeEstimate.label}.` : `If you submit now, you’ll enter around position #${estimatedPosition} in the free queue. Estimated wait may shift during the show.`}</span></button>
               {priorityCheckoutAvailable ? <button type="button" onClick={() => setRouteChoice("priority")} aria-pressed={selectedRoute === "priority"} className={`cursor-pointer border p-4 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffaa00]/60 ${selectedRoute === "priority" ? "border-[#ffaa00] bg-[#ffaa00]/10 text-foreground shadow-[0_0_24px_rgba(255,170,0,0.2)]" : "border-[#ffaa00]/40 bg-background/40 text-muted hover:border-[#ffaa00]/70"}`}><span className="text-sm font-bold text-[#ffaa00]">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">Paid skip after payment clears.</span><span className="mt-3 block text-[#ffaa00]">{formatPrice(priorityPriceCents, priorityCurrency)}</span>{submitPriorityImpact && <div className="mt-3 grid grid-cols-2 gap-2 border border-[#ffaa00]/25 bg-[#ffaa00]/5 p-2"><div><span className="block text-[10px] uppercase tracking-widest text-muted">Free queue</span><span className="font-bold text-foreground">{submitPriorityImpact.freeLabel}</span></div><div><span className="block text-[10px] uppercase tracking-widest text-muted">Priority Signal</span><span className="font-bold text-[#ffaa00]">{submitPriorityImpact.priorityLabel}</span></div></div>}<span className="mt-2 block text-muted">Moves your track closer to the front. Does not interrupt the song currently playing.</span></button> : priorityPaymentsAvailable && <div className="border border-[#ffaa00]/30 bg-background/40 p-4 text-left text-muted"><span className="text-sm font-bold text-[#ffaa00]/70">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">{PRIORITY_DEPTH_UNAVAILABLE_MESSAGE}</span><span className="mt-3 block text-[#ffaa00]/70">{formatPrice(priorityPriceCents, priorityCurrency)}</span></div>}
+            </div>
+            <div className="border border-border bg-background/40 p-3 text-xs text-muted">
+              <label className="flex items-start gap-3">
+                <input type="checkbox" checked={acceptedLegal} onChange={(event) => { setAcceptedLegal(event.target.checked); if (event.target.checked) setLegalError(null); }} className="mt-1 h-4 w-4 accent-accent" aria-describedby="queue-legal-helper queue-legal-error" />
+                <span>
+                  I agree to the BARCODE Network <a href="/legal#terms" className="text-accent underline underline-offset-2" target="_blank" rel="noreferrer">Terms</a>, <a href="/legal#queue-submission" className="text-accent underline underline-offset-2" target="_blank" rel="noreferrer">Queue Submission Terms</a>, and <a href="/legal#privacy" className="text-accent underline underline-offset-2" target="_blank" rel="noreferrer">Privacy Policy</a>. I confirm I am 13+ and, if under 18, have parent/guardian permission. I confirm I have the rights to submit this track, and I understand uploads are temporary and may be used for BARCODE Radio/live show-related playback, clips, recaps, platform replays, and related BARCODE Network features as described in the terms.
+                </span>
+              </label>
+              <p id="queue-legal-helper" className="mt-2 text-[11px] text-muted">Raw uploaded MP3/WAV files are temporary and are not intended to be stored permanently. See Queue Submission Terms for upload retention and usage details.</p>
+              {legalError && <p id="queue-legal-error" className="mt-2 text-[11px] font-bold text-accent" role="alert">{legalError}</p>}
             </div>
             <div className="grid gap-2 text-xs sm:grid-cols-2">
               {submitterStatus && <div className="border border-accent/40 bg-accent/5 p-2 text-muted"><p className="font-bold text-accent">Your submissions: {submitterStatus.used} / {submitterStatus.limit}</p><p>Remaining: {submitterStatus.remaining}</p>{submitterStatus.cooldownRemainingSeconds > 0 && <p className="text-accent">Cooldown: {formatCooldown(submitterStatus.cooldownRemainingSeconds)}</p>}</div>}

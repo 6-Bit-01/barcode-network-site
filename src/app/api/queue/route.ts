@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { detectQueueSourceType } from "@/lib/queue-types";
+import { PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, detectQueueSourceType } from "@/lib/queue-types";
 import { getPublicQueueSnapshot, getRadioQueueState, isTrackPersistedInSessionQueue, normalizeQueueSourceKey, requestPriorityUpgradePlaceholder, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
 import type { QueueEntry } from "@/lib/queue-types";
 
@@ -45,6 +45,23 @@ function validateUploadMimeType(value: unknown): string {
 
 function cleanBodyText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+
+function validateLegalAcceptance(body: Record<string, unknown>) {
+  if (body.acceptedLegal !== true) throw new Error("Legal acceptance is required before submitting to the queue.");
+  if (cleanBodyText(body.termsVersion) !== PUBLIC_QUEUE_LEGAL_TERMS_VERSION) throw new Error("Legal terms version mismatch. Refresh the queue and try again.");
+  if (cleanBodyText(body.privacyVersion) !== PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION) throw new Error("Privacy policy version mismatch. Refresh the queue and try again.");
+  if (cleanBodyText(body.queueTermsVersion) !== PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION) throw new Error("Queue terms version mismatch. Refresh the queue and try again.");
+  if (cleanBodyText(body.acceptedCheckboxText) !== PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT) throw new Error("Legal acceptance text mismatch. Refresh the queue and try again.");
+  return {
+    acceptedAt: new Date().toISOString(),
+    termsVersion: PUBLIC_QUEUE_LEGAL_TERMS_VERSION,
+    privacyVersion: PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION,
+    queueTermsVersion: PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION,
+    acceptedCheckboxText: PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT,
+    source: "public_queue_form" as const,
+  };
 }
 
 function parseBodyDuration(value: unknown): number | null {
@@ -147,6 +164,12 @@ export async function submitTrackFromBody(body: Record<string, unknown>): Promis
   const contactEmail = cleanBodyText(body.contactEmail).slice(0, 200);
   const submitterToken = cleanBodyText(body.submitterToken).slice(0, 120);
   const sessionId = cleanBodyText(body.sessionId);
+  let legalAcceptance;
+  try {
+    legalAcceptance = validateLegalAcceptance(body);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Legal acceptance is required before submitting to the queue." }, { status: 400 });
+  }
   const active = await getPublicQueueSnapshot();
 
   if (!sessionId) return NextResponse.json({ error: "Session sync required. Refresh the queue and try again.", code: "session_sync_required" }, { status: 409 });
@@ -186,6 +209,7 @@ export async function submitTrackFromBody(body: Record<string, unknown>): Promis
       collaboratorNames,
       contactEmail,
       submitterToken,
+      legalAcceptance,
     });
     if (!(await isTrackPersistedInSessionQueue(track.id, active.session.sessionId))) {
       return NextResponse.json({ error: QUEUE_ACCEPTANCE_UNCONFIRMED_MESSAGE, code: "queue_acceptance_unconfirmed" }, { status: 500 });
@@ -199,7 +223,7 @@ export async function submitTrackFromBody(body: Record<string, unknown>): Promis
   if (await hasDuplicateLinkSubmission(link)) return duplicateResponse();
 
   const sourceType = detectQueueSourceType(link);
-  const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, contactEmail, submitterToken });
+  const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, contactEmail, submitterToken, legalAcceptance });
   if (!(await isTrackPersistedInSessionQueue(track.id, active.session.sessionId))) {
     return NextResponse.json({ error: QUEUE_ACCEPTANCE_UNCONFIRMED_MESSAGE, code: "queue_acceptance_unconfirmed" }, { status: 500 });
   }

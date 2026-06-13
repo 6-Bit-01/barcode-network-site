@@ -22,6 +22,7 @@ import {
 } from "@/lib/dossier-public-copy-guard";
 import { createDossierSourceFileSummary } from "@/lib/dossier-source-file-summary";
 import { createDossierDraftBlueprint } from "@/lib/dossier-classification";
+import { buildDossierStylePacket, DOSSIER_DRAFT_CONTRACT_REQUIRED_FIELDS } from "@/lib/dossier-style-packet";
 import {
   DOSSIER_CATEGORY_OPTIONS,
   DOSSIER_ECOSYSTEM_LANE_OPTIONS,
@@ -366,6 +367,7 @@ export default function DossierDraftEditorPage() {
   const blueprint = candidate
     ? createDossierDraftBlueprint({ candidate, recommendations: [], publicDossiers: [] })
     : null;
+  const stylePacket = useMemo(() => buildDossierStylePacket(), []);
   const sourceFileSummary = candidate
     ? createDossierSourceFileSummary({
         candidate,
@@ -818,8 +820,30 @@ export default function DossierDraftEditorPage() {
         {blueprint && (
           <details className="border border-border bg-surface p-5 text-sm text-muted">
             <summary className="cursor-pointer text-xl font-bold text-foreground">
-              Related Dossier Blueprint — admin-only
+              Draft Contract / Style Reference — admin-only
             </summary>
+            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+              <section className="border border-border/60 bg-background/30 p-3">
+                <h3 className="font-bold text-foreground">Structured contract</h3>
+                <p>{DOSSIER_DRAFT_CONTRACT_REQUIRED_FIELDS.length} required fields. Future BNL output must return fields, not a blob.</p>
+              </section>
+              <section className="border border-border/60 bg-background/30 p-3">
+                <h3 className="font-bold text-foreground">Style packet</h3>
+                <p>{stylePacket.representativePublicDossierExamples.length} representative public examples loaded from site content.</p>
+              </section>
+              <section className="border border-border/60 bg-background/30 p-3">
+                <h3 className="font-bold text-foreground">Review boundary</h3>
+                <p>Owner Review remains required; style data is not public dossier text.</p>
+              </section>
+            </div>
+            <details className="mt-4 border border-border/60 bg-background/20 p-3 text-xs">
+              <summary className="cursor-pointer font-semibold text-foreground">Collapsed style packet boundaries</summary>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                {[...stylePacket.publicSafetyRules, ...stylePacket.sourceBoundaryRules].map((rule) => (
+                  <li key={rule}>{rule}</li>
+                ))}
+              </ul>
+            </details>
             <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
               <section className="border border-border/60 bg-background/30 p-3">
                 <h3 className="font-bold text-foreground">Classification</h3>

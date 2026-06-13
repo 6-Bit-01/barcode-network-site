@@ -9,6 +9,7 @@ import type {
   DossierSourceFileNote,
 } from "@/lib/dossier-workflow";
 import type { DossierDraftBlueprint } from "@/lib/dossier-classification";
+import { buildDossierStylePacket, DOSSIER_DRAFT_CONTRACT_REQUIRED_FIELDS } from "@/lib/dossier-style-packet";
 import {
   formatDossierSummaryBadge,
   type DossierSourceFileSummary,
@@ -587,6 +588,10 @@ function BlueprintList({ items, empty = "—" }: { items?: string[]; empty?: str
 }
 
 function DossierBlueprintView({ blueprint }: { blueprint: DossierDraftBlueprint }) {
+  const stylePacket = buildDossierStylePacket();
+  const missingCoverage = stylePacket.categorySpecificExamples
+    .filter((item) => item.coverage === "missing")
+    .map((item) => item.category);
   return (
     <Section
       title="Dossier Blueprint"
@@ -607,6 +612,24 @@ function DossierBlueprintView({ blueprint }: { blueprint: DossierDraftBlueprint 
         <section className="border border-border/50 bg-background/30 p-3">
           <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Recommended next action</h4>
           <p className="text-foreground">{blueprint.readiness.recommendedNextAction}</p>
+        </section>
+        <section className="border border-border/50 bg-background/30 p-3">
+          <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Style Packet / Draft Contract</h4>
+          <p className="text-foreground">Available for future BNL authoring. Draft Blueprint exists and can pair with the site-owned style packet and structured draft contract.</p>
+          <p className="mt-1 text-xs uppercase tracking-widest text-muted">Required fields: {DOSSIER_DRAFT_CONTRACT_REQUIRED_FIELDS.length} · Public examples: {stylePacket.representativePublicDossierExamples.length} · Missing category examples: {missingCoverage.length ? missingCoverage.join(", ") : "none"}</p>
+          <details className="mt-3 border border-border/50 bg-background/20 p-2 text-xs text-muted">
+            <summary className="cursor-pointer font-semibold text-foreground">Collapsed style reference</summary>
+            <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+              <div>
+                <p className="font-semibold text-foreground">Owner Review rules</p>
+                <BlueprintList items={stylePacket.ownerReviewRules} />
+              </div>
+              <div>
+                <p className="font-semibold text-foreground">Source boundary rules</p>
+                <BlueprintList items={stylePacket.sourceBoundaryRules} />
+              </div>
+            </div>
+          </details>
         </section>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <section className="border border-border/50 bg-background/30 p-3">

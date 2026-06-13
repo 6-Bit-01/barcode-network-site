@@ -1794,3 +1794,45 @@ test("cleanup deletes expired BARCODE upload files idempotently without removing
   assert.ok(link, "link-only queue record should remain");
   assert.equal(link.uploadedFileDeletionStatus, null);
 });
+
+test("cleanup processes duplicate uploaded track appearances only once per run", async () => {
+  await freshOpenSession("duplicate upload cleanup", { showStarted: false });
+  const oldCreatedAt = new Date(Date.UTC(2026, 0, 1)).toISOString();
+  const uploadUrl = "https://store.private.blob.vercel-storage.com/barcode-radio-queue/duplicate-upload.mp3";
+  const upload = await queue.addToQueue({
+    artist: "Duplicate Upload Artist",
+    title: "Duplicate Upload Track",
+    tiktokHandle: "@duplicateuploadartist",
+    link: uploadUrl,
+    fileUrl: uploadUrl,
+    fileName: "duplicate-upload.mp3",
+    fileSize: 777,
+    mimeType: "audio/mpeg",
+    sourceType: "upload",
+    tier: "free",
+    lane: "regular",
+    amount: 0,
+    stripeSessionId: null,
+    createdAt: oldCreatedAt,
+  });
+  await queue.updateRadioTrack(upload.id, "spotlight");
+
+  const deleted = [];
+  const result = await queue.cleanupExpiredQueueUploads({
+    now: new Date(Date.UTC(2026, 0, 3)),
+    deleteBlob: async (url) => {
+      deleted.push(url);
+      if (deleted.length > 1) throw new Error("duplicate delete should not run");
+    },
+  });
+  const state = await queue.getRadioQueueState();
+  const queued = state.queue.find((entry) => entry.id === upload.id);
+  const spotlight = state.spotlight.find((entry) => entry.id === upload.id);
+
+  assert.deepEqual(result, { scanned: 1, deleted: 1, skippedActive: 0, failed: 0 });
+  assert.deepEqual(deleted, [uploadUrl]);
+  assert.equal(queued.uploadedFileDeletionStatus, "deleted");
+  assert.equal(spotlight.uploadedFileDeletionStatus, "deleted");
+  assert.equal(queued.uploadedFileDeletionError, null);
+  assert.equal(spotlight.uploadedFileDeletionError, null);
+});

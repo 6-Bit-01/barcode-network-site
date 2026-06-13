@@ -1264,13 +1264,19 @@ function isTrackActiveForPlayback(session: QueueSession, id: string): boolean {
   return session.loadedTrackId === id || session.loadedTrack?.id === id || session.nextInLineTrackId === id || session.nextInLineTrack?.id === id;
 }
 
-function updateEntryInSession(session: QueueSession, id: string, update: (entry: QueueEntry) => QueueEntry): void {
-  session.queue = session.queue.map((entry) => entry.id === id ? update(entry) : entry);
-  session.completed = session.completed.map((entry) => entry.id === id ? update(entry) : entry);
-  session.removed = session.removed.map((entry) => entry.id === id ? update(entry) : entry);
-  session.spotlight = session.spotlight.map((entry) => entry.id === id ? update(entry) : entry);
-  if (session.nextInLineTrack?.id === id) session.nextInLineTrack = update(session.nextInLineTrack);
-  if (session.loadedTrack?.id === id) session.loadedTrack = update(session.loadedTrack);
+function updateEntriesInSession(session: QueueSession, shouldUpdate: (entry: QueueEntry) => boolean, update: (entry: QueueEntry) => QueueEntry): void {
+  session.queue = session.queue.map((entry) => shouldUpdate(entry) ? update(entry) : entry);
+  session.completed = session.completed.map((entry) => shouldUpdate(entry) ? update(entry) : entry);
+  session.removed = session.removed.map((entry) => shouldUpdate(entry) ? update(entry) : entry);
+  session.spotlight = session.spotlight.map((entry) => shouldUpdate(entry) ? update(entry) : entry);
+  if (session.nextInLineTrack && shouldUpdate(session.nextInLineTrack)) session.nextInLineTrack = update(session.nextInLineTrack);
+  if (session.loadedTrack && shouldUpdate(session.loadedTrack)) session.loadedTrack = update(session.loadedTrack);
+}
+
+function updateMatchingEntriesInStore(store: QueueStore, candidate: { id: string; fileUrl: string }, update: (entry: QueueEntry) => QueueEntry): void {
+  for (const session of store.sessions) {
+    updateEntriesInSession(session, (entry) => entry.id === candidate.id || entry.fileUrl === candidate.fileUrl, update);
+  }
 }
 
 export async function cleanupExpiredQueueUploads(options: { now?: Date; deleteBlob?: (url: string) => Promise<void> } = {}): Promise<QueueUploadCleanupResult> {
@@ -1283,30 +1289,50 @@ export async function cleanupExpiredQueueUploads(options: { now?: Date; deleteBl
   const result: QueueUploadCleanupResult = { scanned: 0, deleted: 0, skippedActive: 0, failed: 0 };
   let changed = false;
 
+  const candidates = new Map<string, { id: string; fileUrl: string; active: boolean }>();
+  const candidatesByTrackId = new Map<string, { id: string; fileUrl: string; active: boolean }>();
+
   for (const session of store.sessions) {
     const entries = [session.loadedTrack, session.nextInLineTrack, ...session.queue, ...session.completed, ...session.removed, ...session.spotlight].filter((entry): entry is QueueEntry => Boolean(entry));
     for (const entry of entries) {
       const normalized = normalizeEntry(entry);
-      if (!isUploadedAudioEntry(normalized) || normalized.uploadedFileDeletionStatus === "deleted" || !normalized.uploadedFileDeleteAfter) continue;
+      if (!isUploadedAudioEntry(normalized) || normalized.uploadedFileDeletionStatus === "deleted" || !normalized.uploadedFileDeleteAfter || !normalized.fileUrl) continue;
       const due = new Date(normalized.uploadedFileDeleteAfter).getTime();
       if (!Number.isFinite(due) || due > now.getTime()) continue;
-      result.scanned += 1;
-      if (isTrackActiveForPlayback(session, normalized.id)) {
-        result.skippedActive += 1;
+      const key = normalized.fileUrl;
+      const existing = candidates.get(key) ?? candidatesByTrackId.get(normalized.id);
+      const active = isTrackActiveForPlayback(session, normalized.id);
+      if (existing) {
+        existing.active = existing.active || active;
+        candidatesByTrackId.set(normalized.id, existing);
         continue;
       }
-      try {
-        await deleteBlob(normalized.fileUrl ?? "");
-        const deletedAt = now.toISOString();
-        updateEntryInSession(session, normalized.id, (item) => normalizeEntry({ ...item, uploadedFileDeletedAt: deletedAt, uploadedFileDeletionStatus: "deleted", uploadedFileDeletionError: null }));
-        result.deleted += 1;
-        changed = true;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Upload deletion failed.";
-        updateEntryInSession(session, normalized.id, (item) => normalizeEntry({ ...item, uploadedFileDeletionStatus: "error", uploadedFileDeletionError: message.slice(0, 500) }));
-        result.failed += 1;
-        changed = true;
-      }
+      const candidate = { id: normalized.id, fileUrl: normalized.fileUrl, active };
+      candidates.set(key, candidate);
+      candidatesByTrackId.set(normalized.id, candidate);
+    }
+  }
+
+  for (const candidate of candidates.values()) {
+    result.scanned += 1;
+    if (candidate.active) {
+      result.skippedActive += 1;
+      continue;
+    }
+    try {
+      await deleteBlob(candidate.fileUrl);
+      const deletedAt = now.toISOString();
+      updateMatchingEntriesInStore(store, candidate, (item) => normalizeEntry({ ...item, uploadedFileDeletedAt: deletedAt, uploadedFileDeletionStatus: "deleted", uploadedFileDeletionError: null }));
+      result.deleted += 1;
+      changed = true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Upload deletion failed.";
+      updateMatchingEntriesInStore(store, candidate, (item) => {
+        const current = normalizeEntry(item);
+        return current.uploadedFileDeletionStatus === "deleted" ? current : normalizeEntry({ ...current, uploadedFileDeletionStatus: "error", uploadedFileDeletionError: message.slice(0, 500) });
+      });
+      result.failed += 1;
+      changed = true;
     }
   }
 

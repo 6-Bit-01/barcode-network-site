@@ -39,6 +39,8 @@ Module._extensions[".ts"] = function loadTypeScript(module, filename) {
 
 const require = createRequire(import.meta.url);
 const queue = require("../src/lib/queue.ts");
+const { PRIORITY_DISCLOSURE_TEXT, PRIORITY_TERMS_VERSION } = require("../src/lib/queue-types.ts");
+const priorityAcceptance = { acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT };
 const overlay = require("../src/lib/live-overlay.ts");
 
 let trackSequence = 0;
@@ -1387,6 +1389,13 @@ test("wheel ceremony eligibility helper excludes unsafe queue states", () => {
   assert.equal(queue.isWheelEligibleTrack({ ...base, id: "removed", status: "removed" }), false, "removed is excluded");
 });
 
+test("requestPriorityCheckout rejects missing Priority Signal acknowledgement", async () => {
+  const sessionId = await freshOpenSession("priority checkout missing acknowledgement", { showStarted: false });
+  await queue.updatePriorityUpgradeSettings({ enabled: true, paymentsEnabled: true, priceCents: 1000, currency: "usd" });
+  const track = await addTrack("Checkout Missing Acknowledgement");
+  await assert.rejects(() => queue.requestPriorityCheckout(track.id, sessionId), /requires acknowledgement/);
+});
+
 test("requestPriorityCheckout accepts eligible regular and wheel tracks and rejects paid or paid-needs-attention", async () => {
   const sessionId = await freshOpenSession("priority checkout eligibility", { showStarted: false });
   await queue.updatePriorityUpgradeSettings({ enabled: true, paymentsEnabled: true, priceCents: 1000, currency: "usd" });
@@ -1395,13 +1404,13 @@ test("requestPriorityCheckout accepts eligible regular and wheel tracks and reje
   await queue.updateRadioTrack(wheel.id, "wheel");
   await queue.updateRadioTrack(wheel.id, "moveBack");
 
-  const regularRequest = await queue.requestPriorityCheckout(regular.id, sessionId);
-  const wheelRequest = await queue.requestPriorityCheckout(wheel.id, sessionId);
+  const regularRequest = await queue.requestPriorityCheckout(regular.id, sessionId, priorityAcceptance);
+  const wheelRequest = await queue.requestPriorityCheckout(wheel.id, sessionId, priorityAcceptance);
   assert.equal(regularRequest.track.id, regular.id);
   assert.equal(wheelRequest.track.id, wheel.id);
 
   await payPriority(regular, sessionId);
-  await assert.rejects(() => queue.requestPriorityCheckout(regular.id, sessionId), /not available/);
+  await assert.rejects(() => queue.requestPriorityCheckout(regular.id, sessionId, priorityAcceptance), /not available/);
 
   await queue.markPriorityUpgradePaidFromStripe(wheel.id, sessionId, {
     paymentId: `pi_attention_${Date.now()}`,
@@ -1409,7 +1418,7 @@ test("requestPriorityCheckout accepts eligible regular and wheel tracks and reje
     currency: "usd",
     paidAt: new Date().toISOString(),
   });
-  await assert.rejects(() => queue.requestPriorityCheckout(wheel.id, sessionId), /not available/);
+  await assert.rejects(() => queue.requestPriorityCheckout(wheel.id, sessionId, priorityAcceptance), /not available/);
 });
 
 test("markPriorityUpgradeCheckoutPending preserves existing track data", async () => {
@@ -1423,6 +1432,7 @@ test("markPriorityUpgradeCheckoutPending preserves existing track data", async (
     checkoutUrl: "https://example.com/checkout",
     checkoutCreatedAt: new Date().toISOString(),
     checkoutExpiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+    priorityAcceptance,
   });
   const after = await queue.getRadioQueueState();
   const updated = queuedTrack(after, track.id);
@@ -1430,6 +1440,12 @@ test("markPriorityUpgradeCheckoutPending preserves existing track data", async (
   assert.equal(updated?.title, existing?.title);
   assert.equal(updated?.priorityUpgradeStatus, "checkout_pending");
   assert.equal(updated?.priorityUpgradeCheckoutSessionId, "cs_test_123");
+  assert.equal(updated?.priorityLegalAcceptance?.priorityTermsVersion, PRIORITY_TERMS_VERSION);
+  assert.equal(updated?.priorityLegalAcceptance?.priorityDisclosureText, PRIORITY_DISCLOSURE_TEXT);
+  assert.equal(updated?.priorityLegalAcceptance?.source, "priority_checkout");
+  assert.ok(updated?.priorityLegalAcceptance?.acceptedAt);
+  const snapshot = await queue.getPublicQueueSnapshot(sessionId);
+  assert.equal("priorityLegalAcceptance" in snapshot.queue.find((entry) => entry.id === track.id), false);
 });
 
 test("resolvePaidPriority promotes safe queued paid_needs_attention without duplicating or clearing payment metadata", async () => {

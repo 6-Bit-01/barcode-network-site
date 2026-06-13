@@ -6,6 +6,8 @@ import { Redis } from "@upstash/redis";
 import { detectTrackDurationFromLink, parseIso8601DurationToSeconds, parseSpotifyTrackId, parseYouTubeVideoId as parseTrackDurationYouTubeVideoId } from "./track-duration";
 import {
   INTERNAL_BUFFER_DURATION_SECONDS,
+  PRIORITY_DISCLOSURE_TEXT,
+  PRIORITY_TERMS_VERSION,
   detectQueueSourceType,
   generateQueueId,
   getTrackRuntimeSeconds,
@@ -22,6 +24,7 @@ import type {
   QueuePublicSnapshot,
   QueuePublicStatus,
   QueuePublicTrack,
+  PriorityLegalAcceptanceInput,
   QueueSession,
   QueueSessionStatus,
   QueueSessionSummary,
@@ -740,6 +743,7 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     priorityPausedAt: entry.priorityPausedAt ?? null,
     priorityResumedAt: entry.priorityResumedAt ?? null,
     priorityQueueOrderAt: entry.priorityQueueOrderAt ?? entry.priorityUpgradePaidAt ?? null,
+    priorityLegalAcceptance: entry.priorityLegalAcceptance ?? null,
     isTestTrack: entry.isTestTrack === true,
   };
 }
@@ -1590,7 +1594,15 @@ export interface StripePriorityPaymentMetadata {
   paidAt?: string;
 }
 
-export async function requestPriorityCheckout(trackId: string, queueSessionId: string): Promise<PriorityCheckoutRequestResult> {
+function normalizePriorityLegalAcceptance(input?: PriorityLegalAcceptanceInput): QueueEntry["priorityLegalAcceptance"] {
+  if (!input || input.acceptedPriorityTerms !== true || input.priorityTermsVersion !== PRIORITY_TERMS_VERSION || input.priorityDisclosureText !== PRIORITY_DISCLOSURE_TEXT) {
+    throw new Error("Priority Signal checkout requires acknowledgement of the Priority Signal disclosure.");
+  }
+  return { acceptedAt: new Date().toISOString(), priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT, source: "priority_checkout" };
+}
+
+export async function requestPriorityCheckout(trackId: string, queueSessionId: string, priorityAcceptance?: PriorityLegalAcceptanceInput): Promise<PriorityCheckoutRequestResult> {
+  normalizePriorityLegalAcceptance(priorityAcceptance);
   const store = await readStore();
   const session = getSession(store, queueSessionId);
   if (session.sessionId !== store.activeSessionId || session.status !== "open" || !session.queueOpen) throw new Error("Priority Signal upgrades are available only while this broadcast queue is open.");
@@ -1604,11 +1616,12 @@ export async function requestPriorityCheckout(trackId: string, queueSessionId: s
   return { session: summarizeSession(session), track, amountCents, currency: normalizeCurrency(session.priorityUpgradeCurrency), label: session.priorityUpgradeLabel || DEFAULT_PRIORITY_UPGRADE_LABEL };
 }
 
-export async function markPriorityUpgradeCheckoutPending(trackId: string, queueSessionId: string, metadata: { provider?: string; checkoutSessionId?: string; checkoutUrl?: string; checkoutCreatedAt?: string | null; checkoutExpiresAt?: string | null } = {}): Promise<QueuePublicTrack | null> {
+export async function markPriorityUpgradeCheckoutPending(trackId: string, queueSessionId: string, metadata: { provider?: string; checkoutSessionId?: string; checkoutUrl?: string; checkoutCreatedAt?: string | null; checkoutExpiresAt?: string | null; priorityAcceptance?: PriorityLegalAcceptanceInput } = {}): Promise<QueuePublicTrack | null> {
   const store = await readStore();
   const session = getSession(store, queueSessionId);
   if (session.sessionId !== store.activeSessionId || session.status === "archived") return null;
   const now = new Date().toISOString();
+  const priorityLegalAcceptance = metadata.priorityAcceptance ? normalizePriorityLegalAcceptance(metadata.priorityAcceptance) : null;
   const update = (entry: QueueEntry): QueueEntry => normalizeEntry({
     ...entry,
     priorityUpgradeRequested: true,
@@ -1623,6 +1636,7 @@ export async function markPriorityUpgradeCheckoutPending(trackId: string, queueS
     priorityUpgradeCheckoutUrl: metadata.checkoutUrl ?? entry.priorityUpgradeCheckoutUrl ?? null,
     priorityUpgradeCheckoutCreatedAt: metadata.checkoutCreatedAt ?? entry.priorityUpgradeCheckoutCreatedAt ?? now,
     priorityUpgradeCheckoutExpiresAt: metadata.checkoutExpiresAt ?? entry.priorityUpgradeCheckoutExpiresAt ?? null,
+    priorityLegalAcceptance: priorityLegalAcceptance ?? entry.priorityLegalAcceptance ?? null,
   });
   const index = session.queue.findIndex((entry) => entry.id === trackId);
   if (index < 0) return null;

@@ -152,6 +152,97 @@ function assertIncludesCopy(text, expected) {
 }
 
 
+
+test("BNL draft validation accepts artist/music language with public-safe packet support", () => {
+  const now = "2026-06-14T00:00:00.000Z";
+  const packet = bnlDossierDraft.buildBnlDossierDraftRequestPacket({
+    candidate: {
+      id: "candidate_music_supported",
+      name: "Music Supported",
+      candidateType: "artist",
+      source: "manual",
+      tier: "draft_ready",
+      score: 80,
+      whyNow: "Public-safe artist context is ready.",
+      reason: "Artist has public music context.",
+      evidenceSummary: "Artist has public-safe music context.",
+      knownFacts: ["Public-safe artist and music evidence is available."],
+      recommendedCategory: "Artist",
+      recommendedKind: "artist",
+      recommendedEcosystemLane: "artist",
+      status: "active_source_file",
+      createdAt: now,
+      updatedAt: now,
+    },
+    recommendations: [],
+  });
+  const validation = bnlDossierDraft.validateBnlDossierDraftResponse(
+    cleanContractDraft({
+      category: "Artist",
+      kind: "artist",
+      ecosystemLane: "artist",
+      role: "Artist",
+      summary: "Music Supported is an artist with public-safe music context ready for owner review.",
+      tags: ["artist"],
+    }),
+    { packet },
+  );
+  assert.equal(validation.valid, true, JSON.stringify(validation.issues));
+});
+
+test("BNL draft validation rejects artist/music language without public-safe packet support", () => {
+  const validation = bnlDossierDraft.validateBnlDossierDraftResponse(
+    cleanContractDraft({
+      role: "Artist",
+      summary: "Unsupported Fixture is an artist with music context.",
+    }),
+  );
+  assert.equal(validation.valid, false);
+  assert.ok(
+    validation.issues.some((issue) => /unsupported queue\/music claims/i.test(issue)),
+  );
+});
+
+test("BNL draft validation still rejects Priority and payment language", () => {
+  const now = "2026-06-14T00:00:00.000Z";
+  const packet = bnlDossierDraft.buildBnlDossierDraftRequestPacket({
+    candidate: {
+      id: "candidate_payment_blocked",
+      name: "Payment Blocked",
+      candidateType: "artist",
+      source: "manual",
+      tier: "draft_ready",
+      score: 80,
+      whyNow: "Public-safe artist context is ready.",
+      reason: "Artist has public music context.",
+      evidenceSummary: "Artist has public-safe music context.",
+      knownFacts: ["Public-safe artist music evidence is available."],
+      recommendedCategory: "Artist",
+      recommendedKind: "artist",
+      recommendedEcosystemLane: "artist",
+      status: "active_source_file",
+      createdAt: now,
+      updatedAt: now,
+    },
+    recommendations: [],
+  });
+  const validation = bnlDossierDraft.validateBnlDossierDraftResponse(
+    cleanContractDraft({
+      category: "Artist",
+      kind: "artist",
+      ecosystemLane: "artist",
+      role: "Artist",
+      summary: "Payment Blocked is an artist with Priority Signal checkout momentum.",
+      tags: ["artist"],
+    }),
+    { packet },
+  );
+  assert.equal(validation.valid, false);
+  assert.ok(
+    validation.issues.some((issue) => /payment\/Priority Signal/i.test(issue)),
+  );
+});
+
 test("Dossier taxonomy expansion supports first-class artist, collaborator, and community routing", () => {
   assert.ok(dossierTaxonomy.DOSSIER_CATEGORY_OPTIONS.includes("Artist"));
   assert.ok(dossierTaxonomy.DOSSIER_CATEGORY_OPTIONS.includes("Collaborator"));
@@ -4057,6 +4148,139 @@ test("valid BNL draft response reports a stored BNL-authored draft", async () =>
     assert.equal(payload.storedDraft.fields.name, "Valid BNL Draft");
     assert.equal(payload.storedDraft.sourceFileDraftMetadata.generatedBy, "BNL");
     assert.equal(payload.storedDraft.sourceFileDraftMetadata.publicPagesMutated, false);
+    assert.equal(payload.drafts.length, 1);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
+
+
+test("BNL draft request rejects a draft from another candidate without mutation", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  let fetchCalled = false;
+  try {
+    const first = await (
+      await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "BNL Owner A" } })
+    ).json();
+    const second = await (
+      await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "BNL Owner B" } })
+    ).json();
+    const secondDraft = await (
+      await authedPost({ action: "createDraftFromCandidate", candidateId: second.candidate.id })
+    ).json();
+    global.fetch = async () => {
+      fetchCalled = true;
+      return new Response(JSON.stringify({ draft: cleanContractDraft() }), { status: 200 });
+    };
+
+    const response = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: first.candidate.id,
+      draftId: secondDraft.draft.id,
+    });
+    const payload = await response.json();
+    assert.equal(payload.bnlDraft.status, "failed");
+    assert.equal(payload.draftStored, false);
+    assert.equal(payload.storedDraft, undefined);
+    assert.equal(fetchCalled, false);
+    assert.equal(payload.drafts.length, 1);
+    assert.equal(payload.drafts[0].candidateId, second.candidate.id);
+    assert.equal(payload.drafts[0].sourceFileDraftMetadata.generatedBy, "manual_placeholder");
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
+
+test("BNL draft request rejects non-editable same-candidate draft statuses without mutation", async () => {
+  for (const status of ["ready_for_owner_review", "owner_approved", "published", "denied", "superseded"]) {
+    await resetWorkflowStore();
+    process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+    process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+    const originalFetch = global.fetch;
+    let fetchCalled = false;
+    try {
+      const created = await (
+        await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: `BNL Status ${status}` } })
+      ).json();
+      const draftPayload = await (
+        await authedPost({ action: "createDraftFromCandidate", candidateId: created.candidate.id })
+      ).json();
+      const currentState = await store.getDossierWorkflowState();
+      await store.saveDossierWorkflowState({
+        ...currentState,
+        drafts: currentState.drafts.map((draft) =>
+          draft.id === draftPayload.draft.id ? { ...draft, status } : draft,
+        ),
+      });
+      global.fetch = async () => {
+        fetchCalled = true;
+        return new Response(JSON.stringify({ draft: cleanContractDraft() }), { status: 200 });
+      };
+
+      const response = await authedPost({
+        action: "requestBnlDraftFromCandidate",
+        candidateId: created.candidate.id,
+        draftId: draftPayload.draft.id,
+      });
+      const payload = await response.json();
+      assert.equal(payload.bnlDraft.status, "failed", status);
+      assert.equal(payload.draftStored, false, status);
+      assert.equal(payload.storedDraft, undefined, status);
+      assert.equal(fetchCalled, false, status);
+      assert.equal(payload.drafts[0].status, status);
+      assert.equal(payload.drafts[0].sourceFileDraftMetadata.generatedBy, "manual_placeholder");
+    } finally {
+      global.fetch = originalFetch;
+      delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+      delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+    }
+  }
+});
+
+test("BNL draft request updates an eligible same-candidate draft", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  try {
+    const created = await (
+      await authedPost({ action: "createManualCandidate", input: manualCandidateInput })
+    ).json();
+    const draftPayload = await (
+      await authedPost({ action: "createDraftFromCandidate", candidateId: created.candidate.id })
+    ).json();
+    const currentState = await store.getDossierWorkflowState();
+    await store.saveDossierWorkflowState({
+      ...currentState,
+      drafts: currentState.drafts.map((draft) =>
+        draft.id === draftPayload.draft.id
+          ? { ...draft, status: "owner_changes_requested" }
+          : draft,
+      ),
+    });
+    global.fetch = async () =>
+      new Response(
+        JSON.stringify({ draft: cleanContractDraft({ name: "Updated Eligible BNL Draft" }) }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+
+    const response = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: created.candidate.id,
+      draftId: draftPayload.draft.id,
+    });
+    const payload = await response.json();
+    assert.equal(payload.draftStored, true);
+    assert.equal(payload.storedDraft.id, draftPayload.draft.id);
+    assert.equal(payload.storedDraft.fields.name, "Updated Eligible BNL Draft");
+    assert.equal(payload.storedDraft.sourceFileDraftMetadata.generatedBy, "BNL");
     assert.equal(payload.drafts.length, 1);
   } finally {
     global.fetch = originalFetch;

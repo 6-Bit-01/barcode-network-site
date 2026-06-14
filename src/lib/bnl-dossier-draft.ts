@@ -44,6 +44,11 @@ export type BnlDossierDraftRequestPacket = {
     sourceLanes: string[];
   };
   currentDraft?: DossierDraft["fields"];
+  safeClassification: {
+    category: DossierDraft["fields"]["category"];
+    kind: DossierDraft["fields"]["kind"];
+    ecosystemLane: DossierDraft["fields"]["ecosystemLane"];
+  };
   stylePacket: ReturnType<typeof buildDossierStylePacket>;
   fieldRequirements: string[];
   forbiddenPublicCopyPatterns: readonly string[];
@@ -146,6 +151,12 @@ export function buildBnlDossierDraftRequestPacket(input: {
       ),
     },
     ...(currentDraft ? { currentDraft: currentDraft.fields } : {}),
+    safeClassification: {
+      category: candidate.recommendedCategory ?? blueprint.classification.category,
+      kind: candidate.recommendedKind ?? blueprint.classification.kind,
+      ecosystemLane:
+        candidate.recommendedEcosystemLane ?? blueprint.classification.ecosystemLane,
+    },
     stylePacket,
     fieldRequirements: [...DOSSIER_DRAFT_CONTRACT_REQUIRED_FIELDS],
     forbiddenPublicCopyPatterns: stylePacket.forbiddenPublicCopyPatterns,
@@ -154,8 +165,42 @@ export function buildBnlDossierDraftRequestPacket(input: {
   };
 }
 
+export type BnlDossierDraftValidationContext = {
+  packet?: BnlDossierDraftRequestPacket;
+};
+
+const QUEUE_MUSIC_EVIDENCE_REGEX =
+  /\b(?:artist|music|musician|producer|song|track|album|release|submission|submitted|queue|auxchord|radio|performance|performer|dj)\b/i;
+
+const PAYMENT_PRIORITY_REGEX =
+  /\b(?:stripe|payment|paid|checkout|priority\s+signal|priority|tier|invoice|receipt|purchase)\b/i;
+
+function packetAllowsQueueMusicEvidence(
+  packet?: BnlDossierDraftRequestPacket,
+): boolean {
+  if (!packet) return false;
+  const safeText = [
+    ...packet.publicSafeFacts,
+    ...packet.publicSafeNotes.map((note) => note.text),
+  ].join("\n");
+  if (QUEUE_MUSIC_EVIDENCE_REGEX.test(safeText)) return true;
+
+  if (
+    packet.safeClassification.category === "Artist" ||
+    packet.safeClassification.kind === "artist" ||
+    packet.safeClassification.ecosystemLane === "artist"
+  ) {
+    return true;
+  }
+
+  return packet.sourceUsageSummary.sourceLanes.some((lane) =>
+    /^queue_context$/i.test(lane),
+  );
+}
+
 export function validateBnlDossierDraftResponse(
   response: BnlDossierDraftResponse,
+  context: BnlDossierDraftValidationContext = {},
 ): BnlDossierDraftValidationResult {
   const issues: string[] = [];
   const warnings: string[] = [];
@@ -188,7 +233,9 @@ export function validateBnlDossierDraftResponse(
     if (!Array.isArray(response[field])) issues.push(`${field} must be an array`);
   }
   if (Array.isArray(response.files) && response.files.length > 0) issues.push("files must be empty unless safely supported");
-  const contract = validateDossierDraftContractOutput(response);
+  const contract = validateDossierDraftContractOutput(response, {
+    queueMusicEvidenceAllowed: packetAllowsQueueMusicEvidence(context.packet),
+  });
   for (const issue of contract.issues) issues.push(`${issue.field}: ${issue.message}`);
   for (const warning of validateDossierPublicDraftFields({
     ...response,
@@ -202,6 +249,9 @@ export function validateBnlDossierDraftResponse(
     notes: response.notes,
   })) {
     if (typeof value === "string" && containsDossierPublicCopyJunk(value)) issues.push(`${field} contains forbidden internal/source copy`);
+    if (typeof value === "string" && PAYMENT_PRIORITY_REGEX.test(value)) {
+      issues.push(`${field} contains unsupported payment/Priority Signal copy`);
+    }
   }
   return { valid: issues.length === 0, issues, warnings };
 }
@@ -245,7 +295,7 @@ export async function requestBnlDossierDraft(input: {
       status: "received",
       packet: input.packet,
       response,
-      validation: validateBnlDossierDraftResponse(response),
+      validation: validateBnlDossierDraftResponse(response, { packet: input.packet }),
     };
   } catch (error) {
     return {

@@ -6220,6 +6220,36 @@ export async function updateDraftFromSourceFile(
   return updatedDraft;
 }
 
+function isBnlDraftOverwriteEligible(
+  draft: DossierDraft | undefined,
+  candidateId: string,
+): draft is DossierDraft {
+  return Boolean(
+    draft &&
+      draft.candidateId === candidateId &&
+      (draft.status === "draft" || draft.status === "owner_changes_requested"),
+  );
+}
+
+function resolveEligibleBnlDraft(input: {
+  drafts: DossierDraft[];
+  candidateId: string;
+  draftId?: string;
+}): { draft: DossierDraft | null; invalidDraft?: DossierDraft | null } {
+  if (input.draftId) {
+    const providedDraft = input.drafts.find((draft) => draft.id === input.draftId);
+    return isBnlDraftOverwriteEligible(providedDraft, input.candidateId)
+      ? { draft: providedDraft }
+      : { draft: null, invalidDraft: providedDraft ?? null };
+  }
+  return {
+    draft:
+      input.drafts.find((draft) =>
+        isBnlDraftOverwriteEligible(draft, input.candidateId),
+      ) ?? null,
+  };
+}
+
 export type RequestBnlDraftFromCandidateResult = {
   result: BnlDossierDraftGeneratorResult;
   draftStored: boolean;
@@ -6235,13 +6265,37 @@ export async function requestBnlDraftFromCandidate(
   const state = await getDossierWorkflowState();
   const candidate = state.candidates.find((item) => item.id === candidateId);
   if (!candidate) throw new Error("Candidate not found");
-  const currentDraft = draftId
-    ? state.drafts.find((draft) => draft.id === draftId) ?? null
-    : state.drafts.find((draft) => draft.candidateId === candidateId && draft.status !== "published" && draft.status !== "denied") ?? null;
   const recommendations = state.recommendations.filter(
     (recommendation) => recommendation.targetCandidateId === candidate.id,
   );
-  const packet = buildBnlDossierDraftRequestPacket({ candidate, recommendations, currentDraft });
+  const { draft: currentDraft, invalidDraft } = resolveEligibleBnlDraft({
+    drafts: state.drafts,
+    candidateId,
+    draftId,
+  });
+  const packet = buildBnlDossierDraftRequestPacket({
+    candidate,
+    recommendations,
+    currentDraft,
+  });
+
+  if (draftId && invalidDraft !== undefined) {
+    return {
+      result: {
+        status: "failed",
+        message:
+          invalidDraft === null
+            ? "BNL draft request cannot update a missing draft."
+            : "BNL draft request can only update active editable drafts for the same candidate.",
+        packet,
+      },
+      draftStored: false,
+      ...(invalidDraft && invalidDraft.candidateId === candidateId
+        ? { existingDraft: invalidDraft }
+        : {}),
+    };
+  }
+
   const result = await requestBnlDossierDraft({ packet });
   if (result.status !== "received" || !result.validation.valid) {
     return {

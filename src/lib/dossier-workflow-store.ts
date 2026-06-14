@@ -6253,7 +6253,7 @@ function resolveEligibleBnlDraft(input: {
 export type RequestBnlDraftFromCandidateResult = {
   result: BnlDossierDraftGeneratorResult;
   draftStored: boolean;
-  storedDraft?: DossierDraft;
+  storedDraft: DossierDraft | null;
   existingDraft?: DossierDraft;
 };
 
@@ -6290,6 +6290,7 @@ export async function requestBnlDraftFromCandidate(
         packet,
       },
       draftStored: false,
+      storedDraft: null,
       ...(invalidDraft && invalidDraft.candidateId === candidateId
         ? { existingDraft: invalidDraft }
         : {}),
@@ -6301,6 +6302,7 @@ export async function requestBnlDraftFromCandidate(
     return {
       result,
       draftStored: false,
+      storedDraft: null,
       ...(currentDraft ? { existingDraft: currentDraft } : {}),
     };
   }
@@ -6338,7 +6340,7 @@ export async function requestBnlDraftFromCandidate(
   return {
     result,
     draftStored: Boolean(savedDraft),
-    ...(savedDraft ? { storedDraft: savedDraft } : {}),
+    storedDraft: savedDraft,
     ...(currentDraft ? { existingDraft: currentDraft } : {}),
   };
 }

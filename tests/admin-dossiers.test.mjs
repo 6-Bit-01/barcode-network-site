@@ -66,6 +66,75 @@ const dossierPageViewModel = require("../src/lib/dossier-page-view-model.ts");
 const dossierTaxonomy = require("../src/lib/dossier-taxonomy.ts");
 const dossierClassification = require("../src/lib/dossier-classification.ts");
 const dossierStylePacket = require("../src/lib/dossier-style-packet.ts");
+const bnlDossierDraft = require("../src/lib/bnl-dossier-draft.ts");
+
+
+test("BNL dossier draft packet keeps internal aliases out and declares site/BNL ownership boundaries", () => {
+  const now = "2026-06-14T00:00:00.000Z";
+  const candidate = {
+    id: "candidate_bnl_packet",
+    name: "Packet Subject",
+    candidateType: "artist",
+    source: "bnl_source_file_enrichment",
+    tier: "draft_ready",
+    score: 80,
+    whyNow: "Public-safe context is ready for BNL drafting.",
+    reason: "Source File has reviewed facts.",
+    evidenceSummary: "Public-safe BARCODE context.",
+    knownFacts: ["Public-safe fixture fact."],
+    doNotSay: ["Do not mention private handle."],
+    missingInfo: ["Confirm preferred public link."],
+    publicSafetyNotes: ["Keep raw source lanes out of public copy."],
+    sourceFileNotes: [
+      { id: "note_public", candidateId: "candidate_bnl_packet", type: "fact", text: "Public-safe note.", source: "admin_manual", status: "active", publicSafe: true, createdAt: now, updatedAt: now },
+      { id: "note_private", candidateId: "candidate_bnl_packet", type: "do_not_say", text: "Internal only.", source: "admin_manual", status: "active", publicSafe: false, createdAt: now, updatedAt: now },
+    ],
+    identityLinks: [
+      { id: "identity_internal", candidateId: "candidate_bnl_packet", label: "PrivateAlias", normalizedLabel: "privatealias", type: "alias", visibility: "internal_only", status: "confirmed", source: "admin_manual", useForMatching: true, useInPublicDossier: false, createdAt: now, updatedAt: now },
+      { id: "identity_public", candidateId: "candidate_bnl_packet", label: "Public Name", normalizedLabel: "public name", type: "public_persona", visibility: "public_safe", status: "confirmed", source: "owner_confirmed", useForMatching: true, useInPublicDossier: true, createdAt: now, updatedAt: now },
+    ],
+    identityReviewStatus: "needs_confirmation",
+    createdAt: now,
+    updatedAt: now,
+  };
+  const packet = bnlDossierDraft.buildBnlDossierDraftRequestPacket({ candidate, recommendations: [] });
+  assert.equal(packet.requestType, "bnl_proposed_dossier_draft");
+  assert.equal(packet.candidate.sourceFileId, candidate.id);
+  assert.deepEqual(packet.sourceUsageSummary.sourceFileNoteIds, ["note_public"]);
+  assert.equal(packet.identityAliasStatus.internalAliasCount, 1);
+  assert.deepEqual(packet.identityAliasStatus.publicSafeIdentityLabels, ["Public Name"]);
+  assert.equal(JSON.stringify(packet).includes("PrivateAlias"), false);
+  assert.ok(packet.ownerReviewRules.some((rule) => /Owner Review/.test(rule)));
+  assert.ok(packet.sourceBoundaryRules.some((rule) => /Source File/.test(rule)));
+});
+
+test("BNL dossier draft response validation blocks public source/debug copy", () => {
+  const validation = bnlDossierDraft.validateBnlDossierDraftResponse({
+    name: "Packet Subject",
+    category: "Artist",
+    kind: "artist",
+    ecosystemLane: "artist",
+    identityAuthority: "community_owned",
+    status: "PENDING",
+    clearance: "PUBLIC",
+    origin: "UNVERIFIED",
+    role: "source file candidateId: candidate_bnl_packet",
+    summary: "Clean summary.",
+    notes: "Clean notes.",
+    tags: ["music"],
+    proposedTags: [],
+    primaryLink: null,
+    links: [],
+    files: [],
+    missingInfoQuestions: [],
+    ownerReviewWarnings: [],
+    publicSafetyWarnings: [],
+    unsupportedClaimsRejected: [],
+    sourceUsageSummary: "Used public-safe notes only.",
+  });
+  assert.equal(validation.valid, false);
+  assert.ok(validation.issues.some((issue) => /role/.test(issue)));
+});
 
 function source(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");

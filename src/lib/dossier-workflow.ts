@@ -380,6 +380,10 @@ export type DossierDraft = {
     sourceFileNoteIds: string[];
     recommendationIds: string[];
     assembledAt: string;
+    generatedBy?: "BNL" | "manual_placeholder";
+    generatedAt?: string;
+    validationIssues?: string[];
+    validationWarnings?: string[];
     publicSafeDraft: true;
     reviewOnlyEvidence: true;
     autoConfirmedIdentityLinks: false;
@@ -2948,6 +2952,7 @@ export type DossierWorkflowAction =
   | "requestDraft"
   | "createDraftFromCandidate"
   | "updateDraftFromSourceFile"
+  | "requestBnlDraftFromCandidate"
   | "saveDraft"
   | "saveDraftEdit"
   | "submitDraftForOwnerReview"
@@ -3010,6 +3015,7 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "requestDraft",
   "createDraftFromCandidate",
   "updateDraftFromSourceFile",
+  "requestBnlDraftFromCandidate",
   "saveDraft",
   "saveDraftEdit",
   "submitDraftForOwnerReview",

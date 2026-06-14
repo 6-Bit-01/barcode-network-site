@@ -43,6 +43,7 @@ import {
   convertRecommendationToCandidate,
   createDossierRecommendation,
   createDraftFromCandidate,
+  requestBnlDraftFromCandidate,
   updateDraftFromSourceFile,
   createManualDossierCandidate,
   dismissDossierRecommendation,
@@ -126,6 +127,7 @@ const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "createManualCandidate",
   "createDraftFromCandidate",
   "updateDraftFromSourceFile",
+  "requestBnlDraftFromCandidate",
   "saveDraft",
   "submitDraftForOwnerReview",
   "denyCandidate",
@@ -1019,6 +1021,17 @@ export async function POST(req: Request) {
 
     const payload = await workflowPayload();
     return NextResponse.json({ ok: true, action, draft, ...payload });
+  }
+
+  if (action === "requestBnlDraftFromCandidate") {
+    const candidateId = candidateIdFromBody(body);
+    if (!candidateId) {
+      return NextResponse.json({ error: "candidateId is required" }, { status: 400 });
+    }
+    const draftId = draftIdFromBody(body) || undefined;
+    const { result, draft } = await requestBnlDraftFromCandidate(candidateId, draftId);
+    const payload = await workflowPayload();
+    return NextResponse.json({ ok: result.status !== "failed", action, bnlDraft: result, draft, ...payload });
   }
 
   if (action === "updateDraftFromSourceFile") {

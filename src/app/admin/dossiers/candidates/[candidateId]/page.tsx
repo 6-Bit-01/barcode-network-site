@@ -1476,6 +1476,7 @@ export default function CandidateReviewPage() {
         error?: string;
         immediateRefresh?: ImmediateRefreshResult;
         message?: string;
+        bnlDraft?: { status: string; message?: string };
       };
       if (!response.ok)
         throw new Error(
@@ -1550,6 +1551,26 @@ export default function CandidateReviewPage() {
       );
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Failed to create draft.");
+    }
+  }
+
+  async function requestBnlDraft() {
+    if (!candidate) return;
+    try {
+      const data = await postWorkflow({
+        action: "requestBnlDraftFromCandidate",
+        candidateId,
+        ...(primaryDraft ? { draftId: primaryDraft.id } : {}),
+      });
+      setNotice(
+        data.bnlDraft?.status === "not_connected"
+          ? "BNL draft generator not connected yet. The site prepared the safe Source File packet but did not author dossier copy."
+          : data.draft
+            ? `BNL-authored Proposed Dossier draft stored: ${data.draft.fields.name}.`
+            : (data.bnlDraft?.message ?? "BNL draft request did not return a stored draft."),
+      );
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Failed to request BNL draft.");
     }
   }
 
@@ -2097,6 +2118,16 @@ export default function CandidateReviewPage() {
                     className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
                   >
                     Create Proposed Dossier Draft
+                  </button>
+                )}
+                {(mainAction === "create_draft" || mainAction === "update_draft" || mainAction === "open_draft") && candidate && (
+                  <button
+                    type="button"
+                    onClick={() => void requestBnlDraft()}
+                    disabled={saving}
+                    className="border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-background disabled:opacity-50"
+                  >
+                    Request BNL Draft
                   </button>
                 )}
                 {mainAction === "update_draft" && primaryDraft && (

@@ -1239,6 +1239,10 @@ export default function CandidateReviewPage() {
   );
   const primaryDraft =
     linkedDrafts.find((draft) => isDraftActive(draft)) ?? linkedDrafts[0];
+  const newestBnlDraft = [...linkedDrafts]
+    .filter((draft) => draft.sourceFileDraftMetadata?.generatedBy === "BNL")
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  const newestBnlProvenance = newestBnlDraft?.sourceFileDraftMetadata?.bnlDraftProvenance;
   const sourceNotes = [...(candidate?.sourceFileNotes ?? [])].sort(
     (a, b) =>
       (a.status === "active" ? -1 : 1) - (b.status === "active" ? -1 : 1) ||
@@ -2630,6 +2634,29 @@ export default function CandidateReviewPage() {
                 from internal BNL Source File context in the dedicated Proposed
                 Dossier editor.
               </p>
+              {newestBnlDraft && (
+                <div className="mt-3 border border-border/70 bg-background/20 p-3 space-y-1">
+                  <p>BNL Draft Metadata: {newestBnlProvenance ? "Stored" : "Not stored"}</p>
+                  <p>
+                    Resolver evidence:{" "}
+                    {(newestBnlProvenance?.resolverSummary ?? []).length > 0
+                      ? "Detected"
+                      : "Not detected"}
+                  </p>
+                  <p>
+                    Validation:{" "}
+                    {(newestBnlProvenance?.validationIssues ?? newestBnlDraft.sourceFileDraftMetadata?.validationIssues ?? []).length > 0
+                      ? "Issues found"
+                      : "Passed"}
+                  </p>
+                  <Link
+                    href={`/admin/dossiers/drafts/${newestBnlDraft.id}`}
+                    className="inline-flex text-accent hover:underline"
+                  >
+                    Open BNL draft evidence details
+                  </Link>
+                </div>
+              )}
             </div>
           )}
         </Section>

@@ -767,9 +767,7 @@ export default function DossierDraftEditorPage() {
             that may become public after owner review.
           </p>
           <p className="text-sm text-muted mt-2 max-w-4xl">
-            BNL will eventually generate the proposed dossier from the BNL Source File and approved sources. Admins will direct changes
-            conversationally. BNL should ask only for missing specifics. Draft
-            fields are not mutated automatically when new source notes arrive.
+            BNL will eventually generate the proposed dossier from the BNL Source File and approved sources; when connected, BNL authors generated proposed dossier drafts from the Source File packet. The site owns packet construction, validation, storage, editing, and review gates; manual drafts remain placeholder scaffolds. BNL should ask only for missing specifics. Draft fields are not mutated automatically when new source notes arrive.
           </p>
           <div className="mt-4">
             <PhaseRail currentPhase={currentPhase} />

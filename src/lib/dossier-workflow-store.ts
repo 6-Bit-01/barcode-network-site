@@ -4,12 +4,12 @@ import { databasePage, type DatabaseEntry } from "@/content";
 import {
   DOSSIER_PUBLIC_ROLE_PLACEHOLDER,
   DOSSIER_PUBLIC_SUMMARY_PLACEHOLDER,
-  containsDossierPublicCopyJunk,
   isDossierPublicCopyPlaceholder,
   sanitizeDossierPublicCopy,
   validateDossierPublicDraftFields,
 } from "@/lib/dossier-public-copy-guard";
 import { createDossierDraftBlueprint } from "@/lib/dossier-classification";
+import { buildBnlDossierDraftRequestPacket, requestBnlDossierDraft, type BnlDossierDraftGeneratorResult } from "@/lib/bnl-dossier-draft";
 import {
   scoreManualDossierCandidate,
   type CreateDossierRecommendationInput,
@@ -6114,6 +6114,10 @@ function assemblePublicSafeDraftFromSourceFile(input: {
       sourceFileNoteIds: publicSafeNotes.map((note) => note.id),
       recommendationIds: recommendations.map((recommendation) => recommendation.id),
       assembledAt: now,
+      generatedBy: "manual_placeholder",
+      generatedAt: now,
+      validationIssues: [],
+      validationWarnings: ["Manual placeholder scaffold; BNL did not author this draft."],
       publicSafeDraft: true,
       reviewOnlyEvidence: true,
       autoConfirmedIdentityLinks: false,
@@ -6214,6 +6218,129 @@ export async function updateDraftFromSourceFile(
   });
 
   return updatedDraft;
+}
+
+function isBnlDraftOverwriteEligible(
+  draft: DossierDraft | undefined,
+  candidateId: string,
+): draft is DossierDraft {
+  return Boolean(
+    draft &&
+      draft.candidateId === candidateId &&
+      (draft.status === "draft" || draft.status === "owner_changes_requested"),
+  );
+}
+
+function resolveEligibleBnlDraft(input: {
+  drafts: DossierDraft[];
+  candidateId: string;
+  draftId?: string;
+}): { draft: DossierDraft | null; invalidDraft?: DossierDraft | null } {
+  if (input.draftId) {
+    const providedDraft = input.drafts.find((draft) => draft.id === input.draftId);
+    return isBnlDraftOverwriteEligible(providedDraft, input.candidateId)
+      ? { draft: providedDraft }
+      : { draft: null, invalidDraft: providedDraft ?? null };
+  }
+  return {
+    draft:
+      input.drafts.find((draft) =>
+        isBnlDraftOverwriteEligible(draft, input.candidateId),
+      ) ?? null,
+  };
+}
+
+export type RequestBnlDraftFromCandidateResult = {
+  result: BnlDossierDraftGeneratorResult;
+  draftStored: boolean;
+  storedDraft?: DossierDraft;
+  existingDraft?: DossierDraft;
+};
+
+export async function requestBnlDraftFromCandidate(
+  candidateId: string,
+  draftId?: string,
+): Promise<RequestBnlDraftFromCandidateResult> {
+  const now = new Date().toISOString();
+  const state = await getDossierWorkflowState();
+  const candidate = state.candidates.find((item) => item.id === candidateId);
+  if (!candidate) throw new Error("Candidate not found");
+  const recommendations = state.recommendations.filter(
+    (recommendation) => recommendation.targetCandidateId === candidate.id,
+  );
+  const { draft: currentDraft, invalidDraft } = resolveEligibleBnlDraft({
+    drafts: state.drafts,
+    candidateId,
+    draftId,
+  });
+  const packet = buildBnlDossierDraftRequestPacket({
+    candidate,
+    recommendations,
+    currentDraft,
+  });
+
+  if (draftId && invalidDraft !== undefined) {
+    return {
+      result: {
+        status: "failed",
+        message:
+          invalidDraft === null
+            ? "BNL draft request cannot update a missing draft."
+            : "BNL draft request can only update active editable drafts for the same candidate.",
+        packet,
+      },
+      draftStored: false,
+      ...(invalidDraft && invalidDraft.candidateId === candidateId
+        ? { existingDraft: invalidDraft }
+        : {}),
+    };
+  }
+
+  const result = await requestBnlDossierDraft({ packet });
+  if (result.status !== "received" || !result.validation.valid) {
+    return {
+      result,
+      draftStored: false,
+      ...(currentDraft ? { existingDraft: currentDraft } : {}),
+    };
+  }
+
+  let savedDraft: DossierDraft | null = null;
+  await updateDossierWorkflowState((currentState) => {
+    const latestCandidate = currentState.candidates.find((item) => item.id === candidateId) ?? candidate;
+    const metadata: DossierDraft["sourceFileDraftMetadata"] = {
+      sourceCandidateId: candidate.id,
+      sourceCandidateUpdatedAt: latestCandidate.updatedAt,
+      sourceFileNoteIds: packet.sourceUsageSummary.sourceFileNoteIds,
+      recommendationIds: packet.sourceUsageSummary.recommendationIds,
+      assembledAt: now,
+      generatedBy: "BNL",
+      generatedAt: now,
+      publicSafeDraft: true,
+      reviewOnlyEvidence: true,
+      autoConfirmedIdentityLinks: false,
+      publicPagesMutated: false,
+      validationIssues: result.validation.issues,
+      validationWarnings: result.validation.warnings,
+    };
+    const fields = normalizeDraftFields({ ...result.response, primaryLink: result.response.primaryLink ?? undefined, files: [] });
+    if (currentDraft) {
+      const drafts = currentState.drafts.map((draft) => {
+        if (draft.id !== currentDraft.id) return draft;
+        savedDraft = { ...draft, fields, sourceFileDraftMetadata: metadata, updatedAt: now };
+        return savedDraft;
+      });
+      return { ...currentState, drafts, updatedAt: now };
+    }
+    savedDraft = { id: createDraftId(), candidateId: candidate.id, status: "draft", fields, sourceFileDraftMetadata: metadata, createdAt: now, updatedAt: now };
+    return { ...currentState, drafts: [savedDraft, ...currentState.drafts], updatedAt: now };
+  });
+  return {
+    result,
+    draftStored: Boolean(savedDraft),
+    ...(savedDraft ? { storedDraft: savedDraft } : {}),
+    ...(currentDraft ? { existingDraft: currentDraft } : {}),
+  };
 }
 
 export async function saveDossierDraft(

@@ -203,6 +203,93 @@ test("BNL draft validation rejects artist/music language without public-safe pac
   );
 });
 
+test("BNL draft validation accepts music role when BNL source usage cites approved public-safe evidence", () => {
+  const validation = bnlDossierDraft.validateBnlDossierDraftResponse(
+    cleanContractDraft({
+      name: "Evidence Supported Artist",
+      role: "Music artist",
+      summary: "Evidence Supported Artist is a music artist with public-safe broadcast context.",
+      sourceUsageSummary: "Used 1 public-safe entity intelligence fact for Evidence Supported Artist.",
+    }),
+  );
+  assert.equal(validation.valid, true, JSON.stringify(validation.issues));
+});
+
+test("BNL draft validation rejects payment source usage as music support", () => {
+  const validation = bnlDossierDraft.validateBnlDossierDraftResponse(
+    cleanContractDraft({
+      name: "Payment Source Artist",
+      role: "Music artist",
+      summary: "Payment Source Artist is a music artist with public-safe broadcast context.",
+      sourceUsageSummary: "Used 1 Stripe checkout customer priority signal.",
+    }),
+  );
+  assert.equal(validation.valid, false);
+  assert.ok(validation.issues.some((issue) => /payment|unsupported queue\/music/i.test(issue)));
+});
+
+test("BNL draft validation blocks review-only warning language in public notes", () => {
+  const validation = bnlDossierDraft.validateBnlDossierDraftResponse(
+    cleanContractDraft({
+      notes: "Owner Review required. Admin-only evidence exists and must not be copied into public text.",
+      ownerReviewWarnings: ["Owner Review required. Admin-only evidence exists."],
+    }),
+  );
+  assert.equal(validation.valid, false);
+  assert.ok(validation.issues.some((issue) => /notes/.test(issue)));
+});
+
+test("BNL draft validation does not let style examples authorize unrelated music claims", () => {
+  const packet = {
+    candidate: { subjectName: "Unrelated Examples" },
+    publicSafeFacts: ["Public-safe community context only."],
+    publicSafeNotes: [],
+    sourceUsageSummary: { sourceLanes: [] },
+    safeClassification: { category: "Community", kind: "community_member", ecosystemLane: "community_member" },
+  };
+  const validation = bnlDossierDraft.validateBnlDossierDraftResponse(
+    cleanContractDraft({
+      name: "Unrelated Examples",
+      role: "Music artist",
+      summary: "Unrelated Examples is a music artist.",
+      sourceUsageSummary: "Used representative public dossier examples for tone only.",
+    }),
+    { packet },
+  );
+  assert.equal(validation.valid, false);
+});
+
+test("BNL draft validation requires official public dossier authority to match the subject", () => {
+  const packet = {
+    candidate: { subjectName: "Subject Match" },
+    publicSafeFacts: ["Public-safe community context only."],
+    publicSafeNotes: [],
+    sourceUsageSummary: { sourceLanes: [] },
+    safeClassification: { category: "Community", kind: "community_member", ecosystemLane: "community_member" },
+  };
+  const mismatched = bnlDossierDraft.validateBnlDossierDraftResponse(
+    cleanContractDraft({
+      name: "Subject Match",
+      role: "Music artist",
+      summary: "Subject Match is a music artist.",
+      sourceUsageSummary: "Used official public dossier authority for Other Artist.",
+    }),
+    { packet },
+  );
+  assert.equal(mismatched.valid, false);
+
+  const matched = bnlDossierDraft.validateBnlDossierDraftResponse(
+    cleanContractDraft({
+      name: "Subject Match",
+      role: "Music artist",
+      summary: "Subject Match is a music artist.",
+      sourceUsageSummary: "Used official public dossier authority for Subject Match.",
+    }),
+    { packet },
+  );
+  assert.equal(matched.valid, true, JSON.stringify(matched.issues));
+});
+
 test("BNL draft validation still rejects Priority and payment language", () => {
   const now = "2026-06-14T00:00:00.000Z";
   const packet = bnlDossierDraft.buildBnlDossierDraftRequestPacket({
@@ -487,7 +574,7 @@ function cleanContractDraft(overrides = {}) {
     origin: "UNVERIFIED",
     role: "Community Member",
     summary: "Clean Fixture is a recurring BARCODE community presence with public-safe participation signals ready for operator review.",
-    notes: "Owner review is still required before this proposed dossier can be used publicly.",
+    notes: "Public-safe context is ready for a concise dossier preview.",
     tags: ["community"],
     proposedTags: ["fixture-regular"],
     primaryLink: null,
@@ -4065,7 +4152,7 @@ test("BNL draft request not-connected response does not create or report a store
   const payload = await response.json();
   assert.equal(payload.bnlDraft.status, "not_connected");
   assert.equal(payload.draftStored, false);
-  assert.equal(payload.storedDraft, undefined);
+  assert.equal(payload.storedDraft, null);
   assert.equal(payload.draft, undefined);
   assert.equal(payload.drafts.length, 0);
 });
@@ -4106,7 +4193,7 @@ test("invalid BNL draft response reports validation issues without a stored-draf
     const payload = await response.json();
     assert.equal(payload.bnlDraft.status, "received");
     assert.equal(payload.draftStored, false);
-    assert.equal(payload.storedDraft, undefined);
+    assert.equal(payload.storedDraft, null);
     assert.equal(payload.draft, undefined);
     assert.equal(payload.existingDraft.id, existingDraftPayload.draft.id);
     assert.ok(payload.bnlDraft.validation.issues.some((issue) => /role/.test(issue)));
@@ -4186,7 +4273,7 @@ test("BNL draft request rejects a draft from another candidate without mutation"
     const payload = await response.json();
     assert.equal(payload.bnlDraft.status, "failed");
     assert.equal(payload.draftStored, false);
-    assert.equal(payload.storedDraft, undefined);
+    assert.equal(payload.storedDraft, null);
     assert.equal(fetchCalled, false);
     assert.equal(payload.drafts.length, 1);
     assert.equal(payload.drafts[0].candidateId, second.candidate.id);
@@ -4232,7 +4319,7 @@ test("BNL draft request rejects non-editable same-candidate draft statuses witho
       const payload = await response.json();
       assert.equal(payload.bnlDraft.status, "failed", status);
       assert.equal(payload.draftStored, false, status);
-      assert.equal(payload.storedDraft, undefined, status);
+      assert.equal(payload.storedDraft, null, status);
       assert.equal(fetchCalled, false, status);
       assert.equal(payload.drafts[0].status, status);
       assert.equal(payload.drafts[0].sourceFileDraftMetadata.generatedBy, "manual_placeholder");

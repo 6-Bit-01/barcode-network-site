@@ -167,13 +167,37 @@ export function buildBnlDossierDraftRequestPacket(input: {
 
 export type BnlDossierDraftValidationContext = {
   packet?: BnlDossierDraftRequestPacket;
+  response?: BnlDossierDraftResponse;
 };
 
 const QUEUE_MUSIC_EVIDENCE_REGEX =
   /\b(?:artist|music|musician|producer|song|track|album|release|submission|submitted|queue|auxchord|radio|performance|performer|dj)\b/i;
 
 const PAYMENT_PRIORITY_REGEX =
-  /\b(?:stripe|payment|paid|checkout|priority\s+signal|priority|tier|invoice|receipt|purchase)\b/i;
+  /\b(?:stripe|payment|paid|checkout|priority\s+signal|priority|tier|invoice|receipt|purchase|customer)\b/i;
+
+const BNL_PUBLIC_SAFE_EVIDENCE_SOURCE_REGEX =
+  /\b(?:active public-safe broadcast memory|public-safe broadcast memory summar(?:y|ies)|public-safe structured entity evidence summar(?:y|ies)|public-safe entity intelligence facts?|site public read-model context)\b/i;
+
+const BNL_SUBJECT_MATCHED_PUBLIC_CONTEXT_REGEX =
+  /\b(?:official public dossier authority|matching current public dossier context)\b/i;
+
+const UNSAFE_SOURCE_USAGE_REGEX =
+  /\b(?:private|source-blind|review-only|internal|admin-only|payment|priority|stripe|checkout|customer)\b/i;
+
+const PUBLIC_NOTES_REVIEW_WARNING_REGEX =
+  /\b(?:Owner Review|Admin-only|review-only|must not be copied into public text|not public|source-blind|missing info|needs review before claiming)\b/i;
+
+function normalizeSupportText(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 function packetAllowsQueueMusicEvidence(
   packet?: BnlDossierDraftRequestPacket,
@@ -194,8 +218,20 @@ function packetAllowsQueueMusicEvidence(
   }
 
   return packet.sourceUsageSummary.sourceLanes.some((lane) =>
-    /^queue_context$/i.test(lane),
+    /^(?:queue_context|music|artist|radio|broadcast_memory)$/i.test(lane),
   );
+}
+
+function responseAllowsQueueMusicEvidence(
+  response?: BnlDossierDraftResponse,
+  packet?: BnlDossierDraftRequestPacket,
+): boolean {
+  const sourceUsage = response?.sourceUsageSummary?.trim() ?? "";
+  if (!sourceUsage || UNSAFE_SOURCE_USAGE_REGEX.test(sourceUsage)) return false;
+  if (BNL_PUBLIC_SAFE_EVIDENCE_SOURCE_REGEX.test(sourceUsage)) return true;
+  if (!BNL_SUBJECT_MATCHED_PUBLIC_CONTEXT_REGEX.test(sourceUsage)) return false;
+  const subject = normalizeSupportText(packet?.candidate.subjectName ?? response?.name ?? "");
+  return Boolean(subject && normalizeSupportText(sourceUsage).includes(subject));
 }
 
 export function validateBnlDossierDraftResponse(
@@ -233,8 +269,17 @@ export function validateBnlDossierDraftResponse(
     if (!Array.isArray(response[field])) issues.push(`${field} must be an array`);
   }
   if (Array.isArray(response.files) && response.files.length > 0) issues.push("files must be empty unless safely supported");
+  const queueMusicEvidenceAllowed =
+    packetAllowsQueueMusicEvidence(context.packet) ||
+    responseAllowsQueueMusicEvidence(context.response ?? response, context.packet);
+  if (PAYMENT_PRIORITY_REGEX.test(response.sourceUsageSummary)) {
+    issues.push("sourceUsageSummary contains payment/Priority/Stripe/checkout/customer language");
+  }
+  if (/\b(?:private|source-blind|review-only|internal|admin-only)\b/i.test(response.sourceUsageSummary)) {
+    warnings.push("sourceUsageSummary references non-public provenance and cannot authorize public queue/music claims.");
+  }
   const contract = validateDossierDraftContractOutput(response, {
-    queueMusicEvidenceAllowed: packetAllowsQueueMusicEvidence(context.packet),
+    queueMusicEvidenceAllowed,
   });
   for (const issue of contract.issues) issues.push(`${issue.field}: ${issue.message}`);
   for (const warning of validateDossierPublicDraftFields({
@@ -249,6 +294,9 @@ export function validateBnlDossierDraftResponse(
     notes: response.notes,
   })) {
     if (typeof value === "string" && containsDossierPublicCopyJunk(value)) issues.push(`${field} contains forbidden internal/source copy`);
+    if (field === "notes" && typeof value === "string" && PUBLIC_NOTES_REVIEW_WARNING_REGEX.test(value)) {
+      issues.push("notes contains review-only/admin warning text that belongs in metadata");
+    }
     if (typeof value === "string" && PAYMENT_PRIORITY_REGEX.test(value)) {
       issues.push(`${field} contains unsupported payment/Priority Signal copy`);
     }

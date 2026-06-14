@@ -9,7 +9,7 @@ import {
   validateDossierPublicDraftFields,
 } from "@/lib/dossier-public-copy-guard";
 import { createDossierDraftBlueprint } from "@/lib/dossier-classification";
-import { buildBnlDossierDraftRequestPacket, requestBnlDossierDraft, type BnlDossierDraftGeneratorResult } from "@/lib/bnl-dossier-draft";
+import { buildBnlDossierDraftRequestPacket, extractBnlDraftResolverSummary, requestBnlDossierDraft, type BnlDossierDraftGeneratorResult } from "@/lib/bnl-dossier-draft";
 import {
   scoreManualDossierCandidate,
   type CreateDossierRecommendationInput,
@@ -6118,6 +6118,19 @@ function assemblePublicSafeDraftFromSourceFile(input: {
       generatedAt: now,
       validationIssues: [],
       validationWarnings: ["Manual placeholder scaffold; BNL did not author this draft."],
+      bnlDraftProvenance: {
+        missingInfoQuestions: [],
+        ownerReviewWarnings: [],
+        publicSafetyWarnings: [],
+        unsupportedClaimsRejected: [],
+        validationIssues: [],
+        validationWarnings: ["Manual placeholder scaffold; BNL did not author this draft."],
+        generatedBy: "manual_placeholder",
+        generatedAt: now,
+        responseStatus: "not_connected",
+        draftStored: true,
+        resolverSummary: [],
+      },
       publicSafeDraft: true,
       reviewOnlyEvidence: true,
       autoConfirmedIdentityLinks: false,
@@ -6324,6 +6337,20 @@ export async function requestBnlDraftFromCandidate(
       publicPagesMutated: false,
       validationIssues: result.validation.issues,
       validationWarnings: result.validation.warnings,
+      bnlDraftProvenance: {
+        sourceUsageSummary: result.response.sourceUsageSummary,
+        missingInfoQuestions: result.response.missingInfoQuestions ?? [],
+        ownerReviewWarnings: result.response.ownerReviewWarnings ?? [],
+        publicSafetyWarnings: result.response.publicSafetyWarnings ?? [],
+        unsupportedClaimsRejected: result.response.unsupportedClaimsRejected ?? [],
+        validationIssues: result.validation.issues,
+        validationWarnings: result.validation.warnings,
+        generatedBy: "BNL",
+        generatedAt: now,
+        responseStatus: result.status,
+        draftStored: true,
+        resolverSummary: extractBnlDraftResolverSummary(result.response),
+      },
     };
     const fields = normalizeDraftFields({ ...result.response, primaryLink: result.response.primaryLink ?? undefined, files: [] });
     if (currentDraft) {

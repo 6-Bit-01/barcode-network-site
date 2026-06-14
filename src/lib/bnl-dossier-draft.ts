@@ -165,6 +165,20 @@ export function buildBnlDossierDraftRequestPacket(input: {
   };
 }
 
+
+const RESOLVER_PROVENANCE_REGEX =
+  /\b(?:BNL subject memory resolver scanned|subject memory resolver|memory needing review|memory without public-safe provenance|public-safe subject memory resolver items|resolver scanned|resolver items)\b/i;
+
+export function extractBnlDraftResolverSummary(response: Partial<BnlDossierDraftResponse>): string[] {
+  return cleanList([
+    response.sourceUsageSummary,
+    ...(response.ownerReviewWarnings ?? []),
+    ...(response.unsupportedClaimsRejected ?? []),
+    ...(response.publicSafetyWarnings ?? []),
+    ...(response.missingInfoQuestions ?? []),
+  ]).filter((line) => RESOLVER_PROVENANCE_REGEX.test(line));
+}
+
 export type BnlDossierDraftValidationContext = {
   packet?: BnlDossierDraftRequestPacket;
   response?: BnlDossierDraftResponse;

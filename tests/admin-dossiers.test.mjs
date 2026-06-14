@@ -4206,6 +4206,75 @@ test("invalid BNL draft response reports validation issues without a stored-draf
   }
 });
 
+test("BNL draft provenance metadata is persisted for admin review only", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  try {
+    const created = await (
+      await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Crow" } })
+    ).json();
+    const resolverLine = "BNL subject memory resolver scanned 14 candidate memories for Crow.";
+    global.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          draft: cleanContractDraft({
+            name: "Crow",
+            sourceUsageSummary: `Used public-safe source ingredients only. ${resolverLine}`,
+            missingInfoQuestions: ["Confirm Crow's preferred public role line."],
+            ownerReviewWarnings: [
+              "Owner Review remains required.",
+              "BNL memory needing review was used only for owner-review metadata, not public copy.",
+            ],
+            publicSafetyWarnings: ["Keep source-blind memories out of public prose."],
+            unsupportedClaimsRejected: [
+              "Rejected claim: Crow founded a secret venue because it lacked public-safe provenance.",
+              "Used 2 public-safe subject memory resolver items.",
+            ],
+          }),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+
+    const response = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: created.candidate.id,
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.draftStored, true);
+    const provenance = payload.storedDraft.sourceFileDraftMetadata.bnlDraftProvenance;
+    assert.equal(provenance.generatedBy, "BNL");
+    assert.equal(provenance.responseStatus, "received");
+    assert.equal(provenance.draftStored, true);
+    assert.match(provenance.sourceUsageSummary, /Used public-safe source ingredients only/);
+    assert.deepEqual(provenance.missingInfoQuestions, ["Confirm Crow's preferred public role line."]);
+    assert.ok(provenance.ownerReviewWarnings.some((item) => /Owner Review remains required/.test(item)));
+    assert.deepEqual(provenance.publicSafetyWarnings, ["Keep source-blind memories out of public prose."]);
+    assert.ok(provenance.unsupportedClaimsRejected.some((item) => /Rejected claim/.test(item)));
+    assert.ok(provenance.resolverSummary.some((item) => item.includes("BNL subject memory resolver scanned")));
+    assert.ok(provenance.resolverSummary.some((item) => item.includes("memory needing review")));
+    assert.ok(provenance.resolverSummary.some((item) => item.includes("public-safe subject memory resolver items")));
+    assert.deepEqual(provenance.validationIssues, []);
+    assert.deepEqual(provenance.validationWarnings, []);
+
+    const publicFieldsJson = JSON.stringify(payload.storedDraft.fields);
+    assert.doesNotMatch(publicFieldsJson, /BNL subject memory resolver scanned|Owner Review remains required|Rejected claim|source-blind memories/);
+
+    const adminPayload = await (await authedGet()).json();
+    const storedAdminDraft = adminPayload.drafts.find((draft) => draft.id === payload.storedDraft.id);
+    assert.match(storedAdminDraft.sourceFileDraftMetadata.bnlDraftProvenance.sourceUsageSummary, /Used public-safe source ingredients only/);
+
+    const publicReadModelPayload = await (await readModel.GET(new Request("https://example.test/api/bnl/read-model"))).json();
+    assert.doesNotMatch(JSON.stringify(publicReadModelPayload), /BNL subject memory resolver scanned|Rejected claim|source-blind memories|bnlDraftProvenance/);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
+
 test("valid BNL draft response reports a stored BNL-authored draft", async () => {
   await resetWorkflowStore();
   process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";

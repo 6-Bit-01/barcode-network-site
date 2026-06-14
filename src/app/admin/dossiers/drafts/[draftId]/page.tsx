@@ -228,6 +228,105 @@ function PublicCopyGuardWarning({
   );
 }
 
+
+function ProvenanceList({
+  items,
+  empty,
+}: {
+  items?: string[];
+  empty: string;
+}) {
+  const cleanItems = (items ?? []).filter(Boolean);
+  if (cleanItems.length === 0) {
+    return <p className="text-sm text-muted">{empty}</p>;
+  }
+  return (
+    <ul className="list-disc space-y-1 pl-5 text-sm text-muted">
+      {cleanItems.map((item) => (
+        <li key={item} className="whitespace-pre-wrap">{item}</li>
+      ))}
+    </ul>
+  );
+}
+
+function BnlDraftProvenancePanel({ draft }: { draft: DossierDraft }) {
+  const provenance = draft.sourceFileDraftMetadata?.bnlDraftProvenance;
+  const validationItems = [
+    ...(provenance?.validationIssues ?? draft.sourceFileDraftMetadata?.validationIssues ?? []).map(
+      (item) => `Issue: ${item}`,
+    ),
+    ...(provenance?.validationWarnings ?? draft.sourceFileDraftMetadata?.validationWarnings ?? []).map(
+      (item) => `Warning: ${item}`,
+    ),
+  ];
+  return (
+    <section className="border border-border bg-surface p-5 space-y-4 text-sm text-muted">
+      <div>
+        <p className="text-xs uppercase tracking-[0.4em] text-muted mb-2">
+          Admin-only provenance
+        </p>
+        <h2 className="text-2xl font-bold text-foreground">
+          BNL Draft Evidence + Review Notes
+        </h2>
+        <p>
+          This section is stored admin review metadata from BNL. It is not public
+          dossier copy and is not rendered by public dossier pages.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <section className="border border-border/70 bg-background/20 p-3">
+          <h3 className="font-bold text-foreground">Source Usage</h3>
+          <p className="whitespace-pre-wrap">
+            {provenance?.sourceUsageSummary || "No source usage summary was stored for this draft."}
+          </p>
+        </section>
+        <section className="border border-border/70 bg-background/20 p-3">
+          <h3 className="font-bold text-foreground">Subject Memory Resolver</h3>
+          <ProvenanceList
+            items={provenance?.resolverSummary}
+            empty="No resolver metadata stored for this draft."
+          />
+        </section>
+        <section className="border border-border/70 bg-background/20 p-3">
+          <h3 className="font-bold text-foreground">Owner Review Warnings</h3>
+          <ProvenanceList
+            items={provenance?.ownerReviewWarnings}
+            empty="No owner review warnings were reported."
+          />
+        </section>
+        <section className="border border-border/70 bg-background/20 p-3">
+          <h3 className="font-bold text-foreground">Missing Info</h3>
+          <ProvenanceList
+            items={provenance?.missingInfoQuestions}
+            empty="No missing info was reported."
+          />
+        </section>
+        <section className="border border-border/70 bg-background/20 p-3">
+          <h3 className="font-bold text-foreground">Public Safety Notes</h3>
+          <ProvenanceList
+            items={provenance?.publicSafetyWarnings}
+            empty="No public safety notes were reported."
+          />
+        </section>
+        <section className="border border-border/70 bg-background/20 p-3">
+          <h3 className="font-bold text-foreground">Unsupported / Rejected Claims</h3>
+          <ProvenanceList
+            items={provenance?.unsupportedClaimsRejected}
+            empty="No unsupported claims were reported."
+          />
+        </section>
+        <section className="border border-border/70 bg-background/20 p-3 lg:col-span-2">
+          <h3 className="font-bold text-foreground">Validation</h3>
+          <ProvenanceList
+            items={validationItems}
+            empty="No validation issues or warnings were stored."
+          />
+        </section>
+      </div>
+    </section>
+  );
+}
+
 function ProposedDossierPreview({
   form,
 }: {
@@ -974,6 +1073,7 @@ export default function DossierDraftEditorPage() {
             form={form}
             candidate={candidate ?? undefined}
           />
+          <BnlDraftProvenancePanel draft={draft} />
           <details className="border border-border bg-surface p-5 space-y-4">
             <summary className="cursor-pointer text-xl font-bold text-foreground">
               Open Advanced Manual Edit — Manual Override

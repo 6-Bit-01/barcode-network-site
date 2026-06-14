@@ -384,6 +384,20 @@ export type DossierDraft = {
     generatedAt?: string;
     validationIssues?: string[];
     validationWarnings?: string[];
+    bnlDraftProvenance?: {
+      sourceUsageSummary?: string;
+      missingInfoQuestions: string[];
+      ownerReviewWarnings: string[];
+      publicSafetyWarnings: string[];
+      unsupportedClaimsRejected: string[];
+      validationIssues: string[];
+      validationWarnings: string[];
+      generatedBy: "BNL" | "manual_placeholder";
+      generatedAt?: string;
+      responseStatus?: "received" | "failed" | "not_connected";
+      draftStored?: boolean;
+      resolverSummary?: string[];
+    };
     publicSafeDraft: true;
     reviewOnlyEvidence: true;
     autoConfirmedIdentityLinks: false;

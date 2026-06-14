@@ -1029,9 +1029,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "candidateId is required" }, { status: 400 });
     }
     const draftId = draftIdFromBody(body) || undefined;
-    const { result, draft } = await requestBnlDraftFromCandidate(candidateId, draftId);
+    const bnlDraftRequest = await requestBnlDraftFromCandidate(candidateId, draftId);
     const payload = await workflowPayload();
-    return NextResponse.json({ ok: result.status !== "failed", action, bnlDraft: result, draft, ...payload });
+    return NextResponse.json({
+      ok: bnlDraftRequest.result.status !== "failed",
+      action,
+      bnlDraft: bnlDraftRequest.result,
+      draftStored: bnlDraftRequest.draftStored,
+      storedDraft: bnlDraftRequest.storedDraft,
+      existingDraft: bnlDraftRequest.existingDraft,
+      ...payload,
+    });
   }
 
   if (action === "updateDraftFromSourceFile") {

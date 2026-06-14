@@ -1476,7 +1476,14 @@ export default function CandidateReviewPage() {
         error?: string;
         immediateRefresh?: ImmediateRefreshResult;
         message?: string;
-        bnlDraft?: { status: string; message?: string };
+        bnlDraft?: {
+          status: string;
+          message?: string;
+          validation?: { issues?: string[]; warnings?: string[] };
+        };
+        draftStored?: boolean;
+        storedDraft?: DossierDraft;
+        existingDraft?: DossierDraft;
       };
       if (!response.ok)
         throw new Error(
@@ -1562,12 +1569,18 @@ export default function CandidateReviewPage() {
         candidateId,
         ...(primaryDraft ? { draftId: primaryDraft.id } : {}),
       });
+      const validationIssues = data.bnlDraft?.validation?.issues ?? [];
+      const validationWarnings = data.bnlDraft?.validation?.warnings ?? [];
       setNotice(
         data.bnlDraft?.status === "not_connected"
           ? "BNL draft generator not connected yet. The site prepared the safe Source File packet but did not author dossier copy."
-          : data.draft
-            ? `BNL-authored Proposed Dossier draft stored: ${data.draft.fields.name}.`
-            : (data.bnlDraft?.message ?? "BNL draft request did not return a stored draft."),
+          : data.bnlDraft?.status === "failed"
+            ? (data.bnlDraft.message ?? "BNL draft generator failed. No draft was stored.")
+            : data.bnlDraft?.status === "received" && !data.draftStored
+              ? `BNL returned draft output, but validation failed and no draft was stored.${validationIssues.length ? ` Issues: ${validationIssues.join("; ")}` : ""}${validationWarnings.length ? ` Warnings: ${validationWarnings.join("; ")}` : ""}`
+              : data.draftStored && data.storedDraft
+                ? `BNL-authored Proposed Dossier draft stored: ${data.storedDraft.fields.name}.`
+                : (data.bnlDraft?.message ?? "BNL draft request did not return a stored draft."),
       );
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Failed to request BNL draft.");

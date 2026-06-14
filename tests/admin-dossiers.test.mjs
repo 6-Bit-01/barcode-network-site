@@ -3957,6 +3957,114 @@ test("createDraftFromCandidate creates one workflow draft from candidate recomme
   assert.equal(payload.drafts.length, 1);
 });
 
+
+test("BNL draft request not-connected response does not create or report a stored draft", async () => {
+  await resetWorkflowStore();
+  delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+  delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  const created = await (
+    await authedPost({ action: "createManualCandidate", input: manualCandidateInput })
+  ).json();
+
+  const response = await authedPost({
+    action: "requestBnlDraftFromCandidate",
+    candidateId: created.candidate.id,
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.bnlDraft.status, "not_connected");
+  assert.equal(payload.draftStored, false);
+  assert.equal(payload.storedDraft, undefined);
+  assert.equal(payload.draft, undefined);
+  assert.equal(payload.drafts.length, 0);
+});
+
+test("invalid BNL draft response reports validation issues without a stored-draft success", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  try {
+    const created = await (
+      await authedPost({ action: "createManualCandidate", input: manualCandidateInput })
+    ).json();
+    const existingDraftPayload = await (
+      await authedPost({
+        action: "createDraftFromCandidate",
+        candidateId: created.candidate.id,
+      })
+    ).json();
+
+    global.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          draft: cleanContractDraft({
+            name: "Invalid BNL Draft",
+            role: "source file candidateId: candidate_invalid_bnl",
+          }),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+
+    const response = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: created.candidate.id,
+      draftId: existingDraftPayload.draft.id,
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.bnlDraft.status, "received");
+    assert.equal(payload.draftStored, false);
+    assert.equal(payload.storedDraft, undefined);
+    assert.equal(payload.draft, undefined);
+    assert.equal(payload.existingDraft.id, existingDraftPayload.draft.id);
+    assert.ok(payload.bnlDraft.validation.issues.some((issue) => /role/.test(issue)));
+    assert.equal(payload.drafts.length, 1);
+    assert.equal(payload.drafts[0].sourceFileDraftMetadata.generatedBy, "manual_placeholder");
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
+
+test("valid BNL draft response reports a stored BNL-authored draft", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  try {
+    const created = await (
+      await authedPost({ action: "createManualCandidate", input: manualCandidateInput })
+    ).json();
+    global.fetch = async (url, options = {}) => {
+      assert.equal(String(url), process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL);
+      assert.equal(options.headers["X-BNL-DOSSIER-DRAFT-TOKEN"], "test-draft-token");
+      return new Response(
+        JSON.stringify({ draft: cleanContractDraft({ name: "Valid BNL Draft" }) }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+
+    const response = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: created.candidate.id,
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.bnlDraft.status, "received");
+    assert.equal(payload.draftStored, true);
+    assert.equal(payload.storedDraft.fields.name, "Valid BNL Draft");
+    assert.equal(payload.storedDraft.sourceFileDraftMetadata.generatedBy, "BNL");
+    assert.equal(payload.storedDraft.sourceFileDraftMetadata.publicPagesMutated, false);
+    assert.equal(payload.drafts.length, 1);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
+
 test("createDraftFromCandidate keeps internal starter notes out of public draft fields", async () => {
   await resetWorkflowStore();
   const input = {

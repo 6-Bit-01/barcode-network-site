@@ -6220,10 +6220,17 @@ export async function updateDraftFromSourceFile(
   return updatedDraft;
 }
 
+export type RequestBnlDraftFromCandidateResult = {
+  result: BnlDossierDraftGeneratorResult;
+  draftStored: boolean;
+  storedDraft?: DossierDraft;
+  existingDraft?: DossierDraft;
+};
+
 export async function requestBnlDraftFromCandidate(
   candidateId: string,
   draftId?: string,
-): Promise<{ result: BnlDossierDraftGeneratorResult; draft: DossierDraft | null }> {
+): Promise<RequestBnlDraftFromCandidateResult> {
   const now = new Date().toISOString();
   const state = await getDossierWorkflowState();
   const candidate = state.candidates.find((item) => item.id === candidateId);
@@ -6237,7 +6244,11 @@ export async function requestBnlDraftFromCandidate(
   const packet = buildBnlDossierDraftRequestPacket({ candidate, recommendations, currentDraft });
   const result = await requestBnlDossierDraft({ packet });
   if (result.status !== "received" || !result.validation.valid) {
-    return { result, draft: currentDraft };
+    return {
+      result,
+      draftStored: false,
+      ...(currentDraft ? { existingDraft: currentDraft } : {}),
+    };
   }
 
   let savedDraft: DossierDraft | null = null;
@@ -6270,7 +6281,12 @@ export async function requestBnlDraftFromCandidate(
     savedDraft = { id: createDraftId(), candidateId: candidate.id, status: "draft", fields, sourceFileDraftMetadata: metadata, createdAt: now, updatedAt: now };
     return { ...currentState, drafts: [savedDraft, ...currentState.drafts], updatedAt: now };
   });
-  return { result, draft: savedDraft };
+  return {
+    result,
+    draftStored: Boolean(savedDraft),
+    ...(savedDraft ? { storedDraft: savedDraft } : {}),
+    ...(currentDraft ? { existingDraft: currentDraft } : {}),
+  };
 }
 
 export async function saveDossierDraft(

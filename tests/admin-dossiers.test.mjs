@@ -8927,6 +8927,8 @@ test("Source File analyst review cards render structured decisions, signals, bou
           claimType: "public_role_title",
           reviewLane: "needs_public_confirmation",
           suggestedDecision: "needs_more_info",
+          suggestedInternalNote: "Keep Raven role/title internal until owner confirms it.",
+          suggestedRejectionReason: "Reject if Raven is not confirmed to hold this role/title.",
           why: "BNL found role/community/music/context signals, but not enough confirmed public-safe evidence to state a formal role.",
           publicSafe: false,
           confidence: "medium",
@@ -8938,6 +8940,8 @@ test("Source File analyst review cards render structured decisions, signals, bou
           claimType: "public_role_title",
           reviewLane: "public_ready",
           suggestedDecision: "public_ready",
+          suggestedPublicWording: "Raven is a BARCODE Network community member.",
+          recommendedAction: "approve_public",
           publicSafe: true,
           safeEvidenceSummary: "Owner/admin-safe community member wording is available.",
         },
@@ -8958,10 +8962,18 @@ test("Source File analyst review cards render structured decisions, signals, bou
           safeEvidenceSummary: "Possible review claim label, not a confirmed role.",
         },
         {
+          claimText: "subject-owned/keyed local evidence exists",
+          claimType: "non_actionable_artifact",
+          actionability: "non_actionable_artifact",
+          why: "Technical evidence inventory only.",
+          safeEvidenceSummary: "No concrete fact was supplied for approval.",
+        },
+        {
           claimText: "Source-blind Orion context exists.",
           claimType: "source_blind",
           reviewLane: "source_blind",
           suggestedDecision: "keep_internal",
+          suggestedInternalNote: "Keep Orion source-blind context internal until public provenance exists.",
           why: "Useful internally but provenance is withheld.",
           safeEvidenceSummary: "Redacted source-blind context summary.",
         },
@@ -8969,6 +8981,7 @@ test("Source File analyst review cards render structured decisions, signals, bou
       missingConfirmations: [
         {
           claimText: "Preferred display name",
+          suggestedMissingInfoQuestion: "What exact display name may BNL use publicly for Raven?",
           why: "Public name must be exact before use.",
           safeEvidenceSummary: "Candidate is referred to as Raven in public-safe context.",
         },
@@ -9007,17 +9020,20 @@ test("Source File analyst review cards render structured decisions, signals, bou
   assert.doesNotMatch(text, /needs_more_info/);
   assert.match(text, /Which public label, if any, may BNL use for Raven/);
   assert.match(text, /Enter the exact sentence BNL may use as a Source File fact/);
-  assert.match(text, /BNL suggested wording/);
+  assert.match(text, /No BNL suggested wording yet/);
+  assert.match(text, /BNL has not provided safe public wording for this yet/);
+  assert.match(text, /BNL suggested public wording/);
   assert.match(text, /Raven is a BARCODE Network community member/);
   assert.match(text, /BNL suggested internal note/);
-  assert.match(text, /Keep role\/title internal until owner confirms Raven/);
+  assert.match(text, /Keep Raven role\/title internal until owner confirms it/);
   assert.doesNotMatch(text, /Edit \+ confirm public-safe text/);
   assert.match(text, /What am I deciding/);
   assert.match(text, /You are deciding whether this role\/title is true for this subject/);
   assert.match(text, /Approve suggested wording/);
-  assert.match(text, /BNL suggested wording/);
-  assert.match(text, /Keep suggested internal context/);
-  assert.match(text, /Reject/);
+  assert.match(text, /Saves BNL’s suggested sentence as a public-safe Source File fact/);
+  assert.match(text, /Save suggested internal note/);
+  assert.doesNotMatch(text, /Keep suggested internal context/);
+  assert.match(text, /Reject claim|Reject label/);
   assert.match(text, /Weak evidence label \/ pattern/);
   assert.match(text, /Is this label accurate and useful, or should it be rejected/);
   assert.match(text, /Reject if inaccurate; keep internal if useful; do not approve public without exact confirmed wording/);
@@ -9027,15 +9043,18 @@ test("Source File analyst review cards render structured decisions, signals, bou
   assert.doesNotMatch(text, /Music discussion only: 44 Confirm public-ready/);
   assert.match(text, /What exact display name may BNL use publicly/);
   assert.match(text, /Use Raven publicly; keep other aliases internal/);
-  assert.match(text, /Suggested answer/);
-  assert.match(text, /Save suggested answer/);
+  assert.match(text, /BNL suggested confirmation question/);
+  assert.match(text, /What exact display name may BNL use publicly for Raven/);
+  assert.match(text, /Save suggested question/);
   assert.match(text, /Question/);
-  assert.match(text, /Edit answer/);
-  assert.match(text, /Save suggested answer/);
+  assert.match(text, /Edit question/);
   assert.doesNotMatch(text, /Mark answered/);
   assert.match(text, /Source-blind context cannot become public copy by itself/);
   assert.match(text, /Add public-safe replacement text, if owner\/admin confirms it elsewhere/);
-  assert.match(text, /Needs public source/);
+  assert.match(text, /Ask for public source/);
+  assert.match(text, /subject-owned\/keyed local evidence exists/);
+  assert.match(text, /This is not a public-ready claim\. BNL has not provided a concrete fact to approve/);
+  assert.match(text, /Dismiss artifact/);
   assert.doesNotMatch(text, /Source-blind Orion context exists[\s\S]*Approve as public fact/);
   assert.match(text, /Withheld Evidence Audit/);
   assert.match(text, /Total withheld:\s+3/);
@@ -9045,6 +9064,7 @@ test("Source File analyst review cards render structured decisions, signals, bou
   assert.doesNotMatch(text, /person@example\.com|Stripe customer token/);
   assert.match(text, /Admin task/);
   assert.match(text, /Mark done/);
+  assert.doesNotMatch(text, />Needs more info</);
   assert.doesNotMatch(text, /Crow is a BARCODE Network community member|Use Crow publicly|Do not state a public role for Crow/);
   assert.doesNotMatch(text, /Ask owner\/admin to confirm public-safe role wording\.[\s\S]*Edit \+ confirm public-safe text/);
   assert.match(text, /Public boundary/);
@@ -9059,6 +9079,15 @@ test("Source File analyst review cards render structured decisions, signals, bou
   });
   const roleClaim = derived.current.find((claim) => /public role\/title/.test(claim.claimText));
   assert.ok(roleClaim);
+  const publicReadyClaim = derived.current.find((claim) => claim.suggestedApprovedText === "Raven is a BARCODE Network community member.");
+  assert.equal(publicReadyClaim?.suggestedTextSource, "bnl");
+  assert.equal(publicReadyClaim?.hasSafePublicSuggestion, true);
+  const weakLabelClaim = derived.current.find((claim) => claim.claimText === "contest organizer");
+  assert.equal(weakLabelClaim?.suggestedTextSource, "none");
+  assert.equal(weakLabelClaim?.hasSafePublicSuggestion, false);
+  const artifactClaim = derived.current.find((claim) => claim.claimText === "subject-owned/keyed local evidence exists");
+  assert.equal(artifactClaim?.isVagueArtifact, true);
+  assert.equal(artifactClaim?.hasSafePublicSuggestion, false);
   const completedText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
     summary,
     latestSourceFileArchive: archive,

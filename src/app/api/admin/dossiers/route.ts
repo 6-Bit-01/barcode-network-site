@@ -18,6 +18,7 @@ import {
   type DossierIdentityLinkVisibility,
   type CreateDossierRecommendationInput,
   type CreateDossierSourceFileNoteInput,
+  type ReviewDossierSourceFileClaimInput,
   type UpdateDossierSourceFileSummaryInput,
   type DossierCandidateStatus,
   type DossierDraft,
@@ -32,6 +33,7 @@ import {
   applyPopulationReviewRecommendationAction,
   reconcilePopulationSignals,
   addDossierSourceFileNote,
+  reviewDossierSourceFileClaim,
   updateDossierSourceFileSummary,
   archiveDossierCandidate,
   archiveDossierRecommendation,
@@ -136,6 +138,9 @@ const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "mergeCandidates",
   "updateSourceFileSummary",
   "addSourceFileNote",
+  "reviewSourceFileClaim",
+  "editSourceFileClaim",
+  "resetSourceFileClaimReview",
   "requestSourceFileRefresh",
   "recordSourceFileOpen",
   "addDossierIdentityLink",
@@ -250,6 +255,32 @@ function sourceFileNoteInputFromBody(
     publicSafe: input.publicSafe === true,
     appliesToDraftId: input.appliesToDraftId,
     createdBy: input.createdBy,
+  };
+}
+
+function sourceFileClaimReviewInputFromBody(
+  body: Record<string, unknown>,
+): ReviewDossierSourceFileClaimInput | null {
+  const candidateId = candidateIdFromBody(body);
+  const input = body.input;
+  if (!candidateId || !input || typeof input !== "object") return null;
+  const value = input as Partial<ReviewDossierSourceFileClaimInput>;
+  if (typeof value.claimText !== "string" || !value.claimText.trim()) return null;
+  if (typeof value.claimType !== "string" || typeof value.sourceSection !== "string") return null;
+  return {
+    candidateId,
+    claimId: value.claimId,
+    claimText: value.claimText,
+    claimType: value.claimType as ReviewDossierSourceFileClaimInput["claimType"],
+    sourceSection: value.sourceSection,
+    decision: value.decision ?? "pending",
+    editedText: value.editedText,
+    decisionNote: value.decisionNote,
+    publicSafe: value.publicSafe === true,
+    sourceArchiveId: value.sourceArchiveId,
+    sourceRefreshId: value.sourceRefreshId,
+    sourceProvenance: value.sourceProvenance,
+    decidedBy: value.decidedBy ?? "admin",
   };
 }
 
@@ -504,6 +535,29 @@ export async function POST(req: Request) {
       const note = await addDossierSourceFileNote(input);
       const payload = await workflowPayload();
       return NextResponse.json({ ok: true, action, note, ...payload });
+    }
+
+    if (action === "reviewSourceFileClaim" || action === "editSourceFileClaim" || action === "resetSourceFileClaimReview") {
+      const input = sourceFileClaimReviewInputFromBody(body);
+      if (!input) {
+        return NextResponse.json(
+          { error: "Valid candidateId and Source File claim review input are required" },
+          { status: 400 },
+        );
+      }
+      const review = await reviewDossierSourceFileClaim({
+        ...input,
+        decision: action === "resetSourceFileClaimReview" ? "pending" : input.decision,
+        decisionNote: action === "resetSourceFileClaimReview" ? undefined : input.decisionNote,
+      });
+      const payload = await workflowPayload();
+      return NextResponse.json({
+        ok: true,
+        action,
+        review,
+        message: "Claim decision saved. Refresh BNL Source File to let BNL update the analyst read.",
+        ...payload,
+      });
     }
 
     if (action === "recordSourceFileOpen") {

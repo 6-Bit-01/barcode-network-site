@@ -43,6 +43,8 @@ import {
   type DossierSourceFileNote,
   type DossierSourceFileNoteSource,
   type DossierSourceFileNoteType,
+  type DossierSourceFileClaimReview,
+  type ReviewDossierSourceFileClaimInput,
   type DossierDuplicateRisk,
   type DossierPopulationRecommendedAction,
   type DossierPopulationRecommendedLane,
@@ -349,6 +351,9 @@ function sanitizeWorkflowState(value: unknown): DossierWorkflowState {
           ...candidate,
           sourceFileNotes: Array.isArray(candidate.sourceFileNotes)
             ? candidate.sourceFileNotes
+            : [],
+          sourceFileClaimReviews: Array.isArray(candidate.sourceFileClaimReviews)
+            ? candidate.sourceFileClaimReviews
             : [],
           sourceFileSummary:
             candidate.sourceFileSummary &&
@@ -773,6 +778,20 @@ async function readSourceFileArchiveRecord(
 
 function createSourceFileNoteId(): string {
   return `source_file_note_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createSourceFileClaimReviewId(input: {
+  candidateId: string;
+  sourceSection: string;
+  claimText: string;
+  sourceArchiveId?: string;
+}): string {
+  return `source_file_claim_${createHash("sha1").update([
+    input.candidateId,
+    input.sourceSection,
+    input.claimText.trim().toLowerCase().replace(/\s+/g, " "),
+    input.sourceArchiveId ?? "",
+  ].join("|")).digest("hex").slice(0, 24)}`;
 }
 
 function createSourceFileRefreshRequestId(): string {
@@ -4287,6 +4306,89 @@ export async function addDossierSourceFileNote(
   return saved ?? note;
 }
 
+export async function reviewDossierSourceFileClaim(
+  input: ReviewDossierSourceFileClaimInput,
+): Promise<DossierSourceFileClaimReview> {
+  const candidateId = boundedText(input.candidateId, 200);
+  const claimText = boundedText(input.claimText);
+  const sourceSection = boundedText(input.sourceSection, 120);
+  const editedText = boundedText(input.editedText);
+  const allowedDecisions = new Set(["pending", "confirmed_public", "confirmed_internal", "rejected", "needs_more_info", "edited"]);
+  if (!candidateId || !claimText || !sourceSection || !allowedDecisions.has(input.decision)) {
+    throw new DossierWorkflowInputError("Valid candidate, claim text, source section, and decision are required", 400, "invalid_claim_review");
+  }
+  if (input.decision === "confirmed_public" && input.publicSafe !== true) {
+    throw new DossierWorkflowInputError("Public-ready confirmation requires explicit publicSafe true", 400, "public_safe_required");
+  }
+  if (input.claimType === "do_not_say" && input.decision === "confirmed_public") {
+    throw new DossierWorkflowInputError("Do-not-say boundaries cannot become public-ready claims", 400, "do_not_say_public_blocked");
+  }
+  if ((input.claimType === "source_blind" || input.claimType === "review_needed") && input.decision === "confirmed_public" && !editedText) {
+    throw new DossierWorkflowInputError("Source-blind/internal claims require edited public-safe text before public confirmation", 400, "edited_public_text_required");
+  }
+  const now = new Date().toISOString();
+  const sourceArchiveId = boundedText(input.sourceArchiveId, 200) || undefined;
+  const id = boundedText(input.claimId, 200) || createSourceFileClaimReviewId({ candidateId, sourceSection, claimText, sourceArchiveId });
+  let saved: DossierSourceFileClaimReview | null = null;
+
+  await updateDossierWorkflowState((currentState) => {
+    let found = false;
+    const candidates = currentState.candidates.map((candidate) => {
+      if (candidate.id !== candidateId) return candidate;
+      found = true;
+      const existing = (candidate.sourceFileClaimReviews ?? []).find((item) => item.id === id);
+      const review: DossierSourceFileClaimReview = {
+        id,
+        candidateId,
+        claimText,
+        claimType: input.claimType,
+        sourceSection,
+        decision: input.decision,
+        publicSafe: input.publicSafe === true,
+        editedText: editedText || undefined,
+        decisionNote: boundedText(input.decisionNote, 1000) || undefined,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        decidedAt: input.decision === "pending" ? undefined : now,
+        decidedBy: boundedText(input.decidedBy, 200) || "admin",
+        sourceArchiveId,
+        sourceRefreshId: boundedText(input.sourceRefreshId, 200) || undefined,
+        sourceProvenance: normalizeStringArray(input.sourceProvenance).slice(0, 10),
+      };
+      const notes = [...(candidate.sourceFileNotes ?? [])];
+      if (["confirmed_public", "confirmed_internal", "needs_more_info", "edited"].includes(review.decision)) {
+        const noteId = `source_file_note_${review.id}`;
+        const oldNote = notes.find((note) => note.id === noteId);
+        const note: DossierSourceFileNote = {
+          id: noteId,
+          candidateId,
+          type: review.decision === "needs_more_info" ? "missing_info" : review.decision === "confirmed_public" || review.decision === "edited" ? "fact" : "general_note",
+          text: review.editedText || review.claimText,
+          source: "admin_manual",
+          status: "active",
+          publicSafe: review.decision === "confirmed_public" || review.decision === "edited",
+          createdAt: oldNote?.createdAt ?? now,
+          updatedAt: now,
+          createdBy: review.decidedBy,
+        };
+        const noteIndex = notes.findIndex((item) => item.id === noteId);
+        if (noteIndex >= 0) notes[noteIndex] = note;
+        else notes.unshift(note);
+      }
+      saved = review;
+      return {
+        ...candidate,
+        sourceFileClaimReviews: [review, ...(candidate.sourceFileClaimReviews ?? []).filter((item) => item.id !== id)],
+        sourceFileNotes: notes,
+        updatedAt: now,
+      };
+    });
+    if (!found) throw new DossierWorkflowInputError("Candidate not found", 404, "candidate_not_found");
+    return { ...currentState, candidates, updatedAt: now };
+  });
+  return saved!;
+}
+
 export async function createDossierRecommendation(
   input: CreateDossierRecommendationInput,
 ): Promise<DossierRecommendation> {
@@ -7616,11 +7718,13 @@ export async function runSubjectConsolidation(input: { groupId?: string } = {}):
           continue;
         }
         const sourceNotes = sources.flatMap((source) => source.sourceFileNotes ?? []);
+        const sourceClaimReviews = sources.flatMap((source) => source.sourceFileClaimReviews ?? []);
         const aliases = sources.flatMap((source) => source.identityLinks ?? []);
         const recommendationIds = sources.flatMap((source) => source.connectedRecommendationIds ?? []);
         const updatedTarget: DossierCandidate = {
           ...target,
           sourceFileNotes: [...(target.sourceFileNotes ?? []), ...sourceNotes.map((note) => ({ ...note, candidateId: target.id, updatedAt: now }))],
+          sourceFileClaimReviews: [...(target.sourceFileClaimReviews ?? []), ...sourceClaimReviews.map((review) => ({ ...review, candidateId: target.id, updatedAt: now }))],
           identityLinks: [...(target.identityLinks ?? []), ...aliases.map((link) => ({ ...link, candidateId: target.id, visibility: "internal_only" as const, useInPublicDossier: false, updatedAt: now }))],
           connectedRecommendationIds: uniqueStrings(target.connectedRecommendationIds, recommendationIds),
           mergeSourceCandidateIds: uniqueStrings(target.mergeSourceCandidateIds, sources.map((source) => source.id)),

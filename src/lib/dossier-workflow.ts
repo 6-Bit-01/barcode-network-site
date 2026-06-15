@@ -276,6 +276,41 @@ export type DossierSourceFileNote = {
   ingestSource?: DossierRecommendationIngestSource;
 };
 
+export type DossierSourceFileClaimType =
+  | "public_ready"
+  | "review_needed"
+  | "source_blind"
+  | "missing_info"
+  | "recommended_action"
+  | "do_not_say";
+
+export type DossierSourceFileClaimReviewDecision =
+  | "pending"
+  | "confirmed_public"
+  | "confirmed_internal"
+  | "rejected"
+  | "needs_more_info"
+  | "edited";
+
+export type DossierSourceFileClaimReview = {
+  id: string;
+  candidateId: string;
+  claimText: string;
+  claimType: DossierSourceFileClaimType;
+  sourceSection: string;
+  decision: DossierSourceFileClaimReviewDecision;
+  publicSafe: boolean;
+  editedText?: string;
+  decisionNote?: string;
+  createdAt: string;
+  updatedAt: string;
+  decidedAt?: string;
+  decidedBy?: string;
+  sourceArchiveId?: string;
+  sourceRefreshId?: string;
+  sourceProvenance?: string[];
+};
+
 export type DossierIdentityLinkType =
   | "alias"
   | "artist_name"
@@ -370,6 +405,7 @@ export type DossierCandidate = {
   latestSourceFileArchive?: DossierSourceFileArchiveMetadata;
   sourceFileSummary?: DossierSourceFileOperatorSummary;
   sourceFileNotes?: DossierSourceFileNote[];
+  sourceFileClaimReviews?: DossierSourceFileClaimReview[];
   identityLinks?: DossierIdentityLink[];
   sourceLanes?: DossierRecommendationSourceLane[];
   ingestKey?: string;
@@ -2887,6 +2923,22 @@ export type CreateDossierSourceFileNoteInput = {
   createdBy?: string;
 };
 
+export type ReviewDossierSourceFileClaimInput = {
+  candidateId: string;
+  claimId?: string;
+  claimText: string;
+  claimType: DossierSourceFileClaimType;
+  sourceSection: string;
+  decision: DossierSourceFileClaimReviewDecision;
+  editedText?: string;
+  decisionNote?: string;
+  publicSafe?: boolean;
+  sourceArchiveId?: string;
+  sourceRefreshId?: string;
+  sourceProvenance?: string[];
+  decidedBy?: string;
+};
+
 export type CreateDossierSourceFileArchiveInput =
   DossierSourceFileArchiveCompactReadout & {
     candidateId?: string;
@@ -3003,6 +3055,9 @@ export type DossierWorkflowAction =
   | "markNeedsMoreEvidence"
   | "updateSourceFileSummary"
   | "addSourceFileNote"
+  | "reviewSourceFileClaim"
+  | "editSourceFileClaim"
+  | "resetSourceFileClaimReview"
   | "requestSourceFileRefresh"
   | "recordSourceFileOpen"
   | "addDossierIdentityLink"
@@ -3066,6 +3121,9 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "markNeedsMoreEvidence",
   "updateSourceFileSummary",
   "addSourceFileNote",
+  "reviewSourceFileClaim",
+  "editSourceFileClaim",
+  "resetSourceFileClaimReview",
   "requestSourceFileRefresh",
   "recordSourceFileOpen",
   "addDossierIdentityLink",

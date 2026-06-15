@@ -510,6 +510,11 @@ export type DossierSourceFileReviewableClaim = {
   requiresEditedTextForPublic?: boolean;
   whatAmIDeciding?: string;
   isWeakEvidenceLabel?: boolean;
+  suggestedApprovedText?: string;
+  suggestedInternalText?: string;
+  suggestedAnswerText?: string;
+  bnlRecommendationText?: string;
+  hasSafePublicSuggestion?: boolean;
   review?: DossierSourceFileClaimReview;
 };
 
@@ -554,6 +559,37 @@ function isWeakEvidenceLabelText(text: string, record?: UnknownRecord) {
 
 function subjectLabel(value?: string) {
   return value?.trim() || "this subject";
+}
+
+function humanBnlRecommendation(claimType: DossierSourceFileClaimType, suggestedDecision: string | undefined, weakLabel: boolean) {
+  const decision = (suggestedDecision ?? "").toLowerCase();
+  if (weakLabel || /reject/.test(decision)) return "BNL recommends rejecting this if the label is inaccurate.";
+  if (claimType === "source_blind") return "BNL thinks this is source-blind and needs public provenance before use.";
+  if (/internal|keep/.test(decision)) return "BNL recommends keeping this internal unless owner/admin confirms it.";
+  if (/public/.test(decision)) return "BNL thinks this can be public only if the suggested wording is approved.";
+  if (/more|confirm|needs/.test(decision)) return "BNL recommends more confirmation before public use.";
+  return "BNL recommends admin review before use.";
+}
+
+function suggestedTextsForClaim(input: { claimText: string; claimType: DossierSourceFileClaimType; record?: UnknownRecord; subjectName: string; weakLabel: boolean }) {
+  const explicit = analystString(input.record, ["suggestedApprovedText", "suggestedPublicText", "publicSafeText", "approvedText", "suggestedText"]);
+  const internal = analystString(input.record, ["suggestedInternalText", "suggestedInternalNote", "internalNote"]);
+  const answer = analystString(input.record, ["suggestedAnswer", "suggestedAnswerText", "answer"]);
+  const lower = `${input.claimText} ${analystString(input.record, ["claimType", "title"]) ?? ""}`.toLowerCase();
+  if (input.weakLabel || lower.trim() === "contest organizer") {
+    return {
+      approved: undefined,
+      internal: internal ?? "Keep this as internal pattern context only.",
+      answer,
+      fallback: `Reject this claim if ${input.subjectName} is not actually a contest organizer.`,
+    };
+  }
+  if (lower.includes("display name") || lower.includes("preferred name")) return { approved: explicit ?? input.subjectName, internal: internal ?? `Use ${input.subjectName} publicly; keep other aliases internal.`, answer: answer ?? input.subjectName };
+  if (lower.includes("role") || lower.includes("title")) return { approved: explicit ?? `${input.subjectName} is a BARCODE Network community member.`, internal: internal ?? `Keep role/title internal until owner confirms ${input.subjectName}.`, answer: answer ?? `Do not state a public role for ${input.subjectName} yet.` };
+  if (lower.includes("link")) return { approved: explicit, internal: internal ?? `No public links are approved for ${input.subjectName} yet.`, answer: answer ?? `No public links are approved for ${input.subjectName} yet.` };
+  if (lower.includes("orion")) return { approved: explicit, internal: internal ?? "Keep Orion context internal for now.", answer: answer ?? "Keep Orion context internal for now." };
+  if (lower.includes("queue") || lower.includes("submission")) return { approved: explicit, internal: internal ?? `Do not reference ${input.subjectName}'s queue/submission history publicly.`, answer: answer ?? "Do not reference queue/submission history publicly." };
+  return { approved: explicit ?? (input.record?.publicSafe === true ? input.claimText : undefined), internal: internal ?? input.claimText, answer };
 }
 
 function splitSignal(text: string) {
@@ -618,6 +654,8 @@ function buildClaimCard(input: { value: unknown; sourceSection: string; claimTyp
     : claimType === "recommended_action" || claimType === "do_not_say"
       ? { decisionQuestion: claimType === "recommended_action" ? "What admin follow-up should happen for this task?" : "Should this public boundary stay in force?", placeholderText: "", exampleApprovedTexts: [] }
       : buildCardGuidance(claimText, claimType, record, displaySubject);
+  const suggested = suggestedTextsForClaim({ claimText, claimType, record, subjectName: displaySubject, weakLabel });
+  const rawSuggestedDecision = analystString(record, ["suggestedDecision", "recommendation"]);
   const id = stableClaimId({ candidateId: input.candidateId, sourceSection: input.sourceSection, claimText, sourceArchiveId: input.sourceArchiveId });
   const blockedBy = stringItems(record?.blockedBy);
   return {
@@ -647,7 +685,12 @@ function buildClaimCard(input: { value: unknown; sourceSection: string; claimTyp
     safeEvidenceSummary: analystString(record, ["safeEvidenceSummary", "evidenceSummary", "summary"]),
     reviewLane: analystString(record, ["reviewLane", "lane", "safetyLane"]),
     confidence: analystString(record, ["confidence"]),
-    suggestedDecision: analystString(record, ["suggestedDecision", "recommendation"]),
+    suggestedDecision: rawSuggestedDecision,
+    bnlRecommendationText: humanBnlRecommendation(claimType, rawSuggestedDecision, weakLabel),
+    suggestedApprovedText: suggested.approved,
+    suggestedInternalText: suggested.internal,
+    suggestedAnswerText: suggested.answer ?? suggested.fallback,
+    hasSafePublicSuggestion: Boolean(suggested.approved && (record?.publicSafe === true || claimType === "public_ready" || /public/.test((rawSuggestedDecision ?? "").toLowerCase())) && !weakLabel && claimType !== "source_blind"),
     safestDefault: analystString(record, ["safestDefault"]) ?? (weakLabel ? "Reject if inaccurate; keep internal if useful; do not approve public without exact confirmed wording." : claimType === "public_ready" ? "Confirm only if the wording is public-safe and sourced." : "Keep internal or needs more info until owner/admin confirms the wording."),
     blockedBy,
     whatYouAreApproving: claimType === "recommended_action" ? "An admin task state, not a public claim approval." : claimType === "do_not_say" ? "A public-copy boundary that protects against unsupported claims." : claimType === "source_blind" ? "Only a separately confirmed public-safe replacement, not the source-blind text itself." : "A Source File review decision. Confirming public-ready does not publish a dossier.",
@@ -723,63 +766,86 @@ function claimDecisionLabel(claim: DossierSourceFileReviewableClaim) {
   return "Pending";
 }
 
+function savedReviewText(claim: DossierSourceFileReviewableClaim) {
+  return claim.review?.editedText || claim.review?.claimText || claim.claimText;
+}
+
+function CompletedClaimCard({ claim, onReview }: { claim: DossierSourceFileReviewableClaim; onReview?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void }) {
+  const decision = claim.review?.decision ?? "pending";
+  const text = savedReviewText(claim);
+  return (
+    <li data-claim-card="true" className="border border-border/40 bg-background/30 p-3">
+      <h5 className="text-sm font-bold text-foreground">{claim.title}</h5>
+      <p className="mt-1 text-xs uppercase tracking-widest text-accent">{claimDecisionLabel(claim)}</p>
+      {(decision === "confirmed_public" || decision === "edited") && <p className="mt-2 text-sm text-foreground">Saved wording: &quot;{text}&quot;</p>}
+      {decision === "confirmed_internal" && <p className="mt-2 text-sm text-foreground">Saved note: &quot;{text}&quot;</p>}
+      {decision === "needs_more_info" && <p className="mt-2 text-sm text-foreground">Open question: &quot;{text}&quot;</p>}
+      {decision === "rejected" && <p className="mt-2 text-sm text-foreground">No Source File fact was created.</p>}
+      {(decision === "confirmed_public" || decision === "edited") && <p className="mt-1 text-xs text-muted">No dossier was published.</p>}
+      <button type="button" className="mt-3 border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, "pending", { publicSafe: false })}>Undo choice</button>
+    </li>
+  );
+}
+
 function ClaimReviewControls({ claim, onReview }: {
   claim: DossierSourceFileReviewableClaim;
   onReview?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void;
 }) {
-  const decision = claim.review?.decision ?? "pending";
-  const buttons: Array<[string, DossierSourceFileClaimReviewDecision, boolean?]> =
-    claim.claimType === "do_not_say" ? [["Keep boundary", "confirmed_internal"], ["Remove boundary", "rejected"]]
-    : claim.claimType === "recommended_action" ? [["Mark done", "confirmed_internal"], ["Keep open", "needs_more_info"], ["Reject", "rejected"]]
-    : claim.claimType === "source_blind" ? [["Keep internal", "confirmed_internal"], ["Needs public source", "needs_more_info"], ["Reject as false / not useful", "rejected"]]
-    : claim.claimType === "missing_info" ? [["Save answer", "confirmed_internal"], ["Needs more info", "needs_more_info"], ["Reject / not needed", "rejected"]]
-    : claim.claimType === "public_ready" ? [["Approve as public fact", "confirmed_public", true], ["Keep as internal context", "confirmed_internal"], ["Reject as false / not useful", "rejected"]]
-    : [["Approve as public fact", "confirmed_public", true], ["Keep as internal context", "confirmed_internal"], ["Needs more info", "needs_more_info"], ["Reject as false / not useful", "rejected"]];
+  const publicSuggestion = claim.suggestedApprovedText?.trim();
+  const internalSuggestion = claim.suggestedInternalText?.trim() || claim.claimText;
+  const answerSuggestion = claim.suggestedAnswerText?.trim();
+  const canApproveSuggestion = Boolean(claim.hasSafePublicSuggestion && publicSuggestion && (claim.claimType === "public_ready" || claim.claimType === "review_needed"));
+  if (claim.claimType === "do_not_say") {
+    return <div className="mt-3 grid gap-2 sm:grid-cols-2"><button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, "confirmed_internal", { publicSafe: false })}>Keep boundary</button><button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, "rejected", { publicSafe: false })}>Remove boundary</button></div>;
+  }
+  if (claim.claimType === "recommended_action") {
+    return <div className="mt-3 grid gap-2 sm:grid-cols-3"><button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, "confirmed_internal", { publicSafe: false })}>Mark done</button><button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, "needs_more_info", { publicSafe: false })}>Keep open</button><button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, "rejected", { publicSafe: false })}>Reject</button></div>;
+  }
+  if (claim.claimType === "source_blind") {
+    return (
+      <div className="mt-3 space-y-3">
+        <div className="border border-border/40 bg-background/40 p-2"><p className="text-xs font-bold uppercase tracking-widest text-accent">BNL suggested internal note</p><p className="text-foreground">{internalSuggestion}</p></div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, "confirmed_internal", { publicSafe: false, editedText: internalSuggestion })}>Keep internal</button>
+          <details className="border border-border/40 p-2"><summary className="cursor-pointer text-xs text-foreground">Edit internal note</summary><form className="mt-2 flex flex-col gap-2" onSubmit={(event) => { event.preventDefault(); const editedText = String(new FormData(event.currentTarget).get("editedText") ?? "").trim(); if (editedText) onReview?.(claim, "confirmed_internal", { publicSafe: false, editedText }); }}><textarea name="editedText" defaultValue={internalSuggestion} className="min-h-20 border border-border bg-background p-2 text-xs text-foreground" /><button type="submit" className="w-fit border border-accent px-2 py-1 text-xs text-accent">Save internal note</button></form></details>
+          <button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, "needs_more_info", { publicSafe: false })}>Needs public source</button>
+          <button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, "rejected", { publicSafe: false })}>Reject</button>
+        </div>
+      </div>
+    );
+  }
+  if (claim.claimType === "missing_info") {
+    return (
+      <div className="mt-3 space-y-3">
+        <div className="border border-border/40 bg-background/40 p-2"><p className="text-xs font-bold uppercase tracking-widest text-accent">Suggested answer</p><p className="text-foreground">{answerSuggestion ?? "BNL does not have a suggested answer yet."}</p></div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {answerSuggestion && <button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, "confirmed_internal", { publicSafe: false, editedText: answerSuggestion })}>Save suggested answer</button>}
+          <details className="border border-border/40 p-2"><summary className="cursor-pointer text-xs text-foreground">Edit answer</summary><form className="mt-2 flex flex-col gap-2" onSubmit={(event) => { event.preventDefault(); const editedText = String(new FormData(event.currentTarget).get("editedText") ?? "").trim(); if (editedText) onReview?.(claim, "confirmed_internal", { publicSafe: false, editedText }); }}><textarea name="editedText" defaultValue={answerSuggestion ?? ""} className="min-h-20 border border-border bg-background p-2 text-xs text-foreground" /><button type="submit" className="w-fit border border-accent px-2 py-1 text-xs text-accent">Save edited answer</button></form></details>
+          <button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, "needs_more_info", { publicSafe: false })}>Needs more info</button>
+          <button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, "rejected", { publicSafe: false })}>Reject / not needed</button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="mt-3 space-y-3">
-      <span className={`inline-block border px-2 py-1 text-[0.65rem] uppercase tracking-widest ${decision === "confirmed_public" ? "border-accent text-accent" : "border-border text-muted"}`}>
-        {claimDecisionLabel(claim)}
-      </span>
+      <div className="border border-border/40 bg-background/40 p-2"><p className="text-xs font-bold uppercase tracking-widest text-accent">BNL suggested wording</p>{publicSuggestion ? <p className="text-foreground">{publicSuggestion}</p> : <p className="text-muted">BNL does not have safe public wording for this yet. Choose Keep internal, Needs more info, Reject, or write approved wording manually.</p>}</div>
+      <div className="border border-border/40 bg-background/40 p-2"><p className="text-xs font-bold uppercase tracking-widest text-accent">BNL suggested internal note</p><p className="text-foreground">{internalSuggestion}</p></div>
       <div className="grid gap-2 sm:grid-cols-2">
-        {buttons.map(([label, nextDecision, publicSafe]) => (
-          <div key={label} className="border border-border/40 p-2">
-            <button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={(event) => {
-              const container = event.currentTarget.closest("[data-claim-card]");
-              const input = container?.querySelector<HTMLInputElement>("[data-claim-answer]");
-              const validation = container?.querySelector<HTMLElement>("[data-claim-validation]");
-              const editedText = input?.value.trim() ?? "";
-              if ((nextDecision === "confirmed_public" && (claim.claimType === "review_needed" || claim.claimType === "source_blind") && !editedText) || (claim.claimType === "missing_info" && nextDecision === "confirmed_internal" && !editedText)) {
-                if (validation) validation.textContent = nextDecision === "confirmed_public" ? "Enter the exact public-safe sentence first, or choose Keep internal / Needs more info / Reject." : "Enter the exact answer BNL should use, or choose Needs more info / Reject.";
-                return;
-              }
-              if (validation) validation.textContent = "";
-              onReview?.(claim, nextDecision, { publicSafe: publicSafe === true, editedText: editedText || undefined });
-            }}>
-              {label}
-            </button>
-            <p className="mt-1 text-[0.7rem] text-muted/80">{claim.actionConsequences?.[nextDecision] ?? "Stores this admin decision."}</p>
-          </div>
-        ))}
+        {canApproveSuggestion && <button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, "confirmed_public", { publicSafe: true, editedText: publicSuggestion })}>Approve suggested wording</button>}
+        {!canApproveSuggestion && <p className="border border-border/40 p-2 text-xs text-muted">BNL does not have safe public wording for this yet.</p>}
+        <details className="border border-border/40 p-2"><summary className="cursor-pointer text-xs text-foreground">{publicSuggestion ? "Edit wording" : "Write approved wording manually"}</summary><form className="mt-2 flex flex-col gap-2" onSubmit={(event) => { event.preventDefault(); const editedText = String(new FormData(event.currentTarget).get("editedText") ?? "").trim(); if (editedText) onReview?.(claim, "edited", { publicSafe: true, editedText }); }}><textarea name="editedText" defaultValue={publicSuggestion ?? ""} className="min-h-20 border border-border bg-background p-2 text-xs text-foreground" /><button type="submit" className="w-fit border border-accent px-2 py-1 text-xs text-accent">Save edited wording</button></form></details>
+        <button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, "confirmed_internal", { publicSafe: false, editedText: internalSuggestion })}>Keep suggested internal context</button>
+        <details className="border border-border/40 p-2"><summary className="cursor-pointer text-xs text-foreground">Edit internal note</summary><form className="mt-2 flex flex-col gap-2" onSubmit={(event) => { event.preventDefault(); const editedText = String(new FormData(event.currentTarget).get("editedText") ?? "").trim(); if (editedText) onReview?.(claim, "confirmed_internal", { publicSafe: false, editedText }); }}><textarea name="editedText" defaultValue={internalSuggestion} className="min-h-20 border border-border bg-background p-2 text-xs text-foreground" /><button type="submit" className="w-fit border border-accent px-2 py-1 text-xs text-accent">Save internal note</button></form></details>
+        <button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, "needs_more_info", { publicSafe: false })}>Needs more info</button>
+        <button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, "rejected", { publicSafe: false })}>Reject</button>
       </div>
-      <p data-claim-validation="true" className="text-xs text-accent">{claim.claimType === "missing_info" ? "Enter the exact answer BNL should use, or choose Needs more info / Reject." : ""}</p>
-      {claim.claimType !== "recommended_action" && claim.claimType !== "do_not_say" && <form className="flex flex-col gap-2" onSubmit={(event) => {
-        event.preventDefault();
-        const form = new FormData(event.currentTarget);
-        const editedText = String(form.get("editedText") ?? "").trim();
-        if (!editedText) return;
-        onReview?.(claim, "edited", { editedText, publicSafe: claim.claimType !== "source_blind" || Boolean(editedText) });
-        event.currentTarget.reset();
-      }}>
-        {claim.claimType === "source_blind" && <p className="border border-accent/60 bg-accent/10 p-2 text-xs text-foreground">Source-blind context cannot become public copy by itself. Only enter public-safe replacement wording if you have separate confirmation.</p>}
-        <label className="text-xs font-bold text-foreground" htmlFor={`${claim.id}-edited`}>{claim.claimType === "missing_info" ? "Answer to save" : claim.whatToEnter}</label>
-        <input data-claim-answer="true" id={`${claim.id}-edited`} name="editedText" className="border border-border bg-background px-2 py-1 text-xs text-foreground" placeholder={claim.placeholderText ?? "Enter exact public-safe wording"} />
-        <button type="submit" className="w-fit border border-accent px-2 py-1 text-xs text-accent">{claim.claimType === "source_blind" ? "Add public-safe replacement" : "Save exact answer / edited text"}</button>
-      </form>}
     </div>
   );
 }
 
 function ClaimDecisionCard({ claim, onReview }: { claim: DossierSourceFileReviewableClaim; onReview?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void }) {
+  if (claim.review && claim.review.decision !== "pending") return <CompletedClaimCard claim={claim} onReview={onReview} />;
   return (
     <li data-claim-card="true" className="border border-border/40 bg-background/30 p-3">
       <h5 className="text-sm font-bold text-foreground">{claim.title}</h5>
@@ -788,7 +854,7 @@ function ClaimDecisionCard({ claim, onReview }: { claim: DossierSourceFileReview
       {claim.claimType === "source_blind" && <p className="mt-2 border border-accent/60 bg-accent/10 p-2 text-xs text-foreground">Source-blind context cannot become public copy by itself. Only enter public-safe replacement wording if you have separate confirmation.</p>}
       <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
         <div><dt className="font-bold text-accent">{claim.claimType === "missing_info" ? "Question" : "Decision needed"}</dt><dd className="text-foreground">{claim.decisionQuestion}</dd></div>
-        <div><dt className="font-bold text-accent">What BNL thinks</dt><dd className="text-foreground">{claim.suggestedDecision ?? "Admin review is needed before use."}</dd></div>
+        <div><dt className="font-bold text-accent">What BNL thinks</dt><dd className="text-foreground">{claim.bnlRecommendationText ?? "BNL recommends admin review before use."}</dd></div>
         <div><dt className="font-bold text-accent">{claim.claimType === "missing_info" ? "Why BNL needs it" : "Why BNL flagged this"}</dt><dd className="text-foreground">{claim.whyItExists}</dd></div>
         <div><dt className="font-bold text-accent">Evidence summary</dt><dd className="text-foreground">{claim.safeEvidenceSummary ?? "No public-safe evidence summary provided."}</dd></div>
         <div><dt className="font-bold text-accent">Safety lane</dt><dd className="text-foreground">{claim.reviewLane ?? claim.claimType.replace(/_/g, " ")}{claim.confidence ? ` · ${claim.confidence} confidence` : ""}</dd></div>

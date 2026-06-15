@@ -933,6 +933,48 @@ test("Source File claim review decisions persist and update safe Source File not
   assert.equal(candidate.sourceFileNotes[0].publicSafe, false);
   assert.equal(candidate.sourceFileNotes[0].type, "general_note");
 
+  const suggestedPublicResponse = await authedPost({
+    action: "reviewSourceFileClaim",
+    candidateId: "claim-review-candidate",
+    input: {
+      claimId: "claim_suggested_public_fixture",
+      claimText: "Confirm public role/title",
+      claimType: "review_needed",
+      sourceSection: "reviewableClaims",
+      decision: "confirmed_public",
+      editedText: "Claim Review Subject is a BARCODE Network community member.",
+      publicSafe: true,
+    },
+  });
+  assert.equal(suggestedPublicResponse.status, 200);
+  state = await store.getDossierWorkflowState();
+  candidate = state.candidates[0];
+  const suggestedPublicNote = candidate.sourceFileNotes.find((note) => note.id === "source_file_note_claim_suggested_public_fixture");
+  assert.equal(suggestedPublicNote?.text, "Claim Review Subject is a BARCODE Network community member.");
+  assert.equal(suggestedPublicNote?.type, "fact");
+  assert.equal(suggestedPublicNote?.publicSafe, true);
+
+  const editedPublicResponse = await authedPost({
+    action: "editSourceFileClaim",
+    candidateId: "claim-review-candidate",
+    input: {
+      claimId: "claim_edited_public_fixture",
+      claimText: "Confirm public role/title",
+      claimType: "review_needed",
+      sourceSection: "reviewableClaims",
+      decision: "edited",
+      editedText: "Claim Review Subject is a BARCODE Radio viewer/community participant.",
+      publicSafe: true,
+    },
+  });
+  assert.equal(editedPublicResponse.status, 200);
+  state = await store.getDossierWorkflowState();
+  candidate = state.candidates[0];
+  const editedPublicNote = candidate.sourceFileNotes.find((note) => note.id === "source_file_note_claim_edited_public_fixture");
+  assert.equal(editedPublicNote?.text, "Claim Review Subject is a BARCODE Radio viewer/community participant.");
+  assert.equal(editedPublicNote?.type, "fact");
+  assert.equal(editedPublicNote?.publicSafe, true);
+
   const missingAnswerResponse = await authedPost({
     action: "reviewSourceFileClaim",
     candidateId: "claim-review-candidate",
@@ -8892,6 +8934,14 @@ test("Source File analyst review cards render structured decisions, signals, bou
           blockedBy: ["owner wording"],
         },
         {
+          claimText: "Raven is a BARCODE Network community member.",
+          claimType: "public_role_title",
+          reviewLane: "public_ready",
+          suggestedDecision: "public_ready",
+          publicSafe: true,
+          safeEvidenceSummary: "Owner/admin-safe community member wording is available.",
+        },
+        {
           claimText: "Music discussion only: 44",
           claimType: "evidence_signal",
           reviewLane: "signal_summary",
@@ -8953,16 +9003,21 @@ test("Source File analyst review cards render structured decisions, signals, bou
   assert.match(text, /What BNL thinks/);
   assert.match(text, /Why BNL flagged this/);
   assert.match(text, /Public-safe community participation signals only/);
-  assert.match(text, /needs_more_info/);
+  assert.match(text, /BNL recommends more confirmation before public use/);
+  assert.doesNotMatch(text, /needs_more_info/);
   assert.match(text, /Which public label, if any, may BNL use for Raven/);
   assert.match(text, /Enter the exact sentence BNL may use as a Source File fact/);
+  assert.match(text, /BNL suggested wording/);
   assert.match(text, /Raven is a BARCODE Network community member/);
+  assert.match(text, /BNL suggested internal note/);
+  assert.match(text, /Keep role\/title internal until owner confirms Raven/);
+  assert.doesNotMatch(text, /Edit \+ confirm public-safe text/);
   assert.match(text, /What am I deciding/);
   assert.match(text, /You are deciding whether this role\/title is true for this subject/);
-  assert.match(text, /Approve as public fact/);
-  assert.match(text, /Use this only if the claim is true and the exact public wording is approved/);
-  assert.match(text, /Keep as internal context/);
-  assert.match(text, /Reject as false \/ not useful/);
+  assert.match(text, /Approve suggested wording/);
+  assert.match(text, /BNL suggested wording/);
+  assert.match(text, /Keep suggested internal context/);
+  assert.match(text, /Reject/);
   assert.match(text, /Weak evidence label \/ pattern/);
   assert.match(text, /Is this label accurate and useful, or should it be rejected/);
   assert.match(text, /Reject if inaccurate; keep internal if useful; do not approve public without exact confirmed wording/);
@@ -8972,11 +9027,12 @@ test("Source File analyst review cards render structured decisions, signals, bou
   assert.doesNotMatch(text, /Music discussion only: 44 Confirm public-ready/);
   assert.match(text, /What exact display name may BNL use publicly/);
   assert.match(text, /Use Raven publicly; keep other aliases internal/);
+  assert.match(text, /Suggested answer/);
+  assert.match(text, /Save suggested answer/);
   assert.match(text, /Question/);
-  assert.match(text, /Answer to save/);
-  assert.match(text, /Save answer/);
+  assert.match(text, /Edit answer/);
+  assert.match(text, /Save suggested answer/);
   assert.doesNotMatch(text, /Mark answered/);
-  assert.match(text, /Enter the exact answer BNL should use, or choose Needs more info \/ Reject/);
   assert.match(text, /Source-blind context cannot become public copy by itself/);
   assert.match(text, /Add public-safe replacement text, if owner\/admin confirms it elsewhere/);
   assert.match(text, /Needs public source/);
@@ -8994,6 +9050,36 @@ test("Source File analyst review cards render structured decisions, signals, bou
   assert.match(text, /Public boundary/);
   assert.match(text, /Keep boundary/);
   assert.doesNotMatch(text, /Do not say Raven is an official collaborator\.[\s\S]*Approve as public fact/);
+
+  const derived = sourceSummaryPanelComponent.deriveDossierSourceFileReviewableClaims({
+    analystRead: archive.subjectAnalystReadV1,
+    candidateId: archive.candidateId,
+    sourceArchiveId: archive.id,
+    subjectName: archive.subjectName,
+  });
+  const roleClaim = derived.current.find((claim) => /public role\/title/.test(claim.claimText));
+  assert.ok(roleClaim);
+  const completedText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary,
+    latestSourceFileArchive: archive,
+    candidateId: archive.candidateId,
+    claimReviews: [{
+      id: roleClaim.id,
+      candidateId: archive.candidateId,
+      claimText: roleClaim.claimText,
+      claimType: roleClaim.claimType,
+      sourceSection: roleClaim.sourceSection,
+      decision: "confirmed_public",
+      publicSafe: true,
+      editedText: "Raven is a BARCODE Network community member.",
+      createdAt: "2026-06-15T00:00:00.000Z",
+      updatedAt: "2026-06-15T00:00:00.000Z",
+    }],
+  }));
+  assert.match(completedText, /Approved as public fact/);
+  assert.match(completedText, /Saved wording:\s+"\s*Raven is a BARCODE Network community member\.\s*"/);
+  assert.match(completedText, /No dossier was published/);
+  assert.match(completedText, /Undo choice/);
 });
 
 test("Source File page extracts subjectAnalystReadV1 from sourceFileCaseReportV1 and handles old archives", () => {

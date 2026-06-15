@@ -1559,7 +1559,7 @@ export default function CandidateReviewPage() {
     if (!candidate) return;
     const publicSafe = options.publicSafe === true || decision === "edited";
     await postWorkflow({
-      action: decision === "edited" ? "editSourceFileClaim" : "reviewSourceFileClaim",
+      action: decision === "pending" ? "resetSourceFileClaimReview" : decision === "edited" ? "editSourceFileClaim" : "reviewSourceFileClaim",
       candidateId,
       input: {
         claimId: claim.id,

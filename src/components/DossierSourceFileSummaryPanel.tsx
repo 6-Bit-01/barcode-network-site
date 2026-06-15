@@ -162,6 +162,9 @@ function hasAnalystReadShape(value: unknown): value is DossierSubjectAnalystRead
     "publicReadyClaims",
     "sourceFileReviewClaims",
     "reviewNeededClaims",
+    "reviewableClaims",
+    "missingConfirmations",
+    "withheldEvidenceAudit",
     "sourceBlindInsights",
     "privateOrInternalExclusions",
     "doNotSayPublicly",
@@ -485,7 +488,35 @@ export type DossierSourceFileReviewableClaim = {
   claimText: string;
   claimType: DossierSourceFileClaimType;
   sourceSection: string;
+  title?: string;
+  decisionQuestion?: string;
+  whyItExists?: string;
+  safeEvidenceSummary?: string;
+  reviewLane?: string;
+  confidence?: string;
+  suggestedDecision?: string;
+  safestDefault?: string;
+  blockedBy?: string[];
+  whatYouAreApproving?: string;
+  whatToEnter?: string;
+  placeholderText?: string;
+  exampleApprovedTexts?: string[];
+  actionConsequences?: Record<string, string>;
+  isSignalSummary?: boolean;
+  canConfirmPublic?: boolean;
+  canConfirmInternal?: boolean;
+  canReject?: boolean;
+  canNeedMoreInfo?: boolean;
+  requiresEditedTextForPublic?: boolean;
   review?: DossierSourceFileClaimReview;
+};
+
+type SourceFileSignalSummary = {
+  id: string;
+  label: string;
+  count?: string;
+  suggestion: string;
+  actionable: string;
 };
 
 function stableClaimId(input: { candidateId?: string; sourceSection: string; claimText: string; sourceArchiveId?: string }) {
@@ -495,28 +526,152 @@ function stableClaimId(input: { candidateId?: string; sourceSection: string; cla
   return `source_file_claim_${hash.toString(36)}`;
 }
 
+function analystString(record: UnknownRecord | undefined, keys: string[]) {
+  return displayValue(valueByKeys(record, keys));
+}
+
+function classifyClaimType(sourceSection: string, record?: UnknownRecord): DossierSourceFileClaimType {
+  const lane = `${analystString(record, ["reviewLane", "lane", "safetyLane"]) ?? ""} ${analystString(record, ["claimType", "type"]) ?? ""}`.toLowerCase();
+  if (sourceSection === "sourceBlindInsights" || /source[-_ ]?blind|withheld|private|internal/.test(lane)) return "source_blind";
+  if (sourceSection === "missingInfoQuestions" || sourceSection === "missingConfirmations") return "missing_info";
+  if (sourceSection === "recommendedAdminActions") return "recommended_action";
+  if (sourceSection === "doNotSayPublicly") return "do_not_say";
+  if (/public[-_ ]?ready/.test(lane) || record?.publicSafe === true) return "public_ready";
+  return "review_needed";
+}
+
+function isSignalSummaryText(text: string, record?: UnknownRecord) {
+  const joined = `${text} ${analystString(record, ["claimType", "type", "reviewLane", "suggestedDecision"]) ?? ""}`.toLowerCase();
+  return /music discussion only|song\/track\/demo\/wip|feedback requests|generic links|moderation\/community support|source files\/dossiers|pattern summary|signal summary|signal_count|evidence_signal/.test(joined);
+}
+
+function splitSignal(text: string) {
+  const match = text.match(/^(.+?):\s*(\d+)$/);
+  return { label: (match?.[1] ?? text).trim(), count: match?.[2] };
+}
+
+function signalSuggestion(label: string) {
+  const lower = label.toLowerCase();
+  if (lower.includes("music discussion")) return "Music discussion signal. BNL found repeated music discussion, but this does not prove a public music identity or owned link.";
+  if (lower.includes("feedback")) return "Feedback request signal. BNL found review/feedback patterns, but this is context rather than a public-ready fact.";
+  if (lower.includes("song") || lower.includes("track")) return "Music mention signal. BNL found song/track/demo/WIP language without enough public-safe link ownership evidence.";
+  if (lower.includes("generic links")) return "Generic link signal. BNL found links, but they still need ownership and public-use confirmation.";
+  return "Context signal. BNL used this pattern during analysis, but it is not a public-ready fact by itself.";
+}
+
+function buildCardGuidance(claimText: string, claimType: DossierSourceFileClaimType, record?: UnknownRecord) {
+  const lower = `${claimText} ${analystString(record, ["claimType", "title"]) ?? ""}`.toLowerCase();
+  if (lower.includes("display name") || lower.includes("preferred name")) return {
+    decisionQuestion: "What exact display name may BNL use publicly?",
+    placeholderText: "Crow",
+    exampleApprovedTexts: ["Crow", "Use Crow publicly; keep other aliases internal."],
+  };
+  if (lower.includes("role") || lower.includes("title")) return {
+    title: "Confirm public role/title",
+    decisionQuestion: "Which public label, if any, may BNL use for Crow?",
+    whyItExists: "BNL found role/community/music/context signals, but not enough confirmed public-safe evidence to state a formal role.",
+    placeholderText: "Crow is a BARCODE Network community member.",
+    exampleApprovedTexts: ["Crow is a BARCODE Network community member.", "Crow is a BARCODE Radio viewer/community participant.", "Do not state a public role for Crow yet."],
+  };
+  if (lower.includes("link")) return {
+    decisionQuestion: "Which links are owned/approved for public reference?",
+    placeholderText: "No public links approved yet.",
+    exampleApprovedTexts: ["No public links approved yet.", "Approved public link: https://...", "Do not mention Crow music links until owner confirms them."],
+  };
+  if (lower.includes("orion")) return {
+    decisionQuestion: "Can BNL mention Orion in public Crow context, or keep it internal?",
+    placeholderText: "Keep Orion context internal for now.",
+    exampleApprovedTexts: ["Keep Orion context internal for now.", "BNL may reference Orion only as internal BARCODE context, not public dossier copy.", "BNL may mention Crow has recurring Orion-related BARCODE lore/context."],
+  };
+  if (lower.includes("queue") || lower.includes("submission")) return {
+    decisionQuestion: "Can BNL mention Crow’s queue/submission history publicly?",
+    placeholderText: "Do not reference queue/submission history publicly.",
+    exampleApprovedTexts: ["Do not reference queue/submission history publicly.", "Crow has submitted music to BARCODE Radio.", "Keep queue/submission history internal."],
+  };
+  return {
+    decisionQuestion: claimType === "source_blind" ? "Should this source-blind context stay internal, need provenance, or be rejected?" : "What decision should admins make for this Source File item?",
+    placeholderText: claimType === "source_blind" ? "Add separate public-safe replacement wording only if confirmed elsewhere." : "Enter the exact sentence BNL may use as a Source File fact.",
+    exampleApprovedTexts: claimType === "source_blind" ? ["Keep this context internal until provenance is confirmed."] : ["Enter the exact public-safe wording admins have confirmed."],
+  };
+}
+
+function buildClaimCard(input: { value: unknown; sourceSection: string; claimType: DossierSourceFileClaimType; candidateId?: string; sourceArchiveId?: string; reviews?: Map<string, DossierSourceFileClaimReview> }): DossierSourceFileReviewableClaim | undefined {
+  const record = asRecord(input.value);
+  const claimText = displayValue(input.value) ?? analystString(record, ["claimText", "text", "claim", "question", "action", "boundary"]);
+  if (!claimText) return undefined;
+  const claimType = classifyClaimType(input.sourceSection, record) || input.claimType;
+  const guidance = claimType === "recommended_action" || claimType === "do_not_say"
+    ? { decisionQuestion: claimType === "recommended_action" ? "What admin follow-up should happen for this task?" : "Should this public boundary stay in force?", placeholderText: "", exampleApprovedTexts: [] }
+    : buildCardGuidance(claimText, claimType, record);
+  const id = stableClaimId({ candidateId: input.candidateId, sourceSection: input.sourceSection, claimText, sourceArchiveId: input.sourceArchiveId });
+  const blockedBy = stringItems(record?.blockedBy);
+  return {
+    id,
+    claimText,
+    claimType,
+    sourceSection: input.sourceSection,
+    title: analystString(record, ["title", "label"]) ?? guidance.title ?? (claimType === "do_not_say" ? "Public boundary" : claimType === "recommended_action" ? "Admin task" : claimType === "missing_info" ? "Missing confirmation" : "Review Source File claim"),
+    decisionQuestion: analystString(record, ["decisionQuestion", "question"]) ?? guidance.decisionQuestion,
+    whyItExists: analystString(record, ["why", "whyItExists", "reason"]) ?? guidance.whyItExists ?? "BNL flagged this because it needs an explicit admin decision before use.",
+    safeEvidenceSummary: analystString(record, ["safeEvidenceSummary", "evidenceSummary", "summary"]),
+    reviewLane: analystString(record, ["reviewLane", "lane", "safetyLane"]),
+    confidence: analystString(record, ["confidence"]),
+    suggestedDecision: analystString(record, ["suggestedDecision", "recommendation"]),
+    safestDefault: analystString(record, ["safestDefault"]) ?? (claimType === "public_ready" ? "Confirm only if the wording is public-safe and sourced." : "Keep internal or needs more info until owner/admin confirms the wording."),
+    blockedBy,
+    whatYouAreApproving: claimType === "recommended_action" ? "An admin task state, not a public claim approval." : claimType === "do_not_say" ? "A public-copy boundary that protects against unsupported claims." : claimType === "source_blind" ? "Only a separately confirmed public-safe replacement, not the source-blind text itself." : "A Source File review decision. Confirming public-ready does not publish a dossier.",
+    whatToEnter: claimType === "recommended_action" ? "No public-safe text is required unless this task explicitly creates a Source File note." : claimType === "do_not_say" ? "No public-ready wording should be entered for boundaries." : claimType === "source_blind" ? "Add public-safe replacement text, if owner/admin confirms it elsewhere." : "Enter the exact sentence BNL may use as a Source File fact.",
+    placeholderText: guidance.placeholderText,
+    exampleApprovedTexts: guidance.exampleApprovedTexts,
+    actionConsequences: {
+      confirmed_public: "Creates a public-safe Source File fact. It does not publish a dossier.",
+      confirmed_internal: "Stores this as internal Source File context only.",
+      needs_more_info: "Keeps this open as a missing confirmation.",
+      rejected: "Marks this claim as rejected so it does not keep appearing as pending.",
+      edited: claimType === "source_blind" ? "Adds only the edited public-safe replacement wording after separate confirmation." : "Saves edited public-safe Source File wording.",
+    },
+    canConfirmPublic: claimType === "public_ready" || claimType === "review_needed",
+    canConfirmInternal: claimType !== "do_not_say",
+    canReject: true,
+    canNeedMoreInfo: claimType !== "do_not_say",
+    requiresEditedTextForPublic: claimType === "source_blind",
+    review: input.reviews?.get(id),
+  };
+}
+
 export function deriveDossierSourceFileReviewableClaims(input: {
   analystRead?: DossierSubjectAnalystReadV1;
   candidateId?: string;
   sourceArchiveId?: string;
   reviews?: DossierSourceFileClaimReview[];
-}): { current: DossierSourceFileReviewableClaim[]; previous: DossierSourceFileReviewableClaim[] } {
-  const sections: Array<{ sourceSection: string; claimType: DossierSourceFileClaimType; values: unknown }> = [
-    { sourceSection: "publicReadyClaims", claimType: "public_ready", values: input.analystRead?.publicReadyClaims },
-    { sourceSection: stringItems(input.analystRead?.sourceFileReviewClaims).length ? "sourceFileReviewClaims" : "reviewNeededClaims", claimType: "review_needed", values: stringItems(input.analystRead?.sourceFileReviewClaims).length ? input.analystRead?.sourceFileReviewClaims : input.analystRead?.reviewNeededClaims },
-    { sourceSection: "sourceBlindInsights", claimType: "source_blind", values: input.analystRead?.sourceBlindInsights },
-    { sourceSection: "missingInfoQuestions", claimType: "missing_info", values: input.analystRead?.missingInfoQuestions },
+}): { current: DossierSourceFileReviewableClaim[]; previous: DossierSourceFileReviewableClaim[]; signals: SourceFileSignalSummary[] } {
+  const reviewById = new Map((input.reviews ?? []).map((review) => [review.id, review]));
+  const structured = listValues(input.analystRead?.reviewableClaims);
+  const sections: Array<{ sourceSection: string; claimType: DossierSourceFileClaimType; values: unknown }> = structured.length
+    ? [{ sourceSection: "reviewableClaims", claimType: "review_needed", values: structured }]
+    : [
+      { sourceSection: "publicReadyClaims", claimType: "public_ready", values: input.analystRead?.publicReadyClaims },
+      { sourceSection: stringItems(input.analystRead?.sourceFileReviewClaims).length ? "sourceFileReviewClaims" : "reviewNeededClaims", claimType: "review_needed", values: stringItems(input.analystRead?.sourceFileReviewClaims).length ? input.analystRead?.sourceFileReviewClaims : input.analystRead?.reviewNeededClaims },
+      { sourceSection: "sourceBlindInsights", claimType: "source_blind", values: input.analystRead?.sourceBlindInsights },
+    ];
+  sections.push(
+    { sourceSection: "missingConfirmations", claimType: "missing_info", values: input.analystRead?.missingConfirmations ?? input.analystRead?.missingInfoQuestions },
     { sourceSection: "recommendedAdminActions", claimType: "recommended_action", values: input.analystRead?.recommendedAdminActions },
     { sourceSection: "doNotSayPublicly", claimType: "do_not_say", values: input.analystRead?.doNotSayPublicly },
-  ];
-  const reviewById = new Map((input.reviews ?? []).map((review) => [review.id, review]));
-  const current = sections.flatMap((section) => stringItems(section.values).map((claimText) => {
-    const id = stableClaimId({ candidateId: input.candidateId, sourceSection: section.sourceSection, claimText, sourceArchiveId: input.sourceArchiveId });
-    return { id, claimText, claimType: section.claimType, sourceSection: section.sourceSection, review: reviewById.get(id) };
+  );
+  const allCards = sections.flatMap((section) => listValues(section.values).flatMap((value) => {
+    const card = buildClaimCard({ value, sourceSection: section.sourceSection, claimType: section.claimType, candidateId: input.candidateId, sourceArchiveId: input.sourceArchiveId, reviews: reviewById });
+    return card ? [card] : [];
   }));
+  const signals = allCards.filter((card) => isSignalSummaryText(card.claimText, asRecord(card))).map((card) => {
+    const split = splitSignal(card.claimText);
+    return { id: card.id, label: split.label, count: split.count, suggestion: signalSuggestion(split.label), actionable: "Not directly actionable as a public fact." };
+  });
+  const current = allCards.filter((card) => !signals.some((signal) => signal.id === card.id));
   const currentIds = new Set(current.map((claim) => claim.id));
   return {
     current,
+    signals,
     previous: (input.reviews ?? []).filter((review) => !currentIds.has(review.id)).map((review) => ({
       id: review.id,
       claimText: review.claimText,
@@ -533,36 +688,77 @@ function ClaimReviewControls({ claim, onReview }: {
 }) {
   const decision = claim.review?.decision ?? "pending";
   const buttons: Array<[string, DossierSourceFileClaimReviewDecision, boolean?]> =
-    claim.claimType === "public_ready" ? [["Confirm public-ready", "confirmed_public", true], ["Keep internal", "confirmed_internal"], ["Reject", "rejected"]]
-    : claim.claimType === "review_needed" ? [["Confirm public-ready", "confirmed_public", true], ["Confirm internal", "confirmed_internal"], ["Needs more info", "needs_more_info"], ["Reject", "rejected"]]
-    : claim.claimType === "source_blind" ? [["Keep source-blind/internal", "confirmed_internal"], ["Needs provenance", "needs_more_info"], ["Reject", "rejected"]]
-    : claim.claimType === "missing_info" ? [["Mark answered", "confirmed_internal"], ["Needs more info", "needs_more_info"], ["Reject", "rejected"]]
+    claim.claimType === "do_not_say" ? [["Keep boundary", "confirmed_internal"], ["Reject boundary", "rejected"]]
     : claim.claimType === "recommended_action" ? [["Mark done", "confirmed_internal"], ["Keep open", "needs_more_info"], ["Reject", "rejected"]]
-    : [["Keep boundary", "confirmed_internal"], ["Reject boundary", "rejected"]];
+    : claim.claimType === "source_blind" ? [["Keep internal", "confirmed_internal"], ["Needs provenance", "needs_more_info"], ["Reject", "rejected"]]
+    : claim.claimType === "missing_info" ? [["Mark answered", "confirmed_internal"], ["Needs more info", "needs_more_info"], ["Reject", "rejected"]]
+    : claim.claimType === "public_ready" ? [["Confirm public-ready", "confirmed_public", true], ["Keep internal", "confirmed_internal"], ["Reject", "rejected"]]
+    : [["Confirm public-ready", "confirmed_public", true], ["Confirm internal", "confirmed_internal"], ["Needs more info", "needs_more_info"], ["Reject", "rejected"]];
   return (
-    <div className="mt-2 space-y-2">
+    <div className="mt-3 space-y-3">
       <span className={`inline-block border px-2 py-1 text-[0.65rem] uppercase tracking-widest ${decision === "confirmed_public" ? "border-accent text-accent" : "border-border text-muted"}`}>
         {decision.replace(/_/g, " ")}
       </span>
-      <div className="flex flex-wrap gap-2">
+      <div className="grid gap-2 sm:grid-cols-2">
         {buttons.map(([label, nextDecision, publicSafe]) => (
-          <button key={label} type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, nextDecision, { publicSafe: publicSafe === true })}>
-            {label}
-          </button>
+          <div key={label} className="border border-border/40 p-2">
+            <button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => {
+              if (claim.claimType === "missing_info" && nextDecision === "confirmed_internal") return;
+              onReview?.(claim, nextDecision, { publicSafe: publicSafe === true });
+            }}>
+              {label}
+            </button>
+            <p className="mt-1 text-[0.7rem] text-muted/80">{claim.actionConsequences?.[nextDecision] ?? "Stores this admin decision."}</p>
+          </div>
         ))}
       </div>
-      <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => {
+      {claim.claimType === "missing_info" && <p className="text-xs text-accent">Enter the exact answer BNL should use, or choose Needs more info / Reject.</p>}
+      {claim.claimType !== "recommended_action" && claim.claimType !== "do_not_say" && <form className="flex flex-col gap-2" onSubmit={(event) => {
         event.preventDefault();
         const form = new FormData(event.currentTarget);
         const editedText = String(form.get("editedText") ?? "").trim();
-        if (editedText) onReview?.(claim, "edited", { editedText, publicSafe: true });
+        if (!editedText) return;
+        onReview?.(claim, "edited", { editedText, publicSafe: claim.claimType !== "source_blind" || Boolean(editedText) });
         event.currentTarget.reset();
       }}>
-        <input name="editedText" className="flex-1 border border-border bg-background px-2 py-1 text-xs text-foreground" placeholder="Edit + confirm public-safe text" />
-        <button type="submit" className="border border-accent px-2 py-1 text-xs text-accent">Edit + confirm</button>
-      </form>
+        {claim.claimType === "source_blind" && <p className="border border-accent/60 bg-accent/10 p-2 text-xs text-foreground">Source-blind context cannot become public copy by itself. Only enter public-safe replacement wording if you have separate confirmation.</p>}
+        <label className="text-xs font-bold text-foreground" htmlFor={`${claim.id}-edited`}>{claim.whatToEnter}</label>
+        <input id={`${claim.id}-edited`} name="editedText" className="border border-border bg-background px-2 py-1 text-xs text-foreground" placeholder={claim.placeholderText ?? "Enter exact public-safe wording"} />
+        <button type="submit" className="w-fit border border-accent px-2 py-1 text-xs text-accent">{claim.claimType === "source_blind" ? "Add public-safe replacement" : "Save exact answer / edited text"}</button>
+      </form>}
     </div>
   );
+}
+
+function ClaimDecisionCard({ claim, onReview }: { claim: DossierSourceFileReviewableClaim; onReview?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void }) {
+  return (
+    <li className="border border-border/40 bg-background/30 p-3">
+      <h5 className="text-sm font-bold text-foreground">{claim.title}</h5>
+      <p className="mt-1 text-foreground">{claim.claimText}</p>
+      {claim.claimType === "source_blind" && <p className="mt-2 border border-accent/60 bg-accent/10 p-2 text-xs text-foreground">Source-blind context cannot become public copy by itself. Only enter public-safe replacement wording if you have separate confirmation.</p>}
+      <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+        <div><dt className="font-bold text-accent">Decision needed</dt><dd className="text-foreground">{claim.decisionQuestion}</dd></div>
+        <div><dt className="font-bold text-accent">What BNL thinks</dt><dd className="text-foreground">{claim.suggestedDecision ?? "Admin review is needed before use."}</dd></div>
+        <div><dt className="font-bold text-accent">Why BNL flagged this</dt><dd className="text-foreground">{claim.whyItExists}</dd></div>
+        <div><dt className="font-bold text-accent">Evidence summary</dt><dd className="text-foreground">{claim.safeEvidenceSummary ?? "No public-safe evidence summary provided."}</dd></div>
+        <div><dt className="font-bold text-accent">Safety lane</dt><dd className="text-foreground">{claim.reviewLane ?? claim.claimType.replace(/_/g, " ")}{claim.confidence ? ` · ${claim.confidence} confidence` : ""}</dd></div>
+        <div><dt className="font-bold text-accent">Safest default</dt><dd className="text-foreground">{claim.safestDefault}</dd></div>
+        <div><dt className="font-bold text-accent">What to enter if approving</dt><dd className="text-foreground">{claim.whatToEnter}</dd></div>
+        <div><dt className="font-bold text-accent">What you are approving</dt><dd className="text-foreground">{claim.whatYouAreApproving}</dd></div>
+      </dl>
+      {claim.blockedBy && claim.blockedBy.length > 0 && <p className="mt-2 text-xs text-muted">Blocked by: {claim.blockedBy.join(", ")}</p>}
+      {claim.exampleApprovedTexts && claim.exampleApprovedTexts.length > 0 && <div className="mt-2 text-xs"><p className="font-bold text-foreground">Example approved text</p><ul className="list-disc pl-5 text-muted">{claim.exampleApprovedTexts.map((example) => <li key={example}>{example}</li>)}</ul></div>}
+      <ClaimReviewControls claim={claim} onReview={onReview} />
+    </li>
+  );
+}
+
+function WithheldEvidenceAudit({ audit }: { audit: unknown }) {
+  const record = asRecord(audit);
+  if (!record) return null;
+  const categories = listRecords(record.categories ?? record.categoryCounts ?? record.counts);
+  const examples = stringItems(record.safeExamples ?? record.redactedExamples ?? record.examples).filter((example) => !/@|stripe|payment|customer|priority|token|raw id|database row/i.test(example));
+  return <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-1 text-xs font-bold uppercase tracking-widest text-foreground">Withheld Evidence Audit</h4><p className="mb-2 text-xs text-muted/80">This explains what BNL excluded. These are not items you need to review one by one.</p><p className="text-foreground">Total withheld: {scalarLabel(record.totalWithheld ?? record.total ?? record.count)}</p>{categories.length > 0 && <ul className="mt-2 space-y-2 text-foreground">{categories.map((category, index) => <li key={index} className="border border-border/40 p-2">{scalarLabel(category.category ?? category.label ?? category.type)}: {scalarLabel(category.count)}{displayValue(category.reason) ? ` — ${displayValue(category.reason)}` : ""}</li>)}</ul>}{examples.length > 0 && <div className="mt-2"><p className="text-xs font-bold text-foreground">Safe redacted examples</p><ul className="list-disc pl-5 text-foreground">{examples.map((example) => <li key={example}>{example}</li>)}</ul></div>}</section>;
 }
 
 function BnlAnalystReadPanel({
@@ -589,10 +785,11 @@ function BnlAnalystReadPanel({
   }
   const reviewable = deriveDossierSourceFileReviewableClaims({ analystRead, candidateId, sourceArchiveId, reviews: claimReviews });
   const sectionEntries = [
+    ["reviewableClaims", "Source File Claim Decisions"],
     ["publicReadyClaims", "Public-Ready Claims"],
     [stringItems(analystRead.sourceFileReviewClaims).length ? "sourceFileReviewClaims" : "reviewNeededClaims", "Review-Needed Claims"],
     ["sourceBlindInsights", "Source-blind / Withheld Context"],
-    ["missingInfoQuestions", "Missing Confirmations"],
+    ["missingConfirmations", "Missing Confirmations"],
     ["recommendedAdminActions", "Recommended Admin Actions"],
     ["doNotSayPublicly", "Do Not Say Publicly"],
   ] as const;
@@ -607,11 +804,14 @@ function BnlAnalystReadPanel({
         </dl>
         <section className="border border-accent/60 bg-background/30 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-accent">Internal Read</h4><BriefParagraphs value={analystRead.internalRead} /></section>
         <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Strongest Signals</h4><AnalystList value={analystRead.strongestSignals} empty="No strongest signals reported." /></section>
+        {reviewable.signals.length > 0 && <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-1 text-xs font-bold uppercase tracking-widest text-foreground">Evidence Signals / Pattern Summary</h4><p className="mb-2 text-xs text-muted/80">These are pattern counts and context signals BNL used for analysis. They are not public-ready facts by themselves.</p><ul className="space-y-2 text-foreground">{reviewable.signals.map((signal) => <li key={signal.id} className="border border-border/40 p-2"><p className="font-bold">{signal.label}{signal.count ? `: ${signal.count}` : ""}</p><p className="text-xs text-muted">{signal.suggestion}</p><p className="text-xs text-muted">Action: {signal.actionable}</p></li>)}</ul></section>}
         {sectionEntries.map(([section, label]) => {
           const claims = reviewable.current.filter((claim) => claim.sourceSection === section);
+          if (!claims.length && section === "reviewableClaims") return null;
           const privateExclusions = section === "sourceBlindInsights" ? stringItems(analystRead.privateOrInternalExclusions) : [];
-          return <section key={section} className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">{label}</h4>{claims.length ? <ul className="space-y-3 text-foreground">{claims.map((claim) => <li key={claim.id} className="border border-border/40 p-2"><p>{claim.claimText}</p><ClaimReviewControls claim={claim} onReview={onReviewClaim} /></li>)}</ul> : <p className="text-muted">No reviewable claims in this section.</p>}{privateExclusions.length > 0 && <ul className="mt-3 list-disc space-y-2 pl-5 text-foreground">{privateExclusions.map((item, index) => <li key={`private-exclusion-${index}`}>Private/internal withheld: {item}</li>)}</ul>}</section>;
+          return <section key={section} className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">{label}</h4>{claims.length ? <ul className="space-y-3 text-foreground">{claims.map((claim) => <ClaimDecisionCard key={claim.id} claim={claim} onReview={onReviewClaim} />)}</ul> : <p className="text-muted">No reviewable claims in this section.</p>}{privateExclusions.length > 0 && <ul className="mt-3 list-disc space-y-2 pl-5 text-foreground">{privateExclusions.map((item, index) => <li key={`private-exclusion-${index}`}>Private/internal withheld: {item}</li>)}</ul>}</section>;
         })}
+        <WithheldEvidenceAudit audit={analystRead.withheldEvidenceAudit} />
         {reviewable.previous.length > 0 && <details className="border border-border/50 bg-background/20 p-3"><summary className="cursor-pointer text-xs font-bold uppercase tracking-widest text-foreground">Previously reviewed claims</summary><ul className="mt-3 space-y-3 text-foreground">{reviewable.previous.map((claim) => <li key={claim.id} className="border border-border/40 p-2"><p>{claim.claimText}</p><ClaimReviewControls claim={claim} onReview={onReviewClaim} /></li>)}</ul></details>}
         <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Provenance Summary</h4><AnalystList value={analystRead.provenanceSummary} empty="No provenance summary reported." /></section>
       </div>

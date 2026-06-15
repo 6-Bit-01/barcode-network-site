@@ -8839,6 +8839,120 @@ test("Source File page extracts and renders subjectAnalystReadV1 from archive ro
   assert.match(text, /Private\/internal withheld/);
 });
 
+
+test("Source File analyst review cards render structured decisions, signals, boundaries, tasks, and withheld audit safely", () => {
+  const summary = sourceFileReportTestSummary();
+  const archive = {
+    id: "archive-structured-review-cards",
+    candidateId: "candidate-structured-review-cards",
+    subjectName: "Crow",
+    sourceDigest: "abcdef1234567890",
+    createdAt: "2026-06-15T00:00:00.000Z",
+    updatedAt: "2026-06-15T01:00:00.000Z",
+    archiveSize: 123,
+    chunkCount: 1,
+    reviewOnly: true,
+    subjectAnalystReadV1: {
+      internalRead: "Structured read fixture.",
+      likelySubjectType: "community participant",
+      confidence: "medium",
+      publicDraftPosture: "hold for admin review",
+      strongestSignals: ["Community and music discussion signals."],
+      reviewableClaims: [
+        {
+          claimText: "Confirm public role/title: Is Crow a community participant, artist, collaborator, or something else?",
+          claimType: "public_role_title",
+          reviewLane: "needs_public_confirmation",
+          suggestedDecision: "needs_more_info",
+          why: "BNL found role/community/music/context signals, but not enough confirmed public-safe evidence to state a formal role.",
+          publicSafe: false,
+          confidence: "medium",
+          safeEvidenceSummary: "Public-safe community participation signals only.",
+          blockedBy: ["owner wording"],
+        },
+        {
+          claimText: "Music discussion only: 44",
+          claimType: "evidence_signal",
+          reviewLane: "signal_summary",
+          suggestedDecision: "internal_context_only",
+          why: "Pattern count only.",
+          safeEvidenceSummary: "Repeated music discussion without owned-link proof.",
+        },
+        {
+          claimText: "Source-blind Orion context exists.",
+          claimType: "source_blind",
+          reviewLane: "source_blind",
+          suggestedDecision: "keep_internal",
+          why: "Useful internally but provenance is withheld.",
+          safeEvidenceSummary: "Redacted source-blind context summary.",
+        },
+      ],
+      missingConfirmations: [
+        {
+          claimText: "Preferred display name",
+          why: "Public name must be exact before use.",
+          safeEvidenceSummary: "Candidate is referred to as Crow in public-safe context.",
+        },
+      ],
+      recommendedAdminActions: [
+        {
+          action: "Ask owner/admin to confirm public-safe role wording.",
+          why: "This prevents unsupported role claims.",
+          suggestedNextStep: "Collect exact sentence before public use.",
+        },
+      ],
+      doNotSayPublicly: [
+        {
+          boundary: "Do not say Crow is an official collaborator.",
+          why: "No confirmed public-safe collaborator evidence.",
+          protects: "Avoids overstating relationship context.",
+        },
+      ],
+      withheldEvidenceAudit: {
+        totalWithheld: 3,
+        categories: [
+          { category: "private messages", count: 2, reason: "private/source-blind" },
+          { category: "payment metadata", count: 1, reason: "payment details excluded" },
+        ],
+        safeExamples: ["[redacted private message pattern]", "raw email person@example.com should not render", "Stripe customer token should not render"],
+      },
+      provenanceSummary: ["Structured Bot #285 output."],
+    },
+  };
+  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive }));
+  assert.match(text, /Decision needed/);
+  assert.match(text, /What BNL thinks/);
+  assert.match(text, /Why BNL flagged this/);
+  assert.match(text, /Public-safe community participation signals only/);
+  assert.match(text, /needs_more_info/);
+  assert.match(text, /Which public label, if any, may BNL use for Crow/);
+  assert.match(text, /Enter the exact sentence BNL may use as a Source File fact/);
+  assert.match(text, /Crow is a BARCODE Network community member/);
+  assert.match(text, /Evidence Signals \/ Pattern Summary/);
+  assert.match(text, /These are pattern counts and context signals BNL used for analysis/);
+  assert.match(text, /Music discussion signal/);
+  assert.doesNotMatch(text, /Music discussion only: 44 Confirm public-ready/);
+  assert.match(text, /What exact display name may BNL use publicly/);
+  assert.match(text, /Use Crow publicly; keep other aliases internal/);
+  assert.match(text, /Enter the exact answer BNL should use, or choose Needs more info \/ Reject/);
+  assert.match(text, /Source-blind context cannot become public copy by itself/);
+  assert.match(text, /Add public-safe replacement text, if owner\/admin confirms it elsewhere/);
+  assert.match(text, /Needs provenance/);
+  assert.doesNotMatch(text, /Source-blind Orion context exists[\s\S]*Confirm public-ready/);
+  assert.match(text, /Withheld Evidence Audit/);
+  assert.match(text, /Total withheld:\s+3/);
+  assert.match(text, /private messages\s+:\s+2/);
+  assert.match(text, /Safe redacted examples/);
+  assert.match(text, /\[redacted private message pattern\]/);
+  assert.doesNotMatch(text, /person@example\.com|Stripe customer token/);
+  assert.match(text, /Admin task/);
+  assert.match(text, /Mark done/);
+  assert.doesNotMatch(text, /Ask owner\/admin to confirm public-safe role wording\.[\s\S]*Edit \+ confirm public-safe text/);
+  assert.match(text, /Public boundary/);
+  assert.match(text, /Keep boundary/);
+  assert.doesNotMatch(text, /Do not say Crow is an official collaborator\.[\s\S]*Confirm public-ready/);
+});
+
 test("Source File page extracts subjectAnalystReadV1 from sourceFileCaseReportV1 and handles old archives", () => {
   const summary = sourceFileReportTestSummary();
   const archive = {

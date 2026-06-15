@@ -172,11 +172,14 @@ export type DossierSubjectAnalystReadV1 = {
   publicReadyClaims?: string[];
   sourceFileReviewClaims?: string[];
   reviewNeededClaims?: string[];
+  reviewableClaims?: unknown;
   sourceBlindInsights?: string[];
   privateOrInternalExclusions?: string[];
   doNotSayPublicly?: string[];
   missingInfoQuestions?: string[];
-  recommendedAdminActions?: string[];
+  missingConfirmations?: unknown;
+  recommendedAdminActions?: unknown;
+  withheldEvidenceAudit?: unknown;
   draftIngredients?: string[];
   sourceFileIngredients?: string[];
   provenanceSummary?: string[];

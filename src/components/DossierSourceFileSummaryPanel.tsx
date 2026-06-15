@@ -4,6 +4,9 @@ import type React from "react";
 import type { DossierEntityActivityReadout } from "@/lib/dossier-entity-activity-readout";
 import type {
   DossierRecommendation,
+  DossierSourceFileClaimReview,
+  DossierSourceFileClaimReviewDecision,
+  DossierSourceFileClaimType,
   DossierSourceFileArchiveMetadata,
   DossierSourceFileCaseReportV1,
   DossierSourceFileNote,
@@ -477,12 +480,105 @@ function AnalystList({ value, empty }: { value: unknown; empty: string }) {
   );
 }
 
+export type DossierSourceFileReviewableClaim = {
+  id: string;
+  claimText: string;
+  claimType: DossierSourceFileClaimType;
+  sourceSection: string;
+  review?: DossierSourceFileClaimReview;
+};
+
+function stableClaimId(input: { candidateId?: string; sourceSection: string; claimText: string; sourceArchiveId?: string }) {
+  const normalized = `${input.candidateId ?? "candidate"}|${input.sourceSection}|${input.claimText.trim().toLowerCase().replace(/\s+/g, " ")}|${input.sourceArchiveId ?? ""}`;
+  let hash = 0;
+  for (let index = 0; index < normalized.length; index += 1) hash = (hash * 31 + normalized.charCodeAt(index)) >>> 0;
+  return `source_file_claim_${hash.toString(36)}`;
+}
+
+export function deriveDossierSourceFileReviewableClaims(input: {
+  analystRead?: DossierSubjectAnalystReadV1;
+  candidateId?: string;
+  sourceArchiveId?: string;
+  reviews?: DossierSourceFileClaimReview[];
+}): { current: DossierSourceFileReviewableClaim[]; previous: DossierSourceFileReviewableClaim[] } {
+  const sections: Array<{ sourceSection: string; claimType: DossierSourceFileClaimType; values: unknown }> = [
+    { sourceSection: "publicReadyClaims", claimType: "public_ready", values: input.analystRead?.publicReadyClaims },
+    { sourceSection: stringItems(input.analystRead?.sourceFileReviewClaims).length ? "sourceFileReviewClaims" : "reviewNeededClaims", claimType: "review_needed", values: stringItems(input.analystRead?.sourceFileReviewClaims).length ? input.analystRead?.sourceFileReviewClaims : input.analystRead?.reviewNeededClaims },
+    { sourceSection: "sourceBlindInsights", claimType: "source_blind", values: input.analystRead?.sourceBlindInsights },
+    { sourceSection: "missingInfoQuestions", claimType: "missing_info", values: input.analystRead?.missingInfoQuestions },
+    { sourceSection: "recommendedAdminActions", claimType: "recommended_action", values: input.analystRead?.recommendedAdminActions },
+    { sourceSection: "doNotSayPublicly", claimType: "do_not_say", values: input.analystRead?.doNotSayPublicly },
+  ];
+  const reviewById = new Map((input.reviews ?? []).map((review) => [review.id, review]));
+  const current = sections.flatMap((section) => stringItems(section.values).map((claimText) => {
+    const id = stableClaimId({ candidateId: input.candidateId, sourceSection: section.sourceSection, claimText, sourceArchiveId: input.sourceArchiveId });
+    return { id, claimText, claimType: section.claimType, sourceSection: section.sourceSection, review: reviewById.get(id) };
+  }));
+  const currentIds = new Set(current.map((claim) => claim.id));
+  return {
+    current,
+    previous: (input.reviews ?? []).filter((review) => !currentIds.has(review.id)).map((review) => ({
+      id: review.id,
+      claimText: review.claimText,
+      claimType: review.claimType,
+      sourceSection: review.sourceSection,
+      review,
+    })),
+  };
+}
+
+function ClaimReviewControls({ claim, onReview }: {
+  claim: DossierSourceFileReviewableClaim;
+  onReview?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void;
+}) {
+  const decision = claim.review?.decision ?? "pending";
+  const buttons: Array<[string, DossierSourceFileClaimReviewDecision, boolean?]> =
+    claim.claimType === "public_ready" ? [["Confirm public-ready", "confirmed_public", true], ["Keep internal", "confirmed_internal"], ["Reject", "rejected"]]
+    : claim.claimType === "review_needed" ? [["Confirm public-ready", "confirmed_public", true], ["Confirm internal", "confirmed_internal"], ["Needs more info", "needs_more_info"], ["Reject", "rejected"]]
+    : claim.claimType === "source_blind" ? [["Keep source-blind/internal", "confirmed_internal"], ["Needs provenance", "needs_more_info"], ["Reject", "rejected"]]
+    : claim.claimType === "missing_info" ? [["Mark answered", "confirmed_internal"], ["Needs more info", "needs_more_info"], ["Reject", "rejected"]]
+    : claim.claimType === "recommended_action" ? [["Mark done", "confirmed_internal"], ["Keep open", "needs_more_info"], ["Reject", "rejected"]]
+    : [["Keep boundary", "confirmed_internal"], ["Reject boundary", "rejected"]];
+  return (
+    <div className="mt-2 space-y-2">
+      <span className={`inline-block border px-2 py-1 text-[0.65rem] uppercase tracking-widest ${decision === "confirmed_public" ? "border-accent text-accent" : "border-border text-muted"}`}>
+        {decision.replace(/_/g, " ")}
+      </span>
+      <div className="flex flex-wrap gap-2">
+        {buttons.map(([label, nextDecision, publicSafe]) => (
+          <button key={label} type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, nextDecision, { publicSafe: publicSafe === true })}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        const editedText = String(form.get("editedText") ?? "").trim();
+        if (editedText) onReview?.(claim, "edited", { editedText, publicSafe: true });
+        event.currentTarget.reset();
+      }}>
+        <input name="editedText" className="flex-1 border border-border bg-background px-2 py-1 text-xs text-foreground" placeholder="Edit + confirm public-safe text" />
+        <button type="submit" className="border border-accent px-2 py-1 text-xs text-accent">Edit + confirm</button>
+      </form>
+    </div>
+  );
+}
+
 function BnlAnalystReadPanel({
   analystRead,
   refreshedAt,
+  candidateId,
+  sourceArchiveId,
+  claimReviews,
+  onReviewClaim,
 }: {
   analystRead?: DossierSubjectAnalystReadV1;
   refreshedAt?: string;
+  candidateId?: string;
+  sourceArchiveId?: string;
+  claimReviews?: DossierSourceFileClaimReview[];
+  onReviewClaim?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void;
 }) {
   if (!analystRead) {
     return (
@@ -491,14 +587,15 @@ function BnlAnalystReadPanel({
       </Section>
     );
   }
-  const reviewClaims = stringItems(analystRead.reviewNeededClaims).length
-    ? analystRead.reviewNeededClaims
-    : analystRead.sourceFileReviewClaims;
-  const withheldContext = [
-    ...stringItems(analystRead.sourceBlindInsights).map((item) => `Source-blind: ${item}`),
-    ...stringItems(analystRead.privateOrInternalExclusions).map((item) => `Private/internal withheld: ${item}`),
-    ...stringItems(analystRead.doNotSayPublicly).map((item) => `Do not say publicly: ${item}`),
-  ];
+  const reviewable = deriveDossierSourceFileReviewableClaims({ analystRead, candidateId, sourceArchiveId, reviews: claimReviews });
+  const sectionEntries = [
+    ["publicReadyClaims", "Public-Ready Claims"],
+    [stringItems(analystRead.sourceFileReviewClaims).length ? "sourceFileReviewClaims" : "reviewNeededClaims", "Review-Needed Claims"],
+    ["sourceBlindInsights", "Source-blind / Withheld Context"],
+    ["missingInfoQuestions", "Missing Confirmations"],
+    ["recommendedAdminActions", "Recommended Admin Actions"],
+    ["doNotSayPublicly", "Do Not Say Publicly"],
+  ] as const;
   return (
     <Section title="BNL Analyst Read" tone="review" helper="Internal Source File intelligence. Not public dossier copy.">
       <div className="space-y-4">
@@ -510,11 +607,12 @@ function BnlAnalystReadPanel({
         </dl>
         <section className="border border-accent/60 bg-background/30 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-accent">Internal Read</h4><BriefParagraphs value={analystRead.internalRead} /></section>
         <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Strongest Signals</h4><AnalystList value={analystRead.strongestSignals} empty="No strongest signals reported." /></section>
-        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Public-Ready Claims</h4><AnalystList value={analystRead.publicReadyClaims} empty="No public-ready claims yet." /></section>
-        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Review-Needed Claims</h4><AnalystList value={reviewClaims} empty="No review-needed claims reported." /></section>
-        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Source-Blind / Withheld Context</h4><AnalystList value={withheldContext} empty="No source-blind insights reported." /></section>
-        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Missing Confirmations</h4><AnalystList value={analystRead.missingInfoQuestions} empty="No missing confirmations reported." /></section>
-        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Recommended Admin Actions</h4><AnalystList value={analystRead.recommendedAdminActions} empty="No recommended admin actions reported." /></section>
+        {sectionEntries.map(([section, label]) => {
+          const claims = reviewable.current.filter((claim) => claim.sourceSection === section);
+          const privateExclusions = section === "sourceBlindInsights" ? stringItems(analystRead.privateOrInternalExclusions) : [];
+          return <section key={section} className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">{label}</h4>{claims.length ? <ul className="space-y-3 text-foreground">{claims.map((claim) => <li key={claim.id} className="border border-border/40 p-2"><p>{claim.claimText}</p><ClaimReviewControls claim={claim} onReview={onReviewClaim} /></li>)}</ul> : <p className="text-muted">No reviewable claims in this section.</p>}{privateExclusions.length > 0 && <ul className="mt-3 list-disc space-y-2 pl-5 text-foreground">{privateExclusions.map((item, index) => <li key={`private-exclusion-${index}`}>Private/internal withheld: {item}</li>)}</ul>}</section>;
+        })}
+        {reviewable.previous.length > 0 && <details className="border border-border/50 bg-background/20 p-3"><summary className="cursor-pointer text-xs font-bold uppercase tracking-widest text-foreground">Previously reviewed claims</summary><ul className="mt-3 space-y-3 text-foreground">{reviewable.previous.map((claim) => <li key={claim.id} className="border border-border/40 p-2"><p>{claim.claimText}</p><ClaimReviewControls claim={claim} onReview={onReviewClaim} /></li>)}</ul></details>}
         <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Provenance Summary</h4><AnalystList value={analystRead.provenanceSummary} empty="No provenance summary reported." /></section>
       </div>
     </Section>
@@ -812,6 +910,9 @@ export function DossierSourceFileSummaryPanel({
   sourceFileTargetStatus,
   latestSourceFileArchive,
   blueprint,
+  candidateId,
+  claimReviews = [],
+  onReviewClaim,
 }: {
   summary: DossierSourceFileSummary;
   entityReadout?: DossierEntityActivityReadout | null;
@@ -824,6 +925,9 @@ export function DossierSourceFileSummaryPanel({
   sourceFileTargetStatus?: string;
   latestSourceFileArchive?: DossierSourceFileArchiveMetadata;
   blueprint?: DossierDraftBlueprint;
+  candidateId?: string;
+  claimReviews?: DossierSourceFileClaimReview[];
+  onReviewClaim?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void;
 }) {
   const report = normalizeCaseReport(latestSourceFileArchive);
   const interimBrief = normalizeInterimBrief(latestSourceFileArchive);
@@ -877,7 +981,14 @@ export function DossierSourceFileSummaryPanel({
         </p>
       </Section>
 
-      <BnlAnalystReadPanel analystRead={normalizeSubjectAnalystReadV1(latestSourceFileArchive)} refreshedAt={latestSourceFileArchive?.updatedAt ?? summary.lastUpdatedAt} />
+      <BnlAnalystReadPanel
+        analystRead={normalizeSubjectAnalystReadV1(latestSourceFileArchive)}
+        refreshedAt={latestSourceFileArchive?.updatedAt ?? summary.lastUpdatedAt}
+        candidateId={candidateId}
+        sourceArchiveId={latestSourceFileArchive?.id}
+        claimReviews={claimReviews}
+        onReviewClaim={onReviewClaim}
+      />
 
       {blueprint && <DossierBlueprintView blueprint={blueprint} />}
 

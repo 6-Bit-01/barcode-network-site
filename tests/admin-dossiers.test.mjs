@@ -841,9 +841,171 @@ async function resetWorkflowStore() {
     candidates: [],
     drafts: [],
     recommendations: [],
+    sourceFileRefreshRequests: [],
     updatedAt: new Date(0).toISOString(),
   });
 }
+
+function claimReviewCandidate() {
+  const now = "2026-06-15T00:00:00.000Z";
+  return {
+    id: "claim-review-candidate",
+    name: "Claim Review Subject",
+    candidateType: "artist",
+    source: "bnl_source_file_enrichment",
+    tier: "draft_ready",
+    score: 75,
+    whyNow: "BNL analyst read needs admin claim decisions.",
+    reason: "Source File review fixture.",
+    evidenceSummary: "Review-only fixture.",
+    sourceFileNotes: [],
+    sourceFileClaimReviews: [],
+    latestSourceFileArchive: {
+      id: "archive-claim-review",
+      candidateId: "claim-review-candidate",
+      subjectName: "Claim Review Subject",
+      sourceDigest: "digest",
+      createdAt: now,
+      updatedAt: now,
+      archiveSize: 1,
+      chunkCount: 1,
+      reviewOnly: true,
+      subjectAnalystReadV1: {
+        publicReadyClaims: ["Public ready fixture claim."],
+        reviewNeededClaims: ["Review needed fixture claim."],
+        sourceBlindInsights: ["Source blind fixture claim."],
+        doNotSayPublicly: ["Boundary fixture claim."],
+      },
+    },
+    status: "active_source_file",
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+test("Source File claim review decisions persist and update safe Source File notes", async () => {
+  await resetWorkflowStore();
+  await store.saveDossierWorkflowState({
+    version: 1,
+    revision: 0,
+    candidates: [claimReviewCandidate()],
+    drafts: [],
+    recommendations: [],
+    sourceFileRefreshRequests: [],
+    updatedAt: new Date(0).toISOString(),
+  });
+
+  const publicResponse = await authedPost({
+    action: "reviewSourceFileClaim",
+    candidateId: "claim-review-candidate",
+    input: {
+      claimId: "claim_public_fixture",
+      claimText: "Public ready fixture claim.",
+      claimType: "public_ready",
+      sourceSection: "publicReadyClaims",
+      decision: "confirmed_public",
+      publicSafe: true,
+      sourceArchiveId: "archive-claim-review",
+    },
+  });
+  assert.equal(publicResponse.status, 200);
+  let state = await store.getDossierWorkflowState();
+  let candidate = state.candidates[0];
+  assert.equal(candidate.sourceFileClaimReviews[0].decision, "confirmed_public");
+  assert.equal(candidate.sourceFileNotes[0].type, "fact");
+  assert.equal(candidate.sourceFileNotes[0].publicSafe, true);
+
+  const internalResponse = await authedPost({
+    action: "reviewSourceFileClaim",
+    candidateId: "claim-review-candidate",
+    input: {
+      claimId: "claim_internal_fixture",
+      claimText: "Review needed fixture claim.",
+      claimType: "review_needed",
+      sourceSection: "reviewNeededClaims",
+      decision: "confirmed_internal",
+      publicSafe: false,
+    },
+  });
+  assert.equal(internalResponse.status, 200);
+  state = await store.getDossierWorkflowState();
+  candidate = state.candidates[0];
+  assert.equal(candidate.sourceFileNotes[0].publicSafe, false);
+  assert.equal(candidate.sourceFileNotes[0].type, "general_note");
+
+  const rejectResponse = await authedPost({
+    action: "reviewSourceFileClaim",
+    candidateId: "claim-review-candidate",
+    input: {
+      claimId: "claim_reject_fixture",
+      claimText: "Rejected fixture claim.",
+      claimType: "public_ready",
+      sourceSection: "publicReadyClaims",
+      decision: "rejected",
+      publicSafe: false,
+    },
+  });
+  assert.equal(rejectResponse.status, 200);
+  state = await store.getDossierWorkflowState();
+  assert.equal(state.candidates[0].sourceFileClaimReviews.some((review) => review.decision === "rejected"), true);
+});
+
+test("Source File claim review validation protects public boundaries", async () => {
+  await resetWorkflowStore();
+  await store.saveDossierWorkflowState({
+    version: 1,
+    revision: 0,
+    candidates: [claimReviewCandidate()],
+    drafts: [],
+    recommendations: [],
+    sourceFileRefreshRequests: [],
+    updatedAt: new Date(0).toISOString(),
+  });
+
+  const editedResponse = await authedPost({
+    action: "editSourceFileClaim",
+    candidateId: "claim-review-candidate",
+    input: {
+      claimId: "claim_edited_fixture",
+      claimText: "Original internal-ish claim.",
+      claimType: "public_ready",
+      sourceSection: "publicReadyClaims",
+      decision: "edited",
+      editedText: "Edited public-safe claim.",
+      publicSafe: true,
+    },
+  });
+  assert.equal(editedResponse.status, 200);
+  let state = await store.getDossierWorkflowState();
+  assert.equal(state.candidates[0].sourceFileNotes[0].text, "Edited public-safe claim.");
+
+  const sourceBlindResponse = await authedPost({
+    action: "reviewSourceFileClaim",
+    candidateId: "claim-review-candidate",
+    input: {
+      claimText: "Source blind fixture claim.",
+      claimType: "source_blind",
+      sourceSection: "sourceBlindInsights",
+      decision: "confirmed_public",
+      publicSafe: true,
+    },
+  });
+  assert.equal(sourceBlindResponse.status, 400);
+
+  const doNotSayResponse = await authedPost({
+    action: "reviewSourceFileClaim",
+    candidateId: "claim-review-candidate",
+    input: {
+      claimText: "Boundary fixture claim.",
+      claimType: "do_not_say",
+      sourceSection: "doNotSayPublicly",
+      decision: "confirmed_public",
+      publicSafe: true,
+      editedText: "Boundary fixture claim.",
+    },
+  });
+  assert.equal(doNotSayResponse.status, 400);
+});
 
 async function authedGet() {
   return route.GET(

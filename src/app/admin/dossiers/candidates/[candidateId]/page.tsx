@@ -21,6 +21,7 @@ import {
 import {
   DossierSourceFileArchiveRawData,
   DossierSourceFileSummaryPanel,
+  type DossierSourceFileReviewableClaim,
 } from "@/components/DossierSourceFileSummaryPanel";
 import { createHumanReadableSourceFileNoteView } from "@/lib/dossier-note-display";
 import {
@@ -1550,6 +1551,32 @@ export default function CandidateReviewPage() {
     }
   }
 
+  async function reviewSourceFileClaim(
+    claim: DossierSourceFileReviewableClaim,
+    decision: "pending" | "confirmed_public" | "confirmed_internal" | "rejected" | "needs_more_info" | "edited",
+    options: { publicSafe?: boolean; editedText?: string; decisionNote?: string } = {},
+  ) {
+    if (!candidate) return;
+    const publicSafe = options.publicSafe === true || decision === "edited";
+    await postWorkflow({
+      action: decision === "edited" ? "editSourceFileClaim" : "reviewSourceFileClaim",
+      candidateId,
+      input: {
+        claimId: claim.id,
+        claimText: claim.claimText,
+        claimType: claim.claimType,
+        sourceSection: claim.sourceSection,
+        decision: decision === "edited" ? "edited" : decision,
+        editedText: options.editedText,
+        decisionNote: options.decisionNote,
+        publicSafe,
+        sourceArchiveId: candidate.latestSourceFileArchive?.id,
+        sourceProvenance: candidate.latestSourceFileArchive?.subjectAnalystReadV1?.provenanceSummary,
+      },
+    });
+    setNotice("Claim decision saved. Refresh BNL Source File to let BNL update the analyst read.");
+  }
+
   async function createDraft() {
     if (!canCreateDraft) return;
     try {
@@ -2601,6 +2628,9 @@ export default function CandidateReviewPage() {
               currentLane={candidate.status}
               latestRecommendationTimestamp={latestRecommendationTimestamp}
               latestSourceFileArchive={candidate.latestSourceFileArchive}
+              candidateId={candidate.id}
+              claimReviews={candidate.sourceFileClaimReviews ?? []}
+              onReviewClaim={reviewSourceFileClaim}
               sourceFileTargetStatus={
                 isExistingDossierUpdate
                   ? "existing dossier update"

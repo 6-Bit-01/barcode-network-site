@@ -8548,7 +8548,7 @@ test("Source File page renders Entity Intelligence Review Console sections", () 
   assertIncludesCopy(summaryPanel, "BNL Case File Report");
   assertIncludesCopy(summaryPanel, "Recommended Next Steps");
   assertIncludesCopy(summaryPanel, "Queue / Submission Context");
-  assertIncludesCopy(summaryPanel, "Review-only");
+  assertIncludesCopy(summaryPanel, "Admin-review");
   assertIncludesCopy(summaryPanel, "Structured packet");
   assertIncludesCopy(summaryPanel, "Safe fallback");
   assertIncludesCopy(summaryPanel, "Evidence Summary");
@@ -8626,6 +8626,110 @@ function sourceFileReportTestSummary() {
 }
 
 
+
+
+
+test("Source File page extracts and renders subjectAnalystReadV1 from archive root", () => {
+  const summary = sourceFileReportTestSummary();
+  const archive = {
+    id: "archive-analyst-root",
+    candidateId: "candidate-analyst-root",
+    subjectName: "Analyst Root",
+    sourceDigest: "abcdef1234567890",
+    createdAt: "2026-06-14T00:00:00.000Z",
+    updatedAt: "2026-06-14T01:00:00.000Z",
+    archiveSize: 123,
+    chunkCount: 1,
+    reviewOnly: true,
+    subjectAnalystReadV1: {
+      internalRead: "BNL internal read says this source file has recurring creative signals.",
+      likelySubjectType: "artist",
+      confidence: "high",
+      publicDraftPosture: "draft ingredients available after review",
+      strongestSignals: ["Repeated public music references."],
+      publicReadyClaims: ["Public-ready claim from root."],
+      reviewNeededClaims: ["Admin-review claim from root."],
+      sourceBlindInsights: ["Pattern exists but needs provenance."],
+      privateOrInternalExclusions: ["Withhold internal relationship context."],
+      missingInfoQuestions: ["Confirm primary public link."],
+      recommendedAdminActions: ["Verify owner-safe wording."],
+      provenanceSummary: ["Generated from Source File archive root."],
+    },
+  };
+  assert.deepEqual(sourceSummaryPanelComponent.normalizeSubjectAnalystReadV1(archive).publicReadyClaims, ["Public-ready claim from root."]);
+  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive }));
+  assert.match(text, /BNL Analyst Read/);
+  assert.match(text, /Internal Source File intelligence\. Not public dossier copy\./);
+  assert.match(text, /artist/);
+  assert.match(text, /high/);
+  assert.match(text, /draft ingredients available after review/);
+  assert.match(text, /BNL internal read says this source file has recurring creative signals/);
+  assert.match(text, /Repeated public music references/);
+  assert.match(text, /Public-ready claim from root/);
+  assert.match(text, /Admin-review claim from root/);
+  assert.match(text, /Confirm primary public link/);
+  assert.match(text, /Verify owner-safe wording/);
+  assert.match(text, /Generated from Source File archive root/);
+  assert.match(text, /Public-ready/);
+  assert.match(text, /Admin-review/);
+  assert.match(text, /Needs confirmation|Missing Confirmations/);
+  assert.match(text, /Source-blind/);
+  assert.match(text, /Private\/internal withheld/);
+});
+
+test("Source File page extracts subjectAnalystReadV1 from sourceFileCaseReportV1 and handles old archives", () => {
+  const summary = sourceFileReportTestSummary();
+  const archive = {
+    id: "archive-analyst-report",
+    candidateId: "candidate-analyst-report",
+    subjectName: "Analyst Report",
+    sourceDigest: "1234567890abcdef",
+    createdAt: "2026-06-14T00:00:00.000Z",
+    updatedAt: "2026-06-14T02:00:00.000Z",
+    archiveSize: 123,
+    chunkCount: 1,
+    reviewOnly: true,
+    sourceFileCaseReportV1: {
+      caseSummary: "Case report exists.",
+      subjectAnalystReadV1: {
+        internalRead: "Nested report analyst read.",
+        likelySubjectType: "community node",
+        confidence: "medium",
+        publicDraftPosture: "hold for confirmation",
+        strongestSignals: ["Nested signal."],
+        publicReadyClaims: ["Nested public-ready claim."],
+        sourceFileReviewClaims: ["Nested review-needed claim."],
+        missingInfoQuestions: ["Nested missing confirmation."],
+        recommendedAdminActions: ["Nested admin action."],
+      },
+    },
+  };
+  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive }));
+  assert.match(text, /Nested report analyst read/);
+  assert.match(text, /community node/);
+  assert.match(text, /medium/);
+  assert.match(text, /hold for confirmation/);
+  assert.match(text, /Nested signal/);
+  assert.match(text, /Nested public-ready claim/);
+  assert.match(text, /Nested review-needed claim/);
+  assert.match(text, /Nested missing confirmation/);
+  assert.match(text, /Nested admin action/);
+
+  const oldText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: { ...archive, sourceFileCaseReportV1: { caseSummary: "Old report only." } } }));
+  assert.match(oldText, /No BNL analyst read stored yet\. Refresh this Source File after bot PR #284 is deployed\./);
+});
+
+
+
+test("public dossier/read-model routes do not expose subjectAnalystReadV1", () => {
+  for (const routePath of [
+    "src/app/api/bnl/read-model/route.ts",
+    "src/components/DossierPageView.tsx",
+    "src/lib/dossier-page-view-model.ts",
+  ]) {
+    assert.doesNotMatch(normalizedSource(routePath), /subjectAnalystReadV1/);
+  }
+});
 
 test("Source File page renders subjectIntelligenceBriefV1 as the primary report with one collapsed debug fallback", () => {
   const summary = sourceFileReportTestSummary();
@@ -8765,7 +8869,7 @@ test("Source File page renders only BNL-authored Case File Reports and keeps raw
   assert.match(visibleText, /BNL Case File Report/);
   assert.match(visibleText, /BNL-authored case summary sentence/);
   assert.match(visibleText, /Dossier Use/);
-  assert.match(visibleText, /Public-Safe Claims/);
+  assert.match(visibleText, /Public-ready Claims/);
   assert.match(visibleText, /Confidence \/ Memory Coverage/);
   assert.doesNotMatch(visibleText, /COMPACT_SUMMARY_SHOULD_STAY_ARCHIVED|RAW_MISSING_INFO_SHOULD_STAY_ARCHIVED|RAW_EVIDENCE_CATEGORY_FRAGMENT_SHOULD_STAY_ARCHIVED/);
   assert.doesNotMatch(visibleText, /Missing Info|What BNL Knows|Evidence by Category|Latest BNL Source Archive Readout/);
@@ -8892,7 +8996,7 @@ test("Entity Intelligence Review Console collapses duplicate safe bullets and ke
   assert.match(text, /BNL Source File Display Layer/);
   assert.match(text, /BNL Case File Report/);
   assert.match(text, /has not generated a dossier-ready Case File Report/);
-  assert.match(text, /Review-only/);
+  assert.match(text, /Admin-review/);
   assert.doesNotMatch(text, /BNL found an internal local profile match for Crow/);
   assert.doesNotMatch(text, /BNL found prior relationship\/context notes connected to Crow/);
   assert.doesNotMatch(

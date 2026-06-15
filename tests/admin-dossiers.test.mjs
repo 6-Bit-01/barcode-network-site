@@ -933,6 +933,27 @@ test("Source File claim review decisions persist and update safe Source File not
   assert.equal(candidate.sourceFileNotes[0].publicSafe, false);
   assert.equal(candidate.sourceFileNotes[0].type, "general_note");
 
+  const missingAnswerResponse = await authedPost({
+    action: "reviewSourceFileClaim",
+    candidateId: "claim-review-candidate",
+    input: {
+      claimId: "claim_missing_answer_fixture",
+      claimText: "Confirm public role/title",
+      claimType: "missing_info",
+      sourceSection: "missingConfirmations",
+      decision: "confirmed_internal",
+      editedText: "Claim Review Subject is a BARCODE Network community member.",
+      publicSafe: false,
+    },
+  });
+  assert.equal(missingAnswerResponse.status, 200);
+  state = await store.getDossierWorkflowState();
+  candidate = state.candidates[0];
+  const missingAnswerNote = candidate.sourceFileNotes.find((note) => note.id === "source_file_note_claim_missing_answer_fixture");
+  assert.equal(missingAnswerNote?.text, "Claim Review Subject is a BARCODE Network community member.");
+  assert.equal(missingAnswerNote?.type, "general_note");
+  assert.equal(missingAnswerNote?.publicSafe, false);
+
   const rejectResponse = await authedPost({
     action: "reviewSourceFileClaim",
     candidateId: "claim-review-candidate",
@@ -8845,7 +8866,7 @@ test("Source File analyst review cards render structured decisions, signals, bou
   const archive = {
     id: "archive-structured-review-cards",
     candidateId: "candidate-structured-review-cards",
-    subjectName: "Crow",
+    subjectName: "Raven",
     sourceDigest: "abcdef1234567890",
     createdAt: "2026-06-15T00:00:00.000Z",
     updatedAt: "2026-06-15T01:00:00.000Z",
@@ -8860,7 +8881,7 @@ test("Source File analyst review cards render structured decisions, signals, bou
       strongestSignals: ["Community and music discussion signals."],
       reviewableClaims: [
         {
-          claimText: "Confirm public role/title: Is Crow a community participant, artist, collaborator, or something else?",
+          claimText: "Confirm public role/title: Is Raven a community participant, artist, collaborator, or something else?",
           claimType: "public_role_title",
           reviewLane: "needs_public_confirmation",
           suggestedDecision: "needs_more_info",
@@ -8879,6 +8900,14 @@ test("Source File analyst review cards render structured decisions, signals, bou
           safeEvidenceSummary: "Repeated music discussion without owned-link proof.",
         },
         {
+          claimText: "contest organizer",
+          claimType: "weak_label",
+          reviewLane: "weak_label",
+          suggestedDecision: "reject_if_inaccurate",
+          why: "Weak analyst label only.",
+          safeEvidenceSummary: "Possible review claim label, not a confirmed role.",
+        },
+        {
           claimText: "Source-blind Orion context exists.",
           claimType: "source_blind",
           reviewLane: "source_blind",
@@ -8891,7 +8920,7 @@ test("Source File analyst review cards render structured decisions, signals, bou
         {
           claimText: "Preferred display name",
           why: "Public name must be exact before use.",
-          safeEvidenceSummary: "Candidate is referred to as Crow in public-safe context.",
+          safeEvidenceSummary: "Candidate is referred to as Raven in public-safe context.",
         },
       ],
       recommendedAdminActions: [
@@ -8903,7 +8932,7 @@ test("Source File analyst review cards render structured decisions, signals, bou
       ],
       doNotSayPublicly: [
         {
-          boundary: "Do not say Crow is an official collaborator.",
+          boundary: "Do not say Raven is an official collaborator.",
           why: "No confirmed public-safe collaborator evidence.",
           protects: "Avoids overstating relationship context.",
         },
@@ -8925,20 +8954,33 @@ test("Source File analyst review cards render structured decisions, signals, bou
   assert.match(text, /Why BNL flagged this/);
   assert.match(text, /Public-safe community participation signals only/);
   assert.match(text, /needs_more_info/);
-  assert.match(text, /Which public label, if any, may BNL use for Crow/);
+  assert.match(text, /Which public label, if any, may BNL use for Raven/);
   assert.match(text, /Enter the exact sentence BNL may use as a Source File fact/);
-  assert.match(text, /Crow is a BARCODE Network community member/);
+  assert.match(text, /Raven is a BARCODE Network community member/);
+  assert.match(text, /What am I deciding/);
+  assert.match(text, /You are deciding whether this role\/title is true for this subject/);
+  assert.match(text, /Approve as public fact/);
+  assert.match(text, /Use this only if the claim is true and the exact public wording is approved/);
+  assert.match(text, /Keep as internal context/);
+  assert.match(text, /Reject as false \/ not useful/);
+  assert.match(text, /Weak evidence label \/ pattern/);
+  assert.match(text, /Is this label accurate and useful, or should it be rejected/);
+  assert.match(text, /Reject if inaccurate; keep internal if useful; do not approve public without exact confirmed wording/);
   assert.match(text, /Evidence Signals \/ Pattern Summary/);
   assert.match(text, /These are pattern counts and context signals BNL used for analysis/);
   assert.match(text, /Music discussion signal/);
   assert.doesNotMatch(text, /Music discussion only: 44 Confirm public-ready/);
   assert.match(text, /What exact display name may BNL use publicly/);
-  assert.match(text, /Use Crow publicly; keep other aliases internal/);
+  assert.match(text, /Use Raven publicly; keep other aliases internal/);
+  assert.match(text, /Question/);
+  assert.match(text, /Answer to save/);
+  assert.match(text, /Save answer/);
+  assert.doesNotMatch(text, /Mark answered/);
   assert.match(text, /Enter the exact answer BNL should use, or choose Needs more info \/ Reject/);
   assert.match(text, /Source-blind context cannot become public copy by itself/);
   assert.match(text, /Add public-safe replacement text, if owner\/admin confirms it elsewhere/);
-  assert.match(text, /Needs provenance/);
-  assert.doesNotMatch(text, /Source-blind Orion context exists[\s\S]*Confirm public-ready/);
+  assert.match(text, /Needs public source/);
+  assert.doesNotMatch(text, /Source-blind Orion context exists[\s\S]*Approve as public fact/);
   assert.match(text, /Withheld Evidence Audit/);
   assert.match(text, /Total withheld:\s+3/);
   assert.match(text, /private messages\s+:\s+2/);
@@ -8947,10 +8989,11 @@ test("Source File analyst review cards render structured decisions, signals, bou
   assert.doesNotMatch(text, /person@example\.com|Stripe customer token/);
   assert.match(text, /Admin task/);
   assert.match(text, /Mark done/);
+  assert.doesNotMatch(text, /Crow is a BARCODE Network community member|Use Crow publicly|Do not state a public role for Crow/);
   assert.doesNotMatch(text, /Ask owner\/admin to confirm public-safe role wording\.[\s\S]*Edit \+ confirm public-safe text/);
   assert.match(text, /Public boundary/);
   assert.match(text, /Keep boundary/);
-  assert.doesNotMatch(text, /Do not say Crow is an official collaborator\.[\s\S]*Confirm public-ready/);
+  assert.doesNotMatch(text, /Do not say Raven is an official collaborator\.[\s\S]*Approve as public fact/);
 });
 
 test("Source File page extracts subjectAnalystReadV1 from sourceFileCaseReportV1 and handles old archives", () => {

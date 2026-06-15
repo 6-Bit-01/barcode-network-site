@@ -7,6 +7,7 @@ import type {
   DossierSourceFileArchiveMetadata,
   DossierSourceFileCaseReportV1,
   DossierSourceFileNote,
+  DossierSubjectAnalystReadV1,
 } from "@/lib/dossier-workflow";
 import type { DossierDraftBlueprint } from "@/lib/dossier-classification";
 import { buildDossierStylePacket, DOSSIER_DRAFT_CONTRACT_REQUIRED_FIELDS } from "@/lib/dossier-style-packet";
@@ -145,6 +146,48 @@ function normalizeCaseReport(
   return undefined;
 }
 
+function hasAnalystReadShape(value: unknown): value is DossierSubjectAnalystReadV1 {
+  const read = asRecord(value);
+  if (!read) return false;
+  return [
+    "subjectName",
+    "internalRead",
+    "likelySubjectType",
+    "confidence",
+    "publicDraftPosture",
+    "strongestSignals",
+    "publicReadyClaims",
+    "sourceFileReviewClaims",
+    "reviewNeededClaims",
+    "sourceBlindInsights",
+    "privateOrInternalExclusions",
+    "doNotSayPublicly",
+    "missingInfoQuestions",
+    "recommendedAdminActions",
+    "draftIngredients",
+    "sourceFileIngredients",
+    "provenanceSummary",
+  ].some((key) => read[key] !== undefined);
+}
+
+export function normalizeSubjectAnalystReadV1(
+  latestSourceFileArchive?: DossierSourceFileArchiveMetadata,
+): DossierSubjectAnalystReadV1 | undefined {
+  for (const candidate of archivePayloadCandidates(latestSourceFileArchive)) {
+    const brief = asRecord(candidate.sourceFileBriefV2);
+    const report = asRecord(candidate.sourceFileCaseReportV1);
+    const nestedReport = asRecord(brief?.sourceFileCaseReportV1);
+    const match = [
+      candidate.subjectAnalystReadV1,
+      report?.subjectAnalystReadV1,
+      nestedReport?.subjectAnalystReadV1,
+      brief?.subjectAnalystReadV1,
+    ].find(hasAnalystReadShape);
+    if (match) return match;
+  }
+  return undefined;
+}
+
 function normalizeInterimBrief(latestSourceFileArchive?: DossierSourceFileArchiveMetadata) {
   for (const candidate of archivePayloadCandidates(latestSourceFileArchive)) {
     const brief = asRecord(candidate.sourceFileBriefV2);
@@ -273,7 +316,7 @@ function SubjectIntelligenceBriefView({
   const snapshot: Array<[string, unknown]> = [
     ["Approved authored items", valueByKeys(activity, ["totalApprovedPublicAuthoredItems", "approvedPublicAuthoredItems", "totalApprovedAuthoredItems"])],
     ["Public mentions", valueByKeys(activity, ["totalPublicMentions", "publicMentions"])],
-    ["Review-only evidence", valueByKeys(activity, ["reviewOnlyEvidenceCount", "reviewOnlyCount"])],
+    ["Admin-review evidence", valueByKeys(activity, ["reviewOnlyEvidenceCount", "reviewOnlyCount"])],
     ["Evidence scanned", valueByKeys(activity, ["totalEvidenceScanned", "evidenceScanned", "totalScanned"])],
     ["Latest observed", valueByKeys(activity, ["latestObserved", "latestObservedAt", "latestActivityAt"])],
     ["Activity level", valueByKeys(activity, ["activityLevel", "level"])],
@@ -290,7 +333,7 @@ function SubjectIntelligenceBriefView({
   const adminActions = listValues(brief.recommendedAdminActions);
 
   return (
-    <Section title="BNL Subject Intelligence Brief" tone="review" helper="Primary review-only BNL readout. Use this as admin context, not public copy.">
+    <Section title="BNL Subject Intelligence Brief" tone="review" helper="Primary Admin-review BNL readout. Use this as admin context, not public copy.">
       <div className="space-y-4">
         <section className="border border-accent/60 bg-background/30 p-4">
           <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-accent">Subject Read</h4>
@@ -355,7 +398,7 @@ function SubjectIntelligenceBriefView({
         </section>
 
         <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-3 text-xs font-bold uppercase tracking-widest text-foreground">Music / Link Signals</h4><SignalList value={brief.musicAndLinkSignals} /></section>
-        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-1 text-xs font-bold uppercase tracking-widest text-foreground">Relationship / Context Signals</h4><p className="mb-3 text-xs text-muted">Review-only unless separately confirmed.</p><SignalList value={brief.relationshipSignals} /></section>
+        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-1 text-xs font-bold uppercase tracking-widest text-foreground">Relationship / Context Signals</h4><p className="mb-3 text-xs text-muted">Admin-review unless separately confirmed.</p><SignalList value={brief.relationshipSignals} /></section>
         <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-3 text-xs font-bold uppercase tracking-widest text-foreground">Queue / Submission Read</h4><BriefParagraphs value={brief.queueSubmissionRead} /></section>
         <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-3 text-xs font-bold uppercase tracking-widest text-foreground">What To Add To This Source File</h4><div className="grid grid-cols-1 gap-3 lg:grid-cols-2"><div><h5 className="mb-2 text-xs uppercase tracking-widest text-accent">Source file gaps</h5><SignalList value={sourceFileGaps} empty="No source file gaps recorded." /></div><div><h5 className="mb-2 text-xs uppercase tracking-widest text-accent">Recommended admin actions</h5><SignalList value={adminActions} empty="No recommended admin actions recorded." /></div></div></section>
         <section className="border border-accent/60 bg-accent/10 p-3"><h4 className="mb-3 text-xs font-bold uppercase tracking-widest text-foreground">Do Not Say Publicly Yet</h4><SignalList value={brief.doNotSayPubliclyYet} empty="No do-not-say items recorded." /></section>
@@ -423,6 +466,61 @@ function ReportSectionView({ title, value }: { title: string; value: unknown }) 
   );
 }
 
+
+function AnalystList({ value, empty }: { value: unknown; empty: string }) {
+  const items = stringItems(value);
+  if (!items.length) return <p className="text-muted">{empty}</p>;
+  return (
+    <ul className="list-disc space-y-2 pl-5 text-foreground">
+      {items.map((item, index) => <li key={`${index}-${item.slice(0, 24)}`}>{item}</li>)}
+    </ul>
+  );
+}
+
+function BnlAnalystReadPanel({
+  analystRead,
+  refreshedAt,
+}: {
+  analystRead?: DossierSubjectAnalystReadV1;
+  refreshedAt?: string;
+}) {
+  if (!analystRead) {
+    return (
+      <Section title="BNL Analyst Read" tone="review" helper="Internal Source File intelligence. Not public dossier copy.">
+        <p className="text-foreground">No BNL analyst read stored yet. Refresh this Source File after bot PR #284 is deployed.</p>
+      </Section>
+    );
+  }
+  const reviewClaims = stringItems(analystRead.reviewNeededClaims).length
+    ? analystRead.reviewNeededClaims
+    : analystRead.sourceFileReviewClaims;
+  const withheldContext = [
+    ...stringItems(analystRead.sourceBlindInsights).map((item) => `Source-blind: ${item}`),
+    ...stringItems(analystRead.privateOrInternalExclusions).map((item) => `Private/internal withheld: ${item}`),
+    ...stringItems(analystRead.doNotSayPublicly).map((item) => `Do not say publicly: ${item}`),
+  ];
+  return (
+    <Section title="BNL Analyst Read" tone="review" helper="Internal Source File intelligence. Not public dossier copy.">
+      <div className="space-y-4">
+        <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <SnapshotItem label="Subject type" value={scalarLabel(analystRead.likelySubjectType)} />
+          <SnapshotItem label="Confidence" value={scalarLabel(analystRead.confidence)} />
+          <SnapshotItem label="Public draft posture" value={scalarLabel(analystRead.publicDraftPosture)} />
+          <SnapshotItem label="Last refreshed" value={formatSnapshotDate(refreshedAt)} />
+        </dl>
+        <section className="border border-accent/60 bg-background/30 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-accent">Internal Read</h4><BriefParagraphs value={analystRead.internalRead} /></section>
+        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Strongest Signals</h4><AnalystList value={analystRead.strongestSignals} empty="No strongest signals reported." /></section>
+        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Public-Ready Claims</h4><AnalystList value={analystRead.publicReadyClaims} empty="No public-ready claims yet." /></section>
+        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Review-Needed Claims</h4><AnalystList value={reviewClaims} empty="No review-needed claims reported." /></section>
+        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Source-Blind / Withheld Context</h4><AnalystList value={withheldContext} empty="No source-blind insights reported." /></section>
+        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Missing Confirmations</h4><AnalystList value={analystRead.missingInfoQuestions} empty="No missing confirmations reported." /></section>
+        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Recommended Admin Actions</h4><AnalystList value={analystRead.recommendedAdminActions} empty="No recommended admin actions reported." /></section>
+        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Provenance Summary</h4><AnalystList value={analystRead.provenanceSummary} empty="No provenance summary reported." /></section>
+      </div>
+    </Section>
+  );
+}
+
 function CaseReportView({ report }: { report?: DossierSourceFileCaseReportV1 }) {
   if (asRecord(report?.subjectIntelligenceBriefV1)) {
     return <SubjectIntelligenceBriefView report={report as DossierSourceFileCaseReportV1} />;
@@ -448,7 +546,7 @@ function CaseReportView({ report }: { report?: DossierSourceFileCaseReportV1 }) 
   const sections: ReportSection[] = [
     { title: "Case Summary", value: report.caseSummary },
     { title: "Dossier Use", value: report.dossierUse },
-    { title: "Public-Safe Claims", value: report.publicSafeClaims },
+    { title: "Public-ready Claims", value: report.publicSafeClaims },
     { title: "Evidence Summary", value: report.evidenceSummary },
     { title: "Community Context", value: report.communityContext },
     { title: "Creative / Music Context", value: report.creativeMusicContext, optional: true },
@@ -513,7 +611,7 @@ export function DossierSourceFileArchiveRawData({ latestSourceFileArchive }: { l
   const oldReportSections: ReportSection[] = report ? [
     { title: "Case Summary", value: report.caseSummary },
     { title: "Dossier Use", value: report.dossierUse },
-    { title: "Public-Safe Claims", value: report.publicSafeClaims },
+    { title: "Public-ready Claims", value: report.publicSafeClaims },
     { title: "Evidence Summary", value: report.evidenceSummary },
     { title: "Community Context", value: report.communityContext },
     { title: "Creative / Music Context", value: report.creativeMusicContext, optional: true },
@@ -540,7 +638,7 @@ export function DossierSourceFileArchiveRawData({ latestSourceFileArchive }: { l
         <SnapshotItem label="Size" value={`${latestSourceFileArchive.archiveSize} bytes`} />
         <SnapshotItem label="Chunks" value={String(latestSourceFileArchive.chunkCount)} />
         <SnapshotItem label="Updated" value={formatSnapshotDate(latestSourceFileArchive.updatedAt)} />
-        <SnapshotItem label="Review-only" value={latestSourceFileArchive.reviewOnly ? "Yes" : "No"} />
+        <SnapshotItem label="Admin-review" value={latestSourceFileArchive.reviewOnly ? "Yes" : "No"} />
       </dl>
       {oldReportSections.length > 0 && (
         <section className="mt-3 border border-border/50 bg-background/30 p-2">
@@ -607,7 +705,7 @@ function DossierBlueprintView({ blueprint }: { blueprint: DossierDraftBlueprint 
           <SnapshotItem label="Confidence" value={blueprint.classification.confidence} />
           <SnapshotItem label="Future prefix" value={`${blueprint.classification.recommendedDesignationPrefix}-###`} />
           <SnapshotItem label="Readiness" value={`${blueprint.readiness.label} (${blueprint.readiness.score}/100)`} />
-          <SnapshotItem label="Evidence counts" value={`${blueprint.evidenceCounts.publicSafeFacts} public-safe / ${blueprint.evidenceCounts.reviewOnlyItems} review-only`} />
+          <SnapshotItem label="Evidence counts" value={`${blueprint.evidenceCounts.publicSafeFacts} Public-ready / ${blueprint.evidenceCounts.reviewOnlyItems} Admin-review`} />
         </dl>
         <section className="border border-border/50 bg-background/30 p-3">
           <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Recommended next action</h4>
@@ -760,7 +858,7 @@ export function DossierSourceFileSummaryPanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest">
-          <StatusBadge>Review-only</StatusBadge>
+          <StatusBadge>Admin-review</StatusBadge>
           <StatusBadge>Display-only</StatusBadge>
           <StatusBadge>
             Source: {entityReadout?.readoutSource === "structured" ? "Structured packet" : "Safe fallback"}
@@ -778,6 +876,8 @@ export function DossierSourceFileSummaryPanel({
           Summary badge: {formatDossierSummaryBadge(summary.summarySource)}.
         </p>
       </Section>
+
+      <BnlAnalystReadPanel analystRead={normalizeSubjectAnalystReadV1(latestSourceFileArchive)} refreshedAt={latestSourceFileArchive?.updatedAt ?? summary.lastUpdatedAt} />
 
       {blueprint && <DossierBlueprintView blueprint={blueprint} />}
 

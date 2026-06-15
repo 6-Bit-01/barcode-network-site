@@ -162,6 +162,26 @@ export type DossierSubjectIntelligenceBriefV1 = {
   doNotSayPubliclyYet?: unknown;
 };
 
+export type DossierSubjectAnalystReadV1 = {
+  subjectName?: string;
+  internalRead?: string;
+  likelySubjectType?: string;
+  confidence?: "high" | "medium" | "low" | string;
+  publicDraftPosture?: string;
+  strongestSignals?: string[];
+  publicReadyClaims?: string[];
+  sourceFileReviewClaims?: string[];
+  reviewNeededClaims?: string[];
+  sourceBlindInsights?: string[];
+  privateOrInternalExclusions?: string[];
+  doNotSayPublicly?: string[];
+  missingInfoQuestions?: string[];
+  recommendedAdminActions?: string[];
+  draftIngredients?: string[];
+  sourceFileIngredients?: string[];
+  provenanceSummary?: string[];
+};
+
 export type DossierSourceFileCaseReportV1 = {
   version?: string;
   generatedAt?: string;
@@ -183,6 +203,7 @@ export type DossierSourceFileCaseReportV1 = {
   confidenceNotes?: string | string[];
   memoryCoverage?: string | string[];
   subjectIntelligenceBriefV1?: DossierSubjectIntelligenceBriefV1;
+  subjectAnalystReadV1?: DossierSubjectAnalystReadV1;
 };
 
 export type DossierSourceFileBriefV2 = {
@@ -190,6 +211,7 @@ export type DossierSourceFileBriefV2 = {
   adminSummary?: string;
   recommendedNextAction?: string;
   sourceFileCaseReportV1?: DossierSourceFileCaseReportV1;
+  subjectAnalystReadV1?: DossierSubjectAnalystReadV1;
   caseFileReport?: unknown;
 };
 
@@ -202,6 +224,7 @@ export type DossierSourceFileArchiveCompactReadout = {
   evidenceReceiptSummary?: string[];
   sourceFileCaseReportV1?: DossierSourceFileCaseReportV1;
   sourceFileBriefV2?: DossierSourceFileBriefV2;
+  subjectAnalystReadV1?: DossierSubjectAnalystReadV1;
   archivePayload?: unknown;
   archive?: unknown;
   payload?: unknown;

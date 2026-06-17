@@ -868,7 +868,15 @@ function savedFollowUpQuestionsForClaim(claim: DossierSourceFileReviewableClaim)
   if (!isSavedFollowUpQuestion(claim)) return [];
   const editedText = claim.review?.editedText?.trim();
   if (editedText) return safeCopyQuestions([editedText]);
-  return safeCopyQuestions(claim.verificationPacketQuestions ?? []);
+  const reviewClaimText = claim.review?.claimText?.trim();
+  const shouldSkipClaimTextFallback = claim.isVagueArtifact || claim.isInternalAuditArtifact;
+  if (claim.review?.decision === "needs_more_info" && reviewClaimText && !shouldSkipClaimTextFallback) return safeCopyQuestions([reviewClaimText]);
+  const verificationQuestions = safeCopyQuestions(claim.verificationPacketQuestions ?? []);
+  if (verificationQuestions.length) return verificationQuestions;
+  const suggestedAnswerText = claim.suggestedAnswerText?.trim();
+  if (suggestedAnswerText) return safeCopyQuestions([suggestedAnswerText]);
+  if (claim.claimType === "missing_info" && claim.claimText && !shouldSkipClaimTextFallback) return safeCopyQuestions([claim.claimText]);
+  return [];
 }
 
 function dedupeVerificationQuestions(questions: Array<{ text: string; audience: VerificationPacketAudience }>): VerificationPacketSections {

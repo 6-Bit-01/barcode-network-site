@@ -827,64 +827,128 @@ export function deriveDossierSourceFileReviewableClaims(input: {
 }
 
 
-const VERIFICATION_AUDIENCE_LABELS: Array<{ key: string; title: string; copyLabel: string; intro: (subject: string) => string }> = [
-  { key: "subject", title: "Questions for the subject", copyLabel: "Copy subject questions", intro: (subject) => `Hey ${subject}, BNL is cleaning up your Source File and needs a few quick confirmations:` },
-  { key: "admin", title: "Questions for admin", copyLabel: "Copy admin follow-up", intro: () => "BNL needs admin follow-up on these Source File questions:" },
-  { key: "public_source", title: "Public sources needed", copyLabel: "Copy public source requests", intro: () => "BNL needs public-safe source links for these Source File questions:" },
-  { key: "owner_approved_wording", title: "Owner-approved wording needed", copyLabel: "Copy owner-approved wording requests", intro: () => "BNL needs owner-approved public wording for these Source File questions:" },
-  { key: "link_ownership", title: "Link ownership needed", copyLabel: "Copy link ownership requests", intro: () => "BNL needs link ownership confirmation for these Source File questions:" },
-];
+const VERIFICATION_PACKET_AUDIENCE_LABELS = {
+  subject: "Questions for the subject",
+  admin: "Admin follow-up",
+} as const;
 
-function verificationAudienceKey(value: unknown) {
+type VerificationPacketAudience = keyof typeof VERIFICATION_PACKET_AUDIENCE_LABELS;
+
+type VerificationPacketQuestion = {
+  text: string;
+  sourceCount: number;
+};
+
+type VerificationPacketSections = Record<VerificationPacketAudience, VerificationPacketQuestion[]>;
+
+function verificationAudienceKey(value: unknown): VerificationPacketAudience {
   const raw = textValue(value)?.toLowerCase();
-  return raw && VERIFICATION_AUDIENCE_LABELS.some((group) => group.key === raw) ? raw : "admin";
+  return raw === "subject" ? "subject" : "admin";
 }
 
 function safeCopyQuestions(questions: string[]) {
   return questions.filter((question) => !/@|stripe|payment|customer|token|raw evidence|source-blind|private|database row/i.test(question));
 }
 
-function verificationCopyText(title: string, questions: string[], subject = "there") {
-  const safeQuestions = safeCopyQuestions(questions);
-  const intro = VERIFICATION_AUDIENCE_LABELS.find((group) => group.title === title)?.intro(subject) ?? "BNL needs quick Source File confirmations:";
-  return `${intro}\n\n${safeQuestions.map((question, index) => `${index + 1}. ${question}`).join("\n")}\n\nNo pressure — this is just to avoid BNL saying anything wrong publicly.`;
+function normalizeVerificationQuestion(question: string) {
+  return question.trim().replace(/\s+/g, " ").replace(/[?.!;:]+$/g, "").toLowerCase();
+}
+
+function unresolvedReviewItems(claims: DossierSourceFileReviewableClaim[]) {
+  return claims.filter((claim) => !claim.review?.decision || claim.review.decision === "pending");
+}
+
+function isSavedFollowUpQuestion(claim: DossierSourceFileReviewableClaim) {
+  const decision = claim.review?.decision;
+  if (decision === "needs_more_info") return true;
+  return claim.claimType === "missing_info" && decision === "confirmed_internal";
+}
+
+function savedFollowUpQuestionsForClaim(claim: DossierSourceFileReviewableClaim) {
+  if (!isSavedFollowUpQuestion(claim)) return [];
+  const editedText = claim.review?.editedText?.trim();
+  if (editedText) return safeCopyQuestions([editedText]);
+  return safeCopyQuestions(claim.verificationPacketQuestions ?? []);
+}
+
+function dedupeVerificationQuestions(questions: Array<{ text: string; audience: VerificationPacketAudience }>): VerificationPacketSections {
+  const sections: VerificationPacketSections = { subject: [], admin: [] };
+  const seen: Record<VerificationPacketAudience, Map<string, VerificationPacketQuestion>> = {
+    subject: new Map(),
+    admin: new Map(),
+  };
+  for (const question of questions) {
+    const normalized = normalizeVerificationQuestion(question.text);
+    if (!normalized) continue;
+    const existing = seen[question.audience].get(normalized);
+    if (existing) {
+      existing.sourceCount += 1;
+      continue;
+    }
+    const entry = { text: question.text.trim().replace(/\s+/g, " "), sourceCount: 1 };
+    seen[question.audience].set(normalized, entry);
+    sections[question.audience].push(entry);
+  }
+  return sections;
+}
+
+function verificationPacketSections(claims: DossierSourceFileReviewableClaim[]) {
+  return dedupeVerificationQuestions(claims.flatMap((claim) => savedFollowUpQuestionsForClaim(claim).map((text) => ({
+    text,
+    audience: verificationAudienceKey(claim.verificationPacketAudience ?? claim.confirmationTarget),
+  }))));
+}
+
+function verificationPacketCopyText(sections: VerificationPacketSections) {
+  const blocks = (Object.keys(VERIFICATION_PACKET_AUDIENCE_LABELS) as VerificationPacketAudience[]).flatMap((audience) => {
+    const questions = sections[audience];
+    if (!questions.length) return [];
+    return [`${VERIFICATION_PACKET_AUDIENCE_LABELS[audience]}\n\n${questions.map((question) => `* ${question.text}`).join("\n")}`];
+  });
+  return blocks.join("\n\n");
 }
 
 function copyTextToClipboard(text: string) {
   void navigator.clipboard?.writeText(text);
 }
 
-function VerificationPacket({ claims, subjectName }: { claims: DossierSourceFileReviewableClaim[]; subjectName?: string }) {
-  const grouped = new Map<string, string[]>();
-  for (const claim of claims) {
-    if (claim.review?.decision && claim.review.decision !== "pending") continue;
-    for (const question of claim.verificationPacketQuestions ?? []) {
-      const safe = safeCopyQuestions([question]);
-      if (!safe.length) continue;
-      const key = verificationAudienceKey(claim.verificationPacketAudience ?? claim.confirmationTarget);
-      grouped.set(key, [...(grouped.get(key) ?? []), safe[0]]);
-    }
-  }
-  if (!grouped.size) return null;
-  const allQuestions = [...grouped.values()].flat();
+function VerificationPacket({ claims }: { claims: DossierSourceFileReviewableClaim[]; subjectName?: string }) {
+  const unresolved = unresolvedReviewItems(claims);
+  const locked = unresolved.length > 0;
+  const sections = verificationPacketSections(claims);
+  const hasQuestions = sections.subject.length > 0 || sections.admin.length > 0;
+  const copyText = verificationPacketCopyText(sections);
   return (
     <section className="border border-border/60 bg-background/20 p-3 text-sm">
-      <h4 className="text-xs font-bold uppercase tracking-widest text-foreground">Verification packet</h4>
-      <div className="mt-2 grid gap-2 sm:grid-cols-2">
-        {VERIFICATION_AUDIENCE_LABELS.map((group) => {
-          const questions = grouped.get(group.key) ?? [];
-          if (!questions.length) return null;
-          const copyText = verificationCopyText(group.title, questions, subjectName ?? "there");
-          return (
-            <div key={group.key} className="border border-border/40 bg-background/30 p-2">
-              <p className="text-xs font-bold text-accent">{group.title}</p>
-              <ol className="mt-1 list-decimal space-y-1 pl-5 text-foreground">{questions.map((question) => <li key={question}>{question}</li>)}</ol>
-              <button type="button" className="mt-2 border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => copyTextToClipboard(copyText)}>{group.copyLabel}</button>
-            </div>
-          );
-        })}
-      </div>
-      <button type="button" className="mt-2 border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => copyTextToClipboard(verificationCopyText("All unresolved questions", allQuestions, subjectName ?? "there"))}>Copy all unresolved questions</button>
+      <h4 className="text-xs font-bold uppercase tracking-widest text-foreground">Verification Packet</h4>
+      {locked ? (
+        <div className="mt-2 border border-border/40 bg-background/30 p-2">
+          <p className="text-foreground">Finish all review decisions to unlock the final verification packet.</p>
+          <p className="mt-1 text-xs text-muted">This packet stays locked until all review items above have been resolved.</p>
+          <p className="mt-1 text-xs font-bold text-accent">{unresolved.length} review {unresolved.length === 1 ? "item still needs" : "items still need"} decisions.</p>
+        </div>
+      ) : (
+        <div className="mt-2 space-y-3">
+          <p className="text-xs text-muted">This is the final follow-up packet generated from the review decisions above. Use it to ask the subject or handle admin follow-up.</p>
+          {hasQuestions ? (
+            <>
+              {(Object.keys(VERIFICATION_PACKET_AUDIENCE_LABELS) as VerificationPacketAudience[]).map((audience) => {
+                const questions = sections[audience];
+                if (!questions.length) return null;
+                return (
+                  <div key={audience} className="border border-border/40 bg-background/30 p-2">
+                    <p className="text-xs font-bold text-accent">{VERIFICATION_PACKET_AUDIENCE_LABELS[audience]}</p>
+                    <ol className="mt-1 list-decimal space-y-1 pl-5 text-foreground">{questions.map((question) => <li key={question.text}>{question.text}{question.sourceCount > 1 ? <span className="ml-2 text-[11px] text-muted">Used by {question.sourceCount} review items</span> : null}</li>)}</ol>
+                  </div>
+                );
+              })}
+              <button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => copyTextToClipboard(copyText)}>Copy verification packet</button>
+            </>
+          ) : (
+            <p className="border border-border/40 bg-background/30 p-2 text-xs text-muted">No saved follow-up questions were kept from the resolved review decisions.</p>
+          )}
+        </div>
+      )}
     </section>
   );
 }
@@ -1107,8 +1171,9 @@ function BnlAnalystReadPanel({
           const claims = reviewable.current.filter((claim) => claim.sourceSection === section);
           if (!claims.length && section === "reviewableClaims") return null;
           const privateExclusions = section === "sourceBlindInsights" ? stringItems(analystRead.privateOrInternalExclusions) : [];
-          return <section key={section} className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">{label}</h4>{claims.length ? <><VerificationPacket claims={claims} subjectName={analystRead?.subjectName} /><ul className="space-y-3 text-foreground">{claims.map((claim) => <ClaimDecisionCard key={claim.id} claim={claim} onReview={onReviewClaim} />)}</ul></> : <p className="text-muted">No reviewable claims in this section.</p>}{privateExclusions.length > 0 && <ul className="mt-3 list-disc space-y-2 pl-5 text-foreground">{privateExclusions.map((item, index) => <li key={`private-exclusion-${index}`}>Private/internal withheld: {item}</li>)}</ul>}</section>;
+          return <section key={section} className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">{label}</h4>{claims.length ? <ul className="space-y-3 text-foreground">{claims.map((claim) => <ClaimDecisionCard key={claim.id} claim={claim} onReview={onReviewClaim} />)}</ul> : <p className="text-muted">No reviewable claims in this section.</p>}{privateExclusions.length > 0 && <ul className="mt-3 list-disc space-y-2 pl-5 text-foreground">{privateExclusions.map((item, index) => <li key={`private-exclusion-${index}`}>Private/internal withheld: {item}</li>)}</ul>}</section>;
         })}
+        <VerificationPacket claims={reviewable.current} subjectName={analystRead?.subjectName} />
         <WithheldEvidenceAudit audit={analystRead.withheldEvidenceAudit} />
         {reviewable.previous.length > 0 && <details className="border border-border/50 bg-background/20 p-3"><summary className="cursor-pointer text-xs font-bold uppercase tracking-widest text-foreground">Previously reviewed claims</summary><ul className="mt-3 space-y-3 text-foreground">{reviewable.previous.map((claim) => <li key={claim.id} className="border border-border/40 p-2"><p>{claim.claimText}</p><ClaimReviewControls claim={claim} onReview={onReviewClaim} /></li>)}</ul></details>}
         <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Provenance Summary</h4><AnalystList value={analystRead.provenanceSummary} empty="No provenance summary reported." /></section>

@@ -9111,6 +9111,105 @@ test("Source File analyst review cards render structured decisions, signals, bou
   assert.match(completedText, /Undo choice/);
 });
 
+test("Source File analyst review cards prefer BNL human display fields and verification packets", () => {
+  const summary = sourceFileReportTestSummary();
+  const archive = {
+    id: "archive-display-review-fields",
+    candidateId: "candidate-display-review-fields",
+    subjectName: "Crow",
+    sourceDigest: "abcdef1234567890",
+    createdAt: "2026-06-16T00:00:00.000Z",
+    updatedAt: "2026-06-16T01:00:00.000Z",
+    archiveSize: 123,
+    chunkCount: 1,
+    reviewOnly: true,
+    subjectAnalystReadV1: {
+      subjectName: "Crow",
+      internalRead: "Display fields fixture.",
+      reviewableClaims: [
+        {
+          claimText: "Preferred public role needs review.",
+          claimType: "public_role_title",
+          reviewLane: "needs_public_confirmation",
+          displayTitle: "BNL display title: confirm Crow's public role",
+          displayDecision: "BNL display decision: decide whether this exact role can be public.",
+          displayWhatIsBeingChecked: "BNL display check: the admin is checking public role wording.",
+          displayWhyBNLFlaggedIt: "BNL display why: role evidence needs owner-safe confirmation.",
+          displayBNLRecommendation: "BNL display recommendation: ask for exact owner-approved wording first.",
+          displayEvidenceSummary: "BNL display evidence: public-safe signals only, no raw private logs.",
+          displaySafeDefault: "BNL display safe default: keep this internal until confirmed.",
+          displayApprovalInstruction: "BNL display approval instruction: only approve the exact confirmed sentence.",
+          confirmationTarget: "subject",
+          primaryActionLabel: "Use BNL primary approval label",
+          secondaryActionLabels: ["Use BNL confirmation label", "Use BNL reject label"],
+          verificationPacketQuestion: [
+            "What public role/title should BNL use for you, if any?",
+            "raw evidence: private token should not copy",
+          ],
+          verificationPacketAudience: "subject",
+          recommendedAdminActionCards: [{ title: "Ask Crow for role wording", body: "Use BNL-provided card copy." }],
+          suggestedPublicWording: "Crow is a BARCODE Network community member.",
+          suggestedDecision: "approve_public",
+          publicSafe: true,
+        },
+        {
+          claimText: "Admin follow-up needed.",
+          displayTitle: "Admin packet card",
+          displayDecision: "BNL admin display decision.",
+          displayWhatIsBeingChecked: "BNL admin display check.",
+          displayWhyBNLFlaggedIt: "BNL admin display why.",
+          displayBNLRecommendation: "BNL admin display recommendation.",
+          displayEvidenceSummary: "BNL admin display evidence summary.",
+          displaySafeDefault: "BNL admin display safe default.",
+          verificationPacketQuestion: "Which admin reviewed Crow's public role wording?",
+          verificationPacketAudience: "admin",
+        },
+        {
+          claimText: "Public source needed.",
+          displayTitle: "Public source packet card",
+          displayDecision: "BNL public source display decision.",
+          displayWhatIsBeingChecked: "BNL public source display check.",
+          displayWhyBNLFlaggedIt: "BNL public source display why.",
+          displayBNLRecommendation: "BNL public source display recommendation.",
+          displayEvidenceSummary: "BNL public source display evidence summary.",
+          displaySafeDefault: "BNL public source display safe default.",
+          verificationPacketQuestion: "Which public source confirms Crow's approved role?",
+          verificationPacketAudience: "public_source",
+        },
+      ],
+    },
+  };
+  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive }));
+  assert.match(text, /BNL display title: confirm Crow's public role/);
+  assert.match(text, /BNL display decision: decide whether this exact role can be public/);
+  assert.match(text, /BNL display check: the admin is checking public role wording/);
+  assert.match(text, /BNL display recommendation: ask for exact owner-approved wording first/);
+  assert.match(text, /BNL display why: role evidence needs owner-safe confirmation/);
+  assert.match(text, /BNL display evidence: public-safe signals only, no raw private logs/);
+  assert.match(text, /BNL display safe default: keep this internal until confirmed/);
+  assert.match(text, /BNL display approval instruction: only approve the exact confirmed sentence/);
+  assert.match(text, /Confirmation target:\s+Subject/);
+  assert.match(text, /Verification packet/);
+  assert.match(text, /Questions for the subject/);
+  assert.match(text, /Questions for admin/);
+  assert.match(text, /Public sources needed/);
+  assert.match(text, /Copy subject questions/);
+  assert.match(text, /Copy admin follow-up/);
+  assert.match(text, /Copy public source requests/);
+  assert.match(text, /Copy all unresolved questions/);
+  assert.doesNotMatch(text, /raw evidence: private token should not copy/);
+  assert.match(text, /Use BNL primary approval label/);
+  assert.match(text, /Use BNL confirmation label/);
+  assert.match(text, /Recommended action cards/);
+  assert.match(text, /Ask Crow for role wording/);
+  assert.match(normalizedSource("src/components/DossierSourceFileSummaryPanel.tsx"), /shadow-\[inset_0_3px_0_rgba\(255,255,255,0\.08\)\]/);
+  assert.doesNotMatch(text, /You are deciding whether this claim is true, whether it is useful internally, and whether exact public wording is approved/);
+  assert.doesNotMatch(text, /What decision should admins make for this Source File item/);
+  assert.doesNotMatch(text, /Enter the exact sentence BNL may use as a Source File fact/);
+  assert.doesNotMatch(text, /A Source File review decision\. Confirming public-ready does not publish a dossier/);
+  assert.doesNotMatch(text, /No public-safe evidence summary provided/);
+});
+
 test("Source File page extracts subjectAnalystReadV1 from sourceFileCaseReportV1 and handles old archives", () => {
   const summary = sourceFileReportTestSummary();
   const archive = {

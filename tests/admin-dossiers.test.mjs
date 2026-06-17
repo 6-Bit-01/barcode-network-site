@@ -8974,6 +8974,7 @@ test("Source File analyst review cards render structured decisions, signals, bou
           reviewLane: "source_blind",
           suggestedDecision: "keep_internal",
           suggestedInternalNote: "Keep Orion source-blind context internal until public provenance exists.",
+          confirmationTarget: "public_source",
           why: "Useful internally but provenance is withheld.",
           safeEvidenceSummary: "Redacted source-blind context summary.",
         },
@@ -9061,9 +9062,10 @@ test("Source File analyst review cards render structured decisions, signals, bou
   assert.doesNotMatch(text, /Mark answered/);
   assert.match(text, /Source-blind context cannot become public copy by itself/);
   assert.match(text, /Add public-safe replacement text, if owner\/admin confirms it elsewhere/);
-  assert.match(text, /Ask for public source/);
-  assert.match(text, /subject-owned\/keyed local evidence exists/);
-  assert.match(text, /This is not a public-ready claim\. BNL has not provided a concrete fact to approve/);
+  assert.match(text, /Request public source/);
+  assert.match(text, /Internal audit item/);
+  assert.match(text, /BNL found a weak internal signal, but it is not specific enough to become a Source File fact/);
+  assert.match(text, /Keep as internal note/);
   assert.match(text, /Dismiss artifact/);
   assert.doesNotMatch(text, /Source-blind Orion context exists[\s\S]*Approve as public fact/);
   assert.match(text, /Withheld Evidence Audit/);
@@ -9097,6 +9099,7 @@ test("Source File analyst review cards render structured decisions, signals, bou
   assert.equal(weakLabelClaim?.hasSafePublicSuggestion, false);
   const artifactClaim = derived.current.find((claim) => claim.claimText === "subject-owned/keyed local evidence exists");
   assert.equal(artifactClaim?.isVagueArtifact, true);
+  assert.equal(artifactClaim?.isInternalAuditArtifact, true);
   assert.equal(artifactClaim?.hasSafePublicSuggestion, false);
   const completedText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
     summary,
@@ -9272,6 +9275,72 @@ test("Source File analyst review cards prefer BNL human display fields and verif
   assert.doesNotMatch(text, /What decision should admins make for this Source File item/);
   assert.match(text, /A Source File review decision\. Confirming public-ready does not publish a dossier/);
   assert.doesNotMatch(text, /No public-safe evidence summary provided/);
+});
+
+test("Source File internal evidence artifact cards stay internal and target labels are specific", () => {
+  const summary = sourceFileReportTestSummary();
+  const artifactArchive = {
+    id: "archive-internal-artifact-card",
+    candidateId: "candidate-internal-artifact-card",
+    subjectName: "Crow",
+    sourceDigest: "abcdef1234567890",
+    createdAt: "2026-06-16T00:00:00.000Z",
+    updatedAt: "2026-06-16T01:00:00.000Z",
+    archiveSize: 123,
+    chunkCount: 1,
+    reviewOnly: true,
+    subjectAnalystReadV1: {
+      subjectName: "Crow",
+      internalRead: "Internal artifact fixture.",
+      reviewableClaims: [
+        {
+          claimText: "Vague internal evidence marker",
+          claimType: "internal_audit_artifact",
+          reviewLane: "internal_artifact",
+          displayTitle: "Internal evidence artifact",
+          suggestedMissingInfoQuestion: "Should not show as a BNL suggested question.",
+          suggestedPublicWording: "Should not become public wording.",
+          displayBNLRecommendation: "BNL says keep only if this helps audit context.",
+          confirmationTarget: "link_ownership",
+        },
+      ],
+    },
+  };
+  const artifactText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: artifactArchive }));
+  assert.match(artifactText, /Internal audit item/);
+  assert.match(artifactText, /BNL found a weak internal signal, but it is not specific enough to become a Source File fact/);
+  assert.match(artifactText, /Keep this as internal audit context or dismiss it/);
+  assert.match(artifactText, /BNL says keep only if this helps audit context/);
+  assert.match(artifactText, /Keep as internal note/);
+  assert.match(artifactText, /Dismiss artifact/);
+  assert.match(artifactText, /Removes this from the review queue without creating a public fact/);
+  assert.doesNotMatch(artifactText, /Vague internal evidence marker/);
+  assert.doesNotMatch(artifactText, /What to enter if approving/);
+  assert.doesNotMatch(artifactText, /Example approved text/);
+  assert.doesNotMatch(artifactText, /BNL suggested confirmation question/);
+  assert.doesNotMatch(artifactText, /Use BNL suggested question/);
+  assert.doesNotMatch(artifactText, /Ask for confirmation/);
+  assert.doesNotMatch(artifactText, /Write public wording manually|Save public wording|Should not become public wording/);
+
+  const targetArchive = {
+    ...artifactArchive,
+    id: "archive-target-labels",
+    candidateId: "candidate-target-labels",
+    subjectAnalystReadV1: {
+      subjectName: "Crow",
+      internalRead: "Target label fixture.",
+      missingConfirmations: [
+        { claimText: "Subject confirmation question", suggestedMissingInfoQuestion: "What should BNL ask the subject?", confirmationTarget: "subject" },
+        { claimText: "Public source question", suggestedMissingInfoQuestion: "Which public source can BNL use?", confirmationTarget: "public_source" },
+        { claimText: "Link ownership question", suggestedMissingInfoQuestion: "Who owns these links?", confirmationTarget: "link_ownership" },
+      ],
+    },
+  };
+  const targetText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: targetArchive }));
+  assert.match(targetText, /Add to subject verification packet/);
+  assert.match(targetText, /Request public source/);
+  assert.match(targetText, /Ask who owns these links/);
+  assert.doesNotMatch(targetText, /Ask for confirmation/);
 });
 
 test("Source File partial BNL display fields keep per-field fallback safety guidance", () => {

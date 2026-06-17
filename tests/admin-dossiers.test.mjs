@@ -9166,6 +9166,12 @@ test("Source File analyst review cards prefer BNL human display fields and verif
           publicSafe: true,
         },
         {
+          claimText: "Duplicate subject follow-up.",
+          displayTitle: "Duplicate subject packet card",
+          verificationPacketQuestion: " what public role/title should BNL use for you, if any! ",
+          verificationPacketAudience: "subject",
+        },
+        {
           claimText: "Admin follow-up needed.",
           displayTitle: "Admin packet card",
           displayDecision: "BNL admin display decision.",
@@ -9175,6 +9181,30 @@ test("Source File analyst review cards prefer BNL human display fields and verif
           displayEvidenceSummary: "BNL admin display evidence summary.",
           displaySafeDefault: "BNL admin display safe default.",
           verificationPacketQuestion: "Which admin reviewed Crow's public role wording?",
+          verificationPacketAudience: "admin",
+        },
+        {
+          claimText: "Duplicate admin follow-up needed.",
+          displayTitle: "Duplicate admin packet card",
+          verificationPacketQuestion: " which admin reviewed Crow's public role wording ",
+          verificationPacketAudience: "admin",
+        },
+        {
+          claimText: "Edited saved follow-up source claim.",
+          displayTitle: "Edited saved follow-up packet card",
+          verificationPacketQuestion: "Original packet question should lose to edited text.",
+          verificationPacketAudience: "subject",
+        },
+        {
+          claimText: "Review claimText fallback source claim.",
+          displayTitle: "Review claimText fallback packet card",
+          confirmationTarget: "admin",
+        },
+        {
+          claimText: "subject-owned/keyed local evidence exists",
+          claimType: "non_actionable_artifact",
+          actionability: "non_actionable_artifact",
+          displayTitle: "Internal artifact packet card",
           verificationPacketAudience: "admin",
         },
         {
@@ -9222,7 +9252,7 @@ test("Source File analyst review cards prefer BNL human display fields and verif
     sourceArchiveId: archive.id,
     subjectName: archive.subjectName,
   });
-  const reviewFor = (claimText, decision) => {
+  const reviewFor = (claimText, decision, overrides = {}) => {
     const claim = derived.current.find((item) => item.claimText === claimText);
     assert.ok(claim);
     return {
@@ -9235,15 +9265,37 @@ test("Source File analyst review cards prefer BNL human display fields and verif
       publicSafe: decision === "confirmed_public" || decision === "edited",
       createdAt: "2026-06-16T02:00:00.000Z",
       updatedAt: "2026-06-16T02:00:00.000Z",
+      ...overrides,
     };
   };
+  const lockedText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive, candidateId: archive.candidateId, claimReviews: [
+    reviewFor("Resolved approved question.", "confirmed_public"),
+    reviewFor("Resolved internal question.", "confirmed_internal"),
+    reviewFor("Resolved rejected question.", "rejected"),
+    reviewFor("Resolved needs-more-info question.", "needs_more_info"),
+  ] }));
+  assert.match(lockedText, /Verification Packet/);
+  assert.match(lockedText, /Finish all review decisions to unlock the final verification packet/);
+  assert.match(lockedText, /This packet stays locked until all review items above have been resolved/);
+  assert.match(lockedText, /8\s+review\s+items still need\s+decisions/);
+  assert.doesNotMatch(lockedText, /Copy verification packet/);
   const claimReviews = [
+    reviewFor("Preferred public role needs review.", "needs_more_info", { claimText: "What public role/title should BNL use for you, if any?" }),
+    reviewFor("Duplicate subject follow-up.", "needs_more_info", { claimText: " what public role/title should BNL use for you, if any! " }),
+    reviewFor("Admin follow-up needed.", "needs_more_info", { claimText: "Which admin reviewed Crow's public role wording?" }),
+    reviewFor("Duplicate admin follow-up needed.", "needs_more_info", { claimText: " which admin reviewed Crow's public role wording " }),
+    reviewFor("Edited saved follow-up source claim.", "needs_more_info", { editedText: "What exact edited follow-up should BNL ask Crow?" }),
+    reviewFor("Review claimText fallback source claim.", "needs_more_info", { claimText: "Which admin should verify the fallback follow-up?" }),
+    reviewFor("subject-owned/keyed local evidence exists", "needs_more_info"),
+    reviewFor("Public source needed.", "rejected"),
     reviewFor("Resolved approved question.", "confirmed_public"),
     reviewFor("Resolved internal question.", "confirmed_internal"),
     reviewFor("Resolved rejected question.", "rejected"),
     reviewFor("Resolved needs-more-info question.", "needs_more_info"),
   ];
-  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive, candidateId: archive.candidateId, claimReviews }));
+  const unlockedText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive, candidateId: archive.candidateId, claimReviews }));
+  const text = `${lockedText} ${unlockedText}`;
+  const packetText = unlockedText.slice(unlockedText.lastIndexOf("Verification Packet"));
   assert.match(text, /BNL display title: confirm Crow's public role/);
   assert.match(text, /BNL display decision: decide whether this exact role can be public/);
   assert.match(text, /BNL display check: the admin is checking public role wording/);
@@ -9253,28 +9305,35 @@ test("Source File analyst review cards prefer BNL human display fields and verif
   assert.match(text, /BNL display safe default: keep this internal until confirmed/);
   assert.match(text, /BNL display approval instruction: only approve the exact confirmed sentence/);
   assert.match(text, /Confirmation target:\s+Subject/);
-  assert.match(text, /Verification packet/);
+  assert.match(text, /Verification Packet/);
   assert.match(text, /Questions for the subject/);
-  assert.match(text, /Questions for admin/);
-  assert.match(text, /Public sources needed/);
-  assert.match(text, /Copy subject questions/);
-  assert.match(text, /Copy admin follow-up/);
-  assert.match(text, /Copy public source requests/);
-  assert.match(text, /Copy all unresolved questions/);
-  assert.doesNotMatch(text, /raw evidence: private token should not copy/);
+  assert.match(text, /Admin follow-up/);
+  assert.match(text, /This is the final follow-up packet generated from the review decisions above/);
+  assert.match(text, /Copy verification packet/);
+  assert.equal((packetText.match(/Copy verification packet/g) ?? []).length, 1);
+  assert.equal((packetText.match(/What public role\/title should BNL use for you, if any/g) ?? []).length, 1);
+  assert.equal((packetText.match(/Which admin reviewed Crow's public role wording/g) ?? []).length, 1);
+  assert.match(text, /What exact edited follow-up should BNL ask Crow/);
+  assert.doesNotMatch(packetText, /Original packet question should lose to edited text/);
+  assert.match(text, /Which admin should verify the fallback follow-up/);
+  assert.match(text, /Used by\s+2\s+review items/);
+  assert.doesNotMatch(packetText, /raw evidence: private token should not copy/);
+  assert.doesNotMatch(packetText, /subject-owned\/keyed local evidence exists/);
   assert.doesNotMatch(text, /Resolved approved question should not copy/);
   assert.doesNotMatch(text, /Resolved internal question should not copy/);
   assert.doesNotMatch(text, /Resolved rejected question should not copy/);
-  assert.doesNotMatch(text, /Resolved needs-more-info question should not copy/);
+  assert.match(text, /Resolved needs-more-info question/);
   assert.match(text, /Use BNL primary approval label/);
   assert.match(text, /Use BNL confirmation label/);
   assert.match(text, /Recommended action cards/);
   assert.match(text, /Ask Crow for role wording/);
-  assert.match(normalizedSource("src/components/DossierSourceFileSummaryPanel.tsx"), /shadow-\[inset_0_3px_0_rgba\(255,255,255,0\.08\)\]/);
-  assert.doesNotMatch(text, /You are deciding whether this claim is true, whether it is useful internally, and whether exact public wording is approved/);
-  assert.doesNotMatch(text, /What decision should admins make for this Source File item/);
+  const componentSource = normalizedSource("src/components/DossierSourceFileSummaryPanel.tsx");
+  assert.ok(componentSource.indexOf("sectionEntries.map") < componentSource.indexOf("<VerificationPacket claims={reviewable.current}"));
+  assert.match(componentSource, /normalizeVerificationQuestion/);
+  assert.match(componentSource, /verificationPacketCopyText/);
+  assert.match(componentSource, /isSavedFollowUpQuestion/);
+  assert.match(componentSource, /shadow-\[inset_0_3px_0_rgba\(255,255,255,0\.08\)\]/);
   assert.match(text, /A Source File review decision\. Confirming public-ready does not publish a dossier/);
-  assert.doesNotMatch(text, /No public-safe evidence summary provided/);
 });
 
 test("Source File internal evidence artifact cards stay internal and target labels are specific", () => {

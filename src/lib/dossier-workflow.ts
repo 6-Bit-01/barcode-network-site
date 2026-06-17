@@ -162,7 +162,7 @@ export type DossierSubjectIntelligenceBriefV1 = {
   doNotSayPubliclyYet?: unknown;
 };
 
-export type DossierSubjectAnalystReadV1 = {
+export type DossierSubjectAnalystReadV1 = DossierSourceFileHumanDisplayFields & {
   subjectName?: string;
   internalRead?: string;
   likelySubjectType?: string;
@@ -295,6 +295,51 @@ export type DossierSourceFileClaimType =
   | "recommended_action"
   | "do_not_say";
 
+
+export type DossierSourceFileConfirmationTarget =
+  | "none"
+  | "subject"
+  | "admin"
+  | "public_source"
+  | "owner_approved_wording"
+  | "link_ownership"
+  | string;
+
+export type DossierSourceFileVerificationPacketAudience =
+  | "subject"
+  | "admin"
+  | "public_source"
+  | "owner_approved_wording"
+  | "link_ownership"
+  | string;
+
+export type DossierSourceFileRecommendedAdminActionCard = {
+  title?: string;
+  body?: string;
+  action?: string;
+  label?: string;
+  reason?: string;
+  primaryActionLabel?: string;
+  secondaryActionLabels?: string[];
+};
+
+export type DossierSourceFileHumanDisplayFields = {
+  displayTitle?: string;
+  displayDecision?: string;
+  displayWhatIsBeingChecked?: string;
+  displayWhyBNLFlaggedIt?: string;
+  displayBNLRecommendation?: string;
+  displayEvidenceSummary?: string;
+  displaySafeDefault?: string;
+  displayApprovalInstruction?: string;
+  confirmationTarget?: DossierSourceFileConfirmationTarget;
+  primaryActionLabel?: string;
+  secondaryActionLabels?: string[];
+  verificationPacketQuestion?: string | string[];
+  verificationPacketAudience?: DossierSourceFileVerificationPacketAudience;
+  recommendedAdminActionCards?: DossierSourceFileRecommendedAdminActionCard[];
+};
+
 export type DossierSourceFileClaimReviewDecision =
   | "pending"
   | "confirmed_public"
@@ -303,7 +348,7 @@ export type DossierSourceFileClaimReviewDecision =
   | "needs_more_info"
   | "edited";
 
-export type DossierSourceFileClaimReview = {
+export type DossierSourceFileClaimReview = DossierSourceFileHumanDisplayFields & {
   id: string;
   candidateId: string;
   claimText: string;

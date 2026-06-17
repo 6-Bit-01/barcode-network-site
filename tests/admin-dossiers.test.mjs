@@ -8974,6 +8974,7 @@ test("Source File analyst review cards render structured decisions, signals, bou
           reviewLane: "source_blind",
           suggestedDecision: "keep_internal",
           suggestedInternalNote: "Keep Orion source-blind context internal until public provenance exists.",
+          confirmationTarget: "public_source",
           why: "Useful internally but provenance is withheld.",
           safeEvidenceSummary: "Redacted source-blind context summary.",
         },
@@ -8984,6 +8985,11 @@ test("Source File analyst review cards render structured decisions, signals, bou
           suggestedMissingInfoQuestion: "What exact display name may BNL use publicly for Raven?",
           why: "Public name must be exact before use.",
           safeEvidenceSummary: "Candidate is referred to as Raven in public-safe context.",
+        },
+        {
+          claimText: "Confirm public role/title fallback question",
+          why: "Public role needs a best-guess question fallback.",
+          safeEvidenceSummary: "Public-safe role context only.",
         },
       ],
       recommendedAdminActions: [
@@ -9045,15 +9051,21 @@ test("Source File analyst review cards render structured decisions, signals, bou
   assert.match(text, /Use Raven publicly; keep other aliases internal/);
   assert.match(text, /BNL suggested confirmation question/);
   assert.match(text, /What exact display name may BNL use publicly for Raven/);
-  assert.match(text, /Save suggested question/);
+  assert.match(text, /Use BNL suggested question/);
+  assert.match(text, /Use BNL best-guess question/);
+  assert.doesNotMatch(text, /Save fallback question/);
+  assert.doesNotMatch(text, /Save suggested question/);
+  assert.match(text, /Adds this question to the review notes so it can be answered before BNL uses the claim/);
+  assert.doesNotMatch(text, /Creates or keeps a missing confirmation question for owner\/admin review/);
   assert.match(text, /Question/);
   assert.match(text, /Edit question/);
   assert.doesNotMatch(text, /Mark answered/);
   assert.match(text, /Source-blind context cannot become public copy by itself/);
   assert.match(text, /Add public-safe replacement text, if owner\/admin confirms it elsewhere/);
-  assert.match(text, /Ask for public source/);
-  assert.match(text, /subject-owned\/keyed local evidence exists/);
-  assert.match(text, /This is not a public-ready claim\. BNL has not provided a concrete fact to approve/);
+  assert.match(text, /Request public source/);
+  assert.match(text, /Internal audit item/);
+  assert.match(text, /BNL found a weak internal signal, but it is not specific enough to become a Source File fact/);
+  assert.match(text, /Keep as internal note/);
   assert.match(text, /Dismiss artifact/);
   assert.doesNotMatch(text, /Source-blind Orion context exists[\s\S]*Approve as public fact/);
   assert.match(text, /Withheld Evidence Audit/);
@@ -9087,6 +9099,7 @@ test("Source File analyst review cards render structured decisions, signals, bou
   assert.equal(weakLabelClaim?.hasSafePublicSuggestion, false);
   const artifactClaim = derived.current.find((claim) => claim.claimText === "subject-owned/keyed local evidence exists");
   assert.equal(artifactClaim?.isVagueArtifact, true);
+  assert.equal(artifactClaim?.isInternalAuditArtifact, true);
   assert.equal(artifactClaim?.hasSafePublicSuggestion, false);
   const completedText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
     summary,
@@ -9109,6 +9122,271 @@ test("Source File analyst review cards render structured decisions, signals, bou
   assert.match(completedText, /Saved wording:\s+"\s*Raven is a BARCODE Network community member\.\s*"/);
   assert.match(completedText, /No dossier was published/);
   assert.match(completedText, /Undo choice/);
+});
+
+test("Source File analyst review cards prefer BNL human display fields and verification packets", () => {
+  const summary = sourceFileReportTestSummary();
+  const archive = {
+    id: "archive-display-review-fields",
+    candidateId: "candidate-display-review-fields",
+    subjectName: "Crow",
+    sourceDigest: "abcdef1234567890",
+    createdAt: "2026-06-16T00:00:00.000Z",
+    updatedAt: "2026-06-16T01:00:00.000Z",
+    archiveSize: 123,
+    chunkCount: 1,
+    reviewOnly: true,
+    subjectAnalystReadV1: {
+      subjectName: "Crow",
+      internalRead: "Display fields fixture.",
+      reviewableClaims: [
+        {
+          claimText: "Preferred public role needs review.",
+          claimType: "public_role_title",
+          reviewLane: "needs_public_confirmation",
+          displayTitle: "BNL display title: confirm Crow's public role",
+          displayDecision: "BNL display decision: decide whether this exact role can be public.",
+          displayWhatIsBeingChecked: "BNL display check: the admin is checking public role wording.",
+          displayWhyBNLFlaggedIt: "BNL display why: role evidence needs owner-safe confirmation.",
+          displayBNLRecommendation: "BNL display recommendation: ask for exact owner-approved wording first.",
+          displayEvidenceSummary: "BNL display evidence: public-safe signals only, no raw private logs.",
+          displaySafeDefault: "BNL display safe default: keep this internal until confirmed.",
+          displayApprovalInstruction: "BNL display approval instruction: only approve the exact confirmed sentence.",
+          confirmationTarget: "subject",
+          primaryActionLabel: "Use BNL primary approval label",
+          secondaryActionLabels: ["Use BNL confirmation label", "Use BNL reject label"],
+          verificationPacketQuestion: [
+            "What public role/title should BNL use for you, if any?",
+            "raw evidence: private token should not copy",
+          ],
+          verificationPacketAudience: "subject",
+          recommendedAdminActionCards: [{ title: "Ask Crow for role wording", body: "Use BNL-provided card copy." }],
+          suggestedPublicWording: "Crow is a BARCODE Network community member.",
+          suggestedDecision: "approve_public",
+          publicSafe: true,
+        },
+        {
+          claimText: "Admin follow-up needed.",
+          displayTitle: "Admin packet card",
+          displayDecision: "BNL admin display decision.",
+          displayWhatIsBeingChecked: "BNL admin display check.",
+          displayWhyBNLFlaggedIt: "BNL admin display why.",
+          displayBNLRecommendation: "BNL admin display recommendation.",
+          displayEvidenceSummary: "BNL admin display evidence summary.",
+          displaySafeDefault: "BNL admin display safe default.",
+          verificationPacketQuestion: "Which admin reviewed Crow's public role wording?",
+          verificationPacketAudience: "admin",
+        },
+        {
+          claimText: "Public source needed.",
+          displayTitle: "Public source packet card",
+          displayDecision: "BNL public source display decision.",
+          displayWhatIsBeingChecked: "BNL public source display check.",
+          displayWhyBNLFlaggedIt: "BNL public source display why.",
+          displayBNLRecommendation: "BNL public source display recommendation.",
+          displayEvidenceSummary: "BNL public source display evidence summary.",
+          displaySafeDefault: "BNL public source display safe default.",
+          verificationPacketQuestion: "Which public source confirms Crow's approved role?",
+          verificationPacketAudience: "public_source",
+        },
+        {
+          claimText: "Resolved approved question.",
+          displayTitle: "Resolved approved packet card",
+          verificationPacketQuestion: "Resolved approved question should not copy.",
+          verificationPacketAudience: "subject",
+        },
+        {
+          claimText: "Resolved internal question.",
+          displayTitle: "Resolved internal packet card",
+          verificationPacketQuestion: "Resolved internal question should not copy.",
+          verificationPacketAudience: "admin",
+        },
+        {
+          claimText: "Resolved rejected question.",
+          displayTitle: "Resolved rejected packet card",
+          verificationPacketQuestion: "Resolved rejected question should not copy.",
+          verificationPacketAudience: "public_source",
+        },
+        {
+          claimText: "Resolved needs-more-info question.",
+          displayTitle: "Resolved needs-more-info packet card",
+          verificationPacketQuestion: "Resolved needs-more-info question should not copy.",
+          verificationPacketAudience: "subject",
+        },
+      ],
+    },
+  };
+  const derived = sourceSummaryPanelComponent.deriveDossierSourceFileReviewableClaims({
+    analystRead: archive.subjectAnalystReadV1,
+    candidateId: archive.candidateId,
+    sourceArchiveId: archive.id,
+    subjectName: archive.subjectName,
+  });
+  const reviewFor = (claimText, decision) => {
+    const claim = derived.current.find((item) => item.claimText === claimText);
+    assert.ok(claim);
+    return {
+      id: claim.id,
+      candidateId: archive.candidateId,
+      claimText: claim.claimText,
+      claimType: claim.claimType,
+      sourceSection: claim.sourceSection,
+      decision,
+      publicSafe: decision === "confirmed_public" || decision === "edited",
+      createdAt: "2026-06-16T02:00:00.000Z",
+      updatedAt: "2026-06-16T02:00:00.000Z",
+    };
+  };
+  const claimReviews = [
+    reviewFor("Resolved approved question.", "confirmed_public"),
+    reviewFor("Resolved internal question.", "confirmed_internal"),
+    reviewFor("Resolved rejected question.", "rejected"),
+    reviewFor("Resolved needs-more-info question.", "needs_more_info"),
+  ];
+  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive, candidateId: archive.candidateId, claimReviews }));
+  assert.match(text, /BNL display title: confirm Crow's public role/);
+  assert.match(text, /BNL display decision: decide whether this exact role can be public/);
+  assert.match(text, /BNL display check: the admin is checking public role wording/);
+  assert.match(text, /BNL display recommendation: ask for exact owner-approved wording first/);
+  assert.match(text, /BNL display why: role evidence needs owner-safe confirmation/);
+  assert.match(text, /BNL display evidence: public-safe signals only, no raw private logs/);
+  assert.match(text, /BNL display safe default: keep this internal until confirmed/);
+  assert.match(text, /BNL display approval instruction: only approve the exact confirmed sentence/);
+  assert.match(text, /Confirmation target:\s+Subject/);
+  assert.match(text, /Verification packet/);
+  assert.match(text, /Questions for the subject/);
+  assert.match(text, /Questions for admin/);
+  assert.match(text, /Public sources needed/);
+  assert.match(text, /Copy subject questions/);
+  assert.match(text, /Copy admin follow-up/);
+  assert.match(text, /Copy public source requests/);
+  assert.match(text, /Copy all unresolved questions/);
+  assert.doesNotMatch(text, /raw evidence: private token should not copy/);
+  assert.doesNotMatch(text, /Resolved approved question should not copy/);
+  assert.doesNotMatch(text, /Resolved internal question should not copy/);
+  assert.doesNotMatch(text, /Resolved rejected question should not copy/);
+  assert.doesNotMatch(text, /Resolved needs-more-info question should not copy/);
+  assert.match(text, /Use BNL primary approval label/);
+  assert.match(text, /Use BNL confirmation label/);
+  assert.match(text, /Recommended action cards/);
+  assert.match(text, /Ask Crow for role wording/);
+  assert.match(normalizedSource("src/components/DossierSourceFileSummaryPanel.tsx"), /shadow-\[inset_0_3px_0_rgba\(255,255,255,0\.08\)\]/);
+  assert.doesNotMatch(text, /You are deciding whether this claim is true, whether it is useful internally, and whether exact public wording is approved/);
+  assert.doesNotMatch(text, /What decision should admins make for this Source File item/);
+  assert.match(text, /A Source File review decision\. Confirming public-ready does not publish a dossier/);
+  assert.doesNotMatch(text, /No public-safe evidence summary provided/);
+});
+
+test("Source File internal evidence artifact cards stay internal and target labels are specific", () => {
+  const summary = sourceFileReportTestSummary();
+  const artifactArchive = {
+    id: "archive-internal-artifact-card",
+    candidateId: "candidate-internal-artifact-card",
+    subjectName: "Crow",
+    sourceDigest: "abcdef1234567890",
+    createdAt: "2026-06-16T00:00:00.000Z",
+    updatedAt: "2026-06-16T01:00:00.000Z",
+    archiveSize: 123,
+    chunkCount: 1,
+    reviewOnly: true,
+    subjectAnalystReadV1: {
+      subjectName: "Crow",
+      internalRead: "Internal artifact fixture.",
+      reviewableClaims: [
+        {
+          claimText: "Vague internal evidence marker",
+          claimType: "internal_audit_artifact",
+          reviewLane: "internal_artifact",
+          displayTitle: "Internal evidence artifact",
+          suggestedMissingInfoQuestion: "Should not show as a BNL suggested question.",
+          suggestedPublicWording: "Should not become public wording.",
+          displayBNLRecommendation: "BNL says keep only if this helps audit context.",
+          confirmationTarget: "link_ownership",
+        },
+      ],
+    },
+  };
+  const artifactText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: artifactArchive }));
+  assert.match(artifactText, /Internal audit item/);
+  assert.match(artifactText, /BNL found a weak internal signal, but it is not specific enough to become a Source File fact/);
+  assert.match(artifactText, /Keep this as internal audit context or dismiss it/);
+  assert.match(artifactText, /BNL says keep only if this helps audit context/);
+  assert.match(artifactText, /Keep as internal note/);
+  assert.match(artifactText, /Dismiss artifact/);
+  assert.match(artifactText, /Removes this from the review queue without creating a public fact/);
+  assert.doesNotMatch(artifactText, /Vague internal evidence marker/);
+  assert.doesNotMatch(artifactText, /What to enter if approving/);
+  assert.doesNotMatch(artifactText, /Example approved text/);
+  assert.doesNotMatch(artifactText, /BNL suggested confirmation question/);
+  assert.doesNotMatch(artifactText, /Use BNL suggested question/);
+  assert.doesNotMatch(artifactText, /Ask for confirmation/);
+  assert.doesNotMatch(artifactText, /Write public wording manually|Save public wording|Should not become public wording/);
+
+  const targetArchive = {
+    ...artifactArchive,
+    id: "archive-target-labels",
+    candidateId: "candidate-target-labels",
+    subjectAnalystReadV1: {
+      subjectName: "Crow",
+      internalRead: "Target label fixture.",
+      missingConfirmations: [
+        { claimText: "Subject confirmation question", suggestedMissingInfoQuestion: "What should BNL ask the subject?", confirmationTarget: "subject" },
+        { claimText: "Public source question", suggestedMissingInfoQuestion: "Which public source can BNL use?", confirmationTarget: "public_source" },
+        { claimText: "Link ownership question", suggestedMissingInfoQuestion: "Who owns these links?", confirmationTarget: "link_ownership" },
+      ],
+    },
+  };
+  const targetText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: targetArchive }));
+  assert.match(targetText, /Add to subject verification packet/);
+  assert.match(targetText, /Request public source/);
+  assert.match(targetText, /Ask who owns these links/);
+  assert.doesNotMatch(targetText, /Ask for confirmation/);
+});
+
+test("Source File partial BNL display fields keep per-field fallback safety guidance", () => {
+  const summary = sourceFileReportTestSummary();
+  const archive = {
+    id: "archive-partial-display-fields",
+    candidateId: "candidate-partial-display-fields",
+    subjectName: "Crow",
+    sourceDigest: "abcdef1234567890",
+    createdAt: "2026-06-16T00:00:00.000Z",
+    updatedAt: "2026-06-16T01:00:00.000Z",
+    archiveSize: 123,
+    chunkCount: 1,
+    reviewOnly: true,
+    subjectAnalystReadV1: {
+      subjectName: "Crow",
+      internalRead: "Partial display fixture.",
+      reviewableClaims: [
+        {
+          claimText: "Partial public-ready claim.",
+          displayEvidenceSummary: "BNL evidence summary only for partial public claim.",
+          suggestedPublicWording: "Crow is a BARCODE Network community member.",
+          suggestedDecision: "public_ready",
+          publicSafe: true,
+        },
+        {
+          claimText: "Source-blind partial context exists.",
+          claimType: "source_blind",
+          reviewLane: "source_blind",
+          displayTitle: "BNL partial source-blind title",
+          displayEvidenceSummary: "BNL partial source-blind evidence summary.",
+          suggestedDecision: "keep_internal",
+          suggestedInternalNote: "Keep source-blind partial context internal.",
+        },
+      ],
+    },
+  };
+  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive }));
+  assert.match(text, /BNL evidence summary only for partial public claim/);
+  assert.match(text, /Enter the exact sentence BNL may use as a Source File fact/);
+  assert.match(text, /A Source File review decision\. Confirming public-ready does not publish a dossier/);
+  assert.match(text, /BNL partial source-blind title/);
+  assert.match(text, /BNL partial source-blind evidence summary/);
+  assert.match(text, /Source-blind context cannot become public copy by itself/);
+  assert.match(text, /Only a separately confirmed public-safe replacement, not the source-blind text itself/);
+  assert.match(text, /Add public-safe replacement text, if owner\/admin confirms it elsewhere/);
 });
 
 test("Source File page extracts subjectAnalystReadV1 from sourceFileCaseReportV1 and handles old archives", () => {

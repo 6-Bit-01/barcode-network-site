@@ -705,7 +705,6 @@ function buildClaimCard(input: { value: unknown; sourceSection: string; claimTyp
   const rawSuggestedDecision = analystString(record, ["recommendedAction", "suggestedDecision", "recommendation"]);
   const id = stableClaimId({ candidateId: input.candidateId, sourceSection: input.sourceSection, claimText, sourceArchiveId: input.sourceArchiveId });
   const blockedBy = stringItems(record?.blockedBy);
-  const hasBnlDisplayCopy = Boolean(record && ["displayTitle", "displayDecision", "displayWhatIsBeingChecked", "displayWhyBNLFlaggedIt", "displayBNLRecommendation", "displayEvidenceSummary", "displaySafeDefault", "displayApprovalInstruction"].some((key) => displayField(record, key)));
   return {
     id,
     claimText,
@@ -759,10 +758,10 @@ function buildClaimCard(input: { value: unknown; sourceSection: string; claimTyp
     verificationPacketQuestions: stringListFromRecord(record, "verificationPacketQuestion"),
     verificationPacketAudience: analystString(record, ["verificationPacketAudience"]),
     recommendedAdminActionCards: listRecords(record?.recommendedAdminActionCards),
-    whatYouAreApproving: hasBnlDisplayCopy ? undefined : claimType === "recommended_action" ? "An admin task state, not a public claim approval." : claimType === "do_not_say" ? "A public-copy boundary that protects against unsupported claims." : claimType === "source_blind" ? "Only a separately confirmed public-safe replacement, not the source-blind text itself." : "A Source File review decision. Confirming public-ready does not publish a dossier.",
-    whatToEnter: hasBnlDisplayCopy && !displayField(record, "displayApprovalInstruction") ? undefined : claimType === "recommended_action" ? "No public-safe text is required unless this task explicitly creates a Source File note." : claimType === "do_not_say" ? "No public-ready wording should be entered for boundaries." : claimType === "source_blind" ? "Add public-safe replacement text, if owner/admin confirms it elsewhere." : "Enter the exact sentence BNL may use as a Source File fact.",
+    whatYouAreApproving: claimType === "recommended_action" ? "An admin task state, not a public claim approval." : claimType === "do_not_say" ? "A public-copy boundary that protects against unsupported claims." : claimType === "source_blind" ? "Only a separately confirmed public-safe replacement, not the source-blind text itself." : "A Source File review decision. Confirming public-ready does not publish a dossier.",
+    whatToEnter: claimType === "recommended_action" ? "No public-safe text is required unless this task explicitly creates a Source File note." : claimType === "do_not_say" ? "No public-ready wording should be entered for boundaries." : claimType === "source_blind" ? "Add public-safe replacement text, if owner/admin confirms it elsewhere." : "Enter the exact sentence BNL may use as a Source File fact.",
     placeholderText: guidance.placeholderText,
-    exampleApprovedTexts: hasBnlDisplayCopy ? [] : guidance.exampleApprovedTexts,
+    exampleApprovedTexts: guidance.exampleApprovedTexts,
     actionConsequences: {
       confirmed_public: "Use this only if the claim is true and the exact public wording is approved. This creates a public-safe Source File fact. It does not publish a dossier.",
       confirmed_internal: claimType === "recommended_action" ? "Marks this admin task done." : claimType === "do_not_say" ? "Keeps this public-copy boundary in force." : "Use this if the claim may be useful to BNL internally but should not be public copy.",
@@ -854,6 +853,7 @@ function copyTextToClipboard(text: string) {
 function VerificationPacket({ claims, subjectName }: { claims: DossierSourceFileReviewableClaim[]; subjectName?: string }) {
   const grouped = new Map<string, string[]>();
   for (const claim of claims) {
+    if (claim.review?.decision && claim.review.decision !== "pending") continue;
     for (const question of claim.verificationPacketQuestions ?? []) {
       const safe = safeCopyQuestions([question]);
       if (!safe.length) continue;

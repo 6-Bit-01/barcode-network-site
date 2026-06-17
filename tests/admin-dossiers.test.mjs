@@ -8985,6 +8985,11 @@ test("Source File analyst review cards render structured decisions, signals, bou
           why: "Public name must be exact before use.",
           safeEvidenceSummary: "Candidate is referred to as Raven in public-safe context.",
         },
+        {
+          claimText: "Confirm public role/title fallback question",
+          why: "Public role needs a best-guess question fallback.",
+          safeEvidenceSummary: "Public-safe role context only.",
+        },
       ],
       recommendedAdminActions: [
         {
@@ -9045,7 +9050,12 @@ test("Source File analyst review cards render structured decisions, signals, bou
   assert.match(text, /Use Raven publicly; keep other aliases internal/);
   assert.match(text, /BNL suggested confirmation question/);
   assert.match(text, /What exact display name may BNL use publicly for Raven/);
-  assert.match(text, /Save suggested question/);
+  assert.match(text, /Use BNL suggested question/);
+  assert.match(text, /Use BNL best-guess question/);
+  assert.doesNotMatch(text, /Save fallback question/);
+  assert.doesNotMatch(text, /Save suggested question/);
+  assert.match(text, /Adds this question to the review notes so it can be answered before BNL uses the claim/);
+  assert.doesNotMatch(text, /Creates or keeps a missing confirmation question for owner\/admin review/);
   assert.match(text, /Question/);
   assert.match(text, /Edit question/);
   assert.doesNotMatch(text, /Mark answered/);

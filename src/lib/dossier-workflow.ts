@@ -246,6 +246,9 @@ export type DossierSubjectAnalystReadV1 = DossierSourceFileHumanDisplayFields & 
   dossierBlockedBy?: string[] | string | unknown;
   readyForDraft?: boolean | string | unknown;
   draftReadinessReason?: string | unknown;
+  dossierWorthiness?: string | unknown;
+  currentRead?: string | unknown;
+  canDraftCautiously?: boolean | string | unknown;
   dossierClarificationNeeds?: DossierReadinessQuestionV1[] | unknown;
 };
 
@@ -3543,9 +3546,15 @@ function draftReadinessQuestionKey(question: DossierReadinessQuestionV1): string
   return (question.questionKey ?? question.id ?? draftReadinessQuestionText(question)).trim().toLowerCase();
 }
 
+function draftReadinessQuestionIsMemoryFirstSuppressed(question: DossierReadinessQuestionV1): boolean {
+  const joined = `${draftReadinessQuestionText(question)} ${question.questionFamily ?? ""} ${question.questionCategory ?? ""} ${question.dossierSection ?? ""} ${question.answerType ?? ""} ${question.audience ?? ""} ${question.recipientClass ?? ""} ${question.confirmationTarget ?? ""} ${question.sourceSafety ?? ""} ${question.priority ?? ""}`.toLowerCase();
+  return /route[-_ ]?only|classification[-_ ]?only|routing|tagging|tag candidate|internal[-_ ]?only|source[-_ ]?blind|omit|omittable|can be omitted|nice_to_have|optional|lore|do_not_say|do not say|boundary/.test(joined);
+}
+
 function draftReadinessQuestionIsHighPriority(question: DossierReadinessQuestionV1): boolean {
   const priority = String(question.priority ?? "").toLowerCase();
   if (["low", "nice_to_have", "optional"].includes(priority)) return false;
+  if (draftReadinessQuestionIsMemoryFirstSuppressed(question)) return false;
   const joined = `${draftReadinessQuestionText(question)} ${question.questionFamily ?? ""} ${question.questionCategory ?? ""} ${question.dossierSection ?? ""} ${question.answerType ?? ""} ${question.audience ?? ""} ${question.recipientClass ?? ""} ${question.confirmationTarget ?? ""}`.toLowerCase();
   return !priority || /high|critical|required|readiness|clarification|public|wording|source|link|identity|role|title|fact|safety|boundary/.test(joined);
 }
@@ -3619,14 +3628,14 @@ export function createDossierSourceFileDraftReadinessReadModel(input: {
       : bnlReady
         ? "BNL marked this Source File ready for Proposed Dossier draft generation."
         : "BNL marked this Source File blocked for Proposed Dossier draft generation.";
+    if (bnlReady) {
+      return { readinessState: "ready_for_bnl_draft", readyForDraft: true, primaryReason, blockers: [], unresolvedQuestionCount: 0, resolvedQuestionCount: highPriority.length, authority: "bnl_analyst_read", recommendedNextAction: "Request BNL draft generation from this Source File." };
+    }
     if (unresolvedQuestions.length > 0) {
       return { readinessState: "blocked_by_bnl_questions", readyForDraft: false, primaryReason, blockers, unresolvedQuestionCount: unresolvedQuestions.length, resolvedQuestionCount: highPriority.length - unresolvedQuestions.length, authority: "bnl_question_resolution", recommendedNextAction: "Answer or resolve the listed BNL readiness questions, then refresh the Source File." };
     }
     if (pendingReviews.length > 0) {
       return { readinessState: "blocked_by_unresolved_review", readyForDraft: false, primaryReason, blockers, unresolvedQuestionCount: 0, resolvedQuestionCount: highPriority.length, authority: "bnl_analyst_read", recommendedNextAction: "Resolve pending public wording, identity, role, link, fact, or boundary reviews before drafting." };
-    }
-    if (bnlReady) {
-      return { readinessState: "ready_for_bnl_draft", readyForDraft: true, primaryReason, blockers: [], unresolvedQuestionCount: 0, resolvedQuestionCount: highPriority.length, authority: "bnl_analyst_read", recommendedNextAction: "Request BNL draft generation from this Source File." };
     }
     return { readinessState: "needs_public_evidence", readyForDraft: false, primaryReason, blockers: blockers.length ? blockers : ["BNL has not marked this Source File ready for draft generation."], unresolvedQuestionCount: 0, resolvedQuestionCount: highPriority.length, authority: "bnl_analyst_read", recommendedNextAction: "Add the public-safe evidence or boundary decisions BNL requested, then refresh the Source File." };
   }

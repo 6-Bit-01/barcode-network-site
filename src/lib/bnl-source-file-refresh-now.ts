@@ -1,4 +1,5 @@
 import type { DossierSourceFileRefreshRequest } from "@/lib/dossier-workflow";
+import type { DossierSourceFileWorkflowContextReadModel } from "@/lib/dossier-workflow-store";
 import { safeOriginHost } from "@/lib/trusted-requesting-site-origin";
 
 export type BnlSourceFileImmediateRefreshStatus =
@@ -15,6 +16,8 @@ export type BnlSourceFileImmediateRefreshResult = {
   failureReason?: string;
   callbackBaseSent?: boolean;
   callbackBaseHost?: string;
+  sourceFileWorkflowContextSent?: boolean;
+  sourceFileWorkflowContextCounts?: Record<string, number>;
 };
 
 export type BnlSourceFileImmediateRefreshInput = {
@@ -22,6 +25,7 @@ export type BnlSourceFileImmediateRefreshInput = {
   source?: string;
   timeoutMs?: number;
   requestingSiteOrigin?: string;
+  sourceFileWorkflowContext?: DossierSourceFileWorkflowContextReadModel;
 };
 
 const DEFAULT_REFRESH_NOW_TIMEOUT_MS = 25_000;
@@ -61,6 +65,16 @@ function failureReasonFromPayload(payload: unknown): string | undefined {
   );
 }
 
+function contextCounts(context: DossierSourceFileWorkflowContextReadModel | undefined): Record<string, number> | undefined {
+  if (!context) return undefined;
+  return Object.fromEntries(
+    Object.entries(context).map(([key, value]) => [
+      key,
+      Array.isArray(value) ? value.length : 0,
+    ]),
+  );
+}
+
 export async function refreshBnlSourceFileNow(
   input: BnlSourceFileImmediateRefreshInput,
 ): Promise<BnlSourceFileImmediateRefreshResult> {
@@ -80,6 +94,13 @@ export async function refreshBnlSourceFileNow(
     callbackBaseSent: Boolean(callbackBaseUrl),
     ...(callbackBaseUrl
       ? { callbackBaseHost: safeOriginHost(callbackBaseUrl) }
+      : {}),
+  };
+  const sourceFileWorkflowContext = input.sourceFileWorkflowContext;
+  const workflowContextDiagnostics = {
+    sourceFileWorkflowContextSent: Boolean(sourceFileWorkflowContext),
+    ...(sourceFileWorkflowContext
+      ? { sourceFileWorkflowContextCounts: contextCounts(sourceFileWorkflowContext) }
       : {}),
   };
 
@@ -113,6 +134,9 @@ export async function refreshBnlSourceFileNow(
               sourceFileArchiveCallbackBaseUrl: callbackBaseUrl,
             }
           : {}),
+        ...(sourceFileWorkflowContext
+          ? { sourceFileWorkflowContext }
+          : {}),
       }),
       cache: "no-store",
       signal: controller.signal,
@@ -130,6 +154,7 @@ export async function refreshBnlSourceFileNow(
         failureReason:
           failureReason ?? `BNL immediate refresh returned HTTP ${response.status}.`,
         ...callbackDiagnostics,
+        ...workflowContextDiagnostics,
       };
     }
 
@@ -144,6 +169,7 @@ export async function refreshBnlSourceFileNow(
         recommendationId,
         failureReason,
         ...callbackDiagnostics,
+        ...workflowContextDiagnostics,
       };
     }
     if (payloadStatus === "failed") {
@@ -153,6 +179,7 @@ export async function refreshBnlSourceFileNow(
         recommendationId,
         failureReason,
         ...callbackDiagnostics,
+        ...workflowContextDiagnostics,
       };
     }
 
@@ -162,6 +189,7 @@ export async function refreshBnlSourceFileNow(
       recommendationId,
       failureReason,
       ...callbackDiagnostics,
+      ...workflowContextDiagnostics,
     };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
@@ -170,6 +198,7 @@ export async function refreshBnlSourceFileNow(
         status: "timeout",
         failureReason: "BNL immediate refresh timed out.",
         ...callbackDiagnostics,
+        ...workflowContextDiagnostics,
       };
     }
     return {
@@ -180,6 +209,7 @@ export async function refreshBnlSourceFileNow(
           ? error.message
           : "BNL immediate refresh could not be reached.",
       ...callbackDiagnostics,
+      ...workflowContextDiagnostics,
     };
   } finally {
     clearTimeout(timeout);

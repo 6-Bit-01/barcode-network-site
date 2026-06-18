@@ -818,12 +818,30 @@ export type DossierQuestionResolutionState =
 
 export type DossierResolvedQuestionReadModel = {
   questionKey: string;
+  questionFamily?: string;
+  questionCategory?: string;
+  dossierSection?: string;
+  audience?: string;
+  answerType?: string;
   resolved: boolean;
   resolutionState: DossierQuestionResolutionState;
   resolutionSummary: string;
   sourceIds: string[];
   stillNeedsHuman: boolean;
   safeToSuppressFromActivePacket: boolean;
+  relatedQuestionKeys?: string[];
+};
+
+export type DossierSourceFileWorkflowContextReadModel = {
+  resolvedQuestions: DossierResolvedQuestionReadModel[];
+  claimReviews: Array<Record<string, unknown>>;
+  sourceFileNotes: Array<Record<string, unknown>>;
+  identityLinks: Array<Record<string, unknown>>;
+  suppressedPacketItems: DossierResolvedQuestionReadModel[];
+  knownFacts: string[];
+  missingInfo: string[];
+  doNotSay: string[];
+  publicSafetyNotes: string[];
 };
 
 type DossierQuestionLike = Record<string, unknown> | string;
@@ -854,6 +872,24 @@ function questionText(value: DossierQuestionLike): string {
 function questionField(value: DossierQuestionLike, key: string): string {
   const raw = questionRecord(value)?.[key];
   return typeof raw === "string" ? raw.trim() : "";
+}
+
+function questionStringArrayField(value: DossierQuestionLike, key: string): string[] {
+  const raw = questionRecord(value)?.[key];
+  if (Array.isArray(raw)) return raw.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim());
+  return typeof raw === "string" && raw.trim() ? [raw.trim()] : [];
+}
+
+function enrichResolvedQuestionWithQuestionFields(question: DossierQuestionLike, resolution: DossierResolvedQuestionReadModel): DossierResolvedQuestionReadModel {
+  return {
+    ...resolution,
+    questionFamily: questionField(question, "questionFamily") || undefined,
+    questionCategory: questionField(question, "questionCategory") || undefined,
+    dossierSection: questionField(question, "dossierSection") || questionField(question, "sourceSection") || undefined,
+    audience: questionField(question, "audience") || questionField(question, "recipientClass") || questionField(question, "confirmationTarget") || questionField(question, "verificationPacketAudience") || undefined,
+    answerType: questionField(question, "answerType") || undefined,
+    relatedQuestionKeys: questionStringArrayField(question, "relatedQuestionKeys"),
+  };
 }
 
 export function dossierQuestionResolutionKey(value: DossierQuestionLike): string {
@@ -940,7 +976,7 @@ export function resolveBnlDossierQuestionFromExistingTruth(input: {
     const boundary = boundaryQuestion || factIndex >= (candidate?.knownFacts?.length ?? 0) + (candidate?.missingInfo?.length ?? 0);
     return { ...resolved(boundary ? "resolved_by_rejection_or_boundary" : "resolved_by_existing_public_fact", boundary ? "Question matched an existing candidate boundary/safety note." : "Question matched an existing candidate public-safe fact.", [`candidate:${factIndex}`], !((candidate?.missingInfo ?? []).includes(facts[factIndex]))), questionKey: key };
   }
-  return { questionKey: key, resolved: false, resolutionState: "unresolved", resolutionSummary: "No matching existing Source File truth was found.", sourceIds: [], stillNeedsHuman: true, safeToSuppressFromActivePacket: false };
+  return enrichResolvedQuestionWithQuestionFields(question, { questionKey: key, resolved: false, resolutionState: "unresolved", resolutionSummary: "No matching existing Source File truth was found.", sourceIds: [], stillNeedsHuman: true, safeToSuppressFromActivePacket: false });
 }
 
 export function resolveBnlDossierQuestionsFromExistingTruth(input: {
@@ -949,6 +985,166 @@ export function resolveBnlDossierQuestionsFromExistingTruth(input: {
   draft?: Partial<DossierDraft>;
 }): DossierResolvedQuestionReadModel[] {
   return input.questions.map((question) => resolveBnlDossierQuestionFromExistingTruth({ question, candidate: input.candidate, draft: input.draft }));
+}
+
+const SOURCE_FILE_REFRESH_CONTEXT_ITEM_LIMIT = 25;
+const SOURCE_FILE_REFRESH_CONTEXT_TEXT_LIMIT = 300;
+const PRIVATE_CONTEXT_PATTERN = /@|stripe|payment|customer|token|secret|password|raw evidence|source-blind|private|member-only|database row|account/i;
+
+function compactWorkflowText(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const compacted = value.trim().replace(/\s+/g, " ");
+  if (!compacted || PRIVATE_CONTEXT_PATTERN.test(compacted)) return undefined;
+  return compacted.length > SOURCE_FILE_REFRESH_CONTEXT_TEXT_LIMIT
+    ? `${compacted.slice(0, SOURCE_FILE_REFRESH_CONTEXT_TEXT_LIMIT - 1).trimEnd()}…`
+    : compacted;
+}
+
+function compactWorkflowTexts(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  return values.flatMap((value) => {
+    const text = compactWorkflowText(value);
+    return text ? [text] : [];
+  }).slice(0, SOURCE_FILE_REFRESH_CONTEXT_ITEM_LIMIT);
+}
+
+function optionalCompactField(target: Record<string, unknown>, key: string, value: unknown) {
+  const text = compactWorkflowText(value);
+  if (text) target[key] = text;
+}
+
+function optionalStringField(target: Record<string, unknown>, key: string, value: unknown) {
+  if (typeof value === "string" && value.trim()) target[key] = value.trim();
+}
+
+function optionalStringArrayField(target: Record<string, unknown>, key: string, value: unknown) {
+  const values = Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim())
+    : typeof value === "string" && value.trim()
+      ? [value.trim()]
+      : [];
+  if (values.length) target[key] = values.slice(0, SOURCE_FILE_REFRESH_CONTEXT_ITEM_LIMIT);
+}
+
+function compactQuestionResolutionFromSource(input: {
+  source: Record<string, unknown>;
+  state: DossierQuestionResolutionState;
+  summary: string;
+  sourceIds: string[];
+  suppress?: boolean;
+}): DossierResolvedQuestionReadModel | undefined {
+  const questionKey = typeof input.source.questionKey === "string" && input.source.questionKey.trim()
+    ? input.source.questionKey.trim()
+    : undefined;
+  if (!questionKey) return undefined;
+  const resolutionSummary = compactWorkflowText(input.summary);
+  return {
+    questionKey,
+    questionFamily: compactWorkflowText(input.source.questionFamily),
+    questionCategory: compactWorkflowText(input.source.questionCategory),
+    dossierSection: compactWorkflowText(input.source.dossierSection ?? input.source.sourceSection),
+    audience: compactWorkflowText(input.source.audience ?? input.source.recipientClass ?? input.source.confirmationTarget ?? input.source.verificationPacketAudience),
+    answerType: compactWorkflowText(input.source.answerType),
+    resolved: input.state !== "unresolved" && input.state !== "ambiguous",
+    resolutionState: input.state,
+    resolutionSummary: resolutionSummary ?? "Existing Source File workflow item resolved this BNL question.",
+    sourceIds: input.sourceIds.slice(0, SOURCE_FILE_REFRESH_CONTEXT_ITEM_LIMIT),
+    stillNeedsHuman: input.state === "unresolved" || input.state === "ambiguous",
+    safeToSuppressFromActivePacket: input.suppress !== false && input.state !== "unresolved" && input.state !== "ambiguous",
+    relatedQuestionKeys: Array.isArray(input.source.relatedQuestionKeys)
+      ? input.source.relatedQuestionKeys.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).slice(0, SOURCE_FILE_REFRESH_CONTEXT_ITEM_LIMIT)
+      : undefined,
+  };
+}
+
+export function buildDossierSourceFileWorkflowContext(input: {
+  candidate?: Partial<DossierCandidate> | null;
+}): DossierSourceFileWorkflowContextReadModel | undefined {
+  const candidate = input.candidate;
+  if (!candidate) return undefined;
+  const claimReviews = (candidate.sourceFileClaimReviews ?? []).slice(0, SOURCE_FILE_REFRESH_CONTEXT_ITEM_LIMIT).map((review) => {
+    const record = review as unknown as Record<string, unknown>;
+    const item: Record<string, unknown> = {
+      id: review.id,
+      decision: review.decision,
+      publicSafe: review.publicSafe === true,
+      sourceSection: review.sourceSection,
+    };
+    optionalCompactField(item, "claimText", review.claimText);
+    optionalCompactField(item, "editedText", review.editedText);
+    optionalStringField(item, "questionKey", record.questionKey);
+    optionalStringArrayField(item, "relatedQuestionKeys", record.relatedQuestionKeys);
+    optionalStringField(item, "confirmationTarget", review.confirmationTarget);
+    optionalStringField(item, "verificationPacketAudience", review.verificationPacketAudience);
+    return item;
+  });
+  const sourceFileNotes = (candidate.sourceFileNotes ?? []).filter((note) => note.status !== "ignored" && note.status !== "superseded").slice(0, SOURCE_FILE_REFRESH_CONTEXT_ITEM_LIMIT).flatMap((note) => {
+    const text = compactWorkflowText(note.text);
+    if (!text) return [];
+    const record = note as unknown as Record<string, unknown>;
+    const item: Record<string, unknown> = { id: note.id, type: note.type, text, publicSafe: note.publicSafe === true };
+    optionalStringField(item, "questionKey", record.questionKey);
+    optionalStringArrayField(item, "relatedQuestionKeys", record.relatedQuestionKeys);
+    return [item];
+  });
+  const identityLinks = (candidate.identityLinks ?? []).filter((link) => link.visibility === "public_safe" || link.useInPublicDossier || link.status !== "confirmed").slice(0, SOURCE_FILE_REFRESH_CONTEXT_ITEM_LIMIT).map((link) => {
+    const record = link as unknown as Record<string, unknown>;
+    const item: Record<string, unknown> = {
+      id: link.id,
+      label: compactWorkflowText(link.label),
+      normalizedLabel: compactWorkflowText(link.normalizedLabel),
+      status: link.status,
+      visibility: link.visibility,
+      useInPublicDossier: link.useInPublicDossier === true,
+    };
+    optionalStringField(item, "questionKey", record.questionKey);
+    optionalStringArrayField(item, "relatedQuestionKeys", record.relatedQuestionKeys);
+    return item;
+  });
+  const resolvedQuestions = [
+    ...(candidate.sourceFileClaimReviews ?? []).flatMap((review) => {
+      const state: DossierQuestionResolutionState = review.decision === "rejected"
+        ? "resolved_by_rejection_or_boundary"
+        : review.decision === "needs_more_info" || review.decision === "pending"
+          ? "ambiguous"
+          : "resolved_by_claim_review";
+      return compactQuestionResolutionFromSource({
+        source: review as unknown as Record<string, unknown>,
+        state,
+        summary: review.decision === "rejected" ? "Existing Source File review rejected or bounded this claim." : "Existing Source File claim review answered this question.",
+        sourceIds: [review.id],
+        suppress: review.decision !== "needs_more_info" && review.decision !== "pending",
+      }) ?? [];
+    }),
+    ...(candidate.sourceFileNotes ?? []).flatMap((note) => compactQuestionResolutionFromSource({
+      source: note as unknown as Record<string, unknown>,
+      state: note.type === "do_not_say" || note.type === "public_safety" ? "resolved_by_rejection_or_boundary" : "resolved_by_source_file_note",
+      summary: "Existing Source File note answered or bounded this question.",
+      sourceIds: [note.id],
+    }) ?? []),
+    ...(candidate.identityLinks ?? []).flatMap((link) => compactQuestionResolutionFromSource({
+      source: link as unknown as Record<string, unknown>,
+      state: "resolved_by_identity_link",
+      summary: "Existing identity link answered this question.",
+      sourceIds: [link.id],
+      suppress: link.status === "confirmed",
+    }) ?? []),
+  ].slice(0, SOURCE_FILE_REFRESH_CONTEXT_ITEM_LIMIT);
+  const suppressedPacketItems = resolvedQuestions
+    .filter((item) => item.safeToSuppressFromActivePacket)
+    .slice(0, SOURCE_FILE_REFRESH_CONTEXT_ITEM_LIMIT);
+  const context = {
+    resolvedQuestions,
+    claimReviews,
+    sourceFileNotes,
+    identityLinks,
+    suppressedPacketItems,
+    knownFacts: compactWorkflowTexts(candidate.knownFacts),
+    missingInfo: compactWorkflowTexts(candidate.missingInfo),
+    doNotSay: compactWorkflowTexts(candidate.doNotSay),
+    publicSafetyNotes: compactWorkflowTexts(candidate.publicSafetyNotes),
+  };
+  return Object.values(context).some((value) => Array.isArray(value) && value.length > 0) ? context : undefined;
 }
 
 export async function getDossierWorkflowState(): Promise<DossierWorkflowState> {

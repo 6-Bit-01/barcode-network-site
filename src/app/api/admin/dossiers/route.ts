@@ -31,6 +31,7 @@ import {
 import {
   addDossierIdentityLink,
   applyPopulationReviewRecommendationAction,
+  buildDossierSourceFileWorkflowContext,
   reconcilePopulationSignals,
   addDossierSourceFileNote,
   reviewDossierSourceFileClaim,
@@ -391,6 +392,17 @@ async function verifySourceFileCaseReportAfterImmediateRefresh(input: {
   };
 }
 
+async function sourceFileWorkflowContextForRefresh(candidateId?: string) {
+  if (!candidateId) return undefined;
+  try {
+    const state = await getDossierWorkflowState();
+    const candidate = state.candidates.find((item) => item.id === candidateId);
+    return buildDossierSourceFileWorkflowContext({ candidate });
+  } catch {
+    return undefined;
+  }
+}
+
 async function workflowPayload(
   state?: DossierWorkflowState,
   populationReconcile?: PopulationReconcileSummary,
@@ -579,6 +591,7 @@ export async function POST(req: Request) {
             request: refresh.request,
             source: "admin_open_source_file",
             requestingSiteOrigin,
+            sourceFileWorkflowContext: await sourceFileWorkflowContextForRefresh(refresh.request.candidateId),
           })
         : {
             ok: false,
@@ -636,6 +649,7 @@ export async function POST(req: Request) {
         request: refresh.request,
         source: "admin_manual",
         requestingSiteOrigin,
+        sourceFileWorkflowContext: await sourceFileWorkflowContextForRefresh(refresh.request.candidateId),
       });
       const immediateRefresh = await verifySourceFileCaseReportAfterImmediateRefresh({
         request: refresh.request,

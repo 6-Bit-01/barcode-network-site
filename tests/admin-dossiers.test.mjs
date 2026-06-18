@@ -67,6 +67,7 @@ const dossierTaxonomy = require("../src/lib/dossier-taxonomy.ts");
 const dossierClassification = require("../src/lib/dossier-classification.ts");
 const dossierStylePacket = require("../src/lib/dossier-style-packet.ts");
 const bnlDossierDraft = require("../src/lib/bnl-dossier-draft.ts");
+const bnlSourceFileRefreshNow = require("../src/lib/bnl-source-file-refresh-now.ts");
 
 
 test("BNL dossier draft packet keeps internal aliases out and declares site/BNL ownership boundaries", () => {
@@ -1447,6 +1448,194 @@ test("Source File refresh does not forward untrusted callback origins", async ()
     delete process.env.BNL_SOURCE_FILE_REFRESH_TOKEN;
     delete process.env.BNL_SOURCE_FILE_REFRESH_NOW_TIMEOUT_MS;
   }
+});
+
+test("Source File immediate refresh sends compact bounded workflow context without raw private evidence", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL = "https://bnl.example.test/internal/source-files/refresh-now";
+  process.env.BNL_SOURCE_FILE_REFRESH_TOKEN = "test-refresh-token";
+  process.env.BNL_SOURCE_FILE_REFRESH_NOW_TIMEOUT_MS = "1000";
+
+  const created = await (await authedPost({
+    action: "createManualCandidate",
+    input: {
+      name: "Workflow Context Fixture",
+      candidateType: "artist",
+      reason: "Operator wants workflow context refresh coverage.",
+      whyNow: "Source File has prior decisions.",
+      evidenceSummary: "Admin fixture evidence.",
+    },
+  })).json();
+  const candidateId = created.candidate.id;
+  await authedPost({ action: "promoteCandidateToSourceFile", candidateId });
+
+  const state = await store.getDossierWorkflowState();
+  const now = "2026-06-18T00:00:00.000Z";
+  await store.saveDossierWorkflowState({
+    ...state,
+    candidates: state.candidates.map((candidate) =>
+      candidate.id === candidateId
+        ? {
+            ...candidate,
+            knownFacts: Array.from({ length: 30 }, (_, index) => `Public-safe known fact ${index}`),
+            missingInfo: ["Confirm public link", "private member-only account note"],
+            doNotSay: ["Do not publish unapproved sponsor claim", "token secret should vanish"],
+            publicSafetyNotes: ["Use reviewed public facts only", "customer payment row should vanish"],
+            sourceFileClaimReviews: [
+              {
+                id: "review-public",
+                candidateId,
+                claimText: "Approved public-safe role line.",
+                editedText: "Approved edited public-safe role line.",
+                claimType: "public_ready",
+                sourceSection: "publicReadyClaims",
+                decision: "edited",
+                publicSafe: true,
+                questionKey: "role.public_line",
+                questionFamily: "role",
+                questionCategory: "public_identity",
+                dossierSection: "role",
+                audience: "subject",
+                answerType: "short_text",
+                relatedQuestionKeys: ["role.confirmation"],
+                confirmationTarget: "subject",
+                verificationPacketAudience: "subject",
+                createdAt: now,
+                updatedAt: now,
+                sourceProvenance: ["RAW_EVIDENCE_SHOULD_NOT_SEND"],
+              },
+              {
+                id: "review-raw",
+                candidateId,
+                claimText: "raw evidence private@example.test token stripe customer payment account",
+                claimType: "review_needed",
+                sourceSection: "reviewNeededClaims",
+                decision: "rejected",
+                publicSafe: false,
+                questionKey: "boundary.raw_private",
+                createdAt: now,
+                updatedAt: now,
+              },
+              ...Array.from({ length: 30 }, (_, index) => ({
+                id: `review-cap-${index}`,
+                candidateId,
+                claimText: `Cap safe claim ${index}`,
+                claimType: "review_needed",
+                sourceSection: "reviewNeededClaims",
+                decision: "confirmed_internal",
+                publicSafe: false,
+                questionKey: `cap.question.${index}`,
+                createdAt: now,
+                updatedAt: now,
+              })),
+            ],
+            sourceFileNotes: [
+              { id: "note-public", candidateId, type: "fact", text: "Public-safe note that should be compact.", source: "admin_manual", status: "active", publicSafe: true, questionKey: "note.public_fact", relatedQuestionKeys: ["note.related"], createdAt: now, updatedAt: now },
+              { id: "note-private", candidateId, type: "general_note", text: "private@example.test token raw evidence payment customer account", source: "admin_manual", status: "active", publicSafe: false, createdAt: now, updatedAt: now },
+              { id: "note-long", candidateId, type: "fact", text: `Long ${"safe ".repeat(100)}`, source: "admin_manual", status: "active", publicSafe: true, createdAt: now, updatedAt: now },
+            ],
+            identityLinks: [
+              { id: "identity-public", candidateId, label: "Public Persona", normalizedLabel: "public persona", type: "public_persona", visibility: "public_safe", status: "confirmed", source: "admin_manual", useForMatching: true, useInPublicDossier: true, questionKey: "identity.public", relatedQuestionKeys: ["identity.related"], createdAt: now, updatedAt: now },
+              { id: "identity-internal", candidateId, label: "PrivateAlias", normalizedLabel: "privatealias", type: "alias", visibility: "internal_only", status: "confirmed", source: "admin_manual", useForMatching: true, useInPublicDossier: false, createdAt: now, updatedAt: now },
+            ],
+          }
+        : candidate,
+    ),
+    updatedAt: now,
+  });
+
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (_url, options = {}) => {
+    calls.push(JSON.parse(options.body));
+    return Response.json({ ok: true, status: "success", recommendationId: "context-refresh" });
+  };
+
+  try {
+    const response = await (await authedPost({
+      action: "requestSourceFileRefresh",
+      candidateId,
+      reason: "Send compact workflow context.",
+    })).json();
+    assert.equal(response.immediateRefresh.ok, true);
+    assert.equal(response.immediateRefresh.sourceFileWorkflowContextSent, true);
+    assert.equal(response.immediateRefresh.sourceFileWorkflowContextCounts.resolvedQuestions, 25);
+    const context = calls[0].sourceFileWorkflowContext;
+    assert.ok(context);
+    assert.equal(context.resolvedQuestions.length, 25);
+    assert.equal(context.claimReviews.length, 25);
+    assert.equal(context.knownFacts.length, 25);
+    assert.equal(context.resolvedQuestions[0].questionKey, "role.public_line");
+    assert.equal(context.resolvedQuestions[0].resolutionState, "resolved_by_claim_review");
+    assert.equal(context.resolvedQuestions[0].questionFamily, "role");
+    assert.equal(context.claimReviews[0].decision, "edited");
+    assert.equal(context.claimReviews[0].editedText, "Approved edited public-safe role line.");
+    assert.equal(context.claimReviews[0].publicSafe, true);
+    assert.equal(context.claimReviews[0].sourceProvenance, undefined);
+    assert.equal(context.sourceFileNotes.some((note) => note.id === "note-public"), true);
+    assert.equal(context.sourceFileNotes.some((note) => note.id === "note-private"), false);
+    assert.ok(context.sourceFileNotes.find((note) => note.id === "note-long").text.length <= 300);
+    assert.deepEqual(context.identityLinks.map((link) => link.id), ["identity-public"]);
+    assert.equal(context.identityLinks[0].questionKey, "identity.public");
+    assert.ok(context.suppressedPacketItems.some((item) => item.questionKey === "role.public_line"));
+    const serialized = JSON.stringify(context);
+    assert.doesNotMatch(serialized, /RAW_EVIDENCE_SHOULD_NOT_SEND|private@example|stripe|payment|customer|token|account|sourceProvenance|sourceFileWorkflowContext":/);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL;
+    delete process.env.BNL_SOURCE_FILE_REFRESH_TOKEN;
+    delete process.env.BNL_SOURCE_FILE_REFRESH_NOW_TIMEOUT_MS;
+  }
+});
+
+test("Source File immediate refresh remains compatible without workflow context", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL = "https://bnl.example.test/internal/source-files/refresh-now";
+  process.env.BNL_SOURCE_FILE_REFRESH_TOKEN = "test-refresh-token";
+  process.env.BNL_SOURCE_FILE_REFRESH_NOW_TIMEOUT_MS = "1000";
+
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (_url, options = {}) => {
+    calls.push(JSON.parse(options.body));
+    return Response.json({ ok: true, status: "success", recommendationId: "no-context-refresh" });
+  };
+
+  try {
+    const response = await bnlSourceFileRefreshNow.refreshBnlSourceFileNow({
+      request: {
+        id: "refresh-no-context",
+        candidateId: "candidate-no-context",
+        subjectName: "No Context Fixture",
+        normalizedSubjectKey: "no-context-fixture",
+        status: "pending",
+        reason: "No context fixture.",
+        requestedAt: "2026-06-18T00:00:00.000Z",
+        updatedAt: "2026-06-18T00:00:00.000Z",
+        requestSource: "manual_admin",
+        priority: 1,
+      },
+      source: "admin_manual",
+    });
+    assert.equal(response.ok, true);
+    assert.equal(response.sourceFileWorkflowContextSent, false);
+    assert.equal(calls[0].sourceFileWorkflowContext, undefined);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL;
+    delete process.env.BNL_SOURCE_FILE_REFRESH_TOKEN;
+    delete process.env.BNL_SOURCE_FILE_REFRESH_NOW_TIMEOUT_MS;
+  }
+});
+
+test("Source File workflow context stays out of public and BNL read-model routes", () => {
+  const publicAndReadModelSources = [
+    "src/app/api/bnl/read-model/route.ts",
+    "src/app/api/bnl/source-files/route.ts",
+    "src/app/api/bnl/population-context/route.ts",
+    "src/lib/dossier-page-view-model.ts",
+  ].map((filePath) => fs.readFileSync(path.join(projectRoot, filePath), "utf8")).join("\n");
+  assert.doesNotMatch(publicAndReadModelSources, /sourceFileWorkflowContext/);
 });
 
 

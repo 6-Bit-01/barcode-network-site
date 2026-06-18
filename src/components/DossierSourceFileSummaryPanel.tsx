@@ -583,9 +583,53 @@ function safeHumanText(value: unknown) {
   return text;
 }
 
+function normalizedRoutingToken(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/['"`]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+const STANDALONE_ROUTING_TAGS = new Set([
+  "collaboration_interest",
+  "queue_submission",
+  "contest",
+  "identity",
+  "lore",
+  "music",
+  "orion",
+]);
+
+function isStandaloneRoutingTag(text: string) {
+  const normalized = normalizedRoutingToken(text);
+  return Boolean(normalized) && STANDALONE_ROUTING_TAGS.has(normalized);
+}
+
+function metadataText(record: UnknownRecord | undefined, keys: string[]) {
+  return keys.map((key) => displayValue(record?.[key])).filter(Boolean).join(" ");
+}
+
+function routeClassificationSourceText(record: UnknownRecord | undefined, sourceKind?: string) {
+  return `${sourceKind ?? ""} ${metadataText(record, ["actionability", "reviewLane", "lane", "safetyLane", "sourceSafety", "answerType", "questionFamily", "questionCategory", "dossierSection", "displayTitle", "title"])}`.toLowerCase();
+}
+
+function isKnownRouteClassificationSource(record: UnknownRecord | undefined, sourceKind?: string) {
+  return /route[-_ ]?only|routing(?: tag)?|classification[-_ ]?only|classification tag|tag candidate|primary tag|secondary tag/.test(routeClassificationSourceText(record, sourceKind));
+}
+
+function isRouteOnlyClassificationToken(text: string, record?: UnknownRecord, sourceKind?: string) {
+  const normalized = normalizedRoutingToken(text);
+  if (!normalized) return false;
+  if (isStandaloneRoutingTag(text) && (isKnownRouteClassificationSource(record, sourceKind) || normalized.includes("_"))) return true;
+  return isKnownRouteClassificationSource(record, sourceKind) && /^[a-z0-9]+(?:_[a-z0-9]+)+$/.test(normalized);
+}
+
 function memoryFirstSuppressionReason(record: UnknownRecord | undefined, text: string, sourceSection: string): string | undefined {
-  const joined = `${text} ${analystString(record, ["actionability", "reviewLane", "lane", "safetyLane", "recommendedAction", "suggestedDecision", "sourceSafety", "answerType", "questionFamily", "questionCategory", "dossierSection", "displayBNLRecommendation", "displaySafeDefault", "cannotSuggestPublicReason"]) ?? ""}`.toLowerCase();
-  if (/route[-_ ]?only|routing tag|classification[-_ ]?only|classification tag|tag candidate|primary tag|secondary tag/.test(joined)) return "Suppressed route/classification-only item from active review.";
+  const metadata = metadataText(record, ["actionability", "reviewLane", "lane", "safetyLane", "recommendedAction", "suggestedDecision", "sourceSafety", "answerType", "questionFamily", "questionCategory", "dossierSection", "displayBNLRecommendation", "displaySafeDefault", "cannotSuggestPublicReason"]).toLowerCase();
+  const joined = `${text} ${metadata}`.toLowerCase();
+  if (isRouteOnlyClassificationToken(text, record, sourceSection)) return "Suppressed route/classification-only item from active review.";
   if (/internal[-_ ]?only|private|withheld|lore/.test(joined)) return "Suppressed internal/source-blind item from public review pressure.";
   if (/omit|omittable|can be omitted|not needed for draft|not required/.test(joined)) return "Suppressed omit-able detail from active review.";
   if (/keep_boundary|resolved_boundary|resolved boundary|already resolved boundary/.test(joined)) return "Suppressed resolved boundary/do-not-say item from active review.";
@@ -593,8 +637,17 @@ function memoryFirstSuppressionReason(record: UnknownRecord | undefined, text: s
 }
 
 function memoryFirstQuestionIsDecisionUnlocking(question: ReadinessQuestion) {
-  const joined = `${question.question} ${question.priority ?? ""} ${question.answerType ?? ""} ${question.sourceSafety ?? ""} ${question.dossierSection ?? ""} ${question.questionFamily ?? ""} ${question.questionCategory ?? ""} ${question.audience ?? ""}`.toLowerCase();
-  if (/route[-_ ]?only|routing|classification[-_ ]?only|tag|internal[-_ ]?only|source[-_ ]?blind|omit|omittable|can be omitted|optional|nice_to_have|lore|boundary|do_not_say|do not say|rejected/.test(joined)) return false;
+  const record = {
+    answerType: question.answerType,
+    sourceSafety: question.sourceSafety,
+    questionFamily: question.questionFamily,
+    questionCategory: question.questionCategory,
+    dossierSection: question.dossierSection,
+  };
+  const metadata = `${question.priority ?? ""} ${question.answerType ?? ""} ${question.sourceSafety ?? ""} ${question.dossierSection ?? ""} ${question.questionFamily ?? ""} ${question.questionCategory ?? ""} ${question.audience ?? ""}`.toLowerCase();
+  const joined = `${question.question} ${metadata}`.toLowerCase();
+  if (isRouteOnlyClassificationToken(question.question, record, question.dossierSection)) return false;
+  if (/internal[-_ ]?only|source[-_ ]?blind|omit|omittable|can be omitted|optional|nice_to_have|lore|boundary|do_not_say|do not say|rejected/.test(joined)) return false;
   return /decision|unlock|required|critical|high|public source|owner|identity|safety|public fact|wording|link ownership|ready|draft|clarif|mod/.test(joined);
 }
 
@@ -934,6 +987,12 @@ function buildClaimCard(input: { value: unknown; sourceSection: string; claimTyp
   };
 }
 
+function reviewCardDedupeKey(card: DossierSourceFileReviewableClaim) {
+  const packetQuestions = (card.verificationPacketQuestions ?? []).map(normalizeVerificationQuestion).sort().join("|");
+  const audience = verificationAudienceKey(card.verificationPacketAudience ?? card.confirmationTarget);
+  return [normalizeVerificationQuestion(card.claimText), packetQuestions, audience].join("::");
+}
+
 export function deriveDossierSourceFileReviewableClaims(input: {
   analystRead?: DossierSubjectAnalystReadV1;
   candidateId?: string;
@@ -1014,7 +1073,7 @@ export function deriveDossierSourceFileReviewableClaims(input: {
   });
   const deduped = new Map<string, DossierSourceFileReviewableClaim>();
   for (const card of [...cardsWithReadiness, ...readinessCards]) {
-    const normalized = normalizeVerificationQuestion(card.claimText);
+    const normalized = reviewCardDedupeKey(card);
     if (!deduped.has(normalized)) deduped.set(normalized, card);
   }
   const suppressedCards = [...deduped.values()].filter((card) => card.suppressedReason);
@@ -1100,7 +1159,7 @@ export function classifySavedPacketTextForVerificationPacket(text: string): Save
   if (/^(keep|keeps)\b.*\binternal\b/.test(lower) || /\binternal (only|context)\b/.test(lower)) return "internal_only_resolution";
   if (/^(no|none)\b.*\b(approved|public|source|links?|role|title)\b.*\b(yet|approved|available)?[.!]?$/.test(lower) || /\bno approved public source yet\b/.test(lower)) return "resolved_answer";
   if (/\b(not approved|not public-ready|not public ready)\b/.test(lower)) return "resolved_answer";
-  if (/[?]\s*$/.test(normalized) || /^(what|which|who|when|where|why|how|should|was|were|did|do|does|is|are|can|could)\b/i.test(normalized)) return "active_question";
+  if (/[?]\s*$/.test(normalized) || /^(what|which|who|when|where|why|how|should|was|were|did|do|does|is|are|can|could|confirm)\b/i.test(normalized)) return "active_question";
   return "resolved_answer";
 }
 

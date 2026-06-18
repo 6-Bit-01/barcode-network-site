@@ -12621,6 +12621,56 @@ test("BNL memory-first Source File review suppresses non-actionable cards while 
   assert.match(blocked.blockers.join("\n"), /public source confirms Memory Subject identity|Missing public identity source/);
 });
 
+
+test("BNL memory-first suppression keeps public name/link questions and preserves distinct duplicate packet questions", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const analystRead = {
+    subjectName: "Stage Subject",
+    readyForDraft: true,
+    draftReadinessReason: "BNL can draft after active public wording questions are collected.",
+    reviewableClaims: [
+      { claimText: "Public identity follow-up", displayTitle: "Stage name question", actionability: "missing_confirmation", verificationPacketQuestion: "What stage name should BNL use publicly?", verificationPacketAudience: "subject" },
+      { claimText: "Public identity follow-up", displayTitle: "Display name question", actionability: "missing_confirmation", verificationPacketQuestion: "Confirm public display name.", verificationPacketAudience: "admin" },
+      { claimText: "Public role/link follow-up", displayTitle: "Role question", actionability: "missing_confirmation", verificationPacketQuestion: "What public role/title should BNL use?", verificationPacketAudience: "owner_approved_wording" },
+      { claimText: "Public link follow-up", displayTitle: "Approved links question", actionability: "missing_confirmation", verificationPacketQuestion: "Which approved public links are approved?", verificationPacketAudience: "link_ownership" },
+      { claimText: "Public identity follow-up", displayTitle: "Duplicate display name question", actionability: "missing_confirmation", verificationPacketQuestion: "Confirm public display name.", verificationPacketAudience: "admin" },
+      { claimText: "queue_submission", displayTitle: "Queue tag", actionability: "classification_only", reviewLane: "route_only" },
+      { claimText: "collaboration_interest", displayTitle: "Collaboration tag", actionability: "classification_only", reviewLane: "route_only" },
+      { claimText: "lore", displayTitle: "Lore tag", actionability: "classification_only", reviewLane: "route_only" },
+      { claimText: "orion", displayTitle: "Orion tag", actionability: "classification_only", reviewLane: "route_only" },
+      { claimText: "Internal source-blind backstage context.", displayTitle: "Backstage source-blind", actionability: "source_blind_warning", sourceSafety: "internal_only" },
+    ],
+    dossierReadinessQuestions: [
+      { questionKey: "q:stage", question: "What stage name should BNL use publicly?", priority: "high", answerType: "public_fact", audience: "subject" },
+      { questionKey: "q:hashtag", question: "Which hashtag should not matter to tag routing?", priority: "optional", answerType: "omit_if_unconfirmed", audience: "admin" },
+      { questionKey: "q:token", question: "queue_submission", priority: "high", answerType: "classification_only", audience: "admin" },
+    ],
+  };
+
+  const derived = sourceSummaryPanelComponent.deriveDossierSourceFileReviewableClaims({ analystRead, candidateId: "stage_subject", sourceArchiveId: "archive_stage", subjectName: "Stage Subject", candidate: { sourceFileClaimReviews: [] } });
+  const activeText = derived.current.map((claim) => `${claim.claimText} ${claim.verificationPacketQuestions?.join(" ") ?? ""}`).join("\n");
+  assert.match(activeText, /What stage name should BNL use publicly\?/);
+  assert.match(activeText, /Confirm public display name/);
+  assert.match(activeText, /What public role\/title should BNL use\?/);
+  assert.match(activeText, /Which approved public links are approved\?/);
+  assert.doesNotMatch(activeText, /queue_submission|collaboration_interest|\blore\b|\borion\b|backstage context/);
+  assert.equal((activeText.match(/Confirm public display name/g) ?? []).length, 1);
+
+  const panelText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary: { summarySource: "bnl", lastUpdatedAt: now, substanceLevel: "useful", publicReadiness: "draftable", nextAction: "review", existingPublicDossier: "no" },
+    latestSourceFileArchive: { id: "archive_stage", candidateId: "stage_subject", subjectName: "Stage Subject", sourceDigest: "digest", createdAt: now, updatedAt: now, archiveSize: 1, chunkCount: 1, reviewOnly: true, subjectAnalystReadV1: analystRead },
+    candidateId: "stage_subject",
+    claimReviews: [],
+  }));
+  const packetText = panelText.slice(panelText.lastIndexOf("Verification Packet"));
+  assert.match(packetText, /Questions for the subject[\s\S]*What stage name should BNL use publicly\?/);
+  assert.match(packetText, /Admin follow-up[\s\S]*Confirm public display name/);
+  assert.match(packetText, /Owner-approved wording[\s\S]*What public role\/title should BNL use\?/);
+  assert.match(packetText, /Link ownership[\s\S]*Which approved public links are approved\?/);
+  assert.doesNotMatch(packetText, /queue_submission|collaboration_interest|Internal source-blind backstage context/);
+  assert.doesNotMatch(normalizedSource("src/app/api/bnl/read-model/route.ts"), /Stage Subject|sourceFileClaimReviews|suppressedReason/);
+});
+
 test("admin Source File and Control Center render BNL draft readiness read model without public leakage", () => {
   const sourceFilePage = normalizedSource("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
   const controlCenter = normalizedSource("src/app/admin/dossiers/page.tsx");

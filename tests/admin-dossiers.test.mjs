@@ -12136,7 +12136,21 @@ test("BNL resolved dossier questions suppress active Verification Packet output 
     subjectName: "Packet Subject",
     dossierReadinessQuestions: [
       { questionKey: "q:packet_done", question: "Which public source confirms Packet Subject's role?", audience: "public_source", dossierSection: "role", answerType: "public_fact" },
-      { question: "Which admin still needs to confirm Packet Subject?", audience: "admin", dossierSection: "role", answerType: "confirmation" },
+      {
+        questionKey: "q:packet_unresolved",
+        questionFamily: "identity_readiness",
+        questionCategory: "admin_confirmation",
+        questionVersion: "v1",
+        scopeKey: "crow:role",
+        subjectKey: "packet_subject",
+        supersedesQuestionKeys: ["q:old_packet"],
+        narrowsQuestionKeys: ["q:broad_packet"],
+        replacedByQuestionKey: "q:packet_future",
+        question: "Which admin still needs to confirm Packet Subject?",
+        audience: "admin",
+        dossierSection: "role",
+        answerType: "confirmation",
+      },
     ],
   };
   const derived = sourceSummaryPanelComponent.deriveDossierSourceFileReviewableClaims({ analystRead, candidateId: candidate.id, sourceArchiveId: "archive_packet", subjectName: "Packet Subject", reviews: [], candidate });
@@ -12144,6 +12158,8 @@ test("BNL resolved dossier questions suppress active Verification Packet output 
   assert.equal(derived.current.some((claim) => /Which public source confirms Packet Subject/.test(claim.claimText)), false);
   assert.equal(derived.current.some((claim) => /Which admin still needs/.test(claim.claimText)), true);
   const unresolvedClaim = derived.current.find((claim) => /Which admin still needs/.test(claim.claimText));
+  assert.equal(unresolvedClaim?.resolvedQuestion?.questionKey, "q:packet_unresolved");
+  assert.equal(unresolvedClaim?.resolvedQuestion?.safeToSuppressFromActivePacket, false);
   const panelText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
     summary: { summarySource: "manual", lastUpdatedAt: now, substanceLevel: "useful", publicReadiness: "needs_review", nextAction: "review", existingPublicDossier: "no" },
     latestSourceFileArchive: { id: "archive_packet", candidateId: candidate.id, subjectName: "Packet Subject", sourceDigest: "digest", createdAt: now, updatedAt: now, archiveSize: 1, chunkCount: 1, reviewOnly: true, subjectAnalystReadV1: analystRead },
@@ -12167,8 +12183,12 @@ test("Verification Packet suppresses saved answer and boundary text while keepin
     "Do not use this publicly.",
     "Keep this internal.",
     "No approved public source yet.",
+    "No public links are approved yet.",
+    "Do not state this publicly.",
+    "Do not mention this publicly.",
   ];
   const activeQuestion = "What exact public name may BNL use for Crow?";
+  const aiQuestion = "What AI/persona/project connection is this referring to?";
   const unresolvedQuestion = "Which public links, if any, may BNL associate with Crow?";
   const analystRead = {
     subjectName: "Crow",
@@ -12181,6 +12201,7 @@ test("Verification Packet suppresses saved answer and boundary text while keepin
         suggestedMissingInfoQuestion: text,
       })),
       { claimText: "Name question fixture", verificationPacketQuestion: activeQuestion, verificationPacketAudience: "subject" },
+      { claimText: "AI question fixture", verificationPacketQuestion: aiQuestion, verificationPacketAudience: "admin" },
       { claimText: unresolvedQuestion, verificationPacketQuestion: unresolvedQuestion, verificationPacketAudience: "public_source" },
     ],
   };
@@ -12213,6 +12234,7 @@ test("Verification Packet suppresses saved answer and boundary text while keepin
     assert.doesNotMatch(packetText, new RegExp(suppressed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.match(packetText, /What exact public name may BNL use for Crow\?/);
+  assert.match(packetText, /What AI\/persona\/project connection is this referring to\?/);
   assert.match(packetText, /Which public links, if any, may BNL associate with Crow\?/);
   assert.match(text, /Automatically resolved BNL questions/);
   assert.match(derived.resolvedQuestions.map((question) => question.resolutionSummary).join("\n"), /Suppressed saved/);

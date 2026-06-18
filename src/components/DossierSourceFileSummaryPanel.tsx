@@ -586,6 +586,15 @@ type ReadinessQuestion = {
   audience: DossierSourceFileVerificationPacketAudience;
   audienceLabel: string;
   whyItMatters?: string;
+  questionKey?: string;
+  questionFamily?: string;
+  questionCategory?: string;
+  questionVersion?: string;
+  scopeKey?: string;
+  subjectKey?: string;
+  supersedesQuestionKeys?: string[];
+  narrowsQuestionKeys?: string[];
+  replacedByQuestionKey?: string;
   dossierSection?: string;
   priority?: string;
   answerType?: string;
@@ -627,6 +636,15 @@ function readinessQuestionsFrom(value: unknown, clarificationOnly = false): Read
       audience,
       audienceLabel: readinessAudienceLabel(audience),
       whyItMatters: safeHumanText(valueByKeys(record, ["whyItMatters", "reason", "why"])),
+      questionKey: textValue(record?.questionKey),
+      questionFamily: textValue(record?.questionFamily),
+      questionCategory: textValue(record?.questionCategory),
+      questionVersion: textValue(record?.questionVersion),
+      scopeKey: textValue(record?.scopeKey),
+      subjectKey: textValue(record?.subjectKey),
+      supersedesQuestionKeys: stringItems(record?.supersedesQuestionKeys),
+      narrowsQuestionKeys: stringItems(record?.narrowsQuestionKeys),
+      replacedByQuestionKey: textValue(record?.replacedByQuestionKey),
       dossierSection: safeHumanText(record?.dossierSection),
       priority: safeHumanText(record?.priority),
       answerType: safeHumanText(record?.answerType),
@@ -951,6 +969,15 @@ export function deriveDossierSourceFileReviewableClaims(input: {
       confirmationTarget: question.audience,
       verificationPacketAudience: question.audience,
       verificationPacketQuestion: question.question,
+      questionKey: question.questionKey,
+      questionFamily: question.questionFamily,
+      questionCategory: question.questionCategory,
+      questionVersion: question.questionVersion,
+      scopeKey: question.scopeKey,
+      subjectKey: question.subjectKey,
+      supersedesQuestionKeys: question.supersedesQuestionKeys,
+      narrowsQuestionKeys: question.narrowsQuestionKeys,
+      replacedByQuestionKey: question.replacedByQuestionKey,
       actionability: "missing_confirmation",
       reviewLane: question.clarificationOnly ? "clarification_need" : "dossier_readiness",
     },

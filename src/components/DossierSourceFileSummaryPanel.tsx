@@ -1712,13 +1712,28 @@ function InterimBriefView({ brief, hasReport }: { brief?: UnknownRecord; hasRepo
 }
 
 
+function surfaceLookupRecords(root: UnknownRecord) {
+  const brief = asRecord(root.sourceFileBriefV2);
+  const report = asRecord(root.sourceFileCaseReportV1);
+  const reportAnalyst = asRecord(report?.subjectAnalystReadV1);
+  const briefReport = asRecord(brief?.sourceFileCaseReportV1);
+  const briefReportAnalyst = asRecord(briefReport?.subjectAnalystReadV1);
+  return [
+    root,
+    asRecord(root.subjectAnalystReadV1),
+    report,
+    reportAnalyst,
+    brief,
+    briefReport,
+    briefReportAnalyst,
+  ].filter((record): record is UnknownRecord => Boolean(record));
+}
+
 function normalizeSourceFileSurfaceV1(latestSourceFileArchive?: DossierSourceFileArchiveMetadata, candidate?: Partial<DossierCandidate>): DossierSourceFileSurfaceV1 | undefined {
   const candidateArchive = asRecord(candidate?.latestSourceFileArchive);
   const roots = [latestSourceFileArchive, candidateArchive].filter(Boolean) as UnknownRecord[];
   for (const root of roots.flatMap((archive) => archivePayloadCandidates(archive as DossierSourceFileArchiveMetadata))) {
-    const analyst = asRecord(root.subjectAnalystReadV1);
-    const report = asRecord(root.sourceFileCaseReportV1);
-    const surface = [root.sourceFileSurfaceV1, analyst?.sourceFileSurfaceV1, report?.sourceFileSurfaceV1].map(asRecord).find(Boolean);
+    const surface = surfaceLookupRecords(root).map((record) => record.sourceFileSurfaceV1).map(asRecord).find(Boolean);
     if (surface) return surface as DossierSourceFileSurfaceV1;
   }
   return undefined;
@@ -1728,9 +1743,7 @@ function normalizeSubjectDossierStateV1(latestSourceFileArchive?: DossierSourceF
   const candidateArchive = asRecord(candidate?.latestSourceFileArchive);
   const roots = [latestSourceFileArchive, candidateArchive].filter(Boolean) as UnknownRecord[];
   for (const root of roots.flatMap((archive) => archivePayloadCandidates(archive as DossierSourceFileArchiveMetadata))) {
-    const analyst = asRecord(root.subjectAnalystReadV1);
-    const report = asRecord(root.sourceFileCaseReportV1);
-    const state = [root.subjectDossierStateV1, analyst?.subjectDossierStateV1, report?.subjectDossierStateV1].map(asRecord).find(Boolean);
+    const state = surfaceLookupRecords(root).map((record) => record.subjectDossierStateV1).map(asRecord).find(Boolean);
     if (state) return state as DossierSubjectDossierStateV1;
   }
   return undefined;
@@ -1738,10 +1751,7 @@ function normalizeSubjectDossierStateV1(latestSourceFileArchive?: DossierSourceF
 
 function normalizeReviewActionabilityV1(latestSourceFileArchive?: DossierSourceFileArchiveMetadata): UnknownRecord | undefined {
   for (const candidate of archivePayloadCandidates(latestSourceFileArchive)) {
-    const analyst = asRecord(candidate.subjectAnalystReadV1);
-    const report = asRecord(candidate.sourceFileCaseReportV1);
-    const nestedAnalyst = asRecord(report?.subjectAnalystReadV1);
-    const read = [candidate.reviewActionabilityV1, analyst?.reviewActionabilityV1, report?.reviewActionabilityV1, nestedAnalyst?.reviewActionabilityV1].map(asRecord).find(Boolean);
+    const read = surfaceLookupRecords(candidate).map((record) => record.reviewActionabilityV1).map(asRecord).find(Boolean);
     if (read) return read;
   }
   return undefined;
@@ -1762,6 +1772,11 @@ function humanizeDossierState(value?: string) {
     blocked: "Blocked",
   };
   return labels[raw] ?? raw.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function sourceFileSurfaceHasVerificationPacket(surface?: DossierSourceFileSurfaceV1) {
+  const record = asRecord(surface);
+  return Boolean(record && (Object.prototype.hasOwnProperty.call(record, "verificationQuestions") || Object.prototype.hasOwnProperty.call(record, "verificationPacketQuestions")));
 }
 
 function sourceFileSurfaceQuestions(surface?: DossierSourceFileSurfaceV1): ReadinessQuestion[] {
@@ -2208,8 +2223,9 @@ export function DossierSourceFileSummaryPanel({
   const surfaceStateKey = textValue(subjectDossierState?.state) ?? textValue(subjectDossierState?.status);
   const trueBlockerState = surfaceStateKey === "blocked";
   const surfaceQuestions = sourceFileSurface ? sourceFileSurfaceQuestions(sourceFileSurface) : [];
+  const surfaceOwnsVerificationPacket = sourceFileSurfaceHasVerificationPacket(sourceFileSurface);
   const fallbackSurfaceQuestions = readinessQuestionsFrom(reviewActionability?.verificationPacketQuestions).filter((question) => memoryFirstQuestionIsDecisionUnlocking(question));
-  const visibleSurfaceQuestions = surfaceQuestions.length ? surfaceQuestions : fallbackSurfaceQuestions;
+  const visibleSurfaceQuestions = surfaceOwnsVerificationPacket ? surfaceQuestions : fallbackSurfaceQuestions;
   const latestArchiveMissingReport = Boolean(latestSourceFileArchive && !report);
   const hasArchiveDiagnostics =
     latestSourceFileArchive?.caseReportPresent !== undefined ||

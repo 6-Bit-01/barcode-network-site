@@ -12819,3 +12819,94 @@ test("sourceFileSurfaceV1 blocker state is prominent and prevents wired draft ac
   assert.match(text, /Next step: ask admin for confirmation/);
 });
 
+
+test("sourceFileSurfaceV1 and state nested under sourceFileBriefV2 case report drive primary UI", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const summary = sourceFileSummary.createDossierSourceFileSummary({
+    candidate: { id: "nested_surface_candidate", name: "Nested Surface", candidateType: "artist", source: "manual", tier: "draft_ready", score: 80, status: "active_source_file", createdAt: now, updatedAt: now },
+    recommendations: [],
+  });
+  const archive = {
+    id: "archive_nested_surface",
+    candidateId: "nested_surface_candidate",
+    subjectName: "Nested Surface",
+    sourceDigest: "abcdef1234567890",
+    createdAt: now,
+    updatedAt: now,
+    archiveSize: 123,
+    chunkCount: 1,
+    reviewOnly: true,
+    sourceFileBriefV2: {
+      sourceFileCaseReportV1: {
+        sourceFileSurfaceV1: {
+          statusSummary: "Nested BNL surface should be primary.",
+          primaryAction: { actionKey: "ask_owner", label: "Ask owner for wording" },
+          activeCards: [{ title: "Owner wording needed", subtitle: "Nested surface card wins.", control: { actionKey: "ask_owner", label: "Ask owner" } }],
+          verificationQuestions: [{ question: "Which owner-approved wording unlocks Nested Surface?", audience: "owner_approved_wording", priority: "high" }],
+        },
+        subjectDossierStateV1: { state: "needs_owner_wording" },
+        reviewActionabilityV1: { verificationPacketQuestions: ["Legacy nested packet question should not win."] },
+      },
+    },
+  };
+  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive }));
+  assert.match(text, /BNL Source File Surface \/ BNL Take/);
+  assert.match(text, /Needs owner-approved wording/);
+  assert.match(text, /Nested BNL surface should be primary/);
+  assert.match(text, /Owner wording needed/);
+  assert.match(text, /Which owner-approved wording unlocks Nested Surface\?/);
+  assert.doesNotMatch(text, /Legacy nested packet question should not win|sourceFileBriefV2|sourceFileCaseReportV1|reviewActionabilityV1/);
+});
+
+test("reviewActionabilityV1 nested under sourceFileBriefV2 case report backs missing surface packet but not an empty one", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const summary = sourceFileSummary.createDossierSourceFileSummary({
+    candidate: { id: "nested_packet_candidate", name: "Nested Packet", candidateType: "artist", source: "manual", tier: "review_candidate", score: 60, status: "active_source_file", createdAt: now, updatedAt: now },
+    recommendations: [],
+  });
+  const baseArchive = {
+    id: "archive_nested_packet",
+    candidateId: "nested_packet_candidate",
+    subjectName: "Nested Packet",
+    sourceDigest: "abcdef1234567890",
+    createdAt: now,
+    updatedAt: now,
+    archiveSize: 123,
+    chunkCount: 1,
+    reviewOnly: true,
+    sourceFileBriefV2: {
+      sourceFileCaseReportV1: {
+        subjectDossierStateV1: { state: "needs_admin_confirmation" },
+        reviewActionabilityV1: { verificationPacketQuestions: [{ question: "Which admin confirms Nested Packet?", audience: "admin", priority: "high" }] },
+      },
+    },
+  };
+  const fallbackText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary,
+    latestSourceFileArchive: {
+      ...baseArchive,
+      sourceFileBriefV2: {
+        sourceFileCaseReportV1: {
+          ...baseArchive.sourceFileBriefV2.sourceFileCaseReportV1,
+          sourceFileSurfaceV1: { statusSummary: "Surface without a packet uses legacy packet fallback.", primaryAction: { actionKey: "ask_admin", label: "Ask admin" }, activeCards: [] },
+        },
+      },
+    },
+  }));
+  assert.match(fallbackText, /Which admin confirms Nested Packet\?/);
+
+  const emptyPacketText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary,
+    latestSourceFileArchive: {
+      ...baseArchive,
+      sourceFileBriefV2: {
+        sourceFileCaseReportV1: {
+          ...baseArchive.sourceFileBriefV2.sourceFileCaseReportV1,
+          sourceFileSurfaceV1: { statusSummary: "Surface intentionally has no packet questions.", primaryAction: { actionKey: "ask_admin", label: "Ask admin" }, activeCards: [], verificationQuestions: [] },
+        },
+      },
+    },
+  }));
+  assert.match(emptyPacketText, /BNL did not select packet questions/);
+  assert.doesNotMatch(emptyPacketText, /Which admin confirms Nested Packet\?/);
+});

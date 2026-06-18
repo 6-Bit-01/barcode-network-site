@@ -2645,6 +2645,8 @@ export default function CandidateReviewPage() {
               claimReviews={candidate.sourceFileClaimReviews ?? []}
               onReviewClaim={reviewSourceFileClaim}
               candidate={candidate}
+              onCreateDraft={() => void createDraft()}
+              onRequestBnlDraft={() => void requestBnlDraft()}
               sourceFileTargetStatus={
                 isExistingDossierUpdate
                   ? "existing dossier update"

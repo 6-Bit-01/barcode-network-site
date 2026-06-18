@@ -12742,3 +12742,68 @@ test("admin Source File and Control Center render BNL draft readiness read model
   assert.match(controlCenter, /createDossierSourceFileDraftReadinessReadModel/);
   assert.doesNotMatch(publicReadModel, /sourceFileResolutionAudit|resolvedQuestionAudit|DossierSourceFileDraftReadinessReadModel|sourceFileClaimReviews/);
 });
+
+test("sourceFileSurfaceV1 drives primary Source File surface, compact cards, controls, and packet", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const summary = sourceFileSummary.createDossierSourceFileSummary({
+    candidate: { id: "surface_candidate", name: "Surface Subject", candidateType: "artist", source: "manual", tier: "draft_ready", score: 80, status: "active_source_file", createdAt: now, updatedAt: now },
+    recommendations: [],
+  });
+  const archive = {
+    id: "archive_surface",
+    candidateId: "surface_candidate",
+    subjectName: "Surface Subject",
+    sourceDigest: "abcdef1234567890",
+    createdAt: now,
+    updatedAt: now,
+    archiveSize: 123,
+    chunkCount: 1,
+    reviewOnly: true,
+    sourceFileSurfaceV1: {
+      statusSummary: "BNL can fill a truthful short public dossier with safe omissions.",
+      primaryAction: { actionKey: "create_draft", label: "Draft from public-safe material" },
+      secondaryAction: { actionKey: "ask_owner", label: "Ask owner", inputHint: "owner-approved wording" },
+      activeCards: [
+        { title: "Draft from public-safe material", subtitle: "BNL can fill a truthful short public dossier with safe omissions.", control: { actionKey: "create_draft", label: "Create draft" } },
+        { title: "Owner wording needed", reason: "Only ask for wording that unlocks the dossier.", control: { actionKey: "ask_owner", label: "Copy owner question", inputHint: "owner-approved wording" } },
+        { title: "Internal-only Source File", subtitle: "Keep review pressure low.", control: { actionKey: "keep_internal", label: "Keep internal" } },
+      ],
+      verificationQuestions: [
+        { question: "Which public role wording should BNL use?", audience: "owner_approved_wording", priority: "high" },
+        { question: "Optional internal note?", audience: "admin", priority: "optional", sourceSafety: "internal_only" },
+      ],
+    },
+    subjectDossierStateV1: { state: "ready_for_cautious_draft" },
+    dossierCompletionReadV1: { bnlAssessment: "Legacy completion read should be diagnostic." },
+    reviewActionabilityV1: { verificationPacketQuestions: ["Fallback question should not be primary."] },
+    sourceFileClassificationV1: { internalTags: ["source_blind"] },
+  };
+  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary,
+    subjectName: "Surface Subject",
+    latestSourceFileArchive: archive,
+    candidateId: "surface_candidate",
+    onCreateDraft: () => {},
+  }));
+  assert.match(text, /BNL Source File Surface \/ BNL Take/);
+  assert.match(text, /Ready for cautious draft/);
+  assert.match(text, /Draft from public-safe material/);
+  assert.match(text, /Owner wording needed/);
+  assert.match(text, /Copy \/ focus: Ask owner/);
+  assert.match(text, /owner-approved wording/);
+  assert.match(text, /Which public role wording should BNL use\?/);
+  assert.doesNotMatch(text, /Fallback question should not be primary/);
+  assert.doesNotMatch(text, /actionability|publicUse|blocksDraft|safeDefault|dossierImpact|sourceFileCaseReportV1|subjectAnalystReadV1|reviewActionabilityV1/);
+});
+
+test("sourceFileSurfaceV1 blocker state is prominent and prevents wired draft action", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const summary = sourceFileSummary.createDossierSourceFileSummary({ candidate: { id: "blocked_surface", name: "Blocked Surface", candidateType: "artist", source: "manual", tier: "draft_ready", score: 80, status: "active_source_file", createdAt: now, updatedAt: now }, recommendations: [] });
+  const archive = { id: "archive_blocked", candidateId: "blocked_surface", subjectName: "Blocked Surface", sourceDigest: "abcdef1234567890", createdAt: now, updatedAt: now, archiveSize: 123, chunkCount: 1, reviewOnly: true, sourceFileSurfaceV1: { statusSummary: "BNL needs a hard blocker resolved first.", primaryAction: { actionKey: "create_draft", label: "Create draft" }, activeCards: [{ title: "Blocked until admin confirms source", subtitle: "Do not draft yet.", control: { actionKey: "ask_admin", label: "Ask admin" } }] }, subjectDossierStateV1: { state: "blocked" } };
+  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive, onCreateDraft: () => {} }));
+  assert.match(text, /Blocked/);
+  assert.match(text, /Draft blocked/);
+  assert.doesNotMatch(text, /Create Proposed Dossier Draft/);
+  assert.match(text, /Copy \/ focus: Ask admin/);
+});
+

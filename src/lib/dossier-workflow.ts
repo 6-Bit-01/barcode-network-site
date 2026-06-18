@@ -276,6 +276,57 @@ export type DossierSourceFileDraftReadinessReadModel = {
   recommendedNextAction: string;
 };
 
+
+export type DossierSourceFileSurfaceControlV1 = {
+  controlType?: string;
+  actionKey?: string;
+  label?: string;
+  choices?: string[] | Array<{ label?: string; value?: string; description?: string }>;
+  defaultChoice?: string;
+  inputHint?: string;
+  href?: string;
+  copyText?: string;
+};
+
+export type DossierSourceFileSurfaceActionV1 = {
+  label?: string;
+  title?: string;
+  actionKey?: string;
+  controlType?: string;
+  href?: string;
+  copyText?: string;
+  inputHint?: string;
+};
+
+export type DossierSourceFileSurfaceCardV1 = {
+  id?: string;
+  title?: string;
+  decision?: string;
+  subtitle?: string;
+  reason?: string;
+  bnlReason?: string;
+  control?: DossierSourceFileSurfaceControlV1;
+};
+
+export type DossierSourceFileSurfaceV1 = {
+  version?: string | number;
+  statusSummary?: string;
+  summary?: string;
+  bnlTake?: string;
+  primaryAction?: DossierSourceFileSurfaceActionV1 | string;
+  secondaryAction?: DossierSourceFileSurfaceActionV1 | string;
+  activeCards?: DossierSourceFileSurfaceCardV1[];
+  verificationQuestions?: unknown;
+  verificationPacketQuestions?: unknown;
+};
+
+export type DossierSubjectDossierStateV1 = {
+  state?: string;
+  status?: string;
+  label?: string;
+  summary?: string;
+};
+
 export type DossierSourceFileCaseReportV1 = {
   version?: string;
   generatedAt?: string;
@@ -299,6 +350,8 @@ export type DossierSourceFileCaseReportV1 = {
   subjectIntelligenceBriefV1?: DossierSubjectIntelligenceBriefV1;
   subjectAnalystReadV1?: DossierSubjectAnalystReadV1;
   sourceFileClassificationV1?: DossierSourceFileClassificationV1;
+  sourceFileSurfaceV1?: DossierSourceFileSurfaceV1;
+  subjectDossierStateV1?: DossierSubjectDossierStateV1;
 };
 
 export type DossierSourceFileBriefV2 = {
@@ -321,6 +374,8 @@ export type DossierSourceFileArchiveCompactReadout = {
   sourceFileBriefV2?: DossierSourceFileBriefV2;
   subjectAnalystReadV1?: DossierSubjectAnalystReadV1;
   sourceFileClassificationV1?: DossierSourceFileClassificationV1;
+  sourceFileSurfaceV1?: DossierSourceFileSurfaceV1;
+  subjectDossierStateV1?: DossierSubjectDossierStateV1;
   archivePayload?: unknown;
   archive?: unknown;
   payload?: unknown;

@@ -12,6 +12,7 @@ import type {
   DossierSourceFileNote,
   DossierSubjectAnalystReadV1,
   DossierSourceFileConfirmationTarget,
+  DossierSourceFileVerificationPacketAudience,
 } from "@/lib/dossier-workflow";
 import type { DossierDraftBlueprint } from "@/lib/dossier-classification";
 import { buildDossierStylePacket, DOSSIER_DRAFT_CONTRACT_REQUIRED_FIELDS } from "@/lib/dossier-style-packet";
@@ -154,6 +155,11 @@ function hasAnalystReadShape(value: unknown): value is DossierSubjectAnalystRead
   const read = asRecord(value);
   if (!read) return false;
   return [
+    "dossierReadinessQuestions",
+    "dossierClarificationNeeds",
+    "readyForDraft",
+    "dossierBlockedBy",
+    "draftReadinessReason",
     "subjectName",
     "internalRead",
     "likelySubjectType",
@@ -485,6 +491,7 @@ function AnalystList({ value, empty }: { value: unknown; empty: string }) {
 }
 
 export type DossierSourceFileReviewableClaim = {
+  relatedReadinessQuestions?: ReadinessQuestion[];
   id: string;
   claimText: string;
   claimType: DossierSourceFileClaimType;
@@ -560,14 +567,98 @@ function stringListFromRecord(record: UnknownRecord | undefined, key: string): s
   return stringItems(record?.[key]);
 }
 
+function safeHumanText(value: unknown) {
+  const text = displayValue(value);
+  if (!text) return undefined;
+  if (/@|stripe|payment|customer|token|env|config|raw evidence|raw id|database|table|source-blind detail|private message|mod-only|internal alias/i.test(text)) {
+    return "BNL can see protected context here, but it needs approved wording or a public source before anything can be used publicly.";
+  }
+  return text;
+}
+
+type ReadinessQuestion = {
+  id: string;
+  question: string;
+  audience: DossierSourceFileVerificationPacketAudience;
+  audienceLabel: string;
+  whyItMatters?: string;
+  dossierSection?: string;
+  priority?: string;
+  answerType?: string;
+  sourceSafety?: string;
+  sourceCount?: string;
+  relatedReviewClaimIds: string[];
+  clarificationOnly?: boolean;
+};
+
+function readinessAudienceKey(value: unknown): DossierSourceFileVerificationPacketAudience {
+  const raw = textValue(value)?.toLowerCase().replace(/[ -]+/g, "_");
+  if (raw === "subject" || raw === "admin" || raw === "public_source" || raw === "owner_approved_wording" || raw === "link_ownership" || raw === "owner" || raw === "mod") return raw;
+  return raw || "unknown";
+}
+
+function readinessAudienceLabel(value: unknown) {
+  const key = readinessAudienceKey(value);
+  if (key === "subject") return "Subject";
+  if (key === "admin") return "Admin";
+  if (key === "public_source") return "Public source needed";
+  if (key === "owner_approved_wording") return "Owner-approved wording";
+  if (key === "link_ownership") return "Link ownership";
+  if (key === "owner") return "Owner/operator";
+  if (key === "mod") return "Mod / informed team member";
+  return "Needs routing";
+}
+
+function readinessQuestionsFrom(value: unknown, clarificationOnly = false): ReadinessQuestion[] {
+  return listValues(value).flatMap((item, index) => {
+    const record = asRecord(item);
+    const question = safeHumanText(record ? valueByKeys(record, ["question", "text", "prompt", "need"]) : item);
+    if (!question) return [];
+    const audience = readinessAudienceKey(record ? valueByKeys(record, ["audience", "recipientClass", "confirmationTarget", "verificationPacketAudience"]) : undefined);
+    const relatedReviewClaimIds = stringItems(record?.relatedReviewClaimIds);
+    return [{
+      id: textValue(record?.id) ?? `readiness_question_${index}_${normalizeVerificationQuestion(question).slice(0, 32).replace(/[^a-z0-9]+/g, "_")}`,
+      question,
+      audience,
+      audienceLabel: readinessAudienceLabel(audience),
+      whyItMatters: safeHumanText(valueByKeys(record, ["whyItMatters", "reason", "why"])),
+      dossierSection: safeHumanText(record?.dossierSection),
+      priority: safeHumanText(record?.priority),
+      answerType: safeHumanText(record?.answerType),
+      sourceSafety: safeHumanText(record?.sourceSafety),
+      sourceCount: safeHumanText(record?.sourceCount),
+      relatedReviewClaimIds,
+      clarificationOnly,
+    }];
+  });
+}
+
+function analystReadinessQuestions(analystRead?: DossierSubjectAnalystReadV1) {
+  return [
+    ...readinessQuestionsFrom(analystRead?.dossierReadinessQuestions),
+    ...readinessQuestionsFrom(analystRead?.dossierClarificationNeeds, true),
+  ];
+}
+
+function readinessStatusLine(analystRead?: DossierSubjectAnalystReadV1) {
+  const raw = analystRead?.readyForDraft;
+  const ready = raw === true || (typeof raw === "string" && /^(true|yes|ready)$/i.test(raw.trim()));
+  const notReady = raw === false || (typeof raw === "string" && /^(false|no|not_ready|blocked)$/i.test(raw.trim()));
+  if (!ready && !notReady && !analystRead?.draftReadinessReason) return undefined;
+  return `${ready ? "Ready for draft" : "Not ready for draft"}${safeHumanText(analystRead?.draftReadinessReason) ? ` — ${safeHumanText(analystRead?.draftReadinessReason)}` : ""}`;
+}
+
 function confirmationTargetLabel(value: unknown) {
   const target = textValue(value)?.toLowerCase();
   if (!target || target === "none") return undefined;
   if (target === "subject") return "Subject";
   if (target === "admin") return "Admin";
-  if (target === "public_source") return "Public source";
+  if (target === "public_source") return "Public source needed";
   if (target === "owner_approved_wording") return "Owner-approved wording";
   if (target === "link_ownership") return "Link ownership";
+  if (target === "owner") return "Owner/operator";
+  if (target === "mod") return "Mod / informed team member";
+  if (target === "unknown") return "Needs routing";
   return target.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
@@ -803,6 +894,7 @@ export function deriveDossierSourceFileReviewableClaims(input: {
     { sourceSection: "recommendedAdminActions", claimType: "recommended_action", values: input.analystRead?.recommendedAdminActions },
     { sourceSection: "doNotSayPublicly", claimType: "do_not_say", values: input.analystRead?.doNotSayPublicly },
   );
+  const readinessQuestions = analystReadinessQuestions(input.analystRead);
   const allCards = sections.flatMap((section) => listValues(section.values).flatMap((value) => {
     const card = buildClaimCard({ value, sourceSection: section.sourceSection, claimType: section.claimType, candidateId: input.candidateId, sourceArchiveId: input.sourceArchiveId, subjectName: input.subjectName ?? input.analystRead?.subjectName, reviews: reviewById });
     return card ? [card] : [];
@@ -811,7 +903,35 @@ export function deriveDossierSourceFileReviewableClaims(input: {
     const split = splitSignal(card.claimText);
     return { id: card.id, label: split.label, count: split.count, suggestion: signalSuggestion(split.label), actionable: "Not directly actionable as a public fact." };
   });
-  const current = allCards.filter((card) => !signals.some((signal) => signal.id === card.id));
+  const attachedQuestionIds = new Set<string>();
+  const cardsWithReadiness = allCards.map((card) => {
+    const relatedReadinessQuestions = readinessQuestions.filter((question) => question.relatedReviewClaimIds.includes(card.id));
+    relatedReadinessQuestions.forEach((question) => attachedQuestionIds.add(question.id));
+    return relatedReadinessQuestions.length ? { ...card, relatedReadinessQuestions } : card;
+  });
+  const readinessCards = readinessQuestions.filter((question) => !attachedQuestionIds.has(question.id)).map((question) => buildClaimCard({
+    value: {
+      claimText: question.question,
+      displayTitle: question.clarificationOnly ? "Dossier clarification need" : "Dossier readiness question",
+      displayDecision: question.question,
+      displayWhyBNLFlaggedIt: question.whyItMatters ?? "BNL needs this answered before the Source File can safely support a public Proposed Dossier.",
+      displayBNLRecommendation: question.clarificationOnly ? "Treat this as a clarification need, not a public-fact approval card." : "Save this as a follow-up question if it is still needed.",
+      displayEvidenceSummary: question.sourceSafety ?? "No public-safe source summary provided.",
+      displaySafeDefault: "Keep blocked until the routed question is answered or a public-safe source exists.",
+      confirmationTarget: question.audience,
+      verificationPacketAudience: question.audience,
+      verificationPacketQuestion: question.question,
+      actionability: "missing_confirmation",
+      reviewLane: question.clarificationOnly ? "clarification_need" : "dossier_readiness",
+    },
+    sourceSection: question.clarificationOnly ? "dossierClarificationNeeds" : "dossierReadinessQuestions",
+    claimType: "missing_info",
+    candidateId: input.candidateId,
+    sourceArchiveId: input.sourceArchiveId,
+    subjectName: input.subjectName ?? input.analystRead?.subjectName,
+    reviews: reviewById,
+  })).filter((card): card is DossierSourceFileReviewableClaim => Boolean(card));
+  const current = [...cardsWithReadiness, ...readinessCards].filter((card) => !signals.some((signal) => signal.id === card.id));
   const currentIds = new Set(current.map((claim) => claim.id));
   return {
     current,
@@ -830,6 +950,12 @@ export function deriveDossierSourceFileReviewableClaims(input: {
 const VERIFICATION_PACKET_AUDIENCE_LABELS = {
   subject: "Questions for the subject",
   admin: "Admin follow-up",
+  public_source: "Public source needed",
+  owner_approved_wording: "Owner-approved wording",
+  link_ownership: "Link ownership",
+  owner: "Owner/operator",
+  mod: "Mod / informed team member",
+  unknown: "Needs routing",
 } as const;
 
 type VerificationPacketAudience = keyof typeof VERIFICATION_PACKET_AUDIENCE_LABELS;
@@ -842,8 +968,9 @@ type VerificationPacketQuestion = {
 type VerificationPacketSections = Record<VerificationPacketAudience, VerificationPacketQuestion[]>;
 
 function verificationAudienceKey(value: unknown): VerificationPacketAudience {
-  const raw = textValue(value)?.toLowerCase();
-  return raw === "subject" ? "subject" : "admin";
+  const raw = textValue(value)?.toLowerCase().replace(/[ -]+/g, "_");
+  if (raw && raw in VERIFICATION_PACKET_AUDIENCE_LABELS) return raw as VerificationPacketAudience;
+  return "unknown";
 }
 
 function safeCopyQuestions(questions: string[]) {
@@ -861,6 +988,7 @@ function unresolvedReviewItems(claims: DossierSourceFileReviewableClaim[]) {
 function isSavedFollowUpQuestion(claim: DossierSourceFileReviewableClaim) {
   const decision = claim.review?.decision;
   if (decision === "needs_more_info") return true;
+  if (claim.relatedReadinessQuestions?.length && decision === "confirmed_internal") return true;
   return claim.claimType === "missing_info" && decision === "confirmed_internal";
 }
 
@@ -868,6 +996,8 @@ function savedFollowUpQuestionsForClaim(claim: DossierSourceFileReviewableClaim)
   if (!isSavedFollowUpQuestion(claim)) return [];
   const editedText = claim.review?.editedText?.trim();
   if (editedText) return safeCopyQuestions([editedText]);
+  const relatedReadinessQuestions = claim.relatedReadinessQuestions?.map((question) => question.question) ?? [];
+  if (relatedReadinessQuestions.length) return safeCopyQuestions(relatedReadinessQuestions);
   const reviewClaimText = claim.review?.claimText?.trim();
   const shouldSkipClaimTextFallback = claim.isVagueArtifact || claim.isInternalAuditArtifact;
   if (claim.review?.decision === "needs_more_info" && reviewClaimText && !shouldSkipClaimTextFallback) return safeCopyQuestions([reviewClaimText]);
@@ -880,10 +1010,16 @@ function savedFollowUpQuestionsForClaim(claim: DossierSourceFileReviewableClaim)
 }
 
 function dedupeVerificationQuestions(questions: Array<{ text: string; audience: VerificationPacketAudience }>): VerificationPacketSections {
-  const sections: VerificationPacketSections = { subject: [], admin: [] };
+  const sections = Object.fromEntries((Object.keys(VERIFICATION_PACKET_AUDIENCE_LABELS) as VerificationPacketAudience[]).map((audience) => [audience, []])) as unknown as VerificationPacketSections;
   const seen: Record<VerificationPacketAudience, Map<string, VerificationPacketQuestion>> = {
     subject: new Map(),
     admin: new Map(),
+    public_source: new Map(),
+    owner_approved_wording: new Map(),
+    link_ownership: new Map(),
+    owner: new Map(),
+    mod: new Map(),
+    unknown: new Map(),
   };
   for (const question of questions) {
     const normalized = normalizeVerificationQuestion(question.text);
@@ -903,7 +1039,7 @@ function dedupeVerificationQuestions(questions: Array<{ text: string; audience: 
 function verificationPacketSections(claims: DossierSourceFileReviewableClaim[]) {
   return dedupeVerificationQuestions(claims.flatMap((claim) => savedFollowUpQuestionsForClaim(claim).map((text) => ({
     text,
-    audience: verificationAudienceKey(claim.verificationPacketAudience ?? claim.confirmationTarget),
+    audience: verificationAudienceKey(claim.relatedReadinessQuestions?.find((question) => question.question === text)?.audience ?? claim.verificationPacketAudience ?? claim.confirmationTarget),
   }))));
 }
 
@@ -924,7 +1060,7 @@ function VerificationPacket({ claims }: { claims: DossierSourceFileReviewableCla
   const unresolved = unresolvedReviewItems(claims);
   const locked = unresolved.length > 0;
   const sections = verificationPacketSections(claims);
-  const hasQuestions = sections.subject.length > 0 || sections.admin.length > 0;
+  const hasQuestions = Object.values(sections).some((questions) => questions.length > 0);
   const copyText = verificationPacketCopyText(sections);
   return (
     <section className="border border-border/60 bg-background/20 p-3 text-sm">
@@ -1099,6 +1235,7 @@ function ClaimDecisionCard({ claim, onReview }: { claim: DossierSourceFileReview
         <>
           <p className="mt-1 text-foreground">{claim.claimText}</p>
           {confirmationTargetLabel(claim.confirmationTarget) && <p className="mt-2 text-xs text-muted">Confirmation target: {confirmationTargetLabel(claim.confirmationTarget)}</p>}
+          {claim.relatedReadinessQuestions && claim.relatedReadinessQuestions.length > 0 && <div className="mt-2 border border-border/40 bg-background/40 p-2 text-xs"><p className="font-bold text-foreground">Related BNL readiness questions</p><ul className="mt-1 list-disc pl-5 text-foreground">{claim.relatedReadinessQuestions.map((question) => <li key={question.id}>{question.audienceLabel}: {question.question}{question.whyItMatters ? ` — ${question.whyItMatters}` : ""}</li>)}</ul></div>}
           {claim.whatAmIDeciding && <p className="mt-2 border border-border/50 bg-background/40 p-2 text-xs text-foreground"><strong>What am I deciding?</strong> {claim.whatAmIDeciding}</p>}
           {claim.claimType === "source_blind" && <p className="mt-2 border border-accent/60 bg-accent/10 p-2 text-xs text-foreground">Source-blind context cannot become public copy by itself. Only enter public-safe replacement wording if you have separate confirmation.</p>}
           <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
@@ -1161,6 +1298,8 @@ function BnlAnalystReadPanel({
     ["sourceBlindInsights", "Source-blind / Withheld Context"],
     ["missingConfirmations", "Missing Confirmations"],
     ["recommendedAdminActions", "Recommended Admin Actions"],
+    ["dossierReadinessQuestions", "Dossier Readiness Questions"],
+    ["dossierClarificationNeeds", "Dossier Clarification Needs"],
     ["doNotSayPublicly", "Do Not Say Publicly"],
   ] as const;
   return (
@@ -1173,6 +1312,7 @@ function BnlAnalystReadPanel({
           <SnapshotItem label="Last refreshed" value={formatSnapshotDate(refreshedAt)} />
         </dl>
         <section className="border border-accent/60 bg-background/30 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-accent">Internal Read</h4><BriefParagraphs value={analystRead.internalRead} /></section>
+        {(readinessStatusLine(analystRead) || stringItems(analystRead.dossierBlockedBy).length > 0 || stringItems(analystRead.dossierReadinessSummary).length > 0) && <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Dossier readiness</h4>{readinessStatusLine(analystRead) && <p className="text-foreground">{readinessStatusLine(analystRead)}</p>}{stringItems(analystRead.dossierReadinessSummary).length > 0 && <ul className="mt-2 list-disc pl-5 text-foreground">{stringItems(analystRead.dossierReadinessSummary).map((item) => <li key={item}>{safeHumanText(item)}</li>)}</ul>}{stringItems(analystRead.dossierBlockedBy).length > 0 && <div className="mt-2"><p className="text-xs font-bold text-accent">Compact blockers</p><ul className="list-disc pl-5 text-foreground">{stringItems(analystRead.dossierBlockedBy).map((item) => <li key={item}>{safeHumanText(item)}</li>)}</ul></div>}</section>}
         <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Strongest Signals</h4><AnalystList value={analystRead.strongestSignals} empty="No strongest signals reported." /></section>
         {reviewable.signals.length > 0 && <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-1 text-xs font-bold uppercase tracking-widest text-foreground">Evidence Signals / Pattern Summary</h4><p className="mb-2 text-xs text-muted/80">These are pattern counts and context signals BNL used for analysis. They are not public-ready facts by themselves.</p><ul className="space-y-2 text-foreground">{reviewable.signals.map((signal) => <li key={signal.id} className="border border-border/40 p-2"><p className="font-bold">{signal.label}{signal.count ? `: ${signal.count}` : ""}</p><p className="text-xs text-muted">{signal.suggestion}</p><p className="text-xs text-muted">Action: {signal.actionable}</p></li>)}</ul></section>}
         {sectionEntries.map(([section, label]) => {

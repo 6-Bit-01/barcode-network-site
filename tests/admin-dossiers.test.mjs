@@ -9336,6 +9336,107 @@ test("Source File analyst review cards prefer BNL human display fields and verif
   assert.match(text, /A Source File review decision\. Confirming public-ready does not publish a dossier/);
 });
 
+test("Source File analyst readiness fields wire into existing review and Verification Packet flow", () => {
+  const summary = sourceFileReportTestSummary();
+  const archive = {
+    id: "archive-readiness-wiring",
+    candidateId: "candidate-readiness-wiring",
+    subjectName: "Crow",
+    sourceDigest: "abcdef1234567890",
+    createdAt: "2026-06-17T00:00:00.000Z",
+    updatedAt: "2026-06-17T01:00:00.000Z",
+    archiveSize: 123,
+    chunkCount: 1,
+    reviewOnly: true,
+    subjectAnalystReadV1: {
+      subjectName: "Crow",
+      internalRead: "Readiness fixture.",
+      readyForDraft: false,
+      draftReadinessReason: "BNL still needs owner-approved wording and a public source before drafting.",
+      dossierReadinessSummary: ["Two routed answers remain before a public Proposed Dossier is safe."],
+      dossierBlockedBy: ["Owner-approved wording missing", "raw evidence id database row should be humanized"],
+      reviewableClaims: [{ claimText: "Crow public role needs review.", displayTitle: "Existing role review card" }],
+      dossierReadinessQuestions: [
+        {
+          question: "What owner-approved wording may BNL use for Crow's role?",
+          audience: "owner_approved_wording",
+          whyItMatters: "Prevents public wording from outrunning owner approval.",
+          relatedReviewClaimIds: [],
+          dossierSection: "identity",
+          priority: "high",
+          answerType: "approved wording",
+          sourceSafety: "public-safe follow-up",
+          sourceCount: 2,
+        },
+        {
+          question: "Which public source confirms Crow's role?",
+          audience: "public_source",
+          whyItMatters: "A public dossier needs public provenance.",
+        },
+        {
+          question: "Which link is owned by Crow?",
+          audience: "link_ownership",
+          whyItMatters: "Avoids unapproved link ownership claims.",
+        },
+        {
+          question: "raw evidence: private token database row should never appear",
+          audience: "admin",
+          whyItMatters: "private message with internal alias",
+        },
+      ],
+      dossierClarificationNeeds: [{ question: "Which mod can clarify the context without approving public copy?", audience: "mod", reason: "Clarification only." }],
+    },
+  };
+  const first = sourceSummaryPanelComponent.deriveDossierSourceFileReviewableClaims({ analystRead: archive.subjectAnalystReadV1, candidateId: archive.candidateId, sourceArchiveId: archive.id, subjectName: archive.subjectName });
+  const roleClaim = first.current.find((claim) => claim.claimText === "Crow public role needs review.");
+  assert.ok(roleClaim);
+  archive.subjectAnalystReadV1.dossierReadinessQuestions[0].relatedReviewClaimIds = [roleClaim.id];
+  const derived = sourceSummaryPanelComponent.deriveDossierSourceFileReviewableClaims({ analystRead: archive.subjectAnalystReadV1, candidateId: archive.candidateId, sourceArchiveId: archive.id, subjectName: archive.subjectName });
+  const attached = derived.current.find((claim) => claim.id === roleClaim.id);
+  assert.equal(attached.relatedReadinessQuestions?.[0]?.audienceLabel, "Owner-approved wording");
+  assert.ok(derived.current.some((claim) => claim.sourceSection === "dossierReadinessQuestions" && claim.claimText === "Which public source confirms Crow's role?"));
+  assert.ok(derived.current.some((claim) => claim.sourceSection === "dossierClarificationNeeds" && claim.claimText === "Which mod can clarify the context without approving public copy?"));
+
+  const lockedText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive, candidateId: archive.candidateId }));
+  assert.match(lockedText, /Dossier readiness/);
+  assert.match(lockedText, /Not ready for draft\s+—\s+BNL still needs owner-approved wording and a public source before drafting/);
+  assert.match(lockedText, /Compact blockers/);
+  assert.match(lockedText, /Owner-approved wording missing/);
+  assert.match(lockedText, /BNL can see protected context here, but it needs approved wording or a public source before anything can be used publicly/);
+  assert.match(lockedText, /Related BNL readiness questions/);
+  assert.match(lockedText, /Owner-approved wording\s*:\s+What owner-approved wording may BNL use for Crow's role/);
+  assert.match(lockedText, /Dossier Readiness Questions/);
+  assert.match(lockedText, /Public source needed/);
+  assert.match(lockedText, /Link ownership/);
+  assert.match(lockedText, /Dossier Clarification Needs/);
+  assert.match(lockedText, /Mod \/ informed team member/);
+  assert.match(lockedText, /Treat this as a clarification need, not a public-fact approval card/);
+  assert.doesNotMatch(lockedText, /raw evidence: private token database row should never appear/);
+  assert.match(lockedText, /Finish all review decisions to unlock the final verification packet/);
+
+  const reviews = derived.current.map((claim) => ({
+    id: claim.id,
+    candidateId: archive.candidateId,
+    claimText: claim.claimText,
+    claimType: claim.claimType,
+    sourceSection: claim.sourceSection,
+    decision: claim.claimType === "missing_info" ? "confirmed_internal" : "confirmed_internal",
+    publicSafe: false,
+    editedText: claim.claimType === "missing_info" ? claim.verificationPacketQuestions?.[0] : undefined,
+    createdAt: "2026-06-17T02:00:00.000Z",
+    updatedAt: "2026-06-17T02:00:00.000Z",
+  }));
+  const unlockedText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive, candidateId: archive.candidateId, claimReviews: reviews }));
+  const packetText = unlockedText.slice(unlockedText.lastIndexOf("Verification Packet"));
+  assert.match(packetText, /Copy verification packet/);
+  assert.equal((packetText.match(/Copy verification packet/g) ?? []).length, 1);
+  assert.match(packetText, /Owner-approved wording/);
+  assert.match(packetText, /Public source needed/);
+  assert.match(packetText, /Link ownership/);
+  assert.match(packetText, /Mod \/ informed team member/);
+  assert.equal((packetText.match(/Which public source confirms Crow's role/g) ?? []).length, 1);
+});
+
 test("Source File internal evidence artifact cards stay internal and target labels are specific", () => {
   const summary = sourceFileReportTestSummary();
   const artifactArchive = {

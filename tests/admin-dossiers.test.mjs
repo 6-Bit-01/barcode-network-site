@@ -9137,6 +9137,66 @@ function sourceFileReportTestSummary() {
 
 
 
+test("Source File dossier-completion readout leads classification diagnostics and keeps tags secondary", () => {
+  const summary = sourceFileReportTestSummary();
+  const archive = {
+    id: "archive-completion-readout",
+    candidateId: "candidate-completion-readout",
+    subjectName: "Completion Subject",
+    sourceDigest: "digest-completion-readout",
+    archiveSize: 10,
+    chunkCount: 1,
+    reviewOnly: true,
+    caseReportPresent: true,
+    caseReportExtractedFrom: "sourceFileBriefV2.dossierCompletionReadV1",
+    updatedAt: "2026-06-14T01:00:00.000Z",
+    dossierCompletionReadV1: {
+      likelyDossierAngle: "Completion Subject is a public-safe BARCODE Radio community profile.",
+      dossierWorthiness: "draft cautiously",
+      readiness: "needs owner wording",
+      nearestPublicDossierPattern: "community profile",
+      whatBnlHas: ["Approved public broadcast participation."],
+      publicSafeMaterial: ["Completion Subject has public BARCODE Radio participation."],
+      keepInternal: ["Keep queue/submission context internal.", "Keep lore/entity context internal.", "Keep source-blind internal context out of public copy."],
+      requiredMissing: ["Confirm preferred owner-approved role wording."],
+      optionalMissing: ["Add an approved public link if one exists."],
+      draftCompositionPlan: ["Draft from public participation only."],
+      recommendedNextAction: "Ask owner/admin for role wording.",
+    },
+    subjectAnalystReadV1: {
+      subjectName: "Completion Subject",
+      likelySubjectType: "community member",
+      publicReadyClaims: ["Public-safe claim should remain usable."],
+      sourceBlindInsights: ["PRIVATE_SOURCE_BLIND_RAW_EVIDENCE_SHOULD_NOT_LEAK"],
+      missingConfirmations: ["Broad curiosity question should not lead the needed section."],
+      recommendedAdminActions: ["Ask owner/admin for role wording."],
+    },
+  };
+  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive }));
+  assert.ok(text.indexOf("BNL Dossier Assessment") < text.indexOf("Support / Diagnostics"));
+  assert.match(text, /Completion Subject is a public-safe BARCODE Radio community profile/);
+  assert.match(text, /Public-Safe Dossier Material[\s\S]*Completion Subject has public BARCODE Radio participation/);
+  assert.match(text, /Keep Internal \/ Omit[\s\S]*queue\/submission context internal[\s\S]*lore\/entity context internal[\s\S]*source-blind internal context/);
+  assert.match(text, /Needed To Finish[\s\S]*Confirm preferred owner-approved role wording/);
+  assert.doesNotMatch(text.slice(text.indexOf("Needed To Finish"), text.indexOf("Draft / Next Action")), /Broad curiosity question/);
+  assert.doesNotMatch(text, /No BNL public-safe tags/);
+  assert.doesNotMatch(text, /PRIVATE_SOURCE_BLIND_RAW_EVIDENCE_SHOULD_NOT_LEAK/);
+
+  const panelSource = normalizedSource("src/components/DossierSourceFileSummaryPanel.tsx");
+  assert.ok(panelSource.indexOf("BNL Dossier Assessment") < panelSource.indexOf("Classification diagnostics"));
+  assertIncludesCopy(panelSource, "Classification diagnostics");
+  assertIncludesCopy(panelSource, "Raw buckets are routing diagnostics only");
+  assertIncludesCopy(panelSource, "No public labels approved yet. Public-safe claims may still be available above.");
+  assertIncludesCopy(panelSource, "humanizeClassificationTag");
+  assertIncludesCopy(panelSource, "dedupeStrings");
+  assertIncludesCopy(panelSource, "source-blind internal context");
+  assertIncludesCopy(panelSource, "queue/submission context");
+  assertIncludesCopy(panelSource, "lore/entity context");
+  assertIncludesCopy(panelSource, "possible community context");
+  assertIncludesCopy(panelSource, "Verification Packet");
+});
+
+
 
 
 test("Source File page extracts and renders subjectAnalystReadV1 from archive root", () => {

@@ -1070,6 +1070,130 @@ test("Source File claim review validation protects public boundaries", async () 
   assert.equal(doNotSayResponse.status, 400);
 });
 
+test("Source File completion requests persist BNL readiness questions with stable status handling", async () => {
+  await resetWorkflowStore();
+  const now = "2026-06-18T00:00:00.000Z";
+  const base = {
+    ...claimReviewCandidate(),
+    id: "completion-request-candidate",
+    name: "Completion Request Subject",
+    latestSourceFileArchive: {
+      ...claimReviewCandidate().latestSourceFileArchive,
+      id: "archive-completion-1",
+      candidateId: "completion-request-candidate",
+      sourceDigest: "digest-completion-1",
+      updatedAt: now,
+      subjectAnalystReadV1: {
+        subjectName: "Completion Request Subject",
+        reviewableClaims: [{ id: "claim-role", claim: "Confirm public role/title", type: "review_needed" }],
+        dossierReadinessQuestions: [
+          { id: "readiness-role", question: "Which public source confirms the public role?", audience: "public_source", dossierSection: "identity", answerType: "url", sourceSafety: "public source", relatedReviewClaimIds: ["claim-role"] },
+          { question: "What owner-approved wording should be used?", audience: "owner_approved_wording", dossierSection: "summary", answerType: "wording" },
+          { question: "private source-blind raw evidence id db_123", audience: "admin", dossierSection: "safety", answerType: "boundary" },
+        ],
+        dossierClarificationNeeds: [
+          { question: "Which mod can clarify timing without approving public copy?", audience: "mod", dossierSection: "context", answerType: "person" },
+        ],
+      },
+    },
+    latestSourceFileArchiveId: "archive-completion-1",
+    latestSourceFileArchiveDigest: "digest-completion-1",
+    latestSourceFileArchiveUpdatedAt: now,
+    sourceFileCompletionRequests: undefined,
+  };
+
+  const synced = store.syncSourceFileCompletionRequestsFromAnalystRead(base, base.latestSourceFileArchive, { now });
+  assert.equal(synced.sourceFileCompletionRequests.length, 4);
+  assert.ok(synced.sourceFileCompletionRequests.every((request) => request.requestKey.includes("2026-06-18") === false));
+  assert.ok(synced.sourceFileCompletionRequests.some((request) => request.requestKey === "source_file_completion:completion-request-candidate:dossier_readiness_question:id:readiness-role"));
+  assert.ok(synced.sourceFileCompletionRequests.some((request) => request.question === "BNL can see protected context here, but it needs approved wording or a public source before anything can be used publicly."));
+  const duplicateSync = store.syncSourceFileCompletionRequestsFromAnalystRead(synced, { ...base.latestSourceFileArchive, id: "archive-completion-2", sourceDigest: "digest-completion-2" }, { now: "2026-06-18T01:00:00.000Z" });
+  assert.equal(duplicateSync.sourceFileCompletionRequests.length, 4);
+  assert.equal(duplicateSync.sourceFileCompletionRequests.find((request) => request.requestKey.includes("readiness-role"))?.lastSeenAt, "2026-06-18T01:00:00.000Z");
+
+  await store.saveDossierWorkflowState({
+    version: 1,
+    revision: 0,
+    candidates: [duplicateSync],
+    drafts: [],
+    recommendations: [],
+    sourceFileRefreshRequests: [],
+    updatedAt: now,
+  });
+  const targetRequest = duplicateSync.sourceFileCompletionRequests.find((request) => request.requestKey.includes("readiness-role"));
+  for (const status of ["ready_to_ask", "asked", "not_applicable", "declined", "open"]) {
+    const response = await authedPost({
+      action: "updateSourceFileCompletionRequestStatus",
+      candidateId: duplicateSync.id,
+      input: { requestId: targetRequest.id, status },
+    });
+    assert.equal(response.status, 200);
+    const state = await store.getDossierWorkflowState();
+    assert.equal(state.candidates[0].sourceFileCompletionRequests.find((request) => request.id === targetRequest.id).status, status);
+  }
+
+  const rejectResponse = await authedPost({
+    action: "reviewSourceFileClaim",
+    candidateId: duplicateSync.id,
+    input: {
+      claimId: "claim-role",
+      claimText: "Confirm public role/title",
+      claimType: "review_needed",
+      sourceSection: "reviewableClaims",
+      decision: "rejected",
+      publicSafe: false,
+    },
+  });
+  assert.equal(rejectResponse.status, 200);
+  let state = await store.getDossierWorkflowState();
+  assert.equal(state.candidates[0].sourceFileCompletionRequests.find((request) => request.id === targetRequest.id).status, "not_applicable");
+
+  state.candidates[0].sourceFileCompletionRequests[0].status = "open";
+  await store.saveDossierWorkflowState(state);
+  const internalResponse = await authedPost({
+    action: "reviewSourceFileClaim",
+    candidateId: duplicateSync.id,
+    input: {
+      claimId: "claim-role",
+      claimText: "Confirm public role/title",
+      claimType: "review_needed",
+      sourceSection: "reviewableClaims",
+      decision: "confirmed_internal",
+      publicSafe: false,
+    },
+  });
+  assert.equal(internalResponse.status, 200);
+  state = await store.getDossierWorkflowState();
+  assert.equal(state.candidates[0].sourceFileCompletionRequests[0].status, "open");
+});
+
+test("Verification Packet prefers active persisted completion requests and falls back for old Source Files", () => {
+  const packetArchive = {
+    ...claimReviewCandidate().latestSourceFileArchive,
+    subjectAnalystReadV1: { subjectName: "Claim Review Subject" },
+  };
+  const summary = sourceFileSummary.createDossierSourceFileSummary({ candidate: { ...claimReviewCandidate(), latestSourceFileArchive: packetArchive }, recommendations: [] });
+  const activeText = collectReactText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary,
+    latestSourceFileArchive: packetArchive,
+    claimReviews: [],
+    completionRequests: [
+      { id: "cr-open", candidateId: "claim-review-candidate", requestKey: "k-open", question: "Ask the subject for public link ownership.", audience: "link_ownership", sourceType: "dossier_readiness_question", status: "open", firstSeenAt: "2026-06-18T00:00:00.000Z", lastSeenAt: "2026-06-18T00:00:00.000Z", createdAt: "2026-06-18T00:00:00.000Z", updatedAt: "2026-06-18T00:00:00.000Z" },
+      { id: "cr-asked", candidateId: "claim-review-candidate", requestKey: "k-asked", question: "Do not ask this already asked question.", audience: "subject", sourceType: "dossier_readiness_question", status: "asked", firstSeenAt: "2026-06-18T00:00:00.000Z", lastSeenAt: "2026-06-18T00:00:00.000Z", createdAt: "2026-06-18T00:00:00.000Z", updatedAt: "2026-06-18T00:00:00.000Z" },
+      { id: "cr-declined", candidateId: "claim-review-candidate", requestKey: "k-declined", question: "Do not ask declined.", audience: "subject", sourceType: "dossier_readiness_question", status: "declined", firstSeenAt: "2026-06-18T00:00:00.000Z", lastSeenAt: "2026-06-18T00:00:00.000Z", createdAt: "2026-06-18T00:00:00.000Z", updatedAt: "2026-06-18T00:00:00.000Z" },
+    ],
+  }));
+  assert.match(activeText, /Ask the subject for public link ownership/);
+  assert.doesNotMatch(activeText, /Do not ask this already asked question/);
+
+  const fallbackText = collectReactText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary,
+    latestSourceFileArchive: packetArchive,
+    claimReviews: [{ id: "followup", candidateId: "claim-review-candidate", claimText: "Fallback follow-up question?", claimType: "missing_info", sourceSection: "missingConfirmations", decision: "needs_more_info", publicSafe: false, createdAt: "2026-06-18T00:00:00.000Z", updatedAt: "2026-06-18T00:00:00.000Z" }],
+  }));
+  assert.match(fallbackText, /Fallback follow-up question/);
+});
+
 async function authedGet() {
   return route.GET(
     new Request("https://example.test/api/admin/dossiers", {

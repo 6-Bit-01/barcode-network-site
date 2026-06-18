@@ -391,6 +391,48 @@ export type DossierSourceFileClaimReview = DossierSourceFileHumanDisplayFields &
   sourceProvenance?: string[];
 };
 
+export type DossierSourceFileCompletionRequestStatus =
+  | "open"
+  | "ready_to_ask"
+  | "asked"
+  | "answered"
+  | "declined"
+  | "not_applicable"
+  | "superseded";
+
+export type DossierSourceFileCompletionRequestSourceType =
+  | "dossier_readiness_question"
+  | "dossier_clarification_need"
+  | "verification_fallback";
+
+export type DossierSourceFileCompletionRequest = {
+  id: string;
+  candidateId: string;
+  requestKey: string;
+  question: string;
+  audience?: DossierSourceFileVerificationPacketAudience | string;
+  recipientClass?: DossierSourceFileVerificationPacketAudience | string;
+  audienceLabel?: string;
+  dossierSection?: string;
+  priority?: string;
+  answerType?: string;
+  sourceSafety?: string;
+  sourceCount?: number;
+  relatedReviewClaimIds?: string[];
+  sourceArchiveId?: string;
+  sourceArchiveDigest?: string;
+  sourceRefreshId?: string;
+  sourceType: DossierSourceFileCompletionRequestSourceType;
+  status: DossierSourceFileCompletionRequestStatus;
+  statusReason?: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  createdAt: string;
+  updatedAt: string;
+  statusUpdatedAt?: string;
+  supersededByRequestId?: string;
+};
+
 export type DossierIdentityLinkType =
   | "alias"
   | "artist_name"
@@ -486,6 +528,7 @@ export type DossierCandidate = {
   sourceFileSummary?: DossierSourceFileOperatorSummary;
   sourceFileNotes?: DossierSourceFileNote[];
   sourceFileClaimReviews?: DossierSourceFileClaimReview[];
+  sourceFileCompletionRequests?: DossierSourceFileCompletionRequest[];
   identityLinks?: DossierIdentityLink[];
   sourceLanes?: DossierRecommendationSourceLane[];
   ingestKey?: string;
@@ -3138,6 +3181,7 @@ export type DossierWorkflowAction =
   | "reviewSourceFileClaim"
   | "editSourceFileClaim"
   | "resetSourceFileClaimReview"
+  | "updateSourceFileCompletionRequestStatus"
   | "requestSourceFileRefresh"
   | "recordSourceFileOpen"
   | "addDossierIdentityLink"
@@ -3204,6 +3248,7 @@ export const DOSSIER_WORKFLOW_ACTIONS: DossierWorkflowAction[] = [
   "reviewSourceFileClaim",
   "editSourceFileClaim",
   "resetSourceFileClaimReview",
+  "updateSourceFileCompletionRequestStatus",
   "requestSourceFileRefresh",
   "recordSourceFileOpen",
   "addDossierIdentityLink",

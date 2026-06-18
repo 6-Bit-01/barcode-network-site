@@ -9,6 +9,8 @@ import type {
   DossierSourceFileClaimType,
   DossierSourceFileArchiveMetadata,
   DossierSourceFileCaseReportV1,
+  DossierSourceFileCompletionRequest,
+  DossierSourceFileCompletionRequestStatus,
   DossierSourceFileNote,
   DossierSubjectAnalystReadV1,
   DossierSourceFileConfirmationTarget,
@@ -1054,7 +1056,18 @@ function dedupeVerificationQuestions(questions: Array<{ text: string; audience: 
   return sections;
 }
 
-function verificationPacketSections(claims: DossierSourceFileReviewableClaim[]) {
+function activeCompletionRequests(requests: DossierSourceFileCompletionRequest[] = []) {
+  return requests.filter((request) => request.status === "open" || request.status === "ready_to_ask");
+}
+
+function verificationPacketSections(claims: DossierSourceFileReviewableClaim[], completionRequests: DossierSourceFileCompletionRequest[] = []) {
+  const persisted = activeCompletionRequests(completionRequests).filter((request) => safeCopyQuestions([request.question]).length > 0);
+  if (persisted.length) {
+    return dedupeVerificationQuestions(persisted.map((request) => ({
+      text: request.question,
+      audience: verificationAudienceKey(request.audience ?? request.recipientClass),
+    })));
+  }
   return dedupeVerificationQuestions(claims.flatMap((claim) => savedFollowUpQuestionsForClaim(claim).map((text) => ({
     text,
     audience: verificationAudienceKey(claim.relatedReadinessQuestions?.find((question) => question.question === text)?.audience ?? claim.verificationPacketAudience ?? claim.confirmationTarget),
@@ -1074,10 +1087,10 @@ function copyTextToClipboard(text: string) {
   void navigator.clipboard?.writeText(text);
 }
 
-function VerificationPacket({ claims }: { claims: DossierSourceFileReviewableClaim[]; subjectName?: string }) {
+function VerificationPacket({ claims, completionRequests }: { claims: DossierSourceFileReviewableClaim[]; subjectName?: string; completionRequests?: DossierSourceFileCompletionRequest[] }) {
   const unresolved = unresolvedReviewItems(claims);
   const locked = unresolved.length > 0;
-  const sections = verificationPacketSections(claims);
+  const sections = verificationPacketSections(claims, completionRequests);
   const hasQuestions = Object.values(sections).some((questions) => questions.length > 0);
   const copyText = verificationPacketCopyText(sections);
   return (
@@ -1115,6 +1128,39 @@ function VerificationPacket({ claims }: { claims: DossierSourceFileReviewableCla
   );
 }
 
+function completionRequestForClaim(claim: DossierSourceFileReviewableClaim, requests: DossierSourceFileCompletionRequest[] = []) {
+  return requests.find((request) => request.relatedReviewClaimIds?.includes(claim.id)) ??
+    requests.find((request) => normalizeVerificationQuestion(request.question) === normalizeVerificationQuestion(claim.claimText));
+}
+
+function CompletionRequestBadge({
+  request,
+  onUpdateStatus,
+}: {
+  request?: DossierSourceFileCompletionRequest;
+  onUpdateStatus?: (request: DossierSourceFileCompletionRequest, status: DossierSourceFileCompletionRequestStatus) => void;
+}) {
+  if (!request) return null;
+  const actions: DossierSourceFileCompletionRequestStatus[] = request.status === "open"
+    ? ["ready_to_ask", "asked", "not_applicable", "declined"]
+    : request.status === "ready_to_ask"
+      ? ["asked", "open", "not_applicable", "declined"]
+      : request.status === "asked"
+        ? ["open", "not_applicable", "declined"]
+        : ["open"];
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted">
+      <span className="border border-border/60 bg-background/40 px-2 py-1">Completion request: {request.status.replace(/_/g, " ")}</span>
+      <span>Seen {formatSnapshotDate(request.firstSeenAt)} → {formatSnapshotDate(request.lastSeenAt)}</span>
+      {onUpdateStatus && actions.map((status) => (
+        <button key={status} type="button" className="border border-border px-2 py-1 text-foreground hover:border-accent" onClick={() => onUpdateStatus(request, status)}>
+          {status === "open" ? "Reopen" : `Mark ${status.replace(/_/g, " ")}`}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function claimDecisionLabel(claim: DossierSourceFileReviewableClaim) {
   const decision = claim.review?.decision ?? "pending";
   if (decision === "confirmed_public" || decision === "edited") return "Approved as public fact";
@@ -1140,7 +1186,7 @@ function followUpActionLabel(claim: DossierSourceFileReviewableClaim) {
   return "Add question to follow-up";
 }
 
-function CompletedClaimCard({ claim, onReview }: { claim: DossierSourceFileReviewableClaim; onReview?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void }) {
+function CompletedClaimCard({ claim, onReview, completionBadge }: { claim: DossierSourceFileReviewableClaim; onReview?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void; completionBadge?: React.ReactNode }) {
   const decision = claim.review?.decision ?? "pending";
   const text = savedReviewText(claim);
   return (
@@ -1154,6 +1200,7 @@ function CompletedClaimCard({ claim, onReview }: { claim: DossierSourceFileRevie
       {decision === "needs_more_info" && <p className="mt-2 text-sm text-foreground">Open question: &quot;{text}&quot;</p>}
       {decision === "rejected" && <p className="mt-2 text-sm text-foreground">No Source File fact was created.</p>}
       {(decision === "confirmed_public" || decision === "edited") && <p className="mt-1 text-xs text-muted">No dossier was published.</p>}
+      {completionBadge}
       <button type="button" className="mt-3 border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => onReview?.(claim, "pending", { publicSafe: false })}>Undo choice</button>
     </li>
   );
@@ -1232,8 +1279,8 @@ function ClaimReviewControls({ claim, onReview }: {
   );
 }
 
-function ClaimDecisionCard({ claim, onReview }: { claim: DossierSourceFileReviewableClaim; onReview?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void }) {
-  if (claim.review && claim.review.decision !== "pending") return <CompletedClaimCard claim={claim} onReview={onReview} />;
+function ClaimDecisionCard({ claim, onReview, completionBadge }: { claim: DossierSourceFileReviewableClaim; onReview?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void; completionBadge?: React.ReactNode }) {
+  if (claim.review && claim.review.decision !== "pending") return <CompletedClaimCard claim={claim} onReview={onReview} completionBadge={completionBadge} />;
   return (
     <li data-claim-card="true" className="border border-border bg-background/30 p-3 shadow-[inset_0_3px_0_rgba(255,255,255,0.08)]">
       <div className="-mx-3 -mt-3 mb-2 border-b border-border/60 bg-background/40 px-3 py-2">
@@ -1272,6 +1319,7 @@ function ClaimDecisionCard({ claim, onReview }: { claim: DossierSourceFileReview
       {!claim.isInternalAuditArtifact && claim.recommendedAdminActionCards && claim.recommendedAdminActionCards.length > 0 && <div className="mt-2 border border-border/40 p-2 text-xs"><p className="font-bold text-foreground">Recommended action cards</p>{claim.recommendedAdminActionCards.map((card, index) => <p key={index} className="text-muted">{displayValue(card.title ?? card.label ?? card.action) ?? "Recommended admin action"}{displayValue(card.body ?? card.reason) ? ` — ${displayValue(card.body ?? card.reason)}` : ""}</p>)}</div>}
       {claim.blockedBy && claim.blockedBy.length > 0 && <p className="mt-2 text-xs text-muted">Blocked by: {claim.blockedBy.join(", ")}</p>}
       {!claim.isInternalAuditArtifact && claim.exampleApprovedTexts && claim.exampleApprovedTexts.length > 0 && <div className="mt-2 text-xs"><p className="font-bold text-foreground">Example approved text</p><ul className="list-disc pl-5 text-muted">{claim.exampleApprovedTexts.map((example) => <li key={example}>{example}</li>)}</ul></div>}
+      {completionBadge}
       <ClaimReviewControls claim={claim} onReview={onReview} />
     </li>
   );
@@ -1293,6 +1341,8 @@ function BnlAnalystReadPanel({
   subjectName,
   claimReviews,
   onReviewClaim,
+  completionRequests,
+  onUpdateCompletionRequestStatus,
 }: {
   analystRead?: DossierSubjectAnalystReadV1;
   refreshedAt?: string;
@@ -1301,6 +1351,8 @@ function BnlAnalystReadPanel({
   subjectName?: string;
   claimReviews?: DossierSourceFileClaimReview[];
   onReviewClaim?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void;
+  completionRequests?: DossierSourceFileCompletionRequest[];
+  onUpdateCompletionRequestStatus?: (request: DossierSourceFileCompletionRequest, status: DossierSourceFileCompletionRequestStatus) => void;
 }) {
   if (!analystRead) {
     return (
@@ -1338,9 +1390,14 @@ function BnlAnalystReadPanel({
           const claims = reviewable.current.filter((claim) => claim.sourceSection === section);
           if (!claims.length && (section === "reviewableClaims" || section === "dossierReadinessQuestions" || section === "dossierClarificationNeeds")) return null;
           const privateExclusions = section === "sourceBlindInsights" ? stringItems(analystRead.privateOrInternalExclusions) : [];
-          return <section key={section} className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">{label}</h4>{claims.length ? <ul className="space-y-3 text-foreground">{claims.map((claim) => <ClaimDecisionCard key={claim.id} claim={claim} onReview={onReviewClaim} />)}</ul> : <p className="text-muted">No reviewable claims in this section.</p>}{privateExclusions.length > 0 && <ul className="mt-3 list-disc space-y-2 pl-5 text-foreground">{privateExclusions.map((item, index) => <li key={`private-exclusion-${index}`}>Private/internal withheld: {item}</li>)}</ul>}</section>;
+          return <section key={section} className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">{label}</h4>{claims.length ? <ul className="space-y-3 text-foreground">{claims.map((claim) => {
+            const request = section === "dossierReadinessQuestions" || section === "dossierClarificationNeeds" ? completionRequestForClaim(claim, completionRequests) : undefined;
+            if (request && ["superseded", "declined", "not_applicable"].includes(request.status)) return null;
+            return <ClaimDecisionCard key={claim.id} claim={claim} onReview={onReviewClaim} completionBadge={request ? <CompletionRequestBadge request={request} onUpdateStatus={onUpdateCompletionRequestStatus} /> : undefined} />;
+          })}</ul> : <p className="text-muted">No reviewable claims in this section.</p>}{privateExclusions.length > 0 && <ul className="mt-3 list-disc space-y-2 pl-5 text-foreground">{privateExclusions.map((item, index) => <li key={`private-exclusion-${index}`}>Private/internal withheld: {item}</li>)}</ul>}</section>;
         })}
-        <VerificationPacket claims={reviewable.current} subjectName={analystRead?.subjectName} />
+        <VerificationPacket claims={reviewable.current} subjectName={analystRead?.subjectName} completionRequests={completionRequests} />
+        {(completionRequests ?? []).some((request) => ["superseded", "declined", "not_applicable"].includes(request.status)) && <details className="border border-border/50 bg-background/20 p-3"><summary className="cursor-pointer text-xs font-bold uppercase tracking-widest text-foreground">Inactive completion requests</summary><ul className="mt-2 space-y-2 text-xs text-muted">{(completionRequests ?? []).filter((request) => ["superseded", "declined", "not_applicable"].includes(request.status)).map((request) => <li key={request.id} className="border border-border/40 p-2"><span className="font-bold text-foreground">{request.status.replace(/_/g, " ")}</span>: {request.question}</li>)}</ul></details>}
         <WithheldEvidenceAudit audit={analystRead.withheldEvidenceAudit} />
         {reviewable.previous.length > 0 && <details className="border border-border/50 bg-background/20 p-3"><summary className="cursor-pointer text-xs font-bold uppercase tracking-widest text-foreground">Previously reviewed claims</summary><ul className="mt-3 space-y-3 text-foreground">{reviewable.previous.map((claim) => <li key={claim.id} className="border border-border/40 p-2"><p>{claim.claimText}</p><ClaimReviewControls claim={claim} onReview={onReviewClaim} /></li>)}</ul></details>}
         <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Provenance Summary</h4><AnalystList value={analystRead.provenanceSummary} empty="No provenance summary reported." /></section>
@@ -1643,6 +1700,8 @@ export function DossierSourceFileSummaryPanel({
   candidateId,
   claimReviews = [],
   onReviewClaim,
+  completionRequests = [],
+  onUpdateCompletionRequestStatus,
 }: {
   summary: DossierSourceFileSummary;
   entityReadout?: DossierEntityActivityReadout | null;
@@ -1658,6 +1717,8 @@ export function DossierSourceFileSummaryPanel({
   candidateId?: string;
   claimReviews?: DossierSourceFileClaimReview[];
   onReviewClaim?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void;
+  completionRequests?: DossierSourceFileCompletionRequest[];
+  onUpdateCompletionRequestStatus?: (request: DossierSourceFileCompletionRequest, status: DossierSourceFileCompletionRequestStatus) => void;
 }) {
   const report = normalizeCaseReport(latestSourceFileArchive);
   const interimBrief = normalizeInterimBrief(latestSourceFileArchive);
@@ -1719,6 +1780,8 @@ export function DossierSourceFileSummaryPanel({
         subjectName={subjectName ?? latestSourceFileArchive?.subjectName}
         claimReviews={claimReviews}
         onReviewClaim={onReviewClaim}
+        completionRequests={completionRequests}
+        onUpdateCompletionRequestStatus={onUpdateCompletionRequestStatus}
       />
 
       {blueprint && <DossierBlueprintView blueprint={blueprint} />}

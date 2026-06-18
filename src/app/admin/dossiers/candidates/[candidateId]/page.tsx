@@ -17,6 +17,8 @@ import {
   type DossierRecommendation,
   type DossierSourceFileRefreshRequest,
   type DossierSourceFileNoteType,
+  type DossierSourceFileCompletionRequest,
+  type DossierSourceFileCompletionRequestStatus,
 } from "@/lib/dossier-workflow";
 import {
   DossierSourceFileArchiveRawData,
@@ -1577,6 +1579,21 @@ export default function CandidateReviewPage() {
     setNotice("Claim decision saved. Refresh BNL Source File to let BNL update the analyst read.");
   }
 
+  async function updateCompletionRequestStatus(
+    request: DossierSourceFileCompletionRequest,
+    status: DossierSourceFileCompletionRequestStatus,
+  ) {
+    await postWorkflow({
+      action: "updateSourceFileCompletionRequestStatus",
+      candidateId,
+      input: {
+        requestId: request.id,
+        status,
+      },
+    });
+    setNotice("Completion request status saved.");
+  }
+
   async function createDraft() {
     if (!canCreateDraft) return;
     try {
@@ -2631,6 +2648,8 @@ export default function CandidateReviewPage() {
               candidateId={candidate.id}
               claimReviews={candidate.sourceFileClaimReviews ?? []}
               onReviewClaim={reviewSourceFileClaim}
+              completionRequests={candidate.sourceFileCompletionRequests ?? []}
+              onUpdateCompletionRequestStatus={updateCompletionRequestStatus}
               sourceFileTargetStatus={
                 isExistingDossierUpdate
                   ? "existing dossier update"

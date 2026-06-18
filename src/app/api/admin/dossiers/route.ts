@@ -26,6 +26,7 @@ import {
   type DossierRecommendation,
   type DossierSourceFileRefreshRequest,
   type DossierWorkflowAction,
+  type DossierSourceFileCompletionRequestStatus,
   type MergeDossierCandidatesInput,
 } from "@/lib/dossier-workflow";
 import {
@@ -70,6 +71,7 @@ import {
   updateDossierCandidateStatus,
   updateDossierIdentityLink,
   updateDossierSourceFileRefreshRequestStatus,
+  updateSourceFileCompletionRequestStatus,
   validateDossierDraftFieldsForOwnerReview,
   type DossierWorkflowState,
   type PopulationReconcileSummary,
@@ -141,6 +143,7 @@ const IMPLEMENTED_ACTIONS = new Set<DossierWorkflowAction>([
   "reviewSourceFileClaim",
   "editSourceFileClaim",
   "resetSourceFileClaimReview",
+  "updateSourceFileCompletionRequestStatus",
   "requestSourceFileRefresh",
   "recordSourceFileOpen",
   "addDossierIdentityLink",
@@ -281,6 +284,23 @@ function sourceFileClaimReviewInputFromBody(
     sourceRefreshId: value.sourceRefreshId,
     sourceProvenance: value.sourceProvenance,
     decidedBy: value.decidedBy ?? "admin",
+  };
+}
+
+function sourceFileCompletionRequestStatusInputFromBody(
+  body: Record<string, unknown>,
+): { candidateId: string; requestId: string; status: DossierSourceFileCompletionRequestStatus; statusReason?: string } | null {
+  const candidateId = candidateIdFromBody(body);
+  const value = body.input;
+  if (!candidateId || !value || typeof value !== "object") return null;
+  const input = value as { requestId?: unknown; status?: unknown; statusReason?: unknown };
+  const allowed = new Set(["open", "ready_to_ask", "asked", "not_applicable", "declined"]);
+  if (typeof input.requestId !== "string" || !input.requestId.trim() || typeof input.status !== "string" || !allowed.has(input.status)) return null;
+  return {
+    candidateId,
+    requestId: input.requestId.trim(),
+    status: input.status as DossierSourceFileCompletionRequestStatus,
+    statusReason: typeof input.statusReason === "string" ? input.statusReason : undefined,
   };
 }
 
@@ -558,6 +578,19 @@ export async function POST(req: Request) {
         message: "Claim decision saved. Refresh BNL Source File to let BNL update the analyst read.",
         ...payload,
       });
+    }
+
+    if (action === "updateSourceFileCompletionRequestStatus") {
+      const input = sourceFileCompletionRequestStatusInputFromBody(body);
+      if (!input) {
+        return NextResponse.json(
+          { error: "Valid candidateId, completion request id, and status are required" },
+          { status: 400 },
+        );
+      }
+      const completionRequest = await updateSourceFileCompletionRequestStatus(input);
+      const payload = await workflowPayload();
+      return NextResponse.json({ ok: true, action, completionRequest, ...payload });
     }
 
     if (action === "recordSourceFileOpen") {

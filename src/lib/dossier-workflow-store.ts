@@ -44,6 +44,9 @@ import {
   type DossierSourceFileNoteSource,
   type DossierSourceFileNoteType,
   type DossierSourceFileClaimReview,
+  type DossierSourceFileCompletionRequest,
+  type DossierSourceFileCompletionRequestStatus,
+  type DossierReadinessQuestionV1,
   type ReviewDossierSourceFileClaimInput,
   type DossierDuplicateRisk,
   type DossierPopulationRecommendedAction,
@@ -107,6 +110,7 @@ function emptyWorkflowState(): DossierWorkflowState {
 }
 
 function normalizeStringArray(value: unknown): string[] {
+  if (typeof value === "string") return value.split(",").map((item) => item.trim()).filter(Boolean);
   if (!Array.isArray(value)) return [];
   return value
     .filter((item): item is string => typeof item === "string")
@@ -354,6 +358,9 @@ function sanitizeWorkflowState(value: unknown): DossierWorkflowState {
             : [],
           sourceFileClaimReviews: Array.isArray(candidate.sourceFileClaimReviews)
             ? candidate.sourceFileClaimReviews
+            : [],
+          sourceFileCompletionRequests: Array.isArray(candidate.sourceFileCompletionRequests)
+            ? candidate.sourceFileCompletionRequests
             : [],
           sourceFileSummary:
             candidate.sourceFileSummary &&
@@ -792,6 +799,201 @@ function createSourceFileClaimReviewId(input: {
     input.claimText.trim().toLowerCase().replace(/\s+/g, " "),
     input.sourceArchiveId ?? "",
   ].join("|")).digest("hex").slice(0, 24)}`;
+}
+
+const COMPLETION_REQUEST_SAFE_BOUNDARY =
+  "BNL can see protected context here, but it needs approved wording or a public source before anything can be used publicly.";
+const COMPLETION_REQUEST_TERMINAL_STATUSES = new Set<DossierSourceFileCompletionRequestStatus>(["answered", "declined", "not_applicable", "superseded"]);
+const COMPLETION_REQUEST_ACTIVE_STATUSES = new Set<DossierSourceFileCompletionRequestStatus>(["open", "ready_to_ask"]);
+
+function normalizeCompletionRequestText(value: unknown) {
+  const text = boundedText(value, 1000).replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  if (/@|stripe|payment|customer|token|env|config|raw evidence|database|table|source[- ]blind|private|mod-only|internal alias|alias:/i.test(text)) {
+    return COMPLETION_REQUEST_SAFE_BOUNDARY;
+  }
+  return text;
+}
+
+function completionAudience(value: DossierReadinessQuestionV1) {
+  const raw = boundedText(value.verificationPacketAudience ?? value.recipientClass ?? value.audience ?? value.confirmationTarget, 80)
+    .toLowerCase()
+    .replace(/[ -]+/g, "_");
+  return raw || "unknown";
+}
+
+export function createSourceFileCompletionRequestKey(input: {
+  candidateId: string;
+  sourceType: DossierSourceFileCompletionRequest["sourceType"];
+  question: DossierReadinessQuestionV1;
+  safeQuestion: string;
+}) {
+  const explicitId = boundedText(input.question.id, 200);
+  if (explicitId) return `source_file_completion:${input.candidateId}:${input.sourceType}:id:${explicitId}`;
+  const related = normalizeStringArray(input.question.relatedReviewClaimIds).sort().join(",");
+  const fingerprint = [
+    input.candidateId,
+    input.sourceType,
+    input.safeQuestion.toLowerCase().replace(/\s+/g, " "),
+    completionAudience(input.question),
+    boundedText(input.question.dossierSection, 120).toLowerCase(),
+    boundedText(input.question.answerType, 120).toLowerCase(),
+    related,
+  ].join("|");
+  return `source_file_completion:${createHash("sha1").update(fingerprint).digest("hex").slice(0, 32)}`;
+}
+
+function completionRequestFromQuestion(input: {
+  candidateId: string;
+  question: DossierReadinessQuestionV1;
+  sourceType: DossierSourceFileCompletionRequest["sourceType"];
+  sourceArchiveId?: string;
+  sourceArchiveDigest?: string;
+  sourceRefreshId?: string;
+  now: string;
+}): DossierSourceFileCompletionRequest | null {
+  const safeQuestion = normalizeCompletionRequestText(input.question.question ?? input.question.text);
+  if (!safeQuestion) return null;
+  const requestKey = createSourceFileCompletionRequestKey({ candidateId: input.candidateId, sourceType: input.sourceType, question: input.question, safeQuestion });
+  const audience = completionAudience(input.question);
+  const sourceCountRaw = Number(input.question.sourceCount);
+  return {
+    id: `source_file_completion_${createHash("sha1").update(requestKey).digest("hex").slice(0, 24)}`,
+    candidateId: input.candidateId,
+    requestKey,
+    question: safeQuestion,
+    audience,
+    recipientClass: audience,
+    audienceLabel: audience.replace(/_/g, " "),
+    dossierSection: boundedText(input.question.dossierSection, 120) || undefined,
+    priority: boundedText(input.question.priority, 80) || undefined,
+    answerType: boundedText(input.question.answerType, 120) || undefined,
+    sourceSafety: normalizeCompletionRequestText(input.question.sourceSafety) || undefined,
+    sourceCount: Number.isFinite(sourceCountRaw) ? Math.max(0, Math.floor(sourceCountRaw)) : undefined,
+    relatedReviewClaimIds: normalizeStringArray(input.question.relatedReviewClaimIds),
+    sourceArchiveId: input.sourceArchiveId,
+    sourceArchiveDigest: input.sourceArchiveDigest,
+    sourceRefreshId: input.sourceRefreshId,
+    sourceType: input.sourceType,
+    status: "open",
+    firstSeenAt: input.now,
+    lastSeenAt: input.now,
+    createdAt: input.now,
+    updatedAt: input.now,
+    statusUpdatedAt: input.now,
+  };
+}
+
+function readinessQuestionsFromAnalystRead(analystRead?: DossierSubjectAnalystReadV1) {
+  const readiness = Array.isArray(analystRead?.dossierReadinessQuestions) ? analystRead.dossierReadinessQuestions : [];
+  const clarification = Array.isArray(analystRead?.dossierClarificationNeeds) ? analystRead.dossierClarificationNeeds : [];
+  return [
+    ...readiness.map((question) => ({ question: question as DossierReadinessQuestionV1, sourceType: "dossier_readiness_question" as const })),
+    ...clarification.map((question) => ({ question: question as DossierReadinessQuestionV1, sourceType: "dossier_clarification_need" as const })),
+  ];
+}
+
+export function syncSourceFileCompletionRequestsFromAnalystRead(
+  candidate: DossierCandidate,
+  archive: DossierSourceFileArchiveMetadata | undefined = candidate.latestSourceFileArchive,
+  options: { now?: string; sourceRefreshId?: string } = {},
+): DossierCandidate {
+  const analystRead = archive?.subjectAnalystReadV1;
+  const incoming = readinessQuestionsFromAnalystRead(analystRead);
+  if (!archive || !incoming.length) return candidate;
+  const now = options.now ?? new Date().toISOString();
+  const existing = candidate.sourceFileCompletionRequests ?? [];
+  const byKey = new Map(existing.map((request) => [request.requestKey, request]));
+  const seenKeys = new Set<string>();
+  const upserts: DossierSourceFileCompletionRequest[] = [];
+  for (const item of incoming) {
+    const next = completionRequestFromQuestion({
+      candidateId: candidate.id,
+      question: item.question,
+      sourceType: item.sourceType,
+      sourceArchiveId: archive.id,
+      sourceArchiveDigest: archive.sourceDigest,
+      sourceRefreshId: options.sourceRefreshId,
+      now,
+    });
+    if (!next) continue;
+    seenKeys.add(next.requestKey);
+    const old = byKey.get(next.requestKey);
+    upserts.push(old ? {
+      ...old,
+      question: next.question,
+      audience: next.audience,
+      recipientClass: next.recipientClass,
+      audienceLabel: next.audienceLabel,
+      dossierSection: next.dossierSection,
+      priority: next.priority,
+      answerType: next.answerType,
+      sourceSafety: next.sourceSafety,
+      sourceCount: next.sourceCount,
+      relatedReviewClaimIds: next.relatedReviewClaimIds,
+      sourceArchiveId: next.sourceArchiveId,
+      sourceArchiveDigest: next.sourceArchiveDigest,
+      sourceRefreshId: next.sourceRefreshId,
+      sourceType: next.sourceType,
+      lastSeenAt: now,
+      updatedAt: now,
+    } : next);
+  }
+  const preserved = existing.filter((request) => !seenKeys.has(request.requestKey)).map((request) => (
+    COMPLETION_REQUEST_ACTIVE_STATUSES.has(request.status) && request.sourceArchiveId && request.sourceArchiveId !== archive.id
+      ? { ...request, status: "superseded" as const, statusReason: "No longer present in latest BNL analyst read.", updatedAt: now, statusUpdatedAt: now }
+      : request
+  ));
+  return { ...candidate, sourceFileCompletionRequests: [...upserts, ...preserved] };
+}
+
+function updateCompletionRequestsForClaimReview(candidate: DossierCandidate, review: DossierSourceFileClaimReview, now: string): DossierCandidate {
+  const requests = candidate.sourceFileCompletionRequests ?? [];
+  if (!requests.length) return candidate;
+  let changed = false;
+  const next = requests.map((request) => {
+    const related = request.relatedReviewClaimIds ?? [];
+    if (!related.includes(review.id) || !COMPLETION_REQUEST_ACTIVE_STATUSES.has(request.status)) return request;
+    if (review.decision === "rejected") {
+      changed = true;
+      return { ...request, status: "not_applicable" as const, statusReason: "Related Source File claim was rejected.", updatedAt: now, statusUpdatedAt: now };
+    }
+    return request;
+  });
+  return changed ? { ...candidate, sourceFileCompletionRequests: next } : candidate;
+}
+
+export async function updateSourceFileCompletionRequestStatus(input: {
+  candidateId: string;
+  requestId: string;
+  status: DossierSourceFileCompletionRequestStatus;
+  statusReason?: string;
+}): Promise<DossierSourceFileCompletionRequest> {
+  const candidateId = boundedText(input.candidateId, 200);
+  const requestId = boundedText(input.requestId, 200);
+  const allowed = new Set<DossierSourceFileCompletionRequestStatus>(["open", "ready_to_ask", "asked", "not_applicable", "declined"]);
+  if (!candidateId || !requestId || !allowed.has(input.status)) {
+    throw new DossierWorkflowInputError("Valid completion request status input is required", 400, "invalid_completion_request_status");
+  }
+  const now = new Date().toISOString();
+  let saved: DossierSourceFileCompletionRequest | null = null;
+  await updateDossierWorkflowState((currentState) => {
+    let found = false;
+    const candidates = currentState.candidates.map((candidate) => {
+      if (candidate.id !== candidateId) return candidate;
+      const requests = candidate.sourceFileCompletionRequests ?? [];
+      const next = requests.map((request) => {
+        if (request.id !== requestId) return request;
+        found = true;
+        saved = { ...request, status: input.status, statusReason: boundedText(input.statusReason, 500) || undefined, updatedAt: now, statusUpdatedAt: now };
+        return saved;
+      });
+      return found ? { ...candidate, sourceFileCompletionRequests: next, updatedAt: now } : candidate;
+    });
+    if (!found) throw new DossierWorkflowInputError("Completion request not found", 404, "completion_request_not_found");
+    return { ...currentState, candidates, updatedAt: now };
+  });
+  return saved!;
 }
 
 function createSourceFileRefreshRequestId(): string {
@@ -2722,7 +2924,7 @@ export async function ingestDossierSourceFileArchive(
       [archiveId],
       candidate.sourceFileArchiveIds,
     );
-    const nextCandidate: DossierCandidate = {
+    const nextCandidate: DossierCandidate = syncSourceFileCompletionRequestsFromAnalystRead({
       ...candidate,
       sourceFileArchiveIds: archiveIds,
       latestSourceFileArchiveId: archiveId,
@@ -2730,7 +2932,7 @@ export async function ingestDossierSourceFileArchive(
       latestSourceFileArchiveUpdatedAt: now,
       latestSourceFileArchive: metadata,
       updatedAt: now,
-    };
+    }, metadata, { now });
     attachStatus = archiveAttachStatusForCandidate(candidate);
     savedCandidate = nextCandidate;
     savedCandidateLatestArchiveId = nextCandidate.latestSourceFileArchiveId;
@@ -4376,12 +4578,12 @@ export async function reviewDossierSourceFileClaim(
         else notes.unshift(note);
       }
       saved = review;
-      return {
+      return updateCompletionRequestsForClaimReview({
         ...candidate,
         sourceFileClaimReviews: [review, ...(candidate.sourceFileClaimReviews ?? []).filter((item) => item.id !== id)],
         sourceFileNotes: notes,
         updatedAt: now,
-      };
+      }, review, now);
     });
     if (!found) throw new DossierWorkflowInputError("Candidate not found", 404, "candidate_not_found");
     return { ...currentState, candidates, updatedAt: now };

@@ -162,6 +162,24 @@ export type DossierSubjectIntelligenceBriefV1 = {
   doNotSayPubliclyYet?: unknown;
 };
 
+export type DossierReadinessQuestionV1 = {
+  id?: string;
+  audience?: DossierSourceFileVerificationPacketAudience | DossierSourceFileConfirmationTarget | string;
+  recipientClass?: DossierSourceFileVerificationPacketAudience | DossierSourceFileConfirmationTarget | string;
+  confirmationTarget?: DossierSourceFileConfirmationTarget;
+  verificationPacketAudience?: DossierSourceFileVerificationPacketAudience;
+  question?: string;
+  text?: string;
+  whyItMatters?: string;
+  reason?: string;
+  dossierSection?: string;
+  priority?: string;
+  answerType?: string;
+  sourceSafety?: string;
+  sourceCount?: number | string;
+  relatedReviewClaimIds?: string[] | string;
+};
+
 export type DossierSubjectAnalystReadV1 = DossierSourceFileHumanDisplayFields & {
   subjectName?: string;
   internalRead?: string;
@@ -191,6 +209,12 @@ export type DossierSubjectAnalystReadV1 = DossierSourceFileHumanDisplayFields & 
   draftIngredients?: string[];
   sourceFileIngredients?: string[];
   provenanceSummary?: string[];
+  dossierReadinessQuestions?: DossierReadinessQuestionV1[] | unknown;
+  dossierReadinessSummary?: string | string[] | unknown;
+  dossierBlockedBy?: string[] | string | unknown;
+  readyForDraft?: boolean | string | unknown;
+  draftReadinessReason?: string | unknown;
+  dossierClarificationNeeds?: DossierReadinessQuestionV1[] | unknown;
 };
 
 export type DossierSourceFileCaseReportV1 = {

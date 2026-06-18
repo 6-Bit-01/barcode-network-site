@@ -10,6 +10,7 @@ import {
   type DossierCandidate,
   type DossierCandidateType,
   type DossierRecommendation,
+  type DossierSourceFileClassificationV1,
   type DossierSourceFileNote,
   type DossierWorkflowLink,
 } from "@/lib/dossier-workflow";
@@ -20,6 +21,25 @@ import type {
 } from "@/content";
 
 export type DossierClassificationConfidence = "low" | "medium" | "high";
+
+
+export type DossierClassificationAuthority = "bnl_source_file_classification" | "site_fallback_classification";
+
+export type DossierSourceFileClassificationReadModel = {
+  subjectType?: string;
+  publicDossierType?: string;
+  confidence?: DossierClassificationConfidence | string;
+  publicSafeTags: string[];
+  needsReviewTags: string[];
+  internalOnlyTags: string[];
+  rejectedTags: string[];
+  routingTags: string[];
+  blockedPublicTags: string[];
+  sourceSafety?: string;
+  reasons: string[];
+  blockers: string[];
+  authority: DossierClassificationAuthority;
+};
 
 export type DossierClassificationAlternate = {
   category: DossierCategory;
@@ -99,6 +119,7 @@ export type DossierDraftBlueprint = {
   version: "1.0";
   subjectName: string;
   classification: DossierClassificationResult;
+  classificationProfile: DossierSourceFileClassificationReadModel;
   suggestedTags: DossierTagSuggestionResult;
   publicSafeFacts: DossierEvidenceDistillation["publicSafe"];
   safeRoleDirection: string;
@@ -418,6 +439,95 @@ export function classifyDossierSourceFileSubject(input: ClassificationInput): Do
   };
 }
 
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function stringArray(value: unknown, limit = 20): string[] {
+  if (typeof value === "string") return uniqueStrings(value.split(/[,\n]/), limit);
+  if (!Array.isArray(value)) return [];
+  return uniqueStrings(value.map((item) => typeof item === "string" ? item : undefined), limit);
+}
+
+function sourceFileClassificationFromCandidate(candidate: DossierCandidate): DossierSourceFileClassificationV1 | undefined {
+  const direct = asRecord(candidate.sourceFileClassificationV1);
+  if (direct) return direct as DossierSourceFileClassificationV1;
+  const archive = asRecord(candidate.latestSourceFileArchive);
+  if (!archive) return undefined;
+  const candidates = [archive, asRecord(archive.sourceFileBriefV2), asRecord(archive.sourceFileCaseReportV1), asRecord(archive.archivePayload), asRecord(archive.archive), asRecord(archive.payload), asRecord(archive.sourceFileArchive)].filter(Boolean) as Record<string, unknown>[];
+  for (const item of candidates) {
+    const found = asRecord(item.sourceFileClassificationV1) ?? asRecord(asRecord(item.sourceFileCaseReportV1)?.sourceFileClassificationV1) ?? asRecord(asRecord(item.sourceFileBriefV2)?.sourceFileClassificationV1);
+    if (found) return found as DossierSourceFileClassificationV1;
+  }
+  return undefined;
+}
+
+const PUBLIC_BLOCKED_TAG_PATTERNS = [
+  /@/, /token|password|secret|payment|customer|account|email|private|member.only|source.blind|internal.alias/i,
+];
+const INTERNAL_BY_DEFAULT_TAG_PATTERNS = [/\b(queue|submission|submitter|moderator|mod|admin|staff|team|role|operator)\b/i];
+
+function normalizeTagForPublic(tag: string): string | undefined {
+  const clean = cleanText(tag)?.toLowerCase().replace(/\s+/g, "-");
+  if (!clean || PUBLIC_BLOCKED_TAG_PATTERNS.some((pattern) => pattern.test(clean))) return undefined;
+  return clean;
+}
+
+export function normalizeBnlSourceFileClassification(input: ClassificationInput): DossierSourceFileClassificationReadModel {
+  const bnl = sourceFileClassificationFromCandidate(input.candidate);
+  if (bnl) {
+    const blocked = uniqueStrings([
+      ...stringArray(bnl.doNotPubliclyTagAs),
+      ...stringArray(bnl.blockedPublicTags),
+      ...stringArray(bnl.rejectedTagCandidates),
+    ], 40).map((tag) => tag.toLowerCase());
+    const blockedSet = new Set(blocked);
+    const sourceSafety = cleanText(bnl.sourceSafety);
+    const sourceBlind = /source[_ -]?blind|internal[_ -]?only/i.test(sourceSafety ?? "");
+    const publicSafeTags = sourceBlind ? [] : uniqueStrings(stringArray(bnl.publicSafeTagCandidates)
+      .map(normalizeTagForPublic)
+      .filter((tag): tag is string => Boolean(tag && !blockedSet.has(tag))), 12);
+    const primarySecondary = uniqueStrings([...stringArray(bnl.primaryTags), ...stringArray(bnl.secondaryTags)], 20);
+    const internalOnlyTags = uniqueStrings([
+      ...stringArray(bnl.internalTags),
+      ...primarySecondary.filter((tag) => !publicSafeTags.includes(tag.toLowerCase().replace(/\s+/g, "-")) || INTERNAL_BY_DEFAULT_TAG_PATTERNS.some((pattern) => pattern.test(tag))),
+      ...stringArray(bnl.routingTags),
+    ], 20);
+    return {
+      subjectType: cleanText(bnl.subjectType),
+      publicDossierType: cleanText(bnl.publicDossierType),
+      confidence: cleanText(bnl.confidence),
+      publicSafeTags,
+      needsReviewTags: stringArray(bnl.needsReviewTagCandidates, 12),
+      internalOnlyTags,
+      rejectedTags: stringArray(bnl.rejectedTagCandidates, 12),
+      routingTags: stringArray(bnl.routingTags, 12),
+      blockedPublicTags: uniqueStrings([...stringArray(bnl.blockedPublicTags), ...stringArray(bnl.doNotPubliclyTagAs)], 20),
+      sourceSafety,
+      reasons: stringArray(bnl.classificationReasons, 8),
+      blockers: stringArray(bnl.classificationBlockedBy, 8),
+      authority: "bnl_source_file_classification",
+    };
+  }
+  const fallback = classifyDossierSourceFileSubject(input);
+  return {
+    subjectType: fallback.category,
+    publicDossierType: fallback.kind,
+    confidence: fallback.confidence,
+    publicSafeTags: [],
+    needsReviewTags: [],
+    internalOnlyTags: [],
+    rejectedTags: [],
+    routingTags: [],
+    blockedPublicTags: [],
+    sourceSafety: undefined,
+    reasons: fallback.reasons,
+    blockers: fallback.blockers,
+    authority: "site_fallback_classification",
+  };
+}
+
 function registryItemFor(tag: string, registryItems: DossierTagRegistryItem[]) {
   const canonical = resolveDossierTagCanonical(tag) ?? tag.toLowerCase();
   return registryItems.find((item) => item.tag.toLowerCase() === canonical || item.canonical.toLowerCase() === canonical);
@@ -444,22 +554,38 @@ export function suggestDossierTags(input: ClassificationInput & { classification
     confirmed.set(item.tag, { tag: item.tag, confidence, reason, registrySource: item.source });
   };
 
-  addTag(classification.kind === "community_member" ? "member" : classification.kind, "Suggested from dossier kind.");
-  if (classification.category === "Artist") addTag("artist", "Artist category maps to the existing artist tag.", "high");
-  if (classification.category === "Collaborator") addTag("collaborator", "Collaborator category maps to the existing collaborator tag.", "high");
-  if (classification.category === "Community") addTag("community", "Community category maps to existing community tag.", "high");
-  if (classification.kind === "radio_regular") addTag("radio", "Radio regular kind maps to the existing radio tag.");
-  if (classification.kind === "moderator") addTag("mod", "Moderator kind maps to the existing mod tag.", "high");
-  if (classification.category === "Production") addTag("producer", "Production records use existing production-oriented tag when applicable.");
-  if (classification.category === "Interface") addTag("systems", "Interface records use existing systems tag when applicable.");
-  if (classification.category === "Sponsor") addTag("sponsor", "Sponsor category maps to existing sponsor tag.", "high");
-  if (classification.category === "Entity") addTag("core", "Entity records can reuse core/entity-oriented registry tags when applicable.");
+  const normalizedClassification = normalizeBnlSourceFileClassification(input);
+  if (normalizedClassification.authority !== "bnl_source_file_classification") {
+    addTag(classification.kind === "community_member" ? "member" : classification.kind, "Suggested from dossier kind.");
+    if (classification.category === "Artist") addTag("artist", "Artist category maps to the existing artist tag.", "high");
+    if (classification.category === "Collaborator") addTag("collaborator", "Collaborator category maps to the existing collaborator tag.", "high");
+    if (classification.category === "Community") addTag("community", "Community category maps to existing community tag.", "high");
+    if (classification.kind === "radio_regular") addTag("radio", "Radio regular kind maps to the existing radio tag.");
+    if (classification.kind === "moderator") addTag("mod", "Moderator kind maps to the existing mod tag.", "high");
+    if (classification.category === "Production") addTag("producer", "Production records use existing production-oriented tag when applicable.");
+    if (classification.category === "Interface") addTag("systems", "Interface records use existing systems tag when applicable.");
+    if (classification.category === "Sponsor") addTag("sponsor", "Sponsor category maps to existing sponsor tag.", "high");
+    if (classification.category === "Entity") addTag("core", "Entity records can reuse core/entity-oriented registry tags when applicable.");
+  }
 
-  for (const tag of input.candidate.recommendedTags ?? []) addTag(tag, "Existing candidate recommendation reused when present in registry.");
-  for (const tag of input.candidate.proposedTags ?? []) {
-    const item = registryItemFor(tag, registry.items);
-    if (item) addTag(item.tag, "Candidate proposed tag already exists in registry, so it is safe to suggest.");
-    else proposed.set(tag, { tag, confidence: "low", reason: "Candidate proposed tag is not in the registry yet.", registrySource: "candidate" });
+  if (normalizedClassification.authority === "bnl_source_file_classification") {
+    const blocked = new Set([
+      ...normalizedClassification.blockedPublicTags,
+      ...normalizedClassification.rejectedTags,
+      ...normalizedClassification.internalOnlyTags,
+      ...normalizedClassification.needsReviewTags,
+    ].map((tag) => tag.toLowerCase()));
+    for (const tag of normalizedClassification.publicSafeTags) {
+      if (!blocked.has(tag.toLowerCase())) addTag(tag, "BNL sourceFileClassificationV1 marked this as a public-safe tag candidate.", "high");
+    }
+    for (const tag of normalizedClassification.rejectedTags) rejected.push({ tag, reason: "BNL sourceFileClassificationV1 rejected this public tag candidate." });
+  } else {
+    for (const tag of input.candidate.recommendedTags ?? []) addTag(tag, "Existing candidate recommendation reused when present in registry.");
+    for (const tag of input.candidate.proposedTags ?? []) {
+      const item = registryItemFor(tag, registry.items);
+      if (item) addTag(item.tag, "Candidate proposed tag already exists in registry, so it is safe to suggest.");
+      else proposed.set(tag, { tag, confidence: "low", reason: "Candidate proposed tag is not in the registry yet.", registrySource: "candidate" });
+    }
   }
 
   return {
@@ -580,7 +706,11 @@ export function evaluateDossierReadiness(input: {
 
 export function createDossierDraftBlueprint(input: ClassificationInput): DossierDraftBlueprint {
   const publicDossiers = input.publicDossiers ?? databasePage.entries;
-  const classification = classifyDossierSourceFileSubject({ ...input, publicDossiers });
+  const normalizedClassification = normalizeBnlSourceFileClassification({ ...input, publicDossiers });
+  const fallbackClassification = classifyDossierSourceFileSubject({ ...input, publicDossiers });
+  const classification = normalizedClassification.authority === "bnl_source_file_classification"
+    ? { ...fallbackClassification, kind: (normalizedClassification.publicDossierType as PublicDossierKind) || fallbackClassification.kind, confidence: (normalizedClassification.confidence as DossierClassificationConfidence) || fallbackClassification.confidence, reasons: normalizedClassification.reasons.length ? normalizedClassification.reasons : fallbackClassification.reasons, blockers: uniqueStrings([...fallbackClassification.blockers, ...normalizedClassification.blockers], 8) }
+    : fallbackClassification;
   const suggestedTags = suggestDossierTags({ ...input, publicDossiers, classification });
   const evidence = distillDossierEvidence(input);
   const readiness = evaluateDossierReadiness({ classification, evidence, candidate: input.candidate });
@@ -592,6 +722,7 @@ export function createDossierDraftBlueprint(input: ClassificationInput): Dossier
     version: "1.0",
     subjectName: input.candidate.name,
     classification,
+    classificationProfile: normalizedClassification,
     suggestedTags,
     publicSafeFacts: evidence.publicSafe,
     safeRoleDirection: roleDirection,

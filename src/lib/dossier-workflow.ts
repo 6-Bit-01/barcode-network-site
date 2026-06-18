@@ -164,6 +164,7 @@ export type DossierSubjectIntelligenceBriefV1 = {
 
 export type DossierReadinessQuestionV1 = {
   id?: string;
+  questionKey?: string;
   audience?: DossierSourceFileVerificationPacketAudience | DossierSourceFileConfirmationTarget | string;
   recipientClass?: DossierSourceFileVerificationPacketAudience | DossierSourceFileConfirmationTarget | string;
   confirmationTarget?: DossierSourceFileConfirmationTarget;

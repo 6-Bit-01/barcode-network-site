@@ -806,6 +806,151 @@ function createDraftId(): string {
   return `dossier_draft_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+
+export type DossierQuestionResolutionState =
+  | "resolved_by_claim_review"
+  | "resolved_by_source_file_note"
+  | "resolved_by_identity_link"
+  | "resolved_by_existing_public_fact"
+  | "resolved_by_rejection_or_boundary"
+  | "unresolved"
+  | "ambiguous";
+
+export type DossierResolvedQuestionReadModel = {
+  questionKey: string;
+  resolved: boolean;
+  resolutionState: DossierQuestionResolutionState;
+  resolutionSummary: string;
+  sourceIds: string[];
+  stillNeedsHuman: boolean;
+  safeToSuppressFromActivePacket: boolean;
+};
+
+type DossierQuestionLike = Record<string, unknown> | string;
+
+function normalizeQuestionKeyText(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function questionRecord(value: DossierQuestionLike): Record<string, unknown> | undefined {
+  return value && typeof value === "object" ? value : undefined;
+}
+
+function questionText(value: DossierQuestionLike): string {
+  const record = questionRecord(value);
+  const raw = record ? (record.question ?? record.text ?? record.prompt ?? record.need ?? record.claimText ?? record.verificationPacketQuestion) : value;
+  return typeof raw === "string" ? raw.trim() : "";
+}
+
+function questionField(value: DossierQuestionLike, key: string): string {
+  const raw = questionRecord(value)?.[key];
+  return typeof raw === "string" ? raw.trim() : "";
+}
+
+export function dossierQuestionResolutionKey(value: DossierQuestionLike): string {
+  const explicit = questionField(value, "questionKey");
+  if (explicit) return explicit.trim();
+  return [
+    questionText(value),
+    questionField(value, "dossierSection"),
+    questionField(value, "audience") || questionField(value, "recipientClass") || questionField(value, "confirmationTarget") || questionField(value, "verificationPacketAudience"),
+    questionField(value, "answerType"),
+  ].map(normalizeQuestionKeyText).filter(Boolean).join("|") || "unknown_question";
+}
+
+function hasQuestionKeyMatch(question: DossierQuestionLike, source: Record<string, unknown>): boolean {
+  const key = questionField(question, "questionKey");
+  return Boolean(key && source.questionKey === key);
+}
+
+function textMatchesQuestion(question: DossierQuestionLike, text: unknown): boolean {
+  const q = normalizeQuestionKeyText(questionText(question));
+  const t = normalizeQuestionKeyText(text);
+  if (!q || !t) return false;
+  return q === t || t.includes(q) || q.includes(t);
+}
+
+function questionAudience(question: DossierQuestionLike): string {
+  return normalizeQuestionKeyText(questionField(question, "audience") || questionField(question, "recipientClass") || questionField(question, "confirmationTarget") || questionField(question, "verificationPacketAudience"));
+}
+
+function isPublicQuestion(question: DossierQuestionLike): boolean {
+  const joined = normalizeQuestionKeyText(`${questionText(question)} ${questionField(question, "dossierSection")} ${questionField(question, "answerType")} ${questionAudience(question)}`);
+  return /public|wording|source|link/.test(joined);
+}
+
+function isBoundaryQuestion(question: DossierQuestionLike): boolean {
+  const joined = normalizeQuestionKeyText(`${questionText(question)} ${questionField(question, "dossierSection")} ${questionField(question, "answerType")}`);
+  return /boundary|reject|rejected|do not say|do_not_say|public safety|safety|withheld/.test(joined);
+}
+
+function isIdentityQuestion(question: DossierQuestionLike): boolean {
+  const joined = normalizeQuestionKeyText(`${questionText(question)} ${questionField(question, "dossierSection")} ${questionField(question, "answerType")}`);
+  return /identity|name|alias|handle|persona|display/.test(joined);
+}
+
+function resolved(state: DossierQuestionResolutionState, summary: string, sourceIds: string[], suppress = true): DossierResolvedQuestionReadModel {
+  return { questionKey: "", resolved: true, resolutionState: state, resolutionSummary: summary, sourceIds, stillNeedsHuman: false, safeToSuppressFromActivePacket: suppress };
+}
+
+export function resolveBnlDossierQuestionFromExistingTruth(input: {
+  question: DossierQuestionLike;
+  candidate?: Partial<DossierCandidate>;
+  draft?: Partial<DossierDraft>;
+}): DossierResolvedQuestionReadModel {
+  const { question, candidate } = input;
+  const key = dossierQuestionResolutionKey(question);
+  const reviews = candidate?.sourceFileClaimReviews ?? [];
+  const publicQuestion = isPublicQuestion(question);
+  const boundaryQuestion = isBoundaryQuestion(question);
+  const identityQuestion = isIdentityQuestion(question);
+  for (const review of reviews) {
+    const record = review as unknown as Record<string, unknown>;
+    const text = review.editedText || review.claimText;
+    const matches = hasQuestionKeyMatch(question, record) || textMatchesQuestion(question, text) || (Array.isArray(record.relatedQuestionKeys) && record.relatedQuestionKeys.includes(key));
+    if (!matches) continue;
+    if (review.decision === "needs_more_info" || review.decision === "pending") return { questionKey: key, resolved: false, resolutionState: "ambiguous", resolutionSummary: "Matching claim review still needs more information.", sourceIds: [review.id], stillNeedsHuman: true, safeToSuppressFromActivePacket: false };
+    if (review.decision === "rejected") return { ...resolved("resolved_by_rejection_or_boundary", "Question matched a rejected Source File claim boundary, not public proof.", [review.id], boundaryQuestion), questionKey: key };
+    if (review.decision === "confirmed_internal" && !publicQuestion) return { ...resolved("resolved_by_claim_review", "Question matched an internal-only confirmed Source File claim.", [review.id]), questionKey: key };
+    if ((review.decision === "confirmed_public" || review.decision === "edited") && (review.publicSafe || publicQuestion)) return { ...resolved("resolved_by_claim_review", "Question matched existing public-safe reviewed Source File wording.", [review.id]), questionKey: key };
+  }
+  if (identityQuestion) {
+    const link = (candidate?.identityLinks ?? []).find((item) => item.status === "confirmed" && (hasQuestionKeyMatch(question, item as unknown as Record<string, unknown>) || textMatchesQuestion(question, item.label) || textMatchesQuestion(question, item.normalizedLabel)) && (!publicQuestion || (item.visibility === "public_safe" && item.useInPublicDossier)));
+    if (link) return { ...resolved("resolved_by_identity_link", "Question matched a compatible confirmed identity link.", [link.id]), questionKey: key };
+  }
+  const notes = candidate?.sourceFileNotes ?? [];
+  for (const note of notes) {
+    const matches = textMatchesQuestion(question, note.text) || hasQuestionKeyMatch(question, note as unknown as Record<string, unknown>);
+    if (!matches) continue;
+    if ((note.type === "do_not_say" || note.type === "public_safety") && boundaryQuestion) return { ...resolved("resolved_by_rejection_or_boundary", "Question matched an existing public-safety/do-not-say boundary.", [note.id]), questionKey: key };
+    if (["fact", "link_note", "correction"].includes(note.type) && note.publicSafe !== false) return { ...resolved("resolved_by_source_file_note", "Question matched an existing public-safe Source File note.", [note.id]), questionKey: key };
+  }
+  const facts = [...(candidate?.knownFacts ?? []), ...(candidate?.missingInfo ?? []), ...(candidate?.doNotSay ?? []), ...(candidate?.publicSafetyNotes ?? [])];
+  const factIndex = facts.findIndex((fact) => textMatchesQuestion(question, fact));
+  if (factIndex >= 0) {
+    const boundary = boundaryQuestion || factIndex >= (candidate?.knownFacts?.length ?? 0) + (candidate?.missingInfo?.length ?? 0);
+    return { ...resolved(boundary ? "resolved_by_rejection_or_boundary" : "resolved_by_existing_public_fact", boundary ? "Question matched an existing candidate boundary/safety note." : "Question matched an existing candidate public-safe fact.", [`candidate:${factIndex}`], !((candidate?.missingInfo ?? []).includes(facts[factIndex]))), questionKey: key };
+  }
+  return { questionKey: key, resolved: false, resolutionState: "unresolved", resolutionSummary: "No matching existing Source File truth was found.", sourceIds: [], stillNeedsHuman: true, safeToSuppressFromActivePacket: false };
+}
+
+export function resolveBnlDossierQuestionsFromExistingTruth(input: {
+  questions: DossierQuestionLike[];
+  candidate?: Partial<DossierCandidate>;
+  draft?: Partial<DossierDraft>;
+}): DossierResolvedQuestionReadModel[] {
+  return input.questions.map((question) => resolveBnlDossierQuestionFromExistingTruth({ question, candidate: input.candidate, draft: input.draft }));
+}
+
 export async function getDossierWorkflowState(): Promise<DossierWorkflowState> {
   const redis = getRedis();
   if (!redis) return memoryState;

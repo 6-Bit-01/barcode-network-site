@@ -9560,8 +9560,8 @@ test("Source File analyst review cards prefer BNL human display fields and verif
     reviewFor("Resolved needs-more-info question.", "needs_more_info"),
   ] }));
   assert.match(lockedText, /Verification Packet/);
-  assert.match(lockedText, /Finish all review decisions to unlock the final verification packet/);
-  assert.match(lockedText, /This packet stays locked until all review items above have been resolved/);
+  assert.match(lockedText, /Previewing active BNL decision-unlocking questions/);
+  assert.match(lockedText, /Defaulted\/internal\/omitted questions are suppressed from this packet/);
   assert.match(lockedText, /8\s+review\s+items still need\s+decisions/);
   assert.doesNotMatch(lockedText, /Copy verification packet/);
   const claimReviews = [
@@ -9708,7 +9708,7 @@ test("Source File analyst readiness fields wire into existing review and Verific
   assert.match(lockedText, /Mod \/ informed team member/);
   assert.match(lockedText, /Treat this as a clarification need, not a public-fact approval card/);
   assert.doesNotMatch(lockedText, /raw evidence: private token database row should never appear/);
-  assert.match(lockedText, /Finish all review decisions to unlock the final verification packet/);
+  assert.match(lockedText, /Previewing active BNL decision-unlocking questions/);
 
   const reviewsFor = (roleDecision) => derived.current.map((claim) => ({
     id: claim.id,
@@ -12519,11 +12519,68 @@ test("Verification Packet suppresses saved answer and boundary text while keepin
     assert.doesNotMatch(packetText, new RegExp(suppressed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.match(packetText, /What exact public name may BNL use for Crow\?/);
-  assert.match(packetText, /What AI\/persona\/project connection is this referring to\?/);
-  assert.match(packetText, /Which public links, if any, may BNL associate with Crow\?/);
+  assert.doesNotMatch(packetText, /What AI\/persona\/project connection is this referring to\?/);
+  assert.doesNotMatch(packetText, /Which public links, if any, may BNL associate with Crow\?/);
   assert.match(text, /Automatically resolved BNL questions/);
   assert.match(derived.resolvedQuestions.map((question) => question.resolutionSummary).join("\n"), /Suppressed saved/);
   assert.doesNotMatch(normalizedSource("src/app/api/bnl/read-model/route.ts"), /classifySavedPacketTextForVerificationPacket|safeToSuppressFromActivePacket|resolutionState/);
+});
+
+test("BNL memory-first packet defaults suppress checklist-only questions without relying on review count", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const candidate = {
+    id: "candidate_memory_first_defaults",
+    name: "Memory First Subject",
+    sourceFileClaimReviews: [
+      { id: "review_rejected_label", candidateId: "candidate_memory_first_defaults", questionKey: "q:rejected_label", claimText: "Admin previously rejected this label. Is there new owner-approved evidence that changes it?", claimType: "review_needed", sourceSection: "dossierReadinessQuestions", decision: "rejected", publicSafe: false, createdAt: now, updatedAt: now },
+      { id: "review_manual_before_preview", candidateId: "candidate_memory_first_defaults", questionKey: "q:manual_before", claimText: "Previously reviewed admin question", claimType: "review_needed", sourceSection: "dossierReadinessQuestions", decision: "confirmed_internal", publicSafe: false, createdAt: now, updatedAt: now },
+    ],
+  };
+  const analystRead = {
+    subjectName: "Memory First Subject",
+    readyForDraft: true,
+    canDraftCautiously: true,
+    draftReadinessReason: "BNL can draft cautiously if unsafe details are omitted or kept internal.",
+    dossierReadinessQuestions: [
+      { questionKey: "q:rejected_label", question: "Admin previously rejected this label. Is there new owner-approved evidence that changes it?", audience: "subject", answerType: "label" },
+      { questionKey: "q:protected", question: "Should protected context stay internal?", audience: "admin", answerType: "protected context" },
+      { questionKey: "q:orion", question: "Can BNL mention Orion/lore/internal context publicly?", audience: "admin", answerType: "lore" },
+      { questionKey: "q:queue", question: "Can BNL mention queue/submission history publicly?", audience: "subject", answerType: "queue history" },
+      { questionKey: "q:links", question: "Which public links are missing or unconfirmed?", audience: "link_ownership", answerType: "link" },
+      { questionKey: "q:role", question: "Which public role/title should BNL use?", audience: "owner_approved_wording", answerType: "role" },
+      { questionKey: "q:contest", question: "Which contest/event context is unclear?", audience: "admin", answerType: "event" },
+      { questionKey: "q:collab", question: "Should BNL claim collaboration?", audience: "admin", answerType: "collaboration" },
+      { questionKey: "q:ai", question: "What AI/persona/project/lore connection should be public?", audience: "admin", answerType: "persona" },
+      { questionKey: "q:route", question: "Needs routing: which classification tag applies?", audience: "unknown", answerType: "route/classification tag" },
+      { questionKey: "q:blocker", question: "Which public source confirms the legal-name identity?", audience: "public_source", answerType: "public_fact" },
+    ],
+  };
+  const derived = sourceSummaryPanelComponent.deriveDossierSourceFileReviewableClaims({ analystRead, candidateId: candidate.id, sourceArchiveId: "archive_memory_first", subjectName: "Memory First Subject", candidate, reviews: candidate.sourceFileClaimReviews });
+  const activeText = derived.current.map((claim) => claim.claimText).join("\n");
+  assert.doesNotMatch(activeText, /Admin previously rejected this label/);
+  assert.doesNotMatch(activeText, /protected context/i);
+  assert.doesNotMatch(activeText, /Orion\/lore/i);
+  assert.doesNotMatch(activeText, /queue\/submission/i);
+  assert.doesNotMatch(activeText, /public links are missing/i);
+  assert.doesNotMatch(activeText, /public role\/title/i);
+  assert.doesNotMatch(activeText, /contest\/event/i);
+  assert.doesNotMatch(activeText, /claim collaboration/i);
+  assert.doesNotMatch(activeText, /AI\/persona\/project/i);
+  assert.doesNotMatch(activeText, /classification tag/i);
+  assert.match(activeText, /Which public source confirms the legal-name identity/);
+  assert.match(derived.resolvedQuestions.map((question) => question.resolutionSummary).join("\n"), /already rejected|default keep internal|default omit from public|default use cautious wording|answered by bnl/);
+
+  const panelText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary: { summarySource: "manual", lastUpdatedAt: now, substanceLevel: "useful", publicReadiness: "needs_review", nextAction: "review", existingPublicDossier: "no" },
+    latestSourceFileArchive: { id: "archive_memory_first", candidateId: candidate.id, subjectName: "Memory First Subject", sourceDigest: "digest", createdAt: now, updatedAt: now, archiveSize: 1, chunkCount: 1, reviewOnly: true, subjectAnalystReadV1: analystRead },
+    candidateId: candidate.id,
+    candidate,
+    claimReviews: candidate.sourceFileClaimReviews,
+  }));
+  const packetText = panelText.slice(panelText.lastIndexOf("Verification Packet"));
+  assert.match(packetText, /Which public source confirms the legal-name identity/);
+  assert.doesNotMatch(packetText, /Admin previously rejected this label|protected context|Orion\/lore|queue\/submission|classification tag/);
+  assert.doesNotMatch(normalizedSource("src/app/api/bnl/read-model/route.ts"), /MemoryFirstPacketDefaultState|memoryFirstDefaultForPacketQuestion|sourceFileClaimReviews/);
 });
 
 test("BNL Source File draft readiness read model uses BNL authority before site fallback", () => {

@@ -546,7 +546,21 @@ export type DossierSourceFileReviewableClaim = {
   recommendedAdminActionCards?: UnknownRecord[];
   review?: DossierSourceFileClaimReview;
   resolvedQuestion?: DossierResolvedQuestionReadModel;
+  memoryFirstDefaultState?: MemoryFirstPacketDefaultState;
 };
+
+export type MemoryFirstPacketDefaultState =
+  | "active_question"
+  | "answered_by_bnl"
+  | "default_keep_internal"
+  | "default_omit_from_public"
+  | "default_use_cautious_wording"
+  | "already_rejected"
+  | "resolved_by_boundary"
+  | "resolved_by_existing_truth"
+  | "needs_owner_override"
+  | "needs_public_source"
+  | "needs_identity_confirmation";
 
 type SourceFileSignalSummary = {
   id: string;
@@ -940,9 +954,10 @@ export function deriveDossierSourceFileReviewableClaims(input: {
   const readinessQuestions = analystReadinessQuestions(input.analystRead).map((question) => ({
     ...question,
     resolution: resolveBnlDossierQuestionFromExistingTruth({ question: { ...question, question: question.question }, candidate: input.candidate }),
+    memoryFirstResolution: resolveVerificationPacketQuestionWithBnlJudgment({ text: question.question, audience: question.audience, answerType: question.answerType, dossierSection: question.dossierSection, questionKey: question.questionKey, candidate: input.candidate, analystRead: input.analystRead }),
   }));
-  const resolvedReadinessQuestions = readinessQuestions.filter((question) => question.resolution.safeToSuppressFromActivePacket);
-  const activeReadinessQuestions = readinessQuestions.filter((question) => !question.resolution.safeToSuppressFromActivePacket);
+  const resolvedReadinessQuestions = readinessQuestions.filter((question) => question.resolution.safeToSuppressFromActivePacket || question.memoryFirstResolution?.safeToSuppressFromActivePacket);
+  const activeReadinessQuestions = readinessQuestions.filter((question) => !question.resolution.safeToSuppressFromActivePacket && !question.memoryFirstResolution?.safeToSuppressFromActivePacket);
   const allCards = sections.flatMap((section) => listValues(section.values).flatMap((value) => {
     const card = buildClaimCard({ value, sourceSection: section.sourceSection, claimType: section.claimType, candidateId: input.candidateId, sourceArchiveId: input.sourceArchiveId, subjectName: input.subjectName ?? input.analystRead?.subjectName, reviews: reviewById, candidate: input.candidate });
     return card ? [card] : [];
@@ -990,7 +1005,9 @@ export function deriveDossierSourceFileReviewableClaims(input: {
     reviews: reviewById,
     candidate: input.candidate,
     });
-    return card ? [{ ...card, readinessMetadata: readinessMetadataItems(question), resolvedQuestion: question.resolution }] : [];
+    if (!card) return [];
+    const memoryFirstState = question.memoryFirstResolution?.resolutionSummary.match(/\(([^)]+)\)/)?.[1]?.replace(/ /g, "_") as MemoryFirstPacketDefaultState | undefined;
+    return [{ ...card, readinessMetadata: readinessMetadataItems(question), resolvedQuestion: question.memoryFirstResolution ?? question.resolution, memoryFirstDefaultState: memoryFirstState ?? "active_question" }];
   });
   const current = [...cardsWithReadiness, ...readinessCards].filter((card) => !signals.some((signal) => signal.id === card.id));
   const currentIds = new Set(current.map((claim) => claim.id));
@@ -998,7 +1015,7 @@ export function deriveDossierSourceFileReviewableClaims(input: {
     current,
     signals,
     resolvedQuestions: [
-      ...resolvedReadinessQuestions.map((question) => question.resolution),
+      ...resolvedReadinessQuestions.map((question) => question.memoryFirstResolution ?? question.resolution),
       ...current.flatMap(suppressedSavedPacketResolutionsForClaim),
     ],
     previous: (input.reviews ?? []).filter((review) => !currentIds.has(review.id)).map((review) => ({
@@ -1046,8 +1063,75 @@ function normalizeVerificationQuestion(question: string) {
   return question.trim().replace(/\s+/g, " ").replace(/[?.!;:]+$/g, "").toLowerCase();
 }
 
+function reviewMatchesPacketQuestion(review: DossierSourceFileClaimReview, text: string, questionKey?: string) {
+  const normalized = normalizeVerificationQuestion(text);
+  const reviewKey = textValue((review as unknown as UnknownRecord).questionKey);
+  if (questionKey && reviewKey === questionKey) return true;
+  return [review.claimText, review.editedText].some((value) => value && normalizeVerificationQuestion(value).includes(normalized));
+}
+
+function hasExplicitNewEvidence(record: UnknownRecord | undefined, text: string) {
+  const joined = `${text} ${analystString(record, ["newEvidence", "newOwnerApprovedEvidence", "ownerApprovedEvidence", "evidenceSummary", "publicSource", "suggestedPublicWording"]) ?? ""}`.toLowerCase();
+  return /\b(new|owner-approved|owner approved|public-safe|public source|confirmed)\b.*\b(evidence|source|wording|approval)\b/.test(joined);
+}
+
+export function memoryFirstDefaultForPacketQuestion(input: {
+  text: string;
+  audience?: unknown;
+  answerType?: unknown;
+  dossierSection?: unknown;
+  questionKey?: string;
+  record?: UnknownRecord;
+  candidate?: Partial<DossierCandidate>;
+  analystRead?: DossierSubjectAnalystReadV1;
+}): MemoryFirstPacketDefaultState {
+  const text = input.text.trim();
+  const lower = text.toLowerCase();
+  const joined = `${lower} ${textValue(input.audience) ?? ""} ${textValue(input.answerType) ?? ""} ${textValue(input.dossierSection) ?? ""} ${analystString(input.record, ["claimType", "type", "reviewLane", "actionability", "displayTitle", "title"]) ?? ""}`.toLowerCase();
+  const reviews = input.candidate?.sourceFileClaimReviews ?? [];
+  if (reviews.some((review) => review.decision === "rejected" && reviewMatchesPacketQuestion(review, text, input.questionKey)) && !hasExplicitNewEvidence(input.record, text)) return "already_rejected";
+  if (/route|routing|classification|classify|tag\b|candidate type|needs routing|which lane|what lane/.test(joined)) return "answered_by_bnl";
+  if (/protected context|protected|source-blind|source blind|private|internal context|rules\/instructions|rules|instructions/.test(joined)) return "default_keep_internal";
+  if (/orion|lore|persona|ai\/persona|ai persona|project connection|internal context/.test(joined) && !/approved public wording|required for the dossier|public mention is required/.test(joined)) return "default_keep_internal";
+  if (/queue|submission|submitted|radio history/.test(joined) && !/public-safe and necessary|public safe and necessary|required for the dossier/.test(joined)) return "default_keep_internal";
+  if (/public links?|links? (are )?(missing|unconfirmed)|which public links?|link ownership/.test(joined) && !/identity depends|identity confirmation|safe identity/.test(joined)) return "default_omit_from_public";
+  if (/public role|role\/title|role|title|label/.test(joined) && ((input.analystRead as UnknownRecord | undefined)?.canDraftCautiously || input.analystRead?.readyForDraft)) return "default_use_cautious_wording";
+  if (/contest|event/.test(joined) && !/reason the dossier exists|required for the dossier/.test(joined)) return "default_omit_from_public";
+  if (/collaboration|collab/.test(joined)) return "default_omit_from_public";
+  if (/boundary|do not say|public safety|unsafe/.test(joined)) return "resolved_by_boundary";
+  const existing = input.candidate ? resolveBnlDossierQuestionFromExistingTruth({ question: { question: text, audience: input.audience, answerType: input.answerType, dossierSection: input.dossierSection, questionKey: input.questionKey }, candidate: input.candidate }) : undefined;
+  if (existing?.safeToSuppressFromActivePacket) return "resolved_by_existing_truth";
+  if (/identity|display name|public name|safe name/.test(joined)) return "needs_identity_confirmation";
+  if (/public source|unsupported evidence|requires unsupported|public claim requires/.test(joined)) return "needs_public_source";
+  if (/owner override|owner-approved|owner approved/.test(joined)) return "needs_owner_override";
+  return "active_question";
+}
+
+export function resolveVerificationPacketQuestionWithBnlJudgment(input: Parameters<typeof memoryFirstDefaultForPacketQuestion>[0]): DossierResolvedQuestionReadModel | undefined {
+  const state = memoryFirstDefaultForPacketQuestion(input);
+  if (state === "active_question" || state === "needs_owner_override" || state === "needs_public_source" || state === "needs_identity_confirmation") return undefined;
+  return {
+    questionKey: input.questionKey ?? `memory_first:${normalizeVerificationQuestion(input.text).slice(0, 80)}`,
+    resolved: true,
+    resolutionState: state === "already_rejected" || state === "resolved_by_boundary" ? "resolved_by_rejection_or_boundary" : state === "resolved_by_existing_truth" ? "resolved_by_existing_public_fact" : "resolved_by_claim_review",
+    resolutionSummary: `BNL memory-first default (${state.replace(/_/g, " ")}): ${input.text.trim().replace(/\s+/g, " ")}`,
+    sourceIds: [],
+    stillNeedsHuman: false,
+    safeToSuppressFromActivePacket: true,
+  };
+}
+
+function classifyMemoryFirstReviewActionability(claim: DossierSourceFileReviewableClaim) {
+  if (claim.review && claim.review.decision !== "pending") return "active_question";
+  return claim.memoryFirstDefaultState ?? "active_question";
+}
+
+function memoryFirstDefaultIsActionable(state: MemoryFirstPacketDefaultState | undefined) {
+  return !state || state === "active_question" || state === "needs_owner_override" || state === "needs_public_source" || state === "needs_identity_confirmation";
+}
+
 function unresolvedReviewItems(claims: DossierSourceFileReviewableClaim[]) {
-  return claims.filter((claim) => !claim.review?.decision || claim.review.decision === "pending");
+  return claims.filter((claim) => memoryFirstDefaultIsActionable(classifyMemoryFirstReviewActionability(claim)) && (!claim.review?.decision || claim.review.decision === "pending"));
 }
 
 function isSavedFollowUpQuestion(claim: DossierSourceFileReviewableClaim) {
@@ -1105,6 +1189,9 @@ function suppressedPacketResolutionForClaim(claim: DossierSourceFileReviewableCl
 
 function savedPacketTextCandidatesForClaim(claim: DossierSourceFileReviewableClaim) {
   if (claim.resolvedQuestion?.safeToSuppressFromActivePacket) return [];
+  if ((!claim.review?.decision || claim.review.decision === "pending") && claim.claimType === "missing_info" && !claim.isVagueArtifact && !claim.isInternalAuditArtifact) {
+    return claim.verificationPacketQuestions?.length ? claim.verificationPacketQuestions : [claim.claimText];
+  }
   if (!isSavedFollowUpQuestion(claim)) return [];
   const editedText = claim.review?.editedText?.trim();
   if (editedText) return [editedText];
@@ -1121,12 +1208,14 @@ function savedPacketTextCandidatesForClaim(claim: DossierSourceFileReviewableCla
 }
 
 function savedFollowUpQuestionsForClaim(claim: DossierSourceFileReviewableClaim) {
-  return safeActivePacketQuestions(savedPacketTextCandidatesForClaim(claim));
+  return safeActivePacketQuestions(savedPacketTextCandidatesForClaim(claim))
+    .filter((text) => memoryFirstDefaultIsActionable(memoryFirstDefaultForPacketQuestion({ text, audience: claim.verificationPacketAudience ?? claim.confirmationTarget, answerType: claim.claimType, dossierSection: claim.sourceSection })));
 }
 
 function suppressedSavedPacketResolutionsForClaim(claim: DossierSourceFileReviewableClaim) {
   return safeCopyQuestions(savedPacketTextCandidatesForClaim(claim)).flatMap((text) => {
-    const resolution = suppressedPacketResolutionForClaim(claim, text);
+    const memoryResolution = resolveVerificationPacketQuestionWithBnlJudgment({ text, audience: claim.verificationPacketAudience ?? claim.confirmationTarget, answerType: claim.claimType, dossierSection: claim.sourceSection });
+    const resolution = memoryResolution ?? suppressedPacketResolutionForClaim(claim, text);
     return resolution ? [resolution] : [];
   });
 }
@@ -1189,9 +1278,22 @@ function VerificationPacket({ claims }: { claims: DossierSourceFileReviewableCla
       <h4 className="text-xs font-bold uppercase tracking-widest text-foreground">Verification Packet</h4>
       {locked ? (
         <div className="mt-2 border border-border/40 bg-background/30 p-2">
-          <p className="text-foreground">Finish all review decisions to unlock the final verification packet.</p>
-          <p className="mt-1 text-xs text-muted">This packet stays locked until all review items above have been resolved.</p>
+          <p className="text-foreground">Previewing active BNL decision-unlocking questions.</p>
+          <p className="mt-1 text-xs text-muted">Defaulted/internal/omitted questions are suppressed from this packet; unresolved actionable review items still need decisions before final use.</p>
           <p className="mt-1 text-xs font-bold text-accent">{unresolved.length} review {unresolved.length === 1 ? "item still needs" : "items still need"} decisions.</p>
+          {hasQuestions ? <div className="mt-2 space-y-2">
+            {(Object.keys(VERIFICATION_PACKET_AUDIENCE_LABELS) as VerificationPacketAudience[]).map((audience) => {
+              const questions = sections[audience];
+              if (!questions.length) return null;
+              return (
+                <div key={audience} className="border border-border/40 bg-background/30 p-2">
+                  <p className="text-xs font-bold text-accent">{VERIFICATION_PACKET_AUDIENCE_LABELS[audience]}</p>
+                  <ol className="mt-1 list-decimal space-y-1 pl-5 text-foreground">{questions.map((question) => <li key={question.text}>{question.text}{question.sourceCount > 1 ? <span className="ml-2 text-[11px] text-muted">Used by {question.sourceCount} review items</span> : null}</li>)}</ol>
+                </div>
+              );
+            })}
+            <button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => copyTextToClipboard(copyText)}>Copy verification packet</button>
+          </div> : <p className="mt-2 text-xs text-muted">No active packet questions remain after BNL memory-first defaults.</p>}
         </div>
       ) : (
         <div className="mt-2 space-y-3">

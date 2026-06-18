@@ -3584,8 +3584,20 @@ function draftReadinessPendingPublicReviews(candidate: Partial<DossierCandidate>
   return (candidate.sourceFileClaimReviews ?? [])
     .filter((review) => review.decision === "pending" || review.decision === "needs_more_info")
     .filter((review) => /public|wording|identity|role|title|link|fact|safety|boundary/i.test(`${review.claimText} ${review.sourceSection} ${review.claimType}`))
+    .filter((review) => !draftReadinessTextIsMemoryFirstOmittable(review.claimText, `${review.sourceSection} ${review.claimType}`))
     .map((review) => review.claimText.trim())
     .filter(Boolean);
+}
+
+function draftReadinessTextIsMemoryFirstOmittable(text: string, context = "") {
+  const joined = `${text} ${context}`.toLowerCase();
+  if (/public_source|public source|public_fact|public fact/.test(joined) && /which|confirm|source/.test(joined)) return false;
+  if (/protected context|source-blind|source blind|private|internal context|orion|lore|ai\/persona|ai persona|project connection|rules\/instructions|rules|instructions/.test(joined)) return true;
+  if (/queue|submission|submitted|radio history/.test(joined) && !/public-safe and necessary|public safe and necessary|required for the dossier/.test(joined)) return true;
+  if (/public links?|links? (are )?(missing|unconfirmed)|which public links?|link ownership/.test(joined) && !/identity depends|identity confirmation|safe identity/.test(joined)) return true;
+  if (/contest|event/.test(joined) && !/reason the dossier exists|required for the dossier/.test(joined)) return true;
+  if (/collaboration|collab|route|routing|classification|classify|tag\b|candidate type|needs routing|which lane|what lane/.test(joined)) return true;
+  return false;
 }
 
 function draftReadinessHasBnlReadiness(analystRead: DossierSubjectAnalystReadV1 | undefined): analystRead is DossierSubjectAnalystReadV1 {
@@ -3609,7 +3621,7 @@ export function createDossierSourceFileDraftReadinessReadModel(input: {
       ...(Array.isArray(analystRead.dossierClarificationNeeds) ? analystRead.dossierClarificationNeeds : []),
     ] as DossierReadinessQuestionV1[];
     const highPriority = questions.filter(draftReadinessQuestionIsHighPriority);
-    const unresolvedQuestions = highPriority.filter((question) => !draftReadinessQuestionResolvedByReview(candidate, question));
+    const unresolvedQuestions = highPriority.filter((question) => !draftReadinessQuestionResolvedByReview(candidate, question) && !draftReadinessTextIsMemoryFirstOmittable(draftReadinessQuestionText(question), `${question.audience ?? ""} ${question.answerType ?? ""} ${question.dossierSection ?? ""}`));
     const pendingReviews = draftReadinessPendingPublicReviews(candidate);
     const bnlReady = draftReadinessBool(analystRead.readyForDraft) === true;
     const explicitBlockers = draftReadinessStringItems(analystRead.dossierBlockedBy);

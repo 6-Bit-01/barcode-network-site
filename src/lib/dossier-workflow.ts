@@ -3594,10 +3594,17 @@ function draftReadinessTextIsMemoryFirstOmittable(text: string, context = "") {
   if (/public_source|public source|public_fact|public fact/.test(joined) && /which|confirm|source/.test(joined)) return false;
   if (/protected context|source-blind|source blind|private|internal context|orion|lore|ai\/persona|ai persona|project connection|rules\/instructions|rules|instructions/.test(joined)) return true;
   if (/queue|submission|submitted|radio history/.test(joined) && !/public-safe and necessary|public safe and necessary|required for the dossier/.test(joined)) return true;
-  if (/public links?|links? (are )?(missing|unconfirmed)|which public links?|link ownership/.test(joined) && !/identity depends|identity confirmation|safe identity/.test(joined)) return true;
+  if (/(links? (are )?(missing|unconfirmed)|missing public links?|unconfirmed public links?|link ownership)/.test(joined) && !/approved|identity depends|identity confirmation|safe identity/.test(joined)) return true;
   if (/contest|event/.test(joined) && !/reason the dossier exists|required for the dossier/.test(joined)) return true;
-  if (/collaboration|collab|route|routing|classification|classify|tag\b|candidate type|needs routing|which lane|what lane/.test(joined)) return true;
+  if (/collaboration|collab/.test(joined) || draftReadinessIsRouteOnlyClassificationToken(text, context)) return true;
   return false;
+}
+
+function draftReadinessIsRouteOnlyClassificationToken(text: string, context = "") {
+  const normalized = text.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_/-]+/g, "");
+  if (/^(collaboration_interest|queue_submission|contest|identity|lore|music|orion|route|routing|classification|candidate_type|source_type|tag|[_a-z0-9/-]+_tag)$/.test(normalized)) return true;
+  if (!/route|routing|classification|classify|tag|taxonomy|candidate_type|source_type/.test(context.toLowerCase())) return false;
+  return /^[\s`"'*_/-]*[a-z0-9]+(?:[_/-][a-z0-9]+)*[\s`"'*_/-]*$/i.test(text.trim());
 }
 
 function draftReadinessHasBnlReadiness(analystRead: DossierSubjectAnalystReadV1 | undefined): analystRead is DossierSubjectAnalystReadV1 {

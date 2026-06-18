@@ -570,8 +570,8 @@ type SourceFileSignalSummary = {
   actionable: string;
 };
 
-function stableClaimId(input: { candidateId?: string; sourceSection: string; claimText: string; sourceArchiveId?: string }) {
-  const normalized = `${input.candidateId ?? "candidate"}|${input.sourceSection}|${input.claimText.trim().toLowerCase().replace(/\s+/g, " ")}|${input.sourceArchiveId ?? ""}`;
+function stableClaimId(input: { candidateId?: string; sourceSection: string; claimText: string; sourceArchiveId?: string; packetSignature?: string }) {
+  const normalized = `${input.candidateId ?? "candidate"}|${input.sourceSection}|${input.claimText.trim().toLowerCase().replace(/\s+/g, " ")}|${input.packetSignature ?? ""}|${input.sourceArchiveId ?? ""}`;
   let hash = 0;
   for (let index = 0; index < normalized.length; index += 1) hash = (hash * 31 + normalized.charCodeAt(index)) >>> 0;
   return `source_file_claim_${hash.toString(36)}`;
@@ -852,7 +852,14 @@ function buildClaimCard(input: { value: unknown; sourceSection: string; claimTyp
       : buildCardGuidance(claimText, claimType, record, displaySubject);
   const suggested = suggestedTextsForClaim({ claimText, claimType, record, subjectName: displaySubject, weakLabel, vagueArtifact });
   const rawSuggestedDecision = analystString(record, ["recommendedAction", "suggestedDecision", "recommendation"]);
-  const id = stableClaimId({ candidateId: input.candidateId, sourceSection: input.sourceSection, claimText, sourceArchiveId: input.sourceArchiveId });
+  const verificationPacketQuestions = stringListFromRecord(record, "verificationPacketQuestion");
+  const verificationPacketAudience = analystString(record, ["verificationPacketAudience"]);
+  const packetSignature = [
+    ...verificationPacketQuestions.map(normalizeVerificationQuestion),
+    verificationPacketAudience ? `audience:${verificationPacketAudience}` : undefined,
+    analystString(record, ["suggestedMissingInfoQuestion", "suggestedAnswer", "suggestedAnswerText", "answer"]) ? `followup:${normalizeVerificationQuestion(analystString(record, ["suggestedMissingInfoQuestion", "suggestedAnswer", "suggestedAnswerText", "answer"]) ?? "")}` : undefined,
+  ].filter(Boolean).join("|");
+  const id = stableClaimId({ candidateId: input.candidateId, sourceSection: input.sourceSection, claimText, sourceArchiveId: input.sourceArchiveId, packetSignature });
   const blockedBy = stringItems(record?.blockedBy);
   return {
     id,
@@ -905,8 +912,8 @@ function buildClaimCard(input: { value: unknown; sourceSection: string; claimTyp
     confirmationTarget: analystString(record, ["confirmationTarget"]),
     primaryActionLabel: displayField(record, "primaryActionLabel"),
     secondaryActionLabels: stringListFromRecord(record, "secondaryActionLabels"),
-    verificationPacketQuestions: stringListFromRecord(record, "verificationPacketQuestion"),
-    verificationPacketAudience: analystString(record, ["verificationPacketAudience"]),
+    verificationPacketQuestions,
+    verificationPacketAudience,
     recommendedAdminActionCards: listRecords(record?.recommendedAdminActionCards),
     whatYouAreApproving: claimType === "recommended_action" ? "An admin task state, not a public claim approval." : claimType === "do_not_say" ? "A public-copy boundary that protects against unsupported claims." : claimType === "source_blind" ? "Only a separately confirmed public-safe replacement, not the source-blind text itself." : "A Source File review decision. Confirming public-ready does not publish a dossier.",
     whatToEnter: claimType === "recommended_action" ? "No public-safe text is required unless this task explicitly creates a Source File note." : claimType === "do_not_say" ? "No public-ready wording should be entered for boundaries." : claimType === "source_blind" ? "Add public-safe replacement text, if owner/admin confirms it elsewhere." : "Enter the exact sentence BNL may use as a Source File fact.",
@@ -927,6 +934,26 @@ function buildClaimCard(input: { value: unknown; sourceSection: string; claimTyp
     review: input.reviews?.get(id),
     resolvedQuestion: resolvedQuestion?.safeToSuppressFromActivePacket ? resolvedQuestion : undefined,
   };
+}
+
+function reviewCardDedupeKey(claim: DossierSourceFileReviewableClaim) {
+  return [
+    claim.sourceSection,
+    normalizeVerificationQuestion(claim.claimText),
+    (claim.verificationPacketQuestions ?? []).map(normalizeVerificationQuestion).sort().join("|"),
+    claim.verificationPacketAudience ?? claim.confirmationTarget ?? "",
+    claim.suggestedAnswerText ? normalizeVerificationQuestion(claim.suggestedAnswerText) : "",
+  ].join("::");
+}
+
+function dedupeReviewableClaimCards(claims: DossierSourceFileReviewableClaim[]) {
+  const seen = new Set<string>();
+  return claims.filter((claim) => {
+    const key = reviewCardDedupeKey(claim);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export function deriveDossierSourceFileReviewableClaims(input: {
@@ -1009,7 +1036,7 @@ export function deriveDossierSourceFileReviewableClaims(input: {
     const memoryFirstState = question.memoryFirstResolution?.resolutionSummary.match(/\(([^)]+)\)/)?.[1]?.replace(/ /g, "_") as MemoryFirstPacketDefaultState | undefined;
     return [{ ...card, readinessMetadata: readinessMetadataItems(question), resolvedQuestion: question.memoryFirstResolution ?? question.resolution, memoryFirstDefaultState: memoryFirstState ?? "active_question" }];
   });
-  const current = [...cardsWithReadiness, ...readinessCards].filter((card) => !signals.some((signal) => signal.id === card.id));
+  const current = dedupeReviewableClaimCards([...cardsWithReadiness, ...readinessCards].filter((card) => !signals.some((signal) => signal.id === card.id)));
   const currentIds = new Set(current.map((claim) => claim.id));
   return {
     current,
@@ -1075,6 +1102,18 @@ function hasExplicitNewEvidence(record: UnknownRecord | undefined, text: string)
   return /\b(new|owner-approved|owner approved|public-safe|public source|confirmed)\b.*\b(evidence|source|wording|approval)\b/.test(joined);
 }
 
+function isStandaloneRoutingTag(text: string) {
+  const normalized = text.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_/-]+/g, "");
+  return /^(collaboration_interest|queue_submission|contest|identity|lore|music|orion|route|routing|classification|candidate_type|source_type|tag|[_a-z0-9/-]+_tag)$/.test(normalized);
+}
+
+function isRouteOnlyClassificationToken(text: string, sourceKind?: string) {
+  const source = (sourceKind ?? "").toLowerCase();
+  if (isStandaloneRoutingTag(text)) return true;
+  if (!/route|routing|classification|classify|tag|taxonomy|candidate_type|source_type/.test(source)) return false;
+  return /^[\s`"'*_/-]*[a-z0-9]+(?:[_/-][a-z0-9]+)*[\s`"'*_/-]*$/i.test(text.trim());
+}
+
 export function memoryFirstDefaultForPacketQuestion(input: {
   text: string;
   audience?: unknown;
@@ -1088,13 +1127,14 @@ export function memoryFirstDefaultForPacketQuestion(input: {
   const text = input.text.trim();
   const lower = text.toLowerCase();
   const joined = `${lower} ${textValue(input.audience) ?? ""} ${textValue(input.answerType) ?? ""} ${textValue(input.dossierSection) ?? ""} ${analystString(input.record, ["claimType", "type", "reviewLane", "actionability", "displayTitle", "title"]) ?? ""}`.toLowerCase();
+  const routeSourceKind = `${textValue(input.answerType) ?? ""} ${textValue(input.dossierSection) ?? ""} ${analystString(input.record, ["claimType", "type", "reviewLane", "actionability", "displayTitle", "title"]) ?? ""}`;
   const reviews = input.candidate?.sourceFileClaimReviews ?? [];
   if (reviews.some((review) => review.decision === "rejected" && reviewMatchesPacketQuestion(review, text, input.questionKey)) && !hasExplicitNewEvidence(input.record, text)) return "already_rejected";
-  if (/route|routing|classification|classify|tag\b|candidate type|needs routing|which lane|what lane/.test(joined)) return "answered_by_bnl";
+  if (isRouteOnlyClassificationToken(text, routeSourceKind)) return "answered_by_bnl";
   if (/protected context|protected|source-blind|source blind|private|internal context|rules\/instructions|rules|instructions/.test(joined)) return "default_keep_internal";
   if (/orion|lore|persona|ai\/persona|ai persona|project connection|internal context/.test(joined) && !/approved public wording|required for the dossier|public mention is required/.test(joined)) return "default_keep_internal";
   if (/queue|submission|submitted|radio history/.test(joined) && !/public-safe and necessary|public safe and necessary|required for the dossier/.test(joined)) return "default_keep_internal";
-  if (/public links?|links? (are )?(missing|unconfirmed)|which public links?|link ownership/.test(joined) && !/identity depends|identity confirmation|safe identity/.test(joined)) return "default_omit_from_public";
+  if (/(links? (are )?(missing|unconfirmed)|missing public links?|unconfirmed public links?|link ownership)/.test(joined) && !/approved|identity depends|identity confirmation|safe identity/.test(joined)) return "default_omit_from_public";
   if (/public role|role\/title|role|title|label/.test(joined) && ((input.analystRead as UnknownRecord | undefined)?.canDraftCautiously || input.analystRead?.readyForDraft)) return "default_use_cautious_wording";
   if (/contest|event/.test(joined) && !/reason the dossier exists|required for the dossier/.test(joined)) return "default_omit_from_public";
   if (/collaboration|collab/.test(joined)) return "default_omit_from_public";
@@ -1162,7 +1202,7 @@ export function classifySavedPacketTextForVerificationPacket(text: string): Save
 }
 
 function isActiveVerificationPacketQuestion(text: string) {
-  return classifySavedPacketTextForVerificationPacket(text) === "active_question";
+  return classifySavedPacketTextForVerificationPacket(text) === "active_question" || /^(confirm|verify|approve|choose)\b/i.test(text.trim());
 }
 
 function safeActivePacketQuestions(questions: string[]) {

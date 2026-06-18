@@ -12520,7 +12520,7 @@ test("Verification Packet suppresses saved answer and boundary text while keepin
   }
   assert.match(packetText, /What exact public name may BNL use for Crow\?/);
   assert.doesNotMatch(packetText, /What AI\/persona\/project connection is this referring to\?/);
-  assert.doesNotMatch(packetText, /Which public links, if any, may BNL associate with Crow\?/);
+  assert.match(packetText, /Which public links, if any, may BNL associate with Crow\?/);
   assert.match(text, /Automatically resolved BNL questions/);
   assert.match(derived.resolvedQuestions.map((question) => question.resolutionSummary).join("\n"), /Suppressed saved/);
   assert.doesNotMatch(normalizedSource("src/app/api/bnl/read-model/route.ts"), /classifySavedPacketTextForVerificationPacket|safeToSuppressFromActivePacket|resolutionState/);
@@ -12551,7 +12551,7 @@ test("BNL memory-first packet defaults suppress checklist-only questions without
       { questionKey: "q:contest", question: "Which contest/event context is unclear?", audience: "admin", answerType: "event" },
       { questionKey: "q:collab", question: "Should BNL claim collaboration?", audience: "admin", answerType: "collaboration" },
       { questionKey: "q:ai", question: "What AI/persona/project/lore connection should be public?", audience: "admin", answerType: "persona" },
-      { questionKey: "q:route", question: "Needs routing: which classification tag applies?", audience: "unknown", answerType: "route/classification tag" },
+      { questionKey: "q:route", question: "classification", audience: "unknown", answerType: "route/classification tag" },
       { questionKey: "q:blocker", question: "Which public source confirms the legal-name identity?", audience: "public_source", answerType: "public_fact" },
     ],
   };
@@ -12581,6 +12581,65 @@ test("BNL memory-first packet defaults suppress checklist-only questions without
   assert.match(packetText, /Which public source confirms the legal-name identity/);
   assert.doesNotMatch(packetText, /Admin previously rejected this label|protected context|Orion\/lore|queue\/submission|classification tag/);
   assert.doesNotMatch(normalizedSource("src/app/api/bnl/read-model/route.ts"), /MemoryFirstPacketDefaultState|memoryFirstDefaultForPacketQuestion|sourceFileClaimReviews/);
+});
+
+test("memory-first routing tag suppression preserves real stage/name/link questions and distinct duplicate packet questions", () => {
+  const analystRead = {
+    subjectName: "Stage Subject",
+    readyForDraft: false,
+    reviewableClaims: [
+      { claimText: "Shared evidence", displayTitle: "Name packet", verificationPacketQuestion: "What stage name should BNL use publicly?", verificationPacketAudience: "subject" },
+      { claimText: "Shared evidence", displayTitle: "Role packet", verificationPacketQuestion: "What public role/title should BNL use?", verificationPacketAudience: "owner_approved_wording" },
+      { claimText: "Shared evidence", displayTitle: "Role packet duplicate", verificationPacketQuestion: "What public role/title should BNL use?", verificationPacketAudience: "owner_approved_wording" },
+      { claimText: "Display fixture", verificationPacketQuestion: "Confirm public display name.", verificationPacketAudience: "admin" },
+      { claimText: "Links fixture", verificationPacketQuestion: "Which public links are approved?", verificationPacketAudience: "link_ownership" },
+    ],
+    dossierReadinessQuestions: [
+      { questionKey: "q:queue_token", question: "queue_submission", audience: "unknown", answerType: "classification" },
+      { questionKey: "q:collab_token", question: "collaboration_interest", audience: "unknown", answerType: "classification" },
+      { questionKey: "q:lore_token", question: "lore", audience: "unknown", answerType: "classification" },
+      { questionKey: "q:orion_token", question: "orion", audience: "unknown", answerType: "classification" },
+      { questionKey: "q:stage_name", question: "What stage name should BNL use publicly?", audience: "subject", answerType: "identity" },
+    ],
+  };
+  const derived = sourceSummaryPanelComponent.deriveDossierSourceFileReviewableClaims({ analystRead, candidateId: "candidate_stage_tags", sourceArchiveId: "archive_stage_tags", subjectName: "Stage Subject" });
+  const activeText = derived.current.map((claim) => `${claim.claimText} ${(claim.verificationPacketQuestions ?? []).join(" ")} ${claim.verificationPacketAudience ?? ""}`).join("\n");
+  assert.match(activeText, /What stage name should BNL use publicly/);
+  assert.match(activeText, /Confirm public display name/);
+  assert.match(activeText, /What public role\/title should BNL use/);
+  assert.match(activeText, /Which public links are approved/);
+  assert.doesNotMatch(activeText, /queue_submission|collaboration_interest|\blore\b|\borion\b/);
+  assert.equal(derived.current.filter((claim) => claim.claimText === "Shared evidence").length, 2);
+
+  const now = "2026-06-18T00:00:00.000Z";
+  const reviews = derived.current.map((claim) => ({
+    id: claim.id,
+    candidateId: "candidate_stage_tags",
+    claimText: claim.claimText,
+    claimType: claim.claimType,
+    sourceSection: claim.sourceSection,
+    decision: "needs_more_info",
+    publicSafe: false,
+    createdAt: now,
+    updatedAt: now,
+  }));
+  const panelText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary: { summarySource: "manual", lastUpdatedAt: now, substanceLevel: "useful", publicReadiness: "needs_review", nextAction: "review", existingPublicDossier: "no" },
+    latestSourceFileArchive: { id: "archive_stage_tags", candidateId: "candidate_stage_tags", subjectName: "Stage Subject", sourceDigest: "digest", createdAt: now, updatedAt: now, archiveSize: 1, chunkCount: 1, reviewOnly: true, subjectAnalystReadV1: analystRead },
+    candidateId: "candidate_stage_tags",
+    claimReviews: reviews,
+  }));
+  const packetText = panelText.slice(panelText.lastIndexOf("Verification Packet"));
+  assert.equal((packetText.match(/What stage name should BNL use publicly/g) ?? []).length, 1);
+  assert.equal((packetText.match(/What public role\/title should BNL use/g) ?? []).length, 1);
+  assert.match(packetText, /Questions for the subject/);
+  assert.match(packetText, /Owner-approved wording/);
+  assert.match(packetText, /Admin follow-up/);
+  assert.match(packetText, /Link ownership/);
+  assert.match(packetText, /Confirm public display name/);
+  assert.match(packetText, /Which public links are approved/);
+  assert.doesNotMatch(packetText, /queue_submission|collaboration_interest|\blore\b|\borion\b/);
+  assert.doesNotMatch(normalizedSource("src/app/api/bnl/read-model/route.ts"), /isStandaloneRoutingTag|isRouteOnlyClassificationToken|sourceFileClaimReviews/);
 });
 
 test("BNL Source File draft readiness read model uses BNL authority before site fallback", () => {

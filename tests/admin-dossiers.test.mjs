@@ -1110,6 +1110,49 @@ test("Source File completion requests persist BNL readiness questions with stabl
   const duplicateSync = store.syncSourceFileCompletionRequestsFromAnalystRead(synced, { ...base.latestSourceFileArchive, id: "archive-completion-2", sourceDigest: "digest-completion-2" }, { now: "2026-06-18T01:00:00.000Z" });
   assert.equal(duplicateSync.sourceFileCompletionRequests.length, 4);
   assert.equal(duplicateSync.sourceFileCompletionRequests.find((request) => request.requestKey.includes("readiness-role"))?.lastSeenAt, "2026-06-18T01:00:00.000Z");
+  const olderShape = store.syncSourceFileCompletionRequestsFromAnalystRead(duplicateSync, {
+    ...base.latestSourceFileArchive,
+    id: "archive-older-no-readiness",
+    sourceDigest: "digest-older-no-readiness",
+    subjectAnalystReadV1: { subjectName: "Completion Request Subject" },
+  }, { now: "2026-06-18T02:00:00.000Z" });
+  assert.deepEqual(
+    olderShape.sourceFileCompletionRequests.map((request) => request.status),
+    duplicateSync.sourceFileCompletionRequests.map((request) => request.status),
+  );
+  const terminalFixture = {
+    ...duplicateSync,
+    sourceFileCompletionRequests: duplicateSync.sourceFileCompletionRequests.map((request, index) => ({
+      ...request,
+      status: ["open", "ready_to_ask", "answered", "declined"][index] ?? request.status,
+    })),
+  };
+  const emptyReadiness = store.syncSourceFileCompletionRequestsFromAnalystRead(terminalFixture, {
+    ...base.latestSourceFileArchive,
+    id: "archive-empty-readiness",
+    sourceDigest: "digest-empty-readiness",
+    subjectAnalystReadV1: {
+      subjectName: "Completion Request Subject",
+      dossierReadinessQuestions: [],
+      dossierClarificationNeeds: [],
+      draftReadinessReason: "No remaining completion requests.",
+    },
+  }, { now: "2026-06-18T03:00:00.000Z" });
+  assert.deepEqual(emptyReadiness.sourceFileCompletionRequests.map((request) => request.status), ["superseded", "superseded", "answered", "declined"]);
+  assert.equal(emptyReadiness.sourceFileCompletionRequests[0].statusReason, "No longer present in latest BNL analyst read.");
+  const readyForDraftEmpty = store.syncSourceFileCompletionRequestsFromAnalystRead({
+    ...duplicateSync,
+    sourceFileCompletionRequests: duplicateSync.sourceFileCompletionRequests.map((request) => ({ ...request, status: "open" })),
+  }, {
+    ...base.latestSourceFileArchive,
+    id: "archive-ready-for-draft",
+    sourceDigest: "digest-ready-for-draft",
+    subjectAnalystReadV1: {
+      subjectName: "Completion Request Subject",
+      readyForDraft: true,
+    },
+  }, { now: "2026-06-18T04:00:00.000Z" });
+  assert.ok(readyForDraftEmpty.sourceFileCompletionRequests.every((request) => request.status === "superseded"));
 
   await store.saveDossierWorkflowState({
     version: 1,
@@ -1185,6 +1228,29 @@ test("Verification Packet prefers active persisted completion requests and falls
   }));
   assert.match(activeText, /Ask the subject for public link ownership/);
   assert.doesNotMatch(activeText, /Do not ask this already asked question/);
+
+  const inactiveArchive = {
+    ...packetArchive,
+    subjectAnalystReadV1: {
+      subjectName: "Claim Review Subject",
+      dossierReadinessQuestions: [{ id: "inactive-readiness", question: "Inactive readiness question?", audience: "subject" }],
+      dossierClarificationNeeds: [{ id: "inactive-clarification", question: "Inactive clarification question?", audience: "mod" }],
+    },
+  };
+  const inactiveText = collectReactText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary,
+    latestSourceFileArchive: inactiveArchive,
+    claimReviews: [],
+    completionRequests: [
+      { id: "cr-inactive-readiness", candidateId: "claim-review-candidate", requestKey: "inactive-readiness", question: "Inactive readiness question?", audience: "subject", sourceType: "dossier_readiness_question", status: "superseded", firstSeenAt: "2026-06-18T00:00:00.000Z", lastSeenAt: "2026-06-18T00:00:00.000Z", createdAt: "2026-06-18T00:00:00.000Z", updatedAt: "2026-06-18T00:00:00.000Z" },
+      { id: "cr-inactive-clarification", candidateId: "claim-review-candidate", requestKey: "inactive-clarification", question: "Inactive clarification question?", audience: "mod", sourceType: "dossier_clarification_need", status: "not_applicable", firstSeenAt: "2026-06-18T00:00:00.000Z", lastSeenAt: "2026-06-18T00:00:00.000Z", createdAt: "2026-06-18T00:00:00.000Z", updatedAt: "2026-06-18T00:00:00.000Z" },
+    ],
+  }));
+  assert.doesNotMatch(inactiveText, /Dossier Readiness Questions/);
+  assert.doesNotMatch(inactiveText, /Dossier Clarification Needs/);
+  assert.match(inactiveText, /Inactive completion requests/);
+  assert.match(inactiveText, /Inactive readiness question/);
+  assert.match(inactiveText, /Inactive clarification question/);
 
   const fallbackText = collectReactText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
     summary,

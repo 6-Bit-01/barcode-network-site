@@ -893,16 +893,48 @@ function readinessQuestionsFromAnalystRead(analystRead?: DossierSubjectAnalystRe
   ];
 }
 
+function analystReadHasCompletionRequestShape(analystRead?: DossierSubjectAnalystReadV1) {
+  if (!analystRead) return false;
+  return (
+    "dossierReadinessQuestions" in analystRead ||
+    "dossierClarificationNeeds" in analystRead ||
+    "readyForDraft" in analystRead ||
+    "draftReadinessReason" in analystRead ||
+    "dossierBlockedBy" in analystRead ||
+    "dossierReadinessSummary" in analystRead
+  );
+}
+
+function supersedeStaleActiveCompletionRequest(
+  request: DossierSourceFileCompletionRequest,
+  now: string,
+): DossierSourceFileCompletionRequest {
+  if (!COMPLETION_REQUEST_ACTIVE_STATUSES.has(request.status)) return request;
+  return {
+    ...request,
+    status: "superseded",
+    statusReason: "No longer present in latest BNL analyst read.",
+    updatedAt: now,
+    statusUpdatedAt: now,
+  };
+}
+
 export function syncSourceFileCompletionRequestsFromAnalystRead(
   candidate: DossierCandidate,
   archive: DossierSourceFileArchiveMetadata | undefined = candidate.latestSourceFileArchive,
   options: { now?: string; sourceRefreshId?: string } = {},
 ): DossierCandidate {
   const analystRead = archive?.subjectAnalystReadV1;
+  if (!archive || !analystRead || !analystReadHasCompletionRequestShape(analystRead)) return candidate;
   const incoming = readinessQuestionsFromAnalystRead(analystRead);
-  if (!archive || !incoming.length) return candidate;
   const now = options.now ?? new Date().toISOString();
   const existing = candidate.sourceFileCompletionRequests ?? [];
+  if (!incoming.length) {
+    return {
+      ...candidate,
+      sourceFileCompletionRequests: existing.map((request) => supersedeStaleActiveCompletionRequest(request, now)),
+    };
+  }
   const byKey = new Map(existing.map((request) => [request.requestKey, request]));
   const seenKeys = new Set<string>();
   const upserts: DossierSourceFileCompletionRequest[] = [];
@@ -940,9 +972,7 @@ export function syncSourceFileCompletionRequestsFromAnalystRead(
     } : next);
   }
   const preserved = existing.filter((request) => !seenKeys.has(request.requestKey)).map((request) => (
-    COMPLETION_REQUEST_ACTIVE_STATUSES.has(request.status) && request.sourceArchiveId && request.sourceArchiveId !== archive.id
-      ? { ...request, status: "superseded" as const, statusReason: "No longer present in latest BNL analyst read.", updatedAt: now, statusUpdatedAt: now }
-      : request
+    supersedeStaleActiveCompletionRequest(request, now)
   ));
   return { ...candidate, sourceFileCompletionRequests: [...upserts, ...preserved] };
 }

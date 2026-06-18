@@ -1388,11 +1388,17 @@ function BnlAnalystReadPanel({
         {reviewable.signals.length > 0 && <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-1 text-xs font-bold uppercase tracking-widest text-foreground">Evidence Signals / Pattern Summary</h4><p className="mb-2 text-xs text-muted/80">These are pattern counts and context signals BNL used for analysis. They are not public-ready facts by themselves.</p><ul className="space-y-2 text-foreground">{reviewable.signals.map((signal) => <li key={signal.id} className="border border-border/40 p-2"><p className="font-bold">{signal.label}{signal.count ? `: ${signal.count}` : ""}</p><p className="text-xs text-muted">{signal.suggestion}</p><p className="text-xs text-muted">Action: {signal.actionable}</p></li>)}</ul></section>}
         {sectionEntries.map(([section, label]) => {
           const claims = reviewable.current.filter((claim) => claim.sourceSection === section);
-          if (!claims.length && (section === "reviewableClaims" || section === "dossierReadinessQuestions" || section === "dossierClarificationNeeds")) return null;
+          const hidesInactiveCompletionRequests = section === "dossierReadinessQuestions" || section === "dossierClarificationNeeds";
+          const visibleClaims = hidesInactiveCompletionRequests
+            ? claims.filter((claim) => {
+                const request = completionRequestForClaim(claim, completionRequests);
+                return !request || !["superseded", "declined", "not_applicable"].includes(request.status);
+              })
+            : claims;
+          if (!visibleClaims.length && (section === "reviewableClaims" || hidesInactiveCompletionRequests)) return null;
           const privateExclusions = section === "sourceBlindInsights" ? stringItems(analystRead.privateOrInternalExclusions) : [];
-          return <section key={section} className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">{label}</h4>{claims.length ? <ul className="space-y-3 text-foreground">{claims.map((claim) => {
-            const request = section === "dossierReadinessQuestions" || section === "dossierClarificationNeeds" ? completionRequestForClaim(claim, completionRequests) : undefined;
-            if (request && ["superseded", "declined", "not_applicable"].includes(request.status)) return null;
+          return <section key={section} className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">{label}</h4>{visibleClaims.length ? <ul className="space-y-3 text-foreground">{visibleClaims.map((claim) => {
+            const request = hidesInactiveCompletionRequests ? completionRequestForClaim(claim, completionRequests) : undefined;
             return <ClaimDecisionCard key={claim.id} claim={claim} onReview={onReviewClaim} completionBadge={request ? <CompletionRequestBadge request={request} onUpdateStatus={onUpdateCompletionRequestStatus} /> : undefined} />;
           })}</ul> : <p className="text-muted">No reviewable claims in this section.</p>}{privateExclusions.length > 0 && <ul className="mt-3 list-disc space-y-2 pl-5 text-foreground">{privateExclusions.map((item, index) => <li key={`private-exclusion-${index}`}>Private/internal withheld: {item}</li>)}</ul>}</section>;
         })}

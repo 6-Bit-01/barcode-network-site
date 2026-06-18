@@ -12077,3 +12077,166 @@ test("Source File intelligence and dynamic main actions are readiness-driven", (
   assert.doesNotMatch(pageCopy, /Review source context and decide whether to attach or convert into a BNL Source File/);
   assert.doesNotMatch(pageCopy, /RELATIONSHIP_JOURNAL[\s\S]{0,200}BNL Dossier Intelligence/);
 });
+
+test("BNL canonical dossier questions resolve from existing Source File truth", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const baseCandidate = {
+    id: "candidate_question_resolution",
+    name: "Question Subject",
+    candidateType: "artist",
+    source: "manual",
+    tier: "draft_ready",
+    score: 80,
+    whyNow: "Fixture.",
+    reason: "Fixture.",
+    evidenceSummary: "Fixture.",
+    status: "active_source_file",
+    createdAt: now,
+    updatedAt: now,
+    knownFacts: ["Question Subject has a public-safe BARCODE role."],
+    missingInfo: ["Which public source confirms the unresolved role?"],
+    doNotSay: ["Do not say Question Subject runs payments."],
+    publicSafetyNotes: ["Keep private member activity out of public copy."],
+    identityLinks: [{ id: "identity_public_name", candidateId: "candidate_question_resolution", label: "Question Alias", normalizedLabel: "question alias", type: "public_persona", visibility: "public_safe", status: "confirmed", source: "owner_confirmed", useForMatching: true, useInPublicDossier: true, createdAt: now, updatedAt: now }],
+    sourceFileNotes: [
+      { id: "note_public_fact", candidateId: "candidate_question_resolution", type: "fact", text: "Question Subject has a public-safe link.", source: "admin_manual", status: "active", publicSafe: true, createdAt: now, updatedAt: now },
+      { id: "note_boundary", candidateId: "candidate_question_resolution", type: "do_not_say", text: "Do not say Question Subject runs payments.", source: "admin_manual", status: "active", publicSafe: false, createdAt: now, updatedAt: now },
+      { id: "note_safety", candidateId: "candidate_question_resolution", type: "public_safety", text: "Keep private member activity out of public copy.", source: "admin_manual", status: "active", publicSafe: false, createdAt: now, updatedAt: now },
+    ],
+    sourceFileClaimReviews: [
+      { id: "review_public", candidateId: "candidate_question_resolution", questionKey: "q:public_role", claimText: "What public role may BNL use for Question Subject?", claimType: "review_needed", sourceSection: "dossierReadinessQuestions", decision: "confirmed_public", publicSafe: true, createdAt: now, updatedAt: now },
+      { id: "review_edited", candidateId: "candidate_question_resolution", claimText: "Original public wording question", editedText: "Question Subject has edited public wording.", claimType: "review_needed", sourceSection: "reviewableClaims", decision: "edited", publicSafe: true, createdAt: now, updatedAt: now },
+      { id: "review_internal", candidateId: "candidate_question_resolution", claimText: "Which public source confirms internal role?", claimType: "review_needed", sourceSection: "reviewableClaims", decision: "confirmed_internal", publicSafe: false, createdAt: now, updatedAt: now },
+      { id: "review_rejected", candidateId: "candidate_question_resolution", claimText: "Should BNL reject the unsupported sponsor claim?", claimType: "review_needed", sourceSection: "reviewableClaims", decision: "rejected", publicSafe: false, createdAt: now, updatedAt: now },
+      { id: "review_more", candidateId: "candidate_question_resolution", claimText: "Which public source confirms the unresolved role?", claimType: "missing_info", sourceSection: "reviewableClaims", decision: "needs_more_info", publicSafe: false, createdAt: now, updatedAt: now },
+    ],
+  };
+  const resolve = (question) => store.resolveBnlDossierQuestionFromExistingTruth({ question, candidate: baseCandidate });
+  assert.equal(resolve({ questionKey: "q:public_role", question: "Different text", audience: "public_source" }).resolutionState, "resolved_by_claim_review");
+  assert.equal(resolve({ question: "Question Subject has edited public wording.", audience: "public_source" }).resolutionState, "resolved_by_claim_review");
+  assert.equal(resolve({ question: "Which public source confirms internal role?", audience: "public_source" }).resolved, false);
+  assert.equal(resolve({ question: "Should BNL reject the unsupported sponsor claim?", answerType: "boundary" }).resolutionState, "resolved_by_rejection_or_boundary");
+  assert.equal(resolve({ question: "Which public source confirms the unresolved role?", audience: "subject" }).stillNeedsHuman, true);
+  assert.equal(resolve({ question: "Question Alias", dossierSection: "identity" }).resolutionState, "resolved_by_identity_link");
+  assert.equal(resolve({ question: "Question Subject has a public-safe link.", answerType: "link" }).resolutionState, "resolved_by_source_file_note");
+  assert.equal(resolve({ question: "Do not say Question Subject runs payments.", answerType: "boundary" }).resolutionState, "resolved_by_rejection_or_boundary");
+  assert.equal(resolve({ question: "Keep private member activity out of public copy.", answerType: "public_safety" }).resolutionState, "resolved_by_rejection_or_boundary");
+  assert.equal(resolve({ question: "Question Subject has a public-safe BARCODE role.", dossierSection: "role", audience: "public_source", answerType: "public_fact" }).resolutionState, "resolved_by_existing_public_fact");
+  assert.equal(resolve({ question: "Completely unknown public fact?", audience: "subject" }).resolutionState, "unresolved");
+});
+
+test("BNL resolved dossier questions suppress active Verification Packet output without public read-model metadata", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const candidate = {
+    id: "candidate_packet_resolution",
+    name: "Packet Subject",
+    sourceFileClaimReviews: [{ id: "review_packet", candidateId: "candidate_packet_resolution", questionKey: "q:packet_done", claimText: "Which public source confirms Packet Subject's role?", claimType: "review_needed", sourceSection: "dossierReadinessQuestions", decision: "confirmed_public", publicSafe: true, createdAt: now, updatedAt: now }],
+  };
+  const analystRead = {
+    subjectName: "Packet Subject",
+    dossierReadinessQuestions: [
+      { questionKey: "q:packet_done", question: "Which public source confirms Packet Subject's role?", audience: "public_source", dossierSection: "role", answerType: "public_fact" },
+      {
+        questionKey: "q:packet_unresolved",
+        questionFamily: "identity_readiness",
+        questionCategory: "admin_confirmation",
+        questionVersion: "v1",
+        scopeKey: "crow:role",
+        subjectKey: "packet_subject",
+        supersedesQuestionKeys: ["q:old_packet"],
+        narrowsQuestionKeys: ["q:broad_packet"],
+        replacedByQuestionKey: "q:packet_future",
+        question: "Which admin still needs to confirm Packet Subject?",
+        audience: "admin",
+        dossierSection: "role",
+        answerType: "confirmation",
+      },
+    ],
+  };
+  const derived = sourceSummaryPanelComponent.deriveDossierSourceFileReviewableClaims({ analystRead, candidateId: candidate.id, sourceArchiveId: "archive_packet", subjectName: "Packet Subject", reviews: [], candidate });
+  assert.equal(derived.resolvedQuestions.length, 1);
+  assert.equal(derived.current.some((claim) => /Which public source confirms Packet Subject/.test(claim.claimText)), false);
+  assert.equal(derived.current.some((claim) => /Which admin still needs/.test(claim.claimText)), true);
+  const unresolvedClaim = derived.current.find((claim) => /Which admin still needs/.test(claim.claimText));
+  assert.equal(unresolvedClaim?.resolvedQuestion?.questionKey, "q:packet_unresolved");
+  assert.equal(unresolvedClaim?.resolvedQuestion?.safeToSuppressFromActivePacket, false);
+  const panelText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary: { summarySource: "manual", lastUpdatedAt: now, substanceLevel: "useful", publicReadiness: "needs_review", nextAction: "review", existingPublicDossier: "no" },
+    latestSourceFileArchive: { id: "archive_packet", candidateId: candidate.id, subjectName: "Packet Subject", sourceDigest: "digest", createdAt: now, updatedAt: now, archiveSize: 1, chunkCount: 1, reviewOnly: true, subjectAnalystReadV1: analystRead },
+    candidateId: candidate.id,
+    candidate,
+    claimReviews: unresolvedClaim ? [{ id: unresolvedClaim.id, candidateId: candidate.id, claimText: unresolvedClaim.claimText, claimType: unresolvedClaim.claimType, sourceSection: unresolvedClaim.sourceSection, decision: "needs_more_info", publicSafe: false, createdAt: now, updatedAt: now }] : [],
+  }));
+  assert.match(panelText, /Automatically resolved BNL questions/);
+  assert.doesNotMatch(panelText.slice(panelText.lastIndexOf("Verification Packet")), /Which public source confirms Packet Subject's role/);
+  assert.match(panelText.slice(panelText.lastIndexOf("Verification Packet")), /Which admin still needs to confirm Packet Subject/);
+  assert.doesNotMatch(normalizedSource("src/app/api/bnl/read-model/route.ts"), /DossierResolvedQuestionReadModel|resolutionState|safeToSuppressFromActivePacket|sourceFileClaimReviews/);
+});
+
+test("Verification Packet suppresses saved answer and boundary text while keeping real questions", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const suppressedTexts = [
+    "No public links are approved for Crow yet.",
+    "Do not state a public role for Crow yet.",
+    "Keep Orion context internal for now.",
+    "Do not reference queue/submission history publicly.",
+    "Do not use this publicly.",
+    "Keep this internal.",
+    "No approved public source yet.",
+    "No public links are approved yet.",
+    "Do not state this publicly.",
+    "Do not mention this publicly.",
+  ];
+  const activeQuestion = "What exact public name may BNL use for Crow?";
+  const aiQuestion = "What AI/persona/project connection is this referring to?";
+  const unresolvedQuestion = "Which public links, if any, may BNL associate with Crow?";
+  const analystRead = {
+    subjectName: "Crow",
+    reviewableClaims: [
+      ...suppressedTexts.map((text, index) => ({
+        claimText: `Saved answer fixture ${index}`,
+        displayTitle: `Saved answer fixture ${index}`,
+        verificationPacketQuestion: `Original packet question ${index}?`,
+        verificationPacketAudience: "subject",
+        suggestedMissingInfoQuestion: text,
+      })),
+      { claimText: "Name question fixture", verificationPacketQuestion: activeQuestion, verificationPacketAudience: "subject" },
+      { claimText: "AI question fixture", verificationPacketQuestion: aiQuestion, verificationPacketAudience: "admin" },
+      { claimText: unresolvedQuestion, verificationPacketQuestion: unresolvedQuestion, verificationPacketAudience: "public_source" },
+    ],
+  };
+  const first = sourceSummaryPanelComponent.deriveDossierSourceFileReviewableClaims({ analystRead, candidateId: "crow_packet", sourceArchiveId: "archive_crow", subjectName: "Crow" });
+  const reviews = first.current.map((claim) => {
+    const suppressedIndex = suppressedTexts.findIndex((_, index) => claim.claimText === `Saved answer fixture ${index}`);
+    return {
+      id: claim.id,
+      candidateId: "crow_packet",
+      claimText: claim.claimText,
+      claimType: claim.claimType,
+      sourceSection: claim.sourceSection,
+      decision: "needs_more_info",
+      publicSafe: false,
+      editedText: suppressedIndex >= 0 ? suppressedTexts[suppressedIndex] : undefined,
+      createdAt: now,
+      updatedAt: now,
+    };
+  });
+  const derived = sourceSummaryPanelComponent.deriveDossierSourceFileReviewableClaims({ analystRead, candidateId: "crow_packet", sourceArchiveId: "archive_crow", subjectName: "Crow", reviews });
+  assert.ok(derived.resolvedQuestions.length >= suppressedTexts.length);
+  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary: { summarySource: "manual", lastUpdatedAt: now, substanceLevel: "useful", publicReadiness: "needs_review", nextAction: "review", existingPublicDossier: "no" },
+    latestSourceFileArchive: { id: "archive_crow", candidateId: "crow_packet", subjectName: "Crow", sourceDigest: "digest", createdAt: now, updatedAt: now, archiveSize: 1, chunkCount: 1, reviewOnly: true, subjectAnalystReadV1: analystRead },
+    candidateId: "crow_packet",
+    claimReviews: reviews,
+  }));
+  const packetText = text.slice(text.lastIndexOf("Verification Packet"));
+  for (const suppressed of suppressedTexts) {
+    assert.doesNotMatch(packetText, new RegExp(suppressed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.match(packetText, /What exact public name may BNL use for Crow\?/);
+  assert.match(packetText, /What AI\/persona\/project connection is this referring to\?/);
+  assert.match(packetText, /Which public links, if any, may BNL associate with Crow\?/);
+  assert.match(text, /Automatically resolved BNL questions/);
+  assert.match(derived.resolvedQuestions.map((question) => question.resolutionSummary).join("\n"), /Suppressed saved/);
+  assert.doesNotMatch(normalizedSource("src/app/api/bnl/read-model/route.ts"), /classifySavedPacketTextForVerificationPacket|safeToSuppressFromActivePacket|resolutionState/);
+});

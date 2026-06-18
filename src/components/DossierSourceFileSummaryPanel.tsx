@@ -13,9 +13,11 @@ import type {
   DossierSubjectAnalystReadV1,
   DossierSourceFileConfirmationTarget,
   DossierSourceFileVerificationPacketAudience,
+  DossierCandidate,
 } from "@/lib/dossier-workflow";
 import type { DossierDraftBlueprint } from "@/lib/dossier-classification";
 import { buildDossierStylePacket, DOSSIER_DRAFT_CONTRACT_REQUIRED_FIELDS } from "@/lib/dossier-style-packet";
+import { resolveBnlDossierQuestionFromExistingTruth, type DossierResolvedQuestionReadModel } from "@/lib/dossier-workflow-store";
 import {
   formatDossierSummaryBadge,
   type DossierSourceFileSummary,
@@ -542,6 +544,7 @@ export type DossierSourceFileReviewableClaim = {
   verificationPacketAudience?: string;
   recommendedAdminActionCards?: UnknownRecord[];
   review?: DossierSourceFileClaimReview;
+  resolvedQuestion?: DossierResolvedQuestionReadModel;
 };
 
 type SourceFileSignalSummary = {
@@ -583,6 +586,15 @@ type ReadinessQuestion = {
   audience: DossierSourceFileVerificationPacketAudience;
   audienceLabel: string;
   whyItMatters?: string;
+  questionKey?: string;
+  questionFamily?: string;
+  questionCategory?: string;
+  questionVersion?: string;
+  scopeKey?: string;
+  subjectKey?: string;
+  supersedesQuestionKeys?: string[];
+  narrowsQuestionKeys?: string[];
+  replacedByQuestionKey?: string;
   dossierSection?: string;
   priority?: string;
   answerType?: string;
@@ -590,6 +602,7 @@ type ReadinessQuestion = {
   sourceCount?: string;
   relatedReviewClaimIds: string[];
   clarificationOnly?: boolean;
+  resolution?: DossierResolvedQuestionReadModel;
 };
 
 function readinessAudienceKey(value: unknown): DossierSourceFileVerificationPacketAudience {
@@ -623,6 +636,15 @@ function readinessQuestionsFrom(value: unknown, clarificationOnly = false): Read
       audience,
       audienceLabel: readinessAudienceLabel(audience),
       whyItMatters: safeHumanText(valueByKeys(record, ["whyItMatters", "reason", "why"])),
+      questionKey: textValue(record?.questionKey),
+      questionFamily: textValue(record?.questionFamily),
+      questionCategory: textValue(record?.questionCategory),
+      questionVersion: textValue(record?.questionVersion),
+      scopeKey: textValue(record?.scopeKey),
+      subjectKey: textValue(record?.subjectKey),
+      supersedesQuestionKeys: stringItems(record?.supersedesQuestionKeys),
+      narrowsQuestionKeys: stringItems(record?.narrowsQuestionKeys),
+      replacedByQuestionKey: textValue(record?.replacedByQuestionKey),
       dossierSection: safeHumanText(record?.dossierSection),
       priority: safeHumanText(record?.priority),
       answerType: safeHumanText(record?.answerType),
@@ -796,7 +818,7 @@ function buildCardGuidance(claimText: string, claimType: DossierSourceFileClaimT
   };
 }
 
-function buildClaimCard(input: { value: unknown; sourceSection: string; claimType: DossierSourceFileClaimType; candidateId?: string; sourceArchiveId?: string; subjectName?: string; reviews?: Map<string, DossierSourceFileClaimReview> }): DossierSourceFileReviewableClaim | undefined {
+function buildClaimCard(input: { value: unknown; sourceSection: string; claimType: DossierSourceFileClaimType; candidateId?: string; sourceArchiveId?: string; subjectName?: string; reviews?: Map<string, DossierSourceFileClaimReview>; candidate?: Partial<DossierCandidate> }): DossierSourceFileReviewableClaim | undefined {
   const record = asRecord(input.value);
   const claimText = displayValue(input.value) ?? analystString(record, ["claimText", "text", "claim", "question", "action", "boundary"]);
   if (!claimText) return undefined;
@@ -805,6 +827,8 @@ function buildClaimCard(input: { value: unknown; sourceSection: string; claimTyp
   const weakLabel = isWeakEvidenceLabelText(claimText, record);
   const vagueArtifact = isVagueArtifactText(claimText, record);
   const displayTitle = displayField(record, "displayTitle");
+  const resolutionQuestion = { ...(record ?? {}), question: analystString(record, ["verificationPacketQuestion", "question", "text", "claimText"]) ?? claimText, dossierSection: analystString(record, ["dossierSection"]) ?? input.sourceSection };
+  const resolvedQuestion = input.candidate ? resolveBnlDossierQuestionFromExistingTruth({ question: resolutionQuestion, candidate: input.candidate }) : undefined;
   const internalArtifact = vagueArtifact || /^internal evidence artifact$/i.test(displayTitle ?? "") || /^vague internal evidence marker$/i.test(claimText.trim());
   const guidance = weakLabel
     ? { title: "Weak evidence label / pattern", decisionQuestion: "Is this label accurate and useful, or should it be rejected?", placeholderText: "Only enter wording here if this label is true and public-safe. Otherwise reject this claim.", exampleApprovedTexts: [`Keep ${displaySubject} label internal until confirmed.`, "Reject this label as inaccurate or not useful."] }
@@ -886,6 +910,7 @@ function buildClaimCard(input: { value: unknown; sourceSection: string; claimTyp
     canNeedMoreInfo: claimType !== "do_not_say",
     requiresEditedTextForPublic: claimType === "source_blind",
     review: input.reviews?.get(id),
+    resolvedQuestion: resolvedQuestion?.safeToSuppressFromActivePacket ? resolvedQuestion : undefined,
   };
 }
 
@@ -895,7 +920,8 @@ export function deriveDossierSourceFileReviewableClaims(input: {
   sourceArchiveId?: string;
   reviews?: DossierSourceFileClaimReview[];
   subjectName?: string;
-}): { current: DossierSourceFileReviewableClaim[]; previous: DossierSourceFileReviewableClaim[]; signals: SourceFileSignalSummary[] } {
+  candidate?: Partial<DossierCandidate>;
+}): { current: DossierSourceFileReviewableClaim[]; previous: DossierSourceFileReviewableClaim[]; signals: SourceFileSignalSummary[]; resolvedQuestions: DossierResolvedQuestionReadModel[] } {
   const reviewById = new Map((input.reviews ?? []).map((review) => [review.id, review]));
   const structured = listValues(input.analystRead?.reviewableClaims);
   const sections: Array<{ sourceSection: string; claimType: DossierSourceFileClaimType; values: unknown }> = structured.length
@@ -910,9 +936,14 @@ export function deriveDossierSourceFileReviewableClaims(input: {
     { sourceSection: "recommendedAdminActions", claimType: "recommended_action", values: input.analystRead?.recommendedAdminActions },
     { sourceSection: "doNotSayPublicly", claimType: "do_not_say", values: input.analystRead?.doNotSayPublicly },
   );
-  const readinessQuestions = analystReadinessQuestions(input.analystRead);
+  const readinessQuestions = analystReadinessQuestions(input.analystRead).map((question) => ({
+    ...question,
+    resolution: resolveBnlDossierQuestionFromExistingTruth({ question: { ...question, question: question.question }, candidate: input.candidate }),
+  }));
+  const resolvedReadinessQuestions = readinessQuestions.filter((question) => question.resolution.safeToSuppressFromActivePacket);
+  const activeReadinessQuestions = readinessQuestions.filter((question) => !question.resolution.safeToSuppressFromActivePacket);
   const allCards = sections.flatMap((section) => listValues(section.values).flatMap((value) => {
-    const card = buildClaimCard({ value, sourceSection: section.sourceSection, claimType: section.claimType, candidateId: input.candidateId, sourceArchiveId: input.sourceArchiveId, subjectName: input.subjectName ?? input.analystRead?.subjectName, reviews: reviewById });
+    const card = buildClaimCard({ value, sourceSection: section.sourceSection, claimType: section.claimType, candidateId: input.candidateId, sourceArchiveId: input.sourceArchiveId, subjectName: input.subjectName ?? input.analystRead?.subjectName, reviews: reviewById, candidate: input.candidate });
     return card ? [card] : [];
   }));
   const signals = allCards.filter((card) => isSignalSummaryText(card.claimText, asRecord(card))).map((card) => {
@@ -921,11 +952,11 @@ export function deriveDossierSourceFileReviewableClaims(input: {
   });
   const attachedQuestionIds = new Set<string>();
   const cardsWithReadiness = allCards.map((card) => {
-    const relatedReadinessQuestions = readinessQuestions.filter((question) => question.relatedReviewClaimIds.includes(card.id));
+    const relatedReadinessQuestions = activeReadinessQuestions.filter((question) => question.relatedReviewClaimIds.includes(card.id));
     relatedReadinessQuestions.forEach((question) => attachedQuestionIds.add(question.id));
     return relatedReadinessQuestions.length ? { ...card, relatedReadinessQuestions } : card;
   });
-  const readinessCards: DossierSourceFileReviewableClaim[] = readinessQuestions.filter((question) => !attachedQuestionIds.has(question.id)).flatMap((question) => {
+  const readinessCards: DossierSourceFileReviewableClaim[] = activeReadinessQuestions.filter((question) => !attachedQuestionIds.has(question.id)).flatMap((question) => {
     const card = buildClaimCard({
     value: {
       claimText: question.question,
@@ -938,6 +969,15 @@ export function deriveDossierSourceFileReviewableClaims(input: {
       confirmationTarget: question.audience,
       verificationPacketAudience: question.audience,
       verificationPacketQuestion: question.question,
+      questionKey: question.questionKey,
+      questionFamily: question.questionFamily,
+      questionCategory: question.questionCategory,
+      questionVersion: question.questionVersion,
+      scopeKey: question.scopeKey,
+      subjectKey: question.subjectKey,
+      supersedesQuestionKeys: question.supersedesQuestionKeys,
+      narrowsQuestionKeys: question.narrowsQuestionKeys,
+      replacedByQuestionKey: question.replacedByQuestionKey,
       actionability: "missing_confirmation",
       reviewLane: question.clarificationOnly ? "clarification_need" : "dossier_readiness",
     },
@@ -947,14 +987,19 @@ export function deriveDossierSourceFileReviewableClaims(input: {
     sourceArchiveId: input.sourceArchiveId,
     subjectName: input.subjectName ?? input.analystRead?.subjectName,
     reviews: reviewById,
+    candidate: input.candidate,
     });
-    return card ? [{ ...card, readinessMetadata: readinessMetadataItems(question) }] : [];
+    return card ? [{ ...card, readinessMetadata: readinessMetadataItems(question), resolvedQuestion: question.resolution }] : [];
   });
   const current = [...cardsWithReadiness, ...readinessCards].filter((card) => !signals.some((signal) => signal.id === card.id));
   const currentIds = new Set(current.map((claim) => claim.id));
   return {
     current,
     signals,
+    resolvedQuestions: [
+      ...resolvedReadinessQuestions.map((question) => question.resolution),
+      ...current.flatMap(suppressedSavedPacketResolutionsForClaim),
+    ],
     previous: (input.reviews ?? []).filter((review) => !currentIds.has(review.id)).map((review) => ({
       id: review.id,
       claimText: review.claimText,
@@ -1010,21 +1055,79 @@ function isSavedFollowUpQuestion(claim: DossierSourceFileReviewableClaim) {
   return claim.claimType === "missing_info" && decision === "confirmed_internal";
 }
 
-function savedFollowUpQuestionsForClaim(claim: DossierSourceFileReviewableClaim) {
+
+type SavedPacketTextClassification =
+  | "active_question"
+  | "resolved_answer"
+  | "boundary_instruction"
+  | "internal_only_resolution"
+  | "unsafe_or_not_public";
+
+export function classifySavedPacketTextForVerificationPacket(text: string): SavedPacketTextClassification {
+  const normalized = text.trim().replace(/\s+/g, " ");
+  const lower = normalized.toLowerCase();
+  if (!normalized) return "unsafe_or_not_public";
+  if (/@|stripe|payment|customer|token|raw evidence|source-blind|private|database row/i.test(normalized)) return "unsafe_or_not_public";
+  if (/^(do not|don’t|dont)\b/.test(lower) || /\bdo not use this publicly\b/.test(lower) || /\bdo not reference\b/.test(lower) || /\bdo not state\b/.test(lower)) return "boundary_instruction";
+  if (/^(keep|keeps)\b.*\binternal\b/.test(lower) || /\binternal (only|context)\b/.test(lower)) return "internal_only_resolution";
+  if (/^(no|none)\b.*\b(approved|public|source|links?|role|title)\b.*\b(yet|approved|available)?[.!]?$/.test(lower) || /\bno approved public source yet\b/.test(lower)) return "resolved_answer";
+  if (/\b(not approved|not public-ready|not public ready)\b/.test(lower)) return "resolved_answer";
+  if (/[?]\s*$/.test(normalized) || /^(what|which|who|when|where|why|how|should|was|were|did|do|does|is|are|can|could)\b/i.test(normalized)) return "active_question";
+  return "resolved_answer";
+}
+
+function isActiveVerificationPacketQuestion(text: string) {
+  return classifySavedPacketTextForVerificationPacket(text) === "active_question";
+}
+
+function safeActivePacketQuestions(questions: string[]) {
+  return safeCopyQuestions(questions).filter(isActiveVerificationPacketQuestion);
+}
+
+function suppressedPacketResolutionForClaim(claim: DossierSourceFileReviewableClaim, text: string, classification = classifySavedPacketTextForVerificationPacket(text)): DossierResolvedQuestionReadModel | undefined {
+  if (classification === "active_question") return undefined;
+  const resolutionState = classification === "boundary_instruction" || classification === "unsafe_or_not_public"
+    ? "resolved_by_rejection_or_boundary"
+    : classification === "internal_only_resolution"
+      ? "resolved_by_claim_review"
+      : "resolved_by_existing_public_fact";
+  return {
+    questionKey: `${claim.id}:suppressed:${normalizeVerificationQuestion(text).slice(0, 80)}`,
+    resolved: true,
+    resolutionState,
+    resolutionSummary: `Suppressed saved ${classification.replace(/_/g, " ")} from the active Verification Packet: ${text.trim().replace(/\s+/g, " ")}`,
+    sourceIds: claim.review?.id ? [claim.review.id] : [claim.id],
+    stillNeedsHuman: false,
+    safeToSuppressFromActivePacket: true,
+  };
+}
+
+function savedPacketTextCandidatesForClaim(claim: DossierSourceFileReviewableClaim) {
+  if (claim.resolvedQuestion?.safeToSuppressFromActivePacket) return [];
   if (!isSavedFollowUpQuestion(claim)) return [];
   const editedText = claim.review?.editedText?.trim();
-  if (editedText) return safeCopyQuestions([editedText]);
+  if (editedText) return [editedText];
   const relatedReadinessQuestions = claim.review?.decision === "needs_more_info" ? (claim.relatedReadinessQuestions?.map((question) => question.question) ?? []) : [];
-  if (relatedReadinessQuestions.length) return safeCopyQuestions(relatedReadinessQuestions);
+  if (relatedReadinessQuestions.length) return relatedReadinessQuestions;
   const reviewClaimText = claim.review?.claimText?.trim();
   const shouldSkipClaimTextFallback = claim.isVagueArtifact || claim.isInternalAuditArtifact;
-  if (claim.review?.decision === "needs_more_info" && reviewClaimText && !shouldSkipClaimTextFallback) return safeCopyQuestions([reviewClaimText]);
-  const verificationQuestions = safeCopyQuestions(claim.verificationPacketQuestions ?? []);
-  if (verificationQuestions.length) return verificationQuestions;
+  if (claim.verificationPacketQuestions?.length) return claim.verificationPacketQuestions;
+  if (claim.review?.decision === "needs_more_info" && reviewClaimText && !shouldSkipClaimTextFallback) return [reviewClaimText];
   const suggestedAnswerText = claim.suggestedAnswerText?.trim();
-  if (suggestedAnswerText) return safeCopyQuestions([suggestedAnswerText]);
-  if (claim.claimType === "missing_info" && claim.claimText && !shouldSkipClaimTextFallback) return safeCopyQuestions([claim.claimText]);
+  if (suggestedAnswerText) return [suggestedAnswerText];
+  if (claim.claimType === "missing_info" && claim.claimText && !shouldSkipClaimTextFallback) return [claim.claimText];
   return [];
+}
+
+function savedFollowUpQuestionsForClaim(claim: DossierSourceFileReviewableClaim) {
+  return safeActivePacketQuestions(savedPacketTextCandidatesForClaim(claim));
+}
+
+function suppressedSavedPacketResolutionsForClaim(claim: DossierSourceFileReviewableClaim) {
+  return safeCopyQuestions(savedPacketTextCandidatesForClaim(claim)).flatMap((text) => {
+    const resolution = suppressedPacketResolutionForClaim(claim, text);
+    return resolution ? [resolution] : [];
+  });
 }
 
 function dedupeVerificationQuestions(questions: Array<{ text: string; audience: VerificationPacketAudience }>): VerificationPacketSections {
@@ -1293,6 +1396,7 @@ function BnlAnalystReadPanel({
   subjectName,
   claimReviews,
   onReviewClaim,
+  candidate,
 }: {
   analystRead?: DossierSubjectAnalystReadV1;
   refreshedAt?: string;
@@ -1301,6 +1405,7 @@ function BnlAnalystReadPanel({
   subjectName?: string;
   claimReviews?: DossierSourceFileClaimReview[];
   onReviewClaim?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void;
+  candidate?: Partial<DossierCandidate>;
 }) {
   if (!analystRead) {
     return (
@@ -1309,7 +1414,7 @@ function BnlAnalystReadPanel({
       </Section>
     );
   }
-  const reviewable = deriveDossierSourceFileReviewableClaims({ analystRead, candidateId, sourceArchiveId, subjectName: subjectName ?? analystRead.subjectName, reviews: claimReviews });
+  const reviewable = deriveDossierSourceFileReviewableClaims({ analystRead, candidateId, sourceArchiveId, subjectName: subjectName ?? analystRead.subjectName, reviews: claimReviews, candidate });
   const sectionEntries = [
     ["reviewableClaims", "Source File Claim Decisions"],
     ["publicReadyClaims", "Public-Ready Claims"],
@@ -1334,6 +1439,7 @@ function BnlAnalystReadPanel({
         {(readinessStatusLine(analystRead) || stringItems(analystRead.dossierBlockedBy).length > 0 || stringItems(analystRead.dossierReadinessSummary).length > 0) && <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Dossier readiness</h4>{readinessStatusLine(analystRead) && <p className="text-foreground">{readinessStatusLine(analystRead)}</p>}{stringItems(analystRead.dossierReadinessSummary).length > 0 && <ul className="mt-2 list-disc pl-5 text-foreground">{stringItems(analystRead.dossierReadinessSummary).map((item) => <li key={item}>{safeHumanText(item)}</li>)}</ul>}{stringItems(analystRead.dossierBlockedBy).length > 0 && <div className="mt-2"><p className="text-xs font-bold text-accent">Compact blockers</p><ul className="list-disc pl-5 text-foreground">{stringItems(analystRead.dossierBlockedBy).map((item) => <li key={item}>{safeHumanText(item)}</li>)}</ul></div>}</section>}
         <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Strongest Signals</h4><AnalystList value={analystRead.strongestSignals} empty="No strongest signals reported." /></section>
         {reviewable.signals.length > 0 && <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-1 text-xs font-bold uppercase tracking-widest text-foreground">Evidence Signals / Pattern Summary</h4><p className="mb-2 text-xs text-muted/80">These are pattern counts and context signals BNL used for analysis. They are not public-ready facts by themselves.</p><ul className="space-y-2 text-foreground">{reviewable.signals.map((signal) => <li key={signal.id} className="border border-border/40 p-2"><p className="font-bold">{signal.label}{signal.count ? `: ${signal.count}` : ""}</p><p className="text-xs text-muted">{signal.suggestion}</p><p className="text-xs text-muted">Action: {signal.actionable}</p></li>)}</ul></section>}
+        {reviewable.resolvedQuestions.length > 0 && <details className="border border-border/50 bg-background/20 p-3 text-xs text-muted"><summary className="cursor-pointer font-semibold text-foreground">Automatically resolved BNL questions ({reviewable.resolvedQuestions.length})</summary><ul className="mt-2 space-y-1">{reviewable.resolvedQuestions.map((question) => <li key={question.questionKey}><span className="font-semibold text-foreground">{question.resolutionState}</span>: {question.resolutionSummary}</li>)}</ul></details>}
         {sectionEntries.map(([section, label]) => {
           const claims = reviewable.current.filter((claim) => claim.sourceSection === section);
           if (!claims.length && (section === "reviewableClaims" || section === "dossierReadinessQuestions" || section === "dossierClarificationNeeds")) return null;
@@ -1643,6 +1749,7 @@ export function DossierSourceFileSummaryPanel({
   candidateId,
   claimReviews = [],
   onReviewClaim,
+  candidate,
 }: {
   summary: DossierSourceFileSummary;
   entityReadout?: DossierEntityActivityReadout | null;
@@ -1658,6 +1765,7 @@ export function DossierSourceFileSummaryPanel({
   candidateId?: string;
   claimReviews?: DossierSourceFileClaimReview[];
   onReviewClaim?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void;
+  candidate?: Partial<DossierCandidate>;
 }) {
   const report = normalizeCaseReport(latestSourceFileArchive);
   const interimBrief = normalizeInterimBrief(latestSourceFileArchive);
@@ -1719,6 +1827,7 @@ export function DossierSourceFileSummaryPanel({
         subjectName={subjectName ?? latestSourceFileArchive?.subjectName}
         claimReviews={claimReviews}
         onReviewClaim={onReviewClaim}
+        candidate={candidate}
       />
 
       {blueprint && <DossierBlueprintView blueprint={blueprint} />}

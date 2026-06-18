@@ -2631,6 +2631,7 @@ export default function CandidateReviewPage() {
               candidateId={candidate.id}
               claimReviews={candidate.sourceFileClaimReviews ?? []}
               onReviewClaim={reviewSourceFileClaim}
+              candidate={candidate}
               sourceFileTargetStatus={
                 isExistingDossierUpdate
                   ? "existing dossier update"

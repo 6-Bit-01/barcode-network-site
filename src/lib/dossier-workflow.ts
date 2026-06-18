@@ -164,6 +164,15 @@ export type DossierSubjectIntelligenceBriefV1 = {
 
 export type DossierReadinessQuestionV1 = {
   id?: string;
+  questionKey?: string;
+  questionFamily?: string;
+  questionCategory?: string;
+  questionVersion?: string;
+  scopeKey?: string;
+  subjectKey?: string;
+  supersedesQuestionKeys?: string[] | string;
+  narrowsQuestionKeys?: string[] | string;
+  replacedByQuestionKey?: string;
   audience?: DossierSourceFileVerificationPacketAudience | DossierSourceFileConfirmationTarget | string;
   recipientClass?: DossierSourceFileVerificationPacketAudience | DossierSourceFileConfirmationTarget | string;
   confirmationTarget?: DossierSourceFileConfirmationTarget;

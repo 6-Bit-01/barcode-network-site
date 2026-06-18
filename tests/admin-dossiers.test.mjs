@@ -9560,10 +9560,10 @@ test("Source File analyst review cards prefer BNL human display fields and verif
     reviewFor("Resolved needs-more-info question.", "needs_more_info"),
   ] }));
   assert.match(lockedText, /Verification Packet/);
-  assert.match(lockedText, /Finish all review decisions to unlock the final verification packet/);
-  assert.match(lockedText, /This packet stays locked until all review items above have been resolved/);
-  assert.match(lockedText, /8\s+review\s+items still need\s+decisions/);
-  assert.doesNotMatch(lockedText, /Copy verification packet/);
+  assert.match(lockedText, /Preview active decision-unlocking questions without approving every review card first/);
+  assert.match(lockedText, /Owner Review and true BNL blockers still apply before publishing/);
+  assert.match(lockedText, /Preview includes packet questions while/);
+  assert.match(lockedText, /Copy verification packet/);
   const claimReviews = [
     reviewFor("Preferred public role needs review.", "needs_more_info", { claimText: "What public role/title should BNL use for you, if any?" }),
     reviewFor("Duplicate subject follow-up.", "needs_more_info", { claimText: " what public role/title should BNL use for you, if any! " }),
@@ -9593,7 +9593,7 @@ test("Source File analyst review cards prefer BNL human display fields and verif
   assert.match(text, /Verification Packet/);
   assert.match(text, /Questions for the subject/);
   assert.match(text, /Admin follow-up/);
-  assert.match(text, /This is the final follow-up packet generated from the review decisions above/);
+  assert.match(text, /Preview active decision-unlocking questions without approving every review card first/);
   assert.match(text, /Copy verification packet/);
   assert.equal((packetText.match(/Copy verification packet/g) ?? []).length, 1);
   assert.equal((packetText.match(/What public role\/title should BNL use for you, if any/g) ?? []).length, 1);
@@ -9708,7 +9708,7 @@ test("Source File analyst readiness fields wire into existing review and Verific
   assert.match(lockedText, /Mod \/ informed team member/);
   assert.match(lockedText, /Treat this as a clarification need, not a public-fact approval card/);
   assert.doesNotMatch(lockedText, /raw evidence: private token database row should never appear/);
-  assert.match(lockedText, /Finish all review decisions to unlock the final verification packet/);
+  assert.match(lockedText, /Preview active decision-unlocking questions without approving every review card first/);
 
   const reviewsFor = (roleDecision) => derived.current.map((claim) => ({
     id: claim.id,
@@ -12550,18 +12550,18 @@ test("BNL Source File draft readiness read model uses BNL authority before site 
   assert.equal(ready.readyForDraft, true);
   assert.equal(ready.authority, "bnl_analyst_read");
   assert.equal(ready.unresolvedQuestionCount, 0);
-  assert.equal(ready.resolvedQuestionCount, 2);
+  assert.equal(ready.resolvedQuestionCount, 1);
 
   const blocked = workflow.createDossierSourceFileDraftReadinessReadModel({ sourceFileExists: true, candidate: baseCandidate, analystRead: { readyForDraft: false, draftReadinessReason: "BNL needs one more answer.", dossierReadinessQuestions: [{ questionKey: "q:missing", question: "Which public source confirms the title?", priority: "high", audience: "public_source", answerType: "public_fact" }] } });
   assert.equal(blocked.readinessState, "blocked_by_bnl_questions");
   assert.equal(blocked.authority, "bnl_question_resolution");
   assert.match(blocked.blockers.join("\n"), /Which public source confirms the title/);
 
-  const internalDoesNotSatisfyPublic = workflow.createDossierSourceFileDraftReadinessReadModel({ sourceFileExists: true, candidate: baseCandidate, analystRead: { readyForDraft: true, dossierReadinessQuestions: [{ questionKey: "q:internal", question: "Which public source confirms internal context?", priority: "high", audience: "public_source", answerType: "public_fact" }] } });
-  assert.equal(internalDoesNotSatisfyPublic.readinessState, "blocked_by_bnl_questions");
+  const readyWithUnrelatedReviewItems = workflow.createDossierSourceFileDraftReadinessReadModel({ sourceFileExists: true, candidate: baseCandidate, analystRead: { readyForDraft: true, draftReadinessReason: "BNL can draft cautiously; internal context can be omitted.", dossierReadinessQuestions: [{ questionKey: "q:internal", question: "Which public source confirms internal context?", priority: "optional", audience: "public_source", answerType: "omit_if_unconfirmed internal_only" }] } });
+  assert.equal(readyWithUnrelatedReviewItems.readinessState, "ready_for_bnl_draft");
 
   const pendingPublicReview = workflow.createDossierSourceFileDraftReadinessReadModel({ sourceFileExists: true, candidate: { ...baseCandidate, sourceFileClaimReviews: [{ id: "review_pending", candidateId: "candidate_draft_readiness", claimText: "Pending public role wording", claimType: "review_needed", sourceSection: "reviewableClaims", decision: "pending", publicSafe: false, createdAt: now, updatedAt: now }] }, analystRead: { readyForDraft: true, draftReadinessReason: "BNL ready if reviews clear." } });
-  assert.equal(pendingPublicReview.readinessState, "blocked_by_unresolved_review");
+  assert.equal(pendingPublicReview.readinessState, "ready_for_bnl_draft");
 
   const pendingInternalOnly = workflow.createDossierSourceFileDraftReadinessReadModel({ sourceFileExists: true, candidate: { ...baseCandidate, sourceFileClaimReviews: [{ id: "review_pending_internal", candidateId: "candidate_draft_readiness", claimText: "Pending internal-only operator note", claimType: "review_needed", sourceSection: "sourceBlindInsights", decision: "pending", publicSafe: false, createdAt: now, updatedAt: now }] }, analystRead: { readyForDraft: true, draftReadinessReason: "BNL ready." } });
   assert.equal(pendingInternalOnly.readinessState, "ready_for_bnl_draft");
@@ -12569,6 +12569,56 @@ test("BNL Source File draft readiness read model uses BNL authority before site 
   const fallback = workflow.createDossierSourceFileDraftReadinessReadModel({ sourceFileExists: true, fallback: { readyForDraft: false, primaryReason: "Local heuristic only.", blockers: ["Needs public evidence."], recommendedNextAction: "Refresh BNL." } });
   assert.equal(fallback.readinessState, "fallback_heuristic");
   assert.equal(fallback.authority, "site_fallback_heuristic");
+});
+
+
+test("BNL memory-first Source File review suppresses non-actionable cards while preserving packet preview and true blockers", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const analystRead = {
+    subjectName: "Memory Subject",
+    currentRead: "Memory-first summary says this is a cautious but draftable community readout.",
+    internalRead: "internal_route_only_token",
+    readyForDraft: true,
+    draftReadinessReason: "BNL says draft cautiously; public links can be omitted.",
+    dossierWorthiness: "useful community context",
+    dossierBlockedBy: ["route_only_classification_tag"],
+    reviewableClaims: [
+      { claimText: "Public role needs owner-approved wording?", displayTitle: "Role wording", actionability: "actionable_claim", verificationPacketQuestion: "Which public role wording should BNL use for Memory Subject?", verificationPacketAudience: "subject" },
+      { claimText: "Public role needs owner-approved wording?", displayTitle: "Duplicate role wording", actionability: "actionable_claim", verificationPacketQuestion: "Which public role wording should BNL use for Memory Subject?", verificationPacketAudience: "subject" },
+      { claimText: "artist_candidate", displayTitle: "Classification tag", actionability: "classification_only", reviewLane: "route_only" },
+      { claimText: "Public links can be omitted if none are owner-approved.", displayTitle: "Omit-able link detail", actionability: "omit_if_unconfirmed" },
+      { claimText: "Source-blind lore context should stay internal.", displayTitle: "Internal lore", actionability: "source_blind_warning", sourceSafety: "internal_only lore" },
+      { claimText: "Do not say private alias publicly.", displayTitle: "Boundary already resolved", actionability: "boundary", recommendedAction: "keep_boundary" },
+    ],
+    dossierReadinessQuestions: [
+      { questionKey: "q:role", question: "Which public role wording should BNL use for Memory Subject?", priority: "high", answerType: "decision_unlocking public_fact", audience: "subject" },
+      { questionKey: "q:route", question: "Which routing tag applies?", priority: "high", answerType: "classification_only", audience: "admin" },
+      { questionKey: "q:link", question: "Which public link should be used?", priority: "optional", answerType: "omit_if_unconfirmed", audience: "link_ownership" },
+    ],
+  };
+  const derived = sourceSummaryPanelComponent.deriveDossierSourceFileReviewableClaims({ analystRead, candidateId: "memory_subject", sourceArchiveId: "archive_memory", subjectName: "Memory Subject", candidate: { sourceFileClaimReviews: [] } });
+  assert.equal(derived.current.length, 1);
+  assert.match(derived.current[0].claimText, /Public role/);
+  assert.doesNotMatch(derived.current.map((claim) => claim.claimText).join("\n"), /artist_candidate|Public links can be omitted|Source-blind lore|private alias/);
+
+  const panelText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary: { summarySource: "bnl", lastUpdatedAt: now, substanceLevel: "useful", publicReadiness: "draftable", nextAction: "request_draft", existingPublicDossier: "no" },
+    latestSourceFileArchive: { id: "archive_memory", candidateId: "memory_subject", subjectName: "Memory Subject", sourceDigest: "digest", createdAt: now, updatedAt: now, archiveSize: 1, chunkCount: 1, reviewOnly: true, subjectAnalystReadV1: analystRead },
+    candidateId: "memory_subject",
+    claimReviews: [],
+  }));
+  assert.match(panelText, /Memory-first summary says this is a cautious but draftable community readout/);
+  assert.doesNotMatch(panelText, /route_only_classification_tag|internal_route_only_token/);
+  assert.match(panelText.slice(panelText.lastIndexOf("Verification Packet")), /Which public role wording should BNL use for Memory Subject\?/);
+  assert.doesNotMatch(panelText.slice(panelText.lastIndexOf("Verification Packet")), /routing tag|public link/);
+
+  const ready = workflow.createDossierSourceFileDraftReadinessReadModel({ sourceFileExists: true, candidate: { sourceFileClaimReviews: [{ id: "suppressed_internal", candidateId: "memory_subject", claimText: "Internal-only lore item", claimType: "review_needed", sourceSection: "sourceBlindInsights", decision: "pending", publicSafe: false, createdAt: now, updatedAt: now }] }, analystRead });
+  assert.equal(ready.readyForDraft, true);
+  assert.match(ready.primaryReason, /draft cautiously/);
+
+  const blocked = workflow.createDossierSourceFileDraftReadinessReadModel({ sourceFileExists: true, candidate: { sourceFileClaimReviews: [] }, analystRead: { readyForDraft: false, draftReadinessReason: "BNL needs a public identity source before drafting.", dossierWorthiness: "promising but blocked", dossierBlockedBy: ["Missing public identity source"], dossierReadinessQuestions: [{ questionKey: "q:identity", question: "Which public source confirms Memory Subject identity?", priority: "critical", answerType: "public_fact", audience: "public_source" }] } });
+  assert.equal(blocked.readyForDraft, false);
+  assert.match(blocked.blockers.join("\n"), /public source confirms Memory Subject identity|Missing public identity source/);
 });
 
 test("admin Source File and Control Center render BNL draft readiness read model without public leakage", () => {

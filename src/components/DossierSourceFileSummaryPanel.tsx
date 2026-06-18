@@ -969,7 +969,10 @@ export function deriveDossierSourceFileReviewableClaims(input: {
   return {
     current,
     signals,
-    resolvedQuestions: resolvedReadinessQuestions.map((question) => question.resolution),
+    resolvedQuestions: [
+      ...resolvedReadinessQuestions.map((question) => question.resolution),
+      ...current.flatMap(suppressedSavedPacketResolutionsForClaim),
+    ],
     previous: (input.reviews ?? []).filter((review) => !currentIds.has(review.id)).map((review) => ({
       id: review.id,
       claimText: review.claimText,
@@ -1025,22 +1028,79 @@ function isSavedFollowUpQuestion(claim: DossierSourceFileReviewableClaim) {
   return claim.claimType === "missing_info" && decision === "confirmed_internal";
 }
 
-function savedFollowUpQuestionsForClaim(claim: DossierSourceFileReviewableClaim) {
+
+type SavedPacketTextClassification =
+  | "active_question"
+  | "resolved_answer"
+  | "boundary_instruction"
+  | "internal_only_resolution"
+  | "unsafe_or_not_public";
+
+export function classifySavedPacketTextForVerificationPacket(text: string): SavedPacketTextClassification {
+  const normalized = text.trim().replace(/\s+/g, " ");
+  const lower = normalized.toLowerCase();
+  if (!normalized) return "unsafe_or_not_public";
+  if (/@|stripe|payment|customer|token|raw evidence|source-blind|private|database row/i.test(normalized)) return "unsafe_or_not_public";
+  if (/^(do not|don’t|dont)\b/.test(lower) || /\bdo not use this publicly\b/.test(lower) || /\bdo not reference\b/.test(lower) || /\bdo not state\b/.test(lower)) return "boundary_instruction";
+  if (/^(keep|keeps)\b.*\binternal\b/.test(lower) || /\binternal (only|context)\b/.test(lower)) return "internal_only_resolution";
+  if (/^(no|none)\b.*\b(approved|public|source|links?|role|title)\b.*\b(yet|approved|available)?[.!]?$/.test(lower) || /\bno approved public source yet\b/.test(lower)) return "resolved_answer";
+  if (/\b(not approved|not public-ready|not public ready)\b/.test(lower)) return "resolved_answer";
+  if (/[?]\s*$/.test(normalized) || /^(what|which|who|when|where|why|how|should|was|were|did|do|does|is|are|can|could)\b/i.test(normalized)) return "active_question";
+  return "resolved_answer";
+}
+
+function isActiveVerificationPacketQuestion(text: string) {
+  return classifySavedPacketTextForVerificationPacket(text) === "active_question";
+}
+
+function safeActivePacketQuestions(questions: string[]) {
+  return safeCopyQuestions(questions).filter(isActiveVerificationPacketQuestion);
+}
+
+function suppressedPacketResolutionForClaim(claim: DossierSourceFileReviewableClaim, text: string, classification = classifySavedPacketTextForVerificationPacket(text)): DossierResolvedQuestionReadModel | undefined {
+  if (classification === "active_question") return undefined;
+  const resolutionState = classification === "boundary_instruction" || classification === "unsafe_or_not_public"
+    ? "resolved_by_rejection_or_boundary"
+    : classification === "internal_only_resolution"
+      ? "resolved_by_claim_review"
+      : "resolved_by_existing_public_fact";
+  return {
+    questionKey: `${claim.id}:suppressed:${normalizeVerificationQuestion(text).slice(0, 80)}`,
+    resolved: true,
+    resolutionState,
+    resolutionSummary: `Suppressed saved ${classification.replace(/_/g, " ")} from the active Verification Packet: ${text.trim().replace(/\s+/g, " ")}`,
+    sourceIds: claim.review?.id ? [claim.review.id] : [claim.id],
+    stillNeedsHuman: false,
+    safeToSuppressFromActivePacket: true,
+  };
+}
+
+function savedPacketTextCandidatesForClaim(claim: DossierSourceFileReviewableClaim) {
   if (claim.resolvedQuestion?.safeToSuppressFromActivePacket) return [];
   if (!isSavedFollowUpQuestion(claim)) return [];
   const editedText = claim.review?.editedText?.trim();
-  if (editedText) return safeCopyQuestions([editedText]);
+  if (editedText) return [editedText];
   const relatedReadinessQuestions = claim.review?.decision === "needs_more_info" ? (claim.relatedReadinessQuestions?.map((question) => question.question) ?? []) : [];
-  if (relatedReadinessQuestions.length) return safeCopyQuestions(relatedReadinessQuestions);
+  if (relatedReadinessQuestions.length) return relatedReadinessQuestions;
   const reviewClaimText = claim.review?.claimText?.trim();
   const shouldSkipClaimTextFallback = claim.isVagueArtifact || claim.isInternalAuditArtifact;
-  if (claim.review?.decision === "needs_more_info" && reviewClaimText && !shouldSkipClaimTextFallback) return safeCopyQuestions([reviewClaimText]);
-  const verificationQuestions = safeCopyQuestions(claim.verificationPacketQuestions ?? []);
-  if (verificationQuestions.length) return verificationQuestions;
+  if (claim.verificationPacketQuestions?.length) return claim.verificationPacketQuestions;
+  if (claim.review?.decision === "needs_more_info" && reviewClaimText && !shouldSkipClaimTextFallback) return [reviewClaimText];
   const suggestedAnswerText = claim.suggestedAnswerText?.trim();
-  if (suggestedAnswerText) return safeCopyQuestions([suggestedAnswerText]);
-  if (claim.claimType === "missing_info" && claim.claimText && !shouldSkipClaimTextFallback) return safeCopyQuestions([claim.claimText]);
+  if (suggestedAnswerText) return [suggestedAnswerText];
+  if (claim.claimType === "missing_info" && claim.claimText && !shouldSkipClaimTextFallback) return [claim.claimText];
   return [];
+}
+
+function savedFollowUpQuestionsForClaim(claim: DossierSourceFileReviewableClaim) {
+  return safeActivePacketQuestions(savedPacketTextCandidatesForClaim(claim));
+}
+
+function suppressedSavedPacketResolutionsForClaim(claim: DossierSourceFileReviewableClaim) {
+  return safeCopyQuestions(savedPacketTextCandidatesForClaim(claim)).flatMap((text) => {
+    const resolution = suppressedPacketResolutionForClaim(claim, text);
+    return resolution ? [resolution] : [];
+  });
 }
 
 function dedupeVerificationQuestions(questions: Array<{ text: string; audience: VerificationPacketAudience }>): VerificationPacketSections {

@@ -12156,3 +12156,65 @@ test("BNL resolved dossier questions suppress active Verification Packet output 
   assert.match(panelText.slice(panelText.lastIndexOf("Verification Packet")), /Which admin still needs to confirm Packet Subject/);
   assert.doesNotMatch(normalizedSource("src/app/api/bnl/read-model/route.ts"), /DossierResolvedQuestionReadModel|resolutionState|safeToSuppressFromActivePacket|sourceFileClaimReviews/);
 });
+
+test("Verification Packet suppresses saved answer and boundary text while keeping real questions", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const suppressedTexts = [
+    "No public links are approved for Crow yet.",
+    "Do not state a public role for Crow yet.",
+    "Keep Orion context internal for now.",
+    "Do not reference queue/submission history publicly.",
+    "Do not use this publicly.",
+    "Keep this internal.",
+    "No approved public source yet.",
+  ];
+  const activeQuestion = "What exact public name may BNL use for Crow?";
+  const unresolvedQuestion = "Which public links, if any, may BNL associate with Crow?";
+  const analystRead = {
+    subjectName: "Crow",
+    reviewableClaims: [
+      ...suppressedTexts.map((text, index) => ({
+        claimText: `Saved answer fixture ${index}`,
+        displayTitle: `Saved answer fixture ${index}`,
+        verificationPacketQuestion: `Original packet question ${index}?`,
+        verificationPacketAudience: "subject",
+        suggestedMissingInfoQuestion: text,
+      })),
+      { claimText: "Name question fixture", verificationPacketQuestion: activeQuestion, verificationPacketAudience: "subject" },
+      { claimText: unresolvedQuestion, verificationPacketQuestion: unresolvedQuestion, verificationPacketAudience: "public_source" },
+    ],
+  };
+  const first = sourceSummaryPanelComponent.deriveDossierSourceFileReviewableClaims({ analystRead, candidateId: "crow_packet", sourceArchiveId: "archive_crow", subjectName: "Crow" });
+  const reviews = first.current.map((claim) => {
+    const suppressedIndex = suppressedTexts.findIndex((_, index) => claim.claimText === `Saved answer fixture ${index}`);
+    return {
+      id: claim.id,
+      candidateId: "crow_packet",
+      claimText: claim.claimText,
+      claimType: claim.claimType,
+      sourceSection: claim.sourceSection,
+      decision: "needs_more_info",
+      publicSafe: false,
+      editedText: suppressedIndex >= 0 ? suppressedTexts[suppressedIndex] : undefined,
+      createdAt: now,
+      updatedAt: now,
+    };
+  });
+  const derived = sourceSummaryPanelComponent.deriveDossierSourceFileReviewableClaims({ analystRead, candidateId: "crow_packet", sourceArchiveId: "archive_crow", subjectName: "Crow", reviews });
+  assert.ok(derived.resolvedQuestions.length >= suppressedTexts.length);
+  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary: { summarySource: "manual", lastUpdatedAt: now, substanceLevel: "useful", publicReadiness: "needs_review", nextAction: "review", existingPublicDossier: "no" },
+    latestSourceFileArchive: { id: "archive_crow", candidateId: "crow_packet", subjectName: "Crow", sourceDigest: "digest", createdAt: now, updatedAt: now, archiveSize: 1, chunkCount: 1, reviewOnly: true, subjectAnalystReadV1: analystRead },
+    candidateId: "crow_packet",
+    claimReviews: reviews,
+  }));
+  const packetText = text.slice(text.lastIndexOf("Verification Packet"));
+  for (const suppressed of suppressedTexts) {
+    assert.doesNotMatch(packetText, new RegExp(suppressed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.match(packetText, /What exact public name may BNL use for Crow\?/);
+  assert.match(packetText, /Which public links, if any, may BNL associate with Crow\?/);
+  assert.match(text, /Automatically resolved BNL questions/);
+  assert.match(derived.resolvedQuestions.map((question) => question.resolutionSummary).join("\n"), /Suppressed saved/);
+  assert.doesNotMatch(normalizedSource("src/app/api/bnl/read-model/route.ts"), /classifySavedPacketTextForVerificationPacket|safeToSuppressFromActivePacket|resolutionState/);
+});

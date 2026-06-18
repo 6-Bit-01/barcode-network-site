@@ -2,6 +2,7 @@
 
 import type React from "react";
 import type { DossierEntityActivityReadout } from "@/lib/dossier-entity-activity-readout";
+import { createDossierSourceFileDraftReadinessReadModel } from "@/lib/dossier-workflow";
 import type {
   DossierRecommendation,
   DossierSourceFileClaimReview,
@@ -1415,6 +1416,11 @@ function BnlAnalystReadPanel({
     );
   }
   const reviewable = deriveDossierSourceFileReviewableClaims({ analystRead, candidateId, sourceArchiveId, subjectName: subjectName ?? analystRead.subjectName, reviews: claimReviews, candidate });
+  const draftReadiness = createDossierSourceFileDraftReadinessReadModel({
+    sourceFileExists: true,
+    candidate: { ...(candidate ?? {}), sourceFileClaimReviews: claimReviews ?? candidate?.sourceFileClaimReviews },
+    analystRead,
+  });
   const sectionEntries = [
     ["reviewableClaims", "Source File Claim Decisions"],
     ["publicReadyClaims", "Public-Ready Claims"],
@@ -1436,7 +1442,7 @@ function BnlAnalystReadPanel({
           <SnapshotItem label="Last refreshed" value={formatSnapshotDate(refreshedAt)} />
         </dl>
         <section className="border border-accent/60 bg-background/30 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-accent">Internal Read</h4><BriefParagraphs value={analystRead.internalRead} /></section>
-        {(readinessStatusLine(analystRead) || stringItems(analystRead.dossierBlockedBy).length > 0 || stringItems(analystRead.dossierReadinessSummary).length > 0) && <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Dossier readiness</h4>{readinessStatusLine(analystRead) && <p className="text-foreground">{readinessStatusLine(analystRead)}</p>}{stringItems(analystRead.dossierReadinessSummary).length > 0 && <ul className="mt-2 list-disc pl-5 text-foreground">{stringItems(analystRead.dossierReadinessSummary).map((item) => <li key={item}>{safeHumanText(item)}</li>)}</ul>}{stringItems(analystRead.dossierBlockedBy).length > 0 && <div className="mt-2"><p className="text-xs font-bold text-accent">Compact blockers</p><ul className="list-disc pl-5 text-foreground">{stringItems(analystRead.dossierBlockedBy).map((item) => <li key={item}>{safeHumanText(item)}</li>)}</ul></div>}</section>}
+        <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Dossier readiness</h4><p className="text-foreground">{draftReadiness.readinessState.replace(/_/g, " ")} — {safeHumanText(draftReadiness.primaryReason)}</p><p className="mt-1 text-xs text-muted">Authority: {draftReadiness.authority.replace(/_/g, " ")} · resolved {draftReadiness.resolvedQuestionCount} · unresolved {draftReadiness.unresolvedQuestionCount}</p>{draftReadiness.blockers.length > 0 && <div className="mt-2"><p className="text-xs font-bold text-accent">Current BNL blockers</p><ul className="list-disc pl-5 text-foreground">{draftReadiness.blockers.map((item) => <li key={item}>{safeHumanText(item)}</li>)}</ul></div>}</section>
         <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Strongest Signals</h4><AnalystList value={analystRead.strongestSignals} empty="No strongest signals reported." /></section>
         {reviewable.signals.length > 0 && <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-1 text-xs font-bold uppercase tracking-widest text-foreground">Evidence Signals / Pattern Summary</h4><p className="mb-2 text-xs text-muted/80">These are pattern counts and context signals BNL used for analysis. They are not public-ready facts by themselves.</p><ul className="space-y-2 text-foreground">{reviewable.signals.map((signal) => <li key={signal.id} className="border border-border/40 p-2"><p className="font-bold">{signal.label}{signal.count ? `: ${signal.count}` : ""}</p><p className="text-xs text-muted">{signal.suggestion}</p><p className="text-xs text-muted">Action: {signal.actionable}</p></li>)}</ul></section>}
         {reviewable.resolvedQuestions.length > 0 && <details className="border border-border/50 bg-background/20 p-3 text-xs text-muted"><summary className="cursor-pointer font-semibold text-foreground">Automatically resolved BNL questions ({reviewable.resolvedQuestions.length})</summary><ul className="mt-2 space-y-1">{reviewable.resolvedQuestions.map((question) => <li key={question.questionKey}><span className="font-semibold text-foreground">{question.resolutionState}</span>: {question.resolutionSummary}</li>)}</ul></details>}

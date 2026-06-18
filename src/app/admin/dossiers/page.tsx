@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
+  createDossierSourceFileDraftReadinessReadModel,
   createDossierPopulationAudit,
   createDossierPopulationMethodAudit,
   getDossierSourceFileMetrics,
@@ -2118,6 +2119,17 @@ export default function DossierControlCenterPage() {
                       candidate,
                       draft,
                     );
+                    const readiness = createDossierSourceFileDraftReadinessReadModel({
+                      candidate,
+                      sourceFileExists: true,
+                      analystRead: candidate.latestSourceFileArchive?.subjectAnalystReadV1,
+                      fallback: {
+                        readyForDraft: false,
+                        primaryReason: "BNL readiness is not available yet; using the conservative site fallback heuristic.",
+                        blockers: candidate.missingInfo ?? [],
+                        recommendedNextAction: "Refresh the Source File so BNL can provide draft readiness.",
+                      },
+                    });
                     const actionLabel = sourceFileActionLabel();
                     const actionHref = `/admin/dossiers/candidates/${candidate.id}`;
                     return (
@@ -2137,9 +2149,10 @@ export default function DossierControlCenterPage() {
                             "Low"}
                         </td>
                         <td className="py-3 pr-3">
-                          {(candidate.missingInfo ?? []).length > 0
-                            ? candidate.missingInfo?.join("; ")
-                            : "—"}
+                          {readiness.blockers.length > 0
+                            ? readiness.blockers.slice(0, 2).join("; ")
+                            : readiness.primaryReason}
+                          <p className="mt-1 text-xs text-muted">{readiness.recommendedNextAction}</p>
                         </td>
                         <td className="py-3 pr-3">{dossierStatus}</td>
                         <td className="py-3 pr-3">

@@ -218,12 +218,38 @@ export type DossierSubjectAnalystReadV1 = DossierSourceFileHumanDisplayFields & 
   draftIngredients?: string[];
   sourceFileIngredients?: string[];
   provenanceSummary?: string[];
+  sourceFileResolutionAudit?: unknown;
+  resolvedQuestionAudit?: unknown;
   dossierReadinessQuestions?: DossierReadinessQuestionV1[] | unknown;
   dossierReadinessSummary?: string | string[] | unknown;
   dossierBlockedBy?: string[] | string | unknown;
   readyForDraft?: boolean | string | unknown;
   draftReadinessReason?: string | unknown;
   dossierClarificationNeeds?: DossierReadinessQuestionV1[] | unknown;
+};
+
+export type DossierSourceFileDraftReadinessState =
+  | "ready_for_bnl_draft"
+  | "blocked_by_bnl_questions"
+  | "blocked_by_unresolved_review"
+  | "needs_public_evidence"
+  | "fallback_heuristic"
+  | "no_source_file";
+
+export type DossierSourceFileDraftReadinessAuthority =
+  | "bnl_analyst_read"
+  | "bnl_question_resolution"
+  | "site_fallback_heuristic";
+
+export type DossierSourceFileDraftReadinessReadModel = {
+  readinessState: DossierSourceFileDraftReadinessState;
+  readyForDraft: boolean;
+  primaryReason: string;
+  blockers: string[];
+  unresolvedQuestionCount: number;
+  resolvedQuestionCount: number;
+  authority: DossierSourceFileDraftReadinessAuthority;
+  recommendedNextAction: string;
 };
 
 export type DossierSourceFileCaseReportV1 = {
@@ -3469,3 +3495,117 @@ export const DOSSIER_WORKFLOW_RULES = [
   "Sheila/Cliff-style Network characters are BARCODE-controlled records, while mods are community-owned identities.",
   "Loose intake, strict drafting/publishing: BNL discoveries enter Candidate Intake first, active Source Files require admin promotion, and drafting/publishing require evidence, duplicate checks, public-safety review, and owner approval.",
 ] as const;
+
+function draftReadinessStringItems(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim());
+  return typeof value === "string" && value.trim() ? [value.trim()] : [];
+}
+
+function draftReadinessBool(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "yes", "ready", "ready_for_draft"].includes(normalized)) return true;
+    if (["false", "no", "blocked", "not_ready"].includes(normalized)) return false;
+  }
+  return undefined;
+}
+
+function draftReadinessQuestionText(question: DossierReadinessQuestionV1): string {
+  return (question.question ?? question.text ?? question.reason ?? "BNL readiness question").trim();
+}
+
+function draftReadinessQuestionKey(question: DossierReadinessQuestionV1): string {
+  return (question.questionKey ?? question.id ?? draftReadinessQuestionText(question)).trim().toLowerCase();
+}
+
+function draftReadinessQuestionIsHighPriority(question: DossierReadinessQuestionV1): boolean {
+  const priority = String(question.priority ?? "").toLowerCase();
+  if (["low", "nice_to_have", "optional"].includes(priority)) return false;
+  const joined = `${draftReadinessQuestionText(question)} ${question.questionFamily ?? ""} ${question.questionCategory ?? ""} ${question.dossierSection ?? ""} ${question.answerType ?? ""} ${question.audience ?? ""} ${question.recipientClass ?? ""} ${question.confirmationTarget ?? ""}`.toLowerCase();
+  return !priority || /high|critical|required|readiness|clarification|public|wording|source|link|identity|role|title|fact|safety|boundary/.test(joined);
+}
+
+function draftReadinessQuestionNeedsPublicProof(question: DossierReadinessQuestionV1): boolean {
+  const joined = `${draftReadinessQuestionText(question)} ${question.dossierSection ?? ""} ${question.answerType ?? ""} ${question.audience ?? ""} ${question.recipientClass ?? ""} ${question.confirmationTarget ?? ""}`.toLowerCase();
+  return /public|wording|source|link|evidence|proof|fact/.test(joined);
+}
+
+function draftReadinessQuestionIsBoundary(question: DossierReadinessQuestionV1): boolean {
+  const joined = `${draftReadinessQuestionText(question)} ${question.dossierSection ?? ""} ${question.answerType ?? ""}`.toLowerCase();
+  return /boundary|reject|rejected|do not say|do_not_say|public safety|safety|withheld/.test(joined);
+}
+
+function draftReadinessReviewMatchesQuestion(review: DossierSourceFileClaimReview, question: DossierReadinessQuestionV1): boolean {
+  const record = review as unknown as Record<string, unknown>;
+  const key = draftReadinessQuestionKey(question);
+  const related = Array.isArray(record.relatedQuestionKeys) ? record.relatedQuestionKeys : [];
+  const questionText = draftReadinessQuestionText(question).toLowerCase();
+  const reviewText = `${review.claimText ?? ""} ${review.editedText ?? ""}`.toLowerCase();
+  return record.questionKey === question.questionKey || related.includes(key) || Boolean(questionText && reviewText && (questionText.includes(reviewText.trim()) || reviewText.includes(questionText)));
+}
+
+function draftReadinessQuestionResolvedByReview(candidate: Partial<DossierCandidate>, question: DossierReadinessQuestionV1): boolean {
+  const publicQuestion = draftReadinessQuestionNeedsPublicProof(question);
+  const boundaryQuestion = draftReadinessQuestionIsBoundary(question);
+  return (candidate.sourceFileClaimReviews ?? []).some((review) => {
+    if (!draftReadinessReviewMatchesQuestion(review, question)) return false;
+    if (review.decision === "rejected") return boundaryQuestion;
+    if (review.decision === "confirmed_internal") return !publicQuestion;
+    return (review.decision === "confirmed_public" || review.decision === "edited") && review.publicSafe !== false;
+  });
+}
+
+function draftReadinessPendingPublicReviews(candidate: Partial<DossierCandidate>): string[] {
+  return (candidate.sourceFileClaimReviews ?? [])
+    .filter((review) => review.decision === "pending" || review.decision === "needs_more_info")
+    .filter((review) => /public|wording|identity|role|title|link|fact|safety|boundary/i.test(`${review.claimText} ${review.sourceSection} ${review.claimType}`))
+    .map((review) => review.claimText.trim())
+    .filter(Boolean);
+}
+
+function draftReadinessHasBnlReadiness(analystRead: DossierSubjectAnalystReadV1 | undefined): analystRead is DossierSubjectAnalystReadV1 {
+  return Boolean(analystRead && (analystRead.readyForDraft !== undefined || analystRead.draftReadinessReason !== undefined || analystRead.dossierBlockedBy !== undefined || analystRead.dossierReadinessQuestions !== undefined || analystRead.dossierClarificationNeeds !== undefined));
+}
+
+export function createDossierSourceFileDraftReadinessReadModel(input: {
+  candidate?: Partial<DossierCandidate>;
+  sourceFileExists: boolean;
+  analystRead?: DossierSubjectAnalystReadV1;
+  fallback?: { readyForDraft: boolean; primaryReason: string; blockers: string[]; recommendedNextAction: string };
+}): DossierSourceFileDraftReadinessReadModel {
+  if (!input.sourceFileExists) {
+    return { readinessState: "no_source_file", readyForDraft: false, primaryReason: "This record has not been added to a BNL Source File yet.", blockers: ["Add it to a Source File before drafting."], unresolvedQuestionCount: 0, resolvedQuestionCount: 0, authority: "site_fallback_heuristic", recommendedNextAction: "Add this record to a BNL Source File before requesting a draft." };
+  }
+  const candidate = input.candidate ?? {};
+  const analystRead = input.analystRead;
+  if (draftReadinessHasBnlReadiness(analystRead)) {
+    const questions = [
+      ...(Array.isArray(analystRead.dossierReadinessQuestions) ? analystRead.dossierReadinessQuestions : []),
+      ...(Array.isArray(analystRead.dossierClarificationNeeds) ? analystRead.dossierClarificationNeeds : []),
+    ] as DossierReadinessQuestionV1[];
+    const highPriority = questions.filter(draftReadinessQuestionIsHighPriority);
+    const unresolvedQuestions = highPriority.filter((question) => !draftReadinessQuestionResolvedByReview(candidate, question));
+    const pendingReviews = draftReadinessPendingPublicReviews(candidate);
+    const bnlReady = draftReadinessBool(analystRead.readyForDraft) === true;
+    const explicitBlockers = draftReadinessStringItems(analystRead.dossierBlockedBy);
+    const blockers = [...unresolvedQuestions.map(draftReadinessQuestionText), ...pendingReviews, ...(bnlReady ? [] : explicitBlockers)].filter(Boolean);
+    const primaryReason = typeof analystRead.draftReadinessReason === "string" && analystRead.draftReadinessReason.trim()
+      ? analystRead.draftReadinessReason.trim()
+      : bnlReady
+        ? "BNL marked this Source File ready for Proposed Dossier draft generation."
+        : "BNL marked this Source File blocked for Proposed Dossier draft generation.";
+    if (unresolvedQuestions.length > 0) {
+      return { readinessState: "blocked_by_bnl_questions", readyForDraft: false, primaryReason, blockers, unresolvedQuestionCount: unresolvedQuestions.length, resolvedQuestionCount: highPriority.length - unresolvedQuestions.length, authority: "bnl_question_resolution", recommendedNextAction: "Answer or resolve the listed BNL readiness questions, then refresh the Source File." };
+    }
+    if (pendingReviews.length > 0) {
+      return { readinessState: "blocked_by_unresolved_review", readyForDraft: false, primaryReason, blockers, unresolvedQuestionCount: 0, resolvedQuestionCount: highPriority.length, authority: "bnl_analyst_read", recommendedNextAction: "Resolve pending public wording, identity, role, link, fact, or boundary reviews before drafting." };
+    }
+    if (bnlReady) {
+      return { readinessState: "ready_for_bnl_draft", readyForDraft: true, primaryReason, blockers: [], unresolvedQuestionCount: 0, resolvedQuestionCount: highPriority.length, authority: "bnl_analyst_read", recommendedNextAction: "Request BNL draft generation from this Source File." };
+    }
+    return { readinessState: "needs_public_evidence", readyForDraft: false, primaryReason, blockers: blockers.length ? blockers : ["BNL has not marked this Source File ready for draft generation."], unresolvedQuestionCount: 0, resolvedQuestionCount: highPriority.length, authority: "bnl_analyst_read", recommendedNextAction: "Add the public-safe evidence or boundary decisions BNL requested, then refresh the Source File." };
+  }
+  const fallback = input.fallback;
+  return { readinessState: "fallback_heuristic", readyForDraft: Boolean(fallback?.readyForDraft), primaryReason: fallback?.primaryReason ?? "BNL readiness is not available yet; using the conservative site fallback heuristic.", blockers: fallback?.blockers ?? [], unresolvedQuestionCount: 0, resolvedQuestionCount: 0, authority: "site_fallback_heuristic", recommendedNextAction: fallback?.recommendedNextAction ?? "Refresh the Source File so BNL can provide draft readiness." };
+}

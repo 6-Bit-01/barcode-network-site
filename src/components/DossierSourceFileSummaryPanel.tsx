@@ -1570,8 +1570,6 @@ function BnlAnalystReadPanel({
   claimReviews,
   onReviewClaim,
   candidate,
-  onCreateDraft,
-  onRequestBnlDraft,
 }: {
   analystRead?: DossierSubjectAnalystReadV1;
   refreshedAt?: string;
@@ -1581,8 +1579,6 @@ function BnlAnalystReadPanel({
   claimReviews?: DossierSourceFileClaimReview[];
   onReviewClaim?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void;
   candidate?: Partial<DossierCandidate>;
-  onCreateDraft?: () => void;
-  onRequestBnlDraft?: () => void;
 }) {
   if (!analystRead) {
     return (
@@ -1740,6 +1736,17 @@ function normalizeSubjectDossierStateV1(latestSourceFileArchive?: DossierSourceF
   return undefined;
 }
 
+function normalizeReviewActionabilityV1(latestSourceFileArchive?: DossierSourceFileArchiveMetadata): UnknownRecord | undefined {
+  for (const candidate of archivePayloadCandidates(latestSourceFileArchive)) {
+    const analyst = asRecord(candidate.subjectAnalystReadV1);
+    const report = asRecord(candidate.sourceFileCaseReportV1);
+    const nestedAnalyst = asRecord(report?.subjectAnalystReadV1);
+    const read = [candidate.reviewActionabilityV1, analyst?.reviewActionabilityV1, report?.reviewActionabilityV1, nestedAnalyst?.reviewActionabilityV1].map(asRecord).find(Boolean);
+    if (read) return read;
+  }
+  return undefined;
+}
+
 function humanizeDossierState(value?: string) {
   const raw = value?.trim();
   if (!raw) return "BNL guided Source File";
@@ -1762,35 +1769,177 @@ function sourceFileSurfaceQuestions(surface?: DossierSourceFileSurfaceV1): Readi
   return readinessQuestionsFrom(questions).filter((question) => memoryFirstQuestionIsDecisionUnlocking(question));
 }
 
-function BnlSurfaceControl({ control, blocked, onCreateDraft, onRequestBnlDraft }: { control?: UnknownRecord; blocked: boolean; onCreateDraft?: () => void; onRequestBnlDraft?: () => void }) {
-  const actionKey = textValue(control?.actionKey) ?? textValue(control?.controlType);
-  const label = textValue(control?.label) ?? humanizeDossierState(actionKey);
-  const inputHint = textValue(control?.inputHint);
-  const copyText = textValue(control?.copyText) ?? inputHint;
-  const choices = listValues(control?.choices).flatMap((choice) => {
-    const record = asRecord(choice);
-    return [textValue(record?.label) ?? textValue(record?.value) ?? textValue(choice)].filter(Boolean) as string[];
-  });
-  if (actionKey === "create_draft" && !blocked && onCreateDraft) return <button type="button" className="border border-accent px-3 py-2 text-xs text-accent hover:bg-accent hover:text-background" onClick={onCreateDraft}>{label === "create draft" ? "Create Proposed Dossier Draft" : label}</button>;
-  if ((actionKey === "create_draft" || actionKey === "request_bnl_draft") && !blocked && onRequestBnlDraft) return <button type="button" className="border border-accent px-3 py-2 text-xs text-accent hover:bg-accent hover:text-background" onClick={onRequestBnlDraft}>{label}</button>;
-  if (actionKey === "open_update_plan") return <a href="#dossier-update-workspace" className="border border-border px-3 py-2 text-xs text-foreground hover:border-accent">{label}</a>;
-  if (textValue(control?.href)) return <a href={textValue(control?.href)} className="border border-border px-3 py-2 text-xs text-foreground hover:border-accent">{label}</a>;
-  return <div className="space-y-2"><button type="button" className="border border-border px-3 py-2 text-xs text-foreground hover:border-accent" onClick={() => copyText && copyTextToClipboard(copyText)}>{/ask_owner|ask_admin|copy|confirm_wording/i.test(actionKey ?? "") ? `Copy / focus: ${label}` : label}</button>{inputHint && <p className="text-[11px] text-muted">Input focus: {safeHumanText(inputHint)}</p>}{choices.length > 0 && <div className="flex flex-wrap gap-2 text-[11px] text-muted">{choices.map((choice) => <span key={choice} className="border border-border/50 px-2 py-1">{choice}</span>)}</div>}</div>;
+function firstQuestionForAction(questions: ReadinessQuestion[], actionKey?: string) {
+  const target = (actionKey ?? "").toLowerCase();
+  if (/owner/.test(target)) return questions.find((question) => /owner|wording|subject/.test(`${question.audience} ${question.question}`.toLowerCase()));
+  if (/admin/.test(target)) return questions.find((question) => /admin|confirm/.test(`${question.audience} ${question.question}`.toLowerCase()));
+  return questions[0];
 }
 
-function BnlSourceFileSurfacePanel({ surface, state, blocked, onCreateDraft, onRequestBnlDraft }: { surface: DossierSourceFileSurfaceV1; state?: DossierSubjectDossierStateV1; blocked: boolean; onCreateDraft?: () => void; onRequestBnlDraft?: () => void }) {
-  const stateLabel = humanizeDossierState(textValue(state?.state) ?? textValue(state?.status) ?? textValue(state?.label));
+function bnlStateGuidance(stateKey?: string) {
+  const state = stateKey?.trim();
+  const guidance: Record<string, string> = {
+    ready_for_cautious_draft: "BNL is draft-focused: use public-safe material and omit unconfirmed role, link, lore, queue, and internal details.",
+    needs_owner_wording: "BNL needs owner-approved wording before this can become better public dossier copy.",
+    needs_admin_confirmation: "BNL needs an admin confirmation before it can safely advance this dossier surface.",
+    update_existing_public_dossier: "BNL found an existing public dossier target; prepare an update plan instead of starting a parallel new dossier.",
+    candidate_new: "BNL is still building enough context to decide whether this should become a public dossier.",
+    source_file_building: "BNL is gathering context; keep pressure low until the Source File has enough public-safe material.",
+    watch_only: "BNL recommends watching and refreshing rather than forcing public review cards.",
+    internal_only: "BNL recommends an internal hold; do not create public review pressure from this surface.",
+    blocked: "BNL says a blocker must be resolved before drafting or public-copy approval.",
+  };
+  return state ? guidance[state] : undefined;
+}
+
+function BnlSurfaceControl({
+  control,
+  blocked,
+  packetQuestions,
+  onCreateDraft,
+  onRequestBnlDraft,
+}: {
+  control?: UnknownRecord;
+  blocked: boolean;
+  packetQuestions: ReadinessQuestion[];
+  onCreateDraft?: () => void;
+  onRequestBnlDraft?: () => void;
+}) {
+  const actionKey = (textValue(control?.actionKey) ?? textValue(control?.controlType) ?? "").toLowerCase();
+  const label = textValue(control?.label) ?? humanizeDossierState(actionKey);
+  const inputHint = safeHumanText(control?.inputHint);
+  const explicitCopy = safeHumanText(control?.copyText);
+  const routedQuestion = firstQuestionForAction(packetQuestions, actionKey);
+  const copyText = explicitCopy ?? routedQuestion?.question;
+  const choices = listValues(control?.choices).flatMap((choice) => {
+    const record = asRecord(choice);
+    return [safeHumanText(record?.label) ?? safeHumanText(record?.value) ?? safeHumanText(choice)].filter(Boolean) as string[];
+  });
+
+  if ((actionKey === "create_draft" || actionKey === "create_proposed_dossier") && !blocked && onCreateDraft) {
+    return <button type="button" className="border border-accent px-3 py-2 text-xs text-accent hover:bg-accent hover:text-background" onClick={onCreateDraft}>{label === "create draft" ? "Create Proposed Dossier Draft" : label}</button>;
+  }
+  if ((actionKey === "request_bnl_draft" || actionKey === "create_bnl_draft") && !blocked && onRequestBnlDraft) {
+    return <button type="button" className="border border-accent px-3 py-2 text-xs text-accent hover:bg-accent hover:text-background" onClick={onRequestBnlDraft}>{label}</button>;
+  }
+  if ((actionKey === "create_draft" || actionKey === "create_proposed_dossier" || actionKey === "request_bnl_draft" || actionKey === "create_bnl_draft") && blocked) {
+    return <p className="border border-accent/60 bg-accent/10 p-2 text-xs text-foreground">Draft action blocked by BNL until the blocker is resolved.</p>;
+  }
+  if (actionKey === "open_update_plan") {
+    return <a href="#dossier-update-workspace" className="border border-border px-3 py-2 text-xs text-foreground hover:border-accent">{label}</a>;
+  }
+  if (textValue(control?.href)) {
+    return <a href={textValue(control?.href)} className="border border-border px-3 py-2 text-xs text-foreground hover:border-accent">{label}</a>;
+  }
+  if (/ask_owner|owner_wording/.test(actionKey) && copyText) {
+    return <button type="button" className="border border-border px-3 py-2 text-xs text-foreground hover:border-accent" onClick={() => copyTextToClipboard(copyText)}>Copy owner question</button>;
+  }
+  if (/ask_admin|admin_confirmation/.test(actionKey) && copyText) {
+    return <button type="button" className="border border-border px-3 py-2 text-xs text-foreground hover:border-accent" onClick={() => copyTextToClipboard(copyText)}>Copy admin question</button>;
+  }
+  if (/copy/.test(actionKey) && copyText) {
+    return <button type="button" className="border border-border px-3 py-2 text-xs text-foreground hover:border-accent" onClick={() => copyTextToClipboard(copyText)}>Copy question</button>;
+  }
+
+  const recommendedDefault = /keep_internal|internal_only/.test(actionKey)
+    ? "Recommended default: keep internal."
+    : /omit|omit_from_public/.test(actionKey)
+      ? "Recommended default: omit from public draft."
+      : /ask_owner|owner_wording/.test(actionKey)
+        ? "Next step: ask owner for approved public wording."
+        : /ask_admin|admin_confirmation/.test(actionKey)
+          ? "Next step: ask admin for confirmation."
+          : /reject_claim/.test(actionKey)
+            ? "Recommended default: reject or dismiss this claim in legacy diagnostics only if it is tied to a real review item."
+            : /approve_public_copy/.test(actionKey)
+              ? "Public copy approval requires a tied review claim and Owner Review; no direct action is available from this card."
+              : label;
+  return (
+    <div className="space-y-2 border border-border/50 bg-background/20 p-2 text-xs text-muted">
+      <p className="font-semibold text-foreground">{recommendedDefault}</p>
+      {inputHint && <p>Suggested wording focus: {inputHint}</p>}
+      {choices.length > 0 && <p>BNL choices: {choices.join(" / ")}</p>}
+    </div>
+  );
+}
+
+function BnlSourceFileSurfacePanel({
+  surface,
+  state,
+  blocked,
+  packetQuestions,
+  onCreateDraft,
+  onRequestBnlDraft,
+}: {
+  surface: DossierSourceFileSurfaceV1;
+  state?: DossierSubjectDossierStateV1;
+  blocked: boolean;
+  packetQuestions: ReadinessQuestion[];
+  onCreateDraft?: () => void;
+  onRequestBnlDraft?: () => void;
+}) {
+  const stateKey = textValue(state?.state) ?? textValue(state?.status);
+  const stateLabel = humanizeDossierState(stateKey ?? textValue(state?.label));
   const summary = safeHumanText(surface.statusSummary ?? surface.summary ?? surface.bnlTake ?? state?.summary) ?? "BNL has authored the operating surface for this Source File.";
   const action = typeof surface.primaryAction === "string" ? { label: surface.primaryAction, actionKey: surface.primaryAction } : asRecord(surface.primaryAction);
   const secondary = typeof surface.secondaryAction === "string" ? { label: surface.secondaryAction, actionKey: surface.secondaryAction } : asRecord(surface.secondaryAction);
   const cards = (surface.activeCards ?? []).filter((card) => asRecord(card));
-  return <div className="space-y-4"><Section title="BNL Source File Surface / BNL Take" tone={blocked ? "caution" : "review"} helper="BNL-authored operating surface. Raw read models are preserved below as diagnostics."><div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest"><StatusBadge>{stateLabel}</StatusBadge>{blocked && <StatusBadge>Draft blocked</StatusBadge>}</div><p className="mt-3 text-base text-foreground">{summary}</p><div className="mt-4 flex flex-wrap gap-3"><BnlSurfaceControl control={action} blocked={blocked} onCreateDraft={onCreateDraft} onRequestBnlDraft={onRequestBnlDraft} />{secondary && <BnlSurfaceControl control={secondary} blocked={blocked} onCreateDraft={onCreateDraft} onRequestBnlDraft={onRequestBnlDraft} />}</div></Section><Section title="BNL Active Cards" helper="Compact cards selected by BNL for the current dossier state.">{cards.length ? <ul className="grid gap-3 lg:grid-cols-2">{cards.map((card, index) => { const record = asRecord(card) ?? {}; const control = asRecord(record.control) ?? { actionKey: record.actionKey, controlType: record.controlType, label: record.controlLabel, inputHint: record.inputHint, choices: record.choices }; const title = safeHumanText(record.title ?? record.decision) ?? `BNL card ${index + 1}`; const subtitle = safeHumanText(record.subtitle ?? record.reason ?? record.bnlReason); return <li key={textValue(record.id) ?? `${index}-${title}`} className="border border-border bg-background/30 p-3"><h4 className="font-bold text-foreground">{title}</h4>{subtitle && <p className="mt-2 text-sm text-muted">{subtitle}</p>}<div className="mt-3"><BnlSurfaceControl control={control} blocked={blocked} onCreateDraft={onCreateDraft} onRequestBnlDraft={onRequestBnlDraft} /></div></li>; })}</ul> : <p className="text-muted">BNL did not select active cards for this state.</p>}</Section></div>;
+  const stateGuidance = bnlStateGuidance(stateKey);
+  return (
+    <div className="space-y-4">
+      <Section title="BNL Source File Surface / BNL Take" tone={blocked ? "caution" : "review"} helper="BNL-authored operating surface. Raw read models are preserved below as diagnostics.">
+        <div className="flex flex-wrap gap-2 text-xs uppercase tracking-widest"><StatusBadge>{stateLabel}</StatusBadge>{blocked && <StatusBadge>Draft blocked</StatusBadge>}</div>
+        <p className="mt-3 text-base text-foreground">{summary}</p>
+        {stateGuidance && <p className="mt-2 text-sm text-muted">{stateGuidance}</p>}
+        <div className="mt-4 flex flex-wrap gap-3">
+          <BnlSurfaceControl control={action} blocked={blocked} packetQuestions={packetQuestions} onCreateDraft={onCreateDraft} onRequestBnlDraft={onRequestBnlDraft} />
+          {secondary && <BnlSurfaceControl control={secondary} blocked={blocked} packetQuestions={packetQuestions} onCreateDraft={onCreateDraft} onRequestBnlDraft={onRequestBnlDraft} />}
+        </div>
+      </Section>
+      <Section title="BNL Active Cards" helper="Compact cards selected by BNL for the current dossier state.">
+        {cards.length ? (
+          <ul className="grid gap-3 lg:grid-cols-2">
+            {cards.map((card, index) => {
+              const record = asRecord(card) ?? {};
+              const control = asRecord(record.control) ?? { actionKey: record.actionKey, controlType: record.controlType, label: record.controlLabel, inputHint: record.inputHint, choices: record.choices, copyText: record.copyText };
+              const title = safeHumanText(record.title ?? record.decision) ?? `BNL card ${index + 1}`;
+              const subtitle = safeHumanText(record.subtitle ?? record.reason ?? record.bnlReason);
+              return (
+                <li key={textValue(record.id) ?? `${index}-${title}`} className="border border-border bg-background/30 p-3">
+                  <h4 className="font-bold text-foreground">{title}</h4>
+                  {subtitle && <p className="mt-2 text-sm text-muted">{subtitle}</p>}
+                  <div className="mt-3"><BnlSurfaceControl control={control} blocked={blocked} packetQuestions={packetQuestions} onCreateDraft={onCreateDraft} onRequestBnlDraft={onRequestBnlDraft} /></div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : <p className="text-muted">BNL did not select active cards for this state.</p>}
+      </Section>
+    </div>
+  );
 }
 
 function BnlSurfaceVerificationPacket({ questions }: { questions: ReadinessQuestion[] }) {
   const sections = dedupeVerificationQuestions(questions.map((question) => ({ text: question.question, audience: verificationAudienceKey(question.audience) })));
   const hasQuestions = Object.values(sections).some((items) => items.length > 0);
-  return <section className="border border-border/60 bg-background/20 p-3 text-sm"><h4 className="text-xs font-bold uppercase tracking-widest text-foreground">BNL Verification Packet</h4><p className="mt-2 text-xs text-muted">BNL-selected questions that unlock a better dossier.</p>{hasQuestions ? <div className="mt-3 space-y-3">{(Object.keys(VERIFICATION_PACKET_AUDIENCE_LABELS) as VerificationPacketAudience[]).map((audience) => sections[audience].length ? <div key={audience} className="border border-border/40 bg-background/30 p-2"><p className="text-xs font-bold text-accent">{VERIFICATION_PACKET_AUDIENCE_LABELS[audience]}</p><ol className="mt-1 list-decimal space-y-1 pl-5 text-foreground">{sections[audience].map((question) => <li key={question.text}>{question.text}</li>)}</ol></div> : null)}</div> : <p className="mt-3 border border-border/40 bg-background/30 p-2 text-xs text-muted">BNL did not select packet questions for this surface.</p>}</section>;
+  const copyText = verificationPacketCopyText(sections);
+  return (
+    <section className="border border-border/60 bg-background/20 p-3 text-sm">
+      <h4 className="text-xs font-bold uppercase tracking-widest text-foreground">BNL Verification Packet</h4>
+      <p className="mt-2 text-xs text-muted">BNL-selected questions that unlock a better dossier.</p>
+      {hasQuestions ? (
+        <div className="mt-3 space-y-3">
+          {(Object.keys(VERIFICATION_PACKET_AUDIENCE_LABELS) as VerificationPacketAudience[]).map((audience) => sections[audience].length ? (
+            <div key={audience} className="border border-border/40 bg-background/30 p-2">
+              <p className="text-xs font-bold text-accent">{VERIFICATION_PACKET_AUDIENCE_LABELS[audience]}</p>
+              <ol className="mt-1 list-decimal space-y-1 pl-5 text-foreground">{sections[audience].map((question) => <li key={question.text}>{question.text}</li>)}</ol>
+            </div>
+          ) : null)}
+          <button type="button" className="border border-border px-2 py-1 text-xs text-foreground hover:border-accent" onClick={() => copyTextToClipboard(copyText)}>Copy BNL verification packet</button>
+        </div>
+      ) : <p className="mt-3 border border-border/40 bg-background/30 p-2 text-xs text-muted">BNL did not select packet questions for this surface.</p>}
+    </section>
+  );
 }
 
 export function DossierSourceFileArchiveRawData({ latestSourceFileArchive }: { latestSourceFileArchive?: DossierSourceFileArchiveMetadata }) {
@@ -2053,16 +2202,25 @@ export function DossierSourceFileSummaryPanel({
   const interimBrief = normalizeInterimBrief(latestSourceFileArchive);
   const analystRead = normalizeSubjectAnalystReadV1(latestSourceFileArchive);
   const dossierCompletionRead = normalizeDossierCompletionReadV1(latestSourceFileArchive);
+  const reviewActionability = normalizeReviewActionabilityV1(latestSourceFileArchive);
   const sourceFileSurface = normalizeSourceFileSurfaceV1(latestSourceFileArchive, candidate);
   const subjectDossierState = normalizeSubjectDossierStateV1(latestSourceFileArchive, candidate);
   const surfaceStateKey = textValue(subjectDossierState?.state) ?? textValue(subjectDossierState?.status);
   const trueBlockerState = surfaceStateKey === "blocked";
   const surfaceQuestions = sourceFileSurface ? sourceFileSurfaceQuestions(sourceFileSurface) : [];
+  const fallbackSurfaceQuestions = readinessQuestionsFrom(reviewActionability?.verificationPacketQuestions).filter((question) => memoryFirstQuestionIsDecisionUnlocking(question));
+  const visibleSurfaceQuestions = surfaceQuestions.length ? surfaceQuestions : fallbackSurfaceQuestions;
   const latestArchiveMissingReport = Boolean(latestSourceFileArchive && !report);
   const hasArchiveDiagnostics =
     latestSourceFileArchive?.caseReportPresent !== undefined ||
     latestSourceFileArchive?.caseReportExtractedFrom !== undefined;
-  const snapshotItems = [
+  const surfacePrimaryAction = asRecord(sourceFileSurface?.primaryAction);
+  const snapshotItems = sourceFileSurface ? [
+    ["Subject", subjectName ?? latestSourceFileArchive?.subjectName ?? "Unknown subject"],
+    ["BNL state", humanizeDossierState(surfaceStateKey ?? textValue(subjectDossierState?.label))],
+    ["Last refresh", latestArchiveMissingReport ? "Report backfill required" : formatSnapshotDate(latestRecommendationTimestamp ?? summary.lastUpdatedAt)],
+    ["Main action", textValue(surfacePrimaryAction?.label) ?? textValue(surfacePrimaryAction?.actionKey) ?? (typeof sourceFileSurface.primaryAction === "string" ? sourceFileSurface.primaryAction : "BNL guidance")],
+  ] : [
     ["Subject", subjectName ?? latestSourceFileArchive?.subjectName ?? "Unknown subject"],
     ["Current state", humanStatus(currentLane ?? summary.nextAction)],
     ["Refresh status", latestArchiveMissingReport ? "Case report missing" : formatSnapshotDate(summary.lastUpdatedAt)],
@@ -2097,7 +2255,7 @@ export function DossierSourceFileSummaryPanel({
         </div>
       </div>
 
-      <Section title="Source File header / refresh status" helper="Status only. This section does not create dossier copy.">
+      <Section title={sourceFileSurface ? "Compact Source File status" : "Source File header / refresh status"} helper={sourceFileSurface ? "Secondary status only. BNL state and action below control the page." : "Status only. This section does not create dossier copy."}>
         <dl className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           {snapshotItems.map(([label, value]) => (
             <SnapshotItem key={label} label={label} value={value} />
@@ -2110,12 +2268,18 @@ export function DossierSourceFileSummaryPanel({
 
       {sourceFileSurface ? (
         <>
-          <BnlSourceFileSurfacePanel surface={sourceFileSurface} state={subjectDossierState} blocked={trueBlockerState} onCreateDraft={onCreateDraft} onRequestBnlDraft={onRequestBnlDraft} />
-          <BnlSurfaceVerificationPacket questions={surfaceQuestions.length ? surfaceQuestions : readinessQuestionsFrom((asRecord((latestSourceFileArchive as unknown as UnknownRecord)?.reviewActionabilityV1)?.verificationPacketQuestions))} />
+          <BnlSourceFileSurfacePanel surface={sourceFileSurface} state={subjectDossierState} blocked={trueBlockerState} packetQuestions={visibleSurfaceQuestions} onCreateDraft={onCreateDraft} onRequestBnlDraft={onRequestBnlDraft} />
+          <BnlSurfaceVerificationPacket questions={visibleSurfaceQuestions} />
           <details className="border border-border/70 bg-background/20 p-3 text-sm text-muted">
             <summary className="cursor-pointer font-semibold text-foreground">Support / Diagnostics</summary>
             <div className="mt-4 space-y-4">
               <DossierCompletionReadout completionRead={dossierCompletionRead} analystRead={analystRead} report={report} interimBrief={interimBrief} />
+              <details className="border border-border/60 bg-background/20 p-3 text-sm text-muted">
+                <summary className="cursor-pointer font-semibold text-foreground">Legacy claim review diagnostics</summary>
+                <div className="mt-4">
+                  <BnlAnalystReadPanel analystRead={analystRead} refreshedAt={latestSourceFileArchive?.updatedAt ?? summary.lastUpdatedAt} candidateId={candidateId} sourceArchiveId={latestSourceFileArchive?.id} subjectName={subjectName ?? latestSourceFileArchive?.subjectName} claimReviews={claimReviews} onReviewClaim={onReviewClaim} candidate={candidate} />
+                </div>
+              </details>
             </div>
           </details>
         </>
@@ -2128,16 +2292,18 @@ export function DossierSourceFileSummaryPanel({
         />
       )}
 
-      <BnlAnalystReadPanel
-        analystRead={analystRead}
-        refreshedAt={latestSourceFileArchive?.updatedAt ?? summary.lastUpdatedAt}
-        candidateId={candidateId}
-        sourceArchiveId={latestSourceFileArchive?.id}
-        subjectName={subjectName ?? latestSourceFileArchive?.subjectName}
-        claimReviews={claimReviews}
-        onReviewClaim={onReviewClaim}
-        candidate={candidate}
-      />
+      {!sourceFileSurface && (
+        <BnlAnalystReadPanel
+          analystRead={analystRead}
+          refreshedAt={latestSourceFileArchive?.updatedAt ?? summary.lastUpdatedAt}
+          candidateId={candidateId}
+          sourceArchiveId={latestSourceFileArchive?.id}
+          subjectName={subjectName ?? latestSourceFileArchive?.subjectName}
+          claimReviews={claimReviews}
+          onReviewClaim={onReviewClaim}
+          candidate={candidate}
+        />
+      )}
 
       {blueprint && <DossierBlueprintView blueprint={blueprint} />}
 

@@ -12774,25 +12774,36 @@ test("sourceFileSurfaceV1 drives primary Source File surface, compact cards, con
       ],
     },
     subjectDossierStateV1: { state: "ready_for_cautious_draft" },
+    subjectAnalystReadV1: {
+      subjectName: "Surface Subject",
+      reviewableClaims: [{ title: "Old Source File Claim Decisions wall", claimText: "Legacy giant review claim should not dominate." }],
+    },
     dossierCompletionReadV1: { bnlAssessment: "Legacy completion read should be diagnostic." },
     reviewActionabilityV1: { verificationPacketQuestions: ["Fallback question should not be primary."] },
     sourceFileClassificationV1: { internalTags: ["source_blind"] },
   };
-  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+  const element = sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
     summary,
     subjectName: "Surface Subject",
     latestSourceFileArchive: archive,
     candidateId: "surface_candidate",
     onCreateDraft: () => {},
-  }));
+  });
+  const text = collectDefaultVisibleText(element);
+  const fullText = collectReactText(element);
   assert.match(text, /BNL Source File Surface \/ BNL Take/);
   assert.match(text, /Ready for cautious draft/);
   assert.match(text, /Draft from public-safe material/);
   assert.match(text, /Owner wording needed/);
-  assert.match(text, /Copy \/ focus: Ask owner/);
-  assert.match(text, /owner-approved wording/);
+  assert.match(text, /Copy owner question/);
+  assert.doesNotMatch(text, /Copy \/ focus/);
   assert.match(text, /Which public role wording should BNL use\?/);
   assert.doesNotMatch(text, /Fallback question should not be primary/);
+  assert.doesNotMatch(text, /Source File Claim Decisions|Legacy giant review claim should not dominate/);
+  assert.match(text, /Compact Source File status/);
+  assert.doesNotMatch(text, /Evidence depth|Public readiness|Identity certainty|BNL recommendation cards/);
+  assert.match(fullText, /Legacy claim review diagnostics/);
+  assert.match(fullText, /Source File Claim Decisions/);
   assert.doesNotMatch(text, /actionability|publicUse|blocksDraft|safeDefault|dossierImpact|sourceFileCaseReportV1|subjectAnalystReadV1|reviewActionabilityV1/);
 });
 
@@ -12804,6 +12815,7 @@ test("sourceFileSurfaceV1 blocker state is prominent and prevents wired draft ac
   assert.match(text, /Blocked/);
   assert.match(text, /Draft blocked/);
   assert.doesNotMatch(text, /Create Proposed Dossier Draft/);
-  assert.match(text, /Copy \/ focus: Ask admin/);
+  assert.doesNotMatch(text, /Copy \/ focus/);
+  assert.match(text, /Next step: ask admin for confirmation/);
 });
 

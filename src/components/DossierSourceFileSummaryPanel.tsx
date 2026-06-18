@@ -492,6 +492,7 @@ function AnalystList({ value, empty }: { value: unknown; empty: string }) {
 
 export type DossierSourceFileReviewableClaim = {
   relatedReadinessQuestions?: ReadinessQuestion[];
+  readinessMetadata?: string[];
   id: string;
   claimText: string;
   claimType: DossierSourceFileClaimType;
@@ -570,7 +571,7 @@ function stringListFromRecord(record: UnknownRecord | undefined, key: string): s
 function safeHumanText(value: unknown) {
   const text = displayValue(value);
   if (!text) return undefined;
-  if (/@|stripe|payment|customer|token|env|config|raw evidence|raw id|database|table|source-blind detail|private message|mod-only|internal alias/i.test(text)) {
+  if (/@|stripe|payment|customer|token|env|config|raw evidence|raw id|database|table|source-blind detail|private|mod-only|internal alias/i.test(text)) {
     return "BNL can see protected context here, but it needs approved wording or a public source before anything can be used publicly.";
   }
   return text;
@@ -631,6 +632,21 @@ function readinessQuestionsFrom(value: unknown, clarificationOnly = false): Read
       clarificationOnly,
     }];
   });
+}
+
+function readinessMetadataItems(question: ReadinessQuestion) {
+  return [
+    question.dossierSection ? `Section: ${question.dossierSection}` : undefined,
+    question.priority ? `Priority: ${question.priority}` : undefined,
+    question.answerType ? `Answer: ${question.answerType}` : undefined,
+    question.sourceSafety ? `Source: ${question.sourceSafety}` : undefined,
+    question.sourceCount ? `Used by ${question.sourceCount} source items` : undefined,
+  ].filter((item): item is string => Boolean(item));
+}
+
+function ReadinessMetadataLine({ items }: { items?: string[] }) {
+  if (!items?.length) return null;
+  return <p className="mt-1 text-[11px] text-muted">{items.join(" · ")}</p>;
 }
 
 function analystReadinessQuestions(analystRead?: DossierSubjectAnalystReadV1) {
@@ -909,7 +925,8 @@ export function deriveDossierSourceFileReviewableClaims(input: {
     relatedReadinessQuestions.forEach((question) => attachedQuestionIds.add(question.id));
     return relatedReadinessQuestions.length ? { ...card, relatedReadinessQuestions } : card;
   });
-  const readinessCards = readinessQuestions.filter((question) => !attachedQuestionIds.has(question.id)).map((question) => buildClaimCard({
+  const readinessCards: DossierSourceFileReviewableClaim[] = readinessQuestions.filter((question) => !attachedQuestionIds.has(question.id)).flatMap((question) => {
+    const card = buildClaimCard({
     value: {
       claimText: question.question,
       displayTitle: question.clarificationOnly ? "Dossier clarification need" : "Dossier readiness question",
@@ -930,7 +947,9 @@ export function deriveDossierSourceFileReviewableClaims(input: {
     sourceArchiveId: input.sourceArchiveId,
     subjectName: input.subjectName ?? input.analystRead?.subjectName,
     reviews: reviewById,
-  })).filter((card): card is DossierSourceFileReviewableClaim => Boolean(card));
+    });
+    return card ? [{ ...card, readinessMetadata: readinessMetadataItems(question) }] : [];
+  });
   const current = [...cardsWithReadiness, ...readinessCards].filter((card) => !signals.some((signal) => signal.id === card.id));
   const currentIds = new Set(current.map((claim) => claim.id));
   return {
@@ -988,7 +1007,6 @@ function unresolvedReviewItems(claims: DossierSourceFileReviewableClaim[]) {
 function isSavedFollowUpQuestion(claim: DossierSourceFileReviewableClaim) {
   const decision = claim.review?.decision;
   if (decision === "needs_more_info") return true;
-  if (claim.relatedReadinessQuestions?.length && decision === "confirmed_internal") return true;
   return claim.claimType === "missing_info" && decision === "confirmed_internal";
 }
 
@@ -996,7 +1014,7 @@ function savedFollowUpQuestionsForClaim(claim: DossierSourceFileReviewableClaim)
   if (!isSavedFollowUpQuestion(claim)) return [];
   const editedText = claim.review?.editedText?.trim();
   if (editedText) return safeCopyQuestions([editedText]);
-  const relatedReadinessQuestions = claim.relatedReadinessQuestions?.map((question) => question.question) ?? [];
+  const relatedReadinessQuestions = claim.review?.decision === "needs_more_info" ? (claim.relatedReadinessQuestions?.map((question) => question.question) ?? []) : [];
   if (relatedReadinessQuestions.length) return safeCopyQuestions(relatedReadinessQuestions);
   const reviewClaimText = claim.review?.claimText?.trim();
   const shouldSkipClaimTextFallback = claim.isVagueArtifact || claim.isInternalAuditArtifact;
@@ -1235,7 +1253,8 @@ function ClaimDecisionCard({ claim, onReview }: { claim: DossierSourceFileReview
         <>
           <p className="mt-1 text-foreground">{claim.claimText}</p>
           {confirmationTargetLabel(claim.confirmationTarget) && <p className="mt-2 text-xs text-muted">Confirmation target: {confirmationTargetLabel(claim.confirmationTarget)}</p>}
-          {claim.relatedReadinessQuestions && claim.relatedReadinessQuestions.length > 0 && <div className="mt-2 border border-border/40 bg-background/40 p-2 text-xs"><p className="font-bold text-foreground">Related BNL readiness questions</p><ul className="mt-1 list-disc pl-5 text-foreground">{claim.relatedReadinessQuestions.map((question) => <li key={question.id}>{question.audienceLabel}: {question.question}{question.whyItMatters ? ` — ${question.whyItMatters}` : ""}</li>)}</ul></div>}
+          {claim.relatedReadinessQuestions && claim.relatedReadinessQuestions.length > 0 && <div className="mt-2 border border-border/40 bg-background/40 p-2 text-xs"><p className="font-bold text-foreground">Related BNL readiness questions</p><ul className="mt-1 list-disc pl-5 text-foreground">{claim.relatedReadinessQuestions.map((question) => <li key={question.id}>{question.audienceLabel}: {question.question}{question.whyItMatters ? ` — ${question.whyItMatters}` : ""}<ReadinessMetadataLine items={readinessMetadataItems(question)} /></li>)}</ul></div>}
+          {claim.readinessMetadata && <ReadinessMetadataLine items={claim.readinessMetadata} />}
           {claim.whatAmIDeciding && <p className="mt-2 border border-border/50 bg-background/40 p-2 text-xs text-foreground"><strong>What am I deciding?</strong> {claim.whatAmIDeciding}</p>}
           {claim.claimType === "source_blind" && <p className="mt-2 border border-accent/60 bg-accent/10 p-2 text-xs text-foreground">Source-blind context cannot become public copy by itself. Only enter public-safe replacement wording if you have separate confirmation.</p>}
           <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
@@ -1317,7 +1336,7 @@ function BnlAnalystReadPanel({
         {reviewable.signals.length > 0 && <section className="border border-border/50 bg-background/20 p-3"><h4 className="mb-1 text-xs font-bold uppercase tracking-widest text-foreground">Evidence Signals / Pattern Summary</h4><p className="mb-2 text-xs text-muted/80">These are pattern counts and context signals BNL used for analysis. They are not public-ready facts by themselves.</p><ul className="space-y-2 text-foreground">{reviewable.signals.map((signal) => <li key={signal.id} className="border border-border/40 p-2"><p className="font-bold">{signal.label}{signal.count ? `: ${signal.count}` : ""}</p><p className="text-xs text-muted">{signal.suggestion}</p><p className="text-xs text-muted">Action: {signal.actionable}</p></li>)}</ul></section>}
         {sectionEntries.map(([section, label]) => {
           const claims = reviewable.current.filter((claim) => claim.sourceSection === section);
-          if (!claims.length && section === "reviewableClaims") return null;
+          if (!claims.length && (section === "reviewableClaims" || section === "dossierReadinessQuestions" || section === "dossierClarificationNeeds")) return null;
           const privateExclusions = section === "sourceBlindInsights" ? stringItems(analystRead.privateOrInternalExclusions) : [];
           return <section key={section} className="border border-border/50 bg-background/20 p-3"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">{label}</h4>{claims.length ? <ul className="space-y-3 text-foreground">{claims.map((claim) => <ClaimDecisionCard key={claim.id} claim={claim} onReview={onReviewClaim} />)}</ul> : <p className="text-muted">No reviewable claims in this section.</p>}{privateExclusions.length > 0 && <ul className="mt-3 list-disc space-y-2 pl-5 text-foreground">{privateExclusions.map((item, index) => <li key={`private-exclusion-${index}`}>Private/internal withheld: {item}</li>)}</ul>}</section>;
         })}

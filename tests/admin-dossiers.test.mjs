@@ -9334,6 +9334,8 @@ test("Source File analyst review cards prefer BNL human display fields and verif
   assert.match(componentSource, /isSavedFollowUpQuestion/);
   assert.match(componentSource, /shadow-\[inset_0_3px_0_rgba\(255,255,255,0\.08\)\]/);
   assert.match(text, /A Source File review decision\. Confirming public-ready does not publish a dossier/);
+  assert.doesNotMatch(text, /Dossier Readiness Questions/);
+  assert.doesNotMatch(text, /Dossier Clarification Needs/);
 });
 
 test("Source File analyst readiness fields wire into existing review and Verification Packet flow", () => {
@@ -9372,6 +9374,11 @@ test("Source File analyst readiness fields wire into existing review and Verific
           question: "Which public source confirms Crow's role?",
           audience: "public_source",
           whyItMatters: "A public dossier needs public provenance.",
+          dossierSection: "role",
+          priority: "raw evidence priority should be humanized",
+          answerType: "public URL",
+          sourceSafety: "private sourceSafety should be humanized",
+          sourceCount: 1,
         },
         {
           question: "Which link is owned by Crow?",
@@ -9405,8 +9412,12 @@ test("Source File analyst readiness fields wire into existing review and Verific
   assert.match(lockedText, /BNL can see protected context here, but it needs approved wording or a public source before anything can be used publicly/);
   assert.match(lockedText, /Related BNL readiness questions/);
   assert.match(lockedText, /Owner-approved wording\s*:\s+What owner-approved wording may BNL use for Crow's role/);
+  assert.match(lockedText, /Section: identity · Priority: high · Answer: approved wording · Source: public-safe follow-up · Used by 2 source items/);
   assert.match(lockedText, /Dossier Readiness Questions/);
   assert.match(lockedText, /Public source needed/);
+  assert.match(lockedText, /Section: role · Priority: BNL can see protected context here, but it needs approved wording or a public source before anything can be used publicly\. · Answer: public URL · Source: BNL can see protected context here, but it needs approved wording or a public source before anything can be used publicly\. · Used by 1 source items/);
+  assert.doesNotMatch(lockedText, /raw evidence priority should be humanized/);
+  assert.doesNotMatch(lockedText, /private sourceSafety should be humanized/);
   assert.match(lockedText, /Link ownership/);
   assert.match(lockedText, /Dossier Clarification Needs/);
   assert.match(lockedText, /Mod \/ informed team member/);
@@ -9414,20 +9425,25 @@ test("Source File analyst readiness fields wire into existing review and Verific
   assert.doesNotMatch(lockedText, /raw evidence: private token database row should never appear/);
   assert.match(lockedText, /Finish all review decisions to unlock the final verification packet/);
 
-  const reviews = derived.current.map((claim) => ({
+  const reviewsFor = (roleDecision) => derived.current.map((claim) => ({
     id: claim.id,
     candidateId: archive.candidateId,
     claimText: claim.claimText,
     claimType: claim.claimType,
     sourceSection: claim.sourceSection,
-    decision: claim.claimType === "missing_info" ? "confirmed_internal" : "confirmed_internal",
+    decision: claim.id === roleClaim.id ? roleDecision : "confirmed_internal",
     publicSafe: false,
-    editedText: claim.claimType === "missing_info" ? claim.verificationPacketQuestions?.[0] : undefined,
+    editedText: claim.id !== roleClaim.id && claim.claimType === "missing_info" ? claim.verificationPacketQuestions?.[0] : undefined,
     createdAt: "2026-06-17T02:00:00.000Z",
     updatedAt: "2026-06-17T02:00:00.000Z",
   }));
-  const unlockedText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive, candidateId: archive.candidateId, claimReviews: reviews }));
-  const packetText = unlockedText.slice(unlockedText.lastIndexOf("Verification Packet"));
+  const internalText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive, candidateId: archive.candidateId, claimReviews: reviewsFor("confirmed_internal") }));
+  const internalPacketText = internalText.slice(internalText.lastIndexOf("Verification Packet"));
+  assert.match(internalPacketText, /Copy verification packet/);
+  assert.doesNotMatch(internalPacketText, /Owner-approved wording/);
+
+  const moreInfoText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive, candidateId: archive.candidateId, claimReviews: reviewsFor("needs_more_info") }));
+  const packetText = moreInfoText.slice(moreInfoText.lastIndexOf("Verification Packet"));
   assert.match(packetText, /Copy verification packet/);
   assert.equal((packetText.match(/Copy verification packet/g) ?? []).length, 1);
   assert.match(packetText, /Owner-approved wording/);

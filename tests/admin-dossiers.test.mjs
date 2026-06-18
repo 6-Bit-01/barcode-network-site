@@ -353,6 +353,102 @@ test("Dossier taxonomy expansion supports first-class artist, collaborator, and 
   assert.equal(dossierClassification.routeDossierCandidateType("personnel").category, "Personnel");
 });
 
+
+test("BNL sourceFileClassificationV1 drives classification tags while preserving safety buckets", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const candidate = {
+    id: "bnl-classification-fixture",
+    name: "BNL Classified Subject",
+    candidateType: "unknown",
+    source: "bnl_source_file_enrichment",
+    tier: "review_candidate",
+    score: 60,
+    whyNow: "BNL emitted canonical classification.",
+    reason: "BNL source file classification exists.",
+    evidenceSummary: "Public music context exists.",
+    knownFacts: ["Public artist page exists."],
+    recommendedTags: ["queue", "moderator"],
+    proposedTags: ["manual-private"],
+    sourceFileClassificationV1: {
+      version: "1",
+      subjectType: "artist",
+      publicDossierType: "artist",
+      confidence: "high",
+      publicSafeTagCandidates: ["artist", "radio", "queue"],
+      internalTags: ["internal-alias", "moderator", "team"],
+      needsReviewTagCandidates: ["role"],
+      rejectedTagCandidates: ["payment-customer"],
+      doNotPubliclyTagAs: ["moderator"],
+      blockedPublicTags: ["team"],
+      routingTags: ["queue_submission"],
+      classificationReasons: ["BNL canonical classification supplied."],
+      classificationBlockedBy: ["Owner review remains required."],
+      sourceSafety: "public_safe",
+    },
+    status: "active_source_file",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const profile = dossierClassification.normalizeBnlSourceFileClassification({ candidate, recommendations: [] });
+  assert.equal(profile.authority, "bnl_source_file_classification");
+  assert.deepEqual(profile.publicSafeTags, ["artist", "radio", "queue"]);
+  assert.ok(profile.internalOnlyTags.includes("moderator"));
+  assert.ok(profile.needsReviewTags.includes("role"));
+  assert.ok(profile.rejectedTags.includes("payment-customer"));
+  assert.ok(profile.blockedPublicTags.includes("team"));
+
+  const blueprint = dossierClassification.createDossierDraftBlueprint({ candidate, recommendations: [] });
+  assert.equal(blueprint.classificationProfile.authority, "bnl_source_file_classification");
+  assert.equal(blueprint.classification.kind, "artist");
+  const publicTags = new Set([
+    ...blueprint.suggestedTags.tags.map((tag) => tag.tag),
+    ...blueprint.suggestedTags.proposedTags.map((tag) => tag.tag),
+  ]);
+  assert.equal(publicTags.has("artist"), true);
+  assert.equal(publicTags.has("radio"), true);
+  assert.equal(publicTags.has("moderator"), false);
+  assert.equal(publicTags.has("team"), false);
+  assert.equal(publicTags.has("role"), false);
+  assert.equal(publicTags.has("payment-customer"), false);
+});
+
+test("BNL source-blind classification prevents public tag promotion and fallback remains labeled", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const base = {
+    id: "source-blind-classification-fixture",
+    name: "Source Blind Subject",
+    candidateType: "artist",
+    source: "manual",
+    tier: "review_candidate",
+    score: 60,
+    whyNow: "Fixture.",
+    reason: "Fixture.",
+    evidenceSummary: "Artist music signal.",
+    status: "active_source_file",
+    createdAt: now,
+    updatedAt: now,
+  };
+  const sourceBlind = dossierClassification.createDossierDraftBlueprint({
+    candidate: {
+      ...base,
+      sourceFileClassificationV1: {
+        publicDossierType: "artist",
+        publicSafeTagCandidates: ["artist", "radio"],
+        sourceSafety: "source_blind",
+      },
+    },
+    recommendations: [],
+  });
+  assert.equal(sourceBlind.classificationProfile.authority, "bnl_source_file_classification");
+  assert.deepEqual(sourceBlind.classificationProfile.publicSafeTags, []);
+  assert.equal(sourceBlind.suggestedTags.tags.some((tag) => tag.tag === "radio"), false);
+
+  const fallback = dossierClassification.normalizeBnlSourceFileClassification({ candidate: base, recommendations: [] });
+  assert.equal(fallback.authority, "site_fallback_classification");
+  assert.equal(fallback.publicDossierType, "artist");
+});
+
 test("Dossier classification blueprint separates category, evidence, readiness, and admin-only identity data", () => {
   const now = "2026-06-12T00:00:00.000Z";
   const base = {

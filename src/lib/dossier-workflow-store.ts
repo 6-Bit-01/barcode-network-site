@@ -31,6 +31,7 @@ import {
   type DossierSourceFileArchiveAttachStatus,
   type DossierSourceFileArchiveMetadata,
   type DossierSourceFileCaseReportV1,
+  type DossierSourceFileClassificationV1,
   type DossierSubjectAnalystReadV1,
   type DossierSourceFileEnrichmentArchive,
   type DossierRecommendationSourceLane,
@@ -562,6 +563,39 @@ function findSubjectAnalystReadV1(input: unknown) {
   return { read: undefined, path: undefined };
 }
 
+
+function isSourceFileClassificationV1Shape(value: unknown) {
+  const classification = sourceArchiveObject(value);
+  if (!classification) return false;
+  return [
+    "subjectType",
+    "publicDossierType",
+    "publicSafeTagCandidates",
+    "internalTags",
+    "needsReviewTagCandidates",
+    "rejectedTagCandidates",
+    "blockedPublicTags",
+    "sourceSafety",
+  ].some((key) => classification[key] !== undefined);
+}
+
+function findSourceFileClassificationV1(input: unknown) {
+  for (const candidate of sourceArchivePayloadCandidates(input)) {
+    const brief = sourceArchiveObject(candidate.value.sourceFileBriefV2);
+    const report = sourceArchiveObject(candidate.value.sourceFileCaseReportV1);
+    const nestedReport = sourceArchiveObject(brief?.sourceFileCaseReportV1);
+    const checks: Array<{ value: unknown; path: string }> = [
+      { value: candidate.value.sourceFileClassificationV1, path: `${candidate.path}.sourceFileClassificationV1` },
+      { value: report?.sourceFileClassificationV1, path: `${candidate.path}.sourceFileCaseReportV1.sourceFileClassificationV1` },
+      { value: nestedReport?.sourceFileClassificationV1, path: `${candidate.path}.sourceFileBriefV2.sourceFileCaseReportV1.sourceFileClassificationV1` },
+      { value: brief?.sourceFileClassificationV1, path: `${candidate.path}.sourceFileBriefV2.sourceFileClassificationV1` },
+    ];
+    const match = checks.find((check) => isSourceFileClassificationV1Shape(check.value));
+    if (match) return { classification: match.value as DossierSourceFileClassificationV1, path: match.path };
+  }
+  return { classification: undefined, path: undefined };
+}
+
 function isSourceFileCaseReportShape(value: unknown) {
   const report = sourceArchiveObject(value);
   if (!report) return false;
@@ -659,6 +693,8 @@ function normalizeSourceFileArchiveInput(
       caseReportExtractedFrom?: string;
       sourceFileBriefExtractedFrom?: string;
       subjectAnalystReadV1?: DossierSubjectAnalystReadV1;
+      sourceFileClassificationV1?: DossierSourceFileClassificationV1;
+      sourceFileClassificationExtractedFrom?: string;
     })
   | null {
   const subjectName = compactArchiveText(input.subjectName, 200);
@@ -666,6 +702,7 @@ function normalizeSourceFileArchiveInput(
   const caseReport = findSourceFileCaseReportV1(input);
   const sourceFileBrief = findSourceFileBriefV2(input);
   const analystRead = findSubjectAnalystReadV1(input);
+  const classification = findSourceFileClassificationV1(input);
   return {
     ...input,
     candidateId: compactArchiveText(input.candidateId, 200),
@@ -686,6 +723,8 @@ function normalizeSourceFileArchiveInput(
     sourceFileCaseReportV1: caseReport.report,
     sourceFileBriefV2: sourceFileBrief.brief,
     subjectAnalystReadV1: analystRead.read,
+    sourceFileClassificationV1: classification.classification,
+    sourceFileClassificationExtractedFrom: classification.path,
     caseReportPresent: Boolean(caseReport.report),
     subjectMemoryPacketPresent: sourceArchiveHasSubjectMemoryPacket(input),
     caseReportExtractedFrom: caseReport.path,
@@ -3049,6 +3088,7 @@ export async function ingestDossierSourceFileArchive(
       sourceFileCaseReportV1: normalized.sourceFileCaseReportV1,
       sourceFileBriefV2: normalized.sourceFileBriefV2,
       subjectAnalystReadV1: normalized.subjectAnalystReadV1,
+      sourceFileClassificationV1: normalized.sourceFileClassificationV1,
       caseReportPresent: normalized.caseReportPresent,
       subjectMemoryPacketPresent: normalized.subjectMemoryPacketPresent,
       caseReportExtractedFrom: normalized.caseReportExtractedFrom,

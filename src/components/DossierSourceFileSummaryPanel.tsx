@@ -1648,6 +1648,21 @@ function DossierBlueprintView({ blueprint }: { blueprint: DossierDraftBlueprint 
           <SnapshotItem label="Evidence counts" value={`${blueprint.evidenceCounts.publicSafeFacts} Public-ready / ${blueprint.evidenceCounts.reviewOnlyItems} Admin-review`} />
         </dl>
         <section className="border border-border/50 bg-background/30 p-3">
+          <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Source File Classification</h4>
+          <p className="text-xs uppercase tracking-widest text-muted">Authority: {blueprint.classificationProfile.authority === "bnl_source_file_classification" ? "BNL sourceFileClassificationV1" : "Site fallback classification"}</p>
+          <dl className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <SnapshotItem label="Subject type" value={blueprint.classificationProfile.subjectType ?? "—"} />
+            <SnapshotItem label="Public dossier type" value={blueprint.classificationProfile.publicDossierType ?? "—"} />
+            <SnapshotItem label="Source safety" value={blueprint.classificationProfile.sourceSafety ?? "—"} />
+          </dl>
+          <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+            <div><p className="text-xs font-bold uppercase tracking-widest text-foreground">Public-safe tags</p><BlueprintList items={blueprint.classificationProfile.publicSafeTags} empty="No BNL public-safe tags." /></div>
+            <div><p className="text-xs font-bold uppercase tracking-widest text-foreground">Needs review tags</p><BlueprintList items={blueprint.classificationProfile.needsReviewTags} empty="No needs-review tags." /></div>
+            <div><p className="text-xs font-bold uppercase tracking-widest text-foreground">Internal-only tags</p><BlueprintList items={blueprint.classificationProfile.internalOnlyTags} empty="No internal-only tags." /></div>
+            <div><p className="text-xs font-bold uppercase tracking-widest text-foreground">Rejected / blocked tags</p><BlueprintList items={[...blueprint.classificationProfile.rejectedTags, ...blueprint.classificationProfile.blockedPublicTags]} empty="No rejected or blocked tags." /></div>
+          </div>
+        </section>
+        <section className="border border-border/50 bg-background/30 p-3">
           <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Recommended next action</h4>
           <p className="text-foreground">{blueprint.readiness.recommendedNextAction}</p>
         </section>

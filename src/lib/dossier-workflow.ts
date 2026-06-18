@@ -189,6 +189,27 @@ export type DossierReadinessQuestionV1 = {
   relatedReviewClaimIds?: string[] | string;
 };
 
+
+export type DossierSourceFileClassificationV1 = {
+  version?: string | number;
+  subjectType?: string;
+  publicDossierType?: string;
+  confidence?: "high" | "medium" | "low" | string;
+  primaryTags?: string[] | string;
+  secondaryTags?: string[] | string;
+  internalTags?: string[] | string;
+  doNotPubliclyTagAs?: string[] | string;
+  routingTags?: string[] | string;
+  evidenceSignals?: unknown;
+  publicSafeTagCandidates?: string[] | string;
+  needsReviewTagCandidates?: string[] | string;
+  rejectedTagCandidates?: string[] | string;
+  classificationReasons?: string[] | string;
+  blockedPublicTags?: string[] | string;
+  sourceSafety?: string;
+  classificationBlockedBy?: string[] | string;
+};
+
 export type DossierSubjectAnalystReadV1 = DossierSourceFileHumanDisplayFields & {
   subjectName?: string;
   internalRead?: string;
@@ -274,6 +295,7 @@ export type DossierSourceFileCaseReportV1 = {
   memoryCoverage?: string | string[];
   subjectIntelligenceBriefV1?: DossierSubjectIntelligenceBriefV1;
   subjectAnalystReadV1?: DossierSubjectAnalystReadV1;
+  sourceFileClassificationV1?: DossierSourceFileClassificationV1;
 };
 
 export type DossierSourceFileBriefV2 = {
@@ -295,6 +317,7 @@ export type DossierSourceFileArchiveCompactReadout = {
   sourceFileCaseReportV1?: DossierSourceFileCaseReportV1;
   sourceFileBriefV2?: DossierSourceFileBriefV2;
   subjectAnalystReadV1?: DossierSubjectAnalystReadV1;
+  sourceFileClassificationV1?: DossierSourceFileClassificationV1;
   archivePayload?: unknown;
   archive?: unknown;
   payload?: unknown;
@@ -518,6 +541,7 @@ export type DossierCandidate = {
   latestSourceFileArchiveDigest?: string;
   latestSourceFileArchiveUpdatedAt?: string;
   latestSourceFileArchive?: DossierSourceFileArchiveMetadata;
+  sourceFileClassificationV1?: DossierSourceFileClassificationV1;
   sourceFileSummary?: DossierSourceFileOperatorSummary;
   sourceFileNotes?: DossierSourceFileNote[];
   sourceFileClaimReviews?: DossierSourceFileClaimReview[];

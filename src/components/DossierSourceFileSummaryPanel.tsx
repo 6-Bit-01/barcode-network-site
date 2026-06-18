@@ -102,6 +102,98 @@ function stringItems(value: unknown): string[] {
   });
 }
 
+
+function dedupeStrings(items: string[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = item.trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function humanizeClassificationTag(tag: string) {
+  const normalized = tag.trim().toLowerCase().replace(/[_ ]+/g, "-");
+  const labels: Record<string, string> = {
+    "source-blind": "source-blind internal context",
+    queue: "queue/submission context",
+    "lore-entity": "lore/entity context",
+    "community-member": "possible community context",
+    platform: "platform/context marker",
+    discord: "Discord-only context",
+  };
+  return labels[normalized] ?? tag.trim().replace(/[_-]+/g, " ");
+}
+
+function DossierReadoutList({ value, empty }: { value: unknown; empty: string }) {
+  const items = dedupeStrings(stringItems(value).map((item) => safeHumanText(item) ?? item));
+  if (!items.length) return <p className="text-muted">{empty}</p>;
+  return <ul className="list-disc space-y-2 pl-5 text-foreground">{items.map((item) => <li key={item}>{item}</li>)}</ul>;
+}
+
+function normalizeDossierCompletionReadV1(latestSourceFileArchive?: DossierSourceFileArchiveMetadata) {
+  for (const candidate of archivePayloadCandidates(latestSourceFileArchive)) {
+    const brief = asRecord(candidate.sourceFileBriefV2);
+    const report = asRecord(candidate.sourceFileCaseReportV1);
+    const nestedReport = asRecord(brief?.sourceFileCaseReportV1);
+    const read = [
+      candidate.dossierCompletionReadV1,
+      brief?.dossierCompletionReadV1,
+      report?.dossierCompletionReadV1,
+      nestedReport?.dossierCompletionReadV1,
+    ].map(asRecord).find(Boolean);
+    if (read) return read;
+  }
+  return undefined;
+}
+
+function DossierCompletionReadout({
+  completionRead,
+  analystRead,
+  report,
+  interimBrief,
+}: {
+  completionRead?: UnknownRecord;
+  analystRead?: DossierSubjectAnalystReadV1;
+  report?: DossierSourceFileCaseReportV1;
+  interimBrief?: UnknownRecord;
+}) {
+  const analyst = analystRead as UnknownRecord | undefined;
+  const read = completionRead;
+  const hasSubjectIntelligence = Boolean(asRecord(report?.subjectIntelligenceBriefV1));
+  const angle = valueByKeys(read, ["likelyDossierAngle", "dossierAngle", "angle"]) ?? valueByKeys(analyst, ["likelyDossierAngle", "dossierAngle", "currentRead", "internalRead"]) ?? (hasSubjectIntelligence ? undefined : report?.caseSummary) ?? interimBrief?.adminSummary;
+  const pattern = valueByKeys(read, ["nearestPublicDossierPattern", "publicDossierPattern"]) ?? valueByKeys(analyst, ["nearestPublicDossierPattern", "publicDraftPosture", "publicDossierPattern"]);
+  const worthiness = valueByKeys(read, ["dossierWorthiness", "worthiness"]) ?? analystRead?.dossierWorthiness;
+  const readiness = valueByKeys(read, ["readiness", "draftReadiness", "readyForDraft"]) ?? readinessStatusLine(analystRead);
+  const assessment = valueByKeys(read, ["bnlAssessment", "assessment", "summary", "shortAssessment"]) ?? valueByKeys(analyst, ["dossierReadinessSummary", "currentRead", "internalRead"]) ?? (hasSubjectIntelligence ? undefined : report?.dossierUse);
+  const whatBnlHas = valueByKeys(read, ["whatBnlHas", "whatBNLHas", "availableMaterial"]) ?? valueByKeys(analyst, ["draftIngredients", "sourceFileIngredients", "strongestSignals"]) ?? report?.evidenceSummary;
+  const publicSafe = valueByKeys(read, ["publicSafeMaterial", "publicSafeClaims", "usablePublicClaims", "draftIngredients"]) ?? analystRead?.publicReadyClaims ?? (hasSubjectIntelligence ? undefined : report?.publicSafeClaims);
+  const internal = valueByKeys(read, ["keepInternal", "internalOnly", "omittedMaterial", "omitFromPublic"]) ?? valueByKeys(analyst, ["privateOrInternalExclusions", "doNotSayPublicly", "sourceBlindInsights"]) ?? report?.internalOnlyNotes;
+  const required = valueByKeys(read, ["requiredMissing", "trueBlockers", "neededToFinish"]) ?? valueByKeys(analyst, ["missingConfirmations", "dossierBlockedBy"]);
+  const optional = valueByKeys(read, ["optionalMissing", "helpfulButOptional"]) ?? analystRead?.recommendedAdminActions;
+  const plan = valueByKeys(read, ["draftCompositionPlan", "compositionPlan"]) ?? valueByKeys(analyst, ["draftCompositionPlan", "draftReadinessReason"]);
+  const next = valueByKeys(read, ["recommendedNextAction", "nextAction"]) ?? valueByKeys(analyst, ["recommendedNextAction", "recommendedAdminActions"]) ?? report?.recommendedNextSteps ?? interimBrief?.recommendedNextAction;
+  return (
+    <div className="space-y-4">
+      <Section title="BNL Dossier Assessment" tone="caution" helper="Main Source File readout. Uses dossierCompletionReadV1 first when present, then BNL analyst/case-report fallbacks.">
+        <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <SnapshotItem label="Dossier angle" value={scalarLabel(angle)} />
+          <SnapshotItem label="Dossier worthiness" value={scalarLabel(worthiness)} />
+          <SnapshotItem label="Readiness" value={scalarLabel(readiness)} />
+          <SnapshotItem label="Nearest public pattern" value={scalarLabel(pattern)} />
+        </dl>
+        <div className="mt-3 border border-border/50 bg-background/30 p-3"><BriefParagraphs value={assessment} /></div>
+      </Section>
+      <Section title="What BNL Has"><DossierReadoutList value={whatBnlHas} empty="No dossier ingredients recorded yet." /></Section>
+      <Section title="Public-Safe Dossier Material" helper="Public-safe claims and usable draft ingredients, not raw public-safe tag buckets."><DossierReadoutList value={publicSafe} empty="No public labels approved yet. Public-safe claims may still be available below." /></Section>
+      <Section title="Keep Internal / Omit" helper="Internal/source-blind, queue, lore, Discord-only, unapproved role/link/collaboration context stays out of public copy."><DossierReadoutList value={internal} empty="No internal omit guidance recorded." /></Section>
+      <Section title="Needed To Finish"><div className="grid grid-cols-1 gap-3 lg:grid-cols-2"><div><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Required</h4><DossierReadoutList value={required} empty="No required dossier-completion needs recorded." /></div><div><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Optional</h4><DossierReadoutList value={optional} empty="No optional improvements recorded." /></div></div></Section>
+      <Section title="Draft / Next Action"><div className="grid grid-cols-1 gap-3 lg:grid-cols-2"><div><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Draft composition plan</h4><DossierReadoutList value={plan} empty="No draft composition plan recorded." /></div><div><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Recommended next action</h4><DossierReadoutList value={next} empty="No next action recorded." /></div></div></Section>
+    </div>
+  );
+}
+
 function hasReportShape(value: unknown): value is DossierSourceFileCaseReportV1 {
   const report = asRecord(value);
   if (!report) return false;
@@ -1511,8 +1603,9 @@ function BnlAnalystReadPanel({
     ["doNotSayPublicly", "Do Not Say Publicly"],
   ] as const;
   return (
-    <Section title="BNL Analyst Read" tone="review" helper="Internal Source File intelligence. Not public dossier copy.">
+    <Section title="Support / Diagnostics" tone="review" helper="Internal Source File intelligence. Not public dossier copy. Secondary admin support: review cards, Verification Packet, withheld evidence, provenance, and analyst diagnostics.">
       <div className="space-y-4">
+        <h4 className="text-xs font-bold uppercase tracking-widest text-foreground">BNL Analyst Read</h4>
         <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <SnapshotItem label="Subject type" value={scalarLabel(analystRead.likelySubjectType)} />
           <SnapshotItem label="Confidence" value={scalarLabel(analystRead.confidence)} />
@@ -1692,8 +1785,8 @@ export function DossierSourceFileArchiveRawData({ latestSourceFileArchive }: { l
 }
 
 
-function BlueprintList({ items, empty = "—" }: { items?: string[]; empty?: string }) {
-  const safeItems = (items ?? []).filter(Boolean);
+function BlueprintList({ items, empty = "—", humanize = false }: { items?: string[]; empty?: string; humanize?: boolean }) {
+  const safeItems = dedupeStrings((items ?? []).filter(Boolean).map((item) => humanize ? humanizeClassificationTag(item) : item));
   if (!safeItems.length) return <p className="text-muted">{empty}</p>;
   return (
     <ul className="list-disc space-y-1 pl-5 text-foreground">
@@ -1726,21 +1819,22 @@ function DossierBlueprintView({ blueprint }: { blueprint: DossierDraftBlueprint 
           <SnapshotItem label="Readiness" value={`${blueprint.readiness.label} (${blueprint.readiness.score}/100)`} />
           <SnapshotItem label="Evidence counts" value={`${blueprint.evidenceCounts.publicSafeFacts} Public-ready / ${blueprint.evidenceCounts.reviewOnlyItems} Admin-review`} />
         </dl>
-        <section className="border border-border/50 bg-background/30 p-3">
-          <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Source File Classification</h4>
-          <p className="text-xs uppercase tracking-widest text-muted">Authority: {blueprint.classificationProfile.authority === "bnl_source_file_classification" ? "BNL sourceFileClassificationV1" : "Site fallback classification"}</p>
+        <details className="border border-border/50 bg-background/30 p-3 text-xs text-muted">
+          <summary className="cursor-pointer font-semibold text-foreground">Classification diagnostics</summary>
+          <p className="mt-2 uppercase tracking-widest text-muted">Authority: {blueprint.classificationProfile.authority === "bnl_source_file_classification" ? "BNL sourceFileClassificationV1" : "Site fallback classification"}</p>
+          <p className="mt-2 text-muted">Raw buckets are routing diagnostics only. If the same tag appears in multiple buckets, treat it as a routing conflict, not a dossier fact.</p>
           <dl className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
             <SnapshotItem label="Subject type" value={blueprint.classificationProfile.subjectType ?? "—"} />
             <SnapshotItem label="Public dossier type" value={blueprint.classificationProfile.publicDossierType ?? "—"} />
             <SnapshotItem label="Source safety" value={blueprint.classificationProfile.sourceSafety ?? "—"} />
           </dl>
           <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <div><p className="text-xs font-bold uppercase tracking-widest text-foreground">Public-safe tags</p><BlueprintList items={blueprint.classificationProfile.publicSafeTags} empty="No BNL public-safe tags." /></div>
-            <div><p className="text-xs font-bold uppercase tracking-widest text-foreground">Needs review tags</p><BlueprintList items={blueprint.classificationProfile.needsReviewTags} empty="No needs-review tags." /></div>
-            <div><p className="text-xs font-bold uppercase tracking-widest text-foreground">Internal-only tags</p><BlueprintList items={blueprint.classificationProfile.internalOnlyTags} empty="No internal-only tags." /></div>
-            <div><p className="text-xs font-bold uppercase tracking-widest text-foreground">Rejected / blocked tags</p><BlueprintList items={[...blueprint.classificationProfile.rejectedTags, ...blueprint.classificationProfile.blockedPublicTags]} empty="No rejected or blocked tags." /></div>
+            <div><p className="text-xs font-bold uppercase tracking-widest text-foreground">Public-safe labels</p><BlueprintList humanize items={blueprint.classificationProfile.publicSafeTags} empty="No public labels approved yet. Public-safe claims may still be available above." /></div>
+            <div><p className="text-xs font-bold uppercase tracking-widest text-foreground">Needs-review diagnostics</p><BlueprintList humanize items={blueprint.classificationProfile.needsReviewTags} empty="No needs-review diagnostics." /></div>
+            <div><p className="text-xs font-bold uppercase tracking-widest text-foreground">Internal-only diagnostics</p><BlueprintList humanize items={blueprint.classificationProfile.internalOnlyTags} empty="No internal-only diagnostics." /></div>
+            <div><p className="text-xs font-bold uppercase tracking-widest text-foreground">Rejected / blocked diagnostics</p><BlueprintList humanize items={[...blueprint.classificationProfile.rejectedTags, ...blueprint.classificationProfile.blockedPublicTags]} empty="No rejected or blocked diagnostics." /></div>
           </div>
-        </section>
+        </details>
         <section className="border border-border/50 bg-background/30 p-3">
           <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Recommended next action</h4>
           <p className="text-foreground">{blueprint.readiness.recommendedNextAction}</p>
@@ -1869,6 +1963,8 @@ export function DossierSourceFileSummaryPanel({
 }) {
   const report = normalizeCaseReport(latestSourceFileArchive);
   const interimBrief = normalizeInterimBrief(latestSourceFileArchive);
+  const analystRead = normalizeSubjectAnalystReadV1(latestSourceFileArchive);
+  const dossierCompletionRead = normalizeDossierCompletionReadV1(latestSourceFileArchive);
   const latestArchiveMissingReport = Boolean(latestSourceFileArchive && !report);
   const hasArchiveDiagnostics =
     latestSourceFileArchive?.caseReportPresent !== undefined ||
@@ -1919,8 +2015,15 @@ export function DossierSourceFileSummaryPanel({
         </p>
       </Section>
 
+      <DossierCompletionReadout
+        completionRead={dossierCompletionRead}
+        analystRead={analystRead}
+        report={report}
+        interimBrief={interimBrief}
+      />
+
       <BnlAnalystReadPanel
-        analystRead={normalizeSubjectAnalystReadV1(latestSourceFileArchive)}
+        analystRead={analystRead}
         refreshedAt={latestSourceFileArchive?.updatedAt ?? summary.lastUpdatedAt}
         candidateId={candidateId}
         sourceArchiveId={latestSourceFileArchive?.id}

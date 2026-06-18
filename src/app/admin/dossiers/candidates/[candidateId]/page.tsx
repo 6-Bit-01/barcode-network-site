@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
+  createDossierSourceFileDraftReadinessReadModel,
   getDossierSourceFileMetrics,
   normalizeDossierSubjectName,
   type DossierCandidate,
@@ -21,6 +22,7 @@ import {
 import {
   DossierSourceFileArchiveRawData,
   DossierSourceFileSummaryPanel,
+  normalizeSubjectAnalystReadV1,
   type DossierSourceFileReviewableClaim,
 } from "@/components/DossierSourceFileSummaryPanel";
 import { createHumanReadableSourceFileNoteView } from "@/lib/dossier-note-display";
@@ -568,13 +570,13 @@ function primaryActionForSourceFile(input: {
   return "add_missing_evidence";
 }
 
-function actionExplanation(action: MainSourceFileAction, readinessLabel: DossierReadinessLabel) {
+function actionExplanation(action: MainSourceFileAction, readiness: { primaryReason: string; recommendedNextAction: string }) {
   if (action === "add_to_source_file") return "This record needs to become a BNL Source File before drafting is available.";
   if (action === "create_draft") return "The Source File has enough public-safe dossier intelligence to create a reviewable Proposed Dossier draft.";
   if (action === "open_draft") return "The Proposed Dossier draft is current with the Source File.";
   if (action === "update_draft") return "The Source File has changed since the current draft was created or updated.";
   if (action === "open_update_workspace") return "A public dossier is already linked, so this should move through the Dossier Update workspace instead of a new Proposed Dossier.";
-  return `Draft blocked: missing public-safe identity / role / activity evidence. Current readiness: ${readinessLabel}.`;
+  return readiness.recommendedNextAction || `Draft blocked: ${readiness.primaryReason}`;
 }
 
 function sourceWarningLabels(input: {
@@ -1930,7 +1932,7 @@ export default function CandidateReviewPage() {
   const sourceFileExists = !isCandidateIntake && !isArchivedCandidate && !isCandidateClosed(candidate);
   const identityNeedsReview =
     proposedIdentityLinks.length > 0 || candidate.identityReviewStatus === "needs_confirmation";
-  const readiness = readinessForSourceFile({
+  const fallbackReadiness = readinessForSourceFile({
     sourceFileExists,
     identityNeedsReview,
     publicSafeFactCount: rawPublicSafeFacts.length,
@@ -1939,7 +1941,18 @@ export default function CandidateReviewPage() {
     missingInfoCount: (candidate.missingInfo ?? []).length + (sourceFileSummary?.missingInfo ?? []).length,
     reviewOnlyEvidenceCount: reviewOnlyNotes[0] === "No review-only evidence notes recorded." ? 0 : reviewOnlyNotes.length,
   });
-  const readyForDraft = readiness.label === "Ready for Proposed Dossier";
+  const readiness = createDossierSourceFileDraftReadinessReadModel({
+    candidate,
+    sourceFileExists,
+    analystRead: normalizeSubjectAnalystReadV1(candidate.latestSourceFileArchive),
+    fallback: {
+      readyForDraft: fallbackReadiness.label === "Ready for Proposed Dossier",
+      primaryReason: fallbackReadiness.reasons[0] ?? "BNL readiness is not available yet; using the conservative site fallback heuristic.",
+      blockers: fallbackReadiness.blockers,
+      recommendedNextAction: fallbackReadiness.label === "Ready for Proposed Dossier" ? "Request BNL draft generation from this Source File." : "Refresh the Source File so BNL can provide draft readiness.",
+    },
+  });
+  const readyForDraft = readiness.readyForDraft;
   const mainAction = primaryActionForSourceFile({
     sourceFileExists,
     hasPublicDossier: Boolean(candidate.existingDossierMatch),
@@ -1966,7 +1979,7 @@ export default function CandidateReviewPage() {
   const dossierIntelligenceSummary = firstMeaningful([
     sourceFileSummary?.currentRead,
     entityActivityReadout?.currentRead,
-    `${candidate.name} is classified as ${entityType}. Dossier readiness is ${readiness.label.toLowerCase()} based on ${rawPublicSafeFacts.length} public-safe fact${rawPublicSafeFacts.length === 1 ? "" : "s"} and ${activitySignals.length} activity signal${activitySignals.length === 1 ? "" : "s"}.`,
+    `${candidate.name} is classified as ${entityType}. Dossier readiness is ${readiness.readinessState.replace(/_/g, " ")} based on ${rawPublicSafeFacts.length} public-safe fact${rawPublicSafeFacts.length === 1 ? "" : "s"} and ${activitySignals.length} activity signal${activitySignals.length === 1 ? "" : "s"}.`,
   ], `${candidate.name} needs more BNL dossier intelligence before public drafting.`);
   const whatToAddGroups = [
     {
@@ -1999,7 +2012,7 @@ export default function CandidateReviewPage() {
     },
     {
       title: "Dossier decision",
-      items: [actionExplanation(mainAction, readiness.label)],
+      items: [actionExplanation(mainAction, readiness)],
     },
   ].map((group) => ({ ...group, items: group.items.filter(Boolean) as string[] }));
 
@@ -2127,7 +2140,7 @@ export default function CandidateReviewPage() {
             <div className="border border-border bg-background/20 p-3 lg:col-span-2">
               <p className="mb-3 text-accent">Main actions</p>
               <p className="mb-3 text-sm normal-case tracking-normal text-muted">
-                {actionExplanation(mainAction, readiness.label)}
+                {actionExplanation(mainAction, readiness)}
               </p>
               <div className="flex flex-wrap gap-3">
                 <Link
@@ -2211,7 +2224,7 @@ export default function CandidateReviewPage() {
                     type="button"
                     disabled
                     className="border border-border px-4 py-2 text-muted opacity-60"
-                    title={actionExplanation(mainAction, readiness.label)}
+                    title={actionExplanation(mainAction, readiness)}
                   >
                     Draft blocked: missing public-safe identity / role / activity evidence
                   </button>
@@ -2367,7 +2380,7 @@ export default function CandidateReviewPage() {
               </div>
               <div className="border border-border/60 bg-background/30 p-3">
                 <dt className="text-xs uppercase tracking-widest text-accent">Dossier decision</dt>
-                <dd className="mt-1">{readiness.label}</dd>
+                <dd className="mt-1">{readiness.readinessState.replace(/_/g, " ")}</dd>
               </div>
             </dl>
             <div>
@@ -2452,16 +2465,16 @@ export default function CandidateReviewPage() {
 
         <Section title="Dossier Readiness">
           <div className="space-y-3">
-            <p className="text-xl font-bold text-foreground">{readiness.label}</p>
+            <p className="text-xl font-bold text-foreground">{readiness.readinessState.replace(/_/g, " ")}</p>
             <div>
               <h3 className="font-semibold text-foreground">Readiness reasons</h3>
-              {meaningFirstList(readiness.reasons, "No positive readiness reasons recorded yet.", candidate.name)}
+              {meaningFirstList([readiness.primaryReason], "No positive readiness reasons recorded yet.", candidate.name)}
             </div>
             <div>
               <h3 className="font-semibold text-foreground">Blockers</h3>
               {meaningFirstList(readiness.blockers, "No blockers recorded beyond Owner Review.", candidate.name)}
             </div>
-            <p>Recommended next action: {actionExplanation(mainAction, readiness.label)}</p>
+            <p>Recommended next action: {actionExplanation(mainAction, readiness)}</p>
           </div>
         </Section>
 

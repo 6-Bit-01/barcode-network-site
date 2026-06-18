@@ -9595,8 +9595,8 @@ test("Source File analyst readiness fields wire into existing review and Verific
 
   const lockedText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive, candidateId: archive.candidateId }));
   assert.match(lockedText, /Dossier readiness/);
-  assert.match(lockedText, /Not ready for draft\s+—\s+BNL still needs owner-approved wording and a public source before drafting/);
-  assert.match(lockedText, /Compact blockers/);
+  assert.match(lockedText, /blocked by bnl questions\s+—\s+BNL still needs owner-approved wording and a public source before drafting/);
+  assert.match(lockedText, /Current BNL blockers/);
   assert.match(lockedText, /Owner-approved wording missing/);
   assert.match(lockedText, /BNL can see protected context here, but it needs approved wording or a public source before anything can be used publicly/);
   assert.match(lockedText, /Related BNL readiness questions/);
@@ -12256,7 +12256,7 @@ test("Source File intelligence and dynamic main actions are readiness-driven", (
 
   const mainActions = page.slice(page.indexOf("<p className=\"mb-3 text-accent\">Main actions</p>"), page.indexOf("<p className=\"mb-3 text-accent\">Review state</p>"));
   assert.doesNotMatch(mainActions, /Create Proposed Dossier Draft[\s\S]*Open Proposed Dossier Draft[\s\S]*Update Draft From Source File[\s\S]*Add to Source File/);
-  assert.match(mainActions, /actionExplanation\(mainAction, readiness\.label\)/);
+  assert.match(mainActions, /actionExplanation\(mainAction, readiness\)/);
 
   const technicalCoverageIndex = page.indexOf("Technical Source Coverage");
   const dossierIntelligenceIndex = page.indexOf("BNL Dossier Intelligence");
@@ -12428,4 +12428,61 @@ test("Verification Packet suppresses saved answer and boundary text while keepin
   assert.match(text, /Automatically resolved BNL questions/);
   assert.match(derived.resolvedQuestions.map((question) => question.resolutionSummary).join("\n"), /Suppressed saved/);
   assert.doesNotMatch(normalizedSource("src/app/api/bnl/read-model/route.ts"), /classifySavedPacketTextForVerificationPacket|safeToSuppressFromActivePacket|resolutionState/);
+});
+
+test("BNL Source File draft readiness read model uses BNL authority before site fallback", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const baseCandidate = {
+    id: "candidate_draft_readiness",
+    name: "Draft Readiness Subject",
+    sourceFileClaimReviews: [
+      { id: "review_role", candidateId: "candidate_draft_readiness", questionKey: "q:role", claimText: "Which public wording confirms the role?", claimType: "review_needed", sourceSection: "dossierReadinessQuestions", decision: "confirmed_public", publicSafe: true, createdAt: now, updatedAt: now },
+      { id: "review_boundary", candidateId: "candidate_draft_readiness", questionKey: "q:boundary", claimText: "Should BNL use the unsafe boundary?", claimType: "review_needed", sourceSection: "dossierReadinessQuestions", decision: "rejected", publicSafe: false, createdAt: now, updatedAt: now },
+      { id: "review_internal", candidateId: "candidate_draft_readiness", questionKey: "q:internal", claimText: "Which admin confirms internal context?", claimType: "review_needed", sourceSection: "dossierReadinessQuestions", decision: "confirmed_internal", publicSafe: false, createdAt: now, updatedAt: now },
+    ],
+  };
+  const readyRead = {
+    readyForDraft: true,
+    draftReadinessReason: "BNL says ready after resolved questions.",
+    dossierReadinessQuestions: [
+      { questionKey: "q:role", question: "Which public wording confirms the role?", priority: "high", audience: "public_source", answerType: "public_fact" },
+      { questionKey: "q:boundary", question: "Should BNL use the unsafe boundary?", priority: "high", answerType: "boundary" },
+    ],
+  };
+  const ready = workflow.createDossierSourceFileDraftReadinessReadModel({ sourceFileExists: true, candidate: baseCandidate, analystRead: readyRead, fallback: { readyForDraft: false, primaryReason: "Fallback says blocked", blockers: ["Fallback blocker"], recommendedNextAction: "Fallback action" } });
+  assert.equal(ready.readinessState, "ready_for_bnl_draft");
+  assert.equal(ready.readyForDraft, true);
+  assert.equal(ready.authority, "bnl_analyst_read");
+  assert.equal(ready.unresolvedQuestionCount, 0);
+  assert.equal(ready.resolvedQuestionCount, 2);
+
+  const blocked = workflow.createDossierSourceFileDraftReadinessReadModel({ sourceFileExists: true, candidate: baseCandidate, analystRead: { readyForDraft: false, draftReadinessReason: "BNL needs one more answer.", dossierReadinessQuestions: [{ questionKey: "q:missing", question: "Which public source confirms the title?", priority: "high", audience: "public_source", answerType: "public_fact" }] } });
+  assert.equal(blocked.readinessState, "blocked_by_bnl_questions");
+  assert.equal(blocked.authority, "bnl_question_resolution");
+  assert.match(blocked.blockers.join("\n"), /Which public source confirms the title/);
+
+  const internalDoesNotSatisfyPublic = workflow.createDossierSourceFileDraftReadinessReadModel({ sourceFileExists: true, candidate: baseCandidate, analystRead: { readyForDraft: true, dossierReadinessQuestions: [{ questionKey: "q:internal", question: "Which public source confirms internal context?", priority: "high", audience: "public_source", answerType: "public_fact" }] } });
+  assert.equal(internalDoesNotSatisfyPublic.readinessState, "blocked_by_bnl_questions");
+
+  const pendingPublicReview = workflow.createDossierSourceFileDraftReadinessReadModel({ sourceFileExists: true, candidate: { ...baseCandidate, sourceFileClaimReviews: [{ id: "review_pending", candidateId: "candidate_draft_readiness", claimText: "Pending public role wording", claimType: "review_needed", sourceSection: "reviewableClaims", decision: "pending", publicSafe: false, createdAt: now, updatedAt: now }] }, analystRead: { readyForDraft: true, draftReadinessReason: "BNL ready if reviews clear." } });
+  assert.equal(pendingPublicReview.readinessState, "blocked_by_unresolved_review");
+
+  const pendingInternalOnly = workflow.createDossierSourceFileDraftReadinessReadModel({ sourceFileExists: true, candidate: { ...baseCandidate, sourceFileClaimReviews: [{ id: "review_pending_internal", candidateId: "candidate_draft_readiness", claimText: "Pending internal-only operator note", claimType: "review_needed", sourceSection: "sourceBlindInsights", decision: "pending", publicSafe: false, createdAt: now, updatedAt: now }] }, analystRead: { readyForDraft: true, draftReadinessReason: "BNL ready." } });
+  assert.equal(pendingInternalOnly.readinessState, "ready_for_bnl_draft");
+
+  const fallback = workflow.createDossierSourceFileDraftReadinessReadModel({ sourceFileExists: true, fallback: { readyForDraft: false, primaryReason: "Local heuristic only.", blockers: ["Needs public evidence."], recommendedNextAction: "Refresh BNL." } });
+  assert.equal(fallback.readinessState, "fallback_heuristic");
+  assert.equal(fallback.authority, "site_fallback_heuristic");
+});
+
+test("admin Source File and Control Center render BNL draft readiness read model without public leakage", () => {
+  const sourceFilePage = normalizedSource("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+  const controlCenter = normalizedSource("src/app/admin/dossiers/page.tsx");
+  const publicReadModel = normalizedSource("src/app/api/bnl/read-model/route.ts");
+  assert.match(sourceFilePage, /createDossierSourceFileDraftReadinessReadModel/);
+  assert.match(sourceFilePage, /normalizeSubjectAnalystReadV1/);
+  assert.doesNotMatch(sourceFilePage, /readyForDraft = readiness\.label === "Ready for Proposed Dossier"/);
+  assert.match(controlCenter, /readiness\.recommendedNextAction/);
+  assert.match(controlCenter, /createDossierSourceFileDraftReadinessReadModel/);
+  assert.doesNotMatch(publicReadModel, /sourceFileResolutionAudit|resolvedQuestionAudit|DossierSourceFileDraftReadinessReadModel|sourceFileClaimReviews/);
 });

@@ -34,6 +34,18 @@ type ReportSection = {
   optional?: boolean;
 };
 
+type SourceFilePagePlanFallbacks = {
+  entityType?: string;
+  activityLevel?: string;
+  dossierDecision?: string;
+  evidenceSupportingDossierValue?: string[];
+  missingBeforePublicUse?: string[];
+  recentActivity?: string[];
+  authoredOrMentioned?: string[];
+  confidence?: string;
+  recurringTopics?: string[];
+};
+
 function StatusBadge({ children }: { children: React.ReactNode }) {
   return (
     <span className="border border-border bg-background/40 px-2 py-1 text-muted">
@@ -2120,6 +2132,8 @@ function SourceFilePagePlanView({
   summary,
   latestSourceFileArchive,
   report,
+  reviewBoundaryLabels = [],
+  pagePlanFallbacks,
   subjectName,
   currentLane,
   latestRecommendationTimestamp,
@@ -2129,6 +2143,8 @@ function SourceFilePagePlanView({
   summary: DossierSourceFileSummary;
   latestSourceFileArchive?: DossierSourceFileArchiveMetadata;
   report?: DossierSourceFileCaseReportV1;
+  reviewBoundaryLabels?: string[];
+  pagePlanFallbacks?: SourceFilePagePlanFallbacks;
   subjectName?: string;
   currentLane?: string;
   latestRecommendationTimestamp?: string;
@@ -2147,10 +2163,21 @@ function SourceFilePagePlanView({
     ["Admin-review evidence", valueByKeys(activity, ["reviewOnlyEvidenceCount", "reviewOnlyCount"])],
     ["Evidence scanned", valueByKeys(activity, ["totalEvidenceScanned", "evidenceScanned", "totalScanned"])],
     ["Latest observed", valueByKeys(activity, ["latestObserved", "latestObservedAt", "latestActivityAt"])],
-    ["Activity level", valueByKeys(activity, ["activityLevel", "level"])],
+    ["Activity level", valueByKeys(activity, ["activityLevel", "level"]) ?? pagePlanFallbacks?.activityLevel],
+    ["Recent activity", stringItems(pagePlanFallbacks?.recentActivity).join("; ")],
+    ["Authored or mentioned", stringItems(pagePlanFallbacks?.authoredOrMentioned).join("; ")],
+    ["Confidence", pagePlanFallbacks?.confidence],
     ["Top channels", stringItems(valueByKeys(activity, ["topChannels", "channels"])).join(", ") || valueByKeys(activity, ["topChannels", "channels"])],
   ].filter(([, value]) => isMeaningfulDisplayValue(value));
-  const topicCards = listRecords(subjectBrief?.topicBuckets).filter((topic) =>
+  const fallbackTopicCards = stringItems(pagePlanFallbacks?.recurringTopics).map((topic) => ({
+    topic,
+    bnlInterpretation: "BNL observed this as a recurring community activity topic.",
+    strength: pagePlanFallbacks?.confidence ?? pagePlanFallbacks?.activityLevel ?? "admin-review",
+    evidenceCount: 1,
+    publicUseStatus: "admin-review",
+    whyItMatters: "Helps BNL understand recurring subject interests before deciding whether a dossier is solid.",
+  }));
+  const topicCards = [...listRecords(subjectBrief?.topicBuckets), ...fallbackTopicCards].filter((topic) =>
     isMeaningfulDisplayValue(valueByKeys(topic, ["topic", "name", "label"])) ||
     isMeaningfulDisplayValue(valueByKeys(topic, ["explanation", "summary", "note", "bnlInterpretation", "interpretation"]))
   );
@@ -2160,6 +2187,8 @@ function SourceFilePagePlanView({
   const subjectRead = analyst.overallRead ?? subjectBrief?.subjectRead;
   const secondaryReadFields = [
     ["What BNL thinks this is", analyst.whatBnlThinksThisIs],
+    ["Entity type", pagePlanFallbacks?.entityType],
+    ["Activity level", pagePlanFallbacks?.activityLevel],
     ["Why this Source File exists", analyst.whyThisSourceFileExists],
     ["Strongest observed patterns", analyst.whatSeemsUseful ?? valueByKeys(subjectBrief, ["strongestObservedPatterns", "strongestPatterns"])],
     ["What seems weak", analyst.whatSeemsWeak],
@@ -2169,14 +2198,26 @@ function SourceFilePagePlanView({
   ] as const;
   const meaningfulSecondaryReadFields = secondaryReadFields.filter(([, value]) => isMeaningfulDisplayValue(value));
   const hiddenSecondaryReadCount = secondaryReadFields.length - meaningfulSecondaryReadFields.length;
-  const needRecords = compactRecordsByKey(listRecords(plan.whatBnlNeeds), ["neededItem", "whyNeeded"]);
+  const fallbackNeeds = stringItems(pagePlanFallbacks?.missingBeforePublicUse).map((neededItem) => ({
+    neededItem,
+    whyNeeded: "BNL needs this resolved before public use.",
+    requiredOrOptional: "required",
+    whatItUnlocks: "Unlocks safer wording for public draft.",
+    currentStatus: "open",
+  }));
+  const needRecords = compactRecordsByKey([...listRecords(plan.whatBnlNeeds), ...fallbackNeeds], ["neededItem", "whyNeeded"]);
   const activeNeeds = needRecords.filter(({ record }) => needPriority(record) !== 2);
   const displayNeeds = activeNeeds.length ? activeNeeds : needRecords;
   const requiredCandidates = displayNeeds.filter(({ record }) => needPriority(record) === 0);
   const requiredNeeds = (requiredCandidates.length ? requiredCandidates : displayNeeds).slice(0, 3);
   const extraRequiredNeeds = requiredCandidates.slice(3);
   const optionalNeeds = displayNeeds.filter((need) => !requiredNeeds.includes(need) && !extraRequiredNeeds.includes(need));
-  const reviewRecords = listRecords(plan.bnlReviewGuidance);
+  const fallbackReviewGuidance: UnknownRecord[] = stringItems(pagePlanFallbacks?.evidenceSupportingDossierValue).map((reviewIssue) => ({
+    reviewIssue,
+    bnlDecision: "Use as dossier-supporting context only after confirming the public-safe wording.",
+    recommendedDefault: "admin-review",
+  }));
+  const reviewRecords: UnknownRecord[] = [...listRecords(plan.bnlReviewGuidance), ...fallbackReviewGuidance];
   const reviewKind = (item: UnknownRecord) => scalarLabel(asRecord(item.suggestedControl)?.kind ?? item.bnlDecision ?? item.recommendedDefault ?? item.reviewIssue).toLowerCase();
   const reviewCounts = {
     usePublicly: reviewRecords.filter((item) => /use_public|use publicly|public/.test(reviewKind(item))).length,
@@ -2203,6 +2244,11 @@ function SourceFilePagePlanView({
         <SnapshotItem label="Last refresh" value={formatSnapshotDate(String(header.lastRefresh ?? latestRecommendationTimestamp ?? latestSourceFileArchive?.updatedAt ?? summary.lastUpdatedAt ?? ""))} />
         <SnapshotItem label="Existing public dossier" value={planHeaderValue(header.existingPublicDossier ?? summary.existingPublicDossier, "BNL did not state whether a public dossier exists yet.")} />
       </dl>
+      {reviewBoundaryLabels.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2 text-xs uppercase tracking-widest">
+          {dedupeStrings(reviewBoundaryLabels).map((label) => <StatusBadge key={label}>{label}</StatusBadge>)}
+        </div>
+      )}
     </Section>
     <Section title="BNL Subject Intelligence Brief" tone="caution" helper="BNL-controlled subject read. This folds the page-plan analyst read into one primary intelligence section.">
       <dl className="space-y-3">
@@ -2240,7 +2286,7 @@ function SourceFilePagePlanView({
       {reviewRecords.length ? <div className="space-y-3"><dl className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6"><SnapshotItem label="Use publicly" value={reviewCounts.usePublicly} /><SnapshotItem label="Ask owner" value={reviewCounts.askOwner} /><SnapshotItem label="Ask admin" value={reviewCounts.askAdmin} /><SnapshotItem label="Keep internal" value={reviewCounts.keepInternal} /><SnapshotItem label="Omit / ignore" value={reviewCounts.omitIgnore} /><SnapshotItem label="Blockers" value={reviewCounts.blockers} /></dl><ul className="space-y-3">{primaryReviewGuidance.map((item, index) => <li key={index} className="border border-border/50 bg-background/30 p-3"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Review issue", item.reviewIssue)}{renderPlanField("BNL decision", item.bnlDecision)}{renderMeaningfulPlanField("Recommended default", item.recommendedDefault)}{renderMeaningfulPlanField("Needed to finish", item.neededToFinish)}</dl><SuggestedControlView control={asRecord(item.suggestedControl) as DossierSourceFilePagePlanSuggestedControl | undefined} /></li>)}</ul>{secondaryReviewGuidance.length > 0 && <details className="border border-border/50 bg-background/20 p-3 text-xs text-muted"><summary className="cursor-pointer font-semibold text-foreground">Additional review guidance ({secondaryReviewGuidance.length})</summary><ul className="mt-3 space-y-3 text-sm">{secondaryReviewGuidance.map((item, index) => <li key={index} className="border border-border/50 bg-background/30 p-3"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Review issue", item.reviewIssue)}{renderPlanField("BNL decision", item.bnlDecision)}{renderMeaningfulPlanField("BNL explanation", item.bnlExplanation)}</dl></li>)}</ul></details>}</div> : <p className="text-muted">BNL did not add review guidance.</p>}
     </Section>
     <Section title="Questions To Ask"><PlanItems items={plan.questionsToAsk} empty={plan.noDecisionUnlockingQuestionsText ?? "BNL says no decision-unlocking questions exist."} render={(item) => <dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Question", item.question)}{renderPlanField("Audience", item.audience)}{renderPlanField("Why BNL is asking", item.whyBnlIsAsking)}{renderPlanField("What answer would unlock", item.whatAnswerWouldUnlock)}{renderPlanField("Required or optional", item.requiredOrOptional)}</dl>} /></Section>
-    <Section title="Dossier Worth-It Decision" tone="caution"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Worth a dossier", plan.worthDecision?.worthADossier, "BNL did not state whether this is dossier-worthy yet.")}{renderPlanField("Decision", plan.worthDecision?.decision, "BNL did not provide a dossier decision yet.")}{renderPlanField("Why", plan.worthDecision?.why, "BNL did not explain the decision yet.")}{renderPlanField("Possible dossier type", plan.worthDecision?.possibleDossierType, "BNL did not suggest a dossier type yet.")}{renderPlanField("Draft readiness", plan.worthDecision?.draftReadiness, "BNL did not provide a draft-readiness assessment yet.")}{renderPlanField("What would change the decision", plan.worthDecision?.whatWouldChangeTheDecision, "BNL did not explain what would change the decision yet.")}</dl></Section>
+    <Section title="Dossier Worth-It Decision" tone="caution"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Worth a dossier", plan.worthDecision?.worthADossier, "BNL did not state whether this is dossier-worthy yet.")}{renderPlanField("Decision", plan.worthDecision?.decision ?? pagePlanFallbacks?.dossierDecision, "BNL did not provide a dossier decision yet.")}{renderPlanField("Why", plan.worthDecision?.why, "BNL did not explain the decision yet.")}{renderPlanField("Possible dossier type", plan.worthDecision?.possibleDossierType, "BNL did not suggest a dossier type yet.")}{renderPlanField("Draft readiness", plan.worthDecision?.draftReadiness, "BNL did not provide a draft-readiness assessment yet.")}{renderPlanField("What would change the decision", plan.worthDecision?.whatWouldChangeTheDecision, "BNL did not explain what would change the decision yet.")}</dl></Section>
     <Section title="Draft / Update Plan"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Can draft", draft.canDraft === undefined ? undefined : canDraft ? "Yes" : "No")}{renderMeaningfulPlanField("Draft type", draft.draftType)}{renderMeaningfulPlanField("Suggested angle", draft.suggestedAngle)}{!canDraft && renderMeaningfulPlanField("Why not", draft.whyNot)}{renderMeaningfulPlanField("Owner Review warnings", draft.ownerReviewWarnings)}</dl>{draftUseItems.length > 0 && <div className="mt-3 border border-border/50 bg-background/30 p-3"><p className="text-xs font-bold uppercase tracking-widest text-accent">Use these materials</p><ul className="mt-2 list-disc pl-5 text-foreground">{draftUseItems.slice(0, 5).map((item) => <li key={item}>{item}</li>)}</ul></div>}{draftOmitItems.length > 0 && <div className="mt-3 border border-border/50 bg-background/30 p-3"><p className="text-xs font-bold uppercase tracking-widest text-accent">Omit these materials</p><ul className="mt-2 list-disc pl-5 text-foreground">{draftOmitItems.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul></div>}{(draftUseItems.length > 5 || draftOmitItems.length > 3) && <details className="mt-3 border border-border/50 bg-background/20 p-3 text-xs text-muted"><summary className="cursor-pointer font-semibold text-foreground">View full draft material list</summary><div className="mt-3 grid grid-cols-1 gap-3 text-sm md:grid-cols-2"><div><p className="font-bold text-foreground">All usable materials</p><ul className="list-disc pl-5">{draftUseItems.map((item) => <li key={item}>{item}</li>)}</ul></div><div><p className="font-bold text-foreground">All omitted materials</p><ul className="list-disc pl-5">{draftOmitItems.map((item) => <li key={item}>{item}</li>)}</ul></div></div></details>}{canDraft && <p className="mt-3 text-xs text-muted">Draft controls remain available only where existing handlers provide them; Owner Review is still required.</p>}</Section>
     <Section title="Internal / Omit / Hold" helper="Collapsed audit summary. Expand only when internal/omit detail is needed.">
       <p className="text-foreground">BNL is withholding {keepInternalGroups.reduce((sum, group) => sum + group.count, 0)} internal/review-only items and omitting {omitGroups.reduce((sum, group) => sum + group.count, 0)} public-draft risks. Expand for audit details.</p>
@@ -2296,6 +2342,8 @@ export function DossierSourceFileSummaryPanel({
   latestRecommendationTimestamp,
   sourceFileTargetStatus,
   latestSourceFileArchive,
+  reviewBoundaryLabels = [],
+  pagePlanFallbacks,
   blueprint,
   candidateId,
   claimReviews = [],
@@ -2312,6 +2360,8 @@ export function DossierSourceFileSummaryPanel({
   latestRecommendationTimestamp?: string;
   sourceFileTargetStatus?: string;
   latestSourceFileArchive?: DossierSourceFileArchiveMetadata;
+  reviewBoundaryLabels?: string[];
+  pagePlanFallbacks?: SourceFilePagePlanFallbacks;
   blueprint?: DossierDraftBlueprint;
   candidateId?: string;
   claimReviews?: DossierSourceFileClaimReview[];
@@ -2386,6 +2436,8 @@ export function DossierSourceFileSummaryPanel({
             latestRecommendationTimestamp={latestRecommendationTimestamp}
             sourceFileTargetStatus={sourceFileTargetStatus}
             report={report}
+            reviewBoundaryLabels={reviewBoundaryLabels}
+            pagePlanFallbacks={pagePlanFallbacks}
           />
           <details className="border border-border/60 bg-background/20 p-3 text-sm text-muted">
             <summary className="cursor-pointer font-semibold text-foreground">Support / Diagnostics</summary>

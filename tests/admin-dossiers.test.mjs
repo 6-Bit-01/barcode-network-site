@@ -12990,6 +12990,50 @@ test("sourceFilePagePlanV1 topic public-use status does not promote negated safe
   assert.match(renderTopicStatus("approved_public"), /Public use status[\s\S]*public-safe/);
 });
 
+test("sourceFilePagePlanV1 folds old top intelligence blocks into BNL page-plan sections", () => {
+  const summary = sourceFileReportTestSummary();
+  const archive = {
+    id: "archive-page-plan-folded-intelligence",
+    candidateId: "candidate-page-plan-folded-intelligence",
+    subjectName: "Folded Intelligence Subject",
+    sourceDigest: "digest",
+    createdAt: "2026-06-18T00:00:00.000Z",
+    updatedAt: "2026-06-18T00:00:00.000Z",
+    archiveSize: 1,
+    chunkCount: 1,
+    reviewOnly: true,
+    sourceFilePagePlanV1: {
+      header: { subject: "Folded Intelligence Subject", sourceFileStatus: "active" },
+      analystRead: { overallRead: "BNL authored the main subject read." },
+    },
+  };
+  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary,
+    latestSourceFileArchive: archive,
+    reviewBoundaryLabels: ["Internal review required", "Public use locked", "Owner review required"],
+    pagePlanFallbacks: {
+      entityType: "community member",
+      activityLevel: "medium",
+      dossierDecision: "needs owner review",
+      evidenceSupportingDossierValue: ["Public-safe recurring show mention."],
+      missingBeforePublicUse: ["Owner-approved role wording"],
+      recentActivity: ["Recent public conversation activity."],
+      authoredOrMentioned: ["Mentioned by BARCODE context."],
+      confidence: "medium",
+      recurringTopics: ["Interface language", "BARCODE Radio context"],
+    },
+  }));
+
+  assert.match(text, /Unified Source File Header[\s\S]*Internal review required[\s\S]*Public use locked[\s\S]*Owner review required/);
+  assert.match(text, /BNL Subject Intelligence Brief[\s\S]*Entity type[\s\S]*community member[\s\S]*Activity level[\s\S]*medium/);
+  assert.match(text, /What They Talk About[\s\S]*Interface language|What They Talk About[\s\S]*BARCODE Radio context/);
+  assert.match(text, /Activity Snapshot[\s\S]*Activity level[\s\S]*medium[\s\S]*Recent activity[\s\S]*Recent public conversation activity[\s\S]*Authored or mentioned[\s\S]*Mentioned by BARCODE context[\s\S]*Confidence[\s\S]*medium/);
+  assert.match(text, /What BNL Needs To Make A Solid Dossier[\s\S]*Owner-approved role wording/);
+  assert.match(text, /BNL Review Guidance[\s\S]*Use publicly[\s\S]*Ask owner[\s\S]*Ask admin/);
+  assert.match(text, /Dossier Worth-It Decision[\s\S]*Decision[\s\S]*needs owner review/);
+  assert.doesNotMatch(text, /Review Boundaries[\s\S]*Internal working material only|BNL Dossier Intelligence[\s\S]*Evidence supporting dossier value|Community Activity Profile[\s\S]*Recurring topics/);
+});
+
 test("sourceFilePagePlanV1 renders canDraft true without exposing draft controls in the header", () => {
   const summary = sourceFileReportTestSummary();
   const archive = {

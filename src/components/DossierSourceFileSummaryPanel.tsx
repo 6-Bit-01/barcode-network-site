@@ -2143,23 +2143,57 @@ function verificationAudience(value: unknown, control?: UnknownRecord): Verifica
   return "general";
 }
 
+function isNonQuestionAssessmentMaterial(value: string) {
+  const text = value.trim();
+  if (!text) return true;
+  if (/does not have any decision-unlocking questions|no decision-unlocking questions/i.test(text)) return true;
+  if (/@|stripe|payment|customer|token|raw evidence|raw id|database row|source-blind detail|private evidence|internal raw/i.test(text)) return true;
+  if (/excluded\s+\d+\s+protected\/private/i.test(text)) return true;
+  if (/source-blind|internal context|raw details were withheld|no confirmed queue or submission|do not state|public-safe material|review-only evidence|unlocks\s*:\s*false/i.test(text)) return true;
+  if (/^(?:[a-z][a-z0-9 /_-]*):\s*\d+$/i.test(text)) return true;
+  if (/^(?:\d+|none|unknown|false|n\/?a|not applicable|placeholder|tbd)$/i.test(text)) return true;
+  if (/\b(?:count|counts|total|metric|metrics|warning|warnings|audit|diagnostic|diagnostics|withheld|protected|private|internal|boundary|summary|activity)\b[^?]*:?\s*\d+$/i.test(text)) return true;
+  if (/\b\d+\s+(?:item|items|record|records|mention|mentions|link|links|claim|claims|evidence|entries)\b/i.test(text)) return true;
+  return false;
+}
+
 function safeVerificationQuestionText(value: unknown) {
-  const text = displayValue(value);
+  const text = displayValue(value)?.trim();
   if (!text) return undefined;
-  if (/does not have any decision-unlocking questions|no decision-unlocking questions/i.test(text)) return undefined;
-  if (/@|stripe|payment|customer|token|raw evidence|raw id|database row|source-blind detail|private evidence|internal raw/i.test(text)) return undefined;
+  if (isNonQuestionAssessmentMaterial(text)) return undefined;
+  const hasQuestionMark = text.includes("?");
+  const startsWithQuestionIntent = /^(?:what|which|who|where|when|why|how|should|can|could|is|are|was|were|did|does|do)\b/i.test(text);
+  if (!hasQuestionMark && !startsWithQuestionIntent) return undefined;
+  if (!/[a-z]/i.test(text) || text.length < 8) return undefined;
+  if (!/(?:bnl|dossier|public|owner|admin|source|confirm|approve|use|wording|role|claim|draft|question|answer|subject|profile|evidence|decision|review|publish|associate|link|name)/i.test(text)) return undefined;
   return text;
+}
+
+function safeVerificationUnlockText(value: unknown) {
+  const text = safeHumanText(value)?.trim();
+  if (!text) return undefined;
+  if (/^(?:false|none|unknown|n\/?a|not applicable|placeholder|tbd|null|empty|—|-|no)$/i.test(text)) return undefined;
+  if (/^unlocks\s*:\s*false$/i.test(text)) return undefined;
+  return text;
+}
+
+function verificationWhyFallback(audience: VerificationQuestion["audience"]) {
+  if (audience === "owner") return "BNL needs owner-approved wording before using this publicly.";
+  if (audience === "admin") return "BNL needs an admin decision before this can shape the dossier.";
+  if (audience === "public-source") return "BNL needs a public source before using this as public dossier evidence.";
+  return "BNL needs this answered before deciding whether the dossier is solid.";
 }
 
 function questionFromRecord(record: UnknownRecord, fallbackAudience?: unknown): VerificationQuestion | undefined {
   const control = asRecord(record.suggestedControl);
   const question = safeVerificationQuestionText(record.question ?? control?.questionToCopy);
   if (!question) return undefined;
+  const audience = verificationAudience(record.audience ?? fallbackAudience, control);
   return {
     question,
-    audience: verificationAudience(record.audience ?? fallbackAudience, control),
-    why: safeHumanText(record.whyBnlIsAsking ?? record.whyNeeded ?? record.bnlExplanation),
-    unlocks: safeHumanText(record.whatAnswerWouldUnlock ?? record.whatItUnlocks ?? record.neededToFinish),
+    audience,
+    why: safeHumanText(record.whyBnlIsAsking ?? record.whyNeeded ?? record.bnlExplanation) ?? verificationWhyFallback(audience),
+    unlocks: safeVerificationUnlockText(record.whatAnswerWouldUnlock ?? record.whatItUnlocks ?? record.neededToFinish),
     requiredOrOptional: displayValue(record.requiredOrOptional),
   };
 }
@@ -2204,7 +2238,7 @@ function VerificationPacketSection({ questions, subject, empty }: { questions: V
   const adminQuestions = questions.filter((question) => question.audience === "admin");
   const publicSourceQuestions = questions.filter((question) => question.audience === "public-source");
   return (
-    <Section title="Verification Packet" helper="Operator-facing questions and clean copy controls. Private/source-blind/internal raw evidence is not copied.">
+    <Section title="Verification Packet" helper="Operator-facing questions and clean copy controls. Protected review material is not copied.">
       {questions.length ? (
         <div className="space-y-3">
           <div className="flex flex-wrap gap-2">

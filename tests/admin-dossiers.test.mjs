@@ -12930,6 +12930,61 @@ test("sourceFilePagePlanV1 renders as primary fixed Source File page before fall
 });
 
 
+
+test("Verification Packet hardens copyable questions against metrics, warnings, boundaries, and false unlocks", () => {
+  const summary = sourceFileReportTestSummary();
+  const pagePlan = {
+    header: { subject: "Crow", sourceFileStatus: "active" },
+    analystRead: { overallRead: "BNL is checking whether Crow has enough public-safe dossier context." },
+    whatBnlNeeds: [{
+      neededItem: "Generic fallback bad item",
+      suggestedControl: { kind: "ask_owner", questionToCopy: "Music discussion only: 40" },
+      whatItUnlocks: "false",
+    }],
+    bnlReviewGuidance: [
+      { reviewIssue: "Protected warning", suggestedControl: { kind: "ask_admin", questionToCopy: "Excluded 204 protected/private memory item(s)" }, neededToFinish: "false" },
+      { reviewIssue: "Source-blind warning", suggestedControl: { kind: "ask_admin", questionToCopy: "Source-blind/internal context exists" } },
+      { reviewIssue: "Queue boundary", suggestedControl: { kind: "ask_admin", questionToCopy: "No confirmed queue or submission history is connected" } },
+      { reviewIssue: "Boundary note", suggestedControl: { kind: "ask_owner", questionToCopy: "Do not state artist/music role without owner-approved wording" } },
+      { reviewIssue: "Unlock false note", suggestedControl: { kind: "ask_admin", questionToCopy: "Which admin should decide whether Crow has enough public dossier support?" }, neededToFinish: false },
+    ],
+    questionsToAsk: [
+      { question: "Which owner-approved public wording should BNL use for Crow?", audience: "owner", whatAnswerWouldUnlock: "false" },
+      { question: "Which admin can confirm whether Crow is ready for a public dossier?", audience: "admin", whatAnswerWouldUnlock: "unknown" },
+      { question: "What public source confirms Crow's public role?", audience: "public-source", whatAnswerWouldUnlock: "none" },
+      { question: "contest/event activity", audience: "general" },
+      { question: "Generic links: 7", audience: "general" },
+      { question: "Collaboration offers: 9", audience: "general" },
+      { question: "public-safe material summary", audience: "general" },
+      { question: "review-only evidence", audience: "general" },
+      { question: "raw details were withheld", audience: "general" },
+      { question: "Unlocks: false", audience: "general" },
+    ],
+    worthDecision: {},
+    diagnosticsSummary: { rawArchiveAvailable: true },
+  };
+  const element = sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary,
+    latestSourceFileArchive: { id: "archive_crow_hardened_packet", candidateId: "candidate_crow_hardened_packet", subjectName: "Crow", sourceDigest: "digest", createdAt: "2026-06-19T00:00:00.000Z", updatedAt: "2026-06-19T00:00:00.000Z", archiveSize: 1, chunkCount: 1, reviewOnly: true, sourceFilePagePlanV1: pagePlan },
+  });
+  const text = collectDefaultVisibleText(element);
+  const packetText = text.slice(text.lastIndexOf("Verification Packet"), text.indexOf("Public-Safe Material BNL Can Use"));
+
+  assert.match(packetText, /Which owner-approved public wording should BNL use for Crow\?/);
+  assert.match(packetText, /Which admin can confirm whether Crow is ready for a public dossier\?/);
+  assert.match(packetText, /What public source confirms Crow's public role\?/);
+  assert.match(packetText, /BNL needs owner-approved wording before using this publicly/);
+  assert.match(packetText, /BNL needs an admin decision before this can shape the dossier/);
+  assert.match(packetText, /BNL needs a public source before using this as public dossier evidence/);
+  assert.doesNotMatch(packetText, /This question is included because it can unlock a safer dossier decision/);
+  assert.doesNotMatch(packetText, /GENERAL/);
+  assert.doesNotMatch(packetText, /Music discussion only: 40|Generic links: 7|Collaboration offers: 9/);
+  assert.doesNotMatch(packetText, /Excluded 204 protected\/private|Source-blind\/internal context exists|raw details were withheld|review-only evidence/i);
+  assert.doesNotMatch(packetText, /No confirmed queue or submission|Do not state artist\/music role|contest\/event activity|public-safe material summary/i);
+  assert.doesNotMatch(packetText, /Unlocks:\s*(false|unknown|none)|What answer unlocks\s*(false|unknown|none)/i);
+  assert.doesNotMatch(packetText, /private\/source-blind\/internal raw evidence|protected\/private memory item/i);
+});
+
 test("sourceFilePagePlanV1 consolidates header, fills blank primary fields, and prioritizes required needs", () => {
   const summary = sourceFileReportTestSummary();
   const archive = {

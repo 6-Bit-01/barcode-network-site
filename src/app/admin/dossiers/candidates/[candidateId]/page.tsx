@@ -22,6 +22,7 @@ import {
 import {
   DossierSourceFileArchiveRawData,
   DossierSourceFileSummaryPanel,
+  normalizeSourceFilePagePlanV1,
   normalizeSubjectAnalystReadV1,
   type DossierSourceFileReviewableClaim,
 } from "@/components/DossierSourceFileSummaryPanel";
@@ -1941,6 +1942,11 @@ export default function CandidateReviewPage() {
     missingInfoCount: (candidate.missingInfo ?? []).length + (sourceFileSummary?.missingInfo ?? []).length,
     reviewOnlyEvidenceCount: reviewOnlyNotes[0] === "No review-only evidence notes recorded." ? 0 : reviewOnlyNotes.length,
   });
+  const hasSourceFilePagePlan = Boolean(normalizeSourceFilePagePlanV1(candidate.latestSourceFileArchive));
+  const reviewBoundaryLabels = sourceWarningLabels({
+    candidate,
+    recommendations: attachedRecommendations,
+  });
   const readiness = createDossierSourceFileDraftReadinessReadModel({
     candidate,
     sourceFileExists,
@@ -2348,7 +2354,7 @@ export default function CandidateReviewPage() {
       </section>
 
       <section className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-4">
-        <section className="border border-border bg-surface p-4 space-y-3">
+        {!hasSourceFilePagePlan && <section className="border border-border bg-surface p-4 space-y-3">
           <h2 className="text-lg font-bold text-foreground">
             Review Boundaries
           </h2>
@@ -2364,9 +2370,9 @@ export default function CandidateReviewPage() {
               <StatusBadge key={label}>{label}</StatusBadge>
             ))}
           </div>
-        </section>
+        </section>}
 
-        <Section title="BNL Dossier Intelligence">
+        {!hasSourceFilePagePlan && <Section title="BNL Dossier Intelligence">
           <div className="space-y-3">
             <p className="text-foreground">{dossierIntelligenceSummary}</p>
             <dl className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -2405,9 +2411,9 @@ export default function CandidateReviewPage() {
               )}
             </div>
           </div>
-        </Section>
+        </Section>}
 
-        <Section title="Community Activity Profile">
+        {!hasSourceFilePagePlan && <Section title="Community Activity Profile">
           <div className="space-y-3">
             <dl className="grid grid-cols-1 gap-3 md:grid-cols-3">
               <div className="border border-border/60 bg-background/30 p-3">
@@ -2435,7 +2441,7 @@ export default function CandidateReviewPage() {
               Public-safe status: {rawPublicSafeFacts.length > 0 ? "public-safe facts are available for drafting" : "public-safe facts are still missing"}. Review-only status: {reviewOnlyNotes[0] === "No review-only evidence notes recorded." ? "no review-only notes recorded" : "review-only evidence exists and must stay internal"}.
             </p>
           </div>
-        </Section>
+        </Section>}
 
         <Section title="Queue / Music Footprint">
           <div className="space-y-3">
@@ -2641,6 +2647,22 @@ export default function CandidateReviewPage() {
               currentLane={candidate.status}
               latestRecommendationTimestamp={latestRecommendationTimestamp}
               latestSourceFileArchive={candidate.latestSourceFileArchive}
+              reviewBoundaryLabels={reviewBoundaryLabels}
+              pagePlanFallbacks={{
+                entityType,
+                activityLevel,
+                dossierDecision: readiness.readinessState.replace(/_/g, " "),
+                evidenceSupportingDossierValue: [
+                  ...rawPublicSafeFacts,
+                  ...activitySignals,
+                  ...musicSignals,
+                ],
+                missingBeforePublicUse: [...readiness.blockers, ...(sourceFileSummary?.missingInfo ?? [])],
+                recentActivity: entityActivityReadout?.recentActivitySummary ?? sourceFileSummary?.recentActivitySummary ?? [],
+                authoredOrMentioned: authoredVsMentioned,
+                confidence: entityActivityReadout?.confidence ?? candidate.confidence,
+                recurringTopics: topicSignals,
+              }}
               candidateId={candidate.id}
               claimReviews={candidate.sourceFileClaimReviews ?? []}
               onReviewClaim={reviewSourceFileClaim}

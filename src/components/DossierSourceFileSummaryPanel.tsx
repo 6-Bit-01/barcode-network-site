@@ -34,6 +34,26 @@ type ReportSection = {
   optional?: boolean;
 };
 
+type SourceFilePagePlanFallbacks = {
+  entityType?: string;
+  activityLevel?: string;
+  dossierDecision?: string;
+  evidenceSupportingDossierValue?: string[];
+  missingBeforePublicUse?: string[];
+  recentActivity?: string[];
+  authoredOrMentioned?: string[];
+  confidence?: string;
+  recurringTopics?: string[];
+};
+
+type VerificationQuestion = {
+  question: string;
+  audience: "owner" | "admin" | "public-source" | "general";
+  why?: string;
+  unlocks?: string;
+  requiredOrOptional?: string;
+};
+
 function StatusBadge({ children }: { children: React.ReactNode }) {
   return (
     <span className="border border-border bg-background/40 px-2 py-1 text-muted">
@@ -329,6 +349,34 @@ function displayValue(value: unknown): string | undefined {
 
 function scalarLabel(value: unknown) {
   return displayValue(value) ?? "—";
+}
+
+function isMeaningfulDisplayValue(value: unknown) {
+  const displayed = displayValue(value);
+  return Boolean(displayed && !/^(—|-|n\/a|none|null|undefined|unknown|not provided)$/i.test(displayed.trim()));
+}
+
+function publicUseStatus(value: unknown) {
+  const displayed = displayValue(value)?.toLowerCase().trim();
+  const normalized = displayed?.replace(/[_\s]+/g, "-") ?? "";
+  const words = displayed?.replace(/[_-]+/g, " ") ?? "";
+  if (normalized === "internal-only") return "internal-only";
+  if (normalized === "admin-review") return "admin-review";
+  if (
+    /(^|[-\s])(unsafe|rejected|blocked|private|internal|source-blind|omit|unapproved)([-\s]|$)/.test(normalized) ||
+    /\b(not|no|never|do-not|dont)\b.*\b(public|safe|approved|use|copy)\b/.test(words) ||
+    /\bnot\b.*\bapproved\b/.test(words) ||
+    /\bnot\b.*\bfor\b.*\bpublic\b/.test(words)
+  ) return "internal-only";
+  if (/(needs-review|admin-review|review-only|unresolved|uncertain|unconfirmed|pending|ambiguous)/.test(normalized)) return "admin-review";
+  if (normalized === "public-safe" || normalized === "approved-public" || normalized === "public-approved" || /\b(public safe|approved public|public approved)\b/.test(words)) return "public-safe";
+  return "admin-review";
+}
+
+function topicFallbackWhy(status: string) {
+  if (status === "public-safe") return "Can help shape a public-safe dossier angle if the rest of the read supports it.";
+  if (status === "internal-only") return "Helps BNL understand the subject, but should stay out of public copy unless separately approved.";
+  return "Helps BNL decide whether the subject has enough clear signal for a solid dossier.";
 }
 
 function listRecords(value: unknown): UnknownRecord[] {
@@ -1570,6 +1618,7 @@ function BnlAnalystReadPanel({
   claimReviews,
   onReviewClaim,
   candidate,
+  legacyClaimDecisionLabel = "Source File Claim Decisions",
 }: {
   analystRead?: DossierSubjectAnalystReadV1;
   refreshedAt?: string;
@@ -1579,6 +1628,7 @@ function BnlAnalystReadPanel({
   claimReviews?: DossierSourceFileClaimReview[];
   onReviewClaim?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void;
   candidate?: Partial<DossierCandidate>;
+  legacyClaimDecisionLabel?: string;
 }) {
   if (!analystRead) {
     return (
@@ -1594,7 +1644,7 @@ function BnlAnalystReadPanel({
     analystRead,
   });
   const sectionEntries = [
-    ["reviewableClaims", "Source File Claim Decisions"],
+    ["reviewableClaims", legacyClaimDecisionLabel],
     ["publicReadyClaims", "Public-Ready Claims"],
     [stringItems(analystRead.sourceFileReviewClaims).length ? "sourceFileReviewClaims" : "reviewNeededClaims", "Review-Needed Claims"],
     ["sourceBlindInsights", "Source-blind / Withheld Context"],
@@ -1980,7 +2030,7 @@ function unlockFallback(item: UnknownRecord) {
   if (/angle|classification|type/.test(marker)) return "Helps confirm dossier angle.";
   if (/draft|worth|decision|dossier/.test(marker)) return "Helps determine whether the dossier should be drafted.";
   if (/refresh|evidence|source|material/.test(marker)) return "Improves dossier readiness.";
-  return "BNL did not specify what this unlocks yet.";
+  return "Improves dossier readiness.";
 }
 
 function SuggestedControlView({ control }: { control?: DossierSourceFilePagePlanSuggestedControl }) {
@@ -1999,10 +2049,196 @@ function PlanItems({ items, empty, render, prioritizeNeeds = false }: { items?: 
   return <ul className="space-y-3">{displayRecords.map((item, index) => <li key={index} className={`border border-border/50 bg-background/30 p-3 ${prioritizeNeeds && needPriority(item) === 0 ? "border-accent/70" : ""}`}>{render(item, index)}</li>)}</ul>;
 }
 
+function displayPlanValue(value: unknown) {
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  const items = stringItems(value);
+  if (items.length) return dedupeStrings(items);
+  return displayValue(value);
+}
+
+function renderMeaningfulPlanField(label: string, value: unknown) {
+  if (!isMeaningfulDisplayValue(value)) return null;
+  return renderPlanField(label, displayPlanValue(value));
+}
+
+function normalizedTextKey(value: unknown) {
+  return (displayValue(value) ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b(the|a|an|and|or|but|with|for|to|of|in|on|around)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function strengthRank(value: unknown) {
+  const text = scalarLabel(value).toLowerCase();
+  if (/strong|high|confirmed/.test(text)) return 4;
+  if (/useful|medium|partial/.test(text)) return 3;
+  if (/thin|low|weak/.test(text)) return 2;
+  if (/noise|none|unknown/.test(text)) return 0;
+  return 1;
+}
+
+function numericValue(value: unknown) {
+  if (typeof value === "number") return value;
+  const parsed = Number(displayValue(value));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function groupedTopicCards(topics: UnknownRecord[]) {
+  const groups = new Map<string, { interpretation: unknown; records: UnknownRecord[]; evidenceCount: number; strength: number }>();
+  for (const topic of topics) {
+    const interpretation = valueByKeys(topic, ["bnlInterpretation", "interpretation", "explanation", "summary", "note"]);
+    const key = normalizedTextKey(interpretation) || normalizedTextKey(valueByKeys(topic, ["topic", "name", "label"]));
+    if (!key) continue;
+    const evidenceCount = numericValue(valueByKeys(topic, ["evidenceCount", "count"]));
+    const strength = strengthRank(valueByKeys(topic, ["evidenceStrength", "strength", "confidence"]));
+    const existing = groups.get(key);
+    if (existing) {
+      existing.records.push(topic);
+      existing.evidenceCount += evidenceCount;
+      existing.strength = Math.max(existing.strength, strength);
+    } else {
+      groups.set(key, { interpretation, records: [topic], evidenceCount, strength });
+    }
+  }
+  return [...groups.values()].sort((a, b) => b.strength - a.strength || b.evidenceCount - a.evidenceCount);
+}
+
+function TopicCard({ group }: { group: ReturnType<typeof groupedTopicCards>[number] }) {
+  const primary = group.records[0];
+  const status = publicUseStatus(valueByKeys(primary, ["publicUseStatus", "publicStatus", "status", "safetyLane"]));
+  const topics = dedupeStrings(group.records.map((topic) => scalarLabel(valueByKeys(topic, ["topic", "name", "label"]))).filter((topic) => topic !== "—"));
+  return (
+    <li className="border border-border/50 bg-background/30 p-3">
+      <dl className="grid grid-cols-1 gap-2 md:grid-cols-2">
+        {renderPlanField("Topic / pattern", topics.length > 1 ? topics.join(", ") : topics[0] ?? "Unnamed topic pattern")}
+        {renderPlanField("BNL interpretation", group.interpretation, "BNL has not written an interpretation for this topic yet.")}
+        {renderPlanField("Evidence strength", valueByKeys(primary, ["evidenceStrength", "strength", "confidence"]), "Unrated")}
+        {renderPlanField("Evidence count", group.evidenceCount || valueByKeys(primary, ["evidenceCount", "count"]), "0")}
+        {renderPlanField("Public use status", status)}
+        {renderPlanField("Why it matters for dossier readiness", valueByKeys(primary, ["whyItMatters", "whyItMattersForDossierReadiness", "dossierReadinessReason"]), topicFallbackWhy(status))}
+      </dl>
+      {topics.length > 1 && <p className="mt-2 text-xs text-muted">Grouped related topics with the same BNL interpretation.</p>}
+    </li>
+  );
+}
+
+function compactRecordsByKey(records: UnknownRecord[], keys: string[]) {
+  const groups = new Map<string, { record: UnknownRecord; count: number }>();
+  for (const record of records) {
+    const key = normalizedTextKey(valueByKeys(record, keys)) || JSON.stringify(record);
+    const existing = groups.get(key);
+    if (existing) existing.count += 1;
+    else groups.set(key, { record, count: 1 });
+  }
+  return [...groups.values()];
+}
+
+function verificationAudience(value: unknown, control?: UnknownRecord): VerificationQuestion["audience"] {
+  const marker = `${scalarLabel(value)} ${scalarLabel(control?.kind)} ${scalarLabel(control?.label)}`.toLowerCase();
+  if (/owner/.test(marker)) return "owner";
+  if (/admin/.test(marker)) return "admin";
+  if (/public[-_\s]?source|source/.test(marker)) return "public-source";
+  return "general";
+}
+
+function safeVerificationQuestionText(value: unknown) {
+  const text = displayValue(value);
+  if (!text) return undefined;
+  if (/does not have any decision-unlocking questions|no decision-unlocking questions/i.test(text)) return undefined;
+  if (/@|stripe|payment|customer|token|raw evidence|raw id|database row|source-blind detail|private evidence|internal raw/i.test(text)) return undefined;
+  return text;
+}
+
+function questionFromRecord(record: UnknownRecord, fallbackAudience?: unknown): VerificationQuestion | undefined {
+  const control = asRecord(record.suggestedControl);
+  const question = safeVerificationQuestionText(record.question ?? control?.questionToCopy);
+  if (!question) return undefined;
+  return {
+    question,
+    audience: verificationAudience(record.audience ?? fallbackAudience, control),
+    why: safeHumanText(record.whyBnlIsAsking ?? record.whyNeeded ?? record.bnlExplanation),
+    unlocks: safeHumanText(record.whatAnswerWouldUnlock ?? record.whatItUnlocks ?? record.neededToFinish),
+    requiredOrOptional: displayValue(record.requiredOrOptional),
+  };
+}
+
+function dedupePlanVerificationQuestions(questions: VerificationQuestion[]) {
+  const seen = new Set<string>();
+  return questions.filter((question) => {
+    const key = normalizedTextKey(question.question);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function verificationPacketText(subject: string, questions: VerificationQuestion[]) {
+  const groups: Array<[VerificationQuestion["audience"], string]> = [
+    ["owner", "OWNER"],
+    ["admin", "ADMIN"],
+    ["public-source", "PUBLIC SOURCE"],
+    ["general", "GENERAL"],
+  ];
+  const sections = groups.flatMap(([audience, label]) => {
+    const items = questions.filter((question) => question.audience === audience);
+    if (!items.length) return [];
+    const lines = items.flatMap((item, index) => [
+      `${index + 1}. ${item.question}`,
+      item.why ? `   Why BNL needs this: ${item.why}` : undefined,
+      item.unlocks ? `   Unlocks: ${item.unlocks}` : undefined,
+    ].filter(Boolean));
+    return [`${label}:`, "", ...lines, ""];
+  });
+  return [`BNL verification questions for ${subject}:`, "", ...sections].join("\n").trim();
+}
+
+function CopyVerificationButton({ label, questions, subject }: { label: string; questions: VerificationQuestion[]; subject: string }) {
+  if (!questions.length) return null;
+  return <button type="button" className="border border-accent px-3 py-1 text-xs font-bold uppercase tracking-widest text-accent" onClick={() => void navigator.clipboard?.writeText(verificationPacketText(subject, questions))}>{label}</button>;
+}
+
+function VerificationPacketSection({ questions, subject, empty }: { questions: VerificationQuestion[]; subject: string; empty: string }) {
+  const ownerQuestions = questions.filter((question) => question.audience === "owner");
+  const adminQuestions = questions.filter((question) => question.audience === "admin");
+  const publicSourceQuestions = questions.filter((question) => question.audience === "public-source");
+  return (
+    <Section title="Verification Packet" helper="Operator-facing questions and clean copy controls. Private/source-blind/internal raw evidence is not copied.">
+      {questions.length ? (
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <CopyVerificationButton label="Copy all questions" questions={questions} subject={subject} />
+            <CopyVerificationButton label="Copy owner questions" questions={ownerQuestions} subject={subject} />
+            <CopyVerificationButton label="Copy admin questions" questions={adminQuestions} subject={subject} />
+            <CopyVerificationButton label="Copy public-source questions" questions={publicSourceQuestions} subject={subject} />
+          </div>
+          <ul className="space-y-3">
+            {questions.map((question, index) => (
+              <li key={`${index}-${question.question.slice(0, 24)}`} className="border border-border/50 bg-background/30 p-3">
+                <dl className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  {renderPlanField("Question", question.question)}
+                  {renderPlanField("Audience", question.audience)}
+                  {renderMeaningfulPlanField("Why BNL is asking", question.why)}
+                  {renderMeaningfulPlanField("What answer unlocks", question.unlocks)}
+                  {renderMeaningfulPlanField("Required or optional", question.requiredOrOptional)}
+                </dl>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : <p className="text-muted">{empty}</p>}
+    </Section>
+  );
+}
+
 function SourceFilePagePlanView({
   plan,
   summary,
   latestSourceFileArchive,
+  report,
+  reviewBoundaryLabels = [],
+  pagePlanFallbacks,
   subjectName,
   currentLane,
   latestRecommendationTimestamp,
@@ -2011,6 +2247,9 @@ function SourceFilePagePlanView({
   plan: DossierSourceFilePagePlanV1;
   summary: DossierSourceFileSummary;
   latestSourceFileArchive?: DossierSourceFileArchiveMetadata;
+  report?: DossierSourceFileCaseReportV1;
+  reviewBoundaryLabels?: string[];
+  pagePlanFallbacks?: SourceFilePagePlanFallbacks;
   subjectName?: string;
   currentLane?: string;
   latestRecommendationTimestamp?: string;
@@ -2021,6 +2260,89 @@ function SourceFilePagePlanView({
   const internal = plan.internalOmitHold ?? {};
   const draft = plan.draftOrUpdatePlan ?? {};
   const diagnostics = plan.diagnosticsSummary ?? {};
+  const subjectBrief = asRecord(report?.subjectIntelligenceBriefV1);
+  const activity = asRecord(subjectBrief?.activitySnapshot) ?? subjectBrief;
+  const snapshot = [
+    ["Approved authored items", valueByKeys(activity, ["totalApprovedPublicAuthoredItems", "approvedPublicAuthoredItems", "totalApprovedAuthoredItems"])],
+    ["Public mentions", valueByKeys(activity, ["totalPublicMentions", "publicMentions"])],
+    ["Admin-review evidence", valueByKeys(activity, ["reviewOnlyEvidenceCount", "reviewOnlyCount"])],
+    ["Evidence scanned", valueByKeys(activity, ["totalEvidenceScanned", "evidenceScanned", "totalScanned"])],
+    ["Latest observed", valueByKeys(activity, ["latestObserved", "latestObservedAt", "latestActivityAt"])],
+    ["Activity level", valueByKeys(activity, ["activityLevel", "level"]) ?? pagePlanFallbacks?.activityLevel],
+    ["Recent activity", stringItems(pagePlanFallbacks?.recentActivity).join("; ")],
+    ["Authored or mentioned", stringItems(pagePlanFallbacks?.authoredOrMentioned).join("; ")],
+    ["Confidence", pagePlanFallbacks?.confidence],
+    ["Top channels", stringItems(valueByKeys(activity, ["topChannels", "channels"])).join(", ") || valueByKeys(activity, ["topChannels", "channels"])],
+  ].filter(([, value]) => isMeaningfulDisplayValue(value));
+  const fallbackTopicCards = stringItems(pagePlanFallbacks?.recurringTopics).map((topic) => ({
+    topic,
+    bnlInterpretation: "BNL observed this as a recurring community activity topic.",
+    strength: pagePlanFallbacks?.confidence ?? pagePlanFallbacks?.activityLevel ?? "admin-review",
+    evidenceCount: 1,
+    publicUseStatus: "admin-review",
+    whyItMatters: "Helps BNL understand recurring subject interests before deciding whether a dossier is solid.",
+  }));
+  const topicCards = [...listRecords(subjectBrief?.topicBuckets), ...fallbackTopicCards].filter((topic) =>
+    isMeaningfulDisplayValue(valueByKeys(topic, ["topic", "name", "label"])) ||
+    isMeaningfulDisplayValue(valueByKeys(topic, ["explanation", "summary", "note", "bnlInterpretation", "interpretation"]))
+  );
+  const topicGroups = groupedTopicCards(topicCards);
+  const primaryTopicGroups = topicGroups.slice(0, 5);
+  const secondaryTopicGroups = topicGroups.slice(5);
+  const subjectRead = analyst.overallRead ?? subjectBrief?.subjectRead;
+  const secondaryReadFields = [
+    ["What BNL thinks this is", analyst.whatBnlThinksThisIs],
+    ["Entity type", pagePlanFallbacks?.entityType],
+    ["Activity level", pagePlanFallbacks?.activityLevel],
+    ["Why this Source File exists", analyst.whyThisSourceFileExists],
+    ["Strongest observed patterns", analyst.whatSeemsUseful ?? valueByKeys(subjectBrief, ["strongestObservedPatterns", "strongestPatterns"])],
+    ["What seems weak", analyst.whatSeemsWeak],
+    ["Confirmed vs unconfirmed boundaries", analyst.whatIsUncertain ?? valueByKeys(asRecord(subjectBrief?.bnlTake), ["uncertainty", "uncertainties", "unknowns"])],
+    ["What BNL is watching", analyst.whatBnlIsWatching],
+    ["Confidence / evidence strength", analyst.confidence ?? valueByKeys(subjectBrief, ["confidence", "evidenceStrength", "strength"])],
+  ] as const;
+  const meaningfulSecondaryReadFields = secondaryReadFields.filter(([, value]) => isMeaningfulDisplayValue(value));
+  const hiddenSecondaryReadCount = secondaryReadFields.length - meaningfulSecondaryReadFields.length;
+  const fallbackNeeds = stringItems(pagePlanFallbacks?.missingBeforePublicUse).map((neededItem) => ({
+    neededItem,
+    whyNeeded: "BNL needs this resolved before public use.",
+    requiredOrOptional: "required",
+    whatItUnlocks: "Unlocks safer wording for public draft.",
+    currentStatus: "open",
+  }));
+  const needRecords = compactRecordsByKey([...listRecords(plan.whatBnlNeeds), ...fallbackNeeds], ["neededItem", "whyNeeded"]);
+  const activeNeeds = needRecords.filter(({ record }) => needPriority(record) !== 2);
+  const displayNeeds = activeNeeds.length ? activeNeeds : needRecords;
+  const requiredCandidates = displayNeeds.filter(({ record }) => needPriority(record) === 0);
+  const requiredNeeds = (requiredCandidates.length ? requiredCandidates : displayNeeds).slice(0, 3);
+  const extraRequiredNeeds = requiredCandidates.slice(3);
+  const optionalNeeds = displayNeeds.filter((need) => !requiredNeeds.includes(need) && !extraRequiredNeeds.includes(need));
+  const fallbackReviewGuidance: UnknownRecord[] = stringItems(pagePlanFallbacks?.evidenceSupportingDossierValue).map((reviewIssue) => ({
+    reviewIssue,
+    bnlDecision: "Use as dossier-supporting context only after confirming the public-safe wording.",
+    recommendedDefault: "admin-review",
+  }));
+  const reviewRecords: UnknownRecord[] = [...listRecords(plan.bnlReviewGuidance), ...fallbackReviewGuidance];
+  const verificationQuestions = dedupePlanVerificationQuestions([
+    ...listRecords(plan.questionsToAsk).flatMap((item) => questionFromRecord(item) ? [questionFromRecord(item) as VerificationQuestion] : []),
+    ...listRecords(plan.whatBnlNeeds).flatMap((item) => questionFromRecord(item, item.whoCanAnswer) ? [questionFromRecord(item, item.whoCanAnswer) as VerificationQuestion] : []),
+    ...reviewRecords.flatMap((item) => questionFromRecord(item) ? [questionFromRecord(item) as VerificationQuestion] : []),
+  ]);
+  const reviewKind = (item: UnknownRecord) => scalarLabel(asRecord(item.suggestedControl)?.kind ?? item.bnlDecision ?? item.recommendedDefault ?? item.reviewIssue).toLowerCase();
+  const reviewCounts = {
+    usePublicly: reviewRecords.filter((item) => /use_public|use publicly|public/.test(reviewKind(item))).length,
+    askOwner: reviewRecords.filter((item) => /ask_owner|owner/.test(reviewKind(item))).length,
+    askAdmin: reviewRecords.filter((item) => /ask_admin|admin/.test(reviewKind(item))).length,
+    keepInternal: reviewRecords.filter((item) => /keep_internal|internal/.test(reviewKind(item))).length,
+    omitIgnore: reviewRecords.filter((item) => /omit|ignore|already_resolved|resolved/.test(reviewKind(item))).length,
+    blockers: reviewRecords.filter((item) => /block|required|must|hold/.test(reviewKind(item))).length,
+  };
+  const primaryReviewGuidance = reviewRecords.filter((item) => /blocks_draft|block|ask_owner|owner|ask_admin|admin|use_public|use publicly/.test(reviewKind(item)) || (/keep_internal|internal/.test(reviewKind(item)) && /draft|block|readiness/.test(`${scalarLabel(item.neededToFinish)} ${scalarLabel(item.bnlExplanation)}`.toLowerCase()))).slice(0, 4);
+  const secondaryReviewGuidance = reviewRecords.filter((item) => !primaryReviewGuidance.includes(item));
+  const keepInternalGroups = compactRecordsByKey(listRecords(internal.keepInternal), ["material", "whyInternal"]);
+  const omitGroups = compactRecordsByKey(listRecords(internal.omitFromPublicDraft), ["material", "whyOmitted"]);
+  const draftUseItems = dedupeStrings(stringItems(draft.useTheseMaterials).map((item) => safeHumanText(item) ?? item));
+  const draftOmitItems = dedupeStrings(stringItems(draft.omitTheseMaterials).map((item) => safeHumanText(item) ?? item));
   const canDraft = draft.canDraft === true || String(draft.canDraft).toLowerCase() === "true";
   return <div className="space-y-4" data-source-file-page-plan="primary">
     <Section title="Unified Source File Header" helper="Single BNL page-plan header. Page-plan values win; legacy values only fill missing status context.">
@@ -2032,15 +2354,55 @@ function SourceFilePagePlanView({
         <SnapshotItem label="Last refresh" value={formatSnapshotDate(String(header.lastRefresh ?? latestRecommendationTimestamp ?? latestSourceFileArchive?.updatedAt ?? summary.lastUpdatedAt ?? ""))} />
         <SnapshotItem label="Existing public dossier" value={planHeaderValue(header.existingPublicDossier ?? summary.existingPublicDossier, "BNL did not state whether a public dossier exists yet.")} />
       </dl>
+      {reviewBoundaryLabels.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2 text-xs uppercase tracking-widest">
+          {dedupeStrings(reviewBoundaryLabels).map((label) => <StatusBadge key={label}>{label}</StatusBadge>)}
+        </div>
+      )}
     </Section>
-    <Section title="BNL Analyst Read" tone="caution"><dl className="space-y-3">{renderPlanField("Overall read", analyst.overallRead, "BNL did not provide an overall read yet.")}{renderPlanField("What BNL thinks this is", analyst.whatBnlThinksThisIs, "BNL has not clearly classified this subject yet.")}{renderPlanField("Why this Source File exists", analyst.whyThisSourceFileExists, "BNL did not explain the Source File purpose yet.")}{renderPlanField("What seems useful", analyst.whatSeemsUseful, "BNL did not identify any clearly useful dossier material yet.")}{renderPlanField("What seems weak", analyst.whatSeemsWeak, "BNL did not identify any weak areas yet.")}{renderPlanField("What is uncertain", analyst.whatIsUncertain, "BNL did not specify the uncertain areas yet.")}{renderPlanField("What BNL is watching", analyst.whatBnlIsWatching, "BNL did not list any active watch items yet.")}{renderPlanField("Confidence", analyst.confidence, "BNL did not provide a confidence read yet.")}</dl></Section>
-    <Section title="What BNL Needs" helper="Only the things BNL still needs to build a stronger, safer, more solid dossier."><PlanItems items={plan.whatBnlNeeds} prioritizeNeeds empty="BNL did not list any dossier-completion needs." render={(item) => <><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Needed item", item.neededItem, "BNL did not name the needed dossier item yet.")}{renderPlanField("Why needed", item.whyNeeded, "BNL did not explain why this is needed yet.")}{renderPlanField("Who can answer", item.whoCanAnswer, "BNL did not specify who can answer this yet.")}{renderPlanField("Required or optional", item.requiredOrOptional, "BNL did not mark whether this is required or optional yet.")}{renderPlanField("What it unlocks", item.whatItUnlocks, unlockFallback(item))}{renderPlanField("Current status", item.currentStatus, "BNL did not provide a current status yet.")}</dl><SuggestedControlView control={asRecord(item.suggestedControl) as DossierSourceFilePagePlanSuggestedControl | undefined} /></>} /></Section>
+    <Section title="BNL Subject Intelligence Brief" tone="caution" helper="BNL-controlled subject read. This folds the page-plan analyst read into one primary intelligence section.">
+      <dl className="space-y-3">
+        {renderPlanField("Subject Read", subjectRead, "BNL did not provide an overall subject read yet.")}
+        {meaningfulSecondaryReadFields.map(([label, value]) => renderMeaningfulPlanField(label, value))}
+      </dl>
+      {isMeaningfulDisplayValue(subjectRead) && hiddenSecondaryReadCount > 0 && (
+        <p className="mt-3 border border-border/50 bg-background/30 p-2 text-xs text-muted">Some secondary read fields are still incomplete; BNL is relying on the subject read and topic evidence for now.</p>
+      )}
+    </Section>
+    <Section title="What They Talk About" helper="Compact subject-interest and engagement summary. Stronger grouped topics appear first; lower-priority details stay expandable.">
+      {primaryTopicGroups.length ? (
+        <>
+          <ul className="space-y-3">{primaryTopicGroups.map((group, index) => <TopicCard key={index} group={group} />)}</ul>
+          {secondaryTopicGroups.length > 0 && (
+            <details className="mt-3 border border-border/50 bg-background/20 p-3 text-xs text-muted">
+              <summary className="cursor-pointer font-semibold text-foreground">Show all topic details ({secondaryTopicGroups.length} more)</summary>
+              <ul className="mt-3 space-y-3 text-sm">{secondaryTopicGroups.map((group, index) => <TopicCard key={index} group={group} />)}</ul>
+            </details>
+          )}
+        </>
+      ) : <p className="text-muted">BNL did not find enough meaningful topic detail for this archive.</p>}
+    </Section>
+    <Section title="Activity Snapshot" helper="Only populated activity fields are shown.">{snapshot.length ? <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">{snapshot.map(([label, value]) => <SnapshotItem key={String(label)} label={String(label)} value={scalarLabel(value)} />)}</dl> : <p className="text-muted">BNL did not find enough activity snapshot detail for this archive.</p>}</Section>
+    <Section title="What BNL Needs To Make A Solid Dossier" helper="What BNL needs to make a solid dossier — required blockers first, optional improvements collapsed.">
+      {requiredNeeds.length || optionalNeeds.length || extraRequiredNeeds.length ? (
+        <div className="space-y-3">
+          <ul className="space-y-3">{requiredNeeds.map(({ record }, index) => <li key={index} className="border border-accent/70 bg-background/30 p-3"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Needed item", record.neededItem)}{renderPlanField("Why it matters for a solid dossier", record.whyNeeded, "BNL did not explain why this is needed yet.")}{renderMeaningfulPlanField("Who can answer", record.whoCanAnswer)}{renderPlanField("What it unlocks", record.whatItUnlocks, unlockFallback(record))}{renderMeaningfulPlanField("Current status", record.currentStatus)}{renderMeaningfulPlanField("Required or optional", record.requiredOrOptional)}</dl><SuggestedControlView control={asRecord(record.suggestedControl) as DossierSourceFilePagePlanSuggestedControl | undefined} /></li>)}</ul>
+          {(extraRequiredNeeds.length > 0 || optionalNeeds.length > 0) && <details className="border border-border/50 bg-background/20 p-3 text-xs text-muted"><summary className="cursor-pointer font-semibold text-foreground">Optional dossier improvements ({extraRequiredNeeds.length + optionalNeeds.length})</summary><ul className="mt-3 space-y-3 text-sm">{[...extraRequiredNeeds, ...optionalNeeds].map(({ record }, index) => <li key={index} className="border border-border/50 bg-background/30 p-3"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Needed item", record.neededItem)}{renderPlanField("Why it matters for a solid dossier", record.whyNeeded, "BNL did not explain why this is needed yet.")}{renderPlanField("What it unlocks", record.whatItUnlocks, unlockFallback(record))}{renderMeaningfulPlanField("Current status", record.currentStatus)}{renderMeaningfulPlanField("Required or optional", record.requiredOrOptional)}</dl></li>)}</ul></details>}
+        </div>
+      ) : <p className="text-muted">BNL did not list any dossier-completion needs.</p>}
+    </Section>
+    <VerificationPacketSection questions={verificationQuestions} subject={planHeaderValue(header.subject ?? subjectName ?? latestSourceFileArchive?.subjectName, "this Source File subject")} empty="BNL does not have any decision-unlocking verification questions right now." />
     <Section title="Public-Safe Material BNL Can Use"><PlanItems items={plan.publicSafeMaterial} empty={plan.noPublicSafeMaterialReadyText ?? "BNL says no material is ready for public use yet."} render={(item) => <dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Material", item.material)}{renderPlanField("How BNL would use it", item.howBnlWouldUseIt)}{renderPlanField("Why safe enough", item.whySafeEnough)}{renderPlanField("Confidence", item.confidence)}{renderPlanField("Needs approval", item.needsApproval)}</dl>} /></Section>
-    <Section title="BNL Review Guidance"><PlanItems items={plan.bnlReviewGuidance} empty="BNL did not add review guidance." render={(item) => <><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Review issue", item.reviewIssue)}{renderPlanField("BNL decision", item.bnlDecision)}{renderPlanField("BNL explanation", item.bnlExplanation)}{renderPlanField("Recommended default", item.recommendedDefault)}{renderPlanField("Still active", item.stillActive)}{renderPlanField("Needed to finish", item.neededToFinish)}</dl><SuggestedControlView control={asRecord(item.suggestedControl) as DossierSourceFilePagePlanSuggestedControl | undefined} /></>} /></Section>
-    <Section title="Questions To Ask"><PlanItems items={plan.questionsToAsk} empty={plan.noDecisionUnlockingQuestionsText ?? "BNL says no decision-unlocking questions exist."} render={(item) => <dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Question", item.question)}{renderPlanField("Audience", item.audience)}{renderPlanField("Why BNL is asking", item.whyBnlIsAsking)}{renderPlanField("What answer would unlock", item.whatAnswerWouldUnlock)}{renderPlanField("Required or optional", item.requiredOrOptional)}</dl>} /></Section>
-    <Section title="Dossier Worth-It Decision" tone="caution"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Worth a dossier", plan.worthDecision?.worthADossier, "BNL did not state whether this is dossier-worthy yet.")}{renderPlanField("Decision", plan.worthDecision?.decision, "BNL did not provide a dossier decision yet.")}{renderPlanField("Why", plan.worthDecision?.why, "BNL did not explain the decision yet.")}{renderPlanField("Possible dossier type", plan.worthDecision?.possibleDossierType, "BNL did not suggest a dossier type yet.")}{renderPlanField("Draft readiness", plan.worthDecision?.draftReadiness, "BNL did not provide a draft-readiness assessment yet.")}{renderPlanField("What would change the decision", plan.worthDecision?.whatWouldChangeTheDecision, "BNL did not explain what would change the decision yet.")}</dl></Section>
-    <Section title="Internal / Omit / Hold"><div className="grid grid-cols-1 gap-3 lg:grid-cols-2"><div><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Keep internal</h4><PlanItems items={internal.keepInternal} empty="No keep-internal material listed." render={(item) => <dl className="space-y-2">{renderPlanField("Material", item.material)}{renderPlanField("Why internal", item.whyInternal)}{renderPlanField("Could become public later", item.couldBecomePublicLater)}{renderPlanField("What would make it usable", item.whatWouldMakeItUsable)}</dl>} /></div><div><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Omit from public draft</h4><PlanItems items={internal.omitFromPublicDraft} empty="No omit-from-public-draft material listed." render={(item) => <dl className="space-y-2">{renderPlanField("Material", item.material)}{renderPlanField("Why omitted", item.whyOmitted)}{renderPlanField("Could become public later", item.couldBecomePublicLater)}{renderPlanField("What would make it usable", item.whatWouldMakeItUsable)}</dl>} /></div></div></Section>
-    <Section title="Draft / Update Plan"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Can draft", draft.canDraft)}{renderPlanField("Draft type", draft.draftType)}{renderPlanField("Suggested angle", draft.suggestedAngle)}{renderPlanField("Use these materials", draft.useTheseMaterials)}{renderPlanField("Omit these materials", draft.omitTheseMaterials)}{renderPlanField("Owner Review warnings", draft.ownerReviewWarnings)}{!canDraft && renderPlanField("Why not", draft.whyNot)}</dl>{canDraft && <p className="mt-3 text-xs text-muted">Draft controls remain available only where existing handlers provide them; Owner Review is still required.</p>}</Section>
+    <Section title="BNL Review Guidance" helper="Compact decision summary. Additional low-priority or audit-only guidance is collapsed.">
+      {reviewRecords.length ? <div className="space-y-3"><dl className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6"><SnapshotItem label="Use publicly" value={reviewCounts.usePublicly} /><SnapshotItem label="Ask owner" value={reviewCounts.askOwner} /><SnapshotItem label="Ask admin" value={reviewCounts.askAdmin} /><SnapshotItem label="Keep internal" value={reviewCounts.keepInternal} /><SnapshotItem label="Omit / ignore" value={reviewCounts.omitIgnore} /><SnapshotItem label="Blockers" value={reviewCounts.blockers} /></dl><ul className="space-y-3">{primaryReviewGuidance.map((item, index) => <li key={index} className="border border-border/50 bg-background/30 p-3"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Review issue", item.reviewIssue)}{renderPlanField("BNL decision", item.bnlDecision)}{renderMeaningfulPlanField("Recommended default", item.recommendedDefault)}{renderMeaningfulPlanField("Needed to finish", item.neededToFinish)}</dl><SuggestedControlView control={asRecord(item.suggestedControl) as DossierSourceFilePagePlanSuggestedControl | undefined} /></li>)}</ul>{secondaryReviewGuidance.length > 0 && <details className="border border-border/50 bg-background/20 p-3 text-xs text-muted"><summary className="cursor-pointer font-semibold text-foreground">Additional review guidance ({secondaryReviewGuidance.length})</summary><ul className="mt-3 space-y-3 text-sm">{secondaryReviewGuidance.map((item, index) => <li key={index} className="border border-border/50 bg-background/30 p-3"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Review issue", item.reviewIssue)}{renderPlanField("BNL decision", item.bnlDecision)}{renderMeaningfulPlanField("BNL explanation", item.bnlExplanation)}</dl></li>)}</ul></details>}</div> : <p className="text-muted">BNL did not add review guidance.</p>}
+    </Section>
+    <Section title="Dossier Worth-It Decision" tone="caution"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Worth a dossier", plan.worthDecision?.worthADossier, "BNL did not state whether this is dossier-worthy yet.")}{renderPlanField("Decision", plan.worthDecision?.decision ?? pagePlanFallbacks?.dossierDecision, "BNL did not provide a dossier decision yet.")}{renderPlanField("Why", plan.worthDecision?.why, "BNL did not explain the decision yet.")}{renderPlanField("Possible dossier type", plan.worthDecision?.possibleDossierType, "BNL did not suggest a dossier type yet.")}{renderPlanField("Draft readiness", plan.worthDecision?.draftReadiness, "BNL did not provide a draft-readiness assessment yet.")}{renderPlanField("What would change the decision", plan.worthDecision?.whatWouldChangeTheDecision, "BNL did not explain what would change the decision yet.")}</dl></Section>
+    <Section title="Draft / Update Plan"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Can draft", draft.canDraft === undefined ? undefined : canDraft ? "Yes" : "No")}{renderMeaningfulPlanField("Draft type", draft.draftType)}{renderMeaningfulPlanField("Suggested angle", draft.suggestedAngle)}{!canDraft && renderMeaningfulPlanField("Why not", draft.whyNot)}{renderMeaningfulPlanField("Owner Review warnings", draft.ownerReviewWarnings)}</dl>{draftUseItems.length > 0 && <div className="mt-3 border border-border/50 bg-background/30 p-3"><p className="text-xs font-bold uppercase tracking-widest text-accent">Use these materials</p><ul className="mt-2 list-disc pl-5 text-foreground">{draftUseItems.slice(0, 5).map((item) => <li key={item}>{item}</li>)}</ul></div>}{draftOmitItems.length > 0 && <div className="mt-3 border border-border/50 bg-background/30 p-3"><p className="text-xs font-bold uppercase tracking-widest text-accent">Omit these materials</p><ul className="mt-2 list-disc pl-5 text-foreground">{draftOmitItems.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul></div>}{(draftUseItems.length > 5 || draftOmitItems.length > 3) && <details className="mt-3 border border-border/50 bg-background/20 p-3 text-xs text-muted"><summary className="cursor-pointer font-semibold text-foreground">View full draft material list</summary><div className="mt-3 grid grid-cols-1 gap-3 text-sm md:grid-cols-2"><div><p className="font-bold text-foreground">All usable materials</p><ul className="list-disc pl-5">{draftUseItems.map((item) => <li key={item}>{item}</li>)}</ul></div><div><p className="font-bold text-foreground">All omitted materials</p><ul className="list-disc pl-5">{draftOmitItems.map((item) => <li key={item}>{item}</li>)}</ul></div></div></details>}{canDraft && <p className="mt-3 text-xs text-muted">Draft controls remain available only where existing handlers provide them; Owner Review is still required.</p>}</Section>
+    <Section title="Internal / Omit / Hold" helper="Collapsed audit summary. Expand only when internal/omit detail is needed.">
+      <p className="text-foreground">BNL is withholding {keepInternalGroups.reduce((sum, group) => sum + group.count, 0)} internal/review-only items and omitting {omitGroups.reduce((sum, group) => sum + group.count, 0)} public-draft risks. Expand for audit details.</p>
+      {[...keepInternalGroups, ...omitGroups].slice(0, 2).map(({ record }, index) => <p key={index} className="mt-2 text-xs text-muted">{scalarLabel(valueByKeys(record, ["whyInternal", "whyOmitted", "material"]))}</p>)}
+      {(keepInternalGroups.length > 0 || omitGroups.length > 0) && <details className="mt-3 border border-border/50 bg-background/20 p-3 text-xs text-muted"><summary className="cursor-pointer font-semibold text-foreground">View internal / omit details</summary><div className="mt-3 grid grid-cols-1 gap-3 text-sm lg:grid-cols-2"><div><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Keep internal</h4>{keepInternalGroups.length ? <ul className="space-y-3">{keepInternalGroups.map(({ record, count }, index) => <li key={index} className="border border-border/50 bg-background/30 p-3"><p className="font-semibold text-foreground">{scalarLabel(record.material)}{count > 1 ? ` — ${count} items` : ""}</p><dl className="mt-2 space-y-2">{renderMeaningfulPlanField("Why internal", record.whyInternal)}{renderMeaningfulPlanField("Could become public later", record.couldBecomePublicLater)}{renderMeaningfulPlanField("What would make it usable", record.whatWouldMakeItUsable)}</dl></li>)}</ul> : <p>No keep-internal material listed.</p>}</div><div><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Omit from public draft</h4>{omitGroups.length ? <ul className="space-y-3">{omitGroups.map(({ record, count }, index) => <li key={index} className="border border-border/50 bg-background/30 p-3"><p className="font-semibold text-foreground">{scalarLabel(record.material)}{count > 1 ? ` — ${count} items` : ""}</p><dl className="mt-2 space-y-2">{renderMeaningfulPlanField("Why omitted", record.whyOmitted)}{renderMeaningfulPlanField("Could become public later", record.couldBecomePublicLater)}{renderMeaningfulPlanField("What would make it usable", record.whatWouldMakeItUsable)}</dl></li>)}</ul> : <p>No omit-from-public-draft material listed.</p>}</div></div></details>}
+    </Section>
     <Section title="Diagnostics Summary"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-4">{renderPlanField("Raw archive available", diagnostics.rawArchiveAvailable)}{renderPlanField("Case report available", diagnostics.caseReportAvailable)}{renderPlanField("Interim brief available", diagnostics.interimBriefAvailable)}{renderPlanField("Blueprint available", diagnostics.blueprintAvailable)}{renderPlanField("Legacy claim review count", diagnostics.legacyClaimReviewCount)}{renderPlanField("Absorbed review count", diagnostics.absorbedReviewCount)}{renderPlanField("Hidden diagnostic count", diagnostics.hiddenDiagnosticCount)}{renderPlanField("Safety notes", diagnostics.safetyNotes)}</dl></Section>
   </div>;
 }
@@ -2090,6 +2452,8 @@ export function DossierSourceFileSummaryPanel({
   latestRecommendationTimestamp,
   sourceFileTargetStatus,
   latestSourceFileArchive,
+  reviewBoundaryLabels = [],
+  pagePlanFallbacks,
   blueprint,
   candidateId,
   claimReviews = [],
@@ -2106,6 +2470,8 @@ export function DossierSourceFileSummaryPanel({
   latestRecommendationTimestamp?: string;
   sourceFileTargetStatus?: string;
   latestSourceFileArchive?: DossierSourceFileArchiveMetadata;
+  reviewBoundaryLabels?: string[];
+  pagePlanFallbacks?: SourceFilePagePlanFallbacks;
   blueprint?: DossierDraftBlueprint;
   candidateId?: string;
   claimReviews?: DossierSourceFileClaimReview[];
@@ -2179,6 +2545,9 @@ export function DossierSourceFileSummaryPanel({
             currentLane={currentLane}
             latestRecommendationTimestamp={latestRecommendationTimestamp}
             sourceFileTargetStatus={sourceFileTargetStatus}
+            report={report}
+            reviewBoundaryLabels={reviewBoundaryLabels}
+            pagePlanFallbacks={pagePlanFallbacks}
           />
           <details className="border border-border/60 bg-background/20 p-3 text-sm text-muted">
             <summary className="cursor-pointer font-semibold text-foreground">Support / Diagnostics</summary>
@@ -2198,6 +2567,7 @@ export function DossierSourceFileSummaryPanel({
                 claimReviews={claimReviews}
                 onReviewClaim={onReviewClaim}
                 candidate={candidate}
+                legacyClaimDecisionLabel="Legacy claim decision records"
               />
               {blueprint && <DossierBlueprintView blueprint={blueprint} />}
               {hasArchiveDiagnostics && (

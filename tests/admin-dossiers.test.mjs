@@ -12882,8 +12882,8 @@ test("sourceFilePagePlanV1 renders as primary fixed Source File page before fall
     "BNL Review Guidance",
     "Questions To Ask",
     "Dossier Worth-It Decision",
-    "Internal / Omit / Hold",
     "Draft / Update Plan",
+    "Internal / Omit / Hold",
     "Diagnostics Summary",
   ];
   for (const section of sections) assert.match(text, new RegExp(section.replace(/[\/]/g, "\\$&")));
@@ -12897,10 +12897,11 @@ test("sourceFilePagePlanV1 renders as primary fixed Source File page before fall
   assert.match(text, /Activity Snapshot[\s\S]*Public mentions[\s\S]*3[\s\S]*Top channels[\s\S]*#barcode-radio/);
   assert.doesNotMatch(text, /Approved authored items[\s\S]*—/);
   assert.match(text, /Needed item[\s\S]*Owner-approved role wording/);
-  assert.ok(text.indexOf("Public-Safe Material BNL Can Use") < text.indexOf("Internal / Omit / Hold"));
-  assert.match(text, /BNL Review Guidance[\s\S]*Legacy claim card about collaborator wording[\s\S]*Do not publish as a fact yet/);
+  assert.ok(text.indexOf("Public-Safe Material BNL Can Use") < text.indexOf("Draft / Update Plan"));
+  assert.match(text, /BNL Review Guidance[\s\S]*Use publicly[\s\S]*Ask owner[\s\S]*Keep internal[\s\S]*Omit \/ ignore[\s\S]*Blockers/);
+  assert.match(fullText, /Additional review guidance[\s\S]*Legacy claim card about collaborator wording[\s\S]*Do not publish as a fact yet/);
   assert.ok(text.indexOf("Questions To Ask") < text.indexOf("Dossier Worth-It Decision"));
-  assert.match(text, /Draft \/ Update Plan[\s\S]*Can draft[\s\S]*false[\s\S]*Why not[\s\S]*Required owner wording is still missing/);
+  assert.match(text, /Draft \/ Update Plan[\s\S]*Can draft[\s\S]*No[\s\S]*Why not[\s\S]*Required owner wording is still missing/);
   assert.match(text, /Support \/ Diagnostics/);
   assert.doesNotMatch(text, /Source File Claim Decisions|Main Action|sourceFilePagePlanV1|Fallback completion read should be diagnostic/);
   assert.match(fullText, /Legacy claim decision records[\s\S]*Legacy collaborator claim stays diagnostic/);
@@ -12934,10 +12935,11 @@ test("sourceFilePagePlanV1 consolidates header, fills blank primary fields, and 
   assert.match(text, /Unified Source File Header[\s\S]*Empty Field Plan Subject/);
   assert.doesNotMatch(text, /Source File header \/ refresh status|Compact Source File Header|BNL Dossier Intelligence/);
   assert.match(text, /Subject Read[\s\S]*BNL did not provide an overall subject read yet/);
-  assert.match(text, /What BNL thinks this is[\s\S]*BNL has not clearly classified this subject yet/);
+  assert.doesNotMatch(text, /What BNL thinks this is[\s\S]*BNL has not clearly classified this subject yet/);
   assert.match(text, /Worth a dossier[\s\S]*BNL did not state whether this is dossier-worthy yet/);
   assert.match(text, /What it unlocks[\s\S]*Unlocks clearer public-safe dossier wording/);
-  assert.ok(text.indexOf("Required owner wording") < text.indexOf("Optional polish"));
+  assert.ok(text.includes("Required owner wording"));
+  assert.doesNotMatch(text, /Optional polish[\s\S]*Why it matters for a solid dossier/);
 });
 
 test("sourceFilePagePlanV1 renders canDraft true without exposing draft controls in the header", () => {
@@ -12960,7 +12962,7 @@ test("sourceFilePagePlanV1 renders canDraft true without exposing draft controls
     } } } },
   };
   const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive }));
-  assert.match(text, /Draft \/ Update Plan[\s\S]*Can draft[\s\S]*true[\s\S]*Draft controls remain available only where existing handlers provide them/);
+  assert.match(text, /Draft \/ Update Plan[\s\S]*Can draft[\s\S]*Yes[\s\S]*Draft controls remain available only where existing handlers provide them/);
   assert.doesNotMatch(text.slice(0, text.indexOf("Draft / Update Plan")), /Create Draft|Request BNL Draft|Main Action/);
 });
 

@@ -9172,7 +9172,9 @@ test("Source File dossier-completion readout leads classification diagnostics an
       recommendedAdminActions: ["Ask owner/admin for role wording."],
     },
   };
-  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive }));
+  const element = sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive });
+  const text = collectDefaultVisibleText(element);
+  const fullText = collectReactText(element);
   assert.ok(text.indexOf("BNL Dossier Assessment") < text.indexOf("Support / Diagnostics"));
   assert.match(text, /Completion Subject is a public-safe BARCODE Radio community profile/);
   assert.match(text, /Public-Safe Dossier Material[\s\S]*Completion Subject has public BARCODE Radio participation/);
@@ -12839,14 +12841,43 @@ test("sourceFilePagePlanV1 renders as primary fixed Source File page before fall
     chunkCount: 1,
     reviewOnly: true,
     sourceFilePagePlanV1: pagePlan,
+    sourceFileCaseReportV1: {
+      subjectIntelligenceBriefV1: {
+        subjectRead: "Legacy subject read folded into the BNL-controlled read.",
+        activitySnapshot: {
+          totalPublicMentions: 3,
+          topChannels: ["#barcode-radio"],
+          latestObserved: "2026-06-16T00:00:00.000Z",
+        },
+        topicBuckets: [{
+          topic: "Interface / lore language",
+          bnlInterpretation: "The subject repeatedly engages with interface and lore phrasing around BARCODE context.",
+          strength: "medium",
+          evidenceCount: 4,
+          publicUseStatus: "admin-review",
+          whyItMatters: "Shows a recurring subject-interest pattern BNL can evaluate for dossier readiness.",
+        }],
+      },
+    },
     dossierCompletionReadV1: { bnlAssessment: "Fallback completion read should be diagnostic." },
-    subjectAnalystReadV1: { sourceBlindInsights: ["Source-blind withheld item"] },
+    subjectAnalystReadV1: {
+      sourceBlindInsights: ["Source-blind withheld item"],
+      reviewableClaims: [{
+        claim: "Legacy collaborator claim stays diagnostic.",
+        safestDefault: "Hold for review.",
+        rationale: "Legacy claim record should not compete with the page plan.",
+      }],
+    },
   };
-  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive }));
+  const element = sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive });
+  const text = collectDefaultVisibleText(element);
+  const fullText = collectReactText(element);
   const sections = [
     "Unified Source File Header",
-    "BNL Analyst Read",
-    "What BNL Needs",
+    "BNL Subject Intelligence Brief",
+    "What They Talk About",
+    "Activity Snapshot",
+    "What BNL Needs To Make A Solid Dossier",
     "Public-Safe Material BNL Can Use",
     "BNL Review Guidance",
     "Questions To Ask",
@@ -12860,15 +12891,19 @@ test("sourceFilePagePlanV1 renders as primary fixed Source File page before fall
   assert.doesNotMatch(text, /Source File header \/ refresh status/);
   assert.doesNotMatch(text, /Compact Source File Header/);
   assert.doesNotMatch(text, /BNL Dossier Intelligence/);
-  assert.match(text, /What BNL Needs[\s\S]*Only the things BNL still needs to build a stronger, safer, more solid dossier/);
-  assert.match(text, /Overall read[\s\S]*BNL sees a cautious public dossier possibility/);
+  assert.match(text, /What BNL Needs To Make A Solid Dossier[\s\S]*What BNL needs to make a solid dossier/);
+  assert.match(text, /Subject Read[\s\S]*BNL sees a cautious public dossier possibility/);
+  assert.match(text, /What They Talk About[\s\S]*Topic \/ pattern[\s\S]*Interface \/ lore language[\s\S]*BNL interpretation[\s\S]*The subject repeatedly engages[\s\S]*Evidence strength[\s\S]*medium[\s\S]*Evidence count[\s\S]*4[\s\S]*Public use status[\s\S]*admin-review[\s\S]*Why it matters for dossier readiness[\s\S]*recurring subject-interest pattern/);
+  assert.match(text, /Activity Snapshot[\s\S]*Public mentions[\s\S]*3[\s\S]*Top channels[\s\S]*#barcode-radio/);
+  assert.doesNotMatch(text, /Approved authored items[\s\S]*—/);
   assert.match(text, /Needed item[\s\S]*Owner-approved role wording/);
   assert.ok(text.indexOf("Public-Safe Material BNL Can Use") < text.indexOf("Internal / Omit / Hold"));
   assert.match(text, /BNL Review Guidance[\s\S]*Legacy claim card about collaborator wording[\s\S]*Do not publish as a fact yet/);
   assert.ok(text.indexOf("Questions To Ask") < text.indexOf("Dossier Worth-It Decision"));
   assert.match(text, /Draft \/ Update Plan[\s\S]*Can draft[\s\S]*false[\s\S]*Why not[\s\S]*Required owner wording is still missing/);
   assert.match(text, /Support \/ Diagnostics/);
-  assert.doesNotMatch(text, /Main Action|sourceFilePagePlanV1|Fallback completion read should be diagnostic/);
+  assert.doesNotMatch(text, /Source File Claim Decisions|Main Action|sourceFilePagePlanV1|Fallback completion read should be diagnostic/);
+  assert.match(fullText, /Legacy claim decision records[\s\S]*Legacy collaborator claim stays diagnostic/);
 });
 
 
@@ -12898,12 +12933,11 @@ test("sourceFilePagePlanV1 consolidates header, fills blank primary fields, and 
   const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive }));
   assert.match(text, /Unified Source File Header[\s\S]*Empty Field Plan Subject/);
   assert.doesNotMatch(text, /Source File header \/ refresh status|Compact Source File Header|BNL Dossier Intelligence/);
-  assert.match(text, /Overall read[\s\S]*BNL did not provide an overall read yet/);
+  assert.match(text, /Subject Read[\s\S]*BNL did not provide an overall subject read yet/);
   assert.match(text, /What BNL thinks this is[\s\S]*BNL has not clearly classified this subject yet/);
   assert.match(text, /Worth a dossier[\s\S]*BNL did not state whether this is dossier-worthy yet/);
   assert.match(text, /What it unlocks[\s\S]*Unlocks clearer public-safe dossier wording/);
   assert.ok(text.indexOf("Required owner wording") < text.indexOf("Optional polish"));
-  assert.doesNotMatch(text, /—/);
 });
 
 test("sourceFilePagePlanV1 renders canDraft true without exposing draft controls in the header", () => {
@@ -12972,10 +13006,9 @@ test("root sourceFilePagePlanV1 survives Source File archive ingest and renders 
     latestSourceFileArchive: sourceFile.latestSourceFileArchive,
   }));
   assert.match(panelText, /Unified Source File Header[\s\S]*Root Page Plan Subject/);
-  assert.match(panelText, /BNL Analyst Read[\s\S]*Root page plan survived ingest/);
-  assert.match(panelText, /What BNL Needs[\s\S]*Root owner answer/);
+  assert.match(panelText, /BNL Subject Intelligence Brief[\s\S]*Root page plan survived ingest/);
+  assert.match(panelText, /What BNL Needs To Make A Solid Dossier[\s\S]*Root owner answer/);
   assert.match(panelText, /What it unlocks[\s\S]*Unlocks clearer public-safe dossier wording/);
-  assert.doesNotMatch(panelText, /—/);
 });
 
 test("sourceFileBriefV2.subjectAnalystReadV1.sourceFilePagePlanV1 renders primary UI", () => {
@@ -13008,8 +13041,7 @@ test("sourceFileBriefV2.subjectAnalystReadV1.sourceFilePagePlanV1 renders primar
     latestSourceFileArchive: archive,
   }));
   assert.match(panelText, /Unified Source File Header[\s\S]*Brief Analyst Plan Subject/);
-  assert.match(panelText, /BNL Analyst Read[\s\S]*Direct brief analyst page plan was found/);
+  assert.match(panelText, /BNL Subject Intelligence Brief[\s\S]*Direct brief analyst page plan was found/);
   assert.match(panelText, /Public-Safe Material BNL Can Use[\s\S]*Approved public signal/);
-  assert.doesNotMatch(panelText, /—/);
   assert.doesNotMatch(panelText, /Legacy completion read should stay diagnostic/);
 });

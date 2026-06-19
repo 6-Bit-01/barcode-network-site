@@ -331,6 +331,25 @@ function scalarLabel(value: unknown) {
   return displayValue(value) ?? "—";
 }
 
+function isMeaningfulDisplayValue(value: unknown) {
+  const displayed = displayValue(value);
+  return Boolean(displayed && !/^(—|-|n\/a|none|null|undefined|unknown|not provided)$/i.test(displayed.trim()));
+}
+
+function publicUseStatus(value: unknown) {
+  const displayed = displayValue(value)?.toLowerCase().replace(/[_ ]+/g, "-");
+  if (displayed === "public-safe" || displayed === "admin-review" || displayed === "internal-only") return displayed;
+  if (/internal|source-blind|private|omit/.test(displayed ?? "")) return "internal-only";
+  if (/public|safe|approved/.test(displayed ?? "")) return "public-safe";
+  return "admin-review";
+}
+
+function topicFallbackWhy(status: string) {
+  if (status === "public-safe") return "Can help shape a public-safe dossier angle if the rest of the read supports it.";
+  if (status === "internal-only") return "Helps BNL understand the subject, but should stay out of public copy unless separately approved.";
+  return "Helps BNL decide whether the subject has enough clear signal for a solid dossier.";
+}
+
 function listRecords(value: unknown): UnknownRecord[] {
   if (Array.isArray(value)) {
     return value.flatMap((item) =>
@@ -1570,6 +1589,7 @@ function BnlAnalystReadPanel({
   claimReviews,
   onReviewClaim,
   candidate,
+  legacyClaimDecisionLabel = "Source File Claim Decisions",
 }: {
   analystRead?: DossierSubjectAnalystReadV1;
   refreshedAt?: string;
@@ -1579,6 +1599,7 @@ function BnlAnalystReadPanel({
   claimReviews?: DossierSourceFileClaimReview[];
   onReviewClaim?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void;
   candidate?: Partial<DossierCandidate>;
+  legacyClaimDecisionLabel?: string;
 }) {
   if (!analystRead) {
     return (
@@ -1594,7 +1615,7 @@ function BnlAnalystReadPanel({
     analystRead,
   });
   const sectionEntries = [
-    ["reviewableClaims", "Source File Claim Decisions"],
+    ["reviewableClaims", legacyClaimDecisionLabel],
     ["publicReadyClaims", "Public-Ready Claims"],
     [stringItems(analystRead.sourceFileReviewClaims).length ? "sourceFileReviewClaims" : "reviewNeededClaims", "Review-Needed Claims"],
     ["sourceBlindInsights", "Source-blind / Withheld Context"],
@@ -1980,7 +2001,7 @@ function unlockFallback(item: UnknownRecord) {
   if (/angle|classification|type/.test(marker)) return "Helps confirm dossier angle.";
   if (/draft|worth|decision|dossier/.test(marker)) return "Helps determine whether the dossier should be drafted.";
   if (/refresh|evidence|source|material/.test(marker)) return "Improves dossier readiness.";
-  return "BNL did not specify what this unlocks yet.";
+  return "Improves dossier readiness.";
 }
 
 function SuggestedControlView({ control }: { control?: DossierSourceFilePagePlanSuggestedControl }) {
@@ -2003,6 +2024,7 @@ function SourceFilePagePlanView({
   plan,
   summary,
   latestSourceFileArchive,
+  report,
   subjectName,
   currentLane,
   latestRecommendationTimestamp,
@@ -2011,6 +2033,7 @@ function SourceFilePagePlanView({
   plan: DossierSourceFilePagePlanV1;
   summary: DossierSourceFileSummary;
   latestSourceFileArchive?: DossierSourceFileArchiveMetadata;
+  report?: DossierSourceFileCaseReportV1;
   subjectName?: string;
   currentLane?: string;
   latestRecommendationTimestamp?: string;
@@ -2021,6 +2044,21 @@ function SourceFilePagePlanView({
   const internal = plan.internalOmitHold ?? {};
   const draft = plan.draftOrUpdatePlan ?? {};
   const diagnostics = plan.diagnosticsSummary ?? {};
+  const subjectBrief = asRecord(report?.subjectIntelligenceBriefV1);
+  const activity = asRecord(subjectBrief?.activitySnapshot) ?? subjectBrief;
+  const snapshot = [
+    ["Approved authored items", valueByKeys(activity, ["totalApprovedPublicAuthoredItems", "approvedPublicAuthoredItems", "totalApprovedAuthoredItems"])],
+    ["Public mentions", valueByKeys(activity, ["totalPublicMentions", "publicMentions"])],
+    ["Admin-review evidence", valueByKeys(activity, ["reviewOnlyEvidenceCount", "reviewOnlyCount"])],
+    ["Evidence scanned", valueByKeys(activity, ["totalEvidenceScanned", "evidenceScanned", "totalScanned"])],
+    ["Latest observed", valueByKeys(activity, ["latestObserved", "latestObservedAt", "latestActivityAt"])],
+    ["Activity level", valueByKeys(activity, ["activityLevel", "level"])],
+    ["Top channels", stringItems(valueByKeys(activity, ["topChannels", "channels"])).join(", ") || valueByKeys(activity, ["topChannels", "channels"])],
+  ].filter(([, value]) => isMeaningfulDisplayValue(value));
+  const topicCards = listRecords(subjectBrief?.topicBuckets).filter((topic) =>
+    isMeaningfulDisplayValue(valueByKeys(topic, ["topic", "name", "label"])) ||
+    isMeaningfulDisplayValue(valueByKeys(topic, ["explanation", "summary", "note", "bnlInterpretation", "interpretation"]))
+  );
   const canDraft = draft.canDraft === true || String(draft.canDraft).toLowerCase() === "true";
   return <div className="space-y-4" data-source-file-page-plan="primary">
     <Section title="Unified Source File Header" helper="Single BNL page-plan header. Page-plan values win; legacy values only fill missing status context.">
@@ -2033,8 +2071,10 @@ function SourceFilePagePlanView({
         <SnapshotItem label="Existing public dossier" value={planHeaderValue(header.existingPublicDossier ?? summary.existingPublicDossier, "BNL did not state whether a public dossier exists yet.")} />
       </dl>
     </Section>
-    <Section title="BNL Analyst Read" tone="caution"><dl className="space-y-3">{renderPlanField("Overall read", analyst.overallRead, "BNL did not provide an overall read yet.")}{renderPlanField("What BNL thinks this is", analyst.whatBnlThinksThisIs, "BNL has not clearly classified this subject yet.")}{renderPlanField("Why this Source File exists", analyst.whyThisSourceFileExists, "BNL did not explain the Source File purpose yet.")}{renderPlanField("What seems useful", analyst.whatSeemsUseful, "BNL did not identify any clearly useful dossier material yet.")}{renderPlanField("What seems weak", analyst.whatSeemsWeak, "BNL did not identify any weak areas yet.")}{renderPlanField("What is uncertain", analyst.whatIsUncertain, "BNL did not specify the uncertain areas yet.")}{renderPlanField("What BNL is watching", analyst.whatBnlIsWatching, "BNL did not list any active watch items yet.")}{renderPlanField("Confidence", analyst.confidence, "BNL did not provide a confidence read yet.")}</dl></Section>
-    <Section title="What BNL Needs" helper="Only the things BNL still needs to build a stronger, safer, more solid dossier."><PlanItems items={plan.whatBnlNeeds} prioritizeNeeds empty="BNL did not list any dossier-completion needs." render={(item) => <><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Needed item", item.neededItem, "BNL did not name the needed dossier item yet.")}{renderPlanField("Why needed", item.whyNeeded, "BNL did not explain why this is needed yet.")}{renderPlanField("Who can answer", item.whoCanAnswer, "BNL did not specify who can answer this yet.")}{renderPlanField("Required or optional", item.requiredOrOptional, "BNL did not mark whether this is required or optional yet.")}{renderPlanField("What it unlocks", item.whatItUnlocks, unlockFallback(item))}{renderPlanField("Current status", item.currentStatus, "BNL did not provide a current status yet.")}</dl><SuggestedControlView control={asRecord(item.suggestedControl) as DossierSourceFilePagePlanSuggestedControl | undefined} /></>} /></Section>
+    <Section title="BNL Subject Intelligence Brief" tone="caution" helper="BNL-controlled subject read. This folds the page-plan analyst read into one primary intelligence section."><dl className="space-y-3">{renderPlanField("Subject Read", analyst.overallRead ?? subjectBrief?.subjectRead, "BNL did not provide an overall subject read yet.")}{renderPlanField("What BNL thinks this is", analyst.whatBnlThinksThisIs, "BNL has not clearly classified this subject yet.")}{renderPlanField("Why this Source File exists", analyst.whyThisSourceFileExists, "BNL did not explain the Source File purpose yet.")}{renderPlanField("Strongest observed patterns", analyst.whatSeemsUseful ?? valueByKeys(subjectBrief, ["strongestObservedPatterns", "strongestPatterns"]), "BNL did not identify the strongest observed patterns yet.")}{renderPlanField("What seems weak", analyst.whatSeemsWeak, "BNL did not identify any weak areas yet.")}{renderPlanField("Confirmed vs unconfirmed boundaries", analyst.whatIsUncertain ?? valueByKeys(asRecord(subjectBrief?.bnlTake), ["uncertainty", "uncertainties", "unknowns"]), "BNL did not specify the uncertain areas yet.")}{renderPlanField("What BNL is watching", analyst.whatBnlIsWatching, "BNL did not list any active watch items yet.")}{renderPlanField("Confidence / evidence strength", analyst.confidence ?? valueByKeys(subjectBrief, ["confidence", "evidenceStrength", "strength"]), "BNL did not provide a confidence read yet.")}</dl></Section>
+    <Section title="What They Talk About" helper="Subject interests, public conversation themes, archive context, and channel/activity clues. Status labels control what can become dossier copy.">{topicCards.length ? <ul className="space-y-3">{topicCards.map((topic, index) => { const status = publicUseStatus(valueByKeys(topic, ["publicUseStatus", "publicStatus", "status", "safetyLane"])); return <li key={`${index}-${scalarLabel(valueByKeys(topic, ["topic", "name", "label"])).slice(0, 24)}`} className="border border-border/50 bg-background/30 p-3"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Topic / pattern", valueByKeys(topic, ["topic", "name", "label"]), "Unnamed topic pattern")}{renderPlanField("BNL interpretation", valueByKeys(topic, ["bnlInterpretation", "interpretation", "explanation", "summary", "note"]), "BNL has not written an interpretation for this topic yet.")}{renderPlanField("Evidence strength", valueByKeys(topic, ["evidenceStrength", "strength", "confidence"]), "Unrated")}{renderPlanField("Evidence count", valueByKeys(topic, ["evidenceCount", "count"]), "0")}{renderPlanField("Public use status", status)}{renderPlanField("Why it matters for dossier readiness", valueByKeys(topic, ["whyItMatters", "whyItMattersForDossierReadiness", "dossierReadinessReason"]), topicFallbackWhy(status))}</dl></li>; })}</ul> : <p className="text-muted">BNL did not find enough meaningful topic detail for this archive.</p>}</Section>
+    <Section title="Activity Snapshot" helper="Only populated activity fields are shown.">{snapshot.length ? <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">{snapshot.map(([label, value]) => <SnapshotItem key={String(label)} label={String(label)} value={scalarLabel(value)} />)}</dl> : <p className="text-muted">BNL did not find enough activity snapshot detail for this archive.</p>}</Section>
+    <Section title="What BNL Needs To Make A Solid Dossier" helper="What BNL needs to make a solid dossier — not a generic task list."><PlanItems items={plan.whatBnlNeeds} prioritizeNeeds empty="BNL did not list any dossier-completion needs." render={(item) => <><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Needed item", item.neededItem, "BNL did not name the needed dossier item yet.")}{renderPlanField("Why it matters for a solid dossier", item.whyNeeded, "BNL did not explain why this is needed yet.")}{renderPlanField("Who can answer", item.whoCanAnswer, "BNL did not specify who can answer this yet.")}{renderPlanField("What it unlocks", item.whatItUnlocks, unlockFallback(item))}{renderPlanField("Current status", item.currentStatus, "BNL did not provide a current status yet.")}{renderPlanField("Required or optional", item.requiredOrOptional, "BNL did not mark whether this is required or optional yet.")}</dl><SuggestedControlView control={asRecord(item.suggestedControl) as DossierSourceFilePagePlanSuggestedControl | undefined} /></>} /></Section>
     <Section title="Public-Safe Material BNL Can Use"><PlanItems items={plan.publicSafeMaterial} empty={plan.noPublicSafeMaterialReadyText ?? "BNL says no material is ready for public use yet."} render={(item) => <dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Material", item.material)}{renderPlanField("How BNL would use it", item.howBnlWouldUseIt)}{renderPlanField("Why safe enough", item.whySafeEnough)}{renderPlanField("Confidence", item.confidence)}{renderPlanField("Needs approval", item.needsApproval)}</dl>} /></Section>
     <Section title="BNL Review Guidance"><PlanItems items={plan.bnlReviewGuidance} empty="BNL did not add review guidance." render={(item) => <><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Review issue", item.reviewIssue)}{renderPlanField("BNL decision", item.bnlDecision)}{renderPlanField("BNL explanation", item.bnlExplanation)}{renderPlanField("Recommended default", item.recommendedDefault)}{renderPlanField("Still active", item.stillActive)}{renderPlanField("Needed to finish", item.neededToFinish)}</dl><SuggestedControlView control={asRecord(item.suggestedControl) as DossierSourceFilePagePlanSuggestedControl | undefined} /></>} /></Section>
     <Section title="Questions To Ask"><PlanItems items={plan.questionsToAsk} empty={plan.noDecisionUnlockingQuestionsText ?? "BNL says no decision-unlocking questions exist."} render={(item) => <dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Question", item.question)}{renderPlanField("Audience", item.audience)}{renderPlanField("Why BNL is asking", item.whyBnlIsAsking)}{renderPlanField("What answer would unlock", item.whatAnswerWouldUnlock)}{renderPlanField("Required or optional", item.requiredOrOptional)}</dl>} /></Section>
@@ -2179,6 +2219,7 @@ export function DossierSourceFileSummaryPanel({
             currentLane={currentLane}
             latestRecommendationTimestamp={latestRecommendationTimestamp}
             sourceFileTargetStatus={sourceFileTargetStatus}
+            report={report}
           />
           <details className="border border-border/60 bg-background/20 p-3 text-sm text-muted">
             <summary className="cursor-pointer font-semibold text-foreground">Support / Diagnostics</summary>
@@ -2198,6 +2239,7 @@ export function DossierSourceFileSummaryPanel({
                 claimReviews={claimReviews}
                 onReviewClaim={onReviewClaim}
                 candidate={candidate}
+                legacyClaimDecisionLabel="Legacy claim decision records"
               />
               {blueprint && <DossierBlueprintView blueprint={blueprint} />}
               {hasArchiveDiagnostics && (

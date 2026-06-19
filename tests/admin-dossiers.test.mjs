@@ -12844,7 +12844,7 @@ test("sourceFilePagePlanV1 renders as primary fixed Source File page before fall
   };
   const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive }));
   const sections = [
-    "Compact Source File Header",
+    "Unified Source File Header",
     "BNL Analyst Read",
     "What BNL Needs",
     "Public-Safe Material BNL Can Use",
@@ -12857,6 +12857,10 @@ test("sourceFilePagePlanV1 renders as primary fixed Source File page before fall
   ];
   for (const section of sections) assert.match(text, new RegExp(section.replace(/[\/]/g, "\\$&")));
   for (let index = 0; index < sections.length - 1; index += 1) assert.ok(text.indexOf(sections[index]) < text.indexOf(sections[index + 1]), `${sections[index]} should render before ${sections[index + 1]}`);
+  assert.doesNotMatch(text, /Source File header \/ refresh status/);
+  assert.doesNotMatch(text, /Compact Source File Header/);
+  assert.doesNotMatch(text, /BNL Dossier Intelligence/);
+  assert.match(text, /What BNL Needs[\s\S]*Only the things BNL still needs to build a stronger, safer, more solid dossier/);
   assert.match(text, /Overall read[\s\S]*BNL sees a cautious public dossier possibility/);
   assert.match(text, /Needed item[\s\S]*Owner-approved role wording/);
   assert.ok(text.indexOf("Public-Safe Material BNL Can Use") < text.indexOf("Internal / Omit / Hold"));
@@ -12865,6 +12869,41 @@ test("sourceFilePagePlanV1 renders as primary fixed Source File page before fall
   assert.match(text, /Draft \/ Update Plan[\s\S]*Can draft[\s\S]*false[\s\S]*Why not[\s\S]*Required owner wording is still missing/);
   assert.match(text, /Support \/ Diagnostics/);
   assert.doesNotMatch(text, /Main Action|sourceFilePagePlanV1|Fallback completion read should be diagnostic/);
+});
+
+
+test("sourceFilePagePlanV1 consolidates header, fills blank primary fields, and prioritizes required needs", () => {
+  const summary = sourceFileReportTestSummary();
+  const archive = {
+    id: "archive-page-plan-empty-fields",
+    candidateId: "candidate-page-plan-empty-fields",
+    subjectName: "Empty Field Plan Subject",
+    sourceDigest: "digest",
+    createdAt: "2026-06-18T00:00:00.000Z",
+    updatedAt: "2026-06-18T00:00:00.000Z",
+    archiveSize: 1,
+    chunkCount: 1,
+    reviewOnly: true,
+    sourceFilePagePlanV1: {
+      header: { subject: "Empty Field Plan Subject", sourceFileStatus: "active" },
+      analystRead: {},
+      whatBnlNeeds: [
+        { neededItem: "Optional polish", requiredOrOptional: "optional", currentStatus: "later" },
+        { neededItem: "Required owner wording", requiredOrOptional: "required", suggestedControl: { kind: "ask_owner" } },
+      ],
+      worthDecision: {},
+      diagnosticsSummary: { rawArchiveAvailable: true },
+    },
+  };
+  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive }));
+  assert.match(text, /Unified Source File Header[\s\S]*Empty Field Plan Subject/);
+  assert.doesNotMatch(text, /Source File header \/ refresh status|Compact Source File Header|BNL Dossier Intelligence/);
+  assert.match(text, /Overall read[\s\S]*BNL did not provide an overall read yet/);
+  assert.match(text, /What BNL thinks this is[\s\S]*BNL has not clearly classified this subject yet/);
+  assert.match(text, /Worth a dossier[\s\S]*BNL did not state whether this is dossier-worthy yet/);
+  assert.match(text, /What it unlocks[\s\S]*Unlocks clearer public-safe dossier wording/);
+  assert.ok(text.indexOf("Required owner wording") < text.indexOf("Optional polish"));
+  assert.doesNotMatch(text, /—/);
 });
 
 test("sourceFilePagePlanV1 renders canDraft true without exposing draft controls in the header", () => {
@@ -12932,9 +12971,11 @@ test("root sourceFilePagePlanV1 survives Source File archive ingest and renders 
     summary: sourceFileReportTestSummary(),
     latestSourceFileArchive: sourceFile.latestSourceFileArchive,
   }));
-  assert.match(panelText, /Compact Source File Header[\s\S]*Root Page Plan Subject/);
+  assert.match(panelText, /Unified Source File Header[\s\S]*Root Page Plan Subject/);
   assert.match(panelText, /BNL Analyst Read[\s\S]*Root page plan survived ingest/);
   assert.match(panelText, /What BNL Needs[\s\S]*Root owner answer/);
+  assert.match(panelText, /What it unlocks[\s\S]*Unlocks clearer public-safe dossier wording/);
+  assert.doesNotMatch(panelText, /—/);
 });
 
 test("sourceFileBriefV2.subjectAnalystReadV1.sourceFilePagePlanV1 renders primary UI", () => {
@@ -12966,8 +13007,9 @@ test("sourceFileBriefV2.subjectAnalystReadV1.sourceFilePagePlanV1 renders primar
     summary,
     latestSourceFileArchive: archive,
   }));
-  assert.match(panelText, /Compact Source File Header[\s\S]*Brief Analyst Plan Subject/);
+  assert.match(panelText, /Unified Source File Header[\s\S]*Brief Analyst Plan Subject/);
   assert.match(panelText, /BNL Analyst Read[\s\S]*Direct brief analyst page plan was found/);
   assert.match(panelText, /Public-Safe Material BNL Can Use[\s\S]*Approved public signal/);
+  assert.doesNotMatch(panelText, /—/);
   assert.doesNotMatch(panelText, /Legacy completion read should stay diagnostic/);
 });

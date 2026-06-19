@@ -337,10 +337,19 @@ function isMeaningfulDisplayValue(value: unknown) {
 }
 
 function publicUseStatus(value: unknown) {
-  const displayed = displayValue(value)?.toLowerCase().replace(/[_ ]+/g, "-");
-  if (displayed === "public-safe" || displayed === "admin-review" || displayed === "internal-only") return displayed;
-  if (/internal|source-blind|private|omit/.test(displayed ?? "")) return "internal-only";
-  if (/public|safe|approved/.test(displayed ?? "")) return "public-safe";
+  const displayed = displayValue(value)?.toLowerCase().trim();
+  const normalized = displayed?.replace(/[_\s]+/g, "-") ?? "";
+  const words = displayed?.replace(/[_-]+/g, " ") ?? "";
+  if (normalized === "internal-only") return "internal-only";
+  if (normalized === "admin-review") return "admin-review";
+  if (
+    /(^|[-\s])(unsafe|rejected|blocked|private|internal|source-blind|omit|unapproved)([-\s]|$)/.test(normalized) ||
+    /\b(not|no|never|do-not|dont)\b.*\b(public|safe|approved|use|copy)\b/.test(words) ||
+    /\bnot\b.*\bapproved\b/.test(words) ||
+    /\bnot\b.*\bfor\b.*\bpublic\b/.test(words)
+  ) return "internal-only";
+  if (/(needs-review|admin-review|review-only|unresolved|uncertain|unconfirmed|pending|ambiguous)/.test(normalized)) return "admin-review";
+  if (normalized === "public-safe" || normalized === "approved-public" || normalized === "public-approved" || /\b(public safe|approved public|public approved)\b/.test(words)) return "public-safe";
   return "admin-review";
 }
 

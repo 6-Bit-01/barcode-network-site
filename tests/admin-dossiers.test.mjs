@@ -12942,6 +12942,54 @@ test("sourceFilePagePlanV1 consolidates header, fills blank primary fields, and 
   assert.doesNotMatch(text, /Optional polish[\s\S]*Why it matters for a solid dossier/);
 });
 
+test("sourceFilePagePlanV1 topic public-use status does not promote negated safety labels", () => {
+  const summary = sourceFileReportTestSummary();
+  const renderTopicStatus = (status) => collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary,
+    latestSourceFileArchive: {
+      id: `archive-topic-status-${String(status).replace(/\W+/g, "-")}`,
+      candidateId: "candidate-topic-status",
+      subjectName: "Topic Status Subject",
+      sourceDigest: "digest",
+      createdAt: "2026-06-18T00:00:00.000Z",
+      updatedAt: "2026-06-18T00:00:00.000Z",
+      archiveSize: 1,
+      chunkCount: 1,
+      reviewOnly: true,
+      sourceFilePagePlanV1: {
+        header: { subject: "Topic Status Subject", sourceFileStatus: "active" },
+        analystRead: { overallRead: "BNL has a concise subject read." },
+      },
+      sourceFileCaseReportV1: {
+        subjectIntelligenceBriefV1: {
+          topicBuckets: [{
+            topic: `Status ${status}`,
+            bnlInterpretation: `BNL interpretation for ${status}.`,
+            strength: "high",
+            evidenceCount: 9,
+            publicUseStatus: status,
+            whyItMatters: "Confirms status normalization for dossier readiness.",
+          }],
+        },
+      },
+    },
+  }));
+
+  for (const status of ["unsafe", "not_public_safe", "not approved", "unapproved"]) {
+    const text = renderTopicStatus(status);
+    assert.match(text, /BNL Subject Intelligence Brief/);
+    assert.match(text, /What They Talk About[\s\S]*Topic \/ pattern[\s\S]*Status/);
+    assert.match(text, /Public use status[\s\S]*internal-only/);
+    assert.doesNotMatch(text, /Public use status[\s\S]*public-safe/);
+  }
+
+  assert.match(renderTopicStatus("source-blind"), /Public use status[\s\S]*internal-only/);
+  assert.match(renderTopicStatus("internal-only"), /Public use status[\s\S]*internal-only/);
+  assert.match(renderTopicStatus("admin-review"), /Public use status[\s\S]*admin-review/);
+  assert.match(renderTopicStatus("public-safe"), /Public use status[\s\S]*public-safe/);
+  assert.match(renderTopicStatus("approved_public"), /Public use status[\s\S]*public-safe/);
+});
+
 test("sourceFilePagePlanV1 renders canDraft true without exposing draft controls in the header", () => {
   const summary = sourceFileReportTestSummary();
   const archive = {

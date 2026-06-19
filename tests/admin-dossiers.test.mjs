@@ -12789,7 +12789,7 @@ test("sourceFilePagePlanV1 renders as primary fixed Source File page before fall
       recommendedDefault: "Hold for Owner Review",
       stillActive: "yes",
       neededToFinish: "Owner answer",
-      suggestedControl: { kind: "keep_internal", recommendation: "Keep this as review guidance." },
+      suggestedControl: { kind: "ask_admin", questionToCopy: "Which admin can confirm whether this claim blocks drafting?", recommendation: "Keep this as review guidance." },
     }],
     questionsToAsk: [{
       question: "What public wording is approved?",
@@ -12797,6 +12797,21 @@ test("sourceFilePagePlanV1 renders as primary fixed Source File page before fall
       whyBnlIsAsking: "It determines whether the dossier can be drafted.",
       whatAnswerWouldUnlock: "Draft readiness.",
       requiredOrOptional: "required",
+    }, {
+      question: "What public role wording should BNL use?",
+      audience: "Owner",
+      whyBnlIsAsking: "Duplicate of the need-level copy question.",
+      whatAnswerWouldUnlock: "Draft readiness.",
+      requiredOrOptional: "required",
+    }, {
+      question: "Source-blind detail: which internal raw evidence proves this?",
+      audience: "Admin",
+      whyBnlIsAsking: "This should stay out of copy.",
+      whatAnswerWouldUnlock: "Nothing public-safe.",
+      requiredOrOptional: "optional",
+    }, {
+      question: "BNL does not have any decision-unlocking questions right now.",
+      audience: "Admin",
     }],
     worthDecision: {
       worthADossier: "maybe",
@@ -12878,9 +12893,9 @@ test("sourceFilePagePlanV1 renders as primary fixed Source File page before fall
     "What They Talk About",
     "Activity Snapshot",
     "What BNL Needs To Make A Solid Dossier",
+    "Verification Packet",
     "Public-Safe Material BNL Can Use",
     "BNL Review Guidance",
-    "Questions To Ask",
     "Dossier Worth-It Decision",
     "Draft / Update Plan",
     "Internal / Omit / Hold",
@@ -12897,10 +12912,17 @@ test("sourceFilePagePlanV1 renders as primary fixed Source File page before fall
   assert.match(text, /Activity Snapshot[\s\S]*Public mentions[\s\S]*3[\s\S]*Top channels[\s\S]*#barcode-radio/);
   assert.doesNotMatch(text, /Approved authored items[\s\S]*—/);
   assert.match(text, /Needed item[\s\S]*Owner-approved role wording/);
+  assert.ok(text.indexOf("Verification Packet") > text.indexOf("What BNL Needs To Make A Solid Dossier"));
+  assert.ok(text.indexOf("Verification Packet") < text.indexOf("Public-Safe Material BNL Can Use"));
   assert.ok(text.indexOf("Public-Safe Material BNL Can Use") < text.indexOf("Draft / Update Plan"));
+  assert.match(text, /Verification Packet[\s\S]*Copy all questions[\s\S]*Copy owner questions[\s\S]*Copy admin questions/);
+  assert.match(text, /Verification Packet[\s\S]*What public wording is approved[\s\S]*What public role wording should BNL use[\s\S]*Which admin can confirm whether this claim blocks drafting/);
+  assert.equal((text.match(/What public role wording should BNL use/g) ?? []).length, 1);
+  assert.doesNotMatch(text, /which internal raw evidence proves|BNL does not have any decision-unlocking questions right now/);
   assert.match(text, /BNL Review Guidance[\s\S]*Use publicly[\s\S]*Ask owner[\s\S]*Keep internal[\s\S]*Omit \/ ignore[\s\S]*Blockers/);
-  assert.match(fullText, /Additional review guidance[\s\S]*Legacy claim card about collaborator wording[\s\S]*Do not publish as a fact yet/);
-  assert.ok(text.indexOf("Questions To Ask") < text.indexOf("Dossier Worth-It Decision"));
+  assert.match(text, /BNL Review Guidance[\s\S]*Legacy claim card about collaborator wording[\s\S]*Do not publish as a fact yet/);
+  assert.doesNotMatch(text, /Questions To Ask/);
+  assert.ok(text.indexOf("BNL Review Guidance") < text.indexOf("Dossier Worth-It Decision"));
   assert.match(text, /Draft \/ Update Plan[\s\S]*Can draft[\s\S]*No[\s\S]*Why not[\s\S]*Required owner wording is still missing/);
   assert.match(text, /Support \/ Diagnostics/);
   assert.doesNotMatch(text, /Source File Claim Decisions|Main Action|sourceFilePagePlanV1|Fallback completion read should be diagnostic/);

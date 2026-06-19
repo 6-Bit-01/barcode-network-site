@@ -46,6 +46,14 @@ type SourceFilePagePlanFallbacks = {
   recurringTopics?: string[];
 };
 
+type VerificationQuestion = {
+  question: string;
+  audience: "owner" | "admin" | "public-source" | "general";
+  why?: string;
+  unlocks?: string;
+  requiredOrOptional?: string;
+};
+
 function StatusBadge({ children }: { children: React.ReactNode }) {
   return (
     <span className="border border-border bg-background/40 px-2 py-1 text-muted">
@@ -2127,6 +2135,103 @@ function compactRecordsByKey(records: UnknownRecord[], keys: string[]) {
   return [...groups.values()];
 }
 
+function verificationAudience(value: unknown, control?: UnknownRecord): VerificationQuestion["audience"] {
+  const marker = `${scalarLabel(value)} ${scalarLabel(control?.kind)} ${scalarLabel(control?.label)}`.toLowerCase();
+  if (/owner/.test(marker)) return "owner";
+  if (/admin/.test(marker)) return "admin";
+  if (/public[-_\s]?source|source/.test(marker)) return "public-source";
+  return "general";
+}
+
+function safeVerificationQuestionText(value: unknown) {
+  const text = displayValue(value);
+  if (!text) return undefined;
+  if (/does not have any decision-unlocking questions|no decision-unlocking questions/i.test(text)) return undefined;
+  if (/@|stripe|payment|customer|token|raw evidence|raw id|database row|source-blind detail|private evidence|internal raw/i.test(text)) return undefined;
+  return text;
+}
+
+function questionFromRecord(record: UnknownRecord, fallbackAudience?: unknown): VerificationQuestion | undefined {
+  const control = asRecord(record.suggestedControl);
+  const question = safeVerificationQuestionText(record.question ?? control?.questionToCopy);
+  if (!question) return undefined;
+  return {
+    question,
+    audience: verificationAudience(record.audience ?? fallbackAudience, control),
+    why: safeHumanText(record.whyBnlIsAsking ?? record.whyNeeded ?? record.bnlExplanation),
+    unlocks: safeHumanText(record.whatAnswerWouldUnlock ?? record.whatItUnlocks ?? record.neededToFinish),
+    requiredOrOptional: displayValue(record.requiredOrOptional),
+  };
+}
+
+function dedupePlanVerificationQuestions(questions: VerificationQuestion[]) {
+  const seen = new Set<string>();
+  return questions.filter((question) => {
+    const key = normalizedTextKey(question.question);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function verificationPacketText(subject: string, questions: VerificationQuestion[]) {
+  const groups: Array<[VerificationQuestion["audience"], string]> = [
+    ["owner", "OWNER"],
+    ["admin", "ADMIN"],
+    ["public-source", "PUBLIC SOURCE"],
+    ["general", "GENERAL"],
+  ];
+  const sections = groups.flatMap(([audience, label]) => {
+    const items = questions.filter((question) => question.audience === audience);
+    if (!items.length) return [];
+    const lines = items.flatMap((item, index) => [
+      `${index + 1}. ${item.question}`,
+      item.why ? `   Why BNL needs this: ${item.why}` : undefined,
+      item.unlocks ? `   Unlocks: ${item.unlocks}` : undefined,
+    ].filter(Boolean));
+    return [`${label}:`, "", ...lines, ""];
+  });
+  return [`BNL verification questions for ${subject}:`, "", ...sections].join("\n").trim();
+}
+
+function CopyVerificationButton({ label, questions, subject }: { label: string; questions: VerificationQuestion[]; subject: string }) {
+  if (!questions.length) return null;
+  return <button type="button" className="border border-accent px-3 py-1 text-xs font-bold uppercase tracking-widest text-accent" onClick={() => void navigator.clipboard?.writeText(verificationPacketText(subject, questions))}>{label}</button>;
+}
+
+function VerificationPacketSection({ questions, subject, empty }: { questions: VerificationQuestion[]; subject: string; empty: string }) {
+  const ownerQuestions = questions.filter((question) => question.audience === "owner");
+  const adminQuestions = questions.filter((question) => question.audience === "admin");
+  const publicSourceQuestions = questions.filter((question) => question.audience === "public-source");
+  return (
+    <Section title="Verification Packet" helper="Operator-facing questions and clean copy controls. Private/source-blind/internal raw evidence is not copied.">
+      {questions.length ? (
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <CopyVerificationButton label="Copy all questions" questions={questions} subject={subject} />
+            <CopyVerificationButton label="Copy owner questions" questions={ownerQuestions} subject={subject} />
+            <CopyVerificationButton label="Copy admin questions" questions={adminQuestions} subject={subject} />
+            <CopyVerificationButton label="Copy public-source questions" questions={publicSourceQuestions} subject={subject} />
+          </div>
+          <ul className="space-y-3">
+            {questions.map((question, index) => (
+              <li key={`${index}-${question.question.slice(0, 24)}`} className="border border-border/50 bg-background/30 p-3">
+                <dl className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  {renderPlanField("Question", question.question)}
+                  {renderPlanField("Audience", question.audience)}
+                  {renderMeaningfulPlanField("Why BNL is asking", question.why)}
+                  {renderMeaningfulPlanField("What answer unlocks", question.unlocks)}
+                  {renderMeaningfulPlanField("Required or optional", question.requiredOrOptional)}
+                </dl>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : <p className="text-muted">{empty}</p>}
+    </Section>
+  );
+}
+
 function SourceFilePagePlanView({
   plan,
   summary,
@@ -2218,6 +2323,11 @@ function SourceFilePagePlanView({
     recommendedDefault: "admin-review",
   }));
   const reviewRecords: UnknownRecord[] = [...listRecords(plan.bnlReviewGuidance), ...fallbackReviewGuidance];
+  const verificationQuestions = dedupePlanVerificationQuestions([
+    ...listRecords(plan.questionsToAsk).flatMap((item) => questionFromRecord(item) ? [questionFromRecord(item) as VerificationQuestion] : []),
+    ...listRecords(plan.whatBnlNeeds).flatMap((item) => questionFromRecord(item, item.whoCanAnswer) ? [questionFromRecord(item, item.whoCanAnswer) as VerificationQuestion] : []),
+    ...reviewRecords.flatMap((item) => questionFromRecord(item) ? [questionFromRecord(item) as VerificationQuestion] : []),
+  ]);
   const reviewKind = (item: UnknownRecord) => scalarLabel(asRecord(item.suggestedControl)?.kind ?? item.bnlDecision ?? item.recommendedDefault ?? item.reviewIssue).toLowerCase();
   const reviewCounts = {
     usePublicly: reviewRecords.filter((item) => /use_public|use publicly|public/.test(reviewKind(item))).length,
@@ -2281,11 +2391,11 @@ function SourceFilePagePlanView({
         </div>
       ) : <p className="text-muted">BNL did not list any dossier-completion needs.</p>}
     </Section>
+    <VerificationPacketSection questions={verificationQuestions} subject={planHeaderValue(header.subject ?? subjectName ?? latestSourceFileArchive?.subjectName, "this Source File subject")} empty="BNL does not have any decision-unlocking verification questions right now." />
     <Section title="Public-Safe Material BNL Can Use"><PlanItems items={plan.publicSafeMaterial} empty={plan.noPublicSafeMaterialReadyText ?? "BNL says no material is ready for public use yet."} render={(item) => <dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Material", item.material)}{renderPlanField("How BNL would use it", item.howBnlWouldUseIt)}{renderPlanField("Why safe enough", item.whySafeEnough)}{renderPlanField("Confidence", item.confidence)}{renderPlanField("Needs approval", item.needsApproval)}</dl>} /></Section>
     <Section title="BNL Review Guidance" helper="Compact decision summary. Additional low-priority or audit-only guidance is collapsed.">
       {reviewRecords.length ? <div className="space-y-3"><dl className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6"><SnapshotItem label="Use publicly" value={reviewCounts.usePublicly} /><SnapshotItem label="Ask owner" value={reviewCounts.askOwner} /><SnapshotItem label="Ask admin" value={reviewCounts.askAdmin} /><SnapshotItem label="Keep internal" value={reviewCounts.keepInternal} /><SnapshotItem label="Omit / ignore" value={reviewCounts.omitIgnore} /><SnapshotItem label="Blockers" value={reviewCounts.blockers} /></dl><ul className="space-y-3">{primaryReviewGuidance.map((item, index) => <li key={index} className="border border-border/50 bg-background/30 p-3"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Review issue", item.reviewIssue)}{renderPlanField("BNL decision", item.bnlDecision)}{renderMeaningfulPlanField("Recommended default", item.recommendedDefault)}{renderMeaningfulPlanField("Needed to finish", item.neededToFinish)}</dl><SuggestedControlView control={asRecord(item.suggestedControl) as DossierSourceFilePagePlanSuggestedControl | undefined} /></li>)}</ul>{secondaryReviewGuidance.length > 0 && <details className="border border-border/50 bg-background/20 p-3 text-xs text-muted"><summary className="cursor-pointer font-semibold text-foreground">Additional review guidance ({secondaryReviewGuidance.length})</summary><ul className="mt-3 space-y-3 text-sm">{secondaryReviewGuidance.map((item, index) => <li key={index} className="border border-border/50 bg-background/30 p-3"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Review issue", item.reviewIssue)}{renderPlanField("BNL decision", item.bnlDecision)}{renderMeaningfulPlanField("BNL explanation", item.bnlExplanation)}</dl></li>)}</ul></details>}</div> : <p className="text-muted">BNL did not add review guidance.</p>}
     </Section>
-    <Section title="Questions To Ask"><PlanItems items={plan.questionsToAsk} empty={plan.noDecisionUnlockingQuestionsText ?? "BNL says no decision-unlocking questions exist."} render={(item) => <dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Question", item.question)}{renderPlanField("Audience", item.audience)}{renderPlanField("Why BNL is asking", item.whyBnlIsAsking)}{renderPlanField("What answer would unlock", item.whatAnswerWouldUnlock)}{renderPlanField("Required or optional", item.requiredOrOptional)}</dl>} /></Section>
     <Section title="Dossier Worth-It Decision" tone="caution"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Worth a dossier", plan.worthDecision?.worthADossier, "BNL did not state whether this is dossier-worthy yet.")}{renderPlanField("Decision", plan.worthDecision?.decision ?? pagePlanFallbacks?.dossierDecision, "BNL did not provide a dossier decision yet.")}{renderPlanField("Why", plan.worthDecision?.why, "BNL did not explain the decision yet.")}{renderPlanField("Possible dossier type", plan.worthDecision?.possibleDossierType, "BNL did not suggest a dossier type yet.")}{renderPlanField("Draft readiness", plan.worthDecision?.draftReadiness, "BNL did not provide a draft-readiness assessment yet.")}{renderPlanField("What would change the decision", plan.worthDecision?.whatWouldChangeTheDecision, "BNL did not explain what would change the decision yet.")}</dl></Section>
     <Section title="Draft / Update Plan"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Can draft", draft.canDraft === undefined ? undefined : canDraft ? "Yes" : "No")}{renderMeaningfulPlanField("Draft type", draft.draftType)}{renderMeaningfulPlanField("Suggested angle", draft.suggestedAngle)}{!canDraft && renderMeaningfulPlanField("Why not", draft.whyNot)}{renderMeaningfulPlanField("Owner Review warnings", draft.ownerReviewWarnings)}</dl>{draftUseItems.length > 0 && <div className="mt-3 border border-border/50 bg-background/30 p-3"><p className="text-xs font-bold uppercase tracking-widest text-accent">Use these materials</p><ul className="mt-2 list-disc pl-5 text-foreground">{draftUseItems.slice(0, 5).map((item) => <li key={item}>{item}</li>)}</ul></div>}{draftOmitItems.length > 0 && <div className="mt-3 border border-border/50 bg-background/30 p-3"><p className="text-xs font-bold uppercase tracking-widest text-accent">Omit these materials</p><ul className="mt-2 list-disc pl-5 text-foreground">{draftOmitItems.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul></div>}{(draftUseItems.length > 5 || draftOmitItems.length > 3) && <details className="mt-3 border border-border/50 bg-background/20 p-3 text-xs text-muted"><summary className="cursor-pointer font-semibold text-foreground">View full draft material list</summary><div className="mt-3 grid grid-cols-1 gap-3 text-sm md:grid-cols-2"><div><p className="font-bold text-foreground">All usable materials</p><ul className="list-disc pl-5">{draftUseItems.map((item) => <li key={item}>{item}</li>)}</ul></div><div><p className="font-bold text-foreground">All omitted materials</p><ul className="list-disc pl-5">{draftOmitItems.map((item) => <li key={item}>{item}</li>)}</ul></div></div></details>}{canDraft && <p className="mt-3 text-xs text-muted">Draft controls remain available only where existing handlers provide them; Owner Review is still required.</p>}</Section>
     <Section title="Internal / Omit / Hold" helper="Collapsed audit summary. Expand only when internal/omit detail is needed.">

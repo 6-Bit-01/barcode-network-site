@@ -15,6 +15,8 @@ import type {
   DossierSourceFileConfirmationTarget,
   DossierSourceFileVerificationPacketAudience,
   DossierCandidate,
+  DossierSourceFilePagePlanV1,
+  DossierSourceFilePagePlanSuggestedControl,
 } from "@/lib/dossier-workflow";
 import type { DossierDraftBlueprint } from "@/lib/dossier-classification";
 import { buildDossierStylePacket, DOSSIER_DRAFT_CONTRACT_REQUIRED_FIELDS } from "@/lib/dossier-style-packet";
@@ -1894,6 +1896,113 @@ function DossierBlueprintView({ blueprint }: { blueprint: DossierDraftBlueprint 
   );
 }
 
+
+function hasPagePlanShape(value: unknown): value is DossierSourceFilePagePlanV1 {
+  const plan = asRecord(value);
+  if (!plan) return false;
+  return [
+    "header",
+    "analystRead",
+    "whatBnlNeeds",
+    "publicSafeMaterial",
+    "bnlReviewGuidance",
+    "questionsToAsk",
+    "worthDecision",
+    "internalOmitHold",
+    "draftOrUpdatePlan",
+    "diagnosticsSummary",
+  ].some((key) => plan[key] !== undefined);
+}
+
+export function normalizeSourceFilePagePlanV1(
+  latestSourceFileArchive?: DossierSourceFileArchiveMetadata,
+): DossierSourceFilePagePlanV1 | undefined {
+  for (const candidate of archivePayloadCandidates(latestSourceFileArchive)) {
+    const rootAnalyst = asRecord(candidate.subjectAnalystReadV1);
+    const report = asRecord(candidate.sourceFileCaseReportV1);
+    const reportAnalyst = asRecord(report?.subjectAnalystReadV1);
+    const brief = asRecord(candidate.sourceFileBriefV2);
+    const briefReport = asRecord(brief?.sourceFileCaseReportV1);
+    const briefReportAnalyst = asRecord(briefReport?.subjectAnalystReadV1);
+    const match = [
+      candidate.sourceFilePagePlanV1,
+      rootAnalyst?.sourceFilePagePlanV1,
+      report?.sourceFilePagePlanV1,
+      reportAnalyst?.sourceFilePagePlanV1,
+      brief?.sourceFilePagePlanV1,
+      briefReport?.sourceFilePagePlanV1,
+      briefReportAnalyst?.sourceFilePagePlanV1,
+    ].find(hasPagePlanShape);
+    if (match) return match;
+  }
+  return undefined;
+}
+
+function renderPlanField(label: string, value: unknown) {
+  return <div><dt className="text-xs uppercase tracking-widest text-accent">{label}</dt><dd className="mt-1 text-foreground"><BriefParagraphs value={value} /></dd></div>;
+}
+
+function SuggestedControlView({ control }: { control?: DossierSourceFilePagePlanSuggestedControl }) {
+  if (!control?.kind || control.kind === "none") return null;
+  if ((control.kind === "ask_owner" || control.kind === "ask_admin") && control.questionToCopy) {
+    return <button type="button" className="mt-2 border border-accent px-3 py-1 text-xs font-bold uppercase tracking-widest text-accent" onClick={() => void navigator.clipboard?.writeText(control.questionToCopy ?? "")}>{control.label ?? `Copy ${control.kind === "ask_owner" ? "owner" : "admin"} question`}</button>;
+  }
+  const text = control.guidance ?? control.recommendation ?? control.label ?? humanStatus(control.kind);
+  return <p className="mt-2 text-xs text-muted">{control.kind === "refresh" ? `Refresh guidance: ${text}` : text}</p>;
+}
+
+function PlanItems({ items, empty, render }: { items?: unknown[]; empty: string; render: (item: UnknownRecord, index: number) => React.ReactNode }) {
+  const records = (items ?? []).flatMap((item) => asRecord(item) ? [asRecord(item) as UnknownRecord] : []);
+  if (!records.length) return <p className="text-muted">{empty}</p>;
+  return <ul className="space-y-3">{records.map((item, index) => <li key={index} className="border border-border/50 bg-background/30 p-3">{render(item, index)}</li>)}</ul>;
+}
+
+function SourceFilePagePlanView({
+  plan,
+  summary,
+  latestSourceFileArchive,
+  subjectName,
+  currentLane,
+  latestRecommendationTimestamp,
+  sourceFileTargetStatus,
+}: {
+  plan: DossierSourceFilePagePlanV1;
+  summary: DossierSourceFileSummary;
+  latestSourceFileArchive?: DossierSourceFileArchiveMetadata;
+  subjectName?: string;
+  currentLane?: string;
+  latestRecommendationTimestamp?: string;
+  sourceFileTargetStatus?: string;
+}) {
+  const header = plan.header ?? {};
+  const analyst = plan.analystRead ?? {};
+  const internal = plan.internalOmitHold ?? {};
+  const draft = plan.draftOrUpdatePlan ?? {};
+  const diagnostics = plan.diagnosticsSummary ?? {};
+  const canDraft = draft.canDraft === true || String(draft.canDraft).toLowerCase() === "true";
+  return <div className="space-y-4" data-source-file-page-plan="primary">
+    <Section title="Compact Source File Header" helper="BNL-filled status summary only; draft controls live in the draft plan when available.">
+      <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <SnapshotItem label="Subject" value={scalarLabel(header.subject ?? subjectName ?? latestSourceFileArchive?.subjectName)} />
+        <SnapshotItem label="Source File status" value={scalarLabel(header.sourceFileStatus ?? sourceFileTargetStatus ?? summary.nextAction)} />
+        <SnapshotItem label="BNL state" value={scalarLabel(header.bnlState ?? summary.publicReadiness)} />
+        <SnapshotItem label="Current lane" value={scalarLabel(header.currentLane ?? currentLane)} />
+        <SnapshotItem label="Last refresh" value={formatSnapshotDate(String(header.lastRefresh ?? latestRecommendationTimestamp ?? latestSourceFileArchive?.updatedAt ?? summary.lastUpdatedAt ?? ""))} />
+        <SnapshotItem label="Existing public dossier" value={scalarLabel(header.existingPublicDossier ?? summary.existingPublicDossier)} />
+      </dl>
+    </Section>
+    <Section title="BNL Analyst Read" tone="caution"><dl className="space-y-3">{renderPlanField("Overall read", analyst.overallRead)}{renderPlanField("What BNL thinks this is", analyst.whatBnlThinksThisIs)}{renderPlanField("Why this Source File exists", analyst.whyThisSourceFileExists)}{renderPlanField("What seems useful", analyst.whatSeemsUseful)}{renderPlanField("What seems weak", analyst.whatSeemsWeak)}{renderPlanField("What is uncertain", analyst.whatIsUncertain)}{renderPlanField("What BNL is watching", analyst.whatBnlIsWatching)}{renderPlanField("Confidence", analyst.confidence)}</dl></Section>
+    <Section title="What BNL Needs"><PlanItems items={plan.whatBnlNeeds} empty="BNL did not list any current needs." render={(item) => <><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Needed item", item.neededItem)}{renderPlanField("Why needed", item.whyNeeded)}{renderPlanField("Who can answer", item.whoCanAnswer)}{renderPlanField("Required or optional", item.requiredOrOptional)}{renderPlanField("What it unlocks", item.whatItUnlocks)}{renderPlanField("Current status", item.currentStatus)}</dl><SuggestedControlView control={asRecord(item.suggestedControl) as DossierSourceFilePagePlanSuggestedControl | undefined} /></>} /></Section>
+    <Section title="Public-Safe Material BNL Can Use"><PlanItems items={plan.publicSafeMaterial} empty={plan.noPublicSafeMaterialReadyText ?? "BNL says no material is ready for public use yet."} render={(item) => <dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Material", item.material)}{renderPlanField("How BNL would use it", item.howBnlWouldUseIt)}{renderPlanField("Why safe enough", item.whySafeEnough)}{renderPlanField("Confidence", item.confidence)}{renderPlanField("Needs approval", item.needsApproval)}</dl>} /></Section>
+    <Section title="BNL Review Guidance"><PlanItems items={plan.bnlReviewGuidance} empty="BNL did not add review guidance." render={(item) => <><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Review issue", item.reviewIssue)}{renderPlanField("BNL decision", item.bnlDecision)}{renderPlanField("BNL explanation", item.bnlExplanation)}{renderPlanField("Recommended default", item.recommendedDefault)}{renderPlanField("Still active", item.stillActive)}{renderPlanField("Needed to finish", item.neededToFinish)}</dl><SuggestedControlView control={asRecord(item.suggestedControl) as DossierSourceFilePagePlanSuggestedControl | undefined} /></>} /></Section>
+    <Section title="Questions To Ask"><PlanItems items={plan.questionsToAsk} empty={plan.noDecisionUnlockingQuestionsText ?? "BNL says no decision-unlocking questions exist."} render={(item) => <dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Question", item.question)}{renderPlanField("Audience", item.audience)}{renderPlanField("Why BNL is asking", item.whyBnlIsAsking)}{renderPlanField("What answer would unlock", item.whatAnswerWouldUnlock)}{renderPlanField("Required or optional", item.requiredOrOptional)}</dl>} /></Section>
+    <Section title="Dossier Worth-It Decision" tone="caution"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Worth a dossier", plan.worthDecision?.worthADossier)}{renderPlanField("Decision", plan.worthDecision?.decision)}{renderPlanField("Why", plan.worthDecision?.why)}{renderPlanField("Possible dossier type", plan.worthDecision?.possibleDossierType)}{renderPlanField("Draft readiness", plan.worthDecision?.draftReadiness)}{renderPlanField("What would change the decision", plan.worthDecision?.whatWouldChangeTheDecision)}</dl></Section>
+    <Section title="Internal / Omit / Hold"><div className="grid grid-cols-1 gap-3 lg:grid-cols-2"><div><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Keep internal</h4><PlanItems items={internal.keepInternal} empty="No keep-internal material listed." render={(item) => <dl className="space-y-2">{renderPlanField("Material", item.material)}{renderPlanField("Why internal", item.whyInternal)}{renderPlanField("Could become public later", item.couldBecomePublicLater)}{renderPlanField("What would make it usable", item.whatWouldMakeItUsable)}</dl>} /></div><div><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-foreground">Omit from public draft</h4><PlanItems items={internal.omitFromPublicDraft} empty="No omit-from-public-draft material listed." render={(item) => <dl className="space-y-2">{renderPlanField("Material", item.material)}{renderPlanField("Why omitted", item.whyOmitted)}{renderPlanField("Could become public later", item.couldBecomePublicLater)}{renderPlanField("What would make it usable", item.whatWouldMakeItUsable)}</dl>} /></div></div></Section>
+    <Section title="Draft / Update Plan"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2">{renderPlanField("Can draft", draft.canDraft)}{renderPlanField("Draft type", draft.draftType)}{renderPlanField("Suggested angle", draft.suggestedAngle)}{renderPlanField("Use these materials", draft.useTheseMaterials)}{renderPlanField("Omit these materials", draft.omitTheseMaterials)}{renderPlanField("Owner Review warnings", draft.ownerReviewWarnings)}{!canDraft && renderPlanField("Why not", draft.whyNot)}</dl>{canDraft && <p className="mt-3 text-xs text-muted">Draft controls remain available only where existing handlers provide them; Owner Review is still required.</p>}</Section>
+    <Section title="Diagnostics Summary"><dl className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-4">{renderPlanField("Raw archive available", diagnostics.rawArchiveAvailable)}{renderPlanField("Case report available", diagnostics.caseReportAvailable)}{renderPlanField("Interim brief available", diagnostics.interimBriefAvailable)}{renderPlanField("Blueprint available", diagnostics.blueprintAvailable)}{renderPlanField("Legacy claim review count", diagnostics.legacyClaimReviewCount)}{renderPlanField("Absorbed review count", diagnostics.absorbedReviewCount)}{renderPlanField("Hidden diagnostic count", diagnostics.hiddenDiagnosticCount)}{renderPlanField("Safety notes", diagnostics.safetyNotes)}</dl></Section>
+  </div>;
+}
+
 function formatSnapshotDate(value?: string) {
   if (!value) return "—";
   const parsed = new Date(value);
@@ -1961,6 +2070,7 @@ export function DossierSourceFileSummaryPanel({
   onReviewClaim?: (claim: DossierSourceFileReviewableClaim, decision: DossierSourceFileClaimReviewDecision, options?: { publicSafe?: boolean; editedText?: string; decisionNote?: string }) => void;
   candidate?: Partial<DossierCandidate>;
 }) {
+  const sourceFilePagePlan = normalizeSourceFilePagePlanV1(latestSourceFileArchive);
   const report = normalizeCaseReport(latestSourceFileArchive);
   const interimBrief = normalizeInterimBrief(latestSourceFileArchive);
   const analystRead = normalizeSubjectAnalystReadV1(latestSourceFileArchive);
@@ -2015,43 +2125,85 @@ export function DossierSourceFileSummaryPanel({
         </p>
       </Section>
 
-      <DossierCompletionReadout
-        completionRead={dossierCompletionRead}
-        analystRead={analystRead}
-        report={report}
-        interimBrief={interimBrief}
-      />
+      {sourceFilePagePlan ? (
+        <>
+          <SourceFilePagePlanView
+            plan={sourceFilePagePlan}
+            summary={summary}
+            latestSourceFileArchive={latestSourceFileArchive}
+            subjectName={subjectName}
+            currentLane={currentLane}
+            latestRecommendationTimestamp={latestRecommendationTimestamp}
+            sourceFileTargetStatus={sourceFileTargetStatus}
+          />
+          <details className="border border-border/60 bg-background/20 p-3 text-sm text-muted">
+            <summary className="cursor-pointer font-semibold text-foreground">Support / Diagnostics</summary>
+            <div className="mt-3 space-y-4">
+              <DossierCompletionReadout
+                completionRead={dossierCompletionRead}
+                analystRead={analystRead}
+                report={report}
+                interimBrief={interimBrief}
+              />
+              <BnlAnalystReadPanel
+                analystRead={analystRead}
+                refreshedAt={latestSourceFileArchive?.updatedAt ?? summary.lastUpdatedAt}
+                candidateId={candidateId}
+                sourceArchiveId={latestSourceFileArchive?.id}
+                subjectName={subjectName ?? latestSourceFileArchive?.subjectName}
+                claimReviews={claimReviews}
+                onReviewClaim={onReviewClaim}
+                candidate={candidate}
+              />
+              {blueprint && <DossierBlueprintView blueprint={blueprint} />}
+              {hasArchiveDiagnostics && (
+                <Section title="Archive ingest diagnostics" helper="Admin-only preservation check. These fields are safe booleans and path labels, not raw archive secrets.">
+                  <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <SnapshotItem label="caseReportPresent" value={latestSourceFileArchive?.caseReportPresent ? "true" : "false"} />
+                    <SnapshotItem label="caseReportExtractedFrom" value={latestSourceFileArchive?.caseReportExtractedFrom ?? "—"} />
+                  </dl>
+                </Section>
+              )}
+              <CaseReportView report={report} />
+              <InterimBriefView brief={interimBrief} hasReport={Boolean(report)} />
+            </div>
+          </details>
+        </>
+      ) : (
+        <>
+          <DossierCompletionReadout
+            completionRead={dossierCompletionRead}
+            analystRead={analystRead}
+            report={report}
+            interimBrief={interimBrief}
+          />
 
-      <BnlAnalystReadPanel
-        analystRead={analystRead}
-        refreshedAt={latestSourceFileArchive?.updatedAt ?? summary.lastUpdatedAt}
-        candidateId={candidateId}
-        sourceArchiveId={latestSourceFileArchive?.id}
-        subjectName={subjectName ?? latestSourceFileArchive?.subjectName}
-        claimReviews={claimReviews}
-        onReviewClaim={onReviewClaim}
-        candidate={candidate}
-      />
+          <BnlAnalystReadPanel
+            analystRead={analystRead}
+            refreshedAt={latestSourceFileArchive?.updatedAt ?? summary.lastUpdatedAt}
+            candidateId={candidateId}
+            sourceArchiveId={latestSourceFileArchive?.id}
+            subjectName={subjectName ?? latestSourceFileArchive?.subjectName}
+            claimReviews={claimReviews}
+            onReviewClaim={onReviewClaim}
+            candidate={candidate}
+          />
 
-      {blueprint && <DossierBlueprintView blueprint={blueprint} />}
+          {blueprint && <DossierBlueprintView blueprint={blueprint} />}
 
-      {hasArchiveDiagnostics && (
-        <Section title="Archive ingest diagnostics" helper="Admin-only preservation check. These fields are safe booleans and path labels, not raw archive secrets.">
-          <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <SnapshotItem
-              label="caseReportPresent"
-              value={latestSourceFileArchive?.caseReportPresent ? "true" : "false"}
-            />
-            <SnapshotItem
-              label="caseReportExtractedFrom"
-              value={latestSourceFileArchive?.caseReportExtractedFrom ?? "—"}
-            />
-          </dl>
-        </Section>
+          {hasArchiveDiagnostics && (
+            <Section title="Archive ingest diagnostics" helper="Admin-only preservation check. These fields are safe booleans and path labels, not raw archive secrets.">
+              <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <SnapshotItem label="caseReportPresent" value={latestSourceFileArchive?.caseReportPresent ? "true" : "false"} />
+                <SnapshotItem label="caseReportExtractedFrom" value={latestSourceFileArchive?.caseReportExtractedFrom ?? "—"} />
+              </dl>
+            </Section>
+          )}
+
+          <CaseReportView report={report} />
+          <InterimBriefView brief={interimBrief} hasReport={Boolean(report)} />
+        </>
       )}
-
-      <CaseReportView report={report} />
-      <InterimBriefView brief={interimBrief} hasReport={Boolean(report)} />
     </section>
   );
 }

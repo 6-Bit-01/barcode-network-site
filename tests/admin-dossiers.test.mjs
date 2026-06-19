@@ -12742,3 +12742,151 @@ test("admin Source File and Control Center render BNL draft readiness read model
   assert.match(controlCenter, /createDossierSourceFileDraftReadinessReadModel/);
   assert.doesNotMatch(publicReadModel, /sourceFileResolutionAudit|resolvedQuestionAudit|DossierSourceFileDraftReadinessReadModel|sourceFileClaimReviews/);
 });
+
+test("sourceFilePagePlanV1 renders as primary fixed Source File page before fallbacks", () => {
+  const summary = sourceFileReportTestSummary();
+  const pagePlan = {
+    header: {
+      subject: "Plan Subject",
+      sourceFileStatus: "active",
+      bnlState: "needs_owner_review",
+      currentLane: "active_source_file",
+      lastRefresh: "2026-06-17T00:00:00.000Z",
+      existingPublicDossier: "no",
+    },
+    analystRead: {
+      overallRead: "BNL sees a cautious public dossier possibility.",
+      whatBnlThinksThisIs: "A public-facing community profile candidate.",
+      whyThisSourceFileExists: "To decide whether a safe dossier can be drafted.",
+      whatSeemsUseful: ["Approved public appearance context."],
+      whatSeemsWeak: ["Role wording is not owner-confirmed."],
+      whatIsUncertain: ["Preferred public name."],
+      whatBnlIsWatching: ["Whether owner approval changes the angle."],
+      confidence: "medium",
+    },
+    whatBnlNeeds: [{
+      neededItem: "Owner-approved role wording",
+      whyNeeded: "Prevents overclaiming.",
+      whoCanAnswer: "Owner",
+      requiredOrOptional: "required",
+      whatItUnlocks: "A safe draft angle.",
+      currentStatus: "open",
+      suggestedControl: { kind: "ask_owner", questionToCopy: "What public role wording should BNL use?" },
+    }],
+    publicSafeMaterial: [{
+      material: "Public BARCODE Radio appearance",
+      howBnlWouldUseIt: "As the only public-safe anchor.",
+      whySafeEnough: "Already public and non-private.",
+      confidence: "high",
+      needsApproval: "yes",
+    }],
+    bnlReviewGuidance: [{
+      reviewIssue: "Legacy claim card about collaborator wording",
+      bnlDecision: "Do not publish as a fact yet",
+      bnlExplanation: "It needs owner-approved wording.",
+      recommendedDefault: "Hold for Owner Review",
+      stillActive: "yes",
+      neededToFinish: "Owner answer",
+      suggestedControl: { kind: "keep_internal", recommendation: "Keep this as review guidance." },
+    }],
+    questionsToAsk: [{
+      question: "What public wording is approved?",
+      audience: "Owner",
+      whyBnlIsAsking: "It determines whether the dossier can be drafted.",
+      whatAnswerWouldUnlock: "Draft readiness.",
+      requiredOrOptional: "required",
+    }],
+    worthDecision: {
+      worthADossier: "maybe",
+      decision: "Hold until owner wording arrives.",
+      why: "There is useful public-safe material, but not enough approved framing.",
+      possibleDossierType: "Community",
+      draftReadiness: "blocked",
+      whatWouldChangeTheDecision: "Owner-approved role wording.",
+    },
+    internalOmitHold: {
+      keepInternal: [{ material: "Source-blind withheld item", whyInternal: "Source-blind/internal.", couldBecomePublicLater: "no", whatWouldMakeItUsable: "Separate public confirmation." }],
+      omitFromPublicDraft: [{ material: "Unapproved collaborator label", whyOmitted: "Not owner-approved.", couldBecomePublicLater: "yes", whatWouldMakeItUsable: "Owner approval." }],
+    },
+    draftOrUpdatePlan: {
+      canDraft: false,
+      draftType: "community update",
+      suggestedAngle: "Public appearance only.",
+      useTheseMaterials: ["Public BARCODE Radio appearance"],
+      omitTheseMaterials: ["Unapproved collaborator label"],
+      ownerReviewWarnings: ["Owner Review required before publishing."],
+      whyNot: "Required owner wording is still missing.",
+    },
+    diagnosticsSummary: {
+      rawArchiveAvailable: true,
+      caseReportAvailable: true,
+      interimBriefAvailable: true,
+      blueprintAvailable: false,
+      legacyClaimReviewCount: 1,
+      absorbedReviewCount: 1,
+      hiddenDiagnosticCount: 2,
+      safetyNotes: ["Private/source-blind evidence stays diagnostic only."],
+    },
+  };
+  const archive = {
+    id: "archive-page-plan",
+    candidateId: "candidate-page-plan",
+    subjectName: "Plan Subject",
+    sourceDigest: "digest",
+    createdAt: "2026-06-17T00:00:00.000Z",
+    updatedAt: "2026-06-17T00:00:00.000Z",
+    archiveSize: 1,
+    chunkCount: 1,
+    reviewOnly: true,
+    sourceFilePagePlanV1: pagePlan,
+    dossierCompletionReadV1: { bnlAssessment: "Fallback completion read should be diagnostic." },
+    subjectAnalystReadV1: { sourceBlindInsights: ["Source-blind withheld item"] },
+  };
+  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive }));
+  const sections = [
+    "Compact Source File Header",
+    "BNL Analyst Read",
+    "What BNL Needs",
+    "Public-Safe Material BNL Can Use",
+    "BNL Review Guidance",
+    "Questions To Ask",
+    "Dossier Worth-It Decision",
+    "Internal / Omit / Hold",
+    "Draft / Update Plan",
+    "Diagnostics Summary",
+  ];
+  for (const section of sections) assert.match(text, new RegExp(section.replace(/[\/]/g, "\\$&")));
+  for (let index = 0; index < sections.length - 1; index += 1) assert.ok(text.indexOf(sections[index]) < text.indexOf(sections[index + 1]), `${sections[index]} should render before ${sections[index + 1]}`);
+  assert.match(text, /Overall read[\s\S]*BNL sees a cautious public dossier possibility/);
+  assert.match(text, /Needed item[\s\S]*Owner-approved role wording/);
+  assert.ok(text.indexOf("Public-Safe Material BNL Can Use") < text.indexOf("Internal / Omit / Hold"));
+  assert.match(text, /BNL Review Guidance[\s\S]*Legacy claim card about collaborator wording[\s\S]*Do not publish as a fact yet/);
+  assert.ok(text.indexOf("Questions To Ask") < text.indexOf("Dossier Worth-It Decision"));
+  assert.match(text, /Draft \/ Update Plan[\s\S]*Can draft[\s\S]*false[\s\S]*Why not[\s\S]*Required owner wording is still missing/);
+  assert.match(text, /Support \/ Diagnostics/);
+  assert.doesNotMatch(text, /Main Action|sourceFilePagePlanV1|Fallback completion read should be diagnostic/);
+});
+
+test("sourceFilePagePlanV1 renders canDraft true without exposing draft controls in the header", () => {
+  const summary = sourceFileReportTestSummary();
+  const archive = {
+    id: "archive-page-plan-draftable",
+    candidateId: "candidate-page-plan-draftable",
+    subjectName: "Draftable Plan Subject",
+    sourceDigest: "digest",
+    createdAt: "2026-06-17T00:00:00.000Z",
+    updatedAt: "2026-06-17T00:00:00.000Z",
+    archiveSize: 1,
+    chunkCount: 1,
+    reviewOnly: true,
+    sourceFileBriefV2: { sourceFileCaseReportV1: { subjectAnalystReadV1: { sourceFilePagePlanV1: {
+      header: { subject: "Draftable Plan Subject" },
+      analystRead: { overallRead: "BNL can draft cautiously." },
+      draftOrUpdatePlan: { canDraft: true, draftType: "new dossier", suggestedAngle: "Approved public signals." },
+      diagnosticsSummary: { rawArchiveAvailable: true },
+    } } } },
+  };
+  const text = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({ summary, latestSourceFileArchive: archive }));
+  assert.match(text, /Draft \/ Update Plan[\s\S]*Can draft[\s\S]*true[\s\S]*Draft controls remain available only where existing handlers provide them/);
+  assert.doesNotMatch(text.slice(0, text.indexOf("Draft / Update Plan")), /Create Draft|Request BNL Draft|Main Action/);
+});

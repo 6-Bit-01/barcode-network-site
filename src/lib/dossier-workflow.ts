@@ -250,6 +250,7 @@ export type DossierSubjectAnalystReadV1 = DossierSourceFileHumanDisplayFields & 
   currentRead?: string | unknown;
   canDraftCautiously?: boolean | string | unknown;
   dossierClarificationNeeds?: DossierReadinessQuestionV1[] | unknown;
+  sourceFilePagePlanV1?: DossierSourceFilePagePlanV1;
 };
 
 export type DossierSourceFileDraftReadinessState =
@@ -276,6 +277,127 @@ export type DossierSourceFileDraftReadinessReadModel = {
   recommendedNextAction: string;
 };
 
+
+export type DossierSourceFilePagePlanSuggestedControl = {
+  kind?: "ask_owner" | "ask_admin" | "refresh" | "keep_internal" | "omit" | "none" | string;
+  label?: string;
+  recommendation?: string;
+  questionToCopy?: string;
+  guidance?: string;
+};
+
+export type DossierSourceFilePagePlanHeader = {
+  subject?: string;
+  sourceFileStatus?: string;
+  bnlState?: string;
+  currentLane?: string;
+  lastRefresh?: string;
+  existingPublicDossier?: string;
+};
+
+export type DossierSourceFilePagePlanAnalystRead = {
+  overallRead?: string;
+  whatBnlThinksThisIs?: string;
+  whyThisSourceFileExists?: string;
+  whatSeemsUseful?: string | string[];
+  whatSeemsWeak?: string | string[];
+  whatIsUncertain?: string | string[];
+  whatBnlIsWatching?: string | string[];
+  confidence?: string;
+};
+
+export type DossierSourceFilePagePlanNeed = {
+  neededItem?: string;
+  whyNeeded?: string;
+  whoCanAnswer?: string;
+  requiredOrOptional?: string;
+  whatItUnlocks?: string;
+  currentStatus?: string;
+  suggestedControl?: DossierSourceFilePagePlanSuggestedControl;
+};
+
+export type DossierSourceFilePagePlanPublicMaterial = {
+  material?: string;
+  howBnlWouldUseIt?: string;
+  whySafeEnough?: string;
+  confidence?: string;
+  needsApproval?: boolean | string;
+};
+
+export type DossierSourceFilePagePlanReviewGuidance = {
+  reviewIssue?: string;
+  bnlDecision?: string;
+  bnlExplanation?: string;
+  recommendedDefault?: string;
+  stillActive?: boolean | string;
+  neededToFinish?: string;
+  suggestedControl?: DossierSourceFilePagePlanSuggestedControl;
+};
+
+export type DossierSourceFilePagePlanQuestion = {
+  question?: string;
+  audience?: string;
+  whyBnlIsAsking?: string;
+  whatAnswerWouldUnlock?: string;
+  requiredOrOptional?: string;
+};
+
+export type DossierSourceFilePagePlanWorthDecision = {
+  worthADossier?: boolean | string;
+  decision?: string;
+  why?: string;
+  possibleDossierType?: string;
+  draftReadiness?: string;
+  whatWouldChangeTheDecision?: string;
+};
+
+export type DossierSourceFilePagePlanInternalOmitHold = {
+  material?: string;
+  whyInternal?: string;
+  whyOmitted?: string;
+  couldBecomePublicLater?: boolean | string;
+  whatWouldMakeItUsable?: string;
+};
+
+export type DossierSourceFilePagePlanDraftOrUpdatePlan = {
+  canDraft?: boolean | string;
+  draftType?: string;
+  suggestedAngle?: string;
+  useTheseMaterials?: string[] | string;
+  omitTheseMaterials?: string[] | string;
+  ownerReviewWarnings?: string[] | string;
+  whyNot?: string;
+};
+
+export type DossierSourceFilePagePlanDiagnosticsSummary = {
+  rawArchiveAvailable?: boolean | string;
+  caseReportAvailable?: boolean | string;
+  interimBriefAvailable?: boolean | string;
+  blueprintAvailable?: boolean | string;
+  legacyClaimReviewCount?: number | string;
+  absorbedReviewCount?: number | string;
+  hiddenDiagnosticCount?: number | string;
+  safetyNotes?: string[] | string;
+};
+
+export type DossierSourceFilePagePlanV1 = {
+  header?: DossierSourceFilePagePlanHeader;
+  analystRead?: DossierSourceFilePagePlanAnalystRead;
+  whatBnlNeeds?: DossierSourceFilePagePlanNeed[];
+  publicSafeMaterial?: DossierSourceFilePagePlanPublicMaterial[];
+  noPublicSafeMaterialReadyText?: string;
+  bnlReviewGuidance?: DossierSourceFilePagePlanReviewGuidance[];
+  questionsToAsk?: DossierSourceFilePagePlanQuestion[];
+  noDecisionUnlockingQuestionsText?: string;
+  worthDecision?: DossierSourceFilePagePlanWorthDecision;
+  internalOmitHold?: {
+    keepInternal?: DossierSourceFilePagePlanInternalOmitHold[];
+    omitFromPublicDraft?: DossierSourceFilePagePlanInternalOmitHold[];
+  };
+  draftOrUpdatePlan?: DossierSourceFilePagePlanDraftOrUpdatePlan;
+  diagnosticsSummary?: DossierSourceFilePagePlanDiagnosticsSummary;
+};
+
 export type DossierSourceFileCaseReportV1 = {
   version?: string;
   generatedAt?: string;
@@ -299,6 +421,7 @@ export type DossierSourceFileCaseReportV1 = {
   subjectIntelligenceBriefV1?: DossierSubjectIntelligenceBriefV1;
   subjectAnalystReadV1?: DossierSubjectAnalystReadV1;
   sourceFileClassificationV1?: DossierSourceFileClassificationV1;
+  sourceFilePagePlanV1?: DossierSourceFilePagePlanV1;
 };
 
 export type DossierSourceFileBriefV2 = {
@@ -308,6 +431,7 @@ export type DossierSourceFileBriefV2 = {
   sourceFileCaseReportV1?: DossierSourceFileCaseReportV1;
   subjectAnalystReadV1?: DossierSubjectAnalystReadV1;
   caseFileReport?: unknown;
+  sourceFilePagePlanV1?: DossierSourceFilePagePlanV1;
 };
 
 export type DossierSourceFileArchiveCompactReadout = {
@@ -321,6 +445,7 @@ export type DossierSourceFileArchiveCompactReadout = {
   sourceFileBriefV2?: DossierSourceFileBriefV2;
   subjectAnalystReadV1?: DossierSubjectAnalystReadV1;
   sourceFileClassificationV1?: DossierSourceFileClassificationV1;
+  sourceFilePagePlanV1?: DossierSourceFilePagePlanV1;
   archivePayload?: unknown;
   archive?: unknown;
   payload?: unknown;

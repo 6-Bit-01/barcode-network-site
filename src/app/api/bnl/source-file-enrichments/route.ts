@@ -88,6 +88,7 @@ function normalizePayload(value: unknown): CreateDossierSourceFileArchiveInput {
     ),
     sourceFileCaseReportV1: payload.sourceFileCaseReportV1 as CreateDossierSourceFileArchiveInput["sourceFileCaseReportV1"],
     sourceFileBriefV2: payload.sourceFileBriefV2 as CreateDossierSourceFileArchiveInput["sourceFileBriefV2"],
+    sourceFilePagePlanV1: payload.sourceFilePagePlanV1 as CreateDossierSourceFileArchiveInput["sourceFilePagePlanV1"],
     archivePayload: payload.archivePayload,
     archive: payload.archive,
     payload: payload.payload,

@@ -32,6 +32,7 @@ import {
   type DossierSourceFileArchiveMetadata,
   type DossierSourceFileCaseReportV1,
   type DossierSourceFileClassificationV1,
+  type DossierSourceFilePagePlanV1,
   type DossierSubjectAnalystReadV1,
   type DossierSourceFileEnrichmentArchive,
   type DossierRecommendationSourceLane,
@@ -596,6 +597,49 @@ function findSourceFileClassificationV1(input: unknown) {
   return { classification: undefined, path: undefined };
 }
 
+
+function isSourceFilePagePlanV1Shape(value: unknown) {
+  const plan = sourceArchiveObject(value);
+  if (!plan) return false;
+  return [
+    "header",
+    "analystRead",
+    "whatBnlNeeds",
+    "publicSafeMaterial",
+    "bnlReviewGuidance",
+    "questionsToAsk",
+    "worthDecision",
+    "internalOmitHold",
+    "draftOrUpdatePlan",
+    "diagnosticsSummary",
+  ].some((key) => plan[key] !== undefined);
+}
+
+function findSourceFilePagePlanV1(input: unknown) {
+  for (const candidate of sourceArchivePayloadCandidates(input)) {
+    const brief = sourceArchiveObject(candidate.value.sourceFileBriefV2);
+    const rootAnalyst = sourceArchiveObject(candidate.value.subjectAnalystReadV1);
+    const report = sourceArchiveObject(candidate.value.sourceFileCaseReportV1);
+    const reportAnalyst = sourceArchiveObject(report?.subjectAnalystReadV1);
+    const briefAnalyst = sourceArchiveObject(brief?.subjectAnalystReadV1);
+    const nestedReport = sourceArchiveObject(brief?.sourceFileCaseReportV1);
+    const nestedReportAnalyst = sourceArchiveObject(nestedReport?.subjectAnalystReadV1);
+    const checks: Array<{ value: unknown; path: string }> = [
+      { value: candidate.value.sourceFilePagePlanV1, path: `${candidate.path}.sourceFilePagePlanV1` },
+      { value: rootAnalyst?.sourceFilePagePlanV1, path: `${candidate.path}.subjectAnalystReadV1.sourceFilePagePlanV1` },
+      { value: report?.sourceFilePagePlanV1, path: `${candidate.path}.sourceFileCaseReportV1.sourceFilePagePlanV1` },
+      { value: reportAnalyst?.sourceFilePagePlanV1, path: `${candidate.path}.sourceFileCaseReportV1.subjectAnalystReadV1.sourceFilePagePlanV1` },
+      { value: brief?.sourceFilePagePlanV1, path: `${candidate.path}.sourceFileBriefV2.sourceFilePagePlanV1` },
+      { value: briefAnalyst?.sourceFilePagePlanV1, path: `${candidate.path}.sourceFileBriefV2.subjectAnalystReadV1.sourceFilePagePlanV1` },
+      { value: nestedReport?.sourceFilePagePlanV1, path: `${candidate.path}.sourceFileBriefV2.sourceFileCaseReportV1.sourceFilePagePlanV1` },
+      { value: nestedReportAnalyst?.sourceFilePagePlanV1, path: `${candidate.path}.sourceFileBriefV2.sourceFileCaseReportV1.subjectAnalystReadV1.sourceFilePagePlanV1` },
+    ];
+    const match = checks.find((check) => isSourceFilePagePlanV1Shape(check.value));
+    if (match) return { pagePlan: match.value as DossierSourceFilePagePlanV1, path: match.path };
+  }
+  return { pagePlan: undefined, path: undefined };
+}
+
 function isSourceFileCaseReportShape(value: unknown) {
   const report = sourceArchiveObject(value);
   if (!report) return false;
@@ -695,6 +739,7 @@ function normalizeSourceFileArchiveInput(
       subjectAnalystReadV1?: DossierSubjectAnalystReadV1;
       sourceFileClassificationV1?: DossierSourceFileClassificationV1;
       sourceFileClassificationExtractedFrom?: string;
+      sourceFilePagePlanV1?: DossierSourceFilePagePlanV1;
     })
   | null {
   const subjectName = compactArchiveText(input.subjectName, 200);
@@ -703,6 +748,7 @@ function normalizeSourceFileArchiveInput(
   const sourceFileBrief = findSourceFileBriefV2(input);
   const analystRead = findSubjectAnalystReadV1(input);
   const classification = findSourceFileClassificationV1(input);
+  const pagePlan = findSourceFilePagePlanV1(input);
   return {
     ...input,
     candidateId: compactArchiveText(input.candidateId, 200),
@@ -725,6 +771,7 @@ function normalizeSourceFileArchiveInput(
     subjectAnalystReadV1: analystRead.read,
     sourceFileClassificationV1: classification.classification,
     sourceFileClassificationExtractedFrom: classification.path,
+    sourceFilePagePlanV1: pagePlan.pagePlan,
     caseReportPresent: Boolean(caseReport.report),
     subjectMemoryPacketPresent: sourceArchiveHasSubjectMemoryPacket(input),
     caseReportExtractedFrom: caseReport.path,
@@ -3089,6 +3136,7 @@ export async function ingestDossierSourceFileArchive(
       sourceFileBriefV2: normalized.sourceFileBriefV2,
       subjectAnalystReadV1: normalized.subjectAnalystReadV1,
       sourceFileClassificationV1: normalized.sourceFileClassificationV1,
+      sourceFilePagePlanV1: normalized.sourceFilePagePlanV1,
       caseReportPresent: normalized.caseReportPresent,
       subjectMemoryPacketPresent: normalized.subjectMemoryPacketPresent,
       caseReportExtractedFrom: normalized.caseReportExtractedFrom,

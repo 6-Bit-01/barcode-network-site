@@ -12893,6 +12893,7 @@ test("sourceFilePagePlanV1 renders canDraft true without exposing draft controls
 
 test("root sourceFilePagePlanV1 survives Source File archive ingest and renders primary UI", async () => {
   await resetWorkflowStore();
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "test-bnl-ingest-token";
 
   const created = await (await authedPost({
     action: "createManualCandidate",
@@ -12911,21 +12912,25 @@ test("root sourceFilePagePlanV1 survives Source File archive ingest and renders 
     diagnosticsSummary: { rawArchiveAvailable: true },
   };
 
-  const result = await store.ingestDossierSourceFileArchive({
+  const result = await (await bnlArchivePost({
     candidateId: created.candidate.id,
     subjectName: "Root Page Plan Subject",
     subjectKey: "root-page-plan-subject",
     ingestKey: "root-page-plan-ingest",
     sourcePackage: { archiveOrdinal: "root-page-plan" },
     sourceFilePagePlanV1: pagePlan,
-  });
+  })).json();
 
+  assert.equal(result.ok, true);
   assert.equal(result.archive.sourceFilePagePlanV1?.analystRead?.overallRead, "Root page plan survived ingest.");
-  assert.equal(result.candidate.latestSourceFileArchive?.sourceFilePagePlanV1?.header?.subject, "Root Page Plan Subject");
+
+  const state = await store.getDossierWorkflowState();
+  const sourceFile = state.candidates.find((candidate) => candidate.id === created.candidate.id);
+  assert.equal(sourceFile.latestSourceFileArchive?.sourceFilePagePlanV1?.header?.subject, "Root Page Plan Subject");
 
   const panelText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
     summary: sourceFileReportTestSummary(),
-    latestSourceFileArchive: result.archive,
+    latestSourceFileArchive: sourceFile.latestSourceFileArchive,
   }));
   assert.match(panelText, /Compact Source File Header[\s\S]*Root Page Plan Subject/);
   assert.match(panelText, /BNL Analyst Read[\s\S]*Root page plan survived ingest/);

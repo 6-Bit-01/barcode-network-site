@@ -12890,3 +12890,79 @@ test("sourceFilePagePlanV1 renders canDraft true without exposing draft controls
   assert.match(text, /Draft \/ Update Plan[\s\S]*Can draft[\s\S]*true[\s\S]*Draft controls remain available only where existing handlers provide them/);
   assert.doesNotMatch(text.slice(0, text.indexOf("Draft / Update Plan")), /Create Draft|Request BNL Draft|Main Action/);
 });
+
+test("root sourceFilePagePlanV1 survives Source File archive ingest and renders primary UI", async () => {
+  await resetWorkflowStore();
+
+  const created = await (await authedPost({
+    action: "createManualCandidate",
+    input: {
+      name: "Root Page Plan Subject",
+      candidateType: "artist",
+      reason: "Operator wants root page-plan archive coverage.",
+      whyNow: "BNL emits sourceFilePagePlanV1 at the archive root.",
+      evidenceSummary: "Admin fixture evidence.",
+    },
+  })).json();
+  const pagePlan = {
+    header: { subject: "Root Page Plan Subject", sourceFileStatus: "active" },
+    analystRead: { overallRead: "Root page plan survived ingest." },
+    whatBnlNeeds: [{ neededItem: "Root owner answer", whyNeeded: "Confirms the page plan path." }],
+    diagnosticsSummary: { rawArchiveAvailable: true },
+  };
+
+  const result = await store.ingestDossierSourceFileArchive({
+    candidateId: created.candidate.id,
+    subjectName: "Root Page Plan Subject",
+    subjectKey: "root-page-plan-subject",
+    ingestKey: "root-page-plan-ingest",
+    sourcePackage: { archiveOrdinal: "root-page-plan" },
+    sourceFilePagePlanV1: pagePlan,
+  });
+
+  assert.equal(result.archive.sourceFilePagePlanV1?.analystRead?.overallRead, "Root page plan survived ingest.");
+  assert.equal(result.candidate.latestSourceFileArchive?.sourceFilePagePlanV1?.header?.subject, "Root Page Plan Subject");
+
+  const panelText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary: sourceFileReportTestSummary(),
+    latestSourceFileArchive: result.archive,
+  }));
+  assert.match(panelText, /Compact Source File Header[\s\S]*Root Page Plan Subject/);
+  assert.match(panelText, /BNL Analyst Read[\s\S]*Root page plan survived ingest/);
+  assert.match(panelText, /What BNL Needs[\s\S]*Root owner answer/);
+});
+
+test("sourceFileBriefV2.subjectAnalystReadV1.sourceFilePagePlanV1 renders primary UI", () => {
+  const summary = sourceFileReportTestSummary();
+  const archive = {
+    id: "archive-brief-analyst-page-plan",
+    candidateId: "candidate-brief-analyst-page-plan",
+    subjectName: "Brief Analyst Plan Subject",
+    sourceDigest: "digest",
+    createdAt: "2026-06-18T00:00:00.000Z",
+    updatedAt: "2026-06-18T00:00:00.000Z",
+    archiveSize: 1,
+    chunkCount: 1,
+    reviewOnly: true,
+    sourceFileBriefV2: {
+      subjectAnalystReadV1: {
+        sourceFilePagePlanV1: {
+          header: { subject: "Brief Analyst Plan Subject", bnlState: "ready_for_review" },
+          analystRead: { overallRead: "Direct brief analyst page plan was found." },
+          publicSafeMaterial: [{ material: "Approved public signal", howBnlWouldUseIt: "As public-safe context." }],
+          diagnosticsSummary: { interimBriefAvailable: true },
+        },
+      },
+    },
+    dossierCompletionReadV1: { bnlAssessment: "Legacy completion read should stay diagnostic." },
+  };
+
+  const panelText = collectDefaultVisibleText(sourceSummaryPanelComponent.DossierSourceFileSummaryPanel({
+    summary,
+    latestSourceFileArchive: archive,
+  }));
+  assert.match(panelText, /Compact Source File Header[\s\S]*Brief Analyst Plan Subject/);
+  assert.match(panelText, /BNL Analyst Read[\s\S]*Direct brief analyst page plan was found/);
+  assert.match(panelText, /Public-Safe Material BNL Can Use[\s\S]*Approved public signal/);
+  assert.doesNotMatch(panelText, /Legacy completion read should stay diagnostic/);
+});

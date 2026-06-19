@@ -1922,6 +1922,7 @@ export function normalizeSourceFilePagePlanV1(
     const report = asRecord(candidate.sourceFileCaseReportV1);
     const reportAnalyst = asRecord(report?.subjectAnalystReadV1);
     const brief = asRecord(candidate.sourceFileBriefV2);
+    const briefAnalyst = asRecord(brief?.subjectAnalystReadV1);
     const briefReport = asRecord(brief?.sourceFileCaseReportV1);
     const briefReportAnalyst = asRecord(briefReport?.subjectAnalystReadV1);
     const match = [
@@ -1930,6 +1931,7 @@ export function normalizeSourceFilePagePlanV1(
       report?.sourceFilePagePlanV1,
       reportAnalyst?.sourceFilePagePlanV1,
       brief?.sourceFilePagePlanV1,
+      briefAnalyst?.sourceFilePagePlanV1,
       briefReport?.sourceFilePagePlanV1,
       briefReportAnalyst?.sourceFilePagePlanV1,
     ].find(hasPagePlanShape);

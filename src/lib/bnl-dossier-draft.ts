@@ -66,6 +66,7 @@ export type BnlDossierDraftRequestPacket = {
     kind: DossierDraft["fields"]["kind"];
     ecosystemLane: DossierDraft["fields"]["ecosystemLane"];
   };
+  safeClassificationWarnings: string[];
   stylePacket: ReturnType<typeof buildDossierStylePacket>;
   fieldRequirements: string[];
   forbiddenPublicCopyPatterns: readonly string[];
@@ -99,6 +100,99 @@ function cleanList(values: Array<string | undefined>): string[] {
         .filter((value): value is string => Boolean(value)),
     ),
   ];
+}
+
+
+const PLACEHOLDER_CLASSIFICATION_VALUES = new Set([
+  "",
+  "kind",
+  "category",
+  "ecosystemlane",
+  "ecosystem lane",
+  "unknown kind",
+]);
+
+const CATEGORY_KIND_FALLBACKS = {
+  Entity: "entity",
+  Artist: "artist",
+  Community: "community_member",
+  Collaborator: "collaborator",
+  Sponsor: "sponsor_character",
+  Interface: "interface",
+  Production: "program",
+  Personnel: "unknown",
+} as const;
+
+function classificationToken(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function isPlaceholderClassificationValue(value: unknown): boolean {
+  return PLACEHOLDER_CLASSIFICATION_VALUES.has(
+    classificationToken(value).toLowerCase(),
+  );
+}
+
+function isValidDossierCategory(value: unknown): value is NonNullable<DossierDraft["fields"]["category"]> {
+  return (
+    !isPlaceholderClassificationValue(value) &&
+    DOSSIER_CATEGORY_OPTIONS.includes(value as NonNullable<DossierDraft["fields"]["category"]>)
+  );
+}
+
+function isValidDossierKind(value: unknown): value is NonNullable<DossierDraft["fields"]["kind"]> {
+  return (
+    !isPlaceholderClassificationValue(value) &&
+    DOSSIER_KIND_OPTIONS.includes(value as NonNullable<DossierDraft["fields"]["kind"]>)
+  );
+}
+
+function isValidDossierEcosystemLane(value: unknown): value is NonNullable<DossierDraft["fields"]["ecosystemLane"]> {
+  return (
+    !isPlaceholderClassificationValue(value) &&
+    DOSSIER_ECOSYSTEM_LANE_OPTIONS.includes(value as NonNullable<DossierDraft["fields"]["ecosystemLane"]>)
+  );
+}
+
+function describeClassificationValue(value: unknown): string {
+  const clean = classificationToken(value);
+  return clean || "missing";
+}
+
+function coerceSafeDossierClassification(input: {
+  category?: unknown;
+  kind?: unknown;
+  ecosystemLane?: unknown;
+}): {
+  classification: BnlDossierDraftRequestPacket["safeClassification"];
+  warnings: string[];
+} {
+  const warnings: string[] = [];
+  const category = isValidDossierCategory(input.category) ? input.category : "Entity";
+  if (category !== input.category) {
+    warnings.push(
+      `Site classification category "${describeClassificationValue(input.category)}" was invalid; using conservative fallback "${category}" for owner review.`,
+    );
+  }
+
+  const categoryKindFallback = CATEGORY_KIND_FALLBACKS[category];
+  const kind = isValidDossierKind(input.kind) ? input.kind : categoryKindFallback;
+  if (kind !== input.kind) {
+    warnings.push(
+      `Site classification kind "${describeClassificationValue(input.kind)}" was invalid; using conservative fallback "${kind}" for owner review.`,
+    );
+  }
+
+  const ecosystemLane = isValidDossierEcosystemLane(input.ecosystemLane)
+    ? input.ecosystemLane
+    : "unknown";
+  if (ecosystemLane !== input.ecosystemLane) {
+    warnings.push(
+      `Site classification ecosystemLane "${describeClassificationValue(input.ecosystemLane)}" was invalid; using conservative fallback "${ecosystemLane}" for owner review.`,
+    );
+  }
+
+  return { classification: { category, kind, ecosystemLane }, warnings };
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -270,6 +364,12 @@ export function buildBnlDossierDraftRequestPacket(input: {
     (link) => link.visibility === "internal_only" || !link.useInPublicDossier,
   ).length;
   const safeSourceFileIntelligence = buildSafeSourceFileIntelligence(candidate);
+  const safeClassification = coerceSafeDossierClassification({
+    category: candidate.recommendedCategory ?? blueprint.classification.category,
+    kind: candidate.recommendedKind ?? blueprint.classification.kind,
+    ecosystemLane:
+      candidate.recommendedEcosystemLane ?? blueprint.classification.ecosystemLane,
+  });
 
   return {
     version: "1.0",
@@ -296,6 +396,7 @@ export function buildBnlDossierDraftRequestPacket(input: {
     reviewOnlyWarnings: cleanList([
       ...blueprint.ownerReviewWarnings,
       ...(candidate.publicSafetyNotes ?? []),
+      ...safeClassification.warnings,
     ]),
     doNotSayNotes: cleanList([
       ...(candidate.doNotSay ?? []),
@@ -316,12 +417,8 @@ export function buildBnlDossierDraftRequestPacket(input: {
       ),
     },
     ...(currentDraft ? { currentDraft: currentDraft.fields } : {}),
-    safeClassification: {
-      category: candidate.recommendedCategory ?? blueprint.classification.category,
-      kind: candidate.recommendedKind ?? blueprint.classification.kind,
-      ecosystemLane:
-        candidate.recommendedEcosystemLane ?? blueprint.classification.ecosystemLane,
-    },
+    safeClassification: safeClassification.classification,
+    safeClassificationWarnings: safeClassification.warnings,
     stylePacket,
     fieldRequirements: [...DOSSIER_DRAFT_CONTRACT_REQUIRED_FIELDS],
     forbiddenPublicCopyPatterns: stylePacket.forbiddenPublicCopyPatterns,
@@ -423,7 +520,9 @@ function normalizeBnlDossierDraftClassificationFields(
 ): { response: BnlDossierDraftResponse; warnings: string[] } {
   const normalized = { ...response };
   const warnings: string[] = [];
-  const safe = packet.safeClassification;
+  const safeClassification = coerceSafeDossierClassification(packet.safeClassification);
+  const safe = safeClassification.classification;
+  warnings.push(...safeClassification.warnings);
 
   if (
     normalized.category &&
@@ -585,7 +684,11 @@ export async function requestBnlDossierDraft(input: {
       response: normalized.response,
       validation: {
         ...validation,
-        warnings: [...normalized.warnings, ...validation.warnings],
+        warnings: [
+          ...input.packet.safeClassificationWarnings,
+          ...normalized.warnings,
+          ...validation.warnings,
+        ],
       },
     };
   } catch (error) {

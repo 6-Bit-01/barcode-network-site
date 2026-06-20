@@ -196,6 +196,37 @@ test("BNL dossier draft packet includes latest safe Source File page-plan intell
   assert.doesNotMatch(serialized, /RAW_CHUNK_KEY_SHOULD_NOT_COPY|RAW_ARCHIVE_KEY_SHOULD_NOT_COPY/i);
 });
 
+
+test("BNL dossier draft packet coerces invalid safeClassification placeholders", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const packet = bnlDossierDraft.buildBnlDossierDraftRequestPacket({
+    candidate: {
+      id: "candidate_invalid_safe_classification",
+      name: "Invalid Safe Classification",
+      candidateType: "community_member",
+      source: "manual",
+      tier: "review_candidate",
+      score: 50,
+      whyNow: "Legacy taxonomy placeholder fixture.",
+      reason: "Stored taxonomy fields are placeholders.",
+      evidenceSummary: "Public-safe fixture evidence.",
+      recommendedCategory: "category",
+      recommendedKind: "kind",
+      recommendedEcosystemLane: "ecosystemLane",
+      identityReviewStatus: "unreviewed",
+      createdAt: now,
+      updatedAt: now,
+    },
+    recommendations: [],
+  });
+  assert.equal(packet.safeClassification.category, "Entity");
+  assert.equal(packet.safeClassification.kind, "entity");
+  assert.equal(packet.safeClassification.ecosystemLane, "unknown");
+  assert.notEqual(packet.safeClassification.kind, "kind");
+  assert.ok(packet.safeClassificationWarnings.some((warning) => /kind .*invalid.*fallback "entity"/i.test(warning)));
+  assert.ok(packet.reviewOnlyWarnings.some((warning) => /classification kind/i.test(warning)));
+});
+
 test("BNL dossier draft packet preserves legacy fallback and candidate id archive authority", () => {
   const now = "2026-06-18T00:00:00.000Z";
   const legacyCandidate = {
@@ -4956,6 +4987,56 @@ test("valid BNL draft response reports a stored BNL-authored draft", async () =>
 });
 
 
+
+
+test("BNL draft request normalizes kind placeholder through conservative site fallback", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  try {
+    const created = await (
+      await authedPost({ action: "createManualCandidate", input: manualCandidateInput })
+    ).json();
+    const state = await store.getDossierWorkflowState();
+    await store.saveDossierWorkflowState({
+      ...state,
+      candidates: state.candidates.map((candidate) =>
+        candidate.id === created.candidate.id
+          ? {
+              ...candidate,
+              recommendedCategory: "category",
+              recommendedKind: "kind",
+              recommendedEcosystemLane: "ecosystemLane",
+            }
+          : candidate,
+      ),
+    });
+    global.fetch = async () =>
+      new Response(
+        JSON.stringify({ draft: cleanContractDraft({ name: "Conservative Fallback Draft", kind: "kind" }) }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+
+    const response = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: created.candidate.id,
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.draftStored, true);
+    assert.equal(payload.storedDraft.fields.category, "Community");
+    assert.equal(payload.storedDraft.fields.kind, "entity");
+    assert.equal(payload.storedDraft.fields.ecosystemLane, "community_member");
+    assert.ok(payload.bnlDraft.validation.warnings.some((warning) => /unsupported kind "kind"; normalized to safe site classification "entity"/i.test(warning)));
+    assert.ok(payload.bnlDraft.validation.warnings.some((warning) => /Site classification kind "kind" was invalid/i.test(warning)));
+    assert.ok(payload.storedDraft.sourceFileDraftMetadata.validationWarnings.some((warning) => /Site classification kind "kind" was invalid/i.test(warning)));
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
 
 test("BNL draft request normalizes invalid kind to safe packet classification and stores valid draft", async () => {
   await resetWorkflowStore();

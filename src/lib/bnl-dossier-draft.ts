@@ -14,6 +14,9 @@ import type {
   DossierDraft,
   DossierRecommendation,
   DossierSourceFileNote,
+  DossierSourceFileArchiveMetadata,
+  DossierSourceFileClassificationV1,
+  DossierSourceFilePagePlanV1,
 } from "@/lib/dossier-workflow";
 
 export type BnlDossierDraftRequestPacket = {
@@ -25,6 +28,15 @@ export type BnlDossierDraftRequestPacket = {
     sourceCandidateUpdatedAt?: string;
   };
   sourceFileSummary: DossierCandidate["sourceFileSummary"] | null;
+  latestSourceFileArchiveId?: string;
+  latestSourceFileArchiveDigest?: string;
+  latestSourceFileArchiveUpdatedAt?: string;
+  sourceFilePagePlanV1?: DossierSourceFilePagePlanV1;
+  subjectDossierStateV1?: unknown;
+  sourceFileSurfaceV1?: unknown;
+  dossierCompletionReadV1?: unknown;
+  reviewActionabilityV1?: unknown;
+  sourceFileClassificationV1?: DossierSourceFileClassificationV1;
   publicSafeFacts: string[];
   publicSafeNotes: Array<
     Pick<DossierSourceFileNote, "id" | "type" | "text" | "source" | "updatedAt">
@@ -84,6 +96,152 @@ function cleanList(values: Array<string | undefined>): string[] {
   ];
 }
 
+type UnknownRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): UnknownRecord | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as UnknownRecord)
+    : undefined;
+}
+
+function normalizedSubjectName(value: string | undefined): string {
+  return (value ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function archiveMatchesCandidate(
+  candidate: DossierCandidate,
+  archive?: DossierSourceFileArchiveMetadata,
+): archive is DossierSourceFileArchiveMetadata {
+  if (!archive) return false;
+  if (archive.candidateId) return archive.candidateId === candidate.id;
+  return normalizedSubjectName(archive.subjectName) === normalizedSubjectName(candidate.name);
+}
+
+function archivePayloadCandidates(archive?: DossierSourceFileArchiveMetadata): UnknownRecord[] {
+  const root = asRecord(archive);
+  if (!root) return [];
+  const candidates: UnknownRecord[] = [];
+  const seen = new Set<UnknownRecord>();
+  const add = (value: unknown) => {
+    const object = asRecord(value);
+    if (!object || seen.has(object)) return;
+    seen.add(object);
+    candidates.push(object);
+  };
+  add(root);
+  for (const key of ["sourcePackage", "archivePayload", "archive", "payload", "sourceFileArchive"] as const) {
+    const wrapped = root[key];
+    add(wrapped);
+    const wrappedObject = asRecord(wrapped);
+    if (wrappedObject) add(wrappedObject.sourcePackage);
+  }
+  return candidates;
+}
+
+function hasAnyKey(value: unknown, keys: string[]): value is UnknownRecord {
+  const record = asRecord(value);
+  return Boolean(record && keys.some((key) => record[key] !== undefined));
+}
+
+function firstShaped<T>(values: unknown[], keys: string[]): T | undefined {
+  return values.find((value): value is T => hasAnyKey(value, keys));
+}
+
+function buildSafeSourceFileIntelligence(candidate: DossierCandidate): Partial<
+  Pick<
+    BnlDossierDraftRequestPacket,
+    | "latestSourceFileArchiveId"
+    | "latestSourceFileArchiveDigest"
+    | "latestSourceFileArchiveUpdatedAt"
+    | "sourceFilePagePlanV1"
+    | "subjectDossierStateV1"
+    | "sourceFileSurfaceV1"
+    | "dossierCompletionReadV1"
+    | "reviewActionabilityV1"
+    | "sourceFileClassificationV1"
+  >
+> {
+  const archive = archiveMatchesCandidate(candidate, candidate.latestSourceFileArchive)
+    ? candidate.latestSourceFileArchive
+    : undefined;
+  if (!archive) return {};
+
+  const payloads = archivePayloadCandidates(archive);
+  const pagePlanKeys = [
+    "header",
+    "analystRead",
+    "whatBnlNeeds",
+    "publicSafeMaterial",
+    "bnlReviewGuidance",
+    "questionsToAsk",
+    "worthDecision",
+    "internalOmitHold",
+    "draftOrUpdatePlan",
+    "diagnosticsSummary",
+  ];
+  const classificationKeys = [
+    "subjectType",
+    "publicDossierType",
+    "publicSafeTagCandidates",
+    "internalTags",
+    "needsReviewTagCandidates",
+    "rejectedTagCandidates",
+    "blockedPublicTags",
+    "sourceSafety",
+  ];
+  const valuesFor = (key: string) =>
+    payloads.flatMap((payload) => {
+      const brief = asRecord(payload.sourceFileBriefV2);
+      const rootAnalyst = asRecord(payload.subjectAnalystReadV1);
+      const report = asRecord(payload.sourceFileCaseReportV1);
+      const reportAnalyst = asRecord(report?.subjectAnalystReadV1);
+      const briefAnalyst = asRecord(brief?.subjectAnalystReadV1);
+      const nestedReport = asRecord(brief?.sourceFileCaseReportV1);
+      const nestedReportAnalyst = asRecord(nestedReport?.subjectAnalystReadV1);
+      return [
+        payload[key],
+        rootAnalyst?.[key],
+        report?.[key],
+        reportAnalyst?.[key],
+        brief?.[key],
+        briefAnalyst?.[key],
+        nestedReport?.[key],
+        nestedReportAnalyst?.[key],
+      ];
+    });
+
+  return {
+    latestSourceFileArchiveId: candidate.latestSourceFileArchiveId ?? archive.id,
+    latestSourceFileArchiveDigest: candidate.latestSourceFileArchiveDigest ?? archive.sourceDigest,
+    latestSourceFileArchiveUpdatedAt: candidate.latestSourceFileArchiveUpdatedAt ?? archive.updatedAt,
+    ...(firstShaped<DossierSourceFilePagePlanV1>(valuesFor("sourceFilePagePlanV1"), pagePlanKeys)
+      ? { sourceFilePagePlanV1: firstShaped<DossierSourceFilePagePlanV1>(valuesFor("sourceFilePagePlanV1"), pagePlanKeys) }
+      : {}),
+    ...(firstShaped<unknown>(valuesFor("subjectDossierStateV1"), ["state", "summary", "readiness", "dossierState", "candidateState"])
+      ? { subjectDossierStateV1: firstShaped<unknown>(valuesFor("subjectDossierStateV1"), ["state", "summary", "readiness", "dossierState", "candidateState"]) }
+      : {}),
+    ...(firstShaped<unknown>(valuesFor("sourceFileSurfaceV1"), ["summary", "surface", "sections", "cards", "highlights"])
+      ? { sourceFileSurfaceV1: firstShaped<unknown>(valuesFor("sourceFileSurfaceV1"), ["summary", "surface", "sections", "cards", "highlights"]) }
+      : {}),
+    ...(firstShaped<unknown>(valuesFor("dossierCompletionReadV1"), ["bnlAssessment", "readiness", "likelyDossierAngle", "dossierWorthiness", "recommendedNextAction"])
+      ? { dossierCompletionReadV1: firstShaped<unknown>(valuesFor("dossierCompletionReadV1"), ["bnlAssessment", "readiness", "likelyDossierAngle", "dossierWorthiness", "recommendedNextAction"]) }
+      : {}),
+    ...(firstShaped<unknown>(valuesFor("reviewActionabilityV1"), ["actions", "ownerWarnings", "reviewWarnings", "recommendedActions", "blockers"])
+      ? { reviewActionabilityV1: firstShaped<unknown>(valuesFor("reviewActionabilityV1"), ["actions", "ownerWarnings", "reviewWarnings", "recommendedActions", "blockers"]) }
+      : {}),
+    ...(firstShaped<DossierSourceFileClassificationV1>(valuesFor("sourceFileClassificationV1"), classificationKeys)
+      ? { sourceFileClassificationV1: firstShaped<DossierSourceFileClassificationV1>(valuesFor("sourceFileClassificationV1"), classificationKeys) }
+      : {}),
+  };
+}
+
 export function buildBnlDossierDraftRequestPacket(input: {
   candidate: DossierCandidate;
   recommendations: DossierRecommendation[];
@@ -106,6 +264,7 @@ export function buildBnlDossierDraftRequestPacket(input: {
   const internalAliasCount = (candidate.identityLinks ?? []).filter(
     (link) => link.visibility === "internal_only" || !link.useInPublicDossier,
   ).length;
+  const safeSourceFileIntelligence = buildSafeSourceFileIntelligence(candidate);
 
   return {
     version: "1.0",
@@ -116,6 +275,7 @@ export function buildBnlDossierDraftRequestPacket(input: {
       sourceCandidateUpdatedAt: candidate.updatedAt,
     },
     sourceFileSummary: candidate.sourceFileSummary ?? null,
+    ...safeSourceFileIntelligence,
     publicSafeFacts: cleanList([
       ...(candidate.knownFacts ?? []),
       ...blueprint.publicSafeFacts.confirmedPublicFacts,

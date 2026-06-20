@@ -109,6 +109,139 @@ test("BNL dossier draft packet keeps internal aliases out and declares site/BNL 
   assert.ok(packet.sourceBoundaryRules.some((rule) => /Source File/.test(rule)));
 });
 
+
+test("BNL dossier draft packet includes latest safe Source File page-plan intelligence", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const pagePlan = {
+    header: { subject: "Packet Subject", bnlState: "ready for proposed dossier" },
+    analystRead: { overallRead: "Public-safe page plan should guide the draft." },
+    publicSafeMaterial: [{ material: "Public-safe authored material.", whySafeEnough: "Approved by BNL read." }],
+    draftOrUpdatePlan: { canDraft: true, ownerReviewWarnings: ["Owner should confirm preferred public link."] },
+  };
+  const candidate = {
+    id: "candidate_source_intel",
+    name: "Packet Subject",
+    candidateType: "artist",
+    source: "bnl_source_file_enrichment",
+    tier: "draft_ready",
+    score: 80,
+    whyNow: "Public-safe Source File intelligence is ready.",
+    reason: "Latest archive includes authored page plan.",
+    evidenceSummary: "Public-safe summary.",
+    knownFacts: ["Existing public-safe fact."],
+    doNotSay: ["Do not mention internal evidence."],
+    missingInfo: ["Confirm preferred public link."],
+    publicSafetyNotes: ["Keep source-blind material out of public copy."],
+    identityReviewStatus: "needs_confirmation",
+    identityLinks: [
+      { id: "alias_public", candidateId: "candidate_source_intel", label: "Packet Public", normalizedLabel: "packet public", type: "public_persona", visibility: "public_safe", status: "confirmed", source: "owner_confirmed", useForMatching: true, useInPublicDossier: true, createdAt: now, updatedAt: now },
+      { id: "alias_admin", candidateId: "candidate_source_intel", label: "ADMIN_ONLY_ALIAS_SHOULD_NOT_COPY", normalizedLabel: "admin only alias should not copy", type: "alias", visibility: "internal_only", status: "confirmed", source: "admin_manual", useForMatching: true, useInPublicDossier: false, createdAt: now, updatedAt: now },
+    ],
+    sourceFileNotes: [
+      { id: "note_safe", candidateId: "candidate_source_intel", type: "fact", text: "Safe note survives.", source: "admin_manual", status: "active", publicSafe: true, createdAt: now, updatedAt: now },
+      { id: "note_private", candidateId: "candidate_source_intel", type: "general_note", text: "PRIVATE_NOTE_SHOULD_NOT_COPY", source: "admin_manual", status: "active", publicSafe: false, createdAt: now, updatedAt: now },
+    ],
+    latestSourceFileArchiveId: "archive_latest_safe",
+    latestSourceFileArchiveDigest: "digest_latest_safe",
+    latestSourceFileArchiveUpdatedAt: now,
+    latestSourceFileArchive: {
+      id: "archive_latest_safe",
+      candidateId: "candidate_source_intel",
+      subjectName: "Packet Subject",
+      sourceDigest: "digest_latest_safe",
+      createdAt: now,
+      updatedAt: now,
+      archiveSize: 2048,
+      chunkCount: 2,
+      reviewOnly: true,
+      sourceFilePagePlanV1: pagePlan,
+      subjectDossierStateV1: { state: "ready_for_bnl_draft", summary: "Use the safe plan." },
+      sourceFileSurfaceV1: { summary: "Source File surface summary." },
+      dossierCompletionReadV1: { bnlAssessment: "Draft cautiously from public-safe materials.", readiness: "ready" },
+      reviewActionabilityV1: { ownerWarnings: ["Owner confirmation required before publishing."] },
+      sourceFileClassificationV1: { subjectType: "artist", publicDossierType: "Artist", publicSafeTagCandidates: ["artist"] },
+      compactSummary: "Compact fallback summary.",
+      publicSafePossibilities: ["Fallback possibility."],
+      missingInfo: ["Fallback missing info."],
+      publicSafetyNotes: ["Fallback safety note."],
+      doNotSay: ["Fallback do not say."],
+      evidenceReceiptSummary: ["Receipt only."],
+      archiveKey: "RAW_ARCHIVE_KEY_SHOULD_NOT_COPY",
+      chunkKeys: ["RAW_CHUNK_KEY_SHOULD_NOT_COPY"],
+    },
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const packet = bnlDossierDraft.buildBnlDossierDraftRequestPacket({ candidate, recommendations: [] });
+  assert.deepEqual(packet.sourceFilePagePlanV1, pagePlan);
+  assert.equal(packet.subjectDossierStateV1.state, "ready_for_bnl_draft");
+  assert.equal(packet.sourceFileClassificationV1.publicDossierType, "Artist");
+  assert.deepEqual(packet.reviewActionabilityV1.ownerWarnings, ["Owner confirmation required before publishing."]);
+  assert.equal(packet.latestSourceFileArchiveId, "archive_latest_safe");
+  assert.deepEqual(packet.publicSafeFacts.includes("Existing public-safe fact."), true);
+  assert.deepEqual(packet.publicSafeNotes.map((note) => note.id), ["note_safe"]);
+  assert.ok(packet.reviewOnlyWarnings.some((warning) => /source-blind material/i.test(warning)));
+  assert.ok(packet.doNotSayNotes.some((note) => /internal evidence/i.test(note)));
+  assert.ok(packet.missingInfo.includes("Confirm preferred public link."));
+  assert.equal(packet.identityAliasStatus.internalAliasCount, 1);
+  assert.ok(packet.safeClassification);
+  assert.ok(packet.stylePacket);
+  assert.ok(packet.fieldRequirements.length > 0);
+  assert.ok(packet.ownerReviewRules.length > 0);
+  assert.ok(packet.sourceBoundaryRules.length > 0);
+  const serialized = JSON.stringify(packet);
+  assert.doesNotMatch(JSON.stringify(packet.publicSafeFacts), /PRIVATE_NOTE_SHOULD_NOT_COPY|ADMIN_ONLY_ALIAS_SHOULD_NOT_COPY|RAW_CHUNK_KEY_SHOULD_NOT_COPY|RAW_ARCHIVE_KEY_SHOULD_NOT_COPY/i);
+  assert.doesNotMatch(JSON.stringify(packet.publicSafeNotes), /PRIVATE_NOTE_SHOULD_NOT_COPY|ADMIN_ONLY_ALIAS_SHOULD_NOT_COPY|RAW_CHUNK_KEY_SHOULD_NOT_COPY|RAW_ARCHIVE_KEY_SHOULD_NOT_COPY/i);
+  assert.doesNotMatch(serialized, /RAW_CHUNK_KEY_SHOULD_NOT_COPY|RAW_ARCHIVE_KEY_SHOULD_NOT_COPY/i);
+});
+
+test("BNL dossier draft packet preserves legacy fallback and candidate id archive authority", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const legacyCandidate = {
+    id: "candidate_legacy_packet",
+    name: "Legacy Packet",
+    candidateType: "community_member",
+    source: "manual",
+    tier: "review_candidate",
+    score: 50,
+    whyNow: "Legacy fallback.",
+    reason: "No page plan.",
+    evidenceSummary: "Legacy public-safe context.",
+    knownFacts: ["Legacy fact."],
+    identityReviewStatus: "unreviewed",
+    createdAt: now,
+    updatedAt: now,
+  };
+  const legacyPacket = bnlDossierDraft.buildBnlDossierDraftRequestPacket({ candidate: legacyCandidate, recommendations: [] });
+  assert.equal(legacyPacket.sourceFilePagePlanV1, undefined);
+  assert.deepEqual(legacyPacket.publicSafeFacts.includes("Legacy fact."), true);
+
+  const mismatchedArchiveCandidate = {
+    ...legacyCandidate,
+    id: "candidate_id_wins",
+    name: "Same Name",
+    latestSourceFileArchiveId: "archive_wrong_candidate",
+    latestSourceFileArchiveDigest: "digest_wrong_candidate",
+    latestSourceFileArchiveUpdatedAt: now,
+    latestSourceFileArchive: {
+      id: "archive_wrong_candidate",
+      candidateId: "other_candidate_id",
+      subjectName: "Same Name",
+      sourceDigest: "digest_wrong_candidate",
+      createdAt: now,
+      updatedAt: now,
+      archiveSize: 1,
+      chunkCount: 1,
+      reviewOnly: true,
+      sourceFilePagePlanV1: { header: { subject: "Should Not Win" } },
+    },
+  };
+  const packet = bnlDossierDraft.buildBnlDossierDraftRequestPacket({ candidate: mismatchedArchiveCandidate, recommendations: [] });
+  assert.equal(packet.sourceFilePagePlanV1, undefined);
+  assert.equal(packet.latestSourceFileArchiveId, undefined);
+});
+
 test("BNL dossier draft response validation blocks public source/debug copy", () => {
   const validation = bnlDossierDraft.validateBnlDossierDraftResponse({
     name: "Packet Subject",

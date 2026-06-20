@@ -1611,9 +1611,9 @@ export default function CandidateReviewPage() {
           : data.bnlDraft?.status === "failed"
             ? (data.bnlDraft.message ?? "BNL draft generator failed. No draft was stored.")
             : data.bnlDraft?.status === "received" && !data.draftStored
-              ? `BNL returned draft output, but validation failed and no draft was stored.${validationIssues.length ? ` Issues: ${validationIssues.join("; ")}` : ""}${validationWarnings.length ? ` Warnings: ${validationWarnings.join("; ")}` : ""}`
+              ? `BNL returned draft output, but validation failed and no draft was stored. Existing draft, if any, was not updated.${validationIssues.length ? ` Issues: ${validationIssues.join("; ")}` : ""}${validationWarnings.length ? ` Warnings: ${validationWarnings.join("; ")}` : ""}`
               : data.draftStored && data.storedDraft
-                ? `BNL-authored Proposed Dossier draft stored: ${data.storedDraft.fields.name}.`
+                ? `BNL-authored Proposed Dossier draft stored for owner review: ${data.storedDraft.fields.name}.${validationWarnings.length ? ` Warnings: ${validationWarnings.join("; ")}` : ""}`
                 : (data.bnlDraft?.message ?? "BNL draft request did not return a stored draft."),
       );
     } catch (err) {

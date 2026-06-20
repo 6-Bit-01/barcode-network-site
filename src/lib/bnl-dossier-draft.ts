@@ -8,6 +8,11 @@ import {
   containsDossierPublicCopyJunk,
   validateDossierPublicDraftFields,
 } from "@/lib/dossier-public-copy-guard";
+import {
+  DOSSIER_CATEGORY_OPTIONS,
+  DOSSIER_ECOSYSTEM_LANE_OPTIONS,
+  DOSSIER_KIND_OPTIONS,
+} from "@/lib/dossier-taxonomy";
 import { createDossierDraftBlueprint } from "@/lib/dossier-classification";
 import type {
   DossierCandidate,
@@ -362,6 +367,9 @@ const UNSAFE_SOURCE_USAGE_REGEX =
 const PUBLIC_NOTES_REVIEW_WARNING_REGEX =
   /\b(?:Owner Review|Admin-only|review-only|must not be copied into public text|not public|source-blind|missing info|needs review before claiming)\b/i;
 
+const PLACEHOLDER_PUBLIC_COPY_REGEX =
+  /\b(?:clean public summary needed|clean public copy needed|placeholder(?:-only)?|fallback(?:-only)? draft|recurring named topic|public summary needed before owner review|tbd|to be confirmed)\b/i;
+
 function normalizeSupportText(value: string): string {
   return value
     .trim()
@@ -406,6 +414,54 @@ function responseAllowsQueueMusicEvidence(
   if (!BNL_SUBJECT_MATCHED_PUBLIC_CONTEXT_REGEX.test(sourceUsage)) return false;
   const subject = normalizeSupportText(packet?.candidate.subjectName ?? response?.name ?? "");
   return Boolean(subject && normalizeSupportText(sourceUsage).includes(subject));
+}
+
+
+function normalizeBnlDossierDraftClassificationFields(
+  response: BnlDossierDraftResponse,
+  packet: BnlDossierDraftRequestPacket,
+): { response: BnlDossierDraftResponse; warnings: string[] } {
+  const normalized = { ...response };
+  const warnings: string[] = [];
+  const safe = packet.safeClassification;
+
+  if (
+    normalized.category &&
+    !DOSSIER_CATEGORY_OPTIONS.includes(normalized.category) &&
+    safe.category &&
+    DOSSIER_CATEGORY_OPTIONS.includes(safe.category)
+  ) {
+    warnings.push(
+      `BNL returned unsupported category "${String(normalized.category)}"; normalized to safe site classification "${safe.category}".`,
+    );
+    normalized.category = safe.category;
+  }
+
+  if (
+    normalized.kind &&
+    !DOSSIER_KIND_OPTIONS.includes(normalized.kind) &&
+    safe.kind &&
+    DOSSIER_KIND_OPTIONS.includes(safe.kind)
+  ) {
+    warnings.push(
+      `BNL returned unsupported kind "${String(normalized.kind)}"; normalized to safe site classification "${safe.kind}".`,
+    );
+    normalized.kind = safe.kind;
+  }
+
+  if (
+    normalized.ecosystemLane &&
+    !DOSSIER_ECOSYSTEM_LANE_OPTIONS.includes(normalized.ecosystemLane) &&
+    safe.ecosystemLane &&
+    DOSSIER_ECOSYSTEM_LANE_OPTIONS.includes(safe.ecosystemLane)
+  ) {
+    warnings.push(
+      `BNL returned unsupported ecosystemLane "${String(normalized.ecosystemLane)}"; normalized to safe site classification "${safe.ecosystemLane}".`,
+    );
+    normalized.ecosystemLane = safe.ecosystemLane;
+  }
+
+  return { response: normalized, warnings };
 }
 
 export function validateBnlDossierDraftResponse(
@@ -474,6 +530,9 @@ export function validateBnlDossierDraftResponse(
     if (typeof value === "string" && PAYMENT_PRIORITY_REGEX.test(value)) {
       issues.push(`${field} contains unsupported payment/Priority Signal copy`);
     }
+    if (typeof value === "string" && PLACEHOLDER_PUBLIC_COPY_REGEX.test(value)) {
+      warnings.push(`${field} appears placeholder-like and needs owner review before public use`);
+    }
   }
   return { valid: issues.length === 0, issues, warnings };
 }
@@ -512,12 +571,22 @@ export async function requestBnlDossierDraft(input: {
         packet: input.packet,
       };
     }
-    const response = (body.draft ?? body) as BnlDossierDraftResponse;
+    const rawResponse = (body.draft ?? body) as BnlDossierDraftResponse;
+    const normalized = normalizeBnlDossierDraftClassificationFields(
+      rawResponse,
+      input.packet,
+    );
+    const validation = validateBnlDossierDraftResponse(normalized.response, {
+      packet: input.packet,
+    });
     return {
       status: "received",
       packet: input.packet,
-      response,
-      validation: validateBnlDossierDraftResponse(response, { packet: input.packet }),
+      response: normalized.response,
+      validation: {
+        ...validation,
+        warnings: [...normalized.warnings, ...validation.warnings],
+      },
     };
   } catch (error) {
     return {

@@ -4956,6 +4956,126 @@ test("valid BNL draft response reports a stored BNL-authored draft", async () =>
 });
 
 
+
+test("BNL draft request normalizes invalid kind to safe packet classification and stores valid draft", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  const publicBefore = JSON.stringify(databasePage.entries);
+  try {
+    const created = await (
+      await authedPost({ action: "createManualCandidate", input: manualCandidateInput })
+    ).json();
+    global.fetch = async () =>
+      new Response(
+        JSON.stringify({ draft: cleanContractDraft({ name: "Normalized Kind Draft", kind: "topic" }) }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+
+    const response = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: created.candidate.id,
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.bnlDraft.status, "received");
+    assert.equal(payload.draftStored, true);
+    assert.equal(payload.storedDraft.fields.kind, manualCandidateInput.recommendedKind);
+    assert.ok(payload.bnlDraft.validation.warnings.some((warning) => /unsupported kind .*normalized to safe site classification/i.test(warning)));
+    assert.ok(payload.storedDraft.sourceFileDraftMetadata.validationWarnings.some((warning) => /unsupported kind .*normalized/i.test(warning)));
+    assert.ok(payload.storedDraft.sourceFileDraftMetadata.bnlDraftProvenance.validationWarnings.some((warning) => /unsupported kind .*normalized/i.test(warning)));
+    assert.equal(payload.storedDraft.sourceFileDraftMetadata.publicPagesMutated, false);
+    assert.equal(JSON.stringify(databasePage.entries), publicBefore);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
+
+test("BNL draft request normalizes classification but still fails unsafe public copy closed", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  try {
+    const created = await (
+      await authedPost({ action: "createManualCandidate", input: manualCandidateInput })
+    ).json();
+    const existingDraftPayload = await (
+      await authedPost({ action: "createDraftFromCandidate", candidateId: created.candidate.id })
+    ).json();
+    global.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          draft: cleanContractDraft({
+            name: "Unsafe Normalized Draft",
+            kind: "topic",
+            role: "source file candidateId: unsafe_normalized_candidate",
+          }),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+
+    const response = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: created.candidate.id,
+      draftId: existingDraftPayload.draft.id,
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.bnlDraft.status, "received");
+    assert.equal(payload.draftStored, false);
+    assert.equal(payload.storedDraft, null);
+    assert.equal(payload.existingDraft.id, existingDraftPayload.draft.id);
+    assert.ok(payload.bnlDraft.validation.warnings.some((warning) => /unsupported kind .*normalized/i.test(warning)));
+    assert.ok(payload.bnlDraft.validation.issues.some((issue) => /role/.test(issue)));
+    assert.equal(payload.drafts.length, 1);
+    assert.equal(payload.drafts[0].sourceFileDraftMetadata.generatedBy, "manual_placeholder");
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
+
+test("BNL draft validation flags placeholder-like public copy as owner-review warning", () => {
+  const packet = bnlDossierDraft.buildBnlDossierDraftRequestPacket({
+    candidate: {
+      id: "placeholder_copy_candidate",
+      name: "Placeholder Copy Candidate",
+      candidateType: "community_member",
+      source: "manual",
+      tier: "review_candidate",
+      score: 50,
+      whyNow: "Needs review.",
+      reason: "Needs review.",
+      evidenceSummary: "Public-safe fixture.",
+      status: "active_source_file",
+      createdAt: "2026-06-18T00:00:00.000Z",
+      updatedAt: "2026-06-18T00:00:00.000Z",
+    },
+    recommendations: [],
+  });
+  const validation = bnlDossierDraft.validateBnlDossierDraftResponse(
+    cleanContractDraft({
+      summary: "Clean public summary needed before operator approval.",
+      notes: "Recurring named topic: Bit's public mentions need operator review.",
+    }),
+    { packet },
+  );
+  assert.equal(validation.valid, true, JSON.stringify(validation.issues));
+  assert.ok(validation.warnings.some((warning) => /summary appears placeholder-like/i.test(warning)));
+  assert.ok(validation.warnings.some((warning) => /notes appears placeholder-like/i.test(warning)));
+});
+
+test("admin Source File UI copy distinguishes failed BNL output from existing drafts", () => {
+  const pageSource = source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+  assert.match(pageSource, /Existing draft, if any, was not updated/);
+  assert.match(pageSource, /draftStored && data\.storedDraft[\s\S]*BNL-authored Proposed Dossier draft stored for owner review/);
+});
+
 test("BNL draft request rejects a draft from another candidate without mutation", async () => {
   await resetWorkflowStore();
   process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";

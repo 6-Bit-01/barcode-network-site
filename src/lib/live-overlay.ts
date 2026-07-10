@@ -1,7 +1,7 @@
 import { Redis } from "@upstash/redis";
 import { getRadioQueueState, isWheelEligibleTrack, updateRadioTrack } from "./queue";
 import { getTrackArtworkUrl, getTrackDurationLabel } from "./queue-types";
-import { buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateIds, resolveLiveOverlayScene, safeLiveOverlayUrl, wheelFinalRotationForSegment } from "./live-overlay-resolver";
+import { buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateIds, resolveLiveOverlayScene, safeLiveOverlayUrl, serverStampYouTubeSync, wheelFinalRotationForSegment } from "./live-overlay-resolver";
 import { parseYouTubeVideoId } from "./track-duration";
 import type { QueueEntry, QueueSourceType } from "./queue-types";
 import type { LiveOverlayPlaybackState, LiveOverlayStateInput, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
@@ -307,7 +307,7 @@ function normalizePlaybackState(value: unknown): LiveOverlayPlaybackState {
   return value === "paused" || value === "stopped" || value === "playing" ? value : "stopped";
 }
 
-function normalizePlayerSync(input: unknown): LiveOverlayYouTubeSync | null {
+function normalizePlayerSync(input: unknown, receivedAt?: Date): LiveOverlayYouTubeSync | null {
   const raw = input as Partial<LiveOverlayYouTubeSync> | null;
   if (!raw || typeof raw !== "object" || raw.provider !== "youtube") return null;
   const videoId = typeof raw.videoId === "string" && parseYouTubeVideoId(`https://www.youtube.com/watch?v=${raw.videoId}`) ? raw.videoId : null;
@@ -319,7 +319,7 @@ function normalizePlayerSync(input: unknown): LiveOverlayYouTubeSync | null {
     trackId: cleanText(raw.trackId),
     playbackState: normalizePlaybackState(raw.playbackState),
     currentTimeSeconds,
-    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString(),
+    updatedAt: receivedAt ? receivedAt.toISOString() : typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString(),
     muted: true,
   };
 }
@@ -399,8 +399,8 @@ export async function getLiveOverlayPlayerSync(): Promise<LiveOverlayYouTubeSync
   }
 }
 
-export async function setLiveOverlayPlayerSync(sync: LiveOverlayYouTubeSync | null): Promise<LiveOverlayYouTubeSync | null> {
-  const normalized = normalizePlayerSync(sync);
+export async function setLiveOverlayPlayerSync(sync: LiveOverlayYouTubeSync | null, receivedAt = new Date()): Promise<LiveOverlayYouTubeSync | null> {
+  const normalized = serverStampYouTubeSync(sync, receivedAt);
   const redis = getRedis();
   if (redis) {
     if (normalized) await redis.set(PLAYER_SYNC_KEY, JSON.stringify(normalized));
@@ -639,7 +639,7 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
   } else if (payload.action === "clearAllOverrides") {
     next = { ...defaultLiveOverlayState(), updatedAt: now };
   } else if (payload.action === "updatePlayerSync") {
-    await setLiveOverlayPlayerSync(normalizePlayerSync(payload.sync));
+    await setLiveOverlayPlayerSync(normalizePlayerSync(payload.sync), new Date(now));
     return getLiveOverlayAdminSnapshot();
   } else if (payload.action === "clearPlayerSync") {
     await setLiveOverlayPlayerSync(null);

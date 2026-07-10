@@ -68,6 +68,16 @@ function showTrack(scene: ResolvedLiveOverlayScene): boolean {
   return Boolean((scene.mode === "now_playing" || scene.mode === "artist_card") && scene.track);
 }
 
+function youtubeErrorLabel(code?: number | null): string {
+  if (code === 2) return "INVALID VIDEO SIGNAL";
+  if (code === 5) return "HTML5 PLAYBACK UNAVAILABLE";
+  if (code === 100) return "VIDEO UNAVAILABLE";
+  if (code === 101 || code === 150) return "EMBED PLAYBACK DISABLED";
+  return code ? "YOUTUBE PLAYBACK ERROR" : "YOUTUBE PLAYER UNAVAILABLE";
+}
+
+const OVERLAY_POLL_DELAY_MS = 650;
+const YOUTUBE_OVERLAY_READY_TIMEOUT_MS = 9_000;
 const WHEEL_SPIN_START_DELAY_MS = 850;
 const WHEEL_AUDIO_FADE_OUT_MS = 10_000;
 const WHEEL_WINNER_CHEER_AUDIO_PATH = "/audio/wheel/WheelCheer.mp3";
@@ -490,61 +500,122 @@ function ensureYouTubeApi(): Promise<void> {
 function YouTubeOverlayPlayer({ sync }: { sync: LiveOverlayYouTubeSync }) {
   const playerRef = useRef<YTPlayer | null>(null);
   const readyRef = useRef(false);
+  const destroyedRef = useRef(false);
   const loadedVideoRef = useRef<string | null>(null);
   const latestSyncRef = useRef(sync);
+  const generationRef = useRef(0);
+  const readyTimerRef = useRef<number | null>(null);
+  const failedVideoRef = useRef<string | null>(null);
+  const [playerError, setPlayerError] = useState<{ code?: number; message: string } | null>(null);
   const containerId = "live-overlay-youtube-player";
+
+  const clearReadyTimer = useCallback(() => {
+    if (readyTimerRef.current) window.clearTimeout(readyTimerRef.current);
+    readyTimerRef.current = null;
+  }, []);
+
+  const markPlayerUnavailable = useCallback((message: string, code?: number) => {
+    clearReadyTimer();
+    readyRef.current = false;
+    failedVideoRef.current = latestSyncRef.current.videoId;
+    setPlayerError({ code, message });
+    try {
+      playerRef.current?.destroy?.();
+    } catch {
+      // Third-party iframe cleanup is best-effort.
+    }
+    playerRef.current = null;
+  }, [clearReadyTimer]);
 
   const applyYouTubeSync = useCallback((nextSync: LiveOverlayYouTubeSync) => {
     const player = playerRef.current;
-    if (!player || !readyRef.current) return;
-    const expected = expectedYouTubeTime(nextSync);
-    const isNewVideo = loadedVideoRef.current !== nextSync.videoId;
-    if (isNewVideo) {
-      if (nextSync.playbackState === "playing") player.loadVideoById({ videoId: nextSync.videoId, startSeconds: expected });
-      else player.cueVideoById({ videoId: nextSync.videoId, startSeconds: nextSync.currentTimeSeconds });
-      loadedVideoRef.current = nextSync.videoId;
-    } else {
-      const current = player.getCurrentTime();
-      if (Number.isFinite(current) && Math.abs(current - expected) > 1.75) player.seekTo(expected, true);
+    if (!player || !readyRef.current || destroyedRef.current || failedVideoRef.current === nextSync.videoId) return;
+    try {
+      const expected = expectedYouTubeTime(nextSync);
+      const isNewVideo = loadedVideoRef.current !== nextSync.videoId;
+      if (isNewVideo) {
+        if (nextSync.playbackState === "playing") player.loadVideoById({ videoId: nextSync.videoId, startSeconds: expected });
+        else player.cueVideoById({ videoId: nextSync.videoId, startSeconds: nextSync.currentTimeSeconds });
+        loadedVideoRef.current = nextSync.videoId;
+      } else {
+        const current = player.getCurrentTime();
+        if (Number.isFinite(current) && Math.abs(current - expected) > 1.75) player.seekTo(expected, true);
+      }
+      player.mute();
+      if (nextSync.playbackState === "playing") player.playVideo();
+      else if (nextSync.playbackState === "paused") player.pauseVideo();
+      else {
+        player.pauseVideo();
+        player.seekTo(nextSync.currentTimeSeconds, true);
+      }
+    } catch {
+      markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE — HOST USING EXTERNAL SOURCE");
     }
-    player.mute();
-    if (nextSync.playbackState === "playing") player.playVideo();
-    else if (nextSync.playbackState === "paused") player.pauseVideo();
-    else {
-      player.pauseVideo();
-      player.seekTo(nextSync.currentTimeSeconds, true);
-    }
-  }, []);
+  }, [markPlayerUnavailable]);
+
+  useEffect(() => {
+    if (failedVideoRef.current !== sync.videoId) setPlayerError(null);
+    latestSyncRef.current = sync;
+    window.setTimeout(() => applyYouTubeSync(sync), 0);
+  }, [applyYouTubeSync, sync]);
 
   useEffect(() => {
     let cancelled = false;
+    destroyedRef.current = false;
+    const generation = generationRef.current + 1;
+    generationRef.current = generation;
+    readyTimerRef.current = window.setTimeout(() => {
+      if (!cancelled && generationRef.current === generation) markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE — HOST USING EXTERNAL SOURCE");
+    }, YOUTUBE_OVERLAY_READY_TIMEOUT_MS);
     ensureYouTubeApi().then(() => {
-      if (cancelled || playerRef.current || !window.YT?.Player) return;
-      playerRef.current = new window.YT.Player(containerId, {
-        videoId: latestSyncRef.current.videoId,
-        playerVars: { autoplay: 0, controls: 0, modestbranding: 1, playsinline: 1, rel: 0, mute: 1 },
-        events: {
-          onReady: () => {
-            readyRef.current = true;
-            playerRef.current?.mute();
-            applyYouTubeSync(latestSyncRef.current);
+      if (cancelled || generationRef.current !== generation || playerRef.current || !window.YT?.Player || failedVideoRef.current === latestSyncRef.current.videoId) return;
+      try {
+        playerRef.current = new window.YT.Player(containerId, {
+          videoId: latestSyncRef.current.videoId,
+          playerVars: { autoplay: 0, controls: 0, modestbranding: 1, playsinline: 1, rel: 0, mute: 1 },
+          events: {
+            onReady: () => {
+              if (cancelled || generationRef.current !== generation) return;
+              readyRef.current = true;
+              clearReadyTimer();
+              try {
+                playerRef.current?.mute();
+              } catch {
+                markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE — HOST USING EXTERNAL SOURCE");
+                return;
+              }
+              applyYouTubeSync(latestSyncRef.current);
+            },
+            onError: (event: { data: number }) => {
+              if (cancelled || generationRef.current !== generation) return;
+              markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE — HOST USING EXTERNAL SOURCE", event.data);
+            },
           },
-        },
-      });
+        });
+      } catch {
+        markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE — HOST USING EXTERNAL SOURCE");
+      }
+    }).catch(() => {
+      if (!cancelled && generationRef.current === generation) markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE — HOST USING EXTERNAL SOURCE");
     });
     return () => {
       cancelled = true;
+      destroyedRef.current = true;
+      clearReadyTimer();
       readyRef.current = false;
       loadedVideoRef.current = null;
-      playerRef.current?.destroy?.();
+      try {
+        playerRef.current?.destroy?.();
+      } catch {
+        // Third-party iframe cleanup is best-effort.
+      }
       playerRef.current = null;
     };
-  }, [applyYouTubeSync, containerId]);
+  }, [applyYouTubeSync, clearReadyTimer, containerId, markPlayerUnavailable]);
 
-  useEffect(() => {
-    latestSyncRef.current = sync;
-    applyYouTubeSync(sync);
-  }, [applyYouTubeSync, sync]);
+  if (playerError) {
+    return <div className="live-overlay-youtube-fallback" role="status"><p>{playerError.message}</p><span>{playerError.code ? youtubeErrorLabel(playerError.code) : youtubeErrorLabel()}</span></div>;
+  }
 
   return <div className="live-overlay-youtube-player" id={containerId} aria-label="Muted YouTube overlay player" />;
 }
@@ -563,24 +634,38 @@ export function LiveOverlayReceiver() {
 
   useEffect(() => {
     let cancelled = false;
-    async function load() {
+    let timeoutId: number | null = null;
+    let requestSeq = 0;
+    let latestAppliedSeq = 0;
+    let activeController: AbortController | null = null;
+
+    async function poll() {
+      if (cancelled) return;
+      const seq = requestSeq + 1;
+      requestSeq = seq;
+      activeController = new AbortController();
       try {
-        const res = await fetch("/api/overlay/live", { cache: "no-store" });
+        const res = await fetch("/api/overlay/live", { cache: "no-store", signal: activeController.signal });
         if (!res.ok) throw new Error("Overlay state unavailable");
         const next = await res.json();
-        if (!cancelled) {
-          setScene(next.scene ?? next);
+        if (!cancelled && seq > latestAppliedSeq) {
+          latestAppliedSeq = seq;
+          setScene((current) => next.scene ?? next ?? current);
           setConnected(true);
         }
       } catch {
         if (!cancelled) setConnected(false);
+      } finally {
+        activeController = null;
+        if (!cancelled) timeoutId = window.setTimeout(poll, OVERLAY_POLL_DELAY_MS);
       }
     }
-    load();
-    const interval = window.setInterval(load, 650);
+
+    poll();
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      if (timeoutId) window.clearTimeout(timeoutId);
+      activeController?.abort();
     };
   }, []);
 

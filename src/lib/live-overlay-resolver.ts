@@ -194,6 +194,25 @@ export interface LiveOverlayYouTubeSync {
   currentTimeSeconds: number;
   updatedAt: string;
   muted: boolean;
+  clientUpdatedAt?: string;
+}
+
+
+export function serverStampYouTubeSync(input: unknown, receivedAt: Date = new Date()): LiveOverlayYouTubeSync | null {
+  const raw = input as Partial<LiveOverlayYouTubeSync> | null;
+  if (!raw || typeof raw !== "object" || raw.provider !== "youtube") return null;
+  const videoId = typeof raw.videoId === "string" ? raw.videoId : "";
+  if (!/^[a-zA-Z0-9_-]{6,}$/.test(videoId)) return null;
+  const currentTimeSeconds = typeof raw.currentTimeSeconds === "number" && Number.isFinite(raw.currentTimeSeconds) ? Math.max(0, raw.currentTimeSeconds) : 0;
+  return {
+    provider: "youtube",
+    videoId,
+    trackId: typeof raw.trackId === "string" ? raw.trackId.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim() || undefined : undefined,
+    playbackState: raw.playbackState === "playing" || raw.playbackState === "paused" || raw.playbackState === "stopped" ? raw.playbackState : "stopped",
+    currentTimeSeconds,
+    updatedAt: receivedAt.toISOString(),
+    muted: true,
+  };
 }
 
 export interface ResolveLiveOverlaySceneInput {

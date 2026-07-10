@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { buildWheelSegments, derangedWheelCandidateOrder, resolveLiveOverlayScene, WHEEL_RIGHT_POINTER_ANGLE_DEGREES, wheelFinalRotationForSegment, wheelFinalRotationForSlice, wheelSegmentAtPointer, wheelSliceIndexAtPointer, wheelUprightLabelRotationDegrees } from "../src/lib/live-overlay-resolver.ts";
+import { buildWheelSegments, derangedWheelCandidateOrder, resolveLiveOverlayScene, serverStampYouTubeSync, WHEEL_RIGHT_POINTER_ANGLE_DEGREES, wheelFinalRotationForSegment, wheelFinalRotationForSlice, wheelSegmentAtPointer, wheelSliceIndexAtPointer, wheelUprightLabelRotationDegrees } from "../src/lib/live-overlay-resolver.ts";
 
 const session = { sessionId: "s1", status: "open", queueOpen: true, wheelSpinsOwed: 0, sponsorBreakStatus: "not_due", broadcastPhase: "broadcast_active" };
 const youtubeTrack = { id: "yt1", submittedArtistName: "Artist Name", submittedSongTitle: "Video Track", sourceType: "youtube", sourceArtworkUrl: "https://img.youtube.com/vi/abcdefghijk/hqdefault.jpg", link: "https://youtube.com/watch?v=abcdefghijk", durationLabel: "3:30", youtubeVideoId: "abcdefghijk" };
@@ -64,6 +64,12 @@ const zeroReadTwo = resolveLiveOverlayScene({ currentSession: session, nowPlayin
 assert.equal(zeroReadOne, undefined, "first overlay read without sync has no generated zero-time sync");
 assert.equal(zeroReadTwo, undefined, "repeated overlay reads do not generate a new zero-time sync");
 
+const serverReceipt = new Date("2026-07-10T00:01:00.000Z");
+assert.equal(serverStampYouTubeSync({ ...freshSync, updatedAt: "2099-01-01T00:00:00.000Z" }, serverReceipt)?.updatedAt, serverReceipt.toISOString(), "server receipt time replaces future client sync timestamp");
+assert.equal(serverStampYouTubeSync({ ...freshSync, updatedAt: "2000-01-01T00:00:00.000Z" }, serverReceipt)?.updatedAt, serverReceipt.toISOString(), "server receipt time replaces old client sync timestamp");
+assert.equal(serverStampYouTubeSync({ ...freshSync, updatedAt: "not-a-date" }, serverReceipt)?.updatedAt, serverReceipt.toISOString(), "malformed client timestamp does not break server-stamped sync");
+assert.equal(serverStampYouTubeSync({ ...freshSync, updatedAt: undefined }, serverReceipt)?.updatedAt, serverReceipt.toISOString(), "missing client timestamp does not break server-stamped sync");
+
 const nonYoutubeNowPlaying = resolveLiveOverlayScene({ currentSession: session, nowPlaying: spotifyTrack });
 assert.equal(nonYoutubeNowPlaying.mode, "now_playing", "non-YouTube track resolves to artist card now playing");
 assert.equal(nonYoutubeNowPlaying.youtube, undefined, "non-YouTube now playing has no YouTube player metadata");
@@ -97,6 +103,8 @@ assert.equal(adminQueueControl.includes("useCallback(async (playbackState") && !
 assert.equal(adminQueueControl.includes("useMemo<OverlayYouTubeTrackInput>") && adminQueueControl.includes("[trackId, trackLink, sourceType, videoId]"), true, "admin YouTube sync input uses stable primitive dependencies for refreshed queue objects");
 assert.equal(adminQueueControl.includes("playbackStateRef.current === \"playing\" || playbackStateRef.current === \"paused\""), true, "admin YouTube heartbeat publishes while playing and paused");
 assert.equal(adminQueueControl.includes("Stopped/ended publishes immediately") && adminQueueControl.includes("falls back after staleness"), true, "stopped YouTube sync behavior is documented");
+assert.equal(adminQueueControl.includes("onError: (event: { data: number })") && adminQueueControl.includes("youtubeErrorLabel"), true, "admin YouTube player records controlled IFrame error diagnostics");
+assert.equal(adminQueueControl.includes("YOUTUBE_PLAYER_READY_TIMEOUT_MS") && adminQueueControl.includes("window.setTimeout"), true, "admin YouTube player has a readiness watchdog");
 assert.equal(adminQueueControl.includes("Open Wheel Panel") || adminQueueControl.includes("Open Wheel"), true, "top bar and wheel CTA expose an Open Wheel action when spins are owed");
 assert.equal(adminQueueControl.includes("Live Overlay — Wheel Owed"), true, "live overlay utility copy clearly signals owed wheel state");
 assert.equal(adminPanel.includes("Next Action:"), true, "wheel section includes a next action summary for hosts");
@@ -113,6 +121,11 @@ assert.equal(receiver.includes("applyYouTubeSync(latestSyncRef.current)"), true,
 assert.equal(receiver.includes("playerVars: { autoplay: 0") && receiver.includes("else player.cueVideoById") && receiver.includes("else if (nextSync.playbackState === \"paused\") player.pauseVideo()"), true, "YouTube receiver initializes paused/stopped sync without autoplay");
 assert.equal(receiver.includes("Math.abs(current - expected) > 1.75"), true, "YouTube receiver preserves drift tolerance before seeking");
 assert.equal(receiver.includes("player.loadVideoById({ videoId: nextSync.videoId") && receiver.includes("loadedVideoRef.current !== nextSync.videoId"), true, "YouTube receiver only reloads when sync video changes after initial load");
+assert.equal(receiver.includes("requestSeq") && receiver.includes("latestAppliedSeq") && receiver.includes("AbortController") && receiver.includes("window.setTimeout(poll"), true, "overlay polling is ordered, single-flight, and timeout-driven");
+assert.equal(receiver.includes("setScene((current) => next.scene ?? next ?? current)") && receiver.includes("setConnected(false)"), true, "overlay polling failure preserves the last known good scene while signaling hold");
+assert.equal(receiver.includes("onError: (event: { data: number })") && receiver.includes("live-overlay-youtube-fallback"), true, "overlay YouTube errors render a controlled track-card fallback");
+assert.equal(receiver.includes("YOUTUBE_OVERLAY_READY_TIMEOUT_MS") && receiver.includes("markPlayerUnavailable"), true, "overlay YouTube player has a readiness watchdog and controlled fallback");
+assert.equal(receiver.includes("generationRef") && receiver.includes("destroyedRef") && receiver.includes("try {") && receiver.includes("playerRef.current?.destroy?.()"), true, "overlay YouTube player guards operations and ignores obsolete callbacks");
 assert.equal(receiver.includes("Click to spin"), false, "public wheel overlay does not include stock click-to-spin text");
 assert.equal(receiver.includes("ctrl+enter"), false, "public wheel overlay does not include stock keyboard shortcut text");
 assert.equal(receiver.includes("live-overlay-wheel-roster"), false, "public wheel overlay does not render the previous bottom roster/control clutter");

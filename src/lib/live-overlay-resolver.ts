@@ -324,6 +324,10 @@ export function safeLiveOverlayUrl(value: unknown): string | undefined {
   }
 }
 
+function isSafeYouTubeVideoId(value: string | null | undefined): value is string {
+  return typeof value === "string" && /^[a-zA-Z0-9_-]{6,}$/.test(value);
+}
+
 export function youtubePresentationFromUrl(value: string | null | undefined): YouTubePresentation | undefined {
   if (!value) return undefined;
   try {
@@ -333,19 +337,19 @@ export function youtubePresentationFromUrl(value: string | null | undefined): Yo
     const pathname = parsed.pathname.replace(/\/+/g, "/");
     const segments = pathname.split("/").filter(Boolean);
 
-    if ((hostname === "youtube.com" || hostname === "www.youtube.com" || hostname === "m.youtube.com") && segments[0] === "shorts" && Boolean(segments[1])) {
+    if ((hostname === "youtube.com" || hostname === "www.youtube.com" || hostname === "m.youtube.com") && segments[0] === "shorts" && isSafeYouTubeVideoId(segments[1])) {
       return "short";
     }
 
-    if ((hostname === "youtube.com" || hostname === "www.youtube.com" || hostname === "m.youtube.com" || hostname === "music.youtube.com") && pathname === "/watch" && Boolean(parsed.searchParams.get("v"))) {
+    if ((hostname === "youtube.com" || hostname === "www.youtube.com" || hostname === "m.youtube.com" || hostname === "music.youtube.com") && pathname === "/watch" && isSafeYouTubeVideoId(parsed.searchParams.get("v"))) {
       return "standard";
     }
 
-    if (hostname === "youtu.be" && Boolean(segments[0])) {
+    if (hostname === "youtu.be" && isSafeYouTubeVideoId(segments[0])) {
       return "standard";
     }
 
-    if ((hostname === "youtube.com" || hostname === "www.youtube.com" || hostname === "m.youtube.com") && segments[0] === "embed" && Boolean(segments[1])) {
+    if ((hostname === "youtube.com" || hostname === "www.youtube.com" || hostname === "m.youtube.com") && segments[0] === "embed" && isSafeYouTubeVideoId(segments[1])) {
       return "standard";
     }
   } catch {

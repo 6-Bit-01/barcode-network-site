@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist_Mono } from "next/font/google";
+import type { CSSProperties } from "react";
 import "./globals.css";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
@@ -9,10 +9,9 @@ import { SystemTicker } from "@/components/SystemTicker";
 import { LiveBanner } from "@/components/LiveBanner";
 import { BNLNetworkRelayShell } from "@/components/BNLNetworkRelayShell";
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const fontVariables = {
+  "--font-geist-mono": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace",
+} as CSSProperties;
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://barcode-network.com"),
@@ -66,7 +65,8 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${geistMono.variable} antialiased scanlines logo-watermark`}
+        className="antialiased scanlines logo-watermark"
+        style={fontVariables}
       >
         <LiveStatusProvider>
           <DataStream />

@@ -7,17 +7,24 @@ const youtubeTrack = { id: "yt1", submittedArtistName: "Artist Name", submittedS
 const spotifyTrack = { id: "sp1", submittedArtistName: "Spotify Artist", submittedSongTitle: "Audio Track", sourceType: "spotify", sourceArtworkUrl: "https://i.scdn.co/image/example", link: "https://open.spotify.com/track/abc123", durationLabel: "2:45" };
 
 const youtubePresentationCases = [
-  ["https://youtube.com/shorts/shortid123", "short"],
-  ["https://www.youtube.com/shorts/shortid123", "short"],
-  ["https://m.youtube.com/shorts/shortid123", "short"],
-  ["https://youtube.com/shorts/shortid123?feature=share", "short"],
-  ["https://youtube.com/shorts/shortid123#clip", "short"],
-  ["https://youtube.com/watch?v=abcdefghijk", "standard"],
-  ["https://www.youtube.com/watch?v=abcdefghijk", "standard"],
-  ["https://m.youtube.com/watch?v=abcdefghijk", "standard"],
-  ["https://music.youtube.com/watch?v=abcdefghijk", "standard"],
-  ["https://youtu.be/abcdefghijk", "standard"],
-  ["https://youtube.com/embed/abcdefghijk", "standard"],
+  ["https://youtube.com/shorts/abc123", "short"],
+  ["https://www.youtube.com/shorts/abc123", "short"],
+  ["https://m.youtube.com/shorts/abc123", "short"],
+  ["https://youtube.com/shorts/abc123?feature=share", "short"],
+  ["https://youtube.com/shorts/abc123#clip", "short"],
+  ["https://youtube.com/shorts/x", undefined],
+  ["https://youtube.com/shorts/abc 123", undefined],
+  ["https://youtube.com/shorts/abc$123", undefined],
+  ["https://youtube.com/watch?v=abc123", "standard"],
+  ["https://www.youtube.com/watch?v=abc123", "standard"],
+  ["https://m.youtube.com/watch?v=abc123", "standard"],
+  ["https://music.youtube.com/watch?v=abc123", "standard"],
+  ["https://youtube.com/watch?v=x", undefined],
+  ["https://youtube.com/watch?v=abc 123", undefined],
+  ["https://youtu.be/abc123", "standard"],
+  ["https://youtu.be/x", undefined],
+  ["https://youtube.com/embed/abc123", "standard"],
+  ["https://youtube.com/embed/x", undefined],
   ["https://example.com/watch?v=abcdefghijk", undefined],
   ["not a url", undefined],
   ["https://youtube.com/channel/UCabc123", undefined],
@@ -69,9 +76,11 @@ const matchingFresh = resolveLiveOverlayScene({ currentSession: session, nowPlay
 assert.equal(matchingFresh.youtube?.videoId, "abcdefghijk", "matching fresh YouTube player sync is used");
 assert.equal(matchingFresh.youtube?.currentTimeSeconds, 12, "matching fresh sync preserves reported host time");
 assert.equal(matchingFresh.track?.youtubePresentation, "standard", "YouTube presentation classification does not affect sync matching");
-const shortsNowPlaying = resolveLiveOverlayScene({ currentSession: session, nowPlaying: { ...youtubeTrack, id: "yt-short", link: "https://youtube.com/shorts/shortid123", youtubeVideoId: "shortid123" } });
-assert.equal(shortsNowPlaying.track?.youtubePresentation, "short", "resolved Shorts track carries short YouTube presentation");
-const shortLinkNowPlaying = resolveLiveOverlayScene({ currentSession: session, nowPlaying: { ...youtubeTrack, id: "yt-be", link: "https://youtu.be/abcdefghijk" } });
+const shortsNowPlaying = resolveLiveOverlayScene({ currentSession: session, nowPlaying: { ...youtubeTrack, id: "yt-short", link: "https://youtube.com/shorts/abc123", youtubeVideoId: "abc123" } });
+assert.equal(shortsNowPlaying.track?.youtubePresentation, "short", "resolved valid Shorts track carries short YouTube presentation");
+const invalidShortsNowPlaying = resolveLiveOverlayScene({ currentSession: session, nowPlaying: { ...youtubeTrack, id: "yt-bad-short", link: "https://youtube.com/shorts/x", youtubeVideoId: "x" } });
+assert.equal(invalidShortsNowPlaying.track?.youtubePresentation, undefined, "invalid YouTube video URLs do not receive presentation classification");
+const shortLinkNowPlaying = resolveLiveOverlayScene({ currentSession: session, nowPlaying: { ...youtubeTrack, id: "yt-be", link: "https://youtu.be/abc123", youtubeVideoId: "abc123" } });
 assert.equal(shortLinkNowPlaying.track?.youtubePresentation, "standard", "resolved youtu.be track carries standard YouTube presentation");
 assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, now: freshNow }).youtube, undefined, "missing player sync does not fabricate playing from zero");
 assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, playerSync: { ...freshSync, videoId: "zzzzzzzzzzz" }, now: freshNow }).youtube, undefined, "mismatched video ID does not fabricate playing from zero");

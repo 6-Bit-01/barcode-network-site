@@ -1241,11 +1241,21 @@ export default function CandidateReviewPage() {
       [],
     [payload?.drafts, candidateId],
   );
-  const primaryDraft =
-    linkedDrafts.find((draft) => isDraftActive(draft)) ?? linkedDrafts[0];
   const newestBnlDraft = [...linkedDrafts]
     .filter((draft) => draft.sourceFileDraftMetadata?.generatedBy === "BNL")
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  const primaryDraft =
+    newestBnlDraft ??
+    [...linkedDrafts]
+      .filter((draft) => isDraftActive(draft))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ??
+    [...linkedDrafts].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  const bnlDraftRequestTarget = [...linkedDrafts]
+    .filter((draft) => draft.status === "draft" || draft.status === "owner_changes_requested")
+    .sort((a, b) => {
+      const bnlDelta = Number(b.sourceFileDraftMetadata?.generatedBy === "BNL") - Number(a.sourceFileDraftMetadata?.generatedBy === "BNL");
+      return bnlDelta || b.updatedAt.localeCompare(a.updatedAt);
+    })[0];
   const newestBnlProvenance = newestBnlDraft?.sourceFileDraftMetadata?.bnlDraftProvenance;
   const sourceNotes = [...(candidate?.sourceFileNotes ?? [])].sort(
     (a, b) =>
@@ -1601,7 +1611,7 @@ export default function CandidateReviewPage() {
       const data = await postWorkflow({
         action: "requestBnlDraftFromCandidate",
         candidateId,
-        ...(primaryDraft ? { draftId: primaryDraft.id } : {}),
+        ...(bnlDraftRequestTarget ? { draftId: bnlDraftRequestTarget.id } : {}),
       });
       const validationIssues = data.bnlDraft?.validation?.issues ?? [];
       const validationWarnings = data.bnlDraft?.validation?.warnings ?? [];
@@ -1613,7 +1623,7 @@ export default function CandidateReviewPage() {
             : data.bnlDraft?.status === "received" && !data.draftStored
               ? `BNL returned draft output, but validation failed and no draft was stored. Existing draft, if any, was not updated.${validationIssues.length ? ` Issues: ${validationIssues.join("; ")}` : ""}${validationWarnings.length ? ` Warnings: ${validationWarnings.join("; ")}` : ""}`
               : data.draftStored && data.storedDraft
-                ? `BNL-authored Proposed Dossier draft stored for owner review: ${data.storedDraft.fields.name}.${validationWarnings.length ? ` Warnings: ${validationWarnings.join("; ")}` : ""}`
+                ? `BNL-authored Proposed Dossier draft stored for owner review: ${data.storedDraft.fields.name} (${data.storedDraft.id}).${validationWarnings.length ? ` Warnings: ${validationWarnings.join("; ")}` : ""}`
                 : (data.bnlDraft?.message ?? "BNL draft request did not return a stored draft."),
       );
     } catch (err) {

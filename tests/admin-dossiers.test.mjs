@@ -4989,6 +4989,161 @@ test("valid BNL draft response reports a stored BNL-authored draft", async () =>
 
 
 
+
+test("BNL draft request creates authoritative BNL draft when old active draft is not editable", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  const publicBefore = JSON.stringify(databasePage.entries);
+  try {
+    const created = await (
+      await authedPost({ action: "createManualCandidate", input: manualCandidateInput })
+    ).json();
+    const staleDraftPayload = await (
+      await authedPost({ action: "createDraftFromCandidate", candidateId: created.candidate.id })
+    ).json();
+    const state = await store.getDossierWorkflowState();
+    await store.saveDossierWorkflowState({
+      ...state,
+      drafts: state.drafts.map((draft) =>
+        draft.id === staleDraftPayload.draft.id
+          ? {
+              ...draft,
+              status: "ready_for_owner_review",
+              fields: {
+                ...draft.fields,
+                summary: "Clean public summary needed before owner review.",
+                notes: "Public-safe facts:\n- Recurring named topic: Bit’s may inform public-safe wording only after owner and admin review.\n- Recurring named topic: Lardcode may inform public-safe wording only after owner and admin review.",
+              },
+            }
+          : draft,
+      ),
+    });
+    global.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          draft: cleanContractDraft({
+            name: "Crow BNL Authored Draft",
+            summary: "Crow is tracked for a concise BARCODE Network dossier based on public-safe context prepared for owner review.",
+            notes: "BNL-authored draft copy is ready for admin review without source-topic dump material.",
+          }),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+
+    const response = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: created.candidate.id,
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.draftStored, true);
+    assert.notEqual(payload.storedDraft.id, staleDraftPayload.draft.id);
+    assert.equal(payload.storedDraft.sourceFileDraftMetadata.generatedBy, "BNL");
+    assert.equal(payload.storedDraft.fields.name, "Crow BNL Authored Draft");
+    assert.doesNotMatch(JSON.stringify(payload.storedDraft.fields), /Clean public summary needed|Recurring named topic|Bit’s|Lardcode/);
+    assert.equal(payload.drafts.length, 2);
+    assert.ok(payload.drafts.some((draft) => draft.id === staleDraftPayload.draft.id && draft.status === "ready_for_owner_review"));
+    assert.equal(JSON.stringify(databasePage.entries), publicBefore);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
+
+test("candidate page opens newest BNL draft instead of stale active draft", () => {
+  const pageSource = source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+  assert.match(pageSource, /const newestBnlDraft = \[\.\.\.linkedDrafts\]/);
+  assert.match(pageSource, /const primaryDraft =\s*newestBnlDraft \?\?/);
+  assert.match(pageSource, /href=\{`\/admin\/dossiers\/drafts\/\$\{primaryDraft\.id\}`\}/);
+  assert.match(pageSource, /BNL-authored Proposed Dossier draft stored for owner review: \$\{data\.storedDraft\.fields\.name\} \(\$\{data\.storedDraft\.id\}\)/);
+});
+
+test("Update Draft From Source File preserves public fields when source topics would dump into copy", async () => {
+  await resetWorkflowStore();
+  const now = "2026-07-10T00:00:00.000Z";
+  const candidate = await store.createManualDossierCandidate({
+    ...manualCandidateInput,
+    name: "Source Topic Dump Guard",
+  });
+  const state = await store.getDossierWorkflowState();
+  const cleanDraft = {
+    id: "draft_topic_dump_guard",
+    candidateId: candidate.id,
+    status: "draft",
+    fields: cleanContractDraft({
+      name: "Source Topic Dump Guard",
+      summary: "Clean BNL-authored summary remains in place.",
+      notes: "Clean BNL-authored notes remain in place.",
+    }),
+    sourceFileDraftMetadata: {
+      sourceCandidateId: candidate.id,
+      sourceFileNoteIds: [],
+      recommendationIds: [],
+      assembledAt: now,
+      generatedBy: "BNL",
+      generatedAt: now,
+      validationIssues: [],
+      validationWarnings: [],
+      bnlDraftProvenance: {
+        sourceUsageSummary: "Used public-safe source ingredients only.",
+        missingInfoQuestions: [],
+        ownerReviewWarnings: [],
+        publicSafetyWarnings: [],
+        unsupportedClaimsRejected: [],
+        validationIssues: [],
+        validationWarnings: [],
+        generatedBy: "BNL",
+        generatedAt: now,
+        responseStatus: "received",
+        draftStored: true,
+        resolverSummary: [],
+      },
+      publicSafeDraft: true,
+      reviewOnlyEvidence: true,
+      autoConfirmedIdentityLinks: false,
+      publicPagesMutated: false,
+    },
+    createdAt: now,
+    updatedAt: now,
+  };
+  await store.saveDossierWorkflowState({
+    ...state,
+    candidates: state.candidates.map((item) =>
+      item.id === candidate.id
+        ? {
+            ...item,
+            sourceFileNotes: [
+              ...(item.sourceFileNotes ?? []),
+              {
+                id: "topic-dump-note",
+                candidateId: candidate.id,
+                type: "fact",
+                text: "Recurring named topic: Bit’s may inform public-safe wording only after owner and admin review. Lardcode may inform public-safe wording only after owner and admin review.",
+                source: "admin_manual",
+                publicSafe: true,
+                status: "active",
+                createdAt: now,
+                updatedAt: now,
+              },
+            ],
+            updatedAt: now,
+          }
+        : item,
+    ),
+    drafts: [cleanDraft],
+    updatedAt: now,
+  });
+
+  const updated = await store.updateDraftFromSourceFile(cleanDraft.id);
+  assert.equal(updated.fields.summary, "Clean BNL-authored summary remains in place.");
+  assert.equal(updated.fields.notes, "Clean BNL-authored notes remain in place.");
+  assert.doesNotMatch(JSON.stringify(updated.fields), /Recurring named topic|Bit’s|Lardcode|Clean public summary needed|Owner Review must approve/);
+  assert.ok(updated.sourceFileDraftMetadata.validationWarnings.some((warning) => /public draft fields were left unchanged/i.test(warning)));
+});
+
 test("BNL draft request normalizes kind placeholder through conservative site fallback", async () => {
   await resetWorkflowStore();
   process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
@@ -5142,13 +5297,12 @@ test("BNL draft validation flags placeholder-like public copy as owner-review wa
   const validation = bnlDossierDraft.validateBnlDossierDraftResponse(
     cleanContractDraft({
       summary: "Clean public summary needed before operator approval.",
-      notes: "Recurring named topic: Bit's public mentions need operator review.",
+      notes: "Public-safe context remains ready for operator review.",
     }),
     { packet },
   );
   assert.equal(validation.valid, true, JSON.stringify(validation.issues));
   assert.ok(validation.warnings.some((warning) => /summary appears placeholder-like/i.test(warning)));
-  assert.ok(validation.warnings.some((warning) => /notes appears placeholder-like/i.test(warning)));
 });
 
 test("admin Source File UI copy distinguishes failed BNL output from existing drafts", () => {
@@ -12699,7 +12853,8 @@ test("Draft from Source File creates and updates public-safe Proposed Dossier dr
   });
   assert.equal(updateResponse.status, 200);
   const updatePayload = await updateResponse.json();
-  assert.match(updatePayload.draft.fields.notes, /New public-safe fact added after draft creation/);
+  assert.doesNotMatch(updatePayload.draft.fields.notes, /New public-safe fact added after draft creation/);
+  assert.ok(updatePayload.draft.sourceFileDraftMetadata.validationWarnings.some((warning) => /public draft fields were left unchanged/i.test(warning)));
   assert.equal(updatePayload.draft.status, "draft");
   assert.equal(updatePayload.draft.sourceFileDraftMetadata.publicPagesMutated, false);
 

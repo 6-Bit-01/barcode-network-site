@@ -6716,6 +6716,33 @@ function assemblePublicSafeDraftFromSourceFile(input: {
   };
 }
 
+const SOURCE_FILE_PUBLIC_FIELD_DUMP_REGEX =
+  /\b(?:Clean public summary needed before owner review|Clean role needed before owner review|Recurring named topic|Bit’s may inform public-safe wording|Bit's may inform public-safe wording|Lardcode may inform public-safe wording|Admin-only evidence exists|Owner Review must approve this Proposed Dossier)\b/i;
+
+function sourceFileDraftPublicFieldsContainDump(fields: DossierDraft["fields"]): boolean {
+  return [
+    fields.role,
+    fields.summary,
+    fields.notes,
+    ...(fields.tags ?? []),
+    ...(fields.proposedTags ?? []),
+  ].some((value) => typeof value === "string" && SOURCE_FILE_PUBLIC_FIELD_DUMP_REGEX.test(value));
+}
+
+function preservePublicFieldsFromDraft(
+  fields: DossierDraft["fields"],
+  previous: DossierDraft["fields"],
+): DossierDraft["fields"] {
+  return normalizeDraftFields({
+    ...fields,
+    role: previous.role,
+    summary: previous.summary,
+    notes: previous.notes,
+    tags: previous.tags,
+    proposedTags: previous.proposedTags,
+  });
+}
+
 export async function createDraftFromCandidate(
   candidateId: string,
 ): Promise<DossierDraft | null> {
@@ -6790,14 +6817,53 @@ export async function updateDraftFromSourceFile(
       now,
     });
 
+    const publicFieldDumpDetected = sourceFileDraftPublicFieldsContainDump(
+      assembledDraft.fields,
+    );
+    const baseMetadata = assembledDraft.sourceFileDraftMetadata as NonNullable<DossierDraft["sourceFileDraftMetadata"]>;
+    const dumpWarning =
+      "Source File update contained topic/review warning dump text; public draft fields were left unchanged.";
+    const nextMetadata: DossierDraft["sourceFileDraftMetadata"] = publicFieldDumpDetected
+      ? {
+          ...baseMetadata,
+          validationWarnings: [
+            ...(baseMetadata.validationWarnings ?? []),
+            dumpWarning,
+          ],
+          bnlDraftProvenance: {
+            sourceUsageSummary: baseMetadata.bnlDraftProvenance?.sourceUsageSummary,
+            missingInfoQuestions: baseMetadata.bnlDraftProvenance?.missingInfoQuestions ?? [],
+            ownerReviewWarnings: baseMetadata.bnlDraftProvenance?.ownerReviewWarnings ?? [],
+            publicSafetyWarnings: baseMetadata.bnlDraftProvenance?.publicSafetyWarnings ?? [],
+            unsupportedClaimsRejected: baseMetadata.bnlDraftProvenance?.unsupportedClaimsRejected ?? [],
+            validationIssues: baseMetadata.bnlDraftProvenance?.validationIssues ?? [],
+            validationWarnings: [
+              ...(baseMetadata.bnlDraftProvenance?.validationWarnings ?? []),
+              dumpWarning,
+            ],
+            generatedBy: baseMetadata.bnlDraftProvenance?.generatedBy ?? "manual_placeholder",
+            generatedAt: baseMetadata.bnlDraftProvenance?.generatedAt,
+            responseStatus: baseMetadata.bnlDraftProvenance?.responseStatus,
+            draftStored: baseMetadata.bnlDraftProvenance?.draftStored,
+            resolverSummary: baseMetadata.bnlDraftProvenance?.resolverSummary ?? [],
+          },
+        }
+      : baseMetadata;
+
     const drafts = currentState.drafts.map((item) => {
       if (item.id !== draftId) return item;
-      updatedDraft = {
+      const fields = publicFieldDumpDetected
+        ? preservePublicFieldsFromDraft(assembledDraft.fields, item.fields)
+        : assembledDraft.fields;
+      const nextDraft: DossierDraft = {
         ...item,
         ...assembledDraft,
+        fields,
+        sourceFileDraftMetadata: nextMetadata,
         updatedAt: now,
       };
-      return updatedDraft;
+      updatedDraft = nextDraft;
+      return nextDraft;
     });
 
     return {

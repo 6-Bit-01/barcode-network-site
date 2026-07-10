@@ -12435,6 +12435,8 @@ test("Population Review Queue actions update internal workflow records without p
   assert.equal(attachPayload.recommendation.status, "attached_to_source_file");
   assert.equal(attachPayload.candidates.find((item) => item.id === "existing-source-file-pop").sourceFileNotes.length, 1);
 
+  const reconcileResponse = await authedPost({ action: "reconcile_population_signals" });
+  assert.equal(reconcileResponse.status, 200);
   const filedState = await store.getDossierWorkflowState();
   assert.equal(filedState.recommendations.find((item) => item.id === "pop-rec-nonsubject")?.status, "not_population_subject");
   assert.equal(filedState.candidates.length, 1);
@@ -12643,6 +12645,8 @@ test("Population Review Queue create and attach actions route to existing intern
   assert.equal(workspacePayload.recommendation.status, "attached_to_existing_dossier_update");
   assert.equal(workspacePayload.candidate.status, "existing_dossier_update");
 
+  const reconcileBeforeFilingResponse = await authedPost({ action: "reconcile_population_signals" });
+  assert.equal(reconcileBeforeFilingResponse.status, 200);
   const filingResponse = await authedGet();
   assert.equal(filingResponse.status, 200);
   const filingPayload = await filingResponse.json();
@@ -12762,6 +12766,109 @@ test("reconcile_population_signals returns safe counts and files Mind Fanatic pu
   );
   assert.equal(mindVisible.length, 0);
   assert.equal(state.candidates.length, 1);
+});
+
+test("admin dossier read/open/draft payloads do not reconcile population implicitly", async () => {
+  await resetWorkflowStore();
+  const routeSource = source("src/app/api/admin/dossiers/route.ts");
+  assert.doesNotMatch(routeSource, /system:auto_filing/);
+  assert.doesNotMatch(routeSource, /populationReconcile \?\? await reconcilePopulationSignals/);
+  assert.match(routeSource, /if \(action === "reconcile_population_signals"\)/);
+  assert.match(routeSource, /logAdminDossierRouteTiming/);
+
+  const now = new Date().toISOString();
+  const created = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Read Only Source File" },
+    })
+  ).json();
+  await authedPost({
+    action: "promoteCandidateToSourceFile",
+    candidateId: created.candidate.id,
+  });
+  const state = await store.getDossierWorkflowState();
+  await store.saveDossierWorkflowState({
+    ...state,
+    recommendations: [
+      ...state.recommendations,
+      {
+        id: "implicit-reconcile-guard",
+        type: "population_recommendation",
+        populationRecommendation: true,
+        createdBy: "bnl_population_recommender",
+        ingestSource: "bnl_population_recommender",
+        subjectName: "Mind Fanatic [Barcode_Network]",
+        status: "new",
+        reason: "Existing public dossier signal should not file during read/open/draft payloads.",
+        adminSummary: "Public-safe summary only.",
+        recommendedLane: "needs_population_review",
+        recommendedAction: "admin_review_required",
+        sourceLanes: ["broadcast_memory"],
+        rawEvidenceRefs: ["private:implicit:1"],
+        rawEvidenceRefCount: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    updatedAt: now,
+  });
+
+  const getPayload = await (await authedGet()).json();
+  assert.equal(getPayload.populationReconcile, undefined);
+  let current = await store.getDossierWorkflowState();
+  assert.equal(current.recommendations.find((item) => item.id === "implicit-reconcile-guard").status, "new");
+
+  const opened = await (
+    await authedPost({
+      action: "recordSourceFileOpen",
+      candidateId: created.candidate.id,
+    })
+  ).json();
+  assert.equal(opened.populationReconcile, undefined);
+  current = await store.getDossierWorkflowState();
+  assert.equal(current.recommendations.find((item) => item.id === "implicit-reconcile-guard").status, "new");
+
+  const refreshResponse = await authedPost({
+    action: "requestSourceFileRefresh",
+    candidateId: created.candidate.id,
+    reason: "Read-only population reconciliation guard.",
+  });
+  assert.equal(refreshResponse.status, 200);
+  const refreshPayload = await refreshResponse.json();
+  assert.equal(refreshPayload.populationReconcile, undefined);
+  current = await store.getDossierWorkflowState();
+  assert.equal(current.recommendations.find((item) => item.id === "implicit-reconcile-guard").status, "new");
+
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  try {
+    global.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          draft: cleanContractDraft({
+            name: "Read Only Source File BNL Draft",
+            summary: "Population reconciliation is not required to store clean BNL draft prose.",
+          }),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    const draftResponse = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: created.candidate.id,
+    });
+    assert.equal(draftResponse.status, 200);
+    const draftPayload = await draftResponse.json();
+    assert.equal(draftPayload.draftStored, true);
+    assert.equal(draftPayload.populationReconcile, undefined);
+    current = await store.getDossierWorkflowState();
+    assert.equal(current.recommendations.find((item) => item.id === "implicit-reconcile-guard").status, "new");
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
 });
 
 test("population context exposes reconcile destinations and diagnostics", async () => {

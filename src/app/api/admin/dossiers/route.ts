@@ -406,15 +406,28 @@ async function sourceFileWorkflowContextForRefresh(candidateId?: string) {
 async function workflowPayload(
   state?: DossierWorkflowState,
   populationReconcile?: PopulationReconcileSummary,
+  timing?: {
+    getDossierWorkflowStateMs?: number;
+    workflowPayloadMs?: number;
+    refreshNowMs?: number;
+  },
 ): Promise<DossierWorkflowResponse> {
+  const payloadStartedAt = Date.now();
   const tagRegistry = buildDossierTagRegistry(databasePage.entries);
-  const autoPopulationReconcile = state ? populationReconcile : populationReconcile ?? await reconcilePopulationSignals({ actionBy: "system:auto_filing" });
-  const workflowState = state ?? (await getDossierWorkflowState());
+  let workflowState = state;
+  if (!workflowState) {
+    const stateStartedAt = Date.now();
+    workflowState = await getDossierWorkflowState();
+    if (timing) timing.getDossierWorkflowStateMs = Date.now() - stateStartedAt;
+  } else if (timing) {
+    timing.getDossierWorkflowStateMs = 0;
+  }
 
   const waitingForOwnerReview = workflowState.drafts.filter(
     (draft) => draft.status === "ready_for_owner_review",
   );
 
+  if (timing) timing.workflowPayloadMs = Date.now() - payloadStartedAt;
   return {
     candidates: workflowState.candidates,
     drafts: workflowState.drafts,
@@ -473,8 +486,34 @@ async function workflowPayload(
       id: entry.id,
       name: entry.name,
     })),
-    populationReconcile: autoPopulationReconcile,
+    populationReconcile,
   };
+}
+
+function logAdminDossierRouteTiming(input: {
+  action: string;
+  startedAt: number;
+  timing: {
+    getDossierWorkflowStateMs?: number;
+    workflowPayloadMs?: number;
+    refreshNowMs?: number;
+  };
+  payload: Pick<
+    DossierWorkflowResponse,
+    "candidates" | "drafts" | "recommendations" | "sourceFileRefreshRequests"
+  >;
+}) {
+  console.info("admin_dossiers_route_timing", {
+    action: input.action,
+    totalMs: Date.now() - input.startedAt,
+    getDossierWorkflowStateMs: input.timing.getDossierWorkflowStateMs ?? 0,
+    workflowPayloadMs: input.timing.workflowPayloadMs ?? 0,
+    refreshNowMs: input.timing.refreshNowMs ?? 0,
+    candidateCount: input.payload.candidates.length,
+    draftCount: input.payload.drafts.length,
+    recommendationCount: input.payload.recommendations.length,
+    sourceFileRefreshRequestCount: input.payload.sourceFileRefreshRequests.length,
+  });
 }
 
 export async function GET(req: Request) {
@@ -482,7 +521,16 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  return NextResponse.json(await workflowPayload());
+  const startedAt = Date.now();
+  const timing = {};
+  const payload = await workflowPayload(undefined, undefined, timing);
+  logAdminDossierRouteTiming({
+    action: "GET",
+    startedAt,
+    timing,
+    payload,
+  });
+  return NextResponse.json(payload);
 }
 
 export async function POST(req: Request) {
@@ -573,6 +621,8 @@ export async function POST(req: Request) {
     }
 
     if (action === "recordSourceFileOpen") {
+      const startedAt = Date.now();
+      const timing = { refreshNowMs: 0 };
       const candidateId = candidateIdFromBody(body);
       if (!candidateId) {
         return NextResponse.json(
@@ -603,7 +653,13 @@ export async function POST(req: Request) {
             failureReason: refresh.decision.reason,
             callbackBaseSent: false,
           };
-      const payload = await workflowPayload();
+      const payload = await workflowPayload(undefined, undefined, timing);
+      logAdminDossierRouteTiming({
+        action,
+        startedAt,
+        timing,
+        payload,
+      });
       return NextResponse.json({
         ok: true,
         action,

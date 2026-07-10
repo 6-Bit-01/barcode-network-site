@@ -1560,7 +1560,7 @@ test("Source File open refresh workflow dedupes, exposes bot polling, and comple
   const afterRecentCompletion = await (await authedPost({ action: "recordSourceFileOpen", candidateId })).json();
   assert.equal(afterRecentCompletion.sourceFileRefreshRequests.length, 2);
   assert.equal(afterRecentCompletion.refresh.request.status, "pending");
-  assert.equal(afterRecentCompletion.immediateRefresh.status, "unavailable");
+  assert.equal(afterRecentCompletion.immediateRefresh.status, "pending");
 
   const manualAgain = await (await authedPost({
     action: "requestSourceFileRefresh",
@@ -1589,7 +1589,7 @@ test("Source File open refresh workflow dedupes, exposes bot polling, and comple
 
 
 
-test("Source File open and retry call BNL refresh-now server-side with safe status results", async () => {
+test("Source File open queues background refresh while manual retry calls BNL refresh-now", async () => {
   await resetWorkflowStore();
   process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL = "https://bnl.example.test/internal/source-files/refresh-now";
   process.env.BNL_SOURCE_FILE_REFRESH_TOKEN = "test-refresh-token";
@@ -1603,15 +1603,12 @@ test("Source File open and retry call BNL refresh-now server-side with safe stat
     assert.equal(String(url), process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL);
     assert.equal(options.headers["X-BNL-REFRESH-TOKEN"], "test-refresh-token");
     const body = JSON.parse(options.body);
-    assert.equal(body.source, calls.length === 1 ? "admin_open_source_file" : "admin_manual");
+    assert.equal(body.source, "admin_manual");
     assert.equal(body.siteCallbackBaseUrl, "https://example.test");
     assert.equal(body.requestingSiteOrigin, "https://example.test");
     assert.equal(body.sourceFileArchiveCallbackBaseUrl, "https://example.test");
     assert.ok(body.requestId);
     assert.equal(body.candidateId, body.candidateId);
-    if (calls.length === 1) {
-      return Response.json({ ok: true, status: "success", recommendationId: "fresh-rec-id" });
-    }
     return Response.json({ ok: false, status: "failed", failureReason: "BNL fixture failure" }, { status: 500 });
   };
 
@@ -1630,13 +1627,13 @@ test("Source File open and retry call BNL refresh-now server-side with safe stat
     await authedPost({ action: "promoteCandidateToSourceFile", candidateId });
 
     const opened = await (await authedPost({ action: "recordSourceFileOpen", candidateId })).json();
-    assert.equal(opened.immediateRefresh.ok, true);
-    assert.equal(opened.immediateRefresh.status, "success");
-    assert.equal(opened.immediateRefresh.recommendationId, "fresh-rec-id");
-    assert.equal(opened.immediateRefresh.callbackBaseSent, true);
+    assert.equal(opened.immediateRefresh.ok, false);
+    assert.equal(opened.immediateRefresh.status, "pending");
+    assert.match(opened.immediateRefresh.failureReason, /latest-known Source File data is shown/i);
+    assert.equal(opened.immediateRefresh.callbackBaseSent, false);
     assert.equal(opened.immediateRefresh.callbackBaseHost, "example.test");
-    assert.equal(opened.sourceFileRefreshRequests[0].status, "completed");
-    assert.equal(opened.sourceFileRefreshRequests[0].completedByRecommendationId, "fresh-rec-id");
+    assert.equal(opened.sourceFileRefreshRequests[0].status, "pending");
+    assert.equal(calls.length, 0);
 
     const retry = await (await authedPost({
       action: "requestSourceFileRefresh",
@@ -1648,7 +1645,7 @@ test("Source File open and retry call BNL refresh-now server-side with safe stat
     assert.equal(retry.immediateRefresh.failureReason, "BNL fixture failure");
     assert.equal(retry.immediateRefresh.callbackBaseSent, true);
     assert.equal(retry.immediateRefresh.callbackBaseHost, "example.test");
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 1);
   } finally {
     global.fetch = originalFetch;
     delete process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL;
@@ -1698,6 +1695,15 @@ test("Source File refresh does not forward untrusted callback origins", async ()
 
     assert.equal(opened.immediateRefresh.callbackBaseSent, false);
     assert.equal(opened.immediateRefresh.callbackBaseHost, undefined);
+
+    const manual = await (await authedPost({
+      action: "requestSourceFileRefresh",
+      candidateId,
+      reason: "Manual untrusted origin callback safety check.",
+      siteCallbackBaseUrl: "https://evil.example.test",
+    }, { url: "https://evil.example.test/api/admin/dossiers" })).json();
+    assert.equal(manual.immediateRefresh.callbackBaseSent, false);
+    assert.equal(manual.immediateRefresh.callbackBaseHost, undefined);
     assert.equal(calls.length, 1);
     assert.equal(calls[0].body.siteCallbackBaseUrl, undefined);
     assert.equal(calls[0].body.requestingSiteOrigin, undefined);
@@ -2053,20 +2059,15 @@ test("Source File refresh requests case-report backfill and refuses false comple
   try {
     const opened = await (await authedPost({ action: "recordSourceFileOpen", candidateId })).json();
     assert.equal(opened.immediateRefresh.ok, false);
-    assert.equal(opened.immediateRefresh.status, "failed");
-    assert.equal(opened.immediateRefresh.failureReason, "case_report_missing_after_refresh");
-    assert.equal(opened.sourceFileRefreshRequests[0].status, "failed");
+    assert.equal(opened.immediateRefresh.status, "pending");
+    assert.match(opened.immediateRefresh.failureReason, /latest-known Source File data is shown/i);
+    assert.equal(opened.sourceFileRefreshRequests[0].status, "pending");
     assert.equal(opened.sourceFileRefreshRequests[0].completedAt, undefined);
     assert.equal(opened.sourceFileRefreshRequests[0].reason, "case_report_missing");
     assert.equal(opened.sourceFileRefreshRequests[0].caseReportMissing, true);
     assert.equal(opened.sourceFileRefreshRequests[0].requiresCaseReportBackfill, true);
-    assert.equal(calls[0].body.reason, "case_report_missing");
-    assert.equal(calls[0].body.caseReportMissing, true);
-    assert.equal(calls[0].body.requiresCaseReportBackfill, true);
-    assert.equal(calls[0].body.siteCallbackBaseUrl, "https://example.test");
-    assert.equal(calls[0].body.requestingSiteOrigin, "https://example.test");
-    assert.equal(calls[0].body.sourceFileArchiveCallbackBaseUrl, "https://example.test");
-    assert.equal(opened.immediateRefresh.callbackBaseSent, true);
+    assert.equal(calls.length, 0);
+    assert.equal(opened.immediateRefresh.callbackBaseSent, false);
     assert.equal(opened.immediateRefresh.callbackBaseHost, "example.test");
 
     const manual = await (await authedPost({
@@ -2079,12 +2080,12 @@ test("Source File refresh requests case-report backfill and refuses false comple
     assert.equal(manual.sourceFileRefreshRequests[0].status, "failed");
     assert.equal(manual.sourceFileRefreshRequests[0].reason, "case_report_missing");
     assert.equal(manual.sourceFileRefreshRequests[0].failureReason, "case_report_missing_after_refresh");
-    assert.equal(calls[1].body.reason, "case_report_missing");
-    assert.equal(calls[1].body.caseReportMissing, true);
-    assert.equal(calls[1].body.requiresCaseReportBackfill, true);
-    assert.equal(calls[1].body.siteCallbackBaseUrl, "https://example.test");
-    assert.equal(calls[1].body.requestingSiteOrigin, "https://example.test");
-    assert.equal(calls[1].body.sourceFileArchiveCallbackBaseUrl, "https://example.test");
+    assert.equal(calls[0].body.reason, "case_report_missing");
+    assert.equal(calls[0].body.caseReportMissing, true);
+    assert.equal(calls[0].body.requiresCaseReportBackfill, true);
+    assert.equal(calls[0].body.siteCallbackBaseUrl, "https://example.test");
+    assert.equal(calls[0].body.requestingSiteOrigin, "https://example.test");
+    assert.equal(calls[0].body.sourceFileArchiveCallbackBaseUrl, "https://example.test");
     assert.equal(manual.immediateRefresh.callbackBaseSent, true);
     assert.equal(manual.immediateRefresh.callbackBaseHost, "example.test");
     const afterRefreshState = await store.getDossierWorkflowState();
@@ -2311,8 +2312,10 @@ test("Source File immediate refresh timeout/unavailable and stale open requests 
       }],
     });
 
+    const start = Date.now();
     const openedSecond = await (await authedPost({ action: "recordSourceFileOpen", candidateId: second.candidate.id })).json();
-    assert.equal(openedSecond.immediateRefresh.status, "timeout");
+    assert.ok(Date.now() - start < 1000);
+    assert.equal(openedSecond.immediateRefresh.status, "pending");
     assert.equal(openedSecond.sourceFileRefreshRequests.some((request) => request.candidateId === second.candidate.id), true);
     const oldRequest = openedSecond.sourceFileRefreshRequests.find((request) => request.id === "old-claimed-for-other-candidate");
     assert.equal(oldRequest.status, "failed");
@@ -2325,7 +2328,7 @@ test("Source File immediate refresh timeout/unavailable and stale open requests 
   }
 });
 
-test("fresh Source File open still asks BNL immediately and public read model stays read-only", async () => {
+test("fresh Source File open queues background refresh and public read model stays read-only", async () => {
   await resetWorkflowStore();
   process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
 
@@ -2368,7 +2371,7 @@ test("fresh Source File open still asks BNL immediately and public read model st
 
   const opened = await (await authedPost({ action: "recordSourceFileOpen", candidateId: "fresh-source-candidate" })).json();
   assert.equal(opened.refresh.decision.needed, false);
-  assert.equal(opened.immediateRefresh.status, "unavailable");
+  assert.equal(opened.immediateRefresh.status, "pending");
   assert.equal(opened.sourceFileRefreshRequests.length, 1);
   assert.equal(opened.sourceFileRefreshRequests[0].requestSource, "opened_source_file");
 
@@ -2562,12 +2565,15 @@ test("admin Source File page uses immediate refresh status/retry UI and preserve
   assert.match(page, /completedByRecommendationId/);
   assert.match(page, /setRefreshPollingTarget\(\{ candidateId, requestId: refresh\.request\.id \}\)/);
   assert.match(page, /UPDATING SOURCE FILE/);
+  assert.match(page, /BNL REFRESH REQUESTED/);
+  assert.match(page, /BNL REFRESH RUNNING/);
+  assert.match(page, /LATEST-KNOWN DATA SHOWN/);
+  assert.match(page, /Latest-known Source File data is shown while BNL completes the background refresh/);
   assert.match(page, /FILE UPDATED/);
   assert.match(page, /FILE NOT UPDATED/);
   assert.match(page, /RETRYING UPDATE/);
   assert.match(page, /Last-known BNL data is not current for this page open/);
   assert.doesNotMatch(page, /Diagnostics: request/);
-  assert.doesNotMatch(page, /Refresh Requested/);
   assert.doesNotMatch(page, /Waiting for BNL/);
 
   for (const label of [
@@ -2964,6 +2970,9 @@ test("Source File page renders organized BNL Source File workspace with collapse
     "Next recommended action",
     "Diagnostics — collapsed by default",
     "UPDATING SOURCE FILE",
+    "BNL REFRESH REQUESTED",
+    "BNL REFRESH RUNNING",
+    "LATEST-KNOWN DATA SHOWN",
     "FILE UPDATED",
     "FILE NOT UPDATED",
     "RETRYING UPDATE",
@@ -4979,6 +4988,52 @@ test("valid BNL draft response reports a stored BNL-authored draft", async () =>
     assert.equal(payload.storedDraft.sourceFileDraftMetadata.generatedBy, "BNL");
     assert.equal(payload.storedDraft.sourceFileDraftMetadata.publicPagesMutated, false);
     assert.equal(payload.drafts.length, 1);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
+
+test("BNL draft request still stores while Source File refresh is pending", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  try {
+    const created = await (
+      await authedPost({ action: "createManualCandidate", input: manualCandidateInput })
+    ).json();
+    await authedPost({ action: "promoteCandidateToSourceFile", candidateId: created.candidate.id });
+    const opened = await (
+      await authedPost({ action: "recordSourceFileOpen", candidateId: created.candidate.id })
+    ).json();
+    assert.equal(opened.immediateRefresh.status, "pending");
+    assert.equal(opened.sourceFileRefreshRequests.some((request) => request.status === "pending"), true);
+
+    global.fetch = async (url) => {
+      assert.equal(String(url), process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL);
+      return new Response(
+        JSON.stringify({
+          draft: cleanContractDraft({
+            name: "Pending Refresh BNL Draft",
+            summary: "Pending refresh does not block clean BNL-authored dossier prose.",
+          }),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+
+    const response = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: created.candidate.id,
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.draftStored, true);
+    assert.equal(payload.storedDraft.fields.name, "Pending Refresh BNL Draft");
+    assert.equal(payload.storedDraft.sourceFileDraftMetadata.generatedBy, "BNL");
+    assert.equal(payload.sourceFileRefreshRequests.some((request) => request.status === "pending"), true);
   } finally {
     global.fetch = originalFetch;
     delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;

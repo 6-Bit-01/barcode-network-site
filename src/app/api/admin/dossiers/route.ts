@@ -586,39 +586,23 @@ export async function POST(req: Request) {
         candidateId,
         requestedBy: "admin_open_source_file",
       });
-      const immediateRefreshRaw = refresh.request
-        ? await refreshBnlSourceFileNow({
-            request: refresh.request,
-            source: "admin_open_source_file",
-            requestingSiteOrigin,
-            sourceFileWorkflowContext: await sourceFileWorkflowContextForRefresh(refresh.request.candidateId),
-          })
+      const immediateRefresh = refresh.request
+        ? {
+            ok: false,
+            status: "pending" as const,
+            failureReason:
+              "BNL refresh requested; latest-known Source File data is shown while refresh completes in the background.",
+            callbackBaseSent: false,
+            callbackBaseHost: requestingSiteOrigin
+              ? new URL(requestingSiteOrigin).host
+              : undefined,
+          }
         : {
             ok: false,
             status: "skipped" as const,
             failureReason: refresh.decision.reason,
             callbackBaseSent: false,
           };
-      const immediateRefresh = refresh.request
-        ? await verifySourceFileCaseReportAfterImmediateRefresh({
-            request: refresh.request,
-            immediateRefresh: immediateRefreshRaw,
-          })
-        : immediateRefreshRaw;
-      if (refresh.request && immediateRefresh.ok) {
-        await updateDossierSourceFileRefreshRequestStatus({
-          requestId: refresh.request.id,
-          status: "completed",
-          completedByRecommendationId: immediateRefresh.recommendationId,
-        });
-      } else if (refresh.request && immediateRefresh.status !== "unavailable") {
-        await updateDossierSourceFileRefreshRequestStatus({
-          requestId: refresh.request.id,
-          status:
-            immediateRefresh.status === "skipped" ? "skipped" : "failed",
-          failureReason: immediateRefresh.failureReason,
-        });
-      }
       const payload = await workflowPayload();
       return NextResponse.json({
         ok: true,

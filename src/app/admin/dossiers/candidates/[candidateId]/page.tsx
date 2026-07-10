@@ -52,7 +52,7 @@ type WorkflowPayload = {
 
 type ImmediateRefreshResult = {
   ok: boolean;
-  status: "success" | "failed" | "skipped" | "timeout" | "unavailable";
+  status: "success" | "failed" | "skipped" | "timeout" | "unavailable" | "pending";
   recommendationId?: string;
   failureReason?: string;
 };
@@ -1342,6 +1342,9 @@ export default function CandidateReviewPage() {
     request: nonStaleActiveRefreshRequest,
     recommendation: latestEnrichmentForRefreshStatus,
   });
+  const backgroundRefreshPending = Boolean(
+    nonStaleActiveRefreshRequest && !activeRefreshResolvedByEnrichment,
+  );
   const latestRefreshRequest =
     nonStaleActiveRefreshRequest ??
     [...refreshRequests].sort((a, b) =>
@@ -1368,40 +1371,71 @@ export default function CandidateReviewPage() {
       (latestEnrichmentNewerThanOpen ||
         (sourceFileOpenState.immediateRefresh?.ok && immediateRecommendationVisible)),
   );
+  const latestKnownSourceFileDataVisible = Boolean(
+    candidate?.latestSourceFileArchive ??
+      candidate?.latestSourceFileArchiveId ??
+      latestEnrichmentForRefreshStatus,
+  );
+  const terminalRefreshFailure = Boolean(
+    latestRefreshRequest &&
+      !backgroundRefreshPending &&
+      !sourceFileFreshForOpen &&
+      !latestEnrichmentNewerThanOpen &&
+      (latestRefreshRequest.status === "failed" ||
+        latestRefreshRequest.status === "cancelled"),
+  );
   const refreshStatusLabel = sourceFileOpenState.running
     ? sourceFileOpenState.immediateRefresh
       ? "RETRYING UPDATE"
       : "UPDATING SOURCE FILE"
-    : sourceFileFreshForOpen
-      ? "FILE UPDATED"
-      : "FILE NOT UPDATED";
+    : backgroundRefreshPending
+      ? nonStaleActiveRefreshRequest?.status === "claimed"
+        ? "BNL REFRESH RUNNING"
+        : "BNL REFRESH REQUESTED"
+      : sourceFileFreshForOpen
+        ? "FILE UPDATED"
+        : terminalRefreshFailure
+          ? "FILE NOT UPDATED"
+          : "LATEST-KNOWN DATA SHOWN";
   const refreshStatusDetail = sourceFileOpenState.running
     ? "BNL is updating this Source File now through the server-side immediate refresh endpoint."
-    : caseReportMissingForLatestArchive
-      ? "Latest archive exists, but BNL has not generated the Source File report yet. Refresh requests ask BNL for report backfill."
-      : sourceFileFreshForOpen
-        ? "Source File updated for this page open."
-        : "This page is not treating older BNL Source File data as current. Use FILE NOT UPDATED to retry the immediate update.";
+    : backgroundRefreshPending
+      ? latestKnownSourceFileDataVisible
+        ? "Latest-known Source File data is shown while BNL completes the background refresh."
+        : "BNL refresh is queued; this page will poll until Source File data arrives."
+      : caseReportMissingForLatestArchive
+        ? "Latest archive exists, but BNL has not generated the Source File report yet. Refresh requests ask BNL for report backfill."
+        : sourceFileFreshForOpen
+          ? "Source File updated for this page open."
+          : terminalRefreshFailure
+            ? "This page is not treating older BNL Source File data as current. Use FILE NOT UPDATED to retry the immediate update."
+            : "Latest-known Source File data is shown. Use refresh if you need a new BNL freshness check.";
   const refreshFailureReason =
-    sourceFileOpenState.immediateRefresh?.failureReason ??
-    latestRefreshRequest?.failureReason ??
-    (caseReportMissingForLatestArchive
-      ? "case_report_missing_after_refresh"
-      : !sourceFileFreshForOpen && !sourceFileOpenState.running
-        ? "No fresh BNL enrichment is visible for this page open."
-        : undefined);
-  const manualRefreshDisabled = saving || !candidate || sourceFileOpenState.running || sourceFileFreshForOpen;
+    backgroundRefreshPending
+      ? undefined
+      : sourceFileOpenState.immediateRefresh?.failureReason ??
+        latestRefreshRequest?.failureReason ??
+        (caseReportMissingForLatestArchive
+          ? "case_report_missing_after_refresh"
+          : terminalRefreshFailure
+            ? "No fresh BNL enrichment is visible for this page open."
+            : undefined);
+  const manualRefreshDisabled = saving || !candidate || sourceFileOpenState.running || sourceFileFreshForOpen || backgroundRefreshPending;
   const manualRefreshButtonLabel = sourceFileOpenState.running
     ? sourceFileOpenState.immediateRefresh
       ? "RETRYING UPDATE"
       : "UPDATING SOURCE FILE"
-    : sourceFileFreshForOpen
-      ? "FILE UPDATED"
-      : "FILE NOT UPDATED";
+    : backgroundRefreshPending
+      ? nonStaleActiveRefreshRequest?.status === "claimed"
+        ? "REFRESH RUNNING"
+        : "REFRESH REQUESTED"
+      : sourceFileFreshForOpen
+        ? "FILE UPDATED"
+        : "FILE NOT UPDATED";
   const manualRefreshButtonClass = sourceFileFreshForOpen
     ? "border border-border bg-muted/20 px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-70"
     : "border border-red-500 px-4 py-2 text-xs uppercase tracking-widest text-red-400 hover:bg-red-500 hover:text-background disabled:opacity-50";
-  const staleDataWarning = !sourceFileFreshForOpen;
+  const staleDataWarning = terminalRefreshFailure;
   const sourceFileSummary = candidate
     ? createDossierSourceFileSummary({
         candidate,

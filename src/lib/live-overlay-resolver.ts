@@ -7,6 +7,8 @@ export type WheelCeremonyStatus = "idle" | "ready" | "reencrypting" | "spinning"
 export const WHEEL_RIGHT_POINTER_ANGLE_DEGREES = 90;
 export const YOUTUBE_SYNC_STALE_AFTER_MS = 12_000;
 
+export type YouTubePresentation = "standard" | "short";
+
 export interface WheelSegmentInput {
   id: string;
   label: string;
@@ -235,6 +237,7 @@ export interface ResolvedLiveOverlayTrack {
   trackTitle: string;
   sourceType: QueueSourceType | "unknown";
   durationLabel?: string;
+  youtubePresentation?: YouTubePresentation;
 }
 
 export interface ResolvedWheelCeremonyTrack {
@@ -321,6 +324,40 @@ export function safeLiveOverlayUrl(value: unknown): string | undefined {
   }
 }
 
+function isSafeYouTubeVideoId(value: string | null | undefined): value is string {
+  return typeof value === "string" && /^[a-zA-Z0-9_-]{6,}$/.test(value);
+}
+
+export function youtubePresentationFromUrl(value: string | null | undefined): YouTubePresentation | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return undefined;
+    const hostname = parsed.hostname.toLowerCase();
+    const pathname = parsed.pathname.replace(/\/+/g, "/");
+    const segments = pathname.split("/").filter(Boolean);
+
+    if ((hostname === "youtube.com" || hostname === "www.youtube.com" || hostname === "m.youtube.com") && segments[0] === "shorts" && isSafeYouTubeVideoId(segments[1])) {
+      return "short";
+    }
+
+    if ((hostname === "youtube.com" || hostname === "www.youtube.com" || hostname === "m.youtube.com" || hostname === "music.youtube.com") && pathname === "/watch" && isSafeYouTubeVideoId(parsed.searchParams.get("v"))) {
+      return "standard";
+    }
+
+    if (hostname === "youtu.be" && isSafeYouTubeVideoId(segments[0])) {
+      return "standard";
+    }
+
+    if ((hostname === "youtube.com" || hostname === "www.youtube.com" || hostname === "m.youtube.com") && segments[0] === "embed" && isSafeYouTubeVideoId(segments[1])) {
+      return "standard";
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
 function cleanDisplay(value: string | null | undefined): string | undefined {
   const cleaned = value?.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
   return cleaned || undefined;
@@ -351,6 +388,7 @@ function youtubeSyncForTrack(track: LiveOverlayTrackInput, playerSync?: LiveOver
 function safeTrack(track: LiveOverlayTrackInput): { track: ResolvedLiveOverlayTrack; artworkUrl: string | null; sourceUrl: string | null } {
   const sourceType = track.sourceType ?? "unknown";
   const isUpload = sourceType === "upload";
+  const sourceUrl = isUpload ? null : safeLiveOverlayUrl(track.link) ?? null;
   return {
     track: {
       id: track.id,
@@ -358,9 +396,10 @@ function safeTrack(track: LiveOverlayTrackInput): { track: ResolvedLiveOverlayTr
       trackTitle: displayTitle(track),
       sourceType,
       durationLabel: cleanDisplay(track.durationLabel),
+      youtubePresentation: sourceType === "youtube" ? youtubePresentationFromUrl(sourceUrl) : undefined,
     },
     artworkUrl: safeLiveOverlayUrl(track.sourceArtworkUrl) ?? null,
-    sourceUrl: isUpload ? null : safeLiveOverlayUrl(track.link) ?? null,
+    sourceUrl,
   };
 }
 

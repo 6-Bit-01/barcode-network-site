@@ -1,11 +1,39 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { buildWheelSegments, derangedWheelCandidateOrder, resolveLiveOverlayScene, serverStampYouTubeSync, WHEEL_RIGHT_POINTER_ANGLE_DEGREES, wheelFinalRotationForSegment, wheelFinalRotationForSlice, wheelSegmentAtPointer, wheelSliceIndexAtPointer, wheelUprightLabelRotationDegrees } from "../src/lib/live-overlay-resolver.ts";
+import { buildWheelSegments, derangedWheelCandidateOrder, resolveLiveOverlayScene, serverStampYouTubeSync, youtubePresentationFromUrl, WHEEL_RIGHT_POINTER_ANGLE_DEGREES, wheelFinalRotationForSegment, wheelFinalRotationForSlice, wheelSegmentAtPointer, wheelSliceIndexAtPointer, wheelUprightLabelRotationDegrees } from "../src/lib/live-overlay-resolver.ts";
 
 const session = { sessionId: "s1", status: "open", queueOpen: true, wheelSpinsOwed: 0, sponsorBreakStatus: "not_due", broadcastPhase: "broadcast_active" };
 const youtubeTrack = { id: "yt1", submittedArtistName: "Artist Name", submittedSongTitle: "Video Track", sourceType: "youtube", sourceArtworkUrl: "https://img.youtube.com/vi/abcdefghijk/hqdefault.jpg", link: "https://youtube.com/watch?v=abcdefghijk", durationLabel: "3:30", youtubeVideoId: "abcdefghijk" };
 const spotifyTrack = { id: "sp1", submittedArtistName: "Spotify Artist", submittedSongTitle: "Audio Track", sourceType: "spotify", sourceArtworkUrl: "https://i.scdn.co/image/example", link: "https://open.spotify.com/track/abc123", durationLabel: "2:45" };
 
+const youtubePresentationCases = [
+  ["https://youtube.com/shorts/abc123", "short"],
+  ["https://www.youtube.com/shorts/abc123", "short"],
+  ["https://m.youtube.com/shorts/abc123", "short"],
+  ["https://youtube.com/shorts/abc123?feature=share", "short"],
+  ["https://youtube.com/shorts/abc123#clip", "short"],
+  ["https://youtube.com/shorts/x", undefined],
+  ["https://youtube.com/shorts/abc 123", undefined],
+  ["https://youtube.com/shorts/abc$123", undefined],
+  ["https://youtube.com/watch?v=abc123", "standard"],
+  ["https://www.youtube.com/watch?v=abc123", "standard"],
+  ["https://m.youtube.com/watch?v=abc123", "standard"],
+  ["https://music.youtube.com/watch?v=abc123", "standard"],
+  ["https://youtube.com/watch?v=x", undefined],
+  ["https://youtube.com/watch?v=abc 123", undefined],
+  ["https://youtu.be/abc123", "standard"],
+  ["https://youtu.be/x", undefined],
+  ["https://youtube.com/embed/abc123", "standard"],
+  ["https://youtube.com/embed/x", undefined],
+  ["https://example.com/watch?v=abcdefghijk", undefined],
+  ["not a url", undefined],
+  ["https://youtube.com/channel/UCabc123", undefined],
+  ["https://youtube.com/@barcode", undefined],
+  ["https://youtube.com/", undefined],
+];
+for (const [url, expected] of youtubePresentationCases) {
+  assert.equal(youtubePresentationFromUrl(url), expected, `${url} resolves YouTube presentation ${expected ?? "undefined"}`);
+}
 
 function finalRotationForPointerLocalAngle(localAngle, pointerAngle = WHEEL_RIGHT_POINTER_ANGLE_DEGREES) {
   return 1080 + pointerAngle - localAngle;
@@ -40,12 +68,20 @@ assert.equal(resolveLiveOverlayScene({ currentSession: session }).mode, "session
 const youtubeNowPlaying = resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack });
 assert.equal(youtubeNowPlaying.mode, "now_playing", "YouTube track resolves to now playing");
 assert.equal(youtubeNowPlaying.youtube, undefined, "YouTube track without fresh host sync falls back to now playing card");
+assert.equal(youtubeNowPlaying.track?.youtubePresentation, "standard", "resolved watch-link track carries standard YouTube presentation");
 
 const freshNow = new Date("2026-07-10T00:00:10.000Z");
 const freshSync = { provider: "youtube", videoId: "abcdefghijk", trackId: "yt1", playbackState: "playing", currentTimeSeconds: 12, updatedAt: "2026-07-10T00:00:06.000Z", muted: true };
 const matchingFresh = resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, playerSync: freshSync, now: freshNow });
 assert.equal(matchingFresh.youtube?.videoId, "abcdefghijk", "matching fresh YouTube player sync is used");
 assert.equal(matchingFresh.youtube?.currentTimeSeconds, 12, "matching fresh sync preserves reported host time");
+assert.equal(matchingFresh.track?.youtubePresentation, "standard", "YouTube presentation classification does not affect sync matching");
+const shortsNowPlaying = resolveLiveOverlayScene({ currentSession: session, nowPlaying: { ...youtubeTrack, id: "yt-short", link: "https://youtube.com/shorts/abc123", youtubeVideoId: "abc123" } });
+assert.equal(shortsNowPlaying.track?.youtubePresentation, "short", "resolved valid Shorts track carries short YouTube presentation");
+const invalidShortsNowPlaying = resolveLiveOverlayScene({ currentSession: session, nowPlaying: { ...youtubeTrack, id: "yt-bad-short", link: "https://youtube.com/shorts/x", youtubeVideoId: "x" } });
+assert.equal(invalidShortsNowPlaying.track?.youtubePresentation, undefined, "invalid YouTube video URLs do not receive presentation classification");
+const shortLinkNowPlaying = resolveLiveOverlayScene({ currentSession: session, nowPlaying: { ...youtubeTrack, id: "yt-be", link: "https://youtu.be/abc123", youtubeVideoId: "abc123" } });
+assert.equal(shortLinkNowPlaying.track?.youtubePresentation, "standard", "resolved youtu.be track carries standard YouTube presentation");
 assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, now: freshNow }).youtube, undefined, "missing player sync does not fabricate playing from zero");
 assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, playerSync: { ...freshSync, videoId: "zzzzzzzzzzz" }, now: freshNow }).youtube, undefined, "mismatched video ID does not fabricate playing from zero");
 assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, playerSync: { ...freshSync, trackId: "other-track" }, now: freshNow }).youtube, undefined, "mismatched queue track ID does not control current track");
@@ -73,6 +109,7 @@ assert.equal(serverStampYouTubeSync({ ...freshSync, updatedAt: undefined }, serv
 const nonYoutubeNowPlaying = resolveLiveOverlayScene({ currentSession: session, nowPlaying: spotifyTrack });
 assert.equal(nonYoutubeNowPlaying.mode, "now_playing", "non-YouTube track resolves to artist card now playing");
 assert.equal(nonYoutubeNowPlaying.youtube, undefined, "non-YouTube now playing has no YouTube player metadata");
+assert.equal(nonYoutubeNowPlaying.track?.youtubePresentation, undefined, "non-YouTube resolved track has no YouTube presentation");
 
 assert.equal(resolveLiveOverlayScene({ currentSession: { ...session, sponsorBreakStatus: "running" }, nowPlaying: youtubeTrack }).mode, "sponsor", "sponsor running beats YouTube now playing");
 
@@ -131,6 +168,15 @@ assert.equal(receiver.includes("data-youtube-wrapper") && receiver.includes("pla
 assert.equal(receiver.includes("failedVideoRef.current = failedVideoRef.current === latestSyncRef.current.videoId ? failedVideoRef.current : null"), true, "overlay clears the previous failed-video marker for a different video");
 assert.equal(receiver.includes("failedVideoRef.current === nextSync.videoId") && receiver.includes("failedVideoRef.current === latestSyncRef.current.videoId"), true, "overlay does not recreate the same failed video on every poll");
 assert.equal(receiver.includes("YOUTUBE_OVERLAY_READY_TIMEOUT_MS") && receiver.includes("markPlayerUnavailable"), true, "overlay YouTube player has a readiness watchdog and controlled fallback");
+assert.equal(receiver.includes('scene.track?.youtubePresentation === "short"') && receiver.includes('live-overlay-youtube-scene--short'), true, "receiver applies the Shorts modifier only for short presentation");
+assert.equal(receiver.includes('const youtubeSceneClass = shortYouTube ? "live-overlay-youtube-scene live-overlay-youtube-scene--short" : "live-overlay-youtube-scene"'), true, "standard YouTube keeps the normal scene class");
+assert.equal((receiver.match(/<YouTubeOverlayPlayer sync=\{scene.youtube\} \/>/g) ?? []).length, 1, "both layouts use the same YouTubeOverlayPlayer");
+assert.equal(receiver.includes('className="live-overlay-youtube-viewport"'), true, "YouTube scene uses the dedicated viewport wrapper");
+assert.equal(receiver.includes('className="live-overlay-youtube-lower"') && receiver.includes('<p className="live-overlay-mode">{label}</p>') && receiver.includes('<h1>{scene.track.artistName}</h1>') && receiver.includes('<h2>{scene.track.trackTitle}</h2>'), true, "YouTube scene uses a separate information rail with only now playing, artist, and title copy");
+assert.equal(overlayCss.includes('.live-overlay-youtube-viewport') && overlayCss.includes('position: absolute') && overlayCss.includes('inset: 0'), true, "standard YouTube retains the current full-frame viewport and lower-third behavior");
+assert.equal(overlayCss.includes('.live-overlay-youtube-scene--short .live-overlay-youtube-lower') && overlayCss.includes('position: relative') && overlayCss.includes('left: auto') && overlayCss.includes('bottom: auto'), true, "Shorts lower block is not absolutely positioned over the player");
+assert.equal(overlayCss.includes('aspect-ratio: 9 / 16'), true, "Shorts viewport uses aspect-ratio: 9 / 16");
+assert.equal(overlayCss.includes('overflow-wrap: anywhere') && overlayCss.includes('min-width: 0') && overlayCss.includes('hyphens: auto'), true, "long Shorts rail text wraps inside the rail");
 assert.equal(receiver.includes("generationRef") && receiver.includes("destroyedRef") && receiver.includes("try {") && receiver.includes("playerRef.current?.destroy?.()"), true, "overlay YouTube player guards operations and ignores obsolete callbacks");
 assert.equal(receiver.includes("Click to spin"), false, "public wheel overlay does not include stock click-to-spin text");
 assert.equal(receiver.includes("ctrl+enter"), false, "public wheel overlay does not include stock keyboard shortcut text");

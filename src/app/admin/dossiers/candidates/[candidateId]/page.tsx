@@ -1497,7 +1497,17 @@ export default function CandidateReviewPage() {
         bnlDraft?: {
           status: string;
           message?: string;
-          validation?: { issues?: string[]; warnings?: string[] };
+          validation?: {
+            issues?: string[];
+            warnings?: string[];
+            diagnostics?: Array<{
+              field?: string;
+              preview?: string;
+              guard?: string;
+              reason?: string;
+              sanitizerResult?: string;
+            }>;
+          };
         };
         draftStored?: boolean;
         storedDraft?: DossierDraft;
@@ -1615,13 +1625,22 @@ export default function CandidateReviewPage() {
       });
       const validationIssues = data.bnlDraft?.validation?.issues ?? [];
       const validationWarnings = data.bnlDraft?.validation?.warnings ?? [];
+      const validationDiagnostics = data.bnlDraft?.validation?.diagnostics ?? [];
+      const diagnosticText = validationDiagnostics.length
+        ? ` Diagnostics: ${validationDiagnostics
+            .slice(0, 3)
+            .map((diagnostic) =>
+              `${diagnostic.field}: ${diagnostic.reason ?? diagnostic.guard}; preview "${diagnostic.preview}"; sanitizer ${diagnostic.sanitizerResult}`,
+            )
+            .join(" | ")}`
+        : "";
       setNotice(
         data.bnlDraft?.status === "not_connected"
           ? "BNL draft generator not connected yet. The site prepared the safe Source File packet but did not author dossier copy."
           : data.bnlDraft?.status === "failed"
             ? (data.bnlDraft.message ?? "BNL draft generator failed. No draft was stored.")
             : data.bnlDraft?.status === "received" && !data.draftStored
-              ? `BNL returned draft output, but validation failed and no draft was stored. Existing draft, if any, was not updated.${validationIssues.length ? ` Issues: ${validationIssues.join("; ")}` : ""}${validationWarnings.length ? ` Warnings: ${validationWarnings.join("; ")}` : ""}`
+              ? `BNL returned draft output, but validation failed and no draft was stored. Existing draft, if any, was not updated.${validationIssues.length ? ` Issues: ${validationIssues.join("; ")}` : ""}${validationWarnings.length ? ` Warnings: ${validationWarnings.join("; ")}` : ""}${diagnosticText}`
               : data.draftStored && data.storedDraft
                 ? `BNL-authored Proposed Dossier draft stored for owner review: ${data.storedDraft.fields.name} (${data.storedDraft.id}).${validationWarnings.length ? ` Warnings: ${validationWarnings.join("; ")}` : ""}`
                 : (data.bnlDraft?.message ?? "BNL draft request did not return a stored draft."),

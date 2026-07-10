@@ -5305,9 +5305,81 @@ test("BNL draft validation flags placeholder-like public copy as owner-review wa
   assert.ok(validation.warnings.some((warning) => /summary appears placeholder-like/i.test(warning)));
 });
 
+test("clean BNL fallback summary passes site public-copy guard", () => {
+  const validation = bnlDossierDraft.validateBnlDossierDraftResponse(
+    cleanContractDraft({
+      name: "Crow",
+      summary: "Crow is a BARCODE Network dossier subject with public-facing details still being confirmed.",
+    }),
+  );
+  assert.equal(validation.valid, true, JSON.stringify(validation.issues));
+  assert.ok(!validation.issues.some((issue) => /summary contains forbidden internal\/source copy/i.test(issue)));
+  assert.deepEqual(validation.diagnostics, []);
+});
+
+test("BNL draft request fails closed with admin-safe diagnostics for recurring topic summary", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  const publicBefore = JSON.stringify(databasePage.entries);
+  try {
+    const created = await (
+      await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Crow" } })
+    ).json();
+    const existingDraftPayload = await (
+      await authedPost({ action: "createDraftFromCandidate", candidateId: created.candidate.id })
+    ).json();
+    const originalDraftFields = JSON.stringify(existingDraftPayload.draft.fields);
+    const dirtySummary =
+      "Recurring named topic: Bit’s may inform public-safe wording only after owner and admin review. " +
+      "Recurring named topic: Lardcode may inform public-safe wording only after owner and admin review. " +
+      "Admin-only evidence exists at https://private.example/source?id=source_secret_123 and candidateId: candidate_secret_123.";
+    global.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          draft: cleanContractDraft({
+            name: "Crow Dirty BNL Draft",
+            summary: dirtySummary,
+          }),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+
+    const response = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: created.candidate.id,
+      draftId: existingDraftPayload.draft.id,
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.bnlDraft.status, "received");
+    assert.equal(payload.draftStored, false);
+    assert.equal(payload.storedDraft, null);
+    assert.equal(payload.existingDraft.id, existingDraftPayload.draft.id);
+    assert.ok(payload.bnlDraft.validation.issues.some((issue) => /summary contains forbidden internal\/source copy/i.test(issue)));
+    const summaryDiagnostic = payload.bnlDraft.validation.diagnostics.find((diagnostic) => diagnostic.field === "summary");
+    assert.ok(summaryDiagnostic);
+    assert.equal(summaryDiagnostic.guard, "dossier_public_copy_guard");
+    assert.match(summaryDiagnostic.reason, /source_topic_dump|source_topic_public_wording_warning|admin_only_evidence_dump/);
+    assert.ok(summaryDiagnostic.preview.length <= 220);
+    assert.doesNotMatch(summaryDiagnostic.preview, /https?:\/\//i);
+    assert.doesNotMatch(summaryDiagnostic.preview, /candidate_secret_123/i);
+    assert.match(summaryDiagnostic.sanitizerResult, /empty|still_blocked/);
+    assert.equal(JSON.stringify(payload.existingDraft.fields), originalDraftFields);
+    assert.equal(payload.drafts.length, 1);
+    assert.equal(JSON.stringify(databasePage.entries), publicBefore);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
+
 test("admin Source File UI copy distinguishes failed BNL output from existing drafts", () => {
   const pageSource = source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
   assert.match(pageSource, /Existing draft, if any, was not updated/);
+  assert.match(pageSource, /Diagnostics: \$\{validationDiagnostics/);
   assert.match(pageSource, /draftStored && data\.storedDraft[\s\S]*BNL-authored Proposed Dossier draft stored for owner review/);
 });
 

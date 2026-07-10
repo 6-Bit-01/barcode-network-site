@@ -6,6 +6,8 @@ import {
 } from "@/lib/dossier-style-packet";
 import {
   containsDossierPublicCopyJunk,
+  diagnoseDossierPublicCopyJunk,
+  sanitizeDossierPublicCopy,
   validateDossierPublicDraftFields,
 } from "@/lib/dossier-public-copy-guard";
 import {
@@ -76,10 +78,19 @@ export type BnlDossierDraftRequestPacket = {
 
 export type BnlDossierDraftResponse = DossierDraftContractOutput;
 
+export type BnlDossierDraftRejectedFieldDiagnostic = {
+  field: "role" | "summary" | "notes" | "sourceUsageSummary";
+  preview: string;
+  guard: string;
+  reason: string;
+  sanitizerResult: "clean" | "empty" | "still_blocked";
+};
+
 export type BnlDossierDraftValidationResult = {
   valid: boolean;
   issues: string[];
   warnings: string[];
+  diagnostics: BnlDossierDraftRejectedFieldDiagnostic[];
 };
 
 export type BnlDossierDraftGeneratorResult =
@@ -563,12 +574,45 @@ function normalizeBnlDossierDraftClassificationFields(
   return { response: normalized, warnings };
 }
 
+function adminSafeDiagnosticPreview(value: string): string {
+  return value
+    .replace(/https?:\/\/\S+/gi, "[url]")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email]")
+    .replace(/\b(?:cus|tok|pi|cs|sub|price|prod|acct)_[a-z0-9_]+\b/gi, "[redacted-id]")
+    .replace(/\b(?:candidate|source|recommendation|target|archive|draft)(?:[-_ ]?id|Id|ID)\s*[:=]\s*[a-z0-9:_-]{6,}\b/gi, "[redacted-id]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 220);
+}
+
+function sanitizerResultFor(value: string): BnlDossierDraftRejectedFieldDiagnostic["sanitizerResult"] {
+  const sanitized = sanitizeDossierPublicCopy(value);
+  if (!sanitized) return "empty";
+  return containsDossierPublicCopyJunk(sanitized) ? "still_blocked" : "clean";
+}
+
+function rejectedFieldDiagnostic(
+  field: BnlDossierDraftRejectedFieldDiagnostic["field"],
+  value: string,
+  fallbackReason: string,
+): BnlDossierDraftRejectedFieldDiagnostic {
+  const diagnosis = diagnoseDossierPublicCopyJunk(value);
+  return {
+    field,
+    preview: adminSafeDiagnosticPreview(value),
+    guard: diagnosis?.guard ?? "bnl_dossier_draft_validation",
+    reason: diagnosis?.reason ?? fallbackReason,
+    sanitizerResult: sanitizerResultFor(value),
+  };
+}
+
 export function validateBnlDossierDraftResponse(
   response: BnlDossierDraftResponse,
   context: BnlDossierDraftValidationContext = {},
 ): BnlDossierDraftValidationResult {
   const issues: string[] = [];
   const warnings: string[] = [];
+  const diagnostics: BnlDossierDraftRejectedFieldDiagnostic[] = [];
   for (const field of [
     "name",
     "category",
@@ -603,6 +647,13 @@ export function validateBnlDossierDraftResponse(
     responseAllowsQueueMusicEvidence(context.response ?? response, context.packet);
   if (PAYMENT_PRIORITY_REGEX.test(response.sourceUsageSummary)) {
     issues.push("sourceUsageSummary contains payment/Priority/Stripe/checkout/customer language");
+    diagnostics.push(
+      rejectedFieldDiagnostic(
+        "sourceUsageSummary",
+        response.sourceUsageSummary,
+        "payment_or_priority_language",
+      ),
+    );
   }
   if (/\b(?:private|source-blind|review-only|internal|admin-only)\b/i.test(response.sourceUsageSummary)) {
     warnings.push("sourceUsageSummary references non-public provenance and cannot authorize public queue/music claims.");
@@ -622,18 +673,23 @@ export function validateBnlDossierDraftResponse(
     summary: response.summary,
     notes: response.notes,
   })) {
-    if (typeof value === "string" && containsDossierPublicCopyJunk(value)) issues.push(`${field} contains forbidden internal/source copy`);
+    if (typeof value === "string" && containsDossierPublicCopyJunk(value)) {
+      issues.push(`${field} contains forbidden internal/source copy`);
+      diagnostics.push(rejectedFieldDiagnostic(field as BnlDossierDraftRejectedFieldDiagnostic["field"], value, "public_copy_junk"));
+    }
     if (field === "notes" && typeof value === "string" && PUBLIC_NOTES_REVIEW_WARNING_REGEX.test(value)) {
       issues.push("notes contains review-only/admin warning text that belongs in metadata");
+      diagnostics.push(rejectedFieldDiagnostic("notes", value, "review_only_warning_in_public_notes"));
     }
     if (typeof value === "string" && PAYMENT_PRIORITY_REGEX.test(value)) {
       issues.push(`${field} contains unsupported payment/Priority Signal copy`);
+      diagnostics.push(rejectedFieldDiagnostic(field as BnlDossierDraftRejectedFieldDiagnostic["field"], value, "payment_or_priority_language"));
     }
     if (typeof value === "string" && PLACEHOLDER_PUBLIC_COPY_REGEX.test(value)) {
       warnings.push(`${field} appears placeholder-like and needs owner review before public use`);
     }
   }
-  return { valid: issues.length === 0, issues, warnings };
+  return { valid: issues.length === 0, issues, warnings, diagnostics };
 }
 
 export async function requestBnlDossierDraft(input: {

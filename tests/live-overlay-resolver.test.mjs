@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { buildWheelSegments, derangedWheelCandidateOrder, resolveLiveOverlayScene, WHEEL_RIGHT_POINTER_ANGLE_DEGREES, wheelFinalRotationForSegment, wheelFinalRotationForSlice, wheelSegmentAtPointer, wheelSliceIndexAtPointer, wheelUprightLabelRotationDegrees } from "../src/lib/live-overlay-resolver.ts";
+import { buildWheelSegments, derangedWheelCandidateOrder, resolveLiveOverlayScene, serverStampYouTubeSync, WHEEL_RIGHT_POINTER_ANGLE_DEGREES, wheelFinalRotationForSegment, wheelFinalRotationForSlice, wheelSegmentAtPointer, wheelSliceIndexAtPointer, wheelUprightLabelRotationDegrees } from "../src/lib/live-overlay-resolver.ts";
 
 const session = { sessionId: "s1", status: "open", queueOpen: true, wheelSpinsOwed: 0, sponsorBreakStatus: "not_due", broadcastPhase: "broadcast_active" };
 const youtubeTrack = { id: "yt1", submittedArtistName: "Artist Name", submittedSongTitle: "Video Track", sourceType: "youtube", sourceArtworkUrl: "https://img.youtube.com/vi/abcdefghijk/hqdefault.jpg", link: "https://youtube.com/watch?v=abcdefghijk", durationLabel: "3:30", youtubeVideoId: "abcdefghijk" };
@@ -39,8 +39,36 @@ assert.equal(resolveLiveOverlayScene({ currentSession: session }).mode, "session
 
 const youtubeNowPlaying = resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack });
 assert.equal(youtubeNowPlaying.mode, "now_playing", "YouTube track resolves to now playing");
-assert.equal(youtubeNowPlaying.youtube?.videoId, "abcdefghijk", "YouTube scene includes safe player metadata");
-assert.equal(youtubeNowPlaying.youtube?.muted, true, "YouTube overlay defaults muted");
+assert.equal(youtubeNowPlaying.youtube, undefined, "YouTube track without fresh host sync falls back to now playing card");
+
+const freshNow = new Date("2026-07-10T00:00:10.000Z");
+const freshSync = { provider: "youtube", videoId: "abcdefghijk", trackId: "yt1", playbackState: "playing", currentTimeSeconds: 12, updatedAt: "2026-07-10T00:00:06.000Z", muted: true };
+const matchingFresh = resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, playerSync: freshSync, now: freshNow });
+assert.equal(matchingFresh.youtube?.videoId, "abcdefghijk", "matching fresh YouTube player sync is used");
+assert.equal(matchingFresh.youtube?.currentTimeSeconds, 12, "matching fresh sync preserves reported host time");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, now: freshNow }).youtube, undefined, "missing player sync does not fabricate playing from zero");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, playerSync: { ...freshSync, videoId: "zzzzzzzzzzz" }, now: freshNow }).youtube, undefined, "mismatched video ID does not fabricate playing from zero");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, playerSync: { ...freshSync, trackId: "other-track" }, now: freshNow }).youtube, undefined, "mismatched queue track ID does not control current track");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, playerSync: { ...freshSync, updatedAt: "2026-07-10T00:00:00.000Z" }, now: new Date("2026-07-10T00:00:20.000Z") }).youtube, undefined, "stale player sync falls back safely");
+const pausedSync = { ...freshSync, playbackState: "paused", currentTimeSeconds: 42 };
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, playerSync: pausedSync, now: freshNow }).youtube?.playbackState, "paused", "paused sync remains paused at the reported time");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, playerSync: pausedSync, now: freshNow }).youtube?.currentTimeSeconds, 42, "paused sync keeps reported time");
+const pausedHeartbeat = { ...pausedSync, updatedAt: "2026-07-10T00:00:18.000Z" };
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, playerSync: pausedHeartbeat, now: new Date("2026-07-10T00:00:30.000Z") }).youtube?.playbackState, "paused", "paused heartbeat remains fresh beyond the first 12 seconds of pause");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, playerSync: pausedHeartbeat, now: new Date("2026-07-10T00:00:30.000Z") }).youtube?.currentTimeSeconds, 42, "paused heartbeat keeps the same current time");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, playerSync: { ...pausedSync, updatedAt: "2026-07-10T00:00:00.000Z" }, now: new Date("2026-07-10T00:00:30.000Z") }).youtube, undefined, "genuinely stale paused sync falls back safely when the host is gone");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: spotifyTrack, playerSync: freshSync, now: freshNow }).youtube, undefined, "non-YouTube tracks do not retain previous YouTube sync");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: { ...youtubeTrack, id: "yt2", link: "https://youtube.com/watch?v=zzzzzzzzzzz", youtubeVideoId: "zzzzzzzzzzz" }, playerSync: freshSync, now: freshNow }).youtube, undefined, "changing loaded track clears obsolete sync from resolver control");
+const zeroReadOne = resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, now: freshNow }).youtube;
+const zeroReadTwo = resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, now: freshNow }).youtube;
+assert.equal(zeroReadOne, undefined, "first overlay read without sync has no generated zero-time sync");
+assert.equal(zeroReadTwo, undefined, "repeated overlay reads do not generate a new zero-time sync");
+
+const serverReceipt = new Date("2026-07-10T00:01:00.000Z");
+assert.equal(serverStampYouTubeSync({ ...freshSync, updatedAt: "2099-01-01T00:00:00.000Z" }, serverReceipt)?.updatedAt, serverReceipt.toISOString(), "server receipt time replaces future client sync timestamp");
+assert.equal(serverStampYouTubeSync({ ...freshSync, updatedAt: "2000-01-01T00:00:00.000Z" }, serverReceipt)?.updatedAt, serverReceipt.toISOString(), "server receipt time replaces old client sync timestamp");
+assert.equal(serverStampYouTubeSync({ ...freshSync, updatedAt: "not-a-date" }, serverReceipt)?.updatedAt, serverReceipt.toISOString(), "malformed client timestamp does not break server-stamped sync");
+assert.equal(serverStampYouTubeSync({ ...freshSync, updatedAt: undefined }, serverReceipt)?.updatedAt, serverReceipt.toISOString(), "missing client timestamp does not break server-stamped sync");
 
 const nonYoutubeNowPlaying = resolveLiveOverlayScene({ currentSession: session, nowPlaying: spotifyTrack });
 assert.equal(nonYoutubeNowPlaying.mode, "now_playing", "non-YouTube track resolves to artist card now playing");
@@ -71,6 +99,14 @@ const liveOverlayController = readFileSync("src/lib/live-overlay.ts", "utf8");
 assert.equal(adminPanel.includes("Show Now Playing"), false, "admin panel does not expose normal manual scene picker");
 assert.equal(adminPanel.includes("Temporary System Message") && adminPanel.indexOf("Temporary System Message") > adminPanel.indexOf("<details"), true, "temporary system message is inside collapsed emergency details");
 assert.equal(adminPanel.includes("selectedWheelTrackId") && adminPanel.includes("Choose winning track") && adminPanel.includes("selectedTrackId"), true, "admin panel provides a grouped winner track picker before confirming Wheel Chosen");
+assert.equal(adminQueueControl.includes("useCallback(async (playbackState") && !adminQueueControl.includes("}, [entry, videoId])"), true, "admin YouTube publish callback does not depend on the full entry object");
+assert.equal(adminQueueControl.includes("useMemo<OverlayYouTubeTrackInput>") && adminQueueControl.includes("[trackId, trackLink, sourceType, videoId]"), true, "admin YouTube sync input uses stable primitive dependencies for refreshed queue objects");
+assert.equal(adminQueueControl.includes("playbackStateRef.current === \"playing\" || playbackStateRef.current === \"paused\""), true, "admin YouTube heartbeat publishes while playing and paused");
+assert.equal(adminQueueControl.includes("Stopped/ended publishes immediately") && adminQueueControl.includes("falls back after staleness"), true, "stopped YouTube sync behavior is documented");
+assert.equal(adminQueueControl.includes("onError: (event: { data: number })") && adminQueueControl.includes("youtubeErrorLabel"), true, "admin YouTube player records controlled IFrame error diagnostics");
+assert.equal(adminQueueControl.includes("playerHostRef") && adminQueueControl.includes("document.createElement(\"div\")") && adminQueueControl.includes("new yt.Player(mount"), true, "admin YouTube player uses an empty imperative host instead of a React-managed target child");
+assert.equal(adminQueueControl.includes("clearImperativeHost") && adminQueueControl.includes("replaceChildren()"), true, "admin YouTube cleanup clears YouTube-owned descendants imperatively and idempotently");
+assert.equal(adminQueueControl.includes("YOUTUBE_PLAYER_READY_TIMEOUT_MS") && adminQueueControl.includes("window.setTimeout"), true, "admin YouTube player has a readiness watchdog");
 assert.equal(adminQueueControl.includes("Open Wheel Panel") || adminQueueControl.includes("Open Wheel"), true, "top bar and wheel CTA expose an Open Wheel action when spins are owed");
 assert.equal(adminQueueControl.includes("Live Overlay — Wheel Owed"), true, "live overlay utility copy clearly signals owed wheel state");
 assert.equal(adminPanel.includes("Next Action:"), true, "wheel section includes a next action summary for hosts");
@@ -81,6 +117,21 @@ assert.equal(liveOverlayController.includes("submitterIdentityKeys") && liveOver
 
 const receiver = readFileSync("src/components/LiveOverlayReceiver.tsx", "utf8");
 const overlayCss = readFileSync("src/app/overlay/live/overlay-live.css", "utf8");
+assert.equal(receiver.includes("sync.currentTimeSeconds + elapsed"), true, "playing YouTube sync extrapolates from reported host time in the receiver");
+assert.equal(receiver.includes("latestSyncRef") && !receiver.includes("initialSyncRef"), true, "YouTube receiver uses latest sync instead of frozen mount-time sync");
+assert.equal(receiver.includes("applyYouTubeSync(latestSyncRef.current)"), true, "YouTube receiver applies the latest sync from onReady");
+assert.equal(receiver.includes("playerVars: { autoplay: 0") && receiver.includes("else player.cueVideoById") && receiver.includes("else if (nextSync.playbackState === \"paused\") player.pauseVideo()"), true, "YouTube receiver initializes paused/stopped sync without autoplay");
+assert.equal(receiver.includes("Math.abs(current - expected) > 1.75"), true, "YouTube receiver preserves drift tolerance before seeking");
+assert.equal(receiver.includes("player.loadVideoById({ videoId: nextSync.videoId") && receiver.includes("loadedVideoRef.current !== nextSync.videoId"), true, "YouTube receiver only reloads when sync video changes after initial load");
+assert.equal(receiver.includes("requestSeq") && receiver.includes("latestAppliedSeq") && receiver.includes("AbortController") && receiver.includes("window.setTimeout(poll"), true, "overlay polling is ordered, single-flight, and timeout-driven");
+assert.equal(receiver.includes("setScene((current) => next.scene ?? next ?? current)") && receiver.includes("setConnected(false)"), true, "overlay polling failure preserves the last known good scene while signaling hold");
+assert.equal(receiver.includes("onError: (event: { data: number })") && receiver.includes("live-overlay-youtube-fallback"), true, "overlay YouTube errors render a controlled track-card fallback");
+assert.equal(receiver.includes("playerHostRef") && receiver.includes("document.createElement(\"div\")") && receiver.includes("new window.YT.Player(mount"), true, "overlay YouTube player uses an empty imperative host instead of its React component root");
+assert.equal(receiver.includes("data-youtube-wrapper") && receiver.includes("playerError && <div className=\"live-overlay-youtube-fallback\""), true, "overlay YouTube fallback stays inside the stable React-owned wrapper");
+assert.equal(receiver.includes("failedVideoRef.current = failedVideoRef.current === latestSyncRef.current.videoId ? failedVideoRef.current : null"), true, "overlay clears the previous failed-video marker for a different video");
+assert.equal(receiver.includes("failedVideoRef.current === nextSync.videoId") && receiver.includes("failedVideoRef.current === latestSyncRef.current.videoId"), true, "overlay does not recreate the same failed video on every poll");
+assert.equal(receiver.includes("YOUTUBE_OVERLAY_READY_TIMEOUT_MS") && receiver.includes("markPlayerUnavailable"), true, "overlay YouTube player has a readiness watchdog and controlled fallback");
+assert.equal(receiver.includes("generationRef") && receiver.includes("destroyedRef") && receiver.includes("try {") && receiver.includes("playerRef.current?.destroy?.()"), true, "overlay YouTube player guards operations and ignores obsolete callbacks");
 assert.equal(receiver.includes("Click to spin"), false, "public wheel overlay does not include stock click-to-spin text");
 assert.equal(receiver.includes("ctrl+enter"), false, "public wheel overlay does not include stock keyboard shortcut text");
 assert.equal(receiver.includes("live-overlay-wheel-roster"), false, "public wheel overlay does not render the previous bottom roster/control clutter");

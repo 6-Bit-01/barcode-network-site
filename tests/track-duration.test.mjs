@@ -63,6 +63,7 @@ test("parses YouTube watch, short, and shorts URLs", () => {
   assert.equal(duration.parseYouTubeVideoId("https://www.youtube.com/watch?v=abc123_DEF45"), "abc123_DEF45");
   assert.equal(duration.parseYouTubeVideoId("https://youtu.be/abc123_DEF45?si=test"), "abc123_DEF45");
   assert.equal(duration.parseYouTubeVideoId("https://www.youtube.com/shorts/abc123_DEF45"), "abc123_DEF45");
+  assert.equal(duration.parseYouTubeVideoId("https://music.youtube.com/watch?v=abc123_DEF45&list=test"), "abc123_DEF45");
 });
 
 test("parses Spotify track URLs", () => {

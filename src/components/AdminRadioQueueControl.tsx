@@ -1,12 +1,13 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AdminLiveOverlayControl } from "@/components/AdminLiveOverlayControl";
 import { buildQueueTimingDisplay, formatHoursMinutes, queueTimingInputFromAdminState } from "@/lib/queue-timing-display";
 import { parseYouTubeVideoId } from "@/lib/track-duration";
 import { formatRuntime, getTrackRuntimeSeconds } from "@/lib/queue-types";
+import { YOUTUBE_SYNC_STALE_AFTER_MS } from "@/lib/live-overlay-resolver";
 import type { QueueEntry, QueueLane, QueueState } from "@/lib/queue-types";
 
 type Tab = "active" | "completed" | "removed" | "spotlight";
@@ -17,6 +18,16 @@ type SimulationAction = "addSimulationFreeTrack" | "addSimulationPaidPriority" |
 const LANE_LABELS: Record<QueueLane, string> = { priority: "Priority Signal", wheel: "Wheel Winner", regular: "Regular Queue" };
 const FIXED_PRIORITY_LABEL = "Priority Signal Upgrade";
 const FIXED_PRIORITY_INSTRUCTIONS = "Moves this track into the Priority Signal lane after payment confirmation.";
+const YOUTUBE_PLAYER_READY_TIMEOUT_MS = 9_000;
+
+function youtubeErrorLabel(code?: number | null): string {
+  if (code === 2) return "Invalid video ID";
+  if (code === 5) return "HTML5 playback unavailable";
+  if (code === 100) return "Video not found/private";
+  if (code === 101 || code === 150) return "Embedding disabled by owner";
+  return code ? `YouTube error ${code}` : "YouTube unavailable";
+}
+
 const SIMULATION_SPEEDS: Record<SimulationSpeed, { label: string; minDelayMs: number; maxDelayMs: number; priorityChance: number }> = {
   slow: { label: "Slow", minDelayMs: 40_000, maxDelayMs: 90_000, priorityChance: 0.15 },
   normal: { label: "Normal", minDelayMs: 20_000, maxDelayMs: 60_000, priorityChance: 0.25 },
@@ -65,11 +76,16 @@ function detectedLabel(entry: QueueEntry): string | null {
   if (!entry.detectedArtistName && !entry.detectedSongTitle && !entry.providerTitle) return null;
   return `${entry.detectedArtistName || "Unknown artist"} — ${entry.detectedSongTitle || entry.providerTitle || "Unknown title"}`;
 }
-async function publishOverlayYouTubeSync(entry: QueueEntry, playbackState: "playing" | "paused" | "stopped", currentTimeSeconds = 0) {
-  if (entry.sourceType !== "youtube") return;
-  const videoId = parseYouTubeVideoId(entry.link);
-  if (!videoId) return;
-  await fetch("/api/admin/overlay/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "updatePlayerSync", sync: { provider: "youtube", videoId, trackId: entry.id, playbackState, currentTimeSeconds, updatedAt: new Date().toISOString(), muted: true } }) });
+type OverlayYouTubeTrackInput = { id: string; link: string; sourceType: QueueEntry["sourceType"]; videoId: string | null };
+function buildOverlayYouTubeSync(track: OverlayYouTubeTrackInput, playbackState: "playing" | "paused" | "stopped", currentTimeSeconds = 0) {
+  if (track.sourceType !== "youtube" || !track.videoId) return null;
+  return { provider: "youtube" as const, videoId: track.videoId, trackId: track.id, playbackState, currentTimeSeconds: Math.max(0, currentTimeSeconds), updatedAt: new Date().toISOString(), muted: true };
+}
+async function publishOverlayYouTubeSync(track: OverlayYouTubeTrackInput, playbackState: "playing" | "paused" | "stopped", currentTimeSeconds = 0) {
+  const sync = buildOverlayYouTubeSync(track, playbackState, currentTimeSeconds);
+  if (!sync) return null;
+  await fetch("/api/admin/overlay/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "updatePlayerSync", sync }) });
+  return sync;
 }
 async function clearOverlayPlayerSync() {
   await fetch("/api/admin/overlay/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "clearPlayerSync" }) });
@@ -270,8 +286,7 @@ export function AdminRadioQueueControl() {
     setMinimized(false);
     const updated = await action(entry.id, "load");
     if (updated?.nowPlaying?.id === entry.id) {
-      if (entry.sourceType === "youtube") await publishOverlayYouTubeSync(entry, "playing", 0);
-      else await clearOverlayPlayerSync();
+      if (entry.sourceType !== "youtube") await clearOverlayPlayerSync();
       setPlayerActionPending(false);
       return;
     }
@@ -570,6 +585,7 @@ type AdminYTPlayer = {
   stopVideo: () => void;
   seekTo: (seconds: number, allowSeekAhead: boolean) => void;
   getCurrentTime: () => number;
+  getVideoData?: () => { video_id?: string };
   mute: () => void;
   destroy?: () => void;
 };
@@ -582,7 +598,7 @@ declare global {
 
 function ensureAdminYouTubeApi(): Promise<void> {
   if (typeof window === "undefined") return Promise.resolve();
-  if ((window as Window & { YT?: { Player: new (elementId: string, options: Record<string, unknown>) => AdminYTPlayer } }).YT?.Player) return Promise.resolve();
+  if ((window as Window & { YT?: { Player: new (elementId: string | HTMLElement, options: Record<string, unknown>) => AdminYTPlayer } }).YT?.Player) return Promise.resolve();
   return new Promise((resolve) => {
     const previous = window.onYouTubeIframeAPIReady;
     window.onYouTubeIframeAPIReady = () => {
@@ -599,42 +615,127 @@ function ensureAdminYouTubeApi(): Promise<void> {
 
 function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
   const playerRef = useRef<AdminYTPlayer | null>(null);
+  const playerHostRef = useRef<HTMLDivElement | null>(null);
+  const generationRef = useRef(0);
   const playbackStateRef = useRef<"playing" | "paused" | "stopped">("stopped");
-  const videoId = parseYouTubeVideoId(entry.link);
-  const containerId = `admin-youtube-player-${entry.id}`;
+  const [diagnostics, setDiagnostics] = useState<{ provider: string; videoId: string; trackId: string; playbackState: "playing" | "paused" | "stopped"; currentTimeSeconds: number; updatedAt: string; status: "Fresh" | "Stale" | "Missing" | "Mismatch" | "Error"; ready: boolean; errorCode?: number; publishStatus?: "success" | "failed" } | null>(null);
+  const [diagnosticsNow, setDiagnosticsNow] = useState(() => Date.now());
+  const trackId = entry.id;
+  const trackLink = entry.link;
+  const sourceType = entry.sourceType;
+  const videoId = parseYouTubeVideoId(trackLink);
+  const trackSyncInput = useMemo<OverlayYouTubeTrackInput>(() => ({ id: trackId, link: trackLink, sourceType, videoId }), [trackId, trackLink, sourceType, videoId]);
+  const containerId = `admin-youtube-player-${trackId}-${videoId ?? "unknown"}`;
+  const clearImperativeHost = useCallback(() => {
+    if (playerHostRef.current) playerHostRef.current.replaceChildren();
+  }, []);
+  const publish = useCallback(async (playbackState: "playing" | "paused" | "stopped", currentTimeSeconds = 0) => {
+    let actualVideoId = videoId;
+    try {
+      actualVideoId = playerRef.current?.getVideoData?.().video_id || videoId;
+    } catch {
+      setDiagnostics((current) => current ? { ...current, status: "Error", publishStatus: "failed" } : null);
+      return;
+    }
+    if (!actualVideoId || actualVideoId !== videoId) {
+      setDiagnostics(actualVideoId ? { provider: "youtube", videoId: actualVideoId, trackId, playbackState, currentTimeSeconds, updatedAt: new Date().toISOString(), status: "Mismatch", ready: Boolean(playerRef.current), publishStatus: "failed" } : null);
+      return;
+    }
+    try {
+      const sync = await publishOverlayYouTubeSync(trackSyncInput, playbackState, currentTimeSeconds);
+      if (sync) setDiagnostics({ ...sync, status: "Fresh", ready: Boolean(playerRef.current), publishStatus: "success" });
+    } catch {
+      setDiagnostics((current) => current ? { ...current, status: "Error", publishStatus: "failed" } : null);
+    }
+  }, [trackId, trackSyncInput, videoId]);
 
   useEffect(() => {
     if (!videoId) return;
     let cancelled = false;
+    const generation = generationRef.current + 1;
+    generationRef.current = generation;
+    clearImperativeHost();
+    const mount = document.createElement("div");
+    mount.id = `${containerId}-yt-${generation}`;
+    playerHostRef.current?.appendChild(mount);
+    let readyTimer: number | null = window.setTimeout(() => {
+      if (cancelled || generationRef.current !== generation) return;
+      playbackStateRef.current = "stopped";
+      setDiagnostics({ provider: "youtube", videoId, trackId, playbackState: "stopped", currentTimeSeconds: 0, updatedAt: new Date().toISOString(), status: "Error", ready: false, publishStatus: "failed" });
+      publish("stopped", 0);
+    }, YOUTUBE_PLAYER_READY_TIMEOUT_MS);
     ensureAdminYouTubeApi().then(() => {
-      const yt = (window as Window & { YT?: { Player: new (elementId: string, options: Record<string, unknown>) => AdminYTPlayer } }).YT;
-      if (cancelled || playerRef.current || !yt?.Player) return;
-      playerRef.current = new yt.Player(containerId, {
+      const yt = (window as Window & { YT?: { Player: new (elementId: string | HTMLElement, options: Record<string, unknown>) => AdminYTPlayer } }).YT;
+      if (cancelled || generationRef.current !== generation || playerRef.current || !yt?.Player || !mount.isConnected) return;
+      playerRef.current = new yt.Player(mount, {
         videoId,
         playerVars: { autoplay: 0, controls: 1, modestbranding: 1, playsinline: 1, rel: 0 },
         events: {
+          onReady: () => {
+            if (cancelled || generationRef.current !== generation) return;
+            if (readyTimer) window.clearTimeout(readyTimer);
+            readyTimer = null;
+            setDiagnostics((current) => current ? { ...current, ready: true } : { provider: "youtube", videoId, trackId, playbackState: "stopped", currentTimeSeconds: 0, updatedAt: new Date().toISOString(), status: "Missing", ready: true });
+          },
+          onError: (event: { data: number }) => {
+            if (cancelled || generationRef.current !== generation) return;
+            if (readyTimer) window.clearTimeout(readyTimer);
+            readyTimer = null;
+            playbackStateRef.current = "stopped";
+            setDiagnostics({ provider: "youtube", videoId, trackId, playbackState: "stopped", currentTimeSeconds: 0, updatedAt: new Date().toISOString(), status: "Error", ready: false, errorCode: event.data, publishStatus: "failed" });
+            publish("stopped", 0);
+          },
           onStateChange: (event: { data: number }) => {
+            if (cancelled || generationRef.current !== generation) return;
             const next = event.data === 1 ? "playing" : event.data === 2 ? "paused" : event.data === 0 ? "stopped" : null;
             if (!next) return;
             playbackStateRef.current = next;
-            publishOverlayYouTubeSync(entry, next, playerRef.current?.getCurrentTime() ?? 0);
+            let eventTime = 0;
+            try {
+              eventTime = playerRef.current?.getCurrentTime() ?? 0;
+            } catch {
+              playbackStateRef.current = "stopped";
+              setDiagnostics((current) => current ? { ...current, status: "Error", publishStatus: "failed" } : null);
+              return;
+            }
+            publish(next, eventTime);
           },
         },
       });
     });
     const interval = window.setInterval(() => {
-      if (playbackStateRef.current === "playing") publishOverlayYouTubeSync(entry, "playing", playerRef.current?.getCurrentTime() ?? 0);
-    }, 5_000);
+      let currentTime = 0;
+      try {
+        currentTime = playerRef.current?.getCurrentTime() ?? 0;
+      } catch {
+        playbackStateRef.current = "stopped";
+        setDiagnostics((current) => current ? { ...current, status: "Error", publishStatus: "failed" } : null);
+      }
+      if (playbackStateRef.current === "playing" || playbackStateRef.current === "paused") publish(playbackStateRef.current, currentTime);
+      const observedAt = Date.now();
+      setDiagnosticsNow(observedAt);
+      setDiagnostics((current) => current ? { ...current, status: current.status === "Error" || current.status === "Mismatch" ? current.status : observedAt - new Date(current.updatedAt).getTime() > YOUTUBE_SYNC_STALE_AFTER_MS ? "Stale" : "Fresh" } : null);
+      // Stopped/ended publishes immediately from onStateChange, then intentionally falls back after staleness.
+      // Playing and paused continue heartbeating while the authoritative host player remains mounted.
+    }, 2_500);
     return () => {
       cancelled = true;
+      generationRef.current += 1;
       window.clearInterval(interval);
-      if (playerRef.current?.destroy) playerRef.current.destroy();
+      if (readyTimer) window.clearTimeout(readyTimer);
+      try {
+        if (playerRef.current?.destroy) playerRef.current.destroy();
+      } catch {
+        // YouTube iframe cleanup is best-effort.
+      }
       playerRef.current = null;
+      clearImperativeHost();
     };
-  }, [containerId, entry, videoId]);
+  }, [clearImperativeHost, containerId, publish, trackId, videoId]);
 
   if (!videoId) return <div className="border border-border p-3 text-sm text-muted">No playable YouTube video ID found. Use Open Link.</div>;
-  return <div id={containerId} className="h-56 w-full border border-border" />;
+  const syncAge = diagnostics ? Math.max(0, Math.round((diagnosticsNow - new Date(diagnostics.updatedAt).getTime()) / 1000)) : null;
+  return <div className="space-y-2"><div className="relative h-56 w-full border border-border"><div ref={playerHostRef} className="h-full w-full" data-youtube-host={containerId} /></div><div className="grid gap-1 border border-border/60 bg-surface/80 p-2 text-[10px] uppercase tracking-widest text-muted sm:grid-cols-3"><span>Provider: {diagnostics?.provider ?? "youtube"}</span><span>Video ID: {diagnostics?.videoId ?? videoId}</span><span>Track ID: {diagnostics?.trackId ?? trackId}</span><span>State: {diagnostics?.playbackState ?? "Missing"}</span><span>Host time: {Math.round(diagnostics?.currentTimeSeconds ?? 0)}s</span><span>Sync: {diagnostics?.status ?? "Missing"}{syncAge !== null ? ` · ${syncAge}s` : ""}</span><span>Ready: {diagnostics?.ready ? "yes" : "no"}</span><span>Error: {diagnostics?.errorCode ? `${diagnostics.errorCode} · ${youtubeErrorLabel(diagnostics.errorCode)}` : "—"}</span><span>Publish: {diagnostics?.publishStatus ?? "—"}</span></div></div>;
 }
 
 function PlayerDock({ player, minimized, setMinimized, readOnly, actionPending, onAction, onCopy }: { player: QueueEntry; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; actionPending: boolean; onAction: (id: string, action: AdminQueueAction) => void; onCopy: () => void }) {

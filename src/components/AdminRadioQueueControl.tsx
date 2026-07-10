@@ -1,12 +1,13 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AdminLiveOverlayControl } from "@/components/AdminLiveOverlayControl";
 import { buildQueueTimingDisplay, formatHoursMinutes, queueTimingInputFromAdminState } from "@/lib/queue-timing-display";
 import { parseYouTubeVideoId } from "@/lib/track-duration";
 import { formatRuntime, getTrackRuntimeSeconds } from "@/lib/queue-types";
+import { YOUTUBE_SYNC_STALE_AFTER_MS } from "@/lib/live-overlay-resolver";
 import type { QueueEntry, QueueLane, QueueState } from "@/lib/queue-types";
 
 type Tab = "active" | "completed" | "removed" | "spotlight";
@@ -65,11 +66,17 @@ function detectedLabel(entry: QueueEntry): string | null {
   if (!entry.detectedArtistName && !entry.detectedSongTitle && !entry.providerTitle) return null;
   return `${entry.detectedArtistName || "Unknown artist"} — ${entry.detectedSongTitle || entry.providerTitle || "Unknown title"}`;
 }
-async function publishOverlayYouTubeSync(entry: QueueEntry, playbackState: "playing" | "paused" | "stopped", currentTimeSeconds = 0) {
-  if (entry.sourceType !== "youtube") return;
+function buildOverlayYouTubeSync(entry: QueueEntry, playbackState: "playing" | "paused" | "stopped", currentTimeSeconds = 0) {
+  if (entry.sourceType !== "youtube") return null;
   const videoId = parseYouTubeVideoId(entry.link);
-  if (!videoId) return;
-  await fetch("/api/admin/overlay/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "updatePlayerSync", sync: { provider: "youtube", videoId, trackId: entry.id, playbackState, currentTimeSeconds, updatedAt: new Date().toISOString(), muted: true } }) });
+  if (!videoId) return null;
+  return { provider: "youtube" as const, videoId, trackId: entry.id, playbackState, currentTimeSeconds: Math.max(0, currentTimeSeconds), updatedAt: new Date().toISOString(), muted: true };
+}
+async function publishOverlayYouTubeSync(entry: QueueEntry, playbackState: "playing" | "paused" | "stopped", currentTimeSeconds = 0) {
+  const sync = buildOverlayYouTubeSync(entry, playbackState, currentTimeSeconds);
+  if (!sync) return null;
+  await fetch("/api/admin/overlay/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "updatePlayerSync", sync }) });
+  return sync;
 }
 async function clearOverlayPlayerSync() {
   await fetch("/api/admin/overlay/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "clearPlayerSync" }) });
@@ -270,8 +277,7 @@ export function AdminRadioQueueControl() {
     setMinimized(false);
     const updated = await action(entry.id, "load");
     if (updated?.nowPlaying?.id === entry.id) {
-      if (entry.sourceType === "youtube") await publishOverlayYouTubeSync(entry, "playing", 0);
-      else await clearOverlayPlayerSync();
+      if (entry.sourceType !== "youtube") await clearOverlayPlayerSync();
       setPlayerActionPending(false);
       return;
     }
@@ -570,6 +576,7 @@ type AdminYTPlayer = {
   stopVideo: () => void;
   seekTo: (seconds: number, allowSeekAhead: boolean) => void;
   getCurrentTime: () => number;
+  getVideoData?: () => { video_id?: string };
   mute: () => void;
   destroy?: () => void;
 };
@@ -600,8 +607,19 @@ function ensureAdminYouTubeApi(): Promise<void> {
 function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
   const playerRef = useRef<AdminYTPlayer | null>(null);
   const playbackStateRef = useRef<"playing" | "paused" | "stopped">("stopped");
+  const [diagnostics, setDiagnostics] = useState<{ provider: string; videoId: string; trackId: string; playbackState: "playing" | "paused" | "stopped"; currentTimeSeconds: number; updatedAt: string; status: "Fresh" | "Stale" | "Missing" | "Mismatch" } | null>(null);
+  const [diagnosticsNow, setDiagnosticsNow] = useState(() => Date.now());
   const videoId = parseYouTubeVideoId(entry.link);
   const containerId = `admin-youtube-player-${entry.id}`;
+  const publish = useCallback(async (playbackState: "playing" | "paused" | "stopped", currentTimeSeconds = 0) => {
+    const actualVideoId = playerRef.current?.getVideoData?.().video_id || videoId;
+    if (!actualVideoId || actualVideoId !== videoId) {
+      setDiagnostics(actualVideoId ? { provider: "youtube", videoId: actualVideoId, trackId: entry.id, playbackState, currentTimeSeconds, updatedAt: new Date().toISOString(), status: "Mismatch" } : null);
+      return;
+    }
+    const sync = await publishOverlayYouTubeSync(entry, playbackState, currentTimeSeconds);
+    if (sync) setDiagnostics({ ...sync, status: "Fresh" });
+  }, [entry, videoId]);
 
   useEffect(() => {
     if (!videoId) return;
@@ -617,24 +635,28 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
             const next = event.data === 1 ? "playing" : event.data === 2 ? "paused" : event.data === 0 ? "stopped" : null;
             if (!next) return;
             playbackStateRef.current = next;
-            publishOverlayYouTubeSync(entry, next, playerRef.current?.getCurrentTime() ?? 0);
+            publish(next, playerRef.current?.getCurrentTime() ?? 0);
           },
         },
       });
     });
     const interval = window.setInterval(() => {
-      if (playbackStateRef.current === "playing") publishOverlayYouTubeSync(entry, "playing", playerRef.current?.getCurrentTime() ?? 0);
-    }, 5_000);
+      if (playbackStateRef.current === "playing") publish("playing", playerRef.current?.getCurrentTime() ?? 0);
+      const observedAt = Date.now();
+      setDiagnosticsNow(observedAt);
+      setDiagnostics((current) => current ? { ...current, status: observedAt - new Date(current.updatedAt).getTime() > YOUTUBE_SYNC_STALE_AFTER_MS ? "Stale" : current.status === "Mismatch" ? "Mismatch" : "Fresh" } : null);
+    }, 2_500);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
       if (playerRef.current?.destroy) playerRef.current.destroy();
       playerRef.current = null;
     };
-  }, [containerId, entry, videoId]);
+  }, [containerId, publish, videoId]);
 
   if (!videoId) return <div className="border border-border p-3 text-sm text-muted">No playable YouTube video ID found. Use Open Link.</div>;
-  return <div id={containerId} className="h-56 w-full border border-border" />;
+  const syncAge = diagnostics ? Math.max(0, Math.round((diagnosticsNow - new Date(diagnostics.updatedAt).getTime()) / 1000)) : null;
+  return <div className="space-y-2"><div id={containerId} className="h-56 w-full border border-border" /><div className="grid gap-1 border border-border/60 bg-surface/80 p-2 text-[10px] uppercase tracking-widest text-muted sm:grid-cols-3"><span>Provider: {diagnostics?.provider ?? "youtube"}</span><span>Video ID: {diagnostics?.videoId ?? videoId}</span><span>Track ID: {diagnostics?.trackId ?? entry.id}</span><span>State: {diagnostics?.playbackState ?? "Missing"}</span><span>Host time: {Math.round(diagnostics?.currentTimeSeconds ?? 0)}s</span><span>Sync: {diagnostics?.status ?? "Missing"}{syncAge !== null ? ` · ${syncAge}s` : ""}</span></div></div>;
 }
 
 function PlayerDock({ player, minimized, setMinimized, readOnly, actionPending, onAction, onCopy }: { player: QueueEntry; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; actionPending: boolean; onAction: (id: string, action: AdminQueueAction) => void; onCopy: () => void }) {

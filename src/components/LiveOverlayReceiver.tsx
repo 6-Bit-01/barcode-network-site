@@ -15,6 +15,7 @@ type YTPlayer = {
   seekTo: (seconds: number, allowSeekAhead: boolean) => void;
   getCurrentTime: () => number;
   mute: () => void;
+  destroy?: () => void;
 };
 
 declare global {
@@ -490,6 +491,7 @@ function YouTubeOverlayPlayer({ sync }: { sync: LiveOverlayYouTubeSync }) {
   const playerRef = useRef<YTPlayer | null>(null);
   const readyRef = useRef(false);
   const loadedVideoRef = useRef<string | null>(null);
+  const initialSyncRef = useRef(sync);
   const containerId = "live-overlay-youtube-player";
 
   useEffect(() => {
@@ -497,22 +499,26 @@ function YouTubeOverlayPlayer({ sync }: { sync: LiveOverlayYouTubeSync }) {
     ensureYouTubeApi().then(() => {
       if (cancelled || playerRef.current || !window.YT?.Player) return;
       playerRef.current = new window.YT.Player(containerId, {
-        videoId: sync.videoId,
+        videoId: initialSyncRef.current.videoId,
         playerVars: { autoplay: 1, controls: 0, modestbranding: 1, playsinline: 1, rel: 0, mute: 1 },
         events: {
           onReady: () => {
             readyRef.current = true;
             playerRef.current?.mute();
-            playerRef.current?.loadVideoById({ videoId: sync.videoId, startSeconds: expectedYouTubeTime(sync) });
-            loadedVideoRef.current = sync.videoId;
+            playerRef.current?.loadVideoById({ videoId: initialSyncRef.current.videoId, startSeconds: expectedYouTubeTime(initialSyncRef.current) });
+            loadedVideoRef.current = initialSyncRef.current.videoId;
           },
         },
       });
     });
     return () => {
       cancelled = true;
+      readyRef.current = false;
+      loadedVideoRef.current = null;
+      playerRef.current?.destroy?.();
+      playerRef.current = null;
     };
-  }, [sync]);
+  }, []);
 
   useEffect(() => {
     const player = playerRef.current;

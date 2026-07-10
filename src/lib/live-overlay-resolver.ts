@@ -5,6 +5,7 @@ export type WheelOverlayStatus = "ready" | "intro" | "active" | "complete";
 export type WheelCeremonyStatus = "idle" | "ready" | "reencrypting" | "spinning" | "result_pending" | "confirmed" | "cancelled" | "signal_lost";
 
 export const WHEEL_RIGHT_POINTER_ANGLE_DEGREES = 90;
+export const YOUTUBE_SYNC_STALE_AFTER_MS = 12_000;
 
 export interface WheelSegmentInput {
   id: string;
@@ -314,13 +315,18 @@ function displayTitle(track: LiveOverlayTrackInput | LiveOverlayWheelCandidateIn
   return cleanDisplay(track.detectedSongTitle) || cleanDisplay(track.submittedSongTitle) || cleanDisplay("trackTitle" in track ? track.trackTitle : undefined) || cleanDisplay(track.title) || "Untitled transmission";
 }
 
-function youtubeSyncForTrack(track: LiveOverlayTrackInput, playerSync?: LiveOverlayYouTubeSync | null): LiveOverlayYouTubeSync | undefined {
+function youtubeSyncForTrack(track: LiveOverlayTrackInput, playerSync?: LiveOverlayYouTubeSync | null, now: Date = new Date()): LiveOverlayYouTubeSync | undefined {
   if (track.sourceType !== "youtube") return undefined;
   const safeLink = safeLiveOverlayUrl(track.link);
-  if (!safeLink || !track.youtubeVideoId) return undefined;
+  if (!safeLink || !track.youtubeVideoId || playerSync?.provider !== "youtube") return undefined;
   const videoId = track.youtubeVideoId;
-  const syncMatchesTrack = playerSync?.provider === "youtube" && playerSync.videoId === videoId && (!playerSync.trackId || !track.id || playerSync.trackId === track.id);
-  return syncMatchesTrack ? { ...playerSync, muted: true } : { provider: "youtube", videoId, trackId: track.id, playbackState: "playing", currentTimeSeconds: 0, updatedAt: new Date().toISOString(), muted: true };
+  const syncTrackMatches = !playerSync.trackId || !track.id || playerSync.trackId === track.id;
+  const syncAgeMs = now.getTime() - new Date(playerSync.updatedAt).getTime();
+  const syncIsFresh = Number.isFinite(syncAgeMs) && syncAgeMs >= 0 && syncAgeMs <= YOUTUBE_SYNC_STALE_AFTER_MS;
+  // YouTube host sync heartbeats every 2.5s while playing; 12s tolerates brief polling/network delays
+  // but prevents old or mismatched player state from restarting a new overlay video at 0s.
+  if (playerSync.videoId !== videoId || !syncTrackMatches || !syncIsFresh) return undefined;
+  return { ...playerSync, muted: true };
 }
 
 function safeTrack(track: LiveOverlayTrackInput): { track: ResolvedLiveOverlayTrack; artworkUrl: string | null; sourceUrl: string | null } {
@@ -593,7 +599,7 @@ export function resolveLiveOverlayScene(input: ResolveLiveOverlaySceneInput): Re
 
   if (input.nowPlaying) {
     const safe = safeTrack(input.nowPlaying);
-    const youtube = youtubeSyncForTrack(input.nowPlaying, input.playerSync);
+    const youtube = youtubeSyncForTrack(input.nowPlaying, input.playerSync, now);
     return scene({
       mode: "now_playing",
       reason: youtube ? "Current YouTube track is loaded." : "Current track is loaded.",

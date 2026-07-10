@@ -2209,6 +2209,130 @@ test("Source File archive ingest preserves BNL Case File Reports from accepted w
   }
 });
 
+test("workflow persistence compacts hydrated Source File archives while preserving selected-archive hydration", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const now = new Date().toISOString();
+  const bloatedText = "BNL_SAFE_ARCHIVE_PAYLOAD ".repeat(80_000);
+  const archive = {
+    id: "archive_compaction_fixture",
+    candidateId: "compaction-candidate",
+    subjectName: "Compaction Candidate",
+    subjectKey: workflow.normalizeDossierSubjectName("Compaction Candidate"),
+    ingestSource: "bnl_source_file_enrichment",
+    sourceDigest: "digest_compaction_fixture",
+    createdAt: now,
+    updatedAt: now,
+    archiveSize: bloatedText.length,
+    chunkCount: 1,
+    chunkKeys: ["archive_compaction_fixture:chunk:0"],
+    compactSummary: ["Compact summary survives in separate archive metadata."],
+    sourceFilePagePlanV1: {
+      version: "1",
+      generatedAt: now,
+      subjectName: "Compaction Candidate",
+      header: {
+        title: "Compaction Candidate",
+        subtitle: "Hydrated page-plan body for BNL handoff.",
+      },
+      primarySections: [
+        {
+          id: "overview",
+          title: "Overview",
+          displayMode: "summary",
+          publicSafe: true,
+          body: "Hydrated page-plan body for BNL handoff.",
+        },
+      ],
+    },
+    sourceFileClassificationV1: {
+      category: "Entity",
+      kind: "entity",
+      ecosystemLane: "unknown",
+      confidence: "medium",
+    },
+    sourcePackage: { oversizedFixtureText: bloatedText },
+    reviewOnly: true,
+  };
+  const bloatedState = {
+    version: 1,
+    revision: 1,
+    candidates: [
+      {
+        ...manualCandidateInput,
+        id: "compaction-candidate",
+        name: "Compaction Candidate",
+        status: "active_source_file",
+        source: "manual",
+        createdAt: now,
+        updatedAt: now,
+        sourceFileNotes: [],
+        sourceFileArchiveIds: [archive.id],
+        latestSourceFileArchiveId: archive.id,
+        latestSourceFileArchiveDigest: archive.sourceDigest,
+        latestSourceFileArchiveUpdatedAt: archive.updatedAt,
+        latestSourceFileArchive: archive,
+      },
+    ],
+    drafts: [],
+    recommendations: [],
+    sourceFileRefreshRequests: [],
+    updatedAt: now,
+  };
+  const compacted = store.compactDossierWorkflowStateForPersistence(bloatedState);
+  const compactedCandidate = compacted.candidates[0];
+  assert.equal(compactedCandidate.latestSourceFileArchive, undefined);
+  assert.equal(compactedCandidate.latestSourceFileArchiveId, archive.id);
+  assert.equal(compactedCandidate.latestSourceFileArchiveDigest, archive.sourceDigest);
+  assert.equal(compactedCandidate.latestSourceFileArchiveUpdatedAt, archive.updatedAt);
+  assert.deepEqual(compactedCandidate.sourceFileArchiveIds, [archive.id]);
+  assert.ok(Buffer.byteLength(JSON.stringify(compacted), "utf8") < 200_000);
+
+  const originalFetch = global.fetch;
+  try {
+    await store.saveDossierWorkflowState(bloatedState);
+    const opened = await (
+      await authedPost({
+        action: "recordSourceFileOpen",
+        candidateId: "compaction-candidate",
+      })
+    ).json();
+    assert.equal(opened.ok, true);
+    const openedCandidate = opened.candidates.find((candidate) => candidate.id === "compaction-candidate");
+    assert.equal(openedCandidate.latestSourceFileArchiveId, archive.id);
+    assert.equal(openedCandidate.latestSourceFileArchive.sourceFilePagePlanV1.primarySections[0].body, "Hydrated page-plan body for BNL handoff.");
+
+    global.fetch = async (_url, options = {}) => {
+      const packet = JSON.parse(options.body);
+      assert.equal(packet.latestSourceFileArchiveId, archive.id);
+      assert.equal(packet.sourceFilePagePlanV1.primarySections[0].body, "Hydrated page-plan body for BNL handoff.");
+      assert.equal(JSON.stringify(packet).includes(bloatedText.slice(0, 100)), false);
+      return new Response(
+        JSON.stringify({
+          draft: cleanContractDraft({
+            name: "Compaction Candidate BNL Draft",
+            summary: "Hydrated page-plan intelligence still reaches BNL draft generation.",
+          }),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+    const draftResponse = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: "compaction-candidate",
+    });
+    assert.equal(draftResponse.status, 200);
+    const draftPayload = await draftResponse.json();
+    assert.equal(draftPayload.draftStored, true);
+    assert.equal(draftPayload.storedDraft.fields.name, "Compaction Candidate BNL Draft");
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
+
 test("Source File case-report missing detection uses normalized archive extraction without compact-summary synthesis", () => {
   const report = bnlCaseReportFixture("nested preserved archive");
   const candidateBase = {

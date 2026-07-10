@@ -74,6 +74,7 @@ export type DossierWorkflowState = {
 
 export const DOSSIER_WORKFLOW_STORAGE_KEY = "barcode:dossier-workflow:v1";
 export const DOSSIER_WORKFLOW_LOCK_KEY = "barcode:dossier-workflow:v1:lock";
+const DOSSIER_WORKFLOW_SAFE_STORAGE_BYTES = 9_500_000;
 export const DOSSIER_SOURCE_FILE_ARCHIVE_KEY_PREFIX =
   "barcode:dossier-source-file-archive:v1";
 
@@ -401,6 +402,69 @@ function sanitizeWorkflowState(value: unknown): DossierWorkflowState {
         ? candidateState.updatedAt
         : new Date().toISOString(),
   };
+}
+
+function candidateWithCompactedSourceFileArchive(
+  candidate: DossierCandidate,
+): DossierCandidate {
+  const archive = candidate.latestSourceFileArchive;
+  const archiveIds = normalizeStringArray(candidate.sourceFileArchiveIds);
+  const latestArchiveId =
+    candidate.latestSourceFileArchiveId ??
+    (typeof archive?.id === "string" ? archive.id : undefined);
+  return {
+    ...candidate,
+    sourceFileArchiveIds: latestArchiveId
+      ? uniqueStrings([latestArchiveId], archiveIds)
+      : archiveIds,
+    latestSourceFileArchiveId: latestArchiveId,
+    latestSourceFileArchiveDigest:
+      candidate.latestSourceFileArchiveDigest ??
+      (typeof archive?.sourceDigest === "string" ? archive.sourceDigest : undefined),
+    latestSourceFileArchiveUpdatedAt:
+      candidate.latestSourceFileArchiveUpdatedAt ??
+      (typeof archive?.updatedAt === "string" ? archive.updatedAt : undefined),
+    latestSourceFileArchive: undefined,
+  };
+}
+
+export function compactDossierWorkflowStateForPersistence(
+  state: DossierWorkflowState,
+): DossierWorkflowState {
+  const sanitized = sanitizeWorkflowState(state);
+  return {
+    ...sanitized,
+    candidates: sanitized.candidates.map(candidateWithCompactedSourceFileArchive),
+  };
+}
+
+function serializedWorkflowStateBytes(state: DossierWorkflowState): number {
+  return Buffer.byteLength(JSON.stringify(state), "utf8");
+}
+
+function assertWorkflowStateWithinStorageLimit(
+  state: DossierWorkflowState,
+  options: { log?: boolean } = {},
+) {
+  const serializedBytes = serializedWorkflowStateBytes(state);
+  if (options.log) {
+    console.info("dossier_workflow_state_storage_size", {
+      serializedBytes,
+      safeLimitBytes: DOSSIER_WORKFLOW_SAFE_STORAGE_BYTES,
+      candidateCount: state.candidates.length,
+      draftCount: state.drafts.length,
+      recommendationCount: state.recommendations.length,
+      sourceFileRefreshRequestCount: state.sourceFileRefreshRequests.length,
+      latestSourceFileArchiveEmbeddedCount: state.candidates.filter(
+        (candidate) => Boolean(candidate.latestSourceFileArchive),
+      ).length,
+    });
+  }
+  if (serializedBytes > DOSSIER_WORKFLOW_SAFE_STORAGE_BYTES) {
+    throw new Error(
+      `Dossier workflow state is too large to persist safely after Source File archive compaction (${serializedBytes} bytes).`,
+    );
+  }
 }
 
 function createCandidateId(): string {
@@ -810,6 +874,17 @@ async function saveSourceFileArchiveRecord(input: {
   }
 }
 
+async function saveSourceFileArchiveManifest(
+  metadata: DossierSourceFileArchiveMetadata,
+): Promise<void> {
+  const redis = getRedis();
+  if (redis) {
+    await redis.set(sourceFileArchiveStorageKey(metadata.id), metadata);
+    return;
+  }
+  memoryArchiveManifestStore.set(metadata.id, metadata);
+}
+
 async function readSourceFileArchiveManifest(
   archiveId: string,
 ): Promise<DossierSourceFileArchiveMetadata | null> {
@@ -860,6 +935,37 @@ async function readSourceFileArchiveRecord(
   } catch {
     return null;
   }
+}
+
+async function persistHydratedCandidateArchiveManifests(
+  state: DossierWorkflowState,
+): Promise<void> {
+  const archives = state.candidates
+    .map((candidate) => candidate.latestSourceFileArchive)
+    .filter(
+      (archive): archive is DossierSourceFileArchiveMetadata =>
+        Boolean(archive?.id),
+    );
+  for (const archive of archives) {
+    await saveSourceFileArchiveManifest(archive);
+  }
+}
+
+async function hydrateWorkflowStateSourceFileArchives(
+  state: DossierWorkflowState,
+): Promise<DossierWorkflowState> {
+  const candidates = await Promise.all(
+    state.candidates.map(async (candidate) => {
+      if (candidate.latestSourceFileArchive || !candidate.latestSourceFileArchiveId) {
+        return candidate;
+      }
+      const archive = await readSourceFileArchiveManifest(
+        candidate.latestSourceFileArchiveId,
+      );
+      return archive ? { ...candidate, latestSourceFileArchive: archive } : candidate;
+    }),
+  );
+  return { ...state, candidates };
 }
 
 function createSourceFileNoteId(): string {
@@ -1235,11 +1341,13 @@ export function buildDossierSourceFileWorkflowContext(input: {
 
 export async function getDossierWorkflowState(): Promise<DossierWorkflowState> {
   const redis = getRedis();
-  if (!redis) return memoryState;
+  if (!redis) {
+    return hydrateWorkflowStateSourceFileArchives(sanitizeWorkflowState(memoryState));
+  }
 
-  const state = sanitizeWorkflowState(
+  const state = await hydrateWorkflowStateSourceFileArchives(sanitizeWorkflowState(
     await redis.get<unknown>(DOSSIER_WORKFLOW_STORAGE_KEY),
-  );
+  ));
   memoryState = state;
   return state;
 }
@@ -1252,7 +1360,11 @@ export async function saveDossierWorkflowState(
     version: 1,
     updatedAt: state.updatedAt || new Date().toISOString(),
   });
-  memoryState = nextState;
+  await persistHydratedCandidateArchiveManifests(nextState);
+  const persistedState = compactDossierWorkflowStateForPersistence(nextState);
+  const redis = getRedis();
+  assertWorkflowStateWithinStorageLimit(persistedState, { log: Boolean(redis) });
+  memoryState = persistedState;
   if (
     nextState.candidates.length === 0 &&
     nextState.recommendations.length === 0 &&
@@ -1265,9 +1377,8 @@ export async function saveDossierWorkflowState(
     memoryArchiveChunkStore = new Map<string, string>();
   }
 
-  const redis = getRedis();
   if (redis) {
-    await redis.set(DOSSIER_WORKFLOW_STORAGE_KEY, nextState);
+    await redis.set(DOSSIER_WORKFLOW_STORAGE_KEY, persistedState);
   }
 }
 
@@ -1323,7 +1434,9 @@ export async function updateDossierWorkflowState(
 
   if (!redis) {
     return withMemoryWriteLock(async () => {
-      const currentState = sanitizeWorkflowState(memoryState);
+      const currentState = await hydrateWorkflowStateSourceFileArchives(
+        sanitizeWorkflowState(memoryState),
+      );
       const updaterResult = updater(currentState);
       if (updaterResult === currentState) return currentState;
       const updatedState = sanitizeWorkflowState(updaterResult);
@@ -1333,7 +1446,10 @@ export async function updateDossierWorkflowState(
         revision: currentState.revision + 1,
         updatedAt: updatedState.updatedAt || new Date().toISOString(),
       });
-      memoryState = nextState;
+      await persistHydratedCandidateArchiveManifests(nextState);
+      const persistedState = compactDossierWorkflowStateForPersistence(nextState);
+      assertWorkflowStateWithinStorageLimit(persistedState);
+      memoryState = persistedState;
       return nextState;
     });
   }
@@ -1341,8 +1457,10 @@ export async function updateDossierWorkflowState(
   for (let attempt = 0; attempt < MAX_UPDATE_ATTEMPTS; attempt += 1) {
     const lockToken = await acquireRedisLock(redis);
     try {
-      const currentState = sanitizeWorkflowState(
-        await redis.get<unknown>(DOSSIER_WORKFLOW_STORAGE_KEY),
+      const currentState = await hydrateWorkflowStateSourceFileArchives(
+        sanitizeWorkflowState(
+          await redis.get<unknown>(DOSSIER_WORKFLOW_STORAGE_KEY),
+        ),
       );
       const updaterResult = updater(currentState);
       if (updaterResult === currentState) return currentState;
@@ -1362,8 +1480,11 @@ export async function updateDossierWorkflowState(
         revision: currentState.revision + 1,
         updatedAt: updatedState.updatedAt || new Date().toISOString(),
       });
-      await redis.set(DOSSIER_WORKFLOW_STORAGE_KEY, nextState);
-      memoryState = nextState;
+      await persistHydratedCandidateArchiveManifests(nextState);
+      const persistedState = compactDossierWorkflowStateForPersistence(nextState);
+      assertWorkflowStateWithinStorageLimit(persistedState, { log: true });
+      await redis.set(DOSSIER_WORKFLOW_STORAGE_KEY, persistedState);
+      memoryState = persistedState;
       return nextState;
     } finally {
       await releaseRedisLock(redis, lockToken);

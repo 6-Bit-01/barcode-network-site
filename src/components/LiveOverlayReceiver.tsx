@@ -20,7 +20,7 @@ type YTPlayer = {
 
 declare global {
   interface Window {
-    YT?: { Player: new (elementId: string, options: Record<string, unknown>) => YTPlayer };
+    YT?: { Player: new (elementId: string | HTMLElement, options: Record<string, unknown>) => YTPlayer };
     onYouTubeIframeAPIReady?: () => void;
   }
 }
@@ -499,6 +499,7 @@ function ensureYouTubeApi(): Promise<void> {
 
 function YouTubeOverlayPlayer({ sync }: { sync: LiveOverlayYouTubeSync }) {
   const playerRef = useRef<YTPlayer | null>(null);
+  const playerHostRef = useRef<HTMLDivElement | null>(null);
   const readyRef = useRef(false);
   const destroyedRef = useRef(false);
   const loadedVideoRef = useRef<string | null>(null);
@@ -508,6 +509,10 @@ function YouTubeOverlayPlayer({ sync }: { sync: LiveOverlayYouTubeSync }) {
   const failedVideoRef = useRef<string | null>(null);
   const [playerError, setPlayerError] = useState<{ code?: number; message: string } | null>(null);
   const containerId = "live-overlay-youtube-player";
+
+  const clearImperativeHost = useCallback(() => {
+    if (playerHostRef.current) playerHostRef.current.replaceChildren();
+  }, []);
 
   const clearReadyTimer = useCallback(() => {
     if (readyTimerRef.current) window.clearTimeout(readyTimerRef.current);
@@ -525,7 +530,8 @@ function YouTubeOverlayPlayer({ sync }: { sync: LiveOverlayYouTubeSync }) {
       // Third-party iframe cleanup is best-effort.
     }
     playerRef.current = null;
-  }, [clearReadyTimer]);
+    clearImperativeHost();
+  }, [clearImperativeHost, clearReadyTimer]);
 
   const applyYouTubeSync = useCallback((nextSync: LiveOverlayYouTubeSync) => {
     const player = playerRef.current;
@@ -564,13 +570,19 @@ function YouTubeOverlayPlayer({ sync }: { sync: LiveOverlayYouTubeSync }) {
     destroyedRef.current = false;
     const generation = generationRef.current + 1;
     generationRef.current = generation;
+    failedVideoRef.current = failedVideoRef.current === latestSyncRef.current.videoId ? failedVideoRef.current : null;
+    setPlayerError((current) => failedVideoRef.current === latestSyncRef.current.videoId ? current : null);
+    clearImperativeHost();
+    const mount = document.createElement("div");
+    mount.id = `${containerId}-yt-${generation}`;
+    playerHostRef.current?.appendChild(mount);
     readyTimerRef.current = window.setTimeout(() => {
       if (!cancelled && generationRef.current === generation) markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE — HOST USING EXTERNAL SOURCE");
     }, YOUTUBE_OVERLAY_READY_TIMEOUT_MS);
     ensureYouTubeApi().then(() => {
-      if (cancelled || generationRef.current !== generation || playerRef.current || !window.YT?.Player || failedVideoRef.current === latestSyncRef.current.videoId) return;
+      if (cancelled || generationRef.current !== generation || playerRef.current || !window.YT?.Player || failedVideoRef.current === latestSyncRef.current.videoId || !mount.isConnected) return;
       try {
-        playerRef.current = new window.YT.Player(containerId, {
+        playerRef.current = new window.YT.Player(mount, {
           videoId: latestSyncRef.current.videoId,
           playerVars: { autoplay: 0, controls: 0, modestbranding: 1, playsinline: 1, rel: 0, mute: 1 },
           events: {
@@ -600,6 +612,7 @@ function YouTubeOverlayPlayer({ sync }: { sync: LiveOverlayYouTubeSync }) {
     });
     return () => {
       cancelled = true;
+      generationRef.current += 1;
       destroyedRef.current = true;
       clearReadyTimer();
       readyRef.current = false;
@@ -610,14 +623,11 @@ function YouTubeOverlayPlayer({ sync }: { sync: LiveOverlayYouTubeSync }) {
         // Third-party iframe cleanup is best-effort.
       }
       playerRef.current = null;
+      clearImperativeHost();
     };
-  }, [applyYouTubeSync, clearReadyTimer, containerId, markPlayerUnavailable]);
+  }, [applyYouTubeSync, clearImperativeHost, clearReadyTimer, containerId, markPlayerUnavailable, sync.trackId, sync.videoId]);
 
-  if (playerError) {
-    return <div className="live-overlay-youtube-fallback" role="status"><p>{playerError.message}</p><span>{playerError.code ? youtubeErrorLabel(playerError.code) : youtubeErrorLabel()}</span></div>;
-  }
-
-  return <div className="live-overlay-youtube-player" id={containerId} aria-label="Muted YouTube overlay player" />;
+  return <div className="live-overlay-youtube-player" data-youtube-wrapper={containerId} aria-label="Muted YouTube overlay player"><div ref={playerHostRef} className={playerError ? "live-overlay-youtube-host live-overlay-youtube-host--hidden" : "live-overlay-youtube-host"} />{playerError && <div className="live-overlay-youtube-fallback" role="status"><p>{playerError.message}</p><span>{playerError.code ? youtubeErrorLabel(playerError.code) : youtubeErrorLabel()}</span></div>}</div>;
 }
 
 export function LiveOverlayReceiver() {

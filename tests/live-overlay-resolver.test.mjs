@@ -104,6 +104,8 @@ assert.equal(adminQueueControl.includes("useMemo<OverlayYouTubeTrackInput>") && 
 assert.equal(adminQueueControl.includes("playbackStateRef.current === \"playing\" || playbackStateRef.current === \"paused\""), true, "admin YouTube heartbeat publishes while playing and paused");
 assert.equal(adminQueueControl.includes("Stopped/ended publishes immediately") && adminQueueControl.includes("falls back after staleness"), true, "stopped YouTube sync behavior is documented");
 assert.equal(adminQueueControl.includes("onError: (event: { data: number })") && adminQueueControl.includes("youtubeErrorLabel"), true, "admin YouTube player records controlled IFrame error diagnostics");
+assert.equal(adminQueueControl.includes("playerHostRef") && adminQueueControl.includes("document.createElement(\"div\")") && adminQueueControl.includes("new yt.Player(mount"), true, "admin YouTube player uses an empty imperative host instead of a React-managed target child");
+assert.equal(adminQueueControl.includes("clearImperativeHost") && adminQueueControl.includes("replaceChildren()"), true, "admin YouTube cleanup clears YouTube-owned descendants imperatively and idempotently");
 assert.equal(adminQueueControl.includes("YOUTUBE_PLAYER_READY_TIMEOUT_MS") && adminQueueControl.includes("window.setTimeout"), true, "admin YouTube player has a readiness watchdog");
 assert.equal(adminQueueControl.includes("Open Wheel Panel") || adminQueueControl.includes("Open Wheel"), true, "top bar and wheel CTA expose an Open Wheel action when spins are owed");
 assert.equal(adminQueueControl.includes("Live Overlay — Wheel Owed"), true, "live overlay utility copy clearly signals owed wheel state");
@@ -124,6 +126,10 @@ assert.equal(receiver.includes("player.loadVideoById({ videoId: nextSync.videoId
 assert.equal(receiver.includes("requestSeq") && receiver.includes("latestAppliedSeq") && receiver.includes("AbortController") && receiver.includes("window.setTimeout(poll"), true, "overlay polling is ordered, single-flight, and timeout-driven");
 assert.equal(receiver.includes("setScene((current) => next.scene ?? next ?? current)") && receiver.includes("setConnected(false)"), true, "overlay polling failure preserves the last known good scene while signaling hold");
 assert.equal(receiver.includes("onError: (event: { data: number })") && receiver.includes("live-overlay-youtube-fallback"), true, "overlay YouTube errors render a controlled track-card fallback");
+assert.equal(receiver.includes("playerHostRef") && receiver.includes("document.createElement(\"div\")") && receiver.includes("new window.YT.Player(mount"), true, "overlay YouTube player uses an empty imperative host instead of its React component root");
+assert.equal(receiver.includes("data-youtube-wrapper") && receiver.includes("playerError && <div className=\"live-overlay-youtube-fallback\""), true, "overlay YouTube fallback stays inside the stable React-owned wrapper");
+assert.equal(receiver.includes("failedVideoRef.current = failedVideoRef.current === latestSyncRef.current.videoId ? failedVideoRef.current : null"), true, "overlay clears the previous failed-video marker for a different video");
+assert.equal(receiver.includes("failedVideoRef.current === nextSync.videoId") && receiver.includes("failedVideoRef.current === latestSyncRef.current.videoId"), true, "overlay does not recreate the same failed video on every poll");
 assert.equal(receiver.includes("YOUTUBE_OVERLAY_READY_TIMEOUT_MS") && receiver.includes("markPlayerUnavailable"), true, "overlay YouTube player has a readiness watchdog and controlled fallback");
 assert.equal(receiver.includes("generationRef") && receiver.includes("destroyedRef") && receiver.includes("try {") && receiver.includes("playerRef.current?.destroy?.()"), true, "overlay YouTube player guards operations and ignores obsolete callbacks");
 assert.equal(receiver.includes("Click to spin"), false, "public wheel overlay does not include stock click-to-spin text");

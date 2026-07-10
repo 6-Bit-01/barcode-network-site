@@ -598,7 +598,7 @@ declare global {
 
 function ensureAdminYouTubeApi(): Promise<void> {
   if (typeof window === "undefined") return Promise.resolve();
-  if ((window as Window & { YT?: { Player: new (elementId: string, options: Record<string, unknown>) => AdminYTPlayer } }).YT?.Player) return Promise.resolve();
+  if ((window as Window & { YT?: { Player: new (elementId: string | HTMLElement, options: Record<string, unknown>) => AdminYTPlayer } }).YT?.Player) return Promise.resolve();
   return new Promise((resolve) => {
     const previous = window.onYouTubeIframeAPIReady;
     window.onYouTubeIframeAPIReady = () => {
@@ -615,6 +615,8 @@ function ensureAdminYouTubeApi(): Promise<void> {
 
 function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
   const playerRef = useRef<AdminYTPlayer | null>(null);
+  const playerHostRef = useRef<HTMLDivElement | null>(null);
+  const generationRef = useRef(0);
   const playbackStateRef = useRef<"playing" | "paused" | "stopped">("stopped");
   const [diagnostics, setDiagnostics] = useState<{ provider: string; videoId: string; trackId: string; playbackState: "playing" | "paused" | "stopped"; currentTimeSeconds: number; updatedAt: string; status: "Fresh" | "Stale" | "Missing" | "Mismatch" | "Error"; ready: boolean; errorCode?: number; publishStatus?: "success" | "failed" } | null>(null);
   const [diagnosticsNow, setDiagnosticsNow] = useState(() => Date.now());
@@ -624,6 +626,9 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
   const videoId = parseYouTubeVideoId(trackLink);
   const trackSyncInput = useMemo<OverlayYouTubeTrackInput>(() => ({ id: trackId, link: trackLink, sourceType, videoId }), [trackId, trackLink, sourceType, videoId]);
   const containerId = `admin-youtube-player-${trackId}-${videoId ?? "unknown"}`;
+  const clearImperativeHost = useCallback(() => {
+    if (playerHostRef.current) playerHostRef.current.replaceChildren();
+  }, []);
   const publish = useCallback(async (playbackState: "playing" | "paused" | "stopped", currentTimeSeconds = 0) => {
     let actualVideoId = videoId;
     try {
@@ -647,27 +652,33 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
   useEffect(() => {
     if (!videoId) return;
     let cancelled = false;
+    const generation = generationRef.current + 1;
+    generationRef.current = generation;
+    clearImperativeHost();
+    const mount = document.createElement("div");
+    mount.id = `${containerId}-yt-${generation}`;
+    playerHostRef.current?.appendChild(mount);
     let readyTimer: number | null = window.setTimeout(() => {
-      if (cancelled) return;
+      if (cancelled || generationRef.current !== generation) return;
       playbackStateRef.current = "stopped";
       setDiagnostics({ provider: "youtube", videoId, trackId, playbackState: "stopped", currentTimeSeconds: 0, updatedAt: new Date().toISOString(), status: "Error", ready: false, publishStatus: "failed" });
       publish("stopped", 0);
     }, YOUTUBE_PLAYER_READY_TIMEOUT_MS);
     ensureAdminYouTubeApi().then(() => {
-      const yt = (window as Window & { YT?: { Player: new (elementId: string, options: Record<string, unknown>) => AdminYTPlayer } }).YT;
-      if (cancelled || playerRef.current || !yt?.Player) return;
-      playerRef.current = new yt.Player(containerId, {
+      const yt = (window as Window & { YT?: { Player: new (elementId: string | HTMLElement, options: Record<string, unknown>) => AdminYTPlayer } }).YT;
+      if (cancelled || generationRef.current !== generation || playerRef.current || !yt?.Player || !mount.isConnected) return;
+      playerRef.current = new yt.Player(mount, {
         videoId,
         playerVars: { autoplay: 0, controls: 1, modestbranding: 1, playsinline: 1, rel: 0 },
         events: {
           onReady: () => {
-            if (cancelled) return;
+            if (cancelled || generationRef.current !== generation) return;
             if (readyTimer) window.clearTimeout(readyTimer);
             readyTimer = null;
             setDiagnostics((current) => current ? { ...current, ready: true } : { provider: "youtube", videoId, trackId, playbackState: "stopped", currentTimeSeconds: 0, updatedAt: new Date().toISOString(), status: "Missing", ready: true });
           },
           onError: (event: { data: number }) => {
-            if (cancelled) return;
+            if (cancelled || generationRef.current !== generation) return;
             if (readyTimer) window.clearTimeout(readyTimer);
             readyTimer = null;
             playbackStateRef.current = "stopped";
@@ -675,7 +686,7 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
             publish("stopped", 0);
           },
           onStateChange: (event: { data: number }) => {
-            if (cancelled) return;
+            if (cancelled || generationRef.current !== generation) return;
             const next = event.data === 1 ? "playing" : event.data === 2 ? "paused" : event.data === 0 ? "stopped" : null;
             if (!next) return;
             playbackStateRef.current = next;
@@ -709,6 +720,7 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
     }, 2_500);
     return () => {
       cancelled = true;
+      generationRef.current += 1;
       window.clearInterval(interval);
       if (readyTimer) window.clearTimeout(readyTimer);
       try {
@@ -717,12 +729,13 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
         // YouTube iframe cleanup is best-effort.
       }
       playerRef.current = null;
+      clearImperativeHost();
     };
-  }, [containerId, publish, trackId, videoId]);
+  }, [clearImperativeHost, containerId, publish, trackId, videoId]);
 
   if (!videoId) return <div className="border border-border p-3 text-sm text-muted">No playable YouTube video ID found. Use Open Link.</div>;
   const syncAge = diagnostics ? Math.max(0, Math.round((diagnosticsNow - new Date(diagnostics.updatedAt).getTime()) / 1000)) : null;
-  return <div className="space-y-2"><div id={containerId} className="h-56 w-full border border-border" /><div className="grid gap-1 border border-border/60 bg-surface/80 p-2 text-[10px] uppercase tracking-widest text-muted sm:grid-cols-3"><span>Provider: {diagnostics?.provider ?? "youtube"}</span><span>Video ID: {diagnostics?.videoId ?? videoId}</span><span>Track ID: {diagnostics?.trackId ?? trackId}</span><span>State: {diagnostics?.playbackState ?? "Missing"}</span><span>Host time: {Math.round(diagnostics?.currentTimeSeconds ?? 0)}s</span><span>Sync: {diagnostics?.status ?? "Missing"}{syncAge !== null ? ` · ${syncAge}s` : ""}</span><span>Ready: {diagnostics?.ready ? "yes" : "no"}</span><span>Error: {diagnostics?.errorCode ? `${diagnostics.errorCode} · ${youtubeErrorLabel(diagnostics.errorCode)}` : "—"}</span><span>Publish: {diagnostics?.publishStatus ?? "—"}</span></div></div>;
+  return <div className="space-y-2"><div className="relative h-56 w-full border border-border"><div ref={playerHostRef} className="h-full w-full" data-youtube-host={containerId} /></div><div className="grid gap-1 border border-border/60 bg-surface/80 p-2 text-[10px] uppercase tracking-widest text-muted sm:grid-cols-3"><span>Provider: {diagnostics?.provider ?? "youtube"}</span><span>Video ID: {diagnostics?.videoId ?? videoId}</span><span>Track ID: {diagnostics?.trackId ?? trackId}</span><span>State: {diagnostics?.playbackState ?? "Missing"}</span><span>Host time: {Math.round(diagnostics?.currentTimeSeconds ?? 0)}s</span><span>Sync: {diagnostics?.status ?? "Missing"}{syncAge !== null ? ` · ${syncAge}s` : ""}</span><span>Ready: {diagnostics?.ready ? "yes" : "no"}</span><span>Error: {diagnostics?.errorCode ? `${diagnostics.errorCode} · ${youtubeErrorLabel(diagnostics.errorCode)}` : "—"}</span><span>Publish: {diagnostics?.publishStatus ?? "—"}</span></div></div>;
 }
 
 function PlayerDock({ player, minimized, setMinimized, readOnly, actionPending, onAction, onCopy }: { player: QueueEntry; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; actionPending: boolean; onAction: (id: string, action: AdminQueueAction) => void; onCopy: () => void }) {

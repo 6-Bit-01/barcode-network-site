@@ -1100,3 +1100,13 @@ body > div:last-of-type {
   color: rgba(255, 255, 255, 0.68);
   font-size: 0.75rem;
 }
+
+.live-overlay-youtube-host,
+.live-overlay-youtube-host iframe {
+  width: 100%;
+  height: 100%;
+}
+
+.live-overlay-youtube-host--hidden {
+  display: none;
+}

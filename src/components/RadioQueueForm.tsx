@@ -590,24 +590,36 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
             <div className="grid gap-2 border border-border/70 bg-background/40 p-3 text-xs text-muted sm:grid-cols-[0.95fr_1.05fr]">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-foreground">Accepted track sources</p>
-                <div className="mt-2 grid grid-cols-2 gap-2">
+                <div className="mt-2 grid gap-2 sm:grid-cols-[0.6fr_1.4fr]">
                   <div>
                     <p className="text-[10px] uppercase tracking-widest text-muted">Upload</p>
-                    <p className="mt-1 font-bold text-foreground">MP3 or WAV</p>
+                    <ul className="mt-1 space-y-0.5 font-bold text-foreground">
+                      <li>MP3</li>
+                      <li>WAV</li>
+                    </ul>
                   </div>
                   <div>
-                    <p className="text-[10px] uppercase tracking-widest text-muted">Track links</p>
-                    <ul className="mt-1 space-y-0.5 text-foreground">
-                      <li>YouTube video or Short</li>
-                      <li>Spotify track</li>
+                    <p className="text-[10px] uppercase tracking-widest text-muted">Common track links</p>
+                    <ul className="mt-1 grid gap-x-3 gap-y-0.5 text-foreground sm:grid-cols-2">
+                      <li>YouTube video, Short, or YouTube Music</li>
+                      <li>Spotify</li>
                       <li>SoundCloud track</li>
+                      <li>Apple Music</li>
+                      <li>Amazon Music</li>
+                      <li>Suno</li>
+                      <li>Bandcamp</li>
+                      <li>Audiomack</li>
+                      <li>BeatStars</li>
+                      <li>TikTok video or Short</li>
+                      <li>Direct hosted audio or music-video link</li>
+                      <li>Other public direct song links</li>
                     </ul>
                   </div>
                 </div>
               </div>
               <div className="space-y-1 leading-relaxed">
-                <p>Other public track links may still be submitted, but artwork, duration, or embedded playback may be unavailable and the host may need to open them externally.</p>
-                <p className="text-foreground">Send a direct song/video link rather than an artist profile or general homepage.</p>
+                <p>Some services may not provide automatic artwork, duration, or embedded playback. Those links are still accepted and may be opened externally by the host.</p>
+                <p className="text-foreground">Send a direct song, track, or video link—not an artist profile, playlist, channel, album homepage, or general website page.</p>
               </div>
             </div>
             {mode === "link" ? (

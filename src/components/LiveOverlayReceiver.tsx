@@ -683,6 +683,8 @@ export function LiveOverlayReceiver() {
   const trackVisible = showTrack(scene);
   const youtubeVisible = scene.mode === "now_playing" && scene.automatic && scene.youtube && scene.track;
   const wheelVisible = Boolean(scene.wheelCeremony);
+  const shortYouTube = scene.track?.youtubePresentation === "short";
+  const youtubeSceneClass = shortYouTube ? "live-overlay-youtube-scene live-overlay-youtube-scene--short" : "live-overlay-youtube-scene";
 
   async function enableOverlayAudio() {
     const spin = new Audio("/audio/wheel/142.mp3");
@@ -776,8 +778,10 @@ export function LiveOverlayReceiver() {
           {wheelVisible ? (
             <WheelCeremonyOverlay scene={scene} audioArmed={audioArmed} audioNotice={audioNotice} audioJustArmed={audioJustArmed} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={() => playSfxBuffer(cheerBufferRef, WHEEL_CHEER_VOLUME)} playEncryptSfx={() => playSfxBuffer(encryptBufferRef, WHEEL_ENCRYPT_VOLUME)} />
           ) : youtubeVisible && scene.youtube && scene.track ? (
-            <div className="live-overlay-youtube-scene">
-              <YouTubeOverlayPlayer sync={scene.youtube} />
+            <div className={youtubeSceneClass}>
+              <div className="live-overlay-youtube-viewport">
+                <YouTubeOverlayPlayer sync={scene.youtube} />
+              </div>
               <div className="live-overlay-youtube-lower">
                 <p className="live-overlay-mode">{label}</p>
                 <h1>{scene.track.artistName}</h1>

@@ -272,6 +272,12 @@ body > div:last-of-type {
   box-shadow: 1vmin 1vmin 0 rgba(255, 0, 0, 0.72), inset 0 0 60px rgba(255, 0, 0, 0.16);
 }
 
+.live-overlay-youtube-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
 .live-overlay-youtube-player,
 .live-overlay-youtube-player iframe {
   position: absolute;
@@ -310,6 +316,68 @@ body > div:last-of-type {
   margin-top: 0.8vmin;
   color: rgba(255, 255, 255, 0.78);
   font-size: clamp(0.85rem, 2.35vmin, 1.9rem);
+}
+
+.live-overlay-youtube-scene--short {
+  display: grid;
+  grid-template-columns: minmax(0, 0.64fr) minmax(0, 0.36fr);
+  align-items: center;
+  gap: 3vmin;
+  padding: 3vmin;
+}
+
+.live-overlay-youtube-scene--short .live-overlay-youtube-viewport {
+  position: relative;
+  inset: auto;
+  aspect-ratio: 9 / 16;
+  width: min(100%, 42.75vmin);
+  max-height: 100%;
+  justify-self: center;
+  align-self: center;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 0 0 0.25vmin rgba(255, 255, 255, 0.18), 0 0 4vmin rgba(255, 0, 0, 0.22);
+}
+
+.live-overlay-youtube-scene--short .live-overlay-youtube-player,
+.live-overlay-youtube-scene--short .live-overlay-youtube-player iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.live-overlay-youtube-scene--short .live-overlay-youtube-lower {
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  z-index: 1;
+  min-width: 0;
+  max-width: 100%;
+  align-self: center;
+  overflow: hidden;
+  border-left: 0.5vmin solid #f00;
+  background: linear-gradient(135deg, rgba(255, 0, 0, 0.2), rgba(0, 0, 0, 0.9) 34%, rgba(0, 0, 0, 0.72));
+  padding: 2.2vmin 2.4vmin;
+}
+
+.live-overlay-youtube-scene--short .live-overlay-youtube-lower h1,
+.live-overlay-youtube-scene--short .live-overlay-youtube-lower h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  hyphens: auto;
+}
+
+.live-overlay-youtube-scene--short .live-overlay-youtube-lower h1 {
+  font-size: clamp(1.25rem, 3.5vmin, 3rem);
+  line-height: 0.98;
+}
+
+.live-overlay-youtube-scene--short .live-overlay-youtube-lower h2 {
+  font-size: clamp(0.8rem, 2.1vmin, 1.65rem);
+  line-height: 1.08;
 }
 
 

@@ -109,6 +109,170 @@ test("BNL dossier draft packet keeps internal aliases out and declares site/BNL 
   assert.ok(packet.sourceBoundaryRules.some((rule) => /Source File/.test(rule)));
 });
 
+
+test("BNL dossier draft packet includes latest safe Source File page-plan intelligence", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const pagePlan = {
+    header: { subject: "Packet Subject", bnlState: "ready for proposed dossier" },
+    analystRead: { overallRead: "Public-safe page plan should guide the draft." },
+    publicSafeMaterial: [{ material: "Public-safe authored material.", whySafeEnough: "Approved by BNL read." }],
+    draftOrUpdatePlan: { canDraft: true, ownerReviewWarnings: ["Owner should confirm preferred public link."] },
+  };
+  const candidate = {
+    id: "candidate_source_intel",
+    name: "Packet Subject",
+    candidateType: "artist",
+    source: "bnl_source_file_enrichment",
+    tier: "draft_ready",
+    score: 80,
+    whyNow: "Public-safe Source File intelligence is ready.",
+    reason: "Latest archive includes authored page plan.",
+    evidenceSummary: "Public-safe summary.",
+    knownFacts: ["Existing public-safe fact."],
+    doNotSay: ["Do not mention internal evidence."],
+    missingInfo: ["Confirm preferred public link."],
+    publicSafetyNotes: ["Keep source-blind material out of public copy."],
+    identityReviewStatus: "needs_confirmation",
+    identityLinks: [
+      { id: "alias_public", candidateId: "candidate_source_intel", label: "Packet Public", normalizedLabel: "packet public", type: "public_persona", visibility: "public_safe", status: "confirmed", source: "owner_confirmed", useForMatching: true, useInPublicDossier: true, createdAt: now, updatedAt: now },
+      { id: "alias_admin", candidateId: "candidate_source_intel", label: "ADMIN_ONLY_ALIAS_SHOULD_NOT_COPY", normalizedLabel: "admin only alias should not copy", type: "alias", visibility: "internal_only", status: "confirmed", source: "admin_manual", useForMatching: true, useInPublicDossier: false, createdAt: now, updatedAt: now },
+    ],
+    sourceFileNotes: [
+      { id: "note_safe", candidateId: "candidate_source_intel", type: "fact", text: "Safe note survives.", source: "admin_manual", status: "active", publicSafe: true, createdAt: now, updatedAt: now },
+      { id: "note_private", candidateId: "candidate_source_intel", type: "general_note", text: "PRIVATE_NOTE_SHOULD_NOT_COPY", source: "admin_manual", status: "active", publicSafe: false, createdAt: now, updatedAt: now },
+    ],
+    latestSourceFileArchiveId: "archive_latest_safe",
+    latestSourceFileArchiveDigest: "digest_latest_safe",
+    latestSourceFileArchiveUpdatedAt: now,
+    latestSourceFileArchive: {
+      id: "archive_latest_safe",
+      candidateId: "candidate_source_intel",
+      subjectName: "Packet Subject",
+      sourceDigest: "digest_latest_safe",
+      createdAt: now,
+      updatedAt: now,
+      archiveSize: 2048,
+      chunkCount: 2,
+      reviewOnly: true,
+      sourceFilePagePlanV1: pagePlan,
+      subjectDossierStateV1: { state: "ready_for_bnl_draft", summary: "Use the safe plan." },
+      sourceFileSurfaceV1: { summary: "Source File surface summary." },
+      dossierCompletionReadV1: { bnlAssessment: "Draft cautiously from public-safe materials.", readiness: "ready" },
+      reviewActionabilityV1: { ownerWarnings: ["Owner confirmation required before publishing."] },
+      sourceFileClassificationV1: { subjectType: "artist", publicDossierType: "Artist", publicSafeTagCandidates: ["artist"] },
+      compactSummary: "Compact fallback summary.",
+      publicSafePossibilities: ["Fallback possibility."],
+      missingInfo: ["Fallback missing info."],
+      publicSafetyNotes: ["Fallback safety note."],
+      doNotSay: ["Fallback do not say."],
+      evidenceReceiptSummary: ["Receipt only."],
+      archiveKey: "RAW_ARCHIVE_KEY_SHOULD_NOT_COPY",
+      chunkKeys: ["RAW_CHUNK_KEY_SHOULD_NOT_COPY"],
+    },
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const packet = bnlDossierDraft.buildBnlDossierDraftRequestPacket({ candidate, recommendations: [] });
+  assert.deepEqual(packet.sourceFilePagePlanV1, pagePlan);
+  assert.equal(packet.subjectDossierStateV1.state, "ready_for_bnl_draft");
+  assert.equal(packet.sourceFileClassificationV1.publicDossierType, "Artist");
+  assert.deepEqual(packet.reviewActionabilityV1.ownerWarnings, ["Owner confirmation required before publishing."]);
+  assert.equal(packet.latestSourceFileArchiveId, "archive_latest_safe");
+  assert.deepEqual(packet.publicSafeFacts.includes("Existing public-safe fact."), true);
+  assert.deepEqual(packet.publicSafeNotes.map((note) => note.id), ["note_safe"]);
+  assert.ok(packet.reviewOnlyWarnings.some((warning) => /source-blind material/i.test(warning)));
+  assert.ok(packet.doNotSayNotes.some((note) => /internal evidence/i.test(note)));
+  assert.ok(packet.missingInfo.includes("Confirm preferred public link."));
+  assert.equal(packet.identityAliasStatus.internalAliasCount, 1);
+  assert.ok(packet.safeClassification);
+  assert.ok(packet.stylePacket);
+  assert.ok(packet.fieldRequirements.length > 0);
+  assert.ok(packet.ownerReviewRules.length > 0);
+  assert.ok(packet.sourceBoundaryRules.length > 0);
+  const serialized = JSON.stringify(packet);
+  assert.doesNotMatch(JSON.stringify(packet.publicSafeFacts), /PRIVATE_NOTE_SHOULD_NOT_COPY|ADMIN_ONLY_ALIAS_SHOULD_NOT_COPY|RAW_CHUNK_KEY_SHOULD_NOT_COPY|RAW_ARCHIVE_KEY_SHOULD_NOT_COPY/i);
+  assert.doesNotMatch(JSON.stringify(packet.publicSafeNotes), /PRIVATE_NOTE_SHOULD_NOT_COPY|ADMIN_ONLY_ALIAS_SHOULD_NOT_COPY|RAW_CHUNK_KEY_SHOULD_NOT_COPY|RAW_ARCHIVE_KEY_SHOULD_NOT_COPY/i);
+  assert.doesNotMatch(serialized, /RAW_CHUNK_KEY_SHOULD_NOT_COPY|RAW_ARCHIVE_KEY_SHOULD_NOT_COPY/i);
+});
+
+
+test("BNL dossier draft packet coerces invalid safeClassification placeholders", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const packet = bnlDossierDraft.buildBnlDossierDraftRequestPacket({
+    candidate: {
+      id: "candidate_invalid_safe_classification",
+      name: "Invalid Safe Classification",
+      candidateType: "community_member",
+      source: "manual",
+      tier: "review_candidate",
+      score: 50,
+      whyNow: "Legacy taxonomy placeholder fixture.",
+      reason: "Stored taxonomy fields are placeholders.",
+      evidenceSummary: "Public-safe fixture evidence.",
+      recommendedCategory: "category",
+      recommendedKind: "kind",
+      recommendedEcosystemLane: "ecosystemLane",
+      identityReviewStatus: "unreviewed",
+      createdAt: now,
+      updatedAt: now,
+    },
+    recommendations: [],
+  });
+  assert.equal(packet.safeClassification.category, "Entity");
+  assert.equal(packet.safeClassification.kind, "entity");
+  assert.equal(packet.safeClassification.ecosystemLane, "unknown");
+  assert.notEqual(packet.safeClassification.kind, "kind");
+  assert.ok(packet.safeClassificationWarnings.some((warning) => /kind .*invalid.*fallback "entity"/i.test(warning)));
+  assert.ok(packet.reviewOnlyWarnings.some((warning) => /classification kind/i.test(warning)));
+});
+
+test("BNL dossier draft packet preserves legacy fallback and candidate id archive authority", () => {
+  const now = "2026-06-18T00:00:00.000Z";
+  const legacyCandidate = {
+    id: "candidate_legacy_packet",
+    name: "Legacy Packet",
+    candidateType: "community_member",
+    source: "manual",
+    tier: "review_candidate",
+    score: 50,
+    whyNow: "Legacy fallback.",
+    reason: "No page plan.",
+    evidenceSummary: "Legacy public-safe context.",
+    knownFacts: ["Legacy fact."],
+    identityReviewStatus: "unreviewed",
+    createdAt: now,
+    updatedAt: now,
+  };
+  const legacyPacket = bnlDossierDraft.buildBnlDossierDraftRequestPacket({ candidate: legacyCandidate, recommendations: [] });
+  assert.equal(legacyPacket.sourceFilePagePlanV1, undefined);
+  assert.deepEqual(legacyPacket.publicSafeFacts.includes("Legacy fact."), true);
+
+  const mismatchedArchiveCandidate = {
+    ...legacyCandidate,
+    id: "candidate_id_wins",
+    name: "Same Name",
+    latestSourceFileArchiveId: "archive_wrong_candidate",
+    latestSourceFileArchiveDigest: "digest_wrong_candidate",
+    latestSourceFileArchiveUpdatedAt: now,
+    latestSourceFileArchive: {
+      id: "archive_wrong_candidate",
+      candidateId: "other_candidate_id",
+      subjectName: "Same Name",
+      sourceDigest: "digest_wrong_candidate",
+      createdAt: now,
+      updatedAt: now,
+      archiveSize: 1,
+      chunkCount: 1,
+      reviewOnly: true,
+      sourceFilePagePlanV1: { header: { subject: "Should Not Win" } },
+    },
+  };
+  const packet = bnlDossierDraft.buildBnlDossierDraftRequestPacket({ candidate: mismatchedArchiveCandidate, recommendations: [] });
+  assert.equal(packet.sourceFilePagePlanV1, undefined);
+  assert.equal(packet.latestSourceFileArchiveId, undefined);
+});
+
 test("BNL dossier draft response validation blocks public source/debug copy", () => {
   const validation = bnlDossierDraft.validateBnlDossierDraftResponse({
     name: "Packet Subject",
@@ -1396,7 +1560,7 @@ test("Source File open refresh workflow dedupes, exposes bot polling, and comple
   const afterRecentCompletion = await (await authedPost({ action: "recordSourceFileOpen", candidateId })).json();
   assert.equal(afterRecentCompletion.sourceFileRefreshRequests.length, 2);
   assert.equal(afterRecentCompletion.refresh.request.status, "pending");
-  assert.equal(afterRecentCompletion.immediateRefresh.status, "unavailable");
+  assert.equal(afterRecentCompletion.immediateRefresh.status, "pending");
 
   const manualAgain = await (await authedPost({
     action: "requestSourceFileRefresh",
@@ -1425,7 +1589,7 @@ test("Source File open refresh workflow dedupes, exposes bot polling, and comple
 
 
 
-test("Source File open and retry call BNL refresh-now server-side with safe status results", async () => {
+test("Source File open queues background refresh while manual retry calls BNL refresh-now", async () => {
   await resetWorkflowStore();
   process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL = "https://bnl.example.test/internal/source-files/refresh-now";
   process.env.BNL_SOURCE_FILE_REFRESH_TOKEN = "test-refresh-token";
@@ -1439,15 +1603,12 @@ test("Source File open and retry call BNL refresh-now server-side with safe stat
     assert.equal(String(url), process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL);
     assert.equal(options.headers["X-BNL-REFRESH-TOKEN"], "test-refresh-token");
     const body = JSON.parse(options.body);
-    assert.equal(body.source, calls.length === 1 ? "admin_open_source_file" : "admin_manual");
+    assert.equal(body.source, "admin_manual");
     assert.equal(body.siteCallbackBaseUrl, "https://example.test");
     assert.equal(body.requestingSiteOrigin, "https://example.test");
     assert.equal(body.sourceFileArchiveCallbackBaseUrl, "https://example.test");
     assert.ok(body.requestId);
     assert.equal(body.candidateId, body.candidateId);
-    if (calls.length === 1) {
-      return Response.json({ ok: true, status: "success", recommendationId: "fresh-rec-id" });
-    }
     return Response.json({ ok: false, status: "failed", failureReason: "BNL fixture failure" }, { status: 500 });
   };
 
@@ -1466,13 +1627,13 @@ test("Source File open and retry call BNL refresh-now server-side with safe stat
     await authedPost({ action: "promoteCandidateToSourceFile", candidateId });
 
     const opened = await (await authedPost({ action: "recordSourceFileOpen", candidateId })).json();
-    assert.equal(opened.immediateRefresh.ok, true);
-    assert.equal(opened.immediateRefresh.status, "success");
-    assert.equal(opened.immediateRefresh.recommendationId, "fresh-rec-id");
-    assert.equal(opened.immediateRefresh.callbackBaseSent, true);
+    assert.equal(opened.immediateRefresh.ok, false);
+    assert.equal(opened.immediateRefresh.status, "pending");
+    assert.match(opened.immediateRefresh.failureReason, /latest-known Source File data is shown/i);
+    assert.equal(opened.immediateRefresh.callbackBaseSent, false);
     assert.equal(opened.immediateRefresh.callbackBaseHost, "example.test");
-    assert.equal(opened.sourceFileRefreshRequests[0].status, "completed");
-    assert.equal(opened.sourceFileRefreshRequests[0].completedByRecommendationId, "fresh-rec-id");
+    assert.equal(opened.sourceFileRefreshRequests[0].status, "pending");
+    assert.equal(calls.length, 0);
 
     const retry = await (await authedPost({
       action: "requestSourceFileRefresh",
@@ -1484,7 +1645,7 @@ test("Source File open and retry call BNL refresh-now server-side with safe stat
     assert.equal(retry.immediateRefresh.failureReason, "BNL fixture failure");
     assert.equal(retry.immediateRefresh.callbackBaseSent, true);
     assert.equal(retry.immediateRefresh.callbackBaseHost, "example.test");
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 1);
   } finally {
     global.fetch = originalFetch;
     delete process.env.BNL_SOURCE_FILE_REFRESH_NOW_URL;
@@ -1534,6 +1695,15 @@ test("Source File refresh does not forward untrusted callback origins", async ()
 
     assert.equal(opened.immediateRefresh.callbackBaseSent, false);
     assert.equal(opened.immediateRefresh.callbackBaseHost, undefined);
+
+    const manual = await (await authedPost({
+      action: "requestSourceFileRefresh",
+      candidateId,
+      reason: "Manual untrusted origin callback safety check.",
+      siteCallbackBaseUrl: "https://evil.example.test",
+    }, { url: "https://evil.example.test/api/admin/dossiers" })).json();
+    assert.equal(manual.immediateRefresh.callbackBaseSent, false);
+    assert.equal(manual.immediateRefresh.callbackBaseHost, undefined);
     assert.equal(calls.length, 1);
     assert.equal(calls[0].body.siteCallbackBaseUrl, undefined);
     assert.equal(calls[0].body.requestingSiteOrigin, undefined);
@@ -1889,20 +2059,15 @@ test("Source File refresh requests case-report backfill and refuses false comple
   try {
     const opened = await (await authedPost({ action: "recordSourceFileOpen", candidateId })).json();
     assert.equal(opened.immediateRefresh.ok, false);
-    assert.equal(opened.immediateRefresh.status, "failed");
-    assert.equal(opened.immediateRefresh.failureReason, "case_report_missing_after_refresh");
-    assert.equal(opened.sourceFileRefreshRequests[0].status, "failed");
+    assert.equal(opened.immediateRefresh.status, "pending");
+    assert.match(opened.immediateRefresh.failureReason, /latest-known Source File data is shown/i);
+    assert.equal(opened.sourceFileRefreshRequests[0].status, "pending");
     assert.equal(opened.sourceFileRefreshRequests[0].completedAt, undefined);
     assert.equal(opened.sourceFileRefreshRequests[0].reason, "case_report_missing");
     assert.equal(opened.sourceFileRefreshRequests[0].caseReportMissing, true);
     assert.equal(opened.sourceFileRefreshRequests[0].requiresCaseReportBackfill, true);
-    assert.equal(calls[0].body.reason, "case_report_missing");
-    assert.equal(calls[0].body.caseReportMissing, true);
-    assert.equal(calls[0].body.requiresCaseReportBackfill, true);
-    assert.equal(calls[0].body.siteCallbackBaseUrl, "https://example.test");
-    assert.equal(calls[0].body.requestingSiteOrigin, "https://example.test");
-    assert.equal(calls[0].body.sourceFileArchiveCallbackBaseUrl, "https://example.test");
-    assert.equal(opened.immediateRefresh.callbackBaseSent, true);
+    assert.equal(calls.length, 0);
+    assert.equal(opened.immediateRefresh.callbackBaseSent, false);
     assert.equal(opened.immediateRefresh.callbackBaseHost, "example.test");
 
     const manual = await (await authedPost({
@@ -1915,12 +2080,12 @@ test("Source File refresh requests case-report backfill and refuses false comple
     assert.equal(manual.sourceFileRefreshRequests[0].status, "failed");
     assert.equal(manual.sourceFileRefreshRequests[0].reason, "case_report_missing");
     assert.equal(manual.sourceFileRefreshRequests[0].failureReason, "case_report_missing_after_refresh");
-    assert.equal(calls[1].body.reason, "case_report_missing");
-    assert.equal(calls[1].body.caseReportMissing, true);
-    assert.equal(calls[1].body.requiresCaseReportBackfill, true);
-    assert.equal(calls[1].body.siteCallbackBaseUrl, "https://example.test");
-    assert.equal(calls[1].body.requestingSiteOrigin, "https://example.test");
-    assert.equal(calls[1].body.sourceFileArchiveCallbackBaseUrl, "https://example.test");
+    assert.equal(calls[0].body.reason, "case_report_missing");
+    assert.equal(calls[0].body.caseReportMissing, true);
+    assert.equal(calls[0].body.requiresCaseReportBackfill, true);
+    assert.equal(calls[0].body.siteCallbackBaseUrl, "https://example.test");
+    assert.equal(calls[0].body.requestingSiteOrigin, "https://example.test");
+    assert.equal(calls[0].body.sourceFileArchiveCallbackBaseUrl, "https://example.test");
     assert.equal(manual.immediateRefresh.callbackBaseSent, true);
     assert.equal(manual.immediateRefresh.callbackBaseHost, "example.test");
     const afterRefreshState = await store.getDossierWorkflowState();
@@ -2044,6 +2209,130 @@ test("Source File archive ingest preserves BNL Case File Reports from accepted w
   }
 });
 
+test("workflow persistence compacts hydrated Source File archives while preserving selected-archive hydration", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const now = new Date().toISOString();
+  const bloatedText = "BNL_SAFE_ARCHIVE_PAYLOAD ".repeat(80_000);
+  const archive = {
+    id: "archive_compaction_fixture",
+    candidateId: "compaction-candidate",
+    subjectName: "Compaction Candidate",
+    subjectKey: workflow.normalizeDossierSubjectName("Compaction Candidate"),
+    ingestSource: "bnl_source_file_enrichment",
+    sourceDigest: "digest_compaction_fixture",
+    createdAt: now,
+    updatedAt: now,
+    archiveSize: bloatedText.length,
+    chunkCount: 1,
+    chunkKeys: ["archive_compaction_fixture:chunk:0"],
+    compactSummary: ["Compact summary survives in separate archive metadata."],
+    sourceFilePagePlanV1: {
+      version: "1",
+      generatedAt: now,
+      subjectName: "Compaction Candidate",
+      header: {
+        title: "Compaction Candidate",
+        subtitle: "Hydrated page-plan body for BNL handoff.",
+      },
+      primarySections: [
+        {
+          id: "overview",
+          title: "Overview",
+          displayMode: "summary",
+          publicSafe: true,
+          body: "Hydrated page-plan body for BNL handoff.",
+        },
+      ],
+    },
+    sourceFileClassificationV1: {
+      category: "Entity",
+      kind: "entity",
+      ecosystemLane: "unknown",
+      confidence: "medium",
+    },
+    sourcePackage: { oversizedFixtureText: bloatedText },
+    reviewOnly: true,
+  };
+  const bloatedState = {
+    version: 1,
+    revision: 1,
+    candidates: [
+      {
+        ...manualCandidateInput,
+        id: "compaction-candidate",
+        name: "Compaction Candidate",
+        status: "active_source_file",
+        source: "manual",
+        createdAt: now,
+        updatedAt: now,
+        sourceFileNotes: [],
+        sourceFileArchiveIds: [archive.id],
+        latestSourceFileArchiveId: archive.id,
+        latestSourceFileArchiveDigest: archive.sourceDigest,
+        latestSourceFileArchiveUpdatedAt: archive.updatedAt,
+        latestSourceFileArchive: archive,
+      },
+    ],
+    drafts: [],
+    recommendations: [],
+    sourceFileRefreshRequests: [],
+    updatedAt: now,
+  };
+  const compacted = store.compactDossierWorkflowStateForPersistence(bloatedState);
+  const compactedCandidate = compacted.candidates[0];
+  assert.equal(compactedCandidate.latestSourceFileArchive, undefined);
+  assert.equal(compactedCandidate.latestSourceFileArchiveId, archive.id);
+  assert.equal(compactedCandidate.latestSourceFileArchiveDigest, archive.sourceDigest);
+  assert.equal(compactedCandidate.latestSourceFileArchiveUpdatedAt, archive.updatedAt);
+  assert.deepEqual(compactedCandidate.sourceFileArchiveIds, [archive.id]);
+  assert.ok(Buffer.byteLength(JSON.stringify(compacted), "utf8") < 200_000);
+
+  const originalFetch = global.fetch;
+  try {
+    await store.saveDossierWorkflowState(bloatedState);
+    const opened = await (
+      await authedPost({
+        action: "recordSourceFileOpen",
+        candidateId: "compaction-candidate",
+      })
+    ).json();
+    assert.equal(opened.ok, true);
+    const openedCandidate = opened.candidates.find((candidate) => candidate.id === "compaction-candidate");
+    assert.equal(openedCandidate.latestSourceFileArchiveId, archive.id);
+    assert.equal(openedCandidate.latestSourceFileArchive.sourceFilePagePlanV1.primarySections[0].body, "Hydrated page-plan body for BNL handoff.");
+
+    global.fetch = async (_url, options = {}) => {
+      const packet = JSON.parse(options.body);
+      assert.equal(packet.latestSourceFileArchiveId, archive.id);
+      assert.equal(packet.sourceFilePagePlanV1.primarySections[0].body, "Hydrated page-plan body for BNL handoff.");
+      assert.equal(JSON.stringify(packet).includes(bloatedText.slice(0, 100)), false);
+      return new Response(
+        JSON.stringify({
+          draft: cleanContractDraft({
+            name: "Compaction Candidate BNL Draft",
+            summary: "Hydrated page-plan intelligence still reaches BNL draft generation.",
+          }),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+    const draftResponse = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: "compaction-candidate",
+    });
+    assert.equal(draftResponse.status, 200);
+    const draftPayload = await draftResponse.json();
+    assert.equal(draftPayload.draftStored, true);
+    assert.equal(draftPayload.storedDraft.fields.name, "Compaction Candidate BNL Draft");
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
+
 test("Source File case-report missing detection uses normalized archive extraction without compact-summary synthesis", () => {
   const report = bnlCaseReportFixture("nested preserved archive");
   const candidateBase = {
@@ -2147,8 +2436,10 @@ test("Source File immediate refresh timeout/unavailable and stale open requests 
       }],
     });
 
+    const start = Date.now();
     const openedSecond = await (await authedPost({ action: "recordSourceFileOpen", candidateId: second.candidate.id })).json();
-    assert.equal(openedSecond.immediateRefresh.status, "timeout");
+    assert.ok(Date.now() - start < 1000);
+    assert.equal(openedSecond.immediateRefresh.status, "pending");
     assert.equal(openedSecond.sourceFileRefreshRequests.some((request) => request.candidateId === second.candidate.id), true);
     const oldRequest = openedSecond.sourceFileRefreshRequests.find((request) => request.id === "old-claimed-for-other-candidate");
     assert.equal(oldRequest.status, "failed");
@@ -2161,7 +2452,7 @@ test("Source File immediate refresh timeout/unavailable and stale open requests 
   }
 });
 
-test("fresh Source File open still asks BNL immediately and public read model stays read-only", async () => {
+test("fresh Source File open queues background refresh and public read model stays read-only", async () => {
   await resetWorkflowStore();
   process.env.BNL_SOURCE_FILE_READ_TOKEN = "test-source-file-read-token";
 
@@ -2204,7 +2495,7 @@ test("fresh Source File open still asks BNL immediately and public read model st
 
   const opened = await (await authedPost({ action: "recordSourceFileOpen", candidateId: "fresh-source-candidate" })).json();
   assert.equal(opened.refresh.decision.needed, false);
-  assert.equal(opened.immediateRefresh.status, "unavailable");
+  assert.equal(opened.immediateRefresh.status, "pending");
   assert.equal(opened.sourceFileRefreshRequests.length, 1);
   assert.equal(opened.sourceFileRefreshRequests[0].requestSource, "opened_source_file");
 
@@ -2398,12 +2689,15 @@ test("admin Source File page uses immediate refresh status/retry UI and preserve
   assert.match(page, /completedByRecommendationId/);
   assert.match(page, /setRefreshPollingTarget\(\{ candidateId, requestId: refresh\.request\.id \}\)/);
   assert.match(page, /UPDATING SOURCE FILE/);
+  assert.match(page, /BNL REFRESH REQUESTED/);
+  assert.match(page, /BNL REFRESH RUNNING/);
+  assert.match(page, /LATEST-KNOWN DATA SHOWN/);
+  assert.match(page, /Latest-known Source File data is shown while BNL completes the background refresh/);
   assert.match(page, /FILE UPDATED/);
   assert.match(page, /FILE NOT UPDATED/);
   assert.match(page, /RETRYING UPDATE/);
   assert.match(page, /Last-known BNL data is not current for this page open/);
   assert.doesNotMatch(page, /Diagnostics: request/);
-  assert.doesNotMatch(page, /Refresh Requested/);
   assert.doesNotMatch(page, /Waiting for BNL/);
 
   for (const label of [
@@ -2800,6 +3094,9 @@ test("Source File page renders organized BNL Source File workspace with collapse
     "Next recommended action",
     "Diagnostics — collapsed by default",
     "UPDATING SOURCE FILE",
+    "BNL REFRESH REQUESTED",
+    "BNL REFRESH RUNNING",
+    "LATEST-KNOWN DATA SHOWN",
     "FILE UPDATED",
     "FILE NOT UPDATED",
     "RETRYING UPDATE",
@@ -4822,6 +5119,448 @@ test("valid BNL draft response reports a stored BNL-authored draft", async () =>
   }
 });
 
+test("BNL draft request still stores while Source File refresh is pending", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  try {
+    const created = await (
+      await authedPost({ action: "createManualCandidate", input: manualCandidateInput })
+    ).json();
+    await authedPost({ action: "promoteCandidateToSourceFile", candidateId: created.candidate.id });
+    const opened = await (
+      await authedPost({ action: "recordSourceFileOpen", candidateId: created.candidate.id })
+    ).json();
+    assert.equal(opened.immediateRefresh.status, "pending");
+    assert.equal(opened.sourceFileRefreshRequests.some((request) => request.status === "pending"), true);
+
+    global.fetch = async (url) => {
+      assert.equal(String(url), process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL);
+      return new Response(
+        JSON.stringify({
+          draft: cleanContractDraft({
+            name: "Pending Refresh BNL Draft",
+            summary: "Pending refresh does not block clean BNL-authored dossier prose.",
+          }),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+
+    const response = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: created.candidate.id,
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.draftStored, true);
+    assert.equal(payload.storedDraft.fields.name, "Pending Refresh BNL Draft");
+    assert.equal(payload.storedDraft.sourceFileDraftMetadata.generatedBy, "BNL");
+    assert.equal(payload.sourceFileRefreshRequests.some((request) => request.status === "pending"), true);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
+
+
+
+
+
+test("BNL draft request creates authoritative BNL draft when old active draft is not editable", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  const publicBefore = JSON.stringify(databasePage.entries);
+  try {
+    const created = await (
+      await authedPost({ action: "createManualCandidate", input: manualCandidateInput })
+    ).json();
+    const staleDraftPayload = await (
+      await authedPost({ action: "createDraftFromCandidate", candidateId: created.candidate.id })
+    ).json();
+    const state = await store.getDossierWorkflowState();
+    await store.saveDossierWorkflowState({
+      ...state,
+      drafts: state.drafts.map((draft) =>
+        draft.id === staleDraftPayload.draft.id
+          ? {
+              ...draft,
+              status: "ready_for_owner_review",
+              fields: {
+                ...draft.fields,
+                summary: "Clean public summary needed before owner review.",
+                notes: "Public-safe facts:\n- Recurring named topic: Bit’s may inform public-safe wording only after owner and admin review.\n- Recurring named topic: Lardcode may inform public-safe wording only after owner and admin review.",
+              },
+            }
+          : draft,
+      ),
+    });
+    global.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          draft: cleanContractDraft({
+            name: "Crow BNL Authored Draft",
+            summary: "Crow is tracked for a concise BARCODE Network dossier based on public-safe context prepared for owner review.",
+            notes: "BNL-authored draft copy is ready for admin review without source-topic dump material.",
+          }),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+
+    const response = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: created.candidate.id,
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.draftStored, true);
+    assert.notEqual(payload.storedDraft.id, staleDraftPayload.draft.id);
+    assert.equal(payload.storedDraft.sourceFileDraftMetadata.generatedBy, "BNL");
+    assert.equal(payload.storedDraft.fields.name, "Crow BNL Authored Draft");
+    assert.doesNotMatch(JSON.stringify(payload.storedDraft.fields), /Clean public summary needed|Recurring named topic|Bit’s|Lardcode/);
+    assert.equal(payload.drafts.length, 2);
+    assert.ok(payload.drafts.some((draft) => draft.id === staleDraftPayload.draft.id && draft.status === "ready_for_owner_review"));
+    assert.equal(JSON.stringify(databasePage.entries), publicBefore);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
+
+test("candidate page opens newest BNL draft instead of stale active draft", () => {
+  const pageSource = source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+  assert.match(pageSource, /const newestBnlDraft = \[\.\.\.linkedDrafts\]/);
+  assert.match(pageSource, /const primaryDraft =\s*newestBnlDraft \?\?/);
+  assert.match(pageSource, /href=\{`\/admin\/dossiers\/drafts\/\$\{primaryDraft\.id\}`\}/);
+  assert.match(pageSource, /BNL-authored Proposed Dossier draft stored for owner review: \$\{data\.storedDraft\.fields\.name\} \(\$\{data\.storedDraft\.id\}\)/);
+});
+
+test("Update Draft From Source File preserves public fields when source topics would dump into copy", async () => {
+  await resetWorkflowStore();
+  const now = "2026-07-10T00:00:00.000Z";
+  const candidate = await store.createManualDossierCandidate({
+    ...manualCandidateInput,
+    name: "Source Topic Dump Guard",
+  });
+  const state = await store.getDossierWorkflowState();
+  const cleanDraft = {
+    id: "draft_topic_dump_guard",
+    candidateId: candidate.id,
+    status: "draft",
+    fields: cleanContractDraft({
+      name: "Source Topic Dump Guard",
+      summary: "Clean BNL-authored summary remains in place.",
+      notes: "Clean BNL-authored notes remain in place.",
+    }),
+    sourceFileDraftMetadata: {
+      sourceCandidateId: candidate.id,
+      sourceFileNoteIds: [],
+      recommendationIds: [],
+      assembledAt: now,
+      generatedBy: "BNL",
+      generatedAt: now,
+      validationIssues: [],
+      validationWarnings: [],
+      bnlDraftProvenance: {
+        sourceUsageSummary: "Used public-safe source ingredients only.",
+        missingInfoQuestions: [],
+        ownerReviewWarnings: [],
+        publicSafetyWarnings: [],
+        unsupportedClaimsRejected: [],
+        validationIssues: [],
+        validationWarnings: [],
+        generatedBy: "BNL",
+        generatedAt: now,
+        responseStatus: "received",
+        draftStored: true,
+        resolverSummary: [],
+      },
+      publicSafeDraft: true,
+      reviewOnlyEvidence: true,
+      autoConfirmedIdentityLinks: false,
+      publicPagesMutated: false,
+    },
+    createdAt: now,
+    updatedAt: now,
+  };
+  await store.saveDossierWorkflowState({
+    ...state,
+    candidates: state.candidates.map((item) =>
+      item.id === candidate.id
+        ? {
+            ...item,
+            sourceFileNotes: [
+              ...(item.sourceFileNotes ?? []),
+              {
+                id: "topic-dump-note",
+                candidateId: candidate.id,
+                type: "fact",
+                text: "Recurring named topic: Bit’s may inform public-safe wording only after owner and admin review. Lardcode may inform public-safe wording only after owner and admin review.",
+                source: "admin_manual",
+                publicSafe: true,
+                status: "active",
+                createdAt: now,
+                updatedAt: now,
+              },
+            ],
+            updatedAt: now,
+          }
+        : item,
+    ),
+    drafts: [cleanDraft],
+    updatedAt: now,
+  });
+
+  const updated = await store.updateDraftFromSourceFile(cleanDraft.id);
+  assert.equal(updated.fields.summary, "Clean BNL-authored summary remains in place.");
+  assert.equal(updated.fields.notes, "Clean BNL-authored notes remain in place.");
+  assert.doesNotMatch(JSON.stringify(updated.fields), /Recurring named topic|Bit’s|Lardcode|Clean public summary needed|Owner Review must approve/);
+  assert.ok(updated.sourceFileDraftMetadata.validationWarnings.some((warning) => /public draft fields were left unchanged/i.test(warning)));
+});
+
+test("BNL draft request normalizes kind placeholder through conservative site fallback", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  try {
+    const created = await (
+      await authedPost({ action: "createManualCandidate", input: manualCandidateInput })
+    ).json();
+    const state = await store.getDossierWorkflowState();
+    await store.saveDossierWorkflowState({
+      ...state,
+      candidates: state.candidates.map((candidate) =>
+        candidate.id === created.candidate.id
+          ? {
+              ...candidate,
+              recommendedCategory: "category",
+              recommendedKind: "kind",
+              recommendedEcosystemLane: "ecosystemLane",
+            }
+          : candidate,
+      ),
+    });
+    global.fetch = async () =>
+      new Response(
+        JSON.stringify({ draft: cleanContractDraft({ name: "Conservative Fallback Draft", kind: "kind" }) }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+
+    const response = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: created.candidate.id,
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.draftStored, true);
+    assert.equal(payload.storedDraft.fields.category, "Community");
+    assert.equal(payload.storedDraft.fields.kind, "entity");
+    assert.equal(payload.storedDraft.fields.ecosystemLane, "community_member");
+    assert.ok(payload.bnlDraft.validation.warnings.some((warning) => /unsupported kind "kind"; normalized to safe site classification "entity"/i.test(warning)));
+    assert.ok(payload.bnlDraft.validation.warnings.some((warning) => /Site classification kind "kind" was invalid/i.test(warning)));
+    assert.ok(payload.storedDraft.sourceFileDraftMetadata.validationWarnings.some((warning) => /Site classification kind "kind" was invalid/i.test(warning)));
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
+
+test("BNL draft request normalizes invalid kind to safe packet classification and stores valid draft", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  const publicBefore = JSON.stringify(databasePage.entries);
+  try {
+    const created = await (
+      await authedPost({ action: "createManualCandidate", input: manualCandidateInput })
+    ).json();
+    global.fetch = async () =>
+      new Response(
+        JSON.stringify({ draft: cleanContractDraft({ name: "Normalized Kind Draft", kind: "topic" }) }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+
+    const response = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: created.candidate.id,
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.bnlDraft.status, "received");
+    assert.equal(payload.draftStored, true);
+    assert.equal(payload.storedDraft.fields.kind, manualCandidateInput.recommendedKind);
+    assert.ok(payload.bnlDraft.validation.warnings.some((warning) => /unsupported kind .*normalized to safe site classification/i.test(warning)));
+    assert.ok(payload.storedDraft.sourceFileDraftMetadata.validationWarnings.some((warning) => /unsupported kind .*normalized/i.test(warning)));
+    assert.ok(payload.storedDraft.sourceFileDraftMetadata.bnlDraftProvenance.validationWarnings.some((warning) => /unsupported kind .*normalized/i.test(warning)));
+    assert.equal(payload.storedDraft.sourceFileDraftMetadata.publicPagesMutated, false);
+    assert.equal(JSON.stringify(databasePage.entries), publicBefore);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
+
+test("BNL draft request normalizes classification but still fails unsafe public copy closed", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  try {
+    const created = await (
+      await authedPost({ action: "createManualCandidate", input: manualCandidateInput })
+    ).json();
+    const existingDraftPayload = await (
+      await authedPost({ action: "createDraftFromCandidate", candidateId: created.candidate.id })
+    ).json();
+    global.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          draft: cleanContractDraft({
+            name: "Unsafe Normalized Draft",
+            kind: "topic",
+            role: "source file candidateId: unsafe_normalized_candidate",
+          }),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+
+    const response = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: created.candidate.id,
+      draftId: existingDraftPayload.draft.id,
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.bnlDraft.status, "received");
+    assert.equal(payload.draftStored, false);
+    assert.equal(payload.storedDraft, null);
+    assert.equal(payload.existingDraft.id, existingDraftPayload.draft.id);
+    assert.ok(payload.bnlDraft.validation.warnings.some((warning) => /unsupported kind .*normalized/i.test(warning)));
+    assert.ok(payload.bnlDraft.validation.issues.some((issue) => /role/.test(issue)));
+    assert.equal(payload.drafts.length, 1);
+    assert.equal(payload.drafts[0].sourceFileDraftMetadata.generatedBy, "manual_placeholder");
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
+
+test("BNL draft validation flags placeholder-like public copy as owner-review warning", () => {
+  const packet = bnlDossierDraft.buildBnlDossierDraftRequestPacket({
+    candidate: {
+      id: "placeholder_copy_candidate",
+      name: "Placeholder Copy Candidate",
+      candidateType: "community_member",
+      source: "manual",
+      tier: "review_candidate",
+      score: 50,
+      whyNow: "Needs review.",
+      reason: "Needs review.",
+      evidenceSummary: "Public-safe fixture.",
+      status: "active_source_file",
+      createdAt: "2026-06-18T00:00:00.000Z",
+      updatedAt: "2026-06-18T00:00:00.000Z",
+    },
+    recommendations: [],
+  });
+  const validation = bnlDossierDraft.validateBnlDossierDraftResponse(
+    cleanContractDraft({
+      summary: "Clean public summary needed before operator approval.",
+      notes: "Public-safe context remains ready for operator review.",
+    }),
+    { packet },
+  );
+  assert.equal(validation.valid, true, JSON.stringify(validation.issues));
+  assert.ok(validation.warnings.some((warning) => /summary appears placeholder-like/i.test(warning)));
+});
+
+test("clean BNL fallback summary passes site public-copy guard", () => {
+  const validation = bnlDossierDraft.validateBnlDossierDraftResponse(
+    cleanContractDraft({
+      name: "Crow",
+      summary: "Crow is a BARCODE Network dossier subject with public-facing details still being confirmed.",
+    }),
+  );
+  assert.equal(validation.valid, true, JSON.stringify(validation.issues));
+  assert.ok(!validation.issues.some((issue) => /summary contains forbidden internal\/source copy/i.test(issue)));
+  assert.deepEqual(validation.diagnostics, []);
+});
+
+test("BNL draft request fails closed with admin-safe diagnostics for recurring topic summary", async () => {
+  await resetWorkflowStore();
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  const publicBefore = JSON.stringify(databasePage.entries);
+  try {
+    const created = await (
+      await authedPost({ action: "createManualCandidate", input: { ...manualCandidateInput, name: "Crow" } })
+    ).json();
+    const existingDraftPayload = await (
+      await authedPost({ action: "createDraftFromCandidate", candidateId: created.candidate.id })
+    ).json();
+    const originalDraftFields = JSON.stringify(existingDraftPayload.draft.fields);
+    const dirtySummary =
+      "Recurring named topic: Bit’s may inform public-safe wording only after owner and admin review. " +
+      "Recurring named topic: Lardcode may inform public-safe wording only after owner and admin review. " +
+      "Admin-only evidence exists at https://private.example/source?id=source_secret_123 and candidateId: candidate_secret_123.";
+    global.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          draft: cleanContractDraft({
+            name: "Crow Dirty BNL Draft",
+            summary: dirtySummary,
+          }),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+
+    const response = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: created.candidate.id,
+      draftId: existingDraftPayload.draft.id,
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.bnlDraft.status, "received");
+    assert.equal(payload.draftStored, false);
+    assert.equal(payload.storedDraft, null);
+    assert.equal(payload.existingDraft.id, existingDraftPayload.draft.id);
+    assert.ok(payload.bnlDraft.validation.issues.some((issue) => /summary contains forbidden internal\/source copy/i.test(issue)));
+    const summaryDiagnostic = payload.bnlDraft.validation.diagnostics.find((diagnostic) => diagnostic.field === "summary");
+    assert.ok(summaryDiagnostic);
+    assert.equal(summaryDiagnostic.guard, "dossier_public_copy_guard");
+    assert.match(summaryDiagnostic.reason, /source_topic_dump|source_topic_public_wording_warning|admin_only_evidence_dump/);
+    assert.ok(summaryDiagnostic.preview.length <= 220);
+    assert.doesNotMatch(summaryDiagnostic.preview, /https?:\/\//i);
+    assert.doesNotMatch(summaryDiagnostic.preview, /candidate_secret_123/i);
+    assert.match(summaryDiagnostic.sanitizerResult, /empty|still_blocked/);
+    assert.equal(JSON.stringify(payload.existingDraft.fields), originalDraftFields);
+    assert.equal(payload.drafts.length, 1);
+    assert.equal(JSON.stringify(databasePage.entries), publicBefore);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
+});
+
+test("admin Source File UI copy distinguishes failed BNL output from existing drafts", () => {
+  const pageSource = source("src/app/admin/dossiers/candidates/[candidateId]/page.tsx");
+  assert.match(pageSource, /Existing draft, if any, was not updated/);
+  assert.match(pageSource, /Diagnostics: \$\{validationDiagnostics/);
+  assert.match(pageSource, /draftStored && data\.storedDraft[\s\S]*BNL-authored Proposed Dossier draft stored for owner review/);
+});
 
 test("BNL draft request rejects a draft from another candidate without mutation", async () => {
   await resetWorkflowStore();
@@ -11820,6 +12559,8 @@ test("Population Review Queue actions update internal workflow records without p
   assert.equal(attachPayload.recommendation.status, "attached_to_source_file");
   assert.equal(attachPayload.candidates.find((item) => item.id === "existing-source-file-pop").sourceFileNotes.length, 1);
 
+  const reconcileResponse = await authedPost({ action: "reconcile_population_signals" });
+  assert.equal(reconcileResponse.status, 200);
   const filedState = await store.getDossierWorkflowState();
   assert.equal(filedState.recommendations.find((item) => item.id === "pop-rec-nonsubject")?.status, "not_population_subject");
   assert.equal(filedState.candidates.length, 1);
@@ -12028,6 +12769,8 @@ test("Population Review Queue create and attach actions route to existing intern
   assert.equal(workspacePayload.recommendation.status, "attached_to_existing_dossier_update");
   assert.equal(workspacePayload.candidate.status, "existing_dossier_update");
 
+  const reconcileBeforeFilingResponse = await authedPost({ action: "reconcile_population_signals" });
+  assert.equal(reconcileBeforeFilingResponse.status, 200);
   const filingResponse = await authedGet();
   assert.equal(filingResponse.status, 200);
   const filingPayload = await filingResponse.json();
@@ -12147,6 +12890,109 @@ test("reconcile_population_signals returns safe counts and files Mind Fanatic pu
   );
   assert.equal(mindVisible.length, 0);
   assert.equal(state.candidates.length, 1);
+});
+
+test("admin dossier read/open/draft payloads do not reconcile population implicitly", async () => {
+  await resetWorkflowStore();
+  const routeSource = source("src/app/api/admin/dossiers/route.ts");
+  assert.doesNotMatch(routeSource, /system:auto_filing/);
+  assert.doesNotMatch(routeSource, /populationReconcile \?\? await reconcilePopulationSignals/);
+  assert.match(routeSource, /if \(action === "reconcile_population_signals"\)/);
+  assert.match(routeSource, /logAdminDossierRouteTiming/);
+
+  const now = new Date().toISOString();
+  const created = await (
+    await authedPost({
+      action: "createManualCandidate",
+      input: { ...manualCandidateInput, name: "Read Only Source File" },
+    })
+  ).json();
+  await authedPost({
+    action: "promoteCandidateToSourceFile",
+    candidateId: created.candidate.id,
+  });
+  const state = await store.getDossierWorkflowState();
+  await store.saveDossierWorkflowState({
+    ...state,
+    recommendations: [
+      ...state.recommendations,
+      {
+        id: "implicit-reconcile-guard",
+        type: "population_recommendation",
+        populationRecommendation: true,
+        createdBy: "bnl_population_recommender",
+        ingestSource: "bnl_population_recommender",
+        subjectName: "Mind Fanatic [Barcode_Network]",
+        status: "new",
+        reason: "Existing public dossier signal should not file during read/open/draft payloads.",
+        adminSummary: "Public-safe summary only.",
+        recommendedLane: "needs_population_review",
+        recommendedAction: "admin_review_required",
+        sourceLanes: ["broadcast_memory"],
+        rawEvidenceRefs: ["private:implicit:1"],
+        rawEvidenceRefCount: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    updatedAt: now,
+  });
+
+  const getPayload = await (await authedGet()).json();
+  assert.equal(getPayload.populationReconcile, undefined);
+  let current = await store.getDossierWorkflowState();
+  assert.equal(current.recommendations.find((item) => item.id === "implicit-reconcile-guard").status, "new");
+
+  const opened = await (
+    await authedPost({
+      action: "recordSourceFileOpen",
+      candidateId: created.candidate.id,
+    })
+  ).json();
+  assert.equal(opened.populationReconcile, undefined);
+  current = await store.getDossierWorkflowState();
+  assert.equal(current.recommendations.find((item) => item.id === "implicit-reconcile-guard").status, "new");
+
+  const refreshResponse = await authedPost({
+    action: "requestSourceFileRefresh",
+    candidateId: created.candidate.id,
+    reason: "Read-only population reconciliation guard.",
+  });
+  assert.equal(refreshResponse.status, 200);
+  const refreshPayload = await refreshResponse.json();
+  assert.equal(refreshPayload.populationReconcile, undefined);
+  current = await store.getDossierWorkflowState();
+  assert.equal(current.recommendations.find((item) => item.id === "implicit-reconcile-guard").status, "new");
+
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL = "https://bnl.example.test/internal/dossiers/draft";
+  process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN = "test-draft-token";
+  const originalFetch = global.fetch;
+  try {
+    global.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          draft: cleanContractDraft({
+            name: "Read Only Source File BNL Draft",
+            summary: "Population reconciliation is not required to store clean BNL draft prose.",
+          }),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    const draftResponse = await authedPost({
+      action: "requestBnlDraftFromCandidate",
+      candidateId: created.candidate.id,
+    });
+    assert.equal(draftResponse.status, 200);
+    const draftPayload = await draftResponse.json();
+    assert.equal(draftPayload.draftStored, true);
+    assert.equal(draftPayload.populationReconcile, undefined);
+    current = await store.getDossierWorkflowState();
+    assert.equal(current.recommendations.find((item) => item.id === "implicit-reconcile-guard").status, "new");
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_URL;
+    delete process.env.BNL_DOSSIER_DRAFT_GENERATOR_TOKEN;
+  }
 });
 
 test("population context exposes reconcile destinations and diagnostics", async () => {
@@ -12365,7 +13211,8 @@ test("Draft from Source File creates and updates public-safe Proposed Dossier dr
   });
   assert.equal(updateResponse.status, 200);
   const updatePayload = await updateResponse.json();
-  assert.match(updatePayload.draft.fields.notes, /New public-safe fact added after draft creation/);
+  assert.doesNotMatch(updatePayload.draft.fields.notes, /New public-safe fact added after draft creation/);
+  assert.ok(updatePayload.draft.sourceFileDraftMetadata.validationWarnings.some((warning) => /public draft fields were left unchanged/i.test(warning)));
   assert.equal(updatePayload.draft.status, "draft");
   assert.equal(updatePayload.draft.sourceFileDraftMetadata.publicPagesMutated, false);
 

@@ -59,6 +59,12 @@ const JUNK_PATTERNS = [
   /\breview before converting\b/i,
   /\bmedium-confidence bnl discovery\b/i,
   /\bsource-file\b/i,
+  /\bclean public summary needed before owner review\b/i,
+  /\bclean role needed before owner review\b/i,
+  /\brecurring named topic\b/i,
+  /\b(?:bit’s|bit\'s|lardcode) may inform public-safe wording\b/i,
+  /\badmin-only evidence exists\b/i,
+  /\bowner review must approve this proposed dossier\b/i,
   /\bsource file\b/i,
   /\bdossier seed\b/i,
   /\badd a dossier entry\b/i,
@@ -143,6 +149,47 @@ function isMostlyBackendTerms(value: string): boolean {
   return backendCount >= 3 && backendCount / words.length >= 0.35;
 }
 
+export type DossierPublicCopyJunkDiagnostic = {
+  guard: string;
+  matched: boolean;
+  reason: string;
+};
+
+const DIAGNOSTIC_JUNK_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
+  { pattern: /\bclean public summary needed before owner review\b/i, reason: "placeholder_summary" },
+  { pattern: /\bclean role needed before owner review\b/i, reason: "placeholder_role" },
+  { pattern: /\brecurring named topic\b/i, reason: "source_topic_dump" },
+  { pattern: /\b(?:bit’s|bit's|lardcode) may inform public-safe wording\b/i, reason: "source_topic_public_wording_warning" },
+  { pattern: /\badmin-only evidence exists\b/i, reason: "admin_only_evidence_dump" },
+  { pattern: /\bowner review must approve this proposed dossier\b/i, reason: "owner_review_instruction_dump" },
+  { pattern: /\b(?:candidate|source|recommendation|target)[-_ ]?id\s*[:=]\s*[a-z0-9:_-]{8,}\b/i, reason: "raw_workflow_identifier" },
+  { pattern: /\bsource files?\b/i, reason: "source_file_process_copy" },
+  { pattern: /\bsource lanes?\b/i, reason: "source_lane_debug_copy" },
+];
+
+export function diagnoseDossierPublicCopyJunk(value: string): DossierPublicCopyJunkDiagnostic | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  for (const { pattern, reason } of DIAGNOSTIC_JUNK_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return { guard: "dossier_public_copy_guard", matched: true, reason };
+    }
+  }
+  if (hasRepeatedSourceLabels(trimmed)) {
+    return { guard: "dossier_public_copy_guard", matched: true, reason: "repeated_source_labels" };
+  }
+  if (hasRepeatedLines(trimmed)) {
+    return { guard: "dossier_public_copy_guard", matched: true, reason: "repeated_lines" };
+  }
+  if (isMostlyBackendTerms(trimmed)) {
+    return { guard: "dossier_public_copy_guard", matched: true, reason: "mostly_backend_terms" };
+  }
+  if (JUNK_PATTERNS.some((pattern) => pattern.test(trimmed))) {
+    return { guard: "dossier_public_copy_guard", matched: true, reason: "generic_source_or_debug_copy" };
+  }
+  return null;
+}
+
 export function isDossierPublicCopyPlaceholder(value: string | undefined): boolean {
   const trimmed = value?.trim().toLowerCase();
   return Boolean(trimmed && PUBLIC_COPY_PLACEHOLDERS.has(trimmed));
@@ -152,6 +199,7 @@ export function containsDossierPublicCopyJunk(value: string): boolean {
   const trimmed = value.trim();
   if (!trimmed) return false;
   return (
+    DIAGNOSTIC_JUNK_PATTERNS.some(({ pattern }) => pattern.test(trimmed)) ||
     JUNK_PATTERNS.some((pattern) => pattern.test(trimmed)) ||
     hasRepeatedSourceLabels(trimmed) ||
     hasRepeatedLines(trimmed) ||

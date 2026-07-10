@@ -52,7 +52,7 @@ type WorkflowPayload = {
 
 type ImmediateRefreshResult = {
   ok: boolean;
-  status: "success" | "failed" | "skipped" | "timeout" | "unavailable";
+  status: "success" | "failed" | "skipped" | "timeout" | "unavailable" | "pending";
   recommendationId?: string;
   failureReason?: string;
 };
@@ -1241,11 +1241,21 @@ export default function CandidateReviewPage() {
       [],
     [payload?.drafts, candidateId],
   );
-  const primaryDraft =
-    linkedDrafts.find((draft) => isDraftActive(draft)) ?? linkedDrafts[0];
   const newestBnlDraft = [...linkedDrafts]
     .filter((draft) => draft.sourceFileDraftMetadata?.generatedBy === "BNL")
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  const primaryDraft =
+    newestBnlDraft ??
+    [...linkedDrafts]
+      .filter((draft) => isDraftActive(draft))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ??
+    [...linkedDrafts].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  const bnlDraftRequestTarget = [...linkedDrafts]
+    .filter((draft) => draft.status === "draft" || draft.status === "owner_changes_requested")
+    .sort((a, b) => {
+      const bnlDelta = Number(b.sourceFileDraftMetadata?.generatedBy === "BNL") - Number(a.sourceFileDraftMetadata?.generatedBy === "BNL");
+      return bnlDelta || b.updatedAt.localeCompare(a.updatedAt);
+    })[0];
   const newestBnlProvenance = newestBnlDraft?.sourceFileDraftMetadata?.bnlDraftProvenance;
   const sourceNotes = [...(candidate?.sourceFileNotes ?? [])].sort(
     (a, b) =>
@@ -1332,6 +1342,9 @@ export default function CandidateReviewPage() {
     request: nonStaleActiveRefreshRequest,
     recommendation: latestEnrichmentForRefreshStatus,
   });
+  const backgroundRefreshPending = Boolean(
+    nonStaleActiveRefreshRequest && !activeRefreshResolvedByEnrichment,
+  );
   const latestRefreshRequest =
     nonStaleActiveRefreshRequest ??
     [...refreshRequests].sort((a, b) =>
@@ -1358,40 +1371,71 @@ export default function CandidateReviewPage() {
       (latestEnrichmentNewerThanOpen ||
         (sourceFileOpenState.immediateRefresh?.ok && immediateRecommendationVisible)),
   );
+  const latestKnownSourceFileDataVisible = Boolean(
+    candidate?.latestSourceFileArchive ??
+      candidate?.latestSourceFileArchiveId ??
+      latestEnrichmentForRefreshStatus,
+  );
+  const terminalRefreshFailure = Boolean(
+    latestRefreshRequest &&
+      !backgroundRefreshPending &&
+      !sourceFileFreshForOpen &&
+      !latestEnrichmentNewerThanOpen &&
+      (latestRefreshRequest.status === "failed" ||
+        latestRefreshRequest.status === "cancelled"),
+  );
   const refreshStatusLabel = sourceFileOpenState.running
     ? sourceFileOpenState.immediateRefresh
       ? "RETRYING UPDATE"
       : "UPDATING SOURCE FILE"
-    : sourceFileFreshForOpen
-      ? "FILE UPDATED"
-      : "FILE NOT UPDATED";
+    : backgroundRefreshPending
+      ? nonStaleActiveRefreshRequest?.status === "claimed"
+        ? "BNL REFRESH RUNNING"
+        : "BNL REFRESH REQUESTED"
+      : sourceFileFreshForOpen
+        ? "FILE UPDATED"
+        : terminalRefreshFailure
+          ? "FILE NOT UPDATED"
+          : "LATEST-KNOWN DATA SHOWN";
   const refreshStatusDetail = sourceFileOpenState.running
     ? "BNL is updating this Source File now through the server-side immediate refresh endpoint."
-    : caseReportMissingForLatestArchive
-      ? "Latest archive exists, but BNL has not generated the Source File report yet. Refresh requests ask BNL for report backfill."
-      : sourceFileFreshForOpen
-        ? "Source File updated for this page open."
-        : "This page is not treating older BNL Source File data as current. Use FILE NOT UPDATED to retry the immediate update.";
+    : backgroundRefreshPending
+      ? latestKnownSourceFileDataVisible
+        ? "Latest-known Source File data is shown while BNL completes the background refresh."
+        : "BNL refresh is queued; this page will poll until Source File data arrives."
+      : caseReportMissingForLatestArchive
+        ? "Latest archive exists, but BNL has not generated the Source File report yet. Refresh requests ask BNL for report backfill."
+        : sourceFileFreshForOpen
+          ? "Source File updated for this page open."
+          : terminalRefreshFailure
+            ? "This page is not treating older BNL Source File data as current. Use FILE NOT UPDATED to retry the immediate update."
+            : "Latest-known Source File data is shown. Use refresh if you need a new BNL freshness check.";
   const refreshFailureReason =
-    sourceFileOpenState.immediateRefresh?.failureReason ??
-    latestRefreshRequest?.failureReason ??
-    (caseReportMissingForLatestArchive
-      ? "case_report_missing_after_refresh"
-      : !sourceFileFreshForOpen && !sourceFileOpenState.running
-        ? "No fresh BNL enrichment is visible for this page open."
-        : undefined);
-  const manualRefreshDisabled = saving || !candidate || sourceFileOpenState.running || sourceFileFreshForOpen;
+    backgroundRefreshPending
+      ? undefined
+      : sourceFileOpenState.immediateRefresh?.failureReason ??
+        latestRefreshRequest?.failureReason ??
+        (caseReportMissingForLatestArchive
+          ? "case_report_missing_after_refresh"
+          : terminalRefreshFailure
+            ? "No fresh BNL enrichment is visible for this page open."
+            : undefined);
+  const manualRefreshDisabled = saving || !candidate || sourceFileOpenState.running || sourceFileFreshForOpen || backgroundRefreshPending;
   const manualRefreshButtonLabel = sourceFileOpenState.running
     ? sourceFileOpenState.immediateRefresh
       ? "RETRYING UPDATE"
       : "UPDATING SOURCE FILE"
-    : sourceFileFreshForOpen
-      ? "FILE UPDATED"
-      : "FILE NOT UPDATED";
+    : backgroundRefreshPending
+      ? nonStaleActiveRefreshRequest?.status === "claimed"
+        ? "REFRESH RUNNING"
+        : "REFRESH REQUESTED"
+      : sourceFileFreshForOpen
+        ? "FILE UPDATED"
+        : "FILE NOT UPDATED";
   const manualRefreshButtonClass = sourceFileFreshForOpen
     ? "border border-border bg-muted/20 px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-70"
     : "border border-red-500 px-4 py-2 text-xs uppercase tracking-widest text-red-400 hover:bg-red-500 hover:text-background disabled:opacity-50";
-  const staleDataWarning = !sourceFileFreshForOpen;
+  const staleDataWarning = terminalRefreshFailure;
   const sourceFileSummary = candidate
     ? createDossierSourceFileSummary({
         candidate,
@@ -1487,7 +1531,17 @@ export default function CandidateReviewPage() {
         bnlDraft?: {
           status: string;
           message?: string;
-          validation?: { issues?: string[]; warnings?: string[] };
+          validation?: {
+            issues?: string[];
+            warnings?: string[];
+            diagnostics?: Array<{
+              field?: string;
+              preview?: string;
+              guard?: string;
+              reason?: string;
+              sanitizerResult?: string;
+            }>;
+          };
         };
         draftStored?: boolean;
         storedDraft?: DossierDraft;
@@ -1601,19 +1655,28 @@ export default function CandidateReviewPage() {
       const data = await postWorkflow({
         action: "requestBnlDraftFromCandidate",
         candidateId,
-        ...(primaryDraft ? { draftId: primaryDraft.id } : {}),
+        ...(bnlDraftRequestTarget ? { draftId: bnlDraftRequestTarget.id } : {}),
       });
       const validationIssues = data.bnlDraft?.validation?.issues ?? [];
       const validationWarnings = data.bnlDraft?.validation?.warnings ?? [];
+      const validationDiagnostics = data.bnlDraft?.validation?.diagnostics ?? [];
+      const diagnosticText = validationDiagnostics.length
+        ? ` Diagnostics: ${validationDiagnostics
+            .slice(0, 3)
+            .map((diagnostic) =>
+              `${diagnostic.field}: ${diagnostic.reason ?? diagnostic.guard}; preview "${diagnostic.preview}"; sanitizer ${diagnostic.sanitizerResult}`,
+            )
+            .join(" | ")}`
+        : "";
       setNotice(
         data.bnlDraft?.status === "not_connected"
           ? "BNL draft generator not connected yet. The site prepared the safe Source File packet but did not author dossier copy."
           : data.bnlDraft?.status === "failed"
             ? (data.bnlDraft.message ?? "BNL draft generator failed. No draft was stored.")
             : data.bnlDraft?.status === "received" && !data.draftStored
-              ? `BNL returned draft output, but validation failed and no draft was stored.${validationIssues.length ? ` Issues: ${validationIssues.join("; ")}` : ""}${validationWarnings.length ? ` Warnings: ${validationWarnings.join("; ")}` : ""}`
+              ? `BNL returned draft output, but validation failed and no draft was stored. Existing draft, if any, was not updated.${validationIssues.length ? ` Issues: ${validationIssues.join("; ")}` : ""}${validationWarnings.length ? ` Warnings: ${validationWarnings.join("; ")}` : ""}${diagnosticText}`
               : data.draftStored && data.storedDraft
-                ? `BNL-authored Proposed Dossier draft stored: ${data.storedDraft.fields.name}.`
+                ? `BNL-authored Proposed Dossier draft stored for owner review: ${data.storedDraft.fields.name} (${data.storedDraft.id}).${validationWarnings.length ? ` Warnings: ${validationWarnings.join("; ")}` : ""}`
                 : (data.bnlDraft?.message ?? "BNL draft request did not return a stored draft."),
       );
     } catch (err) {

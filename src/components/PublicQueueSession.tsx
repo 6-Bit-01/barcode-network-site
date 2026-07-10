@@ -198,7 +198,7 @@ function sourceTypeLabel(track: QueuePublicTrack): string {
 
 export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const [snapshot, setSnapshot] = useState<QueuePublicSnapshot | null>(null);
-  const { siteShowMode, streamUrl } = useLiveStatus();
+  const { streamUrl } = useLiveStatus();
   const [submitOpen, setSubmitOpen] = useState(false);
   const [intakeScrollLocked, setIntakeScrollLocked] = useState(false);
   const [lastSubmittedTrackId, setLastSubmittedTrackId] = useState<string | null>(null);
@@ -458,7 +458,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   }
 
   const liveShowHref = streamUrl || externalLinks.tiktokLive;
-  const showWatchLiveLink = siteShowMode === "broadcast_live" && Boolean(liveShowHref);
+  const showWatchLiveLink = Boolean(snapshot && !isEnded && liveShowHref);
   const contentOffsetClass = publicHudMinimized ? "pt-[2.25rem] sm:pt-[2.75rem]" : "pt-[4.25rem] sm:pt-[4.75rem]";
 
   if (isEnded) {
@@ -485,7 +485,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
             className="inline-flex cursor-pointer items-center gap-2 border border-[#ffaa00]/60 bg-[#ffaa00] px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-background transition-colors hover:bg-[#ffb733] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffaa00]/70"
           >
             <span aria-hidden="true">📺</span>
-            <span>Watch Live</span>
+            <span>WATCH ON TIKTOK</span>
           </a>
         </div>
       )}

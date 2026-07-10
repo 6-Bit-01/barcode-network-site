@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { buildWheelSegments, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
 import type { LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
@@ -491,22 +491,43 @@ function YouTubeOverlayPlayer({ sync }: { sync: LiveOverlayYouTubeSync }) {
   const playerRef = useRef<YTPlayer | null>(null);
   const readyRef = useRef(false);
   const loadedVideoRef = useRef<string | null>(null);
-  const initialSyncRef = useRef(sync);
+  const latestSyncRef = useRef(sync);
   const containerId = "live-overlay-youtube-player";
+
+  const applyYouTubeSync = useCallback((nextSync: LiveOverlayYouTubeSync) => {
+    const player = playerRef.current;
+    if (!player || !readyRef.current) return;
+    const expected = expectedYouTubeTime(nextSync);
+    const isNewVideo = loadedVideoRef.current !== nextSync.videoId;
+    if (isNewVideo) {
+      if (nextSync.playbackState === "playing") player.loadVideoById({ videoId: nextSync.videoId, startSeconds: expected });
+      else player.cueVideoById({ videoId: nextSync.videoId, startSeconds: nextSync.currentTimeSeconds });
+      loadedVideoRef.current = nextSync.videoId;
+    } else {
+      const current = player.getCurrentTime();
+      if (Number.isFinite(current) && Math.abs(current - expected) > 1.75) player.seekTo(expected, true);
+    }
+    player.mute();
+    if (nextSync.playbackState === "playing") player.playVideo();
+    else if (nextSync.playbackState === "paused") player.pauseVideo();
+    else {
+      player.pauseVideo();
+      player.seekTo(nextSync.currentTimeSeconds, true);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     ensureYouTubeApi().then(() => {
       if (cancelled || playerRef.current || !window.YT?.Player) return;
       playerRef.current = new window.YT.Player(containerId, {
-        videoId: initialSyncRef.current.videoId,
-        playerVars: { autoplay: 1, controls: 0, modestbranding: 1, playsinline: 1, rel: 0, mute: 1 },
+        videoId: latestSyncRef.current.videoId,
+        playerVars: { autoplay: 0, controls: 0, modestbranding: 1, playsinline: 1, rel: 0, mute: 1 },
         events: {
           onReady: () => {
             readyRef.current = true;
             playerRef.current?.mute();
-            playerRef.current?.loadVideoById({ videoId: initialSyncRef.current.videoId, startSeconds: expectedYouTubeTime(initialSyncRef.current) });
-            loadedVideoRef.current = initialSyncRef.current.videoId;
+            applyYouTubeSync(latestSyncRef.current);
           },
         },
       });
@@ -518,27 +539,12 @@ function YouTubeOverlayPlayer({ sync }: { sync: LiveOverlayYouTubeSync }) {
       playerRef.current?.destroy?.();
       playerRef.current = null;
     };
-  }, []);
+  }, [applyYouTubeSync, containerId]);
 
   useEffect(() => {
-    const player = playerRef.current;
-    if (!player || !readyRef.current) return;
-    const expected = expectedYouTubeTime(sync);
-    if (loadedVideoRef.current !== sync.videoId) {
-      player.loadVideoById({ videoId: sync.videoId, startSeconds: expected });
-      loadedVideoRef.current = sync.videoId;
-    } else {
-      const current = player.getCurrentTime();
-      if (Number.isFinite(current) && Math.abs(current - expected) > 1.75) player.seekTo(expected, true);
-    }
-    player.mute();
-    if (sync.playbackState === "playing") player.playVideo();
-    else if (sync.playbackState === "paused") player.pauseVideo();
-    else {
-      player.pauseVideo();
-      player.seekTo(sync.currentTimeSeconds, true);
-    }
-  }, [sync]);
+    latestSyncRef.current = sync;
+    applyYouTubeSync(sync);
+  }, [applyYouTubeSync, sync]);
 
   return <div className="live-overlay-youtube-player" id={containerId} aria-label="Muted YouTube overlay player" />;
 }

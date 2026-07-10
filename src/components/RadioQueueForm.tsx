@@ -587,6 +587,29 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
               <button type="button" onClick={() => setMode("link")} aria-pressed={mode === "link"} className={`flex min-h-[44px] items-center cursor-pointer border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${mode === "link" ? "border-accent bg-accent text-background" : "border-border hover:border-accent/50 hover:bg-accent/10"}`}><span className={`text-xs uppercase tracking-widest ${mode === "link" ? "text-background" : "text-muted"}`}>Use Track Link</span></button>
               <button type="button" onClick={() => setMode("upload")} aria-pressed={mode === "upload"} className={`flex min-h-[44px] items-center cursor-pointer border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${mode === "upload" ? "border-accent bg-accent text-background" : "border-border hover:border-accent/50 hover:bg-accent/10"}`}><span className={`text-xs uppercase tracking-widest ${mode === "upload" ? "text-background" : "text-muted"}`}>Upload MP3/WAV</span></button>
             </div>
+            <div className="grid gap-2 border border-border/70 bg-background/40 p-3 text-xs text-muted sm:grid-cols-[0.95fr_1.05fr]">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-foreground">Accepted track sources</p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-muted">Upload</p>
+                    <p className="mt-1 font-bold text-foreground">MP3 or WAV</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-muted">Track links</p>
+                    <ul className="mt-1 space-y-0.5 text-foreground">
+                      <li>YouTube video or Short</li>
+                      <li>Spotify track</li>
+                      <li>SoundCloud track</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-1 leading-relaxed">
+                <p>Other public track links may still be submitted, but artwork, duration, or embedded playback may be unavailable and the host may need to open them externally.</p>
+                <p className="text-foreground">Send a direct song/video link rather than an artist profile or general homepage.</p>
+              </div>
+            </div>
             {mode === "link" ? (
               <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Track Link</span><input type="url" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://soundcloud.com/..." className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
             ) : (

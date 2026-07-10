@@ -620,7 +620,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
               </div>
               <div className="space-y-1 leading-relaxed lg:self-end">
                 <p>Some accepted services currently open externally and may not provide automatic artwork, duration, or embedded playback. Expanded player and metadata support is planned.</p>
-                <p className="text-foreground">Send a direct song, track, or video link—not an artist profile, playlist, channel, album page, or general homepage.</p>
+                <p className="text-foreground">Send a direct song, track, or video link—not an artist profile, playlist, channel, general homepage, or album page that does not identify a specific track.</p>
               </div>
             </div>
             {mode === "link" ? (

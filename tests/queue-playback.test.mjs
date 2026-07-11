@@ -2032,9 +2032,9 @@ test("admin and public TikTok component source assertions remain scoped", () => 
   assert.match(tiktokSource, /readyTimerRef = useRef<number \| null>\(null\)/);
   assert.match(tiktokSource, /const clearDashboardTikTokReadyTimer = useCallback\(\(\) => \{/);
   assert.match(tiktokSource, /const markDashboardTikTokReady[\s\S]*clearDashboardTikTokReadyTimer\(\)/);
-  assert.match(tiktokSource, /type !== "onPlayerError"\) markDashboardTikTokReady\("trusted_event"\)/);
+  assert.match(tiktokSource, /type !== "onPlayerError"\) markDashboardTikTokReady\(\)/);
   assert.match(tiktokSource, /type === "onPlayerError"[\s\S]*clearDashboardTikTokReadyTimer\(\)/);
-  assert.match(tiktokSource, /return \(\) => \{ clearDashboardTikTokReadyTimer\(\); clearLoadedReadyFallbackTimer\(\); clearStartConfirmationTimer\(\); window\.removeEventListener/);
+  assert.match(tiktokSource, /return \(\) => \{ clearDashboardTikTokReadyTimer\(\); window\.removeEventListener/);
   assert.match(tiktokSource, /const value = payload\.value/);
   assert.match(tiktokSource, /value\.errorCode/);
   assert.match(tiktokSource, /value\.errorType/);
@@ -2043,10 +2043,8 @@ test("admin and public TikTok component source assertions remain scoped", () => 
   assert.match(adminSource, /code === 1001 \|\| name === "INVALID_VIDEO"\) return "Invalid or unavailable video"/);
   assert.match(adminSource, /code === 2001 \|\| name === "SERVER_ERROR"\) return "TikTok server error"/);
   assert.match(adminSource, /code === 3001 \|\| name === "PLAYBACK_ERROR"\) return "Playback error"/);
-  assert.match(tiktokSource, /safeCode === 3002 \|\| errorType === "AUTOPLAY_ERROR"/);
-  assert.match(tiktokSource, /TikTok requires a direct Play click\. Press Play in the player\./);
-  assert.doesNotMatch(tiktokSource, /3002[\s\S]{0,160}setStatus\("error"\)/);
-  assert.doesNotMatch(tiktokSource, /3002[\s\S]{0,180}setErrorLabel\(tiktokErrorLabel/);
+  assert.doesNotMatch(tiktokSource, /TikTok requires a direct Play click\. Press Play in the player\./);
+  assert.doesNotMatch(tiktokSource, /firstStartRequestedRef|manual_required|START TIKTOK PLAYBACK/);
   assert.match(tiktokSource, /<iframe ref=\{iframeRef\}/);
   assert.match(tiktokSource, /event\.origin !== "https:\/\/www\.tiktok\.com"/);
   assert.match(tiktokSource, /event\.source !== iframeRef\.current\?\.contentWindow/);

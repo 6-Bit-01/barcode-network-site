@@ -418,7 +418,6 @@ export interface ResolvedLiveOverlayScene {
   videoUrl?: string;
   youtube?: LiveOverlayYouTubeSync;
   tiktok?: LiveOverlayTikTokSync;
-  tiktokPreload?: { postId: string; trackId?: string };
   wheelCeremony?: ResolvedWheelCeremonyScene;
   priority: number;
   automatic: boolean;
@@ -829,7 +828,6 @@ export function resolveLiveOverlayScene(input: ResolveLiveOverlaySceneInput): Re
       sourceUrl: safe.sourceUrl,
       youtube,
       tiktok,
-      tiktokPreload: input.nowPlaying.sourceType === "tiktok" && input.nowPlaying.tiktokPostId && /^\d{8,32}$/.test(input.nowPlaying.tiktokPostId) ? { postId: input.nowPlaying.tiktokPostId, trackId: input.nowPlaying.id } : undefined,
       priority: youtube || tiktok ? 60 : 50,
       automatic: true,
       overrideActive: false,

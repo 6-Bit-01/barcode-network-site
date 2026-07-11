@@ -212,6 +212,7 @@ const tiktokPlayer = "https://www.tiktok.com/player/v1/6718335390845095173";
 
 test("parses canonical TikTok post and player URLs strictly", () => {
   assert.equal(queueTypes.parseTikTokVideoUrl(tiktokPost)?.postId, "6718335390845095173");
+  assert.equal(queueTypes.parseTikTokVideoUrl("https://www.tiktok.com/@Scout2015/video/6718335390845095173")?.canonicalSourceUrl, tiktokPost);
   assert.equal(queueTypes.parseTikTokVideoUrl(`${tiktokPost}?utm_source=test`)?.canonicalSourceUrl, tiktokPost);
   assert.equal(queueTypes.parseTikTokVideoUrl(`${tiktokPost}#frag`)?.canonicalSourceUrl, tiktokPost);
   assert.equal(queueTypes.parseTikTokVideoUrl(tiktokPlayer)?.sourceForm, "player");
@@ -234,6 +235,12 @@ test("rejects non-canonical TikTok and lookalike URLs", () => {
     "https://user@www.tiktok.com/@scout2015/video/6718335390845095173",
     "https://www.tiktok.com:444/@scout2015/video/6718335390845095173",
   ]) assert.equal(queueTypes.parseTikTokVideoUrl(value), null, value);
+});
+
+test("permits only safe HTTPS TikTok artwork passthrough", () => {
+  assert.equal(queueTypes.getTrackArtworkUrl({ sourceType: "tiktok", sourceArtworkUrl: "https://example.com/art.jpg" }), "https://example.com/art.jpg");
+  assert.equal(queueTypes.getTrackArtworkUrl({ sourceType: "tiktok", sourceArtworkUrl: "http://example.com/art.jpg" }), null);
+  assert.equal(queueTypes.getTrackArtworkUrl({ sourceType: "tiktok", sourceArtworkUrl: "https://user@example.com/art.jpg" }), null);
 });
 
 test("classifies only canonical TikTok forms as first-class TikTok", () => {

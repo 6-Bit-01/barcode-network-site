@@ -752,7 +752,7 @@ function tiktokErrorLabel(code?: number | null, name?: string | null): string {
 }
 
 function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
-  const parsed = parseTikTokVideoUrl(entry.link);
+  const parsed = useMemo(() => parseTikTokVideoUrl(entry.link), [entry.link]);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">(parsed ? "loading" : "error");
   const [errorLabel, setErrorLabel] = useState<string | null>(parsed ? null : "No valid TikTok video ID found. Use Open Link.");

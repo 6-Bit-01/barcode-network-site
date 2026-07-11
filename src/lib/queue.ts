@@ -996,7 +996,13 @@ async function readLimitedJson(res: Response): Promise<unknown | null> {
       chunks.push(value);
     }
   }
-  try { return JSON.parse(new TextDecoder().decode(Buffer.concat(chunks))); } catch { return null; }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try { return JSON.parse(new TextDecoder().decode(body)); } catch { return null; }
 }
 
 async function lookupTikTokMetadata(link: string): Promise<ProviderMetadata> {

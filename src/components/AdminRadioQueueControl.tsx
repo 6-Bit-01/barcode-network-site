@@ -743,56 +743,100 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
 }
 
 
+type TikTokPlayerStatus = "loading" | "ready" | "error";
+
+function isPlainTikTokObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 function tiktokErrorLabel(code?: number | null, name?: string | null): string {
   if (code === 1001 || name === "INVALID_VIDEO") return "Invalid or unavailable video";
   if (code === 2001 || name === "SERVER_ERROR") return "TikTok server error";
   if (code === 3001 || name === "PLAYBACK_ERROR") return "Playback error";
-  if (code === 3002 || name === "AUTOPLAY_ERROR") return "Autoplay blocked";
   return "TikTok player unavailable";
 }
 
 function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
   const parsed = useMemo(() => parseTikTokVideoUrl(entry.link), [entry.link]);
+  const parsedPostId = parsed?.postId ?? null;
+  const parsedPlayerUrl = parsed?.playerUrl ?? null;
+  const hasParsedTikTokUrl = Boolean(parsedPostId && parsedPlayerUrl);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "error">(parsed ? "loading" : "error");
-  const [errorLabel, setErrorLabel] = useState<string | null>(parsed ? null : "No valid TikTok video ID found. Use Open Link.");
+  const statusRef = useRef<TikTokPlayerStatus>(hasParsedTikTokUrl ? "loading" : "error");
+  const [status, setStatus] = useState<TikTokPlayerStatus>(hasParsedTikTokUrl ? "loading" : "error");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [errorLabel, setErrorLabel] = useState<string | null>(hasParsedTikTokUrl ? null : "No valid TikTok video ID found. Use Open Link.");
   const src = useMemo(() => {
-    if (!parsed) return null;
+    if (!parsedPlayerUrl) return null;
     const params = new URLSearchParams({ controls: "1", progress_bar: "1", play_button: "1", volume_control: "1", fullscreen_button: "1", timestamp: "1", autoplay: "0", music_info: "1", description: "1", rel: "0", native_context_menu: "1", closed_caption: "1", muted: "0" });
-    return `${parsed.playerUrl}?${params.toString()}`;
-  }, [parsed]);
+    return `${parsedPlayerUrl}?${params.toString()}`;
+  }, [parsedPlayerUrl]);
 
   useEffect(() => {
-    if (!parsed) return;
-    setStatus("loading");
-    setErrorLabel(null);
-    const timer = window.setTimeout(() => {
-      setStatus((current) => current === "ready" ? current : "error");
-      setErrorLabel((current) => current ?? "TikTok player did not become ready. Open Link remains available.");
+    statusRef.current = hasParsedTikTokUrl ? "loading" : "error";
+    setStatus(statusRef.current);
+    setNotice(null);
+    setErrorLabel(hasParsedTikTokUrl ? null : "No valid TikTok video ID found. Use Open Link.");
+    if (!hasParsedTikTokUrl) return;
+
+    let readyTimer: number | null = window.setTimeout(() => {
+      if (readyTimer === null) return;
+      readyTimer = null;
+      setStatus((current) => {
+        if (current === "ready" || current === "error") return current;
+        statusRef.current = "error";
+        setErrorLabel((existing) => existing ?? "TikTok player did not become ready. Open Link remains available.");
+        return "error";
+      });
     }, TIKTOK_PLAYER_READY_TIMEOUT_MS);
+
+    const clearReadyTimer = () => {
+      if (readyTimer !== null) {
+        window.clearTimeout(readyTimer);
+        readyTimer = null;
+      }
+    };
+
     function onMessage(event: MessageEvent) {
       if (event.origin !== "https://www.tiktok.com") return;
       if (event.source !== iframeRef.current?.contentWindow) return;
       const payload = event.data;
-      if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
-      if ((payload as Record<string, unknown>)["x-tiktok-player"] !== true) return;
-      const type = (payload as { type?: unknown }).type;
+      if (!isPlainTikTokObject(payload)) return;
+      if (payload["x-tiktok-player"] !== true) return;
+      const type = payload.type;
       if (type !== "onPlayerReady" && type !== "onStateChange" && type !== "onPlayerError") return;
-      if (type === "onPlayerReady") { setStatus("ready"); setErrorLabel(null); }
+      if (type === "onPlayerReady") {
+        clearReadyTimer();
+        statusRef.current = "ready";
+        setStatus("ready");
+        setNotice(null);
+        setErrorLabel(null);
+        return;
+      }
       if (type === "onPlayerError") {
-        const codeValue = (payload as { errorCode?: unknown; code?: unknown }).errorCode ?? (payload as { code?: unknown }).code;
-        const code = Number(codeValue);
-        const error = typeof (payload as { errorType?: unknown; error?: unknown }).errorType === "string" ? (payload as { errorType: string }).errorType : typeof (payload as { error?: unknown }).error === "string" ? (payload as { error: string }).error : null;
+        const value = payload.value;
+        if (!isPlainTikTokObject(value)) return;
+        const code = typeof value.errorCode === "number" ? value.errorCode : Number(value.errorCode);
+        const errorType = typeof value.errorType === "string" ? value.errorType : null;
+        const safeCode = Number.isFinite(code) ? code : null;
+        if (safeCode === 3002 || errorType === "AUTOPLAY_ERROR") {
+          setNotice("Automatic playback was blocked. Use the player’s Play control.");
+          setErrorLabel(null);
+          return;
+        }
+        clearReadyTimer();
+        statusRef.current = "error";
+        setNotice(null);
         setStatus("error");
-        setErrorLabel(tiktokErrorLabel(Number.isFinite(code) ? code : null, error));
+        setErrorLabel(tiktokErrorLabel(safeCode, errorType));
       }
     }
     window.addEventListener("message", onMessage);
-    return () => { window.clearTimeout(timer); window.removeEventListener("message", onMessage); };
-  }, [parsed]);
+    return () => { clearReadyTimer(); window.removeEventListener("message", onMessage); };
+  }, [parsedPostId, parsedPlayerUrl, hasParsedTikTokUrl, entry.link]);
 
   if (!src) return <div className="border border-border p-3 text-sm text-muted">No valid TikTok video ID found. Use Open Link.</div>;
-  return <div className="space-y-2"><div className="mx-auto max-h-[62vh] min-h-[360px] w-full max-w-[420px] overflow-hidden border border-border bg-black"><iframe ref={iframeRef} title={`TikTok player for ${submittedArtist(entry)} — ${submittedTitle(entry)}`} src={src} className="h-[62vh] min-h-[360px] max-h-[620px] w-full" allow="fullscreen; autoplay; encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" /></div>{status === "loading" && <p className="text-xs text-muted">Loading TikTok player… Open Link and Copy Link remain available.</p>}{status === "ready" && <p className="text-xs text-muted">TikTok player ready. Use the native controls.</p>}{status === "error" && <p className="border border-danger/40 bg-danger/10 p-2 text-xs text-danger">{errorLabel ?? "TikTok player unavailable."} Use Open Link or Copy Link.</p>}</div>;
+  return <div className="space-y-2"><div className="mx-auto max-h-[62vh] min-h-[360px] w-full max-w-[420px] overflow-hidden border border-border bg-black"><iframe ref={iframeRef} title={`TikTok player for ${submittedArtist(entry)} — ${submittedTitle(entry)}`} src={src} className="h-[62vh] min-h-[360px] max-h-[620px] w-full" allow="fullscreen; autoplay; encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" /></div>{status === "loading" && <p className="text-xs text-muted">Loading TikTok player… Open Link and Copy Link remain available.</p>}{status === "ready" && <p className="text-xs text-muted">TikTok player ready. Use the native controls.</p>}{notice && <p className="border border-accent/40 bg-accent/10 p-2 text-xs text-accent">{notice}</p>}{status === "error" && <p className="border border-danger/40 bg-danger/10 p-2 text-xs text-danger">{errorLabel ?? "TikTok player unavailable."} Use Open Link or Copy Link.</p>}</div>;
 }
 
 function PlayerDock({ player, minimized, setMinimized, readOnly, actionPending, onAction, onCopy }: { player: QueueEntry; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; actionPending: boolean; onAction: (id: string, action: AdminQueueAction) => void; onCopy: () => void }) {

@@ -65,7 +65,6 @@ export interface LiveOverlayPayload {
   sponsorLabel?: unknown;
   videoUrl?: unknown;
   sync?: unknown;
-  startDelayMs?: unknown;
 }
 
 export interface LiveOverlayAdminSnapshot {
@@ -309,10 +308,10 @@ function normalizePlaybackState(value: unknown): LiveOverlayPlaybackState {
   return value === "paused" || value === "stopped" || value === "playing" ? value : "stopped";
 }
 
-function normalizePlayerSync(input: unknown, receivedAt?: Date, startDelayMs?: unknown): LiveOverlayPlayerSync | null {
+function normalizePlayerSync(input: unknown, receivedAt?: Date): LiveOverlayPlayerSync | null {
   const raw = input as Partial<LiveOverlayPlayerSync> | null;
   if (!raw || typeof raw !== "object") return null;
-  if (raw.provider === "tiktok") return serverStampTikTokSync(raw, receivedAt ?? (typeof raw.updatedAt === "string" ? new Date(raw.updatedAt) : new Date()), typeof startDelayMs === "number" ? startDelayMs : undefined);
+  if (raw.provider === "tiktok") return serverStampTikTokSync(raw, receivedAt ?? (typeof raw.updatedAt === "string" ? new Date(raw.updatedAt) : new Date()));
   if (raw.provider !== "youtube") return null;
   const videoId = typeof raw.videoId === "string" && parseYouTubeVideoId(`https://www.youtube.com/watch?v=${raw.videoId}`) ? raw.videoId : null;
   if (!videoId) return null;
@@ -644,7 +643,7 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload, receivedA
   } else if (payload.action === "clearAllOverrides") {
     next = { ...defaultLiveOverlayState(), updatedAt: now };
   } else if (payload.action === "updatePlayerSync") {
-    await setLiveOverlayPlayerSync(normalizePlayerSync(payload.sync, receivedAt, payload.startDelayMs), receivedAt ?? new Date(now));
+    await setLiveOverlayPlayerSync(normalizePlayerSync(payload.sync, receivedAt), receivedAt ?? new Date(now));
     return getLiveOverlayAdminSnapshot();
   } else if (payload.action === "clearPlayerSync") {
     await setLiveOverlayPlayerSync(null);

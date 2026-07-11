@@ -2034,7 +2034,7 @@ test("admin and public TikTok component source assertions remain scoped", () => 
   assert.match(tiktokSource, /const markDashboardTikTokReady[\s\S]*clearDashboardTikTokReadyTimer\(\)/);
   assert.match(tiktokSource, /type !== "onPlayerError"\) markDashboardTikTokReady\("trusted_event"\)/);
   assert.match(tiktokSource, /type === "onPlayerError"[\s\S]*clearDashboardTikTokReadyTimer\(\)/);
-  assert.match(tiktokSource, /return \(\) => \{ clearDashboardTikTokReadyTimer\(\); clearLoadedReadyFallbackTimer\(\); window\.removeEventListener/);
+  assert.match(tiktokSource, /return \(\) => \{ clearDashboardTikTokReadyTimer\(\); clearLoadedReadyFallbackTimer\(\); clearStartConfirmationTimer\(\); window\.removeEventListener/);
   assert.match(tiktokSource, /const value = payload\.value/);
   assert.match(tiktokSource, /value\.errorCode/);
   assert.match(tiktokSource, /value\.errorType/);
@@ -2044,7 +2044,7 @@ test("admin and public TikTok component source assertions remain scoped", () => 
   assert.match(adminSource, /code === 2001 \|\| name === "SERVER_ERROR"\) return "TikTok server error"/);
   assert.match(adminSource, /code === 3001 \|\| name === "PLAYBACK_ERROR"\) return "Playback error"/);
   assert.match(tiktokSource, /safeCode === 3002 \|\| errorType === "AUTOPLAY_ERROR"/);
-  assert.match(tiktokSource, /Automatic playback was blocked\. Use the player’s Play control\./);
+  assert.match(tiktokSource, /TikTok requires a direct Play click\. Press Play in the player\./);
   assert.doesNotMatch(tiktokSource, /3002[\s\S]{0,160}setStatus\("error"\)/);
   assert.doesNotMatch(tiktokSource, /3002[\s\S]{0,180}setErrorLabel\(tiktokErrorLabel/);
   assert.match(tiktokSource, /<iframe ref=\{iframeRef\}/);

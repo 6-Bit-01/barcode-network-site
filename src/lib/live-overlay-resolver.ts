@@ -6,9 +6,7 @@ export type WheelCeremonyStatus = "idle" | "ready" | "reencrypting" | "spinning"
 
 export const WHEEL_RIGHT_POINTER_ANGLE_DEGREES = 90;
 export const YOUTUBE_SYNC_STALE_AFTER_MS = 12_000;
-export const TIKTOK_SYNCHRONIZED_START_DELAY_MS = 1_500;
-export const TIKTOK_MIN_SYNCHRONIZED_START_DELAY_MS = 750;
-export const TIKTOK_MAX_SYNCHRONIZED_START_DELAY_MS = 2_500;
+export const TIKTOK_MATCHING_SYNC_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
 export type YouTubePresentation = "standard" | "short";
 
@@ -253,17 +251,6 @@ export function playbackCorrectionTarget(input: { expectedTimeSeconds: number; d
   return Number.isFinite(target) ? target : null;
 }
 
-export function expectedScheduledTikTokPlaybackTime(input: { playbackState: LiveOverlayPlaybackState; currentTimeSeconds: number; scheduledStartAt?: string; startToken?: string; serverNowMs?: number | null; durationSeconds?: number; }): number | null {
-  if (!Number.isFinite(input.currentTimeSeconds) || input.currentTimeSeconds < 0) return null;
-  let expected = input.currentTimeSeconds;
-  const scheduledStartAtMs = typeof input.scheduledStartAt === "string" ? new Date(input.scheduledStartAt).getTime() : Number.NaN;
-  const hasSchedule = input.playbackState === "playing" && Number.isFinite(scheduledStartAtMs) && typeof input.startToken === "string" && /^tt-start-[a-z0-9]+$/.test(input.startToken);
-  if (hasSchedule && typeof input.serverNowMs === "number" && Number.isFinite(input.serverNowMs)) expected += Math.max(0, input.serverNowMs - scheduledStartAtMs) / 1000;
-  if (typeof input.durationSeconds === "number" && Number.isFinite(input.durationSeconds) && input.durationSeconds > 0) expected = Math.min(expected, input.durationSeconds);
-  expected = Math.max(0, expected);
-  return Number.isFinite(expected) ? expected : null;
-}
-
 export function detectMaterialPlaybackSeek(input: { playbackState: LiveOverlayPlaybackState; previousTimeSeconds: number; previousObservedAtMs: number; currentTimeSeconds: number; currentObservedAtMs: number; playingThresholdSeconds?: number; pausedThresholdSeconds?: number; }): boolean {
   const { playbackState, previousTimeSeconds, previousObservedAtMs, currentTimeSeconds, currentObservedAtMs } = input;
   if (![previousTimeSeconds, previousObservedAtMs, currentTimeSeconds, currentObservedAtMs].every(Number.isFinite) || previousTimeSeconds < 0 || currentTimeSeconds < 0) return false;
@@ -303,8 +290,6 @@ export interface LiveOverlayTikTokSync {
   muted: true;
   clientUpdatedAt?: string;
   correctionReason?: LiveOverlaySyncCorrectionReason;
-  scheduledStartAt?: string;
-  startToken?: string;
 }
 
 export type LiveOverlayPlayerSync = LiveOverlayYouTubeSync | LiveOverlayTikTokSync;
@@ -331,17 +316,7 @@ export function serverStampYouTubeSync(input: unknown, receivedAt: Date = new Da
   };
 }
 
-function tiktokStartToken(postId: string, trackId: string | undefined, receivedAt: Date): string {
-  const source = `${postId}:${trackId ?? "trackless"}:${receivedAt.toISOString()}`;
-  let hash = 2166136261;
-  for (let index = 0; index < source.length; index += 1) {
-    hash ^= source.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `tt-start-${(hash >>> 0).toString(36)}`;
-}
-
-export function serverStampTikTokSync(input: unknown, receivedAt: Date = new Date(), startDelayMs?: number): LiveOverlayTikTokSync | null {
+export function serverStampTikTokSync(input: unknown, receivedAt: Date = new Date()): LiveOverlayTikTokSync | null {
   const raw = input as Partial<LiveOverlayTikTokSync> | null;
   if (!raw || typeof raw !== "object" || raw.provider !== "tiktok") return null;
   const postId = typeof raw.postId === "string" && /^\d{8,32}$/.test(raw.postId) ? raw.postId : null;
@@ -350,11 +325,6 @@ export function serverStampTikTokSync(input: unknown, receivedAt: Date = new Dat
   if (typeof raw.currentTimeSeconds !== "number" || !Number.isFinite(raw.currentTimeSeconds) || raw.currentTimeSeconds < 0) return null;
   const durationSeconds = typeof raw.durationSeconds === "number" && Number.isFinite(raw.durationSeconds) && raw.durationSeconds > 0 ? raw.durationSeconds : undefined;
   const trackId = cleanSyncTrackId(raw.trackId);
-  const safeStartDelayMs = typeof startDelayMs === "number" && Number.isFinite(startDelayMs) && raw.playbackState === "playing" ? Math.max(TIKTOK_MIN_SYNCHRONIZED_START_DELAY_MS, Math.min(TIKTOK_MAX_SYNCHRONIZED_START_DELAY_MS, startDelayMs)) : undefined;
-  const rawScheduledStartAtMs = typeof raw.scheduledStartAt === "string" ? new Date(raw.scheduledStartAt).getTime() : Number.NaN;
-  const mayPreserveServerSchedule = typeof raw.updatedAt === "string" && raw.updatedAt === receivedAt.toISOString() && Number.isFinite(rawScheduledStartAtMs) && typeof raw.startToken === "string" && /^tt-start-[a-z0-9]+$/.test(raw.startToken);
-  const scheduledStartAt = safeStartDelayMs === undefined ? mayPreserveServerSchedule ? raw.scheduledStartAt : undefined : new Date(receivedAt.getTime() + safeStartDelayMs).toISOString();
-  const startToken = scheduledStartAt ? safeStartDelayMs === undefined && mayPreserveServerSchedule ? raw.startToken : tiktokStartToken(postId, trackId, receivedAt) : undefined;
   return {
     provider: "tiktok",
     postId,
@@ -365,8 +335,6 @@ export function serverStampTikTokSync(input: unknown, receivedAt: Date = new Dat
     updatedAt: receivedAt.toISOString(),
     muted: true,
     correctionReason: normalizeLiveOverlaySyncCorrectionReason(raw.correctionReason),
-    scheduledStartAt,
-    startToken,
   };
 }
 
@@ -569,8 +537,10 @@ export function tiktokSyncForTrack(track: LiveOverlayTrackInput, playerSync?: Li
   const postId = track.tiktokPostId ?? tiktokPostIdFromCanonicalUrl(track.link);
   if (!postId || !/^\d{8,32}$/.test(postId) || playerSync?.provider !== "tiktok") return undefined;
   const syncTrackMatches = !playerSync.trackId || !track.id || playerSync.trackId === track.id;
-  const syncAgeMs = now.getTime() - new Date(playerSync.updatedAt).getTime();
-  const syncIsFresh = Number.isFinite(syncAgeMs) && syncAgeMs >= 0 && syncAgeMs <= YOUTUBE_SYNC_STALE_AFTER_MS;
+  const updatedAtMs = new Date(playerSync.updatedAt).getTime();
+  const syncAgeMs = now.getTime() - updatedAtMs;
+  const maxAgeMs = playerSync.playbackState === "stopped" ? YOUTUBE_SYNC_STALE_AFTER_MS : TIKTOK_MATCHING_SYNC_MAX_AGE_MS;
+  const syncIsFresh = Number.isFinite(updatedAtMs) && Number.isFinite(syncAgeMs) && syncAgeMs >= 0 && syncAgeMs <= maxAgeMs;
   if (playerSync.postId !== postId || !syncTrackMatches || !syncIsFresh) return undefined;
   return { ...playerSync, muted: true };
 }

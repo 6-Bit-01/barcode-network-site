@@ -7,7 +7,7 @@ import { AdminLiveOverlayControl } from "@/components/AdminLiveOverlayControl";
 import { buildQueueTimingDisplay, formatHoursMinutes, queueTimingInputFromAdminState } from "@/lib/queue-timing-display";
 import { parseYouTubeVideoId } from "@/lib/track-duration";
 import { formatRuntime, getTrackRuntimeSeconds, parseTikTokVideoUrl } from "@/lib/queue-types";
-import { detectMaterialPlaybackSeek, estimatedOneWayLatencySeconds, projectObservedPlaybackTime, YOUTUBE_SYNC_STALE_AFTER_MS } from "@/lib/live-overlay-resolver";
+import { detectMaterialPlaybackSeek, projectObservedPlaybackTime, YOUTUBE_SYNC_STALE_AFTER_MS } from "@/lib/live-overlay-resolver";
 import type { QueueEntry, QueueLane, QueueState } from "@/lib/queue-types";
 import type { LiveOverlayPlaybackState, LiveOverlaySyncCorrectionReason } from "@/lib/live-overlay-resolver";
 
@@ -25,7 +25,7 @@ const TIKTOK_SYNC_HEARTBEAT_MS = 1_000;
 const MAX_SYNC_RTT_MS = 3_000;
 const PUBLISH_PRIORITY: Record<LiveOverlaySyncCorrectionReason, number> = { heartbeat: 1, state_change: 2, seek: 3 };
 
-type QueuedOverlayPublish = { playbackState: LiveOverlayPlaybackState; currentTimeSeconds: number; correctionReason: LiveOverlaySyncCorrectionReason };
+type QueuedOverlayPublish = { playbackState: LiveOverlayPlaybackState; currentTimeSeconds: number; observedAtMs?: number; correctionReason: LiveOverlaySyncCorrectionReason };
 
 function clampSyncRttMs(value: number): number {
   if (!Number.isFinite(value) || value < 0) return 0;
@@ -688,12 +688,12 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
       return;
     }
     const startMs = performance.now();
-    const compensatedTime = playbackState === "playing" ? Math.max(0, currentTimeSeconds + estimatedOneWayLatencySeconds(publishRttMsRef.current)) : currentTimeSeconds;
+    const publishTime = currentTimeSeconds;
     try {
-      const sync = await publishOverlayYouTubeSync(trackSyncInput, playbackState, compensatedTime, correctionReason);
+      const sync = await publishOverlayYouTubeSync(trackSyncInput, playbackState, publishTime, correctionReason);
       const measured = clampSyncRttMs(performance.now() - startMs);
       publishRttMsRef.current = updateRttEstimate(publishRttMsRef.current, measured);
-      if (sync) setDiagnostics({ ...sync, currentTimeSeconds: compensatedTime, status: "Fresh", ready: Boolean(playerRef.current), publishStatus: "success" });
+      if (sync) setDiagnostics({ ...sync, currentTimeSeconds: publishTime, status: "Fresh", ready: Boolean(playerRef.current), publishStatus: "success" });
     } catch {
       const measured = clampSyncRttMs(performance.now() - startMs);
       publishRttMsRef.current = updateRttEstimate(publishRttMsRef.current, measured);
@@ -860,12 +860,12 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
     const params = new URLSearchParams({ controls: "1", progress_bar: "1", play_button: "1", volume_control: "1", fullscreen_button: "1", timestamp: "1", autoplay: "0", music_info: "1", description: "1", rel: "0", native_context_menu: "1", closed_caption: "1", muted: "0" });
     return `${parsedPlayerUrl}?${params.toString()}`;
   }, [parsedPlayerUrl]);
-  const publishNow = useCallback(async (playbackState: LiveOverlayPlaybackState, observedTimeSeconds: number, correctionReason: LiveOverlaySyncCorrectionReason = "heartbeat") => {
-    if (!readyRef.current || !hasObservedCurrentTimeRef.current || latestTimeObservedAtRef.current === null || trackSyncInput.sourceType !== "tiktok" || !trackSyncInput.postId) return null;
+  const publishNow = useCallback(async (playbackState: LiveOverlayPlaybackState, observedTimeSeconds: number, observedAtMs: number | undefined, correctionReason: LiveOverlaySyncCorrectionReason = "heartbeat") => {
+    if (!readyRef.current || !hasObservedCurrentTimeRef.current || observedAtMs === undefined || trackSyncInput.sourceType !== "tiktok" || !trackSyncInput.postId) return null;
     const nowMs = Date.now();
-    const projected = projectObservedPlaybackTime(playbackState, observedTimeSeconds, latestTimeObservedAtRef.current, nowMs, durationRef.current);
+    const projected = projectObservedPlaybackTime(playbackState, observedTimeSeconds, observedAtMs, nowMs, durationRef.current);
     if (projected === null) return null;
-    const publishTime = playbackState === "playing" ? Math.min(durationRef.current ?? Number.POSITIVE_INFINITY, projected + estimatedOneWayLatencySeconds(publishRttMsRef.current)) : observedTimeSeconds;
+    const publishTime = playbackState === "playing" ? projected : observedTimeSeconds;
     const startMs = performance.now();
     try {
       const sync = await publishOverlayTikTokSync(trackSyncInput, playbackState, publishTime, durationRef.current, correctionReason);
@@ -880,8 +880,8 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
     }
   }, [trackSyncInput]);
 
-  const publish = useCallback((playbackState: LiveOverlayPlaybackState, observedTimeSeconds = latestTimeRef.current, correctionReason: LiveOverlaySyncCorrectionReason = "heartbeat") => {
-    const next = { playbackState, currentTimeSeconds: observedTimeSeconds, correctionReason };
+  const publish = useCallback((playbackState: LiveOverlayPlaybackState, observedTimeSeconds = latestTimeRef.current, correctionReason: LiveOverlaySyncCorrectionReason = "heartbeat", observedAtMs = latestTimeObservedAtRef.current ?? undefined) => {
+    const next = { playbackState, currentTimeSeconds: observedTimeSeconds, observedAtMs, correctionReason };
     if (publishInFlightRef.current) {
       if (shouldReplaceQueuedPublish(queuedPublishRef.current, next)) queuedPublishRef.current = next;
       return;
@@ -890,7 +890,7 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
     void (async () => {
       let current: QueuedOverlayPublish | null = next;
       while (current && tiktokGenerationActiveRef.current) {
-        await publishNow(current.playbackState, current.currentTimeSeconds, current.correctionReason);
+        await publishNow(current.playbackState, current.currentTimeSeconds, current.observedAtMs, current.correctionReason);
         current = queuedPublishRef.current;
         queuedPublishRef.current = null;
       }
@@ -971,11 +971,11 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
           const pendingReason = pendingCorrectionReasonRef.current;
           pendingPlaybackStateRef.current = null;
           pendingCorrectionReasonRef.current = "state_change";
-          publish(pendingState, currentTime, pendingReason);
+          publish(pendingState, currentTime, pendingReason, nowMs);
           return;
         }
         lastTimeEventAtRef.current = nowMs;
-        if (previousAt !== null && detectMaterialPlaybackSeek({ playbackState: lastStablePlaybackStateRef.current, previousTimeSeconds: previous, previousObservedAtMs: previousAt, currentTimeSeconds: currentTime, currentObservedAtMs: nowMs })) publish(lastStablePlaybackStateRef.current, currentTime, "seek");
+        if (previousAt !== null && detectMaterialPlaybackSeek({ playbackState: lastStablePlaybackStateRef.current, previousTimeSeconds: previous, previousObservedAtMs: previousAt, currentTimeSeconds: currentTime, currentObservedAtMs: nowMs })) publish(lastStablePlaybackStateRef.current, currentTime, "seek", nowMs);
         return;
       }
       if (type === "onStateChange") {
@@ -1008,7 +1008,7 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
     }
     window.addEventListener("message", onMessage);
     const heartbeat = window.setInterval(() => {
-      if (readyRef.current && hasObservedCurrentTimeRef.current && (lastStablePlaybackStateRef.current === "playing" || lastStablePlaybackStateRef.current === "paused")) publish(lastStablePlaybackStateRef.current, latestTimeRef.current, "heartbeat");
+      if (readyRef.current && hasObservedCurrentTimeRef.current && (lastStablePlaybackStateRef.current === "playing" || lastStablePlaybackStateRef.current === "paused")) publish(lastStablePlaybackStateRef.current, latestTimeRef.current, "heartbeat", latestTimeObservedAtRef.current ?? undefined);
     }, TIKTOK_SYNC_HEARTBEAT_MS);
     return () => { clearReadyTimer(); window.removeEventListener("message", onMessage); tiktokGenerationActiveRef.current = false; queuedPublishRef.current = null; window.clearInterval(heartbeat); };
     // Effect lifecycle is keyed by the parsed TikTok media URL; PlayerDock remounts on queue-track identity changes.

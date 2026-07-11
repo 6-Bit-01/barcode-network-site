@@ -202,9 +202,12 @@ export function projectObservedPlaybackTime(playbackState: LiveOverlayPlaybackSt
   return Number.isFinite(projected) ? projected : null;
 }
 
-export function estimatedOneWayLatencySeconds(roundTripMs: number | null | undefined): number {
-  if (typeof roundTripMs !== "number" || !Number.isFinite(roundTripMs) || roundTripMs < 0) return 0;
-  return Math.min(roundTripMs / 2, 750) / 1000;
+export function serverRelativeSyncAgeSeconds(updatedAt: string, serverNowMs: number, elapsedSinceServerAnchorMs: number): number | null {
+  const updatedAtMs = new Date(updatedAt).getTime();
+  if (!Number.isFinite(updatedAtMs) || !Number.isFinite(serverNowMs) || !Number.isFinite(elapsedSinceServerAnchorMs)) return null;
+  const elapsedMs = Math.max(0, elapsedSinceServerAnchorMs);
+  const ageMs = Math.max(0, serverNowMs + elapsedMs - updatedAtMs);
+  return Number.isFinite(ageMs) ? ageMs / 1000 : null;
 }
 
 export function detectMaterialPlaybackSeek(input: { playbackState: LiveOverlayPlaybackState; previousTimeSeconds: number; previousObservedAtMs: number; currentTimeSeconds: number; currentObservedAtMs: number; playingThresholdSeconds?: number; pausedThresholdSeconds?: number; }): boolean {

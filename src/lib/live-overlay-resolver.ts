@@ -226,6 +226,30 @@ export function updateTransitEstimateMs(previousMs: number | null, measuredMs: n
   return Math.max(0, Math.min(300, previousMs * 0.75 + clampedMeasuredMs * 0.25));
 }
 
+
+export function shouldCorrectPlaybackDrift(input: { playbackState: LiveOverlayPlaybackState; driftSeconds: number; behindThresholdSeconds: number; aheadThresholdSeconds: number; pausedThresholdSeconds: number; }): boolean {
+  const { playbackState, driftSeconds, behindThresholdSeconds, aheadThresholdSeconds, pausedThresholdSeconds } = input;
+  if (![driftSeconds, behindThresholdSeconds, aheadThresholdSeconds, pausedThresholdSeconds].every(Number.isFinite) || behindThresholdSeconds < 0 || aheadThresholdSeconds < 0 || pausedThresholdSeconds < 0) return false;
+  if (playbackState === "playing") {
+    if (driftSeconds < 0) return Math.abs(driftSeconds) > behindThresholdSeconds;
+    if (driftSeconds > 0) return driftSeconds > aheadThresholdSeconds;
+    return false;
+  }
+  return Math.abs(driftSeconds) > pausedThresholdSeconds;
+}
+
+export function playbackCorrectionTarget(input: { expectedTimeSeconds: number; driftSeconds: number; playbackState: LiveOverlayPlaybackState; maximumCatchUpSeconds: number; durationSeconds?: number; }): number | null {
+  const { expectedTimeSeconds, driftSeconds, playbackState, maximumCatchUpSeconds, durationSeconds } = input;
+  if (!Number.isFinite(expectedTimeSeconds) || expectedTimeSeconds < 0 || !Number.isFinite(driftSeconds) || !Number.isFinite(maximumCatchUpSeconds) || maximumCatchUpSeconds < 0) return null;
+  let target = expectedTimeSeconds;
+  if (playbackState === "playing" && driftSeconds < 0) {
+    target += Math.min(maximumCatchUpSeconds, Math.abs(driftSeconds) * 0.5);
+  }
+  target = Math.max(0, target);
+  if (typeof durationSeconds === "number" && Number.isFinite(durationSeconds) && durationSeconds > 0) target = Math.min(target, durationSeconds);
+  return Number.isFinite(target) ? target : null;
+}
+
 export function detectMaterialPlaybackSeek(input: { playbackState: LiveOverlayPlaybackState; previousTimeSeconds: number; previousObservedAtMs: number; currentTimeSeconds: number; currentObservedAtMs: number; playingThresholdSeconds?: number; pausedThresholdSeconds?: number; }): boolean {
   const { playbackState, previousTimeSeconds, previousObservedAtMs, currentTimeSeconds, currentObservedAtMs } = input;
   if (![previousTimeSeconds, previousObservedAtMs, currentTimeSeconds, currentObservedAtMs].every(Number.isFinite) || previousTimeSeconds < 0 || currentTimeSeconds < 0) return false;

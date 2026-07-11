@@ -210,6 +210,22 @@ export function serverRelativeSyncAgeSeconds(updatedAt: string, serverNowMs: num
   return Number.isFinite(ageMs) ? ageMs / 1000 : null;
 }
 
+
+export function estimateOneWayNetworkTransitMs(totalRoundTripMs: number, serverProcessingMs: number, maximumMs = 300): number {
+  if (!Number.isFinite(totalRoundTripMs) || totalRoundTripMs < 0) return 0;
+  const safeProcessingMs = Number.isFinite(serverProcessingMs) && serverProcessingMs >= 0 ? serverProcessingMs : 0;
+  const safeMaximumMs = Number.isFinite(maximumMs) && maximumMs >= 0 ? maximumMs : 300;
+  const networkRoundTripMs = Math.max(0, totalRoundTripMs - safeProcessingMs);
+  const oneWayMs = networkRoundTripMs / 2;
+  return Math.max(0, Math.min(safeMaximumMs, Number.isFinite(oneWayMs) ? oneWayMs : 0));
+}
+
+export function updateTransitEstimateMs(previousMs: number | null, measuredMs: number): number {
+  const clampedMeasuredMs = Number.isFinite(measuredMs) ? Math.max(0, Math.min(300, measuredMs)) : 0;
+  if (previousMs === null || !Number.isFinite(previousMs)) return clampedMeasuredMs;
+  return Math.max(0, Math.min(300, previousMs * 0.75 + clampedMeasuredMs * 0.25));
+}
+
 export function detectMaterialPlaybackSeek(input: { playbackState: LiveOverlayPlaybackState; previousTimeSeconds: number; previousObservedAtMs: number; currentTimeSeconds: number; currentObservedAtMs: number; playingThresholdSeconds?: number; pausedThresholdSeconds?: number; }): boolean {
   const { playbackState, previousTimeSeconds, previousObservedAtMs, currentTimeSeconds, currentObservedAtMs } = input;
   if (![previousTimeSeconds, previousObservedAtMs, currentTimeSeconds, currentObservedAtMs].every(Number.isFinite) || previousTimeSeconds < 0 || currentTimeSeconds < 0) return false;

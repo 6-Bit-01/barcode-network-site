@@ -4,8 +4,10 @@ import { getResolvedLiveOverlayScene } from "@/lib/live-overlay";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const serverRequestReceivedAt = new Date();
   const scene = await getResolvedLiveOverlayScene();
-  return NextResponse.json({ scene, serverNow: new Date().toISOString() }, {
+  const serverNow = new Date();
+  return NextResponse.json({ scene, serverRequestReceivedAt: serverRequestReceivedAt.toISOString(), serverNow: serverNow.toISOString() }, {
     headers: { "Cache-Control": "no-store" },
   });
 }

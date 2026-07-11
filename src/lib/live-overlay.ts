@@ -457,7 +457,7 @@ export async function getLiveOverlayAdminSnapshot(): Promise<LiveOverlayAdminSna
   return { overlayState, scene, playerSync, wheelCandidates: getWheelCandidatesFromQueue(queueState.queue) };
 }
 
-export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<LiveOverlayAdminSnapshot> {
+export async function setLiveOverlayState(payload: LiveOverlayPayload, receivedAt?: Date): Promise<LiveOverlayAdminSnapshot> {
   const current = await getStoredLiveOverlayState();
   const now = new Date().toISOString();
   let next: LiveOverlayState = { ...current, updatedAt: now };
@@ -643,7 +643,7 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<
   } else if (payload.action === "clearAllOverrides") {
     next = { ...defaultLiveOverlayState(), updatedAt: now };
   } else if (payload.action === "updatePlayerSync") {
-    await setLiveOverlayPlayerSync(normalizePlayerSync(payload.sync), new Date(now));
+    await setLiveOverlayPlayerSync(normalizePlayerSync(payload.sync, receivedAt), receivedAt ?? new Date(now));
     return getLiveOverlayAdminSnapshot();
   } else if (payload.action === "clearPlayerSync") {
     await setLiveOverlayPlayerSync(null);

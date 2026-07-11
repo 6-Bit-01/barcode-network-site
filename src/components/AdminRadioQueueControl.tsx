@@ -22,6 +22,7 @@ const FIXED_PRIORITY_INSTRUCTIONS = "Moves this track into the Priority Signal l
 
 const YOUTUBE_SYNC_HEARTBEAT_MS = 1_000;
 const TIKTOK_SYNC_HEARTBEAT_MS = 1_000;
+const TIKTOK_SCHEDULED_START_EARLY_TOLERANCE_MS = 100;
 const PUBLISH_PRIORITY: Record<LiveOverlaySyncCorrectionReason, number> = { heartbeat: 1, state_change: 2, seek: 3 };
 
 type QueuedOverlayPublish = { playbackState: LiveOverlayPlaybackState; currentTimeSeconds: number; observedAtMs?: number; correctionReason: LiveOverlaySyncCorrectionReason };
@@ -868,6 +869,8 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
   const synchronizedStartPendingRef = useRef(false);
   const synchronizedStartTimerRef = useRef<number | null>(null);
   const activeStartTokenRef = useRef<string | null>(null);
+  const scheduledStartAtMsRef = useRef<number | null>(null);
+  const scheduledStartAtPerformanceMsRef = useRef<number | null>(null);
   const [synchronizedStartStatus, setSynchronizedStartStatus] = useState<"waiting" | "scheduled" | "started">("waiting");
   const [synchronizedStartDelayMs, setSynchronizedStartDelayMs] = useState<number | null>(null);
   const [hasOfficialCurrentTime, setHasOfficialCurrentTime] = useState(false);
@@ -935,28 +938,28 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
   const startSynchronizedPlayback = useCallback(async () => {
     if (synchronizedStartPendingRef.current || synchronizedStartCompletedRef.current || !readyRef.current || !hasObservedCurrentTimeRef.current || latestTimeObservedAtRef.current === null || !trackSyncInput.postId) return;
     const generation = generationRef.current;
-    const observedTimeSeconds = latestTimeRef.current;
-    const observedAtMs = latestTimeObservedAtRef.current;
+    const startPositionSeconds = typeof durationRef.current === "number" && Number.isFinite(durationRef.current) && durationRef.current > 0 ? Math.min(latestTimeRef.current, durationRef.current) : latestTimeRef.current;
     synchronizedStartPendingRef.current = true;
     setSynchronizedStartStatus("scheduled");
     sendDashboardTikTokVoidCommand("pause");
-    sendDashboardTikTokSeekCommand(observedTimeSeconds);
-    const projected = projectObservedPlaybackTime("playing", observedTimeSeconds, observedAtMs, Date.now(), durationRef.current);
-    if (projected === null) {
+    sendDashboardTikTokSeekCommand(startPositionSeconds);
+    if (!Number.isFinite(startPositionSeconds) || startPositionSeconds < 0) {
       synchronizedStartPendingRef.current = false;
       setSynchronizedStartStatus("waiting");
       return;
     }
     try {
-      const result = await publishOverlayTikTokSync(trackSyncInput, "playing", projected, durationRef.current, "state_change", TIKTOK_SYNCHRONIZED_START_DELAY_MS);
+      const result = await publishOverlayTikTokSync(trackSyncInput, "playing", startPositionSeconds, durationRef.current, "state_change", TIKTOK_SYNCHRONIZED_START_DELAY_MS);
       if (!result) throw new Error("Scheduled TikTok start could not be published.");
       const stampedSync = result?.sync as (typeof result extends null ? never : NonNullable<typeof result>["sync"] & { scheduledStartAt?: string; startToken?: string }) | null | undefined;
       const scheduledStartAtMs = typeof stampedSync?.scheduledStartAt === "string" ? new Date(stampedSync.scheduledStartAt).getTime() : Number.NaN;
       if (!stampedSync?.startToken || !Number.isFinite(scheduledStartAtMs) || result.serverResponseGeneratedAtMs === undefined || result.responseReceivedAtPerformanceMs === undefined) throw new Error("Scheduled TikTok start was not accepted.");
       activeStartTokenRef.current = stampedSync.startToken;
+      scheduledStartAtMsRef.current = scheduledStartAtMs;
       const serverNowAtReceiptMs = result.serverResponseGeneratedAtMs + result.outboundTransitMs;
       const elapsedSinceReceiptMs = performance.now() - result.responseReceivedAtPerformanceMs;
       const delayMs = Math.max(0, scheduledStartAtMs - serverNowAtReceiptMs - elapsedSinceReceiptMs);
+      scheduledStartAtPerformanceMsRef.current = performance.now() + delayMs;
       setSynchronizedStartDelayMs(Math.round(delayMs));
       if (synchronizedStartTimerRef.current) window.clearTimeout(synchronizedStartTimerRef.current);
       synchronizedStartTimerRef.current = window.setTimeout(() => {
@@ -966,6 +969,8 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
     } catch {
       synchronizedStartPendingRef.current = false;
       activeStartTokenRef.current = null;
+      scheduledStartAtMsRef.current = null;
+      scheduledStartAtPerformanceMsRef.current = null;
       setSynchronizedStartStatus("waiting");
       setSynchronizedStartDelayMs(null);
       setDiagnostics((current) => current ? { ...current, status: "Error", publishStatus: "failed" } : null);
@@ -989,6 +994,8 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
     synchronizedStartCompletedRef.current = false;
     synchronizedStartPendingRef.current = false;
     activeStartTokenRef.current = null;
+    scheduledStartAtMsRef.current = null;
+    scheduledStartAtPerformanceMsRef.current = null;
     if (synchronizedStartTimerRef.current) window.clearTimeout(synchronizedStartTimerRef.current);
     synchronizedStartTimerRef.current = null;
     setSynchronizedStartStatus("waiting");
@@ -1014,6 +1021,7 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
     const clearReadyTimer = () => { if (readyTimer !== null) { window.clearTimeout(readyTimer); readyTimer = null; } };
     const publishObservedState = (state: LiveOverlayPlaybackState, correctionReason: LiveOverlaySyncCorrectionReason = "state_change") => {
       lastStablePlaybackStateRef.current = state;
+      if (synchronizedStartPendingRef.current && state !== "playing") return;
       if (hasObservedCurrentTimeRef.current) publish(state, latestTimeRef.current, correctionReason);
       else { pendingPlaybackStateRef.current = state; pendingCorrectionReasonRef.current = correctionReason; }
     };
@@ -1049,6 +1057,10 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
         if (Number.isFinite(duration) && duration > 0) durationRef.current = duration;
         hasObservedCurrentTimeRef.current = true;
         setHasOfficialCurrentTime(true);
+        if (synchronizedStartPendingRef.current) {
+          lastTimeEventAtRef.current = nowMs;
+          return;
+        }
         const pendingState = pendingPlaybackStateRef.current;
         if (pendingState) {
           const pendingReason = pendingCorrectionReasonRef.current;
@@ -1063,9 +1075,29 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
       }
       if (type === "onStateChange") {
         const stateValue = typeof payload.value === "number" ? payload.value : Number(payload.value);
-        if (stateValue === 1) { synchronizedStartCompletedRef.current = true; synchronizedStartPendingRef.current = false; setSynchronizedStartStatus("started"); setSynchronizedStartDelayMs(null); publishObservedState("playing", "state_change"); }
-        else if (stateValue === 2) publishObservedState("paused", "state_change");
-        else if (stateValue === 0) publishObservedState("stopped", "state_change");
+        if (stateValue === 1) {
+          if (synchronizedStartPendingRef.current) {
+            const scheduledStartAtPerformanceMs = scheduledStartAtPerformanceMsRef.current;
+            if (scheduledStartAtPerformanceMs !== null && performance.now() + TIKTOK_SCHEDULED_START_EARLY_TOLERANCE_MS < scheduledStartAtPerformanceMs) {
+              sendDashboardTikTokVoidCommand("pause");
+              lastStablePlaybackStateRef.current = "paused";
+              return;
+            }
+            synchronizedStartCompletedRef.current = true;
+            synchronizedStartPendingRef.current = false;
+            lastStablePlaybackStateRef.current = "playing";
+            scheduledStartAtMsRef.current = null;
+            scheduledStartAtPerformanceMsRef.current = null;
+            if (synchronizedStartTimerRef.current) window.clearTimeout(synchronizedStartTimerRef.current);
+            synchronizedStartTimerRef.current = null;
+            setSynchronizedStartStatus("started");
+            setSynchronizedStartDelayMs(null);
+            return;
+          }
+          publishObservedState("playing", "state_change");
+        }
+        else if (stateValue === 2) { lastStablePlaybackStateRef.current = "paused"; if (!synchronizedStartPendingRef.current) publishObservedState("paused", "state_change"); }
+        else if (stateValue === 0) { lastStablePlaybackStateRef.current = "stopped"; if (!synchronizedStartPendingRef.current) publishObservedState("stopped", "state_change"); }
         else if (stateValue === -1) lastStablePlaybackStateRef.current = "stopped";
         return;
       }
@@ -1086,14 +1118,23 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
         setStatus("error");
         setDiagnostics({ provider: "tiktok", postId: parsedPostId, trackId: entry.id, ready: readyRef.current, playbackState: lastStablePlaybackStateRef.current, currentTimeSeconds: latestTimeRef.current, durationSeconds: durationRef.current, updatedAt: lastPublishedAtRef.current, syncAgeSeconds: null, status: "Error", publishStatus: "failed" });
         setErrorLabel(tiktokErrorLabel(safeCode, errorType));
-        if (safeCode === 1001 || safeCode === 2001 || safeCode === 3001 || errorType === "INVALID_VIDEO" || errorType === "SERVER_ERROR" || errorType === "PLAYBACK_ERROR") void clearOverlayPlayerSync();
+        if (safeCode === 1001 || safeCode === 2001 || safeCode === 3001 || errorType === "INVALID_VIDEO" || errorType === "SERVER_ERROR" || errorType === "PLAYBACK_ERROR") {
+          if (synchronizedStartTimerRef.current) window.clearTimeout(synchronizedStartTimerRef.current);
+          synchronizedStartTimerRef.current = null;
+          scheduledStartAtMsRef.current = null;
+          scheduledStartAtPerformanceMsRef.current = null;
+          activeStartTokenRef.current = null;
+          synchronizedStartPendingRef.current = false;
+          setSynchronizedStartStatus("waiting");
+          void clearOverlayPlayerSync();
+        }
       }
     }
     window.addEventListener("message", onMessage);
     const heartbeat = window.setInterval(() => {
       if (readyRef.current && hasObservedCurrentTimeRef.current && synchronizedStartCompletedRef.current && (lastStablePlaybackStateRef.current === "playing" || lastStablePlaybackStateRef.current === "paused")) publish(lastStablePlaybackStateRef.current, latestTimeRef.current, "heartbeat", latestTimeObservedAtRef.current ?? undefined);
     }, TIKTOK_SYNC_HEARTBEAT_MS);
-    return () => { clearReadyTimer(); window.removeEventListener("message", onMessage); if (synchronizedStartTimerRef.current) window.clearTimeout(synchronizedStartTimerRef.current); synchronizedStartTimerRef.current = null; tiktokGenerationActiveRef.current = false; queuedPublishRef.current = null; window.clearInterval(heartbeat); };
+    return () => { clearReadyTimer(); window.removeEventListener("message", onMessage); if (synchronizedStartTimerRef.current) window.clearTimeout(synchronizedStartTimerRef.current); synchronizedStartTimerRef.current = null; scheduledStartAtMsRef.current = null; scheduledStartAtPerformanceMsRef.current = null; activeStartTokenRef.current = null; tiktokGenerationActiveRef.current = false; queuedPublishRef.current = null; window.clearInterval(heartbeat); };
     // Effect lifecycle is keyed by the parsed TikTok media URL; PlayerDock remounts on queue-track identity changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [parsedPostId, parsedPlayerUrl, hasParsedTikTokUrl, entry.link]);

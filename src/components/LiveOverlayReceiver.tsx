@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MutableRefObject } from "react";
-import { buildWheelSegments, estimateOneWayNetworkTransitMs, playbackCorrectionTarget, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, shouldCorrectPlaybackDrift, updateTransitEstimateMs, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
+import { buildWheelSegments, estimateOneWayNetworkTransitMs, expectedScheduledTikTokPlaybackTime, playbackCorrectionTarget, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, shouldCorrectPlaybackDrift, updateTransitEstimateMs, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
 import type { LiveOverlayPlaybackState, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
 
 type YTPlayer = {
@@ -711,7 +711,11 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
 }
 
 function expectedTikTokTime(sync: LiveOverlayTikTokSync, clockAnchor: OverlayServerClockAnchor | null): number {
-  const ageSeconds = sync.playbackState === "playing" ? serverRelativeAgeFromAnchor(sync.updatedAt, clockAnchor) : 0;
+  const scheduledExpected = expectedScheduledTikTokPlaybackTime({ playbackState: sync.playbackState, currentTimeSeconds: sync.currentTimeSeconds, scheduledStartAt: sync.scheduledStartAt, startToken: sync.startToken, serverNowMs: serverNowFromAnchor(clockAnchor), durationSeconds: sync.durationSeconds });
+  const scheduledStartAtMs = typeof sync.scheduledStartAt === "string" ? new Date(sync.scheduledStartAt).getTime() : Number.NaN;
+  const hasValidSchedule = Number.isFinite(scheduledStartAtMs) && typeof sync.startToken === "string" && /^tt-start-[a-z0-9]+$/.test(sync.startToken);
+  if (sync.playbackState !== "playing" || hasValidSchedule) return scheduledExpected ?? sync.currentTimeSeconds;
+  const ageSeconds = serverRelativeAgeFromAnchor(sync.updatedAt, clockAnchor);
   const expected = sync.currentTimeSeconds + (ageSeconds ?? 0);
   return typeof sync.durationSeconds === "number" && Number.isFinite(sync.durationSeconds) && sync.durationSeconds > 0 ? Math.min(expected, sync.durationSeconds) : expected;
 }
@@ -847,6 +851,7 @@ function TikTokOverlayPlayer({ sync, preload, active, artistName, trackTitle, cl
     const start = () => {
       if (destroyedRef.current || latestSyncRef.current.postId !== nextSync.postId || latestSyncRef.current.trackId !== nextSync.trackId) return;
       scheduledStartTimerRef.current = null;
+      lastAppliedPlaybackStateRef.current = "playing";
       sendTikTokVoidCommand("play");
       beginStartupGrace();
       updateDiagnostics({ startStatus: delayMs === 0 ? "expired" : "started", startDelayMs: 0 });

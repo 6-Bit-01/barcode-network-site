@@ -253,6 +253,17 @@ export function playbackCorrectionTarget(input: { expectedTimeSeconds: number; d
   return Number.isFinite(target) ? target : null;
 }
 
+export function expectedScheduledTikTokPlaybackTime(input: { playbackState: LiveOverlayPlaybackState; currentTimeSeconds: number; scheduledStartAt?: string; startToken?: string; serverNowMs?: number | null; durationSeconds?: number; }): number | null {
+  if (!Number.isFinite(input.currentTimeSeconds) || input.currentTimeSeconds < 0) return null;
+  let expected = input.currentTimeSeconds;
+  const scheduledStartAtMs = typeof input.scheduledStartAt === "string" ? new Date(input.scheduledStartAt).getTime() : Number.NaN;
+  const hasSchedule = input.playbackState === "playing" && Number.isFinite(scheduledStartAtMs) && typeof input.startToken === "string" && /^tt-start-[a-z0-9]+$/.test(input.startToken);
+  if (hasSchedule && typeof input.serverNowMs === "number" && Number.isFinite(input.serverNowMs)) expected += Math.max(0, input.serverNowMs - scheduledStartAtMs) / 1000;
+  if (typeof input.durationSeconds === "number" && Number.isFinite(input.durationSeconds) && input.durationSeconds > 0) expected = Math.min(expected, input.durationSeconds);
+  expected = Math.max(0, expected);
+  return Number.isFinite(expected) ? expected : null;
+}
+
 export function detectMaterialPlaybackSeek(input: { playbackState: LiveOverlayPlaybackState; previousTimeSeconds: number; previousObservedAtMs: number; currentTimeSeconds: number; currentObservedAtMs: number; playingThresholdSeconds?: number; pausedThresholdSeconds?: number; }): boolean {
   const { playbackState, previousTimeSeconds, previousObservedAtMs, currentTimeSeconds, currentObservedAtMs } = input;
   if (![previousTimeSeconds, previousObservedAtMs, currentTimeSeconds, currentObservedAtMs].every(Number.isFinite) || previousTimeSeconds < 0 || currentTimeSeconds < 0) return false;

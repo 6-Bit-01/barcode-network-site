@@ -205,3 +205,54 @@ test("unsupported file hosts are not safe duration sources", () => {
   assert.equal(duration.parseSafeTrackProviderUrl("https://www.dropbox.com/s/abc/song.wav"), null);
   assert.equal(duration.parseSafeTrackProviderUrl("https://random.example/audio/song.mp3"), null);
 });
+
+const queueTypes = require("../src/lib/queue-types.ts");
+const tiktokPost = "https://www.tiktok.com/@scout2015/video/6718335390845095173";
+const tiktokPlayer = "https://www.tiktok.com/player/v1/6718335390845095173";
+
+test("parses canonical TikTok post and player URLs strictly", () => {
+  assert.equal(queueTypes.parseTikTokVideoUrl(tiktokPost)?.postId, "6718335390845095173");
+  assert.equal(queueTypes.parseTikTokVideoUrl(`${tiktokPost}?utm_source=test`)?.canonicalSourceUrl, tiktokPost);
+  assert.equal(queueTypes.parseTikTokVideoUrl(`${tiktokPost}#frag`)?.canonicalSourceUrl, tiktokPost);
+  assert.equal(queueTypes.parseTikTokVideoUrl(tiktokPlayer)?.sourceForm, "player");
+  assert.equal(queueTypes.parseTikTokVideoUrl(tiktokPost)?.postId, queueTypes.parseTikTokVideoUrl(tiktokPlayer)?.postId);
+});
+
+test("rejects non-canonical TikTok and lookalike URLs", () => {
+  for (const value of [
+    "https://www.tiktok.com/@scout2015",
+    "https://www.tiktok.com/tag/music",
+    "https://www.tiktok.com/music/song-123",
+    "https://www.tiktok.com/@scout2015/live",
+    "https://www.tiktok.com/@scout2015/collection/name-123",
+    "https://www.tiktok.com/@scout2015/video/",
+    "https://www.tiktok.com/@scout2015/video/notnumeric",
+    "https://www.tiktok.com/@scout2015/video/1234567",
+    "http://www.tiktok.com/@scout2015/video/6718335390845095173",
+    "https://evil-tiktok.com/@scout2015/video/6718335390845095173",
+    "https://tiktok.com.evil.example/@scout2015/video/6718335390845095173",
+    "https://user@www.tiktok.com/@scout2015/video/6718335390845095173",
+    "https://www.tiktok.com:444/@scout2015/video/6718335390845095173",
+  ]) assert.equal(queueTypes.parseTikTokVideoUrl(value), null, value);
+});
+
+test("classifies only canonical TikTok forms as first-class TikTok", () => {
+  assert.equal(queueTypes.detectQueueSourceType(tiktokPost), "tiktok");
+  assert.equal(queueTypes.detectQueueSourceType(tiktokPlayer), "tiktok");
+  assert.equal(queueTypes.detectQueueSourceType("https://vm.tiktok.com/ZMabc/"), "other");
+  assert.equal(queueTypes.detectQueueSourceType("https://vt.tiktok.com/ZMabc/"), "other");
+  assert.equal(queueTypes.detectQueueSourceType("https://m.tiktok.com/v/6718335390845095173"), "other");
+});
+
+test("TikTok duration parsing returns unavailable and stores 300 second estimate", async () => {
+  const parsed = duration.parseSafeTrackProviderUrl(tiktokPost);
+  assert.equal(parsed.provider, "tiktok");
+  assert.equal(parsed.providerTrackId, "6718335390845095173");
+  assert.equal(parsed.normalizedUrl, tiktokPost);
+  const result = await duration.detectTrackDurationFromLink(tiktokPost);
+  assert.equal(result.durationSeconds, null);
+  assert.equal(result.durationIsEstimate, true);
+  assert.equal(result.durationSource, "unknown");
+  assert.match(result.notes.join(" "), /does not document exact duration/);
+  assert.deepEqual(duration.trackDurationStorageFields(result), { detectedDurationSeconds: null, estimatedDurationSeconds: 300, durationIsEstimate: true, durationSource: "estimated" });
+});

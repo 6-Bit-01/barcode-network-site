@@ -1,6 +1,6 @@
-import { INTERNAL_BUFFER_DURATION_SECONDS } from "./queue-types";
+import { INTERNAL_BUFFER_DURATION_SECONDS, parseTikTokVideoUrl } from "./queue-types";
 
-export type TrackDurationProvider = "youtube" | "spotify" | "soundcloud" | "direct" | "other";
+export type TrackDurationProvider = "youtube" | "spotify" | "soundcloud" | "tiktok" | "direct" | "other";
 
 export type TrackDurationSource =
   | "upload_metadata"
@@ -126,6 +126,8 @@ export function parseSafeTrackProviderUrl(link?: string | null): ParsedTrackProv
   if (youtubeId) return { provider: "youtube", providerTrackId: youtubeId, normalizedUrl: `https://www.youtube.com/watch?v=${youtubeId}` };
   const spotifyId = parseSpotifyTrackId(link);
   if (spotifyId) return { provider: "spotify", providerTrackId: spotifyId, normalizedUrl: `https://open.spotify.com/track/${spotifyId}` };
+  const tiktok = parseTikTokVideoUrl(link);
+  if (tiktok) return { provider: "tiktok", providerTrackId: tiktok.postId, normalizedUrl: tiktok.canonicalSourceUrl };
   const soundcloudUrl = parseSoundCloudPublicUrl(link);
   if (soundcloudUrl) return { provider: "soundcloud", normalizedUrl: soundcloudUrl };
   return null;
@@ -194,6 +196,7 @@ export async function detectTrackDurationFromLink(link?: string | null): Promise
     if (parsed.provider === "youtube" && parsed.providerTrackId) return detectYouTubeDuration(parsed.providerTrackId);
     if (parsed.provider === "spotify" && parsed.providerTrackId) return detectSpotifyDuration(parsed.providerTrackId);
     if (parsed.provider === "soundcloud") return detectSoundCloudDuration(parsed.normalizedUrl);
+    if (parsed.provider === "tiktok") return unavailable("tiktok", ["Official TikTok oEmbed does not document exact duration metadata; using the internal estimate."], parsed.providerTrackId);
     return unavailable(parsed.provider, ["Provider is parsed but duration fetching is not enabled."], parsed.providerTrackId);
   } catch (error) {
     return unavailable(parsed.provider, [error instanceof Error ? `Duration lookup failed: ${error.message}` : "Duration lookup failed."], parsed.providerTrackId);

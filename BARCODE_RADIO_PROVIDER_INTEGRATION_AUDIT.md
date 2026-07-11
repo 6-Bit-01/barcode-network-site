@@ -1,6 +1,6 @@
 # BARCODE Radio provider integration audit
 
-Access date for all cited sources: 2026-07-10.
+Access date for all cited sources: 2026-07-11.
 
 ## 1. Executive decision
 
@@ -60,14 +60,14 @@ A provider can and often should stop at Level 1 without qualifying for Levels 2-
 | Amazon Music | Supported with conditions | Supported with conditions | Supported | Supported with conditions | Supported with conditions | Supported | Supported | Supported | Supported | Unknown pending evidence | Not officially supported | Not officially supported | Not officially supported | Not officially supported | Supported with conditions | Supported | Level 2 if approved; otherwise Level 1 | Supported with conditions | Amazon Music Web API Overview, Tracks, Player |
 | Suno | Supported with conditions | Unknown pending evidence | Supported with conditions | Not officially supported | Unknown pending evidence | Not officially supported | Not officially supported | Not officially supported | Not officially supported | Not officially supported | Not officially supported | Not officially supported | Not officially supported | Not officially supported | Supported with conditions | Supported | Level 1 | Supported with conditions | Suno Help link-only songs, duration, rights |
 | Bandcamp | Supported with conditions | Unknown pending evidence | Unknown pending evidence | Not officially supported | Supported with conditions | Unknown pending evidence | Unknown pending evidence | Unknown pending evidence | Unknown pending evidence | Supported with conditions | Not officially supported | Not officially supported | Not officially supported | Not officially supported | Supported with conditions | Supported | Level 1 | Supported with conditions | Bandcamp Developer, Account API, Sales API, Exclusive Embed Help |
-| TikTok video / Short | Supported | Supported with conditions | Supported | Supported | Not officially supported for oEmbed | Supported | Supported | Supported | Unknown pending evidence | Supported | Supported | Supported | Supported | Supported | Supported with conditions | Supported | Level 4 candidate | Supported | TikTok Embed Videos, Embed Player, Display API |
+| TikTok video / Short | Supported | Supported with conditions | Supported | Supported | Not appropriate — no authentication documented for public oEmbed or Embed Player; authenticated Display API is not used | Supported | Supported | Supported | Unknown pending evidence | Supported | Supported | Supported | Supported | Supported | Supported with conditions | Supported | Level 4 candidate | Supported | TikTok Embed Videos, Embed Player, Display API |
 
 ## 5. Detailed provider findings
 
 ### Apple Music
 
-- **Exact URL grammar:** accept `https://music.apple.com/{storefront}/album/{slug}/{albumId}?i={songId}` as a song when `i` is present; accept `https://music.apple.com/{storefront}/song/{slug}/{songId}` if encountered; accept locale/storefront path segments such as `us`; reject album URLs without a song ID, playlists, artists, radio/stations, and generic pages.
-- **Accepted examples:** `https://music.apple.com/us/album/example/123456789?i=987654321`; `https://music.apple.com/us/song/example/987654321`.
+- **Exact URL grammar:** verified accepted song grammar is the Apple Music album-form URL with a storefront path and a specific track query parameter: `https://music.apple.com/{storefront}/album/{slug}/{albumId}?i={songId}`. Accept locale/storefront path segments such as `us`; reject album URLs without a song ID, playlists, artists, radio/stations, and generic pages. The plausible `/song/{slug}/{songId}` form is not treated as verified accepted grammar until a first-party Apple source or current official `music.apple.com` page confirms it.
+- **Accepted examples:** `https://music.apple.com/us/album/example/123456789?i=987654321`.
 - **Invalid examples:** `https://music.apple.com/us/album/example/123456789`; `https://music.apple.com/us/playlist/...`; `https://music.apple.com/us/artist/...`.
 - **Canonical ID strategy:** use `apple_music:song:{storefront}:{songId}` or `apple_music:song:{songId}` if duplicate behavior should merge storefronts. The Apple Music API identifies catalog songs by storefront plus song ID.
 - **Redirect strategy:** do not require redirects for canonical album-form song links; if resolving Apple short/marketing links, use server-side allowlisted redirect resolution with strict limits.
@@ -81,7 +81,7 @@ A provider can and often should stop at Level 1 without qualifying for Levels 2-
 - **Security/rate limits:** storefront allowlist/validation; token storage server-side; timeout and response-size caps.
 - **Terms/policy:** use Apple Music API/MusicKit only under Apple Developer terms and marketing/widget rules.
 - **Official citations:** Apple Music API overview (https://developer.apple.com/documentation/applemusicapi/); Get a Catalog Song (https://developer.apple.com/documentation/applemusicapi/get-a-catalog-song); Generating Developer Tokens (https://developer.apple.com/documentation/applemusicapi/generating-developer-tokens); User Authentication for MusicKit (https://developer.apple.com/documentation/applemusicapi/user-authentication-for-musickit); MusicKit (https://developer.apple.com/musickit/); MusicKit on the Web (https://developer.apple.com/musickit/web/); MusicPlayer (https://developer.apple.com/documentation/musickit/musicplayer); Apple Music Marketing Tools (https://artists.apple.com/support/1117-apple-music-marketing-tools).
-- **Unresolved questions:** exact iframe URL generation contract for submitted song URLs and whether album-form `?i=` links should merge across storefronts.
+- **Unresolved questions:** exact iframe URL generation contract for submitted song URLs, whether album-form `?i=` links should merge across storefronts, and whether `https://music.apple.com/{storefront}/song/{slug}/{songId}` is a current first-party Apple URL form that should be accepted later.
 
 ### Amazon Music
 
@@ -142,22 +142,22 @@ A provider can and often should stop at Level 1 without qualifying for Levels 2-
 
 ### TikTok video / Short
 
-- **Exact URL grammar:** accept `https://www.tiktok.com/@{handle}/video/{postId}` and `https://www.tiktok.com/player/v1/{postId}`; accept Short/share URLs only after resolving redirects to a canonical `www.tiktok.com/@.../video/{postId}` or official player URL.
+- **Exact URL grammar:** accept canonical post URLs `https://www.tiktok.com/@{handle}/video/{postId}` verified by TikTok oEmbed documentation and canonical player URLs `https://www.tiktok.com/player/v1/{postId}` verified by TikTok Embed Player documentation. Short/share redirect handling is conditional and must be added only for individually verified TikTok-owned hosts; no short-link hostname is accepted merely because it contains `tiktok`.
 - **Accepted examples:** `https://www.tiktok.com/@scout2015/video/6718335390845095173`; `https://www.tiktok.com/player/v1/6718335390845095173`.
 - **Invalid examples:** profiles without `/video/{id}`, tags, music pages, live pages, collection pages, deleted/private/unavailable content.
 - **Canonical ID strategy:** `tiktok:video:{postId}`.
-- **Redirect strategy:** resolve `vm.tiktok.com` and similar official share redirects server-side with strict HTTPS, hop, timeout, content-length, and final-host allowlists.
-- **Metadata strategy:** TikTok oEmbed returns embed HTML and information for a video URL; Display API exists for authenticated user profile/videos but is not needed for arbitrary public submitted URLs.
-- **Duration strategy:** no exact duration field verified from oEmbed in the official docs; use internal estimate unless the official player can emit duration in tested implementation.
+- **Redirect strategy:** keep short/share redirects unsupported unless each host is verified as TikTok-owned from first-party evidence or an actual official TikTok share flow. Any redirect resolver must enforce HTTPS, limited hops, request timeouts, response-size limits, private-network rejection, and final-host validation to a canonical TikTok post/player URL. If a host cannot be verified, that host remains unsupported and users can still submit the canonical URL.
+- **Metadata strategy:** TikTok oEmbed documents `title`, `author_name`, `author_url`, `thumbnail_url`, `thumbnail_width`, `thumbnail_height`, and `html`. Map `author_name` to `detectedArtistName`, map `title` to `providerTitle` as the TikTok caption/video title, map `thumbnail_url` to `artworkUrl`, and leave `detectedSongTitle` as submitted/fallback data because the caption is not verified music-track metadata. Do not render or trust returned oEmbed `html` directly; construct the official player iframe from a validated post ID. TikTok Display API exists for authenticated user profile/videos but is unrelated to arbitrary public submitted-video handling.
+- **Duration strategy:** no exact duration field is documented in the oEmbed response; use internal estimate unless the official player is tested and deliberately added later as a duration source.
 - **Embed strategy:** use the official Embed Player iframe `https://www.tiktok.com/player/v1/{postId}` instead of assuming older blockquote embed control behavior.
 - **Playback strategy:** the Embed Player supports host-to-player messages including play, pause, seekTo, mute, and unMute, and player-to-host messages including ready, state, current time, mute/volume, and errors.
 - **Overlay strategy:** Level 4 candidate because official controls/events exist; implementation must validate `event.origin`, test autoplay/mute behavior, unavailable content, recommended-content behavior, vertical layout, and drift correction.
 - **Fallback strategy:** external-open to canonical TikTok video URL; if embed/player errors, show controlled card/fallback.
-- **Environment variables or credentials:** none for oEmbed/player; do not use Display API unless implementing authenticated user-owned features.
+- **Environment variables or credentials:** public oEmbed does not document an access-token requirement, and the official Embed Player iframe does not document an access-token requirement. TikTok Display API requires authentication but is unrelated to arbitrary public submitted-video handling. No TikTok client secret or user OAuth flow is needed for the proposed Level 1-3 queue implementation, based only on what the official documentation currently specifies.
 - **Security/rate limits:** sanitize oEmbed HTML or avoid rendering it directly; prefer constructing official iframe from validated post ID.
 - **Terms/policy:** comply with TikTok developer/embed terms and content availability restrictions.
 - **Official citations:** TikTok Embed Videos/oEmbed (https://developers.tiktok.com/doc/embed-videos/); TikTok Embed Player (https://developers.tiktok.com/doc/embed-player); TikTok Display API get started (https://developers.tiktok.com/doc/display-api-get-started/).
-- **Unresolved questions:** current list of official short-link hosts and autoplay behavior in Vercel preview browsers.
+- **Unresolved questions:** current list of individually verified TikTok-owned short-link hosts, whether any such hosts can be evidenced from first-party docs or an actual official TikTok share flow, and autoplay behavior in Vercel preview browsers.
 
 ## 6. Existing-system integration map
 
@@ -185,7 +185,7 @@ No generic plugin framework is required for the next PRs; a small shared provide
 
 ## 8. Recommended PR sequence
 
-1. **TikTok Level 1-3 site-only PR.** Files: queue types, parser/duration tests, queue metadata via oEmbed, admin PlayerDock iframe, public labels. Behavior: recognize video/Short URLs, resolve official short links, provider ID duplicate detection, oEmbed title/author/thumbnail where available, admin iframe fallback. Tests: parser, duplicate, metadata fallback, admin embed builder. Manual rehearsal: Vercel preview PlayerDock with public and unavailable TikToks. Blockers: short-link host list and event-origin checks. Live-overlay: not included.
+1. **TikTok Level 1-3 site-only PR.** Files: queue types, parser/duration tests, queue metadata via oEmbed, admin PlayerDock iframe, public labels. Behavior: recognize canonical TikTok post/player URLs, add short/share redirects only for individually verified TikTok-owned hosts, provider ID duplicate detection, oEmbed title/author/thumbnail mapping where available, admin iframe fallback. Tests: parser, duplicate, metadata fallback, admin embed builder. Manual rehearsal: Vercel preview PlayerDock with public and unavailable TikToks. Blockers: short-link host list and event-origin checks. Live-overlay: not included.
 2. **TikTok Level 4 overlay PR.** Files: live-overlay state/resolver/admin/receiver/tests. Behavior: host-authoritative TikTok player sync with play/pause/seek/current-time/error events. Tests: resolver freshness, event validation, fallback, drift correction. Manual rehearsal: required in preview. Blockers: autoplay/mute and private/deleted behavior.
 3. **Apple Music Level 1-2 PR.** Files: queue types, track-duration, queue metadata, API route-adjacent tests, labels. Behavior: album-form `?i=` song parsing, storefront-aware provider ID, developer-token catalog metadata if configured, external-open fallback. Tests: URL grammar, album-without-song invalid, metadata fallback. Manual rehearsal: no browser playback required. Blockers: credential availability and storefront policy. Live-overlay: not included.
 4. **Apple Music Level 3 admin embed PR.** Files: AdminRadioQueueControl and tests. Behavior: official Apple embeddable widget/iframe only with fallback. Manual rehearsal: preview PlayerDock. Blockers: exact official iframe construction.
@@ -201,35 +201,35 @@ Next step: **TikTok video / Short Level 1-3**.
 - **Branch suggestion:** `codex/tiktok-queue-provider-level-3`
 - **PR title:** `Add TikTok queue provider recognition and admin embed`
 - **Expected files:** `src/lib/queue-types.ts`, `src/lib/track-duration.ts`, `src/lib/queue.ts`, `src/app/api/queue/route.ts` only if validation wiring requires it, `src/components/AdminRadioQueueControl.tsx`, `src/components/PublicQueueSession.tsx`, `tests/track-duration.test.mjs`, `tests/queue-playback.test.mjs`.
-- **Behavior:** recognize canonical TikTok video/player URLs and official share redirects; create `tiktok:video:{postId}` provider IDs; use oEmbed for title/author/thumbnail with safe fallback; use official Embed Player iframe in admin; retain external-open fallback.
+- **Behavior:** recognize canonical TikTok post/player URLs. Add short/share redirects only for individually verified TikTok-owned hosts. Create `tiktok:video:{postId}` provider IDs; use oEmbed with `author_name` mapped to `detectedArtistName`, `title` mapped only to `providerTitle`, and `thumbnail_url` mapped to `artworkUrl`; use official Embed Player iframe in admin; retain external-open fallback.
 - **Must not change:** queue ordering/brain, payments, uploads, BNL bot, YouTube sync, live-overlay files, PlayerDock ownership semantics, public submission confirmation, accepted-source panel, or `WATCH ON TIKTOK` behavior beyond necessary labels.
 - **Preview rehearsal:** required for PlayerDock iframe and unavailable/private video fallback; no live-overlay rehearsal until the separate Level 4 PR.
 
 ## 10. Sources
 
-- Apple — Apple Music API — https://developer.apple.com/documentation/applemusicapi/ — accessed 2026-07-10 — Supports that Apple Music API retrieves albums, songs, artists, playlists, music videos, stations, ratings, charts, recommendations, and related catalog data.
-- Apple — Get a Catalog Song — https://developer.apple.com/documentation/applemusicapi/get-a-catalog-song — accessed 2026-07-10 — Supports storefront/song ID catalog retrieval.
-- Apple — Generating Developer Tokens — https://developer.apple.com/documentation/applemusicapi/generating-developer-tokens — accessed 2026-07-10 — Supports developer-token requirement.
-- Apple — User Authentication for MusicKit — https://developer.apple.com/documentation/applemusicapi/user-authentication-for-musickit — accessed 2026-07-10 — Supports Music User Token requirement for subscriber-specific data.
-- Apple — MusicKit — https://developer.apple.com/musickit/ — accessed 2026-07-10 — Supports website/app playback with user permission and Apple Music membership flows.
-- Apple — MusicKit on the Web — https://developer.apple.com/musickit/web/ — accessed 2026-07-10 — Supports web integration and Apple Music API access.
-- Apple — MusicPlayer — https://developer.apple.com/documentation/musickit/musicplayer — accessed 2026-07-10 — Supports playback time/readiness/player capability claims.
-- Apple — MusicPlayer pause() — https://developer.apple.com/documentation/musickit/musicplayer/pause%28%29 — accessed 2026-07-10 — Supports play/pause control claims.
-- Apple — Apple Music Marketing Tools — https://artists.apple.com/support/1117-apple-music-marketing-tools — accessed 2026-07-10 — Supports official badges/widgets/toolbox embedding availability.
-- Amazon — Amazon Music Web API Overview — https://developer.amazon.com/docs/music/API_web_overview.html — accessed 2026-07-10 — Supports closed beta, metadata purpose, OAuth/x-api-key requirements, approval gate, and rate limiting.
-- Amazon — Web API Tracks — https://developer.amazon.com/docs/music/API_web_track.html — accessed 2026-07-10 — Supports track ID, title, artists, images, duration, album URL, territory, and eligibility metadata.
-- Amazon — Web API Player — https://developer.amazon.com/docs/music/API_web_player.html — accessed 2026-07-10 — Supports that documented Player endpoints are recent-playback/history, not iframe control.
-- Amazon — Web API Albums — https://developer.amazon.com/docs/music/API_web_albums.html — accessed 2026-07-10 — Supports album metadata scope and catalog entity distinctions.
-- Suno — Why don't I see songs in my profile? — https://help.suno.com/en/articles/2551361 — accessed 2026-07-10 — Supports link-only/default visibility and publishing to public profile.
-- Suno — How long will my song be? — https://help.suno.com/en/articles/2409473 — accessed 2026-07-10 — Supports model duration ranges but not exact public-song metadata.
-- Suno — Do I have the copyrights to songs I made? — https://help.suno.com/en/articles/2746945 — accessed 2026-07-10 — Supports rights distinctions.
-- Suno — What is commercial use? — https://help.suno.com/en/articles/9601985 — accessed 2026-07-10 — Supports commercial-use licensing boundaries.
-- Suno — Knowledge Base — https://help.suno.com/ — accessed 2026-07-10 — Supports official area checked for public support documentation.
-- Bandcamp — Bandcamp API — https://bandcamp.com/developer — accessed 2026-07-10 — Supports OAuth, account/label/partner API scope, and absence of arbitrary public catalog metadata in documented API overview.
-- Bandcamp — Account API — https://bandcamp.com/developer/account — accessed 2026-07-10 — Supports account-owned band metadata API scope.
-- Bandcamp — Sales Report API — https://bandcamp.com/developer/sales — accessed 2026-07-10 — Supports account sales/report scope and item URL fields, not public catalog metadata.
-- Bandcamp — Merch Orders API — https://bandcamp.com/developer/merch — accessed 2026-07-10 — Supports merch/order API scope and authenticated account usage.
-- Bandcamp — How do I set up an exclusive embed? — https://bandcamp.com/help/exclusive_embed — accessed 2026-07-10 — Supports official Share/Embed UI existence and exclusive embed flow.
-- TikTok — Embed Videos — https://developers.tiktok.com/doc/embed-videos/ — accessed 2026-07-10 — Supports oEmbed API, returned embed HTML, attribution, and video information.
-- TikTok — Embed Player — https://developers.tiktok.com/doc/embed-player — accessed 2026-07-10 — Supports iframe player URL, query parameters, host-to-player messages, player-to-host messages, and error reporting.
-- TikTok — Display API Get Started — https://developers.tiktok.com/doc/display-api-get-started/ — accessed 2026-07-10 — Supports authenticated Display API requirements and scopes.
+- Apple — Apple Music API — https://developer.apple.com/documentation/applemusicapi/ — accessed 2026-07-11 — Supports that Apple Music API retrieves albums, songs, artists, playlists, music videos, stations, ratings, charts, recommendations, and related catalog data.
+- Apple — Get a Catalog Song — https://developer.apple.com/documentation/applemusicapi/get-a-catalog-song — accessed 2026-07-11 — Supports storefront/song ID catalog retrieval.
+- Apple — Generating Developer Tokens — https://developer.apple.com/documentation/applemusicapi/generating-developer-tokens — accessed 2026-07-11 — Supports developer-token requirement.
+- Apple — User Authentication for MusicKit — https://developer.apple.com/documentation/applemusicapi/user-authentication-for-musickit — accessed 2026-07-11 — Supports Music User Token requirement for subscriber-specific data.
+- Apple — MusicKit — https://developer.apple.com/musickit/ — accessed 2026-07-11 — Supports website/app playback with user permission and Apple Music membership flows.
+- Apple — MusicKit on the Web — https://developer.apple.com/musickit/web/ — accessed 2026-07-11 — Supports web integration and Apple Music API access.
+- Apple — MusicPlayer — https://developer.apple.com/documentation/musickit/musicplayer — accessed 2026-07-11 — Supports playback time/readiness/player capability claims.
+- Apple — MusicPlayer pause() — https://developer.apple.com/documentation/musickit/musicplayer/pause%28%29 — accessed 2026-07-11 — Supports play/pause control claims.
+- Apple — Apple Music Marketing Tools — https://artists.apple.com/support/1117-apple-music-marketing-tools — accessed 2026-07-11 — Supports official badges/widgets/toolbox embedding availability.
+- Amazon — Amazon Music Web API Overview — https://developer.amazon.com/docs/music/API_web_overview.html — accessed 2026-07-11 — Supports closed beta, metadata purpose, OAuth/x-api-key requirements, approval gate, and rate limiting.
+- Amazon — Web API Tracks — https://developer.amazon.com/docs/music/API_web_track.html — accessed 2026-07-11 — Supports track ID, title, artists, images, duration, album URL, territory, and eligibility metadata.
+- Amazon — Web API Player — https://developer.amazon.com/docs/music/API_web_player.html — accessed 2026-07-11 — Supports that documented Player endpoints are recent-playback/history, not iframe control.
+- Amazon — Web API Albums — https://developer.amazon.com/docs/music/API_web_albums.html — accessed 2026-07-11 — Supports album metadata scope and catalog entity distinctions.
+- Suno — Why don't I see songs in my profile? — https://help.suno.com/en/articles/2551361 — accessed 2026-07-11 — Supports link-only/default visibility and publishing to public profile.
+- Suno — How long will my song be? — https://help.suno.com/en/articles/2409473 — accessed 2026-07-11 — Supports model duration ranges but not exact public-song metadata.
+- Suno — Do I have the copyrights to songs I made? — https://help.suno.com/en/articles/2746945 — accessed 2026-07-11 — Supports rights distinctions.
+- Suno — What is commercial use? — https://help.suno.com/en/articles/9601985 — accessed 2026-07-11 — Supports commercial-use licensing boundaries.
+- Suno — Knowledge Base — https://help.suno.com/ — accessed 2026-07-11 — Supports official area checked for public support documentation.
+- Bandcamp — Bandcamp API — https://bandcamp.com/developer — accessed 2026-07-11 — Supports OAuth, account/label/partner API scope, and absence of arbitrary public catalog metadata in documented API overview.
+- Bandcamp — Account API — https://bandcamp.com/developer/account — accessed 2026-07-11 — Supports account-owned band metadata API scope.
+- Bandcamp — Sales Report API — https://bandcamp.com/developer/sales — accessed 2026-07-11 — Supports account sales/report scope and item URL fields, not public catalog metadata.
+- Bandcamp — Merch Orders API — https://bandcamp.com/developer/merch — accessed 2026-07-11 — Supports merch/order API scope and authenticated account usage.
+- Bandcamp — How do I set up an exclusive embed? — https://bandcamp.com/help/exclusive_embed — accessed 2026-07-11 — Supports official Share/Embed UI existence and exclusive embed flow.
+- TikTok — Embed Videos — https://developers.tiktok.com/doc/embed-videos/ — accessed 2026-07-11 — Supports oEmbed API, returned embed HTML, attribution, and video information.
+- TikTok — Embed Player — https://developers.tiktok.com/doc/embed-player — accessed 2026-07-11 — Supports iframe player URL, query parameters, host-to-player messages, player-to-host messages, and error reporting.
+- TikTok — Display API Get Started — https://developers.tiktok.com/doc/display-api-get-started/ — accessed 2026-07-11 — Supports authenticated Display API requirements and scopes.

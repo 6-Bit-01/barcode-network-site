@@ -76,8 +76,8 @@ function tiktokOverlayErrorLabel(code?: number | null): string {
   if (code === 1001) return "INVALID VIDEO SIGNAL";
   if (code === 2001) return "TIKTOK SERVER ERROR";
   if (code === 3001) return "VIDEO PLAYBACK ERROR";
-  if (code === 3002) return "TIKTOK PLAYER UNAVAILABLE";
-  return "TIKTOK PLAYER UNAVAILABLE";
+  if (code === 3002) return "TIKTOK PLAYER ERROR";
+  return "TIKTOK PLAYER ERROR";
 }
 
 function youtubeErrorLabel(code?: number | null): string {
@@ -90,7 +90,9 @@ function youtubeErrorLabel(code?: number | null): string {
 
 const OVERLAY_POLL_DELAY_MS = 650;
 const YOUTUBE_OVERLAY_READY_TIMEOUT_MS = 9_000;
-const TIKTOK_OVERLAY_READY_TIMEOUT_MS = 10_000;
+const TIKTOK_IFRAME_LOAD_TIMEOUT_MS = 20_000;
+const TIKTOK_PLAYER_EVENT_TIMEOUT_MS = 12_000;
+const TIKTOK_DELAYED_PLAY_MS = 100;
 const TIKTOK_ORIGIN = "https://www.tiktok.com";
 const WHEEL_SPIN_START_DELAY_MS = 850;
 const WHEEL_AUDIO_FADE_OUT_MS = 10_000;
@@ -645,70 +647,158 @@ function YouTubeOverlayPlayer({ sync }: { sync: LiveOverlayYouTubeSync }) {
 }
 
 function expectedTikTokTime(sync: LiveOverlayTikTokSync): number {
-  if (sync.playbackState !== "playing") return sync.currentTimeSeconds;
-  const elapsed = Math.max(0, (Date.now() - new Date(sync.updatedAt).getTime()) / 1000);
-  return sync.currentTimeSeconds + elapsed;
+  const elapsed = sync.playbackState === "playing" ? Math.max(0, (Date.now() - new Date(sync.updatedAt).getTime()) / 1000) : 0;
+  const expected = sync.currentTimeSeconds + elapsed;
+  return typeof sync.durationSeconds === "number" && Number.isFinite(sync.durationSeconds) && sync.durationSeconds > 0 ? Math.min(expected, sync.durationSeconds) : expected;
 }
+
+type TikTokTrustedEventType = "onPlayerReady" | "onStateChange" | "onCurrentTime" | "onMute" | "onVolumeChange" | "onPlayerError";
+type TikTokFailureReason = "iframe_load_timeout" | "player_event_timeout" | "autoplay_blocked" | "player_error" | null;
+
+type TikTokDiagnosticState = {
+  iframeLoaded: boolean;
+  trustedEventSeen: boolean;
+  firstTrustedEventType?: TikTokTrustedEventType;
+  lastTrustedEventType?: TikTokTrustedEventType;
+  postId: string;
+  trackId?: string;
+  playbackState: LiveOverlayTikTokSync["playbackState"];
+  expectedTime?: number;
+  localObservedTime?: number;
+  lastCommand?: "mute" | "play" | "pause" | "seekTo";
+  bootstrapAttempt: number;
+  errorCode?: number;
+  errorType?: string;
+  failureReason: TikTokFailureReason;
+  status: "bootstrapping" | "iframe_loaded" | "trusted_event" | "playing" | "paused" | "stopped" | "failed";
+};
 
 function TikTokOverlayPlayer({ sync, artistName, trackTitle }: { sync: LiveOverlayTikTokSync; artistName: string; trackTitle: string }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const iframeLoadedRef = useRef(false);
+  const trustedEventSeenRef = useRef(false);
+  const firstTrustedEventTypeRef = useRef<TikTokTrustedEventType | undefined>(undefined);
+  const lastTrustedEventTypeRef = useRef<TikTokTrustedEventType | undefined>(undefined);
   const readyRef = useRef(false);
   const latestSyncRef = useRef(sync);
-  const localTimeRef = useRef(sync.currentTimeSeconds);
+  const localTimeRef = useRef<number>(Number.NaN);
   const destroyedRef = useRef(false);
   const generationRef = useRef(0);
-  const retryAutoplayRef = useRef(false);
-  const readyTimerRef = useRef<number | null>(null);
+  const bootstrapAttemptRef = useRef(0);
+  const iframeLoadTimerRef = useRef<number | null>(null);
+  const playerEventTimerRef = useRef<number | null>(null);
   const failedPostRef = useRef<string | null>(null);
-  const [playerError, setPlayerError] = useState<{ code?: number; message: string } | null>(null);
+  const [initialAutoplay] = useState(() => sync.playbackState === "playing");
+  const [playerError, setPlayerError] = useState<{ code?: number; message: string; reason: Exclude<TikTokFailureReason, null>; errorType?: string } | null>(null);
+  const [diagnostics, setDiagnostics] = useState<TikTokDiagnosticState>({ iframeLoaded: false, trustedEventSeen: false, postId: sync.postId, trackId: sync.trackId, playbackState: sync.playbackState, bootstrapAttempt: 0, failureReason: null, status: "bootstrapping" });
   const src = useMemo(() => {
-    const params = new URLSearchParams({ controls: "0", progress_bar: "0", play_button: "0", volume_control: "0", fullscreen_button: "0", timestamp: "0", autoplay: "0", music_info: "0", description: "0", rel: "0", native_context_menu: "0", closed_caption: "0", muted: "1" });
+    const params = new URLSearchParams({ controls: "0", progress_bar: "0", play_button: "0", volume_control: "0", fullscreen_button: "0", timestamp: "0", autoplay: initialAutoplay ? "1" : "0", music_info: "0", description: "0", rel: "0", native_context_menu: "0", closed_caption: "0", muted: "1" });
     return `${TIKTOK_ORIGIN}/player/v1/${sync.postId}?${params.toString()}`;
-  }, [sync.postId]);
+  }, [initialAutoplay, sync.postId]);
 
-  const clearReadyTimer = useCallback(() => {
-    if (readyTimerRef.current) window.clearTimeout(readyTimerRef.current);
-    readyTimerRef.current = null;
+  const updateDiagnostics = useCallback((patch: Partial<TikTokDiagnosticState>) => {
+    setDiagnostics((current) => ({ ...current, ...patch, postId: latestSyncRef.current.postId, trackId: latestSyncRef.current.trackId, playbackState: latestSyncRef.current.playbackState }));
   }, []);
 
-  const sendTikTokCommand = useCallback((type: "mute" | "play" | "pause" | "seekTo", value?: number) => {
-    iframeRef.current?.contentWindow?.postMessage({ type, value, "x-tiktok-player": true }, TIKTOK_ORIGIN);
+  const clearIframeLoadTimer = useCallback(() => {
+    if (iframeLoadTimerRef.current) window.clearTimeout(iframeLoadTimerRef.current);
+    iframeLoadTimerRef.current = null;
   }, []);
 
-  const markPlayerUnavailable = useCallback((message: string, code?: number) => {
-    clearReadyTimer();
+  const clearPlayerEventTimer = useCallback(() => {
+    if (playerEventTimerRef.current) window.clearTimeout(playerEventTimerRef.current);
+    playerEventTimerRef.current = null;
+  }, []);
+
+  const markPlayerUnavailable = useCallback((message: string, reason: Exclude<TikTokFailureReason, null>, code?: number, errorType?: string) => {
+    clearIframeLoadTimer();
+    clearPlayerEventTimer();
     readyRef.current = false;
     failedPostRef.current = latestSyncRef.current.postId;
-    setPlayerError({ code, message });
-  }, [clearReadyTimer]);
+    setPlayerError({ code, message, reason, errorType });
+    updateDiagnostics({ status: "failed", failureReason: reason, errorCode: code, errorType });
+  }, [clearIframeLoadTimer, clearPlayerEventTimer, updateDiagnostics]);
+
+  const sendTikTokVoidCommand = useCallback((type: "mute" | "play" | "pause") => {
+    iframeRef.current?.contentWindow?.postMessage({ type, "x-tiktok-player": true }, TIKTOK_ORIGIN);
+    updateDiagnostics({ lastCommand: type });
+  }, [updateDiagnostics]);
+
+  const sendTikTokSeekCommand = useCallback((seconds: number) => {
+    if (!Number.isFinite(seconds) || seconds < 0) return;
+    iframeRef.current?.contentWindow?.postMessage({ type: "seekTo", value: seconds, "x-tiktok-player": true }, TIKTOK_ORIGIN);
+    updateDiagnostics({ lastCommand: "seekTo", expectedTime: seconds });
+  }, [updateDiagnostics]);
 
   const applyTikTokSync = useCallback((nextSync: LiveOverlayTikTokSync) => {
+    const generation = generationRef.current;
     if (!readyRef.current || destroyedRef.current || failedPostRef.current === nextSync.postId) return;
     const expected = expectedTikTokTime(nextSync);
-    sendTikTokCommand("mute");
-    if (!Number.isFinite(localTimeRef.current) || Math.abs(localTimeRef.current - expected) > 1.75 || nextSync.playbackState === "stopped") {
-      sendTikTokCommand("seekTo", nextSync.playbackState === "playing" ? expected : nextSync.currentTimeSeconds);
+    sendTikTokVoidCommand("mute");
+    const mustSeek = !Number.isFinite(localTimeRef.current) || Math.abs(localTimeRef.current - expected) > 1.75 || nextSync.playbackState === "stopped";
+    if (mustSeek) {
+      sendTikTokSeekCommand(nextSync.playbackState === "playing" ? expected : nextSync.currentTimeSeconds);
       localTimeRef.current = nextSync.playbackState === "playing" ? expected : nextSync.currentTimeSeconds;
     }
-    if (nextSync.playbackState === "playing") sendTikTokCommand("play");
-    else sendTikTokCommand("pause");
-  }, [sendTikTokCommand]);
+    updateDiagnostics({ expectedTime: expected, localObservedTime: Number.isFinite(localTimeRef.current) ? localTimeRef.current : undefined, status: nextSync.playbackState });
+    if (nextSync.playbackState === "playing") {
+      const play = () => {
+        if (destroyedRef.current || generationRef.current !== generation || failedPostRef.current === nextSync.postId || latestSyncRef.current.postId !== nextSync.postId || latestSyncRef.current.trackId !== nextSync.trackId) return;
+        sendTikTokVoidCommand("play");
+      };
+      if (mustSeek) window.setTimeout(play, TIKTOK_DELAYED_PLAY_MS);
+      else play();
+    } else {
+      sendTikTokVoidCommand("pause");
+    }
+  }, [sendTikTokSeekCommand, sendTikTokVoidCommand, updateDiagnostics]);
+
+  const markTrustedPlayerEvent = useCallback((type: TikTokTrustedEventType) => {
+    if (!firstTrustedEventTypeRef.current) firstTrustedEventTypeRef.current = type;
+    lastTrustedEventTypeRef.current = type;
+    trustedEventSeenRef.current = true;
+    readyRef.current = true;
+    clearPlayerEventTimer();
+    updateDiagnostics({ trustedEventSeen: true, firstTrustedEventType: firstTrustedEventTypeRef.current, lastTrustedEventType: type, status: "trusted_event" });
+  }, [clearPlayerEventTimer, updateDiagnostics]);
+
+  const startPlayerEventTimer = useCallback((generation: number) => {
+    clearPlayerEventTimer();
+    playerEventTimerRef.current = window.setTimeout(() => {
+      if (generationRef.current === generation && !trustedEventSeenRef.current) markPlayerUnavailable("TIKTOK PLAYER DID NOT SIGNAL READY", "player_event_timeout");
+    }, TIKTOK_PLAYER_EVENT_TIMEOUT_MS);
+  }, [clearPlayerEventTimer, markPlayerUnavailable]);
+
+  const handleIframeLoad = useCallback(() => {
+    iframeLoadedRef.current = true;
+    clearIframeLoadTimer();
+    updateDiagnostics({ iframeLoaded: true, status: "iframe_loaded" });
+    startPlayerEventTimer(generationRef.current);
+  }, [clearIframeLoadTimer, startPlayerEventTimer, updateDiagnostics]);
 
   useEffect(() => {
-    if (failedPostRef.current !== sync.postId) setPlayerError(null);
     latestSyncRef.current = sync;
     window.setTimeout(() => applyTikTokSync(sync), 0);
   }, [applyTikTokSync, sync]);
 
   useEffect(() => {
     destroyedRef.current = false;
+    iframeLoadedRef.current = false;
+    trustedEventSeenRef.current = false;
+    firstTrustedEventTypeRef.current = undefined;
+    lastTrustedEventTypeRef.current = undefined;
     readyRef.current = false;
-    retryAutoplayRef.current = false;
+    localTimeRef.current = Number.NaN;
+    failedPostRef.current = null;
+    bootstrapAttemptRef.current = 0;
     const generation = generationRef.current + 1;
     generationRef.current = generation;
-    readyTimerRef.current = window.setTimeout(() => {
-      if (generationRef.current === generation) markPlayerUnavailable("TIKTOK PLAYER UNAVAILABLE");
-    }, TIKTOK_OVERLAY_READY_TIMEOUT_MS);
+    clearIframeLoadTimer();
+    clearPlayerEventTimer();
+    iframeLoadTimerRef.current = window.setTimeout(() => {
+      if (generationRef.current === generation && !iframeLoadedRef.current) markPlayerUnavailable("TIKTOK IFRAME FAILED TO LOAD", "iframe_load_timeout");
+    }, TIKTOK_IFRAME_LOAD_TIMEOUT_MS);
+
     function onMessage(event: MessageEvent) {
       if (event.origin !== TIKTOK_ORIGIN) return;
       if (event.source !== iframeRef.current?.contentWindow) return;
@@ -716,11 +806,10 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle }: { sync: LiveOverl
       if (!isPlainTikTokMessage(payload)) return;
       if (payload["x-tiktok-player"] !== true) return;
       const type = payload.type;
-      if (type !== "onPlayerReady" && type !== "onStateChange" && type !== "onCurrentTime" && type !== "onPlayerError") return;
+      if (type !== "onPlayerReady" && type !== "onStateChange" && type !== "onCurrentTime" && type !== "onMute" && type !== "onVolumeChange" && type !== "onPlayerError") return;
+      markTrustedPlayerEvent(type);
       if (type === "onPlayerReady") {
-        clearReadyTimer();
-        readyRef.current = true;
-        sendTikTokCommand("mute");
+        sendTikTokVoidCommand("mute");
         applyTikTokSync(latestSyncRef.current);
         return;
       }
@@ -728,21 +817,39 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle }: { sync: LiveOverl
         const value = payload.value;
         if (!isPlainTikTokMessage(value)) return;
         const currentTime = typeof value.currentTime === "number" ? value.currentTime : Number(value.currentTime);
-        if (Number.isFinite(currentTime) && currentTime >= 0) localTimeRef.current = currentTime;
+        if (Number.isFinite(currentTime) && currentTime >= 0) {
+          localTimeRef.current = currentTime;
+          updateDiagnostics({ localObservedTime: currentTime });
+        }
+        applyTikTokSync(latestSyncRef.current);
+        return;
+      }
+      if (type === "onStateChange" || type === "onMute" || type === "onVolumeChange") {
+        applyTikTokSync(latestSyncRef.current);
         return;
       }
       if (type === "onPlayerError") {
         const value = payload.value;
         if (!isPlainTikTokMessage(value)) return;
         const code = typeof value.errorCode === "number" ? value.errorCode : Number(value.errorCode);
+        const errorType = typeof value.errorType === "string" ? value.errorType : undefined;
         const safeCode = Number.isFinite(code) ? code : undefined;
-        if (safeCode === 3002 && !retryAutoplayRef.current && latestSyncRef.current.playbackState === "playing") {
-          retryAutoplayRef.current = true;
-          sendTikTokCommand("mute");
-          window.setTimeout(() => applyTikTokSync(latestSyncRef.current), 500);
+        if (safeCode === 3002 || errorType === "AUTOPLAY_ERROR") {
+          bootstrapAttemptRef.current += 1;
+          updateDiagnostics({ bootstrapAttempt: bootstrapAttemptRef.current, errorCode: 3002, errorType: "AUTOPLAY_ERROR" });
+          if (bootstrapAttemptRef.current === 1 && latestSyncRef.current.playbackState === "playing") {
+            sendTikTokVoidCommand("mute");
+            sendTikTokSeekCommand(expectedTikTokTime(latestSyncRef.current));
+            window.setTimeout(() => {
+              if (destroyedRef.current || generationRef.current !== generation || failedPostRef.current === latestSyncRef.current.postId) return;
+              sendTikTokVoidCommand("play");
+            }, TIKTOK_DELAYED_PLAY_MS);
+            return;
+          }
+          markPlayerUnavailable("AUTOPLAY BLOCKED BY BROWSER", "autoplay_blocked", 3002, "AUTOPLAY_ERROR");
           return;
         }
-        markPlayerUnavailable(tiktokOverlayErrorLabel(safeCode), safeCode);
+        markPlayerUnavailable(tiktokOverlayErrorLabel(safeCode), "player_error", safeCode, errorType);
       }
     }
     window.addEventListener("message", onMessage);
@@ -750,12 +857,14 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle }: { sync: LiveOverl
       destroyedRef.current = true;
       generationRef.current += 1;
       readyRef.current = false;
-      clearReadyTimer();
+      clearIframeLoadTimer();
+      clearPlayerEventTimer();
       window.removeEventListener("message", onMessage);
     };
-  }, [applyTikTokSync, clearReadyTimer, markPlayerUnavailable, sendTikTokCommand, sync.postId, sync.trackId]);
+  }, [applyTikTokSync, clearIframeLoadTimer, clearPlayerEventTimer, markPlayerUnavailable, markTrustedPlayerEvent, sendTikTokSeekCommand, sendTikTokVoidCommand, sync.postId, sync.trackId, updateDiagnostics]);
 
-  return <div className="live-overlay-tiktok-player" aria-label="Muted TikTok overlay player"><iframe ref={iframeRef} title={`TikTok overlay for ${artistName} — ${trackTitle}`} src={src} className={playerError ? "live-overlay-tiktok-iframe live-overlay-tiktok-iframe--hidden" : "live-overlay-tiktok-iframe"} allow="fullscreen; autoplay; encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />{playerError && <div className="live-overlay-tiktok-fallback" role="status"><p>{artistName}</p><strong>{trackTitle}</strong><span>{playerError.message}</span></div>}</div>;
+  const safeStatus = playerError ? "failed" : diagnostics.status;
+  return <div className="live-overlay-tiktok-player" aria-label="Muted TikTok overlay player" data-tiktok-status={safeStatus} data-tiktok-failure-reason={playerError?.reason ?? diagnostics.failureReason ?? undefined} data-tiktok-error-code={playerError?.code ?? diagnostics.errorCode ?? undefined} data-tiktok-first-event={diagnostics.firstTrustedEventType} data-tiktok-last-event={diagnostics.lastTrustedEventType}><iframe ref={iframeRef} onLoad={handleIframeLoad} title={`TikTok overlay for ${artistName} — ${trackTitle}`} src={src} className={playerError ? "live-overlay-tiktok-iframe live-overlay-tiktok-iframe--hidden" : "live-overlay-tiktok-iframe"} allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />{playerError && <div className="live-overlay-tiktok-fallback" role="status" data-tiktok-status="failed" data-tiktok-failure-reason={playerError.reason} data-tiktok-error-code={playerError.code} data-tiktok-first-event={diagnostics.firstTrustedEventType} data-tiktok-last-event={diagnostics.lastTrustedEventType}><p>{artistName}</p><strong>{trackTitle}</strong><span>{playerError.message}</span></div>}</div>;
 }
 
 export function LiveOverlayReceiver() {
@@ -920,7 +1029,7 @@ export function LiveOverlayReceiver() {
           ) : tiktokVisible && scene.tiktok && scene.track ? (
             <div className="live-overlay-tiktok-scene live-overlay-vertical-video-scene">
               <div className="live-overlay-tiktok-viewport">
-                <TikTokOverlayPlayer sync={scene.tiktok} artistName={scene.track.artistName} trackTitle={scene.track.trackTitle} />
+                <TikTokOverlayPlayer key={`${scene.tiktok.trackId ?? "trackless"}:${scene.tiktok.postId}`} sync={scene.tiktok} artistName={scene.track.artistName} trackTitle={scene.track.trackTitle} />
               </div>
               <div className="live-overlay-tiktok-rail">
                 <p className="live-overlay-mode">{label}</p>

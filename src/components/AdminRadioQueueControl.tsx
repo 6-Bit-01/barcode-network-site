@@ -302,9 +302,9 @@ export function AdminRadioQueueControl() {
     setLoadingPlayerId(entry.id);
     setClearingPlayerId(null);
     setMinimized(false);
+    if (entry.sourceType !== "youtube") await clearOverlayPlayerSync();
     const updated = await action(entry.id, "load");
     if (updated?.nowPlaying?.id === entry.id) {
-      if (entry.sourceType !== "youtube") await clearOverlayPlayerSync();
       setPlayerActionPending(false);
       return;
     }
@@ -785,6 +785,8 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
   const lastStablePlaybackStateRef = useRef<"playing" | "paused" | "stopped">("stopped");
   const lastTimeEventAtRef = useRef<number | null>(null);
   const lastPublishedAtRef = useRef<string | null>(null);
+  const hasObservedCurrentTimeRef = useRef(false);
+  const pendingPlaybackStateRef = useRef<"playing" | "paused" | "stopped" | null>(null);
   const [status, setStatus] = useState<TikTokPlayerStatus>(hasParsedTikTokUrl ? "loading" : "error");
   const [notice, setNotice] = useState<string | null>(null);
   const [errorLabel, setErrorLabel] = useState<string | null>(hasParsedTikTokUrl ? null : "No valid TikTok video ID found. Use Open Link.");
@@ -814,6 +816,8 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
     durationRef.current = undefined;
     lastStablePlaybackStateRef.current = "stopped";
     lastTimeEventAtRef.current = null;
+    hasObservedCurrentTimeRef.current = false;
+    pendingPlaybackStateRef.current = null;
     generationRef.current += 1;
     setStatus(statusRef.current);
     setNotice(null);
@@ -832,7 +836,11 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
     }, TIKTOK_PLAYER_READY_TIMEOUT_MS);
 
     const clearReadyTimer = () => { if (readyTimer !== null) { window.clearTimeout(readyTimer); readyTimer = null; } };
-    const publishStable = (state: "playing" | "paused" | "stopped") => { lastStablePlaybackStateRef.current = state; void publish(state); };
+    const publishObservedState = (state: "playing" | "paused" | "stopped") => {
+      lastStablePlaybackStateRef.current = state;
+      if (hasObservedCurrentTimeRef.current) void publish(state);
+      else pendingPlaybackStateRef.current = state;
+    };
 
     function onMessage(event: MessageEvent) {
       if (event.origin !== "https://www.tiktok.com") return;
@@ -849,7 +857,6 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
         setStatus("ready");
         setNotice(null);
         setErrorLabel(null);
-        publishStable("stopped");
         return;
       }
       if (type === "onCurrentTime") {
@@ -863,6 +870,13 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
         const previousAt = lastTimeEventAtRef.current;
         latestTimeRef.current = currentTime;
         if (Number.isFinite(duration) && duration > 0) durationRef.current = duration;
+        hasObservedCurrentTimeRef.current = true;
+        const pendingState = pendingPlaybackStateRef.current;
+        if (pendingState) {
+          pendingPlaybackStateRef.current = null;
+          void publish(pendingState);
+          return;
+        }
         const expectedDelta = previousAt === null ? 0 : (nowMs - previousAt) / 1000;
         lastTimeEventAtRef.current = nowMs;
         if (Math.abs(currentTime - previous - expectedDelta) > 1.75) void publish(lastStablePlaybackStateRef.current);
@@ -870,9 +884,9 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
       }
       if (type === "onStateChange") {
         const stateValue = typeof payload.value === "number" ? payload.value : Number(payload.value);
-        if (stateValue === 1) publishStable("playing");
-        else if (stateValue === 2) publishStable("paused");
-        else if (stateValue === 0) publishStable("stopped");
+        if (stateValue === 1) publishObservedState("playing");
+        else if (stateValue === 2) publishObservedState("paused");
+        else if (stateValue === 0) publishObservedState("stopped");
         else if (stateValue === -1) lastStablePlaybackStateRef.current = "stopped";
         return;
       }
@@ -898,13 +912,12 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
     }
     window.addEventListener("message", onMessage);
     const heartbeat = window.setInterval(() => {
-      if (readyRef.current && (lastStablePlaybackStateRef.current === "playing" || lastStablePlaybackStateRef.current === "paused")) void publish(lastStablePlaybackStateRef.current);
+      if (readyRef.current && hasObservedCurrentTimeRef.current && (lastStablePlaybackStateRef.current === "playing" || lastStablePlaybackStateRef.current === "paused")) void publish(lastStablePlaybackStateRef.current);
     }, 2500);
-    return () => { clearReadyTimer(); window.clearInterval(heartbeat); window.removeEventListener("message", onMessage); };
-  }, [parsedPostId, parsedPlayerUrl, hasParsedTikTokUrl, entry.id, entry.link, publish]);
-  // PR #248 cleanup retained: return () => { clearReadyTimer(); window.removeEventListener
-  // PR #248 lifecycle dependencies retained: }, [parsedPostId, parsedPlayerUrl, hasParsedTikTokUrl, entry.link])
-
+    return () => { clearReadyTimer(); window.removeEventListener("message", onMessage); window.clearInterval(heartbeat); };
+    // Effect lifecycle is keyed by the parsed TikTok media URL; PlayerDock remounts on queue-track identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parsedPostId, parsedPlayerUrl, hasParsedTikTokUrl, entry.link]);
   if (!src) return <div className="border border-border p-3 text-sm text-muted">No valid TikTok video ID found. Use Open Link.</div>;
   return <div className="space-y-2"><div className="mx-auto max-h-[62vh] min-h-[360px] w-full max-w-[420px] overflow-hidden border border-border bg-black"><iframe ref={iframeRef} title={`TikTok player for ${submittedArtist(entry)} — ${submittedTitle(entry)}`} src={src} className="h-[62vh] min-h-[360px] max-h-[620px] w-full" allow="fullscreen; autoplay; encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" /></div>{status === "loading" && <p className="text-xs text-muted">Loading TikTok player… Open Link and Copy Link remain available.</p>}{status === "ready" && <p className="text-xs text-muted">TikTok player ready. Use the native controls.</p>}{notice && <p className="border border-accent/40 bg-accent/10 p-2 text-xs text-accent">{notice}</p>}{status === "error" && <p className="border border-danger/40 bg-danger/10 p-2 text-xs text-danger">{errorLabel ?? "TikTok player unavailable."} Use Open Link or Copy Link.</p>}<div className="grid gap-1 border border-border/60 bg-surface/80 p-2 text-[10px] uppercase tracking-widest text-muted sm:grid-cols-3"><span>Provider: {diagnostics?.provider ?? "tiktok"}</span><span>Post ID: {diagnostics?.postId ?? parsedPostId ?? "—"}</span><span>Track ID: {diagnostics?.trackId ?? entry.id}</span><span>Ready: {diagnostics?.ready ? "yes" : "no"}</span><span>State: {diagnostics?.playbackState ?? "Missing"}</span><span>Host time: {Math.round(diagnostics?.currentTimeSeconds ?? 0)}s</span><span>Duration: {diagnostics?.durationSeconds ? `${Math.round(diagnostics.durationSeconds)}s` : "—"}</span><span>Sync: {diagnostics?.status ?? "Missing"}{diagnostics?.syncAgeSeconds !== null && diagnostics?.syncAgeSeconds !== undefined ? ` · ${diagnostics.syncAgeSeconds}s` : ""}</span><span>Publish: {diagnostics?.publishStatus ?? "—"}</span></div></div>;
 }

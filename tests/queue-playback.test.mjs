@@ -2029,11 +2029,12 @@ test("admin and public TikTok component source assertions remain scoped", () => 
   assert.match(tiktokSource, /useEffect\(\(\) => \{/);
   assert.match(tiktokSource, /\}, \[parsedPostId, parsedPlayerUrl, hasParsedTikTokUrl, entry\.link\]\)/);
   assert.doesNotMatch(tiktokSource.match(/\}, \[[^\]]+\]\)/)?.[0] ?? "", /status|notice|errorLabel/);
-  assert.match(tiktokSource, /let readyTimer: number \| null = window\.setTimeout/);
-  assert.match(tiktokSource, /const clearReadyTimer = \(\) => \{/);
-  assert.match(tiktokSource, /type === "onPlayerReady"[\s\S]*clearReadyTimer\(\)/);
-  assert.match(tiktokSource, /type === "onPlayerError"[\s\S]*clearReadyTimer\(\)/);
-  assert.match(tiktokSource, /return \(\) => \{ clearReadyTimer\(\); window\.removeEventListener/);
+  assert.match(tiktokSource, /readyTimerRef = useRef<number \| null>\(null\)/);
+  assert.match(tiktokSource, /const clearDashboardTikTokReadyTimer = useCallback\(\(\) => \{/);
+  assert.match(tiktokSource, /const markDashboardTikTokReady[\s\S]*clearDashboardTikTokReadyTimer\(\)/);
+  assert.match(tiktokSource, /type !== "onPlayerError"\) markDashboardTikTokReady\("trusted_event"\)/);
+  assert.match(tiktokSource, /type === "onPlayerError"[\s\S]*clearDashboardTikTokReadyTimer\(\)/);
+  assert.match(tiktokSource, /return \(\) => \{ clearDashboardTikTokReadyTimer\(\); clearLoadedReadyFallbackTimer\(\); window\.removeEventListener/);
   assert.match(tiktokSource, /const value = payload\.value/);
   assert.match(tiktokSource, /value\.errorCode/);
   assert.match(tiktokSource, /value\.errorType/);

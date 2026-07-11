@@ -1939,6 +1939,81 @@ test("TikTok canonical duplicate identity blocks equivalent forms while preservi
   } finally { mock.restore(); }
 });
 
+
+async function addLegacyIdentityTrack(label, overrides = {}) {
+  trackSequence += 1;
+  return queue.addToQueue({
+    artist: `${label} Artist`,
+    title: `${label} Track`,
+    tiktokHandle: `@legacy${trackSequence}`,
+    link: tiktokPostUrl,
+    tier: "free",
+    lane: "regular",
+    amount: 0,
+    stripeSessionId: null,
+    createdAt: new Date(Date.UTC(2026, 1, 1, 0, 0, trackSequence)).toISOString(),
+    sourceType: "other",
+    normalizedSourceKey: "tiktok.com/@scout2015/video/6718335390845095173",
+    providerId: null,
+    ...overrides,
+  });
+}
+
+test("legacy TikTok persisted identities are repaired during queue normalization", async () => {
+  await freshOpenSession("legacy tiktok identity repair", { showStarted: false });
+  const legacyOther = await addLegacyIdentityTrack("Legacy Other");
+  const legacyLink = await addLegacyIdentityTrack("Legacy Link", { link: `${tiktokPostUrl}?utm_source=test`, sourceType: "link", normalizedSourceKey: "tiktok.com/@scout2015/video/6718335390845095173?utm_source=test" });
+  const missingProvider = await addLegacyIdentityTrack("Legacy Missing Provider", { sourceType: "tiktok", normalizedSourceKey: "tiktok.com/@scout2015/video/6718335390845095173", providerId: null });
+  const oldKey = await addLegacyIdentityTrack("Legacy Old Key", { sourceType: "tiktok", normalizedSourceKey: "tiktok.com/@scout2015/video/6718335390845095173#fragment", providerId: "tiktok:tiktok.com/@scout2015/video/6718335390845095173" });
+  const player = await addLegacyIdentityTrack("Legacy Player", { link: tiktokPlayerUrl, sourceType: "other", normalizedSourceKey: "tiktok.com/player/v1/6718335390845095173" });
+
+  const state = await queue.getRadioQueueState();
+  for (const id of [legacyOther.id, legacyLink.id, missingProvider.id, oldKey.id, player.id]) {
+    const entry = state.queue.find((item) => item.id === id);
+    assert.ok(entry, `expected migrated entry ${id}`);
+    assert.equal(entry.sourceType, "tiktok");
+    assert.equal(entry.normalizedSourceKey, "tiktok:video:6718335390845095173");
+    assert.equal(entry.providerId, "tiktok:video:6718335390845095173");
+  }
+});
+
+test("migrated legacy TikTok entries block new equivalent submissions", async () => {
+  await freshOpenSession("legacy tiktok duplicate repair", { showStarted: false });
+  await addLegacyIdentityTrack("Legacy Duplicate Anchor");
+  const mock = mockTikTokOEmbed({});
+  try {
+    await assert.rejects(() => queue.submitRadioTrack({ artist: "Legacy New", title: "Canonical", tiktokHandle: "@legacynew1", link: tiktokPostUrl }), /Duplicate transmission/);
+    await assert.rejects(() => queue.submitRadioTrack({ artist: "Legacy New", title: "Player", tiktokHandle: "@legacynew2", link: tiktokPlayerUrl }), /Duplicate transmission/);
+    await assert.rejects(() => queue.submitRadioTrack({ artist: "Legacy New", title: "Query", tiktokHandle: "@legacynew3", link: `${tiktokPostUrl}?utm_source=test` }), /Duplicate transmission/);
+    await assert.rejects(() => queue.submitRadioTrack({ artist: "Legacy New", title: "Fragment", tiktokHandle: "@legacynew4", link: `${tiktokPostUrl}#fragment` }), /Duplicate transmission/);
+    const distinct = await queue.submitRadioTrack({ artist: "Legacy New", title: "Distinct", tiktokHandle: "@legacynew5", link: "https://www.tiktok.com/@scout2015/video/6718335390845095174" });
+    assert.equal(distinct.providerId, "tiktok:video:6718335390845095174");
+  } finally { mock.restore(); }
+});
+
+test("unsupported TikTok-style and non-TikTok legacy entries are not migrated", async () => {
+  await freshOpenSession("legacy tiktok non migration", { showStarted: false });
+  const cases = [
+    await addLegacyIdentityTrack("Legacy VM", { link: "https://vm.tiktok.com/ZMabc/", sourceType: "other", normalizedSourceKey: "vm.tiktok.com/ZMabc" }),
+    await addLegacyIdentityTrack("Legacy VT", { link: "https://vt.tiktok.com/ZMabc/", sourceType: "other", normalizedSourceKey: "vt.tiktok.com/ZMabc" }),
+    await addLegacyIdentityTrack("Legacy M", { link: "https://m.tiktok.com/v/6718335390845095173", sourceType: "other", normalizedSourceKey: "m.tiktok.com/v/6718335390845095173" }),
+    await addLegacyIdentityTrack("Legacy Invalid", { link: "https://www.tiktok.com/@scout2015", sourceType: "other", normalizedSourceKey: "tiktok.com/@scout2015" }),
+    await addLegacyIdentityTrack("Legacy Generic", { link: "https://example.com/song", sourceType: "other", normalizedSourceKey: "example.com/song" }),
+    await addLegacyIdentityTrack("Legacy YouTube", { link: "https://www.youtube.com/watch?v=abc123_DEF45", sourceType: "youtube", normalizedSourceKey: "youtube.com/watch?v=abc123_def45", providerId: "youtube:abc123_DEF45" }),
+    await addLegacyIdentityTrack("Legacy Spotify", { link: "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC", sourceType: "spotify", normalizedSourceKey: "open.spotify.com/track/4ulu6hmcjmi75m1a2tkuqc", providerId: "spotify:4uLU6hMCjMI75M1A2tKUQC" }),
+    await addLegacyIdentityTrack("Legacy SoundCloud", { link: "https://soundcloud.com/artist-name/track-name", sourceType: "soundcloud", normalizedSourceKey: "soundcloud.com/artist-name/track-name", providerId: "soundcloud:soundcloud.com/artist-name/track-name" }),
+    await addLegacyIdentityTrack("Legacy Upload", { link: tiktokPostUrl, fileUrl: "https://store.private.blob.vercel-storage.com/barcode-radio-queue/legacy-upload.mp3", fileName: "legacy-upload.mp3", fileSize: 1234, mimeType: "audio/mpeg", sourceType: "upload", normalizedSourceKey: "upload:legacy", providerId: "upload:legacy" }),
+  ];
+  const state = await queue.getRadioQueueState();
+  for (const original of cases) {
+    const entry = state.queue.find((item) => item.id === original.id);
+    assert.ok(entry, `expected non-migrated entry ${original.id}`);
+    assert.equal(entry.sourceType, original.sourceType);
+    assert.equal(entry.normalizedSourceKey, original.normalizedSourceKey);
+    assert.equal(entry.providerId, original.providerId ?? null);
+  }
+});
+
 test("admin and public TikTok component source assertions remain scoped", () => {
   const adminSource = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
   const publicSource = fs.readFileSync(path.join(projectRoot, "src/components/PublicQueueSession.tsx"), "utf8");

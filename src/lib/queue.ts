@@ -700,7 +700,11 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
   const submittedArtistName = entry.submittedArtistName ?? entry.artist;
   const submittedSongTitle = entry.submittedSongTitle ?? entry.title;
   const detectedDurationSeconds = entry.detectedDurationSeconds ?? null;
-  const sourceType = entry.sourceType ?? detectQueueSourceType(entry.link);
+  const storedSourceType = (entry as QueueEntry & { sourceType?: QueueSourceType | null }).sourceType ?? undefined;
+  const parsedTikTok = parseTikTokVideoUrl(entry.link);
+  const shouldMigrateTikTokIdentity = Boolean(parsedTikTok && (!storedSourceType || storedSourceType === "link" || storedSourceType === "other" || storedSourceType === "tiktok"));
+  const canonicalTikTokKey = parsedTikTok ? `tiktok:video:${parsedTikTok.postId}` : null;
+  const sourceType = shouldMigrateTikTokIdentity ? "tiktok" : storedSourceType ?? detectQueueSourceType(entry.link);
   const durationSource = normalizeDurationSource(entry.durationSource, detectedDurationSeconds, sourceType);
   const priorityUpgradeStatus = normalizePriorityUpgradeStatus(entry.priorityUpgradeStatus);
   const paidPriorityStatus = priorityUpgradeStatus === "paid" || priorityUpgradeStatus === "manual";
@@ -717,6 +721,8 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     detectedSongTitle: entry.detectedSongTitle ?? null,
     providerTitle: entry.providerTitle ?? null,
     sourceType,
+    normalizedSourceKey: shouldMigrateTikTokIdentity && canonicalTikTokKey ? canonicalTikTokKey : entry.normalizedSourceKey ?? null,
+    providerId: shouldMigrateTikTokIdentity && canonicalTikTokKey ? canonicalTikTokKey : entry.providerId ?? null,
     estimatedDurationSeconds: entry.estimatedDurationSeconds ?? detectedDurationSeconds ?? INTERNAL_BUFFER_DURATION_SECONDS,
     detectedDurationSeconds,
     durationIsEstimate: detectedDurationSeconds === null,

@@ -3,7 +3,7 @@
 // ============================================================
 
 export type QueueTier = "free" | "featured" | "fastlane" | "frontrow";
-export type QueueSourceType = "upload" | "link" | "youtube" | "soundcloud" | "spotify" | "other";
+export type QueueSourceType = "upload" | "link" | "youtube" | "soundcloud" | "spotify" | "tiktok" | "other";
 export type QueueLane = "priority" | "wheel" | "regular";
 export type QueueNonPriorityLane = "wheel" | "regular";
 export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | "next" | "pending" | "played" | "refunded" | "expired";
@@ -256,6 +256,45 @@ export interface QueueState {
   wheelEligibleArtists?: QueueWheelArtistOption[];
 }
 
+
+export interface ParsedTikTokVideoUrl {
+  postId: string;
+  sourceForm: "post" | "player";
+  canonicalSourceUrl: string;
+  playerUrl: string;
+  oEmbedSourceUrl: string | null;
+  handle?: string;
+}
+
+const TIKTOK_VIDEO_ID_PATTERN = /^\d{8,32}$/;
+const TIKTOK_HANDLE_PATTERN = /^@[A-Za-z0-9._-]{1,64}$/;
+
+export function parseTikTokVideoUrl(value?: string | null): ParsedTikTokVideoUrl | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "https:") return null;
+    if (url.username || url.password || url.port) return null;
+    const host = url.hostname.toLowerCase();
+    if (host !== "www.tiktok.com" && host !== "tiktok.com") return null;
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts.length === 3 && TIKTOK_HANDLE_PATTERN.test(parts[0]) && parts[1] === "video" && TIKTOK_VIDEO_ID_PATTERN.test(parts[2])) {
+      const handle = parts[0].toLowerCase();
+      const postId = parts[2];
+      const canonicalSourceUrl = `https://www.tiktok.com/${handle}/video/${postId}`;
+      return { postId, sourceForm: "post", handle, canonicalSourceUrl, playerUrl: `https://www.tiktok.com/player/v1/${postId}`, oEmbedSourceUrl: canonicalSourceUrl };
+    }
+    if (parts.length === 3 && parts[0] === "player" && parts[1] === "v1" && TIKTOK_VIDEO_ID_PATTERN.test(parts[2])) {
+      const postId = parts[2];
+      const playerUrl = `https://www.tiktok.com/player/v1/${postId}`;
+      return { postId, sourceForm: "player", canonicalSourceUrl: playerUrl, playerUrl, oEmbedSourceUrl: null };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function parseQueueYouTubeVideoId(link?: string | null): string | null {
   if (!link) return null;
   try {
@@ -269,12 +308,22 @@ export function parseQueueYouTubeVideoId(link?: string | null): string | null {
   }
 }
 
+function isSafeHttpsArtworkUrl(value?: string | null): value is string {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
 export function getTrackArtworkUrl(track: Pick<QueueEntry, "sourceType" | "sourceArtworkUrl" | "link"> | Pick<QueuePublicTrack, "sourceType" | "sourceArtworkUrl">): string | null {
   if (track.sourceType === "youtube" && "link" in track) {
     const videoId = parseQueueYouTubeVideoId(track.link);
     if (videoId) return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
   }
-  if ((track.sourceType === "spotify" || track.sourceType === "soundcloud" || track.sourceType === "youtube") && track.sourceArtworkUrl) return track.sourceArtworkUrl;
+  if ((track.sourceType === "spotify" || track.sourceType === "soundcloud" || track.sourceType === "youtube" || track.sourceType === "tiktok") && isSafeHttpsArtworkUrl(track.sourceArtworkUrl)) return track.sourceArtworkUrl;
   return null;
 }
 
@@ -327,6 +376,7 @@ export function formatRuntime(seconds: number): string {
 }
 
 export function detectQueueSourceType(value: string): QueueSourceType {
+  if (parseTikTokVideoUrl(value)) return "tiktok";
   try {
     const url = new URL(value);
     const host = url.hostname.replace(/^www\./, "").toLowerCase();

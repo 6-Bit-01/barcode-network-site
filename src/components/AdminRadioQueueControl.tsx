@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { AdminLiveOverlayControl } from "@/components/AdminLiveOverlayControl";
 import { buildQueueTimingDisplay, formatHoursMinutes, queueTimingInputFromAdminState } from "@/lib/queue-timing-display";
 import { parseYouTubeVideoId } from "@/lib/track-duration";
-import { formatRuntime, getTrackRuntimeSeconds } from "@/lib/queue-types";
+import { formatRuntime, getTrackRuntimeSeconds, parseTikTokVideoUrl } from "@/lib/queue-types";
 import { YOUTUBE_SYNC_STALE_AFTER_MS } from "@/lib/live-overlay-resolver";
 import type { QueueEntry, QueueLane, QueueState } from "@/lib/queue-types";
 
@@ -19,6 +19,7 @@ const LANE_LABELS: Record<QueueLane, string> = { priority: "Priority Signal", wh
 const FIXED_PRIORITY_LABEL = "Priority Signal Upgrade";
 const FIXED_PRIORITY_INSTRUCTIONS = "Moves this track into the Priority Signal lane after payment confirmation.";
 const YOUTUBE_PLAYER_READY_TIMEOUT_MS = 9_000;
+const TIKTOK_PLAYER_READY_TIMEOUT_MS = 10_000;
 
 function youtubeErrorLabel(code?: number | null): string {
   if (code === 2) return "Invalid video ID";
@@ -34,7 +35,10 @@ const SIMULATION_SPEEDS: Record<SimulationSpeed, { label: string; minDelayMs: nu
   fast: { label: "Fast", minDelayMs: 5_000, maxDelayMs: 15_000, priorityChance: 0.4 },
 };
 
-function sourceLabel(entry: QueueEntry): string { return (entry.sourceType ?? "other").toUpperCase(); }
+function sourceLabel(entry: QueueEntry): string {
+  if (entry.sourceType === "tiktok") return "TikTok";
+  return (entry.sourceType ?? "other").toUpperCase();
+}
 function formatPrice(cents = 0, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }
 function adminAudioUrl(entry: QueueEntry): string {
   const params = new URLSearchParams({ id: entry.id });
@@ -738,6 +742,103 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
   return <div className="space-y-2"><div className="relative h-56 w-full border border-border"><div ref={playerHostRef} className="h-full w-full" data-youtube-host={containerId} /></div><div className="grid gap-1 border border-border/60 bg-surface/80 p-2 text-[10px] uppercase tracking-widest text-muted sm:grid-cols-3"><span>Provider: {diagnostics?.provider ?? "youtube"}</span><span>Video ID: {diagnostics?.videoId ?? videoId}</span><span>Track ID: {diagnostics?.trackId ?? trackId}</span><span>State: {diagnostics?.playbackState ?? "Missing"}</span><span>Host time: {Math.round(diagnostics?.currentTimeSeconds ?? 0)}s</span><span>Sync: {diagnostics?.status ?? "Missing"}{syncAge !== null ? ` · ${syncAge}s` : ""}</span><span>Ready: {diagnostics?.ready ? "yes" : "no"}</span><span>Error: {diagnostics?.errorCode ? `${diagnostics.errorCode} · ${youtubeErrorLabel(diagnostics.errorCode)}` : "—"}</span><span>Publish: {diagnostics?.publishStatus ?? "—"}</span></div></div>;
 }
 
+
+type TikTokPlayerStatus = "loading" | "ready" | "error";
+
+function isPlainTikTokObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function tiktokErrorLabel(code?: number | null, name?: string | null): string {
+  if (code === 1001 || name === "INVALID_VIDEO") return "Invalid or unavailable video";
+  if (code === 2001 || name === "SERVER_ERROR") return "TikTok server error";
+  if (code === 3001 || name === "PLAYBACK_ERROR") return "Playback error";
+  return "TikTok player unavailable";
+}
+
+function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
+  const parsed = useMemo(() => parseTikTokVideoUrl(entry.link), [entry.link]);
+  const parsedPostId = parsed?.postId ?? null;
+  const parsedPlayerUrl = parsed?.playerUrl ?? null;
+  const hasParsedTikTokUrl = Boolean(parsedPostId && parsedPlayerUrl);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const statusRef = useRef<TikTokPlayerStatus>(hasParsedTikTokUrl ? "loading" : "error");
+  const [status, setStatus] = useState<TikTokPlayerStatus>(hasParsedTikTokUrl ? "loading" : "error");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [errorLabel, setErrorLabel] = useState<string | null>(hasParsedTikTokUrl ? null : "No valid TikTok video ID found. Use Open Link.");
+  const src = useMemo(() => {
+    if (!parsedPlayerUrl) return null;
+    const params = new URLSearchParams({ controls: "1", progress_bar: "1", play_button: "1", volume_control: "1", fullscreen_button: "1", timestamp: "1", autoplay: "0", music_info: "1", description: "1", rel: "0", native_context_menu: "1", closed_caption: "1", muted: "0" });
+    return `${parsedPlayerUrl}?${params.toString()}`;
+  }, [parsedPlayerUrl]);
+
+  useEffect(() => {
+    statusRef.current = hasParsedTikTokUrl ? "loading" : "error";
+    setStatus(statusRef.current);
+    setNotice(null);
+    setErrorLabel(hasParsedTikTokUrl ? null : "No valid TikTok video ID found. Use Open Link.");
+    if (!hasParsedTikTokUrl) return;
+
+    let readyTimer: number | null = window.setTimeout(() => {
+      if (readyTimer === null) return;
+      readyTimer = null;
+      setStatus((current) => {
+        if (current === "ready" || current === "error") return current;
+        statusRef.current = "error";
+        setErrorLabel((existing) => existing ?? "TikTok player did not become ready. Open Link remains available.");
+        return "error";
+      });
+    }, TIKTOK_PLAYER_READY_TIMEOUT_MS);
+
+    const clearReadyTimer = () => {
+      if (readyTimer !== null) {
+        window.clearTimeout(readyTimer);
+        readyTimer = null;
+      }
+    };
+
+    function onMessage(event: MessageEvent) {
+      if (event.origin !== "https://www.tiktok.com") return;
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      const payload = event.data;
+      if (!isPlainTikTokObject(payload)) return;
+      if (payload["x-tiktok-player"] !== true) return;
+      const type = payload.type;
+      if (type !== "onPlayerReady" && type !== "onStateChange" && type !== "onPlayerError") return;
+      if (type === "onPlayerReady") {
+        clearReadyTimer();
+        statusRef.current = "ready";
+        setStatus("ready");
+        setNotice(null);
+        setErrorLabel(null);
+        return;
+      }
+      if (type === "onPlayerError") {
+        const value = payload.value;
+        if (!isPlainTikTokObject(value)) return;
+        const code = typeof value.errorCode === "number" ? value.errorCode : Number(value.errorCode);
+        const errorType = typeof value.errorType === "string" ? value.errorType : null;
+        const safeCode = Number.isFinite(code) ? code : null;
+        if (safeCode === 3002 || errorType === "AUTOPLAY_ERROR") {
+          setNotice("Automatic playback was blocked. Use the player’s Play control.");
+          setErrorLabel(null);
+          return;
+        }
+        clearReadyTimer();
+        statusRef.current = "error";
+        setNotice(null);
+        setStatus("error");
+        setErrorLabel(tiktokErrorLabel(safeCode, errorType));
+      }
+    }
+    window.addEventListener("message", onMessage);
+    return () => { clearReadyTimer(); window.removeEventListener("message", onMessage); };
+  }, [parsedPostId, parsedPlayerUrl, hasParsedTikTokUrl, entry.link]);
+
+  if (!src) return <div className="border border-border p-3 text-sm text-muted">No valid TikTok video ID found. Use Open Link.</div>;
+  return <div className="space-y-2"><div className="mx-auto max-h-[62vh] min-h-[360px] w-full max-w-[420px] overflow-hidden border border-border bg-black"><iframe ref={iframeRef} title={`TikTok player for ${submittedArtist(entry)} — ${submittedTitle(entry)}`} src={src} className="h-[62vh] min-h-[360px] max-h-[620px] w-full" allow="fullscreen; autoplay; encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" /></div>{status === "loading" && <p className="text-xs text-muted">Loading TikTok player… Open Link and Copy Link remain available.</p>}{status === "ready" && <p className="text-xs text-muted">TikTok player ready. Use the native controls.</p>}{notice && <p className="border border-accent/40 bg-accent/10 p-2 text-xs text-accent">{notice}</p>}{status === "error" && <p className="border border-danger/40 bg-danger/10 p-2 text-xs text-danger">{errorLabel ?? "TikTok player unavailable."} Use Open Link or Copy Link.</p>}</div>;
+}
+
 function PlayerDock({ player, minimized, setMinimized, readOnly, actionPending, onAction, onCopy }: { player: QueueEntry; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; actionPending: boolean; onAction: (id: string, action: AdminQueueAction) => void; onCopy: () => void }) {
   const embedded = embedUrl(player);
   return (
@@ -760,8 +861,9 @@ function PlayerDock({ player, minimized, setMinimized, readOnly, actionPending, 
           <div className="w-full min-w-0">
             {player.sourceType === "upload" && player.fileUrl && <audio key={`${player.id}-${adminAudioUrl(player)}`} src={adminAudioUrl(player)} controls className="w-full" />}
             {player.sourceType === "youtube" && <AdminYouTubePlayer key={player.id} entry={player} />}
-            {player.sourceType !== "upload" && player.sourceType !== "youtube" && embedded && <iframe key={`${player.id}-${embedded}`} title="Queue preview" src={embedded} className="h-56 w-full border border-border" allow="clipboard-write; encrypted-media; picture-in-picture" />}
-            {player.sourceType !== "upload" && player.sourceType !== "youtube" && !embedded && <div className="border border-border p-2 text-sm text-muted">No embeddable preview for this source. Use Open Link or Copy Link.</div>}
+            {player.sourceType === "tiktok" && <AdminTikTokPlayer key={player.id} entry={player} />}
+            {player.sourceType !== "upload" && player.sourceType !== "youtube" && player.sourceType !== "tiktok" && embedded && <iframe key={`${player.id}-${embedded}`} title="Queue preview" src={embedded} className="h-56 w-full border border-border" allow="clipboard-write; encrypted-media; picture-in-picture" />}
+            {player.sourceType !== "upload" && player.sourceType !== "youtube" && player.sourceType !== "tiktok" && !embedded && <div className="border border-border p-2 text-sm text-muted">No embeddable preview for this source. Use Open Link or Copy Link.</div>}
           </div>
           <div className="flex flex-wrap gap-2">
             <a href={openUrl(player)} target="_blank" rel="noreferrer" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent">Open Link</a>

@@ -14,6 +14,7 @@ import {
   getTrackDurationLabel,
   getTrackArtworkUrl,
   normalizeTier,
+  parseTikTokVideoUrl,
 } from "./queue-types";
 import type {
   QueueDurationSource,
@@ -45,6 +46,8 @@ const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 1000;
 const DEFAULT_PRIORITY_UPGRADE_CURRENCY = "usd";
 const PRE_SHOW_ROUTING_DELAY_MS = (20 * 60 + 15) * 1000;
 const UPLOADED_FILE_RETENTION_MS = 24 * 60 * 60 * 1000;
+const TIKTOK_OEMBED_TIMEOUT_MS = 2500;
+const TIKTOK_OEMBED_MAX_BYTES = 256 * 1024;
 const BARCODE_QUEUE_UPLOAD_HOST_SUFFIX = ".private.blob.vercel-storage.com";
 const BARCODE_QUEUE_UPLOAD_PATH_PREFIX = "/barcode-radio-queue/";
 
@@ -697,7 +700,11 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
   const submittedArtistName = entry.submittedArtistName ?? entry.artist;
   const submittedSongTitle = entry.submittedSongTitle ?? entry.title;
   const detectedDurationSeconds = entry.detectedDurationSeconds ?? null;
-  const sourceType = entry.sourceType ?? detectQueueSourceType(entry.link);
+  const storedSourceType = (entry as QueueEntry & { sourceType?: QueueSourceType | null }).sourceType ?? undefined;
+  const parsedTikTok = parseTikTokVideoUrl(entry.link);
+  const shouldMigrateTikTokIdentity = Boolean(parsedTikTok && (!storedSourceType || storedSourceType === "link" || storedSourceType === "other" || storedSourceType === "tiktok"));
+  const canonicalTikTokKey = parsedTikTok ? `tiktok:video:${parsedTikTok.postId}` : null;
+  const sourceType = shouldMigrateTikTokIdentity ? "tiktok" : storedSourceType ?? detectQueueSourceType(entry.link);
   const durationSource = normalizeDurationSource(entry.durationSource, detectedDurationSeconds, sourceType);
   const priorityUpgradeStatus = normalizePriorityUpgradeStatus(entry.priorityUpgradeStatus);
   const paidPriorityStatus = priorityUpgradeStatus === "paid" || priorityUpgradeStatus === "manual";
@@ -714,6 +721,8 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     detectedSongTitle: entry.detectedSongTitle ?? null,
     providerTitle: entry.providerTitle ?? null,
     sourceType,
+    normalizedSourceKey: shouldMigrateTikTokIdentity && canonicalTikTokKey ? canonicalTikTokKey : entry.normalizedSourceKey ?? null,
+    providerId: shouldMigrateTikTokIdentity && canonicalTikTokKey ? canonicalTikTokKey : entry.providerId ?? null,
     estimatedDurationSeconds: entry.estimatedDurationSeconds ?? detectedDurationSeconds ?? INTERNAL_BUFFER_DURATION_SECONDS,
     detectedDurationSeconds,
     durationIsEstimate: detectedDurationSeconds === null,
@@ -959,6 +968,75 @@ async function lookupSoundCloudOEmbed(link: string, base: ProviderMetadata = bla
   return { ...base, providerTitle, artworkUrl };
 }
 
+
+function sanitizeProviderText(value: unknown, maxLength = 180): string | null {
+  if (typeof value !== "string") return null;
+  const cleaned = value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  return cleaned ? cleaned.slice(0, maxLength) : null;
+}
+
+function safeHttpsPublicUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password) return null;
+    return url.toString();
+  } catch { return null; }
+}
+
+async function readLimitedJson(res: Response): Promise<unknown | null> {
+  const contentType = res.headers.get("content-type") || "";
+  if (!/application\/(json|.*\+json)|text\/json/i.test(contentType)) return null;
+  const length = Number(res.headers.get("content-length") || 0);
+  if (Number.isFinite(length) && length > TIKTOK_OEMBED_MAX_BYTES) return null;
+  const reader = res.body?.getReader();
+  if (!reader) return null;
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      total += value.byteLength;
+      if (total > TIKTOK_OEMBED_MAX_BYTES) return null;
+      chunks.push(value);
+    }
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try { return JSON.parse(new TextDecoder().decode(body)); } catch { return null; }
+}
+
+async function lookupTikTokMetadata(link: string): Promise<ProviderMetadata> {
+  const parsed = parseTikTokVideoUrl(link);
+  if (!parsed?.oEmbedSourceUrl) return blankProvider("internal_estimate");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIKTOK_OEMBED_TIMEOUT_MS);
+  try {
+    const endpoint = `https://www.tiktok.com/oembed?url=${encodeURIComponent(parsed.oEmbedSourceUrl)}`;
+    const res = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
+    if (!res.ok) return blankProvider("internal_estimate");
+    const payload = await readLimitedJson(res);
+    if (!payload || typeof payload !== "object") return blankProvider("internal_estimate");
+    return {
+      detectedArtistName: sanitizeProviderText((payload as { author_name?: unknown }).author_name, 120),
+      detectedSongTitle: null,
+      providerTitle: sanitizeProviderText((payload as { title?: unknown }).title, 240),
+      detectedDurationSeconds: null,
+      durationSource: "internal_estimate",
+      artworkUrl: safeHttpsPublicUrl((payload as { thumbnail_url?: unknown }).thumbnail_url),
+    };
+  } catch {
+    return blankProvider("internal_estimate");
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function lookupSoundCloudMetadata(link: string): Promise<ProviderMetadata> {
   const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
   if (!clientId) return lookupSoundCloudOEmbed(link).catch(() => blankProvider("internal_estimate"));
@@ -980,6 +1058,7 @@ export async function detectProviderMetadata(sourceType: QueueSourceType, link: 
     if (sourceType === "youtube") metadata = await lookupYouTubeMetadata(link);
     else if (sourceType === "spotify") metadata = await lookupSpotifyMetadata(link);
     else if (sourceType === "soundcloud") metadata = await lookupSoundCloudMetadata(link);
+    else if (sourceType === "tiktok") metadata = await lookupTikTokMetadata(link);
     else return metadata;
 
     if (metadata.detectedDurationSeconds) return metadata;
@@ -1017,6 +1096,8 @@ function normalizeEmail(value?: string | null): string {
 
 export function normalizeQueueSourceKey(value?: string | null): string | null {
   if (!value) return null;
+  const tiktok = parseTikTokVideoUrl(value);
+  if (tiktok) return `tiktok:video:${tiktok.postId}`;
   try {
     const url = new URL(value.trim());
     url.hash = "";
@@ -1040,6 +1121,10 @@ function parseProviderId(sourceType: QueueSourceType, link: string): string | nu
   if (sourceType === "soundcloud") {
     const key = normalizeQueueSourceKey(link);
     return key ? `soundcloud:${key}` : null;
+  }
+  if (sourceType === "tiktok") {
+    const parsed = parseTikTokVideoUrl(link);
+    return parsed ? `tiktok:video:${parsed.postId}` : null;
   }
   return null;
 }

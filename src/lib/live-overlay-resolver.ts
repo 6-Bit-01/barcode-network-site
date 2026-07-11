@@ -188,6 +188,40 @@ export interface LiveOverlaySessionInput {
 }
 
 export type LiveOverlayPlaybackState = "playing" | "paused" | "stopped";
+export type LiveOverlaySyncCorrectionReason = "state_change" | "heartbeat" | "seek";
+
+export function normalizeLiveOverlaySyncCorrectionReason(value: unknown): LiveOverlaySyncCorrectionReason | undefined {
+  return value === "state_change" || value === "heartbeat" || value === "seek" ? value : undefined;
+}
+
+export function projectObservedPlaybackTime(playbackState: LiveOverlayPlaybackState, currentTimeSeconds: number, observedAtMs: number, nowMs: number, durationSeconds?: number): number | null {
+  if (!Number.isFinite(currentTimeSeconds) || currentTimeSeconds < 0 || !Number.isFinite(observedAtMs) || !Number.isFinite(nowMs)) return null;
+  const elapsed = playbackState === "playing" ? Math.max(0, nowMs - observedAtMs) / 1000 : 0;
+  let projected = Math.max(0, currentTimeSeconds + elapsed);
+  if (typeof durationSeconds === "number" && Number.isFinite(durationSeconds) && durationSeconds > 0) projected = Math.min(projected, durationSeconds);
+  return Number.isFinite(projected) ? projected : null;
+}
+
+export function estimatedOneWayLatencySeconds(roundTripMs: number | null | undefined): number {
+  if (typeof roundTripMs !== "number" || !Number.isFinite(roundTripMs) || roundTripMs < 0) return 0;
+  return Math.min(roundTripMs / 2, 750) / 1000;
+}
+
+export function detectMaterialPlaybackSeek(input: { playbackState: LiveOverlayPlaybackState; previousTimeSeconds: number; previousObservedAtMs: number; currentTimeSeconds: number; currentObservedAtMs: number; playingThresholdSeconds?: number; pausedThresholdSeconds?: number; }): boolean {
+  const { playbackState, previousTimeSeconds, previousObservedAtMs, currentTimeSeconds, currentObservedAtMs } = input;
+  if (![previousTimeSeconds, previousObservedAtMs, currentTimeSeconds, currentObservedAtMs].every(Number.isFinite) || previousTimeSeconds < 0 || currentTimeSeconds < 0) return false;
+  const elapsedSeconds = Math.max(0, currentObservedAtMs - previousObservedAtMs) / 1000;
+  const threshold = playbackState === "playing" ? input.playingThresholdSeconds ?? 0.75 : input.pausedThresholdSeconds ?? 0.25;
+  const expectedMovement = playbackState === "playing" ? elapsedSeconds : 0;
+  const actualMovement = currentTimeSeconds - previousTimeSeconds;
+  return Math.abs(actualMovement - expectedMovement) > threshold;
+}
+
+export function roundPlaybackDriftSeconds(value: number): number | null {
+  if (!Number.isFinite(value)) return null;
+  const rounded = Math.round(value * 100) / 100;
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
 
 export interface LiveOverlayYouTubeSync {
   provider: "youtube";
@@ -198,6 +232,7 @@ export interface LiveOverlayYouTubeSync {
   updatedAt: string;
   muted: boolean;
   clientUpdatedAt?: string;
+  correctionReason?: LiveOverlaySyncCorrectionReason;
 }
 
 export interface LiveOverlayTikTokSync {
@@ -210,6 +245,7 @@ export interface LiveOverlayTikTokSync {
   updatedAt: string;
   muted: true;
   clientUpdatedAt?: string;
+  correctionReason?: LiveOverlaySyncCorrectionReason;
 }
 
 export type LiveOverlayPlayerSync = LiveOverlayYouTubeSync | LiveOverlayTikTokSync;
@@ -232,6 +268,7 @@ export function serverStampYouTubeSync(input: unknown, receivedAt: Date = new Da
     currentTimeSeconds,
     updatedAt: receivedAt.toISOString(),
     muted: true,
+    correctionReason: normalizeLiveOverlaySyncCorrectionReason(raw.correctionReason),
   };
 }
 
@@ -252,6 +289,7 @@ export function serverStampTikTokSync(input: unknown, receivedAt: Date = new Dat
     durationSeconds,
     updatedAt: receivedAt.toISOString(),
     muted: true,
+    correctionReason: normalizeLiveOverlaySyncCorrectionReason(raw.correctionReason),
   };
 }
 

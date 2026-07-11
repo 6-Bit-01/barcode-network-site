@@ -1,10 +1,27 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { buildWheelSegments, derangedWheelCandidateOrder, resolveLiveOverlayScene, serverStampTikTokSync, serverStampYouTubeSync, youtubePresentationFromUrl, WHEEL_RIGHT_POINTER_ANGLE_DEGREES, wheelFinalRotationForSegment, wheelFinalRotationForSlice, wheelSegmentAtPointer, wheelSliceIndexAtPointer, wheelUprightLabelRotationDegrees } from "../src/lib/live-overlay-resolver.ts";
+import { buildWheelSegments, derangedWheelCandidateOrder, detectMaterialPlaybackSeek, estimatedOneWayLatencySeconds, projectObservedPlaybackTime, resolveLiveOverlayScene, roundPlaybackDriftSeconds, serverStampTikTokSync, serverStampYouTubeSync, youtubePresentationFromUrl, WHEEL_RIGHT_POINTER_ANGLE_DEGREES, wheelFinalRotationForSegment, wheelFinalRotationForSlice, wheelSegmentAtPointer, wheelSliceIndexAtPointer, wheelUprightLabelRotationDegrees } from "../src/lib/live-overlay-resolver.ts";
 
 const session = { sessionId: "s1", status: "open", queueOpen: true, wheelSpinsOwed: 0, sponsorBreakStatus: "not_due", broadcastPhase: "broadcast_active" };
 const youtubeTrack = { id: "yt1", submittedArtistName: "Artist Name", submittedSongTitle: "Video Track", sourceType: "youtube", sourceArtworkUrl: "https://img.youtube.com/vi/abcdefghijk/hqdefault.jpg", link: "https://youtube.com/watch?v=abcdefghijk", durationLabel: "3:30", youtubeVideoId: "abcdefghijk" };
 const spotifyTrack = { id: "sp1", submittedArtistName: "Spotify Artist", submittedSongTitle: "Audio Track", sourceType: "spotify", sourceArtworkUrl: "https://i.scdn.co/image/example", link: "https://open.spotify.com/track/abc123", durationLabel: "2:45" };
+
+
+assert.equal(projectObservedPlaybackTime("playing", 10, 1_000, 2_500), 11.5, "playing projection advances from observation time");
+assert.equal(projectObservedPlaybackTime("paused", 10, 1_000, 2_500), 10, "paused projection does not advance");
+assert.equal(projectObservedPlaybackTime("stopped", 10, 1_000, 2_500), 10, "stopped projection does not advance");
+assert.equal(projectObservedPlaybackTime("playing", 10, 1_000, 5_000, 12), 12, "projection clamps to duration");
+assert.equal(projectObservedPlaybackTime("playing", 0, 1_000, 1_000), 0, "projection accepts zero");
+assert.equal(projectObservedPlaybackTime("playing", Number.NaN, 1_000, 2_000), null, "invalid projection returns null");
+assert.equal(estimatedOneWayLatencySeconds(500), 0.25, "one-way latency estimate is RTT / 2");
+assert.equal(estimatedOneWayLatencySeconds(4_000), 0.75, "one-way estimate clamps to 750ms");
+assert.equal(estimatedOneWayLatencySeconds(-1), 0, "invalid RTT produces zero");
+assert.equal(detectMaterialPlaybackSeek({ playbackState: "playing", previousTimeSeconds: 10, previousObservedAtMs: 1_000, currentTimeSeconds: 11, currentObservedAtMs: 2_000 }), false, "normal playing progression is not a seek");
+assert.equal(detectMaterialPlaybackSeek({ playbackState: "playing", previousTimeSeconds: 10, previousObservedAtMs: 1_000, currentTimeSeconds: 15, currentObservedAtMs: 2_000 }), true, "abnormal playing jump is a seek");
+assert.equal(detectMaterialPlaybackSeek({ playbackState: "paused", previousTimeSeconds: 10, previousObservedAtMs: 1_000, currentTimeSeconds: 10.4, currentObservedAtMs: 2_000 }), true, "paused timeline movement is a seek");
+assert.equal(detectMaterialPlaybackSeek({ playbackState: "stopped", previousTimeSeconds: 0, previousObservedAtMs: 1_000, currentTimeSeconds: 0.5, currentObservedAtMs: 2_000 }), true, "stopped timeline movement is a seek");
+assert.equal(roundPlaybackDriftSeconds(1.234), 1.23, "signed drift rounds to two decimals");
+assert.equal(Object.is(roundPlaybackDriftSeconds(-0.001), -0), false, "negative zero normalizes to zero");
 
 const youtubePresentationCases = [
   ["https://youtube.com/shorts/abc123", "short"],
@@ -137,6 +154,15 @@ assert.equal(serverStampYouTubeSync({ ...freshSync, updatedAt: "2099-01-01T00:00
 assert.equal(serverStampYouTubeSync({ ...freshSync, updatedAt: "2000-01-01T00:00:00.000Z" }, serverReceipt)?.updatedAt, serverReceipt.toISOString(), "server receipt time replaces old client sync timestamp");
 assert.equal(serverStampYouTubeSync({ ...freshSync, updatedAt: "not-a-date" }, serverReceipt)?.updatedAt, serverReceipt.toISOString(), "malformed client timestamp does not break server-stamped sync");
 assert.equal(serverStampYouTubeSync({ ...freshSync, updatedAt: undefined }, serverReceipt)?.updatedAt, serverReceipt.toISOString(), "missing client timestamp does not break server-stamped sync");
+assert.equal(serverStampYouTubeSync({ ...freshSync, correctionReason: "state_change" }, serverReceipt)?.correctionReason, "state_change", "YouTube correctionReason accepts state_change");
+assert.equal(serverStampYouTubeSync({ ...freshSync, correctionReason: "heartbeat" }, serverReceipt)?.correctionReason, "heartbeat", "YouTube correctionReason accepts heartbeat");
+assert.equal(serverStampYouTubeSync({ ...freshSync, correctionReason: "seek" }, serverReceipt)?.correctionReason, "seek", "YouTube correctionReason accepts seek");
+assert.equal(serverStampTikTokSync({ ...freshTikTokSync, correctionReason: "state_change" }, serverReceipt)?.correctionReason, "state_change", "TikTok correctionReason accepts state_change");
+assert.equal(serverStampTikTokSync({ ...freshTikTokSync, correctionReason: "heartbeat" }, serverReceipt)?.correctionReason, "heartbeat", "TikTok correctionReason accepts heartbeat");
+assert.equal(serverStampTikTokSync({ ...freshTikTokSync, correctionReason: "seek" }, serverReceipt)?.correctionReason, "seek", "TikTok correctionReason accepts seek");
+assert.equal(serverStampTikTokSync({ ...freshTikTokSync, correctionReason: "bad" }, serverReceipt)?.correctionReason, undefined, "invalid correctionReason is discarded");
+assert.equal(serverStampTikTokSync(freshTikTokSync, serverReceipt)?.correctionReason, undefined, "old sync without correctionReason remains valid");
+assert.equal(serverStampTikTokSync({ ...freshTikTokSync, muted: false }, serverReceipt)?.muted, true, "muted remains forced true");
 
 const nonYoutubeNowPlaying = resolveLiveOverlayScene({ currentSession: session, nowPlaying: spotifyTrack });
 assert.equal(nonYoutubeNowPlaying.mode, "now_playing", "non-YouTube track resolves to artist card now playing");
@@ -189,8 +215,8 @@ const overlayCss = readFileSync("src/app/overlay/live/overlay-live.css", "utf8")
 assert.equal(receiver.includes("sync.currentTimeSeconds + elapsed"), true, "playing YouTube sync extrapolates from reported host time in the receiver");
 assert.equal(receiver.includes("latestSyncRef") && !receiver.includes("initialSyncRef"), true, "YouTube receiver uses latest sync instead of frozen mount-time sync");
 assert.equal(receiver.includes("applyYouTubeSync(latestSyncRef.current)"), true, "YouTube receiver applies the latest sync from onReady");
-assert.equal(receiver.includes("playerVars: { autoplay: 0") && receiver.includes("else player.cueVideoById") && receiver.includes("else if (nextSync.playbackState === \"paused\") player.pauseVideo()"), true, "YouTube receiver initializes paused/stopped sync without autoplay");
-assert.equal(receiver.includes("Math.abs(current - expected) > 1.75"), true, "YouTube receiver preserves drift tolerance before seeking");
+assert.equal(receiver.includes("playerVars: { autoplay: 0") && receiver.includes("player.cueVideoById") && receiver.includes("player.pauseVideo()"), true, "YouTube receiver initializes paused/stopped sync without autoplay");
+assert.equal(receiver.includes("YOUTUBE_PLAYING_DRIFT_THRESHOLD_SECONDS = 0.7") && receiver.includes("YOUTUBE_PAUSED_DRIFT_THRESHOLD_SECONDS = 0.25"), true, "YouTube receiver uses tightened provider-specific drift thresholds before seeking");
 assert.equal(receiver.includes("player.loadVideoById({ videoId: nextSync.videoId") && receiver.includes("loadedVideoRef.current !== nextSync.videoId"), true, "YouTube receiver only reloads when sync video changes after initial load");
 assert.equal(receiver.includes("requestSeq") && receiver.includes("latestAppliedSeq") && receiver.includes("AbortController") && receiver.includes("window.setTimeout(poll"), true, "overlay polling is ordered, single-flight, and timeout-driven");
 assert.equal(receiver.includes("setScene((current) => next.scene ?? next ?? current)") && receiver.includes("setConnected(false)"), true, "overlay polling failure preserves the last known good scene while signaling hold");
@@ -338,9 +364,9 @@ assert.equal(sourceAdmin.includes('type === "onPlayerReady"') && sourceAdmin.inc
 assert.equal(!sourceAdmin.includes('publishStable("stopped")') && !sourceAdmin.includes('publishStable("playing")'), true, "onPlayerReady does not publish stopped or synthetic playing sync");
 assert.equal(sourceAdmin.includes("hasObservedCurrentTimeRef") && sourceAdmin.includes("pendingPlaybackStateRef"), true, "Admin state waits for official current-time evidence");
 assert.equal(sourceAdmin.includes('pendingPlaybackStateRef.current = "playing"') || sourceAdmin.includes("pendingPlaybackStateRef.current = state"), true, "Pending playing publishes after valid onCurrentTime");
-assert.equal(sourceAdmin.includes("const pendingState = pendingPlaybackStateRef.current") && sourceAdmin.includes("void publish(pendingState)"), true, "Pending paused/stopped state publishes after valid onCurrentTime");
+assert.equal(sourceAdmin.includes("const pendingState = pendingPlaybackStateRef.current") && sourceAdmin.includes("publish(pendingState, currentTime, pendingReason)"), true, "Pending paused/stopped state publishes after valid onCurrentTime");
 assert.equal(sourceAdmin.includes("currentTime < 0") && sourceAdmin.includes("Number.isFinite(currentTime)"), true, "Observed currentTime zero is accepted while negative/NaN are rejected");
-assert.equal(sourceAdmin.includes("window.setInterval") && sourceAdmin.includes("2500") && sourceAdmin.includes("hasObservedCurrentTimeRef.current") && sourceAdmin.includes('lastStablePlaybackStateRef.current === "paused"'), true, "Heartbeats require observed current time and run while playing/paused");
+assert.equal(sourceAdmin.includes("window.setInterval") && sourceAdmin.includes("TIKTOK_SYNC_HEARTBEAT_MS") && sourceAdmin.includes("hasObservedCurrentTimeRef.current") && sourceAdmin.includes('lastStablePlaybackStateRef.current === "paused"'), true, "Heartbeats require observed current time and run while playing/paused");
 assert.equal(!sourceAdmin.includes('lastStablePlaybackStateRef.current === "stopped")) void publish'), true, "Stopped state is not heartbeated");
 assert.equal(sourceAdmin.indexOf('if (entry.sourceType !== "youtube") await clearOverlayPlayerSync()') < sourceAdmin.indexOf('const updated = await action(entry.id, "load")'), true, "Old sync clears before non-YouTube load mutation");
 assert.equal(!sourceAdmin.includes('if (updated?.nowPlaying?.id === entry.id) {\n      if (entry.sourceType !== "youtube") await clearOverlayPlayerSync();'), true, "No later non-YouTube clear race remains");

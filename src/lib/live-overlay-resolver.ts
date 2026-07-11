@@ -118,6 +118,7 @@ export interface LiveOverlayTrackInput {
   link?: string | null;
   durationLabel?: string;
   youtubeVideoId?: string | null;
+  tiktokPostId?: string | null;
 }
 
 export interface LiveOverlayWheelCandidateInput {
@@ -199,6 +200,23 @@ export interface LiveOverlayYouTubeSync {
   clientUpdatedAt?: string;
 }
 
+export interface LiveOverlayTikTokSync {
+  provider: "tiktok";
+  postId: string;
+  trackId?: string;
+  playbackState: LiveOverlayPlaybackState;
+  currentTimeSeconds: number;
+  durationSeconds?: number;
+  updatedAt: string;
+  muted: true;
+  clientUpdatedAt?: string;
+}
+
+export type LiveOverlayPlayerSync = LiveOverlayYouTubeSync | LiveOverlayTikTokSync;
+
+function cleanSyncTrackId(value: unknown): string | undefined {
+  return typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim() || undefined : undefined;
+}
 
 export function serverStampYouTubeSync(input: unknown, receivedAt: Date = new Date()): LiveOverlayYouTubeSync | null {
   const raw = input as Partial<LiveOverlayYouTubeSync> | null;
@@ -209,7 +227,7 @@ export function serverStampYouTubeSync(input: unknown, receivedAt: Date = new Da
   return {
     provider: "youtube",
     videoId,
-    trackId: typeof raw.trackId === "string" ? raw.trackId.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim() || undefined : undefined,
+    trackId: cleanSyncTrackId(raw.trackId),
     playbackState: raw.playbackState === "playing" || raw.playbackState === "paused" || raw.playbackState === "stopped" ? raw.playbackState : "stopped",
     currentTimeSeconds,
     updatedAt: receivedAt.toISOString(),
@@ -217,12 +235,39 @@ export function serverStampYouTubeSync(input: unknown, receivedAt: Date = new Da
   };
 }
 
+export function serverStampTikTokSync(input: unknown, receivedAt: Date = new Date()): LiveOverlayTikTokSync | null {
+  const raw = input as Partial<LiveOverlayTikTokSync> | null;
+  if (!raw || typeof raw !== "object" || raw.provider !== "tiktok") return null;
+  const postId = typeof raw.postId === "string" && /^\d{8,32}$/.test(raw.postId) ? raw.postId : null;
+  if (!postId) return null;
+  if (raw.playbackState !== "playing" && raw.playbackState !== "paused" && raw.playbackState !== "stopped") return null;
+  if (typeof raw.currentTimeSeconds !== "number" || !Number.isFinite(raw.currentTimeSeconds) || raw.currentTimeSeconds < 0) return null;
+  const durationSeconds = typeof raw.durationSeconds === "number" && Number.isFinite(raw.durationSeconds) && raw.durationSeconds > 0 ? raw.durationSeconds : undefined;
+  return {
+    provider: "tiktok",
+    postId,
+    trackId: cleanSyncTrackId(raw.trackId),
+    playbackState: raw.playbackState,
+    currentTimeSeconds: raw.currentTimeSeconds,
+    durationSeconds,
+    updatedAt: receivedAt.toISOString(),
+    muted: true,
+  };
+}
+
+export function serverStampLiveOverlayPlayerSync(input: unknown, receivedAt: Date = new Date()): LiveOverlayPlayerSync | null {
+  const provider = (input as { provider?: unknown } | null)?.provider;
+  if (provider === "youtube") return serverStampYouTubeSync(input, receivedAt);
+  if (provider === "tiktok") return serverStampTikTokSync(input, receivedAt);
+  return null;
+}
+
 export interface ResolveLiveOverlaySceneInput {
   overlayState?: LiveOverlayStateInput | null;
   currentSession?: LiveOverlaySessionInput | null;
   nowPlaying?: LiveOverlayTrackInput | null;
   upNext?: LiveOverlayTrackInput | null;
-  playerSync?: LiveOverlayYouTubeSync | null;
+  playerSync?: LiveOverlayPlayerSync | null;
   wheelCandidates?: LiveOverlayWheelCandidateInput[];
   wheelSpinsOwed?: number;
   sponsorBreakStatus?: SponsorBreakStatus;
@@ -289,6 +334,7 @@ export interface ResolvedLiveOverlayScene {
   sourceUrl?: string | null;
   videoUrl?: string;
   youtube?: LiveOverlayYouTubeSync;
+  tiktok?: LiveOverlayTikTokSync;
   wheelCeremony?: ResolvedWheelCeremonyScene;
   priority: number;
   automatic: boolean;
@@ -322,6 +368,23 @@ export function safeLiveOverlayUrl(value: unknown): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+
+function tiktokPostIdFromCanonicalUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
+    const host = url.hostname.toLowerCase();
+    if (host !== "www.tiktok.com" && host !== "tiktok.com") return null;
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts.length === 3 && /^@[A-Za-z0-9._-]{1,64}$/.test(parts[0]) && parts[1] === "video" && /^\d{8,32}$/.test(parts[2])) return parts[2];
+    if (parts.length === 3 && parts[0] === "player" && parts[1] === "v1" && /^\d{8,32}$/.test(parts[2])) return parts[2];
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function isSafeYouTubeVideoId(value: string | null | undefined): value is string {
@@ -371,7 +434,7 @@ function displayTitle(track: LiveOverlayTrackInput | LiveOverlayWheelCandidateIn
   return cleanDisplay(track.detectedSongTitle) || cleanDisplay(track.submittedSongTitle) || cleanDisplay("trackTitle" in track ? track.trackTitle : undefined) || cleanDisplay(track.title) || "Untitled transmission";
 }
 
-function youtubeSyncForTrack(track: LiveOverlayTrackInput, playerSync?: LiveOverlayYouTubeSync | null, now: Date = new Date()): LiveOverlayYouTubeSync | undefined {
+function youtubeSyncForTrack(track: LiveOverlayTrackInput, playerSync?: LiveOverlayPlayerSync | null, now: Date = new Date()): LiveOverlayYouTubeSync | undefined {
   if (track.sourceType !== "youtube") return undefined;
   const safeLink = safeLiveOverlayUrl(track.link);
   if (!safeLink || !track.youtubeVideoId || playerSync?.provider !== "youtube") return undefined;
@@ -382,6 +445,17 @@ function youtubeSyncForTrack(track: LiveOverlayTrackInput, playerSync?: LiveOver
   // YouTube host sync heartbeats every 2.5s while playing; 12s tolerates brief polling/network delays
   // but prevents old or mismatched player state from restarting a new overlay video at 0s.
   if (playerSync.videoId !== videoId || !syncTrackMatches || !syncIsFresh) return undefined;
+  return { ...playerSync, muted: true };
+}
+
+export function tiktokSyncForTrack(track: LiveOverlayTrackInput, playerSync?: LiveOverlayPlayerSync | null, now: Date = new Date()): LiveOverlayTikTokSync | undefined {
+  if (track.sourceType !== "tiktok") return undefined;
+  const postId = track.tiktokPostId ?? tiktokPostIdFromCanonicalUrl(track.link);
+  if (!postId || !/^\d{8,32}$/.test(postId) || playerSync?.provider !== "tiktok") return undefined;
+  const syncTrackMatches = !playerSync.trackId || !track.id || playerSync.trackId === track.id;
+  const syncAgeMs = now.getTime() - new Date(playerSync.updatedAt).getTime();
+  const syncIsFresh = Number.isFinite(syncAgeMs) && syncAgeMs >= 0 && syncAgeMs <= YOUTUBE_SYNC_STALE_AFTER_MS;
+  if (playerSync.postId !== postId || !syncTrackMatches || !syncIsFresh) return undefined;
   return { ...playerSync, muted: true };
 }
 
@@ -658,16 +732,18 @@ export function resolveLiveOverlayScene(input: ResolveLiveOverlaySceneInput): Re
   if (input.nowPlaying) {
     const safe = safeTrack(input.nowPlaying);
     const youtube = youtubeSyncForTrack(input.nowPlaying, input.playerSync, now);
+    const tiktok = youtube ? undefined : tiktokSyncForTrack(input.nowPlaying, input.playerSync, now);
     return scene({
       mode: "now_playing",
-      reason: youtube ? "Current YouTube track is loaded." : "Current track is loaded.",
+      reason: youtube ? "Current YouTube track is loaded." : tiktok ? "Current TikTok track is loaded." : "Current track is loaded.",
       title: "NOW PLAYING",
-      subtitle: youtube ? "YOUTUBE SIGNAL" : "BARCODE RADIO LIVE",
+      subtitle: youtube ? "YOUTUBE SIGNAL" : tiktok ? "TIKTOK SIGNAL" : "BARCODE RADIO LIVE",
       track: safe.track,
       artworkUrl: safe.artworkUrl,
       sourceUrl: safe.sourceUrl,
       youtube,
-      priority: youtube ? 60 : 50,
+      tiktok,
+      priority: youtube || tiktok ? 60 : 50,
       automatic: true,
       overrideActive: false,
     }, overlayState, wheelSpinsOwed, false);

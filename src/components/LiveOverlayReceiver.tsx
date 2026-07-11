@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { buildWheelSegments, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
-import type { LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
+import type { LiveOverlayTikTokSync, LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
 
 type YTPlayer = {
   loadVideoById: (options: { videoId: string; startSeconds?: number }) => void;
@@ -68,6 +68,18 @@ function showTrack(scene: ResolvedLiveOverlayScene): boolean {
   return Boolean((scene.mode === "now_playing" || scene.mode === "artist_card") && scene.track);
 }
 
+function isPlainTikTokMessage(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function tiktokOverlayErrorLabel(code?: number | null): string {
+  if (code === 1001) return "INVALID VIDEO SIGNAL";
+  if (code === 2001) return "TIKTOK SERVER ERROR";
+  if (code === 3001) return "VIDEO PLAYBACK ERROR";
+  if (code === 3002) return "TIKTOK PLAYER UNAVAILABLE";
+  return "TIKTOK PLAYER UNAVAILABLE";
+}
+
 function youtubeErrorLabel(code?: number | null): string {
   if (code === 2) return "INVALID VIDEO SIGNAL";
   if (code === 5) return "HTML5 PLAYBACK UNAVAILABLE";
@@ -78,6 +90,8 @@ function youtubeErrorLabel(code?: number | null): string {
 
 const OVERLAY_POLL_DELAY_MS = 650;
 const YOUTUBE_OVERLAY_READY_TIMEOUT_MS = 9_000;
+const TIKTOK_OVERLAY_READY_TIMEOUT_MS = 10_000;
+const TIKTOK_ORIGIN = "https://www.tiktok.com";
 const WHEEL_SPIN_START_DELAY_MS = 850;
 const WHEEL_AUDIO_FADE_OUT_MS = 10_000;
 const WHEEL_WINNER_CHEER_AUDIO_PATH = "/audio/wheel/WheelCheer.mp3";
@@ -630,6 +644,120 @@ function YouTubeOverlayPlayer({ sync }: { sync: LiveOverlayYouTubeSync }) {
   return <div className="live-overlay-youtube-player" data-youtube-wrapper={containerId} aria-label="Muted YouTube overlay player"><div ref={playerHostRef} className={playerError ? "live-overlay-youtube-host live-overlay-youtube-host--hidden" : "live-overlay-youtube-host"} />{playerError && <div className="live-overlay-youtube-fallback" role="status"><p>{playerError.message}</p><span>{playerError.code ? youtubeErrorLabel(playerError.code) : youtubeErrorLabel()}</span></div>}</div>;
 }
 
+function expectedTikTokTime(sync: LiveOverlayTikTokSync): number {
+  if (sync.playbackState !== "playing") return sync.currentTimeSeconds;
+  const elapsed = Math.max(0, (Date.now() - new Date(sync.updatedAt).getTime()) / 1000);
+  return sync.currentTimeSeconds + elapsed;
+}
+
+function TikTokOverlayPlayer({ sync, artistName, trackTitle }: { sync: LiveOverlayTikTokSync; artistName: string; trackTitle: string }) {
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const readyRef = useRef(false);
+  const latestSyncRef = useRef(sync);
+  const localTimeRef = useRef(sync.currentTimeSeconds);
+  const destroyedRef = useRef(false);
+  const generationRef = useRef(0);
+  const retryAutoplayRef = useRef(false);
+  const readyTimerRef = useRef<number | null>(null);
+  const failedPostRef = useRef<string | null>(null);
+  const [playerError, setPlayerError] = useState<{ code?: number; message: string } | null>(null);
+  const src = useMemo(() => {
+    const params = new URLSearchParams({ controls: "0", progress_bar: "0", play_button: "0", volume_control: "0", fullscreen_button: "0", timestamp: "0", autoplay: "0", music_info: "0", description: "0", rel: "0", native_context_menu: "0", closed_caption: "0", muted: "1" });
+    return `${TIKTOK_ORIGIN}/player/v1/${sync.postId}?${params.toString()}`;
+  }, [sync.postId]);
+
+  const clearReadyTimer = useCallback(() => {
+    if (readyTimerRef.current) window.clearTimeout(readyTimerRef.current);
+    readyTimerRef.current = null;
+  }, []);
+
+  const sendTikTokCommand = useCallback((type: "mute" | "play" | "pause" | "seekTo", value?: number) => {
+    iframeRef.current?.contentWindow?.postMessage({ type, value, "x-tiktok-player": true }, TIKTOK_ORIGIN);
+  }, []);
+
+  const markPlayerUnavailable = useCallback((message: string, code?: number) => {
+    clearReadyTimer();
+    readyRef.current = false;
+    failedPostRef.current = latestSyncRef.current.postId;
+    setPlayerError({ code, message });
+  }, [clearReadyTimer]);
+
+  const applyTikTokSync = useCallback((nextSync: LiveOverlayTikTokSync) => {
+    if (!readyRef.current || destroyedRef.current || failedPostRef.current === nextSync.postId) return;
+    const expected = expectedTikTokTime(nextSync);
+    sendTikTokCommand("mute");
+    if (!Number.isFinite(localTimeRef.current) || Math.abs(localTimeRef.current - expected) > 1.75 || nextSync.playbackState === "stopped") {
+      sendTikTokCommand("seekTo", nextSync.playbackState === "playing" ? expected : nextSync.currentTimeSeconds);
+      localTimeRef.current = nextSync.playbackState === "playing" ? expected : nextSync.currentTimeSeconds;
+    }
+    if (nextSync.playbackState === "playing") sendTikTokCommand("play");
+    else sendTikTokCommand("pause");
+  }, [sendTikTokCommand]);
+
+  useEffect(() => {
+    if (failedPostRef.current !== sync.postId) setPlayerError(null);
+    latestSyncRef.current = sync;
+    window.setTimeout(() => applyTikTokSync(sync), 0);
+  }, [applyTikTokSync, sync]);
+
+  useEffect(() => {
+    destroyedRef.current = false;
+    readyRef.current = false;
+    retryAutoplayRef.current = false;
+    const generation = generationRef.current + 1;
+    generationRef.current = generation;
+    readyTimerRef.current = window.setTimeout(() => {
+      if (generationRef.current === generation) markPlayerUnavailable("TIKTOK PLAYER UNAVAILABLE");
+    }, TIKTOK_OVERLAY_READY_TIMEOUT_MS);
+    function onMessage(event: MessageEvent) {
+      if (event.origin !== TIKTOK_ORIGIN) return;
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      const payload = event.data;
+      if (!isPlainTikTokMessage(payload)) return;
+      if (payload["x-tiktok-player"] !== true) return;
+      const type = payload.type;
+      if (type !== "onPlayerReady" && type !== "onStateChange" && type !== "onCurrentTime" && type !== "onPlayerError") return;
+      if (type === "onPlayerReady") {
+        clearReadyTimer();
+        readyRef.current = true;
+        sendTikTokCommand("mute");
+        applyTikTokSync(latestSyncRef.current);
+        return;
+      }
+      if (type === "onCurrentTime") {
+        const value = payload.value;
+        if (!isPlainTikTokMessage(value)) return;
+        const currentTime = typeof value.currentTime === "number" ? value.currentTime : Number(value.currentTime);
+        if (Number.isFinite(currentTime) && currentTime >= 0) localTimeRef.current = currentTime;
+        return;
+      }
+      if (type === "onPlayerError") {
+        const value = payload.value;
+        if (!isPlainTikTokMessage(value)) return;
+        const code = typeof value.errorCode === "number" ? value.errorCode : Number(value.errorCode);
+        const safeCode = Number.isFinite(code) ? code : undefined;
+        if (safeCode === 3002 && !retryAutoplayRef.current && latestSyncRef.current.playbackState === "playing") {
+          retryAutoplayRef.current = true;
+          sendTikTokCommand("mute");
+          window.setTimeout(() => applyTikTokSync(latestSyncRef.current), 500);
+          return;
+        }
+        markPlayerUnavailable(tiktokOverlayErrorLabel(safeCode), safeCode);
+      }
+    }
+    window.addEventListener("message", onMessage);
+    return () => {
+      destroyedRef.current = true;
+      generationRef.current += 1;
+      readyRef.current = false;
+      clearReadyTimer();
+      window.removeEventListener("message", onMessage);
+    };
+  }, [applyTikTokSync, clearReadyTimer, markPlayerUnavailable, sendTikTokCommand, sync.postId, sync.trackId]);
+
+  return <div className="live-overlay-tiktok-player" aria-label="Muted TikTok overlay player"><iframe ref={iframeRef} title={`TikTok overlay for ${artistName} — ${trackTitle}`} src={src} className={playerError ? "live-overlay-tiktok-iframe live-overlay-tiktok-iframe--hidden" : "live-overlay-tiktok-iframe"} allow="fullscreen; autoplay; encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />{playerError && <div className="live-overlay-tiktok-fallback" role="status"><p>{artistName}</p><strong>{trackTitle}</strong><span>{playerError.message}</span></div>}</div>;
+}
+
 export function LiveOverlayReceiver() {
   const [scene, setScene] = useState<ResolvedLiveOverlayScene>(fallbackScene());
   const [connected, setConnected] = useState(false);
@@ -682,6 +810,7 @@ export function LiveOverlayReceiver() {
   const label = useMemo(() => modeLabel(scene.mode), [scene.mode]);
   const trackVisible = showTrack(scene);
   const youtubeVisible = scene.mode === "now_playing" && scene.automatic && scene.youtube && scene.track;
+  const tiktokVisible = scene.mode === "now_playing" && scene.automatic && scene.tiktok && scene.track;
   const wheelVisible = Boolean(scene.wheelCeremony);
   const shortYouTube = scene.track?.youtubePresentation === "short";
   const youtubeSceneClass = shortYouTube ? "live-overlay-youtube-scene live-overlay-youtube-scene--short" : "live-overlay-youtube-scene";
@@ -766,7 +895,7 @@ export function LiveOverlayReceiver() {
 
   return (
     <div className="live-overlay-shell" aria-label="BARCODE Radio live overlay receiver">
-      <section className={`live-overlay-stage ${frameTone(scene.mode)} ${youtubeVisible ? "live-overlay-stage--youtube" : ""} ${wheelVisible ? "live-overlay-stage--wheel-ceremony" : ""}`}>
+      <section className={`live-overlay-stage ${frameTone(scene.mode)} ${youtubeVisible ? "live-overlay-stage--youtube" : ""} ${tiktokVisible ? "live-overlay-stage--tiktok" : ""} ${wheelVisible ? "live-overlay-stage--wheel-ceremony" : ""}`}>
         <div className="live-overlay-noise" aria-hidden="true" />
         <div className="live-overlay-corners" aria-hidden="true" />
         <div className="live-overlay-header">
@@ -783,6 +912,17 @@ export function LiveOverlayReceiver() {
                 <YouTubeOverlayPlayer sync={scene.youtube} />
               </div>
               <div className="live-overlay-youtube-lower">
+                <p className="live-overlay-mode">{label}</p>
+                <h1>{scene.track.artistName}</h1>
+                <h2>{scene.track.trackTitle}</h2>
+              </div>
+            </div>
+          ) : tiktokVisible && scene.tiktok && scene.track ? (
+            <div className="live-overlay-tiktok-scene live-overlay-vertical-video-scene">
+              <div className="live-overlay-tiktok-viewport">
+                <TikTokOverlayPlayer sync={scene.tiktok} artistName={scene.track.artistName} trackTitle={scene.track.trackTitle} />
+              </div>
+              <div className="live-overlay-tiktok-rail">
                 <p className="live-overlay-mode">{label}</p>
                 <h1>{scene.track.artistName}</h1>
                 <h2>{scene.track.trackTitle}</h2>

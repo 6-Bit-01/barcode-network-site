@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { buildWheelSegments, derangedWheelCandidateOrder, resolveLiveOverlayScene, serverStampYouTubeSync, youtubePresentationFromUrl, WHEEL_RIGHT_POINTER_ANGLE_DEGREES, wheelFinalRotationForSegment, wheelFinalRotationForSlice, wheelSegmentAtPointer, wheelSliceIndexAtPointer, wheelUprightLabelRotationDegrees } from "../src/lib/live-overlay-resolver.ts";
+import { buildWheelSegments, derangedWheelCandidateOrder, resolveLiveOverlayScene, serverStampTikTokSync, serverStampYouTubeSync, youtubePresentationFromUrl, WHEEL_RIGHT_POINTER_ANGLE_DEGREES, wheelFinalRotationForSegment, wheelFinalRotationForSlice, wheelSegmentAtPointer, wheelSliceIndexAtPointer, wheelUprightLabelRotationDegrees } from "../src/lib/live-overlay-resolver.ts";
 
 const session = { sessionId: "s1", status: "open", queueOpen: true, wheelSpinsOwed: 0, sponsorBreakStatus: "not_due", broadcastPhase: "broadcast_active" };
 const youtubeTrack = { id: "yt1", submittedArtistName: "Artist Name", submittedSongTitle: "Video Track", sourceType: "youtube", sourceArtworkUrl: "https://img.youtube.com/vi/abcdefghijk/hqdefault.jpg", link: "https://youtube.com/watch?v=abcdefghijk", durationLabel: "3:30", youtubeVideoId: "abcdefghijk" };
@@ -101,6 +101,38 @@ assert.equal(zeroReadOne, undefined, "first overlay read without sync has no gen
 assert.equal(zeroReadTwo, undefined, "repeated overlay reads do not generate a new zero-time sync");
 
 const serverReceipt = new Date("2026-07-10T00:01:00.000Z");
+const tiktokTrack = { id: "tt1", submittedArtistName: "TikTok Artist", submittedSongTitle: "Vertical Track", sourceType: "tiktok", sourceArtworkUrl: "https://www.tiktok.com/example.jpg", link: "https://www.tiktok.com/@scout2015/video/6718335390845095173", durationLabel: "0:59", tiktokPostId: "6718335390845095173" };
+const freshTikTokSync = { provider: "tiktok", postId: "6718335390845095173", trackId: "tt1", playbackState: "playing", currentTimeSeconds: 12, durationSeconds: 59, updatedAt: "2026-07-10T00:00:06.000Z", muted: true };
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: tiktokTrack, now: freshNow }).tiktok, undefined, "TikTok track without sync resolves to normal Now Playing card");
+const matchingTikTok = resolveLiveOverlayScene({ currentSession: session, nowPlaying: tiktokTrack, playerSync: freshTikTokSync, now: freshNow });
+assert.equal(matchingTikTok.tiktok?.postId, "6718335390845095173", "fresh matching TikTok sync is accepted");
+assert.equal(matchingTikTok.youtube, undefined, "TikTok sync scene does not also contain YouTube sync");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: tiktokTrack, playerSync: { ...freshTikTokSync, postId: "6718335390845095174" }, now: freshNow }).tiktok, undefined, "TikTok post ID mismatch is rejected");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: tiktokTrack, playerSync: { ...freshTikTokSync, trackId: "other" }, now: freshNow }).tiktok, undefined, "TikTok track ID mismatch is rejected");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: tiktokTrack, playerSync: { ...freshTikTokSync, updatedAt: "2026-07-10T00:00:00.000Z" }, now: new Date("2026-07-10T00:00:20.000Z") }).tiktok, undefined, "stale TikTok sync is rejected");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: tiktokTrack, playerSync: { ...freshTikTokSync, updatedAt: "2099-01-01T00:00:00.000Z" }, now: freshNow }).tiktok, undefined, "future TikTok sync timestamp is rejected safely");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: tiktokTrack, playerSync: { ...freshTikTokSync, updatedAt: "not-a-date" }, now: freshNow }).tiktok, undefined, "invalid TikTok sync timestamp is rejected safely");
+const pausedTikTok = { ...freshTikTokSync, playbackState: "paused", currentTimeSeconds: 42 };
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: tiktokTrack, playerSync: pausedTikTok, now: freshNow }).tiktok?.currentTimeSeconds, 42, "paused TikTok sync preserves the reported time");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: tiktokTrack, playerSync: { ...pausedTikTok, updatedAt: "2026-07-10T00:00:18.000Z" }, now: new Date("2026-07-10T00:00:30.000Z") }).tiktok?.playbackState, "paused", "paused TikTok heartbeat remains fresh");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: tiktokTrack, playerSync: freshTikTokSync, now: freshNow }).tiktok?.playbackState, "playing", "playing TikTok sync remains playing");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: tiktokTrack, playerSync: { ...freshTikTokSync, playbackState: "stopped" }, now: freshNow }).tiktok?.playbackState, "stopped", "stopped TikTok sync remains stopped");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: spotifyTrack, playerSync: freshTikTokSync, now: freshNow }).tiktok, undefined, "non-TikTok track rejects TikTok sync");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: tiktokTrack, playerSync: freshSync, now: freshNow }).tiktok, undefined, "TikTok track rejects YouTube sync");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: youtubeTrack, playerSync: freshTikTokSync, now: freshNow }).youtube, undefined, "YouTube track rejects TikTok sync");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: { ...tiktokTrack, id: "tt2", tiktokPostId: "6718335390845095174", link: "https://www.tiktok.com/@scout2015/video/6718335390845095174" }, playerSync: freshTikTokSync, now: freshNow }).tiktok, undefined, "track changes remove obsolete TikTok authority");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: tiktokTrack, now: freshNow }).tiktok, undefined, "repeated reads without sync do not fabricate zero-time TikTok sync");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, nowPlaying: tiktokTrack, now: freshNow }).tiktok, undefined, "second read without sync does not fabricate TikTok sync");
+assert.equal(serverStampTikTokSync({ ...freshTikTokSync, updatedAt: "2099-01-01T00:00:00.000Z" }, serverReceipt)?.updatedAt, serverReceipt.toISOString(), "TikTok server stamping replaces client timestamps");
+assert.equal(serverStampTikTokSync({ ...freshTikTokSync, postId: "abc" }, serverReceipt), null, "invalid TikTok post IDs are rejected");
+assert.equal(serverStampTikTokSync({ ...freshTikTokSync, currentTimeSeconds: -1 }, serverReceipt), null, "negative TikTok current times are rejected");
+assert.equal(serverStampTikTokSync({ ...freshTikTokSync, currentTimeSeconds: Number.NaN }, serverReceipt), null, "NaN TikTok current times are rejected");
+assert.equal(serverStampTikTokSync({ ...freshTikTokSync, durationSeconds: -1 }, serverReceipt)?.durationSeconds, undefined, "invalid TikTok duration is discarded");
+assert.equal(resolveLiveOverlayScene({ currentSession: { ...session, sponsorBreakStatus: "running" }, nowPlaying: tiktokTrack, playerSync: freshTikTokSync, now: freshNow }).mode, "sponsor", "Sponsor override beats TikTok playback");
+assert.equal(resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelOverlayActive: true }, nowPlaying: tiktokTrack, playerSync: freshTikTokSync, now: freshNow }).mode, "wheel_ready", "Wheel override beats TikTok playback");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, overlayState: { systemMessageActive: true, systemMessage: "Hold" }, nowPlaying: tiktokTrack, playerSync: freshTikTokSync, now: freshNow }).mode, "system_message", "System message override beats TikTok playback");
+assert.equal(resolveLiveOverlayScene({ currentSession: session, overlayState: { systemMessageActive: false }, nowPlaying: tiktokTrack, playerSync: freshTikTokSync, now: freshNow }).tiktok?.postId, "6718335390845095173", "Clearing an override returns to synchronized TikTok when sync remains fresh");
+
 assert.equal(serverStampYouTubeSync({ ...freshSync, updatedAt: "2099-01-01T00:00:00.000Z" }, serverReceipt)?.updatedAt, serverReceipt.toISOString(), "server receipt time replaces future client sync timestamp");
 assert.equal(serverStampYouTubeSync({ ...freshSync, updatedAt: "2000-01-01T00:00:00.000Z" }, serverReceipt)?.updatedAt, serverReceipt.toISOString(), "server receipt time replaces old client sync timestamp");
 assert.equal(serverStampYouTubeSync({ ...freshSync, updatedAt: "not-a-date" }, serverReceipt)?.updatedAt, serverReceipt.toISOString(), "malformed client timestamp does not break server-stamped sync");
@@ -296,3 +328,31 @@ const cancelled = resolveLiveOverlayScene({ currentSession: { ...session, wheelS
 assert.equal(cancelled.mode, "now_playing", "cancelled wheel returns to automatic overlay mode without a wheel scene");
 
 console.log("live overlay resolver tests passed");
+
+const sourceAdmin = readFileSync("src/components/AdminRadioQueueControl.tsx", "utf8");
+const sourceReceiver = readFileSync("src/components/LiveOverlayReceiver.tsx", "utf8");
+const sourceCss = readFileSync("src/app/overlay/live/overlay-live.css", "utf8");
+assert.equal(sourceAdmin.includes("buildOverlayTikTokSync") && sourceAdmin.includes("parseTikTokVideoUrl(entry.link)") && sourceAdmin.includes("postId: parsedPostId"), true, "Admin TikTok publisher uses the validated post ID");
+assert.equal(sourceAdmin.includes("value.currentTime") && sourceAdmin.includes("value.duration"), true, "Admin publisher uses official event.data.value");
+assert.equal(sourceAdmin.includes('type === "onPlayerReady"') && sourceAdmin.includes('type === "onStateChange"') && sourceAdmin.includes('type === "onCurrentTime"'), true, "Admin publishes on ready/state/current-time transitions");
+assert.equal(sourceAdmin.includes("window.setInterval") && sourceAdmin.includes("2500") && sourceAdmin.includes('lastStablePlaybackStateRef.current === "paused"'), true, "Heartbeat exists while playing and paused");
+assert.equal(!sourceAdmin.includes('publishStable("playing")') || !sourceAdmin.includes('currentTimeSeconds: 0, playbackState: "playing"'), true, "No synthetic playing-at-zero publication exists");
+assert.equal(sourceReceiver.includes("TIKTOK_ORIGIN") && sourceReceiver.includes("postMessage({ type, value") && !sourceReceiver.includes("postMessage({type"), true, "Overlay receiver sends exact targetOrigin");
+assert.equal(!sourceReceiver.includes('postMessage({type: "seekTo"') && !sourceReceiver.includes(", '*'") && !sourceReceiver.includes(', "*"'), true, "Overlay receiver never uses wildcard postMessage target");
+assert.equal(sourceReceiver.includes("event.origin !== TIKTOK_ORIGIN"), true, "Overlay receiver validates event.origin");
+assert.equal(sourceReceiver.includes("event.source !== iframeRef.current?.contentWindow"), true, "Overlay receiver validates event.source");
+assert.equal(sourceReceiver.includes('payload["x-tiktok-player"] !== true'), true, "Overlay receiver validates x-tiktok-player");
+assert.equal(sourceReceiver.includes('sendTikTokCommand("mute")'), true, "Overlay receiver sends mute");
+assert.equal(sourceReceiver.includes('sendTikTokCommand("play")'), true, "Overlay receiver handles play");
+assert.equal(sourceReceiver.includes('sendTikTokCommand("pause")'), true, "Overlay receiver handles pause");
+assert.equal(sourceReceiver.includes('sendTikTokCommand("seekTo"'), true, "Overlay receiver handles seekTo");
+assert.equal(!sourceReceiver.includes("unMute"), true, "Overlay receiver does not send unMute");
+assert.equal(!sourceReceiver.includes("updatePlayerSync") && !sourceReceiver.includes("publishOverlayTikTokSync"), true, "Overlay receiver does not publish sync back to the server");
+assert.equal(sourceReceiver.includes("sync.postId") && sourceReceiver.includes("sync.trackId") && sourceReceiver.includes("latestSyncRef.current = sync"), true, "TikTok iframe is not remounted on heartbeat/current-time updates");
+assert.equal(sourceReceiver.includes("TIKTOK_OVERLAY_READY_TIMEOUT_MS") && sourceReceiver.includes("10_000"), true, "TikTok readiness timeout exists");
+assert.equal(sourceReceiver.includes("live-overlay-tiktok-fallback") && sourceReceiver.includes("tiktokOverlayErrorLabel"), true, "TikTok controlled fallback exists");
+assert.equal(sourceCss.includes("live-overlay-tiktok-rail") && sourceCss.includes("overflow-wrap: anywhere"), true, "TikTok vertical layout has a separate text rail");
+assert.equal(sourceReceiver.includes("YouTubeOverlayPlayer") && sourceAdmin.includes("AdminYouTubePlayer"), true, "Existing YouTube player implementation remains present");
+assert.equal(sourceCss.includes("live-overlay-youtube-scene--short"), true, "Existing YouTube Shorts CSS remains present");
+assert.equal(sourceAdmin.includes("Open Link") && sourceAdmin.includes("Copy Link") && sourceAdmin.includes("AdminTikTokPlayer"), true, "Existing PlayerDock TikTok behavior from PR #248 remains present");
+assert.equal(!sourceAdmin.includes("queue-brain") && !sourceReceiver.includes("queue-brain"), true, "No queue-brain files were changed unnecessarily");

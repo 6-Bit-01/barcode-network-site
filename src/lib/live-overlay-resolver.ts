@@ -6,6 +6,9 @@ export type WheelCeremonyStatus = "idle" | "ready" | "reencrypting" | "spinning"
 
 export const WHEEL_RIGHT_POINTER_ANGLE_DEGREES = 90;
 export const YOUTUBE_SYNC_STALE_AFTER_MS = 12_000;
+export const TIKTOK_SYNCHRONIZED_START_DELAY_MS = 1_500;
+export const TIKTOK_MIN_SYNCHRONIZED_START_DELAY_MS = 750;
+export const TIKTOK_MAX_SYNCHRONIZED_START_DELAY_MS = 2_500;
 
 export type YouTubePresentation = "standard" | "short";
 
@@ -289,6 +292,8 @@ export interface LiveOverlayTikTokSync {
   muted: true;
   clientUpdatedAt?: string;
   correctionReason?: LiveOverlaySyncCorrectionReason;
+  scheduledStartAt?: string;
+  startToken?: string;
 }
 
 export type LiveOverlayPlayerSync = LiveOverlayYouTubeSync | LiveOverlayTikTokSync;
@@ -315,7 +320,17 @@ export function serverStampYouTubeSync(input: unknown, receivedAt: Date = new Da
   };
 }
 
-export function serverStampTikTokSync(input: unknown, receivedAt: Date = new Date()): LiveOverlayTikTokSync | null {
+function tiktokStartToken(postId: string, trackId: string | undefined, receivedAt: Date): string {
+  const source = `${postId}:${trackId ?? "trackless"}:${receivedAt.toISOString()}`;
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `tt-start-${(hash >>> 0).toString(36)}`;
+}
+
+export function serverStampTikTokSync(input: unknown, receivedAt: Date = new Date(), startDelayMs?: number): LiveOverlayTikTokSync | null {
   const raw = input as Partial<LiveOverlayTikTokSync> | null;
   if (!raw || typeof raw !== "object" || raw.provider !== "tiktok") return null;
   const postId = typeof raw.postId === "string" && /^\d{8,32}$/.test(raw.postId) ? raw.postId : null;
@@ -323,16 +338,24 @@ export function serverStampTikTokSync(input: unknown, receivedAt: Date = new Dat
   if (raw.playbackState !== "playing" && raw.playbackState !== "paused" && raw.playbackState !== "stopped") return null;
   if (typeof raw.currentTimeSeconds !== "number" || !Number.isFinite(raw.currentTimeSeconds) || raw.currentTimeSeconds < 0) return null;
   const durationSeconds = typeof raw.durationSeconds === "number" && Number.isFinite(raw.durationSeconds) && raw.durationSeconds > 0 ? raw.durationSeconds : undefined;
+  const trackId = cleanSyncTrackId(raw.trackId);
+  const safeStartDelayMs = typeof startDelayMs === "number" && Number.isFinite(startDelayMs) && raw.playbackState === "playing" ? Math.max(TIKTOK_MIN_SYNCHRONIZED_START_DELAY_MS, Math.min(TIKTOK_MAX_SYNCHRONIZED_START_DELAY_MS, startDelayMs)) : undefined;
+  const rawScheduledStartAtMs = typeof raw.scheduledStartAt === "string" ? new Date(raw.scheduledStartAt).getTime() : Number.NaN;
+  const mayPreserveServerSchedule = typeof raw.updatedAt === "string" && raw.updatedAt === receivedAt.toISOString() && Number.isFinite(rawScheduledStartAtMs) && typeof raw.startToken === "string" && /^tt-start-[a-z0-9]+$/.test(raw.startToken);
+  const scheduledStartAt = safeStartDelayMs === undefined ? mayPreserveServerSchedule ? raw.scheduledStartAt : undefined : new Date(receivedAt.getTime() + safeStartDelayMs).toISOString();
+  const startToken = scheduledStartAt ? safeStartDelayMs === undefined && mayPreserveServerSchedule ? raw.startToken : tiktokStartToken(postId, trackId, receivedAt) : undefined;
   return {
     provider: "tiktok",
     postId,
-    trackId: cleanSyncTrackId(raw.trackId),
+    trackId,
     playbackState: raw.playbackState,
     currentTimeSeconds: raw.currentTimeSeconds,
     durationSeconds,
     updatedAt: receivedAt.toISOString(),
     muted: true,
     correctionReason: normalizeLiveOverlaySyncCorrectionReason(raw.correctionReason),
+    scheduledStartAt,
+    startToken,
   };
 }
 
@@ -416,6 +439,7 @@ export interface ResolvedLiveOverlayScene {
   videoUrl?: string;
   youtube?: LiveOverlayYouTubeSync;
   tiktok?: LiveOverlayTikTokSync;
+  tiktokPreload?: { postId: string; trackId?: string };
   wheelCeremony?: ResolvedWheelCeremonyScene;
   priority: number;
   automatic: boolean;
@@ -824,6 +848,7 @@ export function resolveLiveOverlayScene(input: ResolveLiveOverlaySceneInput): Re
       sourceUrl: safe.sourceUrl,
       youtube,
       tiktok,
+      tiktokPreload: input.nowPlaying.sourceType === "tiktok" && input.nowPlaying.tiktokPostId && /^\d{8,32}$/.test(input.nowPlaying.tiktokPostId) ? { postId: input.nowPlaying.tiktokPostId, trackId: input.nowPlaying.id } : undefined,
       priority: youtube || tiktok ? 60 : 50,
       automatic: true,
       overrideActive: false,

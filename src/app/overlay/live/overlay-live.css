@@ -1218,6 +1218,29 @@ body > div:last-of-type {
   border: 0;
 }
 
+.live-overlay-tiktok-player--preload {
+  position: absolute;
+  top: -200vh;
+  left: -200vw;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.live-overlay-tiktok-player--active {
+  top: calc(8vmin + 3vmin);
+  bottom: calc(8vmin + 3vmin);
+  left: calc(8vmin + 3vmin);
+  width: min(calc((100vw - 22vmin - 3vmin) * 0.62), 42.75vmin);
+  height: auto;
+  aspect-ratio: 9 / 16;
+  z-index: 3;
+  overflow: hidden;
+  background: #000;
+}
+
 .live-overlay-tiktok-iframe--hidden {
   opacity: 0;
   pointer-events: none;

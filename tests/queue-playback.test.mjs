@@ -1607,6 +1607,26 @@ test("public POST rejects missing legal acceptance", async () => {
   assert.equal(payload.error, "Legal acceptance is required before submitting to the queue.");
 });
 
+test("public POST rejects invalid Apple Music host pages before creating tracks", async () => {
+  const sessionId = await freshOpenSession("invalid apple page");
+  const before = await queue.getRadioQueueState();
+  const response = await queueApi.submitTrackFromBody({
+    sessionId,
+    mode: "link",
+    artist: "Apple Artist",
+    title: "Album Page",
+    tiktokHandle: "@invalidapple",
+    link: "https://music.apple.com/us/album/example-album/123456789",
+    ...legalAcceptanceBody(),
+  });
+  const payload = await jsonOf(response);
+  const after = await queue.getRadioQueueState();
+  assert.equal(response.status, 400);
+  assert.equal(payload.code, "invalid_apple_music_song_url");
+  assert.equal(payload.error, "Use a direct Apple Music song link. Album, artist, playlist, and station pages are not accepted.");
+  assert.equal(after.queue.length, before.queue.length);
+});
+
 test("public POST accepts current active sessionId", async () => {
   const sessionId = await freshOpenSession("current session");
   const response = await queueApi.submitTrackFromBody({
@@ -2058,4 +2078,106 @@ test("admin and public TikTok component source assertions remain scoped", () => 
   assert.match(adminSource, /function AdminYouTubePlayer/);
   assert.match(formSource, /TikTok video or Short/);
   assert.match(publicSource, /WATCH ON TIKTOK/);
+});
+
+const appleMusicUrl = "https://music.apple.com/us/album/example-album/123456789?i=987654321";
+
+function mockAppleMusicCatalog(body, init = {}) {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    if (init.throwAbort) throw new DOMException("aborted", "AbortError");
+    return new Response(typeof body === "string" ? body : JSON.stringify(body), {
+      status: init.status ?? 200,
+      headers: { "content-type": init.contentType ?? "application/json", ...(init.contentLength ? { "content-length": init.contentLength } : {}) },
+    });
+  };
+  return { calls, restore: () => { globalThis.fetch = originalFetch; } };
+}
+
+function withAppleToken(value, callback) {
+  const original = process.env.APPLE_MUSIC_DEVELOPER_TOKEN;
+  if (value === undefined) delete process.env.APPLE_MUSIC_DEVELOPER_TOKEN;
+  else process.env.APPLE_MUSIC_DEVELOPER_TOKEN = value;
+  return Promise.resolve(callback()).finally(() => {
+    if (original === undefined) delete process.env.APPLE_MUSIC_DEVELOPER_TOKEN;
+    else process.env.APPLE_MUSIC_DEVELOPER_TOKEN = original;
+  });
+}
+
+test("Apple Music direct song submissions use provider identity and duplicate-safe normalization", async () => withAppleToken(undefined, async () => {
+  await freshOpenSession("apple duplicate", { showStarted: false });
+  const first = await queue.submitRadioTrack({ artist: "Submitted Artist", title: "Submitted Song", tiktokHandle: "@appledup1", link: `${appleMusicUrl}&utm_source=x#frag` });
+  assert.equal(first.sourceType, "apple_music");
+  assert.equal(first.providerId, "apple_music:song:987654321");
+  assert.equal(first.normalizedSourceKey, "apple_music:song:987654321");
+  assert.equal(queue.normalizeQueueSourceKey("https://music.apple.com/gb/album/other-slug/123456789?i=987654321&utm_medium=y#x"), "apple_music:song:987654321");
+  assert.equal(first.submittedArtistName, "Submitted Artist");
+  assert.equal(first.submittedSongTitle, "Submitted Song");
+  assert.equal(first.detectedArtistName, null);
+  assert.equal(first.detectedSongTitle, null);
+  assert.equal(first.detectedDurationSeconds, null);
+  assert.equal(first.durationIsEstimate, true);
+  assert.equal(first.estimatedDurationSeconds, 300);
+  await withFakeNow(new Date(Date.now() + 301_000), async () => {
+    await assert.rejects(() => queue.submitRadioTrack({ artist: "Apple Artist", title: "Tracking", tiktokHandle: "@appledup2", link: `${appleMusicUrl}&utm_campaign=x` }), /Duplicate transmission/);
+    await assert.rejects(() => queue.submitRadioTrack({ artist: "Apple Artist", title: "Storefront", tiktokHandle: "@appledup3", link: "https://music.apple.com/gb/album/example-album/123456789?i=987654321" }), /Duplicate transmission/);
+    await assert.rejects(() => queue.submitRadioTrack({ artist: "Apple Artist", title: "Slug", tiktokHandle: "@appledup4", link: "https://music.apple.com/us/album/harmless-slug/123456789?i=987654321" }), /Duplicate transmission/);
+  });
+}));
+
+test("Apple Music catalog metadata is optional, supplemental, safe, and fetched once", async () => withAppleToken("secret-dev-token", async () => {
+  const mock = mockAppleMusicCatalog({ data: [{ attributes: { artistName: "Catalog Artist", name: "Catalog Song", durationInMillis: 201500, artwork: { url: "https://is1-ssl.mzstatic.com/image/thumb/Music/{w}x{h}bb.jpg" } } }] });
+  try {
+    const track = await queue.createQueueTrack({ artist: "Submitted Artist", title: "Submitted Song", tiktokHandle: "@applemeta", link: appleMusicUrl });
+    assert.equal(mock.calls.length, 1);
+    assert.match(mock.calls[0].url, /api\.music\.apple\.com\/v1\/catalog\/us\/songs\/987654321/);
+    assert.equal(mock.calls[0].options.headers.Authorization, "Bearer secret-dev-token");
+    assert.equal(JSON.stringify(track).includes("secret-dev-token"), false);
+    assert.equal(track.detectedArtistName, "Catalog Artist");
+    assert.equal(track.detectedSongTitle, "Catalog Song");
+    assert.equal(track.providerTitle, "Catalog Song");
+    assert.equal(track.detectedDurationSeconds, 202);
+    assert.equal(track.durationIsEstimate, false);
+    assert.equal(track.durationSource, "apple_music_api");
+    assert.equal(track.sourceArtworkUrl, "https://is1-ssl.mzstatic.com/image/thumb/Music/600x600bb.jpg");
+    assert.equal(track.submittedArtistName, "Submitted Artist");
+    assert.equal(track.submittedSongTitle, "Submitted Song");
+  } finally { mock.restore(); }
+}));
+
+test("Apple Music metadata failures accept track with internal estimate", async () => {
+  for (const scenario of [
+    { token: undefined, body: { data: [] }, expectCalls: 0 },
+    { token: "token", body: { errors: [{ detail: "missing" }] }, status: 404, expectCalls: 1 },
+    { token: "token", body: "{bad json", expectCalls: 1 },
+    { token: "token", body: { data: [{ attributes: { name: "Oversize" } }] }, contentLength: String(300 * 1024), expectCalls: 1 },
+    { token: "token", body: { data: [] }, expectCalls: 1 },
+    { token: "token", body: {}, throwAbort: true, expectCalls: 1 },
+    { token: "token", body: { data: [{ attributes: { artwork: { url: "https://is1-ssl.mzstatic.com/image/thumb/Music/unbounded.jpg" } } }] }, expectCalls: 1 },
+  ]) {
+    await withAppleToken(scenario.token, async () => {
+      const mock = mockAppleMusicCatalog(scenario.body, scenario);
+      try {
+        const track = await queue.createQueueTrack({ artist: "Fallback Artist", title: "Fallback Song", tiktokHandle: `@applefallback${Math.random().toString(36).slice(2, 8)}`, link: appleMusicUrl });
+        assert.equal(mock.calls.length, scenario.expectCalls);
+        assert.equal(track.detectedDurationSeconds, null);
+        assert.equal(track.durationIsEstimate, true);
+        assert.equal(track.estimatedDurationSeconds, 300);
+        if (scenario.body?.data?.[0]?.attributes?.artwork) assert.equal(track.sourceArtworkUrl, null);
+      } finally { mock.restore(); }
+    });
+  }
+});
+
+test("admin and public Apple Music component source assertions remain external-open only", () => {
+  const adminSource = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
+  const publicSource = fs.readFileSync(path.join(projectRoot, "src/components/PublicQueueSession.tsx"), "utf8");
+  const overlayFiles = ["src/components/LiveOverlayReceiver.tsx", "src/lib/live-overlay.ts", "src/lib/live-overlay-resolver.ts", "src/app/api/admin/overlay/live/route.ts", "src/app/api/overlay/live/route.ts", "src/app/overlay/live/overlay-live.css"];
+  assert.match(adminSource, /entry\.sourceType === "apple_music"\) return "Apple Music"/);
+  assert.match(publicSource, /track\.sourceType === "apple_music"\) return "Apple Music"/);
+  assert.match(adminSource, /entry\.sourceType === "apple_music"\) return null/);
+  assert.doesNotMatch(adminSource, /AppleMusicPlayer|music\.apple\.com\/embed/);
+  for (const file of overlayFiles) assert.doesNotMatch(fs.readFileSync(path.join(projectRoot, file), "utf8"), /apple_music|Apple Music|music\.apple\.com/);
 });

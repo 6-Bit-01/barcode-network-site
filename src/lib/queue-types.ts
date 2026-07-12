@@ -3,11 +3,11 @@
 // ============================================================
 
 export type QueueTier = "free" | "featured" | "fastlane" | "frontrow";
-export type QueueSourceType = "upload" | "link" | "youtube" | "soundcloud" | "spotify" | "tiktok" | "other";
+export type QueueSourceType = "upload" | "link" | "youtube" | "soundcloud" | "spotify" | "tiktok" | "apple_music" | "other";
 export type QueueLane = "priority" | "wheel" | "regular";
 export type QueueNonPriorityLane = "wheel" | "regular";
 export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | "next" | "pending" | "played" | "refunded" | "expired";
-export type QueueDurationSource = "upload_metadata" | "file_metadata" | "youtube" | "soundcloud" | "spotify" | "youtube_api" | "spotify_api" | "soundcloud_api" | "direct_metadata" | "provider_metadata" | "internal_estimate" | "estimated" | "unknown";
+export type QueueDurationSource = "upload_metadata" | "file_metadata" | "youtube" | "soundcloud" | "spotify" | "youtube_api" | "spotify_api" | "soundcloud_api" | "apple_music_api" | "direct_metadata" | "provider_metadata" | "internal_estimate" | "estimated" | "unknown";
 export type QueueSessionStatus = "prepared" | "open" | "closed" | "archived";
 export type QueueBroadcastPhase = "warmup" | "submission_window" | "broadcast_active" | "ended";
 export type PriorityUpgradeStatus = "none" | "requested" | "manual" | "checkout_pending" | "paid" | "paid_needs_attention" | "failed" | "refunded";
@@ -294,6 +294,41 @@ export function parseTikTokVideoUrl(value?: string | null): ParsedTikTokVideoUrl
     return null;
   }
 }
+export interface ParsedAppleMusicSongUrl {
+  storefront: string;
+  albumSlug: string;
+  albumId: string;
+  songId: string;
+  canonicalSourceUrl: string;
+  providerId: string;
+}
+
+const APPLE_MUSIC_ID_PATTERN = /^\d{1,32}$/;
+const APPLE_MUSIC_STOREFRONT_PATTERN = /^[a-z]{2}(?:-[a-z0-9]{2,8})?$/i;
+const APPLE_MUSIC_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,199}$/;
+
+export function parseAppleMusicSongUrl(value?: string | null): ParsedAppleMusicSongUrl | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "https:") return null;
+    if (url.hostname !== "music.apple.com") return null;
+    if (url.username || url.password || url.port) return null;
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts.length !== 4) return null;
+    const [storefront, kind, albumSlug, albumId] = parts;
+    if (!APPLE_MUSIC_STOREFRONT_PATTERN.test(storefront)) return null;
+    if (kind !== "album") return null;
+    if (!APPLE_MUSIC_SLUG_PATTERN.test(albumSlug)) return null;
+    if (!APPLE_MUSIC_ID_PATTERN.test(albumId)) return null;
+    const songId = url.searchParams.get("i");
+    if (!songId || !APPLE_MUSIC_ID_PATTERN.test(songId)) return null;
+    const canonicalSourceUrl = `https://music.apple.com/${storefront}/album/${albumSlug}/${albumId}?i=${songId}`;
+    return { storefront, albumSlug, albumId, songId, canonicalSourceUrl, providerId: `apple_music:song:${songId}` };
+  } catch {
+    return null;
+  }
+}
 
 export function parseQueueYouTubeVideoId(link?: string | null): string | null {
   if (!link) return null;
@@ -323,7 +358,7 @@ export function getTrackArtworkUrl(track: Pick<QueueEntry, "sourceType" | "sourc
     const videoId = parseQueueYouTubeVideoId(track.link);
     if (videoId) return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
   }
-  if ((track.sourceType === "spotify" || track.sourceType === "soundcloud" || track.sourceType === "youtube" || track.sourceType === "tiktok") && isSafeHttpsArtworkUrl(track.sourceArtworkUrl)) return track.sourceArtworkUrl;
+  if ((track.sourceType === "spotify" || track.sourceType === "soundcloud" || track.sourceType === "youtube" || track.sourceType === "tiktok" || track.sourceType === "apple_music") && isSafeHttpsArtworkUrl(track.sourceArtworkUrl)) return track.sourceArtworkUrl;
   return null;
 }
 
@@ -377,6 +412,7 @@ export function formatRuntime(seconds: number): string {
 
 export function detectQueueSourceType(value: string): QueueSourceType {
   if (parseTikTokVideoUrl(value)) return "tiktok";
+  if (parseAppleMusicSongUrl(value)) return "apple_music";
   try {
     const url = new URL(value);
     const host = url.hostname.replace(/^www\./, "").toLowerCase();

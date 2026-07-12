@@ -194,6 +194,7 @@ function sourceTypeLabel(track: QueuePublicTrack): string {
   if (track.sourceType === "soundcloud") return "SoundCloud";
   if (track.sourceType === "youtube") return "YouTube";
   if (track.sourceType === "tiktok") return "TikTok";
+  if (track.sourceType === "apple_music") return "Apple Music";
   return track.sourceType ? track.sourceType.toUpperCase() : "Track link";
 }
 

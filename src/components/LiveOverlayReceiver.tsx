@@ -715,29 +715,9 @@ function expectedTikTokTime(sync: LiveOverlayTikTokSync, clockAnchor: OverlaySer
   return typeof sync.durationSeconds === "number" && Number.isFinite(sync.durationSeconds) && sync.durationSeconds > 0 ? Math.min(expected, sync.durationSeconds) : expected;
 }
 
-function tiktokSyncRevision(sync: LiveOverlayTikTokSync): string {
-  return [sync.postId, sync.trackId ?? "", sync.playbackState, sync.currentTimeSeconds, sync.updatedAt, sync.correctionReason ?? ""].join("|");
-}
-
-function tiktokAuthority(sync: LiveOverlayTikTokSync | undefined): "fresh" | "latched" | "none" {
-  if (!sync) return "none";
-  const ageMs = Date.now() - new Date(sync.updatedAt).getTime();
-  return Number.isFinite(ageMs) && ageMs > 12_000 ? "latched" : "fresh";
-}
 
 type TikTokTrustedEventType = "onPlayerReady" | "onStateChange" | "onCurrentTime" | "onMute" | "onVolumeChange" | "onPlayerError";
 type TikTokFailureReason = "iframe_load_timeout" | "player_event_timeout" | "autoplay_blocked" | "player_error" | null;
-
-function estimatedTikTokLocalTime(mediaTimeSeconds: number, observedAtPerformanceMs: number | null, playbackState: LiveOverlayPlaybackState, nowPerformanceMs: number, durationSeconds?: number): number | null {
-  if (!Number.isFinite(mediaTimeSeconds) || mediaTimeSeconds < 0) return null;
-  let estimated = mediaTimeSeconds;
-  if (playbackState === "playing" && observedAtPerformanceMs !== null && Number.isFinite(observedAtPerformanceMs) && Number.isFinite(nowPerformanceMs)) {
-    estimated += Math.max(0, nowPerformanceMs - observedAtPerformanceMs) / 1000;
-  }
-  if (typeof durationSeconds === "number" && Number.isFinite(durationSeconds) && durationSeconds > 0) estimated = Math.min(estimated, durationSeconds);
-  estimated = Math.max(0, estimated);
-  return Number.isFinite(estimated) ? estimated : null;
-}
 
 type TikTokDiagnosticState = {
   iframeLoaded: boolean;
@@ -759,8 +739,6 @@ type TikTokDiagnosticState = {
   lastCorrectionAt?: number;
   correctionCount: number;
   correctionReason?: string;
-  authority?: "fresh" | "latched" | "none";
-  syncRevisionApplied?: string;
   failureReason: TikTokFailureReason;
   status: "bootstrapping" | "iframe_loaded" | "trusted_event" | "playing" | "paused" | "stopped" | "failed";
 };
@@ -774,8 +752,6 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
   const lastTrustedEventTypeRef = useRef<TikTokTrustedEventType | undefined>(undefined);
   const latestSyncRef = useRef<LiveOverlayTikTokSync>(sync);
   const localTimeRef = useRef<number>(Number.NaN);
-  const localTimelineObservedAtRef = useRef<number | null>(null);
-  const localTimelinePlaybackStateRef = useRef<LiveOverlayPlaybackState>("stopped");
   const destroyedRef = useRef(false);
   const generationRef = useRef(0);
   const bootstrapAttemptRef = useRef(0);
@@ -783,16 +759,16 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
   const lastCorrectionAtRef = useRef<number | null>(null);
   const correctionCountRef = useRef(0);
   const lastCorrectionReasonRef = useRef<string | null>(null);
-  const lastAppliedSyncRevisionRef = useRef<string | null>(null);
   const iframeLoadTimerRef = useRef<number | null>(null);
   const playerEventTimerRef = useRef<number | null>(null);
   const failedPostRef = useRef<string | null>(null);
+  const [initialAutoplay] = useState(() => sync.playbackState === "playing");
   const [playerError, setPlayerError] = useState<{ code?: number; message: string; reason: Exclude<TikTokFailureReason, null>; errorType?: string } | null>(null);
-  const [diagnostics, setDiagnostics] = useState<TikTokDiagnosticState>({ iframeLoaded: false, trustedEventSeen: false, postId: sync.postId, trackId: sync.trackId, playbackState: sync.playbackState, bootstrapAttempt: 0, correctionCount: 0, failureReason: null, status: "bootstrapping", authority: tiktokAuthority(sync) });
+  const [diagnostics, setDiagnostics] = useState<TikTokDiagnosticState>({ iframeLoaded: false, trustedEventSeen: false, postId: sync.postId, trackId: sync.trackId, playbackState: sync.playbackState, bootstrapAttempt: 0, correctionCount: 0, failureReason: null, status: "bootstrapping" });
   const src = useMemo(() => {
-    const params = new URLSearchParams({ controls: "0", progress_bar: "0", play_button: "0", volume_control: "0", fullscreen_button: "0", timestamp: "0", autoplay: "0", music_info: "0", description: "0", rel: "0", native_context_menu: "0", closed_caption: "0", muted: "1" });
+    const params = new URLSearchParams({ controls: "0", progress_bar: "0", play_button: "0", volume_control: "0", fullscreen_button: "0", timestamp: "0", autoplay: initialAutoplay ? "1" : "0", music_info: "0", description: "0", rel: "0", native_context_menu: "0", closed_caption: "0", muted: "1" });
     return `${TIKTOK_ORIGIN}/player/v1/${sync.postId}?${params.toString()}`;
-  }, [sync.postId]);
+  }, [initialAutoplay, sync.postId]);
 
   const updateDiagnostics = useCallback((patch: Partial<TikTokDiagnosticState>) => {
     setDiagnostics((current) => ({ ...current, ...patch, postId: sync.postId, trackId: sync.trackId, playbackState: latestSyncRef.current.playbackState }));
@@ -818,42 +794,29 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
   }, [clearIframeLoadTimer, clearPlayerEventTimer, updateDiagnostics]);
 
   const sendTikTokVoidCommand = useCallback((type: "mute" | "play" | "pause") => {
-    const nowPerformanceMs = performance.now();
-    if (type === "play" || type === "pause") {
-      const projected = estimatedTikTokLocalTime(localTimeRef.current, localTimelineObservedAtRef.current, localTimelinePlaybackStateRef.current, nowPerformanceMs, latestSyncRef.current.durationSeconds);
-      if (projected !== null) localTimeRef.current = projected;
-      localTimelineObservedAtRef.current = nowPerformanceMs;
-      localTimelinePlaybackStateRef.current = type === "play" ? "playing" : "paused";
-    }
     iframeRef.current?.contentWindow?.postMessage({ type, "x-tiktok-player": true }, TIKTOK_ORIGIN);
-    updateDiagnostics({ lastCommand: type, localObservedTime: Number.isFinite(localTimeRef.current) ? localTimeRef.current : undefined });
+    updateDiagnostics({ lastCommand: type });
   }, [updateDiagnostics]);
 
   const sendTikTokSeekCommand = useCallback((seconds: number) => {
     if (!Number.isFinite(seconds) || seconds < 0) return;
-    localTimeRef.current = seconds;
-    localTimelineObservedAtRef.current = performance.now();
     iframeRef.current?.contentWindow?.postMessage({ type: "seekTo", value: seconds, "x-tiktok-player": true }, TIKTOK_ORIGIN);
-    updateDiagnostics({ lastCommand: "seekTo", expectedTime: seconds, localObservedTime: seconds });
+    updateDiagnostics({ lastCommand: "seekTo", expectedTime: seconds });
   }, [updateDiagnostics]);
 
   const applyTikTokSync = useCallback((nextSync: LiveOverlayTikTokSync) => {
     const generation = generationRef.current;
     if (!readyRef.current || destroyedRef.current || failedPostRef.current === nextSync.postId) return;
-    const revision = tiktokSyncRevision(nextSync);
-    const duplicateRevision = lastAppliedSyncRevisionRef.current === revision;
     const expected = expectedTikTokTime(nextSync, clockAnchorRef.current);
     const previousState = lastAppliedPlaybackStateRef.current;
     const reason = nextSync.correctionReason ?? "heartbeat";
     const nowMs = Date.now();
-    const nowPerformanceMs = performance.now();
-    const projectedLocalTime = estimatedTikTokLocalTime(localTimeRef.current, localTimelineObservedAtRef.current, localTimelinePlaybackStateRef.current, nowPerformanceMs, nextSync.durationSeconds);
-    const drift = projectedLocalTime !== null ? projectedLocalTime - expected : null;
-    const bypassCooldown = projectedLocalTime === null || reason === "seek" || nextSync.playbackState !== "playing" || lastCorrectionAtRef.current === null || nowMs - lastCorrectionAtRef.current >= PLAYER_CORRECTION_COOLDOWN_MS;
+    const drift = Number.isFinite(localTimeRef.current) ? localTimeRef.current - expected : null;
+    const bypassCooldown = !Number.isFinite(localTimeRef.current) || reason === "seek" || nextSync.playbackState !== "playing" || lastCorrectionAtRef.current === null || nowMs - lastCorrectionAtRef.current >= PLAYER_CORRECTION_COOLDOWN_MS;
     const shouldCorrect = drift !== null && shouldCorrectPlaybackDrift({ playbackState: nextSync.playbackState, driftSeconds: drift, behindThresholdSeconds: TIKTOK_BEHIND_THRESHOLD_SECONDS, aheadThresholdSeconds: TIKTOK_AHEAD_THRESHOLD_SECONDS, pausedThresholdSeconds: TIKTOK_PAUSED_DRIFT_THRESHOLD_SECONDS });
     const correctionTarget = drift !== null && nextSync.playbackState === "playing" ? playbackCorrectionTarget({ expectedTimeSeconds: expected, driftSeconds: drift, playbackState: nextSync.playbackState, maximumCatchUpSeconds: TIKTOK_MAX_CATCH_UP_SECONDS, durationSeconds: nextSync.durationSeconds }) : null;
     const seekTarget = nextSync.playbackState === "playing" ? correctionTarget ?? expected : nextSync.currentTimeSeconds;
-    const mustSeek = !duplicateRevision && (projectedLocalTime === null || nextSync.playbackState === "stopped" || (shouldCorrect && bypassCooldown));
+    const mustSeek = !Number.isFinite(localTimeRef.current) || nextSync.playbackState === "stopped" || (shouldCorrect && bypassCooldown);
     sendTikTokVoidCommand("mute");
     if (mustSeek) {
       sendTikTokSeekCommand(seekTarget);
@@ -863,22 +826,21 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
       lastCorrectionReasonRef.current = reason;
     }
     const roundedDrift = roundedFiniteSeconds(drift);
-    updateDiagnostics({ expectedTime: expected, localObservedTime: projectedLocalTime ?? (Number.isFinite(localTimeRef.current) ? localTimeRef.current : undefined), driftSeconds: roundedDrift, driftDirection: driftDirectionFromRoundedDrift(roundedDrift), correctionTargetSeconds: roundedFiniteSeconds(mustSeek ? seekTarget : null), correctionCount: correctionCountRef.current, lastCorrectionAt: lastCorrectionAtRef.current ?? undefined, correctionReason: lastCorrectionReasonRef.current ?? undefined, status: nextSync.playbackState, authority: tiktokAuthority(nextSync), syncRevisionApplied: revision });
+    updateDiagnostics({ expectedTime: expected, localObservedTime: Number.isFinite(localTimeRef.current) ? localTimeRef.current : undefined, driftSeconds: roundedDrift, driftDirection: driftDirectionFromRoundedDrift(roundedDrift), correctionTargetSeconds: roundedFiniteSeconds(mustSeek ? seekTarget : null), correctionCount: correctionCountRef.current, lastCorrectionAt: lastCorrectionAtRef.current ?? undefined, correctionReason: lastCorrectionReasonRef.current ?? undefined, status: nextSync.playbackState });
     const stateChanged = previousState !== nextSync.playbackState;
     if (nextSync.playbackState === "playing") {
       const play = () => {
         if (destroyedRef.current || generationRef.current !== generation || failedPostRef.current === nextSync.postId || latestSyncRef.current.postId !== nextSync.postId || latestSyncRef.current.trackId !== nextSync.trackId) return;
         sendTikTokVoidCommand("play");
       };
-      if (!duplicateRevision && (stateChanged || mustSeek)) {
+      if (stateChanged || mustSeek) {
         if (mustSeek) window.setTimeout(play, TIKTOK_DELAYED_PLAY_MS);
         else play();
       }
-    } else if (!duplicateRevision && (stateChanged || mustSeek)) {
+    } else if (stateChanged || mustSeek) {
       sendTikTokVoidCommand("pause");
     }
     lastAppliedPlaybackStateRef.current = nextSync.playbackState;
-    lastAppliedSyncRevisionRef.current = revision;
   }, [clockAnchorRef, sendTikTokSeekCommand, sendTikTokVoidCommand, updateDiagnostics]);
 
   const markTrustedPlayerEvent = useCallback((type: TikTokTrustedEventType) => {
@@ -917,15 +879,12 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
     firstTrustedEventTypeRef.current = undefined;
     lastTrustedEventTypeRef.current = undefined;
     localTimeRef.current = Number.NaN;
-    localTimelineObservedAtRef.current = null;
-    localTimelinePlaybackStateRef.current = "stopped";
     failedPostRef.current = null;
     bootstrapAttemptRef.current = 0;
     lastAppliedPlaybackStateRef.current = null;
     lastCorrectionAtRef.current = null;
     correctionCountRef.current = 0;
     lastCorrectionReasonRef.current = null;
-    lastAppliedSyncRevisionRef.current = null;
     const generation = generationRef.current + 1;
     generationRef.current = generation;
     window.setTimeout(() => {
@@ -957,8 +916,6 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
         const currentTime = typeof value.currentTime === "number" ? value.currentTime : Number(value.currentTime);
         if (Number.isFinite(currentTime) && currentTime >= 0) {
           localTimeRef.current = currentTime;
-          localTimelineObservedAtRef.current = performance.now();
-          localTimelinePlaybackStateRef.current = latestSyncRef.current.playbackState;
           updateDiagnostics({ localObservedTime: currentTime });
         }
         applyTikTokSync(latestSyncRef.current);
@@ -1001,15 +958,12 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
       clearIframeLoadTimer();
       clearPlayerEventTimer();
       localTimeRef.current = Number.NaN;
-      localTimelineObservedAtRef.current = null;
-      localTimelinePlaybackStateRef.current = "stopped";
-      lastAppliedSyncRevisionRef.current = null;
       window.removeEventListener("message", onMessage);
     };
   }, [applyTikTokSync, clearIframeLoadTimer, clearPlayerEventTimer, clockAnchorRef, markPlayerUnavailable, markTrustedPlayerEvent, sendTikTokSeekCommand, sendTikTokVoidCommand, updateDiagnostics]);
 
   const safeStatus = playerError ? "failed" : diagnostics.status;
-  return <div className="live-overlay-tiktok-player live-overlay-tiktok-player--active" aria-label="Muted TikTok overlay player" data-tiktok-status={safeStatus} data-tiktok-failure-reason={playerError?.reason ?? diagnostics.failureReason ?? undefined} data-tiktok-error-code={playerError?.code ?? diagnostics.errorCode ?? undefined} data-tiktok-first-event={diagnostics.firstTrustedEventType} data-tiktok-last-event={diagnostics.lastTrustedEventType} data-tiktok-drift-seconds={diagnostics.driftSeconds} data-tiktok-drift-direction={diagnostics.driftDirection} data-tiktok-correction-target={diagnostics.correctionTargetSeconds} data-tiktok-correction-count={diagnostics.correctionCount} data-tiktok-correction-reason={diagnostics.correctionReason} data-tiktok-authority={diagnostics.authority ?? "fresh"} data-tiktok-sync-revision-applied={diagnostics.syncRevisionApplied} data-overlay-server-clock={clockAnchored ? "anchored" : "missing"} data-overlay-response-transit-ms={responseTransitMs ?? undefined}><iframe ref={iframeRef} onLoad={handleIframeLoad} title={`TikTok overlay for ${artistName} — ${trackTitle}`} src={src} className={playerError ? "live-overlay-tiktok-iframe live-overlay-tiktok-iframe--hidden" : "live-overlay-tiktok-iframe"} allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />{playerError && <div className="live-overlay-tiktok-fallback" role="status" data-tiktok-status="failed" data-tiktok-failure-reason={playerError.reason} data-tiktok-error-code={playerError.code} data-tiktok-first-event={diagnostics.firstTrustedEventType} data-tiktok-last-event={diagnostics.lastTrustedEventType} data-tiktok-drift-seconds={diagnostics.driftSeconds} data-tiktok-drift-direction={diagnostics.driftDirection} data-tiktok-correction-target={diagnostics.correctionTargetSeconds} data-tiktok-correction-count={diagnostics.correctionCount} data-tiktok-correction-reason={diagnostics.correctionReason} data-tiktok-authority={diagnostics.authority ?? "fresh"} data-tiktok-sync-revision-applied={diagnostics.syncRevisionApplied} data-overlay-server-clock={clockAnchored ? "anchored" : "missing"} data-overlay-response-transit-ms={responseTransitMs ?? undefined}><p>{artistName}</p><strong>{trackTitle}</strong><span>{playerError.message}</span></div>}</div>;
+  return <div className="live-overlay-tiktok-player live-overlay-tiktok-player--active" aria-label="Muted TikTok overlay player" data-tiktok-status={safeStatus} data-tiktok-failure-reason={playerError?.reason ?? diagnostics.failureReason ?? undefined} data-tiktok-error-code={playerError?.code ?? diagnostics.errorCode ?? undefined} data-tiktok-first-event={diagnostics.firstTrustedEventType} data-tiktok-last-event={diagnostics.lastTrustedEventType} data-tiktok-drift-seconds={diagnostics.driftSeconds} data-tiktok-drift-direction={diagnostics.driftDirection} data-tiktok-correction-target={diagnostics.correctionTargetSeconds} data-tiktok-correction-count={diagnostics.correctionCount} data-tiktok-correction-reason={diagnostics.correctionReason} data-overlay-server-clock={clockAnchored ? "anchored" : "missing"} data-overlay-response-transit-ms={responseTransitMs ?? undefined}><iframe ref={iframeRef} onLoad={handleIframeLoad} title={`TikTok overlay for ${artistName} — ${trackTitle}`} src={src} className={playerError ? "live-overlay-tiktok-iframe live-overlay-tiktok-iframe--hidden" : "live-overlay-tiktok-iframe"} allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />{playerError && <div className="live-overlay-tiktok-fallback" role="status" data-tiktok-status="failed" data-tiktok-failure-reason={playerError.reason} data-tiktok-error-code={playerError.code} data-tiktok-first-event={diagnostics.firstTrustedEventType} data-tiktok-last-event={diagnostics.lastTrustedEventType} data-tiktok-drift-seconds={diagnostics.driftSeconds} data-tiktok-drift-direction={diagnostics.driftDirection} data-tiktok-correction-target={diagnostics.correctionTargetSeconds} data-tiktok-correction-count={diagnostics.correctionCount} data-tiktok-correction-reason={diagnostics.correctionReason} data-overlay-server-clock={clockAnchored ? "anchored" : "missing"} data-overlay-response-transit-ms={responseTransitMs ?? undefined}><p>{artistName}</p><strong>{trackTitle}</strong><span>{playerError.message}</span></div>}</div>;
 }
 
 export function LiveOverlayReceiver() {

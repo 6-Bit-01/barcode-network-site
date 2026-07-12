@@ -301,6 +301,49 @@ test("rejects unsupported Apple Music URL forms", () => {
   }
 });
 
+
+test("accepts safe international Apple Music album slug segments", () => {
+  const cases = [
+    ["example-album", "us"],
+    ["caf%C3%A9-del-mar", "us"],
+    ["%E6%9D%B1%E4%BA%AC", "jp"],
+    ["rock-%26-roll", "us"],
+    ["album_name", "us"],
+  ];
+  for (const [slug, storefront] of cases) {
+    const parsed = queueTypes.parseAppleMusicSongUrl(`https://music.apple.com/${storefront}/album/${slug}/123456789?i=987654321&utm_source=x#frag`);
+    assert.ok(parsed, slug);
+    assert.equal(parsed.albumSlug, slug);
+    assert.equal(parsed.canonicalSourceUrl, `https://music.apple.com/${storefront}/album/${slug}/123456789?i=987654321`);
+    assert.equal(parsed.providerId, "apple_music:song:987654321");
+  }
+});
+
+test("normalizes Apple Music storefront casing and preserves encoded slug", () => {
+  const parsed = queueTypes.parseAppleMusicSongUrl("https://music.apple.com/US/album/caf%C3%A9-del-mar/123456789?i=987654321");
+  assert.ok(parsed);
+  assert.equal(parsed.storefront, "us");
+  assert.equal(parsed.albumSlug, "caf%C3%A9-del-mar");
+  assert.equal(parsed.canonicalSourceUrl, "https://music.apple.com/us/album/caf%C3%A9-del-mar/123456789?i=987654321");
+});
+
+test("rejects unsafe Apple Music encoded slug and ambiguous song parameter variants", () => {
+  const overlong = "a".repeat(301);
+  for (const value of [
+    "https://music.apple.com/us/album/bad%ZZslug/123456789?i=987654321",
+    "https://music.apple.com/us/album/%2F/123456789?i=987654321",
+    "https://music.apple.com/us/album/%5C/123456789?i=987654321",
+    "https://music.apple.com/us/album/bad%00slug/123456789?i=987654321",
+    "https://music.apple.com/us/album/bad%1Fslug/123456789?i=987654321",
+    "https://music.apple.com/us/album/./123456789?i=987654321",
+    "https://music.apple.com/us/album/../123456789?i=987654321",
+    `https://music.apple.com/us/album/${overlong}/123456789?i=987654321`,
+    "https://music.apple.com/us/album/example-album/123456789?i=987654321&i=123456789",
+  ]) {
+    assert.equal(queueTypes.parseAppleMusicSongUrl(value), null, value);
+  }
+});
+
 test("permits only safe HTTPS Apple Music artwork passthrough", () => {
   assert.equal(queueTypes.getTrackArtworkUrl({ sourceType: "apple_music", sourceArtworkUrl: "https://is1-ssl.mzstatic.com/image/thumb/Music/art.jpg" }), "https://is1-ssl.mzstatic.com/image/thumb/Music/art.jpg");
   assert.equal(queueTypes.getTrackArtworkUrl({ sourceType: "apple_music", sourceArtworkUrl: "http://is1-ssl.mzstatic.com/art.jpg" }), null);

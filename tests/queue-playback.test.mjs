@@ -2081,6 +2081,7 @@ test("admin and public TikTok component source assertions remain scoped", () => 
 });
 
 const appleMusicUrl = "https://music.apple.com/us/album/example-album/123456789?i=987654321";
+const uppercaseStorefrontAppleMusicUrl = "https://music.apple.com/US/album/caf%C3%A9-del-mar/123456789?i=987654321";
 
 function mockAppleMusicCatalog(body, init = {}) {
   const originalFetch = globalThis.fetch;
@@ -2130,7 +2131,7 @@ test("Apple Music direct song submissions use provider identity and duplicate-sa
 test("Apple Music catalog metadata is optional, supplemental, safe, and fetched once", async () => withAppleToken("secret-dev-token", async () => {
   const mock = mockAppleMusicCatalog({ data: [{ attributes: { artistName: "Catalog Artist", name: "Catalog Song", durationInMillis: 201500, artwork: { url: "https://is1-ssl.mzstatic.com/image/thumb/Music/{w}x{h}bb.jpg" } } }] });
   try {
-    const track = await queue.createQueueTrack({ artist: "Submitted Artist", title: "Submitted Song", tiktokHandle: "@applemeta", link: appleMusicUrl });
+    const track = await queue.createQueueTrack({ artist: "Submitted Artist", title: "Submitted Song", tiktokHandle: "@applemeta", link: uppercaseStorefrontAppleMusicUrl });
     assert.equal(mock.calls.length, 1);
     assert.match(mock.calls[0].url, /api\.music\.apple\.com\/v1\/catalog\/us\/songs\/987654321/);
     assert.equal(mock.calls[0].options.headers.Authorization, "Bearer secret-dev-token");
@@ -2141,6 +2142,7 @@ test("Apple Music catalog metadata is optional, supplemental, safe, and fetched 
     assert.equal(track.detectedDurationSeconds, 202);
     assert.equal(track.durationIsEstimate, false);
     assert.equal(track.durationSource, "apple_music_api");
+    assert.equal(track.link, uppercaseStorefrontAppleMusicUrl);
     assert.equal(track.sourceArtworkUrl, "https://is1-ssl.mzstatic.com/image/thumb/Music/600x600bb.jpg");
     assert.equal(track.submittedArtistName, "Submitted Artist");
     assert.equal(track.submittedSongTitle, "Submitted Song");

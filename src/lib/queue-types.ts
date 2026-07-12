@@ -305,7 +305,21 @@ export interface ParsedAppleMusicSongUrl {
 
 const APPLE_MUSIC_ID_PATTERN = /^\d{1,32}$/;
 const APPLE_MUSIC_STOREFRONT_PATTERN = /^[a-z]{2}(?:-[a-z0-9]{2,8})?$/i;
-const APPLE_MUSIC_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,199}$/;
+function normalizeAppleMusicAlbumSlug(value: string): string | null {
+  if (!value || value.length > 300) return null;
+  if (value === "." || value === "..") return null;
+  if (value.includes("/") || value.includes("\\") || value.includes("\0")) return null;
+  if (/%(?![0-9A-Fa-f]{2})/.test(value)) return null;
+  try {
+    const decoded = decodeURIComponent(value);
+    if (!decoded || decoded === "." || decoded === "..") return null;
+    if (decoded.includes("/") || decoded.includes("\\") || decoded.includes("\0")) return null;
+    if (/[\u0000-\u001F\u007F]/.test(decoded)) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
 
 export function parseAppleMusicSongUrl(value?: string | null): ParsedAppleMusicSongUrl | null {
   if (!value) return null;
@@ -316,12 +330,16 @@ export function parseAppleMusicSongUrl(value?: string | null): ParsedAppleMusicS
     if (url.username || url.password || url.port) return null;
     const parts = url.pathname.split("/").filter(Boolean);
     if (parts.length !== 4) return null;
-    const [storefront, kind, albumSlug, albumId] = parts;
-    if (!APPLE_MUSIC_STOREFRONT_PATTERN.test(storefront)) return null;
+    const [rawStorefront, kind, rawAlbumSlug, albumId] = parts;
+    if (!APPLE_MUSIC_STOREFRONT_PATTERN.test(rawStorefront)) return null;
+    const storefront = rawStorefront.toLowerCase();
     if (kind !== "album") return null;
-    if (!APPLE_MUSIC_SLUG_PATTERN.test(albumSlug)) return null;
+    const albumSlug = normalizeAppleMusicAlbumSlug(rawAlbumSlug);
+    if (!albumSlug) return null;
     if (!APPLE_MUSIC_ID_PATTERN.test(albumId)) return null;
-    const songId = url.searchParams.get("i");
+    const songIds = url.searchParams.getAll("i");
+    if (songIds.length !== 1) return null;
+    const songId = songIds[0];
     if (!songId || !APPLE_MUSIC_ID_PATTERN.test(songId)) return null;
     const canonicalSourceUrl = `https://music.apple.com/${storefront}/album/${albumSlug}/${albumId}?i=${songId}`;
     return { storefront, albumSlug, albumId, songId, canonicalSourceUrl, providerId: `apple_music:song:${songId}` };

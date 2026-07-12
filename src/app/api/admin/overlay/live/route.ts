@@ -15,24 +15,12 @@ export async function GET() {
   return NextResponse.json(await getLiveOverlayAdminSnapshot(), { headers: { "Cache-Control": "no-store" } });
 }
 
-function transportHeaders(serverRequestReceivedAt: Date, serverResponseGeneratedAt: Date) {
-  return {
-    "Cache-Control": "no-store",
-    "X-BNL-Request-Received-At": serverRequestReceivedAt.toISOString(),
-    "X-BNL-Response-Generated-At": serverResponseGeneratedAt.toISOString(),
-  };
-}
-
 export async function POST(req: Request) {
-  const serverRequestReceivedAt = new Date();
   if (!(await assertAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   try {
-    const snapshot = await setLiveOverlayState(body, serverRequestReceivedAt);
-    const serverResponseGeneratedAt = new Date();
-    return NextResponse.json(snapshot, { headers: transportHeaders(serverRequestReceivedAt, serverResponseGeneratedAt) });
+    return NextResponse.json(await setLiveOverlayState(body), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    const serverResponseGeneratedAt = new Date();
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Overlay update failed." }, { status: 400, headers: transportHeaders(serverRequestReceivedAt, serverResponseGeneratedAt) });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Overlay update failed." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
 }

@@ -1,12 +1,12 @@
 import { Redis } from "@upstash/redis";
 import { getRadioQueueState, isWheelEligibleTrack, updateRadioTrack } from "./queue";
-import { getTrackArtworkUrl, getTrackDurationLabel, parseTikTokVideoUrl } from "./queue-types";
-import { buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateIds, resolveLiveOverlayScene, safeLiveOverlayUrl, normalizeLiveOverlaySyncCorrectionReason, serverStampLiveOverlayPlayerSync, serverStampTikTokSync, wheelFinalRotationForSegment } from "./live-overlay-resolver";
+import { getTrackArtworkUrl, getTrackDurationLabel } from "./queue-types";
+import { buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateIds, resolveLiveOverlayScene, safeLiveOverlayUrl, serverStampYouTubeSync, wheelFinalRotationForSegment } from "./live-overlay-resolver";
 import { parseYouTubeVideoId } from "./track-duration";
 import type { QueueEntry, QueueSourceType } from "./queue-types";
-import type { LiveOverlayPlaybackState, LiveOverlayStateInput, LiveOverlayPlayerSync, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
+import type { LiveOverlayPlaybackState, LiveOverlayStateInput, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
 
-export type { LiveOverlayPlaybackState, LiveOverlayPlayerSync, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
+export type { LiveOverlayPlaybackState, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
 
 export interface LiveOverlayState extends LiveOverlayStateInput {
   mode: OverlayMode;
@@ -70,7 +70,7 @@ export interface LiveOverlayPayload {
 export interface LiveOverlayAdminSnapshot {
   overlayState: LiveOverlayState;
   scene: ResolvedLiveOverlayScene;
-  playerSync: LiveOverlayPlayerSync | null;
+  playerSync: LiveOverlayYouTubeSync | null;
   wheelCandidates: ResolvedWheelCeremonyTrack[];
 }
 
@@ -113,7 +113,7 @@ const WHEEL_AUDIO_FILES = [
 ];
 
 let memoryOverlayState: LiveOverlayState = defaultLiveOverlayState();
-let memoryPlayerSync: LiveOverlayPlayerSync | null = null;
+let memoryPlayerSync: LiveOverlayYouTubeSync | null = null;
 
 function getRedis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -172,7 +172,6 @@ function overlayTrackInput(entry: QueueEntry) {
     link: entry.link,
     durationLabel: getTrackDurationLabel(entry),
     youtubeVideoId: entry.sourceType === "youtube" ? parseYouTubeVideoId(entry.link) : null,
-    tiktokPostId: entry.sourceType === "tiktok" ? parseTikTokVideoUrl(entry.link)?.postId ?? null : null,
   };
 }
 
@@ -291,7 +290,7 @@ function normalizeMode(value: unknown): OverlayMode {
 }
 
 function normalizeSourceType(value: unknown): LiveOverlayState["sourceType"] {
-  const sources: LiveOverlayState["sourceType"][] = ["upload", "link", "youtube", "tiktok", "soundcloud", "spotify", "other", "unknown"];
+  const sources: LiveOverlayState["sourceType"][] = ["upload", "link", "youtube", "soundcloud", "spotify", "other", "unknown"];
   return sources.includes(value as LiveOverlayState["sourceType"]) ? value as LiveOverlayState["sourceType"] : "unknown";
 }
 
@@ -308,11 +307,9 @@ function normalizePlaybackState(value: unknown): LiveOverlayPlaybackState {
   return value === "paused" || value === "stopped" || value === "playing" ? value : "stopped";
 }
 
-function normalizePlayerSync(input: unknown, receivedAt?: Date): LiveOverlayPlayerSync | null {
-  const raw = input as Partial<LiveOverlayPlayerSync> | null;
-  if (!raw || typeof raw !== "object") return null;
-  if (raw.provider === "tiktok") return serverStampTikTokSync(raw, receivedAt ?? (typeof raw.updatedAt === "string" ? new Date(raw.updatedAt) : new Date()));
-  if (raw.provider !== "youtube") return null;
+function normalizePlayerSync(input: unknown, receivedAt?: Date): LiveOverlayYouTubeSync | null {
+  const raw = input as Partial<LiveOverlayYouTubeSync> | null;
+  if (!raw || typeof raw !== "object" || raw.provider !== "youtube") return null;
   const videoId = typeof raw.videoId === "string" && parseYouTubeVideoId(`https://www.youtube.com/watch?v=${raw.videoId}`) ? raw.videoId : null;
   if (!videoId) return null;
   const currentTimeSeconds = typeof raw.currentTimeSeconds === "number" && Number.isFinite(raw.currentTimeSeconds) ? Math.max(0, raw.currentTimeSeconds) : 0;
@@ -324,7 +321,6 @@ function normalizePlayerSync(input: unknown, receivedAt?: Date): LiveOverlayPlay
     currentTimeSeconds,
     updatedAt: receivedAt ? receivedAt.toISOString() : typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString(),
     muted: true,
-    correctionReason: normalizeLiveOverlaySyncCorrectionReason(raw.correctionReason),
   };
 }
 
@@ -391,10 +387,10 @@ async function writeLiveOverlayState(state: LiveOverlayState): Promise<LiveOverl
   return normalized;
 }
 
-export async function getLiveOverlayPlayerSync(): Promise<LiveOverlayPlayerSync | null> {
+export async function getLiveOverlayPlayerSync(): Promise<LiveOverlayYouTubeSync | null> {
   const redis = getRedis();
   if (!redis) return normalizePlayerSync(memoryPlayerSync);
-  const raw = await redis.get<LiveOverlayPlayerSync | string>(PLAYER_SYNC_KEY);
+  const raw = await redis.get<LiveOverlayYouTubeSync | string>(PLAYER_SYNC_KEY);
   if (!raw) return null;
   try {
     return normalizePlayerSync(typeof raw === "string" ? JSON.parse(raw) : raw);
@@ -403,8 +399,8 @@ export async function getLiveOverlayPlayerSync(): Promise<LiveOverlayPlayerSync 
   }
 }
 
-export async function setLiveOverlayPlayerSync(sync: LiveOverlayPlayerSync | null, receivedAt = new Date()): Promise<LiveOverlayPlayerSync | null> {
-  const normalized = serverStampLiveOverlayPlayerSync(sync, receivedAt);
+export async function setLiveOverlayPlayerSync(sync: LiveOverlayYouTubeSync | null, receivedAt = new Date()): Promise<LiveOverlayYouTubeSync | null> {
+  const normalized = serverStampYouTubeSync(sync, receivedAt);
   const redis = getRedis();
   if (redis) {
     if (normalized) await redis.set(PLAYER_SYNC_KEY, JSON.stringify(normalized));
@@ -457,7 +453,7 @@ export async function getLiveOverlayAdminSnapshot(): Promise<LiveOverlayAdminSna
   return { overlayState, scene, playerSync, wheelCandidates: getWheelCandidatesFromQueue(queueState.queue) };
 }
 
-export async function setLiveOverlayState(payload: LiveOverlayPayload, receivedAt?: Date): Promise<LiveOverlayAdminSnapshot> {
+export async function setLiveOverlayState(payload: LiveOverlayPayload): Promise<LiveOverlayAdminSnapshot> {
   const current = await getStoredLiveOverlayState();
   const now = new Date().toISOString();
   let next: LiveOverlayState = { ...current, updatedAt: now };
@@ -643,7 +639,7 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload, receivedA
   } else if (payload.action === "clearAllOverrides") {
     next = { ...defaultLiveOverlayState(), updatedAt: now };
   } else if (payload.action === "updatePlayerSync") {
-    await setLiveOverlayPlayerSync(normalizePlayerSync(payload.sync, receivedAt), receivedAt ?? new Date(now));
+    await setLiveOverlayPlayerSync(normalizePlayerSync(payload.sync), new Date(now));
     return getLiveOverlayAdminSnapshot();
   } else if (payload.action === "clearPlayerSync") {
     await setLiveOverlayPlayerSync(null);

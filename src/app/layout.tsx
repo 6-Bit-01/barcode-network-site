@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     default: "BARCODE Network",
     template: "%s | BARCODE Network",
   },
-  description: "An interdimensional broadcast station. Programs: 6 Bit • BARCODE Radio • Database • Releases • Transmissions.",
+  description: "BARCODE is a living hip-hop broadcast universe connecting music, BARCODE Radio, community, technology, and interdimensional story.",
   keywords: ["BARCODE Network", "6 Bit", "BARCODE Radio", "hip hop", "live broadcast", "music submissions"],
   icons: {
     icon: [
@@ -33,7 +33,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "BARCODE Network",
-    description: "An interdimensional broadcast station. Signal over noise.",
+    description: "BARCODE is a living hip-hop broadcast universe connecting music, BARCODE Radio, community, technology, and interdimensional story.",
     siteName: "BARCODE Network",
     images: [{ url: "/og-image.png", width: 1200, height: 630 }],
     type: "website",
@@ -41,7 +41,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary",
     title: "BARCODE Network",
-    description: "An interdimensional broadcast station. Signal over noise.",
+    description: "BARCODE is a living hip-hop broadcast universe connecting music, BARCODE Radio, community, technology, and interdimensional story.",
   },
   robots: {
     index: true,

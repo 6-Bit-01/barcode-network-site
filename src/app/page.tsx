@@ -62,13 +62,13 @@ export default function Home() {
                 unoptimized
                 priority
               />
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs uppercase tracking-[0.45em] text-muted mb-3 animate-flicker">
                   {homePage.hero.label}
                 </p>
-                <h1 className="text-[clamp(2.35rem,14vw,5rem)] sm:text-[clamp(3.75rem,9vw,7rem)] font-black uppercase leading-[0.9] tracking-[-0.08em] text-foreground break-words">
-                  <span className="block">{homePage.hero.heading1}</span>
-                  <span className="block text-accent">{homePage.hero.heading2}</span>
+                <h1 className="text-[clamp(1.9rem,9vw,4.5rem)] sm:text-[clamp(2.75rem,6vw,4.75rem)] font-black uppercase leading-[0.9] tracking-[-0.08em] text-foreground">
+                  <span className="block whitespace-nowrap">{homePage.hero.heading1}</span>
+                  <span className="block whitespace-nowrap text-accent">{homePage.hero.heading2}</span>
                 </h1>
               </div>
             </div>
@@ -145,7 +145,7 @@ export default function Home() {
                   {program.description}
                 </p>
                 <div className="mt-4 text-xs text-muted/50 uppercase tracking-wider group-hover:text-accent/50 transition-colors">
-                  Enter →
+                  {program.status} →
                 </div>
               </RouteLink>
             ))}

@@ -11,7 +11,7 @@
 
 export const siteConfig = {
   name: "BARCODE Network",
-  tagline: "Interdimensional broadcast infrastructure. Signal over noise.",
+  tagline: "Every fragment carries a signal.",
   domain: "https://barcode-network.com",
   logo: "/logos/emblem.png",
 };
@@ -29,46 +29,65 @@ export const externalLinks = {
 
 export const homePage = {
   hero: {
-    label: "// NETWORK UPLINK: UNKNOWN ORIGIN",
-    heading1: "BARCODE",
-    heading2: "NETWORK",
+    label: "BARCODE NETWORK // PUBLIC ACCESS",
+    heading1: "EVERY FRAGMENT",
+    heading2: "CARRIES A SIGNAL.",
     description:
-      "An interdimensional broadcast station routing programs, signals, and transmissions across unknown channels. This is not an artist page. This is infrastructure.",
-    ctaPrimary: { text: "Access Terminal →", href: "/terminal" },
-    ctaSecondary: { text: "BARCODE Radio", href: "/radio" },
+      "BARCODE is a living hip-hop broadcast universe built from broken technology, human memory, and creative outsiders. Music, live broadcasts, community, and interdimensional story meet here. Traditional, AI-assisted, and hybrid artists share the same signal.",
+    ctaPrimary: { text: "HEAR THE MUSIC →", href: "/releases" },
+    ctaSecondary: { text: "ENTER BARCODE RADIO", href: "/radio" },
+  },
+
+  orientation: {
+    label: "// START HERE",
+    heading: "THE CREW CAME FIRST. THE NETWORK GREW AROUND IT.",
+    paragraphs: [
+      "BARCODE began as a four-member digital hip-hop collective: 6 Bit, DJ Floppydisc, Cache Back, and Mac Modem. BARCODE Network grew around that original signal, connecting the music to live broadcasts, community, characters, software, and story.",
+      "6 Bit is the artist, producer, and host at the center of the public transmission. BARCODE Radio is the live public square, where artists submit original music and the audience responds in real time. The people, work, and events are real; the interdimensional mythology gives what happens a larger place to live.",
+    ],
+  },
+
+  routeSection: {
+    label: "// CHOOSE YOUR ROUTE",
+    heading: "THE MUSIC COMES FIRST. THE WORLD OPENS FROM THERE.",
+    introduction:
+      "Start with the catalog or the live show. Then enter the community or investigate the deeper system.",
   },
 
   programs: [
     {
-      title: "6 Bit",
-      description: "Host entity. Live transmissions. Music analytics.",
-      href: "/terminal",
-      status: "ACTIVE",
-    },
-    {
-      title: "BARCODE Radio",
-      description: "Open frequency. Real-time engagement. Real reactions.",
-      href: "/radio",
-      status: "ACTIVE",
-    },
-    {
-      title: "Database",
-      description: "Dossier system. Entities, partners, sponsors, anomalies.",
-      href: "/database",
-      status: "ACTIVE",
-    },
-    {
-      title: "Releases",
-      description: "Official transmissions. Cataloged audio artifacts.",
+      title: "RELEASES",
+      description: "Hear official releases from 6 Bit and BARCODE.",
       href: "/releases",
-      status: "ACTIVE",
+      status: "LISTEN",
+    },
+    {
+      title: "BARCODE RADIO",
+      description: "Enter the live broadcast for original submissions, reactions, and conversation.",
+      href: "/radio",
+      status: "WATCH",
+    },
+    {
+      title: "COMMUNITY",
+      description: "Join the Discord and meet the artists, listeners, collaborators, and recurring characters around the project.",
+      href: "EXTERNAL:discord",
+      status: "ENTER",
+    },
+    {
+      title: "DATABASE",
+      description: "Open dossiers, transmissions, recurring characters, and deeper continuity.",
+      href: "/database",
+      status: "INVESTIGATE",
     },
   ],
 
   mission: {
-    label: "// MISSION",
-    quote:
-      "BARCODE Network exists to move signal through realities that don’t want it. Every program is a relay. Every transmission is evidence.",
+    label: "// WHY BARCODE EXISTS",
+    heading: "CRAFT BEFORE CATEGORY.",
+    statement:
+      "The work is work. The person is a person. The future is built from what survived.",
+    body:
+      "BARCODE makes room for traditional, AI-assisted, and hybrid creators without reducing their work or their existence to an argument about tools.",
   },
   // Intro video embedded from Google Drive.
   // To use a local file instead, drop it at /public/video/intro.mp4 and set src to "/video/intro.mp4"
@@ -80,12 +99,19 @@ export const homePage = {
     transcript:
       "Hi I'm 6 Bit, and this is The B-B-B-Barcode Network. This is a broadcast station oper-operating out of [redacted]. We value the opportunity to share your-share your music across multiple known and unknown broadcast fre-frequencies.",
   },
+  deeperTransmission: {
+    label: "// DEEPER TRANSMISSION",
+    heading: "THE PEOPLE ARE REAL. THE MYTHOLOGY REMEMBERS.",
+    body:
+      "The releases, broadcasts, collaborations, and community moments happen first. BARCODE’s interdimensional story gives them continuity, turning recurring people, characters, and events into a world you can investigate without losing the truth underneath it.",
+    ctaPrimary: { text: "ENTER THE DATABASE", href: "/database" },
+    ctaSecondary: { text: "VIEW TRANSMISSIONS", href: "/transmissions" },
+  },
   quickLinks: [
-    { label: "Discord", href: "EXTERNAL:discord" },
-    { label: "TikTok", href: "EXTERNAL:tiktok" },
-    { label: "Releases", href: "/releases" },
-    { label: "Database", href: "/database" },
-    { label: "Submit Music", href: "/radio" },
+    { label: "JOIN DISCORD", href: "EXTERNAL:discord" },
+    { label: "SUBMIT MUSIC", href: "/radio" },
+    { label: "OPEN TERMINAL", href: "/terminal" },
+    { label: "FOLLOW ON TIKTOK", href: "EXTERNAL:tiktok" },
   ],
 };
 

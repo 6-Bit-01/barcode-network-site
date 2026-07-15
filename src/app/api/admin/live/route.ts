@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import { verifyAdminToken, COOKIE_NAME } from "@/lib/auth";
 import { isWithinBroadcastWindow } from "@/lib/broadcastSchedule";
+import { queueProductionCapability } from "@/lib/queue-production";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +68,7 @@ export async function GET() {
     isScheduled,
     streamUrl,
     manualOverride: manualOverride !== null,
+    capabilities: queueProductionCapability(),
   });
 }
 

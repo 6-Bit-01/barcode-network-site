@@ -8,6 +8,7 @@ import ts from "typescript";
 // Keep queue tests isolated to the in-memory store instead of any configured Redis.
 delete process.env.UPSTASH_REDIS_REST_URL;
 delete process.env.UPSTASH_REDIS_REST_TOKEN;
+process.env.BARCODE_QUEUE_PRODUCTION_ENABLED = "true";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const originalResolveFilename = Module._resolveFilename;

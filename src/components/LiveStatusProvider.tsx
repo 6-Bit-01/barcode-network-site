@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import type { QueueBroadcastPhase, QueuePublicSnapshot } from "@/lib/queue-types";
+import { derivePublicShowState } from "@/lib/live-status-public";
 
 type SiteShowMode = "offline" | "intake_open" | "broadcast_live";
 
@@ -53,6 +54,7 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
   const [persisted, setPersisted] = useState<boolean | null>(null);
+  const [queueProductionEnabled, setQueueProductionEnabled] = useState(false);
   const [queueSnapshot, setQueueSnapshot] = useState<QueuePublicSnapshot | null>(null);
 
   const fetchStatus = useCallback(async () => {
@@ -67,23 +69,32 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
         setIsScheduled(data.isScheduled);
         setStreamUrlState(data.streamUrl);
         setManualOverride(data.manualOverride);
+        const queueProduction = data?.capabilities?.queueProduction === true;
+        setQueueProductionEnabled(queueProduction);
+        if (!queueProduction) {
+          setQueueSnapshot(null);
+        } else {
+          try {
+            const queueRes = await fetch("/api/queue", { cache: "no-store" });
+            if (queueRes.ok) {
+              const queueData = (await queueRes.json()) as QueuePublicSnapshot;
+              setQueueSnapshot(queueData);
+            } else {
+              queueError = "Failed to fetch queue status";
+            }
+          } catch {
+            queueError = "Failed to fetch queue status";
+          }
+        }
       } else {
+        setQueueProductionEnabled(false);
+        setQueueSnapshot(null);
         adminError = "Failed to fetch live status";
       }
     } catch {
+      setQueueProductionEnabled(false);
+      setQueueSnapshot(null);
       adminError = "Failed to fetch live status";
-    }
-
-    try {
-      const queueRes = await fetch("/api/queue", { cache: "no-store" });
-      if (queueRes.ok) {
-        const queueData = (await queueRes.json()) as QueuePublicSnapshot;
-        setQueueSnapshot(queueData);
-      } else {
-        queueError = "Failed to fetch queue status";
-      }
-    } catch {
-      queueError = "Failed to fetch queue status";
     }
 
     setLastError(adminError ?? queueError);
@@ -152,16 +163,18 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
     }
   }, [fetchStatus]);
 
-  const queueSession = queueSnapshot?.session;
-  const hasActiveQueueSession = Boolean(queueSession && queueSession.status !== "archived" && queueSession.broadcastPhase !== "ended");
-  const queueSessionId = hasActiveQueueSession ? queueSession?.sessionId ?? null : null;
-  const queueHref = queueSessionId ? `/queue/${queueSessionId}` : null;
-  const queueSubmissionsOpen = Boolean(hasActiveQueueSession && queueSnapshot?.status?.isOpen);
-  const queueBroadcastPhase = hasActiveQueueSession ? queueSession?.broadcastPhase ?? null : null;
-
-  let siteShowMode: SiteShowMode = "offline";
-  if (queueSubmissionsOpen) siteShowMode = "intake_open";
-  if (queueBroadcastPhase === "broadcast_active" || isLive) siteShowMode = "broadcast_live";
+  const {
+    hasActiveQueueSession,
+    queueSessionId,
+    queueHref,
+    queueSubmissionsOpen,
+    queueBroadcastPhase,
+    siteShowMode,
+  } = derivePublicShowState({
+    queueProductionEnabled,
+    isLive,
+    queueSnapshot,
+  });
 
   return (
     <LiveStatusContext.Provider value={{

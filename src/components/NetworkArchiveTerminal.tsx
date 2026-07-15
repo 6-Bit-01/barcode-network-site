@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, KeyboardEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { clearTerminalSession } from "@/components/TerminalLogin";
 import { useBNLStatus } from "@/components/useBNLStatus";
 
@@ -24,15 +24,27 @@ export function NetworkArchiveTerminal({ archive, restored, onLock }: { archive:
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const outputRef = useRef<HTMLDivElement>(null);
+  const outputEndRef = useRef<HTMLDivElement>(null);
   const idRef = useRef(2);
+  const [scrollVersion, setScrollVersion] = useState(0);
 
   const bnlDossier = useMemo(() => archive.dossiers.find((d) => d.id === "BNL-01" || d.name.toUpperCase().includes("BNL-01")), [archive.dossiers]);
 
-  useEffect(() => { outputRef.current?.scrollTo({ top: outputRef.current.scrollHeight, behavior: "smooth" }); }, [entries, bnl]);
+  useLayoutEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      outputEndRef.current?.scrollIntoView({
+        block: "end",
+        behavior: reduceMotion ? "instant" : "smooth",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [scrollVersion]);
 
   function push(command: string | undefined, node: ReactNode, variant: Entry["variant"] = "normal") {
     const id = idRef.current++;
     setEntries((prev) => [...prev, { id, command, node, variant, liveStatus: Boolean(command && ["STATUS", "BNL", "BNL-01"].includes(normalize(command))) }]);
+    setScrollVersion((version) => version + 1);
   }
 
   function execute(raw: string) {
@@ -41,7 +53,7 @@ export function NetworkArchiveTerminal({ archive, restored, onLock }: { archive:
     setHistory((prev) => [raw.trim(), ...prev.filter((item) => item !== raw.trim())].slice(0, 20));
     setHistoryIndex(null);
     setInput("");
-    if (command === "CLEAR") { setEntries([{ id: idRef.current++, node: <Intro archive={archive} restored={false} compact /> }]); return; }
+    if (command === "CLEAR") { setEntries([{ id: idRef.current++, node: <Intro archive={archive} restored={false} compact /> }]); setScrollVersion((version) => version + 1); return; }
     if (command === "LOCK") { clearTerminalSession(); onLock(); return; }
     if (command === "HELP" || command === "?") return push(raw, <Help />);
     if (command === "MAP") return push(raw, <Map />);
@@ -64,18 +76,19 @@ export function NetworkArchiveTerminal({ archive, restored, onLock }: { archive:
 
   function onSubmit(event: FormEvent) { event.preventDefault(); execute(input); }
 
-  return <div className="network-archive mx-auto max-w-7xl border border-border bg-background/95 font-mono shadow-2xl shadow-black/40">
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface/80 px-4 py-3">
+  return <div className="network-archive mx-auto flex h-[calc(100dvh-7rem)] min-h-[420px] max-h-[900px] max-w-7xl flex-col overflow-hidden border border-border bg-background/95 font-mono shadow-2xl shadow-black/40 max-[380px]:h-[calc(100dvh-5.5rem)] max-[380px]:min-h-[360px]">
+    <div className="flex flex-none flex-wrap items-center justify-between gap-3 border-b border-border bg-surface/80 px-4 py-3">
       <div><p className="text-xs uppercase tracking-[0.35em] text-muted">BARCODE Network Archive Terminal</p><h1 className="text-lg font-bold uppercase tracking-[0.2em] text-foreground">Public Records Console</h1></div>
       <div className="flex flex-wrap items-center gap-3 text-xs uppercase tracking-widest"><span className="text-muted">PUBLIC OBSERVER</span><span className="flex items-center gap-2 text-accent"><span className="h-2 w-2 rounded-full bg-accent animate-status-blink" />BNL {loading ? "SYNC" : bnl.status}</span><button onClick={() => execute("LOCK")} className="border border-border px-3 py-2 text-muted hover:border-accent/40 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/60">Lock Session</button></div>
     </div>
-    <div className="grid min-h-[72vh] grid-cols-1 md:grid-cols-[240px_1fr]">
-      <aside className="border-b border-border bg-surface/30 p-3 md:border-b-0 md:border-r"><p className="mb-3 text-xs uppercase tracking-[0.3em] text-muted">Archive Index</p><div className="flex gap-2 overflow-x-auto pb-2 md:flex-col md:overflow-visible">{buttons.map((cmd) => <button key={cmd} onClick={() => execute(cmd)} className="shrink-0 border border-border bg-background/50 px-3 py-2 text-left text-xs uppercase tracking-wider text-foreground/75 transition hover:border-accent/40 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/60">{cmd}</button>)}</div></aside>
-      <main className="flex min-h-[68vh] min-w-0 flex-col">
-        <div ref={outputRef} aria-live="polite" className="terminal-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-4 text-sm leading-relaxed sm:p-6">
+    <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden md:grid-cols-[240px_minmax(0,1fr)] md:grid-rows-1">
+      <aside className="flex-none overflow-hidden border-b border-border bg-surface/30 p-3 md:min-h-0 md:overflow-y-auto md:border-b-0 md:border-r"><p className="mb-3 text-xs uppercase tracking-[0.3em] text-muted">Archive Index</p><div className="flex gap-2 overflow-x-auto pb-2 md:flex-col md:overflow-visible md:pb-0">{buttons.map((cmd) => <button key={cmd} onClick={() => execute(cmd)} className="shrink-0 border border-border bg-background/50 px-3 py-2 text-left text-xs uppercase tracking-wider text-foreground/75 transition hover:border-accent/40 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/60">{cmd}</button>)}</div></aside>
+      <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+        <div ref={outputRef} aria-live="polite" className="terminal-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain p-4 text-sm leading-relaxed sm:p-6">
           {entries.map((entry) => <section key={entry.id} className={`archive-output-reveal border-l pl-4 ${entry.variant === "breach" ? "border-red-500/60 bg-red-950/10" : "border-accent/25"}`}>{entry.command && <p className="mb-2 text-xs uppercase tracking-widest text-accent/80">[{seq()}] &gt; {entry.command}</p>}{entry.liveStatus ? <Status data={bnl} loading={loading} dossier={bnlDossier} /> : entry.node}</section>)}
+          <div ref={outputEndRef} aria-hidden="true" />
         </div>
-        <form onSubmit={onSubmit} className="border-t border-border bg-surface/70 p-3"><label htmlFor="archive-command" className="sr-only">Archive command</label><div className="flex items-center gap-2"><span className="text-accent">&gt;</span><input id="archive-command" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={onKeyDown} placeholder="Type HELP, SEARCH signal, WHOIS EN-001..." className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted focus:ring-2 focus:ring-accent/40" /><button className="border border-accent/50 px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background focus:outline-none focus:ring-2 focus:ring-accent/60">Enter</button></div></form>
+        <form onSubmit={onSubmit} className="flex-none border-t border-border bg-surface/70 p-3"><label htmlFor="archive-command" className="sr-only">Archive command</label><div className="flex items-center gap-2"><span className="text-accent">&gt;</span><input id="archive-command" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={onKeyDown} placeholder="Type HELP, SEARCH signal, WHOIS EN-001..." className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted focus:ring-2 focus:ring-accent/40" /><button className="border border-accent/50 px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background focus:outline-none focus:ring-2 focus:ring-accent/60">Enter</button></div></form>
       </main>
     </div>
   </div>;

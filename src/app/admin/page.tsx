@@ -215,33 +215,37 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
       await loadBnl(true); } catch (error) { setRelayActionError(error instanceof Error ? error.message : 'Clear history failed'); } finally { setPendingAction(null); }
   };
   const requestForcePull = async () => {
+    if (pendingAction) return;
     setRelayActionError(null);
     setRelayActionNote(null);
+    setPendingAction('forcePull');
+    let forcePullError: string | null = null;
     try {
-      if (pendingAction) return;
-      setPendingAction('forcePull');
       const res = await fetch('/api/admin/bnl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'forcePull' }) });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
         const reasonParts = [
           typeof payload?.error === "string" ? payload.error : `Request failed (${res.status})`,
-          payload?.webhookDelivery?.reason ? `reason: ${payload.webhookDelivery.reason}` : null,
-          typeof payload?.webhookDelivery?.status === "number" ? `status: ${payload.webhookDelivery.status}` : null,
+          payload?.forcePullAttempt?.reason ? `reason: ${payload.forcePullAttempt.reason}` : null,
+          typeof payload?.forcePullAttempt?.status === "string" ? `status: ${payload.forcePullAttempt.status}` : null,
         ].filter(Boolean);
-        const reason = reasonParts.join(" | ");
-        throw new Error(reason);
+        forcePullError = reasonParts.join(" | ");
+        throw new Error(forcePullError);
       }
       if (typeof payload?.note === "string") setRelayActionNote(payload.note);
-      if (payload?.webhookDelivery && payload.webhookDelivery.delivered === false) {
-        console.warn("[admin] forcePull webhook delivery warning:", payload.webhookDelivery);
-      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to request immediate check-in';
+      forcePullError = error instanceof Error ? error.message : 'Failed to request immediate check-in';
       console.error('[admin] forcePull request failed:', error);
-      setRelayActionError(message);
+      setRelayActionError(forcePullError);
     } finally {
-      await loadBnl(true);
-      setPendingAction(null);
+      try {
+        await loadBnl(true);
+      } catch (refreshError) {
+        const refreshMessage = refreshError instanceof Error ? refreshError.message : 'Manual refresh failed after force-pull request';
+        if (!forcePullError) setRelayActionError(refreshMessage);
+      } finally {
+        setPendingAction(null);
+      }
     }
   };
 

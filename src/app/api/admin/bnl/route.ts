@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import { verifyAdminToken, COOKIE_NAME } from "@/lib/auth";
 import {
+  isPendingForcePull,
+  normalizePendingForcePullStatus,
   pollForcePullStatus,
   resumeForcePullAttempt,
   sanitizeStoredForcePullAttempt,
   storeForcePullAttempt,
-  type ForcePullOutcome,
   type StoredForcePullAttempt,
 } from "@/lib/bnl-force-pull";
 
@@ -114,9 +115,9 @@ async function notifyForcePull(now: string): Promise<StoredForcePullAttempt & { 
     const requestId = typeof body.request_id === "string" ? body.request_id.slice(0, 120) : null;
     const rawStatus = typeof body.status === "string" ? body.status : undefined;
     if (!requestId) return { requestedAt: now, requestId: null, status: "legacy", delivered: true, httpStatus: response.status, warning: "Legacy bot response did not include request_id" };
-    if (rawStatus !== "queued" && rawStatus !== "already_running") return { requestedAt: now, requestId, status: "unconfirmed", delivered: true, httpStatus: response.status, warning: "Unexpected webhook status" };
+    if (!isPendingForcePull(rawStatus)) return { requestedAt: now, requestId, status: "unconfirmed", delivered: true, httpStatus: response.status, warning: "Unexpected webhook status" };
     const statusPath = typeof body.status_url === "string" ? body.status_url.slice(0, 500) : undefined;
-    const polled = statusPath ? await pollForcePullStatus({ webhookUrl, sharedSecret, statusPath, requestedAt: now, requestId }) : { requestedAt: now, requestId, status: rawStatus as ForcePullOutcome, warning: "No status URL returned" };
+    const polled = statusPath ? await pollForcePullStatus({ webhookUrl, sharedSecret, statusPath, requestedAt: now, requestId }) : { requestedAt: now, requestId, status: normalizePendingForcePullStatus(rawStatus ?? "processing"), warning: "No status URL returned" };
     return { ...polled, delivered: true, httpStatus: response.status };
   } catch {
     clearTimeout(timeout);

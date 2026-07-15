@@ -5,7 +5,7 @@ export type PublicForcePullAttempt = { requestedAt: string; requestId: string | 
 export type StoredForcePullAttempt = PublicForcePullAttempt & { statusPath?: string; lastCheckedAt?: string };
 
 type FetchLike = typeof fetch;
-const PENDING = new Set(["accepted", "queued", "already_running", "running", "processing"]);
+export const PENDING_FORCE_PULL_ACKS = new Set(["accepted", "queued", "already_running", "running", "processing"]);
 const TERMINAL = new Set(["published", "disabled", "no_safe_source", "rejected", "provider_failed", "delivery_failed"]);
 const ALLOWED = new Set<ForcePullOutcome>(["queued", "already_running", "processing", "published", "disabled", "no_safe_source", "rejected", "provider_failed", "delivery_failed", "unconfirmed", "legacy"]);
 
@@ -32,7 +32,8 @@ export function sanitizeStoredForcePullAttempt(value: unknown): StoredForcePullA
   const rec = value as Record<string, unknown>;
   return { ...pub, statusPath: safeText(rec.statusPath, 500), lastCheckedAt: safeText(rec.lastCheckedAt, 80) };
 }
-export function isPendingForcePull(status?: string) { return status === "queued" || status === "already_running" || status === "processing"; }
+export function isPendingForcePull(status?: string) { return typeof status === "string" && PENDING_FORCE_PULL_ACKS.has(status); }
+export function normalizePendingForcePullStatus(status: string): ForcePullOutcome { return status === "queued" || status === "already_running" ? status : "processing"; }
 export function resolveSafeStatusPath(path: unknown, webhookUrl: string): string | null {
   if (typeof path !== "string" || !path.startsWith("/")) return null;
   const base = new URL(webhookUrl);
@@ -64,7 +65,7 @@ export async function pollForcePullStatus({ webhookUrl, sharedSecret, statusPath
       const exactRequestId = safeText(body.request_id, 120) ?? requestId;
       const baseRecord = { requestedAt, requestId: exactRequestId, statusPath: safePath, sourceClass: safeText(body.source_class), reason: safeText(body.reason), acceptedRelayId: safeText(body.accepted_relay_id), lastCheckedAt: now() };
       if (TERMINAL.has(rawStatus)) return { ...baseRecord, status: rawStatus as ForcePullOutcome };
-      if (PENDING.has(rawStatus)) { await sleep(intervalMs); continue; }
+      if (isPendingForcePull(rawStatus)) { await sleep(intervalMs); continue; }
       return { ...baseRecord, status: "unconfirmed", warning: `Unexpected status: ${rawStatus}` };
     } catch (error) {
       const aborted = error instanceof Error && error.name === "AbortError";

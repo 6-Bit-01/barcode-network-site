@@ -22,3 +22,13 @@ test('pending force-pull polling stops after terminal result and manual refresh 
   assert.match(admin, /Force-pull outcome is still unconfirmed/);
   assert.match(admin, /Pending outcomes were checked again if available/);
 });
+
+test('force-pull duplicate return happens before clearing messages or entering finally', () => {
+  const start = admin.indexOf('const requestForcePull = async () => {');
+  const body = admin.slice(start, admin.indexOf('  const lastSeenAge', start));
+  assert.ok(body.indexOf('if (pendingAction) return;') < body.indexOf('setRelayActionError(null);'));
+  assert.ok(body.indexOf('if (pendingAction) return;') < body.indexOf('try {'));
+  assert.ok(body.includes('finally {\n      try {\n        await loadBnl(true);'));
+  assert.ok(body.includes('finally {\n        setPendingAction(null);'));
+  assert.match(body, /if \(!forcePullError\) setRelayActionError\(refreshMessage\);/);
+});

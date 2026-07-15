@@ -8,7 +8,7 @@ let source = readFileSync(resolve('src/lib/bnl-force-pull.ts'), 'utf8')
   .replace(/import \{ Redis \} from "@upstash\/redis";\n/, '');
 const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } }).outputText;
 const mod = await import(`data:text/javascript,${encodeURIComponent(js)}`);
-const { pollForcePullStatus, serializeForcePullAttempt, resolveSafeStatusPath, resumeForcePullAttempt } = mod;
+const { pollForcePullStatus, serializeForcePullAttempt, resolveSafeStatusPath, resumeForcePullAttempt, isPendingForcePull, normalizePendingForcePullStatus } = mod;
 const webhookUrl = 'https://bot.example.com/force-pull';
 const base = { webhookUrl, sharedSecret: 'secret', statusPath: '/force-pull/status/r1', requestedAt: 'now', requestId: 'r1', intervalMs: 0, requestTimeoutMs: 25, now: () => 'checked' };
 function res(status, body) { return { status, ok: status >= 200 && status < 300, json: async () => body }; }
@@ -29,11 +29,22 @@ test('repeated 404 reaches unconfirmed rather than permanent processing', async 
   assert.match(out.warning, /Still processing/);
 });
 
-test('queued accepted running and already_running continue polling exact request id', async () => {
-  const chain = ['queued', 'accepted', 'running', 'already_running', 'published'];
+test('queued accepted running processing and already_running continue polling exact request id', async () => {
+  const chain = ['queued', 'accepted', 'running', 'processing', 'already_running', 'published'];
   const out = await pollForcePullStatus({ ...base, requestId: 'exact', fetcher: async () => res(200, { request_id: 'exact', status: chain.shift() }) });
   assert.equal(out.status, 'published');
   assert.equal(out.requestId, 'exact');
+});
+
+
+
+test('every supported pending webhook acknowledgement is accepted and normalized', () => {
+  for (const status of ['accepted', 'queued', 'already_running', 'running', 'processing']) assert.equal(isPendingForcePull(status), true);
+  assert.equal(normalizePendingForcePullStatus('accepted'), 'processing');
+  assert.equal(normalizePendingForcePullStatus('running'), 'processing');
+  assert.equal(normalizePendingForcePullStatus('processing'), 'processing');
+  assert.equal(normalizePendingForcePullStatus('queued'), 'queued');
+  assert.equal(normalizePendingForcePullStatus('already_running'), 'already_running');
 });
 
 for (const status of ['disabled', 'no_safe_source', 'rejected', 'provider_failed', 'delivery_failed']) {
@@ -76,4 +87,10 @@ test('legacy and public serialization remove server-only fields and secrets', ()
   assert.deepEqual(out, { requestedAt: 'now', requestId: null, status: 'legacy', persisted: true, sourceClass: undefined, reason: undefined, acceptedRelayId: undefined, warning: undefined });
   assert.equal(JSON.stringify(out).includes('secret'), false);
   assert.equal(JSON.stringify(out).includes('force-pull'), false);
+});
+
+test('admin route centralizes webhook acknowledgement validation through pending predicate', () => {
+  const route = readFileSync(resolve('src/app/api/admin/bnl/route.ts'), 'utf8');
+  assert.match(route, /if \(!isPendingForcePull\(rawStatus\)\)/);
+  assert.doesNotMatch(route, /rawStatus !== "queued" && rawStatus !== "already_running"/);
 });

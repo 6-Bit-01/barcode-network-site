@@ -44,6 +44,7 @@ const SOURCE_LABELS: Record<string, string> = {
   showtest: "Test Band",
   admin: "Operator Console",
   reset: "Cold Relay",
+  forcePull: "Direct Liaison Request",
   unknown: "Unmarked Signal",
 };
 

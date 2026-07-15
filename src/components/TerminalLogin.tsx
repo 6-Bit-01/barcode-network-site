@@ -35,11 +35,7 @@ export function clearTerminalSession() {
 
 export function TerminalLogin({ onUnlock }: { onUnlock: (restored?: boolean) => void }) {
   const [phase, setPhase] = useState<Phase>("boot");
-  const [lines, setLines] = useState<string[]>(() =>
-    typeof window !== "undefined" && window.sessionStorage.getItem(sessionKey) === "unlocked"
-      ? ["SESSION RESTORED // PUBLIC OBSERVER", "", "Routing to archive console..."]
-      : [],
-  );
+  const [lines, setLines] = useState<string[]>([]);
   const [currentTyping, setCurrentTyping] = useState("");
   const [passwordDots, setPasswordDots] = useState("");
   const [codeLines, setCodeLines] = useState<string[]>([]);
@@ -57,8 +53,9 @@ export function TerminalLogin({ onUnlock }: { onUnlock: (restored?: boolean) => 
 
   useEffect(() => {
     if (window.sessionStorage.getItem(sessionKey) === "unlocked") {
+      const restoreId = window.setTimeout(() => setLines(["SESSION RESTORED // PUBLIC OBSERVER", "", "Routing to archive console..."]), 0);
       const id = window.setTimeout(() => unlock(true), 650);
-      return () => window.clearTimeout(id);
+      return () => { window.clearTimeout(restoreId); window.clearTimeout(id); };
     }
   }, [unlock]);
 

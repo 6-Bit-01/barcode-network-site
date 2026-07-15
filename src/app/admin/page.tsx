@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/set-state-in-effect, react/jsx-no-comment-textnodes, @typescript-eslint/no-explicit-any */
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps, react/jsx-no-comment-textnodes, @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useLiveStatus } from "@/components/LiveStatusProvider";
@@ -20,6 +20,12 @@ interface BNLAdminState {
   adminNote?: string;
   forcePullRequestedAt?: string | null;
 }
+
+
+type ForcePullOutcome = "queued" | "already_running" | "processing" | "published" | "disabled" | "no_safe_source" | "rejected" | "provider_failed" | "delivery_failed" | "unconfirmed" | "legacy";
+interface ForcePullAttempt { requestedAt: string; requestId: string | null; status: ForcePullOutcome; sourceClass?: string; reason?: string; acceptedRelayId?: string; persisted?: boolean; warning?: string }
+const PENDING_FORCE_PULL_OUTCOMES = new Set<ForcePullOutcome>(["queued", "already_running", "processing", "unconfirmed"]);
+function isPendingForcePullAttempt(attempt: ForcePullAttempt | null): boolean { return Boolean(attempt && PENDING_FORCE_PULL_OUTCOMES.has(attempt.status)); }
 
 interface BNLHistoryEntry {
   timestamp: string;
@@ -112,14 +118,17 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
   const [relayForm, setRelayForm] = useState({ status: "ONLINE" as BNLStatusValue, mode: "OBSERVATION" as BNLModeValue, message: defaultRelayMessage });
   const [bnlApiReachable, setBnlApiReachable] = useState(false);
   const [forcePullRequestedAt, setForcePullRequestedAt] = useState<string | null>(null);
-  const [forcePullAttempt, setForcePullAttempt] = useState<any>(null);
+  const [forcePullAttempt, setForcePullAttempt] = useState<ForcePullAttempt | null>(null);
   const [relayActionError, setRelayActionError] = useState<string | null>(null);
   const [relayActionNote, setRelayActionNote] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
 
-  const loadBnl = async () => {
+  const loadBnl = async (strict = false) => {
     const [publicRes, adminRes] = await Promise.all([fetch('/api/bnl/status', { cache: 'no-store' }), fetch('/api/admin/bnl', { cache: 'no-store' })]);
     setBnlApiReachable(publicRes.ok);
+    if (strict && (!publicRes.ok || !adminRes.ok)) {
+      throw new Error(`Refresh failed: public status ${publicRes.status}, admin status ${adminRes.status}`);
+    }
     if (publicRes.ok) {
       const publicData = await publicRes.json();
       setBnl((prev) => ({ ...prev, ...publicData }));
@@ -157,6 +166,20 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
     };
   }, []);
 
+  useEffect(() => {
+    if (!isPendingForcePullAttempt(forcePullAttempt)) return;
+    const started = Date.now();
+    const interval = window.setInterval(() => {
+      if (Date.now() - started > 60_000) {
+        window.clearInterval(interval);
+        setRelayActionNote("Force-pull outcome is still unconfirmed. Use manual refresh to resume checking.");
+        return;
+      }
+      void loadBnl();
+    }, 4_000);
+    return () => window.clearInterval(interval);
+  }, [forcePullAttempt?.requestId, forcePullAttempt?.status]);
+
   const updateRelay = async (action: 'updateStatus' | 'resetStandby') => {
     if (pendingAction) return;
     setPendingAction(action); setRelayActionError(null); setRelayActionNote(null);
@@ -165,7 +188,7 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
       const payload = await res.json().catch(() => ({}));
       if (!res.ok || payload?.ok !== true) throw new Error(typeof payload?.error === 'string' ? payload.error : `Request failed (${res.status})`);
       setRelayActionNote(payload.persisted === false ? 'Relay updated in in-memory fallback only; persistence unavailable.' : 'Relay update confirmed.');
-      await loadBnl();
+      await loadBnl(true);
     } catch (error) { setRelayActionError(error instanceof Error ? error.message : 'Relay action failed'); }
     finally { setPendingAction(null); }
   };
@@ -189,7 +212,7 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
       const payload = await res.json().catch(() => ({}));
       if (!res.ok || payload?.ok !== true) throw new Error(typeof payload?.error === 'string' ? payload.error : `Request failed (${res.status})`);
       setRelayActionNote(payload.persisted === false ? 'History cleared in local in-memory fallback only; persistence unavailable.' : 'Relay history cleared.');
-      await loadBnl(); } catch (error) { setRelayActionError(error instanceof Error ? error.message : 'Clear history failed'); } finally { setPendingAction(null); }
+      await loadBnl(true); } catch (error) { setRelayActionError(error instanceof Error ? error.message : 'Clear history failed'); } finally { setPendingAction(null); }
   };
   const requestForcePull = async () => {
     setRelayActionError(null);
@@ -217,7 +240,7 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
       console.error('[admin] forcePull request failed:', error);
       setRelayActionError(message);
     } finally {
-      await loadBnl();
+      await loadBnl(true);
       setPendingAction(null);
     }
   };
@@ -262,7 +285,7 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
   </div>
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><select value={relayForm.status} onChange={(e)=>setRelayForm({...relayForm,status:e.target.value as BNLStatusValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>ONLINE</option><option>OFFLINE</option></select><select value={relayForm.mode} onChange={(e)=>setRelayForm({...relayForm,mode:e.target.value as BNLModeValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>STANDBY</option><option>OBSERVATION</option><option>ACTIVE_LIAISON</option><option>SIGNAL_DEGRADATION</option><option>RESTRICTED</option></select></div>
   <textarea value={relayForm.message} maxLength={600} onChange={(e)=>setRelayForm({...relayForm,message:e.target.value.slice(0,600)})} className="w-full bg-background border border-border px-3 py-2.5 text-sm" />
-  <div className="flex flex-wrap gap-3"><button disabled={Boolean(pendingAction)} onClick={()=>updateRelay('updateStatus')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all disabled:opacity-50">{pendingAction === 'updateStatus' ? 'Updating…' : 'Update BNL Relay'}</button><button disabled={Boolean(pendingAction)} onClick={()=>updateRelay('resetStandby')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all disabled:opacity-50">{pendingAction === 'resetStandby' ? 'Resetting…' : 'Reset BNL Relay to Standby'}</button><button disabled={Boolean(pendingAction)} onClick={requestForcePull} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all disabled:opacity-50">{pendingAction === 'forcePull' ? 'Sending request…' : 'Request Immediate BNL Check-in'}</button><button disabled={Boolean(pendingAction)} onClick={async()=>{ setPendingAction('refresh'); setRelayActionError(null); try { await loadBnl(); setRelayActionNote('BNL status refreshed.'); } catch { setRelayActionError('Manual refresh failed.'); } finally { setPendingAction(null); } }} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all disabled:opacity-50">{pendingAction === 'refresh' ? 'Refreshing…' : 'Refresh BNL Status'}</button></div>
+  <div className="flex flex-wrap gap-3"><button disabled={Boolean(pendingAction)} onClick={()=>updateRelay('updateStatus')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all disabled:opacity-50">{pendingAction === 'updateStatus' ? 'Updating…' : 'Update BNL Relay'}</button><button disabled={Boolean(pendingAction)} onClick={()=>updateRelay('resetStandby')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all disabled:opacity-50">{pendingAction === 'resetStandby' ? 'Resetting…' : 'Reset BNL Relay to Standby'}</button><button disabled={Boolean(pendingAction)} onClick={requestForcePull} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all disabled:opacity-50">{pendingAction === 'forcePull' ? 'Sending request…' : 'Request Immediate BNL Check-in'}</button><button disabled={Boolean(pendingAction)} onClick={async()=>{ setPendingAction('refresh'); setRelayActionError(null); try { await loadBnl(true); setRelayActionNote('BNL status refreshed. Pending outcomes were checked again if available.'); } catch { setRelayActionError('Manual refresh failed.'); } finally { setPendingAction(null); } }} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all disabled:opacity-50">{pendingAction === 'refresh' ? 'Refreshing…' : 'Refresh BNL Status'}</button></div>
   <div className="text-xs text-muted space-y-1">
     <p><strong>Update BNL Relay:</strong> Publishes the status, mode, and message entered above to the public website relay immediately.</p>
     <p><strong>Reset BNL Relay to Standby:</strong> Sets relay back to monitoring/standby messaging and marks source as admin reset.</p>

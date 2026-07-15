@@ -34,19 +34,19 @@ Source classes are `fresh_public_event`, `recent_public_continuity`, `scoped_bro
 
 ## Response shape
 
-Public `GET /api/bnl/status` still returns flat compatibility fields: `status`, `mode`, `message`, `currentDirective`, `source`, `lastSeen`, and `persisted`. It may also include `contractVersion: 2`, `presence`, and `relay`. `adminNote`, Redis keys, force-pull status paths, webhook data, secrets, and internal compatibility metadata are not public.
+Public `GET /api/bnl/status` still returns flat compatibility fields: `status`, `mode`, `message`, `currentDirective`, `source`, `lastSeen`, and `persisted`. It may also include `contractVersion: 2`, `presence`, and `relay`; `relay` is `null` until a validated v2 relay envelope has been accepted. `adminNote`, Redis keys, force-pull status paths, webhook data, secrets, and internal compatibility metadata are not public.
 
 ## v1 compatibility
 
-The existing flat authenticated payload (`status`, `mode`, `message`, `currentDirective`, `source`, `adminNote`) remains accepted and stored in the existing v1 keys. Existing v1 force-pull, status, history, and admin contracts are not migrated or rewritten. When no v2 record exists, the website adapts the latest v1 status into the combined current view without fabricating a stable legacy relay ID.
+The existing flat authenticated payload (`status`, `mode`, `message`, `currentDirective`, `source`, `adminNote`) remains accepted and stored in the existing v1 keys. Existing v1 force-pull, status, history, and admin contracts are not migrated or rewritten. When no v2 relay record exists, the website keeps the latest v1 status in the flat compatibility fields exactly as stored, including its original `source`; the structured `relay` field remains `null` and no legacy record is classified as `grounded_reflection`, `scheduled`, or any accepted v2 relay.
 
 ## Storage and idempotency
 
-Canonical v2 keys are `bnl:presence:v2`, `bnl:relay:current:v2`, and `bnl:relay:history:v2`. Relay history retains the latest 25 distinct accepted relays. Duplicate delivery of the same `relayId` with identical relay content is idempotent. Reuse of the same `relayId` with different content is rejected with conflict and preserves the last valid records.
+Canonical v2 keys are `bnl:presence:v2`, `bnl:relay:current:v2`, and `bnl:relay:history:v2`. Relay history retains the latest 25 distinct accepted relays. Duplicate delivery of the same `relayId` with identical relay content is idempotent: the original accepted relay object and original `publishedAt` are returned, current relay storage and history are not updated, and an older archived retry cannot roll the public current relay backward. Reuse of the same `relayId` with different substantive content is rejected with conflict and preserves the last valid records. New relay current/history persistence is coordinated in one Redis transaction when Redis is available.
 
 ## Partial cutover
 
-The resolver supports v2 presence with legacy relay, legacy presence with v2 relay, v1 only, and v2 only. Flat status/mode come from resolved presence. Flat message/directive/source/lastSeen come from resolved relay, so `lastSeen` remains relay publication time rather than heartbeat receipt time. `force_pull` maps to public `forcePull`; other accepted v2 triggers map to `relay`.
+The resolver supports v2 presence with legacy flat speech, legacy presence with v2 relay, v1 only, and v2 only. Flat status/mode come from resolved presence. If a v2 relay exists, flat message/directive/source/lastSeen come from that relay, so `lastSeen` remains relay publication time rather than heartbeat receipt time. If no v2 relay exists, flat message/directive/source/lastSeen come from the legacy v1 status unchanged and structured `relay` remains `null`. `force_pull` maps to public `forcePull`; other accepted v2 triggers map to `relay`.
 
 ## Deferred producer cutover and rollback
 

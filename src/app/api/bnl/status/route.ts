@@ -13,11 +13,11 @@ import {
   parseV1Write,
   parseV2PresenceWrite,
   parseV2RelayWrite,
+  decideRelayStorage,
   sanitizeRelayHistory,
   sanitizeStoredV1Status,
   sanitizeStoredV2Relay,
   serializePublicCurrentView,
-  upsertRelayHistory,
   type BNLV1Status,
 } from "@/lib/bnl-presence-relay-contract";
 
@@ -96,15 +96,16 @@ export async function POST(req: Request) {
       const relay = parseV2RelayWrite(body, now);
       const currentHistory = redis ? sanitizeRelayHistory(await redis.get<unknown>(BNL_V2_RELAY_HISTORY_KEY)) : sanitizeRelayHistory(memoryRelayHistory);
       const currentRelay = redis ? sanitizeStoredV2Relay(await redis.get<unknown>(BNL_V2_RELAY_CURRENT_KEY)) : sanitizeStoredV2Relay(memoryRelay);
-      const conflictSeed = currentRelay && !currentHistory.some((item) => item.relayId === currentRelay.relayId) ? [currentRelay, ...currentHistory] : currentHistory;
-      const { history } = upsertRelayHistory(conflictSeed, relay);
-      if (redis) {
-        await redis.set(BNL_V2_RELAY_CURRENT_KEY, relay);
-        await redis.set(BNL_V2_RELAY_HISTORY_KEY, history);
+      const decision = decideRelayStorage({ current: currentRelay, history: currentHistory, relay });
+      if (decision.action === "conflict") throw new BNLContractConflictError();
+      if (decision.action === "insert") {
+        if (redis) {
+          await redis.multi().set(BNL_V2_RELAY_CURRENT_KEY, decision.relay).set(BNL_V2_RELAY_HISTORY_KEY, decision.history).exec();
+        }
+        memoryRelay = decision.relay;
+        memoryRelayHistory = decision.history;
       }
-      memoryRelay = relay;
-      memoryRelayHistory = history;
-      return NextResponse.json({ ok: true, relay, persisted: Boolean(redis) });
+      return NextResponse.json({ ok: true, relay: decision.relay, idempotent: decision.action === "idempotent", persisted: Boolean(redis) });
     }
 
     const nextStatus = parseV1Write(body, now);
@@ -115,6 +116,6 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("[bnl/status] error:", error);
     const status = errorStatus(error);
-    return NextResponse.json({ error: error instanceof BNLContractConflictError ? "Relay ID conflict" : status === 409 ? "Conflict" : "Invalid payload" }, { status });
+    return NextResponse.json({ error: error instanceof BNLContractConflictError ? "Relay ID conflict" : status === 400 ? "Invalid payload" : "Failed to update status" }, { status });
   }
 }

@@ -20,13 +20,14 @@ test('existing v1 POST payloads remain accepted and public view excludes adminNo
   assert.equal(view.message, 'relay speech');
   assert.equal(view.lastSeen, now);
   assert.equal(view.source, 'forcePull');
+  assert.equal(view.relay, null);
   assert.equal(JSON.stringify(mod.serializePublicCurrentView(view)).includes('private'), false);
 });
 
 test('v1-only storage produces flat response and safe combined view without stable legacy relay ID', () => {
   const view = mod.buildCurrentView({ v1: mod.parseV1Write({ ...v1Body, source: 'relay' }, now), persisted: false });
   assert.equal(view.status, 'ONLINE');
-  assert.equal(view.relay.relayId, '');
+  assert.equal(view.relay, null);
   assert.equal(view.contractVersion, 2);
 });
 
@@ -36,7 +37,7 @@ test('v2 presence writes cannot change relay speech timestamp or history', () =>
   const view = mod.buildCurrentView({ presence, relay, persisted: true });
   assert.equal(view.message, relay.message);
   assert.equal(view.lastSeen, now);
-  assert.deepEqual(mod.upsertRelayHistory([relay], relay).history, [relay]);
+  assert.deepEqual(mod.decideRelayStorage({ current: relay, history: [relay], relay: { ...relay, publishedAt: 'retry-time' } }).history, [relay]);
 });
 
 test('repeated heartbeat/startup presence writes never create relay-history entries', () => {
@@ -49,13 +50,16 @@ test('v2 relay writes append exactly one accepted record and identical retries a
   const relay = mod.parseV2RelayWrite(relayBody, now);
   const first = mod.upsertRelayHistory([], relay);
   assert.equal(first.history.length, 1);
-  const second = mod.upsertRelayHistory(first.history, relay);
+  const retry = { ...relay, publishedAt: 'retry-time' };
+  const second = mod.decideRelayStorage({ current: relay, history: first.history, relay: retry });
   assert.equal(second.history.length, 1);
-  assert.equal(second.changed, false);
+  assert.equal(second.action, 'idempotent');
+  assert.equal(second.relay.publishedAt, now);
 });
 
 test('conflicting relay-ID reuse is rejected', () => {
   const relay = mod.parseV2RelayWrite(relayBody, now);
+  assert.equal(mod.decideRelayStorage({ current: relay, history: [relay], relay: { ...relay, message: 'changed' } }).action, 'conflict');
   assert.throws(() => mod.upsertRelayHistory([relay], { ...relay, message: 'changed' }), /Relay ID conflict/);
 });
 
@@ -79,6 +83,7 @@ test('v1-only v2-only and mixed partial-cutover states resolve correctly and las
   assert.equal(mixed2.mode, 'OBSERVATION');
   assert.equal(mixed2.lastSeen, 'relay-time');
   assert.equal(mixed2.source, 'forcePull');
+  assert.equal(mixed.relay, null);
 });
 
 test('only approved source classes and strict object keys are accepted', () => {
@@ -87,10 +92,50 @@ test('only approved source classes and strict object keys are accepted', () => {
   assert.throws(() => mod.parseV2RelayWrite({ ...relayBody, relay: { ...relayBody.relay, extra: true } }, now));
 });
 
-test('public serialization excludes force-pull internals and Redis information', () => {
+test('public serialization excludes injected admin notes, force-pull internals, Redis information, and unknown fields', () => {
   const relay = mod.parseV2RelayWrite({ ...relayBody, relay: { ...relayBody.relay, trigger: 'force_pull' } }, now);
-  const json = JSON.stringify(mod.serializePublicCurrentView(mod.buildCurrentView({ relay, persisted: true })));
+  const serialized = mod.serializePublicCurrentView({ ...mod.buildCurrentView({ relay, persisted: true }), adminNote: 'private', statusPath: '/force-pull/status/r1', redisKey: 'bnl:relay:history:v2', secret: 'secret' });
+  const json = JSON.stringify(serialized);
+  assert.deepEqual(Object.keys(serialized), ['status', 'mode', 'message', 'currentDirective', 'source', 'lastSeen', 'persisted', 'contractVersion', 'presence', 'relay']);
+  assert.equal(json.includes('private'), false);
   assert.equal(json.includes('statusPath'), false);
   assert.equal(json.includes('bnl:'), false);
   assert.equal(json.includes('secret'), false);
+});
+
+test('every legacy v1 source retains exact flat source and never becomes structured relay provenance', () => {
+  for (const source of ['bot', 'startup', 'relay', 'heartbeat', 'showday', 'showtest', 'admin', 'reset', 'forcePull', 'unknown']) {
+    const view = mod.buildCurrentView({ v1: mod.parseV1Write({ ...v1Body, source }, `${source}-time`), persisted: false });
+    assert.equal(view.source, source);
+    assert.equal(view.relay, null);
+    assert.equal(JSON.stringify(view).includes('grounded_reflection'), false);
+    assert.equal(JSON.stringify(view).includes('scheduled'), false);
+  }
+});
+
+test('older archived identical relay retry cannot roll current relay backward', () => {
+  const older = mod.parseV2RelayWrite(relayBody, 'older-time');
+  const newer = mod.parseV2RelayWrite({ ...relayBody, relay: { ...relayBody.relay, relayId: 'relay-002', message: 'newer' } }, 'newer-time');
+  const decision = mod.decideRelayStorage({ current: newer, history: [newer, older], relay: { ...older, publishedAt: 'retry-time' } });
+  assert.equal(decision.action, 'idempotent');
+  assert.equal(decision.relay.publishedAt, 'older-time');
+});
+
+test('new relay decision produces coordinated current/history persistence payload', () => {
+  const relay = mod.parseV2RelayWrite(relayBody, now);
+  const decision = mod.decideRelayStorage({ current: null, history: [], relay });
+  assert.equal(decision.action, 'insert');
+  assert.equal(decision.relay, relay);
+  assert.deepEqual(decision.history, [relay]);
+  const route = readFileSync(resolve('src/app/api/bnl/status/route.ts'), 'utf8');
+  assert.match(route, /redis\.multi\(\)\.set\(BNL_V2_RELAY_CURRENT_KEY, decision\.relay\)\.set\(BNL_V2_RELAY_HISTORY_KEY, decision\.history\)\.exec\(\)/);
+  assert.match(route, /await redis\.multi\(\)\.set[\s\S]+memoryRelay = decision\.relay/);
+});
+
+test('error classification distinguishes validation conflict and infrastructure failures', () => {
+  assert.equal(mod.errorStatus(new Error('redis failed')), 500);
+  assert.equal(mod.errorStatus(new mod.BNLContractConflictError()), 409);
+  try { mod.parseV2PresenceWrite({ contractVersion: 2, kind: 'presence', presence: {} }, now); } catch (error) { assert.equal(mod.errorStatus(error), 400); }
+  const relay = mod.parseV2RelayWrite(relayBody, now);
+  assert.equal(mod.decideRelayStorage({ current: relay, history: [relay], relay: { ...relay, message: 'changed' } }).action, 'conflict');
 });

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { externalLinks } from "@/content";
 import { useBNLStatus } from "@/components/useBNLStatus";
+import { useLiveStatus } from "./LiveStatusProvider";
 
 function bnlTone(online: boolean) {
   return online ? "text-foreground" : "text-foreground/70";
@@ -60,6 +61,7 @@ function BNLRelayExplainer() {
   const [dismissed, setDismissed] = useState(false);
   const [glitchingOut, setGlitchingOut] = useState(false);
   const pathname = usePathname();
+  const { siteShowMode } = useLiveStatus();
 
   useEffect(() => {
     if (pathname === "/queue" || pathname.startsWith("/queue/")) return;
@@ -82,9 +84,11 @@ function BNLRelayExplainer() {
 
   if (pathname === "/queue" || pathname.startsWith("/queue/") || dismissed) return null;
 
+  const desktopTopClass = siteShowMode === "offline" ? "sm:top-24" : "sm:top-[9rem]";
+
   return (
     <div
-      className={`fixed inset-x-3 bottom-16 z-30 sm:top-24 sm:bottom-auto border border-accent/30 bg-black/95 p-3 font-mono text-white shadow-[0_0_35px_rgba(255,0,0,0.16)] transition-opacity duration-[2600ms] ease-out sm:inset-x-auto sm:right-6 sm:w-[calc(100vw-1.5rem)] sm:max-w-sm sm:p-4 ${
+      className={`fixed inset-x-3 bottom-16 z-30 ${desktopTopClass} sm:bottom-auto border border-accent/30 bg-black/95 p-3 font-mono text-white shadow-[0_0_35px_rgba(255,0,0,0.16)] transition-opacity duration-[2600ms] ease-out sm:inset-x-auto sm:right-6 sm:w-[calc(100vw-1.5rem)] sm:max-w-sm sm:p-4 ${
         visible ? "opacity-100" : "opacity-0 pointer-events-none"
       } ${glitchingOut ? "animate-[bnl-relay-glitch-out_520ms_steps(2,end)_forwards]" : ""}`}
     >
@@ -179,8 +183,8 @@ export function BNLNetworkRelayTicker() {
   return (
     <>
       <div aria-hidden className="h-8" />
-      <div className="fixed left-0 right-0 top-14 z-40 border-b border-border/80 bg-black px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-white sm:px-4 sm:text-[11px] sm:tracking-[0.2em]">
-        <div className="mx-auto flex max-w-7xl items-center gap-2 overflow-hidden sm:gap-3">
+      <div className="fixed left-0 right-0 top-14 z-40 h-8 border-b border-border/80 bg-black px-2 font-mono text-[10px] uppercase tracking-[0.14em] text-white sm:px-4 sm:text-[11px] sm:tracking-[0.2em]">
+        <div className="mx-auto flex h-full max-w-7xl items-center gap-2 overflow-hidden sm:gap-3">
           <span className="hidden shrink-0 text-white/85 sm:inline">&gt; NETWORK RELAY // BNL-01</span>
           <span className="shrink-0 text-white/85 sm:hidden">&gt; BNL-01 //</span>
           <div className="bnl-relay-scroll min-w-0 flex-1">

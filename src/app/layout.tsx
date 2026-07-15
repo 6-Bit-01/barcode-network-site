@@ -70,9 +70,9 @@ export default function RootLayout({
       >
         <LiveStatusProvider>
           <DataStream />
-          <LiveBanner />
           <Header />
           <BNLNetworkRelayShell />
+          <LiveBanner />
           <main className="min-h-screen animate-interference overflow-x-hidden">
             {children}
           </main>

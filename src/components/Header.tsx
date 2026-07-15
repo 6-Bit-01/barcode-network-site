@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useLiveStatus } from "./LiveStatusProvider";
 import { GlitchText } from "./GlitchText";
 import { siteConfig } from "@/content";
 
@@ -20,12 +19,6 @@ const navItems = [
 
 export function Header() {
   const pathname = usePathname();
-  const { siteShowMode, queueHref, streamUrl } = useLiveStatus();
-
-  const liveHref = queueHref ?? (siteShowMode === "broadcast_live" ? streamUrl || "/radio" : null);
-  const liveLabel = siteShowMode === "broadcast_live" ? "BARCODE RADIO LIVE" : siteShowMode === "intake_open" ? "SUBMISSIONS OPEN" : null;
-  const isExternalLiveHref = Boolean(liveHref && liveHref.startsWith("http"));
-
   return (
     <header className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm">
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
@@ -71,18 +64,6 @@ export function Header() {
           </nav>
 
           <div className="flex items-center gap-4">
-            {liveHref && liveLabel && (
-              <a
-                href={liveHref}
-                target={isExternalLiveHref ? "_blank" : undefined}
-                rel={isExternalLiveHref ? "noopener noreferrer" : undefined}
-                className="flex items-center gap-2 px-3 py-1 border border-danger rounded text-sm uppercase tracking-wider text-danger live-indicator hover:bg-danger/10 transition-colors"
-              >
-                <span className="w-2 h-2 rounded-full bg-danger" />
-                {liveLabel}
-              </a>
-            )}
-
             <MobileMenu pathname={pathname} />
           </div>
         </div>

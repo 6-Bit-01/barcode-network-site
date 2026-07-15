@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { LiveBanner } from "@/components/LiveBanner";
 import { StatusBadge, SectionDot } from "@/components/LiveEffects";
 import { homePage, siteConfig, externalLinks } from "@/content";
 import { BNLRelayModule } from "@/components/BNLRelay";
@@ -45,9 +44,6 @@ function RouteLink({
 export default function Home() {
   return (
     <div className="pt-14">
-      {/* Live Banner */}
-      <LiveBanner />
-
       {/* Public-access Hero */}
       <section className="relative noise-bg border-b border-border">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-24 sm:py-32">

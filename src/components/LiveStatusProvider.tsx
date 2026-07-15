@@ -67,6 +67,22 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
         setIsScheduled(data.isScheduled);
         setStreamUrlState(data.streamUrl);
         setManualOverride(data.manualOverride);
+        const queueProduction = data?.capabilities?.queueProduction === true;
+        if (!queueProduction) {
+          setQueueSnapshot(null);
+        } else {
+          try {
+            const queueRes = await fetch("/api/queue", { cache: "no-store" });
+            if (queueRes.ok) {
+              const queueData = (await queueRes.json()) as QueuePublicSnapshot;
+              setQueueSnapshot(queueData);
+            } else {
+              queueError = "Failed to fetch queue status";
+            }
+          } catch {
+            queueError = "Failed to fetch queue status";
+          }
+        }
       } else {
         adminError = "Failed to fetch live status";
       }
@@ -74,17 +90,6 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
       adminError = "Failed to fetch live status";
     }
 
-    try {
-      const queueRes = await fetch("/api/queue", { cache: "no-store" });
-      if (queueRes.ok) {
-        const queueData = (await queueRes.json()) as QueuePublicSnapshot;
-        setQueueSnapshot(queueData);
-      } else {
-        queueError = "Failed to fetch queue status";
-      }
-    } catch {
-      queueError = "Failed to fetch queue status";
-    }
 
     setLastError(adminError ?? queueError);
   }, []);

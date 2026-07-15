@@ -30,6 +30,10 @@ import {
   isPublicDatabasePageVisible,
 } from "@/lib/database-visibility";
 import { getRadioQueueState, toPublicQueueTrack } from "@/lib/queue";
+import {
+  isQueueProductionEnabled,
+  queueProductionCapability,
+} from "@/lib/queue-production";
 import type {
   QueueEntry,
   QueueLane,
@@ -170,6 +174,15 @@ function pressureFor(
   if (load >= 0.75) return "high";
   if (load >= 0.4) return "medium";
   return "low";
+}
+
+function disabledQueueProjection() {
+  return {
+    available: false,
+    reason: "queue_production_disabled",
+    message:
+      "BARCODE Radio queue production signals are disabled; testing queue data is unavailable to the BNL public read model.",
+  };
 }
 
 async function readPublicLiveQueueForBnl() {
@@ -1008,7 +1021,10 @@ const rules = {
 };
 
 export async function GET() {
-  const liveQueue = await readPublicLiveQueueForBnl();
+  const queueProductionEnabled = isQueueProductionEnabled();
+  const liveQueue = queueProductionEnabled
+    ? await readPublicLiveQueueForBnl()
+    : { queue: disabledQueueProjection(), artists: [] };
   const dossiers = publicDossiers();
 
   return NextResponse.json(
@@ -1020,12 +1036,27 @@ export async function GET() {
       scope: "bnl_public_read_model",
       source: "barcode-network-site",
       publicOnly: true,
+      capabilities: queueProductionCapability(),
       sections: {
         sourceContext,
         queue: liveQueue.queue,
         artists: liveQueue.artists,
         dossiers,
-        operatorLanes: buildOperatorLanes(liveQueue.queue, dossiers),
+        operatorLanes: queueProductionEnabled
+          ? buildOperatorLanes(
+              liveQueue.queue as Awaited<
+                ReturnType<typeof readPublicLiveQueueForBnl>
+              >["queue"],
+              dossiers,
+            )
+          : {
+              temporaryRuntimeContext: [],
+              recapCandidates: [],
+              broadcastMemoryCandidates: [],
+              dossierSeedCandidates: [],
+              publicSafeCopyCandidates: [],
+              doNotStore: ["queue production signals are disabled"],
+            },
         rules,
       },
     },

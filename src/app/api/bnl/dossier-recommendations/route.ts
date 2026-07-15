@@ -17,6 +17,7 @@ import {
   DossierWorkflowInputError,
   reconcilePopulationSignals,
 } from "@/lib/dossier-workflow-store";
+import { isQueueProductionEnabled } from "@/lib/queue-production";
 
 export const dynamic = "force-dynamic";
 
@@ -518,6 +519,12 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
     }
     sourceLanes = Array.from(new Set(sourceLanes.filter(Boolean)));
     if (sourceLanes.length === 0) sourceLanes = ["unknown"];
+  }
+
+  if (!isQueueProductionEnabled() && sourceLanes.includes("queue_context")) {
+    throw new Error(
+      "queue_context recommendations are disabled until BARCODE_QUEUE_PRODUCTION_ENABLED is exactly true",
+    );
   }
 
   const targetDossierId = text(payload.targetDossierId, 200);

@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import {
   BNLContractConflictError,
+  BNLContractValidationError,
   BNL_V1_HISTORY_KEY,
   BNL_V1_STATUS_KEY,
   BNL_V2_PRESENCE_KEY,
   BNL_V2_RELAY_CURRENT_KEY,
   BNL_V2_RELAY_HISTORY_KEY,
+  appendV1HistoryEntry,
   buildCurrentView,
   errorStatus,
   isV2Envelope,
@@ -16,17 +18,18 @@ import {
   decideRelayStorage,
   sanitizeRelayHistory,
   sanitizeStoredV1Status,
+  sanitizeV1History,
   sanitizeStoredV2Relay,
   serializePublicCurrentView,
+  v1HistoryEntryFromStatus,
+  type BNLV1HistoryEntry,
   type BNLV1Status,
 } from "@/lib/bnl-presence-relay-contract";
 
 export const dynamic = "force-dynamic";
 
-type BNLHistoryEntry = BNLV1Status & { timestamp: string; persisted?: boolean };
-
 let memoryStatus: BNLV1Status = sanitizeStoredV1Status(null);
-let memoryHistory: BNLHistoryEntry[] = [];
+let memoryHistory: BNLV1HistoryEntry[] = [];
 let memoryPresence: unknown = null;
 let memoryRelay: unknown = null;
 let memoryRelayHistory: unknown[] = [];
@@ -38,23 +41,9 @@ function getRedis(): Redis | null {
   return new Redis({ url, token });
 }
 
-function sanitizeHistory(value: unknown): BNLHistoryEntry[] {
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => {
-    const status = sanitizeStoredV1Status(item);
-    const timestamp = item && typeof item === "object" && typeof (item as Record<string, unknown>).timestamp === "string" ? (item as Record<string, string>).timestamp : status.lastSeen;
-    return timestamp && status.message ? { ...status, timestamp } : null;
-  }).filter((item): item is BNLHistoryEntry => Boolean(item)).slice(0, 25);
-}
-
-function sameHistoryContent(a: BNLHistoryEntry, b: BNLHistoryEntry): boolean {
-  return a.status === b.status && a.mode === b.mode && a.source === b.source && a.message === b.message && (a.currentDirective ?? "") === (b.currentDirective ?? "") && (a.adminNote ?? "") === (b.adminNote ?? "");
-}
-
-async function appendHistory(redis: Redis | null, entry: BNLHistoryEntry) {
-  const current = redis ? sanitizeHistory(await redis.get<unknown>(BNL_V1_HISTORY_KEY)) : memoryHistory;
-  const latest = current[0];
-  const nextHistory = latest && sameHistoryContent(latest, entry) ? current.slice(0, 25) : [entry, ...current].slice(0, 25);
+async function appendHistory(redis: Redis | null, entry: BNLV1HistoryEntry) {
+  const current = redis ? sanitizeV1History(await redis.get<unknown>(BNL_V1_HISTORY_KEY)) : memoryHistory;
+  const nextHistory = appendV1HistoryEntry(current, entry);
   if (redis) await redis.set(BNL_V1_HISTORY_KEY, nextHistory);
   memoryHistory = nextHistory;
 }
@@ -81,7 +70,7 @@ export async function POST(req: Request) {
   if (!expectedApiKey || providedApiKey !== expectedApiKey) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => { throw new BNLContractValidationError(); });
     const now = new Date().toISOString();
     const redis = getRedis();
 
@@ -111,7 +100,7 @@ export async function POST(req: Request) {
     const nextStatus = parseV1Write(body, now);
     if (redis) await redis.set(BNL_V1_STATUS_KEY, nextStatus);
     memoryStatus = nextStatus;
-    await appendHistory(redis, { ...nextStatus, timestamp: now, persisted: Boolean(redis) });
+    await appendHistory(redis, v1HistoryEntryFromStatus(nextStatus, now, Boolean(redis)));
     return NextResponse.json({ ok: true, status: nextStatus, persisted: Boolean(redis) });
   } catch (error) {
     console.error("[bnl/status] error:", error);

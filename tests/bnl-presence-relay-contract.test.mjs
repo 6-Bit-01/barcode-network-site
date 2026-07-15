@@ -132,6 +132,39 @@ test('new relay decision produces coordinated current/history persistence payloa
   assert.match(route, /await redis\.multi\(\)\.set[\s\S]+memoryRelay = decision\.relay/);
 });
 
+
+
+test('v1 history sanitizer preserves original strict legacy history contract', () => {
+  const valid = { timestamp: 't1', status: 'ONLINE', mode: 'OBSERVATION', currentDirective: 'listen', message: 'hello', source: 'showday', adminNote: 'operator' };
+  const out = mod.sanitizeV1History([
+    { timestamp: 'only' },
+    { ...valid, status: 'BAD' },
+    { ...valid, mode: 'BAD' },
+    valid,
+    { ...valid, source: 'bad-source', timestamp: 't2', message: 'fallback source' },
+  ]);
+  assert.deepEqual(out, [valid, { ...valid, source: 'unknown', timestamp: 't2', message: 'fallback source' }]);
+});
+
+test('v1 history append uses explicit original entry shape without lastSeen and preserves dedupe', () => {
+  const status = mod.parseV1Write(v1Body, now);
+  const entry = mod.v1HistoryEntryFromStatus(status, now, true);
+  assert.equal('lastSeen' in entry, false);
+  assert.deepEqual(Object.keys(entry), ['timestamp', 'status', 'mode', 'currentDirective', 'message', 'source', 'adminNote', 'persisted']);
+  const first = mod.appendV1HistoryEntry([], entry);
+  const second = mod.appendV1HistoryEntry(first, { ...entry, timestamp: 'later' });
+  assert.equal(second.length, 1);
+  assert.equal(second[0].timestamp, now);
+});
+
+test('malformed JSON path is classified as validation while infrastructure stays 500', () => {
+  assert.equal(mod.errorStatus(new mod.BNLContractValidationError()), 400);
+  assert.equal(mod.errorStatus(new Error('redis unavailable')), 500);
+  const route = readFileSync(resolve('src/app/api/bnl/status/route.ts'), 'utf8');
+  assert.match(route, /req\.json\(\)\.catch\(\(\) => \{ throw new BNLContractValidationError\(\); \}\)/);
+  assert.match(route, /status === 400 \? "Invalid payload" : "Failed to update status"/);
+});
+
 test('error classification distinguishes validation conflict and infrastructure failures', () => {
   assert.equal(mod.errorStatus(new Error('redis failed')), 500);
   assert.equal(mod.errorStatus(new mod.BNLContractConflictError()), 409);

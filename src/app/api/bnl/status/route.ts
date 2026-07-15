@@ -1,86 +1,35 @@
 import { NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
+import {
+  BNLContractConflictError,
+  BNL_V1_HISTORY_KEY,
+  BNL_V1_STATUS_KEY,
+  BNL_V2_PRESENCE_KEY,
+  BNL_V2_RELAY_CURRENT_KEY,
+  BNL_V2_RELAY_HISTORY_KEY,
+  buildCurrentView,
+  errorStatus,
+  isV2Envelope,
+  parseV1Write,
+  parseV2PresenceWrite,
+  parseV2RelayWrite,
+  sanitizeRelayHistory,
+  sanitizeStoredV1Status,
+  sanitizeStoredV2Relay,
+  serializePublicCurrentView,
+  upsertRelayHistory,
+  type BNLV1Status,
+} from "@/lib/bnl-presence-relay-contract";
 
 export const dynamic = "force-dynamic";
 
-type BNLStatusValue = "ONLINE" | "OFFLINE";
-type BNLModeValue =
-  | "STANDBY"
-  | "OBSERVATION"
-  | "ACTIVE_LIAISON"
-  | "SIGNAL_DEGRADATION"
-  | "RESTRICTED";
-type BNLSourceValue =
-  | "bot"
-  | "startup"
-  | "relay"
-  | "heartbeat"
-  | "showday"
-  | "showtest"
-  | "admin"
-  | "reset"
-  | "forcePull"
-  | "unknown";
+type BNLHistoryEntry = BNLV1Status & { timestamp: string; persisted?: boolean };
 
-interface BNLStatus {
-  status: BNLStatusValue;
-  mode: BNLModeValue;
-  message: string;
-  currentDirective: string;
-  source: BNLSourceValue;
-  adminNote?: string;
-  lastSeen: string | null;
-}
-
-interface BNLHistoryEntry {
-  timestamp: string;
-  status: BNLStatusValue;
-  mode: BNLModeValue;
-  currentDirective?: string;
-  message: string;
-  source: BNLSourceValue;
-  adminNote?: string;
-  persisted?: boolean;
-}
-
-const KEY = "bnl:status";
-const HISTORY_KEY = "bnl:history";
-const MAX_MESSAGE_LENGTH = 600;
-const MAX_DIRECTIVE_LENGTH = 800;
-const MAX_ADMIN_NOTE_LENGTH = 400;
-const DEFAULT_DIRECTIVE = "Monitoring Discord-side relay traffic.";
-const DEFAULT_STATUS: BNLStatus = {
-  status: "OFFLINE",
-  mode: "STANDBY",
-  message: "BNL-01 relay awaiting signal.",
-  currentDirective: DEFAULT_DIRECTIVE,
-  source: "unknown",
-  lastSeen: null,
-};
-
-const ALLOWED_STATUS = new Set<BNLStatusValue>(["ONLINE", "OFFLINE"]);
-const ALLOWED_MODES = new Set<BNLModeValue>([
-  "STANDBY",
-  "OBSERVATION",
-  "ACTIVE_LIAISON",
-  "SIGNAL_DEGRADATION",
-  "RESTRICTED",
-]);
-const ALLOWED_SOURCES = new Set<BNLSourceValue>([
-  "bot",
-  "startup",
-  "relay",
-  "heartbeat",
-  "showday",
-  "showtest",
-  "admin",
-  "reset",
-  "forcePull",
-  "unknown",
-]);
-
-let memoryStatus: BNLStatus = { ...DEFAULT_STATUS };
+let memoryStatus: BNLV1Status = sanitizeStoredV1Status(null);
 let memoryHistory: BNLHistoryEntry[] = [];
+let memoryPresence: unknown = null;
+let memoryRelay: unknown = null;
+let memoryRelayHistory: unknown[] = [];
 
 function getRedis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -89,181 +38,83 @@ function getRedis(): Redis | null {
   return new Redis({ url, token });
 }
 
-function sanitizeStoredStatus(value: unknown): BNLStatus {
-  if (!value || typeof value !== "object") return { ...DEFAULT_STATUS };
-
-  const record = value as Record<string, unknown>;
-  const status = ALLOWED_STATUS.has(record.status as BNLStatusValue)
-    ? (record.status as BNLStatusValue)
-    : DEFAULT_STATUS.status;
-  const mode = ALLOWED_MODES.has(record.mode as BNLModeValue)
-    ? (record.mode as BNLModeValue)
-    : DEFAULT_STATUS.mode;
-  const message =
-      typeof record.message === "string" && record.message.trim().length > 0
-      ? record.message.trim().slice(0, MAX_MESSAGE_LENGTH)
-      : DEFAULT_STATUS.message;
-  const currentDirective =
-      typeof record.currentDirective === "string" && record.currentDirective.trim().length > 0
-      ? record.currentDirective.trim().slice(0, MAX_DIRECTIVE_LENGTH)
-      : DEFAULT_STATUS.currentDirective;
-  const source = ALLOWED_SOURCES.has(record.source as BNLSourceValue)
-    ? (record.source as BNLSourceValue)
-    : DEFAULT_STATUS.source;
-  const lastSeen =
-    typeof record.lastSeen === "string" && record.lastSeen.length > 0
-      ? record.lastSeen
-      : null;
-
-  const adminNote =
-      typeof record.adminNote === "string" && record.adminNote.trim().length > 0
-      ? record.adminNote.trim().slice(0, MAX_ADMIN_NOTE_LENGTH)
-      : undefined;
-
-  return { status, mode, message, currentDirective, source, adminNote, lastSeen };
-}
-
 function sanitizeHistory(value: unknown): BNLHistoryEntry[] {
   if (!Array.isArray(value)) return [];
-  const normalized: BNLHistoryEntry[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== "object") continue;
-    const rec = item as Record<string, unknown>;
-    const status = ALLOWED_STATUS.has(rec.status as BNLStatusValue) ? (rec.status as BNLStatusValue) : null;
-    const mode = ALLOWED_MODES.has(rec.mode as BNLModeValue) ? (rec.mode as BNLModeValue) : null;
-    const source = ALLOWED_SOURCES.has(rec.source as BNLSourceValue)
-      ? (rec.source as BNLSourceValue)
-      : "unknown";
-    const timestamp = typeof rec.timestamp === "string" && rec.timestamp ? rec.timestamp : null;
-    const message = typeof rec.message === "string" ? rec.message.trim().slice(0, MAX_MESSAGE_LENGTH) : "";
-    const currentDirective =
-      typeof rec.currentDirective === "string" && rec.currentDirective.trim().length > 0
-        ? rec.currentDirective.trim().slice(0, MAX_DIRECTIVE_LENGTH)
-        : undefined;
-    const adminNote =
-      typeof rec.adminNote === "string" && rec.adminNote.trim().length > 0
-        ? rec.adminNote.trim().slice(0, MAX_ADMIN_NOTE_LENGTH)
-        : undefined;
-    if (!status || !mode || !timestamp || !message) continue;
-    normalized.push({ timestamp, status, mode, currentDirective, message, source, adminNote });
-  }
-  return normalized.slice(0, 25);
+  return value.map((item) => {
+    const status = sanitizeStoredV1Status(item);
+    const timestamp = item && typeof item === "object" && typeof (item as Record<string, unknown>).timestamp === "string" ? (item as Record<string, string>).timestamp : status.lastSeen;
+    return timestamp && status.message ? { ...status, timestamp } : null;
+  }).filter((item): item is BNLHistoryEntry => Boolean(item)).slice(0, 25);
 }
 
 function sameHistoryContent(a: BNLHistoryEntry, b: BNLHistoryEntry): boolean {
-  return (
-    a.status === b.status &&
-    a.mode === b.mode &&
-    a.source === b.source &&
-    a.message === b.message &&
-    (a.currentDirective ?? "") === (b.currentDirective ?? "") &&
-    (a.adminNote ?? "") === (b.adminNote ?? "")
-  );
+  return a.status === b.status && a.mode === b.mode && a.source === b.source && a.message === b.message && (a.currentDirective ?? "") === (b.currentDirective ?? "") && (a.adminNote ?? "") === (b.adminNote ?? "");
 }
 
 async function appendHistory(redis: Redis | null, entry: BNLHistoryEntry) {
-  const current = redis ? sanitizeHistory(await redis.get<unknown>(HISTORY_KEY)) : memoryHistory;
+  const current = redis ? sanitizeHistory(await redis.get<unknown>(BNL_V1_HISTORY_KEY)) : memoryHistory;
   const latest = current[0];
-  const nextHistory = latest && sameHistoryContent(latest, entry)
-    ? current.slice(0, 25)
-    : [entry, ...current].slice(0, 25);
-  if (redis) await redis.set(HISTORY_KEY, nextHistory);
+  const nextHistory = latest && sameHistoryContent(latest, entry) ? current.slice(0, 25) : [entry, ...current].slice(0, 25);
+  if (redis) await redis.set(BNL_V1_HISTORY_KEY, nextHistory);
   memoryHistory = nextHistory;
 }
 
 export async function GET() {
   const redis = getRedis();
-
-  if (redis) {
-    const stored = await redis.get<unknown>(KEY);
-    const resolved = sanitizeStoredStatus(stored);
-    memoryStatus = resolved;
-    const { adminNote: _adminNote, ...publicStatus } = resolved;
-    return NextResponse.json({ ...publicStatus, persisted: true });
-  }
-
-  const { adminNote: _adminNote, ...publicStatus } = memoryStatus;
-  return NextResponse.json({ ...publicStatus, persisted: false });
+  const [v1, presence, relay] = redis
+    ? await Promise.all([
+        redis.get<unknown>(BNL_V1_STATUS_KEY),
+        redis.get<unknown>(BNL_V2_PRESENCE_KEY),
+        redis.get<unknown>(BNL_V2_RELAY_CURRENT_KEY),
+      ])
+    : [memoryStatus, memoryPresence, memoryRelay];
+  const view = buildCurrentView({ v1, presence, relay, persisted: Boolean(redis) });
+  memoryStatus = sanitizeStoredV1Status(v1);
+  memoryPresence = presence;
+  memoryRelay = relay;
+  return NextResponse.json(serializePublicCurrentView(view));
 }
 
 export async function POST(req: Request) {
   const expectedApiKey = process.env.BNL_API_KEY;
   const providedApiKey = req.headers.get("x-api-key");
-
-  if (!expectedApiKey || providedApiKey !== expectedApiKey) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!expectedApiKey || providedApiKey !== expectedApiKey) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const body = (await req.json()) as Record<string, unknown>;
-    const allowedKeys = ["status", "mode", "message", "currentDirective", "source", "adminNote"];
-    const bodyKeys = Object.keys(body);
-    if (!bodyKeys.every((key) => allowedKeys.includes(key))) {
-      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
-    }
-
-    const status = body.status;
-    const mode = body.mode;
-    const message = body.message;
-    const currentDirective = body.currentDirective;
-    const source = body.source;
-    const adminNote = body.adminNote;
-
-    if (!ALLOWED_STATUS.has(status as BNLStatusValue) || !ALLOWED_MODES.has(mode as BNLModeValue) || typeof message !== "string") {
-      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
-    }
-
-    const trimmedMessage = message.trim();
-    if (!trimmedMessage || trimmedMessage.length > MAX_MESSAGE_LENGTH) {
-      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
-    }
-
-    if (
-      currentDirective !== undefined
-      && (typeof currentDirective !== "string"
-      || currentDirective.trim().length === 0
-      || currentDirective.trim().length > MAX_DIRECTIVE_LENGTH)
-    ) {
-      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
-    }
-
-    if (source !== undefined && (!ALLOWED_SOURCES.has(source as BNLSourceValue) || typeof source !== "string")) {
-      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
-    }
-
-    if (adminNote !== undefined && (typeof adminNote !== "string" || adminNote.trim().length > MAX_ADMIN_NOTE_LENGTH)) {
-      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
-    }
-
+    const body = await req.json();
     const now = new Date().toISOString();
-    const nextStatus: BNLStatus = {
-      status: status as BNLStatusValue,
-      mode: mode as BNLModeValue,
-      message: trimmedMessage,
-      currentDirective: typeof currentDirective === "string" ? currentDirective.trim() : DEFAULT_DIRECTIVE,
-      source: typeof source === "string" && ALLOWED_SOURCES.has(source as BNLSourceValue) ? (source as BNLSourceValue) : "unknown",
-      adminNote: typeof adminNote === "string" && adminNote.trim().length > 0 ? adminNote.trim() : undefined,
-      lastSeen: now,
-    };
-
     const redis = getRedis();
-    if (redis) await redis.set(KEY, nextStatus);
+
+    if (isV2Envelope(body)) {
+      if ((body as Record<string, unknown>).kind === "presence") {
+        const presence = parseV2PresenceWrite(body, now);
+        if (redis) await redis.set(BNL_V2_PRESENCE_KEY, presence);
+        memoryPresence = presence;
+        return NextResponse.json({ ok: true, presence, persisted: Boolean(redis) });
+      }
+
+      const relay = parseV2RelayWrite(body, now);
+      const currentHistory = redis ? sanitizeRelayHistory(await redis.get<unknown>(BNL_V2_RELAY_HISTORY_KEY)) : sanitizeRelayHistory(memoryRelayHistory);
+      const currentRelay = redis ? sanitizeStoredV2Relay(await redis.get<unknown>(BNL_V2_RELAY_CURRENT_KEY)) : sanitizeStoredV2Relay(memoryRelay);
+      const conflictSeed = currentRelay && !currentHistory.some((item) => item.relayId === currentRelay.relayId) ? [currentRelay, ...currentHistory] : currentHistory;
+      const { history } = upsertRelayHistory(conflictSeed, relay);
+      if (redis) {
+        await redis.set(BNL_V2_RELAY_CURRENT_KEY, relay);
+        await redis.set(BNL_V2_RELAY_HISTORY_KEY, history);
+      }
+      memoryRelay = relay;
+      memoryRelayHistory = history;
+      return NextResponse.json({ ok: true, relay, persisted: Boolean(redis) });
+    }
+
+    const nextStatus = parseV1Write(body, now);
+    if (redis) await redis.set(BNL_V1_STATUS_KEY, nextStatus);
     memoryStatus = nextStatus;
-
-    await appendHistory(redis, {
-      timestamp: now,
-      status: nextStatus.status,
-      mode: nextStatus.mode,
-      currentDirective: nextStatus.currentDirective,
-      message: nextStatus.message,
-      source: nextStatus.source,
-      adminNote: nextStatus.adminNote,
-      persisted: Boolean(redis),
-    });
-
+    await appendHistory(redis, { ...nextStatus, timestamp: now, persisted: Boolean(redis) });
     return NextResponse.json({ ok: true, status: nextStatus, persisted: Boolean(redis) });
   } catch (error) {
     console.error("[bnl/status] error:", error);
-    return NextResponse.json({ error: "Failed to update status" }, { status: 500 });
+    const status = errorStatus(error);
+    return NextResponse.json({ error: error instanceof BNLContractConflictError ? "Relay ID conflict" : status === 409 ? "Conflict" : "Invalid payload" }, { status });
   }
 }

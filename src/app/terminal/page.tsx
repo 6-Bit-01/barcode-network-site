@@ -62,7 +62,7 @@ export default function TerminalPage() {
 
   return (
     <div className="min-h-screen border-b border-border bg-background pt-14 noise-bg">
-      <div className="mx-auto max-w-7xl px-3 py-8 sm:px-6 sm:py-12">
+      <div className="mx-auto max-w-7xl px-3 pb-2 pt-2 sm:px-6">
         <TerminalShell archive={archive} />
       </div>
     </div>

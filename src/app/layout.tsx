@@ -8,6 +8,7 @@ import { DataStream } from "@/components/DataStream";
 import { SystemTicker } from "@/components/SystemTicker";
 import { LiveBanner } from "@/components/LiveBanner";
 import { BNLNetworkRelayShell } from "@/components/BNLNetworkRelayShell";
+import { BNLStatusProvider } from "@/components/BNLStatusProvider";
 
 const fontVariables = {
   "--font-geist-mono": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace",
@@ -69,6 +70,7 @@ export default function RootLayout({
         style={fontVariables}
       >
         <LiveStatusProvider>
+          <BNLStatusProvider>
           <DataStream />
           <LiveBanner />
           <Header />
@@ -80,6 +82,7 @@ export default function RootLayout({
           <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border/30 bg-background/90 backdrop-blur-sm px-4 py-1.5">
             <SystemTicker className="text-xs" />
           </div>
+          </BNLStatusProvider>
         </LiveStatusProvider>
       </body>
     </html>

@@ -6,7 +6,7 @@ export type BNLModeValue =
   | "SIGNAL_DEGRADATION"
   | "RESTRICTED";
 
-export type BNLSourceValue = "bot" | "startup" | "relay" | "heartbeat" | "showday" | "showtest" | "admin" | "reset" | "unknown";
+export type BNLSourceValue = "bot" | "startup" | "relay" | "heartbeat" | "showday" | "showtest" | "admin" | "reset" | "forcePull" | "unknown";
 
 export interface BNLStatus {
   status: BNLStatusValue;

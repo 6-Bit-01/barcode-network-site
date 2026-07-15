@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:queue": "node --test tests/queue-playback.test.mjs tests/bnl-read-model.test.mjs tests/queue-production-capability.test.mjs",
-    "check": "npx tsc --noEmit && npm run lint && npm run test:queue"
+    "check": "npx tsc --noEmit && npm run lint && npm run test:queue && npm run test:bnl",
+    "test:bnl": "node --test tests/bnl-status-controller.test.mjs tests/bnl-force-pull.test.mjs tests/bnl-admin-ui-contract.test.mjs"
   },
   "dependencies": {
     "@upstash/ratelimit": "^2.0.8",

@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import { verifyAdminToken, COOKIE_NAME } from "@/lib/auth";
+import {
+  isPendingForcePull,
+  normalizePendingForcePullStatus,
+  pollForcePullStatus,
+  resumeForcePullAttempt,
+  sanitizeStoredForcePullAttempt,
+  storeForcePullAttempt,
+  type StoredForcePullAttempt,
+} from "@/lib/bnl-force-pull";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +27,7 @@ const STATUS_KEY = "bnl:status";
 const HISTORY_KEY = "bnl:history";
 const FLAGS_KEY = "bnl:flags";
 const FORCE_PULL_KEY = "bnl:force_pull_requested_at";
+const FORCE_PULL_ATTEMPT_KEY = "bnl:force_pull_latest_attempt";
 const MAX_MESSAGE_LENGTH = 600;
 const MAX_DIRECTIVE_LENGTH = 800;
 
@@ -27,11 +37,14 @@ const DEFAULT_FLAGS: BNLFlags = {
   heartbeatEnabled: true,
 };
 
+
+
 const ALLOWED_STATUS = new Set<BNLStatusValue>(["ONLINE", "OFFLINE"]);
 const ALLOWED_MODES = new Set<BNLModeValue>(["STANDBY", "OBSERVATION", "ACTIVE_LIAISON", "SIGNAL_DEGRADATION", "RESTRICTED"]);
 
 let memoryHistory: Array<{ timestamp: string; status: BNLStatusValue; mode: BNLModeValue; currentDirective?: string; message: string; source: BNLSourceValue; adminNote?: string; persisted?: boolean }> = [];
 let memoryFlags: BNLFlags = { ...DEFAULT_FLAGS };
+let memoryForcePullAttempt: StoredForcePullAttempt | null = null;
 
 function getRedis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -87,36 +100,28 @@ function sanitizeFlags(value: unknown): BNLFlags {
   };
 }
 
-async function notifyForcePull(now: string): Promise<{ delivered: boolean; reason?: string; status?: number }> {
+async function notifyForcePull(now: string): Promise<StoredForcePullAttempt & { delivered: boolean; httpStatus?: number }> {
   const webhookUrl = process.env.BNL_FORCE_PULL_WEBHOOK_URL;
-  if (!webhookUrl) return { delivered: false, reason: "BNL_FORCE_PULL_WEBHOOK_URL is not configured" };
+  if (!webhookUrl) return { requestedAt: now, requestId: null, status: "delivery_failed", delivered: false, reason: "Immediate check-in relay is not configured." };
   const sharedSecret = process.env.BNL_FORCE_PULL_SHARED_SECRET || "";
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
-
   try {
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(sharedSecret ? { "x-bnl-secret": sharedSecret } : {}),
-      },
-      body: JSON.stringify({ action: "forcePull", requestedAt: now, source: "website-admin" }),
-      cache: "no-store",
-      signal: controller.signal,
-    });
+    const response = await fetch(webhookUrl, { method: "POST", headers: { "Content-Type": "application/json", ...(sharedSecret ? { "x-bnl-secret": sharedSecret } : {}) }, body: JSON.stringify({ action: "forcePull", requestedAt: now, source: "website-admin" }), cache: "no-store", signal: controller.signal });
     clearTimeout(timeout);
-
-    if (!response.ok) {
-      console.error("[admin/bnl] forcePull webhook returned non-OK status", { status: response.status });
-      return { delivered: false, status: response.status, reason: `Webhook returned ${response.status}` };
-    }
-
-    return { delivered: true, status: response.status };
-  } catch (error) {
+    if (!response.ok) return { requestedAt: now, requestId: null, status: "delivery_failed", delivered: false, httpStatus: response.status, reason: `Webhook returned ${response.status}` };
+    let body: Record<string, unknown>;
+    try { body = await response.json(); } catch { return { requestedAt: now, requestId: null, status: "unconfirmed", delivered: true, httpStatus: response.status, warning: "Malformed webhook JSON" }; }
+    const requestId = typeof body.request_id === "string" ? body.request_id.slice(0, 120) : null;
+    const rawStatus = typeof body.status === "string" ? body.status : undefined;
+    if (!requestId) return { requestedAt: now, requestId: null, status: "legacy", delivered: true, httpStatus: response.status, warning: "Legacy bot response did not include request_id" };
+    if (!isPendingForcePull(rawStatus)) return { requestedAt: now, requestId, status: "unconfirmed", delivered: true, httpStatus: response.status, warning: "Unexpected webhook status" };
+    const statusPath = typeof body.status_url === "string" ? body.status_url.slice(0, 500) : undefined;
+    const polled = statusPath ? await pollForcePullStatus({ webhookUrl, sharedSecret, statusPath, requestedAt: now, requestId }) : { requestedAt: now, requestId, status: normalizePendingForcePullStatus(rawStatus ?? "processing"), warning: "No status URL returned" };
+    return { ...polled, delivered: true, httpStatus: response.status };
+  } catch {
     clearTimeout(timeout);
-    console.error("[admin/bnl] forcePull webhook request failed", error);
-    return { delivered: false, reason: "Webhook request failed" };
+    return { requestedAt: now, requestId: null, status: "delivery_failed", delivered: false, reason: "Webhook request failed" };
   }
 }
 
@@ -144,13 +149,15 @@ export async function GET(req: Request) {
   let history = memoryHistory;
   let flags = memoryFlags;
   let forcePullRequestedAt: string | null = null;
+  let forcePullAttempt = memoryForcePullAttempt;
 
   if (redis) {
-    const [s, h, f, fp] = await Promise.all([
+    const [s, h, f, fp, fpa] = await Promise.all([
       redis.get<unknown>(STATUS_KEY),
       redis.get<unknown>(HISTORY_KEY),
       redis.get<unknown>(FLAGS_KEY),
       redis.get<unknown>(FORCE_PULL_KEY),
+      redis.get<unknown>(FORCE_PULL_ATTEMPT_KEY),
     ]);
     status = s;
     history = sanitizeHistory(h) as typeof memoryHistory;
@@ -158,9 +165,13 @@ export async function GET(req: Request) {
     forcePullRequestedAt = typeof fp === "string" ? fp : null;
     memoryHistory = history;
     memoryFlags = flags;
+    forcePullAttempt = sanitizeStoredForcePullAttempt(fpa);
+    memoryForcePullAttempt = forcePullAttempt;
   }
 
-  return NextResponse.json({ status, history, flags, forcePullRequestedAt, persisted: Boolean(redis) });
+  const publicForcePullAttempt = await resumeForcePullAttempt(redis, FORCE_PULL_ATTEMPT_KEY, forcePullAttempt, { webhookUrl: process.env.BNL_FORCE_PULL_WEBHOOK_URL, sharedSecret: process.env.BNL_FORCE_PULL_SHARED_SECRET || "" }, (record) => { memoryForcePullAttempt = record; });
+
+  return NextResponse.json({ status, history, flags, forcePullRequestedAt, forcePullAttempt: publicForcePullAttempt, persisted: Boolean(redis) });
 }
 
 export async function POST(req: Request) {
@@ -261,34 +272,12 @@ export async function POST(req: Request) {
         console.warn('[admin/bnl] forcePull requested without redis persistence; request timestamp may not be visible across serverless instances');
       }
 
-      const webhookDeliveryResult = await notifyForcePull(now);
-      const webhookDelivery = {
-        ...webhookDeliveryResult,
-        persisted: Boolean(redis),
-        forcePullRequestedAt: now,
-      };
-
-      console.info('[admin/bnl] forcePull requested at', now, { webhookDelivered: webhookDelivery.delivered, webhookStatus: webhookDelivery.status ?? null });
-      if (!webhookDelivery.delivered) {
-        const statusCode = webhookDelivery.reason === "BNL_FORCE_PULL_WEBHOOK_URL is not configured" ? 503 : 502;
-        return NextResponse.json({
-          error: webhookDelivery.reason === "BNL_FORCE_PULL_WEBHOOK_URL is not configured"
-            ? "Immediate check-in relay is not configured."
-            : "Immediate check-in relay delivery failed.",
-          forcePullRequestedAt: now,
-          webhookDelivery,
-          persisted: Boolean(redis),
-        }, { status: statusCode });
+      const rawAttempt = await notifyForcePull(now);
+      const attempt = await storeForcePullAttempt(redis, FORCE_PULL_ATTEMPT_KEY, rawAttempt, (record) => { memoryForcePullAttempt = record; });
+      if (attempt?.status === "delivery_failed") {
+        return NextResponse.json({ error: attempt.reason || "Immediate check-in relay delivery failed.", forcePullRequestedAt: now, forcePullAttempt: attempt, persisted: Boolean(redis) }, { status: attempt.reason?.includes("configured") ? 503 : 502 });
       }
-      return NextResponse.json({
-        ok: true,
-        forcePullRequestedAt: now,
-        note: webhookDelivery.delivered
-          ? "Immediate check-in request delivered to BNL endpoint."
-          : "Immediate check-in recorded, but BNL webhook delivery failed or is not configured.",
-        webhookDelivery,
-        persisted: Boolean(redis),
-      });
+      return NextResponse.json({ ok: true, forcePullRequestedAt: now, forcePullAttempt: attempt, note: "Immediate check-in request delivered to BNL. Publication outcome is reported separately.", persisted: Boolean(redis) });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });

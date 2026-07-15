@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/set-state-in-effect, react/jsx-no-comment-textnodes, @typescript-eslint/no-explicit-any */
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps, react/jsx-no-comment-textnodes, @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useLiveStatus } from "@/components/LiveStatusProvider";
@@ -20,6 +20,12 @@ interface BNLAdminState {
   adminNote?: string;
   forcePullRequestedAt?: string | null;
 }
+
+
+type ForcePullOutcome = "queued" | "already_running" | "processing" | "published" | "disabled" | "no_safe_source" | "rejected" | "provider_failed" | "delivery_failed" | "unconfirmed" | "legacy";
+interface ForcePullAttempt { requestedAt: string; requestId: string | null; status: ForcePullOutcome; sourceClass?: string; reason?: string; acceptedRelayId?: string; persisted?: boolean; warning?: string }
+const PENDING_FORCE_PULL_OUTCOMES = new Set<ForcePullOutcome>(["queued", "already_running", "processing", "unconfirmed"]);
+function isPendingForcePullAttempt(attempt: ForcePullAttempt | null): boolean { return Boolean(attempt && PENDING_FORCE_PULL_OUTCOMES.has(attempt.status)); }
 
 interface BNLHistoryEntry {
   timestamp: string;
@@ -43,7 +49,7 @@ const SOURCE_LABELS: Record<BNLSourceValue, string> = {
   showtest: "Test command",
   admin: "Manual admin update",
   reset: "Admin reset",
-  forcePull: "Immediate check-in",
+  forcePull: "Direct Liaison Request",
   unknown: "Unknown source",
 };
 
@@ -112,12 +118,17 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
   const [relayForm, setRelayForm] = useState({ status: "ONLINE" as BNLStatusValue, mode: "OBSERVATION" as BNLModeValue, message: defaultRelayMessage });
   const [bnlApiReachable, setBnlApiReachable] = useState(false);
   const [forcePullRequestedAt, setForcePullRequestedAt] = useState<string | null>(null);
+  const [forcePullAttempt, setForcePullAttempt] = useState<ForcePullAttempt | null>(null);
   const [relayActionError, setRelayActionError] = useState<string | null>(null);
   const [relayActionNote, setRelayActionNote] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
 
-  const loadBnl = async () => {
+  const loadBnl = async (strict = false) => {
     const [publicRes, adminRes] = await Promise.all([fetch('/api/bnl/status', { cache: 'no-store' }), fetch('/api/admin/bnl', { cache: 'no-store' })]);
     setBnlApiReachable(publicRes.ok);
+    if (strict && (!publicRes.ok || !adminRes.ok)) {
+      throw new Error(`Refresh failed: public status ${publicRes.status}, admin status ${adminRes.status}`);
+    }
     if (publicRes.ok) {
       const publicData = await publicRes.json();
       setBnl((prev) => ({ ...prev, ...publicData }));
@@ -131,6 +142,7 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
       setHistory(adminData.history || []);
       setFlags(adminData.flags || flags);
       setForcePullRequestedAt(typeof adminData.forcePullRequestedAt === "string" ? adminData.forcePullRequestedAt : null);
+      setForcePullAttempt(adminData.forcePullAttempt || null);
     }
   };
 
@@ -154,46 +166,86 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
     };
   }, []);
 
+  useEffect(() => {
+    if (!isPendingForcePullAttempt(forcePullAttempt)) return;
+    const started = Date.now();
+    const interval = window.setInterval(() => {
+      if (Date.now() - started > 60_000) {
+        window.clearInterval(interval);
+        setRelayActionNote("Force-pull outcome is still unconfirmed. Use manual refresh to resume checking.");
+        return;
+      }
+      void loadBnl();
+    }, 4_000);
+    return () => window.clearInterval(interval);
+  }, [forcePullAttempt?.requestId, forcePullAttempt?.status]);
+
   const updateRelay = async (action: 'updateStatus' | 'resetStandby') => {
-    await fetch('/api/admin/bnl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action === 'resetStandby' ? { action } : { action, ...relayForm }) });
-    await loadBnl();
+    if (pendingAction) return;
+    setPendingAction(action); setRelayActionError(null); setRelayActionNote(null);
+    try {
+      const res = await fetch('/api/admin/bnl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action === 'resetStandby' ? { action } : { action, ...relayForm }) });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || payload?.ok !== true) throw new Error(typeof payload?.error === 'string' ? payload.error : `Request failed (${res.status})`);
+      setRelayActionNote(payload.persisted === false ? 'Relay updated in in-memory fallback only; persistence unavailable.' : 'Relay update confirmed.');
+      await loadBnl(true);
+    } catch (error) { setRelayActionError(error instanceof Error ? error.message : 'Relay action failed'); }
+    finally { setPendingAction(null); }
   };
 
   const updateFlags = async (next: typeof flags) => {
-    setFlags(next);
-    await fetch('/api/admin/bnl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'updateFlags', flags: next }) });
+    if (pendingAction) return;
+    const previous = flags; setFlags(next); setPendingAction('updateFlags'); setRelayActionError(null); setRelayActionNote(null);
+    try {
+      const res = await fetch('/api/admin/bnl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'updateFlags', flags: next }) });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || payload?.ok !== true) throw new Error(typeof payload?.error === 'string' ? payload.error : `Request failed (${res.status})`);
+      setRelayActionNote(payload.persisted === false ? 'Flags stored in in-memory fallback only; persistence unavailable.' : 'Control flags stored. BNL may apply scheduled flag changes on his next control refresh.');
+    } catch (error) { setFlags(previous); setRelayActionError(error instanceof Error ? error.message : 'Flag update failed; previous values restored.'); }
+    finally { setPendingAction(null); }
   };
   const clearHistory = async () => {
     const confirmed = window.confirm("This clears the admin history log only. It does not reset BNL, change the public ticker, or affect Discord.");
     if (!confirmed) return;
-    await fetch('/api/admin/bnl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clearHistory' }) });
-    await loadBnl();
+    if (pendingAction) return; setPendingAction('clearHistory'); setRelayActionError(null); setRelayActionNote(null);
+    try { const res = await fetch('/api/admin/bnl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clearHistory' }) });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || payload?.ok !== true) throw new Error(typeof payload?.error === 'string' ? payload.error : `Request failed (${res.status})`);
+      setRelayActionNote(payload.persisted === false ? 'History cleared in local in-memory fallback only; persistence unavailable.' : 'Relay history cleared.');
+      await loadBnl(true); } catch (error) { setRelayActionError(error instanceof Error ? error.message : 'Clear history failed'); } finally { setPendingAction(null); }
   };
   const requestForcePull = async () => {
+    if (pendingAction) return;
     setRelayActionError(null);
     setRelayActionNote(null);
+    setPendingAction('forcePull');
+    let forcePullError: string | null = null;
     try {
       const res = await fetch('/api/admin/bnl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'forcePull' }) });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
         const reasonParts = [
           typeof payload?.error === "string" ? payload.error : `Request failed (${res.status})`,
-          payload?.webhookDelivery?.reason ? `reason: ${payload.webhookDelivery.reason}` : null,
-          typeof payload?.webhookDelivery?.status === "number" ? `status: ${payload.webhookDelivery.status}` : null,
+          payload?.forcePullAttempt?.reason ? `reason: ${payload.forcePullAttempt.reason}` : null,
+          typeof payload?.forcePullAttempt?.status === "string" ? `status: ${payload.forcePullAttempt.status}` : null,
         ].filter(Boolean);
-        const reason = reasonParts.join(" | ");
-        throw new Error(reason);
+        forcePullError = reasonParts.join(" | ");
+        throw new Error(forcePullError);
       }
       if (typeof payload?.note === "string") setRelayActionNote(payload.note);
-      if (payload?.webhookDelivery && payload.webhookDelivery.delivered === false) {
-        console.warn("[admin] forcePull webhook delivery warning:", payload.webhookDelivery);
-      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to request immediate check-in';
+      forcePullError = error instanceof Error ? error.message : 'Failed to request immediate check-in';
       console.error('[admin] forcePull request failed:', error);
-      setRelayActionError(message);
+      setRelayActionError(forcePullError);
     } finally {
-      await loadBnl();
+      try {
+        await loadBnl(true);
+      } catch (refreshError) {
+        const refreshMessage = refreshError instanceof Error ? refreshError.message : 'Manual refresh failed after force-pull request';
+        if (!forcePullError) setRelayActionError(refreshMessage);
+      } finally {
+        setPendingAction(null);
+      }
     }
   };
 
@@ -237,23 +289,24 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
   </div>
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><select value={relayForm.status} onChange={(e)=>setRelayForm({...relayForm,status:e.target.value as BNLStatusValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>ONLINE</option><option>OFFLINE</option></select><select value={relayForm.mode} onChange={(e)=>setRelayForm({...relayForm,mode:e.target.value as BNLModeValue})} className="bg-background border border-border px-3 py-2.5 text-sm"><option>STANDBY</option><option>OBSERVATION</option><option>ACTIVE_LIAISON</option><option>SIGNAL_DEGRADATION</option><option>RESTRICTED</option></select></div>
   <textarea value={relayForm.message} maxLength={600} onChange={(e)=>setRelayForm({...relayForm,message:e.target.value.slice(0,600)})} className="w-full bg-background border border-border px-3 py-2.5 text-sm" />
-  <div className="flex flex-wrap gap-3"><button onClick={()=>updateRelay('updateStatus')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all">Update BNL Relay</button><button onClick={()=>updateRelay('resetStandby')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all">Reset BNL Relay to Standby</button><button onClick={requestForcePull} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all">Request Immediate BNL Check-in</button><button onClick={loadBnl} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all">Refresh BNL Status</button></div>
+  <div className="flex flex-wrap gap-3"><button disabled={Boolean(pendingAction)} onClick={()=>updateRelay('updateStatus')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all disabled:opacity-50">{pendingAction === 'updateStatus' ? 'Updating…' : 'Update BNL Relay'}</button><button disabled={Boolean(pendingAction)} onClick={()=>updateRelay('resetStandby')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all disabled:opacity-50">{pendingAction === 'resetStandby' ? 'Resetting…' : 'Reset BNL Relay to Standby'}</button><button disabled={Boolean(pendingAction)} onClick={requestForcePull} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all disabled:opacity-50">{pendingAction === 'forcePull' ? 'Sending request…' : 'Request Immediate BNL Check-in'}</button><button disabled={Boolean(pendingAction)} onClick={async()=>{ setPendingAction('refresh'); setRelayActionError(null); try { await loadBnl(true); setRelayActionNote('BNL status refreshed. Pending outcomes were checked again if available.'); } catch { setRelayActionError('Manual refresh failed.'); } finally { setPendingAction(null); } }} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all disabled:opacity-50">{pendingAction === 'refresh' ? 'Refreshing…' : 'Refresh BNL Status'}</button></div>
   <div className="text-xs text-muted space-y-1">
     <p><strong>Update BNL Relay:</strong> Publishes the status, mode, and message entered above to the public website relay immediately.</p>
     <p><strong>Reset BNL Relay to Standby:</strong> Sets relay back to monitoring/standby messaging and marks source as admin reset.</p>
-    <p><strong>Request Immediate BNL Check-in:</strong> Sends a forcePull request to the bot/VPS endpoint so it can generate and push a fresh relay update.</p>
+    <p><strong>Request Immediate BNL Check-in:</strong> Sends a forcePull request to BNL. A delivered or 202 accepted request means BNL accepted work; it does not by itself mean a relay was published.</p>
     <p><strong>If webhook delivery fails:</strong> The request timestamp is still recorded on this site, but the bot endpoint did not receive the check-in request.</p>
     <p><strong>History refresh:</strong> Relay metadata/history refresh automatically and can also be refreshed manually with <em>Refresh BNL Status</em>.</p>
   </div>
   <p className="text-xs text-muted">Last immediate check-in request: {forcePullRequestedAt || "never"}.</p>
+  {forcePullAttempt && <p className="text-xs text-muted">Force-pull outcome: {String(forcePullAttempt.status || "outcome unavailable")} {forcePullAttempt.requestId ? `(request ${forcePullAttempt.requestId})` : ""}{forcePullAttempt.warning ? ` — ${forcePullAttempt.warning}` : ""}{forcePullAttempt.persisted === false ? " — persistence unavailable" : ""}</p>}
   {relayActionError && <p className="text-xs text-danger">Immediate check-in request failed: {relayActionError}</p>}
   {relayActionNote && <p className="text-xs text-muted">{relayActionNote}</p>}
-  <div><p className="text-xs text-muted mb-2">Kill switches are stored for future bot consumption.</p>
-    <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Website Relay Enabled:</strong> Allows BNL to update the public website relay automatically.</span><input type="checkbox" checked={flags.websiteRelayEnabled} onChange={(e)=>updateFlags({...flags,websiteRelayEnabled:e.target.checked})} /></label>
-    <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Show-Day Discord Posts Enabled:</strong> Allows BNL to post scheduled Friday show updates in Discord.</span><input type="checkbox" checked={flags.showdayDiscordPostsEnabled} onChange={(e)=>updateFlags({...flags,showdayDiscordPostsEnabled:e.target.checked})} /></label>
-    <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Heartbeat Enabled:</strong> Allows BNL to keep the website relay fresh with periodic status updates.</span><input type="checkbox" checked={flags.heartbeatEnabled} onChange={(e)=>updateFlags({...flags,heartbeatEnabled:e.target.checked})} /></label>
+  <div><p className="text-xs text-muted mb-2">Control flags are stored immediately. BNL may apply scheduled flag changes on his next control refresh; a switch alone does not guarantee an immediate relay.</p>
+    <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Website Relay Enabled:</strong> Allows BNL to update the public website relay automatically.</span><input disabled={Boolean(pendingAction)} type="checkbox" checked={flags.websiteRelayEnabled} onChange={(e)=>updateFlags({...flags,websiteRelayEnabled:e.target.checked})} /></label>
+    <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Show-Day Discord Posts Enabled:</strong> Allows BNL to post scheduled Friday show updates in Discord.</span><input disabled={Boolean(pendingAction)} type="checkbox" checked={flags.showdayDiscordPostsEnabled} onChange={(e)=>updateFlags({...flags,showdayDiscordPostsEnabled:e.target.checked})} /></label>
+    <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Heartbeat Enabled:</strong> Allows BNL to keep the website relay fresh with periodic status updates.</span><input disabled={Boolean(pendingAction)} type="checkbox" checked={flags.heartbeatEnabled} onChange={(e)=>updateFlags({...flags,heartbeatEnabled:e.target.checked})} /></label>
   </div>
-  <div><div className="flex items-center justify-between"><p className="text-xs text-muted mb-2">Admin Relay History (admin only) — most recent 25 updates received from BNL/admin actions.</p><button onClick={clearHistory} className="px-3 py-1.5 text-xs uppercase tracking-widest border border-danger/40 text-danger hover:bg-danger hover:text-background transition-all">Clear Relay History</button></div><div className="space-y-2 text-xs">{history.map((entry, idx)=><div key={idx} className="border border-border p-2"><p>{formatLocalTimestamp(entry.timestamp)} — {entry.status} / {entry.mode} ({SOURCE_LABELS[entry.source || 'unknown']})</p>{entry.currentDirective && <p className="break-words whitespace-pre-wrap">Directive: {entry.currentDirective}</p>}<p>{entry.message}</p>{entry.adminNote && <p>Operator Note: {entry.adminNote}</p>}<p className="text-muted">Persistence: {entry.persisted === undefined ? "unknown" : entry.persisted ? "Stored in Redis (persistent shared storage)" : "In-memory fallback (temporary local storage)"}</p></div>)}</div></div>
+  <div><div className="flex items-center justify-between"><p className="text-xs text-muted mb-2">Admin Relay History (admin only) — most recent 25 updates received from BNL/admin actions.</p><button disabled={Boolean(pendingAction)} onClick={clearHistory} className="px-3 py-1.5 text-xs uppercase tracking-widest border border-danger/40 text-danger hover:bg-danger hover:text-background transition-all">Clear Relay History</button></div><div className="space-y-2 text-xs">{history.map((entry, idx)=><div key={idx} className="border border-border p-2"><p>{formatLocalTimestamp(entry.timestamp)} — {entry.status} / {entry.mode} ({SOURCE_LABELS[entry.source || 'unknown']})</p>{entry.currentDirective && <p className="break-words whitespace-pre-wrap">Directive: {entry.currentDirective}</p>}<p>{entry.message}</p>{entry.adminNote && <p>Operator Note: {entry.adminNote}</p>}<p className="text-muted">Persistence: {entry.persisted === undefined ? "unknown" : entry.persisted ? "Stored in Redis (persistent shared storage)" : "In-memory fallback (temporary local storage)"}</p></div>)}</div></div>
   </div>
 
   </div></section>;

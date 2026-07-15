@@ -99,6 +99,80 @@ const QUEUE_SUBMISSION_STATUSES = [
   "unknown",
 ] as const;
 
+const QUEUE_DERIVED_PROVENANCE_MARKERS = new Set([
+  "queue_context",
+  "queue_frequency",
+  "queue_recurrence",
+  "queue_public_snapshot",
+  "completed_play",
+  "priority_moment",
+  "queue_session",
+  "queue_track",
+  "queue_submission",
+  "queue_status",
+]);
+const QUEUE_KNOWLEDGE_SUBMISSION_STATUSES = new Set([
+  "connected",
+  "confirmed_submission",
+  "no_submission_found",
+  "review_needed",
+  "unknown",
+]);
+
+function provenanceMarker(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  return normalized || null;
+}
+
+function provenanceMarkersFrom(value: unknown): string[] {
+  if (value === undefined || value === null) return [];
+  if (typeof value === "string") {
+    const marker = provenanceMarker(value);
+    return marker ? [marker] : [];
+  }
+  if (Array.isArray(value)) return value.flatMap(provenanceMarkersFrom);
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return [
+      record.source,
+      record.type,
+      record.kind,
+      record.lane,
+      record.authority,
+      record.sourceAuthority,
+      record.provenance,
+      record.surface,
+    ].flatMap(provenanceMarkersFrom);
+  }
+  return [];
+}
+
+function hasQueueDerivedDossierInput(input: {
+  rawSourceLanes?: unknown;
+  normalizedSourceLanes?: readonly DossierRecommendationSourceLane[];
+  rawSourceTypes?: unknown;
+  source?: unknown;
+  sourceAuthority?: unknown;
+  rawProvenance?: unknown;
+  queueSubmissionStatus?: string;
+}): boolean {
+  const markers = [
+    ...provenanceMarkersFrom(input.rawSourceLanes),
+    ...(input.normalizedSourceLanes ?? []),
+    ...provenanceMarkersFrom(input.rawSourceTypes),
+    ...provenanceMarkersFrom(input.source),
+    ...provenanceMarkersFrom(input.sourceAuthority),
+    ...provenanceMarkersFrom(input.rawProvenance),
+  ];
+  if (markers.some((marker) => QUEUE_DERIVED_PROVENANCE_MARKERS.has(marker))) {
+    return true;
+  }
+  return input.queueSubmissionStatus
+    ? QUEUE_KNOWLEDGE_SUBMISSION_STATUSES.has(input.queueSubmissionStatus)
+    : false;
+}
+
 function text(value: unknown, maxLength: number): string | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== "string") throw new Error("Expected text field");
@@ -521,9 +595,29 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
     if (sourceLanes.length === 0) sourceLanes = ["unknown"];
   }
 
-  if (!isQueueProductionEnabled() && sourceLanes.includes("queue_context")) {
+  const sourceTypes = stringList(payload.sourceTypes, 120);
+  const sourceAuthority = packetStringList(payload.sourceAuthority, 1000);
+  const rawProvenance = rawJsonValue(payload.rawProvenance);
+  const queueSubmissionStatus = enumValue(
+    payload.queueSubmissionStatus,
+    QUEUE_SUBMISSION_STATUSES,
+    "queue submission status",
+  );
+
+  if (
+    !isQueueProductionEnabled() &&
+    hasQueueDerivedDossierInput({
+      rawSourceLanes: sourceLanesInput,
+      normalizedSourceLanes: sourceLanes,
+      rawSourceTypes: payload.sourceTypes,
+      source: payload.source,
+      sourceAuthority,
+      rawProvenance,
+      queueSubmissionStatus,
+    })
+  ) {
     throw new Error(
-      "queue_context recommendations are disabled until BARCODE_QUEUE_PRODUCTION_ENABLED is exactly true",
+      "Queue-derived dossier recommendations are disabled until BARCODE_QUEUE_PRODUCTION_ENABLED is exactly true",
     );
   }
 
@@ -561,15 +655,8 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
   const authoredVsMentionedSummary = reviewEvidenceList(payload.authoredVsMentionedSummary, "authoredVsMentionedSummary");
   const publicUseCandidates = packetStringList(payload.publicUseCandidates);
   const reviewOnlyEvidence = packetStringList(payload.reviewOnlyEvidence);
-  const queueSubmissionStatus = enumValue(
-    payload.queueSubmissionStatus,
-    QUEUE_SUBMISSION_STATUSES,
-    "queue submission status",
-  );
   const queueSubmissionNote = text(payload.queueSubmissionNote, 1000);
   const recommendedAction = text(payload.recommendedAction, 1000);
-  const sourceAuthority = packetStringList(payload.sourceAuthority, 1000);
-  const rawProvenance = rawJsonValue(payload.rawProvenance);
   const reason =
     text(payload.reason, 2000) ??
     knownContext?.[0] ??
@@ -610,7 +697,7 @@ function normalizePayload(value: unknown): CreateDossierRecommendationInput {
     evidenceSummary: bridgeEvidenceSummary,
     confidence: enumValue(payload.confidence, CONFIDENCES, "confidence"),
     sourceLanes,
-    sourceTypes: stringList(payload.sourceTypes, 120),
+    sourceTypes,
     suggestedAction: text(payload.suggestedAction, 500),
     knownContext,
     usefulEvidence,

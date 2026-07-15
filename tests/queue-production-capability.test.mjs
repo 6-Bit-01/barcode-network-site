@@ -31,9 +31,31 @@ const readModel = require("../src/app/api/bnl/read-model/route.ts");
 const dossierRecommendations = require("../src/app/api/bnl/dossier-recommendations/route.ts");
 const workflowStore = require("../src/lib/dossier-workflow-store.ts");
 const adminLive = require("../src/app/api/admin/live/route.ts");
+const { derivePublicShowState } = require("../src/lib/live-status-public.ts");
 
 async function resetWorkflowStore() {
   await workflowStore.saveDossierWorkflowState({ version: 1, revision: 0, candidates: [], drafts: [], recommendations: [], updatedAt: new Date(0).toISOString() });
+}
+
+async function postDossierRecommendation(body) {
+  const previousToken = process.env.BNL_DOSSIER_INGEST_TOKEN;
+  process.env.BNL_DOSSIER_INGEST_TOKEN = "queue-production-test-token";
+  try {
+    return await dossierRecommendations.POST(new Request("https://example.test/api/bnl/dossier-recommendations", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer queue-production-test-token" },
+      body: JSON.stringify(body),
+    }));
+  } finally {
+    if (previousToken === undefined) delete process.env.BNL_DOSSIER_INGEST_TOKEN;
+    else process.env.BNL_DOSSIER_INGEST_TOKEN = previousToken;
+  }
+}
+
+async function assertNoWorkflowRecords() {
+  const state = await workflowStore.getDossierWorkflowState();
+  assert.equal(state.recommendations.length, 0);
+  assert.equal(state.candidates.length, 0);
 }
 
 async function withQueueProduction(value, fn) {
@@ -55,13 +77,46 @@ test("queue production capability defaults false and only exact true enables it"
   assert.equal(capability.isQueueProductionEnabled({ BARCODE_QUEUE_PRODUCTION_ENABLED: "true" }), true);
 });
 
-test("global live provider source gates queue polling while preserving manual live mode", () => {
+test("public show-state helper ignores queue snapshots unless production capability is enabled", () => {
+  const queueSnapshot = {
+    session: {
+      sessionId: "test-session",
+      status: "active",
+      broadcastPhase: "broadcast_active",
+    },
+    status: { isOpen: true },
+  };
+
+  assert.deepEqual(derivePublicShowState({ queueProductionEnabled: false, isLive: false, queueSnapshot }), {
+    hasActiveQueueSession: false,
+    queueSessionId: null,
+    queueHref: null,
+    queueSubmissionsOpen: false,
+    queueBroadcastPhase: null,
+    siteShowMode: "offline",
+  });
+
+  assert.equal(
+    derivePublicShowState({ queueProductionEnabled: false, isLive: true, queueSnapshot }).siteShowMode,
+    "broadcast_live",
+  );
+
+  assert.deepEqual(derivePublicShowState({ queueProductionEnabled: true, isLive: false, queueSnapshot }), {
+    hasActiveQueueSession: true,
+    queueSessionId: "test-session",
+    queueHref: "/queue/test-session",
+    queueSubmissionsOpen: true,
+    queueBroadcastPhase: "broadcast_active",
+    siteShowMode: "broadcast_live",
+  });
+});
+
+test("global live provider source fails closed when capability authority is missing", () => {
   const providerSource = fs.readFileSync(path.join(projectRoot, "src/components/LiveStatusProvider.tsx"), "utf8");
   assert.match(providerSource, /capabilities\?\.queueProduction === true/);
   assert.match(providerSource, /setQueueSnapshot\(null\)/);
   assert.match(providerSource, /if \(!queueProduction\)/);
   assert.match(providerSource, /fetch\("\/api\/queue"/);
-  assert.match(providerSource, /queueBroadcastPhase === "broadcast_active" \|\| isLive/);
   assert.doesNotMatch(providerSource, /NEXT_PUBLIC_BARCODE_QUEUE_PRODUCTION_ENABLED/);
 });
 
@@ -100,22 +155,37 @@ test("disabled BNL read model does not read queue storage or expose queue-derive
   });
 });
 
-test("queue_context cannot create approved BNL or Source File evidence while disabled", async () => {
+test("queue-derived dossier recommendation provenance is rejected while disabled", async () => {
+  await withQueueProduction(undefined, async () => {
+    const rejectedPayloads = [
+      { subjectName: "Queue Context Artist", reason: "Queue context", sourceLanes: ["queue_context"] },
+      { subjectName: "Queue Frequency Artist", reason: "Population queue frequency", type: "population_recommendation", ingestSource: "bnl_population_recommender", sourceLanes: ["queue_frequency"] },
+      { subjectName: "Queue Source Type Artist", reason: "Queue public snapshot", sourceTypes: ["queue_public_snapshot"] },
+      { subjectName: "Queue Submission Artist", reason: "Queue submission found", queueSubmissionStatus: "confirmed_submission" },
+    ];
+
+    for (const payload of rejectedPayloads) {
+      await resetWorkflowStore();
+      const response = await postDossierRecommendation(payload);
+      assert.equal(response.status, 400, `${payload.subjectName} should be rejected`);
+      await assertNoWorkflowRecords();
+    }
+  });
+});
+
+test("not_connected queue submission boundary remains compatible while disabled", async () => {
   await withQueueProduction(undefined, async () => {
     await resetWorkflowStore();
-    const previousToken = process.env.BNL_DOSSIER_INGEST_TOKEN;
-    process.env.BNL_DOSSIER_INGEST_TOKEN = "queue-production-test-token";
-    const response = await dossierRecommendations.POST(new Request("https://example.test/api/bnl/dossier-recommendations", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer queue-production-test-token" },
-      body: JSON.stringify({ subjectName: "Queue Test Artist", reason: "Queue context", sourceLanes: ["queue_context"] }),
-    }));
-    assert.equal(response.status, 400);
-    if (previousToken === undefined) delete process.env.BNL_DOSSIER_INGEST_TOKEN;
-    else process.env.BNL_DOSSIER_INGEST_TOKEN = previousToken;
+    const response = await postDossierRecommendation({
+      subjectName: "Non Queue Boundary Artist",
+      reason: "No queue submission is connected to this Source File packet.",
+      sourceLanes: ["website_dossier"],
+      queueSubmissionStatus: "not_connected",
+    });
+    assert.equal(response.status, 200);
     const state = await workflowStore.getDossierWorkflowState();
-    assert.equal(state.recommendations.length, 0);
-    assert.equal(state.candidates.length, 0);
+    assert.equal(state.recommendations.length, 1);
+    assert.equal(state.recommendations[0].queueSubmissionStatus, "not_connected");
   });
 });
 

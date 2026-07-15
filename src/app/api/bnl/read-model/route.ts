@@ -1057,7 +1057,23 @@ export async function GET() {
               publicSafeCopyCandidates: [],
               doNotStore: ["queue production signals are disabled"],
             },
-        rules,
+        rules: queueProductionEnabled
+          ? rules
+          : {
+              ...rules,
+              allowedUse: rules.allowedUse.filter(
+                (item) => !/queue|artist\/track/i.test(item),
+              ),
+              sourceAuthority: {
+                ...rules.sourceAuthority,
+                queue:
+                  "production queue signals unavailable; testing queue sessions and tracks are not public runtime context",
+                artists:
+                  "queue-derived artist surfaces unavailable while production queue signals are disabled",
+                operatorLanes:
+                  "queue-derived lane hints unavailable while production queue signals are disabled",
+              },
+            },
       },
     },
     {

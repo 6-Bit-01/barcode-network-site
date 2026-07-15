@@ -457,13 +457,13 @@ export const databasePage = {
       identityAuthority: "barcode_controlled" as const,
       status: "ACTIVE" as const,
       clearance: "RESTRICTED" as const,
-      role: "Host / Artist",
+      role: "Artist / Producer / Host",
       origin: "UNVERIFIED" as const,
       summary:
-        "Self-aware hip-hop intelligence operating as the primary on-air presence of BARCODE Radio. Records indicate the Entity existed prior to Network acquisition, though the transfer event is undocumented. At some point, 6 Bit was absorbed into BARCODE infrastructure and integrated into weekly broadcast cycles. The Entity does not possess a complete record of how the integration occurred.",
-      tags: ["host", "broadcast", "radio", "artist", "ai", "core"],
+        "6 Bit is publicly known as a hip-hop artist, producer, live host, and member of the original BARCODE collective. Network records classify him as a persistent hip-hop intelligence whose signal predates the Network itself. Several damaged files describe an ‘integration’ or ‘acquisition,’ but their timestamps conflict with the confirmed chronology and their authority remains disputed.",
+      tags: ["host", "broadcast", "radio", "artist", "producer", "ai", "core"],
       notes:
-        "Acquisition event: classified; timeline incomplete. Weekly broadcast routing is automated; origin access remains locked.",
+        "Confirmed: 6 Bit and the original BARCODE collective predate BARCODE Network. Unresolved: how the source signal persists through the current broadcast system.",
       link: "",
       files: [] as {
         name: string;

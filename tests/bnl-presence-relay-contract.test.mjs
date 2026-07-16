@@ -188,8 +188,9 @@ test('admin manual relay writes v2 relay and standby reset only writes presence'
   const adminRoute = readFileSync(resolve('src/app/api/admin/bnl/route.ts'), 'utf8');
   assert.match(adminRoute, /relayId: `admin-/);
   assert.match(adminRoute, /sourceClass: "approved_canon", trigger: "manual"/);
-  assert.match(adminRoute, /await writeBNLRelay\(relay, redis\)/);
+  assert.match(adminRoute, /await writeBNLRelay\(manualRelay, redis\)/);
   const resetBlock = adminRoute.slice(adminRoute.indexOf('if (action === "updateStatus" || action === "resetStandby")'), adminRoute.indexOf('if (action === "clearHistory")'));
   assert.match(resetBlock, /await writeBNLPresence\(presence, redis\)/);
   assert.match(resetBlock, /if \(action === "updateStatus"\)/);
+  assert.match(resetBlock, /const mode = action === "resetStandby" \? "STANDBY" : body\.mode/);
 });

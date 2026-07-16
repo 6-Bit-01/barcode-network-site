@@ -43,6 +43,8 @@ test('focus and visible-document refresh work while hidden-document event does n
 });
 
 test('overlapping requests are prevented and last good status survives later error', async () => {
+  const originalConsoleError = console.error;
+  console.error = () => {};
   let release;
   let calls = 0;
   const gate = new Promise((resolve) => { release = resolve; });
@@ -55,6 +57,7 @@ test('overlapping requests are prevented and last good status survives later err
   await controller.refresh();
   assert.equal(controller.getSnapshot().data.message, 'live');
   assert.match(controller.getSnapshot().error, /failed/i);
+  console.error = originalConsoleError;
 });
 
 test('interval listeners and pending requests are cleaned up', async () => {
@@ -95,6 +98,8 @@ test('production-shaped v2 JSON replaces fallback with relay and presence', asyn
 });
 
 test('failed initial refresh reports sync failure instead of confirmed fallback', async () => {
+  const originalConsoleError = console.error;
+  console.error = () => {};
   const controller = new BNLStatusController(async () => ({ ok: false, status: 503, json: async () => ({}) }));
   await controller.refresh();
   const snapshot = controller.getSnapshot();
@@ -102,6 +107,7 @@ test('failed initial refresh reports sync failure instead of confirmed fallback'
   assert.equal(snapshot.loading, false);
   assert.equal(snapshot.synchronized, false);
   assert.match(snapshot.error, /503/);
+  console.error = originalConsoleError;
 });
 
 test('client requests use no-store semantics', async () => {
@@ -109,5 +115,32 @@ test('client requests use no-store semantics', async () => {
   const controller = new BNLStatusController(async (_url, requestInit) => { init = requestInit; return { ok: true, status: 200, json: async () => good }; });
   await controller.refresh();
   assert.equal(init.cache, 'no-store');
-  assert.equal(init.headers['Cache-Control'], 'no-store');
+  assert.equal(Object.hasOwn(init, 'headers'), false);
+});
+
+
+test('provider-style browser fetch wrapper avoids controller receiver binding', async () => {
+  const providerSource = readFileSync(resolve('src/components/BNLStatusProvider.tsx'), 'utf8');
+  assert.match(providerSource, /new BNLStatusController\(\(input, init\) => globalThis\.fetch\(input, init\)\)/);
+  const originalFetch = globalThis.fetch;
+  const production = {
+    status: 'ONLINE', mode: 'OBSERVATION', message: 'Receiver-safe relay', currentDirective: 'Receiver-safe directive', source: 'relay', lastSeen: '2026-07-16T00:20:32.865Z', persisted: true, contractVersion: 2,
+    presence: { contractVersion: 2, status: 'ONLINE', mode: 'OBSERVATION', source: 'heartbeat', receivedAt: '2026-07-16T00:25:25.083Z' },
+    relay: { contractVersion: 2, relayId: 'bnl-0c3bfdb539281d78f934287f2c536746', message: 'Receiver-safe relay', currentDirective: 'Receiver-safe directive', sourceClass: 'fresh_public_event', trigger: 'scheduled', publishedAt: '2026-07-16T00:20:32.865Z' },
+  };
+  let init;
+  globalThis.fetch = function (_input, requestInit) {
+    assert.equal(this, globalThis);
+    init = requestInit;
+    return Promise.resolve({ ok: true, status: 200, json: async () => production });
+  };
+  try {
+    const controller = new BNLStatusController((input, requestInit) => globalThis.fetch(input, requestInit));
+    await controller.refresh();
+    assert.equal(controller.getSnapshot().data.message, 'Receiver-safe relay');
+    assert.equal(init.cache, 'no-store');
+    assert.equal(Object.hasOwn(init, 'headers'), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

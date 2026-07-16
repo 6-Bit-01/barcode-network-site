@@ -130,22 +130,23 @@ export async function POST(req: Request) {
 
     if (action === "updateStatus" || action === "resetStandby") {
       const status = action === "resetStandby" ? "ONLINE" : body.status;
-      const mode = action === "resetStandby" ? "OBSERVATION" : body.mode;
+      const mode = action === "resetStandby" ? "STANDBY" : body.mode;
       if (!ALLOWED_STATUS.has(status as BNLStatusValue) || !ALLOWED_MODES.has(mode as BNLModeValue)) {
         return NextResponse.json({ error: "Invalid payload" }, { status: 400, headers: BNL_NO_STORE_HEADERS });
       }
       const now = new Date().toISOString();
-      const presence: BNLV2PresenceRecord = { contractVersion: 2, status: status as BNLStatusValue, mode: mode as BNLModeValue, source: action === "resetStandby" ? "reset" : "admin", receivedAt: now };
-      await writeBNLPresence(presence, redis);
-
+      let manualRelay = null;
       if (action === "updateStatus") {
         if (typeof body.message !== "string") return NextResponse.json({ error: "Invalid payload" }, { status: 400, headers: BNL_NO_STORE_HEADERS });
         const trimmedMessage = body.message.trim().slice(0, MAX_MESSAGE_LENGTH);
         if (!trimmedMessage) return NextResponse.json({ error: "Message required" }, { status: 400, headers: BNL_NO_STORE_HEADERS });
         const relayBody = { contractVersion: 2, kind: "relay", relay: { relayId: `admin-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`, message: trimmedMessage, currentDirective: typeof body.currentDirective === "string" && body.currentDirective.trim() ? body.currentDirective.trim().slice(0, MAX_DIRECTIVE_LENGTH) : "Monitoring Discord-side relay traffic.", sourceClass: "approved_canon", trigger: "manual" } };
-        const relay = parseV2RelayWrite(relayBody, now);
-        await writeBNLRelay(relay, redis);
+        manualRelay = parseV2RelayWrite(relayBody, now);
       }
+
+      const presence: BNLV2PresenceRecord = { contractVersion: 2, status: status as BNLStatusValue, mode: mode as BNLModeValue, source: action === "resetStandby" ? "reset" : "admin", receivedAt: now };
+      await writeBNLPresence(presence, redis);
+      if (manualRelay) await writeBNLRelay(manualRelay, redis);
 
       const canonical = await readBNLAdminState(redis);
       return NextResponse.json({ ok: true, ...canonical }, { headers: BNL_NO_STORE_HEADERS });

@@ -8,7 +8,7 @@ const fallback: BNLStatusSnapshot = { data: FALLBACK_STATUS, loading: true, refr
 const Context = createContext<BNLStatusController | null>(null);
 
 export function BNLStatusProvider({ children }: { children: ReactNode }) {
-  const controller = useMemo(() => new BNLStatusController(fetch), []);
+  const controller = useMemo(() => new BNLStatusController((input, init) => globalThis.fetch(input, init)), []);
   useEffect(() => { controller.start(); return () => controller.stop(); }, [controller]);
   return <Context.Provider value={controller}>{children}</Context.Provider>;
 }

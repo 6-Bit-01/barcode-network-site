@@ -63,13 +63,15 @@ export class BNLStatusController {
     this.set({ refreshing: !first, error: null });
     this.inFlight = (async () => {
       try {
-        const res = await this.fetcher("/api/bnl/status", { cache: "no-store", headers: { "Cache-Control": "no-store" }, signal: this.abort?.signal });
+        const res = await this.fetcher("/api/bnl/status", { cache: "no-store", signal: this.abort?.signal });
         if (!res.ok) throw new Error(`BNL status request failed (${res.status})`);
         const payload = normalizeBNLStatusPayload(await res.json());
         this.set({ data: payload, loading: false, refreshing: false, error: null, lastSuccessfulRefresh: this.now(), synchronized: true });
       } catch (error) {
         if ((error as Error).name === "AbortError") return;
-        this.set({ loading: false, refreshing: false, error: error instanceof Error ? error.message : "Failed to load BNL status", synchronized: Boolean(this.snapshot.lastSuccessfulRefresh) });
+        console.error("[bnl-status] refresh failed", error);
+        const message = error instanceof Error && /BNL status request failed \(\d+\)/.test(error.message) ? error.message : "BNL status synchronization failed";
+        this.set({ loading: false, refreshing: false, error: message, synchronized: Boolean(this.snapshot.lastSuccessfulRefresh) });
       } finally { this.inFlight = null; this.abort = null; }
     })();
     return this.inFlight;

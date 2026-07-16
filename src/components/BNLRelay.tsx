@@ -172,10 +172,11 @@ function BNLRelayExplainer() {
 }
 
 export function BNLNetworkRelayTicker() {
-  const { data, error, synchronized } = useBNLStatus();
-  const online = data.status === "ONLINE";
+  const { data, error, lastSuccessfulRefresh } = useBNLStatus();
+  const hasLiveSnapshot = Boolean(lastSuccessfulRefresh);
+  const online = hasLiveSnapshot && data.status === "ONLINE";
   const lastSeenSentence = formatLastSeenSentence(data.lastSeen);
-  const signalCondition = publicModeLabel(data.mode);
+  const signalCondition = hasLiveSnapshot ? publicModeLabel(data.mode) : "SYNC PENDING";
 
   return (
     <>
@@ -187,11 +188,11 @@ export function BNLNetworkRelayTicker() {
           <div className="bnl-relay-scroll min-w-0 flex-1">
             <div className="bnl-relay-scroll-track">
               <span>
-                SIGNAL CONDITION <span className={bnlTone(online)}>{signalCondition}</span> :: {!synchronized && error ? "SYNC FAILURE" : `SURFACE READING ${data.message}`}
+                SIGNAL CONDITION <span className={bnlTone(online)}>{signalCondition}</span> :: {!hasLiveSnapshot && error ? "SYNC UNAVAILABLE — RETRYING" : `SURFACE READING ${data.message}${error ? " :: SYNC DEGRADED — RETRYING" : ""}`}
                 {data.lastSeen ? ` :: ${lastSeenSentence}` : ""} ::
               </span>
               <span aria-hidden>
-                SIGNAL CONDITION <span className={bnlTone(online)}>{signalCondition}</span> :: {!synchronized && error ? "SYNC FAILURE" : `SURFACE READING ${data.message}`}
+                SIGNAL CONDITION <span className={bnlTone(online)}>{signalCondition}</span> :: {!hasLiveSnapshot && error ? "SYNC UNAVAILABLE — RETRYING" : `SURFACE READING ${data.message}${error ? " :: SYNC DEGRADED — RETRYING" : ""}`}
                 {data.lastSeen ? ` :: ${lastSeenSentence}` : ""} ::
               </span>
             </div>
@@ -204,23 +205,36 @@ export function BNLNetworkRelayTicker() {
 }
 
 export function BNLRelayModule({ title }: { title: string }) {
-  const { data, loading, error, synchronized } = useBNLStatus();
-  const online = data.status === "ONLINE";
-  const lastSeenSentence = formatLastSeenSentence(data.lastSeen);
+  const { data, loading, error, synchronized, lastSuccessfulRefresh } = useBNLStatus();
+  const hasLiveSnapshot = Boolean(lastSuccessfulRefresh);
+  const online = hasLiveSnapshot && data.status === "ONLINE";
+  const lastSeenSentence = hasLiveSnapshot ? formatLastSeenSentence(data.lastSeen) : "timestamp unavailable while retrying";
 
   return (
     <div className="border border-border bg-surface p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="text-xs uppercase tracking-[0.35em] text-muted">{title}</h2>
-        <span className={`text-xs uppercase tracking-[0.2em] ${bnlTone(online)}`}>{online ? "LINK ACTIVE" : "LINK QUIET"}</span>
+        <span className={`text-xs uppercase tracking-[0.2em] ${bnlTone(online)}`}>{hasLiveSnapshot ? (online ? "LINK ACTIVE" : "LINK QUIET") : "SYNC RETRY"}</span>
       </div>
       <div className="space-y-2 text-sm text-foreground/70">
-        <p>&gt; SIGNAL CONDITION: {publicModeLabel(data.mode)}</p>
-        <p>&gt; SURFACE READING: {data.message}</p>
-        <p>&gt; NETWORK POSTURE: {data.currentDirective ?? "Monitoring Discord-side relay traffic."}</p>
-        <p>&gt; SIGNAL ORIGIN: {publicSourceLabel(data.source)}</p>
-        <p>&gt; {lastSeenSentence}</p>
+        {hasLiveSnapshot ? (
+          <>
+            <p>&gt; SIGNAL CONDITION: {publicModeLabel(data.mode)}</p>
+            <p>&gt; SURFACE READING: {data.message}</p>
+            <p>&gt; NETWORK POSTURE: {data.currentDirective ?? "Monitoring Discord-side relay traffic."}</p>
+            <p>&gt; SIGNAL ORIGIN: {publicSourceLabel(data.source)}</p>
+            <p>&gt; {lastSeenSentence}</p>
+          </>
+        ) : (
+          <>
+            <p>&gt; SIGNAL CONDITION: SYNC PENDING</p>
+            <p>&gt; RELAY STATE: unavailable while retrying synchronization.</p>
+            <p>&gt; SIGNAL ORIGIN: pending</p>
+            <p>&gt; {lastSeenSentence}</p>
+          </>
+        )}
         {loading ? <p className="text-muted">&gt; FETCHING RELAY...</p> : null}
+        {hasLiveSnapshot && error ? <p className="text-muted">&gt; RELAY SYNC DEGRADED: showing last confirmed relay while retrying.</p> : null}
         {!synchronized && error ? <p className="text-danger">&gt; RELAY SYNC FAILURE: status unavailable; retrying.</p> : null}
       </div>
     </div>

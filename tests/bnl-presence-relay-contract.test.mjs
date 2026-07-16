@@ -127,9 +127,9 @@ test('new relay decision produces coordinated current/history persistence payloa
   assert.equal(decision.action, 'insert');
   assert.equal(decision.relay, relay);
   assert.deepEqual(decision.history, [relay]);
-  const route = readFileSync(resolve('src/app/api/bnl/status/route.ts'), 'utf8');
-  assert.match(route, /redis\.multi\(\)\.set\(BNL_V2_RELAY_CURRENT_KEY, decision\.relay\)\.set\(BNL_V2_RELAY_HISTORY_KEY, decision\.history\)\.exec\(\)/);
-  assert.match(route, /await redis\.multi\(\)\.set[\s\S]+memoryRelay = decision\.relay/);
+  const store = readFileSync(resolve('src/lib/bnl-status-store.ts'), 'utf8');
+  assert.match(store, /redis\.multi\(\)\.set\(BNL_V2_RELAY_CURRENT_KEY, decision\.relay\)\.set\(BNL_V2_RELAY_HISTORY_KEY, decision\.history\)\.exec\(\)/);
+  assert.match(store, /await redis\.multi\(\)\.set[\s\S]+memoryRelay = decision\.relay/);
 });
 
 
@@ -171,4 +171,25 @@ test('error classification distinguishes validation conflict and infrastructure 
   try { mod.parseV2PresenceWrite({ contractVersion: 2, kind: 'presence', presence: {} }, now); } catch (error) { assert.equal(mod.errorStatus(error), 400); }
   const relay = mod.parseV2RelayWrite(relayBody, now);
   assert.equal(mod.decideRelayStorage({ current: relay, history: [relay], relay: { ...relay, message: 'changed' } }).action, 'conflict');
+});
+
+test('public and admin BNL routes use shared canonical resolver and no-store headers', () => {
+  const publicRoute = readFileSync(resolve('src/app/api/bnl/status/route.ts'), 'utf8');
+  const adminRoute = readFileSync(resolve('src/app/api/admin/bnl/route.ts'), 'utf8');
+  const store = readFileSync(resolve('src/lib/bnl-status-store.ts'), 'utf8');
+  assert.match(publicRoute, /resolveBNLCurrentView\(\)/);
+  assert.match(adminRoute, /readBNLAdminState\(redis\)/);
+  assert.match(store, /Cache-Control": "no-store, no-cache, must-revalidate"/);
+  assert.match(publicRoute, /headers: BNL_NO_STORE_HEADERS/);
+  assert.match(adminRoute, /headers: BNL_NO_STORE_HEADERS/);
+});
+
+test('admin manual relay writes v2 relay and standby reset only writes presence', () => {
+  const adminRoute = readFileSync(resolve('src/app/api/admin/bnl/route.ts'), 'utf8');
+  assert.match(adminRoute, /relayId: `admin-/);
+  assert.match(adminRoute, /sourceClass: "approved_canon", trigger: "manual"/);
+  assert.match(adminRoute, /await writeBNLRelay\(relay, redis\)/);
+  const resetBlock = adminRoute.slice(adminRoute.indexOf('if (action === "updateStatus" || action === "resetStandby")'), adminRoute.indexOf('if (action === "clearHistory")'));
+  assert.match(resetBlock, /await writeBNLPresence\(presence, redis\)/);
+  assert.match(resetBlock, /if \(action === "updateStatus"\)/);
 });

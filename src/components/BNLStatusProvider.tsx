@@ -4,7 +4,7 @@ import { createContext, ReactNode, useContext, useEffect, useMemo, useSyncExtern
 import { BNLStatusController, BNLStatusSnapshot } from "@/components/bnl-status-controller";
 import { FALLBACK_STATUS } from "@/components/bnl-status";
 
-const fallback: BNLStatusSnapshot = { data: FALLBACK_STATUS, loading: true, refreshing: false, error: null, lastSuccessfulRefresh: null };
+const fallback: BNLStatusSnapshot = { data: FALLBACK_STATUS, loading: true, refreshing: false, error: null, lastSuccessfulRefresh: null, synchronized: false };
 const Context = createContext<BNLStatusController | null>(null);
 
 export function BNLStatusProvider({ children }: { children: ReactNode }) {

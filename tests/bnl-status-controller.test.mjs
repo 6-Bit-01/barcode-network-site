@@ -78,3 +78,36 @@ test('interval listeners and pending requests are cleaned up', async () => {
   globalThis.setInterval = originalSetInterval;
   globalThis.clearInterval = originalClearInterval;
 });
+
+test('production-shaped v2 JSON replaces fallback with relay and presence', async () => {
+  const production = {
+    status: 'ONLINE', mode: 'OBSERVATION', message: 'Canonical relay message', currentDirective: 'Canonical directive', source: 'relay', lastSeen: '2026-07-16T00:20:32.865Z', persisted: true, contractVersion: 2,
+    presence: { contractVersion: 2, status: 'ONLINE', mode: 'OBSERVATION', source: 'heartbeat', receivedAt: '2026-07-16T00:25:25.083Z' },
+    relay: { contractVersion: 2, relayId: 'bnl-0c3bfdb539281d78f934287f2c536746', message: 'Canonical relay message', currentDirective: 'Canonical directive', sourceClass: 'fresh_public_event', trigger: 'scheduled', publishedAt: '2026-07-16T00:20:32.865Z' },
+  };
+  const controller = new BNLStatusController(async () => ({ ok: true, status: 200, json: async () => production }));
+  await controller.refresh();
+  const snapshot = controller.getSnapshot();
+  assert.equal(snapshot.data.message, 'Canonical relay message');
+  assert.equal(snapshot.data.relay.relayId, 'bnl-0c3bfdb539281d78f934287f2c536746');
+  assert.equal(snapshot.data.presence.source, 'heartbeat');
+  assert.equal(snapshot.synchronized, true);
+});
+
+test('failed initial refresh reports sync failure instead of confirmed fallback', async () => {
+  const controller = new BNLStatusController(async () => ({ ok: false, status: 503, json: async () => ({}) }));
+  await controller.refresh();
+  const snapshot = controller.getSnapshot();
+  assert.equal(snapshot.data.message, 'fallback');
+  assert.equal(snapshot.loading, false);
+  assert.equal(snapshot.synchronized, false);
+  assert.match(snapshot.error, /503/);
+});
+
+test('client requests use no-store semantics', async () => {
+  let init;
+  const controller = new BNLStatusController(async (_url, requestInit) => { init = requestInit; return { ok: true, status: 200, json: async () => good }; });
+  await controller.refresh();
+  assert.equal(init.cache, 'no-store');
+  assert.equal(init.headers['Cache-Control'], 'no-store');
+});

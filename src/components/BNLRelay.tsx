@@ -172,7 +172,7 @@ function BNLRelayExplainer() {
 }
 
 export function BNLNetworkRelayTicker() {
-  const { data } = useBNLStatus();
+  const { data, error, synchronized } = useBNLStatus();
   const online = data.status === "ONLINE";
   const lastSeenSentence = formatLastSeenSentence(data.lastSeen);
   const signalCondition = publicModeLabel(data.mode);
@@ -187,11 +187,11 @@ export function BNLNetworkRelayTicker() {
           <div className="bnl-relay-scroll min-w-0 flex-1">
             <div className="bnl-relay-scroll-track">
               <span>
-                SIGNAL CONDITION <span className={bnlTone(online)}>{signalCondition}</span> :: SURFACE READING {data.message}
+                SIGNAL CONDITION <span className={bnlTone(online)}>{signalCondition}</span> :: {!synchronized && error ? "SYNC FAILURE" : `SURFACE READING ${data.message}`}
                 {data.lastSeen ? ` :: ${lastSeenSentence}` : ""} ::
               </span>
               <span aria-hidden>
-                SIGNAL CONDITION <span className={bnlTone(online)}>{signalCondition}</span> :: SURFACE READING {data.message}
+                SIGNAL CONDITION <span className={bnlTone(online)}>{signalCondition}</span> :: {!synchronized && error ? "SYNC FAILURE" : `SURFACE READING ${data.message}`}
                 {data.lastSeen ? ` :: ${lastSeenSentence}` : ""} ::
               </span>
             </div>
@@ -204,7 +204,7 @@ export function BNLNetworkRelayTicker() {
 }
 
 export function BNLRelayModule({ title }: { title: string }) {
-  const { data, loading } = useBNLStatus();
+  const { data, loading, error, synchronized } = useBNLStatus();
   const online = data.status === "ONLINE";
   const lastSeenSentence = formatLastSeenSentence(data.lastSeen);
 
@@ -221,6 +221,7 @@ export function BNLRelayModule({ title }: { title: string }) {
         <p>&gt; SIGNAL ORIGIN: {publicSourceLabel(data.source)}</p>
         <p>&gt; {lastSeenSentence}</p>
         {loading ? <p className="text-muted">&gt; FETCHING RELAY...</p> : null}
+        {!synchronized && error ? <p className="text-danger">&gt; RELAY SYNC FAILURE: status unavailable; retrying.</p> : null}
       </div>
     </div>
   );

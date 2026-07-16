@@ -8,6 +8,9 @@ import { useState, useEffect } from "react";
 type BNLStatusValue = "ONLINE" | "OFFLINE";
 type BNLModeValue = "STANDBY" | "OBSERVATION" | "ACTIVE_LIAISON" | "SIGNAL_DEGRADATION" | "RESTRICTED";
 type BNLSourceValue = "bot" | "startup" | "relay" | "heartbeat" | "showday" | "showtest" | "admin" | "reset" | "forcePull" | "unknown";
+type BNLV2PresenceSource = "heartbeat" | "startup" | "admin" | "reset" | "unknown";
+type BNLV2RelaySourceClass = "fresh_public_event" | "recent_public_continuity" | "scoped_broadcast_memory" | "public_safe_memory" | "approved_canon" | "grounded_reflection";
+type BNLV2RelayTrigger = "scheduled" | "force_pull" | "manual";
 
 interface BNLAdminState {
   status: BNLStatusValue;
@@ -19,6 +22,9 @@ interface BNLAdminState {
   persisted?: boolean;
   adminNote?: string;
   forcePullRequestedAt?: string | null;
+  contractVersion?: 2;
+  presence?: { contractVersion: 2; status: BNLStatusValue; mode: BNLModeValue; source: BNLV2PresenceSource; receivedAt: string };
+  relay?: { contractVersion: 2; relayId: string; message: string; currentDirective: string; sourceClass: BNLV2RelaySourceClass; trigger: BNLV2RelayTrigger; publishedAt: string } | null;
 }
 
 
@@ -27,16 +33,7 @@ interface ForcePullAttempt { requestedAt: string; requestId: string | null; stat
 const PENDING_FORCE_PULL_OUTCOMES = new Set<ForcePullOutcome>(["queued", "already_running", "processing", "unconfirmed"]);
 function isPendingForcePullAttempt(attempt: ForcePullAttempt | null): boolean { return Boolean(attempt && PENDING_FORCE_PULL_OUTCOMES.has(attempt.status)); }
 
-interface BNLHistoryEntry {
-  timestamp: string;
-  status: BNLStatusValue;
-  mode: BNLModeValue;
-  currentDirective?: string;
-  message: string;
-  source: BNLSourceValue;
-  adminNote?: string;
-  persisted?: boolean;
-}
+interface BNLHistoryEntry { relayId?: string; publishedAt?: string; timestamp?: string; status?: BNLStatusValue; mode?: BNLModeValue; currentDirective?: string; message: string; source?: BNLSourceValue; sourceClass?: BNLV2RelaySourceClass; trigger?: BNLV2RelayTrigger; adminNote?: string; persisted?: boolean; }
 
 const defaultRelayMessage = "BNL-01 relay standing by. Discord memory file monitoring active.";
 const defaultBNL: BNLAdminState = { status: "OFFLINE", mode: "STANDBY", message: "BNL-01 relay awaiting signal.", lastSeen: null };
@@ -204,15 +201,15 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
     } catch (error) { setFlags(previous); setRelayActionError(error instanceof Error ? error.message : 'Flag update failed; previous values restored.'); }
     finally { setPendingAction(null); }
   };
-  const clearHistory = async () => {
-    const confirmed = window.confirm("This clears the admin history log only. It does not reset BNL, change the public ticker, or affect Discord.");
+  const clearLegacyHistory = async () => {
+    const confirmed = window.confirm("This clears only the legacy v1 admin history compatibility log. Accepted v2 relay history is read-only and is not cleared.");
     if (!confirmed) return;
-    if (pendingAction) return; setPendingAction('clearHistory'); setRelayActionError(null); setRelayActionNote(null);
+    if (pendingAction) return; setPendingAction('clearLegacyHistory'); setRelayActionError(null); setRelayActionNote(null);
     try { const res = await fetch('/api/admin/bnl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clearHistory' }) });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok || payload?.ok !== true) throw new Error(typeof payload?.error === 'string' ? payload.error : `Request failed (${res.status})`);
-      setRelayActionNote(payload.persisted === false ? 'History cleared in local in-memory fallback only; persistence unavailable.' : 'Relay history cleared.');
-      await loadBnl(true); } catch (error) { setRelayActionError(error instanceof Error ? error.message : 'Clear history failed'); } finally { setPendingAction(null); }
+      setRelayActionNote(payload.persisted === false ? 'Legacy v1 history cleared in local in-memory fallback only; accepted v2 relay history was left intact.' : 'Legacy v1 history cleared. Accepted v2 relay history was left intact.');
+      await loadBnl(true); } catch (error) { setRelayActionError(error instanceof Error ? error.message : 'Clear legacy history failed'); } finally { setPendingAction(null); }
   };
   const requestForcePull = async () => {
     if (pendingAction) return;
@@ -278,6 +275,12 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
       <p className="text-xs text-muted uppercase tracking-widest mb-2">Admin Relay Metadata (admin only)</p>
       <p>Source Label: {SOURCE_LABELS[bnl.source || "unknown"]}</p>
       <p>Raw Source Code: {bnl.source || "unknown"}</p>
+      <p>Resolved Presence: {bnl.presence ? `${bnl.presence.status} / ${bnl.presence.mode}` : "v1 fallback"}</p>
+      <p>Relay ID: {bnl.relay?.relayId || "v1 fallback / no v2 relay"}</p>
+      <p>Relay Published At: {bnl.relay?.publishedAt ? formatLocalTimestamp(bnl.relay.publishedAt) : "unknown"}</p>
+      <p>Presence Received At: {bnl.presence?.receivedAt ? formatLocalTimestamp(bnl.presence.receivedAt) : "unknown"}</p>
+      <p>Source Class: {bnl.relay?.sourceClass || "v1 fallback"}</p>
+      <p>Trigger: {bnl.relay?.trigger || "v1 fallback"}</p>
       <p>Persistence Layer: {bnl.persisted ? "Redis" : "In-memory fallback"}</p>
       <p className="text-xs text-muted mt-2">This metadata is for admin visibility and is not part of the public ticker display.</p>
     </div>
@@ -292,10 +295,10 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
   <div className="flex flex-wrap gap-3"><button disabled={Boolean(pendingAction)} onClick={()=>updateRelay('updateStatus')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all disabled:opacity-50">{pendingAction === 'updateStatus' ? 'Updating…' : 'Update BNL Relay'}</button><button disabled={Boolean(pendingAction)} onClick={()=>updateRelay('resetStandby')} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all disabled:opacity-50">{pendingAction === 'resetStandby' ? 'Resetting…' : 'Reset BNL Relay to Standby'}</button><button disabled={Boolean(pendingAction)} onClick={requestForcePull} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all disabled:opacity-50">{pendingAction === 'forcePull' ? 'Sending request…' : 'Request Immediate BNL Check-in'}</button><button disabled={Boolean(pendingAction)} onClick={async()=>{ setPendingAction('refresh'); setRelayActionError(null); try { await loadBnl(true); setRelayActionNote('BNL status refreshed. Pending outcomes were checked again if available.'); } catch { setRelayActionError('Manual refresh failed.'); } finally { setPendingAction(null); } }} className="px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all disabled:opacity-50">{pendingAction === 'refresh' ? 'Refreshing…' : 'Refresh BNL Status'}</button></div>
   <div className="text-xs text-muted space-y-1">
     <p><strong>Update BNL Relay:</strong> Publishes the status, mode, and message entered above to the public website relay immediately.</p>
-    <p><strong>Reset BNL Relay to Standby:</strong> Sets relay back to monitoring/standby messaging and marks source as admin reset.</p>
+    <p><strong>Reset BNL Relay to Standby:</strong> Updates presence/mode to standby without erasing the last accepted relay speech or history.</p>
     <p><strong>Request Immediate BNL Check-in:</strong> Sends a forcePull request to BNL. A delivered or 202 accepted request means BNL accepted work; it does not by itself mean a relay was published.</p>
     <p><strong>If webhook delivery fails:</strong> The request timestamp is still recorded on this site, but the bot endpoint did not receive the check-in request.</p>
-    <p><strong>History refresh:</strong> Relay metadata/history refresh automatically and can also be refreshed manually with <em>Refresh BNL Status</em>.</p>
+    <p><strong>History refresh:</strong> Accepted v2 relay history is authoritative/read-only here; legacy v1 history is retained only for compatibility inspection.</p>
   </div>
   <p className="text-xs text-muted">Last immediate check-in request: {forcePullRequestedAt || "never"}.</p>
   {forcePullAttempt && <p className="text-xs text-muted">Force-pull outcome: {String(forcePullAttempt.status || "outcome unavailable")} {forcePullAttempt.requestId ? `(request ${forcePullAttempt.requestId})` : ""}{forcePullAttempt.warning ? ` — ${forcePullAttempt.warning}` : ""}{forcePullAttempt.persisted === false ? " — persistence unavailable" : ""}</p>}
@@ -304,9 +307,9 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
   <div><p className="text-xs text-muted mb-2">Control flags are stored immediately. BNL may apply scheduled flag changes on his next control refresh; a switch alone does not guarantee an immediate relay.</p>
     <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Website Relay Enabled:</strong> Allows BNL to update the public website relay automatically.</span><input disabled={Boolean(pendingAction)} type="checkbox" checked={flags.websiteRelayEnabled} onChange={(e)=>updateFlags({...flags,websiteRelayEnabled:e.target.checked})} /></label>
     <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Show-Day Discord Posts Enabled:</strong> Allows BNL to post scheduled Friday show updates in Discord.</span><input disabled={Boolean(pendingAction)} type="checkbox" checked={flags.showdayDiscordPostsEnabled} onChange={(e)=>updateFlags({...flags,showdayDiscordPostsEnabled:e.target.checked})} /></label>
-    <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Heartbeat Enabled:</strong> Allows BNL to keep the website relay fresh with periodic status updates.</span><input disabled={Boolean(pendingAction)} type="checkbox" checked={flags.heartbeatEnabled} onChange={(e)=>updateFlags({...flags,heartbeatEnabled:e.target.checked})} /></label>
+    <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Heartbeat Enabled:</strong> Allows BNL to refresh presence/heartbeat state only; heartbeat never replaces accepted relay speech.</span><input disabled={Boolean(pendingAction)} type="checkbox" checked={flags.heartbeatEnabled} onChange={(e)=>updateFlags({...flags,heartbeatEnabled:e.target.checked})} /></label>
   </div>
-  <div><div className="flex items-center justify-between"><p className="text-xs text-muted mb-2">Admin Relay History (admin only) — most recent 25 updates received from BNL/admin actions.</p><button disabled={Boolean(pendingAction)} onClick={clearHistory} className="px-3 py-1.5 text-xs uppercase tracking-widest border border-danger/40 text-danger hover:bg-danger hover:text-background transition-all">Clear Relay History</button></div><div className="space-y-2 text-xs">{history.map((entry, idx)=><div key={idx} className="border border-border p-2"><p>{formatLocalTimestamp(entry.timestamp)} — {entry.status} / {entry.mode} ({SOURCE_LABELS[entry.source || 'unknown']})</p>{entry.currentDirective && <p className="break-words whitespace-pre-wrap">Directive: {entry.currentDirective}</p>}<p>{entry.message}</p>{entry.adminNote && <p>Operator Note: {entry.adminNote}</p>}<p className="text-muted">Persistence: {entry.persisted === undefined ? "unknown" : entry.persisted ? "Stored in Redis (persistent shared storage)" : "In-memory fallback (temporary local storage)"}</p></div>)}</div></div>
+  <div><div className="flex items-center justify-between"><p className="text-xs text-muted mb-2">Accepted v2 Relay History (admin only) — most recent 25 accepted relay publications. Legacy v1 history is retained server-side for compatibility/migration inspection.</p><button disabled={Boolean(pendingAction)} onClick={clearLegacyHistory} className="px-3 py-1.5 text-xs uppercase tracking-widest border border-danger/40 text-danger hover:bg-danger hover:text-background transition-all">Clear Legacy v1 History</button></div><div className="space-y-2 text-xs">{history.map((entry, idx)=><div key={entry.relayId || idx} className="border border-border p-2"><p>{formatLocalTimestamp(entry.publishedAt || entry.timestamp || null)} — {entry.relayId || 'legacy entry'} {entry.sourceClass ? `(${entry.sourceClass} / ${entry.trigger || 'unknown trigger'})` : `(${SOURCE_LABELS[entry.source || 'unknown']})`}</p>{entry.currentDirective && <p className="break-words whitespace-pre-wrap">Directive: {entry.currentDirective}</p>}<p>{entry.message}</p>{entry.adminNote && <p>Legacy Operator Note: {entry.adminNote}</p>}<p className="text-muted">Persistence: {entry.persisted === undefined ? "canonical v2 / unknown layer" : entry.persisted ? "Stored in Redis (persistent shared storage)" : "In-memory fallback (temporary local storage)"}</p></div>)}</div></div>
   </div>
 
   </div></section>;

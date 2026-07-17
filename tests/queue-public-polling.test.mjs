@@ -31,6 +31,11 @@ test('validates nested public queue snapshot shape', () => {
   for (const broadcastPhase of ['warmup', 'submission_window', 'broadcast_active', 'ended']) assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, broadcastPhase } }), true);
   assert.equal(isQueuePublicSnapshot(snapshot('s1', { queue: [track('bad', 'unknown')] })), false);
   assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, broadcastPhase: 'pre_show' } }), false);
+  assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, showDate: '2026-02-31' } }), false);
+  assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, broadcastStartedAt: '2026-02-31T00:00:00.000Z' } }), false);
+  assert.equal(isQueuePublicSnapshot({ ...snapshot(), status: { ...snapshot().status, activeCount: Number.MAX_SAFE_INTEGER + 1 } }), false);
+  assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, showStarted: null } }), false);
+  assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, broadcastPhase: null } }), false);
 });
 
 test('distinguishes network non-2xx malformed and unexpected payload failures', async () => {
@@ -82,15 +87,18 @@ test('compatible last good is same session identity and wrong route session is r
 
 test('priority action eligibility rejects closed full wrong position and accepts checkout transitions', () => {
   const base = reduceQueuePollSuccess(initialQueuePollState, snapshot('s1', { status: { ...snapshot().status, activeCount: 2 }, queue: [track('front'), track('target')] }), 1);
-  assert.equal(derivePublicQueueActionEligibility(base, { sessionId: 's1', action: 'priority_request', trackId: 'target', priorityDepth: 2, frontEdgeFreeTrackId: 'front' }).allowed, true);
+  assert.equal(derivePublicQueueActionEligibility(base, { sessionId: 's1', action: 'priority_request', trackId: 'target', priorityDepth: 2 }).allowed, true);
   assert.equal(derivePublicQueueActionEligibility(base, { sessionId: 's2', action: 'priority_request', trackId: 'target', priorityDepth: 2 }).reason, 'wrong_session');
-  assert.equal(derivePublicQueueActionEligibility(base, { sessionId: 's1', action: 'priority_request', trackId: 'front', priorityDepth: 2, frontEdgeFreeTrackId: 'front' }).reason, 'front_edge');
+  assert.equal(derivePublicQueueActionEligibility(base, { sessionId: 's1', action: 'priority_request', trackId: 'front', priorityDepth: 2 }).reason, 'front_edge');
   assert.equal(derivePublicQueueActionEligibility(reduceQueuePollSuccess(initialQueuePollState, snapshot('s1', { status: { ...snapshot().status, isOpen: false } }), 1), { sessionId: 's1', action: 'priority_request', trackId: 'target', priorityDepth: 2 }).reason, 'closed');
   assert.equal(derivePublicQueueActionEligibility(reduceQueuePollSuccess(initialQueuePollState, snapshot('s1', { status: { ...snapshot().status, activeCount: 44, isFull: true } }), 1), { sessionId: 's1', action: 'priority_request', trackId: 'target', priorityDepth: 2 }).reason, 'full');
   assert.equal(derivePublicQueueActionEligibility(reduceQueuePollSuccess(initialQueuePollState, snapshot('s1', { queue: [track('target')], nowPlaying: track('np') }), 1), { sessionId: 's1', action: 'priority_request', trackId: 'np', priorityDepth: 2 }).reason, 'track_missing');
   const pending = reduceQueuePollSuccess(initialQueuePollState, snapshot('s1', { queue: [{ ...track('target'), priorityUpgradeStatus: 'checkout_pending' }] }), 1);
   assert.equal(derivePublicQueueActionEligibility(pending, { sessionId: 's1', action: 'priority_checkout_completed', trackId: 'target', priorityDepth: 2 }).allowed, true);
   assert.equal(derivePublicQueueActionEligibility(pending, { sessionId: 's1', action: 'priority_resume', trackId: 'target', priorityDepth: 2 }).allowed, true);
+  const cooldown = reduceQueuePollSuccess(initialQueuePollState, snapshot('s1', { status: { ...snapshot().status, activeCount: 2 }, queue: [track('front'), track('accepted')], submitterStatus: { used: 1, limit: 2, remaining: 1, cooldownRemainingSeconds: 299, submitted: [] } }), 1);
+  assert.equal(derivePublicQueueActionEligibility(cooldown, { sessionId: 's1', action: 'submit' }).allowed, false, 'cooldown blocks another submission');
+  assert.equal(derivePublicQueueActionEligibility(cooldown, { sessionId: 's1', action: 'priority_checkout_preflight', trackId: 'accepted', priorityDepth: 2 }).allowed, true, 'cooldown does not block accepted-track checkout');
 });
 
 test('controller supports manual retry focus online visible interval coalescing cleanup and wrong-session rejection', async () => {

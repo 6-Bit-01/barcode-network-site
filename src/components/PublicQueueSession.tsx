@@ -211,7 +211,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [view, setView] = useState<QueueView>("active");
   const [mounted, setMounted] = useState(false);
-  const [priorityModalTrack, setPriorityModalTrack] = useState<QueuePublicTrack | null>(null);
+  const [priorityModalTrackId, setPriorityModalTrackId] = useState<string | null>(null);
   const [priorityRequestPending, setPriorityRequestPending] = useState(false);
   const [priorityRequestMessage, setPriorityRequestMessage] = useState<string | null>(null);
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
@@ -422,7 +422,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     return track.priorityUpgradeStatus === "checkout_pending";
   }
 
-  function clearActionTransitionTimer() { actionGenerationRef.current += 1; if (actionTransitionTimerRef.current) window.clearTimeout(actionTransitionTimerRef.current); actionTransitionTimerRef.current = null; }
+  function clearActionTransitionTimer() { actionGenerationRef.current += 1; if (actionTransitionTimerRef.current) window.clearTimeout(actionTransitionTimerRef.current); actionTransitionTimerRef.current = null; setActionTransition(null); }
 
   function runPublicActionTransition(transition: PublicActionVariant, action: () => void, delay = 1200) {
     clearActionTransitionTimer();
@@ -450,9 +450,9 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   function requestPriorityUpgrade(track: QueuePublicTrack) {
     if (!canShowPriorityUpgrade(track) && !canResumePriorityPayment(track)) return;
     runPublicActionTransition(actionVariant(`${sessionId}:${track.id}`, "upgrade"), () => {
-      const eligibility = derivePublicQueueActionEligibility(pollStateRef.current, { sessionId, action: track.priorityUpgradeStatus === "checkout_pending" ? "priority_resume" : "priority_request", trackId: track.id, priorityDepth: MIN_PRIORITY_ACTIVE_DEPTH, frontEdgeFreeTrackId });
+      const eligibility = derivePublicQueueActionEligibility(pollStateRef.current, { sessionId, action: track.priorityUpgradeStatus === "checkout_pending" ? "priority_resume" : "priority_request", trackId: track.id, priorityDepth: MIN_PRIORITY_ACTIVE_DEPTH });
       if (!eligibility.allowed || !eligibility.track) return;
-      setPriorityModalTrack(eligibility.track);
+      setPriorityModalTrackId(eligibility.track.id);
       setPriorityRequestMessage(null);
       if (!priorityUpgradeAvailable) setPriorityRequestMessage("Priority Signal upgrades unavailable.");
     });
@@ -460,33 +460,36 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
   async function beginPriorityCheckout(track: QueuePublicTrack) {
     const preflightAction = track.priorityUpgradeStatus === "checkout_pending" ? "priority_resume" : "priority_checkout_preflight";
-    const preflight = derivePublicQueueActionEligibility(pollStateRef.current, { sessionId, action: preflightAction, trackId: track.id, priorityDepth: MIN_PRIORITY_ACTIVE_DEPTH, frontEdgeFreeTrackId });
+    const preflight = derivePublicQueueActionEligibility(pollStateRef.current, { sessionId, action: preflightAction, trackId: track.id, priorityDepth: MIN_PRIORITY_ACTIVE_DEPTH });
     if (!preflight.allowed || !preflight.track) { setPriorityRequestMessage("Queue signal changed. Retry after resync before starting Priority Signal checkout."); return; }
     const checkoutGeneration = actionGenerationRef.current;
     setPriorityRequestPending(true);
     const res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId: track.id, sessionId, acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT }) });
     const payload = await res.json().catch(() => ({}));
     setPriorityRequestPending(false);
-    const eligibility = derivePublicQueueActionEligibility(pollStateRef.current, { sessionId, action: "priority_checkout_completed", trackId: track.id, priorityDepth: MIN_PRIORITY_ACTIVE_DEPTH, frontEdgeFreeTrackId });
+    const eligibility = derivePublicQueueActionEligibility(pollStateRef.current, { sessionId, action: "priority_checkout_completed", trackId: track.id, priorityDepth: MIN_PRIORITY_ACTIVE_DEPTH });
     if (checkoutGeneration !== actionGenerationRef.current || !eligibility.allowed || !eligibility.track) {
       setPriorityRequestMessage("Queue signal changed before checkout navigation. Retry after resync or resume payment if available.");
       return;
     }
-    if (res.ok && typeof payload.url === "string" && /^https?:\/\//.test(payload.url)) {
+    const checkoutUrl = (() => { try { if (typeof payload.url !== "string") return null; const url = new URL(payload.url); return (url.protocol === "http:" || url.protocol === "https:") && Boolean(url.host) ? url.toString() : null; } catch { return null; } })();
+    if (res.ok && checkoutUrl) {
       setPriorityRequestMessage(payload.message ?? "Checkout started. Skip is not active yet.");
-      window.location.href = payload.url;
+      window.location.href = checkoutUrl;
       return;
     }
     setPriorityRequestMessage(payload.error ?? "Priority Signal checkout is not available right now.");
     retryRef.current?.();
   }
 
-  useEffect(() => { if (queueAuthorityCurrent) return; clearActionTransitionTimer(); setSubmitOpen(false); setIntakeScrollLocked(false); setPriorityModalTrack(null); setPriorityRequestPending(false); }, [queueAuthorityCurrent]);
+  useEffect(() => { if (queueAuthorityCurrent) return; clearActionTransitionTimer(); setSubmitOpen(false); setIntakeScrollLocked(false); setPriorityModalTrackId(null); setPriorityRequestPending(false); }, [queueAuthorityCurrent]);
+  const priorityModalTrack = priorityModalTrackId ? snapshot?.queue.find((track) => track.id === priorityModalTrackId) ?? null : null;
+  useEffect(() => { if (!priorityModalTrackId || !priorityModalTrack) { if (priorityModalTrackId) setPriorityModalTrackId(null); return; } if (!canShowPriorityUpgrade(priorityModalTrack) && !canResumePriorityPayment(priorityModalTrack)) { clearActionTransitionTimer(); setPriorityModalTrackId(null); setPriorityRequestPending(false); } }, [priorityModalTrackId, priorityModalTrack?.id, priorityModalTrack?.lane, priorityModalTrack?.priorityUpgradeStatus, queueAuthorityCurrent, snapshot?.session.broadcastPhase, snapshot?.status.isOpen, snapshot?.status.isFull, snapshot?.status.activeCount, snapshot?.session.priorityUpgradePaymentsEnabled]);
   useEffect(() => () => clearActionTransitionTimer(), [sessionId]);
 
   async function resumePriorityPayment(track: QueuePublicTrack) {
     if (!queueAuthorityCurrent) return;
-    setPriorityModalTrack(null);
+    setPriorityModalTrackId(null);
     setPriorityRequestMessage(null);
     setActionTransition(actionVariant(`${sessionId}:${track.id}`, "resume"));
     await new Promise<void>((resolve) => { runPublicActionTransition(actionVariant(`${sessionId}:${track.id}`, "resume"), resolve, 1200); });
@@ -647,7 +650,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
       {mounted && actionTransition && createPortal(<NavigationTransition {...actionTransition} />, document.body)}
 
-      {mounted && queueAuthorityCurrent && priorityModalTrack && (canShowPriorityUpgrade(priorityModalTrack) || canResumePriorityPayment(priorityModalTrack)) && createPortal(<PriorityUpgradeModal track={priorityModalTrack} price={formatPrice(priorityPriceCents, priorityCurrency)} priorityImpact={priorityDisplayFromImpact(estimatePriorityImpactForTrack(timingSummary, priorityModalTrack))} isOwnTrack={viewerSubmittedTrackIds.has(priorityModalTrack.id)} pending={priorityRequestPending} message={priorityRequestMessage} onConfirm={() => beginPriorityCheckout(priorityModalTrack)} onClose={() => setPriorityModalTrack(null)} />, document.body)}
+      {mounted && queueAuthorityCurrent && priorityModalTrack && (canShowPriorityUpgrade(priorityModalTrack) || canResumePriorityPayment(priorityModalTrack)) && createPortal(<PriorityUpgradeModal track={priorityModalTrack} price={formatPrice(priorityPriceCents, priorityCurrency)} priorityImpact={priorityDisplayFromImpact(estimatePriorityImpactForTrack(timingSummary, priorityModalTrack))} isOwnTrack={viewerSubmittedTrackIds.has(priorityModalTrack.id)} pending={priorityRequestPending} message={priorityRequestMessage} onConfirm={() => beginPriorityCheckout(priorityModalTrack)} onClose={() => setPriorityModalTrackId(null)} />, document.body)}
 
       {mounted && canSubmit && submitOpen && createPortal(<div className="fixed inset-0 z-[10000] grid place-items-center overscroll-contain bg-black/75 p-2 backdrop-blur-md"><div className="flex max-h-[calc(100dvh-1rem)] w-full max-w-[920px] flex-col overflow-hidden border border-accent/50 bg-background/95 p-3 shadow-[0_0_70px_rgba(255,0,0,0.22)]"><div className="mb-2 flex shrink-0 items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.35em] text-accent">Submission Intake</p><p className="mt-0.5 text-[11px] text-muted">Send your song into the free queue.</p></div><button type="button" onClick={() => { setSubmitOpen(false); setIntakeScrollLocked(false); }} className="cursor-pointer border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted transition-colors hover:border-foreground/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-muted/50">Collapse Intake</button></div><div className="overflow-y-auto pr-1"><RadioQueueForm sessionId={sessionId} onCancel={() => { setSubmitOpen(false); setIntakeScrollLocked(false); }} onAcceptedReceipt={(receipt) => setAcceptedReceipt(receipt)} onSubmitted={(trackId, phase, targetId) => { setLastSubmittedTrackId(trackId ?? null); setSubmitterToken(window.localStorage.getItem("barcode-radio-submitter-token") ?? ""); setView("active"); if (phase === "resolved") { setIntakeScrollLocked(false); retryRef.current?.(); window.setTimeout(() => document.getElementById(targetId ?? "active-queue-panel")?.scrollIntoView({ behavior: "smooth", block: "center" }), 250); } if (phase === "complete") { setSubmitOpen(false); setIntakeScrollLocked(false); retryRef.current?.(); } }} /></div></div></div>, document.body)}
     </div>

@@ -901,6 +901,7 @@ export function LiveOverlayReceiver() {
   const encryptBufferRef = useRef<AudioBuffer | null>(null);
   const spinFadeFrameRef = useRef<number | null>(null);
   const spinAudioGenerationRef = useRef(0);
+  const audioJustArmedTimerRef = useRef<number | null>(null);
   const overlayAudioMountedRef = useRef(true);
   const serverClockAnchorRef = useRef<OverlayServerClockAnchor | null>(null);
   const responseTransitEstimateMsRef = useRef<number | null>(null);
@@ -981,6 +982,7 @@ export function LiveOverlayReceiver() {
       overlayAudioMountedRef.current = false;
       spinAudioGenerationRef.current += 1;
       if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current);
+      if (audioJustArmedTimerRef.current) window.clearTimeout(audioJustArmedTimerRef.current);
       terminateWheelSpinAudio(spinAudioRef.current, { volume: WHEEL_SPIN_VOLUME });
     };
   }, []);
@@ -996,6 +998,7 @@ export function LiveOverlayReceiver() {
   function terminateWheelAudioWork(options: { clearSource?: boolean } = {}) {
     spinAudioGenerationRef.current += 1;
     if (spinFadeFrameRef.current) { window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = null; }
+    if (audioJustArmedTimerRef.current) { window.clearTimeout(audioJustArmedTimerRef.current); audioJustArmedTimerRef.current = null; }
     terminateWheelSpinAudio(spinAudioRef.current, { volume: WHEEL_SPIN_VOLUME, clearSource: options.clearSource });
   }
 
@@ -1007,8 +1010,9 @@ export function LiveOverlayReceiver() {
   useEffect(() => {
     const status = scene.wheelCeremony?.status;
     const wheelMode = scene.mode.startsWith("wheel_");
-    if (!wheelMode || status === "cancelled" || status === "signal_lost" || status === "idle") terminateWheelAudioWork();
-  }, [scene.mode, scene.wheelCeremony?.status]);
+    const audioMayContinue = connected && wheelMode && (status === "spinning" || status === "result_pending");
+    if (!audioMayContinue) terminateWheelAudioWork();
+  }, [connected, scene.mode, scene.wheelCeremony?.status]);
 
   async function enableOverlayAudio() {
     overlayAudioMountedRef.current = true;
@@ -1055,7 +1059,8 @@ export function LiveOverlayReceiver() {
       encryptBufferRef.current = encryptBuffer;
       setAudioArmed(true);
       setAudioJustArmed(true);
-      window.setTimeout(() => setAudioJustArmed(false), 2200);
+      if (audioJustArmedTimerRef.current) window.clearTimeout(audioJustArmedTimerRef.current);
+      audioJustArmedTimerRef.current = window.setTimeout(() => { if (overlayAudioMountedRef.current && enableGeneration === spinAudioGenerationRef.current) setAudioJustArmed(false); }, 2200);
       setAudioNotice(!cheerBuffer || !encryptBuffer ? "WHEEL SFX UNAVAILABLE" : null);
       return;
     }

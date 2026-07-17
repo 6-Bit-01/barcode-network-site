@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MutableRefObject } from "react";
 import { buildWheelSegments, estimateOneWayNetworkTransitMs, playbackCorrectionTarget, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, shouldCorrectPlaybackDrift, updateTransitEstimateMs, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
+import { WHEEL_CEREMONY_AUDIO, WHEEL_SPIN_AUDIO_PATHS, isWheelSpinAudioPath, wheelAudioFallbackCandidates } from "@/lib/wheel-audio";
 import type { LiveOverlayPlaybackState, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
 
 type YTPlayer = {
@@ -109,8 +110,8 @@ type OverlayServerClockAnchor = { serverNowMs: number; receivedAtPerformanceMs: 
 type OverlayServerClockAnchorRef = MutableRefObject<OverlayServerClockAnchor | null>;
 const WHEEL_SPIN_START_DELAY_MS = 850;
 const WHEEL_AUDIO_FADE_OUT_MS = 10_000;
-const WHEEL_WINNER_CHEER_AUDIO_PATH = "/audio/wheel/WheelCheer.mp3";
-const WHEEL_REENCRYPT_AUDIO_PATH = "/audio/wheel/WheelEncrypt.mp3";
+const WHEEL_WINNER_CHEER_AUDIO_PATH = WHEEL_CEREMONY_AUDIO.cheer;
+const WHEEL_REENCRYPT_AUDIO_PATH = WHEEL_CEREMONY_AUDIO.encrypt;
 const WHEEL_RESULT_REVEAL_DELAY_MS = 700;
 const WHEEL_SPIN_VOLUME = 0.82;
 const WHEEL_CHEER_VOLUME = 0.665;
@@ -119,75 +120,6 @@ const WHEEL_SELECTOR_LABEL_SCREEN_UPRIGHT_OFFSET_DEG = 0;
 const WHEEL_SELECTOR_ZONE_MIN_ANGLE_DEG = 210;
 const WHEEL_SELECTOR_ZONE_MAX_ANGLE_DEG = 330;
 
-const FALLBACK_WHEEL_AUDIO_FILES = [
-  "/audio/wheel/142.mp3",
-  "/audio/wheel/77.mp3",
-  "/audio/wheel/150.mp3",
-  "/audio/wheel/49.mp3",
-  "/audio/wheel/103.mp3",
-  "/audio/wheel/56.mp3",
-  "/audio/wheel/58.mp3",
-  "/audio/wheel/84.mp3",
-  "/audio/wheel/147.mp3",
-  "/audio/wheel/102.mp3",
-  "/audio/wheel/92.mp3",
-  "/audio/wheel/76.mp3",
-  "/audio/wheel/111.mp3",
-  "/audio/wheel/74.mp3",
-  "/audio/wheel/139.mp3",
-  "/audio/wheel/110.mp3",
-  "/audio/wheel/148.mp3",
-  "/audio/wheel/162.mp3",
-  "/audio/wheel/104.mp3",
-  "/audio/wheel/32%20(1).mp3",
-  "/audio/wheel/140.mp3",
-  "/audio/wheel/81.mp3",
-  "/audio/wheel/75.mp3",
-  "/audio/wheel/78.mp3",
-  "/audio/wheel/36.mp3",
-  "/audio/wheel/154.mp3",
-  "/audio/wheel/24.mp3",
-  "/audio/wheel/41.mp3",
-  "/audio/wheel/130.mp3",
-  "/audio/wheel/70.mp3",
-  "/audio/wheel/93.mp3",
-  "/audio/wheel/10.mp3",
-  "/audio/wheel/8.mp3",
-  "/audio/wheel/33.mp3",
-  "/audio/wheel/15.mp3",
-  "/audio/wheel/138.mp3",
-  "/audio/wheel/1.mp3",
-  "/audio/wheel/123.mp3",
-  "/audio/wheel/105.mp3",
-  "/audio/wheel/73.mp3",
-  "/audio/wheel/54.mp3",
-  "/audio/wheel/127.mp3",
-  "/audio/wheel/21.mp3",
-  "/audio/wheel/46.mp3",
-  "/audio/wheel/72.mp3",
-  "/audio/wheel/43.mp3",
-  "/audio/wheel/82.mp3",
-  "/audio/wheel/3.mp3",
-  "/audio/wheel/99.mp3",
-  "/audio/wheel/wheel-spin-01-creepy-circus-astronautflute.mp3",
-  "/audio/wheel/wheel-spin-02-dark-circus-top-sue.mp3",
-  "/audio/wheel/wheel-spin-03-comedy-circus-top-sue.mp3",
-  "/audio/wheel/wheel-spin-04-circus-fast-andorios.mp3",
-  "/audio/wheel/wheel-spin-05-carousel-circus-chakong.mp3",
-  "/audio/wheel/wheel-spin-06-circus-bear-studiokolomna.mp3",
-  "/audio/wheel/wheel-spin-07-upbeat-corporate-kornevmusic.mp3",
-  "/audio/wheel/wheel-spin-08-corporate-music-absolutesound.mp3",
-  "/audio/wheel/wheel-spin-09-corporate-music-2-absolutesound.mp3",
-  "/audio/wheel/wheel-spin-10-this-heavy-metal-mrclaps.mp3",
-  "/audio/wheel/wheel-spin-11-metal-dark-matter-alexgrohl.mp3",
-  "/audio/wheel/wheel-spin-12-burn-it-down-alexgrohl.mp3",
-  "/audio/wheel/wheel-spin-13-8bit-retro-the-mountain.mp3",
-  "/audio/wheel/wheel-spin-14-retro-swing-the-mountain.mp3",
-  "/audio/wheel/wheel-spin-15-retro-arcade-mondamusic.mp3",
-  "/audio/wheel/wheel-spin-16-synthwave-retro-80s-monume.mp3",
-  "/audio/wheel/wheel-spin-17-retro-game-arcade-moodmode.mp3",
-  "/audio/wheel/wheel-spin-18-retro-surf-rock-tunetank.mp3",
-];
 
 const BINARY_CONFETTI = Array.from({ length: 44 }, (_, index) => ({
   bit: index % 3 === 0 ? "0" : "1",
@@ -199,36 +131,7 @@ const BINARY_CONFETTI = Array.from({ length: 44 }, (_, index) => ({
 
 function safeWheelAudioPath(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const cleaned = value.trim().replace(/\s/g, "%20");
-  if (!/^[a-zA-Z0-9._~!$&'()*+,;=:@/%-]+\.mp3(?:\?.*)?$/i.test(cleaned)) return null;
-  if (/^https?:\/\//i.test(cleaned) || cleaned.includes("..")) return null;
-  if (cleaned.startsWith("/") && !cleaned.startsWith("/audio/wheel/")) return null;
-  return cleaned.startsWith("/") ? cleaned : `/audio/wheel/${cleaned.replace(/^audio\/wheel\//, "")}`;
-}
-
-function normalizeWheelAudioManifest(input: unknown): string[] {
-  const rawFiles = Array.isArray(input) ? input : Array.isArray((input as { files?: unknown } | null)?.files) ? (input as { files: unknown[] }).files : [];
-  return Array.from(new Set(rawFiles.map(safeWheelAudioPath).filter((file): file is string => Boolean(file))));
-}
-
-async function loadWheelAudioFiles(): Promise<string[]> {
-  try {
-    const response = await fetch("/audio/wheel/manifest.json", { cache: "no-store" });
-    if (!response.ok) return FALLBACK_WHEEL_AUDIO_FILES;
-    const files = normalizeWheelAudioManifest(await response.json());
-    return files.length > 0 ? files : FALLBACK_WHEEL_AUDIO_FILES;
-  } catch {
-    return FALLBACK_WHEEL_AUDIO_FILES;
-  }
-}
-
-function shuffledAudioPaths(paths: string[]): string[] {
-  const shuffled = [...paths];
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
-  }
-  return shuffled;
+  return isWheelSpinAudioPath(value.trim()) ? value.trim() : null;
 }
 
 function audioPlayWasBlocked(error: unknown): boolean {
@@ -1037,7 +940,7 @@ export function LiveOverlayReceiver() {
   const youtubeSceneClass = shortYouTube ? "live-overlay-youtube-scene live-overlay-youtube-scene--short" : "live-overlay-youtube-scene";
 
   async function enableOverlayAudio() {
-    const spin = new Audio("/audio/wheel/142.mp3");
+    const spin = new Audio(WHEEL_SPIN_AUDIO_PATHS[0]);
     spinAudioRef.current = spin;
     spin.preload = "auto";
     const testPlay = async (a: HTMLAudioElement) => {
@@ -1085,7 +988,26 @@ export function LiveOverlayReceiver() {
     setAudioNotice("AUDIO COULD NOT BE ENABLED — CLICK AGAIN");
   }
 
-  async function playSpinMusic(path?: string) { const a = spinAudioRef.current; if (!a || !audioArmed) return; a.loop = true; a.volume = WHEEL_SPIN_VOLUME; const p = safeWheelAudioPath(path) ?? a.src ?? "/audio/wheel/142.mp3"; if (!a.src || !a.src.endsWith(p)) a.src = p; try { await a.play(); } catch {} }
+  async function playSpinMusic(path?: string) {
+    const audio = spinAudioRef.current;
+    if (!audio || !audioArmed) return;
+    audio.loop = true;
+    audio.volume = WHEEL_SPIN_VOLUME;
+    for (const candidate of wheelAudioFallbackCandidates(safeWheelAudioPath(path))) {
+      try {
+        if (!audio.src || !audio.src.endsWith(candidate)) audio.src = candidate;
+        await audio.play();
+        setAudioNotice(null);
+        return;
+      } catch (error) {
+        if (audioPlayWasBlocked(error)) {
+          setAudioNotice("WHEEL AUDIO BLOCKED — CLICK ENABLE AUDIO");
+          return;
+        }
+      }
+    }
+    setAudioNotice("WHEEL SPIN AUDIO UNAVAILABLE — CEREMONY CONTINUES SILENTLY");
+  }
   function fadeSpinMusic() { const a = spinAudioRef.current; if (!a) return; const sv = a.volume || WHEEL_SPIN_VOLUME; const st = performance.now(); const tick = (n: number) => { const pr = Math.max(0, Math.min(1, (n - st) / WHEEL_AUDIO_FADE_OUT_MS)); a.volume = sv * (1 - pr); if (pr >= 1) { stopWheelAudio(a); a.volume = sv; spinFadeFrameRef.current = null; return; } spinFadeFrameRef.current = window.requestAnimationFrame(tick); }; if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = window.requestAnimationFrame(tick); }
   function playSfxBuffer(bufferRef: React.MutableRefObject<AudioBuffer | null>, volume: number) {
     const context = sfxContextRef.current;

@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { externalLinks } from "@/content";
 import { formatRuntime } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicTrack } from "@/lib/queue-types";
+import { QueuePollError, fetchQueueSnapshot, initialQueuePollState, reduceQueuePollFailure, reduceQueuePollSuccess, type QueuePollState } from "@/lib/queue-public-polling";
 
 type GatewayPhase = "syncing" | "archived" | "closed" | "open" | "liveOpen" | "liveClosed";
 
@@ -104,7 +105,9 @@ function publicCounts(snapshot: QueuePublicSnapshot | null) {
 }
 
 export function PublicQueueGateway() {
-  const [snapshot, setSnapshot] = useState<QueuePublicSnapshot | null>(null);
+  const [pollState, setPollState] = useState<QueuePollState>(initialQueuePollState);
+  const snapshot = pollState.snapshot;
+  const requestRef = useRef<{ id: number; controller: AbortController } | null>(null);
   const [portalState, setPortalState] = useState<"sealed" | "opening" | "open">("sealed");
   const [transitionPulse, setTransitionPulse] = useState<GatewayPhase | null>(null);
   const [pendingNavigation, setPendingNavigation] = useState<(NavigationVariant & { href: string }) | null>(null);
@@ -113,10 +116,16 @@ export function PublicQueueGateway() {
   const phaseRef = useRef<GatewayPhase>("syncing");
   const wasOpen = useRef(false);
 
-  async function load() {
-    const res = await fetch("/api/queue", { cache: "no-store" });
-    if (res.ok) {
-      const next = await res.json() as QueuePublicSnapshot;
+  async function load(retrying = false) {
+    const previous = requestRef.current;
+    previous?.controller.abort();
+    const controller = new AbortController();
+    const id = (previous?.id ?? 0) + 1;
+    requestRef.current = { id, controller };
+    if (retrying) setPollState((current) => reduceQueuePollFailure(current, "network", true));
+    try {
+      const next = await fetchQueueSnapshot(fetch, "/api/queue", controller.signal);
+      if (requestRef.current?.id !== id) return;
       const nextOpen = Boolean(next.status?.isOpen);
       const nextPhase = phaseForSnapshot(next);
       if (phaseRef.current !== nextPhase) {
@@ -131,7 +140,11 @@ export function PublicQueueGateway() {
         setPortalState("sealed");
       }
       wasOpen.current = nextOpen;
-      setSnapshot(next);
+      setPollState((current) => reduceQueuePollSuccess(current, next));
+    } catch (error) {
+      if (requestRef.current?.id !== id) return;
+      const reason = error instanceof QueuePollError ? error.reason : "network";
+      if (reason !== "aborted") setPollState((current) => reduceQueuePollFailure(current, reason));
     }
   }
 
@@ -140,7 +153,11 @@ export function PublicQueueGateway() {
     setNowMs(Date.now());
     load();
     const interval = setInterval(() => { setNowMs(Date.now()); load(); }, 5_000);
-    return () => clearInterval(interval);
+    const recover = () => { if (document.visibilityState !== "hidden") void load(true); };
+    window.addEventListener("focus", recover);
+    window.addEventListener("online", recover);
+    document.addEventListener("visibilitychange", recover);
+    return () => { clearInterval(interval); requestRef.current?.controller.abort(); window.removeEventListener("focus", recover); window.removeEventListener("online", recover); document.removeEventListener("visibilitychange", recover); };
   }, []);
 
   function beginNavigation(event: React.MouseEvent<HTMLAnchorElement>, href: string, activeSessionId: string) {
@@ -177,6 +194,12 @@ export function PublicQueueGateway() {
 
   return (
     <div className={`space-y-6 ${hasActiveSession ? "pb-24" : ""}`}>
+      {pollState.status !== "current" && <section className="border border-[#ffaa00]/45 bg-[#ffaa00]/10 p-4" role="status" aria-live="polite">
+        <p className="text-xs font-bold uppercase tracking-[0.28em] text-[#ffaa00]">Queue signal {pollState.status === "loading" ? "loading" : pollState.status === "stale" ? "stale" : "unavailable"}</p>
+        <p className="mt-2 text-sm text-muted">{pollState.message ?? "Reading the current BARCODE Radio queue before reporting status."}</p>
+        {pollState.lastGoodAt && <p className="mt-1 text-[11px] uppercase tracking-widest text-muted">Last successful poll: {new Date(pollState.lastGoodAt).toLocaleTimeString()}</p>}
+        <button type="button" onClick={() => void load(true)} className="mt-3 border border-[#ffaa00]/60 px-3 py-2 text-xs font-bold uppercase tracking-widest text-[#ffaa00]">Retry queue signal</button>
+      </section>}
       {hasActiveSession ? <section className="border border-accent/60 bg-accent/10 p-5 shadow-[0_0_34px_rgba(255,0,0,0.12)]">
         <p className="text-xs uppercase tracking-[0.35em] text-accent">BARCODE Radio Queue</p>
         <h1 className="mt-2 text-2xl font-bold text-foreground">Current queue is online</h1>

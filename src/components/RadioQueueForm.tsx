@@ -602,6 +602,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
                     <p className="text-[10px] uppercase tracking-widest text-accent">Built-in support</p>
                     <ul className="mt-1 space-y-0.5 font-bold text-foreground">
                       <li>YouTube video, Short, or YouTube Music</li>
+                      <li>TikTok video or Short</li>
                       <li>Spotify</li>
                       <li>SoundCloud</li>
                     </ul>
@@ -613,7 +614,6 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
                       <li>Amazon Music</li>
                       <li>Suno</li>
                       <li>Bandcamp</li>
-                      <li>TikTok video or Short</li>
                     </ul>
                   </div>
                 </div>

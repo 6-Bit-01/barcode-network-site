@@ -11,6 +11,7 @@ import { estimateExistingTrackTiming, estimatePriorityImpact } from "@/lib/queue
 import { formatRuntime, PRIORITY_DISCLOSURE_TEXT, PRIORITY_TERMS_VERSION } from "@/lib/queue-types";
 import { displayEstimate, buildQueueTimingDisplay, priorityDisplayFromImpact, publicTrackDurationLabel, queueTimingInputFromPublicSnapshot, type QueueTimingDisplaySummary, type PriorityTimingDisplay } from "@/lib/queue-timing-display";
 import type { QueuePublicSnapshot, QueuePublicTrack } from "@/lib/queue-types";
+import { QueuePollError, fetchQueueSnapshot, initialQueuePollState, reduceQueuePollFailure, reduceQueuePollSuccess, type QueuePollState } from "@/lib/queue-public-polling";
 
 type QueueView = "active" | "recent";
 type ActivityTone = "red" | "amber" | "gold" | "cyan" | "archive" | "danger";
@@ -198,7 +199,9 @@ function sourceTypeLabel(track: QueuePublicTrack): string {
 }
 
 export function PublicQueueSession({ sessionId }: { sessionId: string }) {
-  const [snapshot, setSnapshot] = useState<QueuePublicSnapshot | null>(null);
+  const [pollState, setPollState] = useState<QueuePollState>(initialQueuePollState);
+  const snapshot = pollState.snapshot;
+  const requestRef = useRef<{ id: number; controller: AbortController } | null>(null);
   const { streamUrl } = useLiveStatus();
   const [submitOpen, setSubmitOpen] = useState(false);
   const [intakeScrollLocked, setIntakeScrollLocked] = useState(false);
@@ -324,17 +327,30 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     pushActivities(dedupeActivities(changes).slice(0, 4));
   }
 
-  async function load() {
+  async function load(retrying = false) {
     const params = new URLSearchParams({ sessionId });
     if (submitterToken) params.set("submitterToken", submitterToken);
-    const res = await fetch(`/api/queue?${params.toString()}`, { cache: "no-store" });
-    if (res.ok) {
-      const next = await res.json() as QueuePublicSnapshot;
-      captureTrackRects();
-      processSnapshotChanges(previousSnapshotRef.current, next);
-      previousSnapshotRef.current = next;
-      setSnapshot(next);
-      setCooldownRemaining(next.submitterStatus?.cooldownRemainingSeconds ?? 0);
+    const previous = requestRef.current;
+    previous?.controller.abort();
+    const controller = new AbortController();
+    const id = (previous?.id ?? 0) + 1;
+    requestRef.current = { id, controller };
+    if (retrying) setPollState((current) => reduceQueuePollFailure(current, "network", true));
+    try {
+      const next = await fetchQueueSnapshot(fetch, `/api/queue?${params.toString()}`, controller.signal);
+      if (requestRef.current?.id !== id) return;
+      const reduced = reduceQueuePollSuccess(pollState, next, Date.now(), sessionId);
+      if (reduced.status === "current" && reduced.snapshot) {
+        captureTrackRects();
+        processSnapshotChanges(previousSnapshotRef.current, reduced.snapshot);
+        previousSnapshotRef.current = reduced.snapshot;
+        setCooldownRemaining(reduced.snapshot.submitterStatus?.cooldownRemainingSeconds ?? 0);
+      }
+      setPollState(reduced);
+    } catch (error) {
+      if (requestRef.current?.id !== id) return;
+      const reason = error instanceof QueuePollError ? error.reason : "network";
+      if (reason !== "aborted") setPollState((current) => reduceQueuePollFailure(current, reason));
     }
   }
 
@@ -345,7 +361,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     if (priorityResult === "cancelled") setCheckoutNotice("Payment was not completed. Your song stays in the free queue if still active.");
     if (priorityResult === "processing") setCheckoutNotice("Checkout started. Skip is not active yet.");
   }, []);
-  useEffect(() => { load(); const interval = setInterval(load, 5_000); return () => clearInterval(interval); }, [sessionId, submitterToken]);
+  useEffect(() => { load(); const interval = setInterval(load, 5_000); const recover = () => { if (document.visibilityState !== "hidden") void load(true); }; window.addEventListener("focus", recover); window.addEventListener("online", recover); document.addEventListener("visibilitychange", recover); return () => { clearInterval(interval); requestRef.current?.controller.abort(); window.removeEventListener("focus", recover); window.removeEventListener("online", recover); document.removeEventListener("visibilitychange", recover); }; }, [sessionId, submitterToken]);
   useEffect(() => { if (cooldownRemaining <= 0) return; const timer = window.setInterval(() => setCooldownRemaining((value) => Math.max(0, value - 1)), 1000); return () => window.clearInterval(timer); }, [cooldownRemaining]);
   useEffect(() => {
     if (!submitOpen || !intakeScrollLocked) return;
@@ -468,6 +484,12 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="space-y-6">
+      {pollState.status !== "current" && <div className="border border-[#ffaa00]/45 bg-[#ffaa00]/10 p-4" role="status" aria-live="polite">
+        <p className="text-xs font-bold uppercase tracking-[0.28em] text-[#ffaa00]">Queue signal {pollState.status === "loading" ? "loading" : pollState.status === "stale" ? "stale" : "unavailable"}</p>
+        <p className="mt-2 text-sm text-muted">{pollState.message ?? "Reading this BARCODE Radio session before reporting intake status."}</p>
+        {pollState.lastGoodAt && <p className="mt-1 text-[11px] uppercase tracking-widest text-muted">Last successful poll: {new Date(pollState.lastGoodAt).toLocaleTimeString()}</p>}
+        <button type="button" onClick={() => void load(true)} className="mt-3 border border-[#ffaa00]/60 px-3 py-2 text-xs font-bold uppercase tracking-widest text-[#ffaa00]">Retry queue signal</button>
+      </div>}
       <ReceiverHudPortal snapshot={snapshot} submissionsOpen={isOpen} isBroadcastActive={isBroadcastActive} pulse={broadcastStartPulse} mounted={mounted} minimized={publicHudMinimized} onToggleMinimized={() => setPublicHudMinimized((current) => !current)} canSubmit={canSubmitFromHud} submitLabel={hudSubmitLabel} onSubmit={openIntakeCorridor} />
 
       <PersonalSignalStatusBar snapshot={snapshot} mounted={mounted} timingSummary={timingSummary} minimized={publicHudMinimized} onToggleMinimized={() => setPublicHudMinimized((current) => !current)} canSubmit={canSubmitFromHud} submitLabel={hudSubmitLabel} onSubmit={openIntakeCorridor} />

@@ -78,7 +78,18 @@ export default function RadioPage() {
 
       {/* BNL-01 Broadcast Monitor */}
       <section className="border-b border-border">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-12">
+        <div className="mx-auto grid max-w-7xl gap-6 px-4 py-12 sm:px-6 lg:grid-cols-[0.9fr_1.1fr]">
+          <div>
+            <div className="flex items-center gap-3 mb-6">
+              <SectionDot />
+              <h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted">
+                BNL-01 Relay
+              </h2>
+            </div>
+            <p className="text-sm leading-relaxed text-muted">
+              BNL-01 relays approved Network status and public Discord-side activity to website surfaces. It does not control Auxchord submissions, replace the live host, or provide autonomous broadcast decisions.
+            </p>
+          </div>
           <BNLRelayModule title="BNL-01 Broadcast Monitor" />
         </div>
       </section>
@@ -113,24 +124,6 @@ export default function RadioPage() {
                 </li>
               ))}
             </ul>
-          </div>
-        </div>
-      </section>
-
-      {/* Recent Broadcasts / Receipts */}
-      <section className="border-b border-border">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-12">
-          <div className="flex items-center gap-3 mb-8">
-            <SectionDot />
-            <h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted">
-              Broadcast Receipts
-            </h2>
-          </div>
-
-          <div className="space-y-3">
-            {radioPage.receipts.map((receipt, i) => (
-              <ReceiptRow key={i} {...receipt} />
-            ))}
           </div>
         </div>
       </section>
@@ -195,35 +188,6 @@ function StepCard({
       </span>
       <h3 className="text-base font-bold text-foreground mb-2">{title}</h3>
       <p className="text-sm text-muted leading-relaxed">{description}</p>
-    </div>
-  );
-}
-
-function ReceiptRow({
-  date,
-  songs,
-  views,
-  taps,
-}: {
-  date: string;
-  songs: number;
-  views: string;
-  taps: string;
-}) {
-  return (
-    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border border-border bg-surface px-5 py-3 hover:border-accent/20 transition-colors">
-      <span className="text-xs text-muted font-mono">{date}</span>
-      <div className="flex items-center gap-6 mt-2 sm:mt-0">
-        <span className="text-xs text-muted uppercase">
-          <span className="text-foreground/60">{songs}</span> songs
-        </span>
-        <span className="text-xs text-muted uppercase">
-          <span className="text-foreground/60">{views}</span> views
-        </span>
-        <span className="text-xs text-accent uppercase">
-          <span className="text-accent">{taps}</span> taps
-        </span>
-      </div>
     </div>
   );
 }

@@ -30,9 +30,7 @@ export function Footer() {
               </div>
             </div>
             <p className="text-sm text-muted leading-relaxed">
-              A decentralized broadcast system.
-              <br />
-              Signal over noise.
+              Host-led artist discovery, music, community, and media network.
             </p>
           </div>
 
@@ -44,7 +42,7 @@ export function Footer() {
             <ul className="space-y-2">
               <li>
                 <Link href="/terminal" className="text-sm text-foreground/70 hover:text-accent transition-colors">
-                  6 Bit
+                  Terminal Archive
                 </Link>
               </li>
               <li>
@@ -94,21 +92,14 @@ export function Footer() {
             </ul>
           </div>
 
-          {/* Status */}
+          {/* Identity */}
           <div>
             <h4 className="text-xs uppercase tracking-[0.3em] text-muted mb-4">
-              System Status
+              Network
             </h4>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-status-blink" />
-                <span className="text-sm text-muted">Network Online</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-status-blink" style={{ animationDelay: '2s' }} />
-                <span className="text-sm text-muted">Systems Operational</span>
-              </div>
-            </div>
+            <p className="text-sm text-muted leading-relaxed">
+              BARCODE Radio submissions run through Auxchord. Discord is the community hub. Terminal is the Network archive/interface.
+            </p>
           </div>
         </div>
 
@@ -127,8 +118,8 @@ export function Footer() {
               </Link>
             </nav>
           </div>
-          <p className="text-xs text-muted/50 tracking-wider font-mono animate-flicker">
-            SYS.BUILD // v2.0.0 // PHASE_02
+          <p className="text-xs text-muted/50 tracking-wider font-mono">
+            BARCODE Network
           </p>
         </div>
       </div>

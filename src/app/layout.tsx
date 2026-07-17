@@ -5,8 +5,6 @@ import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { LiveStatusProvider } from "@/components/LiveStatusProvider";
 import { DataStream } from "@/components/DataStream";
-import { SystemTicker } from "@/components/SystemTicker";
-import { LiveBanner } from "@/components/LiveBanner";
 import { BNLNetworkRelayShell } from "@/components/BNLNetworkRelayShell";
 import { BNLStatusProvider } from "@/components/BNLStatusProvider";
 
@@ -72,16 +70,12 @@ export default function RootLayout({
         <LiveStatusProvider>
           <BNLStatusProvider>
           <DataStream />
-          <LiveBanner />
           <Header />
           <BNLNetworkRelayShell />
           <main className="min-h-screen animate-interference overflow-x-hidden">
             {children}
           </main>
           <Footer />
-          <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border/30 bg-background/90 backdrop-blur-sm px-4 py-1.5">
-            <SystemTicker className="text-xs" />
-          </div>
           </BNLStatusProvider>
         </LiveStatusProvider>
       </body>

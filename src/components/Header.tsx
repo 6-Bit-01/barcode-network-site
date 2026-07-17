@@ -10,13 +10,17 @@ import { siteConfig } from "@/content";
 
 const navItems = [
   { href: "/", label: "HQ" },
-  { href: "/terminal", label: "Terminal Archive" },
+  { href: "/terminal", label: "Terminal" },
   { href: "/radio", label: "Radio" },
   { href: "/database", label: "Database" },
   { href: "/releases", label: "Releases" },
   { href: "/transmissions", label: "Transmissions" },
   { href: "/merch", label: "Merch" },
 ];
+
+const mobileNavItems = navItems.map((item) =>
+  item.href === "/terminal" ? { ...item, label: "Terminal Archive" } : item,
+);
 
 export function Header() {
   const pathname = usePathname();
@@ -51,7 +55,7 @@ export function Header() {
             </div>
           </Link>
 
-          <nav className="hidden md:flex items-center gap-1">
+          <nav className="hidden xl:flex items-center gap-1">
             {navItems.map((item) => {
               const isActive = pathname === item.href;
               return (
@@ -76,10 +80,11 @@ export function Header() {
                 href={liveHref}
                 target={isExternalLiveHref ? "_blank" : undefined}
                 rel={isExternalLiveHref ? "noopener noreferrer" : undefined}
-                className="flex items-center gap-2 px-3 py-1 border border-danger rounded text-xs sm:text-sm uppercase tracking-wider text-danger live-indicator hover:bg-danger/10 transition-colors" aria-label="Primary BARCODE Radio live and submissions status"
+                className="flex items-center gap-2 px-2 py-1 border border-danger rounded text-xs sm:px-3 sm:text-sm uppercase tracking-wider text-danger live-indicator hover:bg-danger/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger transition-colors" aria-label={`Primary BARCODE Radio live and submissions status: ${liveLabel}`}
               >
                 <span className="w-2 h-2 rounded-full bg-danger" />
-                {liveLabel}
+                <span className="sm:hidden">{siteShowMode === "broadcast_live" ? "LIVE" : "SUBMIT"}</span>
+                <span className="hidden sm:inline">{liveLabel}</span>
               </a>
             )}
 
@@ -93,13 +98,16 @@ export function Header() {
 
 function MobileMenu({ pathname }: { pathname: string }) {
   const [open, setOpen] = useState(false);
+  const menuId = "primary-mobile-navigation";
 
   return (
-    <div className="md:hidden">
+    <div className="xl:hidden">
       <button
         onClick={() => setOpen(!open)}
-        className="p-2 text-muted hover:text-foreground transition-colors"
+        className="p-2 text-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent transition-colors"
         aria-label="Toggle menu"
+        aria-expanded={open}
+        aria-controls={menuId}
       >
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
           {open ? (
@@ -115,9 +123,9 @@ function MobileMenu({ pathname }: { pathname: string }) {
       </button>
 
       {open && (
-        <div className="absolute top-14 left-0 right-0 bg-background border-b border-border p-4">
+        <div id={menuId} className="absolute top-14 left-0 right-0 bg-background border-b border-border p-4">
           <nav className="flex flex-col gap-2">
-            {navItems.map((item) => {
+            {mobileNavItems.map((item) => {
               const isActive = pathname === item.href;
               return (
                 <Link

@@ -30,6 +30,38 @@ test("Header is the only primary global BARCODE Radio live and submissions surfa
   assert.match(header, /siteShowMode === "intake_open"/);
 });
 
+test("Header navigation remains compact until xl and switches consistently", () => {
+  const header = read("src/components/Header.tsx");
+
+  assert.doesNotMatch(header, /hidden md:flex/);
+  assert.doesNotMatch(header, /md:hidden/);
+  assert.match(header, /hidden xl:flex/);
+  assert.match(header, /xl:hidden/);
+  assert.match(header, /\{ href: "\/terminal", label: "Terminal" \}/);
+  assert.match(header, /label: "Terminal Archive"/);
+});
+
+test("Header live CTA has compact mobile labels and full accessible labels", () => {
+  const header = read("src/components/Header.tsx");
+
+  assert.match(header, /sm:hidden/);
+  assert.match(header, /"LIVE"/);
+  assert.match(header, /"SUBMIT"/);
+  assert.match(header, /hidden sm:inline/);
+  assert.match(header, /BARCODE RADIO LIVE/);
+  assert.match(header, /SUBMISSIONS OPEN/);
+  assert.match(header, /aria-label=\{`Primary BARCODE Radio live and submissions status: \$\{liveLabel\}`\}/);
+});
+
+test("Header mobile menu exposes truthful expanded state and controls relationship", () => {
+  const header = read("src/components/Header.tsx");
+
+  assert.match(header, /const menuId = "primary-mobile-navigation"/);
+  assert.match(header, /aria-expanded=\{open\}/);
+  assert.match(header, /aria-controls=\{menuId\}/);
+  assert.match(header, /id=\{menuId\}/);
+});
+
 test("LiveStatusProvider still derives public state from verified admin and queue contracts", () => {
   const provider = read("src/components/LiveStatusProvider.tsx");
 

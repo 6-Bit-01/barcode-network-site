@@ -90,6 +90,24 @@ let memoryArchiveManifestStore = new Map<
 let memoryArchiveChunkStore = new Map<string, string>();
 let memoryWriteQueue: Promise<void> = Promise.resolve();
 
+type DossierArchiveStorageOverride = {
+  save?: (input: { metadata: DossierSourceFileArchiveMetadata; chunks: string[] }) => Promise<void>;
+  readManifest?: (archiveId: string) => Promise<DossierSourceFileArchiveMetadata | null>;
+  readChunks?: (metadata: DossierSourceFileArchiveMetadata) => Promise<string[] | null>;
+  delete?: (metadata: DossierSourceFileArchiveMetadata) => Promise<void>;
+};
+let dossierArchiveStorageOverride: DossierArchiveStorageOverride | null = null;
+
+export function __setDossierArchiveStorageOverrideForTest(override: DossierArchiveStorageOverride | null): void {
+  dossierArchiveStorageOverride = override;
+}
+
+
+function isRedisStorageCapacityExceededError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /ERR\s+DB\s+capacity\s+quota\s+exceeded|capacity quota exceeded/i.test(message);
+}
+
 function getRedis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -858,6 +876,7 @@ async function saveSourceFileArchiveRecord(input: {
   metadata: DossierSourceFileArchiveMetadata;
   chunks: string[];
 }): Promise<void> {
+  if (dossierArchiveStorageOverride?.save) return dossierArchiveStorageOverride.save(input);
   const redis = getRedis();
   if (redis) {
     await Promise.all([
@@ -888,6 +907,7 @@ async function saveSourceFileArchiveManifest(
 async function readSourceFileArchiveManifest(
   archiveId: string,
 ): Promise<DossierSourceFileArchiveMetadata | null> {
+  if (dossierArchiveStorageOverride?.readManifest) return dossierArchiveStorageOverride.readManifest(archiveId);
   const redis = getRedis();
   if (redis) {
     const metadata = await redis.get<DossierSourceFileArchiveMetadata>(
@@ -901,6 +921,7 @@ async function readSourceFileArchiveManifest(
 async function readSourceFileArchiveChunks(
   metadata: DossierSourceFileArchiveMetadata,
 ): Promise<string[] | null> {
+  if (dossierArchiveStorageOverride?.readChunks) return dossierArchiveStorageOverride.readChunks(metadata);
   const chunkKeys = metadata.chunkKeys ?? [];
   if (!chunkKeys.length || chunkKeys.length !== metadata.chunkCount) {
     return null;
@@ -918,6 +939,26 @@ async function readSourceFileArchiveChunks(
   );
   if (chunks.some((chunk) => typeof chunk !== "string")) return null;
   return chunks as string[];
+}
+
+
+async function verifySourceFileArchiveRecord(metadata: DossierSourceFileArchiveMetadata): Promise<boolean> {
+  const manifest = await readSourceFileArchiveManifest(metadata.id);
+  if (!manifest) return false;
+  const chunks = await readSourceFileArchiveChunks(metadata);
+  return Boolean(chunks && chunks.length === metadata.chunkCount);
+}
+
+async function deleteSourceFileArchiveRecord(metadata: DossierSourceFileArchiveMetadata): Promise<void> {
+  if (dossierArchiveStorageOverride?.delete) return dossierArchiveStorageOverride.delete(metadata);
+  const redis = getRedis();
+  const keys = [sourceFileArchiveStorageKey(metadata.id), ...(metadata.chunkKeys ?? [])];
+  if (redis) {
+    await redis.del(...keys);
+    return;
+  }
+  memoryArchiveManifestStore.delete(metadata.id);
+  for (const key of metadata.chunkKeys ?? []) memoryArchiveChunkStore.delete(key);
 }
 
 async function readSourceFileArchiveRecord(
@@ -3164,167 +3205,141 @@ export async function ingestDossierSourceFileArchive(
 
   const digest = sourceFileArchiveDigest(normalized.sourcePackage);
   const now = new Date().toISOString();
-  let savedArchiveMetadata: DossierSourceFileArchiveMetadata | null = null;
-  let savedArchiveChunks: string[] | null = null;
-  let duplicate = false;
-  let attachStatus: DossierSourceFileArchiveAttachStatus | null = null;
-  let savedCandidate: DossierCandidate | null = null;
-  let savedCandidateLatestArchiveId: string | undefined;
-  let savedCandidateLatestArchiveMetadata:
-    | DossierSourceFileArchiveMetadata
-    | undefined;
-
-  await updateDossierWorkflowState((currentState) => {
-    const subjectKey = normalizeName(
-      normalized.subjectKey || normalized.subjectName,
-    );
-    const candidate = normalized.candidateId
-      ? currentState.candidates.find(
-          (item) => item.id === normalized.candidateId,
-        )
-      : currentState.candidates.find(
-          (item) =>
-            normalizeName(item.name) === subjectKey ||
-            normalizeName(item.ingestKey ?? "") ===
-              normalizeName(normalized.ingestKey ?? ""),
-        );
-    if (!candidate) {
-      throw new DossierWorkflowInputError(
-        "Safe exact Source File match is required for archive ingest",
-        404,
-        "archive_target_not_found",
+  const subjectKey = normalizeName(normalized.subjectKey || normalized.subjectName);
+  const initialState = await getDossierWorkflowState();
+  const candidate = normalized.candidateId
+    ? initialState.candidates.find((item) => item.id === normalized.candidateId)
+    : initialState.candidates.find(
+        (item) =>
+          normalizeName(item.name) === subjectKey ||
+          normalizeName(item.ingestKey ?? "") === normalizeName(normalized.ingestKey ?? ""),
       );
-    }
-    if (!isSourceFileEnrichmentAttachableCandidate(candidate)) {
-      throw new DossierWorkflowInputError(
-        "Target is not open for Source File archive attachment",
-        400,
-        "archive_target_not_attachable",
-      );
-    }
-    if (
-      !normalized.candidateId &&
-      normalizeName(candidate.name) !== subjectKey
-    ) {
-      throw new DossierWorkflowInputError(
-        "Archive ingest requires candidateId unless subjectName is an exact safe match",
-        400,
-        "archive_exact_match_required",
-      );
-    }
-
-    if (
-      candidate.latestSourceFileArchiveDigest === digest &&
-      candidate.latestSourceFileArchiveId
-    ) {
-      duplicate = true;
-      attachStatus = "deduped_existing";
-      savedCandidate = candidate;
-      savedCandidateLatestArchiveId = candidate.latestSourceFileArchiveId;
-      savedCandidateLatestArchiveMetadata = candidate.latestSourceFileArchive;
-      return currentState;
-    }
-
-    const serializedPackage = serializeSourceFileArchivePackage(
-      normalized.sourcePackage,
-    );
-    const archiveSize = sourceFileArchiveSize(serializedPackage);
-    const archiveId = createSourceFileArchiveId();
-    const archiveKey = sourceFileArchiveStorageKey(archiveId);
-    const chunks = sourceFileArchiveChunks(serializedPackage);
-    const chunkCount = chunks.length;
-    const chunkKeys = chunks.map((_, index) => `${archiveKey}:chunk:${index}`);
-    savedArchiveMetadata = {
-      id: archiveId,
-      candidateId: candidate.id,
-      subjectName: normalized.subjectName,
-      subjectKey:
-        normalized.subjectKey ?? normalizeName(normalized.subjectName),
-      ingestKey: normalized.ingestKey,
-      ingestSource: normalized.ingestSource ?? "bnl_source_file_enrichment",
-      sourceDigest: digest,
-      createdAt: now,
-      updatedAt: now,
-      archiveSize,
-      chunkCount,
-      compactSummary: normalized.compactSummary,
-      publicSafePossibilities: normalized.publicSafePossibilities,
-      missingInfo: normalized.missingInfo,
-      publicSafetyNotes: normalized.publicSafetyNotes,
-      doNotSay: normalized.doNotSay,
-      evidenceReceiptSummary: normalized.evidenceReceiptSummary,
-      sourceFileCaseReportV1: normalized.sourceFileCaseReportV1,
-      sourceFileBriefV2: normalized.sourceFileBriefV2,
-      subjectAnalystReadV1: normalized.subjectAnalystReadV1,
-      sourceFileClassificationV1: normalized.sourceFileClassificationV1,
-      sourceFilePagePlanV1: normalized.sourceFilePagePlanV1,
-      caseReportPresent: normalized.caseReportPresent,
-      subjectMemoryPacketPresent: normalized.subjectMemoryPacketPresent,
-      caseReportExtractedFrom: normalized.caseReportExtractedFrom,
-      sourceFileBriefExtractedFrom: normalized.sourceFileBriefExtractedFrom,
-      archiveKey,
-      chunkKeys,
-      reviewOnly: true,
-    };
-    savedArchiveChunks = chunks;
-    const metadata = savedArchiveMetadata;
-    const archiveIds = uniqueStrings(
-      [archiveId],
-      candidate.sourceFileArchiveIds,
-    );
-    const nextCandidate: DossierCandidate = {
-      ...candidate,
-      sourceFileArchiveIds: archiveIds,
-      latestSourceFileArchiveId: archiveId,
-      latestSourceFileArchiveDigest: digest,
-      latestSourceFileArchiveUpdatedAt: now,
-      latestSourceFileArchive: metadata,
-      updatedAt: now,
-    };
-    attachStatus = archiveAttachStatusForCandidate(candidate);
-    savedCandidate = nextCandidate;
-    savedCandidateLatestArchiveId = nextCandidate.latestSourceFileArchiveId;
-    savedCandidateLatestArchiveMetadata = nextCandidate.latestSourceFileArchive;
-    return {
-      ...currentState,
-      candidates: currentState.candidates.map((item) =>
-        item.id === candidate.id ? nextCandidate : item,
-      ),
-      updatedAt: now,
-    };
-  });
-
-  if (savedArchiveMetadata && savedArchiveChunks) {
-    await saveSourceFileArchiveRecord({
-      metadata: savedArchiveMetadata,
-      chunks: savedArchiveChunks,
-    });
-  }
-  if (
-    duplicate &&
-    savedCandidateLatestArchiveId &&
-    !savedCandidateLatestArchiveMetadata
-  ) {
-    savedCandidateLatestArchiveMetadata =
-      (await readSourceFileArchiveManifest(savedCandidateLatestArchiveId)) ??
-      undefined;
-  }
-
-  const metadata = savedArchiveMetadata ?? savedCandidateLatestArchiveMetadata;
-  if (!metadata || !attachStatus || !savedCandidate) {
+  if (!candidate) {
     throw new DossierWorkflowInputError(
-      "Source File archive ingest did not attach",
+      "Safe exact Source File match is required for archive ingest",
+      404,
+      "archive_target_not_found",
+    );
+  }
+  if (!isSourceFileEnrichmentAttachableCandidate(candidate)) {
+    throw new DossierWorkflowInputError(
+      "Target is not open for Source File archive attachment",
       400,
-      "archive_attach_failed",
+      "archive_target_not_attachable",
+    );
+  }
+  if (!normalized.candidateId && normalizeName(candidate.name) !== subjectKey) {
+    throw new DossierWorkflowInputError(
+      "Archive ingest requires candidateId unless subjectName is an exact safe match",
+      400,
+      "archive_exact_match_required",
     );
   }
 
-  return {
-    archive: metadata,
-    duplicate,
-    attachStatus,
-    candidate: savedCandidate,
+  if (candidate.latestSourceFileArchiveDigest === digest && candidate.latestSourceFileArchiveId) {
+    console.info("[dossier-source-file-archive] deduped", { archiveId: candidate.latestSourceFileArchiveId, candidateId: candidate.id });
+    const metadata = candidate.latestSourceFileArchive ?? (await readSourceFileArchiveManifest(candidate.latestSourceFileArchiveId));
+    if (!metadata) {
+      throw new DossierWorkflowInputError("Source File archive ingest did not attach", 400, "archive_attach_failed");
+    }
+    return { archive: metadata, duplicate: true, attachStatus: "deduped_existing", candidate };
+  }
+
+  const serializedPackage = serializeSourceFileArchivePackage(normalized.sourcePackage);
+  const archiveSize = sourceFileArchiveSize(serializedPackage);
+  const archiveId = createSourceFileArchiveId();
+  const archiveKey = sourceFileArchiveStorageKey(archiveId);
+  const chunks = sourceFileArchiveChunks(serializedPackage);
+  const chunkCount = chunks.length;
+  const chunkKeys = chunks.map((_, index) => `${archiveKey}:chunk:${index}`);
+  const metadata: DossierSourceFileArchiveMetadata = {
+    id: archiveId,
+    candidateId: candidate.id,
+    subjectName: normalized.subjectName,
+    subjectKey: normalized.subjectKey ?? normalizeName(normalized.subjectName),
+    ingestKey: normalized.ingestKey,
+    ingestSource: normalized.ingestSource ?? "bnl_source_file_enrichment",
+    sourceDigest: digest,
+    createdAt: now,
+    updatedAt: now,
+    archiveSize,
+    chunkCount,
+    compactSummary: normalized.compactSummary,
+    publicSafePossibilities: normalized.publicSafePossibilities,
+    missingInfo: normalized.missingInfo,
+    publicSafetyNotes: normalized.publicSafetyNotes,
+    doNotSay: normalized.doNotSay,
+    evidenceReceiptSummary: normalized.evidenceReceiptSummary,
+    sourceFileCaseReportV1: normalized.sourceFileCaseReportV1,
+    sourceFileBriefV2: normalized.sourceFileBriefV2,
+    subjectAnalystReadV1: normalized.subjectAnalystReadV1,
+    sourceFileClassificationV1: normalized.sourceFileClassificationV1,
+    sourceFilePagePlanV1: normalized.sourceFilePagePlanV1,
+    caseReportPresent: normalized.caseReportPresent,
+    subjectMemoryPacketPresent: normalized.subjectMemoryPacketPresent,
+    caseReportExtractedFrom: normalized.caseReportExtractedFrom,
+    sourceFileBriefExtractedFrom: normalized.sourceFileBriefExtractedFrom,
+    archiveKey,
+    chunkKeys,
+    reviewOnly: true,
   };
+
+  try {
+    await saveSourceFileArchiveRecord({ metadata, chunks });
+    if (!(await verifySourceFileArchiveRecord(metadata))) {
+      await deleteSourceFileArchiveRecord(metadata);
+      throw new DossierWorkflowInputError("Source File archive chunks were not fully stored", 503, "archive_write_incomplete");
+    }
+    console.info("[dossier-source-file-archive] created", { archiveId: metadata.id, candidateId: metadata.candidateId, archiveBytes: metadata.archiveSize, chunkCount: metadata.chunkCount });
+  } catch (error) {
+    console.error("[dossier-source-file-archive] create_failed", { candidateId: metadata.candidateId, reason: isRedisStorageCapacityExceededError(error) ? "storage_capacity_exceeded" : "archive_write_failed" });
+    throw error;
+  }
+
+  let savedCandidate: DossierCandidate | null = null;
+  let attachStatus: DossierSourceFileArchiveAttachStatus | null = null;
+  try {
+    await updateDossierWorkflowState((currentState) => {
+      const currentCandidate = currentState.candidates.find((item) => item.id === candidate.id);
+      if (!currentCandidate || !isSourceFileEnrichmentAttachableCandidate(currentCandidate)) {
+        throw new DossierWorkflowInputError("Target is not open for Source File archive attachment", 400, "archive_target_not_attachable");
+      }
+      if (currentCandidate.latestSourceFileArchiveDigest === digest && currentCandidate.latestSourceFileArchiveId) {
+        savedCandidate = currentCandidate;
+        attachStatus = "deduped_existing";
+        return currentState;
+      }
+      const nextCandidate: DossierCandidate = {
+        ...currentCandidate,
+        sourceFileArchiveIds: uniqueStrings([archiveId], currentCandidate.sourceFileArchiveIds),
+        latestSourceFileArchiveId: archiveId,
+        latestSourceFileArchiveDigest: digest,
+        latestSourceFileArchiveUpdatedAt: now,
+        latestSourceFileArchive: metadata,
+        updatedAt: now,
+      };
+      attachStatus = archiveAttachStatusForCandidate(currentCandidate);
+      savedCandidate = nextCandidate;
+      return { ...currentState, candidates: currentState.candidates.map((item) => item.id === currentCandidate.id ? nextCandidate : item), updatedAt: now };
+    });
+  } catch (error) {
+    await deleteSourceFileArchiveRecord(metadata).catch(() => undefined);
+    throw error;
+  }
+
+  try {
+    const { cleanupCandidateSourceFileArchiveRetention } = await import("@/lib/redis-capacity-audit");
+    const cleanup = await cleanupCandidateSourceFileArchiveRetention({ candidateId: candidate.id });
+    console.info("[dossier-source-file-archive] retention_eviction", { archiveId: metadata.id, deletedManifests: cleanup.deletedManifestIds.length, deletedChunks: cleanup.deletedChunkKeys.length, retainedCount: cleanup.retainedArchiveIds.length, status: cleanup.status });
+  } catch (error) {
+    console.error("[dossier-source-file-archive] retention_eviction_failed", { archiveId: metadata.id, reason: isRedisStorageCapacityExceededError(error) ? "storage_capacity_exceeded" : "eviction_failed" });
+  }
+
+  if (!savedCandidate || !attachStatus) {
+    throw new DossierWorkflowInputError("Source File archive ingest did not attach", 400, "archive_attach_failed");
+  }
+
+  return { archive: metadata, duplicate: false, attachStatus, candidate: savedCandidate };
 }
 
 export async function recordDossierSourceFileOpen(input: {

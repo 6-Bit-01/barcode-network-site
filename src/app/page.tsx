@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { LiveBanner } from "@/components/LiveBanner";
 import { StatusBadge, SectionDot } from "@/components/LiveEffects";
 import { homePage, siteConfig, externalLinks } from "@/content";
 import { BNLRelayModule } from "@/components/BNLRelay";
@@ -45,9 +44,6 @@ function RouteLink({
 export default function Home() {
   return (
     <div className="pt-14">
-      {/* Live Banner */}
-      <LiveBanner />
-
       {/* Public-access Hero */}
       <section className="relative noise-bg border-b border-border">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-24 sm:py-32">
@@ -174,9 +170,20 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Latest Network Relay */}
+      {/* BNL-01 public relay explainer */}
       <section className="border-b border-border">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-10">
+        <div className="mx-auto grid max-w-7xl gap-6 px-4 py-12 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
+          <div>
+            <p className="mb-4 text-xs uppercase tracking-[0.5em] text-muted animate-flicker">
+              {"// BNL-01 RELAY"}
+            </p>
+            <h2 className="mb-4 text-2xl font-black tracking-tight text-foreground sm:text-4xl">
+              Discord activity can surface on the site through an approved relay.
+            </h2>
+            <p className="text-base leading-relaxed text-muted">
+              BNL-01 is the Network’s Discord liaison and website relay system. It connects public Discord-side activity and approved Network status to website relay surfaces; it is not an embedded chatbot, autonomous site operator, or replacement for BARCODE Radio submissions.
+            </p>
+          </div>
           <BNLRelayModule title="Latest Network Relay" />
         </div>
       </section>

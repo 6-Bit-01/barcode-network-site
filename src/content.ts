@@ -123,7 +123,7 @@ export const radioPage = {
     heading1: "BARCODE",
     heading2: "Radio",
     description:
-      "A live intake frequency. Submit a track. It enters the broadcast and becomes part of the network.",
+      "BARCODE Radio is a weekly live broadcast hosted by 6 Bit where original music is submitted through Auxchord, heard on TikTok Live, and discussed with the community.",
     submitButton: { text: "Submit Music", emoji: "🎵" },
     discordButton: { text: "Join Discord", emoji: "💬" },
     tiktokButton: { text: "WATCH ON TIKTOK", emoji: "📺" },
@@ -143,13 +143,13 @@ export const radioPage = {
       number: "01",
       title: "Submit",
       description:
-        "Send your track through Auxchord. The BARCODE Network logs the entry.",
+        "Send your original track through the existing Auxchord submission page.",
     },
     {
       number: "02",
       title: "Queue",
       description:
-        "Entries are routed into the active broadcast queue. Tracks are played live.",
+        "Submissions are reviewed for the weekly live program. Watch the show on TikTok Live and follow updates in Discord.",
     },
     {
       number: "03",
@@ -167,27 +167,6 @@ export const radioPage = {
     "Updates and announcements posted in Discord.",
   ],
 
-  receipts: [
-    {
-      date: "2026.02.20",
-      songs: 39,
-      views: "314",
-      taps: "84.1K",
-    },
-    {
-      date: "2026.02.13",
-      songs: 47,
-      views: "1K",
-      taps: "135.6K",
-    },
-    {
-      date: "2026.02.06",
-      songs: 38,
-      views: "311",
-      taps: "130.1K",
-    },
-  ],
-
   goDeeper: {
     label: "// ACCESS GRANTED: NETWORK DEPTH",
     heading: "Go deeper.",
@@ -195,9 +174,9 @@ export const radioPage = {
       {
         href: "/terminal",
         tag: "PROGRAM",
-        title: "6 Bit Terminal",
+        title: "Terminal Archive",
         description:
-          "The host behind the broadcast. Dossier. Access points. Signal origin.",
+          "Network archive/interface for dossiers, access points, and signal origin notes.",
         cta: "Access Terminal →",
       },
       {
@@ -1006,7 +985,7 @@ export const releasesPage = {
     label: "// ARCHIVE: RELEASES",
     heading: "Releases",
     description:
-      "Official transmission catalog from designated entities. Audio artifacts, indexed and released.",
+      "Official release catalog using the real artwork, descriptions, and verified streaming links currently available on the site.",
   },
 
   catalog: [

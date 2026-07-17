@@ -10,7 +10,7 @@ import { siteConfig } from "@/content";
 
 const navItems = [
   { href: "/", label: "HQ" },
-  { href: "/terminal", label: "Terminal" },
+  { href: "/terminal", label: "Terminal Archive" },
   { href: "/radio", label: "Radio" },
   { href: "/database", label: "Database" },
   { href: "/releases", label: "Releases" },
@@ -76,7 +76,7 @@ export function Header() {
                 href={liveHref}
                 target={isExternalLiveHref ? "_blank" : undefined}
                 rel={isExternalLiveHref ? "noopener noreferrer" : undefined}
-                className="flex items-center gap-2 px-3 py-1 border border-danger rounded text-sm uppercase tracking-wider text-danger live-indicator hover:bg-danger/10 transition-colors"
+                className="flex items-center gap-2 px-3 py-1 border border-danger rounded text-xs sm:text-sm uppercase tracking-wider text-danger live-indicator hover:bg-danger/10 transition-colors" aria-label="Primary BARCODE Radio live and submissions status"
               >
                 <span className="w-2 h-2 rounded-full bg-danger" />
                 {liveLabel}

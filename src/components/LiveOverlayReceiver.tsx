@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MutableRefObject } from "react";
 import { buildWheelSegments, estimateOneWayNetworkTransitMs, playbackCorrectionTarget, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, shouldCorrectPlaybackDrift, updateTransitEstimateMs, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
 import { WHEEL_CEREMONY_AUDIO, WHEEL_SPIN_AUDIO_PATHS, isWheelSpinAudioPath, wheelAudioFallbackCandidates } from "@/lib/wheel-audio";
-import { extractOverlayScene, playWheelSpinWithFallback } from "@/lib/live-overlay-client-recovery";
+import { extractOverlayScene, playWheelSpinWithFallback, terminateWheelSpinAudio } from "@/lib/live-overlay-client-recovery";
 import type { LiveOverlayPlaybackState, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
 
 type YTPlayer = {
@@ -939,6 +939,7 @@ export function LiveOverlayReceiver() {
       activeController?.abort();
       spinAudioGenerationRef.current += 1;
       if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current);
+      terminateWheelSpinAudio(spinAudioRef.current, { volume: WHEEL_SPIN_VOLUME });
     };
   }, []);
 
@@ -951,6 +952,7 @@ export function LiveOverlayReceiver() {
   const youtubeSceneClass = shortYouTube ? "live-overlay-youtube-scene live-overlay-youtube-scene--short" : "live-overlay-youtube-scene";
 
   async function enableOverlayAudio() {
+    terminateWheelSpinAudio(spinAudioRef.current, { volume: WHEEL_SPIN_VOLUME, clearSource: true });
     const spin = new Audio(WHEEL_SPIN_AUDIO_PATHS[0]);
     spinAudioRef.current = spin;
     spin.preload = "auto";
@@ -1005,12 +1007,14 @@ export function LiveOverlayReceiver() {
     const generation = spinAudioGenerationRef.current + 1;
     spinAudioGenerationRef.current = generation;
     if (spinFadeFrameRef.current) { window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = null; }
+    terminateWheelSpinAudio(audio, { volume: WHEEL_SPIN_VOLUME });
     setAudioNotice(null);
     audio.loop = true;
     audio.volume = WHEEL_SPIN_VOLUME;
     const result = await playWheelSpinWithFallback(wheelAudioFallbackCandidates(safeWheelAudioPath(path)), async (candidate, attemptGeneration) => {
       if (spinAudioGenerationRef.current !== attemptGeneration) return;
       if (!audio.src || !audio.src.endsWith(candidate)) audio.src = candidate;
+      audio.currentTime = 0;
       await audio.play();
     }, generation, (attemptGeneration) => spinAudioGenerationRef.current === attemptGeneration);
     if (spinAudioGenerationRef.current === generation) setAudioNotice(result.notice);

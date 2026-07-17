@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { QueuePollError, beginQueuePoll, createQueuePollController, deriveQueueRecoveryView, fetchQueueSnapshot, initialQueuePollState, isQueuePublicSnapshot, queueHasCurrentAuthority, reduceQueuePollFailure, reduceQueuePollSuccess, snapshotsAreCompatible } from '../src/lib/queue-public-polling.ts';
 
-const track = (id = 't1') => ({ id, submittedArtistName: 'Artist', submittedSongTitle: 'Song', sourceType: 'youtube', lane: 'regular', durationLabel: '5:00', durationIsEstimate: true });
-const snapshot = (sessionId = 's1') => ({ session: { sessionId, status: 'open', broadcastPhase: 'pre_show' }, status: { isOpen: true, activeCount: 1, estimatedRuntimeSeconds: 300, capacity: 44, pressure: 'low' }, queue: [track()], completed: [], nowPlaying: null, upNext: null });
+const track = (id = 't1', sourceType = 'other') => ({ id, submittedArtistName: 'Artist', submittedSongTitle: 'Song', sourceType, lane: 'regular', durationLabel: '5:00', durationIsEstimate: true, estimatedDurationSeconds: 300, priorityUpgradeStatus: 'none', publicSourceUrl: 'https://example.com/track' });
+const snapshot = (sessionId = 's1', overrides = {}) => ({ session: { sessionId, title: 'Show', showDate: '2026-07-17', status: 'open', description: 'desc', completedCount: 0, completedRuntimeSeconds: 0, activeCount: 1, removedCount: 0, submissionCooldownSeconds: 0, queueOpen: true, showStarted: false, broadcastPhase: 'submission_window', priorityUpgradesEnabled: true, priorityUpgradePaymentsEnabled: true, priorityUpgradePriceCents: 1000 }, status: { isOpen: true, activeCount: 1, estimatedRuntimeSeconds: 300, capacity: 44, pressure: 'low' }, queue: [track()], completed: [], nowPlaying: null, upNext: null, ...overrides });
 const response = (body, ok = true, status = 200) => ({ ok, status, json: async () => body });
 const wait = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -20,6 +20,13 @@ test('validates nested public queue snapshot shape', () => {
   assert.equal(isQueuePublicSnapshot({ ...snapshot(), queue: [null] }), false);
   assert.equal(isQueuePublicSnapshot({ ...snapshot(), nowPlaying: {} }), false);
   assert.equal(isQueuePublicSnapshot({ ...snapshot(), status: { isOpen: true } }), false);
+  assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, title: {} } }), false);
+  assert.equal(isQueuePublicSnapshot({ ...snapshot(), status: { ...snapshot().status, isFull: 'yes' } }), false);
+  for (const sourceType of ['upload', 'link', 'youtube', 'soundcloud', 'spotify', 'tiktok', 'other']) assert.equal(isQueuePublicSnapshot(snapshot('s1', { queue: [track('t-' + sourceType, sourceType)] })), true);
+  for (const status of ['prepared', 'open', 'closed', 'archived']) assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, status } }), true);
+  for (const broadcastPhase of ['warmup', 'submission_window', 'broadcast_active', 'ended']) assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, broadcastPhase } }), true);
+  assert.equal(isQueuePublicSnapshot(snapshot('s1', { queue: [track('bad', 'unknown')] })), false);
+  assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, broadcastPhase: 'pre_show' } }), false);
 });
 
 test('distinguishes network non-2xx malformed and unexpected payload failures', async () => {
@@ -47,12 +54,23 @@ test('initial unavailable view, current authority, stale authorization, and reco
   assert.equal(recovered.restoredAt, 20);
 });
 
+test('ordinary background in-flight keeps current authority until actual failure', () => {
+  const current = reduceQueuePollSuccess(initialQueuePollState, snapshot(), 10);
+  const refreshing = beginQueuePoll(current, 'interval');
+  assert.equal(queueHasCurrentAuthority(refreshing), true);
+  assert.equal(deriveQueueRecoveryView(refreshing), 'current');
+  const failed = reduceQueuePollFailure(refreshing, 'network');
+  assert.equal(queueHasCurrentAuthority(failed), false);
+  assert.equal(failed.status, 'stale');
+  assert.equal(queueHasCurrentAuthority(reduceQueuePollSuccess(failed, snapshot(), 20, 's1')), true);
+});
+
 test('compatible last good is same session identity and wrong route session is rejected', () => {
   assert.equal(snapshotsAreCompatible(snapshot('a'), snapshot('a')), true);
   assert.equal(snapshotsAreCompatible(snapshot('a'), snapshot('b')), false);
   const rejected = reduceQueuePollSuccess(reduceQueuePollSuccess(initialQueuePollState, snapshot('old')), snapshot('new'), 20, 'old');
-  assert.equal(rejected.status, 'unavailable');
-  assert.equal(rejected.snapshot, null);
+  assert.equal(rejected.status, 'stale');
+  assert.equal(rejected.snapshot.session.sessionId, 'old');
 });
 
 test('controller supports manual retry focus online visible interval coalescing cleanup and wrong-session rejection', async () => {

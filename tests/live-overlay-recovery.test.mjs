@@ -1,12 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractOverlayScene, isResolvedLiveOverlayScene, playWheelSpinWithFallback, providerBeginMedia, providerMarkFailed, providerShouldInitialize, providerSwitchMedia, reduceOverlayFailure, reduceOverlaySuccess } from '../src/lib/live-overlay-client-recovery.ts';
+import { extractOverlayScene, isResolvedLiveOverlayScene, playWheelSpinWithFallback, providerBeginMedia, providerMarkFailed, providerShouldInitialize, providerSwitchMedia, reduceOverlayFailure, reduceOverlaySuccess, terminateWheelSpinAudio } from '../src/lib/live-overlay-client-recovery.ts';
 
-const scene = (id = 'a') => ({ mode: 'now_playing', resolvedMode: 'now_playing', reason: 'ok', title: 'Now', priority: 1, automatic: true, overrideActive: false, wheelOverlayActive: false, wheelSpinsOwed: 0, updatedAt: new Date().toISOString(), track: { artistName: 'Artist', trackTitle: `Song ${id}` } });
+const now = new Date().toISOString();
+const scene = (id = 'a') => ({ mode: 'now_playing', resolvedMode: 'now_playing', reason: 'ok', title: 'Now', priority: 1, automatic: true, overrideActive: false, wheelOverlayActive: false, wheelSpinsOwed: 0, updatedAt: now, track: { artistName: 'Artist', trackTitle: `Song ${id}` } });
 
 test('overlay rejects malformed scene and retains last-good until later valid recovery', () => {
   assert.equal(isResolvedLiveOverlayScene({ scene: {} }), false);
   assert.throws(() => extractOverlayScene({ scene: {} }));
+  assert.equal(isResolvedLiveOverlayScene({ ...scene(), wheelCeremony: { status: 'ready', displayCandidates: 'not-array' } }), false);
+  assert.equal(isResolvedLiveOverlayScene({ ...scene(), tiktok: {} }), false);
+  assert.equal(isResolvedLiveOverlayScene({ ...scene(), track: undefined }), false);
   const initial = { scene: scene('a'), connected: true, held: false, failureReason: null, generation: 1 };
   const held = reduceOverlayFailure(initial, 'timeout', 2);
   assert.equal(held.scene.track.trackTitle, 'Song a');
@@ -42,4 +46,14 @@ test('wheel audio primary fallback success, total failure, and stale generation 
   assert.match(failed.notice, /CONTINUES SILENTLY/);
   const stale = await playWheelSpinWithFallback(['a.mp3', 'b.mp3'], async () => {}, 3, () => false);
   assert.equal(stale.notice, null);
+});
+
+
+test('wheel audio termination stops and resets audio lifecycle', () => {
+  const audio = { src: 'a.mp3', loop: true, volume: 0.2, currentTime: 14, paused: false, pause() { this.paused = true; }, play: async () => {} };
+  terminateWheelSpinAudio(audio, { volume: 0.82 });
+  assert.equal(audio.paused, true);
+  assert.equal(audio.currentTime, 0);
+  assert.equal(audio.volume, 0.82);
+  assert.equal(audio.loop, false);
 });

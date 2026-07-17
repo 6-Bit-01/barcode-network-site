@@ -116,6 +116,7 @@ export function PublicQueueGateway() {
   const retryRef = useRef<(() => void) | null>(null);
 
   const recoveryView = deriveQueueRecoveryView(pollState);
+  useEffect(() => { if (!pollState.restoredAt) return; const timer = window.setTimeout(() => setPollState((current) => current.restoredAt === pollState.restoredAt ? { ...current, restoredAt: null } : current), 3500); return () => window.clearTimeout(timer); }, [pollState.restoredAt]);
 
 
   useEffect(() => {
@@ -167,8 +168,17 @@ export function PublicQueueGateway() {
   const activeSessionId = hasActiveSession ? session?.sessionId ?? null : null;
   const queueHref = activeSessionId ? `/queue/${activeSessionId}` : null;
 
+
+  if (initialRecoveryOnly) {
+    return <div className="space-y-6"><section className="border border-[#ffaa00]/45 bg-[#ffaa00]/10 p-5" role="status" aria-live="polite"><p className="text-xs font-bold uppercase tracking-[0.28em] text-[#ffaa00]">Queue signal {recoveryView === "loading" ? "loading" : recoveryView === "retrying" ? "retrying" : "unavailable"}</p><h1 className="mt-2 text-2xl font-bold text-foreground">{recoveryView === "loading" ? "Synchronizing queue signal" : "Queue signal unavailable"}</h1><p className="mt-3 text-sm text-muted">{pollState.message ?? "Reading the current BARCODE Radio queue before reporting status."}</p>{recoveryView !== "loading" && <button type="button" onClick={() => retryRef.current?.()} className="mt-3 border border-[#ffaa00]/60 px-3 py-2 text-xs font-bold uppercase tracking-widest text-[#ffaa00]">Retry queue signal</button>}</section></div>;
+  }
+
+  if (staleReadOnly && snapshot) {
+    return <div className="space-y-6"><section className="border border-[#ffaa00]/45 bg-[#ffaa00]/10 p-4" role="status" aria-live="polite"><p className="text-xs font-bold uppercase tracking-[0.28em] text-[#ffaa00]">Queue signal {recoveryView === "retrying" ? "retrying" : "last confirmed / read-only"}</p><h1 className="mt-2 text-2xl font-bold text-foreground">Last confirmed queue snapshot</h1><p className="mt-2 text-sm text-muted">Signal stale — current intake status is unknown until recovery.</p>{pollState.lastGoodAt && <p className="mt-1 text-[11px] uppercase tracking-widest text-muted">Last successful poll: {new Date(pollState.lastGoodAt).toLocaleTimeString()}</p>}<button type="button" onClick={() => retryRef.current?.()} disabled={pollState.inFlight} className="mt-3 border border-[#ffaa00]/60 px-3 py-2 text-xs font-bold uppercase tracking-widest text-[#ffaa00] disabled:opacity-50">{pollState.inFlight ? "Retrying…" : "Retry queue signal"}</button></section><section className="border border-border bg-surface p-5"><p className="text-xs uppercase tracking-[0.35em] text-muted">Last confirmed submissions: {snapshot.status.isOpen ? "open" : "closed"}</p><p className="mt-3 text-sm text-muted">Read-only queue data is visible. Mutating actions remain disabled until the queue signal is current.</p></section></div>;
+  }
+
   return (
-    <div className={`space-y-6 ${hasActiveSession ? "pb-24" : ""}`}>
+    <div className={`space-y-6 ${hasActiveSession ? "pb-24" : ""}`}>{pollState.restoredAt && <p className="sr-only" aria-live="polite">Queue signal restored.</p>}
       {recoveryView !== "current" && <section className="border border-[#ffaa00]/45 bg-[#ffaa00]/10 p-4" role="status" aria-live="polite">
         <p className="text-xs font-bold uppercase tracking-[0.28em] text-[#ffaa00]">Queue signal {recoveryView === "loading" ? "loading" : recoveryView === "retrying" ? "retrying" : recoveryView === "stale" ? "last confirmed / read-only" : "unavailable"}</p>
         <p className="mt-2 text-sm text-muted">{pollState.message ?? "Reading the current BARCODE Radio queue before reporting status."}</p>

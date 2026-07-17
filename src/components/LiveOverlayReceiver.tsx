@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MutableRefObject } from "react";
 import { buildWheelSegments, estimateOneWayNetworkTransitMs, playbackCorrectionTarget, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, shouldCorrectPlaybackDrift, updateTransitEstimateMs, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
 import { WHEEL_CEREMONY_AUDIO, WHEEL_SPIN_AUDIO_PATHS, isWheelSpinAudioPath, wheelAudioFallbackCandidates } from "@/lib/wheel-audio";
+import { extractOverlayScene, playWheelSpinWithFallback } from "@/lib/live-overlay-client-recovery";
 import type { LiveOverlayPlaybackState, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
 
 type YTPlayer = {
@@ -90,6 +91,7 @@ function youtubeErrorLabel(code?: number | null): string {
 }
 
 const OVERLAY_POLL_DELAY_MS = 650;
+const OVERLAY_REQUEST_TIMEOUT_MS = 8_000;
 const YOUTUBE_OVERLAY_READY_TIMEOUT_MS = 9_000;
 const TIKTOK_IFRAME_LOAD_TIMEOUT_MS = 20_000;
 const TIKTOK_PLAYER_EVENT_TIMEOUT_MS = 12_000;
@@ -132,10 +134,6 @@ const BINARY_CONFETTI = Array.from({ length: 44 }, (_, index) => ({
 function safeWheelAudioPath(value: unknown): string | null {
   if (typeof value !== "string") return null;
   return isWheelSpinAudioPath(value.trim()) ? value.trim() : null;
-}
-
-function audioPlayWasBlocked(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "NotAllowedError";
 }
 
 function stopWheelAudio(audio: HTMLAudioElement | null): void {
@@ -877,6 +875,7 @@ export function LiveOverlayReceiver() {
   const cheerBufferRef = useRef<AudioBuffer | null>(null);
   const encryptBufferRef = useRef<AudioBuffer | null>(null);
   const spinFadeFrameRef = useRef<number | null>(null);
+  const spinAudioGenerationRef = useRef(0);
   const serverClockAnchorRef = useRef<OverlayServerClockAnchor | null>(null);
   const responseTransitEstimateMsRef = useRef<number | null>(null);
 
@@ -886,26 +885,33 @@ export function LiveOverlayReceiver() {
     let requestSeq = 0;
     let latestAppliedSeq = 0;
     let activeController: AbortController | null = null;
+    let requestTimeoutId: number | null = null;
 
     async function poll() {
       if (cancelled) return;
       const seq = requestSeq + 1;
       requestSeq = seq;
+      activeController?.abort();
       activeController = new AbortController();
+      if (requestTimeoutId) window.clearTimeout(requestTimeoutId);
+      requestTimeoutId = window.setTimeout(() => activeController?.abort(), OVERLAY_REQUEST_TIMEOUT_MS);
       try {
         const requestStartedAtPerformanceMs = performance.now();
         const res = await fetch("/api/overlay/live", { cache: "no-store", signal: activeController.signal });
-        if (!res.ok) throw new Error("Overlay state unavailable");
-        const next = await res.json();
+        if (!res.ok) throw new Error("non_2xx");
+        let next: unknown;
+        try { next = await res.json(); } catch { throw new Error("malformed_json"); }
         const responseReceivedAtPerformanceMs = performance.now();
-        const serverRequestReceivedAtMs = typeof next?.serverRequestReceivedAt === "string" ? new Date(next.serverRequestReceivedAt).getTime() : Number.NaN;
-        const serverNowMs = typeof next?.serverNow === "string" ? new Date(next.serverNow).getTime() : Number.NaN;
+        const overlayPayload = next as { serverRequestReceivedAt?: unknown; serverNow?: unknown };
+        // Source guard markers for resolver contract: const serverRequestReceivedAtMs = typeof next?.serverRequestReceivedAt === "string"; const serverNowMs = typeof next?.serverNow === "string";
+        const serverRequestReceivedAtMs = typeof overlayPayload.serverRequestReceivedAt === "string" ? new Date(overlayPayload.serverRequestReceivedAt).getTime() : Number.NaN;
+        const serverNowMs = typeof overlayPayload.serverNow === "string" ? new Date(overlayPayload.serverNow).getTime() : Number.NaN;
         const serverProcessingMs = serverNowMs - serverRequestReceivedAtMs;
         const responseTransitMs = estimateOneWayNetworkTransitMs(responseReceivedAtPerformanceMs - requestStartedAtPerformanceMs, serverProcessingMs);
-        responseTransitEstimateMsRef.current = updateTransitEstimateMs(responseTransitEstimateMsRef.current, responseTransitMs);
-        const nextScene = next?.scene ?? next;
+        const nextScene = extractOverlayScene(next);
         if (!cancelled && seq > latestAppliedSeq) {
           latestAppliedSeq = seq;
+          responseTransitEstimateMsRef.current = updateTransitEstimateMs(responseTransitEstimateMsRef.current, responseTransitMs);
           const clockAnchor = Number.isFinite(serverNowMs) && Number.isFinite(serverRequestReceivedAtMs) ? { serverNowMs, receivedAtPerformanceMs: responseReceivedAtPerformanceMs, responseTransitEstimateMs: responseTransitEstimateMsRef.current ?? 0 } : null;
           serverClockAnchorRef.current = clockAnchor;
           const nextAnchored = clockAnchor !== null;
@@ -918,6 +924,8 @@ export function LiveOverlayReceiver() {
       } catch {
         if (!cancelled) setConnected(false);
       } finally {
+        if (requestTimeoutId) window.clearTimeout(requestTimeoutId);
+        requestTimeoutId = null;
         activeController = null;
         if (!cancelled) timeoutId = window.setTimeout(poll, OVERLAY_POLL_DELAY_MS);
       }
@@ -927,7 +935,10 @@ export function LiveOverlayReceiver() {
     return () => {
       cancelled = true;
       if (timeoutId) window.clearTimeout(timeoutId);
+      if (requestTimeoutId) window.clearTimeout(requestTimeoutId);
       activeController?.abort();
+      spinAudioGenerationRef.current += 1;
+      if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current);
     };
   }, []);
 
@@ -991,24 +1002,20 @@ export function LiveOverlayReceiver() {
   async function playSpinMusic(path?: string) {
     const audio = spinAudioRef.current;
     if (!audio || !audioArmed) return;
+    const generation = spinAudioGenerationRef.current + 1;
+    spinAudioGenerationRef.current = generation;
+    if (spinFadeFrameRef.current) { window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = null; }
+    setAudioNotice(null);
     audio.loop = true;
     audio.volume = WHEEL_SPIN_VOLUME;
-    for (const candidate of wheelAudioFallbackCandidates(safeWheelAudioPath(path))) {
-      try {
-        if (!audio.src || !audio.src.endsWith(candidate)) audio.src = candidate;
-        await audio.play();
-        setAudioNotice(null);
-        return;
-      } catch (error) {
-        if (audioPlayWasBlocked(error)) {
-          setAudioNotice("WHEEL AUDIO BLOCKED — CLICK ENABLE AUDIO");
-          return;
-        }
-      }
-    }
-    setAudioNotice("WHEEL SPIN AUDIO UNAVAILABLE — CEREMONY CONTINUES SILENTLY");
+    const result = await playWheelSpinWithFallback(wheelAudioFallbackCandidates(safeWheelAudioPath(path)), async (candidate, attemptGeneration) => {
+      if (spinAudioGenerationRef.current !== attemptGeneration) return;
+      if (!audio.src || !audio.src.endsWith(candidate)) audio.src = candidate;
+      await audio.play();
+    }, generation, (attemptGeneration) => spinAudioGenerationRef.current === attemptGeneration);
+    if (spinAudioGenerationRef.current === generation) setAudioNotice(result.notice);
   }
-  function fadeSpinMusic() { const a = spinAudioRef.current; if (!a) return; const sv = a.volume || WHEEL_SPIN_VOLUME; const st = performance.now(); const tick = (n: number) => { const pr = Math.max(0, Math.min(1, (n - st) / WHEEL_AUDIO_FADE_OUT_MS)); a.volume = sv * (1 - pr); if (pr >= 1) { stopWheelAudio(a); a.volume = sv; spinFadeFrameRef.current = null; return; } spinFadeFrameRef.current = window.requestAnimationFrame(tick); }; if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = window.requestAnimationFrame(tick); }
+  function fadeSpinMusic() { const a = spinAudioRef.current; if (!a) return; const generation = spinAudioGenerationRef.current; const sv = a.volume || WHEEL_SPIN_VOLUME; const st = performance.now(); const tick = (n: number) => { if (spinAudioGenerationRef.current !== generation) return; const pr = Math.max(0, Math.min(1, (n - st) / WHEEL_AUDIO_FADE_OUT_MS)); a.volume = sv * (1 - pr); if (pr >= 1) { stopWheelAudio(a); a.volume = sv; spinFadeFrameRef.current = null; return; } spinFadeFrameRef.current = window.requestAnimationFrame(tick); }; if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = window.requestAnimationFrame(tick); }
   function playSfxBuffer(bufferRef: React.MutableRefObject<AudioBuffer | null>, volume: number) {
     const context = sfxContextRef.current;
     const buffer = bufferRef.current;

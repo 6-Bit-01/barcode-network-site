@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { externalLinks } from "@/content";
 import { formatRuntime } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicTrack } from "@/lib/queue-types";
-import { QueuePollError, fetchQueueSnapshot, initialQueuePollState, reduceQueuePollFailure, reduceQueuePollSuccess, type QueuePollState } from "@/lib/queue-public-polling";
+import { createQueuePollController, deriveQueueRecoveryView, initialQueuePollState, type QueuePollState } from "@/lib/queue-public-polling";
 
 type GatewayPhase = "syncing" | "archived" | "closed" | "open" | "liveOpen" | "liveClosed";
 
@@ -107,57 +107,30 @@ function publicCounts(snapshot: QueuePublicSnapshot | null) {
 export function PublicQueueGateway() {
   const [pollState, setPollState] = useState<QueuePollState>(initialQueuePollState);
   const snapshot = pollState.snapshot;
-  const requestRef = useRef<{ id: number; controller: AbortController } | null>(null);
-  const [portalState, setPortalState] = useState<"sealed" | "opening" | "open">("sealed");
-  const [transitionPulse, setTransitionPulse] = useState<GatewayPhase | null>(null);
+  const pollStateRef = useRef<QueuePollState>(initialQueuePollState);
+  const [portalState] = useState<"sealed" | "opening" | "open">("sealed");
+  const [transitionPulse] = useState<GatewayPhase | null>(null);
   const [pendingNavigation, setPendingNavigation] = useState<(NavigationVariant & { href: string }) | null>(null);
   const [nowMs, setNowMs] = useState(0);
   const [mounted, setMounted] = useState(false);
-  const phaseRef = useRef<GatewayPhase>("syncing");
-  const wasOpen = useRef(false);
+  const retryRef = useRef<(() => void) | null>(null);
 
-  async function load(retrying = false) {
-    const previous = requestRef.current;
-    previous?.controller.abort();
-    const controller = new AbortController();
-    const id = (previous?.id ?? 0) + 1;
-    requestRef.current = { id, controller };
-    if (retrying) setPollState((current) => reduceQueuePollFailure(current, "network", true));
-    try {
-      const next = await fetchQueueSnapshot(fetch, "/api/queue", controller.signal);
-      if (requestRef.current?.id !== id) return;
-      const nextOpen = Boolean(next.status?.isOpen);
-      const nextPhase = phaseForSnapshot(next);
-      if (phaseRef.current !== nextPhase) {
-        phaseRef.current = nextPhase;
-        setTransitionPulse(nextPhase);
-        window.setTimeout(() => setTransitionPulse(null), 1400);
-      }
-      if (!wasOpen.current && nextOpen) {
-        setPortalState("opening");
-        window.setTimeout(() => setPortalState("open"), 900);
-      } else if (!nextOpen) {
-        setPortalState("sealed");
-      }
-      wasOpen.current = nextOpen;
-      setPollState((current) => reduceQueuePollSuccess(current, next));
-    } catch (error) {
-      if (requestRef.current?.id !== id) return;
-      const reason = error instanceof QueuePollError ? error.reason : "network";
-      if (reason !== "aborted") setPollState((current) => reduceQueuePollFailure(current, reason));
-    }
-  }
+  const recoveryView = deriveQueueRecoveryView(pollState);
+
 
   useEffect(() => {
     setMounted(true);
     setNowMs(Date.now());
-    load();
-    const interval = setInterval(() => { setNowMs(Date.now()); load(); }, 5_000);
-    const recover = () => { if (document.visibilityState !== "hidden") void load(true); };
-    window.addEventListener("focus", recover);
-    window.addEventListener("online", recover);
-    document.addEventListener("visibilitychange", recover);
-    return () => { clearInterval(interval); requestRef.current?.controller.abort(); window.removeEventListener("focus", recover); window.removeEventListener("online", recover); document.removeEventListener("visibilitychange", recover); };
+    const clock = window.setInterval(() => setNowMs(Date.now()), 1_000);
+    const controller = createQueuePollController({
+      fetcher: fetch,
+      getUrl: () => "/api/queue",
+      getState: () => pollStateRef.current,
+      onState: (updater) => setPollState((current) => { const next = updater(current); pollStateRef.current = next; return next; }),
+    });
+    controller.start();
+    retryRef.current = controller.retry;
+    return () => { window.clearInterval(clock); controller.dispose(); retryRef.current = null; };
   }, []);
 
   function beginNavigation(event: React.MouseEvent<HTMLAnchorElement>, href: string, activeSessionId: string) {
@@ -178,7 +151,7 @@ export function PublicQueueGateway() {
     window.setTimeout(() => { window.location.assign(href); }, 6000);
   }
 
-  const phase = phaseForSnapshot(snapshot);
+  const phase = phaseForSnapshot(recoveryView === "current" || recoveryView === "stale" || recoveryView === "retrying" ? snapshot : null);
   const copy = phaseCopy(phase);
   const counts = publicCounts(snapshot);
   const session = snapshot?.session;
@@ -188,27 +161,30 @@ export function PublicQueueGateway() {
   const intakeWindowMs = session?.preShowEndsAt ? new Date(session.preShowEndsAt).getTime() - nowMs : 0;
   const intakeWindow = Number.isFinite(intakeWindowMs) && intakeWindowMs > 0 ? `${Math.floor(intakeWindowMs / 60000)}:${Math.floor((intakeWindowMs % 60000) / 1000).toString().padStart(2, "0")}` : null;
 
-  const hasActiveSession = Boolean(session && session.status !== "archived");
+  const initialRecoveryOnly = !snapshot && recoveryView !== "current";
+  const staleReadOnly = recoveryView === "stale" || recoveryView === "retrying";
+  const hasActiveSession = Boolean(!initialRecoveryOnly && session && session.status !== "archived");
   const activeSessionId = hasActiveSession ? session?.sessionId ?? null : null;
   const queueHref = activeSessionId ? `/queue/${activeSessionId}` : null;
 
   return (
     <div className={`space-y-6 ${hasActiveSession ? "pb-24" : ""}`}>
-      {pollState.status !== "current" && <section className="border border-[#ffaa00]/45 bg-[#ffaa00]/10 p-4" role="status" aria-live="polite">
-        <p className="text-xs font-bold uppercase tracking-[0.28em] text-[#ffaa00]">Queue signal {pollState.status === "loading" ? "loading" : pollState.status === "stale" ? "stale" : "unavailable"}</p>
+      {recoveryView !== "current" && <section className="border border-[#ffaa00]/45 bg-[#ffaa00]/10 p-4" role="status" aria-live="polite">
+        <p className="text-xs font-bold uppercase tracking-[0.28em] text-[#ffaa00]">Queue signal {recoveryView === "loading" ? "loading" : recoveryView === "retrying" ? "retrying" : recoveryView === "stale" ? "last confirmed / read-only" : "unavailable"}</p>
         <p className="mt-2 text-sm text-muted">{pollState.message ?? "Reading the current BARCODE Radio queue before reporting status."}</p>
         {pollState.lastGoodAt && <p className="mt-1 text-[11px] uppercase tracking-widest text-muted">Last successful poll: {new Date(pollState.lastGoodAt).toLocaleTimeString()}</p>}
-        <button type="button" onClick={() => void load(true)} className="mt-3 border border-[#ffaa00]/60 px-3 py-2 text-xs font-bold uppercase tracking-widest text-[#ffaa00]">Retry queue signal</button>
+        <button type="button" onClick={() => retryRef.current?.()} className="mt-3 border border-[#ffaa00]/60 px-3 py-2 text-xs font-bold uppercase tracking-widest text-[#ffaa00]">Retry queue signal</button>
       </section>}
-      {hasActiveSession ? <section className="border border-accent/60 bg-accent/10 p-5 shadow-[0_0_34px_rgba(255,0,0,0.12)]">
+      {initialRecoveryOnly ? null : staleReadOnly && snapshot ? <section className="border border-border bg-background/60 p-3 text-xs uppercase tracking-[0.22em] text-muted">Viewing last confirmed queue snapshot. Actions are read-only until the signal is current.</section> : null}
+      {initialRecoveryOnly ? <section className="border border-border bg-surface p-5" role="status"><p className="text-xs uppercase tracking-[0.35em] text-muted">Queue Status</p><h1 className="mt-2 text-2xl font-bold text-foreground">{recoveryView === "loading" ? "Synchronizing queue signal" : "Queue signal unavailable"}</h1><p className="mt-3 text-sm text-muted">{pollState.message ?? "Reading the current BARCODE Radio queue before reporting status."}</p></section> : hasActiveSession ? <section className="border border-accent/60 bg-accent/10 p-5 shadow-[0_0_34px_rgba(255,0,0,0.12)]">
         <p className="text-xs uppercase tracking-[0.35em] text-accent">BARCODE Radio Queue</p>
-        <h1 className="mt-2 text-2xl font-bold text-foreground">Current queue is online</h1>
-        <p className="mt-2 text-sm text-muted">{snapshot?.status.isOpen ? "Submissions are open. Open the queue to submit your track." : "Submissions are closed, but you can still view the queue."}</p>
+        <h1 className="mt-2 text-2xl font-bold text-foreground">{staleReadOnly ? "Last confirmed queue snapshot" : "Current queue is online"}</h1>
+        <p className="mt-2 text-sm text-muted">{staleReadOnly ? "Queue signal is not current. This snapshot is read-only until recovery." : snapshot?.status.isOpen ? "Submissions are open. Open the queue to submit your track." : "Submissions are closed, but you can still view the queue."}</p>
         <div className="mt-4 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.18em]">
           <span className={`${snapshot?.status.isOpen ? "border-accent/60 text-accent" : "border-border text-muted"} border px-2 py-1`}>Submissions: {snapshot?.status.isOpen ? "Open" : "Closed"}</span>
           <span className={`${isBroadcastActive(snapshot) ? "border-[#ffaa00]/55 text-[#ffaa00]" : "border-border text-muted"} border px-2 py-1`}>Broadcast: {isBroadcastActive(snapshot) ? "Active" : "Standby"}</span>
         </div>
-        <a href={queueHref ?? "#"} onClick={(event) => queueHref && activeSessionId && beginNavigation(event, queueHref, activeSessionId)} aria-busy={Boolean(pendingNavigation)} className="nav-corridor-link mt-4 inline-flex w-full cursor-pointer items-center justify-center border border-accent bg-accent px-4 py-3 text-xs font-bold uppercase tracking-[0.22em] text-white transition hover:bg-red-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">OPEN CURRENT QUEUE</a>
+        {!staleReadOnly && <a href={queueHref ?? "#"} onClick={(event) => queueHref && activeSessionId && beginNavigation(event, queueHref, activeSessionId)} aria-busy={Boolean(pendingNavigation)} className="nav-corridor-link mt-4 inline-flex w-full cursor-pointer items-center justify-center border border-accent bg-accent px-4 py-3 text-xs font-bold uppercase tracking-[0.22em] text-white transition hover:bg-red-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">OPEN CURRENT QUEUE</a>}
       </section> : <section className="border border-border bg-surface p-5">
         <p className="text-xs uppercase tracking-[0.35em] text-muted">Queue Status</p>
         <p className="mt-2 text-xs uppercase tracking-[0.35em] text-muted">BARCODE Radio Queue</p>

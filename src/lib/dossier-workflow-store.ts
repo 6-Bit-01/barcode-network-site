@@ -90,6 +90,12 @@ let memoryArchiveManifestStore = new Map<
 let memoryArchiveChunkStore = new Map<string, string>();
 let memoryWriteQueue: Promise<void> = Promise.resolve();
 
+
+function isRedisStorageCapacityExceededError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /ERR\s+DB\s+capacity\s+quota\s+exceeded|capacity quota exceeded/i.test(message);
+}
+
 function getRedis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -3218,6 +3224,7 @@ export async function ingestDossierSourceFileArchive(
       candidate.latestSourceFileArchiveId
     ) {
       duplicate = true;
+      console.info("[dossier-source-file-archive] deduped", { archiveId: candidate.latestSourceFileArchiveId, candidateId: candidate.id });
       attachStatus = "deduped_existing";
       savedCandidate = candidate;
       savedCandidateLatestArchiveId = candidate.latestSourceFileArchiveId;
@@ -3294,11 +3301,26 @@ export async function ingestDossierSourceFileArchive(
     };
   });
 
-  if (savedArchiveMetadata && savedArchiveChunks) {
-    await saveSourceFileArchiveRecord({
-      metadata: savedArchiveMetadata,
-      chunks: savedArchiveChunks,
-    });
+  const archiveMetadataToStore = savedArchiveMetadata as DossierSourceFileArchiveMetadata | null;
+  const archiveChunksToStore = savedArchiveChunks as string[] | null;
+  if (archiveMetadataToStore && archiveChunksToStore) {
+    try {
+      await saveSourceFileArchiveRecord({
+        metadata: archiveMetadataToStore,
+        chunks: archiveChunksToStore,
+      });
+      console.info("[dossier-source-file-archive] created", { archiveId: archiveMetadataToStore.id, candidateId: archiveMetadataToStore.candidateId, archiveBytes: archiveMetadataToStore.archiveSize, chunkCount: archiveMetadataToStore.chunkCount });
+    } catch (error) {
+      console.error("[dossier-source-file-archive] create_failed", { candidateId: archiveMetadataToStore.candidateId, reason: isRedisStorageCapacityExceededError(error) ? "storage_capacity_exceeded" : "archive_write_failed" });
+      throw error;
+    }
+    try {
+      const { cleanupSupersededSourceFileArchives } = await import("@/lib/redis-capacity-audit");
+      const cleanup = await cleanupSupersededSourceFileArchives();
+      console.info("[dossier-source-file-archive] retention_eviction", { archiveId: archiveMetadataToStore.id, deletedManifests: cleanup.deletedManifestIds.length, deletedChunks: cleanup.deletedChunkKeys.length, retainedCount: cleanup.retainedArchiveIds.length, status: cleanup.status });
+    } catch (error) {
+      console.error("[dossier-source-file-archive] retention_eviction_failed", { archiveId: archiveMetadataToStore.id, reason: isRedisStorageCapacityExceededError(error) ? "storage_capacity_exceeded" : "eviction_failed" });
+    }
   }
   if (
     duplicate &&

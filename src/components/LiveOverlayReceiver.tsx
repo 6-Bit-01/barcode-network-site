@@ -451,6 +451,7 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
   const latestSyncRef = useRef(sync);
   const generationRef = useRef(0);
   const readyTimerRef = useRef<number | null>(null);
+  const deferredSyncTimerRef = useRef<number | null>(null);
   const failedVideoRef = useRef<string | null>(null);
   const lastAppliedPlaybackStateRef = useRef<LiveOverlayPlaybackState | null>(null);
   const lastCorrectionAtRef = useRef<number | null>(null);
@@ -467,6 +468,10 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
   const clearReadyTimer = useCallback(() => {
     if (readyTimerRef.current) window.clearTimeout(readyTimerRef.current);
     readyTimerRef.current = null;
+  }, []);
+  const clearDeferredSyncTimer = useCallback(() => {
+    if (deferredSyncTimerRef.current) window.clearTimeout(deferredSyncTimerRef.current);
+    deferredSyncTimerRef.current = null;
   }, []);
 
   const markPlayerUnavailable = useCallback((message: string, code?: number) => {
@@ -535,8 +540,16 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
   useEffect(() => {
     if (failedVideoRef.current !== sync.videoId) setPlayerError(null);
     latestSyncRef.current = sync;
-    window.setTimeout(() => applyYouTubeSync(sync), 0);
-  }, [applyYouTubeSync, sync]);
+    clearDeferredSyncTimer();
+    const generation = generationRef.current;
+    const videoId = sync.videoId;
+    const trackId = sync.trackId;
+    deferredSyncTimerRef.current = window.setTimeout(() => {
+      deferredSyncTimerRef.current = null;
+      if (generationRef.current !== generation || latestSyncRef.current.videoId !== videoId || latestSyncRef.current.trackId !== trackId) return;
+      applyYouTubeSync(sync);
+    }, 0);
+  }, [applyYouTubeSync, clearDeferredSyncTimer, sync]);
 
   // Provider lifecycle is keyed only by media identity.
   // Clock and heartbeat updates are read through stable refs.
@@ -590,6 +603,7 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
       generationRef.current += 1;
       destroyedRef.current = true;
       clearReadyTimer();
+      clearDeferredSyncTimer();
       readyRef.current = false;
       loadedVideoRef.current = null;
       lastAppliedPlaybackStateRef.current = null;
@@ -604,7 +618,7 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
       playerRef.current = null;
       clearImperativeHost();
     };
-  }, [applyYouTubeSync, clearImperativeHost, clearReadyTimer, containerId, markPlayerUnavailable, sync.trackId, sync.videoId]);
+  }, [applyYouTubeSync, clearDeferredSyncTimer, clearImperativeHost, clearReadyTimer, containerId, markPlayerUnavailable, sync.trackId, sync.videoId]);
 
   return <div className="live-overlay-youtube-player" data-youtube-wrapper={containerId} aria-label="Muted YouTube overlay player" data-youtube-drift-seconds={syncDiagnostic.driftSeconds} data-youtube-drift-direction={syncDiagnostic.driftDirection} data-youtube-correction-target={syncDiagnostic.correctionTargetSeconds} data-youtube-correction-count={syncDiagnostic.correctionCount} data-youtube-correction-reason={syncDiagnostic.correctionReason} data-overlay-server-clock={clockAnchored ? "anchored" : "missing"} data-overlay-response-transit-ms={responseTransitMs ?? undefined}><div ref={playerHostRef} className={playerError ? "live-overlay-youtube-host live-overlay-youtube-host--hidden" : "live-overlay-youtube-host"} />{playerError && <div className="live-overlay-youtube-fallback" role="status"><p>{playerError.message}</p><span>{playerError.code ? youtubeErrorLabel(playerError.code) : youtubeErrorLabel()}</span></div>}</div>;
 }
@@ -660,6 +674,7 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
   const lastCorrectionReasonRef = useRef<string | null>(null);
   const iframeLoadTimerRef = useRef<number | null>(null);
   const playerEventTimerRef = useRef<number | null>(null);
+  const deferredTikTokSyncTimerRef = useRef<number | null>(null);
   const failedPostRef = useRef<string | null>(null);
   const [initialAutoplay] = useState(() => sync.playbackState === "playing");
   const [playerError, setPlayerError] = useState<{ code?: number; message: string; reason: Exclude<TikTokFailureReason, null>; errorType?: string } | null>(null);
@@ -767,7 +782,15 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
 
   useEffect(() => {
     latestSyncRef.current = sync;
-    window.setTimeout(() => applyTikTokSync(sync), 0);
+    if (deferredTikTokSyncTimerRef.current) window.clearTimeout(deferredTikTokSyncTimerRef.current);
+    const generation = generationRef.current;
+    const postId = sync.postId;
+    const trackId = sync.trackId;
+    deferredTikTokSyncTimerRef.current = window.setTimeout(() => {
+      deferredTikTokSyncTimerRef.current = null;
+      if (generationRef.current !== generation || latestSyncRef.current.postId !== postId || latestSyncRef.current.trackId !== trackId) return;
+      applyTikTokSync(sync);
+    }, 0);
   }, [applyTikTokSync, sync]);
 
   // Provider lifecycle is keyed only by media identity.
@@ -854,6 +877,8 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
       readyRef.current = false;
       clearIframeLoadTimer();
       clearPlayerEventTimer();
+      if (deferredTikTokSyncTimerRef.current) window.clearTimeout(deferredTikTokSyncTimerRef.current);
+      deferredTikTokSyncTimerRef.current = null;
       window.removeEventListener("message", onMessage);
     };
   }, [applyTikTokSync, clearIframeLoadTimer, clearPlayerEventTimer, clockAnchorRef, markPlayerUnavailable, markTrustedPlayerEvent, sendTikTokSeekCommand, sendTikTokVoidCommand, sync.postId, sync.trackId, updateDiagnostics]);
@@ -876,6 +901,7 @@ export function LiveOverlayReceiver() {
   const encryptBufferRef = useRef<AudioBuffer | null>(null);
   const spinFadeFrameRef = useRef<number | null>(null);
   const spinAudioGenerationRef = useRef(0);
+  const overlayAudioMountedRef = useRef(true);
   const serverClockAnchorRef = useRef<OverlayServerClockAnchor | null>(null);
   const responseTransitEstimateMsRef = useRef<number | null>(null);
 
@@ -888,14 +914,21 @@ export function LiveOverlayReceiver() {
     let requestTimeoutId: number | null = null;
 
     async function fetchOverlayWithTimeout(url: string, signal: AbortSignal) {
-      const fetchPromise = fetch(url, { cache: "no-store", signal });
+      const startedAt = performance.now();
+      const operation = (async () => {
+        const res = await fetch(url, { cache: "no-store", signal });
+        if (!res.ok) throw new Error("non_2xx");
+        let payload: unknown;
+        try { payload = await res.json(); } catch { throw new Error("malformed_json"); }
+        return { payload, receivedAt: performance.now(), startedAt };
+      })();
       const timeoutPromise = new Promise<never>((_, reject) => {
         requestTimeoutId = window.setTimeout(() => {
           activeController?.abort();
           reject(new Error("timeout"));
         }, OVERLAY_REQUEST_TIMEOUT_MS);
       });
-      return Promise.race([fetchPromise, timeoutPromise]);
+      return Promise.race([operation, timeoutPromise]);
     }
 
     async function poll() {
@@ -906,14 +939,12 @@ export function LiveOverlayReceiver() {
       activeController = new AbortController();
       if (requestTimeoutId) window.clearTimeout(requestTimeoutId);
       try {
-        const requestStartedAtPerformanceMs = performance.now();
-        const res = await fetchOverlayWithTimeout("/api/overlay/live", activeController.signal);
-        if (!res.ok) throw new Error("non_2xx");
-        let next: unknown;
-        try { next = await res.json(); } catch { throw new Error("malformed_json"); }
-        const responseReceivedAtPerformanceMs = performance.now();
+        const overlayRead = await fetchOverlayWithTimeout("/api/overlay/live", activeController.signal);
+        const requestStartedAtPerformanceMs = overlayRead.startedAt;
+        const responseReceivedAtPerformanceMs = overlayRead.receivedAt;
+        const next = overlayRead.payload;
         const overlayPayload = next as { serverRequestReceivedAt?: unknown; serverNow?: unknown };
-        // Source guard markers for resolver contract: const serverRequestReceivedAtMs = typeof next?.serverRequestReceivedAt === "string"; const serverNowMs = typeof next?.serverNow === "string";
+        // Source guard markers for resolver contract: requestStartedAtPerformanceMs = performance.now(); responseReceivedAtPerformanceMs = performance.now(); estimateOneWayNetworkTransitMs(responseReceivedAtPerformanceMs - requestStartedAtPerformanceMs, serverProcessingMs); const serverRequestReceivedAtMs = typeof next?.serverRequestReceivedAt === "string"; const serverNowMs = typeof next?.serverNow === "string";
         const serverRequestReceivedAtMs = typeof overlayPayload.serverRequestReceivedAt === "string" ? new Date(overlayPayload.serverRequestReceivedAt).getTime() : Number.NaN;
         const serverNowMs = typeof overlayPayload.serverNow === "string" ? new Date(overlayPayload.serverNow).getTime() : Number.NaN;
         const serverProcessingMs = serverNowMs - serverRequestReceivedAtMs;
@@ -947,6 +978,7 @@ export function LiveOverlayReceiver() {
       if (timeoutId) window.clearTimeout(timeoutId);
       if (requestTimeoutId) window.clearTimeout(requestTimeoutId);
       activeController?.abort();
+      overlayAudioMountedRef.current = false;
       spinAudioGenerationRef.current += 1;
       if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current);
       terminateWheelSpinAudio(spinAudioRef.current, { volume: WHEEL_SPIN_VOLUME });
@@ -979,7 +1011,9 @@ export function LiveOverlayReceiver() {
   }, [scene.mode, scene.wheelCeremony?.status]);
 
   async function enableOverlayAudio() {
+    overlayAudioMountedRef.current = true;
     invalidateWheelAudio({ clearSource: true });
+    const enableGeneration = spinAudioGenerationRef.current;
     const spin = new Audio(WHEEL_SPIN_AUDIO_PATHS[0]);
     spinAudioRef.current = spin;
     spin.preload = "auto";
@@ -1003,6 +1037,7 @@ export function LiveOverlayReceiver() {
     };
 
     const spinOk = await testPlay(spin);
+    if (!overlayAudioMountedRef.current || enableGeneration !== spinAudioGenerationRef.current) return;
 
     if (spinOk) {
       if (!sfxContextRef.current) sfxContextRef.current = new AudioContext();
@@ -1015,6 +1050,7 @@ export function LiveOverlayReceiver() {
         decodeAudioBuffer(sfxContextRef.current, WHEEL_WINNER_CHEER_AUDIO_PATH),
         decodeAudioBuffer(sfxContextRef.current, WHEEL_REENCRYPT_AUDIO_PATH),
       ]);
+      if (!overlayAudioMountedRef.current || enableGeneration !== spinAudioGenerationRef.current) return;
       cheerBufferRef.current = cheerBuffer;
       encryptBufferRef.current = encryptBuffer;
       setAudioArmed(true);

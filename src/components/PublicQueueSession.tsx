@@ -226,6 +226,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const [acceptedReceipt, setAcceptedReceipt] = useState<PublicSubmissionReceipt | null>(null);
   const previousSnapshotRef = useRef<QueuePublicSnapshot | null>(null);
   const actionTransitionTimerRef = useRef<number | null>(null);
+  const actionGenerationRef = useRef(0);
   const snapshotMovementKey = useMemo(() => publicSnapshotMovementKey(snapshot), [snapshot]);
   function emitRoutingGhost(ghost: Omit<RoutingGhost, "id">) {
     const id = `${Date.now()}:${ghost.trackId}:${ghost.zone}`;
@@ -421,12 +422,14 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     return track.priorityUpgradeStatus === "checkout_pending";
   }
 
-  function clearActionTransitionTimer() { if (actionTransitionTimerRef.current) window.clearTimeout(actionTransitionTimerRef.current); actionTransitionTimerRef.current = null; }
+  function clearActionTransitionTimer() { actionGenerationRef.current += 1; if (actionTransitionTimerRef.current) window.clearTimeout(actionTransitionTimerRef.current); actionTransitionTimerRef.current = null; }
 
   function runPublicActionTransition(transition: PublicActionVariant, action: () => void, delay = 1200) {
     clearActionTransitionTimer();
+    const generation = actionGenerationRef.current;
     setActionTransition(transition);
     actionTransitionTimerRef.current = window.setTimeout(() => {
+      if (generation !== actionGenerationRef.current) return;
       actionTransitionTimerRef.current = null;
       setActionTransition(null);
       action();
@@ -447,7 +450,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   function requestPriorityUpgrade(track: QueuePublicTrack) {
     if (!canShowPriorityUpgrade(track) && !canResumePriorityPayment(track)) return;
     runPublicActionTransition(actionVariant(`${sessionId}:${track.id}`, "upgrade"), () => {
-      const eligibility = derivePublicQueueActionEligibility(pollStateRef.current, { sessionId, action: track.priorityUpgradeStatus === "checkout_pending" ? "priority_resume" : "priority_request", trackId: track.id, priorityDepth: MIN_PRIORITY_ACTIVE_DEPTH });
+      const eligibility = derivePublicQueueActionEligibility(pollStateRef.current, { sessionId, action: track.priorityUpgradeStatus === "checkout_pending" ? "priority_resume" : "priority_request", trackId: track.id, priorityDepth: MIN_PRIORITY_ACTIVE_DEPTH, frontEdgeFreeTrackId });
       if (!eligibility.allowed || !eligibility.track) return;
       setPriorityModalTrack(eligibility.track);
       setPriorityRequestMessage(null);
@@ -456,25 +459,20 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   }
 
   async function beginPriorityCheckout(track: QueuePublicTrack) {
-    if (!queueAuthorityCurrent) { setPriorityRequestMessage("Queue signal is stale. Retry before starting Priority Signal checkout."); return; }
-    if (track.priorityUpgradeStatus !== "checkout_pending" && !priorityUpgradeAvailable) {
-      setPriorityRequestMessage("Priority Signal upgrades unavailable.");
-      return;
-    }
-    if (track.priorityUpgradeStatus === "checkout_pending" && !priorityPaymentsAvailable) {
-      setPriorityRequestMessage("Priority Signal upgrades unavailable.");
-      return;
-    }
+    const preflightAction = track.priorityUpgradeStatus === "checkout_pending" ? "priority_resume" : "priority_checkout_preflight";
+    const preflight = derivePublicQueueActionEligibility(pollStateRef.current, { sessionId, action: preflightAction, trackId: track.id, priorityDepth: MIN_PRIORITY_ACTIVE_DEPTH, frontEdgeFreeTrackId });
+    if (!preflight.allowed || !preflight.track) { setPriorityRequestMessage("Queue signal changed. Retry after resync before starting Priority Signal checkout."); return; }
+    const checkoutGeneration = actionGenerationRef.current;
     setPriorityRequestPending(true);
     const res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId: track.id, sessionId, acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT }) });
     const payload = await res.json().catch(() => ({}));
     setPriorityRequestPending(false);
-    const eligibility = derivePublicQueueActionEligibility(pollStateRef.current, { sessionId, action: track.priorityUpgradeStatus === "checkout_pending" ? "priority_resume" : "priority_checkout", trackId: track.id, priorityDepth: MIN_PRIORITY_ACTIVE_DEPTH });
-    if (!eligibility.allowed || !eligibility.track) {
+    const eligibility = derivePublicQueueActionEligibility(pollStateRef.current, { sessionId, action: "priority_checkout_completed", trackId: track.id, priorityDepth: MIN_PRIORITY_ACTIVE_DEPTH, frontEdgeFreeTrackId });
+    if (checkoutGeneration !== actionGenerationRef.current || !eligibility.allowed || !eligibility.track) {
       setPriorityRequestMessage("Queue signal changed before checkout navigation. Retry after resync or resume payment if available.");
       return;
     }
-    if (res.ok && typeof payload.url === "string") {
+    if (res.ok && typeof payload.url === "string" && /^https?:\/\//.test(payload.url)) {
       setPriorityRequestMessage(payload.message ?? "Checkout started. Skip is not active yet.");
       window.location.href = payload.url;
       return;
@@ -491,8 +489,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     setPriorityModalTrack(null);
     setPriorityRequestMessage(null);
     setActionTransition(actionVariant(`${sessionId}:${track.id}`, "resume"));
-    window.setTimeout(() => setActionTransition(null), 1200);
-    await new Promise((resolve) => window.setTimeout(resolve, 1200));
+    await new Promise<void>((resolve) => { runPublicActionTransition(actionVariant(`${sessionId}:${track.id}`, "resume"), resolve, 1200); });
     await beginPriorityCheckout(track);
   }
 
@@ -501,7 +498,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const contentOffsetClass = publicHudMinimized ? "pt-[2.25rem] sm:pt-[2.75rem]" : "pt-[4.25rem] sm:pt-[4.75rem]";
 
   if (initialRecoveryOnly) {
-    return <div className="space-y-6"><div className="border border-[#ffaa00]/45 bg-[#ffaa00]/10 p-4" role="status" aria-live="polite"><p className="text-xs font-bold uppercase tracking-[0.28em] text-[#ffaa00]">Queue signal {recoveryView === "loading" ? "loading" : recoveryView === "retrying" ? "retrying" : "unavailable"}</p><p className="mt-2 text-sm text-muted">{pollState.message ?? "Reading this BARCODE Radio session before reporting intake status."}</p><button type="button" onClick={() => retryRef.current?.()} className="mt-3 border border-[#ffaa00]/60 px-3 py-2 text-xs font-bold uppercase tracking-widest text-[#ffaa00]">Retry queue signal</button></div></div>;
+    return <div className="space-y-6"><div className="border border-[#ffaa00]/45 bg-[#ffaa00]/10 p-4" role="status" aria-live="polite"><p className="text-xs font-bold uppercase tracking-[0.28em] text-[#ffaa00]">Queue signal {recoveryView === "loading" ? "loading" : recoveryView === "retrying" ? "retrying" : "unavailable"}</p><p className="mt-2 text-sm text-muted">{pollState.message ?? "Reading this BARCODE Radio session before reporting intake status."}</p><button type="button" onClick={() => retryRef.current?.()} disabled={pollState.inFlight || recoveryView === "retrying"} className="mt-3 border border-[#ffaa00]/60 px-3 py-2 text-xs font-bold uppercase tracking-widest text-[#ffaa00] disabled:opacity-50">{pollState.inFlight || recoveryView === "retrying" ? "Retrying…" : "Retry queue signal"}</button></div></div>;
   }
 
 
@@ -510,7 +507,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   }
 
   if (isEnded) {
-    return <div className="space-y-6">{recoveryView !== "current" && <div className="border border-[#ffaa00]/45 bg-[#ffaa00]/10 p-4" role="status" aria-live="polite"><p className="text-xs font-bold uppercase tracking-[0.28em] text-[#ffaa00]">Queue signal {recoveryView === "retrying" ? "retrying" : recoveryView === "stale" ? "last confirmed / read-only" : "unavailable"}</p><p className="mt-2 text-sm text-muted">{pollState.message ?? "This archived session snapshot is not current."}</p><button type="button" onClick={() => retryRef.current?.()} className="mt-3 border border-[#ffaa00]/60 px-3 py-2 text-xs font-bold uppercase tracking-widest text-[#ffaa00]">Retry queue signal</button></div>}<ReceiverHudPortal snapshot={snapshot} submissionsOpen={false} isBroadcastActive={false} pulse={false} mounted={mounted} minimized={false} onToggleMinimized={() => {}} canSubmit={false} submitLabel="Submissions Closed" onSubmit={() => {}} /><PersonalSignalStatusBar snapshot={snapshot} mounted={mounted} timingSummary={timingSummary} minimized={false} onToggleMinimized={() => {}} canSubmit={false} submitLabel="Submissions Closed" onSubmit={() => {}} /><div className={contentOffsetClass}><SessionPhasePanel snapshot={snapshot} submissionsOpen={false} canSubmit={false} isBroadcastActive={false} /><section className="border border-border bg-surface p-6 space-y-4"><p className="text-xs uppercase tracking-[0.35em] text-danger">SESSION ENDED</p><h2 className="text-3xl font-bold text-foreground">{snapshot?.session.title ?? "BARCODE Radio"}</h2><p className="text-sm text-muted">This song window has collapsed. Temporal alignment for this broadcast has expired. Review the completed signal log below.</p><div className="grid gap-3 sm:grid-cols-3 text-sm"><div className="border border-border p-3"><p className="text-xs text-muted">Show date</p><p>{snapshot?.session.showDate ?? "—"}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed tracks</p><p>{snapshot?.session.completedCount ?? snapshot?.completed.length ?? 0}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed runtime</p><p>{snapshot ? formatRuntime(completedRuntime) : "—"}</p></div></div></section><PublicLane title="Completed Signal Log" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} viewerSubmittedTrackIds={viewerSubmittedTrackIds} canPriorityUpgrade={() => false} canResumePriorityPayment={() => false} priorityPriceCents={0} priorityCurrency="usd" onPriorityUpgrade={() => {}} onPriorityPayment={() => {}} /></div></div>;
+    return <div className="space-y-6">{recoveryView !== "current" && <div className="border border-[#ffaa00]/45 bg-[#ffaa00]/10 p-4" role="status" aria-live="polite"><p className="text-xs font-bold uppercase tracking-[0.28em] text-[#ffaa00]">Queue signal {recoveryView === "retrying" ? "retrying" : recoveryView === "stale" ? "last confirmed / read-only" : "unavailable"}</p><p className="mt-2 text-sm text-muted">{pollState.message ?? "This archived session snapshot is not current."}</p><button type="button" onClick={() => retryRef.current?.()} disabled={pollState.inFlight || recoveryView === "retrying"} className="mt-3 border border-[#ffaa00]/60 px-3 py-2 text-xs font-bold uppercase tracking-widest text-[#ffaa00] disabled:opacity-50">{pollState.inFlight || recoveryView === "retrying" ? "Retrying…" : "Retry queue signal"}</button></div>}<ReceiverHudPortal snapshot={snapshot} submissionsOpen={false} isBroadcastActive={false} pulse={false} mounted={mounted} minimized={false} onToggleMinimized={() => {}} canSubmit={false} submitLabel="Submissions Closed" onSubmit={() => {}} /><PersonalSignalStatusBar snapshot={snapshot} mounted={mounted} timingSummary={timingSummary} minimized={false} onToggleMinimized={() => {}} canSubmit={false} submitLabel="Submissions Closed" onSubmit={() => {}} /><div className={contentOffsetClass}><SessionPhasePanel snapshot={snapshot} submissionsOpen={false} canSubmit={false} isBroadcastActive={false} /><section className="border border-border bg-surface p-6 space-y-4"><p className="text-xs uppercase tracking-[0.35em] text-danger">SESSION ENDED</p><h2 className="text-3xl font-bold text-foreground">{snapshot?.session.title ?? "BARCODE Radio"}</h2><p className="text-sm text-muted">This song window has collapsed. Temporal alignment for this broadcast has expired. Review the completed signal log below.</p><div className="grid gap-3 sm:grid-cols-3 text-sm"><div className="border border-border p-3"><p className="text-xs text-muted">Show date</p><p>{snapshot?.session.showDate ?? "—"}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed tracks</p><p>{snapshot?.session.completedCount ?? snapshot?.completed.length ?? 0}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed runtime</p><p>{snapshot ? formatRuntime(completedRuntime) : "—"}</p></div></div></section><PublicLane title="Completed Signal Log" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} viewerSubmittedTrackIds={viewerSubmittedTrackIds} canPriorityUpgrade={() => false} canResumePriorityPayment={() => false} priorityPriceCents={0} priorityCurrency="usd" onPriorityUpgrade={() => {}} onPriorityPayment={() => {}} /></div></div>;
   }
 
   return (
@@ -520,7 +517,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
         <p className="text-xs font-bold uppercase tracking-[0.28em] text-[#ffaa00]">Queue signal {recoveryView === "loading" ? "loading" : recoveryView === "retrying" ? "retrying" : recoveryView === "stale" ? "last confirmed / read-only" : "unavailable"}</p>
         <p className="mt-2 text-sm text-muted">{pollState.message ?? "Reading this BARCODE Radio session before reporting intake status."}</p>
         {pollState.lastGoodAt && <p className="mt-1 text-[11px] uppercase tracking-widest text-muted">Last successful poll: {new Date(pollState.lastGoodAt).toLocaleTimeString()}</p>}
-        <button type="button" onClick={() => retryRef.current?.()} className="mt-3 border border-[#ffaa00]/60 px-3 py-2 text-xs font-bold uppercase tracking-widest text-[#ffaa00]">Retry queue signal</button>
+        <button type="button" onClick={() => retryRef.current?.()} disabled={pollState.inFlight || recoveryView === "retrying"} className="mt-3 border border-[#ffaa00]/60 px-3 py-2 text-xs font-bold uppercase tracking-widest text-[#ffaa00] disabled:opacity-50">{pollState.inFlight || recoveryView === "retrying" ? "Retrying…" : "Retry queue signal"}</button>
       </div>}
       {staleReadOnly && snapshot && <div className="border border-border bg-background/60 p-3 text-xs uppercase tracking-[0.22em] text-muted">Viewing last confirmed session snapshot. Submission and Priority actions are disabled until the queue signal is current.</div>}
       <ReceiverHudPortal snapshot={snapshot} submissionsOpen={isOpen} isBroadcastActive={isBroadcastActive} pulse={broadcastStartPulse} mounted={mounted} minimized={publicHudMinimized} onToggleMinimized={() => setPublicHudMinimized((current) => !current)} canSubmit={canSubmitFromHud} submitLabel={hudSubmitLabel} onSubmit={openIntakeCorridor} />

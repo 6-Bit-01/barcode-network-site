@@ -14,6 +14,8 @@ const hasOwn = <T extends object>(record: T, key: unknown): key is keyof T => ty
 
 function str(value: unknown, required = true): value is string { return typeof value === "string" && (!required || value.trim().length > 0); }
 function finite(value: unknown): value is number { return typeof value === "number" && Number.isFinite(value); }
+function nonNegativeInt(value: unknown): value is number { return Number.isInteger(value) && (value as number) >= 0; }
+function positiveInt(value: unknown): value is number { return Number.isInteger(value) && (value as number) > 0; }
 function iso(value: unknown): value is string { return str(value) && Number.isFinite(Date.parse(value)); }
 function isoOpt(value: unknown): boolean { return value == null || iso(value); }
 function strOpt(value: unknown): boolean { return value == null || typeof value === "string"; }
@@ -31,13 +33,13 @@ function syncOk(sync: unknown, provider: "tiktok"): sync is LiveOverlayTikTokSyn
 function syncOk(sync: unknown, provider: "youtube" | "tiktok"): boolean {
   const s = sync as Record<string, unknown> | null;
   if (!s || typeof s !== "object" || s.provider !== provider) return false;
-  const identity = provider === "youtube" ? str(s.videoId) : str(s.postId) && /^\d{8,32}$/.test(String(s.postId));
-  return Boolean(identity && strOpt(s.trackId) && hasOwn(PLAYBACK_STATES, s.playbackState) && finite(s.currentTimeSeconds) && s.currentTimeSeconds >= 0 && iso(s.updatedAt) && typeof s.muted === "boolean" && isoOpt(s.clientUpdatedAt) && (s.correctionReason == null || hasOwn(CORRECTION_REASONS, s.correctionReason)) && (provider !== "tiktok" || numOpt(s.durationSeconds)));
+  const identity = provider === "youtube" ? (str(s.videoId) && /^[a-zA-Z0-9_-]{6,}$/.test(String(s.videoId))) : str(s.postId) && /^\d{8,32}$/.test(String(s.postId));
+  return Boolean(identity && strOpt(s.trackId) && hasOwn(PLAYBACK_STATES, s.playbackState) && finite(s.currentTimeSeconds) && s.currentTimeSeconds >= 0 && iso(s.updatedAt) && (provider === "tiktok" ? s.muted === true : typeof s.muted === "boolean") && isoOpt(s.clientUpdatedAt) && (s.correctionReason == null || hasOwn(CORRECTION_REASONS, s.correctionReason)) && (provider !== "tiktok" || numOpt(s.durationSeconds)));
 }
 
 function candidateOk(candidate: unknown): candidate is ResolvedWheelCeremonyTrack {
   const c = candidate as Partial<ResolvedWheelCeremonyTrack> | null;
-  return Boolean(c && typeof c === "object" && str(c.id) && str(c.artistName) && str(c.trackTitle) && stringArrayOpt(c.trackIds) && (c.trackCount == null || (finite(c.trackCount) && c.trackCount >= 0)) && (c.weight == null || (finite(c.weight) && c.weight > 0)) && (c.tracks == null || (Array.isArray(c.tracks) && c.tracks.every(candidateOk))));
+  return Boolean(c && typeof c === "object" && str(c.id) && str(c.artistName) && str(c.trackTitle) && stringArrayOpt(c.trackIds) && (c.trackCount == null || nonNegativeInt(c.trackCount)) && (c.weight == null || (finite(c.weight) && c.weight > 0)) && (c.tracks == null || (Array.isArray(c.tracks) && c.tracks.every(candidateOk))));
 }
 
 function wheelOk(wheel: unknown): wheel is ResolvedWheelCeremonyScene | undefined {
@@ -45,13 +47,14 @@ function wheelOk(wheel: unknown): wheel is ResolvedWheelCeremonyScene | undefine
   const w = wheel as Record<string, unknown> | null;
   if (!w || typeof w !== "object") return false;
   if (!hasOwn(WHEEL_STATUSES, w.status) || !hasOwn(WHEEL_STATUSES, w.storedStatus)) return false;
-  if (!finite(w.candidateCount) || !finite(w.hiddenCandidateCount) || !finite(w.spinDurationMs)) return false;
+  if (!nonNegativeInt(w.candidateCount) || !nonNegativeInt(w.hiddenCandidateCount) || !positiveInt(w.spinDurationMs)) return false;
   if (!Array.isArray(w.displayCandidates) || !w.displayCandidates.every(candidateOk)) return false;
   if (w.resultTrack != null && !candidateOk(w.resultTrack)) return false;
   if (!strOpt(w.resultTrackId) || !strOpt(w.chosenTrackId) || !strOpt(w.seed) || !strOpt(w.previousSeed) || !strOpt(w.reencryptNonce) || !strOpt(w.reencryptCycleId) || !strOpt(w.winningSegmentId) || !strOpt(w.jingleKey) || !strOpt(w.audioPath)) return false;
   if (!isoOpt(w.startedAt) || !isoOpt(w.spinStartedAt) || !isoOpt(w.resultSelectedAt)) return false;
   if (!stringArrayOpt(w.candidateOrder) || !stringArrayOpt(w.previousCandidateOrder)) return false;
-  for (const key of ["finalRotationDeg", "landingAngleDeg", "winningSegmentIndex"] as const) if (w[key] != null && !finite(w[key])) return false;
+  for (const key of ["finalRotationDeg", "landingAngleDeg"] as const) if (w[key] != null && !finite(w[key])) return false;
+  if (w.winningSegmentIndex != null && !nonNegativeInt(w.winningSegmentIndex)) return false;
   return true;
 }
 
@@ -64,8 +67,14 @@ export function isResolvedLiveOverlayScene(value: unknown): value is ResolvedLiv
   if (s.track != null && !trackOk(s.track)) return false;
   if (s.youtube != null && !syncOk(s.youtube, "youtube")) return false;
   if (s.tiktok != null && !syncOk(s.tiktok, "tiktok")) return false;
-  if ((s.mode === "wheel_ready" || s.mode === "wheel_reencrypting" || s.mode === "wheel_spinning" || s.mode === "wheel_result" || s.mode === "wheel_confirmed") && !wheelOk(s.wheelCeremony)) return false;
+  const wheelMode = s.mode === "wheel_ready" || s.mode === "wheel_reencrypting" || s.mode === "wheel_spinning" || s.mode === "wheel_result" || s.mode === "wheel_confirmed";
+  if (wheelMode && !s.wheelCeremony) return false;
   if (!wheelOk(s.wheelCeremony)) return false;
+  if (s.wheelCeremony) {
+    const status = s.wheelCeremony.status;
+    const compatible = s.mode === "wheel_ready" ? (status === "ready" || status === "cancelled" || status === "idle" || status === "signal_lost") : s.mode === "wheel_reencrypting" ? status === "reencrypting" : s.mode === "wheel_spinning" ? status === "spinning" : s.mode === "wheel_result" ? status === "result_pending" : s.mode === "wheel_confirmed" ? status === "confirmed" : true;
+    if (!compatible) return false;
+  }
   return true;
 }
 

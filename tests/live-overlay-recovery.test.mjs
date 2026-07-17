@@ -29,7 +29,11 @@ test('overlay rejects malformed nested fields and retains last-good until later 
     { ...scene, priority: Number.NaN },
     { ...scene, track: { ...scene.track, sourceType: 'bogus' } },
     { ...scene, youtube: { provider: 'youtube', videoId: 'abcdefghijk', playbackState: 'playing', currentTimeSeconds: 1, hostUpdatedAt: now.toISOString(), muted: true } },
-    { ...scene, wheelCeremony: { status: 'cancelled', storedStatus: 'cancelled', candidateCount: 1, displayCandidates: 'not-array', hiddenCandidateCount: 0, spinDurationMs: 24000 } },
+    { ...scene, mode: 'wheel_ready', wheelCeremony: undefined },
+    { ...scene, mode: 'wheel_spinning', wheelCeremony: { status: 'ready', storedStatus: 'ready', candidateCount: 1, displayCandidates: [], hiddenCandidateCount: 0, spinDurationMs: 24000 } },
+    { ...scene, youtube: { provider: 'youtube', videoId: 'x', playbackState: 'playing', currentTimeSeconds: 1, updatedAt: now.toISOString(), muted: true } },
+    { ...scene, tiktok: { provider: 'tiktok', postId: '6718335390845095173', playbackState: 'playing', currentTimeSeconds: 1, updatedAt: now.toISOString(), muted: false } },
+    { ...scene, wheelCeremony: { status: 'cancelled', storedStatus: 'cancelled', candidateCount: 1.2, displayCandidates: [], hiddenCandidateCount: 0, spinDurationMs: -1 } },
   ]) assert.equal(isResolvedLiveOverlayScene(bad), false);
   const initial = { scene, connected: true, held: false, failureReason: null, generation: 1 };
   const held = reduceOverlayFailure(initial, 'timeout', 2);

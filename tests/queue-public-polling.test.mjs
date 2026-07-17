@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { QueuePollError, beginQueuePoll, createQueuePollController, deriveQueueRecoveryView, fetchQueueSnapshot, initialQueuePollState, isQueuePublicSnapshot, queueHasCurrentAuthority, reduceQueuePollFailure, reduceQueuePollSuccess, snapshotsAreCompatible } from '../src/lib/queue-public-polling.ts';
+import { QueuePollError, beginQueuePoll, createQueuePollController, derivePublicQueueActionEligibility, deriveQueueRecoveryView, fetchQueueSnapshot, initialQueuePollState, isQueuePublicSnapshot, queueHasCurrentAuthority, reduceQueuePollFailure, reduceQueuePollSuccess, snapshotsAreCompatible } from '../src/lib/queue-public-polling.ts';
 
 const track = (id = 't1', sourceType = 'other') => ({ id, submittedArtistName: 'Artist', submittedSongTitle: 'Song', sourceType, lane: 'regular', durationLabel: '5:00', durationIsEstimate: true, estimatedDurationSeconds: 300, priorityUpgradeStatus: 'none', publicSourceUrl: 'https://example.com/track' });
-const snapshot = (sessionId = 's1', overrides = {}) => ({ session: { sessionId, title: 'Show', showDate: '2026-07-17', status: 'open', description: 'desc', completedCount: 0, completedRuntimeSeconds: 0, activeCount: 1, removedCount: 0, submissionCooldownSeconds: 0, queueOpen: true, showStarted: false, broadcastPhase: 'submission_window', priorityUpgradesEnabled: true, priorityUpgradePaymentsEnabled: true, priorityUpgradePriceCents: 1000 }, status: { isOpen: true, activeCount: 1, estimatedRuntimeSeconds: 300, capacity: 44, pressure: 'low' }, queue: [track()], completed: [], nowPlaying: null, upNext: null, ...overrides });
+const snapshot = (sessionId = 's1', overrides = {}) => ({ session: { sessionId, title: 'Show', showDate: '2026-07-17', status: 'open', description: 'desc', completedCount: 0, completedRuntimeSeconds: 0, activeCount: 1, removedCount: 0, submissionCooldownSeconds: 0, queueOpen: true, showStarted: false, broadcastPhase: 'submission_window', priorityUpgradesEnabled: true, priorityUpgradePaymentsEnabled: true, priorityUpgradePriceCents: 1000, priorityUpgradeCurrency: 'usd', priorityUpgradeLabel: 'Priority Signal', priorityUpgradeInstructions: 'Move closer' }, status: { isOpen: true, activeCount: 1, estimatedRuntimeSeconds: 300, capacity: 44, pressure: 'low' }, queue: [track()], completed: [], nowPlaying: null, upNext: null, ...overrides });
 const response = (body, ok = true, status = 200) => ({ ok, status, json: async () => body });
 const wait = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -76,6 +76,21 @@ test('compatible last good is same session identity and wrong route session is r
   const rejected = reduceQueuePollSuccess(reduceQueuePollSuccess(initialQueuePollState, snapshot('old')), snapshot('new'), 20, 'old');
   assert.equal(rejected.status, 'stale');
   assert.equal(rejected.snapshot.session.sessionId, 'old');
+});
+
+
+
+test('priority action eligibility rejects closed full wrong position and accepts checkout transitions', () => {
+  const base = reduceQueuePollSuccess(initialQueuePollState, snapshot('s1', { status: { ...snapshot().status, activeCount: 2 }, queue: [track('front'), track('target')] }), 1);
+  assert.equal(derivePublicQueueActionEligibility(base, { sessionId: 's1', action: 'priority_request', trackId: 'target', priorityDepth: 2, frontEdgeFreeTrackId: 'front' }).allowed, true);
+  assert.equal(derivePublicQueueActionEligibility(base, { sessionId: 's2', action: 'priority_request', trackId: 'target', priorityDepth: 2 }).reason, 'wrong_session');
+  assert.equal(derivePublicQueueActionEligibility(base, { sessionId: 's1', action: 'priority_request', trackId: 'front', priorityDepth: 2, frontEdgeFreeTrackId: 'front' }).reason, 'front_edge');
+  assert.equal(derivePublicQueueActionEligibility(reduceQueuePollSuccess(initialQueuePollState, snapshot('s1', { status: { ...snapshot().status, isOpen: false } }), 1), { sessionId: 's1', action: 'priority_request', trackId: 'target', priorityDepth: 2 }).reason, 'closed');
+  assert.equal(derivePublicQueueActionEligibility(reduceQueuePollSuccess(initialQueuePollState, snapshot('s1', { status: { ...snapshot().status, activeCount: 44, isFull: true } }), 1), { sessionId: 's1', action: 'priority_request', trackId: 'target', priorityDepth: 2 }).reason, 'full');
+  assert.equal(derivePublicQueueActionEligibility(reduceQueuePollSuccess(initialQueuePollState, snapshot('s1', { queue: [track('target')], nowPlaying: track('np') }), 1), { sessionId: 's1', action: 'priority_request', trackId: 'np', priorityDepth: 2 }).reason, 'track_missing');
+  const pending = reduceQueuePollSuccess(initialQueuePollState, snapshot('s1', { queue: [{ ...track('target'), priorityUpgradeStatus: 'checkout_pending' }] }), 1);
+  assert.equal(derivePublicQueueActionEligibility(pending, { sessionId: 's1', action: 'priority_checkout_completed', trackId: 'target', priorityDepth: 2 }).allowed, true);
+  assert.equal(derivePublicQueueActionEligibility(pending, { sessionId: 's1', action: 'priority_resume', trackId: 'target', priorityDepth: 2 }).allowed, true);
 });
 
 test('controller supports manual retry focus online visible interval coalescing cleanup and wrong-session rejection', async () => {

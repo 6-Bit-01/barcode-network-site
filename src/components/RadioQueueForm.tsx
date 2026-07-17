@@ -4,6 +4,7 @@
 import { upload } from "@vercel/blob/client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { derivePublicQueueActionEligibility, fetchQueueSnapshot, initialQueuePollState, reduceQueuePollSuccess } from "@/lib/queue-public-polling";
 import { buildQueueTimingDisplay, priorityDisplayFromImpact, queueTimingInputFromPublicSnapshot } from "@/lib/queue-timing-display";
 import { PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, formatRuntime, PRIORITY_DISCLOSURE_TEXT, PRIORITY_TERMS_VERSION } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
@@ -140,6 +141,8 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   const [transmissionState, setTransmissionState] = useState<TransmissionState>("idle");
   const [warpData, setWarpData] = useState<WarpData | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  const formGenerationRef = useRef(0);
+  const latestSnapshotRef = useRef<QueuePublicSnapshot | null>(null);
 
   async function loadStatus() {
     const params = new URLSearchParams();
@@ -148,24 +151,29 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
     if (tiktokHandle.trim()) params.set("tiktokHandle", tiktokHandle.trim());
     if (contactEmail.trim()) params.set("contactEmail", contactEmail.trim());
     if (artist.trim()) params.set("artist", artist.trim());
-    const res = await fetch(`/api/queue${params.size ? `?${params.toString()}` : ""}`, { cache: "no-store" });
-    if (res.ok) {
-      const payload = await res.json();
-      setStatus(payload.status ?? null);
-      setSession(payload.session ?? null);
+    try {
+      const payload = await fetchQueueSnapshot(fetch, `/api/queue${params.size ? `?${params.toString()}` : ""}`);
+      if (sessionId && payload.session.sessionId !== sessionId) throw new Error("wrong_session");
+      latestSnapshotRef.current = payload;
+      setStatus(payload.status);
+      setSession(payload.session);
       setSubmitterStatus(payload.submitterStatus ?? null);
-      setPublicQueue(Array.isArray(payload.queue) ? payload.queue : []);
+      setPublicQueue(payload.queue);
       setNowPlaying(payload.nowPlaying ?? null);
       setUpNext(payload.upNext ?? null);
-      return payload as QueuePublicSnapshot;
+      return payload;
+    } catch {
+      latestSnapshotRef.current = null;
+      setStatus(null);
+      setSubmitterStatus(null);
+      return null;
     }
-    return null;
   }
 
   useEffect(() => {
     loadStatus();
     const interval = setInterval(loadStatus, 5_000);
-    return () => clearInterval(interval);
+    return () => { formGenerationRef.current += 1; clearInterval(interval); };
   }, [submitterToken]);
 
   useEffect(() => {
@@ -267,12 +275,18 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
     setReadState(duration ? "detected" : "pending");
   }
 
-  async function uploadAudioPacket(selectedFile: File): Promise<{ url: string }> {
+  function snapshotAllowsSubmit(snapshot: QueuePublicSnapshot | null): boolean {
+    if (!snapshot) return false;
+    return derivePublicQueueActionEligibility(reduceQueuePollSuccess(initialQueuePollState, snapshot), { sessionId: sessionId ?? snapshot.session.sessionId, action: "submit" }).allowed;
+  }
+
+  async function uploadAudioPacket(selectedFile: File, generation: number): Promise<{ url: string }> {
     setReadState("uploading");
     setUploadProgress(0);
     try {
       const pathname = `barcode-radio-queue/${Date.now()}-${safeFileName(selectedFile.name)}`;
       const mimeType = audioMimeTypeForFile(selectedFile);
+      if (generation !== formGenerationRef.current || !snapshotAllowsSubmit(latestSnapshotRef.current)) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
       const blob = await upload(pathname, selectedFile, {
         access: "private",
         contentType: mimeType,
@@ -286,6 +300,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
         }),
         onUploadProgress: ({ percentage }) => setUploadProgress(Math.round(percentage)),
       });
+      if (generation !== formGenerationRef.current || !snapshotAllowsSubmit(await loadStatus())) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
       setUploadProgress(100);
       return { url: blob.url };
     } catch (uploadError) {
@@ -344,11 +359,15 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   async function startPriorityCheckout(trackId: string): Promise<boolean> {
     const checkoutSessionId = sessionId ?? session?.sessionId;
     if (!checkoutSessionId) return false;
+    const generation = formGenerationRef.current;
+    if (!snapshotAllowsSubmit(await loadStatus())) return false;
     setTransmissionState("priority_requested");
     await wait(650);
+    if (generation !== formGenerationRef.current || !snapshotAllowsSubmit(await loadStatus())) return false;
     const res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId, sessionId: checkoutSessionId, acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT }) });
     const payload = await res.json().catch(() => ({}));
-    if (res.ok && typeof payload.url === "string") {
+    if (generation !== formGenerationRef.current) return false;
+    if (res.ok && typeof payload.url === "string" && /^https?:\/\//.test(payload.url)) {
       window.location.href = payload.url;
       return true;
     }
@@ -373,11 +392,13 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
       setLegalError("You must agree to the BARCODE Network Terms, Queue Submission Terms, and Privacy Policy before submitting.");
       return;
     }
+    formGenerationRef.current += 1;
+    const generation = formGenerationRef.current;
     setSubmitting(true);
     try {
       const refreshedBeforeSubmit = await loadStatus();
       const latestSessionId = refreshedBeforeSubmit?.session?.sessionId ?? session?.sessionId ?? sessionId;
-      if (!latestSessionId) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
+      if (!latestSessionId || !snapshotAllowsSubmit(refreshedBeforeSubmit)) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
       const visibleSessionId = session?.sessionId ?? sessionId;
       if (visibleSessionId && latestSessionId !== visibleSessionId) throw new Error(SESSION_CHANGED_MESSAGE);
       const body: Record<string, string | number | boolean> = {
@@ -399,16 +420,18 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
       if (detectedDuration) body.detectedDurationSeconds = detectedDuration;
       if (mode === "upload") {
         if (!file) throw new Error("Select an MP3/WAV file before final routing.");
-        const blob = await uploadAudioPacket(file);
+        const blob = await uploadAudioPacket(file, generation);
         body.uploadedBlobUrl = blob.url;
         body.uploadOriginalName = file.name;
         body.fileSize = file.size;
         body.mimeType = audioMimeTypeForFile(file);
       }
       if (mode === "link") body.link = link.trim();
+      if (generation !== formGenerationRef.current || !snapshotAllowsSubmit(await loadStatus())) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
 
       const res = await fetch("/api/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const payload = await res.json().catch(() => ({}));
+      if (generation !== formGenerationRef.current) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
       if (!res.ok) {
         if (payload.code === "duplicate_transmission") {
           throw new Error(payload.error || "Duplicate song detected. This track is already in the queue for this session.");

@@ -887,6 +887,17 @@ export function LiveOverlayReceiver() {
     let activeController: AbortController | null = null;
     let requestTimeoutId: number | null = null;
 
+    async function fetchOverlayWithTimeout(url: string, signal: AbortSignal) {
+      const fetchPromise = fetch(url, { cache: "no-store", signal });
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        requestTimeoutId = window.setTimeout(() => {
+          activeController?.abort();
+          reject(new Error("timeout"));
+        }, OVERLAY_REQUEST_TIMEOUT_MS);
+      });
+      return Promise.race([fetchPromise, timeoutPromise]);
+    }
+
     async function poll() {
       if (cancelled) return;
       const seq = requestSeq + 1;
@@ -894,10 +905,9 @@ export function LiveOverlayReceiver() {
       activeController?.abort();
       activeController = new AbortController();
       if (requestTimeoutId) window.clearTimeout(requestTimeoutId);
-      requestTimeoutId = window.setTimeout(() => activeController?.abort(), OVERLAY_REQUEST_TIMEOUT_MS);
       try {
         const requestStartedAtPerformanceMs = performance.now();
-        const res = await fetch("/api/overlay/live", { cache: "no-store", signal: activeController.signal });
+        const res = await fetchOverlayWithTimeout("/api/overlay/live", activeController.signal);
         if (!res.ok) throw new Error("non_2xx");
         let next: unknown;
         try { next = await res.json(); } catch { throw new Error("malformed_json"); }
@@ -951,8 +961,25 @@ export function LiveOverlayReceiver() {
   const shortYouTube = scene.track?.youtubePresentation === "short";
   const youtubeSceneClass = shortYouTube ? "live-overlay-youtube-scene live-overlay-youtube-scene--short" : "live-overlay-youtube-scene";
 
+  function terminateWheelAudioWork(options: { clearSource?: boolean } = {}) {
+    spinAudioGenerationRef.current += 1;
+    if (spinFadeFrameRef.current) { window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = null; }
+    terminateWheelSpinAudio(spinAudioRef.current, { volume: WHEEL_SPIN_VOLUME, clearSource: options.clearSource });
+  }
+
+  function invalidateWheelAudio(options: { clearSource?: boolean; clearNotice?: boolean } = {}) {
+    terminateWheelAudioWork({ clearSource: options.clearSource });
+    if (options.clearNotice) setAudioNotice(null);
+  }
+
+  useEffect(() => {
+    const status = scene.wheelCeremony?.status;
+    const wheelMode = scene.mode.startsWith("wheel_");
+    if (!wheelMode || status === "cancelled" || status === "signal_lost" || status === "idle") terminateWheelAudioWork();
+  }, [scene.mode, scene.wheelCeremony?.status]);
+
   async function enableOverlayAudio() {
-    terminateWheelSpinAudio(spinAudioRef.current, { volume: WHEEL_SPIN_VOLUME, clearSource: true });
+    invalidateWheelAudio({ clearSource: true });
     const spin = new Audio(WHEEL_SPIN_AUDIO_PATHS[0]);
     spinAudioRef.current = spin;
     spin.preload = "auto";
@@ -1004,11 +1031,8 @@ export function LiveOverlayReceiver() {
   async function playSpinMusic(path?: string) {
     const audio = spinAudioRef.current;
     if (!audio || !audioArmed) return;
-    const generation = spinAudioGenerationRef.current + 1;
-    spinAudioGenerationRef.current = generation;
-    if (spinFadeFrameRef.current) { window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = null; }
-    terminateWheelSpinAudio(audio, { volume: WHEEL_SPIN_VOLUME });
-    setAudioNotice(null);
+    invalidateWheelAudio({ clearNotice: true });
+    const generation = spinAudioGenerationRef.current;
     audio.loop = true;
     audio.volume = WHEEL_SPIN_VOLUME;
     const result = await playWheelSpinWithFallback(wheelAudioFallbackCandidates(safeWheelAudioPath(path)), async (candidate, attemptGeneration) => {

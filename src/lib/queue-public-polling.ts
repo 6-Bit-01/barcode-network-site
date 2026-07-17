@@ -14,13 +14,21 @@ const PRIORITY_STATUSES = { none: true, requested: true, manual: true, checkout_
 const PRESSURES = new Set(["low", "medium", "high", "max"]);
 const SOURCE_TYPES = new Set(Object.keys(QUEUE_SOURCE_TYPES));
 const LANES = new Set(["priority", "wheel", "regular"]);
+const DURATION_SOURCES = new Set(["upload_metadata", "file_metadata", "youtube", "soundcloud", "spotify", "youtube_api", "spotify_api", "soundcloud_api", "direct_metadata", "provider_metadata", "internal_estimate", "estimated", "unknown"]);
+const SPONSOR_BREAK_MODES = new Set(["mid_show"]);
+const SPONSOR_BREAK_STATUSES = new Set(["not_due", "due", "running", "completed", "skipped"]);
+const hasOwn = <T extends object>(record: T, key: unknown): key is keyof T => typeof key === "string" && Object.prototype.hasOwnProperty.call(record, key);
 
 function finite(value: unknown): value is number { return typeof value === "number" && Number.isFinite(value); }
 function cleanString(value: unknown): string | null { return typeof value === "string" && value.trim() ? value : null; }
-function validUrl(value: unknown): boolean { if (value == null) return true; if (typeof value !== "string") return false; try { new URL(value); return true; } catch { return false; } }
+function validUrl(value: unknown): boolean { if (value == null) return true; if (typeof value !== "string") return false; try { const url = new URL(value); return url.protocol === "http:" || url.protocol === "https:"; } catch { return false; } }
+function isoOrNull(value: unknown): boolean { return value == null || (typeof value === "string" && Number.isFinite(Date.parse(value))); }
+function stringOrNull(value: unknown): boolean { return value == null || typeof value === "string"; }
+function boolOrNull(value: unknown): boolean { return value == null || typeof value === "boolean"; }
+function validCurrency(value: unknown): boolean { return typeof value === "string" && /^[a-z]{3}$/i.test(value); }
 function validTrack(value: unknown): value is QueuePublicTrack {
   const t = value as Partial<QueuePublicTrack> | null;
-  return Boolean(t && typeof t === "object" && cleanString(t.id) && cleanString(t.submittedArtistName) && cleanString(t.submittedSongTitle) && typeof t.durationLabel === "string" && typeof t.durationIsEstimate === "boolean" && SOURCE_TYPES.has(String(t.sourceType)) && LANES.has(String(t.lane)) && (t.priorityUpgradeStatus == null || String(t.priorityUpgradeStatus) in PRIORITY_STATUSES) && (t.detectedDurationSeconds == null || finite(t.detectedDurationSeconds)) && (t.estimatedDurationSeconds == null || finite(t.estimatedDurationSeconds)) && (t.publicSourceUrl == null || validUrl(t.publicSourceUrl)) && (t.sourceArtworkUrl == null || validUrl(t.sourceArtworkUrl)) && (t.tiktokHandle == null || typeof t.tiktokHandle === "string") && (t.providerTitle == null || typeof t.providerTitle === "string"));
+  return Boolean(t && typeof t === "object" && cleanString(t.id) && cleanString(t.submittedArtistName) && cleanString(t.submittedSongTitle) && typeof t.durationLabel === "string" && typeof t.durationIsEstimate === "boolean" && SOURCE_TYPES.has(String(t.sourceType)) && LANES.has(String(t.lane)) && (t.priorityUpgradeStatus == null || hasOwn(PRIORITY_STATUSES, t.priorityUpgradeStatus)) && (t.detectedDurationSeconds == null || finite(t.detectedDurationSeconds)) && (t.estimatedDurationSeconds == null || finite(t.estimatedDurationSeconds)) && (t.durationSource == null || DURATION_SOURCES.has(String(t.durationSource))) && boolOrNull(t.priorityUpgradeRequested) && (t.publicSourceUrl == null || validUrl(t.publicSourceUrl)) && (t.sourceArtworkUrl == null || validUrl(t.sourceArtworkUrl)) && (t.tiktokHandle == null || typeof t.tiktokHandle === "string") && (t.providerTitle == null || typeof t.providerTitle === "string") && stringOrNull(t.detectedArtistName) && stringOrNull(t.detectedSongTitle));
 }
 function validTrackOrNull(value: unknown): boolean { return value == null || validTrack(value); }
 
@@ -29,18 +37,28 @@ export function isQueuePublicSnapshot(value: unknown): value is QueuePublicSnaps
   const session = v?.session as Record<string, unknown> | undefined;
   const status = v?.status as Record<string, unknown> | undefined;
   if (!v || typeof v !== "object" || !session || !status) return false;
-  if (!cleanString(session.sessionId) || !cleanString(session.title) || !cleanString(session.showDate) || typeof session.description !== "string" || !(String(session.status) in SESSION_STATUSES)) return false;
-  if (session.broadcastPhase != null && !(String(session.broadcastPhase) in BROADCAST_PHASES)) return false;
+  if (!cleanString(session.sessionId) || !cleanString(session.title) || !cleanString(session.showDate) || typeof session.description !== "string" || !hasOwn(SESSION_STATUSES, session.status)) return false;
+  if (session.broadcastPhase != null && !hasOwn(BROADCAST_PHASES, session.broadcastPhase)) return false;
   if (typeof session.queueOpen !== "boolean" || typeof session.showStarted !== "boolean" || !finite(session.completedCount) || !finite(session.completedRuntimeSeconds) || !finite(session.activeCount) || !finite(session.removedCount) || !finite(session.submissionCooldownSeconds)) return false;
   if (session.priorityUpgradesEnabled != null && typeof session.priorityUpgradesEnabled !== "boolean") return false;
   if (session.priorityUpgradePaymentsEnabled != null && typeof session.priorityUpgradePaymentsEnabled !== "boolean") return false;
   if (session.priorityUpgradePriceCents != null && !finite(session.priorityUpgradePriceCents)) return false;
+  if (session.priorityUpgradeCurrency != null && !validCurrency(session.priorityUpgradeCurrency)) return false;
+  if (session.priorityUpgradeLabel != null && typeof session.priorityUpgradeLabel !== "string") return false;
+  if (session.priorityUpgradeInstructions != null && typeof session.priorityUpgradeInstructions !== "string") return false;
+  if (!isoOrNull(session.preShowEndsAt) || !isoOrNull(session.broadcastStartedAt) || !stringOrNull(session.nextInLineTrackId) || !stringOrNull(session.loadedTrackId)) return false;
+  if (session.wheelSpinsOwed != null && !finite(session.wheelSpinsOwed)) return false;
+  if (session.sponsorBreakSeconds != null && !finite(session.sponsorBreakSeconds)) return false;
+  if (session.sponsorBreakMode != null && !SPONSOR_BREAK_MODES.has(String(session.sponsorBreakMode))) return false;
+  if (session.sponsorBreakStatus != null && !SPONSOR_BREAK_STATUSES.has(String(session.sponsorBreakStatus))) return false;
+  if (!isoOrNull(session.sponsorBreakStartedAt) || !isoOrNull(session.sponsorBreakCompletedAt) || !stringOrNull(session.sponsorBreakManualNote)) return false;
+  if (session.sponsorBreakCompletedAfterPlayableCount != null && !finite(session.sponsorBreakCompletedAfterPlayableCount)) return false;
   if (typeof status.isOpen !== "boolean" || !finite(status.activeCount) || !finite(status.estimatedRuntimeSeconds) || !finite(status.capacity) || !PRESSURES.has(String(status.pressure))) return false;
   if (status.isFull != null && typeof status.isFull !== "boolean") return false;
   if (!Array.isArray(v.queue) || !Array.isArray(v.completed) || !v.queue.every(validTrack) || !v.completed.every(validTrack)) return false;
   if (!validTrackOrNull(v.nowPlaying) || !validTrackOrNull(v.upNext)) return false;
   const submitter = v.submitterStatus as Record<string, unknown> | null | undefined;
-  if (submitter && (!finite(submitter.used) || !finite(submitter.limit) || !finite(submitter.remaining) || !finite(submitter.cooldownRemainingSeconds) || !Array.isArray(submitter.submitted) || !submitter.submitted.every(validTrack))) return false;
+  if (submitter != null && (typeof submitter !== "object" || !finite(submitter.used) || !finite(submitter.limit) || !finite(submitter.remaining) || !finite(submitter.cooldownRemainingSeconds) || !Array.isArray(submitter.submitted) || !submitter.submitted.every(validTrack))) return false;
   return true;
 }
 
@@ -53,9 +71,30 @@ export async function fetchQueueSnapshot(fetcher: typeof fetch, url: string, sig
 export const initialQueuePollState: QueuePollState = { status: "loading", snapshot: null, lastGoodAt: null, failureReason: null, message: null, restoredAt: null, inFlight: false };
 export function beginQueuePoll(previous: QueuePollState, trigger: QueuePollTrigger): QueuePollState { return { ...previous, status: previous.snapshot ? trigger === "manual" ? "retrying" : previous.status === "current" ? "current" : "retrying" : trigger === "initial" ? "loading" : "retrying", inFlight: true, restoredAt: null }; }
 export function reduceQueuePollFailure(previous: QueuePollState, reason: QueuePollFailureReason): QueuePollState { const canKeepStale = Boolean(previous.snapshot && previous.status !== "loading"); return { ...previous, status: canKeepStale ? "stale" : "unavailable", inFlight: false, failureReason: reason, message: messageForQueuePollFailure(reason) }; }
-export function reduceQueuePollSuccess(previous: QueuePollState, snapshot: QueuePublicSnapshot, now = Date.now(), requiredSessionId?: string): QueuePollState { if (requiredSessionId && snapshot.session.sessionId !== requiredSessionId) return reduceQueuePollFailure({ ...previous, snapshot: previous.snapshot?.session.sessionId === requiredSessionId ? previous.snapshot : null }, "unexpected_payload"); const wasRecovering = previous.status !== "current" || Boolean(previous.failureReason); return { status: "current", snapshot, lastGoodAt: now, failureReason: null, message: null, restoredAt: wasRecovering ? now : previous.restoredAt, inFlight: false }; }
+export function reduceQueuePollSuccess(previous: QueuePollState, snapshot: QueuePublicSnapshot, now = Date.now(), requiredSessionId?: string): QueuePollState { if (requiredSessionId && snapshot.session.sessionId !== requiredSessionId) return reduceQueuePollFailure({ ...previous, snapshot: previous.snapshot?.session.sessionId === requiredSessionId ? previous.snapshot : null }, "unexpected_payload"); const wasRecovering = previous.status === "stale" || previous.status === "retrying" || previous.status === "unavailable" || Boolean(previous.failureReason); return { status: "current", snapshot, lastGoodAt: now, failureReason: null, message: null, restoredAt: wasRecovering ? now : previous.restoredAt, inFlight: false }; }
 export function queueHasCurrentAuthority(state: QueuePollState): boolean { return state.status === "current" && Boolean(state.snapshot); }
 export function deriveQueueRecoveryView(state: QueuePollState): "loading" | "unavailable" | "retrying" | "stale" | "current" { if (state.status === "loading") return "loading"; if (state.status === "retrying") return "retrying"; if (state.status === "stale") return "stale"; if (state.status === "unavailable") return "unavailable"; return "current"; }
+
+export type PublicQueueActionType = "submit" | "priority_request" | "priority_checkout" | "priority_resume";
+export function derivePublicQueueActionEligibility(state: QueuePollState, input: { sessionId: string; action: PublicQueueActionType; trackId?: string; priorityDepth?: number; }): { allowed: boolean; snapshot: QueuePublicSnapshot | null; track: QueuePublicTrack | null; reason?: string } {
+  const snapshot = queueHasCurrentAuthority(state) ? state.snapshot : null;
+  if (!snapshot) return { allowed: false, snapshot: null, track: null, reason: "not_current" };
+  if (snapshot.session.sessionId !== input.sessionId) return { allowed: false, snapshot, track: null, reason: "wrong_session" };
+  const ended = snapshot.session.status === "archived" || snapshot.session.broadcastPhase === "ended";
+  const full = Boolean(snapshot.status.isFull || snapshot.status.activeCount >= snapshot.status.capacity);
+  const remaining = snapshot.submitterStatus?.remaining;
+  const canSubmit = snapshot.status.isOpen && !ended && !full && (remaining == null || remaining > 0);
+  if (input.action === "submit") return { allowed: canSubmit, snapshot, track: null, reason: canSubmit ? undefined : "submit_closed" };
+  const tracks = [...snapshot.queue, snapshot.nowPlaying, snapshot.upNext].filter((track): track is QueuePublicTrack => Boolean(track));
+  const track = tracks.find((candidate) => candidate.id === input.trackId) ?? null;
+  if (!track) return { allowed: false, snapshot, track: null, reason: "track_missing" };
+  const paymentsAvailable = snapshot.session.priorityUpgradesEnabled === true && snapshot.session.priorityUpgradePaymentsEnabled === true && snapshot.session.priorityUpgradePriceCents > 0;
+  const depthOk = snapshot.status.activeCount >= (input.priorityDepth ?? 0);
+  const resume = track.priorityUpgradeStatus === "checkout_pending";
+  const requestable = track.lane === "regular" && (track.priorityUpgradeStatus == null || track.priorityUpgradeStatus === "none" || track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded");
+  const allowed = !ended && snapshot.session.status === "open" && paymentsAvailable && (input.action === "priority_resume" ? resume : depthOk && requestable);
+  return { allowed, snapshot, track, reason: allowed ? undefined : "priority_unavailable" };
+}
 
 export interface QueuePollControllerOptions { fetcher: typeof fetch; getUrl: () => string; onState: (updater: (state: QueuePollState) => QueuePollState) => void; getState: () => QueuePollState; requiredSessionId?: () => string | undefined; intervalMs?: number; timeoutMs?: number; coalesceMs?: number; windowRef?: Pick<Window, "addEventListener" | "removeEventListener" | "setTimeout" | "clearTimeout">; documentRef?: Pick<Document, "addEventListener" | "removeEventListener" | "visibilityState">; now?: () => number; }
 
@@ -71,5 +110,5 @@ export function createQueuePollController(options: QueuePollControllerOptions) {
   async function run(trigger: QueuePollTrigger) { if (disposed) return; if (inFlight) { pending = true; return; } clearSchedule(); inFlight = true; timedOut = false; const id = ++generation; controller = new AbortController(); set((s) => beginQueuePoll(s, trigger)); try { const snapshot = await Promise.race([fetchQueueSnapshot(options.fetcher, options.getUrl(), controller.signal), new Promise<never>((_, reject) => { timeoutTimer = win.setTimeout(() => { timedOut = true; controller?.abort(); reject(new QueuePollError("timeout", messageForQueuePollFailure("timeout"))); }, timeoutMs) as unknown as number; })]); if (disposed || id !== generation) return; set((s) => reduceQueuePollSuccess(s, snapshot, now(), options.requiredSessionId?.())); } catch (error) { if (disposed || id !== generation) return; const reason = error instanceof QueuePollError ? (error.reason === "aborted" && timedOut ? "timeout" : error.reason) : "network"; set((s) => reason === "aborted" ? reduceQueuePollFailure(s, "timeout") : reduceQueuePollFailure(s, reason)); } finally { if (id === generation) { inFlight = false; controller = null; clearTimeoutTimer(); queueInterval(); if (pending) { pending = false; schedule("interval"); } } } }
   function schedule(trigger: QueuePollTrigger) { if (disposed) return; if (inFlight) { pending = true; return; } if (scheduled) return; scheduled = win.setTimeout(() => { scheduled = null; void run(trigger); }, trigger === "manual" || trigger === "initial" ? 0 : coalesceMs) as unknown as number; }
   const focus = () => schedule("focus"), online = () => schedule("online"), visible = () => { if (doc.visibilityState === "visible") schedule("visible"); };
-  return { start() { if (!disposed && (scheduled || intervalTimer || inFlight)) return; disposed = false; win.addEventListener("focus", focus); win.addEventListener("online", online); doc.addEventListener("visibilitychange", visible); schedule("initial"); queueInterval(); }, retry() { schedule("manual"); }, dispose() { disposed = true; generation++; clearSchedule(); clearIntervalTimer(); clearTimeoutTimer(); controller?.abort(); controller = null; win.removeEventListener("focus", focus); win.removeEventListener("online", online); doc.removeEventListener("visibilitychange", visible); } };
+  return { start() { if (!disposed && (scheduled || intervalTimer || inFlight)) return; disposed = false; win.addEventListener("focus", focus); win.addEventListener("online", online); doc.addEventListener("visibilitychange", visible); schedule("initial"); queueInterval(); }, retry() { schedule("manual"); }, dispose() { disposed = true; generation++; inFlight = false; pending = false; timedOut = false; clearSchedule(); clearIntervalTimer(); clearTimeoutTimer(); controller?.abort(); controller = null; win.removeEventListener("focus", focus); win.removeEventListener("online", online); doc.removeEventListener("visibilitychange", visible); } };
 }

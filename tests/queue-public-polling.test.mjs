@@ -22,6 +22,10 @@ test('validates nested public queue snapshot shape', () => {
   assert.equal(isQueuePublicSnapshot({ ...snapshot(), status: { isOpen: true } }), false);
   assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, title: {} } }), false);
   assert.equal(isQueuePublicSnapshot({ ...snapshot(), status: { ...snapshot().status, isFull: 'yes' } }), false);
+  assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, status: 'toString' } }), false);
+  assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, priorityUpgradeCurrency: { bad: true } } }), false);
+  assert.equal(isQueuePublicSnapshot({ ...snapshot(), queue: [track('bad-url', 'other')].map((entry) => ({ ...entry, publicSourceUrl: 'javascript:alert(1)' })) }), false);
+  assert.equal(isQueuePublicSnapshot({ ...snapshot(), submitterStatus: false }), false);
   for (const sourceType of ['upload', 'link', 'youtube', 'soundcloud', 'spotify', 'tiktok', 'other']) assert.equal(isQueuePublicSnapshot(snapshot('s1', { queue: [track('t-' + sourceType, sourceType)] })), true);
   for (const status of ['prepared', 'open', 'closed', 'archived']) assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, status } }), true);
   for (const broadcastPhase of ['warmup', 'submission_window', 'broadcast_active', 'ended']) assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, broadcastPhase } }), true);
@@ -42,6 +46,7 @@ test('initial unavailable view, current authority, stale authorization, and reco
   assert.equal(queueHasCurrentAuthority(unavailable), false);
   const current = reduceQueuePollSuccess(initialQueuePollState, snapshot(), 10);
   assert.equal(queueHasCurrentAuthority(current), true);
+  assert.equal(current.restoredAt, null, 'initial success does not announce restoration');
   const stale = reduceQueuePollFailure(current, 'non_2xx');
   assert.equal(deriveQueueRecoveryView(stale), 'stale');
   assert.equal(queueHasCurrentAuthority(stale), false);
@@ -110,5 +115,19 @@ test('controller classifies timeout/abort and suppresses stale responses', async
   release();
   await wait(10);
   assert.notEqual(ctl.state.status, 'current');
+  ctl.c.dispose();
+});
+
+
+test('controller disposes hung fetch and restarts cleanly', async () => {
+  let calls = 0;
+  const ctl = controller(async () => { calls += 1; return new Promise(() => {}); }, { timeoutMs: 1000, intervalMs: 1000 });
+  ctl.c.start();
+  await wait(10);
+  assert.equal(ctl.state.inFlight, true);
+  ctl.c.dispose();
+  ctl.c.start();
+  await wait(10);
+  assert.equal(calls, 2, 'restart after hung disposal begins a fresh request');
   ctl.c.dispose();
 });

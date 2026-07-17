@@ -11,7 +11,7 @@ import { estimateExistingTrackTiming, estimatePriorityImpact } from "@/lib/queue
 import { formatRuntime, PRIORITY_DISCLOSURE_TEXT, PRIORITY_TERMS_VERSION } from "@/lib/queue-types";
 import { displayEstimate, buildQueueTimingDisplay, priorityDisplayFromImpact, publicTrackDurationLabel, queueTimingInputFromPublicSnapshot, type QueueTimingDisplaySummary, type PriorityTimingDisplay } from "@/lib/queue-timing-display";
 import type { QueuePublicSnapshot, QueuePublicTrack } from "@/lib/queue-types";
-import { createQueuePollController, deriveQueueRecoveryView, initialQueuePollState, queueHasCurrentAuthority, type QueuePollState } from "@/lib/queue-public-polling";
+import { createQueuePollController, derivePublicQueueActionEligibility, deriveQueueRecoveryView, initialQueuePollState, queueHasCurrentAuthority, type QueuePollState } from "@/lib/queue-public-polling";
 
 type QueueView = "active" | "recent";
 type ActivityTone = "red" | "amber" | "gold" | "cyan" | "archive" | "danger";
@@ -434,11 +434,10 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   }
 
   function openIntakeCorridor() {
-    if (!queueAuthorityCurrent || !canSubmitFromHud) return;
+    if (!derivePublicQueueActionEligibility(pollStateRef.current, { sessionId, action: "submit" }).allowed) return;
     runPublicActionTransition(actionVariant(sessionId, "intake"), () => {
       const latest = pollStateRef.current;
-      const latestSnapshot = latest.snapshot;
-      const latestCanSubmit = latest.status === "current" && latestSnapshot?.session.sessionId === sessionId && latestSnapshot.status.isOpen === true && latestSnapshot.session.status !== "archived" && latestSnapshot.session.broadcastPhase !== "ended" && !latestSnapshot.status.isFull && latestSnapshot.status.activeCount < latestSnapshot.status.capacity && (!latestSnapshot.submitterStatus || latestSnapshot.submitterStatus.remaining > 0);
+      const latestCanSubmit = derivePublicQueueActionEligibility(latest, { sessionId, action: "submit" }).allowed;
       if (!latestCanSubmit) return;
       setIntakeScrollLocked(true);
       setSubmitOpen(true);
@@ -448,9 +447,9 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   function requestPriorityUpgrade(track: QueuePublicTrack) {
     if (!canShowPriorityUpgrade(track) && !canResumePriorityPayment(track)) return;
     runPublicActionTransition(actionVariant(`${sessionId}:${track.id}`, "upgrade"), () => {
-      const latestTrack = [...(pollStateRef.current.snapshot?.queue ?? []), pollStateRef.current.snapshot?.nowPlaying, pollStateRef.current.snapshot?.upNext].filter(Boolean).find((candidate) => candidate?.id === track.id) as QueuePublicTrack | undefined;
-      if (!latestTrack || (!canShowPriorityUpgrade(latestTrack) && !canResumePriorityPayment(latestTrack))) return;
-      setPriorityModalTrack(latestTrack);
+      const eligibility = derivePublicQueueActionEligibility(pollStateRef.current, { sessionId, action: track.priorityUpgradeStatus === "checkout_pending" ? "priority_resume" : "priority_request", trackId: track.id, priorityDepth: MIN_PRIORITY_ACTIVE_DEPTH });
+      if (!eligibility.allowed || !eligibility.track) return;
+      setPriorityModalTrack(eligibility.track);
       setPriorityRequestMessage(null);
       if (!priorityUpgradeAvailable) setPriorityRequestMessage("Priority Signal upgrades unavailable.");
     });
@@ -470,8 +469,8 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     const res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId: track.id, sessionId, acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT }) });
     const payload = await res.json().catch(() => ({}));
     setPriorityRequestPending(false);
-    const latestTrack = [...(pollStateRef.current.snapshot?.queue ?? []), pollStateRef.current.snapshot?.nowPlaying, pollStateRef.current.snapshot?.upNext].filter(Boolean).find((candidate) => candidate?.id === track.id) as QueuePublicTrack | undefined;
-    if (!queueHasCurrentAuthority(pollStateRef.current) || pollStateRef.current.snapshot?.session.sessionId !== sessionId || !latestTrack || (!canShowPriorityUpgrade(latestTrack) && !canResumePriorityPayment(latestTrack))) {
+    const eligibility = derivePublicQueueActionEligibility(pollStateRef.current, { sessionId, action: track.priorityUpgradeStatus === "checkout_pending" ? "priority_resume" : "priority_checkout", trackId: track.id, priorityDepth: MIN_PRIORITY_ACTIVE_DEPTH });
+    if (!eligibility.allowed || !eligibility.track) {
       setPriorityRequestMessage("Queue signal changed before checkout navigation. Retry after resync or resume payment if available.");
       return;
     }

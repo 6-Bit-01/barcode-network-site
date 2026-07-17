@@ -17,6 +17,14 @@ function publicError(error: unknown) {
   return { error: "Storage recovery request failed.", reason: "storage_recovery_failed" };
 }
 
+function httpStatusForCleanup(status: string, ok: boolean): number {
+  if (ok && (status === "completed" || status === "completed_with_already_absent_keys")) return 200;
+  if (status === "partial_recovery") return 207;
+  if (status === "storage_capacity_exceeded") return 507;
+  if (status === "unavailable") return 503;
+  return 500;
+}
+
 export async function GET(req: Request) {
   if (!(await isAuthenticated(req))) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: NO_STORE_HEADERS });
   try {
@@ -35,7 +43,7 @@ export async function POST(req: Request) {
   }
   try {
     const report = await cleanupSupersededSourceFileArchives();
-    return NextResponse.json(report, { status: report.ok ? 200 : 207, headers: NO_STORE_HEADERS });
+    return NextResponse.json(report, { status: httpStatusForCleanup(report.status, report.ok), headers: NO_STORE_HEADERS });
   } catch (error) {
     return NextResponse.json(publicError(error), { status: isStorageCapacityExceededError(error) ? 507 : 500, headers: NO_STORE_HEADERS });
   }

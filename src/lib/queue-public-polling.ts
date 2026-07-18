@@ -13,7 +13,7 @@ const BROADCAST_PHASES = { warmup: true, submission_window: true, broadcast_acti
 const PRIORITY_STATUSES = { none: true, requested: true, manual: true, checkout_pending: true, paid: true, paid_needs_attention: true, failed: true, refunded: true } satisfies Record<PriorityUpgradeStatus, true>;
 const PRESSURES = { low: true, medium: true, high: true, max: true } satisfies Record<QueuePublicSnapshot["status"]["pressure"], true>;
 const LANES = { priority: true, wheel: true, regular: true } satisfies Record<QueueLane, true>;
-const DURATION_SOURCES = { upload_metadata: true, file_metadata: true, youtube: true, soundcloud: true, spotify: true, apple_music: true, youtube_api: true, spotify_api: true, soundcloud_api: true, apple_music_api: true, direct_metadata: true, provider_metadata: true, internal_estimate: true, estimated: true, unknown: true } satisfies Record<QueueDurationSource, true>;
+const DURATION_SOURCES = { upload_metadata: true, file_metadata: true, youtube: true, soundcloud: true, spotify: true, youtube_api: true, spotify_api: true, soundcloud_api: true, apple_music_api: true, direct_metadata: true, provider_metadata: true, internal_estimate: true, estimated: true, unknown: true } satisfies Record<QueueDurationSource, true>;
 const SPONSOR_BREAK_MODES = { mid_show: true } satisfies Record<SponsorBreakMode, true>;
 const SPONSOR_BREAK_STATUSES = { not_due: true, due: true, running: true, completed: true, skipped: true } satisfies Record<SponsorBreakStatus, true>;
 const hasOwn = <T extends object>(record: T, key: unknown): key is keyof T => typeof key === "string" && Object.prototype.hasOwnProperty.call(record, key);

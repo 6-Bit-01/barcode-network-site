@@ -38,16 +38,16 @@ function syncOk(sync: unknown, provider: "youtube" | "tiktok"): boolean {
 function candidateOk(candidate: unknown, depth = 0): candidate is ResolvedWheelCeremonyTrack {
   const c = candidate as Partial<ResolvedWheelCeremonyTrack> | null;
   if (!c || typeof c !== "object" || !str(c.id) || !str(c.artistName) || !str(c.trackTitle)) return false;
-  if (!stringArrayOpt(c.trackIds)) return false;
-  if (c.trackIds != null && c.trackIds.length === 0) return false;
-  if (c.trackCount != null && (!Number.isSafeInteger(c.trackCount) || Number(c.trackCount) <= 0)) return false;
-  if (c.trackIds != null && c.trackCount != null && c.trackIds.length !== Number(c.trackCount)) return false;
-  if (c.weight != null && (!finite(c.weight) || c.weight <= 0)) return false;
-  if (c.tracks != null) {
+  if (c.trackIds !== undefined && (!Array.isArray(c.trackIds) || c.trackIds.length === 0 || !c.trackIds.every((entry) => str(entry)))) return false;
+  if (c.trackCount !== undefined && (!Number.isSafeInteger(c.trackCount) || Number(c.trackCount) <= 0)) return false;
+  if (c.weight !== undefined && (!finite(c.weight) || c.weight <= 0)) return false;
+  if (c.tracks !== undefined) {
     if (depth > 2 || !Array.isArray(c.tracks) || c.tracks.length === 0) return false;
-    if (c.trackCount != null && c.tracks.length !== Number(c.trackCount)) return false;
     if (!c.tracks.every((track) => candidateOk(track, depth + 1))) return false;
   }
+  if (c.trackCount !== undefined && c.trackIds !== undefined && c.trackIds.length !== c.trackCount) return false;
+  if (c.trackCount !== undefined && c.tracks !== undefined && c.tracks.length !== c.trackCount) return false;
+  if (c.trackIds !== undefined && c.tracks !== undefined && c.trackIds.length !== c.tracks.length) return false;
   return true;
 }
 
@@ -108,5 +108,24 @@ export async function playWheelSpinWithFallback(paths: string[], play: (path: st
 export type WheelAudioLike = { src: string; loop: boolean; volume: number; currentTime: number; pause: () => void; play: () => Promise<void> };
 export function terminateWheelSpinAudio(audio: WheelAudioLike | null, options: { volume: number; clearSource?: boolean } = { volume: 1 }): void { if (!audio) return; audio.pause(); audio.currentTime = 0; audio.volume = options.volume; audio.loop = false; if (options.clearSource) audio.src = ""; }
 
-export function shouldStartWheelResultFade(previousStatus: WheelCeremonyStatus | null | undefined, currentStatus: WheelCeremonyStatus | null | undefined, fadeBegun: boolean): boolean { return currentStatus === "confirmed" && previousStatus === "result_pending" && !fadeBegun; }
+export type WheelSfxKind = "cheer" | "encrypt";
+export type WheelSfxEntryLike = { kind: WheelSfxKind; source: { stop: () => void; disconnect: () => void }; gain: { disconnect: () => void } };
+export function stopWheelSfxEntries<T extends WheelSfxEntryLike>(entries: T[], kind?: WheelSfxKind): T[] {
+  const remaining: T[] = [];
+  for (const entry of entries) {
+    if (kind && entry.kind !== kind) {
+      remaining.push(entry);
+      continue;
+    }
+    try { entry.source.stop(); } catch { /* already stopped */ }
+    try { entry.source.disconnect(); } catch { /* already disconnected */ }
+    try { entry.gain.disconnect(); } catch { /* already disconnected */ }
+  }
+  return remaining;
+}
+export function replaceWheelSfxEntry<T extends WheelSfxEntryLike>(entries: T[], next: T): T[] {
+  return [...stopWheelSfxEntries(entries, next.kind), next];
+}
+
+export function shouldStartWheelResultFade(previousStatus: WheelCeremonyStatus | null | undefined, currentStatus: WheelCeremonyStatus | null | undefined, fadeBegun: boolean): boolean { return currentStatus === "confirmed" && (previousStatus === "spinning" || previousStatus === "result_pending") && !fadeBegun; }
 export function shouldStopWheelSpinForStatus(connected: boolean, wheelMode: boolean, status: WheelCeremonyStatus | null | undefined, fadeBegun: boolean): boolean { return !(connected && wheelMode && (status === "spinning" || status === "result_pending" || (status === "confirmed" && fadeBegun))); }

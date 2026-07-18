@@ -1,4 +1,4 @@
-import { INTERNAL_BUFFER_DURATION_SECONDS, parseAppleMusicUrl, parseTikTokVideoUrl } from "./queue-types";
+import { INTERNAL_BUFFER_DURATION_SECONDS, parseAppleMusicSongUrl, parseTikTokVideoUrl } from "./queue-types";
 
 export type TrackDurationProvider = "youtube" | "spotify" | "soundcloud" | "tiktok" | "apple_music" | "direct" | "other";
 
@@ -127,12 +127,12 @@ export function parseSafeTrackProviderUrl(link?: string | null): ParsedTrackProv
   if (youtubeId) return { provider: "youtube", providerTrackId: youtubeId, normalizedUrl: `https://www.youtube.com/watch?v=${youtubeId}` };
   const spotifyId = parseSpotifyTrackId(link);
   if (spotifyId) return { provider: "spotify", providerTrackId: spotifyId, normalizedUrl: `https://open.spotify.com/track/${spotifyId}` };
+  const appleMusic = parseAppleMusicSongUrl(link);
+  if (appleMusic) return { provider: "apple_music", providerTrackId: appleMusic.songId, normalizedUrl: appleMusic.canonicalSourceUrl };
   const tiktok = parseTikTokVideoUrl(link);
   if (tiktok) return { provider: "tiktok", providerTrackId: tiktok.postId, normalizedUrl: tiktok.canonicalSourceUrl };
   const soundcloudUrl = parseSoundCloudPublicUrl(link);
   if (soundcloudUrl) return { provider: "soundcloud", normalizedUrl: soundcloudUrl };
-  const appleMusic = parseAppleMusicUrl(link);
-  if (appleMusic) return { provider: "apple_music", providerTrackId: appleMusic.id, normalizedUrl: appleMusic.canonicalSourceUrl };
   return null;
 }
 
@@ -199,8 +199,8 @@ export async function detectTrackDurationFromLink(link?: string | null): Promise
     if (parsed.provider === "youtube" && parsed.providerTrackId) return detectYouTubeDuration(parsed.providerTrackId);
     if (parsed.provider === "spotify" && parsed.providerTrackId) return detectSpotifyDuration(parsed.providerTrackId);
     if (parsed.provider === "soundcloud") return detectSoundCloudDuration(parsed.normalizedUrl);
+    if (parsed.provider === "apple_music") return unavailable("apple_music", ["Apple Music catalog duration is fetched during queue metadata lookup when configured."], parsed.providerTrackId);
     if (parsed.provider === "tiktok") return unavailable("tiktok", ["Official TikTok oEmbed does not document exact duration metadata; using the internal estimate."], parsed.providerTrackId);
-    if (parsed.provider === "apple_music") return unavailable("apple_music", ["Apple Music links are accepted as external-open sources; Apple Music API duration lookup is not configured."], parsed.providerTrackId);
     return unavailable(parsed.provider, ["Provider is parsed but duration fetching is not enabled."], parsed.providerTrackId);
   } catch (error) {
     return unavailable(parsed.provider, [error instanceof Error ? `Duration lookup failed: ${error.message}` : "Duration lookup failed."], parsed.providerTrackId);

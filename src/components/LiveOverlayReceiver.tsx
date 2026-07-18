@@ -5,7 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MutableRefObject } from "react";
 import { buildWheelSegments, estimateOneWayNetworkTransitMs, playbackCorrectionTarget, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, shouldCorrectPlaybackDrift, updateTransitEstimateMs, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
 import { WHEEL_CEREMONY_AUDIO, WHEEL_SPIN_AUDIO_PATHS, isWheelSpinAudioPath, wheelAudioFallbackCandidates } from "@/lib/wheel-audio";
-import { extractOverlayScene, playWheelSpinWithFallback, shouldStartWheelResultFade, shouldStopWheelSpinForStatus, terminateWheelSpinAudio } from "@/lib/live-overlay-client-recovery";
+import { extractOverlayScene, playWheelSpinWithFallback, replaceWheelSfxEntry, shouldStartWheelResultFade, shouldStopWheelSpinForStatus, stopWheelSfxEntries, terminateWheelSpinAudio } from "@/lib/live-overlay-client-recovery";
+import type { WheelSfxKind } from "@/lib/live-overlay-client-recovery";
 import type { LiveOverlayPlaybackState, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, ResolvedLiveOverlayScene, WheelCeremonyStatus } from "@/lib/live-overlay";
 
 type YTPlayer = {
@@ -899,8 +900,8 @@ export function LiveOverlayReceiver() {
   const sfxContextRef = useRef<AudioContext | null>(null);
   const cheerBufferRef = useRef<AudioBuffer | null>(null);
   const encryptBufferRef = useRef<AudioBuffer | null>(null);
-  const activeSfxSourcesRef = useRef<Array<{ source: AudioBufferSourceNode; gain: GainNode }>>([]);
-  const sfxGenerationRef = useRef(0);
+  const activeSfxSourcesRef = useRef<Array<{ kind: WheelSfxKind; source: AudioBufferSourceNode; gain: GainNode }>>([]);
+  const sfxGenerationRef = useRef<Record<WheelSfxKind, number>>({ cheer: 0, encrypt: 0 });
   const previousWheelStatusRef = useRef<WheelCeremonyStatus | null>(null);
   const spinFadeFrameRef = useRef<number | null>(null);
   const spinAudioGenerationRef = useRef(0);
@@ -910,13 +911,13 @@ export function LiveOverlayReceiver() {
   const serverClockAnchorRef = useRef<OverlayServerClockAnchor | null>(null);
   const responseTransitEstimateMsRef = useRef<number | null>(null);
 
-  function stopActiveSfx() {
-    sfxGenerationRef.current += 1;
-    for (const entry of activeSfxSourcesRef.current.splice(0)) {
-      try { entry.source.stop(); } catch { /* already stopped */ }
-      try { entry.source.disconnect(); } catch { /* already disconnected */ }
-      try { entry.gain.disconnect(); } catch { /* already disconnected */ }
+  function stopActiveSfx(kind?: WheelSfxKind) {
+    if (kind) sfxGenerationRef.current[kind] += 1;
+    else {
+      sfxGenerationRef.current.cheer += 1;
+      sfxGenerationRef.current.encrypt += 1;
     }
+    activeSfxSourcesRef.current = stopWheelSfxEntries(activeSfxSourcesRef.current, kind);
   }
 
   useEffect(() => {
@@ -1034,7 +1035,7 @@ export function LiveOverlayReceiver() {
     const previousStatus = previousWheelStatusRef.current;
     previousWheelStatusRef.current = status;
     const wheelMode = scene.mode.startsWith("wheel_");
-    if (shouldStartWheelResultFade(previousStatus, status, wheelFadeBegunRef.current)) {
+    if (connected && wheelMode && shouldStartWheelResultFade(previousStatus, status, wheelFadeBegunRef.current)) {
       fadeSpinMusic();
       return;
     }
@@ -1117,35 +1118,38 @@ export function LiveOverlayReceiver() {
     if (spinAudioGenerationRef.current === generation) setAudioNotice(result.notice);
   }
   function fadeSpinMusic() { const a = spinAudioRef.current; if (!a) return; wheelFadeBegunRef.current = true; const generation = spinAudioGenerationRef.current; const sv = a.volume || WHEEL_SPIN_VOLUME; const st = performance.now(); const tick = (n: number) => { if (spinAudioGenerationRef.current !== generation) return; const pr = Math.max(0, Math.min(1, (n - st) / WHEEL_AUDIO_FADE_OUT_MS)); a.volume = sv * (1 - pr); if (pr >= 1) { stopWheelAudio(a); a.volume = sv; spinFadeFrameRef.current = null; wheelFadeBegunRef.current = false; return; } spinFadeFrameRef.current = window.requestAnimationFrame(tick); }; if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = window.requestAnimationFrame(tick); }
-  function playSfxBuffer(bufferRef: React.MutableRefObject<AudioBuffer | null>, volume: number) {
+  function playSfxBuffer(bufferRef: React.MutableRefObject<AudioBuffer | null>, volume: number, kind: WheelSfxKind) {
     const context = sfxContextRef.current;
     const buffer = bufferRef.current;
     if (!context || !buffer || !audioArmed) {
       setAudioNotice("WHEEL SFX UNAVAILABLE");
       return;
     }
+    const generation = sfxGenerationRef.current[kind] + 1;
+    sfxGenerationRef.current[kind] = generation;
+    activeSfxSourcesRef.current = stopWheelSfxEntries(activeSfxSourcesRef.current, kind);
     const run = () => {
-      const source = context.createBufferSource();
-      const gain = context.createGain();
-      gain.gain.value = volume;
-      source.buffer = buffer;
-      source.connect(gain);
-      gain.connect(context.destination);
-      const entry = { source, gain };
-      activeSfxSourcesRef.current.push(entry);
-      source.onended = () => { activeSfxSourcesRef.current = activeSfxSourcesRef.current.filter((item) => item.source !== source); try { source.disconnect(); } catch { /* already disconnected */ } try { gain.disconnect(); } catch { /* already disconnected */ } };
-      source.start(0);
+      if (!overlayAudioMountedRef.current || generation !== sfxGenerationRef.current[kind]) return;
+      try {
+        const source = context.createBufferSource();
+        const gain = context.createGain();
+        gain.gain.value = volume;
+        source.buffer = buffer;
+        source.connect(gain);
+        gain.connect(context.destination);
+        const entry = { kind, source, gain };
+        activeSfxSourcesRef.current = replaceWheelSfxEntry(activeSfxSourcesRef.current, entry);
+        source.onended = () => { activeSfxSourcesRef.current = activeSfxSourcesRef.current.filter((item) => item.source !== source); try { source.disconnect(); } catch { /* already disconnected */ } try { gain.disconnect(); } catch { /* already disconnected */ } };
+        source.start(0);
+      } catch {
+        setAudioNotice("WHEEL SFX UNAVAILABLE");
+      }
     };
     if (context.state === "suspended") {
-      const generation = sfxGenerationRef.current;
-      void context.resume().then(() => { if (overlayAudioMountedRef.current && generation === sfxGenerationRef.current) run(); }).catch(() => { if (overlayAudioMountedRef.current && generation === sfxGenerationRef.current) setAudioNotice("WHEEL SFX UNAVAILABLE"); });
+      void context.resume().then(run).catch(() => { if (overlayAudioMountedRef.current && generation === sfxGenerationRef.current[kind]) setAudioNotice("WHEEL SFX UNAVAILABLE"); });
       return;
     }
-    try {
-      run();
-    } catch {
-      setAudioNotice("WHEEL SFX UNAVAILABLE");
-    }
+    run();
   }
 
   return (
@@ -1160,7 +1164,7 @@ export function LiveOverlayReceiver() {
 
         <main className="live-overlay-content">
           {wheelVisible ? (
-            <WheelCeremonyOverlay scene={scene} audioArmed={audioArmed} audioNotice={audioNotice} audioJustArmed={audioJustArmed} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={() => playSfxBuffer(cheerBufferRef, WHEEL_CHEER_VOLUME)} playEncryptSfx={() => playSfxBuffer(encryptBufferRef, WHEEL_ENCRYPT_VOLUME)} />
+            <WheelCeremonyOverlay scene={scene} audioArmed={audioArmed} audioNotice={audioNotice} audioJustArmed={audioJustArmed} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={() => playSfxBuffer(cheerBufferRef, WHEEL_CHEER_VOLUME, "cheer")} playEncryptSfx={() => playSfxBuffer(encryptBufferRef, WHEEL_ENCRYPT_VOLUME, "encrypt")} />
           ) : youtubeVisible && scene.youtube && scene.track ? (
             <div className={youtubeSceneClass}>
               <div className="live-overlay-youtube-viewport">

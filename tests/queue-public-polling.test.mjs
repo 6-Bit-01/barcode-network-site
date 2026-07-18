@@ -36,7 +36,7 @@ test('validates nested public queue snapshot shape', () => {
   assert.equal(isQueuePublicSnapshot({ ...snapshot(), status: { ...snapshot().status, activeCount: Number.MAX_SAFE_INTEGER + 1 } }), false);
   assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, showStarted: null } }), false);
   assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, broadcastPhase: null } }), false);
-  assert.equal(isQueuePublicSnapshot(snapshot('s1', { queue: [{ ...track('apple', 'apple_music'), durationSource: 'apple_music_api', publicSourceUrl: 'https://music.apple.com/us/song/example/123456789' }] })), true);
+  assert.equal(isQueuePublicSnapshot(snapshot('s1', { queue: [{ ...track('apple', 'apple_music'), durationSource: 'apple_music_api', publicSourceUrl: 'https://music.apple.com/us/album/example-album/123456789?i=987654321' }] })), true);
   assert.equal(isQueuePublicSnapshot(snapshot('s1', { queue: [{ ...track('apple-bad', 'apple_music'), publicSourceUrl: 'music://song/123456789' }] })), false);
 });
 

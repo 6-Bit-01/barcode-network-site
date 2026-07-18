@@ -7,7 +7,7 @@ export type QueueSourceType = "upload" | "link" | "youtube" | "soundcloud" | "sp
 export type QueueLane = "priority" | "wheel" | "regular";
 export type QueueNonPriorityLane = "wheel" | "regular";
 export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | "next" | "pending" | "played" | "refunded" | "expired";
-export type QueueDurationSource = "upload_metadata" | "file_metadata" | "youtube" | "soundcloud" | "spotify" | "apple_music" | "youtube_api" | "spotify_api" | "soundcloud_api" | "apple_music_api" | "direct_metadata" | "provider_metadata" | "internal_estimate" | "estimated" | "unknown";
+export type QueueDurationSource = "upload_metadata" | "file_metadata" | "youtube" | "soundcloud" | "spotify" | "youtube_api" | "spotify_api" | "soundcloud_api" | "apple_music_api" | "direct_metadata" | "provider_metadata" | "internal_estimate" | "estimated" | "unknown";
 export type QueueSessionStatus = "prepared" | "open" | "closed" | "archived";
 export type QueueBroadcastPhase = "warmup" | "submission_window" | "broadcast_active" | "ended";
 export type PriorityUpgradeStatus = "none" | "requested" | "manual" | "checkout_pending" | "paid" | "paid_needs_attention" | "failed" | "refunded";
@@ -257,34 +257,6 @@ export interface QueueState {
 }
 
 
-export interface ParsedAppleMusicUrl {
-  kind: "song" | "album" | "music-video";
-  id: string;
-  canonicalSourceUrl: string;
-}
-
-const APPLE_MUSIC_ID_PATTERN = /^\d{5,32}$/;
-
-export function parseAppleMusicUrl(value?: string | null): ParsedAppleMusicUrl | null {
-  if (!value) return null;
-  try {
-    const url = new URL(value.trim());
-    if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
-    const host = url.hostname.replace(/^www\./, "").toLowerCase();
-    if (host !== "music.apple.com" && host !== "itunes.apple.com") return null;
-    const parts = url.pathname.split("/").filter(Boolean);
-    const kind = parts.find((part) => part === "song" || part === "album" || part === "music-video") as ParsedAppleMusicUrl["kind"] | undefined;
-    const rawId = url.searchParams.get("i") ?? parts.findLast((part) => APPLE_MUSIC_ID_PATTERN.test(part));
-    if (!kind || !rawId || !APPLE_MUSIC_ID_PATTERN.test(rawId)) return null;
-    const country = /^[a-z]{2}$/i.test(parts[0] ?? "") ? parts[0].toLowerCase() : "us";
-    const slugIndex = Math.max(0, parts.indexOf(kind) + 1);
-    const slug = parts[slugIndex] && !APPLE_MUSIC_ID_PATTERN.test(parts[slugIndex]) ? parts[slugIndex] : "track";
-    return { kind, id: rawId, canonicalSourceUrl: `https://music.apple.com/${country}/${kind}/${slug}/${rawId}` };
-  } catch {
-    return null;
-  }
-}
-
 export interface ParsedTikTokVideoUrl {
   postId: string;
   sourceForm: "post" | "player";
@@ -318,6 +290,59 @@ export function parseTikTokVideoUrl(value?: string | null): ParsedTikTokVideoUrl
       return { postId, sourceForm: "player", canonicalSourceUrl: playerUrl, playerUrl, oEmbedSourceUrl: null };
     }
     return null;
+  } catch {
+    return null;
+  }
+}
+export interface ParsedAppleMusicSongUrl {
+  storefront: string;
+  albumSlug: string;
+  albumId: string;
+  songId: string;
+  canonicalSourceUrl: string;
+  providerId: string;
+}
+
+const APPLE_MUSIC_ID_PATTERN = /^\d{1,32}$/;
+const APPLE_MUSIC_STOREFRONT_PATTERN = /^[a-z]{2}(?:-[a-z0-9]{2,8})?$/i;
+function normalizeAppleMusicAlbumSlug(value: string): string | null {
+  if (!value || value.length > 300) return null;
+  if (value === "." || value === "..") return null;
+  if (value.includes("/") || value.includes("\\") || value.includes("\0")) return null;
+  if (/%(?![0-9A-Fa-f]{2})/.test(value)) return null;
+  try {
+    const decoded = decodeURIComponent(value);
+    if (!decoded || decoded === "." || decoded === "..") return null;
+    if (decoded.includes("/") || decoded.includes("\\") || decoded.includes("\0")) return null;
+    if (/[\u0000-\u001F\u007F]/.test(decoded)) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+export function parseAppleMusicSongUrl(value?: string | null): ParsedAppleMusicSongUrl | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "https:") return null;
+    if (url.hostname !== "music.apple.com") return null;
+    if (url.username || url.password || url.port) return null;
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts.length !== 4) return null;
+    const [rawStorefront, kind, rawAlbumSlug, albumId] = parts;
+    if (!APPLE_MUSIC_STOREFRONT_PATTERN.test(rawStorefront)) return null;
+    const storefront = rawStorefront.toLowerCase();
+    if (kind !== "album") return null;
+    const albumSlug = normalizeAppleMusicAlbumSlug(rawAlbumSlug);
+    if (!albumSlug) return null;
+    if (!APPLE_MUSIC_ID_PATTERN.test(albumId)) return null;
+    const songIds = url.searchParams.getAll("i");
+    if (songIds.length !== 1) return null;
+    const songId = songIds[0];
+    if (!songId || !APPLE_MUSIC_ID_PATTERN.test(songId)) return null;
+    const canonicalSourceUrl = `https://music.apple.com/${storefront}/album/${albumSlug}/${albumId}?i=${songId}`;
+    return { storefront, albumSlug, albumId, songId, canonicalSourceUrl, providerId: `apple_music:song:${songId}` };
   } catch {
     return null;
   }
@@ -405,14 +430,13 @@ export function formatRuntime(seconds: number): string {
 
 export function detectQueueSourceType(value: string): QueueSourceType {
   if (parseTikTokVideoUrl(value)) return "tiktok";
-  if (parseAppleMusicUrl(value)) return "apple_music";
+  if (parseAppleMusicSongUrl(value)) return "apple_music";
   try {
     const url = new URL(value);
     const host = url.hostname.replace(/^www\./, "").toLowerCase();
     if (host.includes("youtube.com") || host.includes("youtu.be")) return "youtube";
     if (host.includes("soundcloud.com")) return "soundcloud";
     if (host.includes("spotify.com")) return "spotify";
-    if (host === "music.apple.com" || host === "itunes.apple.com") return "apple_music";
     return "other";
   } catch {
     return "link";

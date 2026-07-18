@@ -899,6 +899,7 @@ export function LiveOverlayReceiver() {
   const sfxContextRef = useRef<AudioContext | null>(null);
   const cheerBufferRef = useRef<AudioBuffer | null>(null);
   const encryptBufferRef = useRef<AudioBuffer | null>(null);
+  const activeSfxSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const spinFadeFrameRef = useRef<number | null>(null);
   const spinAudioGenerationRef = useRef(0);
   const audioJustArmedTimerRef = useRef<number | null>(null);
@@ -906,6 +907,13 @@ export function LiveOverlayReceiver() {
   const overlayAudioMountedRef = useRef(true);
   const serverClockAnchorRef = useRef<OverlayServerClockAnchor | null>(null);
   const responseTransitEstimateMsRef = useRef<number | null>(null);
+
+  function stopActiveSfx() {
+    for (const source of activeSfxSourcesRef.current.splice(0)) {
+      try { source.stop(); } catch { /* already stopped */ }
+      try { source.disconnect(); } catch { /* already disconnected */ }
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -988,6 +996,8 @@ export function LiveOverlayReceiver() {
       spinAudioGenerationRef.current += 1;
       if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current);
       if (audioJustArmedTimerRef.current) window.clearTimeout(audioJustArmedTimerRef.current);
+      stopActiveSfx();
+      try { void sfxContextRef.current?.suspend(); } catch { /* non-blocking teardown */ }
       terminateWheelSpinAudio(spinAudioRef.current, { volume: WHEEL_SPIN_VOLUME });
     };
   }, []);
@@ -1006,6 +1016,7 @@ export function LiveOverlayReceiver() {
     if (audioJustArmedTimerRef.current) { window.clearTimeout(audioJustArmedTimerRef.current); audioJustArmedTimerRef.current = null; }
     if (overlayAudioMountedRef.current) setAudioJustArmed(false);
     wheelFadeBegunRef.current = false;
+    stopActiveSfx();
     terminateWheelSpinAudio(spinAudioRef.current, { volume: WHEEL_SPIN_VOLUME, clearSource: options.clearSource });
   }
 
@@ -1019,6 +1030,7 @@ export function LiveOverlayReceiver() {
     const wheelMode = scene.mode.startsWith("wheel_");
     const audioMayContinue = connected && wheelMode && (status === "spinning" || status === "result_pending" || (status === "confirmed" && wheelFadeBegunRef.current));
     if (!audioMayContinue) terminateWheelAudioWork();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected, scene.mode, scene.wheelCeremony?.status]);
 
   async function enableOverlayAudio() {
@@ -1106,10 +1118,13 @@ export function LiveOverlayReceiver() {
       source.buffer = buffer;
       source.connect(gain);
       gain.connect(context.destination);
+      activeSfxSourcesRef.current.push(source);
+      source.onended = () => { activeSfxSourcesRef.current = activeSfxSourcesRef.current.filter((entry) => entry !== source); try { source.disconnect(); } catch { /* already disconnected */ } };
       source.start(0);
     };
     if (context.state === "suspended") {
-      void context.resume().then(run).catch(() => setAudioNotice("WHEEL SFX UNAVAILABLE"));
+      const generation = spinAudioGenerationRef.current;
+      void context.resume().then(() => { if (overlayAudioMountedRef.current && generation === spinAudioGenerationRef.current) run(); }).catch(() => { if (overlayAudioMountedRef.current && generation === spinAudioGenerationRef.current) setAudioNotice("WHEEL SFX UNAVAILABLE"); });
       return;
     }
     try {

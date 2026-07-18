@@ -354,7 +354,8 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   const priorityCurrency = session?.priorityUpgradeCurrency ?? "usd";
   const priorityPaymentsAvailable = session?.priorityUpgradesEnabled === true && session?.priorityUpgradePaymentsEnabled === true && priorityPriceCents > 0;
   const priorityDepthAvailable = (status?.activeCount ?? 0) >= MIN_PRIORITY_ACTIVE_DEPTH;
-  const priorityCheckoutAvailable = priorityPaymentsAvailable && status?.isOpen === true && priorityDepthAvailable;
+  const predictedAcceptedTrackHasPriorityPath = publicQueue.some((track) => track.lane === "priority" || track.lane === "wheel" || track.lane === "regular");
+  const priorityCheckoutAvailable = priorityPaymentsAvailable && status?.isOpen === true && priorityDepthAvailable && predictedAcceptedTrackHasPriorityPath;
   const timingSnapshot = useMemo<QueuePublicSnapshot | null>(() => session && status ? { session, status, queue: publicQueue, completed: [], nowPlaying, upNext, submitterStatus } : null, [session, status, publicQueue, nowPlaying, upNext, submitterStatus]);
   const timingSummary = useMemo(() => buildQueueTimingDisplay(queueTimingInputFromPublicSnapshot(timingSnapshot), { priorityEligible: priorityCheckoutAvailable }), [timingSnapshot, priorityCheckoutAvailable]);
   const submitPriorityImpact = priorityCheckoutAvailable ? priorityDisplayFromImpact(timingSummary.priorityImpactEstimate) : null;

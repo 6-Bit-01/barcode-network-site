@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { externalLinks } from "@/content";
 import { formatRuntime } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicTrack } from "@/lib/queue-types";
+import { createQueuePollController, deriveQueueRecoveryView, initialQueuePollState, type QueuePollState } from "@/lib/queue-public-polling";
 
 type GatewayPhase = "syncing" | "archived" | "closed" | "open" | "liveOpen" | "liveClosed";
 
@@ -104,43 +105,33 @@ function publicCounts(snapshot: QueuePublicSnapshot | null) {
 }
 
 export function PublicQueueGateway() {
-  const [snapshot, setSnapshot] = useState<QueuePublicSnapshot | null>(null);
-  const [portalState, setPortalState] = useState<"sealed" | "opening" | "open">("sealed");
-  const [transitionPulse, setTransitionPulse] = useState<GatewayPhase | null>(null);
+  const [pollState, setPollState] = useState<QueuePollState>(initialQueuePollState);
+  const snapshot = pollState.snapshot;
+  const pollStateRef = useRef<QueuePollState>(initialQueuePollState);
+  const [portalState] = useState<"sealed" | "opening" | "open">("sealed");
+  const [transitionPulse] = useState<GatewayPhase | null>(null);
   const [pendingNavigation, setPendingNavigation] = useState<(NavigationVariant & { href: string }) | null>(null);
   const [nowMs, setNowMs] = useState(0);
   const [mounted, setMounted] = useState(false);
-  const phaseRef = useRef<GatewayPhase>("syncing");
-  const wasOpen = useRef(false);
+  const retryRef = useRef<(() => void) | null>(null);
 
-  async function load() {
-    const res = await fetch("/api/queue", { cache: "no-store" });
-    if (res.ok) {
-      const next = await res.json() as QueuePublicSnapshot;
-      const nextOpen = Boolean(next.status?.isOpen);
-      const nextPhase = phaseForSnapshot(next);
-      if (phaseRef.current !== nextPhase) {
-        phaseRef.current = nextPhase;
-        setTransitionPulse(nextPhase);
-        window.setTimeout(() => setTransitionPulse(null), 1400);
-      }
-      if (!wasOpen.current && nextOpen) {
-        setPortalState("opening");
-        window.setTimeout(() => setPortalState("open"), 900);
-      } else if (!nextOpen) {
-        setPortalState("sealed");
-      }
-      wasOpen.current = nextOpen;
-      setSnapshot(next);
-    }
-  }
+  const recoveryView = deriveQueueRecoveryView(pollState);
+  useEffect(() => { if (!pollState.restoredAt) return; const timer = window.setTimeout(() => setPollState((current) => current.restoredAt === pollState.restoredAt ? { ...current, restoredAt: null } : current), 3500); return () => window.clearTimeout(timer); }, [pollState.restoredAt]);
+
 
   useEffect(() => {
     setMounted(true);
     setNowMs(Date.now());
-    load();
-    const interval = setInterval(() => { setNowMs(Date.now()); load(); }, 5_000);
-    return () => clearInterval(interval);
+    const clock = window.setInterval(() => setNowMs(Date.now()), 1_000);
+    const controller = createQueuePollController({
+      fetcher: fetch,
+      getUrl: () => "/api/queue",
+      getState: () => pollStateRef.current,
+      onState: (updater) => setPollState((current) => { const next = updater(current); pollStateRef.current = next; return next; }),
+    });
+    controller.start();
+    retryRef.current = controller.retry;
+    return () => { window.clearInterval(clock); controller.dispose(); retryRef.current = null; };
   }, []);
 
   function beginNavigation(event: React.MouseEvent<HTMLAnchorElement>, href: string, activeSessionId: string) {
@@ -161,7 +152,7 @@ export function PublicQueueGateway() {
     window.setTimeout(() => { window.location.assign(href); }, 6000);
   }
 
-  const phase = phaseForSnapshot(snapshot);
+  const phase = phaseForSnapshot(recoveryView === "current" || recoveryView === "stale" || recoveryView === "retrying" ? snapshot : null);
   const copy = phaseCopy(phase);
   const counts = publicCounts(snapshot);
   const session = snapshot?.session;
@@ -171,21 +162,39 @@ export function PublicQueueGateway() {
   const intakeWindowMs = session?.preShowEndsAt ? new Date(session.preShowEndsAt).getTime() - nowMs : 0;
   const intakeWindow = Number.isFinite(intakeWindowMs) && intakeWindowMs > 0 ? `${Math.floor(intakeWindowMs / 60000)}:${Math.floor((intakeWindowMs % 60000) / 1000).toString().padStart(2, "0")}` : null;
 
-  const hasActiveSession = Boolean(session && session.status !== "archived");
+  const initialRecoveryOnly = !snapshot && recoveryView !== "current";
+  const staleReadOnly = recoveryView === "stale" || recoveryView === "retrying";
+  const hasActiveSession = Boolean(!initialRecoveryOnly && session && session.status !== "archived");
   const activeSessionId = hasActiveSession ? session?.sessionId ?? null : null;
   const queueHref = activeSessionId ? `/queue/${activeSessionId}` : null;
 
+
+  if (initialRecoveryOnly) {
+    return <div className="space-y-6"><section className="border border-[#ffaa00]/45 bg-[#ffaa00]/10 p-5" role="status" aria-live="polite"><p className="text-xs font-bold uppercase tracking-[0.28em] text-[#ffaa00]">Queue signal {recoveryView === "loading" ? "loading" : recoveryView === "retrying" ? "retrying" : "unavailable"}</p><h1 className="mt-2 text-2xl font-bold text-foreground">{recoveryView === "loading" ? "Synchronizing queue signal" : "Queue signal unavailable"}</h1><p className="mt-3 text-sm text-muted">{pollState.message ?? "Reading the current BARCODE Radio queue before reporting status."}</p>{recoveryView !== "loading" && <button type="button" onClick={() => retryRef.current?.()} disabled={pollState.inFlight || recoveryView === "retrying"} className="mt-3 border border-[#ffaa00]/60 px-3 py-2 text-xs font-bold uppercase tracking-widest text-[#ffaa00] disabled:opacity-50">{pollState.inFlight || recoveryView === "retrying" ? "Retrying…" : "Retry queue signal"}</button>}</section></div>;
+  }
+
+  if (staleReadOnly && snapshot) {
+    return <div className="space-y-6"><section className="border border-[#ffaa00]/45 bg-[#ffaa00]/10 p-4" role="status" aria-live="polite"><p className="text-xs font-bold uppercase tracking-[0.28em] text-[#ffaa00]">Queue signal {recoveryView === "retrying" ? "retrying" : "last confirmed / read-only"}</p><h1 className="mt-2 text-2xl font-bold text-foreground">Last confirmed queue snapshot</h1><p className="mt-2 text-sm text-muted">Signal stale — current intake status is unknown until recovery.</p>{pollState.lastGoodAt && <p className="mt-1 text-[11px] uppercase tracking-widest text-muted">Last successful poll: {new Date(pollState.lastGoodAt).toLocaleTimeString()}</p>}<button type="button" onClick={() => retryRef.current?.()} disabled={pollState.inFlight} className="mt-3 border border-[#ffaa00]/60 px-3 py-2 text-xs font-bold uppercase tracking-widest text-[#ffaa00] disabled:opacity-50">{pollState.inFlight ? "Retrying…" : "Retry queue signal"}</button></section><section className="border border-border bg-surface p-5"><p className="text-xs uppercase tracking-[0.35em] text-muted">Last confirmed submissions: {snapshot.status.isOpen ? "open" : "closed"}</p><p className="mt-3 text-sm text-muted">Read-only queue data is visible. Mutating actions remain disabled until the queue signal is current.</p></section></div>;
+  }
+
   return (
-    <div className={`space-y-6 ${hasActiveSession ? "pb-24" : ""}`}>
-      {hasActiveSession ? <section className="border border-accent/60 bg-accent/10 p-5 shadow-[0_0_34px_rgba(255,0,0,0.12)]">
+    <div className={`space-y-6 ${hasActiveSession ? "pb-24" : ""}`}>{pollState.restoredAt && <p className="sr-only" aria-live="polite">Queue signal restored.</p>}
+      {recoveryView !== "current" && <section className="border border-[#ffaa00]/45 bg-[#ffaa00]/10 p-4" role="status" aria-live="polite">
+        <p className="text-xs font-bold uppercase tracking-[0.28em] text-[#ffaa00]">Queue signal {recoveryView === "loading" ? "loading" : recoveryView === "retrying" ? "retrying" : recoveryView === "stale" ? "last confirmed / read-only" : "unavailable"}</p>
+        <p className="mt-2 text-sm text-muted">{pollState.message ?? "Reading the current BARCODE Radio queue before reporting status."}</p>
+        {pollState.lastGoodAt && <p className="mt-1 text-[11px] uppercase tracking-widest text-muted">Last successful poll: {new Date(pollState.lastGoodAt).toLocaleTimeString()}</p>}
+        <button type="button" onClick={() => retryRef.current?.()} disabled={pollState.inFlight || recoveryView === "retrying"} className="mt-3 border border-[#ffaa00]/60 px-3 py-2 text-xs font-bold uppercase tracking-widest text-[#ffaa00] disabled:opacity-50">{pollState.inFlight || recoveryView === "retrying" ? "Retrying…" : "Retry queue signal"}</button>
+      </section>}
+      {initialRecoveryOnly ? null : staleReadOnly && snapshot ? <section className="border border-border bg-background/60 p-3 text-xs uppercase tracking-[0.22em] text-muted">Viewing last confirmed queue snapshot. Actions are read-only until the signal is current.</section> : null}
+      {initialRecoveryOnly ? <section className="border border-border bg-surface p-5" role="status"><p className="text-xs uppercase tracking-[0.35em] text-muted">Queue Status</p><h1 className="mt-2 text-2xl font-bold text-foreground">{recoveryView === "loading" ? "Synchronizing queue signal" : "Queue signal unavailable"}</h1><p className="mt-3 text-sm text-muted">{pollState.message ?? "Reading the current BARCODE Radio queue before reporting status."}</p></section> : hasActiveSession ? <section className="border border-accent/60 bg-accent/10 p-5 shadow-[0_0_34px_rgba(255,0,0,0.12)]">
         <p className="text-xs uppercase tracking-[0.35em] text-accent">BARCODE Radio Queue</p>
-        <h1 className="mt-2 text-2xl font-bold text-foreground">Current queue is online</h1>
-        <p className="mt-2 text-sm text-muted">{snapshot?.status.isOpen ? "Submissions are open. Open the queue to submit your track." : "Submissions are closed, but you can still view the queue."}</p>
+        <h1 className="mt-2 text-2xl font-bold text-foreground">{staleReadOnly ? "Last confirmed queue snapshot" : "Current queue is online"}</h1>
+        <p className="mt-2 text-sm text-muted">{staleReadOnly ? "Queue signal is not current. This snapshot is read-only until recovery." : snapshot?.status.isOpen ? "Submissions are open. Open the queue to submit your track." : "Submissions are closed, but you can still view the queue."}</p>
         <div className="mt-4 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.18em]">
           <span className={`${snapshot?.status.isOpen ? "border-accent/60 text-accent" : "border-border text-muted"} border px-2 py-1`}>Submissions: {snapshot?.status.isOpen ? "Open" : "Closed"}</span>
           <span className={`${isBroadcastActive(snapshot) ? "border-[#ffaa00]/55 text-[#ffaa00]" : "border-border text-muted"} border px-2 py-1`}>Broadcast: {isBroadcastActive(snapshot) ? "Active" : "Standby"}</span>
         </div>
-        <a href={queueHref ?? "#"} onClick={(event) => queueHref && activeSessionId && beginNavigation(event, queueHref, activeSessionId)} aria-busy={Boolean(pendingNavigation)} className="nav-corridor-link mt-4 inline-flex w-full cursor-pointer items-center justify-center border border-accent bg-accent px-4 py-3 text-xs font-bold uppercase tracking-[0.22em] text-white transition hover:bg-red-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">OPEN CURRENT QUEUE</a>
+        {!staleReadOnly && <a href={queueHref ?? "#"} onClick={(event) => queueHref && activeSessionId && beginNavigation(event, queueHref, activeSessionId)} aria-busy={Boolean(pendingNavigation)} className="nav-corridor-link mt-4 inline-flex w-full cursor-pointer items-center justify-center border border-accent bg-accent px-4 py-3 text-xs font-bold uppercase tracking-[0.22em] text-white transition hover:bg-red-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">OPEN CURRENT QUEUE</a>}
       </section> : <section className="border border-border bg-surface p-5">
         <p className="text-xs uppercase tracking-[0.35em] text-muted">Queue Status</p>
         <p className="mt-2 text-xs uppercase tracking-[0.35em] text-muted">BARCODE Radio Queue</p>

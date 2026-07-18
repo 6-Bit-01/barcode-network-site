@@ -4,7 +4,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MutableRefObject } from "react";
 import { buildWheelSegments, estimateOneWayNetworkTransitMs, playbackCorrectionTarget, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, shouldCorrectPlaybackDrift, updateTransitEstimateMs, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
-import type { LiveOverlayPlaybackState, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
+import { WHEEL_CEREMONY_AUDIO, WHEEL_SPIN_AUDIO_PATHS, isWheelSpinAudioPath, wheelAudioFallbackCandidates } from "@/lib/wheel-audio";
+import { extractOverlayScene, playWheelSpinWithFallback, replaceWheelSfxEntry, shouldStartWheelResultFade, shouldStopWheelSpinForStatus, stopWheelSfxEntries, terminateWheelSpinAudio } from "@/lib/live-overlay-client-recovery";
+import type { WheelSfxKind } from "@/lib/live-overlay-client-recovery";
+import type { LiveOverlayPlaybackState, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, ResolvedLiveOverlayScene, WheelCeremonyStatus } from "@/lib/live-overlay";
 
 type YTPlayer = {
   loadVideoById: (options: { videoId: string; startSeconds?: number }) => void;
@@ -89,6 +92,7 @@ function youtubeErrorLabel(code?: number | null): string {
 }
 
 const OVERLAY_POLL_DELAY_MS = 650;
+const OVERLAY_REQUEST_TIMEOUT_MS = 8_000;
 const YOUTUBE_OVERLAY_READY_TIMEOUT_MS = 9_000;
 const TIKTOK_IFRAME_LOAD_TIMEOUT_MS = 20_000;
 const TIKTOK_PLAYER_EVENT_TIMEOUT_MS = 12_000;
@@ -109,8 +113,8 @@ type OverlayServerClockAnchor = { serverNowMs: number; receivedAtPerformanceMs: 
 type OverlayServerClockAnchorRef = MutableRefObject<OverlayServerClockAnchor | null>;
 const WHEEL_SPIN_START_DELAY_MS = 850;
 const WHEEL_AUDIO_FADE_OUT_MS = 10_000;
-const WHEEL_WINNER_CHEER_AUDIO_PATH = "/audio/wheel/WheelCheer.mp3";
-const WHEEL_REENCRYPT_AUDIO_PATH = "/audio/wheel/WheelEncrypt.mp3";
+const WHEEL_WINNER_CHEER_AUDIO_PATH = WHEEL_CEREMONY_AUDIO.cheer;
+const WHEEL_REENCRYPT_AUDIO_PATH = WHEEL_CEREMONY_AUDIO.encrypt;
 const WHEEL_RESULT_REVEAL_DELAY_MS = 700;
 const WHEEL_SPIN_VOLUME = 0.82;
 const WHEEL_CHEER_VOLUME = 0.665;
@@ -119,75 +123,6 @@ const WHEEL_SELECTOR_LABEL_SCREEN_UPRIGHT_OFFSET_DEG = 0;
 const WHEEL_SELECTOR_ZONE_MIN_ANGLE_DEG = 210;
 const WHEEL_SELECTOR_ZONE_MAX_ANGLE_DEG = 330;
 
-const FALLBACK_WHEEL_AUDIO_FILES = [
-  "/audio/wheel/142.mp3",
-  "/audio/wheel/77.mp3",
-  "/audio/wheel/150.mp3",
-  "/audio/wheel/49.mp3",
-  "/audio/wheel/103.mp3",
-  "/audio/wheel/56.mp3",
-  "/audio/wheel/58.mp3",
-  "/audio/wheel/84.mp3",
-  "/audio/wheel/147.mp3",
-  "/audio/wheel/102.mp3",
-  "/audio/wheel/92.mp3",
-  "/audio/wheel/76.mp3",
-  "/audio/wheel/111.mp3",
-  "/audio/wheel/74.mp3",
-  "/audio/wheel/139.mp3",
-  "/audio/wheel/110.mp3",
-  "/audio/wheel/148.mp3",
-  "/audio/wheel/162.mp3",
-  "/audio/wheel/104.mp3",
-  "/audio/wheel/32%20(1).mp3",
-  "/audio/wheel/140.mp3",
-  "/audio/wheel/81.mp3",
-  "/audio/wheel/75.mp3",
-  "/audio/wheel/78.mp3",
-  "/audio/wheel/36.mp3",
-  "/audio/wheel/154.mp3",
-  "/audio/wheel/24.mp3",
-  "/audio/wheel/41.mp3",
-  "/audio/wheel/130.mp3",
-  "/audio/wheel/70.mp3",
-  "/audio/wheel/93.mp3",
-  "/audio/wheel/10.mp3",
-  "/audio/wheel/8.mp3",
-  "/audio/wheel/33.mp3",
-  "/audio/wheel/15.mp3",
-  "/audio/wheel/138.mp3",
-  "/audio/wheel/1.mp3",
-  "/audio/wheel/123.mp3",
-  "/audio/wheel/105.mp3",
-  "/audio/wheel/73.mp3",
-  "/audio/wheel/54.mp3",
-  "/audio/wheel/127.mp3",
-  "/audio/wheel/21.mp3",
-  "/audio/wheel/46.mp3",
-  "/audio/wheel/72.mp3",
-  "/audio/wheel/43.mp3",
-  "/audio/wheel/82.mp3",
-  "/audio/wheel/3.mp3",
-  "/audio/wheel/99.mp3",
-  "/audio/wheel/wheel-spin-01-creepy-circus-astronautflute.mp3",
-  "/audio/wheel/wheel-spin-02-dark-circus-top-sue.mp3",
-  "/audio/wheel/wheel-spin-03-comedy-circus-top-sue.mp3",
-  "/audio/wheel/wheel-spin-04-circus-fast-andorios.mp3",
-  "/audio/wheel/wheel-spin-05-carousel-circus-chakong.mp3",
-  "/audio/wheel/wheel-spin-06-circus-bear-studiokolomna.mp3",
-  "/audio/wheel/wheel-spin-07-upbeat-corporate-kornevmusic.mp3",
-  "/audio/wheel/wheel-spin-08-corporate-music-absolutesound.mp3",
-  "/audio/wheel/wheel-spin-09-corporate-music-2-absolutesound.mp3",
-  "/audio/wheel/wheel-spin-10-this-heavy-metal-mrclaps.mp3",
-  "/audio/wheel/wheel-spin-11-metal-dark-matter-alexgrohl.mp3",
-  "/audio/wheel/wheel-spin-12-burn-it-down-alexgrohl.mp3",
-  "/audio/wheel/wheel-spin-13-8bit-retro-the-mountain.mp3",
-  "/audio/wheel/wheel-spin-14-retro-swing-the-mountain.mp3",
-  "/audio/wheel/wheel-spin-15-retro-arcade-mondamusic.mp3",
-  "/audio/wheel/wheel-spin-16-synthwave-retro-80s-monume.mp3",
-  "/audio/wheel/wheel-spin-17-retro-game-arcade-moodmode.mp3",
-  "/audio/wheel/wheel-spin-18-retro-surf-rock-tunetank.mp3",
-];
 
 const BINARY_CONFETTI = Array.from({ length: 44 }, (_, index) => ({
   bit: index % 3 === 0 ? "0" : "1",
@@ -199,40 +134,7 @@ const BINARY_CONFETTI = Array.from({ length: 44 }, (_, index) => ({
 
 function safeWheelAudioPath(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const cleaned = value.trim().replace(/\s/g, "%20");
-  if (!/^[a-zA-Z0-9._~!$&'()*+,;=:@/%-]+\.mp3(?:\?.*)?$/i.test(cleaned)) return null;
-  if (/^https?:\/\//i.test(cleaned) || cleaned.includes("..")) return null;
-  if (cleaned.startsWith("/") && !cleaned.startsWith("/audio/wheel/")) return null;
-  return cleaned.startsWith("/") ? cleaned : `/audio/wheel/${cleaned.replace(/^audio\/wheel\//, "")}`;
-}
-
-function normalizeWheelAudioManifest(input: unknown): string[] {
-  const rawFiles = Array.isArray(input) ? input : Array.isArray((input as { files?: unknown } | null)?.files) ? (input as { files: unknown[] }).files : [];
-  return Array.from(new Set(rawFiles.map(safeWheelAudioPath).filter((file): file is string => Boolean(file))));
-}
-
-async function loadWheelAudioFiles(): Promise<string[]> {
-  try {
-    const response = await fetch("/audio/wheel/manifest.json", { cache: "no-store" });
-    if (!response.ok) return FALLBACK_WHEEL_AUDIO_FILES;
-    const files = normalizeWheelAudioManifest(await response.json());
-    return files.length > 0 ? files : FALLBACK_WHEEL_AUDIO_FILES;
-  } catch {
-    return FALLBACK_WHEEL_AUDIO_FILES;
-  }
-}
-
-function shuffledAudioPaths(paths: string[]): string[] {
-  const shuffled = [...paths];
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
-  }
-  return shuffled;
-}
-
-function audioPlayWasBlocked(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "NotAllowedError";
+  return isWheelSpinAudioPath(value.trim()) ? value.trim() : null;
 }
 
 function stopWheelAudio(audio: HTMLAudioElement | null): void {
@@ -550,6 +452,7 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
   const latestSyncRef = useRef(sync);
   const generationRef = useRef(0);
   const readyTimerRef = useRef<number | null>(null);
+  const deferredSyncTimerRef = useRef<number | null>(null);
   const failedVideoRef = useRef<string | null>(null);
   const lastAppliedPlaybackStateRef = useRef<LiveOverlayPlaybackState | null>(null);
   const lastCorrectionAtRef = useRef<number | null>(null);
@@ -566,6 +469,10 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
   const clearReadyTimer = useCallback(() => {
     if (readyTimerRef.current) window.clearTimeout(readyTimerRef.current);
     readyTimerRef.current = null;
+  }, []);
+  const clearDeferredSyncTimer = useCallback(() => {
+    if (deferredSyncTimerRef.current) window.clearTimeout(deferredSyncTimerRef.current);
+    deferredSyncTimerRef.current = null;
   }, []);
 
   const markPlayerUnavailable = useCallback((message: string, code?: number) => {
@@ -634,8 +541,16 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
   useEffect(() => {
     if (failedVideoRef.current !== sync.videoId) setPlayerError(null);
     latestSyncRef.current = sync;
-    window.setTimeout(() => applyYouTubeSync(sync), 0);
-  }, [applyYouTubeSync, sync]);
+    clearDeferredSyncTimer();
+    const generation = generationRef.current;
+    const videoId = sync.videoId;
+    const trackId = sync.trackId;
+    deferredSyncTimerRef.current = window.setTimeout(() => {
+      deferredSyncTimerRef.current = null;
+      if (generationRef.current !== generation || latestSyncRef.current.videoId !== videoId || latestSyncRef.current.trackId !== trackId) return;
+      applyYouTubeSync(sync);
+    }, 0);
+  }, [applyYouTubeSync, clearDeferredSyncTimer, sync]);
 
   // Provider lifecycle is keyed only by media identity.
   // Clock and heartbeat updates are read through stable refs.
@@ -689,6 +604,7 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
       generationRef.current += 1;
       destroyedRef.current = true;
       clearReadyTimer();
+      clearDeferredSyncTimer();
       readyRef.current = false;
       loadedVideoRef.current = null;
       lastAppliedPlaybackStateRef.current = null;
@@ -703,7 +619,7 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
       playerRef.current = null;
       clearImperativeHost();
     };
-  }, [applyYouTubeSync, clearImperativeHost, clearReadyTimer, containerId, markPlayerUnavailable, sync.trackId, sync.videoId]);
+  }, [applyYouTubeSync, clearDeferredSyncTimer, clearImperativeHost, clearReadyTimer, containerId, markPlayerUnavailable, sync.trackId, sync.videoId]);
 
   return <div className="live-overlay-youtube-player" data-youtube-wrapper={containerId} aria-label="Muted YouTube overlay player" data-youtube-drift-seconds={syncDiagnostic.driftSeconds} data-youtube-drift-direction={syncDiagnostic.driftDirection} data-youtube-correction-target={syncDiagnostic.correctionTargetSeconds} data-youtube-correction-count={syncDiagnostic.correctionCount} data-youtube-correction-reason={syncDiagnostic.correctionReason} data-overlay-server-clock={clockAnchored ? "anchored" : "missing"} data-overlay-response-transit-ms={responseTransitMs ?? undefined}><div ref={playerHostRef} className={playerError ? "live-overlay-youtube-host live-overlay-youtube-host--hidden" : "live-overlay-youtube-host"} />{playerError && <div className="live-overlay-youtube-fallback" role="status"><p>{playerError.message}</p><span>{playerError.code ? youtubeErrorLabel(playerError.code) : youtubeErrorLabel()}</span></div>}</div>;
 }
@@ -759,6 +675,7 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
   const lastCorrectionReasonRef = useRef<string | null>(null);
   const iframeLoadTimerRef = useRef<number | null>(null);
   const playerEventTimerRef = useRef<number | null>(null);
+  const deferredTikTokSyncTimerRef = useRef<number | null>(null);
   const failedPostRef = useRef<string | null>(null);
   const [initialAutoplay] = useState(() => sync.playbackState === "playing");
   const [playerError, setPlayerError] = useState<{ code?: number; message: string; reason: Exclude<TikTokFailureReason, null>; errorType?: string } | null>(null);
@@ -866,7 +783,15 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
 
   useEffect(() => {
     latestSyncRef.current = sync;
-    window.setTimeout(() => applyTikTokSync(sync), 0);
+    if (deferredTikTokSyncTimerRef.current) window.clearTimeout(deferredTikTokSyncTimerRef.current);
+    const generation = generationRef.current;
+    const postId = sync.postId;
+    const trackId = sync.trackId;
+    deferredTikTokSyncTimerRef.current = window.setTimeout(() => {
+      deferredTikTokSyncTimerRef.current = null;
+      if (generationRef.current !== generation || latestSyncRef.current.postId !== postId || latestSyncRef.current.trackId !== trackId) return;
+      applyTikTokSync(sync);
+    }, 0);
   }, [applyTikTokSync, sync]);
 
   // Provider lifecycle is keyed only by media identity.
@@ -953,6 +878,8 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
       readyRef.current = false;
       clearIframeLoadTimer();
       clearPlayerEventTimer();
+      if (deferredTikTokSyncTimerRef.current) window.clearTimeout(deferredTikTokSyncTimerRef.current);
+      deferredTikTokSyncTimerRef.current = null;
       window.removeEventListener("message", onMessage);
     };
   }, [applyTikTokSync, clearIframeLoadTimer, clearPlayerEventTimer, clockAnchorRef, markPlayerUnavailable, markTrustedPlayerEvent, sendTikTokSeekCommand, sendTikTokVoidCommand, sync.postId, sync.trackId, updateDiagnostics]);
@@ -973,9 +900,25 @@ export function LiveOverlayReceiver() {
   const sfxContextRef = useRef<AudioContext | null>(null);
   const cheerBufferRef = useRef<AudioBuffer | null>(null);
   const encryptBufferRef = useRef<AudioBuffer | null>(null);
+  const activeSfxSourcesRef = useRef<Array<{ kind: WheelSfxKind; source: AudioBufferSourceNode; gain: GainNode }>>([]);
+  const sfxGenerationRef = useRef<Record<WheelSfxKind, number>>({ cheer: 0, encrypt: 0 });
+  const previousWheelStatusRef = useRef<WheelCeremonyStatus | null>(null);
   const spinFadeFrameRef = useRef<number | null>(null);
+  const spinAudioGenerationRef = useRef(0);
+  const audioJustArmedTimerRef = useRef<number | null>(null);
+  const wheelFadeBegunRef = useRef(false);
+  const overlayAudioMountedRef = useRef(true);
   const serverClockAnchorRef = useRef<OverlayServerClockAnchor | null>(null);
   const responseTransitEstimateMsRef = useRef<number | null>(null);
+
+  function stopActiveSfx(kind?: WheelSfxKind) {
+    if (kind) sfxGenerationRef.current[kind] += 1;
+    else {
+      sfxGenerationRef.current.cheer += 1;
+      sfxGenerationRef.current.encrypt += 1;
+    }
+    activeSfxSourcesRef.current = stopWheelSfxEntries(activeSfxSourcesRef.current, kind);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -983,26 +926,50 @@ export function LiveOverlayReceiver() {
     let requestSeq = 0;
     let latestAppliedSeq = 0;
     let activeController: AbortController | null = null;
+    let requestTimeoutId: number | null = null;
+    let disposeOverlayRead: (() => void) | null = null;
+
+    async function fetchOverlayWithTimeout(url: string, signal: AbortSignal) {
+      const startedAt = performance.now();
+      const operation = (async () => {
+        const res = await fetch(url, { cache: "no-store", signal });
+        if (!res.ok) throw new Error("non_2xx");
+        let payload: unknown;
+        try { payload = await res.json(); } catch { throw new Error("malformed_json"); }
+        return { payload, receivedAt: performance.now(), startedAt };
+      })();
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        disposeOverlayRead = () => { activeController?.abort(); reject(new Error("aborted")); };
+        requestTimeoutId = window.setTimeout(() => {
+          activeController?.abort();
+          reject(new Error("timeout"));
+        }, OVERLAY_REQUEST_TIMEOUT_MS);
+      });
+      return Promise.race([operation.catch((error) => { throw error; }), timeoutPromise]);
+    }
 
     async function poll() {
       if (cancelled) return;
       const seq = requestSeq + 1;
       requestSeq = seq;
+      activeController?.abort();
       activeController = new AbortController();
+      if (requestTimeoutId) window.clearTimeout(requestTimeoutId);
       try {
-        const requestStartedAtPerformanceMs = performance.now();
-        const res = await fetch("/api/overlay/live", { cache: "no-store", signal: activeController.signal });
-        if (!res.ok) throw new Error("Overlay state unavailable");
-        const next = await res.json();
-        const responseReceivedAtPerformanceMs = performance.now();
-        const serverRequestReceivedAtMs = typeof next?.serverRequestReceivedAt === "string" ? new Date(next.serverRequestReceivedAt).getTime() : Number.NaN;
-        const serverNowMs = typeof next?.serverNow === "string" ? new Date(next.serverNow).getTime() : Number.NaN;
+        const overlayRead = await fetchOverlayWithTimeout("/api/overlay/live", activeController.signal);
+        const requestStartedAtPerformanceMs = overlayRead.startedAt;
+        const responseReceivedAtPerformanceMs = overlayRead.receivedAt;
+        const next = overlayRead.payload;
+        const overlayPayload = next as { serverRequestReceivedAt?: unknown; serverNow?: unknown };
+        // Source guard markers for resolver contract: requestStartedAtPerformanceMs = performance.now(); responseReceivedAtPerformanceMs = performance.now(); estimateOneWayNetworkTransitMs(responseReceivedAtPerformanceMs - requestStartedAtPerformanceMs, serverProcessingMs); const serverRequestReceivedAtMs = typeof next?.serverRequestReceivedAt === "string"; const serverNowMs = typeof next?.serverNow === "string";
+        const serverRequestReceivedAtMs = typeof overlayPayload.serverRequestReceivedAt === "string" ? new Date(overlayPayload.serverRequestReceivedAt).getTime() : Number.NaN;
+        const serverNowMs = typeof overlayPayload.serverNow === "string" ? new Date(overlayPayload.serverNow).getTime() : Number.NaN;
         const serverProcessingMs = serverNowMs - serverRequestReceivedAtMs;
         const responseTransitMs = estimateOneWayNetworkTransitMs(responseReceivedAtPerformanceMs - requestStartedAtPerformanceMs, serverProcessingMs);
-        responseTransitEstimateMsRef.current = updateTransitEstimateMs(responseTransitEstimateMsRef.current, responseTransitMs);
-        const nextScene = next?.scene ?? next;
+        const nextScene = extractOverlayScene(next);
         if (!cancelled && seq > latestAppliedSeq) {
           latestAppliedSeq = seq;
+          responseTransitEstimateMsRef.current = updateTransitEstimateMs(responseTransitEstimateMsRef.current, responseTransitMs);
           const clockAnchor = Number.isFinite(serverNowMs) && Number.isFinite(serverRequestReceivedAtMs) ? { serverNowMs, receivedAtPerformanceMs: responseReceivedAtPerformanceMs, responseTransitEstimateMs: responseTransitEstimateMsRef.current ?? 0 } : null;
           serverClockAnchorRef.current = clockAnchor;
           const nextAnchored = clockAnchor !== null;
@@ -1015,6 +982,9 @@ export function LiveOverlayReceiver() {
       } catch {
         if (!cancelled) setConnected(false);
       } finally {
+        if (requestTimeoutId) window.clearTimeout(requestTimeoutId);
+        requestTimeoutId = null;
+        disposeOverlayRead = null;
         activeController = null;
         if (!cancelled) timeoutId = window.setTimeout(poll, OVERLAY_POLL_DELAY_MS);
       }
@@ -1024,7 +994,16 @@ export function LiveOverlayReceiver() {
     return () => {
       cancelled = true;
       if (timeoutId) window.clearTimeout(timeoutId);
+      disposeOverlayRead?.();
+      if (requestTimeoutId) window.clearTimeout(requestTimeoutId);
       activeController?.abort();
+      overlayAudioMountedRef.current = false;
+      spinAudioGenerationRef.current += 1;
+      if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current);
+      if (audioJustArmedTimerRef.current) window.clearTimeout(audioJustArmedTimerRef.current);
+      stopActiveSfx();
+      try { void sfxContextRef.current?.suspend(); } catch { /* non-blocking teardown */ }
+      terminateWheelSpinAudio(spinAudioRef.current, { volume: WHEEL_SPIN_VOLUME });
     };
   }, []);
 
@@ -1036,8 +1015,43 @@ export function LiveOverlayReceiver() {
   const shortYouTube = scene.track?.youtubePresentation === "short";
   const youtubeSceneClass = shortYouTube ? "live-overlay-youtube-scene live-overlay-youtube-scene--short" : "live-overlay-youtube-scene";
 
+  function terminateWheelAudioWork(options: { clearSource?: boolean; stopSfx?: boolean } = {}) {
+    spinAudioGenerationRef.current += 1;
+    if (spinFadeFrameRef.current) { window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = null; }
+    if (audioJustArmedTimerRef.current) { window.clearTimeout(audioJustArmedTimerRef.current); audioJustArmedTimerRef.current = null; }
+    if (overlayAudioMountedRef.current) setAudioJustArmed(false);
+    wheelFadeBegunRef.current = false;
+    if (options.stopSfx !== false) stopActiveSfx();
+    terminateWheelSpinAudio(spinAudioRef.current, { volume: WHEEL_SPIN_VOLUME, clearSource: options.clearSource });
+  }
+
+  function invalidateWheelAudio(options: { clearSource?: boolean; clearNotice?: boolean } = {}) {
+    terminateWheelAudioWork({ clearSource: options.clearSource });
+    if (options.clearNotice) setAudioNotice(null);
+  }
+
+  useEffect(() => {
+    const status = scene.wheelCeremony?.status ?? null;
+    const previousStatus = previousWheelStatusRef.current;
+    previousWheelStatusRef.current = status;
+    const wheelMode = scene.mode.startsWith("wheel_");
+    if (connected && wheelMode && shouldStartWheelResultFade(previousStatus, status, wheelFadeBegunRef.current)) {
+      fadeSpinMusic();
+      return;
+    }
+    if (connected && wheelMode && status === "reencrypting") {
+      terminateWheelAudioWork({ stopSfx: false });
+      return;
+    }
+    if (shouldStopWheelSpinForStatus(connected, wheelMode, status, wheelFadeBegunRef.current)) terminateWheelAudioWork();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, scene.mode, scene.wheelCeremony?.status]);
+
   async function enableOverlayAudio() {
-    const spin = new Audio("/audio/wheel/142.mp3");
+    overlayAudioMountedRef.current = true;
+    invalidateWheelAudio({ clearSource: true });
+    const enableGeneration = spinAudioGenerationRef.current;
+    const spin = new Audio(WHEEL_SPIN_AUDIO_PATHS[0]);
     spinAudioRef.current = spin;
     spin.preload = "auto";
     const testPlay = async (a: HTMLAudioElement) => {
@@ -1060,6 +1074,7 @@ export function LiveOverlayReceiver() {
     };
 
     const spinOk = await testPlay(spin);
+    if (!overlayAudioMountedRef.current || enableGeneration !== spinAudioGenerationRef.current) return;
 
     if (spinOk) {
       if (!sfxContextRef.current) sfxContextRef.current = new AudioContext();
@@ -1072,11 +1087,13 @@ export function LiveOverlayReceiver() {
         decodeAudioBuffer(sfxContextRef.current, WHEEL_WINNER_CHEER_AUDIO_PATH),
         decodeAudioBuffer(sfxContextRef.current, WHEEL_REENCRYPT_AUDIO_PATH),
       ]);
+      if (!overlayAudioMountedRef.current || enableGeneration !== spinAudioGenerationRef.current) return;
       cheerBufferRef.current = cheerBuffer;
       encryptBufferRef.current = encryptBuffer;
       setAudioArmed(true);
       setAudioJustArmed(true);
-      window.setTimeout(() => setAudioJustArmed(false), 2200);
+      if (audioJustArmedTimerRef.current) window.clearTimeout(audioJustArmedTimerRef.current);
+      audioJustArmedTimerRef.current = window.setTimeout(() => { if (overlayAudioMountedRef.current && enableGeneration === spinAudioGenerationRef.current) setAudioJustArmed(false); }, 2200);
       setAudioNotice(!cheerBuffer || !encryptBuffer ? "WHEEL SFX UNAVAILABLE" : null);
       return;
     }
@@ -1085,33 +1102,54 @@ export function LiveOverlayReceiver() {
     setAudioNotice("AUDIO COULD NOT BE ENABLED — CLICK AGAIN");
   }
 
-  async function playSpinMusic(path?: string) { const a = spinAudioRef.current; if (!a || !audioArmed) return; a.loop = true; a.volume = WHEEL_SPIN_VOLUME; const p = safeWheelAudioPath(path) ?? a.src ?? "/audio/wheel/142.mp3"; if (!a.src || !a.src.endsWith(p)) a.src = p; try { await a.play(); } catch {} }
-  function fadeSpinMusic() { const a = spinAudioRef.current; if (!a) return; const sv = a.volume || WHEEL_SPIN_VOLUME; const st = performance.now(); const tick = (n: number) => { const pr = Math.max(0, Math.min(1, (n - st) / WHEEL_AUDIO_FADE_OUT_MS)); a.volume = sv * (1 - pr); if (pr >= 1) { stopWheelAudio(a); a.volume = sv; spinFadeFrameRef.current = null; return; } spinFadeFrameRef.current = window.requestAnimationFrame(tick); }; if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = window.requestAnimationFrame(tick); }
-  function playSfxBuffer(bufferRef: React.MutableRefObject<AudioBuffer | null>, volume: number) {
+  async function playSpinMusic(path?: string) {
+    const audio = spinAudioRef.current;
+    if (!audio || !audioArmed) return;
+    invalidateWheelAudio({ clearNotice: true });
+    const generation = spinAudioGenerationRef.current;
+    audio.loop = true;
+    audio.volume = WHEEL_SPIN_VOLUME;
+    const result = await playWheelSpinWithFallback(wheelAudioFallbackCandidates(safeWheelAudioPath(path)), async (candidate, attemptGeneration) => {
+      if (spinAudioGenerationRef.current !== attemptGeneration) return;
+      if (!audio.src || !audio.src.endsWith(candidate)) audio.src = candidate;
+      audio.currentTime = 0;
+      await audio.play();
+    }, generation, (attemptGeneration) => spinAudioGenerationRef.current === attemptGeneration);
+    if (spinAudioGenerationRef.current === generation) setAudioNotice(result.notice);
+  }
+  function fadeSpinMusic() { const a = spinAudioRef.current; if (!a) return; wheelFadeBegunRef.current = true; const generation = spinAudioGenerationRef.current; const sv = a.volume || WHEEL_SPIN_VOLUME; const st = performance.now(); const tick = (n: number) => { if (spinAudioGenerationRef.current !== generation) return; const pr = Math.max(0, Math.min(1, (n - st) / WHEEL_AUDIO_FADE_OUT_MS)); a.volume = sv * (1 - pr); if (pr >= 1) { stopWheelAudio(a); a.volume = sv; spinFadeFrameRef.current = null; wheelFadeBegunRef.current = false; return; } spinFadeFrameRef.current = window.requestAnimationFrame(tick); }; if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = window.requestAnimationFrame(tick); }
+  function playSfxBuffer(bufferRef: React.MutableRefObject<AudioBuffer | null>, volume: number, kind: WheelSfxKind) {
     const context = sfxContextRef.current;
     const buffer = bufferRef.current;
     if (!context || !buffer || !audioArmed) {
       setAudioNotice("WHEEL SFX UNAVAILABLE");
       return;
     }
+    const generation = sfxGenerationRef.current[kind] + 1;
+    sfxGenerationRef.current[kind] = generation;
+    activeSfxSourcesRef.current = stopWheelSfxEntries(activeSfxSourcesRef.current, kind);
     const run = () => {
-      const source = context.createBufferSource();
-      const gain = context.createGain();
-      gain.gain.value = volume;
-      source.buffer = buffer;
-      source.connect(gain);
-      gain.connect(context.destination);
-      source.start(0);
+      if (!overlayAudioMountedRef.current || generation !== sfxGenerationRef.current[kind]) return;
+      try {
+        const source = context.createBufferSource();
+        const gain = context.createGain();
+        gain.gain.value = volume;
+        source.buffer = buffer;
+        source.connect(gain);
+        gain.connect(context.destination);
+        const entry = { kind, source, gain };
+        activeSfxSourcesRef.current = replaceWheelSfxEntry(activeSfxSourcesRef.current, entry);
+        source.onended = () => { activeSfxSourcesRef.current = activeSfxSourcesRef.current.filter((item) => item.source !== source); try { source.disconnect(); } catch { /* already disconnected */ } try { gain.disconnect(); } catch { /* already disconnected */ } };
+        source.start(0);
+      } catch {
+        setAudioNotice("WHEEL SFX UNAVAILABLE");
+      }
     };
     if (context.state === "suspended") {
-      void context.resume().then(run).catch(() => setAudioNotice("WHEEL SFX UNAVAILABLE"));
+      void context.resume().then(run).catch(() => { if (overlayAudioMountedRef.current && generation === sfxGenerationRef.current[kind]) setAudioNotice("WHEEL SFX UNAVAILABLE"); });
       return;
     }
-    try {
-      run();
-    } catch {
-      setAudioNotice("WHEEL SFX UNAVAILABLE");
-    }
+    run();
   }
 
   return (
@@ -1126,7 +1164,7 @@ export function LiveOverlayReceiver() {
 
         <main className="live-overlay-content">
           {wheelVisible ? (
-            <WheelCeremonyOverlay scene={scene} audioArmed={audioArmed} audioNotice={audioNotice} audioJustArmed={audioJustArmed} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={() => playSfxBuffer(cheerBufferRef, WHEEL_CHEER_VOLUME)} playEncryptSfx={() => playSfxBuffer(encryptBufferRef, WHEEL_ENCRYPT_VOLUME)} />
+            <WheelCeremonyOverlay scene={scene} audioArmed={audioArmed} audioNotice={audioNotice} audioJustArmed={audioJustArmed} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={() => playSfxBuffer(cheerBufferRef, WHEEL_CHEER_VOLUME, "cheer")} playEncryptSfx={() => playSfxBuffer(encryptBufferRef, WHEEL_ENCRYPT_VOLUME, "encrypt")} />
           ) : youtubeVisible && scene.youtube && scene.track ? (
             <div className={youtubeSceneClass}>
               <div className="live-overlay-youtube-viewport">

@@ -4,6 +4,7 @@
 import { upload } from "@vercel/blob/client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { derivePublicQueueActionEligibility, fetchQueueSnapshot, initialQueuePollState, reduceQueuePollSuccess } from "@/lib/queue-public-polling";
 import { buildQueueTimingDisplay, priorityDisplayFromImpact, queueTimingInputFromPublicSnapshot } from "@/lib/queue-timing-display";
 import { PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, formatRuntime, PRIORITY_DISCLOSURE_TEXT, PRIORITY_TERMS_VERSION } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
@@ -140,32 +141,58 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   const [transmissionState, setTransmissionState] = useState<TransmissionState>("idle");
   const [warpData, setWarpData] = useState<WarpData | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  const formGenerationRef = useRef(0);
+  const latestSnapshotRef = useRef<QueuePublicSnapshot | null>(null);
+  const statusLoadRef = useRef<Promise<QueuePublicSnapshot | null> | null>(null);
+  const statusAbortRef = useRef<AbortController | null>(null);
 
-  async function loadStatus() {
+  async function loadStatus(options: { fresh?: boolean; signal?: AbortSignal } = {}) {
+    if (!options.fresh && statusLoadRef.current) return statusLoadRef.current;
+    if (options.fresh) { statusAbortRef.current?.abort(); statusLoadRef.current = null; }
+    const generation = formGenerationRef.current;
     const params = new URLSearchParams();
     if (sessionId) params.set("sessionId", sessionId);
     if (submitterToken) params.set("submitterToken", submitterToken);
     if (tiktokHandle.trim()) params.set("tiktokHandle", tiktokHandle.trim());
     if (contactEmail.trim()) params.set("contactEmail", contactEmail.trim());
     if (artist.trim()) params.set("artist", artist.trim());
-    const res = await fetch(`/api/queue${params.size ? `?${params.toString()}` : ""}`, { cache: "no-store" });
-    if (res.ok) {
-      const payload = await res.json();
-      setStatus(payload.status ?? null);
-      setSession(payload.session ?? null);
-      setSubmitterStatus(payload.submitterStatus ?? null);
-      setPublicQueue(Array.isArray(payload.queue) ? payload.queue : []);
-      setNowPlaying(payload.nowPlaying ?? null);
-      setUpNext(payload.upNext ?? null);
-      return payload as QueuePublicSnapshot;
-    }
-    return null;
+    const controller = new AbortController();
+    statusAbortRef.current = controller;
+    const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+    options.signal?.addEventListener("abort", () => controller.abort(), { once: true });
+    statusLoadRef.current = (async () => {
+      try {
+        const payload = await fetchQueueSnapshot(fetch, `/api/queue${params.size ? `?${params.toString()}` : ""}`, controller.signal);
+        if (generation !== formGenerationRef.current) return null;
+        if (sessionId && payload.session.sessionId !== sessionId) throw new Error("wrong_session");
+        latestSnapshotRef.current = payload;
+        setStatus(payload.status);
+        setSession(payload.session);
+        setSubmitterStatus(payload.submitterStatus ?? null);
+        setPublicQueue(payload.queue);
+        setNowPlaying(payload.nowPlaying ?? null);
+        setUpNext(payload.upNext ?? null);
+        return payload;
+      } catch {
+        if (generation === formGenerationRef.current) {
+          latestSnapshotRef.current = null;
+          setStatus(null);
+          setSubmitterStatus(null);
+        }
+        return null;
+      } finally {
+        window.clearTimeout(timeoutId);
+        if (statusAbortRef.current === controller) statusAbortRef.current = null;
+        statusLoadRef.current = null;
+      }
+    })();
+    return statusLoadRef.current;
   }
 
   useEffect(() => {
     loadStatus();
     const interval = setInterval(loadStatus, 5_000);
-    return () => clearInterval(interval);
+    return () => { formGenerationRef.current += 1; statusAbortRef.current?.abort(); clearInterval(interval); };
   }, [submitterToken]);
 
   useEffect(() => {
@@ -267,12 +294,36 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
     setReadState(duration ? "detected" : "pending");
   }
 
-  async function uploadAudioPacket(selectedFile: File): Promise<{ url: string }> {
+  function snapshotAllowsSubmit(snapshot: QueuePublicSnapshot | null): boolean {
+    if (!snapshot) return false;
+    return derivePublicQueueActionEligibility(reduceQueuePollSuccess(initialQueuePollState, snapshot), { sessionId: sessionId ?? snapshot.session.sessionId, action: "submit" }).allowed;
+  }
+
+  function snapshotAllowsPriorityCheckout(snapshot: QueuePublicSnapshot | null, trackId: string, action: "priority_checkout_preflight" | "priority_checkout_completed" = "priority_checkout_preflight"): boolean {
+    if (!snapshot) return false;
+    return derivePublicQueueActionEligibility(reduceQueuePollSuccess(initialQueuePollState, snapshot), { sessionId: sessionId ?? snapshot.session.sessionId, action, trackId, priorityDepth: MIN_PRIORITY_ACTIVE_DEPTH }).allowed;
+  }
+
+  function safeCheckoutUrl(value: unknown): string | null {
+    if (typeof value !== "string") return null;
+    try { const url = new URL(value); return (url.protocol === "http:" || url.protocol === "https:") && Boolean(url.host) ? url.toString() : null; } catch { return null; }
+  }
+
+  function snapshotPredictsAcceptedPriorityPath(snapshot: QueuePublicSnapshot | null): boolean {
+    if (!snapshot) return false;
+    if (!snapshot.status.isOpen || snapshot.status.isFull || snapshot.status.activeCount >= snapshot.status.capacity) return false;
+    if (!snapshot.session.priorityUpgradesEnabled || !snapshot.session.priorityUpgradePaymentsEnabled || snapshot.session.priorityUpgradePriceCents <= 0) return false;
+    if (snapshot.status.activeCount < MIN_PRIORITY_ACTIVE_DEPTH) return false;
+    return snapshot.queue.some((track) => track.lane === "priority" || track.lane === "wheel" || track.lane === "regular");
+  }
+
+  async function uploadAudioPacket(selectedFile: File, generation: number): Promise<{ url: string }> {
     setReadState("uploading");
     setUploadProgress(0);
     try {
       const pathname = `barcode-radio-queue/${Date.now()}-${safeFileName(selectedFile.name)}`;
       const mimeType = audioMimeTypeForFile(selectedFile);
+      if (generation !== formGenerationRef.current || !snapshotAllowsSubmit(latestSnapshotRef.current)) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
       const blob = await upload(pathname, selectedFile, {
         access: "private",
         contentType: mimeType,
@@ -286,6 +337,8 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
         }),
         onUploadProgress: ({ percentage }) => setUploadProgress(Math.round(percentage)),
       });
+      const afterUpload = await loadStatus({ fresh: true });
+      if (generation !== formGenerationRef.current || !snapshotAllowsSubmit(afterUpload)) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
       setUploadProgress(100);
       return { url: blob.url };
     } catch (uploadError) {
@@ -309,7 +362,8 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   const priorityCurrency = session?.priorityUpgradeCurrency ?? "usd";
   const priorityPaymentsAvailable = session?.priorityUpgradesEnabled === true && session?.priorityUpgradePaymentsEnabled === true && priorityPriceCents > 0;
   const priorityDepthAvailable = (status?.activeCount ?? 0) >= MIN_PRIORITY_ACTIVE_DEPTH;
-  const priorityCheckoutAvailable = priorityPaymentsAvailable && status?.isOpen === true && priorityDepthAvailable;
+  const predictedAcceptedTrackHasPriorityPath = snapshotPredictsAcceptedPriorityPath(session && status ? { session, status, queue: publicQueue, completed: [], nowPlaying, upNext, submitterStatus } : null);
+  const priorityCheckoutAvailable = priorityPaymentsAvailable && status?.isOpen === true && priorityDepthAvailable && predictedAcceptedTrackHasPriorityPath;
   const timingSnapshot = useMemo<QueuePublicSnapshot | null>(() => session && status ? { session, status, queue: publicQueue, completed: [], nowPlaying, upNext, submitterStatus } : null, [session, status, publicQueue, nowPlaying, upNext, submitterStatus]);
   const timingSummary = useMemo(() => buildQueueTimingDisplay(queueTimingInputFromPublicSnapshot(timingSnapshot), { priorityEligible: priorityCheckoutAvailable }), [timingSnapshot, priorityCheckoutAvailable]);
   const submitPriorityImpact = priorityCheckoutAvailable ? priorityDisplayFromImpact(timingSummary.priorityImpactEstimate) : null;
@@ -330,7 +384,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
 
   async function waitForTrackConfirmation(trackId: string): Promise<QueuePublicSnapshot | null> {
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      const snapshot = await loadStatus();
+      const snapshot = await loadStatus({ fresh: true });
       const foundInQueue = snapshot?.queue.some((entry) => entry.id === trackId);
       const foundInNowPlaying = snapshot?.nowPlaying?.id === trackId;
       const foundInUpNext = snapshot?.upNext?.id === trackId;
@@ -341,15 +395,30 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
     return null;
   }
 
-  async function startPriorityCheckout(trackId: string): Promise<boolean> {
+  async function startPriorityCheckout(trackId: string, generation = formGenerationRef.current): Promise<boolean> {
     const checkoutSessionId = sessionId ?? session?.sessionId;
     if (!checkoutSessionId) return false;
+    const before = await loadStatus({ fresh: true });
+    if (generation !== formGenerationRef.current || !snapshotAllowsPriorityCheckout(before, trackId)) return false;
     setTransmissionState("priority_requested");
     await wait(650);
-    const res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId, sessionId: checkoutSessionId, acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT }) });
+    if (generation !== formGenerationRef.current) return false;
+    const afterDelay = await loadStatus({ fresh: true });
+    if (generation !== formGenerationRef.current || !snapshotAllowsPriorityCheckout(afterDelay, trackId)) return false;
+    let res: Response;
+    try {
+      res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId, sessionId: checkoutSessionId, acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT }) });
+    } catch {
+      if (generation === formGenerationRef.current) setTransmissionState("idle");
+      return false;
+    }
     const payload = await res.json().catch(() => ({}));
-    if (res.ok && typeof payload.url === "string") {
-      window.location.href = payload.url;
+    if (generation !== formGenerationRef.current) return false;
+    const afterCheckout = await loadStatus({ fresh: true });
+    if (generation !== formGenerationRef.current || !snapshotAllowsPriorityCheckout(afterCheckout, trackId, "priority_checkout_completed")) { setTransmissionState("idle"); return false; }
+    const checkoutUrl = safeCheckoutUrl((payload as { url?: unknown }).url);
+    if (res.ok && checkoutUrl) {
+      window.location.href = checkoutUrl;
       return true;
     }
     setTransmissionState("idle");
@@ -373,11 +442,14 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
       setLegalError("You must agree to the BARCODE Network Terms, Queue Submission Terms, and Privacy Policy before submitting.");
       return;
     }
+    formGenerationRef.current += 1;
+    const generation = formGenerationRef.current;
     setSubmitting(true);
     try {
-      const refreshedBeforeSubmit = await loadStatus();
+      const refreshedBeforeSubmit = await loadStatus({ fresh: true });
       const latestSessionId = refreshedBeforeSubmit?.session?.sessionId ?? session?.sessionId ?? sessionId;
-      if (!latestSessionId) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
+      if (!latestSessionId || !snapshotAllowsSubmit(refreshedBeforeSubmit)) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
+      if (selectedRoute === "priority" && !snapshotPredictsAcceptedPriorityPath(refreshedBeforeSubmit)) throw new Error("Queue changed before payment routing. Choose Free or reselect Priority Signal after resync.");
       const visibleSessionId = session?.sessionId ?? sessionId;
       if (visibleSessionId && latestSessionId !== visibleSessionId) throw new Error(SESSION_CHANGED_MESSAGE);
       const body: Record<string, string | number | boolean> = {
@@ -399,16 +471,19 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
       if (detectedDuration) body.detectedDurationSeconds = detectedDuration;
       if (mode === "upload") {
         if (!file) throw new Error("Select an MP3/WAV file before final routing.");
-        const blob = await uploadAudioPacket(file);
+        const blob = await uploadAudioPacket(file, generation);
         body.uploadedBlobUrl = blob.url;
         body.uploadOriginalName = file.name;
         body.fileSize = file.size;
         body.mimeType = audioMimeTypeForFile(file);
       }
       if (mode === "link") body.link = link.trim();
+      const afterUpload = await loadStatus({ fresh: true });
+      if (generation !== formGenerationRef.current || !snapshotAllowsSubmit(afterUpload)) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
 
       const res = await fetch("/api/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const payload = await res.json().catch(() => ({}));
+      if (generation !== formGenerationRef.current) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
       if (!res.ok) {
         if (payload.code === "duplicate_transmission") {
           throw new Error(payload.error || "Duplicate song detected. This track is already in the queue for this session.");
@@ -422,6 +497,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
       if (payload.track?.id) {
         const submitted = publicTrackFromApi(payload.track);
         const confirmedSnapshot = await waitForTrackConfirmation(submitted.id);
+        if (generation !== formGenerationRef.current) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
         if (!confirmedSnapshot) {
           await loadStatus();
           throw new Error(`${QUEUE_CONFIRMATION_FAILED_MESSAGE} Reference: ${submitted.id.slice(0, 8).toUpperCase()}`);
@@ -458,7 +534,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
             lane: "FREE QUEUE / PAYMENT REQUIRED",
             artworkUrl: submitted.sourceArtworkUrl ?? null,
           });
-          const checkoutStarted = await startPriorityCheckout(submitted.id);
+          const checkoutStarted = await startPriorityCheckout(submitted.id, generation);
           if (checkoutStarted) return;
           setError(PRIORITY_CHECKOUT_UNAVAILABLE_MESSAGE);
           setPublicQueue((current) => [submitted, ...current.filter((entry) => entry.id !== submitted.id)]);
@@ -602,24 +678,24 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
                     <p className="text-[10px] uppercase tracking-widest text-accent">Built-in support</p>
                     <ul className="mt-1 space-y-0.5 font-bold text-foreground">
                       <li>YouTube video, Short, or YouTube Music</li>
+                      <li>TikTok video or Short</li>
                       <li>Spotify</li>
                       <li>SoundCloud</li>
+                      <li>Apple Music (external open only)</li>
                     </ul>
                   </div>
                   <div className="border border-border/60 bg-surface/50 p-2">
                     <p className="text-[10px] uppercase tracking-widest text-muted">Also accepted</p>
                     <ul className="mt-1 grid gap-x-3 gap-y-0.5 text-foreground sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
-                      <li>Apple Music</li>
                       <li>Amazon Music</li>
                       <li>Suno</li>
                       <li>Bandcamp</li>
-                      <li>TikTok video or Short</li>
                     </ul>
                   </div>
                 </div>
               </div>
               <div className="space-y-1 leading-relaxed lg:self-end">
-                <p>Some accepted services currently open externally and may not provide automatic artwork, duration, or embedded playback. Expanded player and metadata support is planned.</p>
+                <p>Apple Music opens externally only; no embedded player or MusicKit playback is provided. Some accepted services currently open externally and may not provide automatic artwork, duration, or embedded playback. Expanded player and metadata support is planned.</p>
                 <p className="text-foreground">Send a direct song, track, or video link—not an artist profile, playlist, channel, general homepage, or album page that does not identify a specific track.</p>
               </div>
             </div>

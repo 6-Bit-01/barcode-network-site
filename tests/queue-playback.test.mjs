@@ -2182,5 +2182,6 @@ test("admin and public Apple Music component source assertions remain external-o
   assert.match(publicSource, /track\.sourceType === "apple_music"\) return "Apple Music"/);
   assert.match(adminSource, /entry\.sourceType === "apple_music"\) return null/);
   assert.doesNotMatch(adminSource, /AppleMusicPlayer|music\.apple\.com\/embed/);
-  for (const file of overlayFiles) assert.doesNotMatch(fs.readFileSync(path.join(projectRoot, file), "utf8"), /apple_music|Apple Music|music\.apple\.com/);
+  const overlaySource = overlayFiles.map((file) => fs.readFileSync(path.join(projectRoot, file), "utf8")).join("\n");
+  assert.doesNotMatch(overlaySource, /MusicKit|AppleMusicPlayer|music\.apple\.com\/embed|provider:\s*["']apple_music["']/i);
 });

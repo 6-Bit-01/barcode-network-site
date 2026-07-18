@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractOverlayScene, isResolvedLiveOverlayScene, playWheelSpinWithFallback, reduceOverlayFailure, reduceOverlaySuccess, terminateWheelSpinAudio } from '../src/lib/live-overlay-client-recovery.ts';
+import { extractOverlayScene, isResolvedLiveOverlayScene, playWheelSpinWithFallback, reduceOverlayFailure, reduceOverlaySuccess, shouldStartWheelResultFade, shouldStopWheelSpinForStatus, terminateWheelSpinAudio } from '../src/lib/live-overlay-client-recovery.ts';
 import { resolveLiveOverlayScene } from '../src/lib/live-overlay-resolver.ts';
 
 const now = new Date('2026-07-17T00:00:00.000Z');
 const session = { sessionId: 's1', title: 'Show', status: 'open', queueOpen: true, broadcastPhase: 'broadcast_active', wheelSpinsOwed: 1, sponsorBreakStatus: 'not_due' };
 const ytTrack = { id: 'yt-a', submittedArtistName: 'Artist', submittedSongTitle: 'Video', sourceType: 'youtube', sourceArtworkUrl: 'https://img.youtube.com/vi/abcdefghijk/hqdefault.jpg', link: 'https://youtube.com/watch?v=abcdefghijk', durationLabel: '3:00', youtubeVideoId: 'abcdefghijk' };
+const appleTrack = { id: 'am-a', submittedArtistName: 'Apple Artist', submittedSongTitle: 'Apple Song', sourceType: 'apple_music', sourceArtworkUrl: 'https://is1-ssl.mzstatic.com/image.jpg', link: 'https://music.apple.com/us/song/example/123456789', durationLabel: '3:33' };
 const ttTrack = { id: 'tt-a', submittedArtistName: 'TT', submittedSongTitle: 'Post', sourceType: 'tiktok', sourceArtworkUrl: 'https://www.tiktok.com/example.jpg', link: 'https://www.tiktok.com/@scout2015/video/6718335390845095173', durationLabel: '0:59', tiktokPostId: '6718335390845095173' };
 const candidates = [{ id: 'person:a', artistName: 'Artist A', trackTitle: '2 eligible tracks', trackIds: ['a1', 'a2'], trackCount: 2, tracks: [{ id: 'a1', artistName: 'Artist A', trackTitle: 'Song A' }, { id: 'a2', artistName: 'Artist A', trackTitle: 'Song B' }] }, { id: 'person:b', artistName: 'Artist B', trackTitle: 'Song C', trackIds: ['b1'], trackCount: 1 }];
 
@@ -21,6 +22,7 @@ test('production resolver wheel, result, YouTube, TikTok, and optional trackId s
   assertExtracts(resolveLiveOverlayScene({ currentSession: session, overlayState: { wheelOverlayActive: true, wheelCeremonyStatus: 'result_pending', wheelCeremonyResultTrackId: 'person:a', wheelCeremonyCandidateOrder: ['person:a', 'person:b'], wheelCeremonyFinalRotationDeg: 720, wheelCeremonyLandingAngleDeg: 90 }, wheelCandidates: candidates, now }), 'wheel result');
   assertExtracts(resolveLiveOverlayScene({ currentSession: session, nowPlaying: ytTrack, playerSync: { provider: 'youtube', videoId: 'abcdefghijk', playbackState: 'playing', currentTimeSeconds: 12, updatedAt: now.toISOString(), muted: true }, now }), 'youtube sync optional trackId');
   assertExtracts(resolveLiveOverlayScene({ currentSession: session, nowPlaying: ttTrack, playerSync: { provider: 'tiktok', postId: '6718335390845095173', playbackState: 'paused', currentTimeSeconds: 4, durationSeconds: 59, updatedAt: now.toISOString(), muted: true }, now }), 'tiktok sync optional trackId');
+  assertExtracts(resolveLiveOverlayScene({ currentSession: session, nowPlaying: appleTrack, now }), 'apple music external-open scene');
 });
 
 test('overlay rejects malformed nested fields and retains last-good until later valid recovery', () => {
@@ -30,6 +32,7 @@ test('overlay rejects malformed nested fields and retains last-good until later 
     { ...scene, sourceUrl: 'javascript:alert(1)' },
     { ...scene, priority: Number.NaN },
     { ...scene, track: { ...scene.track, sourceType: 'bogus' } },
+    { ...scene, track: { ...scene.track, sourceType: 'apple_music' }, youtube: { provider: 'youtube', videoId: 'abcdefghijk', playbackState: 'playing', currentTimeSeconds: 1, updatedAt: now.toISOString(), muted: true } },
     { ...scene, youtube: { provider: 'youtube', videoId: 'abcdefghijk', playbackState: 'playing', currentTimeSeconds: 1, hostUpdatedAt: now.toISOString(), muted: true } },
     { ...scene, mode: 'wheel_ready', wheelCeremony: undefined },
     { ...scene, mode: 'wheel_spinning', wheelCeremony: { status: 'ready', storedStatus: 'ready', candidateCount: 1, displayCandidates: [], hiddenCandidateCount: 0, spinDurationMs: 24000 } },
@@ -69,6 +72,8 @@ test('wheel validator rejects one-field wheel mutations on valid resolver scene'
     mutateWheel({ winningSegmentIndex: scene.wheelCeremony.candidateCount }),
     mutateWheel({ resultTrack: malformedCandidate }),
     mutateWheel({ displayCandidates: [scene.wheelCeremony.displayCandidates[0], malformedNested] }),
+    mutateWheel({ displayCandidates: [{ ...scene.wheelCeremony.displayCandidates[0], trackCount: 99 }, scene.wheelCeremony.displayCandidates[1]] }),
+    mutateWheel({ displayCandidates: [{ ...scene.wheelCeremony.displayCandidates[0], tracks: [{ id: 'nested', artistName: 'Nested', trackTitle: 'Song', weight: -1 }] }, scene.wheelCeremony.displayCandidates[1]] }),
   ]) assert.equal(isResolvedLiveOverlayScene(bad), false);
 });
 
@@ -85,6 +90,15 @@ test('wheel audio primary fallback success, total failure, blocked autoplay, and
   assert.deepEqual(blocked.attempts, ['a.mp3']);
   const stale = await playWheelSpinWithFallback(['a.mp3', 'b.mp3'], async () => {}, 4, () => false);
   assert.equal(stale.notice, null);
+});
+
+test('wheel status lifecycle preserves early confirmed fade and stops abnormal exits', () => {
+  assert.equal(shouldStartWheelResultFade('result_pending', 'confirmed', false), true);
+  assert.equal(shouldStartWheelResultFade('result_pending', 'confirmed', true), false);
+  assert.equal(shouldStopWheelSpinForStatus(true, true, 'confirmed', true), false);
+  assert.equal(shouldStopWheelSpinForStatus(true, true, 'confirmed', false), true);
+  assert.equal(shouldStopWheelSpinForStatus(true, true, 'reencrypting', false), true);
+  assert.equal(shouldStopWheelSpinForStatus(false, true, 'spinning', false), true);
 });
 
 test('wheel audio termination stops, resets, and can clear source before replacement/unmount', () => {

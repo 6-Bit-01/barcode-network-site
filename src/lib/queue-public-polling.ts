@@ -7,13 +7,13 @@ export type QueuePollState = { status: QueuePollStatus; snapshot: QueuePublicSna
 
 export class QueuePollError extends Error { reason: QueuePollFailureReason; statusCode?: number; constructor(reason: QueuePollFailureReason, message: string, statusCode?: number) { super(message); this.reason = reason; this.statusCode = statusCode; } }
 
-const QUEUE_SOURCE_TYPES = { upload: true, link: true, youtube: true, soundcloud: true, spotify: true, tiktok: true, other: true } satisfies Record<QueueSourceType, true>;
+const QUEUE_SOURCE_TYPES = { upload: true, link: true, youtube: true, soundcloud: true, spotify: true, tiktok: true, apple_music: true, other: true } satisfies Record<QueueSourceType, true>;
 const SESSION_STATUSES = { prepared: true, open: true, closed: true, archived: true } satisfies Record<QueueSessionStatus, true>;
 const BROADCAST_PHASES = { warmup: true, submission_window: true, broadcast_active: true, ended: true } satisfies Record<QueueBroadcastPhase, true>;
 const PRIORITY_STATUSES = { none: true, requested: true, manual: true, checkout_pending: true, paid: true, paid_needs_attention: true, failed: true, refunded: true } satisfies Record<PriorityUpgradeStatus, true>;
 const PRESSURES = { low: true, medium: true, high: true, max: true } satisfies Record<QueuePublicSnapshot["status"]["pressure"], true>;
 const LANES = { priority: true, wheel: true, regular: true } satisfies Record<QueueLane, true>;
-const DURATION_SOURCES = { upload_metadata: true, file_metadata: true, youtube: true, soundcloud: true, spotify: true, youtube_api: true, spotify_api: true, soundcloud_api: true, direct_metadata: true, provider_metadata: true, internal_estimate: true, estimated: true, unknown: true } satisfies Record<QueueDurationSource, true>;
+const DURATION_SOURCES = { upload_metadata: true, file_metadata: true, youtube: true, soundcloud: true, spotify: true, apple_music: true, youtube_api: true, spotify_api: true, soundcloud_api: true, apple_music_api: true, direct_metadata: true, provider_metadata: true, internal_estimate: true, estimated: true, unknown: true } satisfies Record<QueueDurationSource, true>;
 const SPONSOR_BREAK_MODES = { mid_show: true } satisfies Record<SponsorBreakMode, true>;
 const SPONSOR_BREAK_STATUSES = { not_due: true, due: true, running: true, completed: true, skipped: true } satisfies Record<SponsorBreakStatus, true>;
 const hasOwn = <T extends object>(record: T, key: unknown): key is keyof T => typeof key === "string" && Object.prototype.hasOwnProperty.call(record, key);

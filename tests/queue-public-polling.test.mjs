@@ -26,7 +26,7 @@ test('validates nested public queue snapshot shape', () => {
   assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, priorityUpgradeCurrency: { bad: true } } }), false);
   assert.equal(isQueuePublicSnapshot({ ...snapshot(), queue: [track('bad-url', 'other')].map((entry) => ({ ...entry, publicSourceUrl: 'javascript:alert(1)' })) }), false);
   assert.equal(isQueuePublicSnapshot({ ...snapshot(), submitterStatus: false }), false);
-  for (const sourceType of ['upload', 'link', 'youtube', 'soundcloud', 'spotify', 'tiktok', 'other']) assert.equal(isQueuePublicSnapshot(snapshot('s1', { queue: [track('t-' + sourceType, sourceType)] })), true);
+  for (const sourceType of ['upload', 'link', 'youtube', 'soundcloud', 'spotify', 'tiktok', 'apple_music', 'other']) assert.equal(isQueuePublicSnapshot(snapshot('s1', { queue: [track('t-' + sourceType, sourceType)] })), true);
   for (const status of ['prepared', 'open', 'closed', 'archived']) assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, status } }), true);
   for (const broadcastPhase of ['warmup', 'submission_window', 'broadcast_active', 'ended']) assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, broadcastPhase } }), true);
   assert.equal(isQueuePublicSnapshot(snapshot('s1', { queue: [track('bad', 'unknown')] })), false);
@@ -36,6 +36,8 @@ test('validates nested public queue snapshot shape', () => {
   assert.equal(isQueuePublicSnapshot({ ...snapshot(), status: { ...snapshot().status, activeCount: Number.MAX_SAFE_INTEGER + 1 } }), false);
   assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, showStarted: null } }), false);
   assert.equal(isQueuePublicSnapshot({ ...snapshot(), session: { ...snapshot().session, broadcastPhase: null } }), false);
+  assert.equal(isQueuePublicSnapshot(snapshot('s1', { queue: [{ ...track('apple', 'apple_music'), durationSource: 'apple_music_api', publicSourceUrl: 'https://music.apple.com/us/song/example/123456789' }] })), true);
+  assert.equal(isQueuePublicSnapshot(snapshot('s1', { queue: [{ ...track('apple-bad', 'apple_music'), publicSourceUrl: 'music://song/123456789' }] })), false);
 });
 
 test('distinguishes network non-2xx malformed and unexpected payload failures', async () => {

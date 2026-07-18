@@ -681,12 +681,12 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
                       <li>TikTok video or Short</li>
                       <li>Spotify</li>
                       <li>SoundCloud</li>
+                      <li>Apple Music (external open only)</li>
                     </ul>
                   </div>
                   <div className="border border-border/60 bg-surface/50 p-2">
                     <p className="text-[10px] uppercase tracking-widest text-muted">Also accepted</p>
                     <ul className="mt-1 grid gap-x-3 gap-y-0.5 text-foreground sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
-                      <li>Apple Music</li>
                       <li>Amazon Music</li>
                       <li>Suno</li>
                       <li>Bandcamp</li>
@@ -695,7 +695,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
                 </div>
               </div>
               <div className="space-y-1 leading-relaxed lg:self-end">
-                <p>Some accepted services currently open externally and may not provide automatic artwork, duration, or embedded playback. Expanded player and metadata support is planned.</p>
+                <p>Apple Music opens externally only; no embedded player or MusicKit playback is provided. Some accepted services currently open externally and may not provide automatic artwork, duration, or embedded playback. Expanded player and metadata support is planned.</p>
                 <p className="text-foreground">Send a direct song, track, or video link—not an artist profile, playlist, channel, general homepage, or album page that does not identify a specific track.</p>
               </div>
             </div>

@@ -8,7 +8,7 @@ const OVERLAY_MODES = { standby: true, now_playing: true, artist_card: true, whe
 const WHEEL_STATUSES = { idle: true, ready: true, reencrypting: true, spinning: true, result_pending: true, confirmed: true, cancelled: true, signal_lost: true } satisfies Record<WheelCeremonyStatus, true>;
 const PLAYBACK_STATES = { playing: true, paused: true, stopped: true } satisfies Record<LiveOverlayPlaybackState, true>;
 const CORRECTION_REASONS = { state_change: true, heartbeat: true, seek: true } satisfies Record<LiveOverlaySyncCorrectionReason, true>;
-const SOURCE_TYPES = { upload: true, link: true, youtube: true, soundcloud: true, spotify: true, tiktok: true, other: true, unknown: true } satisfies Record<QueueSourceType | "unknown", true>;
+const SOURCE_TYPES = { upload: true, link: true, youtube: true, soundcloud: true, spotify: true, tiktok: true, apple_music: true, other: true, unknown: true } satisfies Record<QueueSourceType | "unknown", true>;
 const PRESENTATIONS = { standard: true, short: true } satisfies Record<"standard" | "short", true>;
 const hasOwn = <T extends object>(record: T, key: unknown): key is keyof T => typeof key === "string" && Object.prototype.hasOwnProperty.call(record, key);
 
@@ -35,9 +35,20 @@ function syncOk(sync: unknown, provider: "youtube" | "tiktok"): boolean {
   return Boolean(identity && strOpt(s.trackId) && hasOwn(PLAYBACK_STATES, s.playbackState) && finite(s.currentTimeSeconds) && s.currentTimeSeconds >= 0 && iso(s.updatedAt) && (provider === "tiktok" ? s.muted === true : typeof s.muted === "boolean") && isoOpt(s.clientUpdatedAt) && (s.correctionReason == null || hasOwn(CORRECTION_REASONS, s.correctionReason)) && (provider !== "tiktok" || s.durationSeconds == null || (finite(s.durationSeconds) && s.durationSeconds >= 0)));
 }
 
-function candidateOk(candidate: unknown): candidate is ResolvedWheelCeremonyTrack {
+function candidateOk(candidate: unknown, depth = 0): candidate is ResolvedWheelCeremonyTrack {
   const c = candidate as Partial<ResolvedWheelCeremonyTrack> | null;
-  return Boolean(c && typeof c === "object" && str(c.id) && str(c.artistName) && str(c.trackTitle) && stringArrayOpt(c.trackIds) && (c.trackCount == null || (Number.isSafeInteger(c.trackCount) && Number(c.trackCount) > 0)) && (c.weight == null || (finite(c.weight) && c.weight > 0)) && (c.tracks == null || (Array.isArray(c.tracks) && c.tracks.every((track) => { const t = track as Partial<ResolvedWheelCeremonyTrack> | null; return Boolean(t && typeof t === "object" && str(t.id) && str(t.artistName) && str(t.trackTitle)); }))));
+  if (!c || typeof c !== "object" || !str(c.id) || !str(c.artistName) || !str(c.trackTitle)) return false;
+  if (!stringArrayOpt(c.trackIds)) return false;
+  if (c.trackIds != null && c.trackIds.length === 0) return false;
+  if (c.trackCount != null && (!Number.isSafeInteger(c.trackCount) || Number(c.trackCount) <= 0)) return false;
+  if (c.trackIds != null && c.trackCount != null && c.trackIds.length !== Number(c.trackCount)) return false;
+  if (c.weight != null && (!finite(c.weight) || c.weight <= 0)) return false;
+  if (c.tracks != null) {
+    if (depth > 2 || !Array.isArray(c.tracks) || c.tracks.length === 0) return false;
+    if (c.trackCount != null && c.tracks.length !== Number(c.trackCount)) return false;
+    if (!c.tracks.every((track) => candidateOk(track, depth + 1))) return false;
+  }
+  return true;
 }
 
 function wheelOk(wheel: unknown): wheel is ResolvedWheelCeremonyScene | undefined {
@@ -96,3 +107,6 @@ export async function playWheelSpinWithFallback(paths: string[], play: (path: st
 
 export type WheelAudioLike = { src: string; loop: boolean; volume: number; currentTime: number; pause: () => void; play: () => Promise<void> };
 export function terminateWheelSpinAudio(audio: WheelAudioLike | null, options: { volume: number; clearSource?: boolean } = { volume: 1 }): void { if (!audio) return; audio.pause(); audio.currentTime = 0; audio.volume = options.volume; audio.loop = false; if (options.clearSource) audio.src = ""; }
+
+export function shouldStartWheelResultFade(previousStatus: WheelCeremonyStatus | null | undefined, currentStatus: WheelCeremonyStatus | null | undefined, fadeBegun: boolean): boolean { return currentStatus === "confirmed" && previousStatus === "result_pending" && !fadeBegun; }
+export function shouldStopWheelSpinForStatus(connected: boolean, wheelMode: boolean, status: WheelCeremonyStatus | null | undefined, fadeBegun: boolean): boolean { return !(connected && wheelMode && (status === "spinning" || status === "result_pending" || (status === "confirmed" && fadeBegun))); }

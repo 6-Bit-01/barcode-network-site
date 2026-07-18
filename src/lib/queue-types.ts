@@ -3,11 +3,11 @@
 // ============================================================
 
 export type QueueTier = "free" | "featured" | "fastlane" | "frontrow";
-export type QueueSourceType = "upload" | "link" | "youtube" | "soundcloud" | "spotify" | "tiktok" | "other";
+export type QueueSourceType = "upload" | "link" | "youtube" | "soundcloud" | "spotify" | "tiktok" | "apple_music" | "other";
 export type QueueLane = "priority" | "wheel" | "regular";
 export type QueueNonPriorityLane = "wheel" | "regular";
 export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | "next" | "pending" | "played" | "refunded" | "expired";
-export type QueueDurationSource = "upload_metadata" | "file_metadata" | "youtube" | "soundcloud" | "spotify" | "youtube_api" | "spotify_api" | "soundcloud_api" | "direct_metadata" | "provider_metadata" | "internal_estimate" | "estimated" | "unknown";
+export type QueueDurationSource = "upload_metadata" | "file_metadata" | "youtube" | "soundcloud" | "spotify" | "apple_music" | "youtube_api" | "spotify_api" | "soundcloud_api" | "apple_music_api" | "direct_metadata" | "provider_metadata" | "internal_estimate" | "estimated" | "unknown";
 export type QueueSessionStatus = "prepared" | "open" | "closed" | "archived";
 export type QueueBroadcastPhase = "warmup" | "submission_window" | "broadcast_active" | "ended";
 export type PriorityUpgradeStatus = "none" | "requested" | "manual" | "checkout_pending" | "paid" | "paid_needs_attention" | "failed" | "refunded";
@@ -257,6 +257,34 @@ export interface QueueState {
 }
 
 
+export interface ParsedAppleMusicUrl {
+  kind: "song" | "album" | "music-video";
+  id: string;
+  canonicalSourceUrl: string;
+}
+
+const APPLE_MUSIC_ID_PATTERN = /^\d{5,32}$/;
+
+export function parseAppleMusicUrl(value?: string | null): ParsedAppleMusicUrl | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
+    const host = url.hostname.replace(/^www\./, "").toLowerCase();
+    if (host !== "music.apple.com" && host !== "itunes.apple.com") return null;
+    const parts = url.pathname.split("/").filter(Boolean);
+    const kind = parts.find((part) => part === "song" || part === "album" || part === "music-video") as ParsedAppleMusicUrl["kind"] | undefined;
+    const rawId = url.searchParams.get("i") ?? parts.findLast((part) => APPLE_MUSIC_ID_PATTERN.test(part));
+    if (!kind || !rawId || !APPLE_MUSIC_ID_PATTERN.test(rawId)) return null;
+    const country = /^[a-z]{2}$/i.test(parts[0] ?? "") ? parts[0].toLowerCase() : "us";
+    const slugIndex = Math.max(0, parts.indexOf(kind) + 1);
+    const slug = parts[slugIndex] && !APPLE_MUSIC_ID_PATTERN.test(parts[slugIndex]) ? parts[slugIndex] : "track";
+    return { kind, id: rawId, canonicalSourceUrl: `https://music.apple.com/${country}/${kind}/${slug}/${rawId}` };
+  } catch {
+    return null;
+  }
+}
+
 export interface ParsedTikTokVideoUrl {
   postId: string;
   sourceForm: "post" | "player";
@@ -323,7 +351,7 @@ export function getTrackArtworkUrl(track: Pick<QueueEntry, "sourceType" | "sourc
     const videoId = parseQueueYouTubeVideoId(track.link);
     if (videoId) return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
   }
-  if ((track.sourceType === "spotify" || track.sourceType === "soundcloud" || track.sourceType === "youtube" || track.sourceType === "tiktok") && isSafeHttpsArtworkUrl(track.sourceArtworkUrl)) return track.sourceArtworkUrl;
+  if ((track.sourceType === "spotify" || track.sourceType === "soundcloud" || track.sourceType === "youtube" || track.sourceType === "tiktok" || track.sourceType === "apple_music") && isSafeHttpsArtworkUrl(track.sourceArtworkUrl)) return track.sourceArtworkUrl;
   return null;
 }
 
@@ -377,12 +405,14 @@ export function formatRuntime(seconds: number): string {
 
 export function detectQueueSourceType(value: string): QueueSourceType {
   if (parseTikTokVideoUrl(value)) return "tiktok";
+  if (parseAppleMusicUrl(value)) return "apple_music";
   try {
     const url = new URL(value);
     const host = url.hostname.replace(/^www\./, "").toLowerCase();
     if (host.includes("youtube.com") || host.includes("youtu.be")) return "youtube";
     if (host.includes("soundcloud.com")) return "soundcloud";
     if (host.includes("spotify.com")) return "spotify";
+    if (host === "music.apple.com" || host === "itunes.apple.com") return "apple_music";
     return "other";
   } catch {
     return "link";

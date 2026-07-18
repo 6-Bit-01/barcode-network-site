@@ -71,8 +71,11 @@ test("parses Spotify track URLs", () => {
   assert.equal(duration.parseSpotifyTrackId("spotify:track:4uLU6hMCjMI75M1A2tKUQC"), "4uLU6hMCjMI75M1A2tKUQC");
 });
 
-test("parses SoundCloud public URLs", () => {
+test("parses SoundCloud and Apple Music public URLs", () => {
   assert.equal(duration.parseSafeTrackProviderUrl("https://soundcloud.com/artist-name/track-name")?.provider, "soundcloud");
+  const apple = duration.parseSafeTrackProviderUrl("https://music.apple.com/us/song/example/123456789?i=123456789&ls=1");
+  assert.equal(apple?.provider, "apple_music");
+  assert.equal(apple?.providerTrackId, "123456789");
 });
 
 test("parses ISO 8601 provider durations", () => {
@@ -103,6 +106,15 @@ test("missing SoundCloud client id returns unavailable without crashing", async 
   assert.equal(result.durationSource, "unknown");
   assert.match(result.notes.join(" "), /SoundCloud client id is not configured/);
 }));
+
+test("Apple Music duration remains accepted external-open without API playback", async () => {
+  const result = await duration.detectTrackDurationFromLink("https://music.apple.com/us/song/example/123456789");
+  assert.equal(result.provider, "apple_music");
+  assert.equal(result.durationSeconds, null);
+  assert.equal(result.durationIsEstimate, true);
+  assert.equal(result.durationSource, "unknown");
+  assert.match(result.notes.join(" "), /external-open/);
+});
 
 test("unknown providers return unavailable detection", async () => {
   const result = await duration.detectTrackDurationFromLink("https://example.com/song.mp3");

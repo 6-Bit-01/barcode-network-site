@@ -14,6 +14,7 @@ import {
   getTrackDurationLabel,
   getTrackArtworkUrl,
   normalizeTier,
+  parseAppleMusicUrl,
   parseTikTokVideoUrl,
 } from "./queue-types";
 import type {
@@ -760,14 +761,15 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
 function normalizeDurationSource(source: QueueDurationSource | string | undefined, detected: number | null, sourceType: QueueSourceType): QueueDurationSource {
   if (source === "browser-audio-metadata" || source === "upload_metadata") return "upload_metadata";
   if (source === "file-metadata" || source === "file_metadata") return "file_metadata";
-  if (source === "provider-metadata" || source === "provider_metadata") return sourceType === "youtube" || sourceType === "soundcloud" || sourceType === "spotify" ? sourceType : "provider_metadata";
+  if (source === "provider-metadata" || source === "provider_metadata") return sourceType === "youtube" || sourceType === "soundcloud" || sourceType === "spotify" || sourceType === "apple_music" ? sourceType : "provider_metadata";
   if (source === "internal-estimate" || source === "internal_estimate" || source === "estimated") return source === "estimated" ? "estimated" : "internal_estimate";
-  if (source === "youtube_api" || source === "spotify_api" || source === "soundcloud_api" || source === "direct_metadata") return source;
-  if (source === "youtube" || source === "soundcloud" || source === "spotify" || source === "unknown") return source;
+  if (source === "youtube_api" || source === "spotify_api" || source === "soundcloud_api" || source === "apple_music_api" || source === "direct_metadata") return source;
+  if (source === "youtube" || source === "soundcloud" || source === "spotify" || source === "apple_music" || source === "unknown") return source;
   if (detected && sourceType === "upload") return "upload_metadata";
   if (detected && sourceType === "youtube") return "youtube_api";
   if (detected && sourceType === "spotify") return "spotify_api";
   if (detected && sourceType === "soundcloud") return "soundcloud_api";
+  if (detected && sourceType === "apple_music") return "apple_music_api";
   return detected ? "provider_metadata" : "internal_estimate";
 }
 
@@ -1059,6 +1061,7 @@ export async function detectProviderMetadata(sourceType: QueueSourceType, link: 
     else if (sourceType === "spotify") metadata = await lookupSpotifyMetadata(link);
     else if (sourceType === "soundcloud") metadata = await lookupSoundCloudMetadata(link);
     else if (sourceType === "tiktok") metadata = await lookupTikTokMetadata(link);
+    else if (sourceType === "apple_music") metadata = blankProvider("internal_estimate");
     else return metadata;
 
     if (metadata.detectedDurationSeconds) return metadata;
@@ -1125,6 +1128,10 @@ function parseProviderId(sourceType: QueueSourceType, link: string): string | nu
   if (sourceType === "tiktok") {
     const parsed = parseTikTokVideoUrl(link);
     return parsed ? `tiktok:video:${parsed.postId}` : null;
+  }
+  if (sourceType === "apple_music") {
+    const parsed = parseAppleMusicUrl(link);
+    return parsed ? `apple_music:${parsed.id}` : null;
   }
   return null;
 }

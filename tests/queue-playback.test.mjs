@@ -1941,6 +1941,21 @@ test("TikTok canonical duplicate identity blocks equivalent forms while preservi
 });
 
 
+test("Apple Music canonical duplicate identity stays external-open without embedded provider", async () => {
+  await freshOpenSession("apple music duplicate", { showStarted: false });
+  const first = await queue.submitRadioTrack({ artist: "Apple Artist", title: "First", tiktokHandle: "@appledup1", link: "https://music.apple.com/us/song/example/123456789?i=123456789&ls=1" });
+  assert.equal(first.sourceType, "apple_music");
+  assert.equal(first.providerId, "apple_music:123456789");
+  assert.equal(first.providerTitle, null);
+  await withFakeNow(new Date(Date.now() + 301_000), async () => {
+    await assert.rejects(() => queue.submitRadioTrack({ artist: "Apple Artist", title: "Same", tiktokHandle: "@appledup2", link: "https://music.apple.com/us/song/example/123456789?i=123456789&utm_source=x" }), /Duplicate transmission/);
+  });
+  const distinct = await withFakeNow(new Date(Date.now() + 602_000), () => queue.submitRadioTrack({ artist: "Apple Artist", title: "Distinct", tiktokHandle: "@appledup3", link: "https://music.apple.com/us/song/example-two/987654321" }));
+  assert.equal(distinct.providerId, "apple_music:987654321");
+  assert.equal(queue.normalizeQueueSourceKey("https://music.apple.com/us/song/example/123456789?i=123456789&utm_source=x"), "music.apple.com/us/song/example/123456789?i=123456789");
+});
+
+
 async function addLegacyIdentityTrack(label, overrides = {}) {
   trackSequence += 1;
   return queue.addToQueue({

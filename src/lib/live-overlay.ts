@@ -258,7 +258,7 @@ function normalizeMode(value: unknown): OverlayMode {
 }
 
 function normalizeSourceType(value: unknown): LiveOverlayState["sourceType"] {
-  const sources: LiveOverlayState["sourceType"][] = ["upload", "link", "youtube", "tiktok", "soundcloud", "spotify", "other", "unknown"];
+  const sources: LiveOverlayState["sourceType"][] = ["upload", "link", "youtube", "tiktok", "soundcloud", "spotify", "apple_music", "other", "unknown"];
   return sources.includes(value as LiveOverlayState["sourceType"]) ? value as LiveOverlayState["sourceType"] : "unknown";
 }
 

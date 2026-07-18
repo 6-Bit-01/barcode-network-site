@@ -1,0 +1,2 @@
+"use client";
+export default function Error({ reset }: { reset: () => void }) { return <div className="pt-14"><section className="mx-auto max-w-3xl px-4 py-24 sm:px-6"><div className="border border-danger/40 bg-surface p-6"><p className="text-xs uppercase tracking-[0.4em] text-danger">Journal signal unavailable</p><button onClick={reset} className="mt-5 border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Retry</button></div></section></div>; }

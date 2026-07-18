@@ -309,6 +309,14 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
     try { const url = new URL(value); return (url.protocol === "http:" || url.protocol === "https:") && Boolean(url.host) ? url.toString() : null; } catch { return null; }
   }
 
+  function snapshotPredictsAcceptedPriorityPath(snapshot: QueuePublicSnapshot | null): boolean {
+    if (!snapshot) return false;
+    if (!snapshot.status.isOpen || snapshot.status.isFull || snapshot.status.activeCount >= snapshot.status.capacity) return false;
+    if (!snapshot.session.priorityUpgradesEnabled || !snapshot.session.priorityUpgradePaymentsEnabled || snapshot.session.priorityUpgradePriceCents <= 0) return false;
+    if (snapshot.status.activeCount < MIN_PRIORITY_ACTIVE_DEPTH) return false;
+    return snapshot.queue.some((track) => track.lane === "priority" || track.lane === "wheel" || track.lane === "regular");
+  }
+
   async function uploadAudioPacket(selectedFile: File, generation: number): Promise<{ url: string }> {
     setReadState("uploading");
     setUploadProgress(0);
@@ -354,7 +362,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   const priorityCurrency = session?.priorityUpgradeCurrency ?? "usd";
   const priorityPaymentsAvailable = session?.priorityUpgradesEnabled === true && session?.priorityUpgradePaymentsEnabled === true && priorityPriceCents > 0;
   const priorityDepthAvailable = (status?.activeCount ?? 0) >= MIN_PRIORITY_ACTIVE_DEPTH;
-  const predictedAcceptedTrackHasPriorityPath = publicQueue.some((track) => track.lane === "priority" || track.lane === "wheel" || track.lane === "regular");
+  const predictedAcceptedTrackHasPriorityPath = snapshotPredictsAcceptedPriorityPath(session && status ? { session, status, queue: publicQueue, completed: [], nowPlaying, upNext, submitterStatus } : null);
   const priorityCheckoutAvailable = priorityPaymentsAvailable && status?.isOpen === true && priorityDepthAvailable && predictedAcceptedTrackHasPriorityPath;
   const timingSnapshot = useMemo<QueuePublicSnapshot | null>(() => session && status ? { session, status, queue: publicQueue, completed: [], nowPlaying, upNext, submitterStatus } : null, [session, status, publicQueue, nowPlaying, upNext, submitterStatus]);
   const timingSummary = useMemo(() => buildQueueTimingDisplay(queueTimingInputFromPublicSnapshot(timingSnapshot), { priorityEligible: priorityCheckoutAvailable }), [timingSnapshot, priorityCheckoutAvailable]);
@@ -441,6 +449,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
       const refreshedBeforeSubmit = await loadStatus({ fresh: true });
       const latestSessionId = refreshedBeforeSubmit?.session?.sessionId ?? session?.sessionId ?? sessionId;
       if (!latestSessionId || !snapshotAllowsSubmit(refreshedBeforeSubmit)) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
+      if (selectedRoute === "priority" && !snapshotPredictsAcceptedPriorityPath(refreshedBeforeSubmit)) throw new Error("Queue changed before payment routing. Choose Free or reselect Priority Signal after resync.");
       const visibleSessionId = session?.sessionId ?? sessionId;
       if (visibleSessionId && latestSessionId !== visibleSessionId) throw new Error(SESSION_CHANGED_MESSAGE);
       const body: Record<string, string | number | boolean> = {

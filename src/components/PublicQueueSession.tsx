@@ -467,16 +467,18 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     priorityCheckoutControllerRef.current?.abort();
     const controller = new AbortController();
     priorityCheckoutControllerRef.current = controller;
+    const timeoutId = window.setTimeout(() => controller.abort(), 8000);
     setPriorityRequestPending(true);
     let res: Response | null = null;
     let payload: { url?: unknown; message?: string; error?: string } = {};
     try {
       res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal, body: JSON.stringify({ trackId: track.id, sessionId, acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT }) });
-      payload = await res.json().catch(() => ({}));
+      payload = await Promise.race([res.json().catch(() => ({})), new Promise<Record<string, unknown>>((resolve) => window.setTimeout(() => resolve({ error: "Priority Signal checkout response timed out." }), 8000))]);
     } catch (error) {
       if (checkoutGeneration === actionGenerationRef.current && (error as { name?: string })?.name !== "AbortError") setPriorityRequestMessage("Priority Signal checkout could not be reached. Retry after the queue signal is current.");
       return;
     } finally {
+      window.clearTimeout(timeoutId);
       if (checkoutGeneration === actionGenerationRef.current) setPriorityRequestPending(false);
       if (priorityCheckoutControllerRef.current === controller) priorityCheckoutControllerRef.current = null;
     }

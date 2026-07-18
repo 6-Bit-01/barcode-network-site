@@ -47,6 +47,31 @@ test('overlay rejects malformed nested fields and retains last-good until later 
   assert.equal(reduceOverlaySuccess(recovered, scene, 2).scene.track.trackTitle, 'Post');
 });
 
+
+
+test('wheel validator rejects one-field wheel mutations on valid resolver scene', () => {
+  const scene = resolveLiveOverlayScene({ currentSession: session, overlayState: { wheelOverlayActive: true, wheelCeremonyStatus: 'ready' }, wheelCandidates: candidates, now });
+  assert.equal(isResolvedLiveOverlayScene(scene), true);
+  const mutateWheel = (patch) => ({ ...scene, wheelCeremony: { ...scene.wheelCeremony, ...patch } });
+  const malformedCandidate = { ...scene.wheelCeremony.displayCandidates[0], artistName: {} };
+  const malformedNested = { ...scene.wheelCeremony.displayCandidates[1], tracks: [{ id: 'nested', artistName: {}, trackTitle: 'Bad' }] };
+  for (const bad of [
+    mutateWheel({ candidateCount: -1 }),
+    mutateWheel({ candidateCount: 1.5 }),
+    mutateWheel({ candidateCount: '2' }),
+    mutateWheel({ hiddenCandidateCount: -1 }),
+    mutateWheel({ spinDurationMs: 1 }),
+    mutateWheel({ displayCandidates: [] }),
+    mutateWheel({ displayCandidates: [malformedCandidate, scene.wheelCeremony.displayCandidates[1]] }),
+    mutateWheel({ candidateCount: scene.wheelCeremony.displayCandidates.length + 1 }),
+    mutateWheel({ startedAt: '2026-02-31T00:00:00.000Z' }),
+    mutateWheel({ audioPath: {} }),
+    mutateWheel({ winningSegmentIndex: scene.wheelCeremony.candidateCount }),
+    mutateWheel({ resultTrack: malformedCandidate }),
+    mutateWheel({ displayCandidates: [scene.wheelCeremony.displayCandidates[0], malformedNested] }),
+  ]) assert.equal(isResolvedLiveOverlayScene(bad), false);
+});
+
 test('wheel audio primary fallback success, total failure, blocked autoplay, and stale generation isolation', async () => {
   const attempts = [];
   const success = await playWheelSpinWithFallback(['a.mp3', 'b.mp3'], async (path) => { attempts.push(path); if (path === 'a.mp3') throw new Error('decode'); }, 1, (g) => g === 1);

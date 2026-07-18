@@ -47,7 +47,7 @@ function wheelOk(wheel: unknown): wheel is ResolvedWheelCeremonyScene | undefine
   if (!hasOwn(WHEEL_STATUSES, w.status) || !hasOwn(WHEEL_STATUSES, w.storedStatus)) return false;
   if (!nonNegativeInt(w.candidateCount) || !nonNegativeInt(w.hiddenCandidateCount) || !Number.isSafeInteger(w.spinDurationMs) || Number(w.spinDurationMs) < 16000 || Number(w.spinDurationMs) > 32000) return false;
   if (!Array.isArray(w.displayCandidates) || !w.displayCandidates.every(candidateOk)) return false;
-  if (Number(w.candidateCount) < w.displayCandidates.length + Number(w.hiddenCandidateCount)) return false;
+  if (Number(w.candidateCount) !== w.displayCandidates.length + Number(w.hiddenCandidateCount)) return false;
   if (w.resultTrack != null && !candidateOk(w.resultTrack)) return false;
   if (!strOpt(w.resultTrackId) || !strOpt(w.chosenTrackId) || !strOpt(w.seed) || !strOpt(w.previousSeed) || !strOpt(w.reencryptNonce) || !strOpt(w.reencryptCycleId) || !strOpt(w.winningSegmentId) || !strOpt(w.jingleKey) || !strOpt(w.audioPath)) return false;
   if (!isoOpt(w.startedAt) || !isoOpt(w.spinStartedAt) || !isoOpt(w.resultSelectedAt)) return false;
@@ -75,10 +75,7 @@ export function isResolvedLiveOverlayScene(value: unknown): value is ResolvedLiv
   if (wheelMode && !s.wheelCeremony) return false;
   if (!wheelMode && s.wheelCeremony) return false;
   if (s.wheelOverlayActive !== wheelMode) return false;
-  if (!wheelOk(s.wheelCeremony)) {
-    const w = s.wheelCeremony as Record<string, unknown> | null | undefined;
-    if (!w || typeof w !== "object" || !hasOwn(WHEEL_STATUSES, w.status) || !hasOwn(WHEEL_STATUSES, w.storedStatus) || !Array.isArray(w.displayCandidates)) return false;
-  }
+  if (!wheelOk(s.wheelCeremony)) return false;
   if (s.wheelCeremony) {
     const status = s.wheelCeremony.status;
     const storedStatus = s.wheelCeremony.storedStatus;

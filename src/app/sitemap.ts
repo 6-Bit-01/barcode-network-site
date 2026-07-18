@@ -1,12 +1,13 @@
 import type { MetadataRoute } from "next";
 import { databasePage } from "@/content";
 import { getAllTransmissions } from "@/lib/transmissions";
+import { getBNLJournalEntry, listAllBNLJournalEntryIds } from "@/lib/bnl-journal-store";
 
 function slugify(name: string) {
   return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
 }
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = "https://barcode-network.com";
   const now = new Date();
 
@@ -15,6 +16,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: base, lastModified: now, changeFrequency: "weekly", priority: 1.0 },
     { url: `${base}/radio`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
     { url: `${base}/database`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
+    { url: `${base}/journal`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
     { url: `${base}/releases`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${base}/merch`, lastModified: now, changeFrequency: "monthly", priority: 0.6 },
     { url: `${base}/terminal`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
@@ -37,5 +39,21 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.7,
   }));
 
-  return [...staticPages, ...databasePages, ...transmissionPages];
+  let journalPages: MetadataRoute.Sitemap = [];
+  try {
+    const ids = await listAllBNLJournalEntryIds();
+    if (ids.ok) {
+      const entries = await Promise.all(ids.value.map((entryId) => getBNLJournalEntry(entryId)));
+      journalPages = entries.flatMap((result) => result.ok && result.value ? [{
+        url: `${base}/journal/${result.value.entryId}`,
+        lastModified: new Date(result.value.publishedAt),
+        changeFrequency: "monthly" as const,
+        priority: 0.6,
+      }] : []);
+    }
+  } catch {
+    journalPages = [];
+  }
+
+  return [...staticPages, ...databasePages, ...transmissionPages, ...journalPages];
 }

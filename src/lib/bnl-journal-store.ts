@@ -302,18 +302,18 @@ export async function getBNLJournalNeighbors(
       ? await redis.zrank(BNL_JOURNAL_INDEX_KEY, entryId)
       : null;
     if (rank === null) return { ok: true, value: { older: null, newer: null } };
-    const olderIds = await redis.zrange(
+    // ZRANK is ascending (oldest first), so adjacent ranks must be read in the
+    // same order. Mixing this rank with a reversed ZRANGE points at unrelated
+    // entries once the archive has more than a couple of records.
+    const olderIds =
+      rank > 0
+        ? await redis.zrange(BNL_JOURNAL_INDEX_KEY, rank - 1, rank - 1)
+        : [];
+    const newerIds = await redis.zrange(
       BNL_JOURNAL_INDEX_KEY,
       rank + 1,
       rank + 1,
-      { rev: true },
     );
-    const newerIds =
-      rank > 0
-        ? await redis.zrange(BNL_JOURNAL_INDEX_KEY, rank - 1, rank - 1, {
-            rev: true,
-          })
-        : [];
     const older = olderIds[0]
       ? await redis.get<PublicBNLJournalEntry>(
           journalLatestKey(String(olderIds[0])),

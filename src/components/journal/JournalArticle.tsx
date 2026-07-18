@@ -35,6 +35,7 @@ export function JournalArticle({
   titleLevel?: "h1" | "h2";
 }) {
   const Title = titleLevel;
+  const SectionTitle = titleLevel === "h1" ? "h2" : "h3";
   return (
     <article
       className={`border border-accent/30 bg-surface/80 p-5 sm:p-8 ${prominent ? "shadow-[0_0_40px_rgba(0,255,136,0.08)]" : ""}`}
@@ -57,15 +58,23 @@ export function JournalArticle({
       <div className="mt-8 space-y-8">
         {entry.sections.map((section) => (
           <section key={section.heading} className="space-y-3">
-            <h2 className="font-mono text-sm uppercase tracking-[0.25em] text-accent">
+            <SectionTitle className="font-mono text-sm uppercase tracking-[0.25em] text-accent">
               {section.heading}
-            </h2>
-            <p className="max-w-3xl whitespace-pre-wrap text-base leading-8 text-muted sm:text-lg sm:leading-9">
+            </SectionTitle>
+            <p className="max-w-3xl whitespace-pre-wrap text-base leading-8 text-foreground/75 sm:text-lg sm:leading-9">
               {section.body}
             </p>
           </section>
         ))}
       </div>
+      {prominent && (
+        <Link
+          href={`/journal/${entry.entryId}`}
+          className="mt-8 inline-flex font-mono text-xs uppercase tracking-widest text-accent hover:text-foreground"
+        >
+          Open this entry →
+        </Link>
+      )}
     </article>
   );
 }
@@ -80,7 +89,7 @@ export function JournalArchiveCard({
       className="block border border-border bg-background/60 p-4 transition-colors hover:border-accent/50"
     >
       <time
-        className="font-mono text-[11px] uppercase tracking-widest text-muted"
+        className="font-mono text-[11px] uppercase tracking-widest text-foreground/60"
         dateTime={entry.publishedAt}
       >
         {formatJournalDate(entry.publishedAt)}
@@ -88,7 +97,7 @@ export function JournalArchiveCard({
       <h2 className="mt-2 text-base font-bold text-foreground">
         {entry.title}
       </h2>
-      <p className="mt-2 line-clamp-3 text-sm leading-6 text-muted">
+      <p className="mt-2 line-clamp-3 text-sm leading-6 text-foreground/70">
         {entry.excerpt}
       </p>
     </Link>

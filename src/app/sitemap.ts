@@ -3,6 +3,10 @@ import { databasePage } from "@/content";
 import { getAllTransmissions } from "@/lib/transmissions";
 import { listAllBNLJournalEntries } from "@/lib/bnl-journal-store";
 
+// Journal entries are published between deployments, so the sitemap must read
+// the live archive instead of freezing whatever Redis contained at build time.
+export const dynamic = "force-dynamic";
+
 function slugify(name: string) {
   return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
 }

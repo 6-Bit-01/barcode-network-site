@@ -1,9 +1,96 @@
-"use client";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { PublicBNLJournalEntry } from "@/lib/bnl-journal-store";
+import { JournalRetryButton } from "@/components/journal/JournalRetryButton";
 
-export function formatJournalDate(value: string) { return new Intl.DateTimeFormat("en", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(value)); }
-export function JournalUnavailable() { const router = useRouter(); return <section className="mx-auto max-w-3xl px-4 py-24 sm:px-6"><div className="border border-danger/40 bg-surface p-6"><p className="text-xs uppercase tracking-[0.4em] text-danger">Journal signal unavailable</p><p className="mt-3 text-muted">The Journal archive cannot be read right now.</p><button type="button" onClick={() => router.refresh()} className="mt-5 inline-flex border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Retry</button></div></section>; }
-export function JournalArticle({ entry, prominent = false, titleLevel = "h1" }: { entry: PublicBNLJournalEntry; prominent?: boolean; titleLevel?: "h1" | "h2" }) { const Title = titleLevel; return <article className={`border border-accent/30 bg-surface/80 p-5 sm:p-8 ${prominent ? "shadow-[0_0_40px_rgba(0,255,136,0.08)]" : ""}`}><p className="text-xs uppercase tracking-[0.35em] text-accent">By BNL-01.</p><time className="mt-3 block font-mono text-xs uppercase tracking-widest text-muted" dateTime={entry.publishedAt}>{formatJournalDate(entry.publishedAt)}</time><Title className="mt-5 text-3xl font-black leading-tight tracking-tight text-foreground sm:text-5xl">{entry.title}</Title><p className="mt-5 max-w-3xl text-lg leading-8 text-foreground/75">{entry.excerpt}</p><div className="mt-8 space-y-8">{entry.sections.map((section) => <section key={section.heading} className="space-y-3"><h2 className="font-mono text-sm uppercase tracking-[0.25em] text-accent">{section.heading}</h2><p className="max-w-3xl whitespace-pre-wrap text-base leading-8 text-muted sm:text-lg sm:leading-9">{section.body}</p></section>)}</div></article>; }
-export function JournalArchiveCard({ entry }: { entry: PublicBNLJournalEntry }) { return <Link href={`/journal/${entry.entryId}`} className="block border border-border bg-background/60 p-4 transition-colors hover:border-accent/50"><time className="font-mono text-[11px] uppercase tracking-widest text-muted" dateTime={entry.publishedAt}>{formatJournalDate(entry.publishedAt)}</time><h2 className="mt-2 text-base font-bold text-foreground">{entry.title}</h2><p className="mt-2 line-clamp-3 text-sm leading-6 text-muted">{entry.excerpt}</p></Link>; }
+export function formatJournalDate(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(value));
+}
+export function JournalUnavailable() {
+  return (
+    <section className="mx-auto max-w-3xl px-4 py-24 sm:px-6">
+      <div className="border border-danger/40 bg-surface p-6">
+        <p className="text-xs uppercase tracking-[0.4em] text-danger">
+          Journal signal unavailable
+        </p>
+        <p className="mt-3 text-muted">
+          The Journal archive cannot be read right now.
+        </p>
+        <JournalRetryButton />
+      </div>
+    </section>
+  );
+}
+export function JournalArticle({
+  entry,
+  prominent = false,
+  titleLevel = "h1",
+}: {
+  entry: PublicBNLJournalEntry;
+  prominent?: boolean;
+  titleLevel?: "h1" | "h2";
+}) {
+  const Title = titleLevel;
+  return (
+    <article
+      className={`border border-accent/30 bg-surface/80 p-5 sm:p-8 ${prominent ? "shadow-[0_0_40px_rgba(0,255,136,0.08)]" : ""}`}
+    >
+      <p className="text-xs uppercase tracking-[0.35em] text-accent">
+        By BNL-01.
+      </p>
+      <time
+        className="mt-3 block font-mono text-xs uppercase tracking-widest text-muted"
+        dateTime={entry.publishedAt}
+      >
+        {formatJournalDate(entry.publishedAt)}
+      </time>
+      <Title className="mt-5 text-3xl font-black leading-tight tracking-tight text-foreground sm:text-5xl">
+        {entry.title}
+      </Title>
+      <p className="mt-5 max-w-3xl text-lg leading-8 text-foreground/75">
+        {entry.excerpt}
+      </p>
+      <div className="mt-8 space-y-8">
+        {entry.sections.map((section) => (
+          <section key={section.heading} className="space-y-3">
+            <h2 className="font-mono text-sm uppercase tracking-[0.25em] text-accent">
+              {section.heading}
+            </h2>
+            <p className="max-w-3xl whitespace-pre-wrap text-base leading-8 text-muted sm:text-lg sm:leading-9">
+              {section.body}
+            </p>
+          </section>
+        ))}
+      </div>
+    </article>
+  );
+}
+export function JournalArchiveCard({
+  entry,
+}: {
+  entry: PublicBNLJournalEntry;
+}) {
+  return (
+    <Link
+      href={`/journal/${entry.entryId}`}
+      className="block border border-border bg-background/60 p-4 transition-colors hover:border-accent/50"
+    >
+      <time
+        className="font-mono text-[11px] uppercase tracking-widest text-muted"
+        dateTime={entry.publishedAt}
+      >
+        {formatJournalDate(entry.publishedAt)}
+      </time>
+      <h2 className="mt-2 text-base font-bold text-foreground">
+        {entry.title}
+      </h2>
+      <p className="mt-2 line-clamp-3 text-sm leading-6 text-muted">
+        {entry.excerpt}
+      </p>
+    </Link>
+  );
+}

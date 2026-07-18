@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, detectQueueSourceType } from "@/lib/queue-types";
+import { PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, detectQueueSourceType, parseAppleMusicSongUrl } from "@/lib/queue-types";
 import { getPublicQueueSnapshot, getRadioQueueState, isTrackPersistedInSessionQueue, normalizeQueueSourceKey, requestPriorityUpgradePlaceholder, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
 import type { QueueEntry } from "@/lib/queue-types";
 
@@ -67,6 +67,15 @@ function validateLegalAcceptance(body: Record<string, unknown>) {
 function parseBodyDuration(value: unknown): number | null {
   const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
+}
+
+function isAppleMusicHostUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.hostname === "music.apple.com";
+  } catch {
+    return false;
+  }
 }
 
 function duplicateResponse(): NextResponse {
@@ -220,6 +229,7 @@ export async function submitTrackFromBody(body: Record<string, unknown>): Promis
   const link = cleanBodyText(body.link);
   if (!link) return NextResponse.json({ error: "Paste a track link." }, { status: 400 });
   try { new URL(link); } catch { return NextResponse.json({ error: "Enter a valid track URL." }, { status: 400 }); }
+  if (isAppleMusicHostUrl(link) && !parseAppleMusicSongUrl(link)) return NextResponse.json({ error: "Use a direct Apple Music song link. Album, artist, playlist, and station pages are not accepted.", code: "invalid_apple_music_song_url" }, { status: 400 });
   if (await hasDuplicateLinkSubmission(link)) return duplicateResponse();
 
   const sourceType = detectQueueSourceType(link);

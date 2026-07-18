@@ -14,6 +14,7 @@ import {
   getTrackDurationLabel,
   getTrackArtworkUrl,
   normalizeTier,
+  parseAppleMusicSongUrl,
   parseTikTokVideoUrl,
 } from "./queue-types";
 import type {
@@ -48,6 +49,8 @@ const PRE_SHOW_ROUTING_DELAY_MS = (20 * 60 + 15) * 1000;
 const UPLOADED_FILE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const TIKTOK_OEMBED_TIMEOUT_MS = 2500;
 const TIKTOK_OEMBED_MAX_BYTES = 256 * 1024;
+const APPLE_MUSIC_CATALOG_TIMEOUT_MS = 2500;
+const APPLE_MUSIC_CATALOG_MAX_BYTES = 256 * 1024;
 const BARCODE_QUEUE_UPLOAD_HOST_SUFFIX = ".private.blob.vercel-storage.com";
 const BARCODE_QUEUE_UPLOAD_PATH_PREFIX = "/barcode-radio-queue/";
 
@@ -761,6 +764,7 @@ function normalizeDurationSource(source: QueueDurationSource | string | undefine
   if (source === "browser-audio-metadata" || source === "upload_metadata") return "upload_metadata";
   if (source === "file-metadata" || source === "file_metadata") return "file_metadata";
   if (source === "provider-metadata" || source === "provider_metadata") return sourceType === "youtube" || sourceType === "soundcloud" || sourceType === "spotify" ? sourceType : "provider_metadata";
+  if (source === "apple_music_api") return "apple_music_api";
   if (source === "internal-estimate" || source === "internal_estimate" || source === "estimated") return source === "estimated" ? "estimated" : "internal_estimate";
   if (source === "youtube_api" || source === "spotify_api" || source === "soundcloud_api" || source === "direct_metadata") return source;
   if (source === "youtube" || source === "soundcloud" || source === "spotify" || source === "unknown") return source;
@@ -768,6 +772,7 @@ function normalizeDurationSource(source: QueueDurationSource | string | undefine
   if (detected && sourceType === "youtube") return "youtube_api";
   if (detected && sourceType === "spotify") return "spotify_api";
   if (detected && sourceType === "soundcloud") return "soundcloud_api";
+  if (detected && sourceType === "apple_music") return "apple_music_api";
   return detected ? "provider_metadata" : "internal_estimate";
 }
 
@@ -984,11 +989,11 @@ function safeHttpsPublicUrl(value: unknown): string | null {
   } catch { return null; }
 }
 
-async function readLimitedJson(res: Response): Promise<unknown | null> {
+async function readLimitedJson(res: Response, maxBytes = TIKTOK_OEMBED_MAX_BYTES): Promise<unknown | null> {
   const contentType = res.headers.get("content-type") || "";
   if (!/application\/(json|.*\+json)|text\/json/i.test(contentType)) return null;
   const length = Number(res.headers.get("content-length") || 0);
-  if (Number.isFinite(length) && length > TIKTOK_OEMBED_MAX_BYTES) return null;
+  if (Number.isFinite(length) && length > maxBytes) return null;
   const reader = res.body?.getReader();
   if (!reader) return null;
   const chunks: Uint8Array[] = [];
@@ -998,7 +1003,7 @@ async function readLimitedJson(res: Response): Promise<unknown | null> {
     if (done) break;
     if (value) {
       total += value.byteLength;
-      if (total > TIKTOK_OEMBED_MAX_BYTES) return null;
+      if (total > maxBytes) return null;
       chunks.push(value);
     }
   }
@@ -1037,6 +1042,44 @@ async function lookupTikTokMetadata(link: string): Promise<ProviderMetadata> {
   }
 }
 
+function safeAppleMusicArtworkUrl(value: unknown): string | null {
+  if (typeof value !== "string" || !value.includes("{w}") || !value.includes("{h}") || value.length > 500) return null;
+  const rendered = value.replace(/\{w\}/g, "600").replace(/\{h\}/g, "600");
+  return safeHttpsPublicUrl(rendered);
+}
+
+async function lookupAppleMusicMetadata(link: string): Promise<ProviderMetadata> {
+  const parsed = parseAppleMusicSongUrl(link);
+  const token = process.env.APPLE_MUSIC_DEVELOPER_TOKEN;
+  if (!parsed || !token) return blankProvider("internal_estimate");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), APPLE_MUSIC_CATALOG_TIMEOUT_MS);
+  try {
+    const endpoint = `https://api.music.apple.com/v1/catalog/${encodeURIComponent(parsed.storefront)}/songs/${encodeURIComponent(parsed.songId)}`;
+    const res = await fetch(endpoint, { cache: "no-store", signal: controller.signal, headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok || !(res.headers.get("content-type") ?? "").toLowerCase().includes("application/json")) return blankProvider("internal_estimate");
+    const payload = await readLimitedJson(res, APPLE_MUSIC_CATALOG_MAX_BYTES);
+    const first = Array.isArray((payload as { data?: unknown[] } | null)?.data) ? (payload as { data: Array<{ attributes?: Record<string, unknown> }> }).data[0] : null;
+    const attributes = first && typeof first.attributes === "object" ? first.attributes : null;
+    if (!attributes) return blankProvider("internal_estimate");
+    const durationMs = typeof attributes.durationInMillis === "number" ? attributes.durationInMillis : null;
+    const seconds = durationMs && Number.isFinite(durationMs) && durationMs > 0 ? Math.max(1, Math.round(durationMs / 1000)) : null;
+    const artwork = typeof attributes.artwork === "object" && attributes.artwork ? safeAppleMusicArtworkUrl((attributes.artwork as { url?: unknown }).url) : null;
+    return {
+      detectedArtistName: sanitizeProviderText(attributes.artistName, 160),
+      detectedSongTitle: sanitizeProviderText(attributes.name, 240),
+      providerTitle: sanitizeProviderText(attributes.name, 240),
+      detectedDurationSeconds: seconds,
+      durationSource: seconds ? "apple_music_api" : "internal_estimate",
+      artworkUrl: artwork,
+    };
+  } catch {
+    return blankProvider("internal_estimate");
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function lookupSoundCloudMetadata(link: string): Promise<ProviderMetadata> {
   const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
   if (!clientId) return lookupSoundCloudOEmbed(link).catch(() => blankProvider("internal_estimate"));
@@ -1059,9 +1102,10 @@ export async function detectProviderMetadata(sourceType: QueueSourceType, link: 
     else if (sourceType === "spotify") metadata = await lookupSpotifyMetadata(link);
     else if (sourceType === "soundcloud") metadata = await lookupSoundCloudMetadata(link);
     else if (sourceType === "tiktok") metadata = await lookupTikTokMetadata(link);
+    else if (sourceType === "apple_music") metadata = await lookupAppleMusicMetadata(link);
     else return metadata;
 
-    if (metadata.detectedDurationSeconds) return metadata;
+    if (metadata.detectedDurationSeconds || sourceType === "apple_music") return metadata;
 
     const duration = await detectTrackDurationFromLink(link);
     if (duration.durationSeconds && duration.durationIsEstimate === false) {
@@ -1096,6 +1140,8 @@ function normalizeEmail(value?: string | null): string {
 
 export function normalizeQueueSourceKey(value?: string | null): string | null {
   if (!value) return null;
+  const appleMusic = parseAppleMusicSongUrl(value);
+  if (appleMusic) return appleMusic.providerId;
   const tiktok = parseTikTokVideoUrl(value);
   if (tiktok) return `tiktok:video:${tiktok.postId}`;
   try {
@@ -1125,6 +1171,10 @@ function parseProviderId(sourceType: QueueSourceType, link: string): string | nu
   if (sourceType === "tiktok") {
     const parsed = parseTikTokVideoUrl(link);
     return parsed ? `tiktok:video:${parsed.postId}` : null;
+  }
+  if (sourceType === "apple_music") {
+    const parsed = parseAppleMusicSongUrl(link);
+    return parsed?.providerId ?? null;
   }
   return null;
 }
@@ -1243,7 +1293,7 @@ export async function createQueueTrack(input: {
   if (!normalizedTikTokHandle) throw new Error("TikTok handle is required.");
   const providerMetadata = sourceType === "upload" ? blankProvider() : await detectProviderMetadata(sourceType, input.link ?? "");
   const providerId = parseProviderId(sourceType, input.link ?? input.fileUrl ?? "");
-  const normalizedSourceKey = normalizeQueueSourceKey(input.fileUrl || input.link || "");
+  const normalizedSourceKey = providerId ?? normalizeQueueSourceKey(input.fileUrl || input.link || "");
   const fileMetadata = sourceType === "upload" ? parseFilenameMetadata(input.fileName) : { artist: null, title: null, providerTitle: null };
   const detectedDurationSeconds = typeof input.detectedDurationSeconds === "number" && Number.isFinite(input.detectedDurationSeconds)
     ? Math.max(1, Math.round(input.detectedDurationSeconds))

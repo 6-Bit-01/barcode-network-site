@@ -69,6 +69,7 @@ const SIMULATION_SPEEDS: Record<SimulationSpeed, { label: string; minDelayMs: nu
 
 function sourceLabel(entry: QueueEntry): string {
   if (entry.sourceType === "tiktok") return "TikTok";
+  if (entry.sourceType === "apple_music") return "Apple Music";
   return (entry.sourceType ?? "other").toUpperCase();
 }
 function formatPrice(cents = 0, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }
@@ -150,6 +151,7 @@ function embedUrl(entry: QueueEntry): string | null {
     }
     if (entry.sourceType === "spotify") return `https://open.spotify.com/embed${parsed.pathname}`;
     if (entry.sourceType === "soundcloud") return `https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}`;
+    if (entry.sourceType === "apple_music") return null;
   } catch { return null; }
   return null;
 }

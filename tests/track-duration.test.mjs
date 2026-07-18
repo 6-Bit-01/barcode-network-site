@@ -263,3 +263,89 @@ test("TikTok duration parsing returns unavailable and stores 300 second estimate
   assert.match(result.notes.join(" "), /does not document exact duration/);
   assert.deepEqual(duration.trackDurationStorageFields(result), { detectedDurationSeconds: null, estimatedDurationSeconds: 300, durationIsEstimate: true, durationSource: "estimated" });
 });
+
+const appleUrl = "https://music.apple.com/us/album/example-album/123456789?i=987654321&utm_source=x#frag";
+
+test("parses Apple Music direct song URLs and canonicalizes identity", () => {
+  const parsed = queueTypes.parseAppleMusicSongUrl(appleUrl);
+  assert.ok(parsed);
+  assert.equal(parsed.storefront, "us");
+  assert.equal(parsed.albumId, "123456789");
+  assert.equal(parsed.songId, "987654321");
+  assert.equal(parsed.providerId, "apple_music:song:987654321");
+  assert.equal(parsed.canonicalSourceUrl, "https://music.apple.com/us/album/example-album/123456789?i=987654321");
+  assert.equal(queueTypes.detectQueueSourceType(appleUrl), "apple_music");
+  const durationParsed = duration.parseSafeTrackProviderUrl(appleUrl);
+  assert.deepEqual(durationParsed, { provider: "apple_music", providerTrackId: "987654321", normalizedUrl: "https://music.apple.com/us/album/example-album/123456789?i=987654321" });
+});
+
+test("rejects unsupported Apple Music URL forms", () => {
+  for (const value of [
+    "https://music.apple.com/us/album/example-album/123456789",
+    "https://music.apple.com/us/artist/example/123456789",
+    "https://music.apple.com/us/playlist/example/pl.123",
+    "https://music.apple.com/us/station/example/ra.123",
+    "https://music.apple.com/us/radio",
+    "https://music.apple.com/",
+    "http://music.apple.com/us/album/example-album/123456789?i=987654321",
+    "https://music.apple.com.evil.test/us/album/example-album/123456789?i=987654321",
+    "https://user:pass@music.apple.com/us/album/example-album/123456789?i=987654321",
+    "https://music.apple.com:444/us/album/example-album/123456789?i=987654321",
+    "https://music.apple.com/us/album/example-album/notnumeric?i=987654321",
+    "https://music.apple.com/us/album/example-album/123456789?i=notnumeric",
+    "https://music.apple.com/us/album//123456789?i=987654321",
+  ]) {
+    assert.equal(queueTypes.parseAppleMusicSongUrl(value), null, value);
+    assert.notEqual(queueTypes.detectQueueSourceType(value), "apple_music", value);
+    assert.equal(duration.parseSafeTrackProviderUrl(value)?.provider === "apple_music", false, value);
+  }
+});
+
+
+test("accepts safe international Apple Music album slug segments", () => {
+  const cases = [
+    ["example-album", "us"],
+    ["caf%C3%A9-del-mar", "us"],
+    ["%E6%9D%B1%E4%BA%AC", "jp"],
+    ["rock-%26-roll", "us"],
+    ["album_name", "us"],
+  ];
+  for (const [slug, storefront] of cases) {
+    const parsed = queueTypes.parseAppleMusicSongUrl(`https://music.apple.com/${storefront}/album/${slug}/123456789?i=987654321&utm_source=x#frag`);
+    assert.ok(parsed, slug);
+    assert.equal(parsed.albumSlug, slug);
+    assert.equal(parsed.canonicalSourceUrl, `https://music.apple.com/${storefront}/album/${slug}/123456789?i=987654321`);
+    assert.equal(parsed.providerId, "apple_music:song:987654321");
+  }
+});
+
+test("normalizes Apple Music storefront casing and preserves encoded slug", () => {
+  const parsed = queueTypes.parseAppleMusicSongUrl("https://music.apple.com/US/album/caf%C3%A9-del-mar/123456789?i=987654321");
+  assert.ok(parsed);
+  assert.equal(parsed.storefront, "us");
+  assert.equal(parsed.albumSlug, "caf%C3%A9-del-mar");
+  assert.equal(parsed.canonicalSourceUrl, "https://music.apple.com/us/album/caf%C3%A9-del-mar/123456789?i=987654321");
+});
+
+test("rejects unsafe Apple Music encoded slug and ambiguous song parameter variants", () => {
+  const overlong = "a".repeat(301);
+  for (const value of [
+    "https://music.apple.com/us/album/bad%ZZslug/123456789?i=987654321",
+    "https://music.apple.com/us/album/%2F/123456789?i=987654321",
+    "https://music.apple.com/us/album/%5C/123456789?i=987654321",
+    "https://music.apple.com/us/album/bad%00slug/123456789?i=987654321",
+    "https://music.apple.com/us/album/bad%1Fslug/123456789?i=987654321",
+    "https://music.apple.com/us/album/./123456789?i=987654321",
+    "https://music.apple.com/us/album/../123456789?i=987654321",
+    `https://music.apple.com/us/album/${overlong}/123456789?i=987654321`,
+    "https://music.apple.com/us/album/example-album/123456789?i=987654321&i=123456789",
+  ]) {
+    assert.equal(queueTypes.parseAppleMusicSongUrl(value), null, value);
+  }
+});
+
+test("permits only safe HTTPS Apple Music artwork passthrough", () => {
+  assert.equal(queueTypes.getTrackArtworkUrl({ sourceType: "apple_music", sourceArtworkUrl: "https://is1-ssl.mzstatic.com/image/thumb/Music/art.jpg" }), "https://is1-ssl.mzstatic.com/image/thumb/Music/art.jpg");
+  assert.equal(queueTypes.getTrackArtworkUrl({ sourceType: "apple_music", sourceArtworkUrl: "http://is1-ssl.mzstatic.com/art.jpg" }), null);
+  assert.equal(queueTypes.getTrackArtworkUrl({ sourceType: "apple_music", sourceArtworkUrl: "https://user@is1-ssl.mzstatic.com/art.jpg" }), null);
+});

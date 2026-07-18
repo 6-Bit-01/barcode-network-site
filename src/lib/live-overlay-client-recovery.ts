@@ -37,7 +37,7 @@ function syncOk(sync: unknown, provider: "youtube" | "tiktok"): boolean {
 
 function candidateOk(candidate: unknown): candidate is ResolvedWheelCeremonyTrack {
   const c = candidate as Partial<ResolvedWheelCeremonyTrack> | null;
-  return Boolean(c && typeof c === "object" && str(c.id) && str(c.artistName) && str(c.trackTitle) && stringArrayOpt(c.trackIds) && (c.trackCount == null || nonNegativeInt(c.trackCount)) && (c.weight == null || (finite(c.weight) && c.weight > 0)) && (c.tracks == null || (Array.isArray(c.tracks) && c.tracks.every(candidateOk))));
+  return Boolean(c && typeof c === "object" && str(c.id) && str(c.artistName) && str(c.trackTitle) && stringArrayOpt(c.trackIds) && (c.trackCount == null || (Number.isSafeInteger(c.trackCount) && Number(c.trackCount) > 0)) && (c.weight == null || (finite(c.weight) && c.weight > 0)) && (c.tracks == null || (Array.isArray(c.tracks) && c.tracks.every(candidateOk))));
 }
 
 function wheelOk(wheel: unknown): wheel is ResolvedWheelCeremonyScene | undefined {
@@ -47,6 +47,7 @@ function wheelOk(wheel: unknown): wheel is ResolvedWheelCeremonyScene | undefine
   if (!hasOwn(WHEEL_STATUSES, w.status) || !hasOwn(WHEEL_STATUSES, w.storedStatus)) return false;
   if (!nonNegativeInt(w.candidateCount) || !nonNegativeInt(w.hiddenCandidateCount) || !Number.isSafeInteger(w.spinDurationMs) || Number(w.spinDurationMs) < 16000 || Number(w.spinDurationMs) > 32000) return false;
   if (!Array.isArray(w.displayCandidates) || !w.displayCandidates.every(candidateOk)) return false;
+  if (Number(w.candidateCount) !== w.displayCandidates.length + Number(w.hiddenCandidateCount)) return false;
   if (w.resultTrack != null && !candidateOk(w.resultTrack)) return false;
   if (!strOpt(w.resultTrackId) || !strOpt(w.chosenTrackId) || !strOpt(w.seed) || !strOpt(w.previousSeed) || !strOpt(w.reencryptNonce) || !strOpt(w.reencryptCycleId) || !strOpt(w.winningSegmentId) || !strOpt(w.jingleKey) || !strOpt(w.audioPath)) return false;
   if (!isoOpt(w.startedAt) || !isoOpt(w.spinStartedAt) || !isoOpt(w.resultSelectedAt)) return false;
@@ -77,7 +78,10 @@ export function isResolvedLiveOverlayScene(value: unknown): value is ResolvedLiv
   if (!wheelOk(s.wheelCeremony)) return false;
   if (s.wheelCeremony) {
     const status = s.wheelCeremony.status;
-    const compatible = s.mode === "wheel_ready" ? status === "ready" : s.mode === "wheel_reencrypting" ? status === "reencrypting" : s.mode === "wheel_spinning" ? status === "spinning" : s.mode === "wheel_result" ? status === "result_pending" : s.mode === "wheel_confirmed" ? status === "confirmed" : true;
+    const storedStatus = s.wheelCeremony.storedStatus;
+    if (status === "signal_lost" && storedStatus !== "signal_lost") return false;
+    if (status !== "signal_lost" && storedStatus === "signal_lost") return false;
+    const compatible = s.mode === "wheel_ready" ? (status === "ready" || status === "signal_lost") : s.mode === "wheel_reencrypting" ? status === "reencrypting" : s.mode === "wheel_spinning" ? status === "spinning" : s.mode === "wheel_result" ? status === "result_pending" : s.mode === "wheel_confirmed" ? status === "confirmed" : true;
     if (!compatible) return false;
   }
   return true;

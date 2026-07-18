@@ -75,6 +75,14 @@ export function reduceQueuePollSuccess(previous: QueuePollState, snapshot: Queue
 export function queueHasCurrentAuthority(state: QueuePollState): boolean { return state.status === "current" && Boolean(state.snapshot); }
 export function deriveQueueRecoveryView(state: QueuePollState): "loading" | "unavailable" | "retrying" | "stale" | "current" { if (state.status === "loading") return "loading"; if (state.status === "retrying") return "retrying"; if (state.status === "stale") return "stale"; if (state.status === "unavailable") return "unavailable"; return "current"; }
 
+
+export function queueEffectiveFrontEdgeTrackId(snapshot: QueuePublicSnapshot | null): string | null {
+  if (!snapshot) return null;
+  const hasActivePriorityOrWheel = snapshot.queue.some((track) => track.lane === "priority" || track.lane === "wheel");
+  if (hasActivePriorityOrWheel) return null;
+  return snapshot.queue.find((track) => track.lane === "regular")?.id ?? null;
+}
+
 export type PublicQueueActionType = "submit" | "priority_request" | "priority_checkout_preflight" | "priority_checkout_completed" | "priority_resume";
 export function derivePublicQueueActionEligibility(state: QueuePollState, input: { sessionId: string; action: PublicQueueActionType; trackId?: string; priorityDepth?: number; }): { allowed: boolean; snapshot: QueuePublicSnapshot | null; track: QueuePublicTrack | null; reason?: string } {
   const snapshot = queueHasCurrentAuthority(state) ? state.snapshot : null;
@@ -89,16 +97,15 @@ export function derivePublicQueueActionEligibility(state: QueuePollState, input:
   const canSubmit = open && !full && (remaining == null || remaining > 0) && cooldownClear;
   if (input.action === "submit") return { allowed: canSubmit, snapshot, track: null, reason: canSubmit ? undefined : "submit_closed" };
   if (!open) return { allowed: false, snapshot, track: null, reason: "closed" };
-  if (full) return { allowed: false, snapshot, track: null, reason: "full" };
   const queueTrack = snapshot.queue.find((candidate) => candidate.id === input.trackId) ?? null;
   if (!queueTrack) return { allowed: false, snapshot, track: null, reason: "track_missing" };
   if (snapshot.nowPlaying?.id === queueTrack.id) return { allowed: false, snapshot, track: queueTrack, reason: "now_playing" };
   if (snapshot.upNext?.id === queueTrack.id) return { allowed: false, snapshot, track: queueTrack, reason: "up_next" };
-  const frontEdgeFreeTrackId = snapshot.queue.find((candidate) => candidate.lane === "regular")?.id ?? null;
+  const frontEdgeFreeTrackId = queueEffectiveFrontEdgeTrackId(snapshot);
   const isFrontEdge = queueTrack.id === frontEdgeFreeTrackId;
   const paymentsAvailable = snapshot.session.priorityUpgradesEnabled === true && snapshot.session.priorityUpgradePaymentsEnabled === true && snapshot.session.priorityUpgradePriceCents > 0;
   if (!paymentsAvailable) return { allowed: false, snapshot, track: queueTrack, reason: "payments_disabled" };
-  const depthOk = snapshot.status.activeCount >= (input.priorityDepth ?? 0);
+  const depthOk = input.action === "priority_resume" ? true : snapshot.status.activeCount >= (input.priorityDepth ?? 0);
   const requestable = queueTrack.lane === "regular" && (queueTrack.priorityUpgradeStatus == null || queueTrack.priorityUpgradeStatus === "none" || queueTrack.priorityUpgradeStatus === "failed" || queueTrack.priorityUpgradeStatus === "refunded");
   if (input.action === "priority_resume") return { allowed: queueTrack.priorityUpgradeStatus === "checkout_pending", snapshot, track: queueTrack, reason: queueTrack.priorityUpgradeStatus === "checkout_pending" ? undefined : "not_pending" };
   if (input.action === "priority_checkout_completed") return { allowed: queueTrack.priorityUpgradeStatus === "checkout_pending" || requestable, snapshot, track: queueTrack, reason: queueTrack.priorityUpgradeStatus === "checkout_pending" || requestable ? undefined : "checkout_not_pending" };

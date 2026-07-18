@@ -144,9 +144,11 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   const formGenerationRef = useRef(0);
   const latestSnapshotRef = useRef<QueuePublicSnapshot | null>(null);
   const statusLoadRef = useRef<Promise<QueuePublicSnapshot | null> | null>(null);
+  const statusAbortRef = useRef<AbortController | null>(null);
 
-  async function loadStatus() {
-    if (statusLoadRef.current) return statusLoadRef.current;
+  async function loadStatus(options: { fresh?: boolean; signal?: AbortSignal } = {}) {
+    if (!options.fresh && statusLoadRef.current) return statusLoadRef.current;
+    if (options.fresh) { statusAbortRef.current?.abort(); statusLoadRef.current = null; }
     const generation = formGenerationRef.current;
     const params = new URLSearchParams();
     if (sessionId) params.set("sessionId", sessionId);
@@ -154,9 +156,13 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
     if (tiktokHandle.trim()) params.set("tiktokHandle", tiktokHandle.trim());
     if (contactEmail.trim()) params.set("contactEmail", contactEmail.trim());
     if (artist.trim()) params.set("artist", artist.trim());
+    const controller = new AbortController();
+    statusAbortRef.current = controller;
+    const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+    options.signal?.addEventListener("abort", () => controller.abort(), { once: true });
     statusLoadRef.current = (async () => {
       try {
-        const payload = await fetchQueueSnapshot(fetch, `/api/queue${params.size ? `?${params.toString()}` : ""}`);
+        const payload = await fetchQueueSnapshot(fetch, `/api/queue${params.size ? `?${params.toString()}` : ""}`, controller.signal);
         if (generation !== formGenerationRef.current) return null;
         if (sessionId && payload.session.sessionId !== sessionId) throw new Error("wrong_session");
         latestSnapshotRef.current = payload;
@@ -175,6 +181,8 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
         }
         return null;
       } finally {
+        window.clearTimeout(timeoutId);
+        if (statusAbortRef.current === controller) statusAbortRef.current = null;
         statusLoadRef.current = null;
       }
     })();
@@ -184,7 +192,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   useEffect(() => {
     loadStatus();
     const interval = setInterval(loadStatus, 5_000);
-    return () => { formGenerationRef.current += 1; clearInterval(interval); };
+    return () => { formGenerationRef.current += 1; statusAbortRef.current?.abort(); clearInterval(interval); };
   }, [submitterToken]);
 
   useEffect(() => {
@@ -321,7 +329,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
         }),
         onUploadProgress: ({ percentage }) => setUploadProgress(Math.round(percentage)),
       });
-      const afterUpload = await loadStatus();
+      const afterUpload = await loadStatus({ fresh: true });
       if (generation !== formGenerationRef.current || !snapshotAllowsSubmit(afterUpload)) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
       setUploadProgress(100);
       return { url: blob.url };
@@ -367,7 +375,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
 
   async function waitForTrackConfirmation(trackId: string): Promise<QueuePublicSnapshot | null> {
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      const snapshot = await loadStatus();
+      const snapshot = await loadStatus({ fresh: true });
       const foundInQueue = snapshot?.queue.some((entry) => entry.id === trackId);
       const foundInNowPlaying = snapshot?.nowPlaying?.id === trackId;
       const foundInUpNext = snapshot?.upNext?.id === trackId;
@@ -381,12 +389,12 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   async function startPriorityCheckout(trackId: string, generation = formGenerationRef.current): Promise<boolean> {
     const checkoutSessionId = sessionId ?? session?.sessionId;
     if (!checkoutSessionId) return false;
-    const before = await loadStatus();
+    const before = await loadStatus({ fresh: true });
     if (generation !== formGenerationRef.current || !snapshotAllowsPriorityCheckout(before, trackId)) return false;
     setTransmissionState("priority_requested");
     await wait(650);
     if (generation !== formGenerationRef.current) return false;
-    const afterDelay = await loadStatus();
+    const afterDelay = await loadStatus({ fresh: true });
     if (generation !== formGenerationRef.current || !snapshotAllowsPriorityCheckout(afterDelay, trackId)) return false;
     let res: Response;
     try {
@@ -397,7 +405,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
     }
     const payload = await res.json().catch(() => ({}));
     if (generation !== formGenerationRef.current) return false;
-    const afterCheckout = await loadStatus();
+    const afterCheckout = await loadStatus({ fresh: true });
     if (generation !== formGenerationRef.current || !snapshotAllowsPriorityCheckout(afterCheckout, trackId, "priority_checkout_completed")) { setTransmissionState("idle"); return false; }
     const checkoutUrl = safeCheckoutUrl((payload as { url?: unknown }).url);
     if (res.ok && checkoutUrl) {
@@ -429,7 +437,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
     const generation = formGenerationRef.current;
     setSubmitting(true);
     try {
-      const refreshedBeforeSubmit = await loadStatus();
+      const refreshedBeforeSubmit = await loadStatus({ fresh: true });
       const latestSessionId = refreshedBeforeSubmit?.session?.sessionId ?? session?.sessionId ?? sessionId;
       if (!latestSessionId || !snapshotAllowsSubmit(refreshedBeforeSubmit)) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
       const visibleSessionId = session?.sessionId ?? sessionId;
@@ -460,7 +468,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
         body.mimeType = audioMimeTypeForFile(file);
       }
       if (mode === "link") body.link = link.trim();
-      const afterUpload = await loadStatus();
+      const afterUpload = await loadStatus({ fresh: true });
       if (generation !== formGenerationRef.current || !snapshotAllowsSubmit(afterUpload)) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
 
       const res = await fetch("/api/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

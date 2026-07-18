@@ -902,6 +902,7 @@ export function LiveOverlayReceiver() {
   const spinFadeFrameRef = useRef<number | null>(null);
   const spinAudioGenerationRef = useRef(0);
   const audioJustArmedTimerRef = useRef<number | null>(null);
+  const wheelFadeBegunRef = useRef(false);
   const overlayAudioMountedRef = useRef(true);
   const serverClockAnchorRef = useRef<OverlayServerClockAnchor | null>(null);
   const responseTransitEstimateMsRef = useRef<number | null>(null);
@@ -913,6 +914,7 @@ export function LiveOverlayReceiver() {
     let latestAppliedSeq = 0;
     let activeController: AbortController | null = null;
     let requestTimeoutId: number | null = null;
+    let disposeOverlayRead: (() => void) | null = null;
 
     async function fetchOverlayWithTimeout(url: string, signal: AbortSignal) {
       const startedAt = performance.now();
@@ -924,12 +926,13 @@ export function LiveOverlayReceiver() {
         return { payload, receivedAt: performance.now(), startedAt };
       })();
       const timeoutPromise = new Promise<never>((_, reject) => {
+        disposeOverlayRead = () => { activeController?.abort(); reject(new Error("aborted")); };
         requestTimeoutId = window.setTimeout(() => {
           activeController?.abort();
           reject(new Error("timeout"));
         }, OVERLAY_REQUEST_TIMEOUT_MS);
       });
-      return Promise.race([operation, timeoutPromise]);
+      return Promise.race([operation.catch((error) => { throw error; }), timeoutPromise]);
     }
 
     async function poll() {
@@ -968,6 +971,7 @@ export function LiveOverlayReceiver() {
       } finally {
         if (requestTimeoutId) window.clearTimeout(requestTimeoutId);
         requestTimeoutId = null;
+        disposeOverlayRead = null;
         activeController = null;
         if (!cancelled) timeoutId = window.setTimeout(poll, OVERLAY_POLL_DELAY_MS);
       }
@@ -977,6 +981,7 @@ export function LiveOverlayReceiver() {
     return () => {
       cancelled = true;
       if (timeoutId) window.clearTimeout(timeoutId);
+      disposeOverlayRead?.();
       if (requestTimeoutId) window.clearTimeout(requestTimeoutId);
       activeController?.abort();
       overlayAudioMountedRef.current = false;
@@ -999,6 +1004,8 @@ export function LiveOverlayReceiver() {
     spinAudioGenerationRef.current += 1;
     if (spinFadeFrameRef.current) { window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = null; }
     if (audioJustArmedTimerRef.current) { window.clearTimeout(audioJustArmedTimerRef.current); audioJustArmedTimerRef.current = null; }
+    if (overlayAudioMountedRef.current) setAudioJustArmed(false);
+    wheelFadeBegunRef.current = false;
     terminateWheelSpinAudio(spinAudioRef.current, { volume: WHEEL_SPIN_VOLUME, clearSource: options.clearSource });
   }
 
@@ -1010,7 +1017,7 @@ export function LiveOverlayReceiver() {
   useEffect(() => {
     const status = scene.wheelCeremony?.status;
     const wheelMode = scene.mode.startsWith("wheel_");
-    const audioMayContinue = connected && wheelMode && (status === "spinning" || status === "result_pending");
+    const audioMayContinue = connected && wheelMode && (status === "spinning" || status === "result_pending" || (status === "confirmed" && wheelFadeBegunRef.current));
     if (!audioMayContinue) terminateWheelAudioWork();
   }, [connected, scene.mode, scene.wheelCeremony?.status]);
 
@@ -1084,7 +1091,7 @@ export function LiveOverlayReceiver() {
     }, generation, (attemptGeneration) => spinAudioGenerationRef.current === attemptGeneration);
     if (spinAudioGenerationRef.current === generation) setAudioNotice(result.notice);
   }
-  function fadeSpinMusic() { const a = spinAudioRef.current; if (!a) return; const generation = spinAudioGenerationRef.current; const sv = a.volume || WHEEL_SPIN_VOLUME; const st = performance.now(); const tick = (n: number) => { if (spinAudioGenerationRef.current !== generation) return; const pr = Math.max(0, Math.min(1, (n - st) / WHEEL_AUDIO_FADE_OUT_MS)); a.volume = sv * (1 - pr); if (pr >= 1) { stopWheelAudio(a); a.volume = sv; spinFadeFrameRef.current = null; return; } spinFadeFrameRef.current = window.requestAnimationFrame(tick); }; if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = window.requestAnimationFrame(tick); }
+  function fadeSpinMusic() { const a = spinAudioRef.current; if (!a) return; wheelFadeBegunRef.current = true; const generation = spinAudioGenerationRef.current; const sv = a.volume || WHEEL_SPIN_VOLUME; const st = performance.now(); const tick = (n: number) => { if (spinAudioGenerationRef.current !== generation) return; const pr = Math.max(0, Math.min(1, (n - st) / WHEEL_AUDIO_FADE_OUT_MS)); a.volume = sv * (1 - pr); if (pr >= 1) { stopWheelAudio(a); a.volume = sv; spinFadeFrameRef.current = null; wheelFadeBegunRef.current = false; return; } spinFadeFrameRef.current = window.requestAnimationFrame(tick); }; if (spinFadeFrameRef.current) window.cancelAnimationFrame(spinFadeFrameRef.current); spinFadeFrameRef.current = window.requestAnimationFrame(tick); }
   function playSfxBuffer(bufferRef: React.MutableRefObject<AudioBuffer | null>, volume: number) {
     const context = sfxContextRef.current;
     const buffer = bufferRef.current;

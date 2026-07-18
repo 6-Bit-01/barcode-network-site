@@ -11,7 +11,7 @@ import { estimateExistingTrackTiming, estimatePriorityImpact } from "@/lib/queue
 import { formatRuntime, PRIORITY_DISCLOSURE_TEXT, PRIORITY_TERMS_VERSION } from "@/lib/queue-types";
 import { displayEstimate, buildQueueTimingDisplay, priorityDisplayFromImpact, publicTrackDurationLabel, queueTimingInputFromPublicSnapshot, type QueueTimingDisplaySummary, type PriorityTimingDisplay } from "@/lib/queue-timing-display";
 import type { QueuePublicSnapshot, QueuePublicTrack } from "@/lib/queue-types";
-import { createQueuePollController, derivePublicQueueActionEligibility, deriveQueueRecoveryView, initialQueuePollState, queueHasCurrentAuthority, type QueuePollState } from "@/lib/queue-public-polling";
+import { createQueuePollController, derivePublicQueueActionEligibility, deriveQueueRecoveryView, initialQueuePollState, queueEffectiveFrontEdgeTrackId, queueHasCurrentAuthority, type QueuePollState } from "@/lib/queue-public-polling";
 
 type QueueView = "active" | "recent";
 type ActivityTone = "red" | "amber" | "gold" | "cyan" | "archive" | "danger";
@@ -227,6 +227,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const previousSnapshotRef = useRef<QueuePublicSnapshot | null>(null);
   const actionTransitionTimerRef = useRef<number | null>(null);
   const actionGenerationRef = useRef(0);
+  const priorityCheckoutControllerRef = useRef<AbortController | null>(null);
   const snapshotMovementKey = useMemo(() => publicSnapshotMovementKey(snapshot), [snapshot]);
   function emitRoutingGhost(ghost: Omit<RoutingGhost, "id">) {
     const id = `${Date.now()}:${ghost.trackId}:${ghost.zone}`;
@@ -407,7 +408,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const timingInput = useMemo(() => queueTimingInputFromPublicSnapshot(snapshot), [snapshot]);
   const timingSummary = useMemo(() => buildQueueTimingDisplay(timingInput, { priorityEligible: priorityUpgradeAvailable }), [timingInput, priorityUpgradeAvailable]);
 
-  const frontEdgeFreeTrackId = lanes.priority.length === 0 && lanes.wheel.length === 0 ? lanes.regular[0]?.id ?? null : null;
+  const frontEdgeFreeTrackId = queueEffectiveFrontEdgeTrackId(snapshot);
 
   function canShowPriorityUpgrade(track: QueuePublicTrack): boolean {
     if (!queueAuthorityCurrent || !priorityUpgradeAvailable || isEnded || snapshot?.session.status !== "open") return false;
@@ -422,7 +423,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     return track.priorityUpgradeStatus === "checkout_pending";
   }
 
-  function clearActionTransitionTimer() { actionGenerationRef.current += 1; if (actionTransitionTimerRef.current) window.clearTimeout(actionTransitionTimerRef.current); actionTransitionTimerRef.current = null; setActionTransition(null); }
+  function clearActionTransitionTimer() { actionGenerationRef.current += 1; if (actionTransitionTimerRef.current) window.clearTimeout(actionTransitionTimerRef.current); actionTransitionTimerRef.current = null; priorityCheckoutControllerRef.current?.abort(); priorityCheckoutControllerRef.current = null; setActionTransition(null); }
 
   function runPublicActionTransition(transition: PublicActionVariant, action: () => void, delay = 1200) {
     clearActionTransitionTimer();
@@ -463,17 +464,30 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     const preflight = derivePublicQueueActionEligibility(pollStateRef.current, { sessionId, action: preflightAction, trackId: track.id, priorityDepth: MIN_PRIORITY_ACTIVE_DEPTH });
     if (!preflight.allowed || !preflight.track) { setPriorityRequestMessage("Queue signal changed. Retry after resync before starting Priority Signal checkout."); return; }
     const checkoutGeneration = actionGenerationRef.current;
+    priorityCheckoutControllerRef.current?.abort();
+    const controller = new AbortController();
+    priorityCheckoutControllerRef.current = controller;
     setPriorityRequestPending(true);
-    const res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId: track.id, sessionId, acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT }) });
-    const payload = await res.json().catch(() => ({}));
-    setPriorityRequestPending(false);
+    let res: Response | null = null;
+    let payload: { url?: unknown; message?: string; error?: string } = {};
+    try {
+      res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal, body: JSON.stringify({ trackId: track.id, sessionId, acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT }) });
+      payload = await res.json().catch(() => ({}));
+    } catch (error) {
+      if (checkoutGeneration === actionGenerationRef.current && (error as { name?: string })?.name !== "AbortError") setPriorityRequestMessage("Priority Signal checkout could not be reached. Retry after the queue signal is current.");
+      return;
+    } finally {
+      if (checkoutGeneration === actionGenerationRef.current) setPriorityRequestPending(false);
+      if (priorityCheckoutControllerRef.current === controller) priorityCheckoutControllerRef.current = null;
+    }
+    if (checkoutGeneration !== actionGenerationRef.current) return;
     const eligibility = derivePublicQueueActionEligibility(pollStateRef.current, { sessionId, action: "priority_checkout_completed", trackId: track.id, priorityDepth: MIN_PRIORITY_ACTIVE_DEPTH });
-    if (checkoutGeneration !== actionGenerationRef.current || !eligibility.allowed || !eligibility.track) {
+    if (!eligibility.allowed || !eligibility.track) {
       setPriorityRequestMessage("Queue signal changed before checkout navigation. Retry after resync or resume payment if available.");
       return;
     }
     const checkoutUrl = (() => { try { if (typeof payload.url !== "string") return null; const url = new URL(payload.url); return (url.protocol === "http:" || url.protocol === "https:") && Boolean(url.host) ? url.toString() : null; } catch { return null; } })();
-    if (res.ok && checkoutUrl) {
+    if (res?.ok && checkoutUrl) {
       setPriorityRequestMessage(payload.message ?? "Checkout started. Skip is not active yet.");
       window.location.href = checkoutUrl;
       return;

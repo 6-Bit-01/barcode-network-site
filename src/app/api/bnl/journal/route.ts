@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticateBNLJournalRequest, validateBNLJournalPayload } from "@/lib/bnl-journal-contract";
+import { authenticateBNLJournalRequest, BNL_JOURNAL_MAX_PAYLOAD_BYTES, validateBNLJournalPayload } from "@/lib/bnl-journal-contract";
 import { publishBNLJournalEntry } from "@/lib/bnl-journal-store";
 
 export const runtime = "nodejs";
@@ -11,7 +11,11 @@ export async function POST(req: Request) {
   if (!authenticateBNLJournalRequest(req.headers.get("x-api-key"))) return json({ ok: false, error: "Unauthorized." }, 401);
   if (!req.headers.get("content-type")?.toLowerCase().includes("application/json")) return json({ ok: false, error: "Invalid Journal contract." }, 400);
   let body: unknown;
-  try { body = await req.json(); } catch { return json({ ok: false, error: "Invalid Journal contract." }, 400); }
+  try {
+    const bytes = Buffer.from(await req.arrayBuffer());
+    if (bytes.byteLength > BNL_JOURNAL_MAX_PAYLOAD_BYTES) return json({ ok: false, error: "Invalid Journal contract." }, 400);
+    body = JSON.parse(bytes.toString("utf8"));
+  } catch { return json({ ok: false, error: "Invalid Journal contract." }, 400); }
   const validated = validateBNLJournalPayload(body);
   if (!validated.ok) return json({ ok: false, error: "Invalid Journal contract." }, 400);
   const result = await publishBNLJournalEntry(validated.entry);

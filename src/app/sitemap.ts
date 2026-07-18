@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { databasePage } from "@/content";
 import { getAllTransmissions } from "@/lib/transmissions";
-import { listBNLJournalArchive } from "@/lib/bnl-journal-store";
+import { listAllBNLJournalEntries } from "@/lib/bnl-journal-store";
 
 function slugify(name: string) {
   return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
@@ -41,9 +41,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   let journalPages: MetadataRoute.Sitemap = [];
   try {
-    const archive = await listBNLJournalArchive(1);
+    const archive = await listAllBNLJournalEntries();
     if (archive.ok) {
-      journalPages = archive.value.entries.map((entry) => ({
+      journalPages = archive.value.map((entry) => ({
         url: `${base}/journal/${entry.entryId}`,
         lastModified: new Date(entry.publishedAt),
         changeFrequency: "monthly" as const,

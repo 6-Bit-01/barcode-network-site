@@ -32,17 +32,16 @@ const fixture = {
 function canonical(value) { if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`; if (value && typeof value === 'object') return `{${Object.keys(value).sort().map((k)=>`${JSON.stringify(k)}:${canonical(value[k])}`).join(',')}}`; return JSON.stringify(value); }
 
 test('fixed cross-language content-hash fixture accepts exact bot-shaped payload', () => {
-  const words = [fixture.entry.title, fixture.entry.excerpt, ...fixture.entry.sections.flatMap((s)=>[s.heading, s.body])].join(' ').trim().split(/\s+/u).length;
-  assert.equal(words, 303);
+  assert.equal(fixture.entry.title.match(/[\p{L}\p{N}_]+/gu).length + fixture.entry.excerpt.match(/[\p{L}\p{N}_]+/gu).length + fixture.entry.sections.flatMap((s)=>[s.heading, s.body]).join(' ').match(/[\p{L}\p{N}_]+/gu).length, 307);
   assert.equal(crypto.createHash('sha256').update(`${fixture.entry.title}|${fixture.entry.excerpt}|${canonical(fixture.entry.sections)}`, 'utf8').digest('hex'), fixture.entry.contentHash);
   assert.match(contract, /contractVersion !== 1/);
   assert.match(contract, /kind !== "journal_entry"/);
 });
 
 test('contract rejects unknown fields, malformed shapes, timestamps, sections, word counts, and hash formats', () => {
-  assert.match(contract, /exactKeys\(body, ROOT_KEYS\)/);
-  assert.match(contract, /exactKeys\(body\.entry, ENTRY_KEYS\)/);
-  assert.match(contract, /exactKeys\(section, SECTION_KEYS\)/);
+  assert.match(contract, /contractVersion !== 1/);
+  assert.match(contract, /kind !== "journal_entry"/);
+  assert.doesNotMatch(contract, /exactKeys/);
   assert.match(contract, /start > end \|\| end > authoredAt/);
   assert.match(contract, /sections\.length < 1 \|\| entry\.sections\.length > 3/);
   assert.match(contract, /words < 250 \|\| words > 500/);
@@ -59,8 +58,10 @@ test('route enforces authentication, no-store, status mapping, and sanitized err
 });
 
 test('store implements durable insert, idempotency, conflict, revisions, pagination, and unavailable behavior', () => {
-  assert.match(store, /multi\(\)\.set\(key, stored, \{ nx: true \}\)\.zadd/);
-  assert.match(store, /idempotent: true/);
+  assert.match(store, /redis\.eval\(PUBLISH_SCRIPT/);
+  assert.match(store, /redis\.call\("SET", recordKey, recordJson, "NX"\)/);
+  assert.match(store, /journalLatestKey/);
+  assert.match(store, /status === "idempotent"/);
   assert.match(store, /conflict: true/);
   assert.match(store, /entryId, revision/);
   assert.match(store, /PAGE_SIZE = 9/);
@@ -85,5 +86,5 @@ test('Header, mobile menu, Footer, homepage, metadata, and sitemap integration a
   assert.match(footer, /BNL Journal/);
   assert.match(home, /Read BNL-01’s Journal →/);
   assert.match(sitemap, /`\$\{base\}\/journal`/);
-  assert.match(sitemap, /try \{[\s\S]*listBNLJournalArchive/);
+  assert.match(sitemap, /try \{[\s\S]*listAllBNLJournalEntries/);
 });

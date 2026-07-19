@@ -125,7 +125,49 @@ export function createQueuePollController(options: QueuePollControllerOptions) {
   const clearIntervalTimer = () => { if (intervalTimer) win.clearTimeout(intervalTimer); intervalTimer = null; };
   const clearTimeoutTimer = () => { if (timeoutTimer) win.clearTimeout(timeoutTimer); timeoutTimer = null; };
   const queueInterval = () => { clearIntervalTimer(); if (!disposed) intervalTimer = win.setTimeout(() => schedule("interval"), intervalMs) as unknown as number; };
-  async function run(trigger: QueuePollTrigger) { if (disposed) return; if (inFlight) { pending = true; return; } clearSchedule(); inFlight = true; timedOut = false; const id = ++generation; controller = new AbortController(); set((s) => beginQueuePoll(s, trigger)); try { const snapshot = await Promise.race([fetchQueueSnapshot(options.fetcher, options.getUrl(), controller.signal), new Promise<never>((_, reject) => { timeoutTimer = win.setTimeout(() => { timedOut = true; controller?.abort(); reject(new QueuePollError("timeout", messageForQueuePollFailure("timeout"))); }, timeoutMs) as unknown as number; })]); if (disposed || id !== generation) return; set((s) => reduceQueuePollSuccess(s, snapshot, now(), options.requiredSessionId?.())); } catch (error) { if (disposed || id !== generation) return; const reason = error instanceof QueuePollError ? (error.reason === "aborted" && timedOut ? "timeout" : error.reason) : "network"; set((s) => reason === "aborted" ? reduceQueuePollFailure(s, "timeout") : reduceQueuePollFailure(s, reason)); } finally { if (id === generation) { inFlight = false; controller = null; clearTimeoutTimer(); queueInterval(); if (pending) { pending = false; schedule("interval"); } } } }
+  async function run(trigger: QueuePollTrigger) {
+    if (disposed) return;
+    if (inFlight) { pending = true; return; }
+    clearSchedule();
+    inFlight = true;
+    timedOut = false;
+    const id = ++generation;
+    const requestController = new AbortController();
+    controller = requestController;
+    const aborted = new Promise<never>((_, reject) => {
+      requestController.signal.addEventListener("abort", () => {
+        reject(new QueuePollError("aborted", messageForQueuePollFailure("aborted")));
+      }, { once: true });
+    });
+    set((s) => beginQueuePoll(s, trigger));
+    try {
+      const snapshot = await Promise.race([
+        fetchQueueSnapshot(options.fetcher, options.getUrl(), requestController.signal),
+        aborted,
+        new Promise<never>((_, reject) => {
+          timeoutTimer = win.setTimeout(() => {
+            timedOut = true;
+            requestController.abort();
+            reject(new QueuePollError("timeout", messageForQueuePollFailure("timeout")));
+          }, timeoutMs) as unknown as number;
+        }),
+      ]);
+      if (disposed || id !== generation) return;
+      set((s) => reduceQueuePollSuccess(s, snapshot, now(), options.requiredSessionId?.()));
+    } catch (error) {
+      if (disposed || id !== generation) return;
+      const reason = error instanceof QueuePollError ? (error.reason === "aborted" && timedOut ? "timeout" : error.reason) : "network";
+      set((s) => reason === "aborted" ? reduceQueuePollFailure(s, "timeout") : reduceQueuePollFailure(s, reason));
+    } finally {
+      if (id === generation) {
+        inFlight = false;
+        controller = null;
+        clearTimeoutTimer();
+        queueInterval();
+        if (pending) { pending = false; schedule("interval"); }
+      }
+    }
+  }
   function schedule(trigger: QueuePollTrigger) { if (disposed) return; if (inFlight) { pending = true; return; } if (scheduled) return; scheduled = win.setTimeout(() => { scheduled = null; void run(trigger); }, trigger === "manual" || trigger === "initial" ? 0 : coalesceMs) as unknown as number; }
   const focus = () => schedule("focus"), online = () => schedule("online"), visible = () => { if (doc.visibilityState === "visible") schedule("visible"); };
   return { start() { if (!disposed && (scheduled || intervalTimer || inFlight)) return; disposed = false; win.addEventListener("focus", focus); win.addEventListener("online", online); doc.addEventListener("visibilitychange", visible); schedule("initial"); queueInterval(); }, retry() { schedule("manual"); }, dispose() { disposed = true; generation++; inFlight = false; pending = false; timedOut = false; clearSchedule(); clearIntervalTimer(); clearTimeoutTimer(); controller?.abort(); controller = null; win.removeEventListener("focus", focus); win.removeEventListener("online", online); doc.removeEventListener("visibilitychange", visible); } };

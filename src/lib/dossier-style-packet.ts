@@ -257,7 +257,10 @@ export function buildDossierStylePacket(input: {
     },
     representativePublicDossierExamples: examples,
     categorySpecificExamples,
-    goodRoleLineExamples: examples.map((entry) => entry.role).filter(Boolean).slice(0, 8),
+    goodRoleLineExamples: Array.from(new Set([
+      "Host / Artist",
+      ...examples.map((entry) => entry.role).filter(Boolean),
+    ])).slice(0, 8),
     goodSummaryExamples: examples.map((entry) => entry.summary).filter(Boolean).slice(0, 8),
     goodNotesExamples: examples.map((entry) => entry.notes).filter(Boolean).slice(0, 8),
     forbiddenPublicCopyPatterns: DOSSIER_FORBIDDEN_PUBLIC_COPY_PATTERNS,

@@ -657,9 +657,10 @@ export function buildProjectionRangeSeconds(seconds: number, confidence: QueueTi
     minMinutes = Math.max(60, Math.floor(minutes / 30) * 30);
     maxMinutes = minMinutes + 30;
   }
-  if (confidence === "low" || hasUncertainty) {
-    minMinutes = Math.max(0, minMinutes - 10);
-    maxMinutes += minutes >= 60 ? 30 : 10;
+  if ((confidence === "low" || hasUncertainty) && minutes > 15) {
+    const uncertaintyMinutes = minutes >= 60 ? 30 : 10;
+    minMinutes = Math.max(0, minMinutes - uncertaintyMinutes);
+    maxMinutes += uncertaintyMinutes;
   }
   const label = maxMinutes <= 60
     ? (minMinutes === 0 ? `About ${maxMinutes} min` : `About ${minMinutes}–${maxMinutes} min`)

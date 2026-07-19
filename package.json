@@ -2,13 +2,18 @@
   "name": "barcode-network-site",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs",
     "test:queue": "node --test tests/queue-public-polling.test.mjs tests/live-overlay-recovery.test.mjs tests/wheel-audio.test.mjs tests/queue-route-recovery.test.mjs tests/provider-grouping.test.mjs tests/live-overlay-resolver.test.mjs tests/queue-playback.test.mjs tests/bnl-read-model.test.mjs tests/queue-production-capability.test.mjs",
-    "check": "npx tsc --noEmit && npm run lint && npm run test:shell && npm run test:queue && npm run test:bnl",
+    "check": "npm run typecheck && npm run lint && npm test",
     "test:bnl": "node --test tests/bnl-status-controller.test.mjs tests/bnl-force-pull.test.mjs tests/bnl-admin-ui-contract.test.mjs tests/bnl-presence-relay-contract.test.mjs tests/bnl-journal-contract.test.mjs tests/bnl-journal-admin-control.test.mjs",
     "test:shell": "node --test tests/global-identity-shell.test.mjs"
   },

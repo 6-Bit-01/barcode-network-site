@@ -2,89 +2,73 @@
 
 ## Source of truth
 
-- main is the stable live branch.
-- Do not push directly to main.
-- All changes must be made on a branch and submitted as a pull request.
-- Keep pull requests small and scoped.
+- `main` is the stable production branch. Never push directly to it.
+- Work on a branch and submit a scoped pull request.
+- Current source and tests override historical checkpoint documents when they disagree.
+- Read `README.md` and the relevant contract document before changing a subsystem.
 
-## Do not restore removed features
+## Existing systems must be extended, not duplicated
 
-- Do not create, restore, or reactivate /queue routes.
-- Do not add AI Stream Queue pages, payments, queue tiers, or 24/7 AI stream features unless explicitly requested.
-- Archived queue files under _archive/ are reference only and should not be moved into src/app/.
+The repository already contains active implementations for:
 
-## Protected content
+- the native BARCODE Radio queue, uploads, Wheel, Priority, Stripe, overlays, archives, and show management;
+- BNL Presence/Relay v2 and public/admin consumers;
+- the BNL Journal and its independent visibility and memory-eligibility controls;
+- the public Database renderer and the internal Source File/dossier workflow;
+- the global identity shell, Terminal, releases, Transmissions, Merch, and Radio pages.
 
-Do not modify these unless explicitly requested:
+Before adding a capability, identify where it belongs in those systems. Do not create a second queue, second relay, second Journal, second dossier store, or second identity shell.
 
-- Header navigation
-- Footer navigation
-- API routes
-- Middleware
-- Vercel config
-- Database canon/lore entries
-- Release catalog
-- BARCODE Radio submission flow
+## Historical code
 
-## BARCODE canon
+- `_archive/`, `stream-engine/`, and `discord-bot/` are reference-only.
+- Their queue shapes, endpoints, tiers, and automation assumptions are stale.
+- Do not run, deploy, restore, or copy them into active routes without an explicit rewrite plan against current contracts.
 
-- BARCODE Radio is the weekly live broadcast.
-- Submissions go through Auxchord.
-- Do not invent new lore, mechanics, releases, entities, sponsors, or platform features.
-- If a detail is missing, leave it unchanged instead of making something up.
+## Queue and public-submission truth
+
+- Native `/queue` and admin queue routes are active, intentional code.
+- Queue-derived public and BNL truth is disabled unless `BARCODE_QUEUE_PRODUCTION_ENABLED` is exactly `true`.
+- Until the owner authorizes native cutover, public Radio participation copy continues to point to Auxchord.
+- Preserve Free/Wheel alternation, backend-confirmed Priority, exact displacement/restoration, Finish-versus-Remove behavior, payment idempotency, upload cleanup, and default-off production gating.
+- Do not add new providers, tiers, payment methods, or queue semantics incidentally.
+
+## Protected boundaries
+
+Change these only when the requested scope requires it, and test every affected consumer:
+
+- Header and Footer navigation.
+- API routes and middleware.
+- Vercel cron/configuration.
+- BARCODE Radio submission flow.
+- Database canon/lore entries and release catalog.
+- Stripe, Redis, Blob, BNL, and Source File authority boundaries.
+
+Never expose admin notes, payment state, private identities, test sessions, or non-public Source File evidence through public or BNL read models.
+
+## BARCODE canon and public truth
+
+- BARCODE Radio is the weekly host-led live broadcast.
+- The people, music, broadcasts, and community are real; mythology adds continuity without replacing reality.
+- Do not invent releases, entities, sponsors, availability, operational status, or platform capabilities.
+- If a fact is unavailable, use an honest unavailable state.
 
 ## Change discipline
 
-- Make only the requested change.
-- Do not perform broad cleanup unless requested, and a specific plan is established. 
-- Do not rewrite unrelated copy.
-- Do not rename files or reorganize folders unless explicitly requested.
-- Before finishing, summarize exactly which files changed and why.
+- Make the smallest coherent change that fully solves the requested problem.
+- Avoid unrelated copy, visual, schema, or behavior changes.
+- When removing a public item, search active routes, shared content, navigation, sitemap, metadata, cards, CTAs, tests, and API/read-model consumers.
+- Do not delete historical references unless the request includes historical cleanup.
+- Preserve user changes already present in the worktree.
 
-## Removal tasks
+## Verification
 
-When asked to remove a page, entry, article, route, feature, or public-facing item:
+For code or configuration changes:
 
-- Search the repo for all active references before editing.
-- Check page routes under `src/app/`.
-- Check shared content/data files such as `src/content.ts`.
-- Check navigation components such as Header and Footer only if the removed item may be linked there.
-- Check sitemap and metadata files.
-- Check imports, cards, lists, indexes, and related CTAs.
-- Remove only active/public references unless explicitly asked to remove archived materials.
-- Do not delete archived/reference materials under `_archive/` unless explicitly requested.
-- After finishing, list every reference found and whether it was removed, left alone, or already inactive.
+```bash
+npm ci
+npm run check
+npm run build
+```
 
-## Scope interpretation
-
-- If a task says "remove from [specific page]," remove it from that page only, unless the user also says to scrub all references.
-- If a task says "remove from the site," "scrub," "delete everywhere," or "remove all traces," search and clean all active references.
-- If unclear, make the smallest safe change and report what related references still exist.
-
-## Routing safety
-
-- Do not create new public routes under `src/app/` unless explicitly requested.
-- Do not restore deleted routes from `_archive/`.
-- Do not move archived files back into active app routes unless explicitly requested.
-- Before adding or removing a route, check whether it affects Header, Footer, sitemap, metadata, or internal links.
-
-## Verification checklist
-
-Before finishing any task, verify:
-
-- The changed files match the requested scope.
-- No unrelated copy was rewritten.
-- No removed feature was restored.
-- No new route was created accidentally.
-- The app builds or type-checks if the task touched code.
-- The final response includes changed files and a short reason for each.
-
-## PR summary format
-
-At the end of every task, summarize:
-
-- Files changed
-- What changed
-- Why it changed
-- Anything intentionally left untouched
-- Any follow-up risks or manual checks needed
+Add focused regressions for behavior changes. A final handoff must list changed files, validation performed, intentionally untouched areas, and any required deployment checks.

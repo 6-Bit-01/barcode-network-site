@@ -1,5 +1,7 @@
 # BARCODE Discord Bot
 
+> **Historical prototype — not BNL01-Bot and not production-ready.** This directory expects retired queue tiers and absent routes such as `/api/queue/free` and `/api/queue/next`. The production Discord system is maintained in `6-Bit-01/BNL01-Bot`; do not deploy or extend this prototype without a deliberate rewrite against the current website queue contract.
+
 A Discord bot for the **BARCODE Network** interdimensional broadcast station. Lets server members interact with the queue, check station status, and submit entries — all from Discord.
 
 ## Commands

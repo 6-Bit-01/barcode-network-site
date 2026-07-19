@@ -6,7 +6,7 @@ export default function NotFound() {
       <div className="text-center space-y-6 max-w-md px-4">
         <div className="font-mono">
           <p className="text-xs uppercase tracking-[0.5em] text-danger mb-4">
-            // ERROR 404
+            {"// ERROR 404"}
           </p>
           <h1 className="text-6xl font-bold text-foreground mb-2">
             <span className="text-danger text-glow-red">SIGNAL</span> LOST
@@ -18,9 +18,9 @@ export default function NotFound() {
         </div>
 
         <div className="bg-surface border border-border p-4 font-mono text-left">
-          <p className="text-xs text-muted mb-2">&gt; BARCODE_NETWORK // ROUTE_LOOKUP</p>
+          <p className="text-xs text-muted mb-2">{"> BARCODE_NETWORK // ROUTE_LOOKUP"}</p>
           <p className="text-xs text-danger">&gt; ERROR: PATH_NOT_FOUND</p>
-          <p className="text-xs text-muted">&gt; STATUS: 404 // NO MATCH IN ROUTING TABLE</p>
+          <p className="text-xs text-muted">{"> STATUS: 404 // NO MATCH IN ROUTING TABLE"}</p>
           <p className="text-xs text-accent mt-2">
             &gt; REDIRECTING TO KNOWN FREQUENCIES...<span className="cursor-blink">_</span>
           </p>

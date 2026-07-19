@@ -11,6 +11,7 @@ import {
 } from "@/lib/bnl-force-pull";
 import { BNL_NO_STORE_HEADERS, clearLegacyBNLHistory, getBNLRedis, readBNLAdminState, writeBNLPresence, writeBNLRelay } from "@/lib/bnl-status-store";
 import { parseV2RelayWrite, type BNLV2PresenceRecord } from "@/lib/bnl-presence-relay-contract";
+import { mergeBNLFlagsAtomic, type JournalControlRedis } from "@/lib/bnl-journal-control-store";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,9 @@ type BNLFlags = {
   websiteRelayEnabled: boolean;
   showdayDiscordPostsEnabled: boolean;
   heartbeatEnabled: boolean;
+  journalAutoPublishEnabled: boolean;
+  journalDailyEnabled: boolean;
+  journalWeeklyEnabled: boolean;
 };
 
 const FLAGS_KEY = "bnl:flags";
@@ -32,6 +36,9 @@ const DEFAULT_FLAGS: BNLFlags = {
   websiteRelayEnabled: true,
   showdayDiscordPostsEnabled: true,
   heartbeatEnabled: true,
+  journalAutoPublishEnabled: true,
+  journalDailyEnabled: true,
+  journalWeeklyEnabled: true,
 };
 
 
@@ -60,6 +67,9 @@ function sanitizeFlags(value: unknown): BNLFlags {
     websiteRelayEnabled: typeof record.websiteRelayEnabled === "boolean" ? record.websiteRelayEnabled : DEFAULT_FLAGS.websiteRelayEnabled,
     showdayDiscordPostsEnabled: typeof record.showdayDiscordPostsEnabled === "boolean" ? record.showdayDiscordPostsEnabled : DEFAULT_FLAGS.showdayDiscordPostsEnabled,
     heartbeatEnabled: typeof record.heartbeatEnabled === "boolean" ? record.heartbeatEnabled : DEFAULT_FLAGS.heartbeatEnabled,
+    journalAutoPublishEnabled: typeof record.journalAutoPublishEnabled === "boolean" ? record.journalAutoPublishEnabled : DEFAULT_FLAGS.journalAutoPublishEnabled,
+    journalDailyEnabled: typeof record.journalDailyEnabled === "boolean" ? record.journalDailyEnabled : DEFAULT_FLAGS.journalDailyEnabled,
+    journalWeeklyEnabled: typeof record.journalWeeklyEnabled === "boolean" ? record.journalWeeklyEnabled : DEFAULT_FLAGS.journalWeeklyEnabled,
   };
 }
 
@@ -169,13 +179,19 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Invalid payload" }, { status: 400, headers: BNL_NO_STORE_HEADERS });
       }
 
-      const nextFlags: BNLFlags = {
+      const flagPatch = {
         websiteRelayEnabled: Boolean(rec.websiteRelayEnabled),
         showdayDiscordPostsEnabled: Boolean(rec.showdayDiscordPostsEnabled),
         heartbeatEnabled: Boolean(rec.heartbeatEnabled),
       };
-
-      if (redis) await redis.set(FLAGS_KEY, nextFlags);
+      const nextFlags: BNLFlags = redis
+        ? sanitizeFlags(
+            await mergeBNLFlagsAtomic(
+              flagPatch,
+              redis as unknown as JournalControlRedis,
+            ),
+          )
+        : { ...memoryFlags, ...flagPatch };
       memoryFlags = nextFlags;
       return NextResponse.json({ ok: true, flags: nextFlags, persisted: Boolean(redis) }, { headers: BNL_NO_STORE_HEADERS });
     }

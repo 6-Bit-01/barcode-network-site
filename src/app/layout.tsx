@@ -24,7 +24,6 @@ export const metadata: Metadata = {
     title: "BARCODE Network",
     description: "BARCODE is a living hip-hop broadcast universe connecting music, BARCODE Radio, community, technology, and interdimensional story.",
     siteName: "BARCODE Network",
-    url: "https://www.barcode-network.com",
     type: "website",
   },
   twitter: {
@@ -33,7 +32,6 @@ export const metadata: Metadata = {
     description: "BARCODE is a living hip-hop broadcast universe connecting music, BARCODE Radio, community, technology, and interdimensional story.",
   },
   alternates: {
-    canonical: "/",
     types: {
       "application/rss+xml": "https://www.barcode-network.com/transmissions/feed",
     },

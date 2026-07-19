@@ -6,14 +6,20 @@ const read = (path) => fs.readFileSync(new URL(`../${path}`, import.meta.url), "
 
 test("public discovery metadata, robots, sitemap, and RSS standardize on www without rotating legacy GUIDs", () => {
   const layout = read("src/app/layout.tsx");
+  const home = read("src/app/page.tsx");
   const robots = read("src/app/robots.ts");
   const sitemap = read("src/app/sitemap.ts");
   const feed = read("src/app/transmissions/feed/route.ts");
 
   assert.match(layout, /metadataBase: new URL\("https:\/\/www\.barcode-network\.com"\)/);
-  assert.match(layout, /canonical: "\/"/);
+  assert.doesNotMatch(layout, /canonical: "\/"/);
+  assert.doesNotMatch(layout, /url: "https:\/\/www\.barcode-network\.com"|url: "\/"/);
   assert.match(layout, /manifest: "\/site\.webmanifest"/);
   assert.doesNotMatch(layout, /\/barcode-radio\.png|\/og-image\.png|\/radio-og-image\.png|\/icon-192\.png|\/icon-512\.png|\/favicon/);
+  assert.match(home, /alternates: \{ canonical: "\/" \}/);
+  assert.match(home, /url: "\/"/);
+  assert.match(home, /siteName: "BARCODE Network"/);
+  assert.match(home, /images: \[\{ url: "\/barcode-radio\.png", width: 1200, height: 630/);
   assert.match(robots, /https:\/\/www\.barcode-network\.com\/sitemap\.xml/);
   assert.match(sitemap, /https:\/\/www\.barcode-network\.com/);
   assert.match(sitemap, /`\$\{base\}\/contact`/);

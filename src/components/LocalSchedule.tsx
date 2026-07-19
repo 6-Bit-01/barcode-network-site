@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { useLiveStatus } from "./LiveStatusProvider";
 import { BROADCAST_TZ } from "@/lib/broadcastSchedule";
 
@@ -11,7 +11,6 @@ import { BROADCAST_TZ } from "@/lib/broadcastSchedule";
  */
 function pacificToLocal(pacificTime: string): { local: string; zone: string } | null {
   try {
-    // Parse the PT time string
     const match = pacificTime.match(/^~?(\d{1,2}):(\d{2})\s*(AM|PM)/i);
     if (!match) return null;
 
@@ -22,7 +21,6 @@ function pacificToLocal(pacificTime: string): { local: string; zone: string } | 
     if (ampm === "PM" && hours !== 12) hours += 12;
     if (ampm === "AM" && hours === 12) hours = 0;
 
-    // Create a date in PT context.
     const now = new Date();
     const pacificDate = new Date(
       now.getFullYear(),
@@ -30,33 +28,24 @@ function pacificToLocal(pacificTime: string): { local: string; zone: string } | 
       now.getDate(),
       hours,
       minutes,
-      0
+      0,
     );
 
-    // Convert: build the date as if in LA timezone, then read in local
-    // Get the UTC offset of PT right now
     const laOffset = getTimezoneOffset(BROADCAST_TZ, now);
     const localOffset = now.getTimezoneOffset();
-
-    // Adjust: base time is in PT, convert to UTC then to local
-    const utcMs =
-      pacificDate.getTime() + laOffset * 60000;
-    const localDate = new Date(utcMs - localOffset * 60000);
+    const utcMs = pacificDate.getTime() + laOffset * 60_000;
+    const localDate = new Date(utcMs - localOffset * 60_000);
 
     const localFormatter = new Intl.DateTimeFormat("en-US", {
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
     });
-
     const zoneFormatter = new Intl.DateTimeFormat("en-US", {
       timeZoneName: "short",
     });
-
     const zoneParts = zoneFormatter.formatToParts(now);
-    const zone =
-      zoneParts.find((p) => p.type === "timeZoneName")?.value ?? "";
-
+    const zone = zoneParts.find((part) => part.type === "timeZoneName")?.value ?? "";
     const prefix = pacificTime.startsWith("~") ? "~" : "";
 
     return {
@@ -68,24 +57,54 @@ function pacificToLocal(pacificTime: string): { local: string; zone: string } | 
   }
 }
 
-/** Get timezone offset in minutes for a given IANA timezone */
-function getTimezoneOffset(tz: string, date: Date): number {
-  const utcStr = date.toLocaleString("en-US", { timeZone: "UTC" });
-  const tzStr = date.toLocaleString("en-US", { timeZone: tz });
-  const utcDate = new Date(utcStr);
-  const tzDate = new Date(tzStr);
-  return (utcDate.getTime() - tzDate.getTime()) / 60000;
+function getTimezoneOffset(timeZone: string, date: Date): number {
+  const utcDate = new Date(date.toLocaleString("en-US", { timeZone: "UTC" }));
+  const zonedDate = new Date(date.toLocaleString("en-US", { timeZone }));
+  return (utcDate.getTime() - zonedDate.getTime()) / 60_000;
 }
 
-/** Check if user is already in Pacific time */
 function isPacificTime(): boolean {
   try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return tz === "America/Los_Angeles" || tz === "America/Vancouver" ||
-           tz === "America/Tijuana" || tz === "US/Pacific";
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return ["America/Los_Angeles", "America/Vancouver", "America/Tijuana", "US/Pacific"].includes(timeZone);
   } catch {
     return false;
   }
+}
+
+const subscribeToHydration = () => () => {};
+
+function resolveLocalTimes(queueOpens: string, showBegins: string, firstTrack: string) {
+  if (isPacificTime()) {
+    return {
+      queue: queueOpens,
+      show: showBegins,
+      first: firstTrack,
+      zone: "PT",
+      converted: false,
+    };
+  }
+
+  const queue = pacificToLocal(queueOpens);
+  const show = pacificToLocal(showBegins);
+  const first = pacificToLocal(firstTrack);
+  if (queue && show && first) {
+    return {
+      queue: queue.local,
+      show: show.local,
+      first: first.local,
+      zone: queue.zone,
+      converted: true,
+    };
+  }
+
+  return {
+    queue: queueOpens,
+    show: showBegins,
+    first: firstTrack,
+    zone: "PT",
+    converted: false,
+  };
 }
 
 export function LocalSchedule({
@@ -101,57 +120,13 @@ export function LocalSchedule({
   firstTrack: string;
   notice: string;
 }) {
-  const [localTimes, setLocalTimes] = useState<{
-    queue: string;
-    show: string;
-    first: string;
-    zone: string;
-    converted: boolean;
-  } | null>(null);
-
-  useEffect(() => {
-    if (isPacificTime()) {
-      // Already in Pacific — show PT values as entered.
-      setLocalTimes({
-        queue: queueOpens,
-        show: showBegins,
-        first: firstTrack,
-        zone: "PT",
-        converted: false,
-      });
-      return;
-    }
-
-    const q = pacificToLocal(queueOpens);
-    const s = pacificToLocal(showBegins);
-    const f = pacificToLocal(firstTrack);
-
-    if (q && s && f) {
-      setLocalTimes({
-        queue: q.local,
-        show: s.local,
-        first: f.local,
-        zone: q.zone,
-        converted: true,
-      });
-    } else {
-      setLocalTimes({
-        queue: queueOpens,
-        show: showBegins,
-        first: firstTrack,
-        zone: "PT",
-        converted: false,
-      });
-    }
-  }, [queueOpens, showBegins, firstTrack]);
-
-  // Before hydration — show configured PT values as fallback (no layout shift)
+  const hydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
+  const localTimes = hydrated ? resolveLocalTimes(queueOpens, showBegins, firstTrack) : null;
   const displayQueue = localTimes?.queue ?? queueOpens;
   const displayShow = localTimes?.show ?? showBegins;
   const displayFirst = localTimes?.first ?? firstTrack;
   const displayZone = localTimes?.zone ?? "PT";
   const isConverted = localTimes?.converted ?? false;
-
   const { isLive } = useLiveStatus();
 
   return (
@@ -190,13 +165,10 @@ export function LocalSchedule({
       </p>
       {isConverted && (
         <p className="text-xs text-muted/50 mt-1">
-          Times shown in your local timezone ({displayZone}).
-          Original: {queueOpens} / {showBegins} / {firstTrack}.
+          Times shown in your local timezone ({displayZone}). Original: {queueOpens} / {showBegins} / {firstTrack}.
         </p>
       )}
-      <p className="text-xs text-muted mt-2">
-        {notice}
-      </p>
+      <p className="text-xs text-muted mt-2">{notice}</p>
     </div>
   );
 }

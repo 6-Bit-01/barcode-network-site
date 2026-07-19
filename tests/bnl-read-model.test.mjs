@@ -425,9 +425,11 @@ test("BNL read model exposes the dossier authoring guide with current page struc
 });
 
 test("dossier authoring guide matches sections rendered by the dossier page", () => {
-  const dossierPageSource = fs.readFileSync(path.join(projectRoot, "src/app/database/[slug]/page.tsx"), "utf8");
+  const dossierRouteSource = fs.readFileSync(path.join(projectRoot, "src/app/database/[slug]/page.tsx"), "utf8");
+  const dossierPageSource = fs.readFileSync(path.join(projectRoot, "src/components/DossierPageView.tsx"), "utf8");
   const authoringGuideSource = fs.readFileSync(path.join(projectRoot, "src/lib/dossier-authoring-guide.ts"), "utf8");
 
+  assert.match(dossierRouteSource, /<DossierPageView dossier=\{databaseEntryToDossierPageViewModel\(entry\)\} \/>/);
   for (const phrase of ["// DOSSIER", "Dossier Record", "Intelligence Brief", "Attached Files", "DOSSIER QUERY"]) {
     assert.ok(dossierPageSource.includes(phrase), `${phrase} should be rendered by the dossier page`);
   }
@@ -499,7 +501,7 @@ test("dossier tag registry preserves raw entry tags and leaves database UI tag b
   const model = await modelJson();
   const afterTags = databasePage.entries.map((entry) => ({ id: entry.id, tags: [...entry.tags] }));
   const databaseTableSource = fs.readFileSync(path.join(projectRoot, "src/components/DatabaseTable.tsx"), "utf8");
-  const dossierPageSource = fs.readFileSync(path.join(projectRoot, "src/app/database/[slug]/page.tsx"), "utf8");
+  const dossierPageSource = fs.readFileSync(path.join(projectRoot, "src/components/DossierPageView.tsx"), "utf8");
 
   assert.deepEqual(afterTags, beforeTags);
   for (const entry of databasePage.entries) {
@@ -509,7 +511,7 @@ test("dossier tag registry preserves raw entry tags and leaves database UI tag b
   assert.ok(model.sections.dossiers.items.every((entry) => Array.isArray(entry.tags) && entry.tags.every((tag) => typeof tag === "string")));
   assert.match(databaseTableSource, /entry\.tags\.some\(\(t\) => t\.toLowerCase\(\)\.includes\(q\)\)/);
   assert.match(databaseTableSource, /entry\.tags\.slice\(0, 3\)\.map/);
-  assert.match(dossierPageSource, /entry\.tags\.map/);
+  assert.match(dossierPageSource, /dossier\.tags\.map/);
 });
 
 test("dossier tag creation policy keeps new tags proposal-only", async () => {
@@ -600,14 +602,15 @@ test("normalized dossiers expose safe primaryLink/links while preserving legacy 
 });
 
 test("dossier page link rendering uses featured link helper and remains safe without links", () => {
-  const dossierPageSource = fs.readFileSync(path.join(projectRoot, "src/app/database/[slug]/page.tsx"), "utf8");
+  const dossierPageSource = fs.readFileSync(path.join(projectRoot, "src/components/DossierPageView.tsx"), "utf8");
+  const dossierViewModelSource = fs.readFileSync(path.join(projectRoot, "src/lib/dossier-page-view-model.ts"), "utf8");
   const noLinkEntry = databasePage.entries.find((entry) => !entry.link && !entry.primaryLink && (!entry.links || entry.links.length === 0));
 
   assert.ok(noLinkEntry, "fixture should include entries without links");
-  assert.match(dossierPageSource, /getDossierPrimaryLink\(entry\)/);
-  assert.match(dossierPageSource, /primaryLink &&/);
-  assert.match(dossierPageSource, /href=\{primaryLink\.url\}/);
-  assert.match(dossierPageSource, /\{primaryLink\.label\}/);
+  assert.match(dossierViewModelSource, /primaryLink: getDossierPrimaryLink\(entry\)/);
+  assert.match(dossierPageSource, /dossier\.primaryLink &&/);
+  assert.match(dossierPageSource, /href=\{dossier\.primaryLink\.url\}/);
+  assert.match(dossierPageSource, /\{dossier\.primaryLink\.label\}/);
 });
 
 test("BNL dossier style profile is dynamically derived from current entries", async () => {

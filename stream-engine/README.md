@@ -1,5 +1,7 @@
 # BARCODE Stream Automation Engine
 
+> **Historical prototype — do not deploy against the current site.** This code expects retired queue tiers and routes such as `/api/queue/next` and `/api/stream-engine/heartbeat` that are not part of current main. The active host-operated queue and overlay contracts live in the root Next.js application. Any future automation engine must be deliberately rewritten against those contracts.
+
 An AI-powered stream automation service that connects OBS Studio to the BARCODE Network queue system for automated broadcasting.
 
 ## What It Does

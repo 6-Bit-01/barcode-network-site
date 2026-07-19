@@ -26,9 +26,12 @@ export function useQueue() {
   }, []);
 
   useEffect(() => {
-    fetchQueue();
+    const initial = setTimeout(() => void fetchQueue(), 0);
     const interval = setInterval(fetchQueue, POLL_INTERVAL);
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(initial);
+      clearInterval(interval);
+    };
   }, [fetchQueue]);
 
   return { state, loading, error, refresh: fetchQueue };

@@ -17,8 +17,9 @@ export function GlitchText({
   className?: string;
   intensity?: "low" | "medium" | "high";
 }) {
-  const [display, setDisplay] = useState(text);
+  const [glitch, setGlitch] = useState<{ source: string; value: string } | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
+  const restoreRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const config = {
     low: { interval: 4000, duration: 150, maxChars: 1 },
@@ -27,8 +28,6 @@ export function GlitchText({
   }[intensity];
 
   useEffect(() => {
-    setDisplay(text);
-
     intervalRef.current = setInterval(() => {
       // Random chance to glitch (60% of intervals)
       if (Math.random() > 0.6) return;
@@ -43,14 +42,19 @@ export function GlitchText({
         }
       }
 
-      setDisplay(chars.join(""));
+      setGlitch({ source: text, value: chars.join("") });
 
       // Restore original text after brief flash
-      setTimeout(() => setDisplay(text), config.duration);
+      clearTimeout(restoreRef.current);
+      restoreRef.current = setTimeout(() => setGlitch(null), config.duration);
     }, config.interval);
 
-    return () => clearInterval(intervalRef.current);
+    return () => {
+      clearInterval(intervalRef.current);
+      clearTimeout(restoreRef.current);
+    };
   }, [text, config.interval, config.duration, config.maxChars]);
 
+  const display = glitch?.source === text ? glitch.value : text;
   return <span className={className}>{display}</span>;
 }

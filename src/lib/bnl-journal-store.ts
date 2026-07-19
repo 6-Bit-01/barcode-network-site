@@ -1,5 +1,6 @@
 import { Redis } from "@upstash/redis";
 import type { BNLJournalEntry } from "@/lib/bnl-journal-contract";
+import type { JournalArchiveFilter } from "@/lib/bnl-journal-navigation";
 
 export type PublicBNLJournalEntry = BNLJournalEntry & { publishedAt: string };
 export type JournalReadResult<T> =
@@ -19,6 +20,10 @@ export type JournalWriteResult =
   | { ok: false; unavailable: true };
 
 export const BNL_JOURNAL_INDEX_KEY = "barcode:bnl-journal:v1:index";
+export const BNL_JOURNAL_DAILY_INDEX_KEY =
+  "barcode:bnl-journal:v1:index:daily";
+export const BNL_JOURNAL_WEEKLY_INDEX_KEY =
+  "barcode:bnl-journal:v1:index:weekly";
 const KEY_PREFIX = "barcode:bnl-journal:v1:entry";
 const LATEST_PREFIX = "barcode:bnl-journal:v1:latest";
 const PAGE_SIZE = 9;
@@ -55,11 +60,22 @@ const PUBLISH_SCRIPT = `
 local recordKey = KEYS[1]
 local latestKey = KEYS[2]
 local indexKey = KEYS[3]
+local dailyIndexKey = KEYS[4]
+local weeklyIndexKey = KEYS[5]
 local entryId = ARGV[1]
 local revision = tonumber(ARGV[2])
 local contentHash = ARGV[3]
 local recordJson = ARGV[4]
 local score = tonumber(ARGV[5])
+local function repairKindIndexes(latest)
+  redis.call("ZREM", dailyIndexKey, entryId)
+  redis.call("ZREM", weeklyIndexKey, entryId)
+  if latest.entryKind == "daily" then
+    redis.call("ZADD", dailyIndexKey, tonumber(latest._score), entryId)
+  elseif latest.entryKind == "weekly" then
+    redis.call("ZADD", weeklyIndexKey, tonumber(latest._score), entryId)
+  end
+end
 local existingJson = redis.call("GET", recordKey)
 if existingJson then
   local existing = cjson.decode(existingJson)
@@ -96,15 +112,16 @@ if existingJson then
   if (not repairedLatestJson) or (not repairedScore) then
     return cjson.encode({ status = "unavailable" })
   end
+  local repairedLatestEntry = cjson.decode(repairedLatestJson)
   if repairedLatest then
-    local repaired = cjson.decode(repairedLatestJson)
-    if repaired.revision ~= existing.revision or repaired.contentHash ~= existing.contentHash then
+    if repairedLatestEntry.revision ~= existing.revision or repairedLatestEntry.contentHash ~= existing.contentHash then
       return cjson.encode({ status = "unavailable" })
     end
   end
   if repairedIndexScore and tonumber(repairedScore) ~= tonumber(repairedIndexScore) then
     return cjson.encode({ status = "unavailable" })
   end
+  repairKindIndexes(repairedLatestEntry)
   return cjson.encode({ status = "idempotent", publishedAt = existing.publishedAt })
 end
 redis.call("SET", recordKey, recordJson, "NX")
@@ -124,9 +141,11 @@ elseif not redis.call("ZSCORE", indexKey, entryId) then
   local latest = cjson.decode(latestJson)
   redis.call("ZADD", indexKey, tonumber(latest._score), entryId)
 end
-if (not redis.call("GET", latestKey)) or (not redis.call("ZSCORE", indexKey, entryId)) then
+local finalLatestJson = redis.call("GET", latestKey)
+if (not finalLatestJson) or (not redis.call("ZSCORE", indexKey, entryId)) then
   return cjson.encode({ status = "unavailable" })
 end
+repairKindIndexes(cjson.decode(finalLatestJson))
 return cjson.encode({ status = "created" })
 `;
 
@@ -152,6 +171,7 @@ function normalize(
   return {
     entryId: entry.entryId,
     revision: entry.revision,
+    ...(entry.entryKind === undefined ? {} : { entryKind: entry.entryKind }),
     title: entry.title,
     excerpt: entry.excerpt,
     sections: entry.sections.map((s) => ({ heading: s.heading, body: s.body })),
@@ -187,6 +207,17 @@ function parseAtomicResult(value: unknown): {
 function validPage(page: number) {
   return Number.isInteger(page) && page > 0 && page <= MAX_PAGE;
 }
+function matchesArchiveFilter(
+  entry: Pick<BNLJournalEntry, "entryKind">,
+  filter: JournalArchiveFilter,
+) {
+  return filter === "all" || entry.entryKind === filter;
+}
+function archiveIndexKey(filter: JournalArchiveFilter) {
+  if (filter === "daily") return BNL_JOURNAL_DAILY_INDEX_KEY;
+  if (filter === "weekly") return BNL_JOURNAL_WEEKLY_INDEX_KEY;
+  return BNL_JOURNAL_INDEX_KEY;
+}
 
 export async function publishBNLJournalEntry(
   entry: BNLJournalEntry,
@@ -204,6 +235,8 @@ export async function publishBNLJournalEntry(
           journalEntryKey(entry.entryId, entry.revision),
           journalLatestKey(entry.entryId),
           BNL_JOURNAL_INDEX_KEY,
+          BNL_JOURNAL_DAILY_INDEX_KEY,
+          BNL_JOURNAL_WEEKLY_INDEX_KEY,
         ],
         [
           entry.entryId,
@@ -261,32 +294,37 @@ export async function publishBNLJournalEntry(
 async function entriesForPage(
   redis: RedisLike,
   page: number,
+  filter: JournalArchiveFilter,
 ): Promise<PublicBNLJournalEntry[] | null> {
   if (!validPage(page)) return null;
   const start = (page - 1) * PAGE_SIZE;
   const ids = await redis.zrange(
-    BNL_JOURNAL_INDEX_KEY,
+    archiveIndexKey(filter),
     start,
     start + PAGE_SIZE,
     { rev: true },
   );
-  const entries: PublicBNLJournalEntry[] = [];
-  for (const rawId of ids) {
-    const entry = await redis.get<PublicBNLJournalEntry>(
-      journalLatestKey(String(rawId)),
-    );
-    if (entry) entries.push(publicEntry(entry));
-  }
-  return entries;
+  const entries = await Promise.all(
+    ids.map((rawId) =>
+      redis.get<PublicBNLJournalEntry>(journalLatestKey(String(rawId))),
+    ),
+  );
+  return entries
+    .filter(
+      (entry): entry is PublicBNLJournalEntry =>
+        entry !== null && matchesArchiveFilter(entry, filter),
+    )
+    .map(publicEntry);
 }
 export async function listBNLJournalArchive(
   page = 1,
   redis: RedisLike | null = asRedisLike(getBNLJournalRedis()),
+  filter: JournalArchiveFilter = "all",
 ): Promise<JournalReadResult<JournalArchivePage | null>> {
   if (!redis) return { ok: false, unavailable: true };
   if (!validPage(page)) return { ok: true, value: null };
   try {
-    const entries = await entriesForPage(redis, page);
+    const entries = await entriesForPage(redis, page, filter);
     if (!entries) return { ok: true, value: null };
     return {
       ok: true,
@@ -318,6 +356,7 @@ export async function getBNLJournalEntry(
 export async function getBNLJournalNeighbors(
   entryId: string,
   redis: RedisLike | null = asRedisLike(getBNLJournalRedis()),
+  filter: JournalArchiveFilter = "all",
 ): Promise<
   JournalReadResult<{
     older: PublicBNLJournalEntry | null;
@@ -326,22 +365,16 @@ export async function getBNLJournalNeighbors(
 > {
   if (!redis) return { ok: false, unavailable: true };
   try {
+    const indexKey = archiveIndexKey(filter);
     const rank = redis.zrank
-      ? await redis.zrank(BNL_JOURNAL_INDEX_KEY, entryId)
+      ? await redis.zrank(indexKey, entryId)
       : null;
     if (rank === null) return { ok: true, value: { older: null, newer: null } };
-    // ZRANK is ascending (oldest first), so adjacent ranks must be read in the
-    // same order. Mixing this rank with a reversed ZRANGE points at unrelated
-    // entries once the archive has more than a couple of records.
+    // ZRANK is ascending (oldest first), so the directly adjacent members in
+    // the selected index are the selected kind's older and newer entries.
     const olderIds =
-      rank > 0
-        ? await redis.zrange(BNL_JOURNAL_INDEX_KEY, rank - 1, rank - 1)
-        : [];
-    const newerIds = await redis.zrange(
-      BNL_JOURNAL_INDEX_KEY,
-      rank + 1,
-      rank + 1,
-    );
+      rank > 0 ? await redis.zrange(indexKey, rank - 1, rank - 1) : [];
+    const newerIds = await redis.zrange(indexKey, rank + 1, rank + 1);
     const older = olderIds[0]
       ? await redis.get<PublicBNLJournalEntry>(
           journalLatestKey(String(olderIds[0])),
@@ -355,8 +388,14 @@ export async function getBNLJournalNeighbors(
     return {
       ok: true,
       value: {
-        older: older ? publicEntry(older) : null,
-        newer: newer ? publicEntry(newer) : null,
+        older:
+          older && matchesArchiveFilter(older, filter)
+            ? publicEntry(older)
+            : null,
+        newer:
+          newer && matchesArchiveFilter(newer, filter)
+            ? publicEntry(newer)
+            : null,
       },
     };
   } catch {

@@ -1,9 +1,11 @@
 import { createHash, timingSafeEqual } from "crypto";
 
 export type BNLJournalSection = { heading: string; body: string };
+export type BNLJournalEntryKind = "daily" | "weekly" | "manual";
 export type BNLJournalEntry = {
   entryId: string;
   revision: number;
+  entryKind?: BNLJournalEntryKind;
   title: string;
   excerpt: string;
   sections: BNLJournalSection[];
@@ -102,18 +104,24 @@ export function validateBNLJournalPayload(
   )
     return { ok: false, reason: "invalid_contract" };
   const entry = body.entry;
+  const entryKeys = [
+    "entryId",
+    "revision",
+    "title",
+    "excerpt",
+    "sections",
+    "authoredAt",
+    "sourceWindowStart",
+    "sourceWindowEnd",
+    "contentHash",
+  ];
   if (
-    !exactKeys(entry, [
-      "entryId",
-      "revision",
-      "title",
-      "excerpt",
-      "sections",
-      "authoredAt",
-      "sourceWindowStart",
-      "sourceWindowEnd",
-      "contentHash",
-    ])
+    !exactKeys(
+      entry,
+      Object.prototype.hasOwnProperty.call(entry, "entryKind")
+        ? [...entryKeys, "entryKind"]
+        : entryKeys,
+    )
   )
     return { ok: false, reason: "invalid_contract" };
   if (
@@ -123,6 +131,13 @@ export function validateBNLJournalPayload(
     return { ok: false, reason: "invalid_entry" };
   if (!Number.isInteger(entry.revision) || Number(entry.revision) <= 0)
     return { ok: false, reason: "invalid_revision" };
+  if (
+    entry.entryKind !== undefined &&
+    entry.entryKind !== "daily" &&
+    entry.entryKind !== "weekly" &&
+    entry.entryKind !== "manual"
+  )
+    return { ok: false, reason: "invalid_entry_kind" };
   if (!safePublicString(entry.title) || !safePublicString(entry.excerpt))
     return { ok: false, reason: "invalid_text" };
   if (

@@ -47,7 +47,16 @@ function loadTs(file, mocks = {}) {
   };
   vm.runInNewContext(
     code,
-    { require: req, exports, module: cjsModule, process, Buffer, URL, console },
+    {
+      require: req,
+      exports,
+      module: cjsModule,
+      process,
+      Buffer,
+      URL,
+      URLSearchParams,
+      console,
+    },
     { filename: file },
   );
   return cjsModule.exports;
@@ -63,9 +72,11 @@ function awaitImport(id) {
 }
 
 const contract = loadTs("src/lib/bnl-journal-contract.ts");
+const navigation = loadTs("src/lib/bnl-journal-navigation.ts");
 const retry = loadTs("src/components/journal/JournalRetryButton.tsx");
 const article = loadTs("src/components/journal/JournalArticle.tsx", {
   "@/lib/bnl-journal-store": {},
+  "@/lib/bnl-journal-navigation": navigation,
   "@/components/journal/JournalRetryButton": retry,
 });
 const routeMod = loadTs("src/app/api/bnl/journal/route.ts", {
@@ -151,8 +162,21 @@ class FakeRedis {
   async eval(_script, keys, args) {
     this.calls.push(["eval"]);
     if (this.fail === "eval") throw new Error("eval fail");
-    const [recordKey, latestKey, indexKey] = keys;
+    const [recordKey, latestKey, indexKey, dailyIndexKey, weeklyIndexKey] =
+      keys;
     const [entryId, revision, contentHash, recordJson, score] = args;
+    const repairKindIndexes = (latest) => {
+      const daily =
+        this.z.get(dailyIndexKey) ??
+        this.z.set(dailyIndexKey, new Map()).get(dailyIndexKey);
+      const weekly =
+        this.z.get(weeklyIndexKey) ??
+        this.z.set(weeklyIndexKey, new Map()).get(weeklyIndexKey);
+      daily.delete(entryId);
+      weekly.delete(entryId);
+      if (latest.entryKind === "daily") daily.set(entryId, latest._score);
+      if (latest.entryKind === "weekly") weekly.set(entryId, latest._score);
+    };
     const existingJson = this.kv.get(recordKey);
     if (existingJson) {
       const existing = JSON.parse(existingJson);
@@ -195,6 +219,7 @@ class FakeRedis {
         (repairedIndexScore !== null && repairedScore !== repairedIndexScore)
       )
         return JSON.stringify({ status: "unavailable" });
+      repairKindIndexes(repaired);
       return JSON.stringify({
         status: "idempotent",
         publishedAt: existing.publishedAt,
@@ -211,6 +236,7 @@ class FakeRedis {
         member: entryId,
       });
     }
+    repairKindIndexes(JSON.parse(this.kv.get(latestKey)));
     return JSON.stringify({ status: "created" });
   }
 }
@@ -237,6 +263,25 @@ test("contract executes bot-compatible validation, word counts, hashes, auth, an
   });
   assert.equal(contract.countJournalWords(e250), 250);
   assert.equal(contract.validateBNLJournalPayload(env(e250)).ok, true);
+  for (const entryKind of ["daily", "weekly", "manual"]) {
+    const classified = makeEntry({ entryKind });
+    assert.equal(
+      contract.validateBNLJournalPayload(env(classified)).ok,
+      true,
+      `${entryKind} entries are accepted`,
+    );
+    assert.equal(
+      classified.contentHash,
+      makeEntry().contentHash,
+      "entry kind remains outside the established public-content hash",
+    );
+  }
+  assert.equal(
+    contract.validateBNLJournalPayload(
+      env(makeEntry({ entryKind: "monthly" })),
+    ).reason,
+    "invalid_entry_kind",
+  );
   const e500 = makeEntry({
     title: "Title",
     excerpt: "Excerpt",
@@ -443,6 +488,250 @@ test("store executes atomic publication, idempotent self-repair, conflicts, boun
   assert.equal(middle.value.newer.entryId, allIds[middleIndex - 1]);
 });
 
+test("archive filters paginate over matching entries and constrain neighbors", async () => {
+  const redis = new FakeRedis();
+  for (let i = 0; i < 30; i++) {
+    const entryKind = i % 3 === 0 ? "daily" : i % 3 === 1 ? "weekly" : null;
+    const entry = makeEntry({
+      entryId: `kind-entry-${String(i).padStart(2, "0")}`,
+      ...(entryKind ? { entryKind } : {}),
+    });
+    assert.equal((await store.publishBNLJournalEntry(entry, redis)).ok, true);
+    redis.z.get(store.BNL_JOURNAL_INDEX_KEY).set(entry.entryId, i);
+    if (entryKind === "daily")
+      redis.z.get(store.BNL_JOURNAL_DAILY_INDEX_KEY).set(entry.entryId, i);
+    if (entryKind === "weekly")
+      redis.z.get(store.BNL_JOURNAL_WEEKLY_INDEX_KEY).set(entry.entryId, i);
+  }
+
+  redis.calls = [];
+  const dailyPage1 = await store.listBNLJournalArchive(1, redis, "daily");
+  assert.deepEqual(redis.calls[0], [
+    "zrange",
+    store.BNL_JOURNAL_DAILY_INDEX_KEY,
+    0,
+    9,
+  ]);
+  assert.equal(redis.calls.filter((call) => call[0] === "zrange").length, 1);
+  assert.equal(redis.calls.filter((call) => call[0] === "get").length, 10);
+  const dailyPage2 = await store.listBNLJournalArchive(2, redis, "daily");
+  assert.equal(dailyPage1.ok, true);
+  assert.equal(dailyPage1.value.entries.length, 9);
+  assert.equal(dailyPage1.value.hasOlder, true);
+  assert.equal(dailyPage1.value.hasNewer, false);
+  assert.equal(dailyPage2.value.entries.length, 1);
+  assert.equal(dailyPage2.value.hasOlder, false);
+  assert.equal(dailyPage2.value.hasNewer, true);
+  assert.deepEqual(
+    [...dailyPage1.value.entries, ...dailyPage2.value.entries].map(
+      (entry) => entry.entryId,
+    ),
+    [27, 24, 21, 18, 15, 12, 9, 6, 3, 0].map(
+      (i) => `kind-entry-${String(i).padStart(2, "0")}`,
+    ),
+  );
+  assert.equal(
+    dailyPage1.value.entries.every((entry) => entry.entryKind === "daily"),
+    true,
+  );
+
+  const weeklyPage1 = await store.listBNLJournalArchive(1, redis, "weekly");
+  assert.equal(weeklyPage1.value.entries.length, 9);
+  assert.equal(
+    weeklyPage1.value.entries.every((entry) => entry.entryKind === "weekly"),
+    true,
+  );
+  redis.calls = [];
+  const highEmpty = await store.listBNLJournalArchive(10000, redis, "weekly");
+  assert.equal(highEmpty.ok, true);
+  assert.equal(highEmpty.value.entries.length, 0);
+  assert.deepEqual(redis.calls, [
+    ["zrange", store.BNL_JOURNAL_WEEKLY_INDEX_KEY, 89991, 90000],
+  ]);
+  const allPage = await store.listBNLJournalArchive(1, redis, "all");
+  assert.equal(
+    allPage.value.entries.some((entry) => entry.entryKind === undefined),
+    true,
+    "legacy records remain visible in All",
+  );
+
+  redis.calls = [];
+  const neighbors = await store.getBNLJournalNeighbors(
+    "kind-entry-15",
+    redis,
+    "daily",
+  );
+  assert.equal(neighbors.value.older.entryId, "kind-entry-12");
+  assert.equal(neighbors.value.newer.entryId, "kind-entry-18");
+  assert.equal(
+    redis.calls
+      .filter((call) => call[0] === "zrank" || call[0] === "zrange")
+      .every((call) => call[1] === store.BNL_JOURNAL_DAILY_INDEX_KEY),
+    true,
+  );
+  assert.equal(redis.calls.filter((call) => call[0] === "zrange").length, 2);
+});
+
+test("idempotent publication repairs the stored kind index without trusting an incoming kind", async () => {
+  const redis = new FakeRedis();
+  const daily = makeEntry({
+    entryId: "daily-repair",
+    entryKind: "daily",
+  });
+  assert.equal((await store.publishBNLJournalEntry(daily, redis)).ok, true);
+  assert.equal(
+    redis.z.get(store.BNL_JOURNAL_DAILY_INDEX_KEY).has(daily.entryId),
+    true,
+  );
+
+  redis.z.get(store.BNL_JOURNAL_DAILY_INDEX_KEY).delete(daily.entryId);
+  redis.z
+    .get(store.BNL_JOURNAL_WEEKLY_INDEX_KEY)
+    .set(daily.entryId, 123);
+  const repaired = await store.publishBNLJournalEntry(daily, redis);
+  assert.equal(repaired.ok, true);
+  assert.equal(repaired.idempotent, true);
+  assert.equal(
+    redis.z.get(store.BNL_JOURNAL_DAILY_INDEX_KEY).has(daily.entryId),
+    true,
+  );
+  assert.equal(
+    redis.z.get(store.BNL_JOURNAL_WEEKLY_INDEX_KEY).has(daily.entryId),
+    false,
+  );
+
+  const differingRetry = makeEntry({
+    entryId: daily.entryId,
+    entryKind: "weekly",
+  });
+  const rejected = await store.publishBNLJournalEntry(differingRetry, redis);
+  assert.equal(rejected.ok, false);
+  assert.equal(
+    redis.z.get(store.BNL_JOURNAL_DAILY_INDEX_KEY).has(daily.entryId),
+    true,
+  );
+  assert.equal(
+    redis.z.get(store.BNL_JOURNAL_WEEKLY_INDEX_KEY).has(daily.entryId),
+    false,
+  );
+
+  const weeklyRevision = makeEntry({
+    entryId: daily.entryId,
+    revision: 2,
+    entryKind: "weekly",
+  });
+  assert.equal(
+    (await store.publishBNLJournalEntry(weeklyRevision, redis)).ok,
+    true,
+  );
+  assert.equal(
+    redis.z.get(store.BNL_JOURNAL_DAILY_INDEX_KEY).has(daily.entryId),
+    false,
+  );
+  assert.equal(
+    redis.z.get(store.BNL_JOURNAL_WEEKLY_INDEX_KEY).has(daily.entryId),
+    true,
+  );
+  assert.equal((await store.publishBNLJournalEntry(daily, redis)).ok, true);
+  assert.equal(
+    redis.z.get(store.BNL_JOURNAL_DAILY_INDEX_KEY).has(daily.entryId),
+    false,
+  );
+  assert.equal(
+    redis.z.get(store.BNL_JOURNAL_WEEKLY_INDEX_KEY).has(daily.entryId),
+    true,
+  );
+});
+
+test("journal navigation preserves archive filters and rejects unknown filters", () => {
+  assert.equal(navigation.parseJournalArchiveFilter(), "all");
+  assert.equal(navigation.parseJournalArchiveFilter("all"), "all");
+  assert.equal(navigation.parseJournalArchiveFilter("daily"), "daily");
+  assert.equal(navigation.parseJournalArchiveFilter("weekly"), "weekly");
+  assert.equal(navigation.parseJournalArchiveFilter("monthly"), null);
+  assert.equal(navigation.journalArchiveHref("all"), "/journal");
+  assert.equal(
+    navigation.journalArchiveHref("daily", 2),
+    "/journal?kind=daily&page=2",
+  );
+  assert.equal(
+    navigation.journalEntryHref("entry/unsafe", "weekly"),
+    "/journal/entry%2Funsafe?kind=weekly",
+  );
+});
+
+test("journal pages canonicalize explicit All and mismatched detail filters", async () => {
+  const placeholderComponents = {
+    JournalArchiveCard: () => React.createElement("div"),
+    JournalArticle: () => React.createElement("article"),
+    JournalUnavailable: () => React.createElement("div"),
+  };
+  const archivePage = loadTs("src/app/journal/page.tsx", {
+    "@/components/journal/JournalArticle": placeholderComponents,
+    "@/lib/bnl-journal-navigation": navigation,
+    "@/lib/bnl-journal-store": {
+      listBNLJournalArchive: () => {
+        throw new Error("canonical redirect must happen before storage read");
+      },
+    },
+  });
+  await assert.rejects(
+    archivePage.default({
+      searchParams: Promise.resolve({ kind: "all", page: "2" }),
+    }),
+    /redirect:\/journal\?page=2/,
+  );
+
+  let detailEntry = {
+    ...makeEntry({ entryId: "daily-detail", entryKind: "daily" }),
+    publishedAt: "2026-07-18T12:30:00Z",
+  };
+  let neighborFilter = null;
+  const detailPage = loadTs("src/app/journal/[entryId]/page.tsx", {
+    "@/components/journal/JournalArticle": placeholderComponents,
+    "@/lib/bnl-journal-navigation": navigation,
+    "@/lib/bnl-journal-store": {
+      getBNLJournalEntry: async () => ({ ok: true, value: detailEntry }),
+      getBNLJournalNeighbors: async (_entryId, _redis, filter) => {
+        neighborFilter = filter;
+        return { ok: true, value: { older: null, newer: null } };
+      },
+    },
+  });
+  await assert.rejects(
+    detailPage.default({
+      params: Promise.resolve({ entryId: detailEntry.entryId }),
+      searchParams: Promise.resolve({ kind: "weekly" }),
+    }),
+    /redirect:\/journal\/daily-detail/,
+  );
+  await assert.rejects(
+    detailPage.default({
+      params: Promise.resolve({ entryId: detailEntry.entryId }),
+      searchParams: Promise.resolve({ kind: "all" }),
+    }),
+    /redirect:\/journal\/daily-detail/,
+  );
+  const matching = await detailPage.default({
+    params: Promise.resolve({ entryId: detailEntry.entryId }),
+    searchParams: Promise.resolve({ kind: "daily" }),
+  });
+  assert.ok(matching);
+  assert.equal(neighborFilter, "daily");
+
+  detailEntry = {
+    ...makeEntry({ entryId: "legacy-detail" }),
+    publishedAt: "2026-07-18T12:30:00Z",
+  };
+  await assert.rejects(
+    detailPage.default({
+      params: Promise.resolve({ entryId: detailEntry.entryId }),
+      searchParams: Promise.resolve({ kind: "daily" }),
+    }),
+    /redirect:\/journal\/legacy-detail/,
+  );
+});
+
 test("React server rendering exposes only display data and escapes hostile text", () => {
   const entry = {
     ...makeEntry({
@@ -462,9 +751,56 @@ test("React server rendering exposes only display data and escapes hostile text"
   );
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.match(html, /By BNL-01\./);
+  assert.match(html, /Journal entry type: Manual/);
   assert.doesNotMatch(
     html,
     /contentHash|sourceWindowStart|sourceWindowEnd|authoredAt|3a4b2b|2026-07-11T00:00:00Z/,
   );
+  const dailyHtml = renderToStaticMarkup(
+    React.createElement(article.JournalArticle, {
+      entry: { ...entry, entryKind: "daily" },
+      prominent: true,
+      archiveFilter: "daily",
+    }),
+  );
+  assert.match(dailyHtml, /Journal entry type: Daily/);
+  assert.match(
+    dailyHtml,
+    /href="\/journal\/bnl-journal-fixture-001\?kind=daily"/,
+  );
+  const weeklyCardHtml = renderToStaticMarkup(
+    React.createElement(article.JournalArchiveCard, {
+      entry: { ...entry, entryKind: "weekly" },
+      archiveFilter: "weekly",
+    }),
+  );
+  assert.match(weeklyCardHtml, /Journal entry type: Weekly/);
+  assert.match(weeklyCardHtml, /\?kind=weekly/);
   assert.equal(article.JournalArticle.toString().includes("useRouter"), false);
+});
+
+test("public archive UI exposes server-backed filters and preserves them in navigation", () => {
+  const archivePage = awaitFs("src/app/journal/page.tsx");
+  const entryPage = awaitFs("src/app/journal/[entryId]/page.tsx");
+  assert.match(archivePage, /aria-label="Filter journal archive"/);
+  assert.match(
+    archivePage,
+    /listBNLJournalArchive\(page, undefined, filter\)/,
+  );
+  assert.match(
+    archivePage,
+    /journalArchiveHref\(filter, archive\.value\.page \+ 1\)/,
+  );
+  assert.match(archivePage, /params\?\.kind === "all"/);
+  assert.match(
+    archivePage,
+    /redirect\(journalArchiveHref\(filter, page\)\)/,
+  );
+  assert.match(
+    entryPage,
+    /getBNLJournalNeighbors\(entryId, undefined, filter\)/,
+  );
+  assert.match(entryPage, /journalArchiveHref\(filter\)/);
+  assert.match(entryPage, /result\.value\.entryKind !== filter/);
+  assert.match(entryPage, /redirect\(journalEntryHref\(entryId\)\)/);
 });

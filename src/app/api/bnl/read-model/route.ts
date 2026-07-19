@@ -188,17 +188,22 @@ function disabledQueueProjection() {
 
 async function readPublicLiveQueueForBnl() {
   const state = await getRadioQueueState();
-  const realQueueEntries = state.queue.filter(isRealQueueEntry);
+  const sessionEnded =
+    state.session?.status === "archived" ||
+    state.session?.broadcastPhase === "ended";
+  const realQueueEntries = sessionEnded
+    ? []
+    : state.queue.filter(isRealQueueEntry);
   const realCompletedEntries = state.history
     .filter(isRealQueueEntry)
     .slice(0, 10);
   const realRemovedCount = (state.removed ?? []).filter(
     isRealQueueEntry,
   ).length;
-  const realNowPlaying = isRealQueueEntry(state.nowPlaying)
+  const realNowPlaying = !sessionEnded && isRealQueueEntry(state.nowPlaying)
     ? state.nowPlaying
     : null;
-  const realUpNext = isRealQueueEntry(state.nextInLine)
+  const realUpNext = !sessionEnded && isRealQueueEntry(state.nextInLine)
     ? state.nextInLine
     : null;
   const activeIds = new Set<string>();
@@ -225,19 +230,23 @@ async function readPublicLiveQueueForBnl() {
         title: state.session?.title ?? "",
         showDate: state.session?.showDate ?? "",
         status: state.session?.status ?? "prepared",
-        queueOpen: state.session?.queueOpen === true,
+        queueOpen: !sessionEnded && state.session?.queueOpen === true,
         broadcastPhase: state.session?.broadcastPhase ?? null,
         activeCount,
         completedCount: publicCompletedTracks.length,
         removedCount: realRemovedCount,
-        wheelSpinsOwed: state.session?.wheelSpinsOwed ?? 0,
+        wheelSpinsOwed: sessionEnded
+          ? 0
+          : state.session?.wheelSpinsOwed ?? 0,
         priorityUpgradesEnabled:
-          state.session?.priorityUpgradesEnabled === true,
+          !sessionEnded && state.session?.priorityUpgradesEnabled === true,
         priorityUpgradeLabel:
           state.session?.priorityUpgradeLabel ?? "Priority Signal",
       },
       status: {
-        isOpen: state.publicStatus?.isOpen ?? state.session?.queueOpen === true,
+        isOpen:
+          !sessionEnded &&
+          (state.publicStatus?.isOpen ?? state.session?.queueOpen === true),
         activeCount,
         capacity,
         pressure: pressureFor(activeCount, capacity),

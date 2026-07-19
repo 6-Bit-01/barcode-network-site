@@ -1430,3 +1430,20 @@ test("BNL source file read model includes Source File Enrichment notes only in p
     /Enrichment Read Subject|bnl_source_file_enrichment|Internal enrichment fact|source_file_note/,
   );
 });
+
+test("BNL dossier primary link resolves to the absolute public Hub URL", () => {
+  const bnlEntry = databasePage.entries.find((entry) => entry.name === "BNL-01");
+  assert.ok(bnlEntry, "BNL-01 fixture should exist");
+  assert.equal(bnlEntry.link, "https://discord.gg/4tHazmD528");
+  const primary = getDossierPrimaryLink(bnlEntry);
+  assert.ok(primary, "BNL-01 should expose a primary link");
+  assert.equal(primary.label, "Open BNL-01 Hub");
+  assert.equal(primary.url, "https://www.barcode-network.com/bnl");
+  assert.equal(primary.type, "website");
+  assert.equal(primary.selectedBy, "operator");
+  assert.equal(primary.publicSafe, true);
+
+  const dossierPageSource = fs.readFileSync(path.join(projectRoot, "src/components/DossierPageView.tsx"), "utf8");
+  assert.match(dossierPageSource, /dossier\.primaryLink &&/);
+  assert.match(dossierPageSource, /href=\{dossier\.primaryLink\.url\}/);
+});

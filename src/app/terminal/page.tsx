@@ -82,7 +82,7 @@ export default async function TerminalPage() {
       journalUnavailable: !journalArchive.ok,
       journalEntries: (journalArchive.ok ? (journalArchive.value?.entries ?? []) : []).slice(0, 5).map((entry) => ({
         entryId: entry.entryId,
-        entryKind: entry.entryKind ?? "public",
+        entryKind: entry.entryKind ?? "manual",
         title: entry.title,
         excerpt: entry.excerpt,
         publishedAt: entry.publishedAt,

@@ -197,7 +197,7 @@ export default function Home() {
             <p className="text-base leading-relaxed text-muted">
               BNL-01 notices what the BARCODE community is discussing, what keeps returning, and what changes around the show. The Hub gathers approved relays and Journal entries for deeper reading; Discord is where people speak with BNL-01.
             </p>
-            <div className="mt-5 flex flex-wrap gap-4"><Link href="/bnl" className="inline-flex text-sm font-mono uppercase tracking-widest text-accent hover:text-foreground">Open the BNL-01 Hub →</Link><a href="https://discord.gg/barcode" target="_blank" rel="noreferrer" className="inline-flex text-sm font-mono uppercase tracking-widest text-accent hover:text-foreground">Talk in Discord →</a></div>
+            <div className="mt-5 flex flex-wrap gap-4"><Link href="/bnl" className="inline-flex text-sm font-mono uppercase tracking-widest text-accent hover:text-foreground">Open the BNL-01 Hub →</Link><a href={externalLinks.discord} target="_blank" rel="noreferrer" className="inline-flex text-sm font-mono uppercase tracking-widest text-accent hover:text-foreground">Talk in Discord →</a></div>
           </div>
           <BNLRelayModule title="Latest Network Relay" />
         </div>

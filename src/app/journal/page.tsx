@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { externalLinks } from "@/content";
 import { notFound, redirect } from "next/navigation";
 import {
   JournalArchiveCard,
@@ -84,7 +85,7 @@ export default async function JournalPage({
               </Link>
             ))}
           </nav>
-          <div className="mt-6 flex flex-wrap gap-4 font-mono text-xs uppercase tracking-widest"><Link href="/bnl" className="text-accent hover:text-foreground">BNL-01 Hub →</Link><a href="https://discord.gg/barcode" target="_blank" rel="noreferrer" className="text-accent hover:text-foreground">Talk in Discord →</a><Link href="/radio" className="text-accent hover:text-foreground">BARCODE Radio →</Link></div>
+          <div className="mt-6 flex flex-wrap gap-4 font-mono text-xs uppercase tracking-widest"><Link href="/bnl" className="text-accent hover:text-foreground">BNL-01 Hub →</Link><a href={externalLinks.discord} target="_blank" rel="noreferrer" className="text-accent hover:text-foreground">Talk in Discord →</a><Link href="/radio" className="text-accent hover:text-foreground">BARCODE Radio →</Link></div>
         </div>
       </section>
       <section className="mx-auto grid max-w-7xl gap-6 px-4 py-10 sm:px-6 lg:grid-cols-[minmax(0,1fr)_360px]">

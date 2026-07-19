@@ -610,7 +610,14 @@ export const databasePage = {
       tags: ["ai", "systems", "handler", "broadcast"],
       notes:
         "Known across the Network as the voice that answers when records fragment. BNL-01 maintains canon continuity between BARCODE Radio and community channels, but sealed archives remain inaccessible under current clearance.",
-      link: "/bnl",
+      link: externalLinks.discord,
+      primaryLink: {
+        label: "Open BNL-01 Hub",
+        url: `${siteConfig.domain}/bnl`,
+        type: "website",
+        selectedBy: "operator",
+        publicSafe: true,
+      },
       files: [] as {
         name: string;
         url: string;

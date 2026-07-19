@@ -775,6 +775,7 @@ test("journal pages canonicalize explicit All and mismatched detail filters", as
     JournalUnavailable: () => React.createElement("div"),
   };
   const archivePage = loadTs("src/app/journal/page.tsx", {
+    "@/content": { externalLinks: { discord: "https://discord.gg/4tHazmD528" } },
     "@/components/journal/JournalArticle": placeholderComponents,
     "@/lib/bnl-journal-navigation": navigation,
     "@/lib/bnl-journal-store": {
@@ -796,6 +797,7 @@ test("journal pages canonicalize explicit All and mismatched detail filters", as
   };
   let neighborFilter = null;
   const detailPage = loadTs("src/app/journal/[entryId]/page.tsx", {
+    "@/content": { externalLinks: { discord: "https://discord.gg/4tHazmD528" } },
     "@/components/journal/JournalArticle": placeholderComponents,
     "@/lib/bnl-journal-navigation": navigation,
     "@/lib/bnl-journal-store": {

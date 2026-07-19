@@ -64,6 +64,8 @@ function loadHub(
       return { listBNLJournalArchive: readArchive };
     if (id === "@/lib/bnl-status-store")
       return { listBNLPublicRelayHistory: readRelayHistory };
+    if (id === "@/content")
+      return { externalLinks: { discord: "https://discord.gg/4tHazmD528" } };
     throw new Error(`unmocked import ${id} in ${file}`);
   };
   vm.runInNewContext(
@@ -399,13 +401,20 @@ test("Terminal BNL public experience uses bounded readers, commands, timestamps,
   assert.match(page, /message: entry\.message/);
   assert.match(page, /currentDirective: entry\.currentDirective/);
   assert.match(page, /publishedAt: entry\.publishedAt/);
+  assert.match(page, /entryKind: entry\.entryKind \?\? "manual"/);
   assert.doesNotMatch(page, /sourceClass|trigger|adminNote|sections|hash|sourceWindow|memory/i);
 
   assert.match(terminal, /"BNL-01", "RELAYS", "BNL LOG", "BNL HUB"/);
-  assert.match(terminal, /command === "TRACE BNL-01" \|\| command === "BNL-01" \|\| command === "BNL"/);
+  assert.match(terminal, /command === "TRACE BNL-01" \|\| command === "BNL-01" \|\| command === "BNL"\) return pushLive\(raw, "trace"\)/);
   assert.match(terminal, /command === "LIST RELAYS" \|\| command === "RELAYS"/);
   assert.match(terminal, /command === "BNL LOG"/);
   assert.match(terminal, /command === "BNL HUB"/);
+  assert.match(terminal, /command === "STATUS"\) return pushLive\(raw, "status"\)/);
+  assert.match(terminal, /liveView\?: "status" \| "trace"/);
+  assert.match(terminal, /entry\.liveView === "trace" \? <TraceBNL data=\{bnl\}/);
+  assert.match(terminal, /entry\.liveView === "status" \? <Status data=\{bnl\}/);
+  assert.match(terminal, /discordHref=\{archive\.radio\.links\.discord\}/);
+  assert.doesNotMatch(terminal, /<TraceBNL data=\{bnl\} loading=\{loading\} dossier=\{bnlDossier\} \/>/);
   assert.match(terminal, /<BNLRelayTimestamp value=\{entry\.publishedAt\}/);
   assert.match(terminal, /h-\[calc\(100dvh-7rem\)\]/);
   assert.match(terminal, /overflow-y-auto/);
@@ -437,7 +446,8 @@ test("BNL public paths are connected without adding modules to unrelated operati
   assert.match(combined, /href="\/radio"/);
   assert.match(combined, /href="\/terminal"/);
   assert.match(combined, /href="\/database\/bnl-01"/);
-  assert.match(combined, /discord\.gg\/barcode/);
+  assert.doesNotMatch(combined, /discord\.gg\/barcode/);
+  assert.match(combined, /externalLinks\.discord/);
   assert.match(combined, /post\.tags\.some/);
   assert.doesNotMatch(untouched, /BNL-01 Hub|BNLRelayModule|BNLNetworkRelayTicker/);
 });

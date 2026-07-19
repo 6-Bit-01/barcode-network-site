@@ -36,6 +36,8 @@ Source classes are `fresh_public_event`, `recent_public_continuity`, `scoped_bro
 
 Public `GET /api/bnl/status` still returns flat compatibility fields: `status`, `mode`, `message`, `currentDirective`, `source`, `lastSeen`, and `persisted`. It may also include `contractVersion: 2`, `presence`, and `relay`; `relay` is `null` until a validated v2 relay envelope has been accepted. `adminNote`, Redis keys, force-pull status paths, webhook data, secrets, and internal compatibility metadata are not public.
 
+The BNL-01 Hub reads the canonical v2 relay history directly on the server and projects at most the newest 20 accepted records. Each public history item contains only `message` (surface reading), `currentDirective` (network posture), and `publishedAt` (transmission date/time). The global status endpoint and its polling payload remain unchanged.
+
 ## v1 compatibility
 
 The existing flat authenticated payload (`status`, `mode`, `message`, `currentDirective`, `source`, `adminNote`) remains accepted and stored in the existing v1 keys. Existing v1 force-pull, status, history, and admin contracts are not migrated or rewritten. When no v2 relay record exists, the website keeps the latest v1 status in the flat compatibility fields exactly as stored, including its original `source`; the structured `relay` field remains `null` and no legacy record is classified as `grounded_reflection`, `scheduled`, or any accepted v2 relay.

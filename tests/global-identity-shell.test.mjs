@@ -43,6 +43,19 @@ test("Header navigation remains compact until xl and switches consistently", () 
   assert.match(header, /label: "Terminal Archive"/);
 });
 
+test("BNL-01 Hub replaces Journal in global navigation while Journal routes remain active aliases", () => {
+  const header = read("src/components/Header.tsx");
+  const footer = read("src/components/Footer.tsx");
+
+  assert.match(header, /\{ href: "\/bnl", label: "BNL-01 Hub" \}/);
+  assert.doesNotMatch(header, /\{ href: "\/journal", label: "Journal" \}/);
+  assert.match(header, /pathname === "\/journal"/);
+  assert.match(header, /pathname\.startsWith\("\/journal\/"\)/);
+  assert.match(footer, /href="\/bnl"/);
+  assert.match(footer, />\s*BNL-01 Hub\s*</);
+  assert.doesNotMatch(footer, /BNL Journal/);
+});
+
 test("Header live CTA has compact mobile labels and full accessible labels", () => {
   const header = read("src/components/Header.tsx");
 

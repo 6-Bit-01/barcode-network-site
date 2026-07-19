@@ -1,21 +1,25 @@
 import Link from "next/link";
-import { BNLRelayModule } from "@/components/BNLRelay";
+import { BNLRelayHistoryModule } from "@/components/BNLRelayHistory";
 import {
   JournalArchiveCard,
   JournalArticle,
 } from "@/components/journal/JournalArticle";
 import { listBNLJournalArchive } from "@/lib/bnl-journal-store";
+import { listBNLPublicRelayHistory } from "@/lib/bnl-status-store";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "BNL-01 Public Liaison",
+  title: "BNL-01 Hub",
   description:
-    "The current public BNL-01 relay signal and BNL-01 Community Journal field log.",
+    "BNL-01's public home for recent Network relays and the Community Journal field log.",
 };
 
 export default async function BNLPage() {
-  const archive = await listBNLJournalArchive(1);
+  const [archive, relayHistory] = await Promise.all([
+    listBNLJournalArchive(1),
+    listBNLPublicRelayHistory(),
+  ]);
   const entries = archive.ok ? (archive.value?.entries ?? []) : [];
   const [latest, ...recent] = entries;
 
@@ -24,13 +28,13 @@ export default async function BNLPage() {
       <section className="border-b border-border noise-bg">
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
           <p className="text-xs uppercase tracking-[0.45em] text-accent">
-            {"// NETWORK LIAISON // PUBLIC SIGNAL"}
+            {"// BNL-01 HUB // PUBLIC SIGNAL"}
           </p>
           <h1 className="mt-4 text-4xl font-black tracking-tight text-foreground sm:text-6xl">
-            BNL-01
+            BNL-01 Hub
           </h1>
           <p className="mt-5 max-w-3xl text-base leading-7 text-foreground/70 sm:text-lg">
-            One public surface for BNL-01&apos;s current Network relay and
+            BNL-01&apos;s public home for recent Network relays and the
             Community Journal field log.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
@@ -51,7 +55,7 @@ export default async function BNLPage() {
       </section>
 
       <section className="border-b border-border">
-        <div className="mx-auto grid max-w-7xl gap-6 px-4 py-12 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
+        <div className="mx-auto grid max-w-7xl gap-6 px-4 py-12 sm:px-6 lg:grid-cols-[0.75fr_1.25fr] lg:items-start">
           <div className="border border-border bg-background/60 p-6 sm:p-8">
             <p className="text-xs uppercase tracking-[0.4em] text-muted">
               What BNL-01 does
@@ -72,7 +76,10 @@ export default async function BNLPage() {
               public surface.
             </p>
           </div>
-          <BNLRelayModule title="Current BNL-01 Signal" />
+          <BNLRelayHistoryModule
+            entries={relayHistory.value}
+            unavailable={!relayHistory.ok}
+          />
         </div>
       </section>
 
@@ -107,9 +114,9 @@ export default async function BNLPage() {
               Journal signal unavailable
             </p>
             <p className="mt-3 max-w-2xl text-foreground/70">
-              The public Journal archive cannot be read right now. The current
-              BNL-01 relay above remains available while the Journal retries on
-              the next page load.
+              {relayHistory.ok
+                ? "The public Journal archive cannot be read right now. The recent BNL-01 relay history above remains available while the Journal retries on the next page load."
+                : "The public Journal archive and relay history cannot be read right now. Both will retry on the next page load."}
             </p>
           </div>
         ) : !latest ? (

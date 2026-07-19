@@ -13,7 +13,7 @@ const navItems = [
   { href: "/terminal", label: "Terminal" },
   { href: "/radio", label: "Radio" },
   { href: "/database", label: "Database" },
-  { href: "/journal", label: "Journal" },
+  { href: "/bnl", label: "BNL-01 Hub" },
   { href: "/releases", label: "Releases" },
   { href: "/transmissions", label: "Transmissions" },
   { href: "/merch", label: "Merch" },
@@ -22,6 +22,17 @@ const navItems = [
 const mobileNavItems = navItems.map((item) =>
   item.href === "/terminal" ? { ...item, label: "Terminal Archive" } : item,
 );
+
+function isNavItemActive(pathname: string, href: string) {
+  if (href === "/bnl") {
+    return (
+      pathname === "/bnl" ||
+      pathname === "/journal" ||
+      pathname.startsWith("/journal/")
+    );
+  }
+  return pathname === href;
+}
 
 export function Header() {
   const pathname = usePathname();
@@ -58,7 +69,7 @@ export function Header() {
 
           <nav className="hidden xl:flex items-center gap-1">
             {navItems.map((item) => {
-              const isActive = pathname === item.href;
+              const isActive = isNavItemActive(pathname, item.href);
               return (
                 <Link
                   key={item.href}
@@ -127,7 +138,7 @@ function MobileMenu({ pathname }: { pathname: string }) {
         <div id={menuId} className="absolute top-14 left-0 right-0 bg-background border-b border-border p-4">
           <nav className="flex flex-col gap-2">
             {mobileNavItems.map((item) => {
-              const isActive = pathname === item.href;
+              const isActive = isNavItemActive(pathname, item.href);
               return (
                 <Link
                   key={item.href}

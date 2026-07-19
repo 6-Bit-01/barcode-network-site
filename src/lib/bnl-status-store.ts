@@ -15,12 +15,14 @@ import {
   sanitizeStoredV2Presence,
   sanitizeV1History,
   serializePublicCurrentView,
+  serializePublicRelayHistory,
   v1HistoryEntryFromStatus,
   type BNLCurrentView,
   type BNLV1HistoryEntry,
   type BNLV1Status,
   type BNLV2PresenceRecord,
   type BNLV2RelayRecord,
+  type BNLPublicRelayHistoryEntry,
 } from "@/lib/bnl-presence-relay-contract";
 
 export const BNL_NO_STORE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
@@ -66,6 +68,45 @@ export async function readBNLAdminState(redis = getBNLRedis()) {
     legacyHistory: memoryHistory,
     persisted: Boolean(redis),
   };
+}
+
+export type BNLPublicRelayHistoryResult =
+  | {
+      ok: true;
+      value: BNLPublicRelayHistoryEntry[];
+      persisted: boolean;
+    }
+  | {
+      ok: false;
+      value: [];
+      persisted: boolean;
+      unavailable: true;
+    };
+
+export async function listBNLPublicRelayHistory(
+  redis?: Redis | null,
+): Promise<BNLPublicRelayHistoryResult> {
+  let persisted = false;
+  try {
+    const relayRedis = redis === undefined ? getBNLRedis() : redis;
+    persisted = Boolean(relayRedis);
+    const stored = relayRedis
+      ? await relayRedis.get<unknown>(BNL_V2_RELAY_HISTORY_KEY)
+      : memoryRelayHistory;
+    memoryRelayHistory = sanitizeRelayHistory(stored);
+    return {
+      ok: true,
+      value: serializePublicRelayHistory(memoryRelayHistory),
+      persisted,
+    };
+  } catch {
+    return {
+      ok: false,
+      value: [],
+      persisted,
+      unavailable: true,
+    };
+  }
 }
 
 export async function appendLegacyBNLHistory(entry: BNLV1HistoryEntry, redis = getBNLRedis()) {

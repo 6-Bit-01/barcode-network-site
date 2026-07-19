@@ -2,11 +2,39 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import vm from 'node:vm';
 import ts from 'typescript';
 
 let source = readFileSync(resolve('src/lib/bnl-presence-relay-contract.ts'), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } }).outputText;
 const mod = await import(`data:text/javascript,${encodeURIComponent(js)}`);
+
+function loadStatusStore() {
+  const file = resolve('src/lib/bnl-status-store.ts');
+  const code = ts.transpileModule(readFileSync(file, 'utf8'), {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+      esModuleInterop: true,
+    },
+  }).outputText;
+  const cjsModule = { exports: {} };
+  vm.runInNewContext(
+    code,
+    {
+      require: (id) => {
+        if (id === '@upstash/redis') return { Redis: class Redis {} };
+        if (id === '@/lib/bnl-presence-relay-contract') return mod;
+        throw new Error(`unmocked import ${id} in ${file}`);
+      },
+      exports: cjsModule.exports,
+      module: cjsModule,
+      process,
+    },
+    { filename: file },
+  );
+  return cjsModule.exports;
+}
 
 const now = '2026-07-15T00:00:00.000Z';
 const v1Body = { status: 'ONLINE', mode: 'OBSERVATION', message: 'relay speech', currentDirective: 'listen', source: 'forcePull', adminNote: 'private' };
@@ -101,6 +129,80 @@ test('public serialization excludes injected admin notes, force-pull internals, 
   assert.equal(json.includes('statusPath'), false);
   assert.equal(json.includes('bnl:'), false);
   assert.equal(json.includes('secret'), false);
+});
+
+test('public relay history filters first, caps at 20, and exposes exactly the three approved fields', () => {
+  const valid = Array.from({ length: 22 }, (_, index) => ({
+    contractVersion: 2,
+    relayId: `relay-${String(index).padStart(3, '0')}`,
+    message: `message-${index}`,
+    currentDirective: `directive-${index}`,
+    sourceClass: 'approved_canon',
+    trigger: 'scheduled',
+    publishedAt: `2026-07-19T${String(index % 24).padStart(2, '0')}:00:00.000Z`,
+  }));
+  const legacy = {
+    timestamp: now,
+    status: 'ONLINE',
+    mode: 'OBSERVATION',
+    message: 'legacy speech',
+    source: 'relay',
+  };
+  const serialized = mod.serializePublicRelayHistory([
+    { malformed: true },
+    legacy,
+    ...valid,
+    { ...valid[0], extra: 'private' },
+  ]);
+
+  assert.equal(serialized.length, 20);
+  assert.deepEqual(serialized[0], {
+    message: 'message-0',
+    currentDirective: 'directive-0',
+    publishedAt: '2026-07-19T00:00:00.000Z',
+  });
+  assert.equal(serialized.at(-1).message, 'message-19');
+  assert.deepEqual(Object.keys(serialized[0]), [
+    'message',
+    'currentDirective',
+    'publishedAt',
+  ]);
+  const json = JSON.stringify(serialized);
+  assert.equal(json.includes('relayId'), false);
+  assert.equal(json.includes('sourceClass'), false);
+  assert.equal(json.includes('trigger'), false);
+  assert.equal(json.includes('legacy speech'), false);
+  assert.equal(json.includes('private'), false);
+});
+
+test('public relay history reader uses only canonical v2 storage and fails closed', async () => {
+  const relay = mod.parseV2RelayWrite(relayBody, now);
+  const requestedKeys = [];
+  const store = loadStatusStore();
+  const success = await store.listBNLPublicRelayHistory({
+    get: async (key) => {
+      requestedKeys.push(key);
+      return [relay];
+    },
+  });
+
+  assert.equal(success.ok, true);
+  assert.deepEqual(requestedKeys, [mod.BNL_V2_RELAY_HISTORY_KEY]);
+  assert.equal(success.value.length, 1);
+  assert.deepEqual(Object.keys(success.value[0]), [
+    'message',
+    'currentDirective',
+    'publishedAt',
+  ]);
+
+  const failure = await loadStatusStore().listBNLPublicRelayHistory({
+    get: async () => {
+      throw new Error('redis unavailable');
+    },
+  });
+  assert.equal(failure.ok, false);
+  assert.equal(failure.unavailable, true);
+  assert.equal(failure.value.length, 0);
 });
 
 test('every legacy v1 source retains exact flat source and never becomes structured relay provenance', () => {

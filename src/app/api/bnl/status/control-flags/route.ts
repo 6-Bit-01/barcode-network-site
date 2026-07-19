@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
+import { mergeBNLFlagsAtomic, type JournalControlRedis } from "@/lib/bnl-journal-control-store";
 
 export const dynamic = "force-dynamic";
 
@@ -7,6 +8,9 @@ type BNLFlags = {
   websiteRelayEnabled: boolean;
   showdayDiscordPostsEnabled: boolean;
   heartbeatEnabled: boolean;
+  journalAutoPublishEnabled: boolean;
+  journalDailyEnabled: boolean;
+  journalWeeklyEnabled: boolean;
 };
 
 const FLAGS_KEY = "bnl:flags";
@@ -14,6 +18,9 @@ const DEFAULT_FLAGS: BNLFlags = {
   websiteRelayEnabled: true,
   showdayDiscordPostsEnabled: true,
   heartbeatEnabled: true,
+  journalAutoPublishEnabled: true,
+  journalDailyEnabled: true,
+  journalWeeklyEnabled: true,
 };
 
 let memoryFlags: BNLFlags = { ...DEFAULT_FLAGS };
@@ -32,6 +39,9 @@ function sanitizeFlags(value: unknown): BNLFlags {
     websiteRelayEnabled: typeof record.websiteRelayEnabled === "boolean" ? record.websiteRelayEnabled : DEFAULT_FLAGS.websiteRelayEnabled,
     showdayDiscordPostsEnabled: typeof record.showdayDiscordPostsEnabled === "boolean" ? record.showdayDiscordPostsEnabled : DEFAULT_FLAGS.showdayDiscordPostsEnabled,
     heartbeatEnabled: typeof record.heartbeatEnabled === "boolean" ? record.heartbeatEnabled : DEFAULT_FLAGS.heartbeatEnabled,
+    journalAutoPublishEnabled: typeof record.journalAutoPublishEnabled === "boolean" ? record.journalAutoPublishEnabled : DEFAULT_FLAGS.journalAutoPublishEnabled,
+    journalDailyEnabled: typeof record.journalDailyEnabled === "boolean" ? record.journalDailyEnabled : DEFAULT_FLAGS.journalDailyEnabled,
+    journalWeeklyEnabled: typeof record.journalWeeklyEnabled === "boolean" ? record.journalWeeklyEnabled : DEFAULT_FLAGS.journalWeeklyEnabled,
   };
 }
 
@@ -41,7 +51,10 @@ function isAuthorized(req: Request): boolean {
   return Boolean(expectedApiKey && providedApiKey === expectedApiKey);
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   const redis = getRedis();
 
   if (redis) {
@@ -61,28 +74,27 @@ export async function POST(req: Request) {
 
   try {
     const body = (await req.json()) as Record<string, unknown>;
+    // Journal automation flags are intentionally read-only on this legacy
+    // endpoint. Their mutations require the Redis-only Journal control plane.
     const allowedKeys = ["websiteRelayEnabled", "showdayDiscordPostsEnabled", "heartbeatEnabled"];
     const keys = Object.keys(body);
-    if (!keys.every((key) => allowedKeys.includes(key))) {
+    if (keys.length === 0 || !keys.every((key) => allowedKeys.includes(key))) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
-    if (
-      typeof body.websiteRelayEnabled !== "boolean" ||
-      typeof body.showdayDiscordPostsEnabled !== "boolean" ||
-      typeof body.heartbeatEnabled !== "boolean"
-    ) {
+    if (!keys.every((key) => typeof body[key] === "boolean")) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
-
-    const nextFlags: BNLFlags = {
-      websiteRelayEnabled: body.websiteRelayEnabled,
-      showdayDiscordPostsEnabled: body.showdayDiscordPostsEnabled,
-      heartbeatEnabled: body.heartbeatEnabled,
-    };
 
     const redis = getRedis();
-    if (redis) await redis.set(FLAGS_KEY, nextFlags);
+    const nextFlags = redis
+      ? sanitizeFlags(
+          await mergeBNLFlagsAtomic(
+            body,
+            redis as unknown as JournalControlRedis,
+          ),
+        )
+      : sanitizeFlags({ ...memoryFlags, ...body });
     memoryFlags = nextFlags;
 
     return NextResponse.json({ ok: true, flags: nextFlags, persisted: Boolean(redis) });

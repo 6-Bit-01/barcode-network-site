@@ -68,19 +68,41 @@ if existingJson then
   end
   local latestJson = redis.call("GET", latestKey)
   local indexScore = redis.call("ZSCORE", indexKey, entryId)
-  local isLatest = false
+  local latest = nil
   if latestJson then
-    local latest = cjson.decode(latestJson)
-    isLatest = latest.revision == existing.revision and latest.contentHash == existing.contentHash
+    latest = cjson.decode(latestJson)
   end
-  if (not latestJson) and indexScore and tonumber(indexScore) == tonumber(existing._score) then
+  local repairedLatest = false
+  local repairedIndexScore = nil
+  if (not latestJson) and (not indexScore) then
     redis.call("SET", latestKey, existingJson)
-  elseif isLatest and (not indexScore) then
     redis.call("ZADD", indexKey, existing._score, entryId)
+    repairedLatest = true
+    repairedIndexScore = existing._score
+  elseif (not latestJson) and indexScore and tonumber(indexScore) == tonumber(existing._score) then
+    redis.call("SET", latestKey, existingJson)
+    repairedLatest = true
+  elseif latest and existing.revision > latest.revision then
+    redis.call("SET", latestKey, existingJson)
+    redis.call("ZADD", indexKey, existing._score, entryId)
+    repairedLatest = true
+    repairedIndexScore = existing._score
+  elseif latest and (not indexScore) then
+    redis.call("ZADD", indexKey, latest._score, entryId)
+    repairedIndexScore = latest._score
   end
-  local repairedLatest = redis.call("GET", latestKey)
+  local repairedLatestJson = redis.call("GET", latestKey)
   local repairedScore = redis.call("ZSCORE", indexKey, entryId)
-  if (not repairedLatest) or (not repairedScore) then
+  if (not repairedLatestJson) or (not repairedScore) then
+    return cjson.encode({ status = "unavailable" })
+  end
+  if repairedLatest then
+    local repaired = cjson.decode(repairedLatestJson)
+    if repaired.revision ~= existing.revision or repaired.contentHash ~= existing.contentHash then
+      return cjson.encode({ status = "unavailable" })
+    end
+  end
+  if repairedIndexScore and tonumber(repairedScore) ~= tonumber(repairedIndexScore) then
     return cjson.encode({ status = "unavailable" })
   end
   return cjson.encode({ status = "idempotent", publishedAt = existing.publishedAt })
@@ -214,6 +236,12 @@ export async function publishBNLJournalEntry(
       journalLatestKey(entry.entryId),
     );
     if (!latest) return { ok: false, unavailable: true };
+    if (
+      latest.revision < confirmed.revision ||
+      (latest.revision === confirmed.revision &&
+        latest.contentHash !== confirmed.contentHash)
+    )
+      return { ok: false, unavailable: true };
     return {
       ok: true,
       persisted: true,

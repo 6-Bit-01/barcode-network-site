@@ -161,14 +161,39 @@ class FakeRedis {
       const latestJson = this.kv.get(latestKey);
       const zset = this.z.get(indexKey);
       const inIndex = zset?.has(entryId);
-      if (!latestJson && inIndex && zset.get(entryId) === existing._score) {
+      const latest = latestJson ? JSON.parse(latestJson) : null;
+      let repairedLatest = false;
+      let repairedIndexScore = null;
+      if (!latestJson && !inIndex) {
         this.kv.set(latestKey, existingJson);
-      } else if (
-        JSON.parse(latestJson).revision === existing.revision &&
-        !inIndex
-      )
         await this.zadd(indexKey, { score: existing._score, member: entryId });
+        repairedLatest = true;
+        repairedIndexScore = existing._score;
+      } else if (!latestJson && zset.get(entryId) === existing._score) {
+        this.kv.set(latestKey, existingJson);
+        repairedLatest = true;
+      } else if (
+        latest &&
+        existing.revision > latest.revision
+      ) {
+        this.kv.set(latestKey, existingJson);
+        await this.zadd(indexKey, { score: existing._score, member: entryId });
+        repairedLatest = true;
+        repairedIndexScore = existing._score;
+      } else if (latest && !inIndex) {
+        await this.zadd(indexKey, { score: latest._score, member: entryId });
+        repairedIndexScore = latest._score;
+      }
       if (!this.kv.get(latestKey) || !this.z.get(indexKey)?.has(entryId))
+        return JSON.stringify({ status: "unavailable" });
+      const repaired = JSON.parse(this.kv.get(latestKey));
+      const repairedScore = this.z.get(indexKey).get(entryId);
+      if (
+        (repairedLatest &&
+          (repaired.revision !== existing.revision ||
+            repaired.contentHash !== existing.contentHash)) ||
+        (repairedIndexScore !== null && repairedScore !== repairedIndexScore)
+      )
         return JSON.stringify({ status: "unavailable" });
       return JSON.stringify({
         status: "idempotent",
@@ -331,6 +356,48 @@ test("store executes atomic publication, idempotent self-repair, conflicts, boun
   assert.equal(
     redis.z.get(store.BNL_JOURNAL_INDEX_KEY).has(first.entryId),
     true,
+  );
+  const storedRev1 = await redis.get(
+    store.journalEntryKey(first.entryId, first.revision),
+  );
+  const storedRev2 = await redis.get(
+    store.journalEntryKey(first.entryId, rev2.revision),
+  );
+  const storedRev1Score = storedRev1._score;
+  const storedRev2Score = storedRev2._score;
+  redis.kv.delete(store.journalLatestKey(first.entryId));
+  redis.z.get(store.BNL_JOURNAL_INDEX_KEY).delete(first.entryId);
+  const oldestRehydrated = await store.publishBNLJournalEntry(first, redis);
+  assert.equal(oldestRehydrated.ok, true, JSON.stringify(oldestRehydrated));
+  assert.equal(oldestRehydrated.idempotent, true);
+  assert.equal(
+    (await redis.get(store.journalLatestKey(first.entryId))).revision,
+    first.revision,
+  );
+  assert.equal(
+    redis.z.get(store.BNL_JOURNAL_INDEX_KEY).get(first.entryId),
+    storedRev1Score,
+  );
+  const newestRehydrated = await store.publishBNLJournalEntry(rev2, redis);
+  assert.equal(newestRehydrated.ok, true, JSON.stringify(newestRehydrated));
+  assert.equal(newestRehydrated.idempotent, true);
+  assert.equal(
+    (await redis.get(store.journalLatestKey(first.entryId))).revision,
+    rev2.revision,
+  );
+  assert.equal(
+    redis.z.get(store.BNL_JOURNAL_INDEX_KEY).get(first.entryId),
+    storedRev2Score,
+  );
+  const oldRetryAfterRehydrate = await store.publishBNLJournalEntry(first, redis);
+  assert.equal(oldRetryAfterRehydrate.ok, true);
+  assert.equal(
+    (await redis.get(store.journalLatestKey(first.entryId))).revision,
+    rev2.revision,
+  );
+  assert.equal(
+    redis.z.get(store.BNL_JOURNAL_INDEX_KEY).get(first.entryId),
+    storedRev2Score,
   );
   redis.kv.delete(store.journalLatestKey(first.entryId));
   assert.equal((await store.publishBNLJournalEntry(first, redis)).ok, false);

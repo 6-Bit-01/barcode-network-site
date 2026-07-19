@@ -83,7 +83,7 @@ test("Radio submission routing falls back to Auxchord and only exact true cuts o
     const env = value === undefined ? {} : { BARCODE_QUEUE_PRODUCTION_ENABLED: value };
     const routing = submissionRouting.getRadioSubmissionRouting(env);
     assert.equal(routing.mode, "auxchord");
-    assert.equal(routing.href, "https://aux.fan/@barcode_radio");
+    assert.equal(routing.href, "https://www.auxchord.app/91");
     assert.equal(routing.external, true);
     assert.match(routing.heroDescription, /Auxchord/);
     assert.match(routing.readModelSummary, /through Auxchord/);

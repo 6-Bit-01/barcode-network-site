@@ -11,6 +11,7 @@ export const metadata: Metadata = {
     description:
       "Official BARCODE Network supply line. Wearable signal, physical artifacts.",
   },
+  alternates: { canonical: "/merch" },
 };
 
 export default function MerchPage() {

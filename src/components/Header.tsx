@@ -67,14 +67,15 @@ export function Header() {
             </div>
           </Link>
 
-          <nav className="hidden xl:flex items-center gap-1">
+          <nav className="hidden xl:flex items-center gap-1" aria-label="Primary navigation">
             {navItems.map((item) => {
               const isActive = isNavItemActive(pathname, item.href);
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`px-3 py-1.5 text-sm uppercase tracking-widest transition-colors ${
+                  aria-current={isActive ? "page" : undefined}
+                  className={`min-h-11 px-3 py-2 text-sm uppercase tracking-widest transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
                     isActive
                       ? "text-accent border-b border-accent"
                       : "text-muted hover:text-foreground"
@@ -117,7 +118,7 @@ function MobileMenu({ pathname }: { pathname: string }) {
       <button
         onClick={() => setOpen(!open)}
         className="p-2 text-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent transition-colors"
-        aria-label="Toggle menu"
+        aria-label={open ? "Close primary navigation" : "Open primary navigation"}
         aria-expanded={open}
         aria-controls={menuId}
       >
@@ -136,7 +137,7 @@ function MobileMenu({ pathname }: { pathname: string }) {
 
       {open && (
         <div id={menuId} className="absolute top-14 left-0 right-0 bg-background border-b border-border p-4">
-          <nav className="flex flex-col gap-2">
+          <nav className="flex flex-col gap-2" aria-label="Mobile primary navigation">
             {mobileNavItems.map((item) => {
               const isActive = isNavItemActive(pathname, item.href);
               return (
@@ -144,7 +145,8 @@ function MobileMenu({ pathname }: { pathname: string }) {
                   key={item.href}
                   href={item.href}
                   onClick={() => setOpen(false)}
-                  className={`px-3 py-2 text-sm uppercase tracking-widest transition-colors ${
+                  aria-current={isActive ? "page" : undefined}
+                  className={`min-h-11 px-3 py-3 text-sm uppercase tracking-widest transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
                     isActive
                       ? "text-accent border-l-2 border-accent pl-4"
                       : "text-muted hover:text-foreground"

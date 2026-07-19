@@ -12,26 +12,25 @@ function slugify(name: string) {
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const base = "https://barcode-network.com";
-  const now = new Date();
-
+  const base = "https://www.barcode-network.com";
   // Static pages
   const staticPages: MetadataRoute.Sitemap = [
-    { url: base, lastModified: now, changeFrequency: "weekly", priority: 1.0 },
-    { url: `${base}/radio`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
-    { url: `${base}/database`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
-    { url: `${base}/bnl`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
-    { url: `${base}/journal`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
-    { url: `${base}/releases`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
-    { url: `${base}/merch`, lastModified: now, changeFrequency: "monthly", priority: 0.6 },
-    { url: `${base}/terminal`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
-    { url: `${base}/transmissions`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
+    { url: base, changeFrequency: "weekly", priority: 1.0 },
+    { url: `${base}/radio`, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${base}/database`, changeFrequency: "weekly", priority: 0.8 },
+    { url: `${base}/bnl`, changeFrequency: "weekly", priority: 0.8 },
+    { url: `${base}/journal`, changeFrequency: "weekly", priority: 0.8 },
+    { url: `${base}/releases`, changeFrequency: "monthly", priority: 0.7 },
+    { url: `${base}/merch`, changeFrequency: "monthly", priority: 0.6 },
+    { url: `${base}/terminal`, changeFrequency: "monthly", priority: 0.5 },
+    { url: `${base}/transmissions`, changeFrequency: "weekly", priority: 0.8 },
+    { url: `${base}/contact`, changeFrequency: "yearly", priority: 0.4 },
+    { url: `${base}/legal`, changeFrequency: "yearly", priority: 0.4 },
   ];
 
   // Dynamic database pages
   const databasePages: MetadataRoute.Sitemap = databasePage.entries.map((entry) => ({
     url: `${base}/database/${slugify(entry.name)}`,
-    lastModified: now,
     changeFrequency: "monthly" as const,
     priority: 0.6,
   }));

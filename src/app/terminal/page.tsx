@@ -14,6 +14,7 @@ export const metadata: Metadata = {
     description:
       "Enter the public BARCODE Network archive. Search dossiers, trace transmissions, monitor BNL-01, and investigate the records behind the signal.",
   },
+  alternates: { canonical: "/terminal" },
 };
 
 function slugify(name: string) {

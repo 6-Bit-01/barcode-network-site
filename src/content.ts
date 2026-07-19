@@ -12,13 +12,13 @@
 export const siteConfig = {
   name: "BARCODE Network",
   tagline: "Every fragment carries a signal.",
-  domain: "https://barcode-network.com",
+  domain: "https://www.barcode-network.com",
   logo: "/logos/emblem.png",
 };
 
 export const externalLinks = {
   discord: "https://discord.gg/4tHazmD528",
-  auxchord: "https://aux.fan/@barcode_radio",
+  auxchord: "https://www.auxchord.app/91",
   tiktok: "https://www.tiktok.com/@six.bit",
   instagram: "https://www.instagram.com/6_bit/",
   facebook: "https://www.facebook.com/six.bit.2025/",
@@ -131,9 +131,9 @@ export const radioPage = {
 
   schedule: {
     day: "Every Friday",
-    queueOpens: "6:40 PM PST",
-    showBegins: "7:00 PM PST",
-    firstTrack: "7:05 PM PST",
+    queueOpens: "6:40 PM PT",
+    showBegins: "7:00 PM PT",
+    firstTrack: "7:05 PM PT",
     notice:
       "BARCODE Radio is a live weekly broadcast. Times auto-convert to your local timezone on this page.",
   },
@@ -244,7 +244,7 @@ export const terminalPage = {
     {
       label: "BNL-01",
       description: "Liaison entity interface",
-      href: "EXTERNAL:discord",
+      href: "/bnl",
     },
     {
       label: "Auxchord",
@@ -466,7 +466,7 @@ export const databasePage = {
         "Community-powered live radio program. Accepts submissions via Auxchord. Broadcasts every Friday.",
       tags: ["radio", "broadcast", "producer"],
       notes:
-        "Submissions open 6:40 PM PST. Show starts 7:00 PM PST. Music starts 7:05 PM PST.",
+        "Submissions open 6:40 PM PT. Show starts 7:00 PM PT. Music starts 7:05 PM PT.",
       link: "",
       files: [] as {
         name: string;

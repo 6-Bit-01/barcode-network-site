@@ -65,6 +65,7 @@ export function BroadcastVideo({
               <>
                 <iframe
                   src={src}
+                  title="BARCODE Network intro broadcast"
                   className="w-full h-full absolute inset-0"
                   allow="autoplay; encrypted-media"
                   allowFullScreen

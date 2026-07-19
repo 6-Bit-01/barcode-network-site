@@ -14,8 +14,10 @@ export const metadata: Metadata = {
     title: "BARCODE Radio — Submit Music & Listen Live",
     description:
       "A live intake frequency. Submissions open at 6:40 PM PT, show starts at 7:00 PM PT, music starts at 7:05 PM PT.",
-    images: [{ url: "/radio-cover.png", width: 1400, height: 1400 }],
+    url: "https://www.barcode-network.com/radio",
   },
+  twitter: { card: "summary" },
+  alternates: { canonical: "/radio" },
 };
 
 export default function RadioPage() {

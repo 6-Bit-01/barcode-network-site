@@ -2,7 +2,8 @@ import { getAllTransmissions } from "@/lib/transmissions";
 
 export async function GET() {
   const posts = getAllTransmissions();
-  const siteUrl = "https://barcode-network.com";
+  const siteUrl = "https://www.barcode-network.com";
+  const legacyGuidSiteUrl = "https://barcode-network.com";
 
   const rssItems = posts
     .map(
@@ -10,7 +11,7 @@ export async function GET() {
     <item>
       <title><![CDATA[${post.title}]]></title>
       <link>${siteUrl}/transmissions/${post.slug}</link>
-      <guid isPermaLink="true">${siteUrl}/transmissions/${post.slug}</guid>
+      <guid isPermaLink="true">${legacyGuidSiteUrl}/transmissions/${post.slug}</guid>
       <pubDate>${new Date(post.date).toUTCString()}</pubDate>
       <author>${post.author}</author>
       <description><![CDATA[${post.excerpt}]]></description>

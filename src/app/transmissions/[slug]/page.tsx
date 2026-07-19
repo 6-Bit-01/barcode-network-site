@@ -26,6 +26,7 @@ export async function generateMetadata({
   return {
     title: post.title,
     description: post.excerpt,
+    alternates: { canonical: `/transmissions/${slug}` },
     openGraph: {
       title: `${post.title} — BARCODE Network`,
       description: post.excerpt,

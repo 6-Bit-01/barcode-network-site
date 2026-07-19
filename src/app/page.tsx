@@ -1,9 +1,23 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { StatusBadge, SectionDot } from "@/components/LiveEffects";
 import { homePage, siteConfig, externalLinks } from "@/content";
 import { BNLRelayModule } from "@/components/BNLRelay";
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+  openGraph: {
+    title: "BARCODE Network",
+    description: "BARCODE is a living hip-hop broadcast universe connecting music, BARCODE Radio, community, technology, and interdimensional story.",
+    siteName: "BARCODE Network",
+    url: "/",
+    images: [{ url: "/barcode-radio.png", width: 1200, height: 630, alt: "BARCODE Network signal card" }],
+    type: "website",
+  },
+};
+
 
 function resolveHref(href: string): string {
   if (href.startsWith("EXTERNAL:")) {

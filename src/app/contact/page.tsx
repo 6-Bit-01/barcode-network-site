@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: "Contact — BARCODE Network",
   description:
     "Contact BARCODE Network for support, legal questions, privacy requests, copyright/takedown notices, security reports, and accessibility feedback.",
+  alternates: { canonical: "/contact" },
 };
 
 const contactReasons = [

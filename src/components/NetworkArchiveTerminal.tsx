@@ -83,13 +83,13 @@ export function NetworkArchiveTerminal({ archive, restored, onLock }: { archive:
     </div>
     <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden md:grid-cols-[240px_minmax(0,1fr)] md:grid-rows-1">
       <aside className="flex-none overflow-hidden border-b border-border bg-surface/30 p-3 md:min-h-0 md:overflow-y-auto md:border-b-0 md:border-r"><p className="mb-3 text-xs uppercase tracking-[0.3em] text-muted">Archive Index</p><div className="flex gap-2 overflow-x-auto pb-2 md:flex-col md:overflow-visible md:pb-0">{buttons.map((cmd) => <button key={cmd} onClick={() => execute(cmd)} className="shrink-0 border border-border bg-background/50 px-3 py-2 text-left text-xs uppercase tracking-wider text-foreground/75 transition hover:border-accent/40 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/60">{cmd}</button>)}</div></aside>
-      <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+      <section className="flex min-h-0 min-w-0 flex-col overflow-hidden" aria-label="Terminal output">
         <div ref={outputRef} aria-live="polite" className="terminal-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain p-4 text-sm leading-relaxed sm:p-6">
           {entries.map((entry) => <section key={entry.id} className={`archive-output-reveal border-l pl-4 ${entry.variant === "breach" ? "border-red-500/60 bg-red-950/10" : "border-accent/25"}`}>{entry.command && <p className="mb-2 text-xs uppercase tracking-widest text-accent/80">[{seq()}] &gt; {entry.command}</p>}{entry.liveStatus ? <Status data={bnl} loading={loading} dossier={bnlDossier} /> : entry.node}</section>)}
           <div ref={outputEndRef} aria-hidden="true" />
         </div>
         <form onSubmit={onSubmit} className="flex-none border-t border-border bg-surface/70 p-3"><label htmlFor="archive-command" className="sr-only">Archive command</label><div className="flex items-center gap-2"><span className="text-accent">&gt;</span><input id="archive-command" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={onKeyDown} placeholder="Type HELP, SEARCH signal, WHOIS EN-001..." className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted focus:ring-2 focus:ring-accent/40" /><button className="border border-accent/50 px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background focus:outline-none focus:ring-2 focus:ring-accent/60">Enter</button></div></form>
-      </main>
+      </section>
     </div>
   </div>;
 }

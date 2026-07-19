@@ -21,7 +21,7 @@ function hostnameFor(url: string): string | null {
 
 function inferDossierLinkType(url: string): DossierLinkType {
   const hostname = hostnameFor(url)?.toLowerCase() ?? "";
-  if (hostname.includes("aux.fan")) return "submission";
+  if (hostname.includes("aux.fan") || hostname.includes("auxchord.app")) return "submission";
   if (hostname.includes("discord.gg") || hostname.includes("discord.com")) return "community";
   if (hostname.includes("spotify.com") || hostname.includes("soundcloud.com") || hostname.includes("youtube.com") || hostname.includes("youtu.be")) return "music";
   if (hostname.includes("tiktok.com") || hostname.includes("instagram.com") || hostname.includes("facebook.com")) return "social";

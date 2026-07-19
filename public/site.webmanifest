@@ -1,13 +1,11 @@
 {
   "name": "BARCODE Network",
   "short_name": "BARCODE",
-  "description": "An interdimensional broadcast station. Signal over noise.",
-  "start_url": "/",
+  "description": "BARCODE Network: music, BARCODE Radio, community, and public dossiers.",
+  "id": "https://www.barcode-network.com/",
+  "start_url": "https://www.barcode-network.com/",
+  "scope": "https://www.barcode-network.com/",
   "display": "standalone",
   "background_color": "#0a0a0a",
-  "theme_color": "#00ff88",
-  "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
-  ]
+  "theme_color": "#00ff88"
 }

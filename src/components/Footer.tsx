@@ -58,8 +58,8 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/journal" className="text-sm text-foreground/70 hover:text-accent transition-colors">
-                  BNL Journal
+                <Link href="/bnl" className="text-sm text-foreground/70 hover:text-accent transition-colors">
+                  BNL-01 Hub
                 </Link>
               </li>
             </ul>

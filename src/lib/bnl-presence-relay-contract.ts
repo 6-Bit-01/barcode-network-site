@@ -9,6 +9,10 @@ export type BNLV1Status = { status: BNLStatusValue; mode: BNLModeValue; message:
 export type BNLV1HistoryEntry = { timestamp: string; status: BNLStatusValue; mode: BNLModeValue; currentDirective?: string; message: string; source: BNLSourceValue; adminNote?: string; persisted?: boolean };
 export type BNLV2PresenceRecord = { contractVersion: 2; status: BNLStatusValue; mode: BNLModeValue; source: BNLV2PresenceSource; receivedAt: string };
 export type BNLV2RelayRecord = { contractVersion: 2; relayId: string; message: string; currentDirective: string; sourceClass: BNLV2RelaySourceClass; trigger: BNLV2RelayTrigger; publishedAt: string };
+export type BNLPublicRelayHistoryEntry = Pick<
+  BNLV2RelayRecord,
+  "message" | "currentDirective" | "publishedAt"
+>;
 export type BNLCurrentView = Omit<BNLV1Status, "adminNote"> & { persisted: boolean; contractVersion: 2; presence: BNLV2PresenceRecord; relay: BNLV2RelayRecord | null };
 export type BNLRelayStorageDecision =
   | { action: "insert"; relay: BNLV2RelayRecord; history: BNLV2RelayRecord[] }
@@ -20,6 +24,7 @@ export const BNL_V1_HISTORY_KEY = "bnl:history";
 export const BNL_V2_PRESENCE_KEY = "bnl:presence:v2";
 export const BNL_V2_RELAY_CURRENT_KEY = "bnl:relay:current:v2";
 export const BNL_V2_RELAY_HISTORY_KEY = "bnl:relay:history:v2";
+export const PUBLIC_BNL_RELAY_HISTORY_LIMIT = 20;
 export const MAX_MESSAGE_LENGTH = 600;
 export const MAX_DIRECTIVE_LENGTH = 800;
 export const MAX_ADMIN_NOTE_LENGTH = 400;
@@ -56,6 +61,17 @@ export function parseV2RelayWrite(body: unknown, now: string): BNLV2RelayRecord 
 export function sanitizeStoredV2Presence(value: unknown): BNLV2PresenceRecord | null { if (!isRecord(value)) return null; try { exactKeys(value, ["contractVersion", "status", "mode", "source", "receivedAt"]); if (value.contractVersion !== 2 || typeof value.receivedAt !== "string") return null; return { contractVersion: 2, status: enumValue(value.status, statuses), mode: enumValue(value.mode, modes), source: enumValue(value.source, presenceSources), receivedAt: value.receivedAt }; } catch { return null; } }
 export function sanitizeStoredV2Relay(value: unknown): BNLV2RelayRecord | null { if (!isRecord(value)) return null; try { exactKeys(value, ["contractVersion", "relayId", "message", "currentDirective", "sourceClass", "trigger", "publishedAt"]); if (value.contractVersion !== 2 || typeof value.publishedAt !== "string") return null; return { contractVersion: 2, relayId: relayId(value.relayId), message: text(value.message, MAX_MESSAGE_LENGTH)!, currentDirective: text(value.currentDirective, MAX_DIRECTIVE_LENGTH)!, sourceClass: enumValue(value.sourceClass, sourceClasses), trigger: enumValue(value.trigger, triggers), publishedAt: value.publishedAt }; } catch { return null; } }
 export function sanitizeRelayHistory(value: unknown): BNLV2RelayRecord[] { return Array.isArray(value) ? value.map(sanitizeStoredV2Relay).filter((x): x is BNLV2RelayRecord => Boolean(x)).slice(0, 25) : []; }
+export function serializePublicRelayHistory(
+  value: unknown,
+): BNLPublicRelayHistoryEntry[] {
+  return sanitizeRelayHistory(value)
+    .slice(0, PUBLIC_BNL_RELAY_HISTORY_LIMIT)
+    .map(({ message, currentDirective, publishedAt }) => ({
+      message,
+      currentDirective,
+      publishedAt,
+    }));
+}
 function sameRelayContent(a: BNLV2RelayRecord, b: BNLV2RelayRecord): boolean { return a.relayId === b.relayId && a.message === b.message && a.currentDirective === b.currentDirective && a.sourceClass === b.sourceClass && a.trigger === b.trigger; }
 export function decideRelayStorage(input: { current: BNLV2RelayRecord | null; history: BNLV2RelayRecord[]; relay: BNLV2RelayRecord }): BNLRelayStorageDecision { const existing = [input.current, ...input.history].filter((item): item is BNLV2RelayRecord => Boolean(item)).find((item) => item.relayId === input.relay.relayId); if (existing) { if (!sameRelayContent(existing, input.relay)) return { action: "conflict", relay: existing, history: input.history }; return { action: "idempotent", relay: existing, history: input.history }; } return { action: "insert", relay: input.relay, history: [input.relay, ...input.history].slice(0, 25) }; }
 export function upsertRelayHistory(history: BNLV2RelayRecord[], relay: BNLV2RelayRecord): { history: BNLV2RelayRecord[]; changed: boolean } { const decision = decideRelayStorage({ current: null, history, relay }); if (decision.action === "conflict") throw new BNLContractConflictError(); return { history: decision.history, changed: decision.action === "insert" }; }

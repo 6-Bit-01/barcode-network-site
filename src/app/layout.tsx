@@ -25,14 +25,12 @@ export const metadata: Metadata = {
     description: "BARCODE is a living hip-hop broadcast universe connecting music, BARCODE Radio, community, technology, and interdimensional story.",
     siteName: "BARCODE Network",
     url: "https://www.barcode-network.com",
-    images: [{ url: "/barcode-radio.png", width: 1200, height: 630, alt: "BARCODE Network signal card" }],
     type: "website",
   },
   twitter: {
-    card: "summary_large_image",
+    card: "summary",
     title: "BARCODE Network",
     description: "BARCODE is a living hip-hop broadcast universe connecting music, BARCODE Radio, community, technology, and interdimensional story.",
-    images: ["/barcode-radio.png"],
   },
   alternates: {
     canonical: "/",
@@ -40,6 +38,7 @@ export const metadata: Metadata = {
       "application/rss+xml": "https://www.barcode-network.com/transmissions/feed",
     },
   },
+  manifest: "/site.webmanifest",
   robots: {
     index: true,
     follow: true,
@@ -67,10 +66,10 @@ export default function RootLayout({
       >
         <LiveStatusProvider>
           <BNLStatusProvider>
+          <a href="#main-content" className="skip-link">Skip to main content</a>
           <DataStream />
           <Header />
           <BNLNetworkRelayShell />
-          <a href="#main-content" className="skip-link">Skip to main content</a>
           <main id="main-content" className="min-h-screen animate-interference overflow-x-hidden" tabIndex={-1}>
             {children}
           </main>

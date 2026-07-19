@@ -15,9 +15,8 @@ export const metadata: Metadata = {
     description:
       "A live intake frequency. Submissions open at 6:40 PM PT, show starts at 7:00 PM PT, music starts at 7:05 PM PT.",
     url: "https://www.barcode-network.com/radio",
-    images: [{ url: "/barcode-radio.png", width: 1200, height: 630, alt: "BARCODE Radio share card" }],
   },
-  twitter: { card: "summary_large_image", images: ["/barcode-radio.png"] },
+  twitter: { card: "summary" },
   alternates: { canonical: "/radio" },
 };
 

@@ -14,10 +14,12 @@ test("fabricated SystemTicker metrics and duplicate LiveBanner surfaces are not 
 
 test("static footer operational claims are removed", () => {
   const footer = read("src/components/Footer.tsx");
+  const submissionRouting = read("src/lib/radio-submission-routing.ts");
 
   assert.doesNotMatch(footer, /Network Online|Systems Operational|all systems operational/i);
   assert.match(footer, /Host-led artist discovery/);
-  assert.match(footer, /Terminal is the Network archive\/interface/);
+  assert.match(footer, /submission\.footerSummary/);
+  assert.match(submissionRouting, /Terminal is the Network archive\/interface/);
 });
 
 test("Header is the only primary global BARCODE Radio live and submissions surface", () => {
@@ -83,11 +85,20 @@ test("BNL relay surfaces loading, confirmed, degraded sync, and unavailable retr
   assert.match(card, /FETCHING RELAY/);
 });
 
-test("Radio page still links to existing Auxchord, TikTok Live, and Discord destinations without receipt metrics", () => {
+test("operational Radio submission surfaces share the gated route while historical Auxchord identity remains intact", () => {
   const radio = read("src/app/radio/page.tsx");
+  const footer = read("src/components/Footer.tsx");
+  const terminal = read("src/app/terminal/page.tsx");
+  const readModel = read("src/app/api/bnl/read-model/route.ts");
   const content = read("src/content.ts");
 
-  assert.match(radio, /externalLinks\.auxchord/);
+  assert.match(radio, /getRadioSubmissionRouting/);
+  assert.match(footer, /getRadioSubmissionRouting/);
+  assert.match(terminal, /getRadioSubmissionRouting/);
+  assert.match(readModel, /getRadioSubmissionRouting/);
+  assert.doesNotMatch(radio, /externalLinks\.auxchord/);
+  assert.doesNotMatch(footer, /externalLinks\.auxchord/);
+  assert.doesNotMatch(terminal, /externalLinks\.auxchord/);
   assert.match(radio, /externalLinks\.tiktokLive/);
   assert.match(radio, /externalLinks\.discord/);
   assert.match(content, /auxchord: "https:\/\/aux\.fan\/@barcode_radio"/);

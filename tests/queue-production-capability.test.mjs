@@ -26,6 +26,7 @@ Module._extensions[".tsx"] = Module._extensions[".ts"];
 
 const require = createRequire(import.meta.url);
 const capability = require("../src/lib/queue-production.ts");
+const submissionRouting = require("../src/lib/radio-submission-routing.ts");
 const queue = require("../src/lib/queue.ts");
 const readModel = require("../src/app/api/bnl/read-model/route.ts");
 const dossierRecommendations = require("../src/app/api/bnl/dossier-recommendations/route.ts");
@@ -75,6 +76,29 @@ test("queue production capability defaults false and only exact true enables it"
   assert.equal(capability.isQueueProductionEnabled({ BARCODE_QUEUE_PRODUCTION_ENABLED: "TRUE" }), false);
   assert.equal(capability.isQueueProductionEnabled({ BARCODE_QUEUE_PRODUCTION_ENABLED: "1" }), false);
   assert.equal(capability.isQueueProductionEnabled({ BARCODE_QUEUE_PRODUCTION_ENABLED: "true" }), true);
+});
+
+test("Radio submission routing falls back to Auxchord and only exact true cuts over to the native queue", () => {
+  for (const value of [undefined, "", "TRUE", "1", "yes"]) {
+    const env = value === undefined ? {} : { BARCODE_QUEUE_PRODUCTION_ENABLED: value };
+    const routing = submissionRouting.getRadioSubmissionRouting(env);
+    assert.equal(routing.mode, "auxchord");
+    assert.equal(routing.href, "https://aux.fan/@barcode_radio");
+    assert.equal(routing.external, true);
+    assert.match(routing.heroDescription, /Auxchord/);
+    assert.match(routing.readModelSummary, /through Auxchord/);
+  }
+
+  const routing = submissionRouting.getRadioSubmissionRouting({
+    BARCODE_QUEUE_PRODUCTION_ENABLED: "true",
+  });
+  assert.equal(routing.mode, "native_queue");
+  assert.equal(routing.href, "/queue");
+  assert.equal(routing.external, false);
+  assert.equal(routing.resourceLabel, "Radio Queue");
+  assert.match(routing.heroDescription, /native BARCODE Radio queue/);
+  assert.match(routing.acceptedSourcesRule, /SoundCloud.*Spotify.*YouTube.*TikTok.*Apple Music.*MP3\/WAV/);
+  assert.doesNotMatch(JSON.stringify(routing), /Auxchord/);
 });
 
 test("public show-state helper ignores queue snapshots unless production capability is enabled", () => {
@@ -146,6 +170,9 @@ test("disabled BNL read model does not read queue storage or expose queue-derive
       assert.deepEqual(model.sections.operatorLanes.temporaryRuntimeContext, []);
       assert.deepEqual(model.sections.operatorLanes.recapCandidates, []);
       assert.deepEqual(model.sections.operatorLanes.dossierSeedCandidates, []);
+      const radioContext = model.sections.sourceContext.find((item) => item.id === "barcode_radio");
+      assert.match(radioContext.summary, /through Auxchord/);
+      assert.doesNotMatch(radioContext.summary, /native BARCODE Radio queue/);
       const serialized = JSON.stringify(model.sections);
       assert.doesNotMatch(serialized, /Open Test Queue|nowPlaying|upNext|queue_derived_artist_surface|queue_public_snapshot|recap_candidate/);
       assert.ok(model.sections.dossiers.public.length > 0);
@@ -199,5 +226,8 @@ test("enabled capability restores public-facing BNL queue behavior", async () =>
     assert.equal(model.sections.queue.available, true);
     assert.ok(JSON.stringify(model.sections.queue).includes(added.id));
     assert.ok(model.sections.artists.some((artist) => artist.name === "Enabled Artist"));
+    const radioContext = model.sections.sourceContext.find((item) => item.id === "barcode_radio");
+    assert.match(radioContext.summary, /native BARCODE Radio queue/);
+    assert.doesNotMatch(radioContext.summary, /Auxchord/);
   });
 });

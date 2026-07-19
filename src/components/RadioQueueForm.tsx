@@ -823,7 +823,7 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
     ["PRESSURE", data?.queueStatus ?? "SYNCING"],
     ["SOURCE", data?.sourceType ?? "SOURCE"],
   ];
-  const codeFragments = ["101101", "ROUTE//FREE", "0xBRC", "ARTIFACT", "WAVEFORM", "0110", "LANE_SYNC", "AUXCHORD", "PACKET", "RED_SIG"];
+  const codeFragments = ["101101", "ROUTE//FREE", "0xBRC", "ARTIFACT", "WAVEFORM", "0110", "LANE_SYNC", "QUEUE_GATE", "PACKET", "RED_SIG"];
   return (
     <div className={`fixed inset-0 z-[110000] overflow-hidden bg-black/92 text-foreground ${motionClass}`} role="status" aria-live="polite">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgba(255,0,0,0.28),transparent_28%),radial-gradient(circle_at_15%_20%,rgba(255,0,0,0.16),transparent_26%),radial-gradient(circle_at_85%_74%,rgba(255,255,255,0.08),transparent_22%)]" />

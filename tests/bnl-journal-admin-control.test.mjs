@@ -41,7 +41,10 @@ function loadTs(file, mocks = {}) {
 }
 
 const store = loadTs("src/lib/bnl-journal-control-store.ts", {
-  "@/lib/bnl-journal-store": { getBNLJournalRedis: () => null },
+  "@/lib/bnl-journal-store": {
+    getBNLJournalRedis: () => null,
+    listJournalEntryControls: async () => [],
+  },
 });
 
 class FakeRedis {
@@ -341,6 +344,7 @@ test("Journal control routes return 401 without auth and 503 without Redis", asy
       verifyAdminToken: async () => false,
     },
     "@/lib/bnl-journal-control-store": unavailableStore,
+    "@/lib/bnl-journal-store": {},
   });
   assert.equal(
     (
@@ -362,6 +366,7 @@ test("Journal control routes return 401 without auth and 503 without Redis", asy
       verifyAdminToken: async () => true,
     },
     "@/lib/bnl-journal-control-store": unavailableStore,
+    "@/lib/bnl-journal-store": {},
   });
   assert.equal(
     (
@@ -378,6 +383,49 @@ test("Journal control routes return 401 without auth and 503 without Redis", asy
     ).status,
     503,
   );
+});
+
+test("bot control GET exposes only memory-ineligible entry ids", async () => {
+  const nextServer = {
+    NextResponse: {
+      json: (body, init = {}) =>
+        new Response(JSON.stringify(body), {
+          status: init.status ?? 200,
+          headers: init.headers,
+        }),
+    },
+  };
+  const route = loadTs("src/app/api/bnl/journal/control/route.ts", {
+    "next/server": nextServer,
+    "@/lib/bnl-journal-contract": {
+      authenticateBNLJournalRequest: () => true,
+    },
+    "@/lib/bnl-journal-control-store": {
+      getJournalControlRedis: () => ({}),
+      readJournalControlState: async () => ({
+        config: {
+          journalAutoPublishEnabled: true,
+          journalDailyEnabled: true,
+          journalWeeklyEnabled: true,
+        },
+        runRequests: [],
+        telemetry: null,
+        recentRuns: [],
+        entryControls: [
+          { entryId: "journal-visible", memoryEligible: true },
+          { entryId: "journal-excluded", memoryEligible: false },
+        ],
+      }),
+    },
+  });
+
+  const response = await route.GET(
+    new Request("https://example.test/api/bnl/journal/control"),
+  );
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.memoryExcludedEntryIds, ["journal-excluded"]);
+  assert.equal(body.entryControls, undefined);
 });
 
 test("legacy control mutation cannot write Journal automation fields", () => {

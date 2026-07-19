@@ -8,6 +8,11 @@ import {
   writeJournalAutomationConfig,
   type JournalCadence,
 } from "@/lib/bnl-journal-control-store";
+import {
+  listBNLJournalAdminEntries,
+  listJournalEntryControlAudit,
+  updateJournalEntryControl,
+} from "@/lib/bnl-journal-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,8 +47,22 @@ export async function GET(req: Request) {
       503,
     );
   try {
-    const state = await readJournalControlState(redis);
-    return json({ ...state, persisted: true });
+    const [state, entries, entryControlAudit] = await Promise.all([
+      readJournalControlState(redis),
+      listBNLJournalAdminEntries(redis),
+      listJournalEntryControlAudit(redis),
+    ]);
+    if (!entries.ok)
+      return json(
+        { error: "Journal entries are unavailable.", reason: "read_failed" },
+        503,
+      );
+    return json({
+      ...state,
+      entries: entries.value,
+      entryControlAudit,
+      persisted: true,
+    });
   } catch (error) {
     console.error("[admin/journal] read failed:", error);
     return json(
@@ -99,6 +118,29 @@ export async function POST(req: Request) {
         idempotent: queued.idempotent,
         persisted: true,
       });
+    }
+
+    if (body.action === "updateEntryControl") {
+      if (
+        typeof body.entryId !== "string" ||
+        typeof body.publicVisible !== "boolean" ||
+        typeof body.memoryEligible !== "boolean"
+      )
+        return json({ error: "Invalid Journal entry control." }, 400);
+      const result = await updateJournalEntryControl(
+        body.entryId,
+        body.publicVisible,
+        body.memoryEligible,
+        redis,
+      );
+      if (!result.ok && result.missing)
+        return json({ error: "Journal entry not found." }, 404);
+      if (!result.ok)
+        return json(
+          { error: "Journal entry control is unavailable." },
+          503,
+        );
+      return json({ ok: true, control: result.control, persisted: true });
     }
 
     return json({ error: "Invalid action." }, 400);

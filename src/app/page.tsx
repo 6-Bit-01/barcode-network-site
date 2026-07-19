@@ -183,8 +183,8 @@ export default function Home() {
             <p className="text-base leading-relaxed text-muted">
               BNL-01 is the Network’s Discord liaison and website relay system. It connects public Discord-side activity and approved Network status to website relay surfaces; it is not an embedded chatbot, autonomous site operator, or replacement for BARCODE Radio submissions.
             </p>
-            <Link href="/journal" className="mt-5 inline-flex text-sm font-mono uppercase tracking-widest text-accent hover:text-foreground">
-              Read BNL-01’s Journal →
+            <Link href="/bnl" className="mt-5 inline-flex text-sm font-mono uppercase tracking-widest text-accent hover:text-foreground">
+              Open the BNL-01 hub →
             </Link>
           </div>
           <BNLRelayModule title="Latest Network Relay" />

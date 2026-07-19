@@ -961,6 +961,74 @@ test("ending broadcast is separate from closing submissions", async () => {
   assert.equal(state.streamStatus, "offline");
 });
 
+test("archived public snapshots neutralize active lanes while preserving the real completed log", async () => {
+  const sessionId = await freshOpenSession("archived public projection");
+  const completedRealTrack = await addTrack("Archived Completed Real");
+
+  let state = await queue.updateRadioTrack("", "pullNext");
+  assert.equal(state.nextInLine?.id, completedRealTrack.id);
+  state = await queue.updateRadioTrack(completedRealTrack.id, "load");
+  state = await queue.updateRadioTrack(completedRealTrack.id, "finish");
+  assert.ok(completedTrack(state, completedRealTrack.id));
+
+  state = await queue.updateRadioTrack("", "addSimulationPaidPriority");
+  state = await queue.updateRadioTrack("", "addSimulationFreeTrack");
+  const archivedSimulationIds = [
+    state.nextInLine,
+    ...state.queue,
+  ].filter((entry) => entry?.isTestTrack).map((entry) => entry.id);
+  assert.equal(archivedSimulationIds.length, 2, "archive should retain both simulation tracks internally");
+
+  await queue.archiveCurrentQueueSession();
+
+  for (const publicSnapshot of [
+    await queue.getPublicQueueSnapshot(),
+    await queue.getPublicQueueSnapshot(sessionId),
+  ]) {
+    assert.equal(publicSnapshot.session.status, "archived");
+    assert.equal(publicSnapshot.session.broadcastPhase, "ended");
+    assert.equal(publicSnapshot.session.queueOpen, false);
+    assert.equal(publicSnapshot.session.showStarted, false);
+    assert.equal(publicSnapshot.session.activeCount, 0);
+    assert.equal(publicSnapshot.session.nextInLineTrackId, null);
+    assert.equal(publicSnapshot.session.loadedTrackId, null);
+    assert.equal(publicSnapshot.session.priorityUpgradesEnabled, false);
+    assert.equal(publicSnapshot.session.priorityUpgradePaymentsEnabled, false);
+    assert.equal(publicSnapshot.status.isOpen, false);
+    assert.equal(publicSnapshot.status.activeCount, 0);
+    assert.equal(publicSnapshot.status.estimatedRuntimeSeconds, 0);
+    assert.equal(publicSnapshot.status.pressure, "low");
+    assert.equal(publicSnapshot.status.isFull, false);
+    assert.deepEqual(publicSnapshot.queue, []);
+    assert.equal(publicSnapshot.nowPlaying, null);
+    assert.equal(publicSnapshot.upNext, null);
+    assert.equal(publicSnapshot.submitterStatus, null);
+    assert.ok(publicSnapshot.completed.some((track) => track.id === completedRealTrack.id));
+    assert.equal(archivedSimulationIds.some((id) => JSON.stringify(publicSnapshot).includes(id)), false);
+  }
+
+  const archivedAdminState = await queue.getRadioQueueState(sessionId);
+  const retainedSimulationIds = [
+    archivedAdminState.nextInLine,
+    ...archivedAdminState.queue,
+  ].filter((entry) => entry?.isTestTrack).map((entry) => entry.id);
+  assert.deepEqual(new Set(retainedSimulationIds), new Set(archivedSimulationIds), "admin archive retains its original simulation records");
+
+  const readModelRoute = require("../src/app/api/bnl/read-model/route.ts");
+  const readModel = await (await readModelRoute.GET()).json();
+  assert.equal(readModel.sections.queue.session.status, "archived");
+  assert.equal(readModel.sections.queue.session.queueOpen, false);
+  assert.equal(readModel.sections.queue.session.activeCount, 0);
+  assert.equal(readModel.sections.queue.session.priorityUpgradesEnabled, false);
+  assert.equal(readModel.sections.queue.status.isOpen, false);
+  assert.equal(readModel.sections.queue.status.activeCount, 0);
+  assert.deepEqual(readModel.sections.queue.queue, []);
+  assert.equal(readModel.sections.queue.nowPlaying, null);
+  assert.equal(readModel.sections.queue.upNext, null);
+  assert.ok(readModel.sections.queue.completed.some((track) => track.id === completedRealTrack.id));
+  assert.equal(archivedSimulationIds.some((id) => JSON.stringify(readModel.sections).includes(id)), false);
+});
+
 
 
 test("new sessions default queue capacity to 44", async () => {

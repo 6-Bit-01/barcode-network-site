@@ -1678,6 +1678,47 @@ export async function getPublicQueueSnapshot(sessionId?: string, identity?: { su
   changed = (await resolvePublicArtworkForSession(session)) || changed;
   if (changed) await writeStore(replaceSession(store, session));
   const normalized = normalizeSession(session);
+  if (normalized.status === "archived") {
+    const publicCompletedEntries = normalized.completed.filter((entry) => !isSimulationTrack(entry));
+    const publicRemovedEntries = normalized.removed.filter((entry) => !isSimulationTrack(entry));
+    const publicSpotlightEntries = normalized.spotlight.filter((entry) => !isSimulationTrack(entry));
+    const publicSession = summarizeSession(normalized);
+    const archivedPublicSession: QueueSessionSummary = {
+      ...publicSession,
+      queueOpen: false,
+      showStarted: false,
+      preShowEndsAt: null,
+      activeCount: 0,
+      nextInLineTrackId: null,
+      nextInLineHoldTrackId: null,
+      loadedTrackId: null,
+      completedCount: publicCompletedEntries.length,
+      removedCount: publicRemovedEntries.length,
+      spotlightCount: publicSpotlightEntries.length,
+      estimatedActiveRuntimeSeconds: 0,
+      completedRuntimeSeconds: publicCompletedEntries.reduce((sum, entry) => sum + getTrackRuntimeSeconds(entry), 0),
+      wheelSpinsOwed: 0,
+      priorityUpgradesEnabled: false,
+      priorityUpgradePaymentsEnabled: false,
+    };
+
+    return {
+      session: archivedPublicSession,
+      status: {
+        isOpen: false,
+        activeCount: 0,
+        estimatedRuntimeSeconds: 0,
+        capacity: normalized.publicStatus.capacity,
+        isFull: false,
+        pressure: "low",
+      },
+      queue: [],
+      completed: publicCompletedEntries.slice(0, 10).map(toPublicQueueTrack),
+      nowPlaying: null,
+      upNext: null,
+      submitterStatus: null,
+    };
+  }
   return { session: summarizeSession(normalized), status: normalized.publicStatus, queue: normalized.queue.map(toPublicQueueTrack), completed: normalized.completed.slice(0, 10).map(toPublicQueueTrack), nowPlaying: normalized.loadedTrack ? toPublicQueueTrack(normalized.loadedTrack) : null, upNext: normalized.nextInLineTrack ? toPublicQueueTrack(normalized.nextInLineTrack) : null, submitterStatus: publicSubmitterStatus(normalized, identity) };
 }
 

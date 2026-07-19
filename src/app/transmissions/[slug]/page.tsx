@@ -119,6 +119,12 @@ export default async function TransmissionPage({
               />
             ))}
           </article>
+          {post.tags.some((tag) => tag.toLowerCase() === "bnl") || /BNL-01/i.test(`${post.title} ${post.excerpt} ${post.body.join(" ")}`) ? (
+            <nav aria-label="BNL-01 related paths" className="mt-10 flex flex-wrap gap-4 border-t border-border pt-6 font-mono text-xs uppercase tracking-widest">
+              <Link href="/bnl" className="text-accent hover:text-foreground">BNL-01 Hub →</Link>
+              <Link href="/terminal" className="text-accent hover:text-foreground">Trace in Terminal →</Link>
+            </nav>
+          ) : null}
         </div>
       </section>
 

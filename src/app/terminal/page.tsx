@@ -3,7 +3,12 @@ import { databasePage, externalLinks, radioPage, releasesPage } from "@/content"
 import { getDatabaseAggregateStats } from "@/lib/database-stats";
 import { getRadioSubmissionRouting } from "@/lib/radio-submission-routing";
 import { getAllTransmissions } from "@/lib/transmissions";
+import { journalEntryHref } from "@/lib/bnl-journal-navigation";
+import { listBNLJournalArchive } from "@/lib/bnl-journal-store";
+import { listBNLPublicRelayHistory } from "@/lib/bnl-status-store";
 import { TerminalShell } from "./terminal-shell";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Network Archive Terminal — BARCODE Network",
@@ -21,8 +26,12 @@ function slugify(name: string) {
   return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
 }
 
-export default function TerminalPage() {
+export default async function TerminalPage() {
   const submission = getRadioSubmissionRouting();
+  const [relayHistory, journalArchive] = await Promise.all([
+    listBNLPublicRelayHistory(),
+    listBNLJournalArchive(1),
+  ]);
   const archive = {
     dossiers: databasePage.entries.map((entry) => ({
       id: entry.id,
@@ -63,6 +72,23 @@ export default function TerminalPage() {
       },
     },
     stats: getDatabaseAggregateStats(databasePage.entries),
+    bnl: {
+      relaysUnavailable: !relayHistory.ok,
+      relays: (relayHistory.ok ? relayHistory.value : []).slice(0, 20).map((entry) => ({
+        message: entry.message,
+        currentDirective: entry.currentDirective,
+        publishedAt: entry.publishedAt,
+      })),
+      journalUnavailable: !journalArchive.ok,
+      journalEntries: (journalArchive.ok ? (journalArchive.value?.entries ?? []) : []).slice(0, 5).map((entry) => ({
+        entryId: entry.entryId,
+        entryKind: entry.entryKind ?? "public",
+        title: entry.title,
+        excerpt: entry.excerpt,
+        publishedAt: entry.publishedAt,
+        href: journalEntryHref(entry.entryId),
+      })),
+    },
   };
 
   return (

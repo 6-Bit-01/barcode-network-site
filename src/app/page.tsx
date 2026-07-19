@@ -192,14 +192,12 @@ export default function Home() {
               {"// BNL-01 RELAY"}
             </p>
             <h2 className="mb-4 text-2xl font-black tracking-tight text-foreground sm:text-4xl">
-              Discord activity can surface on the site through an approved relay.
+              BNL-01 turns public movement into paths you can read.
             </h2>
             <p className="text-base leading-relaxed text-muted">
-              BNL-01 is the Network’s Discord liaison and website relay system. It connects public Discord-side activity and approved Network status to website relay surfaces; it is not an embedded chatbot, autonomous site operator, or replacement for BARCODE Radio submissions.
+              BNL-01 notices what the BARCODE community is discussing, what keeps returning, and what changes around the show. The Hub gathers approved relays and Journal entries for deeper reading; Discord is where people speak with BNL-01.
             </p>
-            <Link href="/bnl" className="mt-5 inline-flex text-sm font-mono uppercase tracking-widest text-accent hover:text-foreground">
-              Open the BNL-01 Hub →
-            </Link>
+            <div className="mt-5 flex flex-wrap gap-4"><Link href="/bnl" className="inline-flex text-sm font-mono uppercase tracking-widest text-accent hover:text-foreground">Open the BNL-01 Hub →</Link><a href="https://discord.gg/barcode" target="_blank" rel="noreferrer" className="inline-flex text-sm font-mono uppercase tracking-widest text-accent hover:text-foreground">Talk in Discord →</a></div>
           </div>
           <BNLRelayModule title="Latest Network Relay" />
         </div>

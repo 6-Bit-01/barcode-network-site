@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useBNLStatus } from "@/components/useBNLStatus";
 
 function bnlTone(online: boolean) {
@@ -64,8 +65,8 @@ export function BNLNetworkRelayTicker() {
       <div aria-hidden className="h-8" />
       <div className="fixed left-0 right-0 top-14 z-40 border-b border-border/80 bg-black px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-white sm:px-4 sm:text-[11px] sm:tracking-[0.2em]">
         <div className="mx-auto flex max-w-7xl items-center gap-2 overflow-hidden sm:gap-3">
-          <span className="hidden shrink-0 text-white/85 sm:inline">&gt; NETWORK RELAY // BNL-01</span>
-          <span className="shrink-0 text-white/85 sm:hidden">&gt; BNL-01 //</span>
+          <Link href="/bnl" className="hidden shrink-0 text-white underline decoration-accent/70 underline-offset-4 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent sm:inline">&gt; BNL HUB // BNL-01</Link>
+          <Link href="/bnl" className="shrink-0 text-white underline decoration-accent/70 underline-offset-4 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent sm:hidden">&gt; BNL HUB //</Link>
           <div className="bnl-relay-scroll min-w-0 flex-1">
             <div className="bnl-relay-scroll-track">
               <span>

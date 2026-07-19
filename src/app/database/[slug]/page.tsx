@@ -28,6 +28,7 @@ export async function generateMetadata({
   return {
     title: `${entry.name} — BARCODE Network Database`,
     description: entry.summary,
+    alternates: { canonical: `/database/${slug}` },
     openGraph: {
       title: `${entry.name} — BARCODE Network Database`,
       description: entry.summary,

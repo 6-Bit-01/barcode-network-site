@@ -13,6 +13,7 @@ export const metadata = {
   title: "BNL-01 Hub",
   description:
     "BNL-01's public home for recent Network relays and the Community Journal field log.",
+  alternates: { canonical: "/bnl" },
 };
 
 export default async function BNLPage() {

@@ -13,34 +13,32 @@ const fontVariables = {
 } as CSSProperties;
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://barcode-network.com"),
+  metadataBase: new URL("https://www.barcode-network.com"),
   title: {
     default: "BARCODE Network",
     template: "%s | BARCODE Network",
   },
   description: "BARCODE is a living hip-hop broadcast universe connecting music, BARCODE Radio, community, technology, and interdimensional story.",
   keywords: ["BARCODE Network", "6 Bit", "BARCODE Radio", "hip hop", "live broadcast", "music submissions"],
-  icons: {
-    icon: [
-      { url: "/favicon.ico", sizes: "48x48" },
-      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
-      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
-    ],
-    apple: "/apple-touch-icon.png",
-  },
   openGraph: {
     title: "BARCODE Network",
     description: "BARCODE is a living hip-hop broadcast universe connecting music, BARCODE Radio, community, technology, and interdimensional story.",
     siteName: "BARCODE Network",
-    images: [{ url: "/og-image.png", width: 1200, height: 630 }],
+    url: "https://www.barcode-network.com",
+    images: [{ url: "/barcode-radio.png", width: 1200, height: 630, alt: "BARCODE Network signal card" }],
     type: "website",
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "BARCODE Network",
     description: "BARCODE is a living hip-hop broadcast universe connecting music, BARCODE Radio, community, technology, and interdimensional story.",
+    images: ["/barcode-radio.png"],
+  },
+  alternates: {
+    canonical: "/",
+    types: {
+      "application/rss+xml": "https://www.barcode-network.com/transmissions/feed",
+    },
   },
   robots: {
     index: true,
@@ -72,7 +70,8 @@ export default function RootLayout({
           <DataStream />
           <Header />
           <BNLNetworkRelayShell />
-          <main className="min-h-screen animate-interference overflow-x-hidden">
+          <a href="#main-content" className="skip-link">Skip to main content</a>
+          <main id="main-content" className="min-h-screen animate-interference overflow-x-hidden" tabIndex={-1}>
             {children}
           </main>
           <Footer />

@@ -15,6 +15,7 @@ export const metadata: Metadata = {
     description:
       "Dispatches from the BARCODE Network. Dev logs, signal reports, and broadcast notes.",
   },
+  alternates: { canonical: "/transmissions" },
 };
 
 export default function TransmissionsPage() {

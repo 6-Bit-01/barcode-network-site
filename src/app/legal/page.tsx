@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   title: "Legal / Privacy — BARCODE Network",
   description:
     "BARCODE Network Legal Center, including Terms of Use, Queue Submission Terms, Priority Signal Terms, Privacy Policy, copyright, security, accessibility, and contact information.",
+  alternates: { canonical: "/legal" },
 };
 
 const legalDocumentPath = path.join(

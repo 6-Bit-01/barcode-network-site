@@ -17,6 +17,7 @@ export const metadata = {
   title: "BNL-01 Community Journal",
   description:
     "Periodic BNL-01 observations drawn from public community activity and recurring BARCODE Network patterns.",
+  alternates: { canonical: "/journal" },
 };
 
 function parsePage(value?: string) {

@@ -9,6 +9,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ["/admin", "/obs", "/api/"],
       },
     ],
-    sitemap: "https://barcode-network.com/sitemap.xml",
+    sitemap: "https://www.barcode-network.com/sitemap.xml",
   };
 }

@@ -13,6 +13,7 @@ export const metadata: Metadata = {
     description:
       "Internal dossier system. Personnel, productions, entities, interfaces — and anomalies connected to BARCODE Network.",
   },
+  alternates: { canonical: "/database" },
 };
 
 const databaseEntries = databasePage.entries;

@@ -13,6 +13,7 @@ export const metadata: Metadata = {
     description:
       "Official BARCODE Network release catalog with available artwork, descriptions, and verified streaming links.",
   },
+  alternates: { canonical: "/releases" },
 };
 
 const releases = releasesPage.catalog;

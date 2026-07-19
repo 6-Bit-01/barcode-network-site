@@ -64,6 +64,8 @@ function loadHub(
       return { listBNLJournalArchive: readArchive };
     if (id === "@/lib/bnl-status-store")
       return { listBNLPublicRelayHistory: readRelayHistory };
+    if (id === "@/content")
+      return { externalLinks: { discord: "https://discord.gg/4tHazmD528" } };
     throw new Error(`unmocked import ${id} in ${file}`);
   };
   vm.runInNewContext(
@@ -380,4 +382,72 @@ test("the Hub relay box distinguishes empty history from an unavailable read", (
     unavailable,
     /No public BNL-01 relays have been published yet/,
   );
+});
+
+test("Terminal BNL public experience uses bounded readers, commands, timestamps, and keeps operational boundaries", () => {
+  const page = read("src/app/terminal/page.tsx");
+  const terminal = read("src/components/NetworkArchiveTerminal.tsx");
+  const apiRoutes = [
+    "src/app/api/bnl/status/route.ts",
+    "src/app/api/bnl/journal/route.ts",
+    "src/app/api/bnl/read-model/route.ts",
+  ].map(read).join("\n");
+
+  assert.match(page, /export const dynamic = "force-dynamic"/);
+  assert.match(page, /Promise\.all\(\[/);
+  assert.match(page, /listBNLPublicRelayHistory\(\)/);
+  assert.match(page, /listBNLJournalArchive\(1\)/);
+  assert.match(page, /relays: \(relayHistory\.ok \? relayHistory\.value : \[\]\)\.slice\(0, 20\)\.map/);
+  assert.match(page, /message: entry\.message/);
+  assert.match(page, /currentDirective: entry\.currentDirective/);
+  assert.match(page, /publishedAt: entry\.publishedAt/);
+  assert.match(page, /entryKind: entry\.entryKind \?\? "manual"/);
+  assert.doesNotMatch(page, /sourceClass|trigger|adminNote|sections|hash|sourceWindow|memory/i);
+
+  assert.match(terminal, /"BNL-01", "RELAYS", "BNL LOG", "BNL HUB"/);
+  assert.match(terminal, /command === "TRACE BNL-01" \|\| command === "BNL-01" \|\| command === "BNL"\) return pushLive\(raw, "trace"\)/);
+  assert.match(terminal, /command === "LIST RELAYS" \|\| command === "RELAYS"/);
+  assert.match(terminal, /command === "BNL LOG"/);
+  assert.match(terminal, /command === "BNL HUB"/);
+  assert.match(terminal, /command === "STATUS"\) return pushLive\(raw, "status"\)/);
+  assert.match(terminal, /liveView\?: "status" \| "trace"/);
+  assert.match(terminal, /entry\.liveView === "trace" \? <TraceBNL data=\{bnl\}/);
+  assert.match(terminal, /entry\.liveView === "status" \? <Status data=\{bnl\}/);
+  assert.match(terminal, /discordHref=\{archive\.radio\.links\.discord\}/);
+  assert.doesNotMatch(terminal, /<TraceBNL data=\{bnl\} loading=\{loading\} dossier=\{bnlDossier\} \/>/);
+  assert.match(terminal, /<BNLRelayTimestamp value=\{entry\.publishedAt\}/);
+  assert.match(terminal, /h-\[calc\(100dvh-7rem\)\]/);
+  assert.match(terminal, /overflow-y-auto/);
+  assert.match(terminal, /Up\/Down recalls command history/);
+  assert.match(terminal, /clearTerminalSession\(\); onLock\(\)/);
+  assert.doesNotMatch(terminal, /textarea|message input|fetch\([^)]*method:\s*["']POST/i);
+  assert.doesNotMatch(apiRoutes, /chat|conversation|messageInput/i);
+});
+
+test("BNL public paths are connected without adding modules to unrelated operational surfaces", () => {
+  const combined = [
+    "src/app/bnl/page.tsx",
+    "src/components/BNLRelay.tsx",
+    "src/app/page.tsx",
+    "src/app/radio/page.tsx",
+    "src/app/journal/page.tsx",
+    "src/app/journal/[entryId]/page.tsx",
+    "src/content.ts",
+    "src/app/transmissions/[slug]/page.tsx",
+  ].map(read).join("\n");
+  const untouched = [
+    "src/app/merch/page.tsx",
+    "src/app/contact/page.tsx",
+    "src/app/legal/page.tsx",
+    "src/app/queue/page.tsx",
+  ].filter((file) => fs.existsSync(file)).map(read).join("\n");
+
+  assert.match(combined, /href="\/bnl"/);
+  assert.match(combined, /href="\/radio"/);
+  assert.match(combined, /href="\/terminal"/);
+  assert.match(combined, /href="\/database\/bnl-01"/);
+  assert.doesNotMatch(combined, /discord\.gg\/barcode/);
+  assert.match(combined, /externalLinks\.discord/);
+  assert.match(combined, /post\.tags\.some/);
+  assert.doesNotMatch(untouched, /BNL-01 Hub|BNLRelayModule|BNLNetworkRelayTicker/);
 });

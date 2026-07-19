@@ -110,8 +110,9 @@ export default function RadioPage() {
               </h2>
             </div>
             <p className="text-sm leading-relaxed text-muted">
-              {submission.bnlBoundary}
+              BNL-01 watches public movement around BARCODE Radio—what the community is discussing, what keeps returning, and what changes around the show—then reflects approved readings on the site. Music, submissions, and the host remain primary.
             </p>
+            <Link href="/bnl" className="mt-4 inline-flex font-mono text-xs uppercase tracking-widest text-accent hover:text-foreground">Open BNL-01 Hub →</Link>
           </div>
           <BNLRelayModule title="BNL-01 Broadcast Monitor" />
         </div>

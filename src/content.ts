@@ -606,11 +606,18 @@ export const databasePage = {
       role: "BARCODE Network Liaison Entity",
       origin: "UNKNOWN" as const,
       summary:
-        "BNL-01 is the BARCODE Network Liaison Entity assigned to Discord-side signal interpretation, community response, and controlled lore retrieval. It operates as a public-facing archive interface rather than a performer, translating fragmented Network records into usable guidance without granting full access to restricted systems. Its function is to answer questions, stabilize confusion, monitor community activity, and keep BARCODE Network information consistent across live broadcasts, Discord discussions, and public-facing transmissions.",
+        "BNL-01 watches public movement around BARCODE—community discussion, recurring questions, and changes around BARCODE Radio—then turns approved readings into relays and Journal entries for the website. People speak with BNL-01 in Discord; the site is the deeper reading and exploration layer.",
       tags: ["ai", "systems", "handler", "broadcast"],
       notes:
         "Known across the Network as the voice that answers when records fragment. BNL-01 maintains canon continuity between BARCODE Radio and community channels, but sealed archives remain inaccessible under current clearance.",
       link: externalLinks.discord,
+      primaryLink: {
+        label: "Open BNL-01 Hub",
+        url: `${siteConfig.domain}/bnl`,
+        type: "website",
+        selectedBy: "operator",
+        publicSafe: true,
+      },
       files: [] as {
         name: string;
         url: string;

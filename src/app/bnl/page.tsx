@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { externalLinks } from "@/content";
 import { BNLRelayHistoryModule } from "@/components/BNLRelayHistory";
 import {
   JournalArchiveCard,
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const metadata = {
   title: "BNL-01 Hub",
   description:
-    "BNL-01's public home for recent Network relays and the Community Journal field log.",
+    "BNL-01's public Hub for the current signal, recent relays, Journal entries, Discord, BARCODE Radio, Terminal, and dossier paths.",
   alternates: { canonical: "/bnl" },
 };
 
@@ -35,22 +36,14 @@ export default async function BNLPage() {
             BNL-01 Hub
           </h1>
           <p className="mt-5 max-w-3xl text-base leading-7 text-foreground/70 sm:text-lg">
-            BNL-01&apos;s public home for recent Network relays and the
-            Community Journal field log.
+            BNL-01 watches the public movement around BARCODE—what the community is discussing, what keeps returning, and what changes around the show—then turns what matters into relays and Journal entries.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link
-              href="/journal"
-              className="inline-flex items-center border border-accent px-5 py-3 font-mono text-xs uppercase tracking-widest text-accent transition-colors hover:bg-accent hover:text-background"
-            >
-              Open the full Journal →
-            </Link>
-            <Link
-              href="/database/bnl-01"
-              className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground"
-            >
-              Read the BNL-01 dossier →
-            </Link>
+            <a href={externalLinks.discord} target="_blank" rel="noreferrer" className="inline-flex items-center border border-accent px-5 py-3 font-mono text-xs uppercase tracking-widest text-accent transition-colors hover:bg-accent hover:text-background">Talk with BNL in Discord →</a>
+            <Link href="/radio" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">BARCODE Radio →</Link>
+            <Link href="/terminal" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">Open Terminal →</Link>
+            <Link href="/journal" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">Full Journal →</Link>
+            <Link href="/database/bnl-01" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">BNL dossier →</Link>
           </div>
         </div>
       </section>
@@ -62,19 +55,13 @@ export default async function BNLPage() {
               What BNL-01 does
             </p>
             <h2 className="mt-4 text-2xl font-black tracking-tight text-foreground sm:text-4xl">
-              Discord liaison and website relay
+              Public signal and reading layer
             </h2>
             <p className="mt-5 text-base leading-8 text-foreground/70">
-              BNL-01 connects approved public Discord-side activity and
-              grounded Network status to website relay surfaces. It helps keep
-              public BARCODE Network information consistent across community
-              discussions, live broadcasts, and public transmissions.
+              BNL-01 watches the public movement around BARCODE: community discussion, recurring questions, live-show context, and what changes around BARCODE Radio. The website collects those approved readings so visitors can explore the signal without turning the site into a chat surface.
             </p>
             <p className="mt-4 text-base leading-8 text-foreground/70">
-              This is not an embedded chatbot, an autonomous site operator, or
-              a replacement for BARCODE Radio submissions. Private Discord
-              activity and restricted Network records do not belong on this
-              public surface.
+              Speak with BNL-01 in Discord. Experience the live Network through BARCODE Radio. Use this Hub, the Journal, the dossier, and Terminal for deeper public reading.
             </p>
           </div>
           <BNLRelayHistoryModule

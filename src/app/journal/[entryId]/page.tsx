@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { externalLinks } from "@/content";
 import { notFound, redirect } from "next/navigation";
 import {
   JournalArticle,
@@ -64,12 +65,12 @@ export default async function JournalEntryPage({
   return (
     <div className="pt-14">
       <section className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
-        <Link
+        <div className="flex flex-wrap gap-4"><Link
           href={journalArchiveHref(filter)}
           className="font-mono text-xs uppercase tracking-widest text-accent"
         >
           ← Back to Journal
-        </Link>
+        </Link><Link href="/bnl" className="font-mono text-xs uppercase tracking-widest text-accent">BNL-01 Hub</Link><a href={externalLinks.discord} target="_blank" rel="noreferrer" className="font-mono text-xs uppercase tracking-widest text-accent">Discord</a><Link href="/radio" className="font-mono text-xs uppercase tracking-widest text-accent">Radio</Link></div>
         <div className="mt-6">
           <JournalArticle entry={result.value} archiveFilter={filter} />
         </div>

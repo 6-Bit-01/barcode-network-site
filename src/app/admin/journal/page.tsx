@@ -33,8 +33,33 @@ type Telemetry = {
   detail?: string;
   lastRun?: RunRecord;
 };
+type EntryControl = {
+  entryId: string;
+  publicVisible: boolean;
+  memoryEligible: boolean;
+  updatedAt: string;
+  updatedBy: "website-admin";
+};
+type JournalEntry = {
+  entryId: string;
+  revision: number;
+  entryKind?: "daily" | "weekly";
+  title: string;
+  excerpt: string;
+  sections: { heading: string; body: string }[];
+  publishedAt: string;
+  control: EntryControl;
+};
+type EntryControlAudit = EntryControl & {
+  changeId: string;
+  previousPublicVisible: boolean;
+  previousMemoryEligible: boolean;
+};
 type State = {
   config: Config;
+  entryControls: EntryControl[];
+  entries: JournalEntry[];
+  entryControlAudit: EntryControlAudit[];
   runRequests: RunRequest[];
   telemetry: Telemetry | null;
   recentRuns: RunRecord[];
@@ -77,6 +102,9 @@ export default function AdminJournalPage() {
   const [loading, setLoading] = useState<string | null>("load");
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [entryFilter, setEntryFilter] = useState<"all" | "daily" | "weekly">(
+    "all",
+  );
 
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading("load");
@@ -167,7 +195,70 @@ export default function AdminJournalPage() {
     }
   }
 
+  async function updateEntryControl(
+    entry: JournalEntry,
+    publicVisible: boolean,
+    memoryEligible: boolean,
+  ) {
+    if (loading || !state) return;
+    const previous = state;
+    const optimisticControl = {
+      ...entry.control,
+      publicVisible,
+      memoryEligible,
+      updatedAt: new Date().toISOString(),
+    };
+    setState({
+      ...state,
+      entries: state.entries.map((candidate) =>
+        candidate.entryId === entry.entryId
+          ? { ...candidate, control: optimisticControl }
+          : candidate,
+      ),
+    });
+    setLoading(`entry:${entry.entryId}`);
+    setError(null);
+    setNote(null);
+    try {
+      const response = await fetch("/api/admin/journal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "updateEntryControl",
+          entryId: entry.entryId,
+          publicVisible,
+          memoryEligible,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok !== true)
+        throw new Error(
+          typeof payload.error === "string"
+            ? payload.error
+            : `Request failed (${response.status})`,
+        );
+      setNote(
+        !publicVisible
+          ? "Entry hidden. BNL memory access is off unless you deliberately re-enable it."
+          : "Entry controls saved.",
+      );
+      await load(true);
+    } catch (caught) {
+      setState(previous);
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Entry control update failed.",
+      );
+    } finally {
+      setLoading(null);
+    }
+  }
+
   const config = state?.config ?? DEFAULT_CONFIG;
+  const filteredEntries = (state?.entries ?? []).filter(
+    (entry) => entryFilter === "all" || entry.entryKind === entryFilter,
+  );
   return (
     <main className="min-h-screen pt-14">
       <section className="border-b border-border noise-bg">
@@ -325,6 +416,156 @@ export default function AdminJournalPage() {
             )}
           </aside>
         </div>
+
+        <section className="border border-border bg-surface p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="font-mono text-xs uppercase tracking-[0.35em] text-muted">
+                Published entry controls
+              </p>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-foreground/70">
+                Hiding an entry removes it from the public archive immediately and
+                turns off future Journal-memory use by default. The two controls
+                remain separate so a hidden entry can be deliberately retained as
+                private continuity.
+              </p>
+            </div>
+            <div className="flex gap-2" aria-label="Filter Journal entries">
+              {(["all", "daily", "weekly"] as const).map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setEntryFilter(filter)}
+                  className={`border px-3 py-2 font-mono text-[10px] uppercase tracking-widest ${
+                    entryFilter === filter
+                      ? "border-accent text-accent"
+                      : "border-border text-muted"
+                  }`}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-4">
+            {filteredEntries.length ? (
+              filteredEntries.map((entry) => {
+                const busy = loading === `entry:${entry.entryId}`;
+                return (
+                  <article key={entry.entryId} className="border border-border p-4">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StatusPill value={entry.entryKind ?? "manual"} />
+                          <StatusPill
+                            value={entry.control.publicVisible ? "public" : "hidden"}
+                          />
+                          <StatusPill
+                            value={
+                              entry.control.memoryEligible
+                                ? "memory eligible"
+                                : "memory excluded"
+                            }
+                          />
+                        </div>
+                        <h2 className="mt-3 text-lg font-bold text-foreground">
+                          {entry.title}
+                        </h2>
+                        <p className="mt-1 font-mono text-[10px] text-muted">
+                          {entry.entryId} · revision {entry.revision} · {localTime(entry.publishedAt)}
+                        </p>
+                        <p className="mt-3 text-sm leading-6 text-foreground/70">
+                          {entry.excerpt}
+                        </p>
+                      </div>
+                      <div className="w-full space-y-3 lg:w-72">
+                        <label className="flex items-center justify-between gap-4 border border-border px-3 py-2 text-sm">
+                          <span>Visible to public</span>
+                          <input
+                            aria-label={`Visible to public: ${entry.title}`}
+                            type="checkbox"
+                            disabled={Boolean(loading)}
+                            checked={entry.control.publicVisible}
+                            onChange={(event) =>
+                              void updateEntryControl(
+                                entry,
+                                event.target.checked,
+                                event.target.checked
+                                  ? entry.control.memoryEligible
+                                  : false,
+                              )
+                            }
+                          />
+                        </label>
+                        <label className="flex items-center justify-between gap-4 border border-border px-3 py-2 text-sm">
+                          <span>Available to BNL memory</span>
+                          <input
+                            aria-label={`Available to BNL memory: ${entry.title}`}
+                            type="checkbox"
+                            disabled={Boolean(loading)}
+                            checked={entry.control.memoryEligible}
+                            onChange={(event) =>
+                              void updateEntryControl(
+                                entry,
+                                entry.control.publicVisible,
+                                event.target.checked,
+                              )
+                            }
+                          />
+                        </label>
+                        {entry.control.publicVisible && (
+                          <Link
+                            href={`/journal/${encodeURIComponent(entry.entryId)}`}
+                            className="inline-block text-xs uppercase tracking-widest text-accent"
+                          >
+                            Open public entry →
+                          </Link>
+                        )}
+                        {busy && <p className="text-xs text-muted">Saving…</p>}
+                      </div>
+                    </div>
+                    <details className="mt-4 border-t border-border pt-4">
+                      <summary className="cursor-pointer font-mono text-xs uppercase tracking-widest text-accent">
+                        Preview full entry
+                      </summary>
+                      <div className="mt-4 space-y-5">
+                        {entry.sections.map((section, index) => (
+                          <section key={`${entry.entryId}-${index}`}>
+                            <h3 className="font-bold text-foreground">
+                              {section.heading}
+                            </h3>
+                            <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-foreground/75">
+                              {section.body}
+                            </p>
+                          </section>
+                        ))}
+                      </div>
+                    </details>
+                  </article>
+                );
+              })
+            ) : (
+              <p className="text-sm text-muted">
+                No published Journal entries match this filter.
+              </p>
+            )}
+          </div>
+
+          {state?.entryControlAudit.length ? (
+            <details className="mt-6 border-t border-border pt-4">
+              <summary className="cursor-pointer font-mono text-xs uppercase tracking-widest text-muted">
+                Recent entry-control audit
+              </summary>
+              <div className="mt-3 space-y-2">
+                {state.entryControlAudit.slice(0, 10).map((record) => (
+                  <p key={record.changeId} className="text-xs leading-5 text-muted">
+                    {localTime(record.updatedAt)} · {record.entryId} · public {String(record.previousPublicVisible)} → {String(record.publicVisible)} · memory {String(record.previousMemoryEligible)} → {String(record.memoryEligible)}
+                  </p>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </section>
 
         <section className="border border-border bg-surface p-5">
           <p className="font-mono text-xs uppercase tracking-[0.35em] text-muted">

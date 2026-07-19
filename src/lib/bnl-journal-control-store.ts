@@ -1,5 +1,10 @@
 import { randomUUID } from "crypto";
-import { getBNLJournalRedis } from "@/lib/bnl-journal-store";
+import {
+  getBNLJournalRedis,
+  listJournalEntryControls,
+  type JournalEntryControl,
+  type RedisLike,
+} from "@/lib/bnl-journal-store";
 
 export type JournalAutomationConfig = {
   journalAutoPublishEnabled: boolean;
@@ -53,6 +58,7 @@ export type JournalAutomationTelemetry = {
 
 export type JournalControlState = {
   config: JournalAutomationConfig;
+  entryControls: JournalEntryControl[];
   runRequests: JournalRunRequest[];
   telemetry: JournalAutomationTelemetry | null;
   recentRuns: JournalRunRecord[];
@@ -79,14 +85,8 @@ export const JOURNAL_CLAIM_LEASE_MS = 30 * 60 * 1000;
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{2,119}$/;
 
-export type JournalControlRedis = {
-  get<T = unknown>(key: string): Promise<T | null>;
+export type JournalControlRedis = RedisLike & {
   set(key: string, value: unknown): Promise<unknown>;
-  eval?<T = unknown>(
-    script: string,
-    keys: string[],
-    args: unknown[],
-  ): Promise<T>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -265,14 +265,16 @@ export function getJournalControlRedis(): JournalControlRedis | null {
 export async function readJournalControlState(
   redis: JournalControlRedis,
 ): Promise<JournalControlState> {
-  const [rawFlags, rawRequests, rawTelemetry, rawRuns] = await Promise.all([
+  const [rawFlags, rawRequests, rawTelemetry, rawRuns, entryControls] = await Promise.all([
     redis.get<unknown>(BNL_FLAGS_KEY),
     redis.get<unknown>(BNL_JOURNAL_RUN_REQUESTS_KEY),
     redis.get<unknown>(BNL_JOURNAL_TELEMETRY_KEY),
     redis.get<unknown>(BNL_JOURNAL_RECENT_RUNS_KEY),
+    listJournalEntryControls(redis),
   ]);
   return {
     config: sanitizeJournalAutomationConfig(rawFlags),
+    entryControls,
     runRequests: sanitizeRequests(rawRequests),
     telemetry: sanitizeJournalTelemetry(rawTelemetry),
     recentRuns: sanitizeRuns(rawRuns),

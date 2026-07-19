@@ -162,18 +162,56 @@ class FakeRedis {
   async eval(_script, keys, args) {
     this.calls.push(["eval"]);
     if (this.fail === "eval") throw new Error("eval fail");
-    const [recordKey, latestKey, indexKey, dailyIndexKey, weeklyIndexKey] =
+    if (_script.includes("journal-entry-control-v1")) {
+      const [controlsKey, auditKey, indexKey, dailyIndexKey, weeklyIndexKey, latestKey] = keys;
+      const [entryId, controlJson, auditJson, maxAudit] = args;
+      const latestJson = this.kv.get(latestKey);
+      if (!latestJson) return JSON.stringify({ status: "missing" });
+      const latest = JSON.parse(latestJson);
+      const controls = this.kv.get(controlsKey)
+        ? JSON.parse(this.kv.get(controlsKey))
+        : {};
+      const control = JSON.parse(controlJson);
+      controls[entryId] = control;
+      const audit = this.kv.get(auditKey)
+        ? JSON.parse(this.kv.get(auditKey))
+        : [];
+      audit.unshift(JSON.parse(auditJson));
+      this.kv.set(controlsKey, JSON.stringify(controls));
+      this.kv.set(auditKey, JSON.stringify(audit.slice(0, Number(maxAudit))));
+      for (const key of [indexKey, dailyIndexKey, weeklyIndexKey])
+        this.z.get(key)?.delete(entryId);
+      if (control.publicVisible) {
+        await this.zadd(indexKey, { score: latest._score, member: entryId });
+        if (latest.entryKind === "daily")
+          await this.zadd(dailyIndexKey, { score: latest._score, member: entryId });
+        if (latest.entryKind === "weekly")
+          await this.zadd(weeklyIndexKey, { score: latest._score, member: entryId });
+      }
+      return JSON.stringify({ status: "updated", control });
+    }
+    const [recordKey, latestKey, indexKey, dailyIndexKey, weeklyIndexKey, controlsKey] =
       keys;
     const [entryId, revision, contentHash, recordJson, score] = args;
+    const controls = this.kv.get(controlsKey)
+      ? JSON.parse(this.kv.get(controlsKey))
+      : {};
+    const publicVisible = controls[entryId]?.publicVisible !== false;
     const repairKindIndexes = (latest) => {
+      const index =
+        this.z.get(indexKey) ??
+        this.z.set(indexKey, new Map()).get(indexKey);
       const daily =
         this.z.get(dailyIndexKey) ??
         this.z.set(dailyIndexKey, new Map()).get(dailyIndexKey);
       const weekly =
         this.z.get(weeklyIndexKey) ??
         this.z.set(weeklyIndexKey, new Map()).get(weeklyIndexKey);
+      index.delete(entryId);
       daily.delete(entryId);
       weekly.delete(entryId);
+      if (!publicVisible) return;
+      index.set(entryId, latest._score);
       if (latest.entryKind === "daily") daily.set(entryId, latest._score);
       if (latest.entryKind === "weekly") weekly.set(entryId, latest._score);
     };
@@ -190,7 +228,8 @@ class FakeRedis {
       let repairedIndexScore = null;
       if (!latestJson && !inIndex) {
         this.kv.set(latestKey, existingJson);
-        await this.zadd(indexKey, { score: existing._score, member: entryId });
+        if (publicVisible)
+          await this.zadd(indexKey, { score: existing._score, member: entryId });
         repairedLatest = true;
         repairedIndexScore = existing._score;
       } else if (!latestJson && zset.get(entryId) === existing._score) {
@@ -201,14 +240,18 @@ class FakeRedis {
         existing.revision > latest.revision
       ) {
         this.kv.set(latestKey, existingJson);
-        await this.zadd(indexKey, { score: existing._score, member: entryId });
+        if (publicVisible)
+          await this.zadd(indexKey, { score: existing._score, member: entryId });
         repairedLatest = true;
         repairedIndexScore = existing._score;
-      } else if (latest && !inIndex) {
+      } else if (latest && publicVisible && !inIndex) {
         await this.zadd(indexKey, { score: latest._score, member: entryId });
         repairedIndexScore = latest._score;
       }
-      if (!this.kv.get(latestKey) || !this.z.get(indexKey)?.has(entryId))
+      if (
+        !this.kv.get(latestKey) ||
+        (publicVisible && !this.z.get(indexKey)?.has(entryId))
+      )
         return JSON.stringify({ status: "unavailable" });
       const repaired = JSON.parse(this.kv.get(latestKey));
       const repairedScore = this.z.get(indexKey).get(entryId);
@@ -216,7 +259,7 @@ class FakeRedis {
         (repairedLatest &&
           (repaired.revision !== existing.revision ||
             repaired.contentHash !== existing.contentHash)) ||
-        (repairedIndexScore !== null && repairedScore !== repairedIndexScore)
+        (publicVisible && repairedIndexScore !== null && repairedScore !== repairedIndexScore)
       )
         return JSON.stringify({ status: "unavailable" });
       repairKindIndexes(repaired);
@@ -229,12 +272,6 @@ class FakeRedis {
     const latestJson = this.kv.get(latestKey);
     if (!latestJson || JSON.parse(latestJson).revision <= Number(revision)) {
       this.kv.set(latestKey, recordJson);
-      await this.zadd(indexKey, { score: Number(score), member: entryId });
-    } else if (!this.z.get(indexKey)?.has(entryId)) {
-      await this.zadd(indexKey, {
-        score: JSON.parse(latestJson)._score,
-        member: entryId,
-      });
     }
     repairKindIndexes(JSON.parse(this.kv.get(latestKey)));
     return JSON.stringify({ status: "created" });
@@ -570,6 +607,77 @@ test("archive filters paginate over matching entries and constrain neighbors", a
     true,
   );
   assert.equal(redis.calls.filter((call) => call[0] === "zrange").length, 2);
+});
+
+test("entry controls hide immediately, remain recoverable, and keep memory eligibility separate", async () => {
+  const redis = new FakeRedis();
+  const entry = makeEntry({
+    entryId: "controlled-daily-entry",
+    entryKind: "daily",
+  });
+  assert.equal((await store.publishBNLJournalEntry(entry, redis)).ok, true);
+
+  const hidden = await store.updateJournalEntryControl(
+    entry.entryId,
+    false,
+    false,
+    redis,
+  );
+  assert.equal(hidden.ok, true);
+  assert.equal(hidden.control.publicVisible, false);
+  assert.equal(hidden.control.memoryEligible, false);
+  assert.equal(
+    (await store.listBNLJournalArchive(1, redis)).value.entries.length,
+    0,
+  );
+  assert.equal((await store.getBNLJournalEntry(entry.entryId, redis)).value, null);
+
+  const adminHidden = await store.listBNLJournalAdminEntries(redis);
+  assert.equal(adminHidden.ok, true);
+  assert.equal(adminHidden.value.length, 1);
+  assert.equal(adminHidden.value[0].entryId, entry.entryId);
+  assert.equal(adminHidden.value[0].control.publicVisible, false);
+  assert.equal((await store.listJournalEntryControlAudit(redis)).length, 1);
+
+  const revisionTwo = makeEntry({
+    entryId: entry.entryId,
+    revision: 2,
+    entryKind: "daily",
+  });
+  assert.equal((await store.publishBNLJournalEntry(revisionTwo, redis)).ok, true);
+  assert.equal(
+    (await store.listBNLJournalArchive(1, redis)).value.entries.length,
+    0,
+    "a later revision cannot silently republish a hidden entry",
+  );
+
+  const restored = await store.updateJournalEntryControl(
+    entry.entryId,
+    true,
+    false,
+    redis,
+  );
+  assert.equal(restored.ok, true);
+  assert.equal(restored.control.publicVisible, true);
+  assert.equal(restored.control.memoryEligible, false);
+  assert.equal(
+    (await store.getBNLJournalEntry(entry.entryId, redis)).value.revision,
+    2,
+  );
+  assert.equal(
+    (await store.listBNLJournalArchive(1, redis, "daily")).value.entries.length,
+    1,
+  );
+  assert.equal((await store.listJournalEntryControlAudit(redis)).length, 2);
+
+  const missing = await store.updateJournalEntryControl(
+    "missing-entry",
+    false,
+    false,
+    redis,
+  );
+  assert.equal(missing.ok, false);
+  assert.equal(missing.missing, true);
 });
 
 test("idempotent publication repairs the stored kind index without trusting an incoming kind", async () => {

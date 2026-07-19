@@ -1,8 +1,24 @@
 import { Redis } from "@upstash/redis";
+import { randomUUID } from "crypto";
 import type { BNLJournalEntry } from "@/lib/bnl-journal-contract";
 import type { JournalArchiveFilter } from "@/lib/bnl-journal-navigation";
 
 export type PublicBNLJournalEntry = BNLJournalEntry & { publishedAt: string };
+export type JournalEntryControl = {
+  entryId: string;
+  publicVisible: boolean;
+  memoryEligible: boolean;
+  updatedAt: string;
+  updatedBy: "website-admin";
+};
+export type JournalEntryControlAuditRecord = JournalEntryControl & {
+  changeId: string;
+  previousPublicVisible: boolean;
+  previousMemoryEligible: boolean;
+};
+export type AdminBNLJournalEntry = PublicBNLJournalEntry & {
+  control: JournalEntryControl;
+};
 export type JournalReadResult<T> =
   | { ok: true; value: T }
   | { ok: false; unavailable: true };
@@ -24,6 +40,10 @@ export const BNL_JOURNAL_DAILY_INDEX_KEY =
   "barcode:bnl-journal:v1:index:daily";
 export const BNL_JOURNAL_WEEKLY_INDEX_KEY =
   "barcode:bnl-journal:v1:index:weekly";
+export const BNL_JOURNAL_ENTRY_CONTROLS_KEY =
+  "barcode:bnl-journal:v1:entry-controls";
+export const BNL_JOURNAL_ENTRY_CONTROL_AUDIT_KEY =
+  "barcode:bnl-journal:v1:entry-control-audit";
 const KEY_PREFIX = "barcode:bnl-journal:v1:entry";
 const LATEST_PREFIX = "barcode:bnl-journal:v1:latest";
 const PAGE_SIZE = 9;
@@ -62,14 +82,22 @@ local latestKey = KEYS[2]
 local indexKey = KEYS[3]
 local dailyIndexKey = KEYS[4]
 local weeklyIndexKey = KEYS[5]
+local controlsKey = KEYS[6]
 local entryId = ARGV[1]
 local revision = tonumber(ARGV[2])
 local contentHash = ARGV[3]
 local recordJson = ARGV[4]
 local score = tonumber(ARGV[5])
+local controlsRaw = redis.call("GET", controlsKey)
+local controls = controlsRaw and cjson.decode(controlsRaw) or {}
+local control = controls[entryId]
+local publicVisible = (not control) or control.publicVisible ~= false
 local function repairKindIndexes(latest)
+  redis.call("ZREM", indexKey, entryId)
   redis.call("ZREM", dailyIndexKey, entryId)
   redis.call("ZREM", weeklyIndexKey, entryId)
+  if not publicVisible then return end
+  redis.call("ZADD", indexKey, tonumber(latest._score), entryId)
   if latest.entryKind == "daily" then
     redis.call("ZADD", dailyIndexKey, tonumber(latest._score), entryId)
   elseif latest.entryKind == "weekly" then
@@ -92,7 +120,7 @@ if existingJson then
   local repairedIndexScore = nil
   if (not latestJson) and (not indexScore) then
     redis.call("SET", latestKey, existingJson)
-    redis.call("ZADD", indexKey, existing._score, entryId)
+    if publicVisible then redis.call("ZADD", indexKey, existing._score, entryId) end
     repairedLatest = true
     repairedIndexScore = existing._score
   elseif (not latestJson) and indexScore and tonumber(indexScore) == tonumber(existing._score) then
@@ -100,16 +128,16 @@ if existingJson then
     repairedLatest = true
   elseif latest and existing.revision > latest.revision then
     redis.call("SET", latestKey, existingJson)
-    redis.call("ZADD", indexKey, existing._score, entryId)
+    if publicVisible then redis.call("ZADD", indexKey, existing._score, entryId) end
     repairedLatest = true
     repairedIndexScore = existing._score
-  elseif latest and (not indexScore) then
+  elseif latest and publicVisible and (not indexScore) then
     redis.call("ZADD", indexKey, latest._score, entryId)
     repairedIndexScore = latest._score
   end
   local repairedLatestJson = redis.call("GET", latestKey)
   local repairedScore = redis.call("ZSCORE", indexKey, entryId)
-  if (not repairedLatestJson) or (not repairedScore) then
+  if (not repairedLatestJson) or (publicVisible and (not repairedScore)) then
     return cjson.encode({ status = "unavailable" })
   end
   local repairedLatestEntry = cjson.decode(repairedLatestJson)
@@ -118,7 +146,7 @@ if existingJson then
       return cjson.encode({ status = "unavailable" })
     end
   end
-  if repairedIndexScore and tonumber(repairedScore) ~= tonumber(repairedIndexScore) then
+  if publicVisible and repairedIndexScore and tonumber(repairedScore) ~= tonumber(repairedIndexScore) then
     return cjson.encode({ status = "unavailable" })
   end
   repairKindIndexes(repairedLatestEntry)
@@ -136,16 +164,15 @@ end
 local latestJson = redis.call("GET", latestKey)
 if (not latestJson) or tonumber(cjson.decode(latestJson).revision) <= revision then
   redis.call("SET", latestKey, recordJson)
-  redis.call("ZADD", indexKey, score, entryId)
-elseif not redis.call("ZSCORE", indexKey, entryId) then
-  local latest = cjson.decode(latestJson)
-  redis.call("ZADD", indexKey, tonumber(latest._score), entryId)
 end
 local finalLatestJson = redis.call("GET", latestKey)
-if (not finalLatestJson) or (not redis.call("ZSCORE", indexKey, entryId)) then
+if not finalLatestJson then
   return cjson.encode({ status = "unavailable" })
 end
 repairKindIndexes(cjson.decode(finalLatestJson))
+if publicVisible and (not redis.call("ZSCORE", indexKey, entryId)) then
+  return cjson.encode({ status = "unavailable" })
+end
 return cjson.encode({ status = "created" })
 `;
 
@@ -199,6 +226,7 @@ function scoreOf(publishedAt: string, revision: number) {
 function parseAtomicResult(value: unknown): {
   status?: string;
   publishedAt?: string;
+  control?: unknown;
 } {
   return typeof value === "string"
     ? JSON.parse(value)
@@ -237,6 +265,7 @@ export async function publishBNLJournalEntry(
           BNL_JOURNAL_INDEX_KEY,
           BNL_JOURNAL_DAILY_INDEX_KEY,
           BNL_JOURNAL_WEEKLY_INDEX_KEY,
+          BNL_JOURNAL_ENTRY_CONTROLS_KEY,
         ],
         [
           entry.entryId,
@@ -345,6 +374,13 @@ export async function getBNLJournalEntry(
 ): Promise<JournalReadResult<PublicBNLJournalEntry | null>> {
   if (!redis) return { ok: false, unavailable: true };
   try {
+    const controls = await listJournalEntryControls(redis);
+    if (
+      controls.some(
+        (control) => control.entryId === entryId && !control.publicVisible,
+      )
+    )
+      return { ok: true, value: null };
     const entry = await redis.get<PublicBNLJournalEntry>(
       journalLatestKey(entryId),
     );
@@ -418,6 +454,234 @@ export async function listAllBNLJournalEntries(
       value: entries
         .filter((entry): entry is PublicBNLJournalEntry => Boolean(entry))
         .map(publicEntry),
+    };
+  } catch {
+    return { ok: false, unavailable: true };
+  }
+}
+
+const ENTRY_ID = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,79}$/;
+const MAX_CONTROL_AUDIT = 250;
+const ENTRY_CONTROL_SCRIPT = `
+-- journal-entry-control-v1
+local controlsKey = KEYS[1]
+local auditKey = KEYS[2]
+local indexKey = KEYS[3]
+local dailyIndexKey = KEYS[4]
+local weeklyIndexKey = KEYS[5]
+local latestKey = KEYS[6]
+local entryId = ARGV[1]
+local control = cjson.decode(ARGV[2])
+local auditRecord = cjson.decode(ARGV[3])
+local maxAudit = tonumber(ARGV[4])
+local latestJson = redis.call("GET", latestKey)
+if not latestJson then return cjson.encode({ status = "missing" }) end
+local latest = cjson.decode(latestJson)
+local controlsRaw = redis.call("GET", controlsKey)
+local controls = controlsRaw and cjson.decode(controlsRaw) or {}
+controls[entryId] = control
+local auditRaw = redis.call("GET", auditKey)
+local audit = auditRaw and cjson.decode(auditRaw) or {}
+table.insert(audit, 1, auditRecord)
+while #audit > maxAudit do table.remove(audit) end
+redis.call("SET", controlsKey, cjson.encode(controls))
+redis.call("SET", auditKey, cjson.encode(audit))
+redis.call("ZREM", indexKey, entryId)
+redis.call("ZREM", dailyIndexKey, entryId)
+redis.call("ZREM", weeklyIndexKey, entryId)
+if control.publicVisible then
+  redis.call("ZADD", indexKey, tonumber(latest._score), entryId)
+  if latest.entryKind == "daily" then
+    redis.call("ZADD", dailyIndexKey, tonumber(latest._score), entryId)
+  elseif latest.entryKind == "weekly" then
+    redis.call("ZADD", weeklyIndexKey, tonumber(latest._score), entryId)
+  end
+end
+return cjson.encode({ status = "updated", control = control })
+`;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function validIso(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    Number.isFinite(Date.parse(value)) &&
+    new Date(value).toISOString() === value
+  );
+}
+
+export function defaultJournalEntryControl(
+  entryId: string,
+): JournalEntryControl {
+  return {
+    entryId,
+    publicVisible: true,
+    memoryEligible: true,
+    updatedAt: "1970-01-01T00:00:00.000Z",
+    updatedBy: "website-admin",
+  };
+}
+
+export function sanitizeJournalEntryControl(
+  value: unknown,
+): JournalEntryControl | null {
+  if (
+    !isRecord(value) ||
+    typeof value.entryId !== "string" ||
+    !ENTRY_ID.test(value.entryId) ||
+    typeof value.publicVisible !== "boolean" ||
+    typeof value.memoryEligible !== "boolean" ||
+    !validIso(value.updatedAt) ||
+    value.updatedBy !== "website-admin"
+  )
+    return null;
+  return {
+    entryId: value.entryId,
+    publicVisible: value.publicVisible,
+    memoryEligible: value.memoryEligible,
+    updatedAt: value.updatedAt,
+    updatedBy: "website-admin",
+  };
+}
+
+function sanitizeJournalEntryControlAudit(
+  value: unknown,
+): JournalEntryControlAuditRecord | null {
+  const control = sanitizeJournalEntryControl(value);
+  if (!control || !isRecord(value)) return null;
+  if (
+    typeof value.changeId !== "string" ||
+    !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{2,119}$/.test(value.changeId) ||
+    typeof value.previousPublicVisible !== "boolean" ||
+    typeof value.previousMemoryEligible !== "boolean"
+  )
+    return null;
+  return {
+    ...control,
+    changeId: value.changeId,
+    previousPublicVisible: value.previousPublicVisible,
+    previousMemoryEligible: value.previousMemoryEligible,
+  };
+}
+
+export async function listJournalEntryControls(
+  redis: Pick<RedisLike, "get"> | null = asRedisLike(getBNLJournalRedis()),
+): Promise<JournalEntryControl[]> {
+  if (!redis) return [];
+  const raw = await redis.get<unknown>(BNL_JOURNAL_ENTRY_CONTROLS_KEY);
+  if (!isRecord(raw)) return [];
+  return Object.values(raw)
+    .map(sanitizeJournalEntryControl)
+    .filter((item): item is JournalEntryControl => Boolean(item))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function listJournalEntryControlAudit(
+  redis: Pick<RedisLike, "get"> | null = asRedisLike(getBNLJournalRedis()),
+): Promise<JournalEntryControlAuditRecord[]> {
+  if (!redis) return [];
+  const raw = await redis.get<unknown>(BNL_JOURNAL_ENTRY_CONTROL_AUDIT_KEY);
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(sanitizeJournalEntryControlAudit)
+    .filter((item): item is JournalEntryControlAuditRecord => Boolean(item))
+    .slice(0, MAX_CONTROL_AUDIT);
+}
+
+export async function updateJournalEntryControl(
+  entryId: string,
+  publicVisible: boolean,
+  memoryEligible: boolean,
+  redis: RedisLike | null = asRedisLike(getBNLJournalRedis()),
+): Promise<
+  | { ok: true; control: JournalEntryControl }
+  | { ok: false; missing?: true; unavailable?: true }
+> {
+  if (!redis?.eval || !ENTRY_ID.test(entryId))
+    return { ok: false, unavailable: true };
+  try {
+    const controls = await listJournalEntryControls(redis);
+    const previous =
+      controls.find((item) => item.entryId === entryId) ??
+      defaultJournalEntryControl(entryId);
+    const control: JournalEntryControl = {
+      entryId,
+      publicVisible,
+      memoryEligible,
+      updatedAt: new Date().toISOString(),
+      updatedBy: "website-admin",
+    };
+    const audit: JournalEntryControlAuditRecord = {
+      ...control,
+      changeId: `journal-control-${randomUUID()}`,
+      previousPublicVisible: previous.publicVisible,
+      previousMemoryEligible: previous.memoryEligible,
+    };
+    const result = parseAtomicResult(
+      await redis.eval(
+        ENTRY_CONTROL_SCRIPT,
+        [
+          BNL_JOURNAL_ENTRY_CONTROLS_KEY,
+          BNL_JOURNAL_ENTRY_CONTROL_AUDIT_KEY,
+          BNL_JOURNAL_INDEX_KEY,
+          BNL_JOURNAL_DAILY_INDEX_KEY,
+          BNL_JOURNAL_WEEKLY_INDEX_KEY,
+          journalLatestKey(entryId),
+        ],
+        [
+          entryId,
+          JSON.stringify(control),
+          JSON.stringify(audit),
+          MAX_CONTROL_AUDIT,
+        ],
+      ),
+    );
+    if (result.status === "missing") return { ok: false, missing: true };
+    const stored = sanitizeJournalEntryControl(result.control);
+    return stored
+      ? { ok: true, control: stored }
+      : { ok: false, unavailable: true };
+  } catch {
+    return { ok: false, unavailable: true };
+  }
+}
+
+export async function listBNLJournalAdminEntries(
+  redis: RedisLike | null = asRedisLike(getBNLJournalRedis()),
+): Promise<JournalReadResult<AdminBNLJournalEntry[]>> {
+  if (!redis) return { ok: false, unavailable: true };
+  try {
+    const controls = await listJournalEntryControls(redis);
+    const visibleIds = await redis.zrange(BNL_JOURNAL_INDEX_KEY, 0, -1, {
+      rev: true,
+    });
+    const ids = [
+      ...new Set([
+        ...visibleIds.map(String),
+        ...controls.map((item) => item.entryId),
+      ]),
+    ];
+    const controlMap = new Map(
+      controls.map((item) => [item.entryId, item]),
+    );
+    const entries = await Promise.all(
+      ids.map((id) =>
+        redis.get<PublicBNLJournalEntry>(journalLatestKey(id)),
+      ),
+    );
+    return {
+      ok: true,
+      value: entries
+        .filter((entry): entry is PublicBNLJournalEntry => Boolean(entry))
+        .map((entry) => ({
+          ...publicEntry(entry),
+          control:
+            controlMap.get(entry.entryId) ??
+            defaultJournalEntryControl(entry.entryId),
+        }))
+        .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt)),
     };
   } catch {
     return { ok: false, unavailable: true };

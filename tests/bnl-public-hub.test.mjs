@@ -97,11 +97,60 @@ function loadRelayHistoryComponent() {
       require: (id) => {
         if (id === "react/jsx-runtime") return require("react/jsx-runtime");
         if (id === "react") return React;
+        if (id === "@/components/BNLRelayTimestamp")
+          return {
+            BNLRelayTimestamp: ({ value }) =>
+              React.createElement("time", { dateTime: value }, value),
+          };
         throw new Error(`unmocked import ${id} in ${file}`);
       },
       exports: cjsModule.exports,
       module: cjsModule,
       Intl,
+      Date,
+    },
+    { filename: file },
+  );
+  return cjsModule.exports;
+}
+
+function intlWithDefaultTimeZone(defaultTimeZone) {
+  function DateTimeFormat(locales, options = {}) {
+    return new Intl.DateTimeFormat(locales, {
+      ...options,
+      timeZone: options.timeZone ?? defaultTimeZone,
+    });
+  }
+
+  return { DateTimeFormat };
+}
+
+function loadRelayTimestampComponent({
+  hydrated = false,
+  defaultTimeZone = "UTC",
+} = {}) {
+  const file = "src/components/BNLRelayTimestamp.tsx";
+  const code = ts.transpileModule(read(file), {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      jsx: ts.JsxEmit.ReactJSX,
+      esModuleInterop: true,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText;
+  const cjsModule = { exports: {} };
+  vm.runInNewContext(
+    code,
+    {
+      require: (id) => {
+        if (id === "react/jsx-runtime") return require("react/jsx-runtime");
+        if (id === "react")
+          return { ...React, useSyncExternalStore: () => hydrated };
+        throw new Error(`unmocked import ${id} in ${file}`);
+      },
+      exports: cjsModule.exports,
+      module: cjsModule,
+      Intl: intlWithDefaultTimeZone(defaultTimeZone),
       Date,
     },
     { filename: file },
@@ -257,6 +306,59 @@ test("the Hub relay box renders at most 20 newest-first public projections", () 
   assert.match(html, /tabindex="0"/);
   assert.match(html, /aria-labelledby="recent-bnl-relays-heading"/);
   assert.doesNotMatch(html, /Signal condition|Signal origin/i);
+});
+
+test("relay timestamps hydrate from UTC into the visitor's browser timezone", () => {
+  const value = "2026-07-19T19:40:00.000Z";
+  const serverTimestamp = loadRelayTimestampComponent({
+    hydrated: false,
+    defaultTimeZone: "America/Los_Angeles",
+  });
+  const pacificTimestamp = loadRelayTimestampComponent({
+    hydrated: true,
+    defaultTimeZone: "America/Los_Angeles",
+  });
+
+  const serverHtml = renderToStaticMarkup(
+    React.createElement(serverTimestamp.BNLRelayTimestamp, { value }),
+  );
+  const pacificHtml = renderToStaticMarkup(
+    React.createElement(pacificTimestamp.BNLRelayTimestamp, { value }),
+  );
+
+  assert.match(serverHtml, /Jul 19, 2026, 7:40 PM UTC/);
+  assert.match(pacificHtml, /Jul 19, 2026, 12:40 PM PDT/);
+  assert.match(pacificHtml, /datetime="2026-07-19T19:40:00.000Z"/i);
+});
+
+test("relay timestamp formatting handles DST, date rollover, and invalid input", () => {
+  const timestamp = loadRelayTimestampComponent();
+
+  assert.equal(
+    timestamp.formatTransmissionTime(
+      "2026-01-19T19:40:00.000Z",
+      "America/Los_Angeles",
+    ),
+    "Jan 19, 2026, 11:40 AM PST",
+  );
+  assert.equal(
+    timestamp.formatTransmissionTime(
+      "2026-07-19T19:40:00.000Z",
+      "America/New_York",
+    ),
+    "Jul 19, 2026, 3:40 PM EDT",
+  );
+  assert.equal(
+    timestamp.formatTransmissionTime(
+      "2026-07-19T19:40:00.000Z",
+      "Asia/Tokyo",
+    ),
+    "Jul 20, 2026, 4:40 AM GMT+9",
+  );
+  assert.equal(
+    timestamp.formatTransmissionTime("not-a-timestamp"),
+    "Time unavailable",
+  );
 });
 
 test("the Hub relay box distinguishes empty history from an unavailable read", () => {

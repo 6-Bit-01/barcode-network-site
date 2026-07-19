@@ -1,19 +1,5 @@
 import type { BNLPublicRelayHistoryEntry } from "@/lib/bnl-presence-relay-contract";
-
-function formatTransmissionTime(value: string): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Time unavailable";
-
-  return `${new Intl.DateTimeFormat("en-US", {
-    timeZone: "UTC",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(parsed)} UTC`;
-}
+import { BNLRelayTimestamp } from "@/components/BNLRelayTimestamp";
 
 export function BNLRelayHistoryModule({
   entries,
@@ -90,9 +76,7 @@ export function BNLRelayHistoryModule({
                     Transmission date / time
                   </dt>
                   <dd className="mt-2 font-mono text-xs uppercase tracking-[0.18em] text-foreground/70">
-                    <time dateTime={entry.publishedAt}>
-                      {formatTransmissionTime(entry.publishedAt)}
-                    </time>
+                    <BNLRelayTimestamp value={entry.publishedAt} />
                   </dd>
                 </div>
               </dl>

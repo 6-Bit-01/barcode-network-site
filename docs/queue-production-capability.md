@@ -8,6 +8,8 @@ The capability is disabled unless the environment variable value is exactly `tru
 
 While disabled, test queue sessions and tracks do not affect global live status, public queue CTAs derived from live status, public show mode, BNL read-model queue projections, queue-derived artists, queue-derived operator lanes, dossier recommendations, Source File evidence, public authoring suggestions, or memory-like evidence.
 
+Operational Radio submission surfaces also remain on the established Auxchord route while disabled. This includes the Radio page, Footer resource and description, Terminal `RADIO` response, and the BARCODE Radio sentence in BNL's public source context. Historical Auxchord database records and dossiers are canon records, not operational routing, and are unchanged by the capability.
+
 ## Authorized testing that remains available
 
 Queue testing and admin workflows may continue in their existing authorized surfaces. The gate only blocks promotion of queue data into public/BNL truth surfaces. It does not change queue mechanics, playback, submissions, provider integrations, admin controls, uploads, priority lanes, scheduling, simulations, payments, or routes.
@@ -18,6 +20,12 @@ When disabled, the global live-status provider does not poll `/api/queue`, cache
 
 Manual and scheduled TikTok live status remains independent. A legitimate manual or scheduled live state may still produce broadcast-live public show mode.
 
+## Native submission presentation
+
+When the capability is enabled, one server-side presentation contract moves the operational Radio submission surfaces to `/queue`, changes the link from external to internal, and uses native-queue wording. The contract does not expose the environment variable to client code and does not change queue/session storage, ordering, Wheel or Priority behavior, playback, payment handling, uploads, provider resolution, or BNL write authority.
+
+The native form accepts supported SoundCloud, Spotify, YouTube, TikTok, and Apple Music song links plus direct MP3/WAV uploads. Apple Music remains external-open only, as stated on the form. This cutover does not add Amazon Music, Suno, Bandcamp, or any other provider.
+
 ## Vercel rollout procedure
 
 1. Leave production disabled until the owner explicitly declares the queue ready for production use.
@@ -25,7 +33,10 @@ Manual and scheduled TikTok live status remains independent. A legitimate manual
 3. Set the value to exactly `true` when the owner approves production queue signals.
 4. Redeploy the site so server-only code reads the new environment value.
 5. Confirm `/api/admin/live` and `/api/bnl/read-model` report `capabilities.queueProduction=true`.
+6. Confirm `/radio`, the Footer, and Terminal `RADIO` route submission to `/queue` as internal links.
+7. Confirm `/queue` shows an honest closed/waiting state when no session is open and the active session when one is open.
+8. Keep the bot's separate queue-production gate disabled until the site cutover is verified and the owner explicitly approves sanitized bot context.
 
 ## Rollback
 
-Unset `BARCODE_QUEUE_PRODUCTION_ENABLED` or set it to anything other than exact `true`, then redeploy. The default-off behavior resumes and queue testing data is quarantined from public and BNL signals.
+Unset `BARCODE_QUEUE_PRODUCTION_ENABLED` or set it to anything other than exact `true`, then redeploy. The default-off behavior resumes, operational submission links return to Auxchord, and queue testing data is quarantined from public and BNL signals. The bot's separate queue-production gate must remain disabled during rollback.

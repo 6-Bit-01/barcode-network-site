@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { databasePage, radioPage, siteConfig } from "@/content";
+import { databasePage, siteConfig } from "@/content";
 import { dossierAuthoringGuide } from "@/lib/dossier-authoring-guide";
 import { buildDossierTagRegistry } from "@/lib/dossier-tags";
 import { DOSSIER_TAXONOMY_GUIDE } from "@/lib/dossier-taxonomy";
@@ -34,6 +34,7 @@ import {
   isQueueProductionEnabled,
   queueProductionCapability,
 } from "@/lib/queue-production";
+import { getRadioSubmissionRouting } from "@/lib/radio-submission-routing";
 import type {
   QueueEntry,
   QueueLane,
@@ -754,7 +755,10 @@ function publicDossiers() {
   };
 }
 
-const sourceContext = [
+function buildSourceContext() {
+  const submission = getRadioSubmissionRouting();
+
+  return [
   {
     id: "barcode_network",
     title: "BARCODE Network",
@@ -763,7 +767,7 @@ const sourceContext = [
   {
     id: "barcode_radio",
     title: "BARCODE Radio",
-    summary: `${radioPage.hero.heading1} ${radioPage.hero.heading2} is the weekly live broadcast. Public submissions enter the show through Auxchord and the website queue surface reflects public session state.`,
+    summary: submission.readModelSummary,
   },
   {
     id: "bnl_01",
@@ -789,7 +793,8 @@ const sourceContext = [
     summary:
       "This source context is not user accounts, payment records, private queue notes, Discord identity mapping, hidden dossiers, private upload access, or private admin state.",
   },
-];
+  ];
+}
 
 type OperatorLaneItem = {
   id: string;
@@ -1014,7 +1019,7 @@ const rules = {
       "public-page-visible database dossier summaries with clearance labels preserved; hidden/private details are not exposed",
     operatorLanes:
       "deterministic public-safe lane hints, not automatic actions",
-    sourceContext: "static public site context",
+    sourceContext: "public site context aligned with the production capability",
     simulationData:
       "BNL must treat this read model as live/public context only, not admin simulation data",
   },
@@ -1038,7 +1043,7 @@ export async function GET() {
       publicOnly: true,
       capabilities: queueProductionCapability(),
       sections: {
-        sourceContext,
+        sourceContext: buildSourceContext(),
         queue: liveQueue.queue,
         artists: liveQueue.artists,
         dossiers,

@@ -4,6 +4,7 @@ import { RadioHero, SectionDot } from "@/components/LiveEffects";
 import { LocalSchedule } from "@/components/LocalSchedule";
 import type { Metadata } from "next";
 import { BNLRelayModule } from "@/components/BNLRelay";
+import { getRadioSubmissionRouting } from "@/lib/radio-submission-routing";
 
 export const metadata: Metadata = {
   title: "BARCODE Radio — Submit Music & Listen Live",
@@ -18,6 +19,16 @@ export const metadata: Metadata = {
 };
 
 export default function RadioPage() {
+  const submission = getRadioSubmissionRouting();
+  const steps = radioPage.steps.map((step) =>
+    step.number === "01"
+      ? { ...step, description: submission.submitStepDescription }
+      : step,
+  );
+  const rules = radioPage.rules.map((rule, index) =>
+    index === 2 ? submission.acceptedSourcesRule : rule,
+  );
+
   return (
     <div className="pt-14">
       {/* Hero — Submit buttons FIRST, zero friction */}
@@ -27,7 +38,7 @@ export default function RadioPage() {
             label={radioPage.hero.label}
             heading1={radioPage.hero.heading1}
             heading2={radioPage.hero.heading2}
-            description={radioPage.hero.description}
+            description={submission.heroDescription}
           />
 
           {/* Schedule notice — auto-converts to visitor's timezone */}
@@ -42,15 +53,25 @@ export default function RadioPage() {
           {/* Primary CTAs — above the fold */}
           <div className="max-w-lg">
             <div className="flex flex-col sm:flex-row gap-4">
-              <a
-                href={externalLinks.auxchord}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold bg-accent text-background hover:bg-accent-dim transition-all text-center"
-              >
-                <span className="text-lg">{radioPage.hero.submitButton.emoji}</span>
-                {radioPage.hero.submitButton.text}
-              </a>
+              {submission.external ? (
+                <a
+                  href={submission.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold bg-accent text-background hover:bg-accent-dim transition-all text-center"
+                >
+                  <span className="text-lg">{radioPage.hero.submitButton.emoji}</span>
+                  {radioPage.hero.submitButton.text}
+                </a>
+              ) : (
+                <Link
+                  href={submission.href}
+                  className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold bg-accent text-background hover:bg-accent-dim transition-all text-center"
+                >
+                  <span className="text-lg">{radioPage.hero.submitButton.emoji}</span>
+                  {radioPage.hero.submitButton.text}
+                </Link>
+              )}
               <a
                 href={externalLinks.discord}
                 target="_blank"
@@ -87,7 +108,7 @@ export default function RadioPage() {
               </h2>
             </div>
             <p className="text-sm leading-relaxed text-muted">
-              BNL-01 relays approved Network status and public Discord-side activity to website surfaces. It does not control Auxchord submissions, replace the live host, or provide autonomous broadcast decisions.
+              {submission.bnlBoundary}
             </p>
           </div>
           <BNLRelayModule title="BNL-01 Broadcast Monitor" />
@@ -98,7 +119,7 @@ export default function RadioPage() {
       <section className="border-b border-border">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-12">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            {radioPage.steps.map((step) => (
+            {steps.map((step) => (
               <StepCard key={step.number} number={step.number} title={step.title} description={step.description} />
             ))}
           </div>
@@ -117,7 +138,7 @@ export default function RadioPage() {
 
           <div className="border border-border bg-surface p-6 max-w-2xl">
             <ul className="space-y-3 text-sm text-muted leading-relaxed">
-              {radioPage.rules.map((rule, i) => (
+              {rules.map((rule, i) => (
                 <li key={i} className="flex items-start gap-2">
                   <span className="text-accent mt-0.5">▸</span>
                   {rule}

@@ -1,9 +1,11 @@
 import Link from "next/link";
 import Image from "next/image";
 import { siteConfig, externalLinks } from "@/content";
+import { getRadioSubmissionRouting } from "@/lib/radio-submission-routing";
 
 export function Footer() {
   const currentYear = new Date().getFullYear();
+  const submission = getRadioSubmissionRouting();
 
   return (
     <footer className="border-t border-border bg-background pb-10">
@@ -80,9 +82,15 @@ export function Footer() {
                 </a>
               </li>
               <li>
-                <a href={externalLinks.auxchord} target="_blank" rel="noopener noreferrer" className="text-sm text-foreground/70 hover:text-accent transition-colors">
-                  Auxchord
-                </a>
+                {submission.external ? (
+                  <a href={submission.href} target="_blank" rel="noopener noreferrer" className="text-sm text-foreground/70 hover:text-accent transition-colors">
+                    {submission.resourceLabel}
+                  </a>
+                ) : (
+                  <Link href={submission.href} className="text-sm text-foreground/70 hover:text-accent transition-colors">
+                    {submission.resourceLabel}
+                  </Link>
+                )}
               </li>
               <li>
                 <a href={externalLinks.tiktok} target="_blank" rel="noopener noreferrer" className="text-sm text-foreground/70 hover:text-accent transition-colors">
@@ -103,7 +111,7 @@ export function Footer() {
               Network
             </h4>
             <p className="text-sm text-muted leading-relaxed">
-              BARCODE Radio submissions run through Auxchord. Discord is the community hub. Terminal is the Network archive/interface.
+              {submission.footerSummary}
             </p>
           </div>
         </div>

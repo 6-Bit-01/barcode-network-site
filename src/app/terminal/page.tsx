@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { databasePage, externalLinks, radioPage, releasesPage } from "@/content";
 import { getDatabaseAggregateStats } from "@/lib/database-stats";
+import { getRadioSubmissionRouting } from "@/lib/radio-submission-routing";
 import { getAllTransmissions } from "@/lib/transmissions";
 import { TerminalShell } from "./terminal-shell";
 
@@ -20,6 +21,7 @@ function slugify(name: string) {
 }
 
 export default function TerminalPage() {
+  const submission = getRadioSubmissionRouting();
   const archive = {
     dossiers: databasePage.entries.map((entry) => ({
       id: entry.id,
@@ -48,11 +50,13 @@ export default function TerminalPage() {
       description: release.description,
     })),
     radio: {
-      description: `${radioPage.hero.heading1} ${radioPage.hero.heading2} is the weekly live broadcast. Submissions go through Auxchord and the show routes original music into a public live session.`,
+      description: submission.terminalDescription,
       schedule: radioPage.schedule,
       links: {
         radio: "/radio",
-        submit: externalLinks.auxchord,
+        submit: submission.href,
+        submitLabel: submission.submitLabel,
+        submitExternal: submission.external,
         discord: externalLinks.discord,
         live: externalLinks.tiktokLive,
       },

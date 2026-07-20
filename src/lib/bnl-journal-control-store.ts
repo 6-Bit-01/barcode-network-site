@@ -473,7 +473,10 @@ local recentRaw = redis.call("GET", recentRunsKey)
 local previousRuns = recentRaw and cjson.decode(recentRaw) or {}
 local recentRuns = { run }
 for _, previous in ipairs(previousRuns) do
-  if previous.runId ~= run.runId and #recentRuns < maxRecent then
+  local preserveFailureForBackoff = run.state == "backoff" and (
+    previous.state == "held" or previous.state == "delivery_failed"
+  )
+  if #recentRuns < maxRecent and (previous.runId ~= run.runId or preserveFailureForBackoff) then
     table.insert(recentRuns, previous)
   end
 end

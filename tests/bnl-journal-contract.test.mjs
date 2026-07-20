@@ -842,6 +842,13 @@ test("journal pages canonicalize explicit All and mismatched detail filters", as
   );
 });
 
+test("public Journal dates use the Pacific publication day across a UTC rollover", () => {
+  assert.equal(
+    article.formatJournalDate("2026-07-20T04:52:03Z"),
+    "July 19, 2026",
+  );
+});
+
 test("React server rendering exposes only display data and escapes hostile text", () => {
   const entry = {
     ...makeEntry({

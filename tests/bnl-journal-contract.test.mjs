@@ -8,7 +8,7 @@ import { createRequire } from "node:module";
 import { renderToStaticMarkup } from "react-dom/server";
 
 const require = createRequire(import.meta.url);
-function loadTs(file, mocks = {}) {
+function loadTs(file, mocks = {}, globals = {}) {
   let code = ts.transpileModule(awaitFs(file), {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
@@ -56,10 +56,33 @@ function loadTs(file, mocks = {}) {
       URL,
       URLSearchParams,
       console,
+      ...globals,
     },
     { filename: file },
   );
   return cjsModule.exports;
+}
+function intlWithDefaultTimeZone(defaultTimeZone) {
+  function DateTimeFormat(locales, options = {}) {
+    return new Intl.DateTimeFormat(locales, {
+      ...options,
+      timeZone: options.timeZone ?? defaultTimeZone,
+    });
+  }
+
+  return { DateTimeFormat };
+}
+function loadJournalDateComponent({
+  hydrated = false,
+  defaultTimeZone = "UTC",
+} = {}) {
+  return loadTs(
+    "src/components/journal/JournalDate.tsx",
+    {
+      react: { ...React, useSyncExternalStore: () => hydrated },
+    },
+    { Intl: intlWithDefaultTimeZone(defaultTimeZone) },
+  );
 }
 function awaitFs(file) {
   return requireFs().readFileSync(file, "utf8");
@@ -74,10 +97,12 @@ function awaitImport(id) {
 const contract = loadTs("src/lib/bnl-journal-contract.ts");
 const navigation = loadTs("src/lib/bnl-journal-navigation.ts");
 const retry = loadTs("src/components/journal/JournalRetryButton.tsx");
+const journalDate = loadTs("src/components/journal/JournalDate.tsx");
 const article = loadTs("src/components/journal/JournalArticle.tsx", {
   "@/lib/bnl-journal-store": {},
   "@/lib/bnl-journal-navigation": navigation,
   "@/components/journal/JournalRetryButton": retry,
+  "@/components/journal/JournalDate": journalDate,
 });
 const routeMod = loadTs("src/app/api/bnl/journal/route.ts", {
   "@/lib/bnl-journal-contract": contract,
@@ -842,11 +867,41 @@ test("journal pages canonicalize explicit All and mismatched detail filters", as
   );
 });
 
-test("public Journal dates use the Pacific publication day across a UTC rollover", () => {
-  assert.equal(
-    article.formatJournalDate("2026-07-20T04:52:03Z"),
-    "July 19, 2026",
+test("public Journal dates resolve in the viewer's browser timezone after hydration", () => {
+  const value = "2026-07-20T04:52:03Z";
+  const serverHtml = renderToStaticMarkup(
+    React.createElement(
+      loadJournalDateComponent({
+        hydrated: false,
+        defaultTimeZone: "America/Los_Angeles",
+      }).JournalDate,
+      { value },
+    ),
   );
+  const pacificHtml = renderToStaticMarkup(
+    React.createElement(
+      loadJournalDateComponent({
+        hydrated: true,
+        defaultTimeZone: "America/Los_Angeles",
+      }).JournalDate,
+      { value },
+    ),
+  );
+  const tokyoHtml = renderToStaticMarkup(
+    React.createElement(
+      loadJournalDateComponent({
+        hydrated: true,
+        defaultTimeZone: "Asia/Tokyo",
+      }).JournalDate,
+      { value },
+    ),
+  );
+
+  assert.match(serverHtml, /July 20, 2026/);
+  assert.match(pacificHtml, /July 19, 2026/);
+  assert.match(tokyoHtml, /July 20, 2026/);
+  assert.match(pacificHtml, /datetime="2026-07-20T04:52:03Z"/i);
+  assert.equal(journalDate.formatJournalDate("not-a-date"), "Date unavailable");
 });
 
 test("React server rendering exposes only display data and escapes hostile text", () => {

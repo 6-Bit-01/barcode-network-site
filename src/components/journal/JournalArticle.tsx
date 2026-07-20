@@ -11,7 +11,7 @@ export function formatJournalDate(value: string) {
     month: "long",
     day: "numeric",
     year: "numeric",
-    timeZone: "UTC",
+    timeZone: "America/Los_Angeles",
   }).format(new Date(value));
 }
 export function JournalUnavailable() {

@@ -404,7 +404,13 @@ test("Terminal BNL public experience uses bounded readers, commands, timestamps,
   assert.match(page, /entryKind: entry\.entryKind \?\? "manual"/);
   assert.doesNotMatch(page, /sourceClass|trigger|adminNote|sections|hash|sourceWindow|memory/i);
 
-  assert.match(terminal, /"BNL-01", "RELAYS", "BNL LOG", "BNL HUB"/);
+  assert.match(terminal, /const primaryButtons = \["HELP", "MAP", "ORIGINS"\]/);
+  assert.match(terminal, /const bnlButtons = \[\{ label: "STATUS", command: "STATUS" \}, \{ label: "TRACE", command: "BNL-01" \}, \{ label: "RELAYS", command: "RELAYS" \}, \{ label: "JOURNAL", command: "BNL LOG" \}, \{ label: "HUB", command: "BNL HUB" \}\]/);
+  assert.match(terminal, /const archiveButtons = \["DATABASE", "WHOIS 6 BIT", "TRANSMISSIONS", "RADIO", "RELEASES", "CLEAR", "LOCK"\]/);
+  assert.match(terminal, /<nav aria-label="Archive command shortcuts"/);
+  assert.match(terminal, /role="group" aria-labelledby="archive-index-bnl"/);
+  assert.match(terminal, /id="archive-index-bnl"[^>]*>BNL-01<\/p>/);
+  assert.match(terminal, /bnlButtons\.map\(\(item\) => <button type="button" key=\{item\.command\} onClick=\{\(\) => execute\(item\.command\)\}/);
   assert.match(terminal, /command === "TRACE BNL-01" \|\| command === "BNL-01" \|\| command === "BNL"\) return pushLive\(raw, "trace"\)/);
   assert.match(terminal, /command === "LIST RELAYS" \|\| command === "RELAYS"/);
   assert.match(terminal, /command === "BNL LOG"/);

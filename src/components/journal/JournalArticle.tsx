@@ -5,15 +5,7 @@ import {
   type JournalArchiveFilter,
 } from "@/lib/bnl-journal-navigation";
 import { JournalRetryButton } from "@/components/journal/JournalRetryButton";
-
-export function formatJournalDate(value: string) {
-  return new Intl.DateTimeFormat("en", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(value));
-}
+import { JournalDate } from "@/components/journal/JournalDate";
 export function JournalUnavailable() {
   return (
     <section className="mx-auto max-w-3xl px-4 py-24 sm:px-6">
@@ -68,12 +60,10 @@ export function JournalArticle({
         </p>
         <JournalKindBadge entry={entry} />
       </div>
-      <time
+      <JournalDate
         className="mt-3 block font-mono text-xs uppercase tracking-widest text-muted"
-        dateTime={entry.publishedAt}
-      >
-        {formatJournalDate(entry.publishedAt)}
-      </time>
+        value={entry.publishedAt}
+      />
       <Title className="mt-5 text-3xl font-black leading-tight tracking-tight text-foreground sm:text-5xl">
         {entry.title}
       </Title>
@@ -116,12 +106,10 @@ export function JournalArchiveCard({
       className="block border border-border bg-background/60 p-4 transition-colors hover:border-accent/50"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <time
+        <JournalDate
           className="font-mono text-[11px] uppercase tracking-widest text-foreground/60"
-          dateTime={entry.publishedAt}
-        >
-          {formatJournalDate(entry.publishedAt)}
-        </time>
+          value={entry.publishedAt}
+        />
         <JournalKindBadge entry={entry} />
       </div>
       <h2 className="mt-2 text-base font-bold text-foreground">

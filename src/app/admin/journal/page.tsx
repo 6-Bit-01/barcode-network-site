@@ -602,7 +602,10 @@ export default function AdminJournalPage() {
           <div className="mt-4 space-y-3">
             {state?.recentRuns.length ? (
               state.recentRuns.map((run) => (
-                <div key={run.runId} className="border border-border p-3 text-sm">
+                <div
+                  key={`${run.runId}:${run.state}:${run.occurredAt}`}
+                  className="border border-border p-3 text-sm"
+                >
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="font-mono text-xs text-foreground">{run.runId}</p>
@@ -615,7 +618,7 @@ export default function AdminJournalPage() {
                     </div>
                     <StatusPill value={run.state} />
                   </div>
-                  {run.entryId && (
+                  {run.state === "published" && run.entryId && (
                     <Link
                       className="mt-2 inline-block text-xs text-accent"
                       href={`/journal/${encodeURIComponent(run.entryId)}`}

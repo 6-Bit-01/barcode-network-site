@@ -16,7 +16,10 @@ export type ArchiveBNLJournalEntry = { entryId: string; entryKind: string; title
 export type ArchivePayload = { dossiers: ArchiveDossier[]; transmissions: ArchiveTransmission[]; releases: ArchiveRelease[]; radio: ArchiveRadio; stats: ArchiveStats; bnl: { relays: ArchiveBNLRelay[]; relaysUnavailable: boolean; journalEntries: ArchiveBNLJournalEntry[]; journalUnavailable: boolean } };
 
 type Entry = { id: number; command?: string; node?: ReactNode; variant?: "normal" | "breach"; liveView?: "status" | "trace" };
-const buttons = ["HELP", "MAP", "ORIGINS", "STATUS", "BNL-01", "RELAYS", "BNL LOG", "BNL HUB", "DATABASE", "WHOIS 6 BIT", "TRANSMISSIONS", "RADIO", "RELEASES", "CLEAR", "LOCK"];
+const primaryButtons = ["HELP", "MAP", "ORIGINS"];
+const bnlButtons = [{ label: "STATUS", command: "STATUS" }, { label: "TRACE", command: "BNL-01" }, { label: "RELAYS", command: "RELAYS" }, { label: "JOURNAL", command: "BNL LOG" }, { label: "HUB", command: "BNL HUB" }];
+const archiveButtons = ["DATABASE", "WHOIS 6 BIT", "TRANSMISSIONS", "RADIO", "RELEASES", "CLEAR", "LOCK"];
+const commandButtonClass = "shrink-0 border border-border bg-background/50 px-3 py-2 text-left text-xs uppercase tracking-wider text-foreground/75 transition hover:border-accent/40 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/60";
 const normalize = (value: string) => value.trim().replace(/\s+/g, " ").toUpperCase();
 const seq = () => Math.floor(Date.now() / 1000).toString(16).toUpperCase();
 
@@ -95,7 +98,19 @@ export function NetworkArchiveTerminal({ archive, restored, onLock }: { archive:
       <div className="flex flex-wrap items-center gap-3 text-xs uppercase tracking-widest"><span className="text-muted">PUBLIC OBSERVER</span><span className="flex items-center gap-2 text-accent"><span className="h-2 w-2 rounded-full bg-accent animate-status-blink" />BNL {loading ? "SYNC" : bnl.status}</span><button onClick={() => execute("LOCK")} className="border border-border px-3 py-2 text-muted hover:border-accent/40 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/60">Lock Session</button></div>
     </div>
     <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden md:grid-cols-[240px_minmax(0,1fr)] md:grid-rows-1">
-      <aside className="flex-none overflow-hidden border-b border-border bg-surface/30 p-3 md:min-h-0 md:overflow-y-auto md:border-b-0 md:border-r"><p className="mb-3 text-xs uppercase tracking-[0.3em] text-muted">Archive Index</p><div className="flex gap-2 overflow-x-auto pb-2 md:flex-col md:overflow-visible md:pb-0">{buttons.map((cmd) => <button key={cmd} onClick={() => execute(cmd)} className="shrink-0 border border-border bg-background/50 px-3 py-2 text-left text-xs uppercase tracking-wider text-foreground/75 transition hover:border-accent/40 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/60">{cmd}</button>)}</div></aside>
+      <aside className="flex-none overflow-hidden border-b border-border bg-surface/30 p-3 md:min-h-0 md:overflow-y-auto md:border-b-0 md:border-r">
+        <p className="mb-3 text-xs uppercase tracking-[0.3em] text-muted">Archive Index</p>
+        <nav aria-label="Archive command shortcuts" className="flex gap-2 overflow-x-auto pb-2 md:flex-col md:overflow-visible md:pb-0">
+          {primaryButtons.map((command) => <button type="button" key={command} onClick={() => execute(command)} className={commandButtonClass}>{command}</button>)}
+          <div role="group" aria-labelledby="archive-index-bnl" className="shrink-0 border border-accent/25 bg-background/30 p-2 md:w-full">
+            <p id="archive-index-bnl" className="mb-2 text-[10px] uppercase tracking-[0.3em] text-accent">BNL-01</p>
+            <div className="flex gap-2 md:flex-col">
+              {bnlButtons.map((item) => <button type="button" key={item.command} onClick={() => execute(item.command)} className={commandButtonClass}>{item.label}</button>)}
+            </div>
+          </div>
+          {archiveButtons.map((command) => <button type="button" key={command} onClick={() => execute(command)} className={commandButtonClass}>{command}</button>)}
+        </nav>
+      </aside>
       <section className="flex min-h-0 min-w-0 flex-col overflow-hidden" aria-label="Terminal output">
         <div ref={outputRef} aria-live="polite" className="terminal-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain p-4 text-sm leading-relaxed sm:p-6">
           {entries.map((entry) => <section key={entry.id} className={`archive-output-reveal border-l pl-4 ${entry.variant === "breach" ? "border-red-500/60 bg-red-950/10" : "border-accent/25"}`}>{entry.command && <p className="mb-2 text-xs uppercase tracking-widest text-accent/80">[{seq()}] &gt; {entry.command}</p>}{entry.liveView === "trace" ? <TraceBNL data={bnl} loading={loading} dossier={bnlDossier} discordHref={archive.radio.links.discord} /> : entry.liveView === "status" ? <Status data={bnl} loading={loading} dossier={bnlDossier} /> : entry.node}</section>)}

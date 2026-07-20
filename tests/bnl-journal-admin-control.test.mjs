@@ -75,7 +75,12 @@ class FakeRedis {
       const previousRuns = [...(this.kv.get(keys[1]) ?? [])];
       const recentRuns = [
         run,
-        ...previousRuns.filter((item) => item.runId !== run.runId),
+        ...previousRuns.filter(
+          (item) =>
+            item.runId !== run.runId ||
+            (run.state === "backoff" &&
+              (item.state === "held" || item.state === "delivery_failed")),
+        ),
       ].slice(0, Number(args[2]));
       const previousTelemetry = { ...(this.kv.get(keys[2]) ?? {}) };
       const telemetry = {
@@ -268,6 +273,82 @@ test("run requests deduplicate by cadence, claim atomically, and clear on termin
   assert.equal(final.telemetry.lastRun.entryId, "journal-daily-2026-07-18");
 });
 
+test("backoff reporting retains the failure diagnostic it is waiting on", async () => {
+  for (const failureState of ["held", "delivery_failed"]) {
+    const redis = new FakeRedis();
+    const runId = `daily-${failureState}-2026-07-18`;
+    const entryId = `journal-${failureState}-2026-07-18`;
+
+    await store.reportJournalRun(
+      {
+        runId,
+        cadence: "daily",
+        state: failureState,
+        occurredAt: "2026-07-19T02:07:57.000Z",
+        entryId,
+        sourceCount: 204,
+        detail: `${failureState}_root_cause`,
+      },
+      redis,
+    );
+    await store.reportJournalRun(
+      {
+        runId,
+        cadence: "daily",
+        state: "backoff",
+        occurredAt: "2026-07-19T02:20:42.000Z",
+        entryId,
+        sourceCount: 204,
+        detail: "retry_after_2026-07-19T03:07:57Z",
+      },
+      redis,
+    );
+
+    let state = await store.readJournalControlState(redis);
+    assert.deepEqual(
+      state.recentRuns.map((run) => run.state),
+      ["backoff", failureState],
+    );
+    assert.equal(state.recentRuns[1].detail, `${failureState}_root_cause`);
+
+    await store.reportJournalRun(
+      {
+        runId,
+        cadence: "daily",
+        state: "backoff",
+        occurredAt: "2026-07-19T02:35:42.000Z",
+        entryId,
+        sourceCount: 204,
+        detail: "retry_after_2026-07-19T03:07:57Z",
+      },
+      redis,
+    );
+    state = await store.readJournalControlState(redis);
+    assert.deepEqual(
+      state.recentRuns.map((run) => run.state),
+      ["backoff", failureState],
+    );
+
+    await store.reportJournalRun(
+      {
+        runId,
+        cadence: "daily",
+        state: "published",
+        occurredAt: "2026-07-19T03:08:00.000Z",
+        entryId,
+        sourceCount: 204,
+        detail: "Published normally.",
+      },
+      redis,
+    );
+    state = await store.readJournalControlState(redis);
+    assert.deepEqual(
+      state.recentRuns.map((run) => run.state),
+      ["published"],
+    );
+  }
+});
+
 test("admin and bot Journal routes enforce auth and Redis-required control writes", () => {
   const adminRoute = readFileSync("src/app/api/admin/journal/route.ts", "utf8");
   const botRoute = readFileSync(
@@ -275,6 +356,14 @@ test("admin and bot Journal routes enforce auth and Redis-required control write
     "utf8",
   );
   const adminPage = readFileSync("src/app/admin/page.tsx", "utf8");
+  const journalAdminPage = readFileSync(
+    "src/app/admin/journal/page.tsx",
+    "utf8",
+  );
+  const controlStoreSource = readFileSync(
+    "src/lib/bnl-journal-control-store.ts",
+    "utf8",
+  );
   assert.match(adminRoute, /verifyAdminToken/);
   assert.match(adminRoute, /if \(!redis\)/);
   assert.match(adminRoute, /persistence_unavailable/);
@@ -283,6 +372,13 @@ test("admin and bot Journal routes enforce auth and Redis-required control write
   assert.match(botRoute, /reportJournalRun/);
   assert.match(botRoute, /writeJournalTelemetry/);
   assert.match(adminPage, /href="\/admin\/journal"/);
+  assert.match(
+    journalAdminPage,
+    /run\.state === "published" && run\.entryId/,
+  );
+  assert.match(controlStoreSource, /preserveFailureForBackoff/);
+  assert.match(controlStoreSource, /previous\.state == "held"/);
+  assert.match(controlStoreSource, /previous\.state == "delivery_failed"/);
 });
 
 test("Journal control routes return 401 without auth and 503 without Redis", async () => {

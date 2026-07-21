@@ -304,7 +304,7 @@ class FakeRedis {
 }
 const store = loadTs("src/lib/bnl-journal-store.ts");
 
-test("contract executes bot-compatible validation, word counts, hashes, auth, and exact envelope boundary", () => {
+test("contract executes bot-compatible validation, hashes, auth, and exact envelope boundary", () => {
   assert.equal(
     contract.computeBNLJournalContentHash({
       title: "Café Signal",
@@ -318,13 +318,6 @@ test("contract executes bot-compatible validation, word counts, hashes, auth, an
     // separators=(",", ":"), ensure_ascii=False) hash path.
     "5d747286ca4e373b86763a506b9e95e8cfde9904148b2ec08a4116e364f59ad1",
   );
-  const e250 = makeEntry({
-    title: "Title",
-    excerpt: "Excerpt",
-    sections: [{ heading: "Heading", body: words(247) }],
-  });
-  assert.equal(contract.countJournalWords(e250), 250);
-  assert.equal(contract.validateBNLJournalPayload(env(e250)).ok, true);
   for (const entryKind of ["daily", "weekly", "manual"]) {
     const classified = makeEntry({ entryKind });
     assert.equal(
@@ -344,31 +337,6 @@ test("contract executes bot-compatible validation, word counts, hashes, auth, an
     ).reason,
     "invalid_entry_kind",
   );
-  const e500 = makeEntry({
-    title: "Title",
-    excerpt: "Excerpt",
-    sections: [{ heading: "Heading", body: words(497) }],
-  });
-  assert.equal(contract.validateBNLJournalPayload(env(e500)).ok, true);
-  const e249 = makeEntry({
-    title: "Title",
-    excerpt: "Excerpt",
-    sections: [{ heading: "Heading", body: words(246) }],
-  });
-  assert.equal(
-    contract.validateBNLJournalPayload(env(e249)).reason,
-    "invalid_word_count",
-  );
-  const e501 = makeEntry({
-    title: "Title",
-    excerpt: "Excerpt",
-    sections: [{ heading: "Heading", body: words(498) }],
-  });
-  assert.equal(
-    contract.validateBNLJournalPayload(env(e501)).reason,
-    "invalid_word_count",
-  );
-  assert.equal(contract.countJournalWords(makeEntry()), 271);
   assert.equal(
     contract.validateBNLJournalPayload(env(makeEntry({ extra: "private" }))).ok,
     false,
@@ -394,7 +362,23 @@ test("contract executes bot-compatible validation, word counts, hashes, auth, an
   assert.equal(contract.authenticateBNLJournalRequest("bad", "secret"), false);
 });
 
-test("route executes auth, raw byte cap, validation, and sanitized success/error responses", async () => {
+test("contract accepts short and more-than-500-word Journal entries", () => {
+  const short = makeEntry({
+    title: "Quiet day",
+    excerpt: "A brief record.",
+    sections: [{ heading: "Observation", body: "The room stayed quiet." }],
+  });
+  assert.equal(contract.validateBNLJournalPayload(env(short)).ok, true);
+
+  const long = makeEntry({
+    title: "Full day",
+    excerpt: "The complete record needed more room.",
+    sections: [{ heading: "Observation", body: words(700) }],
+  });
+  assert.equal(contract.validateBNLJournalPayload(env(long)).ok, true);
+});
+
+test("route accepts short and long valid entries while enforcing the raw byte cap", async () => {
   process.env.BNL_API_KEY = "secret";
   const body = JSON.stringify(env());
   const ok = await routeMod.POST(
@@ -406,6 +390,41 @@ test("route executes auth, raw byte cap, validation, and sanitized success/error
   );
   assert.equal(ok.status, 200);
   assert.equal(ok.headers.get("cache-control"), "no-store");
+  const shortBody = JSON.stringify(
+    env(
+      makeEntry({
+        sections: [{ heading: "Brief record", body: "The room stayed quiet." }],
+      }),
+    ),
+  );
+  const short = await routeMod.POST(
+    new Request("https://x.test/api/bnl/journal", {
+      method: "POST",
+      headers: { "x-api-key": "secret", "content-type": "application/json" },
+      body: shortBody,
+    }),
+  );
+  assert.equal(short.status, 200);
+  const longBody = JSON.stringify(
+    env(
+      makeEntry({
+        sections: [{ heading: "Full record", body: words(700) }],
+      }),
+    ),
+  );
+  assert.ok(
+    Buffer.byteLength(longBody, "utf8") <
+      contract.BNL_JOURNAL_MAX_PAYLOAD_BYTES,
+  );
+  const long = await routeMod.POST(
+    new Request("https://x.test/api/bnl/journal", {
+      method: "POST",
+      headers: { "x-api-key": "secret", "content-type": "application/json" },
+      body: longBody,
+    }),
+  );
+  assert.equal(long.status, 200);
+  assert.equal(contract.BNL_JOURNAL_MAX_PAYLOAD_BYTES, 24_000);
   const unauth = await routeMod.POST(
     new Request("https://x.test", {
       method: "POST",
@@ -414,14 +433,47 @@ test("route executes auth, raw byte cap, validation, and sanitized success/error
     }),
   );
   assert.equal(unauth.status, 401);
-  const huge = await routeMod.POST(
+  const atLimitBody = `${body}${" ".repeat(
+    contract.BNL_JOURNAL_MAX_PAYLOAD_BYTES - Buffer.byteLength(body, "utf8"),
+  )}`;
+  assert.equal(
+    Buffer.byteLength(atLimitBody, "utf8"),
+    contract.BNL_JOURNAL_MAX_PAYLOAD_BYTES,
+  );
+  const atLimit = await routeMod.POST(
     new Request("https://x.test", {
       method: "POST",
       headers: { "x-api-key": "secret", "content-type": "application/json" },
-      body: `${body}${" ".repeat(contract.BNL_JOURNAL_MAX_PAYLOAD_BYTES)}`,
+      body: atLimitBody,
     }),
   );
-  assert.equal(huge.status, 400);
+  assert.equal(atLimit.status, 200);
+  const overLimit = await routeMod.POST(
+    new Request("https://x.test", {
+      method: "POST",
+      headers: { "x-api-key": "secret", "content-type": "application/json" },
+      body: `${atLimitBody} `,
+    }),
+  );
+  assert.equal(overLimit.status, 400);
+
+  const multibyteBody = JSON.stringify(
+    env(
+      makeEntry({
+        title: "Café signal",
+        sections: [{ heading: "Résumé", body: "é".repeat(1_000) }],
+      }),
+    ),
+  );
+  assert.ok(Buffer.byteLength(multibyteBody, "utf8") > multibyteBody.length);
+  const multibyte = await routeMod.POST(
+    new Request("https://x.test", {
+      method: "POST",
+      headers: { "x-api-key": "secret", "content-type": "application/json" },
+      body: multibyteBody,
+    }),
+  );
+  assert.equal(multibyte.status, 200);
 });
 
 test("store executes atomic publication, idempotent self-repair, conflicts, bounded paging, and neighbors", async () => {

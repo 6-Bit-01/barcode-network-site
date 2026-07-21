@@ -46,19 +46,6 @@ function boundedString(value: unknown, max: number) {
     typeof value === "string" && safePublicString(value) && value.length <= max
   );
 }
-export function countJournalWords(
-  entry: Pick<BNLJournalEntry, "title" | "excerpt" | "sections">,
-) {
-  return (
-    [
-      entry.title,
-      entry.excerpt,
-      ...entry.sections.flatMap((s) => [s.heading, s.body]),
-    ]
-      .join(" ")
-      .match(/[\p{L}\p{N}_]+/gu)?.length ?? 0
-  );
-}
 export function canonicalJSON(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJSON).join(",")}]`;
   if (value && typeof value === "object")
@@ -172,9 +159,6 @@ export function validateBNLJournalPayload(
   )
     return { ok: false, reason: "invalid_timestamp" };
   const normalized = entry as unknown as BNLJournalEntry;
-  const words = countJournalWords(normalized);
-  if (words < 250 || words > 500)
-    return { ok: false, reason: "invalid_word_count" };
   if (
     typeof entry.contentHash !== "string" ||
     !HASH.test(entry.contentHash) ||

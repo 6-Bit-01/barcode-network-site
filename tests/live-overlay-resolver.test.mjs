@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { buildWheelSegments, derangedWheelCandidateOrder, detectMaterialPlaybackSeek, estimateOneWayNetworkTransitMs, playbackCorrectionTarget, projectObservedPlaybackTime, resolveLiveOverlayScene, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, serverStampTikTokSync, serverStampYouTubeSync, shouldCorrectPlaybackDrift, updateTransitEstimateMs, youtubePresentationFromUrl, WHEEL_RIGHT_POINTER_ANGLE_DEGREES, wheelFinalRotationForSegment, wheelFinalRotationForSlice, wheelSegmentAtPointer, wheelSliceIndexAtPointer, wheelUprightLabelRotationDegrees } from "../src/lib/live-overlay-resolver.ts";
 
 const session = { sessionId: "s1", status: "open", queueOpen: true, wheelSpinsOwed: 0, sponsorBreakStatus: "not_due", broadcastPhase: "broadcast_active" };
@@ -307,6 +307,35 @@ assert.equal(launched.mode, "wheel_ready", "launched wheel resolves to ready sce
 assert.equal(launched.wheelCeremony?.candidateCount, 2, "ready scene exposes safe eligible candidate count");
 assert.equal(launched.automatic, false, "launched wheel is host-controlled visual state");
 
+const candidateCountRegressions = [
+  ...Array.from({ length: 32 }, (_, index) => index + 1),
+  44,
+];
+for (const candidateCount of candidateCountRegressions) {
+  const candidateCountWheel = resolveLiveOverlayScene({
+    currentSession: { ...session, wheelSpinsOwed: 1 },
+    overlayState: { wheelCeremonyStatus: "ready", wheelOverlayActive: true, wheelCeremonyStartedAt: "2026-07-23T00:00:00.000Z" },
+    wheelCandidates: Array.from({ length: candidateCount }, (_, index) => ({
+      id: `candidate-${index + 1}`,
+      artistName: `Candidate ${index + 1}`,
+      trackTitle: `Track ${index + 1}`,
+      trackIds: [`track-${index + 1}`],
+      trackCount: 1,
+      tracks: [{
+        id: `track-${index + 1}`,
+        artistName: `Candidate ${index + 1}`,
+        trackTitle: `Track ${index + 1}`,
+      }],
+    })),
+  });
+  const visibleCandidateCount = Math.min(candidateCount, 32);
+  assert.equal(candidateCountWheel.mode, "wheel_ready", `${candidateCount}-candidate wheel remains renderable`);
+  assert.equal(candidateCountWheel.wheelCeremony?.candidateCount, candidateCount, `${candidateCount} candidates survive the complete resolver scene`);
+  assert.equal(candidateCountWheel.wheelCeremony?.displayCandidates.length, visibleCandidateCount, `${candidateCount}-candidate wheel preserves the July 17 visible-candidate contract`);
+  assert.equal(candidateCountWheel.wheelCeremony?.hiddenCandidateCount, candidateCount - visibleCandidateCount, `${candidateCount}-candidate wheel reports every candidate beyond the established 32-slice display bound`);
+  assert.equal(candidateCountWheel.wheelCeremony?.displayCandidates.every((candidate) => candidate.tracks?.length === 1), true, `${candidateCount}-candidate grouped wheel preserves nested track data at every visible array position`);
+}
+
 const groupedCandidate = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "ready", wheelOverlayActive: true, wheelCeremonySeed: "grouped-a" }, wheelCandidates: [{ id: "person:melanie", artistName: "Melanie", trackTitle: "3 eligible tracks", trackIds: ["m1", "m2", "m3"], trackCount: 3, tracks: [{ id: "m1", artistName: "Melanie", trackTitle: "First" }, { id: "m2", artistName: "Melanie", trackTitle: "Second" }, { id: "m3", artistName: "Melanie", trackTitle: "Third" }] }], nowPlaying: spotifyTrack });
 assert.equal(groupedCandidate.wheelCeremony?.candidateCount, 1, "grouped person appears once on the wheel");
 assert.equal(groupedCandidate.wheelCeremony?.displayCandidates[0]?.trackCount, 3, "grouped wheel entry preserves eligible track count");
@@ -398,6 +427,17 @@ const sourceCss = readFileSync("src/app/overlay/live/overlay-live.css", "utf8");
 const sourcePublicOverlayRoute = readFileSync("src/app/api/overlay/live/route.ts", "utf8");
 const sourceAdminOverlayRoute = readFileSync("src/app/api/admin/overlay/live/route.ts", "utf8");
 const sourceLiveOverlay = readFileSync("src/lib/live-overlay.ts", "utf8");
+const wheelAudioListStart = sourceLiveOverlay.indexOf("const WHEEL_AUDIO_FILES = [");
+const wheelAudioListEnd = sourceLiveOverlay.indexOf("];", wheelAudioListStart);
+const wheelAudioListSource = sourceLiveOverlay.slice(wheelAudioListStart, wheelAudioListEnd);
+const wheelAudioPaths = [...wheelAudioListSource.matchAll(/"(\/audio\/wheel\/[^"]+\.mp3)"/g)].map((match) => match[1]);
+assert.ok(wheelAudioPaths.length > 0, "wheel spin audio list remains populated");
+for (const audioPath of wheelAudioPaths) {
+  assert.equal(existsSync(`public${decodeURIComponent(audioPath)}`), true, `wheel spin audio exists for ${audioPath}`);
+}
+assert.equal(existsSync("src/lib/live-overlay-client-recovery.ts"), false, "the unproven client scene validator remains absent after restoring the July 17 receiver");
+assert.equal(sourceReceiver.includes("extractOverlayScene"), false, "the receiver does not reintroduce positional candidate validation");
+assert.equal(sourceReceiver.includes("const nextScene = next?.scene ?? next"), true, "the restored receiver accepts the server-resolved scene without treating array indexes as validation depth");
 const adminPostSource = sourceAdminOverlayRoute.slice(sourceAdminOverlayRoute.indexOf("export async function POST"));
 assert.equal(adminPostSource.includes("const serverRequestReceivedAt = new Date()") && adminPostSource.indexOf("const serverRequestReceivedAt = new Date()") < adminPostSource.indexOf("assertAdmin"), true, "admin POST captures request receipt before auth/action processing");
 assert.equal(sourceAdminOverlayRoute.includes("X-BNL-Request-Received-At") && sourceAdminOverlayRoute.includes("X-BNL-Response-Generated-At"), true, "admin POST success/controlled responses contain timing headers");

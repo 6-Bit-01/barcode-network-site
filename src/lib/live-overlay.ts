@@ -2,7 +2,6 @@ import { Redis } from "@upstash/redis";
 import { getRadioQueueState, isWheelEligibleTrack, updateRadioTrack } from "./queue";
 import { getTrackArtworkUrl, getTrackDurationLabel, parseTikTokVideoUrl } from "./queue-types";
 import { buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateIds, resolveLiveOverlayScene, safeLiveOverlayUrl, normalizeLiveOverlaySyncCorrectionReason, serverStampLiveOverlayPlayerSync, wheelFinalRotationForSegment } from "./live-overlay-resolver";
-import { selectWheelSpinAudioPath } from "./wheel-audio";
 import { parseYouTubeVideoId } from "./track-duration";
 import type { QueueEntry, QueueSourceType } from "./queue-types";
 import type { LiveOverlayPlaybackState, LiveOverlayStateInput, LiveOverlayPlayerSync, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
@@ -78,6 +77,38 @@ export interface LiveOverlayAdminSnapshot {
 const OVERLAY_STATE_KEY = "barcode:live-overlay:state";
 const PLAYER_SYNC_KEY = "barcode:live-overlay:player-sync";
 const MAX_TEXT_LENGTH = 180;
+const WHEEL_AUDIO_FILES = [
+  "/audio/wheel/142.mp3",
+  "/audio/wheel/77.mp3",
+  "/audio/wheel/150.mp3",
+  "/audio/wheel/49.mp3",
+  "/audio/wheel/103.mp3",
+  "/audio/wheel/56.mp3",
+  "/audio/wheel/58.mp3",
+  "/audio/wheel/84.mp3",
+  "/audio/wheel/147.mp3",
+  "/audio/wheel/102.mp3",
+  "/audio/wheel/92.mp3",
+  "/audio/wheel/76.mp3",
+  "/audio/wheel/111.mp3",
+  "/audio/wheel/74.mp3",
+  "/audio/wheel/139.mp3",
+  "/audio/wheel/110.mp3",
+  "/audio/wheel/148.mp3",
+  "/audio/wheel/162.mp3",
+  "/audio/wheel/104.mp3",
+  "/audio/wheel/32%20(1).mp3",
+  "/audio/wheel/140.mp3",
+  "/audio/wheel/81.mp3",
+  "/audio/wheel/75.mp3",
+  "/audio/wheel/78.mp3",
+  "/audio/wheel/36.mp3",
+  "/audio/wheel/154.mp3",
+  "/audio/wheel/24.mp3",
+  "/audio/wheel/41.mp3",
+  "/audio/wheel/130.mp3",
+  "/audio/wheel/70.mp3",
+];
 
 let memoryOverlayState: LiveOverlayState = defaultLiveOverlayState();
 let memoryPlayerSync: LiveOverlayPlayerSync | null = null;
@@ -220,7 +251,7 @@ function randomSpinDurationMs(): number {
 }
 
 function randomWheelAudioPath(): string {
-  return selectWheelSpinAudioPath();
+  return WHEEL_AUDIO_FILES[Math.floor(Math.random() * WHEEL_AUDIO_FILES.length)] ?? WHEEL_AUDIO_FILES[0];
 }
 
 function normalizeSpinDurationMs(value: unknown): number | undefined {
@@ -258,7 +289,7 @@ function normalizeMode(value: unknown): OverlayMode {
 }
 
 function normalizeSourceType(value: unknown): LiveOverlayState["sourceType"] {
-  const sources: LiveOverlayState["sourceType"][] = ["upload", "link", "youtube", "tiktok", "soundcloud", "spotify", "apple_music", "other", "unknown"];
+  const sources: LiveOverlayState["sourceType"][] = ["upload", "link", "youtube", "tiktok", "soundcloud", "spotify", "other", "unknown"];
   return sources.includes(value as LiveOverlayState["sourceType"]) ? value as LiveOverlayState["sourceType"] : "unknown";
 }
 

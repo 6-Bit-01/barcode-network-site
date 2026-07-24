@@ -43,7 +43,7 @@ export const homePage = {
     heading: "THE CREW CAME FIRST. THE NETWORK GREW AROUND IT.",
     paragraphs: [
       "BARCODE began as a four-member digital hip-hop collective: 6 Bit, DJ Floppydisc, Cache Back, and Mac Modem. BARCODE Network grew around that original signal, connecting the music to live broadcasts, community, characters, software, and story.",
-      "6 Bit is the artist, MC, and host at the center of the public transmission; GALAKNOISE is BARCODE's music producer. BARCODE Radio is the live public square, where artists submit original music and the audience responds in real time. The people, work, and events are real; the interdimensional mythology gives what happens a larger place to live.",
+      "6 Bit is the artist, MC, and host at the center of the public transmission. BARCODE Radio is the live public square, where artists submit original music and the audience responds in real time. The people, work, and events are real; the interdimensional mythology gives what happens a larger place to live.",
     ],
   },
 

@@ -5,20 +5,22 @@ import { StatusBadge, SectionDot } from "@/components/LiveEffects";
 import { getEntryImage } from "@/lib/placeholder";
 import Image from "next/image";
 import Link from "next/link";
+import type { DatabaseEntry } from "@/content";
 
-type Entry = {
-  id: string;
-  name: string;
-  image: string;
-  category: "Entity" | "Personnel" | "Sponsor" | "Interface" | "Production";
-  status: "ACTIVE" | "INACTIVE" | "ARCHIVED" | "PENDING" | "UNKNOWN";
-  clearance: "PUBLIC" | "INTERNAL" | "RESTRICTED";
-  role: string;
-  origin: "KNOWN" | "UNKNOWN" | "UNVERIFIED" | "WITHHELD";
-  summary: string;
-  tags: string[];
-  notes: string;
-};
+type Entry = Pick<
+  DatabaseEntry,
+  | "id"
+  | "name"
+  | "image"
+  | "category"
+  | "status"
+  | "clearance"
+  | "role"
+  | "origin"
+  | "summary"
+  | "tags"
+  | "notes"
+>;
 
 function slugify(name: string) {
   return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
@@ -38,10 +40,22 @@ const clearanceColors: Record<string, string> = {
   RESTRICTED: "text-red-400/60",
 };
 
-const categoryOrder = ["Personnel", "Production", "Entity", "Interface", "Sponsor"] as const;
+const categoryOrder: DatabaseEntry["category"][] = [
+  "Personnel",
+  "Artist",
+  "Collaborator",
+  "Community",
+  "Production",
+  "Entity",
+  "Interface",
+  "Sponsor",
+];
 
-const categoryLabels: Record<string, string> = {
+const categoryLabels: Record<DatabaseEntry["category"], string> = {
   Personnel: "// PERSONNEL",
+  Artist: "// ARTISTS",
+  Collaborator: "// COLLABORATORS",
+  Community: "// COMMUNITY",
   Production: "// PRODUCTIONS",
   Entity: "// ENTITIES",
   Interface: "// INTERFACES",

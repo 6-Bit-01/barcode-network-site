@@ -7,11 +7,11 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Database — BARCODE Network",
   description:
-    "Internal dossier system. Personnel, productions, entities, interfaces — and anomalies connected to BARCODE Network.",
+    "A public dossier index of the people, entities, productions, interfaces — and anomalies connected to BARCODE Network.",
   openGraph: {
     title: "Database — BARCODE Network",
     description:
-      "Internal dossier system. Personnel, productions, entities, interfaces — and anomalies connected to BARCODE Network.",
+      "A public dossier index of the people, entities, productions, interfaces — and anomalies connected to BARCODE Network.",
   },
   alternates: { canonical: "/database" },
 };

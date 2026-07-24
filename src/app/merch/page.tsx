@@ -5,11 +5,11 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Merch — BARCODE Network",
   description:
-    "Official BARCODE Network supply line. Wearable signal, physical artifacts.",
+    "Archive of BARCODE Network's 1st Wave merch, currently out of stock, plus Observer Not Found.",
   openGraph: {
     title: "Merch — BARCODE Network",
     description:
-      "Official BARCODE Network supply line. Wearable signal, physical artifacts.",
+      "Archive of BARCODE Network's 1st Wave merch, currently out of stock, plus Observer Not Found.",
   },
   alternates: { canonical: "/merch" },
 };
@@ -35,46 +35,30 @@ export default function MerchPage() {
             <div className="flex items-center gap-3">
               <SectionDot />
               <h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted">
-                1st Wave — Supply Drop
+                1st Wave — Archived Drop
               </h2>
             </div>
-            <a
-              href={merchPage.storeUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-accent/60 hover:text-accent uppercase tracking-widest transition-colors"
-            >
-              View Store →
-            </a>
+            <span className="text-xs text-muted uppercase tracking-widest">
+              Storefront retired
+            </span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {merchPage.products.map((product) => (
-              <a
+              <article
                 key={product.name}
-                href={product.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group border border-border bg-surface hover:border-accent/40 p-6 transition-all"
+                className="border border-border bg-surface p-6"
               >
                 <span className="text-xs text-accent/50 uppercase tracking-[0.3em]">
                   {product.tag}
                 </span>
-                <h3 className="text-sm font-bold text-foreground mt-2 mb-3 group-hover:text-accent transition-colors leading-snug">
+                <h3 className="text-sm font-bold text-foreground mt-2 mb-4 leading-snug">
                   {product.name}
                 </h3>
-                <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold text-accent">
-                    {product.price}
-                  </span>
-                  <span className="text-xs text-muted line-through">
-                    {product.originalPrice}
-                  </span>
-                </div>
-                <span className="block mt-3 text-xs text-muted/40 uppercase tracking-wider group-hover:text-accent/60 transition-colors">
-                  Get it →
+                <span className="inline-flex border border-muted/30 px-2 py-1 text-xs font-bold uppercase tracking-wider text-muted">
+                  {product.status}
                 </span>
-              </a>
+              </article>
             ))}
           </div>
         </div>
@@ -155,7 +139,7 @@ export default function MerchPage() {
                 <p key={i}>&gt; {line}</p>
               ))}
               <p className="text-accent mt-4">
-                &gt; SUPPLY CHAIN ACTIVE<span className="cursor-blink">_</span>
+                &gt; FIRST WAVE ARCHIVED<span className="cursor-blink">_</span>
               </p>
             </div>
           </div>

@@ -43,7 +43,7 @@ export const homePage = {
     heading: "THE CREW CAME FIRST. THE NETWORK GREW AROUND IT.",
     paragraphs: [
       "BARCODE began as a four-member digital hip-hop collective: 6 Bit, DJ Floppydisc, Cache Back, and Mac Modem. BARCODE Network grew around that original signal, connecting the music to live broadcasts, community, characters, software, and story.",
-      "6 Bit is the artist, producer, and host at the center of the public transmission. BARCODE Radio is the live public square, where artists submit original music and the audience responds in real time. The people, work, and events are real; the interdimensional mythology gives what happens a larger place to live.",
+      "6 Bit is the artist, MC, and host at the center of the public transmission. BARCODE Radio is the live public square, where artists submit original music and the audience responds in real time. The people, work, and events are real; the interdimensional mythology gives what happens a larger place to live.",
     ],
   },
 
@@ -422,7 +422,7 @@ export const databasePage = {
     label: "// SYSTEM: DATABASE",
     heading: "Database",
     description:
-      "Internal dossier system. Personnel, entities, productions, interfaces — and anomalies connected to BARCODE Network.",
+      "A public dossier index of the people, entities, productions, interfaces — and anomalies connected to BARCODE Network.",
   },
 
   entries: [
@@ -436,11 +436,11 @@ export const databasePage = {
       identityAuthority: "barcode_controlled" as const,
       status: "ACTIVE" as const,
       clearance: "RESTRICTED" as const,
-      role: "Artist / Producer / Host",
+      role: "Artist / MC / Host",
       origin: "UNVERIFIED" as const,
       summary:
-        "6 Bit is publicly known as a hip-hop artist, producer, live host, and member of the original BARCODE collective. Network records classify him as a persistent hip-hop intelligence whose signal predates the Network itself. Several damaged files describe an ‘integration’ or ‘acquisition,’ but their timestamps conflict with the confirmed chronology and their authority remains disputed.",
-      tags: ["host", "broadcast", "radio", "artist", "producer", "ai", "core"],
+        "6 Bit is publicly known as a hip-hop artist, MC, live host, and founding member of the original BARCODE collective. Music production is handled by GALAKNOISE. Network records classify 6 Bit as a persistent hip-hop intelligence whose signal predates the Network itself. Several damaged files describe an ‘integration’ or ‘acquisition,’ but their timestamps conflict with the confirmed chronology and their authority remains disputed.",
+      tags: ["host", "broadcast", "radio", "artist", "mc", "ai", "core"],
       notes:
         "Confirmed: 6 Bit and the original BARCODE collective predate BARCODE Network. Unresolved: how the source signal persists through the current broadcast system.",
       link: "",
@@ -896,13 +896,13 @@ export const databasePage = {
       identityAuthority: "mixed_or_unclear" as const,
       status: "ACTIVE" as const,
       clearance: "RESTRICTED" as const,
-      role: "Remote Signal Producer",
+      role: "BARCODE Music Producer",
       origin: "UNKNOWN" as const,
       summary:
-        "AI Entity operating from a derelict, long-forgotten satellite. Transmits BARCODE-compatible beats from orbit, though the satellite itself is not listed in any active infrastructure registry. Signal origin coordinates fluctuate. Despite the isolation, output remains consistent with BARCODE standards.",
+        "BARCODE's music producer, operating from a derelict, long-forgotten satellite. GALAKNOISE transmits BARCODE-compatible beats from orbit, though the satellite itself is not listed in any active infrastructure registry. Signal origin coordinates fluctuate. Despite the isolation, output remains consistent with BARCODE standards.",
       tags: ["ai", "producer", "automation"],
       notes:
-        "Transmission source: unregistered orbital hardware. Signal quality stable despite infrastructure decay.",
+        "Confirmed role: BARCODE music producer. Transmission source: unregistered orbital hardware. Signal quality stable despite infrastructure decay.",
       link: "",
       files: [] as {
         name: string;
@@ -1020,7 +1020,7 @@ export const releasesPage = {
       status: "ACTIVE",
       cover: "/releases/barcode-vol-1.png",
       description:
-        "The inaugural transmission. A full-length broadcast from 6 Bit through the BARCODE Network.",
+        "BARCODE's first human-collaboration album: a full-length project led by 6 Bit and built with the artists who joined the signal.",
       links: {
         spotify: "https://open.spotify.com/album/1PywhXFBsB4jue16x8ujNs",
         apple: "https://music.apple.com/us/album/barcode-vol-1/1817414054",
@@ -1029,13 +1029,14 @@ export const releasesPage = {
       },
     },
     {
+      // Vol. 0 is the first BARCODE album; its public identity remains redacted.
       title: "[REDACTED]",
       type: "Album",
       date: "20██",
       status: "ARCHIVED",
       cover: "/releases/barcode-vol-0.png",
       description:
-        "A lost transmission. Originally broadcast, then pulled from all frequencies. Remastered fragments scheduled for re-release in two parts. Origin data classified.",
+        "A lost transmission. Originally broadcast, then pulled from all frequencies. A two-part re-release remains planned; release dates are not yet confirmed.",
       links: {},
     },
   ] as ReleaseItem[],
@@ -1054,39 +1055,29 @@ export const merchPage = {
     label: "// SUPPLY: MERCH",
     heading: "Merch",
     description:
-      "Official BARCODE Network supply line. Wearable signal, physical artifacts.",
+      "The first BARCODE merch wave remains on file as a historical supply drop. Every 1st Wave item is currently out of stock.",
   },
-
-  storeUrl: "https://www.6bithiphop.com/c/categories/1st-wave",
 
   products: [
     {
       name: "Decode The Future T-Shirt",
-      price: "$20.00",
-      originalPrice: "$25.00",
-      href: "https://www.6bithiphop.com/c/products/decode-the-future-t-shirt",
       tag: "APPAREL",
+      status: "OUT OF STOCK",
     },
     {
       name: "Neon Stream BARCODE Embroidered Hat",
-      price: "$20.00",
-      originalPrice: "$25.00",
-      href: "https://www.6bithiphop.com/c/products/neon-stream-barcode-embroidered-hat",
       tag: "HEADWEAR",
+      status: "OUT OF STOCK",
     },
     {
       name: "Static Glitch BARCODE Hat",
-      price: "$20.00",
-      originalPrice: "$25.00",
-      href: "https://www.6bithiphop.com/c/products/static-glitch-barcode-hat",
       tag: "HEADWEAR",
+      status: "OUT OF STOCK",
     },
     {
       name: "6 Bit Badge Sticker",
-      price: "$1.50",
-      originalPrice: "$2.00",
-      href: "https://www.6bithiphop.com/c/products/6-bit-badge-sticker",
       tag: "ACCESSORY",
+      status: "OUT OF STOCK",
     },
   ],
 
@@ -1106,10 +1097,10 @@ export const merchPage = {
   },
 
   terminalOutput: [
-    "SUPPLY_CHAIN .................. ACTIVE",
-    "INVENTORY ..................... 1ST WAVE",
-    "DISTRIBUTION .................. ONLINE",
-    "DROP_ALERT_SYSTEM ............. ARMED",
+    "STOREFRONT .................... RETIRED",
+    "INVENTORY ..................... 1ST WAVE ARCHIVE",
+    "AVAILABILITY .................. OUT OF STOCK",
+    "DROP_ALERT_SYSTEM ............. STANDBY",
     "BOOK: OBSERVER NOT FOUND ...... IN PRINT",
   ],
 };

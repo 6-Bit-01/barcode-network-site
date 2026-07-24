@@ -4,11 +4,15 @@ import fs from "node:fs";
 
 const read = (path) => fs.readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("public identity credits 6 Bit and GALAKNOISE correctly", () => {
+test("homepage identifies 6 Bit without adding a GALAKNOISE credit", () => {
   const content = read("src/content.ts");
+  const homepage = content.slice(
+    content.indexOf("export const homePage"),
+    content.indexOf("// ----- RADIO PAGE -----"),
+  );
 
-  assert.match(content, /6 Bit is the artist, MC, and host/);
-  assert.match(content, /GALAKNOISE is BARCODE's music producer/);
+  assert.match(homepage, /6 Bit is the artist, MC, and host/);
+  assert.doesNotMatch(homepage, /GALAKNOISE/);
   assert.match(content, /role: "Artist \/ MC \/ Host"/);
   assert.match(content, /role: "BARCODE Music Producer"/);
   assert.doesNotMatch(content, /6 Bit is the artist, producer, and host/);

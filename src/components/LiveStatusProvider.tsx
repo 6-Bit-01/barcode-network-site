@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import type { QueueBroadcastPhase, QueuePublicSnapshot } from "@/lib/queue-types";
 import { derivePublicShowState } from "@/lib/live-status-public";
 
@@ -47,6 +48,8 @@ export function useLiveStatus() {
 }
 
 export function LiveStatusProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const isolatedPrototype = pathname === "/world/playtest";
   const [isLive, setIsLive] = useState(false);
   const [isScheduled, setIsScheduled] = useState(false);
   const [streamUrl, setStreamUrlState] = useState("https://www.tiktok.com/@six.bit/live");
@@ -58,6 +61,7 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
   const [queueSnapshot, setQueueSnapshot] = useState<QueuePublicSnapshot | null>(null);
 
   const fetchStatus = useCallback(async () => {
+    if (isolatedPrototype) return;
     let adminError: string | null = null;
     let queueError: string | null = null;
 
@@ -98,9 +102,10 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
     }
 
     setLastError(adminError ?? queueError);
-  }, []);
+  }, [isolatedPrototype]);
 
   useEffect(() => {
+    if (isolatedPrototype) return;
     const checkAuth = async () => {
       try {
         const res = await fetch("/api/admin/verify");
@@ -110,18 +115,20 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
       }
     };
     checkAuth();
-  }, []);
+  }, [isolatedPrototype]);
 
   useEffect(() => {
+    if (isolatedPrototype) return;
     const initialFetchTimer = setTimeout(fetchStatus, 0);
     const interval = setInterval(fetchStatus, 15_000);
     return () => {
       clearTimeout(initialFetchTimer);
       clearInterval(interval);
     };
-  }, [fetchStatus]);
+  }, [fetchStatus, isolatedPrototype]);
 
   const toggleLive = useCallback(async () => {
+    if (isolatedPrototype) return;
     try {
       const toggleRes = await fetch("/api/admin/live", {
         method: "POST",
@@ -139,9 +146,10 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
     } catch {
       setLastError("Toggle failed");
     }
-  }, [fetchStatus]);
+  }, [fetchStatus, isolatedPrototype]);
 
   const setStreamUrl = useCallback(async (url: string) => {
+    if (isolatedPrototype) return;
     try {
       const res = await fetch("/api/admin/live", {
         method: "POST",
@@ -161,7 +169,7 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
     } catch {
       setLastError("Stream URL update failed");
     }
-  }, [fetchStatus]);
+  }, [fetchStatus, isolatedPrototype]);
 
   const {
     hasActiveQueueSession,
@@ -178,21 +186,24 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
 
   return (
     <LiveStatusContext.Provider value={{
-      isLive,
+      isLive: isolatedPrototype ? false : isLive,
       toggleLive,
-      streamUrl,
+      streamUrl: isolatedPrototype ? "" : streamUrl,
       setStreamUrl,
-      isScheduled,
-      isAdmin,
-      manualOverride,
-      lastError,
-      persisted,
-      hasActiveQueueSession,
-      queueSessionId,
-      queueHref,
-      queueSubmissionsOpen,
-      queueBroadcastPhase,
-      siteShowMode,
+      isScheduled: isolatedPrototype ? false : isScheduled,
+      isAdmin: isolatedPrototype ? false : isAdmin,
+      manualOverride: isolatedPrototype ? false : manualOverride,
+      lastError: isolatedPrototype ? null : lastError,
+      persisted: isolatedPrototype ? null : persisted,
+      hasActiveQueueSession:
+        isolatedPrototype ? false : hasActiveQueueSession,
+      queueSessionId: isolatedPrototype ? null : queueSessionId,
+      queueHref: isolatedPrototype ? null : queueHref,
+      queueSubmissionsOpen:
+        isolatedPrototype ? false : queueSubmissionsOpen,
+      queueBroadcastPhase:
+        isolatedPrototype ? null : queueBroadcastPhase,
+      siteShowMode: isolatedPrototype ? "offline" : siteShowMode,
     }}>
       {children}
     </LiveStatusContext.Provider>

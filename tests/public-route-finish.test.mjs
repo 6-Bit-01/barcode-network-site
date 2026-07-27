@@ -56,7 +56,7 @@ test("public route finish corrections cover Auxchord, PT scheduling, BNL routing
 });
 
 test("accessibility and reduced-motion finish remains explicit while protected mechanics are untouched", () => {
-  const layout = read("src/app/layout.tsx");
+  const siteChrome = read("src/components/SiteChrome.tsx");
   const header = read("src/components/Header.tsx");
   const css = read("src/app/globals.css");
   const broadcastVideo = read("src/components/BroadcastVideo.tsx");
@@ -64,10 +64,10 @@ test("accessibility and reduced-motion finish remains explicit while protected m
   const trustedOrigin = read("src/lib/trusted-requesting-site-origin.ts");
   const dossierWorkflow = read("src/lib/dossier-workflow.ts");
 
-  assert.match(layout, /href="#main-content"/);
-  assert.ok(layout.indexOf('className="skip-link"') < layout.indexOf('<DataStream />'));
-  assert.ok(layout.indexOf('className="skip-link"') < layout.indexOf('<Header />'));
-  assert.ok(layout.indexOf('className="skip-link"') < layout.indexOf('<BNLNetworkRelayShell />'));
+  assert.match(siteChrome, /href="#main-content"/);
+  assert.ok(siteChrome.indexOf('className="skip-link"') < siteChrome.indexOf('<DataStream />'));
+  assert.ok(siteChrome.indexOf('className="skip-link"') < siteChrome.indexOf('<Header />'));
+  assert.ok(siteChrome.indexOf('className="skip-link"') < siteChrome.indexOf('<BNLNetworkRelayShell />'));
   assert.match(header, /aria-current=\{isActive \? "page" : undefined\}/);
   assert.match(header, /aria-expanded=\{open\}/);
   assert.match(css, /prefers-reduced-motion: reduce/);

@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { BarcodeWorldGreybox } from "@/components/BarcodeWorldGreybox";
+import { FracturedGatePrototype } from "@/components/FracturedGatePrototype";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "BARCODE World Deterministic Greybox",
+  title: "The Fractured Gate · Private BARCODE World Battle Mode Proof",
   description:
-    "Private development-only evidence equipment for the Outskirts to Loose Signal BARCODE World slice.",
+    "Private, deterministic, resettable, noncanonical BARCODE World Battle Mode prototype.",
   robots: {
     index: false,
     follow: false,
@@ -21,5 +21,5 @@ export default function BarcodeWorldPlaytestPage() {
     notFound();
   }
 
-  return <BarcodeWorldGreybox />;
+  return <FracturedGatePrototype />;
 }

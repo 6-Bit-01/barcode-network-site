@@ -1,12 +1,9 @@
 import type { Metadata } from "next";
 import type { CSSProperties } from "react";
 import "./globals.css";
-import { Header } from "@/components/Header";
-import { Footer } from "@/components/Footer";
 import { LiveStatusProvider } from "@/components/LiveStatusProvider";
-import { DataStream } from "@/components/DataStream";
-import { BNLNetworkRelayShell } from "@/components/BNLNetworkRelayShell";
 import { BNLStatusProvider } from "@/components/BNLStatusProvider";
+import { SiteChrome } from "@/components/SiteChrome";
 
 const fontVariables = {
   "--font-geist-mono": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace",
@@ -64,14 +61,7 @@ export default function RootLayout({
       >
         <LiveStatusProvider>
           <BNLStatusProvider>
-          <a href="#main-content" className="skip-link">Skip to main content</a>
-          <DataStream />
-          <Header />
-          <BNLNetworkRelayShell />
-          <main id="main-content" className="min-h-screen animate-interference overflow-x-hidden" tabIndex={-1}>
-            {children}
-          </main>
-          <Footer />
+            <SiteChrome>{children}</SiteChrome>
           </BNLStatusProvider>
         </LiveStatusProvider>
       </body>

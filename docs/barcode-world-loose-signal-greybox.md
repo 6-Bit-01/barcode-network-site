@@ -1,6 +1,12 @@
 # BARCODE World: Outskirts → Loose Signal greybox
 
-Status: **IMPLEMENTED — PRIVATE DEVELOPMENT ROUTE**
+Status: **HISTORICAL IMPLEMENTATION — SUPERSEDED AS THE ACTIVE PRIVATE ROUTE**
+
+The reusable deterministic rules in this implementation remain a mechanics
+reference. The player-facing `/world/playtest` surface is now the bounded
+Fractured Gate prototype described in
+`docs/barcode-world-fractured-gate-prototype.md`. This older Loose Signal
+interface is not being extended and is not player evidence for Fractured Gate.
 
 Source revision: `BARCODE_WORLD_PLAYTEST_READY_VERTICAL_SLICE_SOURCE_PACK_2026-07-26`
 

@@ -7,11 +7,12 @@ export type FracturedGateChoice = FracturedGateRecord;
 export const FRACTURED_GATE_SOURCE: string;
 export const RESULT_TYPES: string[];
 export const BOARD_FOCUSES: Record<string, any>;
+export const BOARD_TILES: Record<string, any>;
 export const FRACTURED_GATE_ACTIONS: Record<string, any>;
 export const BUILDS: any[];
 export const CARDS: Record<string, any>;
+export const ENEMY_CARDS: Record<string, any>;
 export const CORE_RULES: Record<string, any>;
-export const POSITION_NAMES: Record<string, string>;
 
 export function createFracturedGateState(
   buildId?: string,
@@ -24,6 +25,7 @@ export function changeFracturedGateBuild(
   buildId: string,
 ): FracturedGateState;
 export function availableCommand(state: FracturedGateState): number;
+export function availableEnemyCommand(state: FracturedGateState): number;
 export function paidActionCount(state: FracturedGateState): number;
 export function getContextActionGroups(
   state: FracturedGateState,
@@ -33,13 +35,24 @@ export function getCompatibleCards(
   state: FracturedGateState,
   actionId: string,
 ): string[];
+export function getAvailableContextCards(
+  state: FracturedGateState,
+  actionId?: string | null,
+): string[];
 export function previewAction(
   state: FracturedGateState,
   actionId: string,
   targetId: string,
   cardId?: string | null,
+  replacing?: boolean,
 ): FracturedGateRecord;
 export function queueAction(
+  state: FracturedGateState,
+  actionId: string,
+  targetId: string,
+  cardId?: string | null,
+): FracturedGateState;
+export function pivotOpenAction(
   state: FracturedGateState,
   actionId: string,
   targetId: string,
@@ -65,6 +78,9 @@ export function discardToRetain(
 export function projectPlan(
   state: FracturedGateState,
 ): FracturedGateRecord;
+export function passPriority(
+  state: FracturedGateState,
+): FracturedGateState;
 export function lockPlan(
   state: FracturedGateState,
 ): FracturedGateState;
@@ -83,3 +99,7 @@ export function getPositionCoordinates(
 export function getActionDefinition(
   actionId: string,
 ): FracturedGateRecord | null;
+export function tempoComparisonForRoute(
+  route: string,
+  poweredFeed?: string,
+): FracturedGateRecord;

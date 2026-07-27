@@ -8,26 +8,28 @@ import {
 } from "react";
 import {
   BOARD_FOCUSES,
+  BOARD_TILES,
   BUILDS,
   CARDS,
   CORE_RULES,
   advanceResolution,
   availableCommand,
+  availableEnemyCommand,
   changeFracturedGateBuild,
   createFracturedGateState,
   discardToRetain,
   displaySnapshot,
+  getAvailableContextCards,
   getCompatibleCards,
   getContextActionGroups,
   getPositionCoordinates,
-  lockPlan,
+  passPriority,
   paidActionCount,
+  pivotOpenAction,
   previewAction,
   projectPlan,
   queueAction,
   refocusCards,
-  removePlanAction,
-  reorderPlanAction,
   resetFracturedGate,
   settleRound,
   type FracturedGateChoice,
@@ -43,18 +45,19 @@ type PositionedStyle = CSSProperties & {
 
 const CORE_FOCUS_ORDER = [
   "west-exit",
-  "entry",
-  "lower-cover",
-  "lower-yard",
-  "assault",
-  "impact-rush",
   "cracked-divider",
-  "upper-walk",
-  "field-cache",
-  "service-gap",
   "gate-actuator",
-  "gate-platform",
+  "defensive-bollard",
+  "service-gap",
+  "upper-crossing",
+  "lift-relay",
+  "field-cache",
   "gate",
+  "breacher",
+  "guard",
+  "controller",
+  "pressure",
+  "breacher-intent",
 ];
 
 const LANE_NAMES = ["Fast", "Standard", "Slow"];
@@ -79,22 +82,28 @@ function focusStatus(
   focusId: string,
   snapshot: FracturedGateRecord,
 ) {
+  if (BOARD_TILES[focusId]) {
+    const tile = BOARD_TILES[focusId];
+    return `${titleCase(tile.terrain)} · ${tile.x},${tile.y}`;
+  }
+  if (snapshot.enemies?.[focusId]) {
+    const enemy = snapshot.enemies[focusId];
+    return `${titleCase(enemy.status)} · ${enemy.condition} Condition · ${enemy.guard} Guard`;
+  }
   switch (focusId) {
     case "player":
       return `${snapshot.condition} Condition · ${snapshot.guard} Guard`;
-    case "assault":
-      return `${titleCase(snapshot.enemy.status)} · ${snapshot.enemy.condition} Condition`;
-    case "impact-rush":
-      return snapshot.flags.rushBlocked
-        ? "Confirmed · projected blocked"
-        : "Confirmed · Gate −1 Stability";
+    case "breacher-intent":
+      return "Primary pressure · Gate impact if unopposed";
     case "cracked-divider":
     case "breach":
-      return titleCase(snapshot.divider.status);
+      return `${titleCase(snapshot.divider.status)} · conduit ${titleCase(snapshot.divider.conduit)}`;
     case "gate-actuator":
       return snapshot.actuator.controlled
         ? `${titleCase(snapshot.actuator.mode)} Control active`
         : "Idle · local access";
+    case "defensive-bollard":
+      return titleCase(snapshot.bollard.status);
     case "gate":
       return `${snapshot.gate.stability}/3 Stability · ${titleCase(snapshot.gate.status)}`;
     case "field-cache":
@@ -110,7 +119,7 @@ function focusStatus(
     case "service-lift":
       return snapshot.lift.deployed ? "Deployed until Settle" : "Projected";
     case "regulator":
-      return titleCase(snapshot.enemy.regulator);
+      return snapshot.flags.regulatorExposed ? "Exposed" : "Shielded";
     default:
       return BOARD_FOCUSES[focusId]?.kind ?? "";
   }
@@ -123,7 +132,7 @@ function phaseLabel(game: FracturedGateState) {
   }
   if (game.phase === "settle") return "Settle";
   if (game.phase === "result") return "Results";
-  return "Planning";
+  return game.priority === "player" ? "Planning · your priority" : "Planning · enemy priority";
 }
 
 function GatePips({
@@ -154,12 +163,14 @@ function GatePips({
 function BattleBoard({
   game,
   selectedFocus,
+  confirmedTarget,
   targetingChoice,
   projection,
   onFocus,
 }: {
   game: FracturedGateState;
   selectedFocus: string;
+  confirmedTarget: string | null;
   targetingChoice: FracturedGateChoice | null;
   projection: FracturedGateRecord | null;
   onFocus: (focusId: string) => void;
@@ -193,8 +204,8 @@ function BattleBoard({
     visible.add("service-lift");
   }
   if (
-    projectedSnapshot.enemy.regulator === "exposed" ||
-    snapshot.enemy.regulator === "exposed"
+    projectedSnapshot.flags.regulatorExposed ||
+    snapshot.flags.regulatorExposed
   ) {
     visible.add("regulator");
   }
@@ -312,9 +323,9 @@ function BattleBoard({
           strokeDasharray="20 13"
           markerEnd="url(#intent-arrow)"
           opacity={
-            snapshot.enemy.status === "active" ||
-            snapshot.enemy.status === "staggered" ||
-            snapshot.enemy.status === "pinned"
+            ["active", "staggered", "off-balance", "pinned"].includes(
+              snapshot.enemies.breacher.status,
+            )
               ? 0.9
               : 0.22
           }
@@ -348,12 +359,14 @@ function BattleBoard({
             className={styles.projectionPath}
           />
         ) : null}
-        {projection?.collision ? (
+        {projection?.contact ? (
           <g
             transform={
-              projection.collision === "cracked-divider"
+              projection.contact.location === "Cracked Divider"
                 ? "translate(590 395)"
-                : "translate(510 345)"
+                : projection.contact.location === "Defensive Bollard"
+                  ? "translate(720 390)"
+                  : "translate(820 330)"
             }
             className={styles.collisionMark}
           >
@@ -374,6 +387,44 @@ function BattleBoard({
           GATE PLATFORM
         </text>
       </svg>
+
+      <div className={styles.tileLayer} aria-label="Direct tactical tile selection">
+        {Object.values(BOARD_TILES).map((tile: FracturedGateRecord) => {
+          const target = legalTargets.has(tile.id);
+          const confirmed = confirmedTarget === tile.id;
+          const selected = selectedFocus === tile.id;
+          return (
+            <button
+              type="button"
+              key={tile.id}
+              className={`${styles.boardTile} ${
+                target ? styles.legalTile : ""
+              } ${selected ? styles.selectedTile : ""}`}
+              style={
+                {
+                  "--x": `${tile.boardX}%`,
+                  "--y": `${tile.boardY}%`,
+                } as PositionedStyle
+              }
+              onClick={() => onFocus(tile.id)}
+              aria-label={`${tile.name}. ${
+                confirmed
+                  ? "Confirmed target."
+                  : target
+                    ? "Legal target."
+                    : "Inspect or select."
+              }`}
+              data-tile-id={tile.id}
+            >
+              {target ? (
+                <span>{confirmed ? "CONFIRMED" : "TARGET"}</span>
+              ) : (
+                <span aria-hidden="true" />
+              )}
+            </button>
+          );
+        })}
+      </div>
 
       <button
         type="button"
@@ -418,9 +469,16 @@ function BattleBoard({
         const focus = BOARD_FOCUSES[focusId];
         const selected = selectedFocus === focusId;
         const target = legalTargets.has(focusId);
+        const confirmed = confirmedTarget === focusId;
+        const actor = focus.actorId
+          ? projectedSnapshot.enemies?.[focus.actorId]
+          : null;
+        const actorPoint = actor
+          ? getPositionCoordinates(actor.position)
+          : null;
         const enemyInactive =
-          focusId === "assault" &&
-          !["active", "staggered", "pinned"].includes(snapshot.enemy.status);
+          Boolean(actor) &&
+          !["active", "staggered", "off-balance", "pinned"].includes(actor.status);
         const classNames = [
           styles.boardFocus,
           styles[`focus_${focus.kind}`],
@@ -442,8 +500,8 @@ function BattleBoard({
             className={classNames}
             style={
               {
-                "--x": `${focus.x}%`,
-                "--y": `${focus.y}%`,
+                "--x": `${actorPoint?.x ?? focus.x}%`,
+                "--y": `${actorPoint?.y ?? focus.y}%`,
               } as PositionedStyle
             }
             onClick={() => onFocus(focusId)}
@@ -451,7 +509,11 @@ function BattleBoard({
             aria-label={`${focus.name}. ${focusStatus(focusId, projectedSnapshot)}`}
             data-focus-id={focusId}
           >
-            {target ? <span className={styles.targetCue}>TARGET</span> : null}
+            {target ? (
+              <span className={styles.targetCue}>
+                {confirmed ? "CONFIRMED" : "TARGET"}
+              </span>
+            ) : null}
             <strong>{focus.name}</strong>
             <small>{focusStatus(focusId, projectedSnapshot)}</small>
           </button>
@@ -459,8 +521,8 @@ function BattleBoard({
       })}
 
       <div className={styles.intentLegend} aria-hidden="true">
-        <span>CONFIRMED</span>
-        Impact Rush → Gate
+        <span>PRIMARY PRESSURE</span>
+        Breacher → Gate · Guard protecting · Controller and Pressure adaptive
       </div>
 
       {game.phase === "resolution" ? (
@@ -495,7 +557,16 @@ function ContextPanel({
   onCancelTarget: () => void;
 }) {
   const groups = getContextActionGroups(game, focusId);
-  const focus = BOARD_FOCUSES[focusId] ?? BOARD_FOCUSES.player;
+  const focus =
+    BOARD_FOCUSES[focusId] ??
+    (BOARD_TILES[focusId]
+      ? {
+          ...BOARD_TILES[focusId],
+          kind: "tile",
+          description:
+            "A real tactical tile. Movement cost, occupancy, terrain, and contact are resolved on the hidden 13 × 9 scale.",
+        }
+      : BOARD_FOCUSES.player);
   const activeGroup =
     groups.find((group: FracturedGateRecord) => group.parent === selectedParent) ??
     null;
@@ -591,6 +662,7 @@ function PreviewPanel({
   attachedCard,
   preview,
   planProjection,
+  pivotMode,
   onAdd,
 }: {
   game: FracturedGateState;
@@ -599,6 +671,7 @@ function PreviewPanel({
   attachedCard: string | null;
   preview: FracturedGateRecord | null;
   planProjection: FracturedGateRecord | null;
+  pivotMode: boolean;
   onAdd: () => void;
 }) {
   const shown = preview?.legal ? preview.projection : planProjection;
@@ -637,6 +710,37 @@ function PreviewPanel({
             <strong>Important risk</strong>
             <p>{shown.risk}</p>
           </div>
+          {shown.contact ? (
+            <div className={styles.contactForecast}>
+              <strong>Contact risk · {shown.contact.risk}</strong>
+              <span>{shown.contact.timing}</span>
+              <span>Location · {shown.contact.location}</span>
+              <span>
+                Unknown · {shown.contact.unknown} concealed factor
+                {shown.contact.unknown === 1 ? "" : "s"}
+              </span>
+              <p>{shown.contact.reason}</p>
+              <details>
+                <summary>Tempo details</summary>
+                {shown.contact.details}
+              </details>
+            </div>
+          ) : null}
+          {shown.attribution ? (
+            <div className={styles.skillAttribution}>
+              <strong>
+                {shown.attribution.action} · {shown.attribution.build}
+              </strong>
+              <span>Revealed by · {shown.attribution.revealed}</span>
+              <span>Enabled by · {shown.attribution.enabled}</span>
+              {shown.attribution.modified ? (
+                <span>Modified by · {shown.attribution.modified}</span>
+              ) : null}
+              {shown.attribution.opposed ? (
+                <span>Opposed by · {shown.attribution.opposed}</span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : (
         <p className={styles.emptyPreview}>
@@ -653,7 +757,7 @@ function PreviewPanel({
             {attachedCard ? ` · ${cardName(attachedCard)}` : ""}
           </span>
           <button type="button" data-testid="add-to-plan" onClick={onAdd}>
-            ADD TO PLAN
+            {pivotMode ? "LOCK PIVOT" : "ADD TO PLAN"}
           </button>
         </div>
       ) : null}
@@ -667,24 +771,31 @@ function PreviewPanel({
 function PlanChain({
   game,
   projection,
-  onRemove,
-  onReorder,
-  onLock,
+  pivotMode,
+  onBeginPivot,
+  onCancelPivot,
+  onPass,
 }: {
   game: FracturedGateState;
   projection: FracturedGateRecord | null;
-  onRemove: (instanceId: string) => void;
-  onReorder: (instanceId: string, direction: number) => void;
-  onLock: () => void;
+  pivotMode: boolean;
+  onBeginPivot: () => void;
+  onCancelPivot: () => void;
+  onPass: () => void;
 }) {
   const count = paidActionCount(game);
   const density =
     count <= 2 ? "Normal" : count === 3 ? "Pressured" : "Exceptional";
+  const openAction = game.plan.find(
+    (action: FracturedGateRecord) => action.status === "open",
+  );
   return (
     <section className={styles.planPanel} aria-label="Current plan">
       <div className={styles.planTopline}>
         <div>
-          <p className={styles.eyebrow}>Readable plan chain</p>
+          <p className={styles.eyebrow}>
+            Opposed planning · {game.priority === "player" ? "your priority" : "enemy priority"}
+          </p>
           <h2>
             PLAN · {count}/{CORE_RULES.paidActionCap} PAID
           </h2>
@@ -705,39 +816,27 @@ function PlanChain({
 
       {game.plan.length ? (
         <ol className={styles.planChain}>
-          {game.plan.map((action: FracturedGateRecord, index: number) => (
+          {game.plan.map((action: FracturedGateRecord) => (
             <li key={action.instanceId}>
               <span className={styles.planTiming}>{action.lane}</span>
               <strong>{action.label}</strong>
               <small>
                 {action.targetName} · {action.totalCost} Command
-                {action.cardName ? ` · ${action.cardName}` : ""}
+                {action.cardName
+                  ? ` · ${action.concealed ? "concealed modifier" : action.cardName}`
+                  : ""}
               </small>
-              <div className={styles.planEdit}>
-                <button
-                  type="button"
-                  disabled={index === 0}
-                  onClick={() => onReorder(action.instanceId, -1)}
-                  aria-label={`Move ${action.label} earlier`}
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  disabled={index === game.plan.length - 1}
-                  onClick={() => onReorder(action.instanceId, 1)}
-                  aria-label={`Move ${action.label} later`}
-                >
-                  ↓
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onRemove(action.instanceId)}
-                  aria-label={`Remove ${action.label}`}
-                >
-                  ×
-                </button>
-              </div>
+              <span
+                className={
+                  action.status === "open"
+                    ? styles.openCommitment
+                    : styles.solidCommitment
+                }
+              >
+                {action.status === "open"
+                  ? "NEWEST · MAY CHANGE ONCE"
+                  : "SOLID COMMITMENT"}
+              </span>
             </li>
           ))}
         </ol>
@@ -747,19 +846,64 @@ function PlanChain({
         </p>
       )}
 
+      <div className={styles.enemyPlan}>
+        <div>
+          <span>ENEMY SQUAD PLAN</span>
+          <strong>
+            {game.enemyPlan.length} commitment
+            {game.enemyPlan.length === 1 ? "" : "s"} ·{" "}
+            {availableEnemyCommand(game)} Command saved
+          </strong>
+        </div>
+        <ul>
+          {game.enemyPlan.map((action: FracturedGateRecord) => (
+            <li key={action.instanceId}>
+              <strong>{action.actorName}</strong>
+              <span>{action.posture ?? action.label}</span>
+              <small>
+                {action.totalCost} Command
+                {action.concealed || action.modifierCardId
+                  ? " · concealed factor"
+                  : ""}
+              </small>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className={styles.pivotBar}>
+        <span>
+          Pivot · {game.playerPivotUsed ? "SPENT" : "AVAILABLE"} · newest action
+          only
+        </span>
+        {pivotMode ? (
+          <button type="button" onClick={onCancelPivot}>
+            CANCEL PIVOT
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onBeginPivot}
+            disabled={!openAction || game.playerPivotUsed}
+          >
+            CHANGE NEWEST
+          </button>
+        )}
+      </div>
+
       <div className={styles.lockBar}>
         <span>
           {projection
-            ? `Preview #${projection.signature}`
-            : "Preview updates before Lock"}
+            ? `Preview #${projection.signature} · ${game.consecutivePasses}/2 passes`
+            : "Two consecutive passes Lock both plans"}
         </span>
         <button
           type="button"
           data-testid="lock-plan"
-          onClick={onLock}
+          onClick={onPass}
           disabled={!game.plan.length && !game.refocusRecord}
         >
-          LOCK PLAN
+          PASS / LOCK
         </button>
       </div>
     </section>
@@ -769,6 +913,7 @@ function PlanChain({
 function Hand({
   game,
   compatibleCards,
+  contextCards,
   attachedCard,
   refocusMode,
   refocusSelection,
@@ -780,6 +925,7 @@ function Hand({
 }: {
   game: FracturedGateState;
   compatibleCards: Set<string>;
+  contextCards: string[];
   attachedCard: string | null;
   refocusMode: boolean;
   refocusSelection: string[];
@@ -793,6 +939,7 @@ function Hand({
     game.plan.map((action: FracturedGateRecord) => action.cardId).filter(Boolean),
   );
   const overRetain = game.hand.length > CORE_RULES.retainLimit;
+  const displayedCards = [...game.hand, ...contextCards];
   return (
     <section className={styles.handPanel} aria-label="Prepared card hand">
       <div className={styles.handHeading}>
@@ -838,12 +985,13 @@ function Hand({
       </div>
 
       <div className={styles.cards}>
-        {game.hand.map((cardId: string) => {
+        {displayedCards.map((cardId: string) => {
           const card = CARDS[cardId];
           const compatible = compatibleCards.has(cardId);
           const planned = plannedCards.has(cardId);
           const selected = attachedCard === cardId;
           const refocusSelected = refocusSelection.includes(cardId);
+          const context = contextCards.includes(cardId);
           const classes = [
             styles.card,
             compatible ? styles.compatibleCard : "",
@@ -860,7 +1008,9 @@ function Hand({
               key={cardId}
               data-card-id={cardId}
               className={classes}
-              onClick={() => (overRetain ? onDiscard(cardId) : onCard(cardId))}
+              onClick={() =>
+                overRetain && !context ? onDiscard(cardId) : onCard(cardId)
+              }
               disabled={planned && !overRetain}
               aria-pressed={selected || refocusSelected}
             >
@@ -870,6 +1020,11 @@ function Hand({
               </span>
               <span className={styles.cardKind}>{card.kind}</span>
               <p>{card.text}</p>
+              {context ? (
+                <span className={styles.contextCue}>
+                  SOURCE-BOUND · EXPIRES WITH CHAIN
+                </span>
+              ) : null}
               {compatible && !refocusMode ? (
                 <span className={styles.compatibleCue}>COMPATIBLE</span>
               ) : null}
@@ -1000,8 +1155,8 @@ function SettlePanel({
           <dd>{summary.playerPosition}</dd>
         </div>
         <div>
-          <dt>Assault</dt>
-          <dd>{titleCase(summary.enemyStatus)}</dd>
+          <dt>Enemy formation</dt>
+          <dd>{summary.enemyStates.join(" · ")}</dd>
         </div>
         <div>
           <dt>Divider</dt>
@@ -1014,6 +1169,14 @@ function SettlePanel({
         <div>
           <dt>Command carried</dt>
           <dd>{summary.commandCarried}</dd>
+        </div>
+        <div>
+          <dt>Squad Command carried</dt>
+          <dd>{summary.enemyCommandCarried}</dd>
+        </div>
+        <div>
+          <dt>West Exit</dt>
+          <dd>{titleCase(summary.exitStatus)}</dd>
         </div>
         <div>
           <dt>Refund at Settle</dt>
@@ -1051,8 +1214,8 @@ function ResultsPanel({
           <strong>{result.objective}</strong>
         </div>
         <div>
-          <span>Enemy state</span>
-          <strong>{result.enemy}</strong>
+          <span>Enemy formation</span>
+          <strong>{result.enemies.join(" · ")}</strong>
         </div>
         <div>
           <span>Player state</span>
@@ -1073,6 +1236,10 @@ function ResultsPanel({
         <div className={styles.wideResult}>
           <span>Meaningful tradeoff</span>
           <strong>{result.tradeoff}</strong>
+        </div>
+        <div className={styles.wideResult}>
+          <span>Why this title</span>
+          <strong>{result.reason}</strong>
         </div>
       </div>
       <ReviewLog game={game} />
@@ -1098,6 +1265,7 @@ export function FracturedGatePrototype() {
   const [attachedCard, setAttachedCard] = useState<string | null>(null);
   const [refocusMode, setRefocusMode] = useState(false);
   const [refocusSelection, setRefocusSelection] = useState<string[]>([]);
+  const [pivotMode, setPivotMode] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
 
   useEffect(() => {
@@ -1128,9 +1296,15 @@ export function FracturedGatePrototype() {
   const preview = useMemo(
     () =>
       targetingChoice && targetId
-        ? previewAction(game, targetingChoice.id, targetId, attachedCard)
+        ? previewAction(
+            game,
+            targetingChoice.id,
+            targetId,
+            attachedCard,
+            pivotMode,
+          )
         : null,
-    [game, targetingChoice, targetId, attachedCard],
+    [game, targetingChoice, targetId, attachedCard, pivotMode],
   );
   const activeProjection =
     preview?.legal ? preview.projection : planProjection;
@@ -1141,6 +1315,13 @@ export function FracturedGatePrototype() {
           ? getCompatibleCards(game, targetingChoice.id)
           : [],
       ),
+    [game, targetingChoice],
+  );
+  const contextCards = useMemo(
+    () =>
+      targetingChoice
+        ? getAvailableContextCards(game, targetingChoice.id)
+        : [],
     [game, targetingChoice],
   );
   const build = buildFor(game.buildId);
@@ -1157,6 +1338,7 @@ export function FracturedGatePrototype() {
     clearDraft();
     setRefocusMode(false);
     setRefocusSelection([]);
+    setPivotMode(false);
   }
 
   function handleFocus(focusId: string) {
@@ -1186,16 +1368,24 @@ export function FracturedGatePrototype() {
 
   function addDraft() {
     if (!targetingChoice || !targetId || !preview?.legal) return;
-    const next = queueAction(
-      game,
-      targetingChoice.id,
-      targetId,
-      attachedCard,
-    );
+    const next = pivotMode
+      ? pivotOpenAction(
+          game,
+          targetingChoice.id,
+          targetId,
+          attachedCard,
+        )
+      : queueAction(
+          game,
+          targetingChoice.id,
+          targetId,
+          attachedCard,
+        );
     setGame(next);
-    if (next.plan.length > game.plan.length) {
+    if (next !== game && !next.warning) {
       clearDraft();
       setSelectedParent(null);
+      setPivotMode(false);
     }
   }
 
@@ -1248,7 +1438,8 @@ export function FracturedGatePrototype() {
           </p>
           <h1>THE FRACTURED GATE</h1>
           <p>
-            Select → choose → target → preview → plan → lock → watch → settle
+            Select → choose → target → preview → plan → contest → lock → reveal
+            → watch → settle
           </p>
         </div>
         <div className={styles.boundaryBadges} aria-label="Prototype boundary">
@@ -1310,9 +1501,15 @@ export function FracturedGatePrototype() {
           </strong>
         </div>
         <div>
-          <span>Command</span>
+          <span>Player Command</span>
           <strong>
             {availableCommand(game)} / {CORE_RULES.commandCap}
+          </strong>
+        </div>
+        <div>
+          <span>Enemy Squad Command</span>
+          <strong>
+            {availableEnemyCommand(game)} / {CORE_RULES.commandCap}
           </strong>
         </div>
         <div>
@@ -1334,6 +1531,12 @@ export function FracturedGatePrototype() {
             status={display.gate.status}
           />
         </div>
+        <div>
+          <span>Primary pressure</span>
+          <strong>
+            {game.enemyPlan[0]?.posture ?? "Formation is reading the board"}
+          </strong>
+        </div>
       </section>
 
       {game.warning ? (
@@ -1346,6 +1549,7 @@ export function FracturedGatePrototype() {
         <BattleBoard
           game={game}
           selectedFocus={selectedFocus}
+          confirmedTarget={targetId}
           targetingChoice={targetingChoice}
           projection={activeProjection}
           onFocus={handleFocus}
@@ -1370,27 +1574,32 @@ export function FracturedGatePrototype() {
             attachedCard={attachedCard}
             preview={preview}
             planProjection={planProjection}
+            pivotMode={pivotMode}
             onAdd={addDraft}
           />
           <PlanChain
             game={game}
             projection={planProjection}
-            onRemove={(instanceId) =>
-              setGame((current) => removePlanAction(current, instanceId))
-            }
-            onReorder={(instanceId, direction) =>
-              setGame((current) =>
-                reorderPlanAction(current, instanceId, direction),
-              )
-            }
-            onLock={() => {
+            pivotMode={pivotMode}
+            onBeginPivot={() => {
               clearDraft();
-              setGame((current) => lockPlan(current));
+              setSelectedParent(null);
+              setPivotMode(true);
+            }}
+            onCancelPivot={() => {
+              clearDraft();
+              setPivotMode(false);
+            }}
+            onPass={() => {
+              clearDraft();
+              setPivotMode(false);
+              setGame((current) => passPriority(current));
             }}
           />
           <Hand
             game={game}
             compatibleCards={compatibleCards}
+            contextCards={contextCards}
             attachedCard={attachedCard}
             refocusMode={refocusMode}
             refocusSelection={refocusSelection}

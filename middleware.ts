@@ -9,6 +9,22 @@ import { verifyAdminToken, COOKIE_NAME } from "@/lib/auth";
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // The bounded BARCODE World proof is development-only. Stop at the request
+  // boundary in production so no page metadata or client-chunk reference is
+  // returned with the 404 response.
+  if (
+    pathname === "/world/playtest" &&
+    process.env.NODE_ENV === "production"
+  ) {
+    return new NextResponse(null, {
+      status: 404,
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
+        "X-Robots-Tag": "noindex, nofollow, noarchive, noimageindex",
+      },
+    });
+  }
+
   // ---- Rate limit: /api/queue/free ----
   if (pathname === "/api/queue/free" && req.method === "POST") {
     // Simple sliding-window rate limit via Upstash (handled in the route itself
@@ -53,5 +69,6 @@ export const config = {
   matcher: [
     "/admin/:path*",
     "/api/queue/free",
+    "/world/playtest",
   ],
 };

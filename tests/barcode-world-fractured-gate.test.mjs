@@ -1,24 +1,33 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  BOARD_TILES,
   BUILDS,
   CARDS,
   CORE_RULES,
+  ENEMY_CARDS,
+  FRACTURED_GATE_ACTIONS,
+  FRACTURED_GATE_SOURCE,
   RESULT_TYPES,
   advanceResolution,
   availableCommand,
+  availableEnemyCommand,
   createFracturedGateState,
   discardToRetain,
   displaySnapshot,
+  getAvailableContextCards,
   getCompatibleCards,
   getContextActionGroups,
-  lockPlan,
   paidActionCount,
+  passPriority,
+  pivotOpenAction,
   projectPlan,
   queueAction,
   refocusCards,
+  removePlanAction,
   resetFracturedGate,
   settleRound,
+  tempoComparisonForRoute,
 } from "../src/lib/barcode-world/fractured-gate-engine.mjs";
 
 const EXPECTED_OPENING_HANDS = {
@@ -77,53 +86,108 @@ function queue(state, actionId, targetId, cardId = null) {
   return next;
 }
 
+function passToLock(state) {
+  let next = state;
+  for (let count = 0; count < 12 && next.phase === "planning"; count += 1) {
+    next = passPriority(next);
+  }
+  assert.equal(next.phase, "resolution", next.warning);
+  return next;
+}
+
 function resolveToSettle(state) {
-  const locked = lockPlan(state);
-  assert.equal(locked.phase, "resolution", locked.warning);
-  let next = locked;
-  let guard = 0;
-  while (next.phase === "resolution" && guard < 8) {
+  let next = state.phase === "planning" ? passToLock(state) : state;
+  for (let count = 0; count < 8 && next.phase === "resolution"; count += 1) {
     next = advanceResolution(next);
-    guard += 1;
   }
   assert.equal(next.phase, "settle");
   return next;
 }
 
-function finishRound(state) {
-  return settleRound(resolveToSettle(state));
-}
-
-function retainSeven(state) {
+function retainSeven(state, preserve = []) {
   let next = state;
   while (next.phase === "planning" && next.hand.length > CORE_RULES.retainLimit) {
-    next = discardToRetain(next, next.hand.at(-1));
+    const discard = [...next.hand]
+      .reverse()
+      .find((cardId) => !preserve.includes(cardId));
+    assert.ok(discard, "a discardable card should remain");
+    next = discardToRetain(next, discard);
   }
   return next;
 }
 
-function battleExplorationOpening() {
+function battleExplorationCycleOne() {
   let state = createFracturedGateState("battle-exploration");
-  state = queue(state, "reposition", "lower-cover");
+  state = queue(state, "reposition", "tile-3-6");
+  state = queue(state, "advance", "tile-5-6");
+  assert.deepEqual(getAvailableContextCards(state, "answer-divider"), [
+    "follow-through",
+  ]);
   state = queue(
     state,
     "answer-divider",
     "cracked-divider",
-    "brace-through",
+    "follow-through",
   );
-  state = queue(state, "cross-breach", "gate-platform");
   return state;
 }
 
-test("locked Battle foundation and all validated opening hands are preserved", () => {
+function settledCycleOne() {
+  return resolveToSettle(battleExplorationCycleOne());
+}
+
+function battleExplorationCycleTwo() {
+  let state = settleRound(settledCycleOne());
+  state = queue(state, "cross-breach", "tile-10-5");
+  state = queue(state, "stabilize-gate", "gate");
+  state = pivotOpenAction(
+    state,
+    "angle-clash",
+    "defensive-bollard",
+  );
+  assert.equal(state.warning, "");
+  return state;
+}
+
+function settledCycleTwo() {
+  return resolveToSettle(battleExplorationCycleTwo());
+}
+
+function fastSecureResult() {
+  let state = settleRound(settledCycleTwo());
+  state = retainSeven(state, ["objective-brace"]);
+  state = queue(state, "guard-gate", "gate");
+  state = queue(
+    state,
+    "stabilize-gate",
+    "gate",
+    "objective-brace",
+  );
+  state = resolveToSettle(state);
+  return settleRound(state);
+}
+
+test("revised checkpoint, 62-tile board, six builds, and shared squad economy are locked", () => {
+  assert.equal(
+    FRACTURED_GATE_SOURCE,
+    "BARCODE_WORLD_BATTLE_MODE_FRACTURED_GATE_REVISED_ENCOUNTER_CHECKPOINT_2026-07-27",
+  );
+  assert.equal(Object.keys(BOARD_TILES).length, 62);
+  assert.equal(
+    new Set(
+      Object.values(BOARD_TILES).map((tile) => `${tile.x},${tile.y}`),
+    ).size,
+    62,
+  );
   assert.deepEqual(
     BUILDS.map((build) => build.id),
     Object.keys(EXPECTED_OPENING_HANDS),
   );
+
   for (const build of BUILDS) {
     const state = createFracturedGateState(build.id);
-    assert.equal(state.deck.length, 12, `${build.id} deck`);
-    assert.equal(new Set(state.deck).size, 12, `${build.id} unique deck`);
+    assert.equal(state.deck.length, 12, `${build.id} player deck`);
+    assert.equal(new Set(state.deck).size, 12, `${build.id} unique player deck`);
     assert.deepEqual(state.hand, EXPECTED_OPENING_HANDS[build.id]);
     assert.equal(
       state.hand.some((cardId) => CARDS[cardId].partyOnly),
@@ -131,6 +195,28 @@ test("locked Battle foundation and all validated opening hands are preserved", (
       `${build.id} opening is solo-safe`,
     );
   }
+
+  const state = createFracturedGateState();
+  assert.deepEqual(Object.keys(state.enemies), [
+    "breacher",
+    "guard",
+    "controller",
+    "pressure",
+  ]);
+  for (const enemy of Object.values(state.enemies)) {
+    assert.equal(enemy.deck.length, 12, `${enemy.name} deck`);
+    assert.equal(new Set(enemy.deck).size, 12, `${enemy.name} unique deck`);
+    assert.equal(enemy.hand.length, 5, `${enemy.name} opening hand`);
+    assert.ok(enemy.hand.every((cardId) => ENEMY_CARDS[cardId]));
+  }
+  assert.equal(state.enemyCommand, 16);
+  assert.equal(availableEnemyCommand(state), 4);
+  assert.deepEqual(
+    state.enemyPlan.map((action) => action.id),
+    ["impact-rush"],
+  );
+  assert.equal(state.enemyPlan[0].totalCost, 12);
+
   assert.equal(CORE_RULES.commandStart, 16);
   assert.equal(CORE_RULES.commandIncome, 16);
   assert.equal(CORE_RULES.commandCap, 32);
@@ -141,212 +227,328 @@ test("locked Battle foundation and all validated opening hands are preserved", (
   assert.equal(CORE_RULES.retainLimit, 7);
 });
 
-test("context selection exposes no more than four parent actions and never uses dropdown movement", () => {
+test("board-first context stays bounded and spatial legality blocks remote attacks and contact", () => {
   const state = createFracturedGateState("battle-exploration");
   for (const focusId of [
     "player",
-    "impact-rush",
-    "assault",
+    "breacher",
     "cracked-divider",
-    "upper-walk",
     "gate-actuator",
     "gate",
     "field-cache",
     "west-exit",
+    "tile-3-6",
   ]) {
     const groups = getContextActionGroups(state, focusId);
     assert.ok(groups.length <= 4, focusId);
     assert.equal(new Set(groups.map((group) => group.parent)).size, groups.length);
   }
-  assert.deepEqual(
-    getContextActionGroups(state, "impact-rush").map((group) => group.parent),
-    ["Attack", "Defend", "Discipline", "Inspect"],
-  );
-  const playerMove = getContextActionGroups(state, "player").find(
-    (group) => group.parent === "Move",
-  );
-  assert.ok(playerMove.choices[0].legalTargets.includes("lower-cover"));
 
-  let projected = createFracturedGateState("battle-exploration");
-  projected = queue(projected, "reposition", "lower-cover");
-  projected = queue(
-    projected,
+  const remoteAttack = getContextActionGroups(state, "breacher")
+    .find((group) => group.parent === "Attack")
+    .choices[0];
+  assert.equal(remoteAttack.legal, false);
+  assert.match(remoteAttack.reason, /within two tactical tiles/);
+
+  const remoteAnswer = getContextActionGroups(state, "cracked-divider")
+    .find((group) => group.parent === "Discipline")
+    .choices[0];
+  assert.equal(remoteAnswer.legal, false);
+  assert.match(remoteAnswer.reason, /Approach within two tactical tiles/);
+
+  const tileMove = getContextActionGroups(state, "tile-3-6")
+    .find((group) => group.parent === "Move");
+  assert.deepEqual(
+    tileMove.choices.map((choice) => choice.id),
+    ["reposition", "advance"],
+  );
+  assert.deepEqual(tileMove.choices[0].legalTargets, ["tile-3-6"]);
+});
+
+test("Tempo distinguishes clear, rubble, and powered routes without changing Command", () => {
+  assert.deepEqual(
+    tempoComparisonForRoute("clear"),
+    {
+      route: "clear",
+      player: 6,
+      enemy: 6,
+      outcome: "simultaneous",
+      link: "Preserved",
+      reason: "The clear approach preserves Follow Through.",
+    },
+  );
+  assert.deepEqual(
+    tempoComparisonForRoute("rubble"),
+    {
+      route: "rubble",
+      player: 4,
+      enemy: 6,
+      outcome: "enemy_first",
+      link: "Broken",
+      reason: "Rubble breaks the movement-to-contact link.",
+    },
+  );
+  assert.deepEqual(
+    tempoComparisonForRoute("powered", "toward-divider"),
+    {
+      route: "powered",
+      player: 7,
+      enemy: 6,
+      outcome: "player_first",
+      link: "Accelerated",
+      reason:
+        "The powered service track carries momentum toward contact.",
+    },
+  );
+  assert.equal(createFracturedGateState().command, 16);
+});
+
+test("Follow Through is source-bound, appears only after a clear approach, and does not leak enemy cards", () => {
+  let state = createFracturedGateState();
+  assert.deepEqual(getAvailableContextCards(state, "answer-divider"), []);
+  assert.equal(state.hand.includes("follow-through"), false);
+
+  state = queue(state, "reposition", "tile-3-6");
+  state = queue(state, "advance", "tile-5-6");
+  assert.deepEqual(getAvailableContextCards(state, "answer-divider"), [
+    "follow-through",
+  ]);
+  assert.ok(
+    getCompatibleCards(state, "answer-divider").includes("follow-through"),
+  );
+  state = queue(
+    state,
     "answer-divider",
     "cracked-divider",
-    "brace-through",
+    "follow-through",
   );
-  const breachMove = getContextActionGroups(projected, "breach").find(
-    (group) => group.parent === "Move",
-  );
-  assert.equal(breachMove.choices[0].id, "cross-breach");
-  assert.deepEqual(breachMove.choices[0].legalTargets, ["gate-platform"]);
-});
+  assert.equal(availableCommand(state), 4);
 
-test("all six ordered builds have legal, distinct causal openings on the same board", () => {
-  const observations = {};
-
-  let state = battleExplorationOpening();
-  state = resolveToSettle(state);
-  observations["battle-exploration"] = {
-    divider: state.divider.status,
-    position: state.position,
-    gate: state.gate.stability,
-  };
-
-  state = createFracturedGateState("exploration-battle");
-  state = queue(state, "reposition", "upper-walk");
-  state = queue(
-    state,
-    "prepare-upper-route",
-    "gate-platform",
-    "destination-claim",
-  );
-  state = queue(state, "contest-upper-landing", "upper-walk");
-  state = resolveToSettle(state);
-  observations["exploration-battle"] = {
-    prepared: state.upperRoute.prepared,
-    protected: state.upperRoute.protected,
-    gate: state.gate.stability,
-  };
-
-  state = createFracturedGateState("battle-hacking");
-  state = queue(state, "reposition", "lower-cover");
-  state = queue(
-    state,
-    "answer-regulator",
-    "assault",
-    "brace-through",
-  );
-  state = queue(state, "suppress-regulator", "assault");
-  state = resolveToSettle(state);
-  observations["battle-hacking"] = {
-    regulator: state.enemy.regulator,
-    suppressed: state.enemy.regulatorResetSuppressed,
-    gate: state.gate.stability,
-  };
-
-  state = createFracturedGateState("hacking-battle");
-  state = queue(state, "reposition", "actuator");
-  state = queue(
-    state,
-    "establish-bollard-control",
-    "gate-actuator",
-    "quiet-rewrite",
-  );
-  state = queue(state, "contest-actuator", "gate-actuator");
-  state = resolveToSettle(state);
-  observations["hacking-battle"] = {
-    mode: state.actuator.mode,
-    controlled: state.actuator.controlled,
-    held: state.actuator.accessHeld,
-    gate: state.gate.stability,
-  };
-
-  state = createFracturedGateState("exploration-hacking");
-  state = queue(
-    state,
-    "prepare-service-route",
-    "service-gap",
-    "destination-claim",
-  );
-  state = queue(state, "suppress-service-closure", "service-gap");
-  state = resolveToSettle(state);
-  observations["exploration-hacking"] = {
-    prepared: state.serviceRoute.prepared,
-    suppressed: state.serviceRoute.closureSuppressed,
-    gate: state.gate.stability,
-  };
-
-  state = createFracturedGateState("hacking-exploration");
-  state = queue(state, "reposition", "actuator");
-  state = queue(
-    state,
-    "establish-lift-control",
-    "gate-actuator",
-    "quiet-rewrite",
-  );
-  state = resolveToSettle(state);
-  observations["hacking-exploration"] = {
-    mode: state.actuator.mode,
-    controlled: state.actuator.controlled,
-    gate: state.gate.stability,
-  };
-
-  assert.deepEqual(observations, {
-    "battle-exploration": {
-      divider: "breached",
-      position: "gate-platform",
-      gate: 3,
-    },
-    "exploration-battle": {
-      prepared: true,
-      protected: true,
-      gate: 3,
-    },
-    "battle-hacking": {
-      regulator: "exposed",
-      suppressed: true,
-      gate: 3,
-    },
-    "hacking-battle": {
-      mode: "bollard",
-      controlled: true,
-      held: true,
-      gate: 3,
-    },
-    "exploration-hacking": {
-      prepared: true,
-      suppressed: true,
-      gate: 2,
-    },
-    "hacking-exploration": {
-      mode: "lift",
-      controlled: true,
-      gate: 2,
-    },
+  const projection = projectPlan(state);
+  assert.equal(projection.contact.timing, "Likely even");
+  assert.equal(projection.contact.link, "Preserved");
+  const playerFacingPreview = JSON.stringify({
+    expected: projection.expected,
+    risk: projection.risk,
+    contact: projection.contact,
   });
+  assert.doesNotMatch(
+    playerFacingPreview,
+    /Driving Ram|Impact Counter|Shield Link/,
+  );
+  assert.match(playerFacingPreview, /concealed/);
 });
 
-test("Preview and visible Fast → Standard → Slow resolution share the exact deterministic result", () => {
-  const first = battleExplorationOpening();
+test("Preview and resolution share one deterministic simulation while Clash remains a reveal payoff", () => {
+  const first = battleExplorationCycleOne();
+  const second = battleExplorationCycleOne();
   const firstProjection = projectPlan(first);
-  const second = battleExplorationOpening();
   const secondProjection = projectPlan(second);
+
   assert.equal(firstProjection.signature, secondProjection.signature);
   assert.deepEqual(
     firstProjection.packets.map((packet) => packet.lane),
     ["Fast", "Standard", "Slow"],
   );
+  assert.equal(firstProjection.packets[0].snapshot.position, "tile-2-6");
+  assert.equal(firstProjection.packets[0].snapshot.divider.status, "cracked");
+  assert.equal(firstProjection.packets[1].snapshot.position, "tile-5-6");
+  assert.equal(firstProjection.packets[1].snapshot.divider.status, "breached");
 
   const resolved = resolveToSettle(first);
-  assert.deepEqual(displaySnapshot(resolved), firstProjection.finalSnapshot);
+  const resolvedDisplay = displaySnapshot(resolved);
+  for (const key of [
+    "position",
+    "condition",
+    "guard",
+    "majorState",
+    "gate",
+    "divider",
+    "actuator",
+    "bollard",
+    "upperRoute",
+    "serviceRoute",
+    "lift",
+    "poweredTrack",
+    "cache",
+    "westExit",
+    "flags",
+  ]) {
+    assert.deepEqual(
+      resolvedDisplay[key],
+      firstProjection.finalSnapshot[key],
+      key,
+    );
+  }
+  for (const enemyId of Object.keys(resolved.enemies)) {
+    for (const key of ["position", "condition", "guard", "status"]) {
+      assert.deepEqual(
+        resolvedDisplay.enemies[enemyId][key],
+        firstProjection.finalSnapshot.enemies[enemyId][key],
+        `${enemyId}.${key}`,
+      );
+    }
+  }
   assert.equal(resolved.resolution.signature, firstProjection.signature);
+  assert.equal(resolved.divider.status, "breached");
+  assert.equal(resolved.gate.stability, 3);
+  assert.equal(resolved.enemies.breacher.status, "staggered");
   assert.equal(
-    resolved.review.some((event) => event.title === "Cracked Divider breached"),
+    resolved.review.some(
+      (event) => event.title === "CLASH · Divider contact" && event.clash,
+    ),
     true,
+  );
+  assert.deepEqual(
+    resolved.review
+      .filter((event) => !event.title.includes("revealed"))
+      .map((event) => event.title),
+    [
+      "Guard linked to Breacher",
+      "Reposition",
+      "Advance",
+      "CLASH · Divider contact",
+    ],
   );
 });
 
-test("Command, free Reposition, paid-action cap, and Refocus accounting are enforced", () => {
+test("opposed planning protects solid commitments and permits one bounded Pivot per side", () => {
+  let state = settleRound(settledCycleOne());
+  state = queue(state, "cross-breach", "tile-10-5");
+  const committedCross = state.plan[0];
+  state = queue(state, "stabilize-gate", "gate");
+
+  assert.deepEqual(
+    state.plan.map((action) => [action.id, action.status]),
+    [
+      ["cross-breach", "solid"],
+      ["stabilize-gate", "open"],
+    ],
+  );
+  assert.deepEqual(
+    state.enemyPlan.map((action) => [action.id, action.status]),
+    [
+      ["charge-debris", "solid"],
+      ["body-block", "open"],
+    ],
+  );
+
+  state = pivotOpenAction(state, "angle-clash", "defensive-bollard");
+  assert.equal(state.playerPivotUsed, true);
+  assert.equal(state.enemyPivotUsed, true);
+  assert.equal(state.plan[0].instanceId, committedCross.instanceId);
+  assert.equal(state.plan[0].id, "cross-breach");
+  assert.deepEqual(
+    state.plan.map((action) => [action.id, action.status]),
+    [
+      ["cross-breach", "solid"],
+      ["angle-clash", "solid"],
+    ],
+  );
+  assert.deepEqual(
+    state.enemyPlan.map((action) => action.id),
+    ["charge-debris", "brace-line"],
+  );
+
+  const secondPivot = pivotOpenAction(
+    state,
+    "stabilize-gate",
+    "gate",
+  );
+  assert.deepEqual(secondPivot.plan, state.plan);
+  assert.match(secondPivot.warning, /one Pivot is already spent/);
+
+  const erased = removePlanAction(state, committedCross.instanceId);
+  assert.deepEqual(erased.plan, state.plan);
+  assert.match(erased.warning, /Earlier solid commitments cannot be erased/);
+});
+
+test("the revised second cycle reveals fast terrain pressure before linked movement and its Gate Clash", () => {
+  const planned = battleExplorationCycleTwo();
+  const projection = projectPlan(planned);
+  assert.deepEqual(projection.contact, {
+    risk: "HIGH",
+    timing: "Likely even",
+    location: "Defensive Bollard",
+    unknown: 1,
+    link: "Preserved",
+    reason: "The safe upper lip preserves the redirected contact line.",
+    details: "Player 6 · Enemy 6",
+  });
+
+  const resolved = resolveToSettle(planned);
+  const material = resolved.review
+    .filter((event) => !event.title.includes("revealed"))
+    .map((event) => `${event.lane}:${event.title}`);
+  assert.deepEqual(material, [
+    "Fast:Divider conduit charged",
+    "Fast:West Exit threatened",
+    "Standard:Divider opening crossed",
+    "Standard:CLASH · Gate access",
+  ]);
+  assert.equal(resolved.position, "tile-10-5");
+  assert.equal(resolved.divider.conduit, "charged");
+  assert.equal(resolved.bollard.status, "jammed");
+  assert.equal(resolved.westExit.status, "threatened");
+  assert.equal(resolved.gate.stability, 3);
+  assert.equal(resolved.enemies.guard.condition, 5);
+  assert.equal(availableCommand(resolved), 8);
+  assert.equal(availableEnemyCommand(resolved), 0);
+});
+
+test("the complete three-cycle encounter ends in an explained Fast Secure result", () => {
+  const resultState = fastSecureResult();
+  assert.equal(resultState.phase, "result");
+  assert.equal(resultState.result.type, "Fast Secure");
+  assert.equal(resultState.result.diagnostic, false);
+  assert.equal(resultState.result.objective, "Gate stabilized with 3/3 Stability");
+  assert.equal(resultState.result.enemies.length, 4);
+  assert.match(resultState.result.location, /Divider breached/);
+  assert.match(resultState.result.location, /bollard jammed/);
+  assert.match(resultState.result.turningPoint, /second contact/);
+  assert.match(resultState.result.tradeoff, /Field Cache left/);
+
+  const finalReview = resultState.review.map(
+    (event) => `${event.lane}:${event.title}`,
+  );
+  assert.ok(finalReview.includes("Fast:Gate lane guarded"));
+  assert.ok(finalReview.includes("Standard:CLASH · Defended Gate lane"));
+  assert.ok(finalReview.includes("Slow:Gate stabilized"));
+  assert.ok(
+    finalReview.indexOf("Fast:Gate lane guarded") <
+      finalReview.indexOf("Standard:CLASH · Defended Gate lane"),
+  );
+  assert.ok(
+    finalReview.indexOf("Standard:CLASH · Defended Gate lane") <
+      finalReview.indexOf("Slow:Gate stabilized"),
+  );
+
+  assert.deepEqual(
+    resetFracturedGate(resultState),
+    createFracturedGateState("battle-exploration"),
+  );
+});
+
+test("Command banking, free Reposition, paid-action cap, and Refocus are independent from Tempo", () => {
   let state = createFracturedGateState();
-  state = queue(state, "reposition", "lower-cover");
-  const secondFree = queueAction(state, "reposition", "lower-yard");
+  state = queue(state, "reposition", "tile-3-6");
+  const secondFree = queueAction(state, "reposition", "tile-4-6");
   assert.equal(secondFree.plan.length, state.plan.length);
   assert.match(secondFree.warning, /one free ordinary Reposition/);
 
-  state = finishRound(state);
+  state = settleRound(resolveToSettle(state));
   assert.equal(state.command, 32);
   assert.equal(state.round, 2);
 
-  state = queue(state, "guard", "player");
-  state = queue(state, "guard", "player");
-  state = queue(state, "guard", "player");
-  state = queue(state, "guard", "player");
+  for (let count = 0; count < 4; count += 1) {
+    state = queue(state, "guard", "player");
+  }
   assert.equal(paidActionCount(state), 4);
   const fifth = queueAction(state, "guard", "player");
   assert.equal(fifth.plan.length, 4);
   assert.match(fifth.warning, /Four paid actions/);
   assert.equal(availableCommand(state), 8);
+  assert.equal(tempoComparisonForRoute("clear").player, 6);
 
   let refocus = createFracturedGateState("battle-exploration");
   refocus = refocusCards(refocus, [
@@ -362,44 +564,38 @@ test("Command, free Reposition, paid-action cap, and Refocus accounting are enfo
   ]);
   const repeated = refocusCards(refocus, ["brace-through"]);
   assert.deepEqual(repeated.hand, refocus.hand);
-  assert.match(repeated.warning, /once per planning phase/);
+  assert.match(repeated.warning, /once per planning cycle/);
 });
 
-test("compatible cards lift for the current action while the complete hand remains available", () => {
-  let state = createFracturedGateState("battle-exploration");
-  assert.deepEqual(
-    new Set(getCompatibleCards(state, "answer-divider")),
-    new Set(["fallback-guard", "brace-through", "hold-the-edge"]),
-  );
-  assert.ok(
-    getCompatibleCards(state, "stabilize-gate").includes("objective-brace"),
-  );
-
-  state = createFracturedGateState("exploration-battle");
-  assert.ok(
-    getCompatibleCards(state, "prepare-upper-route").includes(
-      "destination-claim",
-    ),
-  );
-
-  state = createFracturedGateState("hacking-battle");
-  assert.ok(
-    getCompatibleCards(state, "establish-bollard-control").includes(
-      "quiet-rewrite",
-    ),
-  );
-});
-
-test("invalidated actions do not retarget and receive deterministic Settle refunds", () => {
+test("invalidated attacks never retarget and refund half the primary cost at Settle", () => {
   let state = createFracturedGateState();
-  state.enemy.guard = 0;
-  state.enemy.condition = 6;
-  state = queue(state, "attack", "assault");
-  state = queue(state, "attack", "assault", "fallback-guard");
+  state.position = "tile-5-6";
+  state.command = 32;
+  state.enemies.breacher.guard = 0;
+  state.enemies.breacher.condition = 5;
+  const untouched = Object.fromEntries(
+    ["guard", "controller", "pressure"].map((id) => [
+      id,
+      state.enemies[id].condition,
+    ]),
+  );
+
+  state = queue(state, "attack", "breacher");
+  state = queue(state, "attack", "breacher");
+  state = queue(state, "attack", "breacher");
   state = resolveToSettle(state);
-  assert.equal(state.enemy.status, "disabled");
+
+  assert.equal(state.enemies.breacher.status, "disabled");
+  assert.deepEqual(
+    Object.fromEntries(
+      ["guard", "controller", "pressure"].map((id) => [
+        id,
+        state.enemies[id].condition,
+      ]),
+    ),
+    untouched,
+  );
   assert.equal(state.settleSummary.refunds, 3);
-  assert.equal(state.guard, 7);
   assert.equal(
     state.review.some(
       (event) =>
@@ -410,55 +606,185 @@ test("invalidated actions do not retarget and receive deterministic Settle refun
   );
 });
 
-test("all five required Results are reachable and explain complete state", () => {
-  const results = [];
+test("all six ordered builds cause distinct, attributed state changes against the same formation", () => {
+  const observations = {};
 
-  let state = finishRound(battleExplorationOpening());
-  state = queue(state, "stabilize-gate", "gate");
-  state = finishRound(state);
-  results.push(state.result);
-
-  state = createFracturedGateState();
-  state = queue(state, "attack", "assault");
-  state = queue(state, "attack", "assault");
-  state = finishRound(state);
-  state = queue(state, "reposition", "lower-cover");
-  state = queue(state, "advance", "lower-yard");
-  state = queue(state, "advance", "gate-platform");
-  state = retainSeven(finishRound(state));
-  state = queue(state, "stabilize-gate", "gate");
-  state = finishRound(state);
-  results.push(state.result);
+  let state = settledCycleOne();
+  observations["battle-exploration"] = {
+    turningPoint: state.flags.turningPoint,
+    divider: state.divider.status,
+  };
 
   state = createFracturedGateState("exploration-battle");
-  state = queue(state, "reposition", "upper-walk");
+  state = queue(state, "reposition", "tile-3-6");
+  state = queue(state, "advance", "tile-4-4");
+  state = queue(state, "advance", "tile-6-3");
+  state = queue(state, "prepare-upper-route", "upper-crossing");
+  state = resolveToSettle(state);
+  observations["exploration-battle"] = {
+    turningPoint: state.flags.turningPoint,
+    prepared: state.upperRoute.prepared,
+  };
+
+  state = createFracturedGateState("battle-hacking");
+  state = queue(state, "reposition", "tile-3-6");
+  state = queue(state, "advance", "tile-5-6");
+  state = queue(state, "answer-regulator", "breacher");
+  state = resolveToSettle(state);
+  observations["battle-hacking"] = {
+    turningPoint: state.flags.turningPoint,
+    exposedThenReset:
+      state.review.some((event) => event.title === "Impact regulator exposed") &&
+      state.review.some(
+        (event) => event.title === "Regulator automatically reset",
+      ),
+  };
+
+  state = createFracturedGateState("hacking-battle");
+  state = queue(state, "reposition", "tile-3-6");
+  state = queue(state, "advance", "tile-5-7");
+  state = queue(state, "advance", "tile-7-7");
+  state = settleRound(resolveToSettle(state));
   state = queue(
     state,
-    "prepare-upper-route",
-    "gate-platform",
-    "destination-claim",
+    "establish-bollard-control",
+    "gate-actuator",
+    "quiet-rewrite",
   );
-  state = queue(state, "contest-upper-landing", "upper-walk");
-  state = retainSeven(finishRound(state));
-  state = queue(state, "recover-cache", "field-cache");
-  state = retainSeven(finishRound(state));
-  state = queue(state, "cross-upper-route", "gate-platform");
-  state = retainSeven(finishRound(state));
-  state = queue(state, "stabilize-gate", "gate");
-  state = finishRound(state);
-  results.push(state.result);
+  state = queue(state, "hold-actuator", "gate-actuator");
+  state = resolveToSettle(state);
+  observations["hacking-battle"] = {
+    turningPoint: state.flags.turningPoint,
+    mode: state.actuator.mode,
+    held: state.actuator.accessHeld,
+  };
 
-  state = createFracturedGateState();
-  for (let round = 0; round < 3; round += 1) {
-    state = queue(state, "guard", "player");
-    state = retainSeven(finishRound(state));
+  state = createFracturedGateState("exploration-hacking");
+  state = queue(state, "prepare-service-route", "service-gap");
+  state = queue(state, "suppress-service-closure", "service-gap");
+  state = resolveToSettle(state);
+  observations["exploration-hacking"] = {
+    turningPoint: state.flags.turningPoint,
+    prepared: state.serviceRoute.prepared,
+    suppressed: state.serviceRoute.closureSuppressed,
+  };
+
+  state = createFracturedGateState("hacking-exploration");
+  state = queue(state, "reposition", "tile-3-6");
+  state = queue(state, "advance", "tile-4-8");
+  state = queue(state, "advance", "tile-5-8");
+  state = settleRound(resolveToSettle(state));
+  state = queue(
+    state,
+    "establish-lift-control",
+    "lift-relay",
+    "quiet-rewrite",
+  );
+  state = resolveToSettle(state);
+  observations["hacking-exploration"] = {
+    turningPoint: state.flags.turningPoint,
+    mode: state.actuator.mode,
+    controlled: state.actuator.controlled,
+  };
+
+  assert.deepEqual(observations, {
+    "battle-exploration": {
+      turningPoint: "divider",
+      divider: "breached",
+    },
+    "exploration-battle": {
+      turningPoint: "upper-route",
+      prepared: true,
+    },
+    "battle-hacking": {
+      turningPoint: "regulator",
+      exposedThenReset: true,
+    },
+    "hacking-battle": {
+      turningPoint: "actuator",
+      mode: "bollard",
+      held: true,
+    },
+    "exploration-hacking": {
+      turningPoint: "service-route",
+      prepared: true,
+      suppressed: true,
+    },
+    "hacking-exploration": {
+      turningPoint: "lift",
+      mode: "lift",
+      controlled: true,
+    },
+  });
+
+  const attributed = [
+    "answer-divider",
+    "prepare-upper-route",
+    "answer-regulator",
+    "establish-bollard-control",
+    "prepare-service-route",
+    "establish-lift-control",
+  ];
+  for (const actionId of attributed) {
+    assert.ok(FRACTURED_GATE_ACTIONS[actionId].attribution.revealed);
+    assert.ok(FRACTURED_GATE_ACTIONS[actionId].attribution.enabled);
   }
-  results.push(state.result);
+});
 
-  state = createFracturedGateState();
-  state = queue(state, "leave", "west-exit");
-  state = finishRound(state);
-  results.push(state.result);
+test("all five owner-facing result families are reachable and explain complete state", () => {
+  const results = [fastSecureResult().result];
+
+  let clean = createFracturedGateState("exploration-battle");
+  clean = queue(clean, "reposition", "tile-3-6");
+  clean = queue(clean, "advance", "tile-4-4");
+  clean = queue(clean, "advance", "tile-6-3");
+  clean = queue(clean, "prepare-upper-route", "upper-crossing");
+  clean = settleRound(resolveToSettle(clean));
+  clean = queue(clean, "cross-upper-route", "tile-9-3");
+  clean = queue(clean, "advance", "tile-10-5");
+  clean = settleRound(resolveToSettle(clean));
+  clean = retainSeven(clean, ["objective-brace"]);
+  clean = queue(clean, "guard-gate", "gate");
+  clean = queue(clean, "stabilize-gate", "gate", "objective-brace");
+  clean = settleRound(resolveToSettle(clean));
+  results.push(clean.result);
+
+  let recovery = createFracturedGateState("exploration-battle");
+  recovery = queue(recovery, "reposition", "tile-3-6");
+  recovery = queue(recovery, "advance", "tile-4-4");
+  recovery = queue(recovery, "advance", "tile-6-3");
+  recovery = queue(recovery, "prepare-upper-route", "upper-crossing");
+  recovery = settleRound(resolveToSettle(recovery));
+  recovery = queue(recovery, "reposition", "tile-6-2");
+  recovery = queue(recovery, "recover-cache", "field-cache");
+  recovery = queue(recovery, "cross-upper-route", "tile-9-3");
+  recovery = queue(recovery, "advance", "tile-10-5");
+  recovery = settleRound(resolveToSettle(recovery));
+  recovery = retainSeven(recovery, ["objective-brace"]);
+  recovery = queue(recovery, "guard-gate", "gate");
+  recovery = queue(
+    recovery,
+    "stabilize-gate",
+    "gate",
+    "objective-brace",
+  );
+  recovery = settleRound(resolveToSettle(recovery));
+  results.push(recovery.result);
+
+  let lost = createFracturedGateState();
+  lost = queue(lost, "guard", "player");
+  lost = settleRound(resolveToSettle(lost));
+  lost = queue(lost, "guard", "player");
+  lost = settleRound(resolveToSettle(lost));
+  lost = retainSeven(lost);
+  lost = queue(lost, "guard", "player");
+  lost = settleRound(resolveToSettle(lost));
+  results.push(lost.result);
+
+  let retreat = createFracturedGateState();
+  retreat = queue(retreat, "leave", "west-exit");
+  retreat = settleRound(resolveToSettle(retreat));
+  results.push(retreat.result);
 
   assert.deepEqual(
     results.map((result) => result.type),
@@ -466,43 +792,44 @@ test("all five required Results are reachable and explain complete state", () =>
   );
   for (const result of results) {
     assert.ok(result.objective);
-    assert.ok(result.enemy);
+    assert.equal(result.enemies.length, 4);
     assert.ok(result.player);
     assert.ok(result.cache);
     assert.ok(result.location);
     assert.ok(result.turningPoint);
     assert.ok(result.tradeoff);
+    assert.ok(result.reason);
   }
 });
 
-test("Hacking / Exploration creates temporary geometry and the lift resets after Settle", () => {
+test("Hacking / Exploration creates temporary geometry and the lift returns at Settle", () => {
   let state = createFracturedGateState("hacking-exploration");
-  state = queue(state, "reposition", "actuator");
+  state = queue(state, "reposition", "tile-3-6");
+  state = queue(state, "advance", "tile-4-8");
+  state = queue(state, "advance", "tile-5-8");
+  state = settleRound(resolveToSettle(state));
   state = queue(
     state,
     "establish-lift-control",
-    "gate-actuator",
+    "lift-relay",
     "quiet-rewrite",
   );
-  state = finishRound(state);
+  state = settleRound(resolveToSettle(state));
+  state = retainSeven(state);
   state = queue(state, "execute-lift", "service-lift");
-  state = queue(state, "cross-lift", "gate-platform", "safe-landing");
+  state = queue(
+    state,
+    "cross-lift",
+    "tile-9-2",
+    state.hand.includes("safe-landing") ? "safe-landing" : null,
+  );
   state = resolveToSettle(state);
-  assert.equal(state.position, "gate-platform");
+  assert.equal(state.position, "tile-9-2");
   assert.equal(state.lift.deployed, true);
   state = settleRound(state);
   assert.equal(state.lift.deployed, false);
   assert.equal(
-    state.review.some((event) => event.title === "Service Lift reset"),
+    state.review.some((event) => event.title === "Service Lift returned"),
     true,
   );
-});
-
-test("reset restores the same seed, opening state, and deterministic plan signature", () => {
-  const planned = battleExplorationOpening();
-  const signature = projectPlan(planned).signature;
-  const reset = resetFracturedGate(resolveToSettle(planned));
-  assert.deepEqual(reset, createFracturedGateState("battle-exploration"));
-  const replay = battleExplorationOpening();
-  assert.equal(projectPlan(replay).signature, signature);
 });

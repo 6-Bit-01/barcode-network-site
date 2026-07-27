@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const gameFiles = [
+  "middleware.ts",
   "src/app/world/playtest/page.tsx",
   "src/components/FracturedGatePrototype.tsx",
   "src/components/FracturedGatePrototype.module.css",
@@ -31,6 +32,12 @@ test("Fractured Gate is production-gated, unlinked, local-only, and has no live-
     contents.find(([path]) => path.endsWith("page.tsx"))[1],
     /BarcodeWorldGreybox/,
   );
+  const middleware = contents.find(([path]) => path === "middleware.ts")[1];
+  assert.match(middleware, /pathname === "\/world\/playtest"/);
+  assert.match(middleware, /process\.env\.NODE_ENV === "production"/);
+  assert.match(middleware, /status:\s*404/);
+  assert.match(middleware, /Cache-Control/);
+  assert.match(middleware, /X-Robots-Tag/);
   assert.doesNotMatch(
     combined,
     /\b(fetch|XMLHttpRequest|WebSocket|EventSource)\s*\(/,

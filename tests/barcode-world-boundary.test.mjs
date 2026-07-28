@@ -42,10 +42,7 @@ test("Fractured Gate is production-gated, unlinked, local-only, and has no live-
     combined,
     /\b(fetch|XMLHttpRequest|WebSocket|EventSource)\s*\(/,
   );
-  assert.doesNotMatch(
-    combined,
-    /\b(localStorage|sessionStorage|indexedDB)\b/,
-  );
+  assert.doesNotMatch(combined, /\b(localStorage|sessionStorage|indexedDB)\b/);
   assert.doesNotMatch(
     combined,
     /(?:from|import)\s+["'][^"']*(?:bnl|queue|relay|journal|supabase|redis)/i,
@@ -74,10 +71,44 @@ test("Fractured Gate preserves semantic input, focus, non-color cues, touch targ
   );
   assert.match(component, /aria-label="The Fractured Gate tactical board"/);
   assert.match(component, /aria-label="Current battle phase"/);
+  assert.match(component, /"Observe"/);
+  assert.match(component, /"Plan actions"/);
+  assert.match(component, /"Commit plans"/);
+  assert.match(component, /"Action phase"/);
+  assert.match(component, /"Aftermath"/);
   assert.match(component, /MOVE RANGE/);
   assert.match(component, /ENEMY PRESSURE/);
   assert.match(component, /CURRENT BUILD LINE/);
+  assert.match(component, /62 PLAYABLE DIAMONDS · 4 ENEMIES/);
+  assert.match(component, /data-action-shortcut="Move"/);
+  assert.match(component, /data-action-shortcut="Attack"/);
+  assert.match(component, /data-action-shortcut="Defend"/);
+  assert.match(component, /data-action-shortcut="Use"/);
+  assert.match(component, /BUILD TACTIC/);
+  assert.match(component, /END PLANNING/);
+  assert.match(component, /planned ·/);
+  assert.match(component, /cyan ghost moves only when the Action Phase begins/);
+  assert.match(component, /BEGIN EXCHANGE/);
+  assert.match(component, /VIEW BATTLE RESULTS/);
+  assert.match(component, /BEGIN FAST ACTIONS/);
+  assert.match(component, /REVIEW AFTERMATH/);
+  assert.match(component, /Command refunded after exchange/);
+  assert.match(component, /Powered service feed/);
+  assert.doesNotMatch(component, /window\.setTimeout/);
+  assert.doesNotMatch(component, />\s*SETTLE\s*</);
   assert.match(component, /powered by Gate Actuator/);
+  assert.match(component, /className=\{styles\.physicalGate\}/);
+  assert.match(component, /className=\{styles\.physicalDivider\}/);
+  assert.match(component, /className=\{styles\.physicalActuator\}/);
+  assert.match(component, /className=\{styles\.physicalBollard\}/);
+  for (const actorClass of [
+    "enemy_breacher",
+    "enemy_guard",
+    "enemy_controller",
+    "enemy_pressure",
+  ]) {
+    assert.match(css, new RegExp(`\\.${actorClass}`));
+  }
   assert.match(component, /data-terrain=/);
   assert.match(component, /type="button"/);
   assert.match(component, /TARGET/);
@@ -92,6 +123,10 @@ test("Fractured Gate preserves semantic input, focus, non-color cues, touch targ
     /clip-path:\s*polygon\(50% 0,\s*100% 50%,\s*50% 100%,\s*0 50%\)/,
   );
   assert.match(css, /\.movementPassThrough/);
+  assert.match(css, /grid-template-columns:\s*repeat\(6,\s*1fr\)/);
+  assert.match(css, /\.actionDock/);
+  assert.match(css, /\.intentSelectableFocus/);
+  assert.match(css, /\.locationShell/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /animation-duration:\s*0\.001ms/);
 });
@@ -107,14 +142,8 @@ test("shared live providers remain inert and expose only fallback state on the p
     assert.match(source, /pathname === "\/world\/playtest"/);
     assert.match(source, /if \(isolatedPrototype\) return/);
   }
-  assert.match(
-    liveProvider,
-    /isLive:\s*isolatedPrototype \? false : isLive/,
-  );
-  assert.match(
-    bnlProvider,
-    /value=\{isolatedPrototype \? null : controller\}/,
-  );
+  assert.match(liveProvider, /isLive:\s*isolatedPrototype \? false : isLive/);
+  assert.match(bnlProvider, /value=\{isolatedPrototype \? null : controller\}/);
   assert.match(siteChrome, /pathname === "\/world\/playtest"/);
   assert.match(siteChrome, /return children/);
   assert.match(siteChrome, /<Header \/>/);
@@ -133,11 +162,7 @@ function luminance(hex) {
     .replace("#", "")
     .match(/.{2}/g)
     .map((channel) => channelToLinear(Number.parseInt(channel, 16)));
-  return (
-    channels[0] * 0.2126 +
-    channels[1] * 0.7152 +
-    channels[2] * 0.0722
-  );
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
 }
 
 function contrast(foreground, background) {

@@ -3,6 +3,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
 } from "react";
@@ -62,10 +63,11 @@ const CORE_FOCUS_ORDER = [
 
 const LANE_NAMES = ["Fast", "Standard", "Slow"];
 const BATTLE_PHASES = [
-  "Read & plan",
-  "Contest & lock",
-  "Resolve",
-  "Settle",
+  "Observe",
+  "Plan actions",
+  "Commit plans",
+  "Action phase",
+  "Aftermath",
   "Results",
 ];
 
@@ -141,7 +143,7 @@ const MARKER_VISUALS: Record<
   "service-lift": {
     glyph: "⇈",
     short: "LIFT BRIDGE",
-    relationship: "Returns at Settle",
+    relationship: "Returns after the exchange",
   },
   regulator: {
     glyph: "R",
@@ -169,9 +171,60 @@ type PhaseGuide = {
   detail: string;
 };
 
+type ActionIntent = "Attack" | "Defend" | "Use" | null;
+
+const ACTION_INTENT_FOCUSES = [
+  "player",
+  "breacher",
+  "guard",
+  "controller",
+  "pressure",
+  "breacher-intent",
+  "gate",
+  "field-cache",
+  "gate-actuator",
+  "defensive-bollard",
+  "service-gap",
+  "upper-crossing",
+  "lift-relay",
+  "breach",
+  "upper-route",
+  "service-route",
+  "service-lift",
+  "regulator",
+];
+
+const ENEMY_VISUALS: Record<
+  string,
+  { icon: string; role: string; intent: string }
+> = {
+  breacher: {
+    icon: "⟫",
+    role: "IMPACT",
+    intent: "Drives the Gate",
+  },
+  guard: {
+    icon: "⬢",
+    role: "GUARD",
+    intent: "Protects the lane",
+  },
+  controller: {
+    icon: "⌘",
+    role: "CONTROL",
+    intent: "Contests machinery",
+  },
+  pressure: {
+    icon: "➤",
+    role: "FLANK",
+    intent: "Denies routes",
+  },
+};
+
 function buildFor(buildId: string) {
-  return BUILDS.find((build: FracturedGateRecord) => build.id === buildId) ??
-    BUILDS[0];
+  return (
+    BUILDS.find((build: FracturedGateRecord) => build.id === buildId) ??
+    BUILDS[0]
+  );
 }
 
 function cardName(cardId: string) {
@@ -185,10 +238,32 @@ function titleCase(value: string) {
     .join(" ");
 }
 
-function focusStatus(
-  focusId: string,
-  snapshot: FracturedGateRecord,
+function positionLabel(positionId: string) {
+  const tile = BOARD_TILES[positionId];
+  return tile ? `space ${tile.x},${tile.y}` : titleCase(positionId);
+}
+
+function actionFocuses(
+  game: FracturedGateState,
+  parent: Exclude<ActionIntent, null>,
 ) {
+  return ACTION_INTENT_FOCUSES.flatMap((focusId) => {
+    const group = getContextActionGroups(game, focusId).find(
+      (candidate: FracturedGateRecord) => candidate.parent === parent,
+    );
+    if (!group) return [];
+    return [
+      {
+        focusId,
+        ready: group.choices.some(
+          (choice: FracturedGateChoice) => choice.legal,
+        ),
+      },
+    ];
+  });
+}
+
+function focusStatus(focusId: string, snapshot: FracturedGateRecord) {
   if (BOARD_TILES[focusId]) {
     const tile = BOARD_TILES[focusId];
     if (tile.terrain === "powered") {
@@ -235,22 +310,14 @@ function focusStatus(
         ? "Prepared · closure suppressed"
         : "Prepared";
     case "service-lift":
-      return snapshot.lift.deployed ? "Deployed until Settle" : "Projected";
+      return snapshot.lift.deployed
+        ? "Deployed until this exchange ends"
+        : "Projected";
     case "regulator":
       return snapshot.flags.regulatorExposed ? "Exposed" : "Shielded";
     default:
       return BOARD_FOCUSES[focusId]?.kind ?? "";
   }
-}
-
-function phaseLabel(game: FracturedGateState) {
-  if (game.phase === "resolution") {
-    const index = game.resolution?.visibleLaneIndex ?? -1;
-    return index >= 0 ? `${LANE_NAMES[index]} resolution` : "Plan locked";
-  }
-  if (game.phase === "settle") return "Settle";
-  if (game.phase === "result") return "Results";
-  return game.priority === "player" ? "Planning · your priority" : "Planning · enemy priority";
 }
 
 function getBuildOpportunity(
@@ -278,62 +345,58 @@ function getBuildOpportunity(
             instruction:
               "Approach on the clear lane, then answer the Breacher at this brittle, load-bearing cover.",
           },
-    "exploration-battle":
-      snapshot.upperRoute.prepared
-        ? {
-            focusId: "upper-crossing",
-            title: "Protect the prepared landing",
-            instruction:
-              "Exploration established the route. Battle can preserve its capacity-one landing against interception.",
-          }
-        : {
-            focusId: "upper-crossing",
-            title: "Prepare the Upper Natural Crossing",
-            instruction:
-              "Exploration sees the handholds. Battle can later defend the east landing.",
-          },
-    "battle-hacking":
-      snapshot.flags.regulatorExposed
-        ? {
-            focusId: "regulator",
-            title: "Suppress the exposed regulator reset",
-            instruction:
-              "Battle exposed real hardware. Hacking can keep its automatic reset from erasing that advantage.",
-          }
-        : {
-            focusId: "breacher",
-            title: "Expose the Breacher’s impact regulator",
-            instruction:
-              "Meet the Breacher physically, then use Hacking on the hardware the collision reveals.",
-          },
-    "hacking-battle":
-      snapshot.actuator.controlled
-        ? {
-            focusId: "defensive-bollard",
-            title: "Convert Control into physical force",
-            instruction:
-              "Hacking owns the output. Battle must hold the access point and author where that force lands.",
-          }
-        : {
-            focusId: "gate-actuator",
-            title: "Take local control of the Gate Actuator",
-            instruction:
-              "Reach the visible actuator that powers both the service track and defensive bollard.",
-          },
-    "exploration-hacking":
-      snapshot.serviceRoute.prepared
-        ? {
-            focusId: "service-gap",
-            title: "Suppress the service shutter",
-            instruction:
-              "Exploration found the rear route. Hacking can delay the Controller-linked closure.",
-          }
-        : {
-            focusId: "service-gap",
-            title: "Prepare the concealed Service Gap",
-            instruction:
-              "Exploration reads the physical gap. Hacking can later keep its shutter open.",
-          },
+    "exploration-battle": snapshot.upperRoute.prepared
+      ? {
+          focusId: "upper-crossing",
+          title: "Protect the prepared landing",
+          instruction:
+            "Exploration established the route. Battle can preserve its capacity-one landing against interception.",
+        }
+      : {
+          focusId: "upper-crossing",
+          title: "Prepare the Upper Natural Crossing",
+          instruction:
+            "Exploration sees the handholds. Battle can later defend the east landing.",
+        },
+    "battle-hacking": snapshot.flags.regulatorExposed
+      ? {
+          focusId: "regulator",
+          title: "Suppress the exposed regulator reset",
+          instruction:
+            "Battle exposed real hardware. Hacking can keep its automatic reset from erasing that advantage.",
+        }
+      : {
+          focusId: "breacher",
+          title: "Expose the Breacher’s impact regulator",
+          instruction:
+            "Meet the Breacher physically, then use Hacking on the hardware the collision reveals.",
+        },
+    "hacking-battle": snapshot.actuator.controlled
+      ? {
+          focusId: "defensive-bollard",
+          title: "Convert Control into physical force",
+          instruction:
+            "Hacking owns the output. Battle must hold the access point and author where that force lands.",
+        }
+      : {
+          focusId: "gate-actuator",
+          title: "Take local control of the Gate Actuator",
+          instruction:
+            "Reach the visible actuator that powers both the service track and defensive bollard.",
+        },
+    "exploration-hacking": snapshot.serviceRoute.prepared
+      ? {
+          focusId: "service-gap",
+          title: "Suppress the service shutter",
+          instruction:
+            "Exploration found the rear route. Hacking can delay the Controller-linked closure.",
+        }
+      : {
+          focusId: "service-gap",
+          title: "Prepare the concealed Service Gap",
+          instruction:
+            "Exploration reads the physical gap. Hacking can later keep its shutter open.",
+        },
     "hacking-exploration":
       snapshot.actuator.controlled && snapshot.actuator.mode === "lift"
         ? {
@@ -361,7 +424,7 @@ function getBuildOpportunity(
     enabled: `${minor} Minor`,
     actionLabel: choice?.label ?? null,
     ready: Boolean(choice?.legal),
-    reason: choice?.legal ? null : choice?.reason ?? null,
+    reason: choice?.legal ? null : (choice?.reason ?? null),
   };
 }
 
@@ -370,41 +433,47 @@ function getPhaseGuide({
   targetingChoice,
   targetId,
   selectedParent,
+  actionIntent,
   pivotMode,
 }: {
   game: FracturedGateState;
   targetingChoice: FracturedGateChoice | null;
   targetId: string | null;
   selectedParent: string | null;
+  actionIntent: ActionIntent;
   pivotMode: boolean;
 }): PhaseGuide {
   if (game.phase === "resolution") {
     const index = game.resolution?.visibleLaneIndex ?? -1;
     return {
-      phaseIndex: 2,
+      phaseIndex: 3,
       kicker: index < 0 ? "Plans revealed" : `${LANE_NAMES[index]} lane`,
-      title: index < 0 ? "The plans are locked" : `Resolve ${LANE_NAMES[index]}`,
+      title:
+        index < 0
+          ? "Both plans are locked"
+          : `${LANE_NAMES[index]} actions are resolving`,
       instruction:
         index < 0
-          ? "Compare both plans, then reveal the first timing lane."
+          ? "Compare the final commitments, then begin the Action Phase."
           : "Watch positions, protection, machinery, and contact update on the battlefield.",
       detail:
-        "Nothing may be added or retargeted after Lock. Invalidated actions are explained in the review.",
+        "Nothing may be added or retargeted now. Invalidated actions are explained in the battle review.",
     };
   }
   if (game.phase === "settle") {
     return {
-      phaseIndex: 3,
+      phaseIndex: 4,
       kicker: "Aftermath",
-      title: "Read what changed, then Settle",
+      title: "Review what the exchange changed",
       instruction:
-        "Review damage, Gate pressure, terrain, temporary machinery, cards, and Command before the next exchange.",
-      detail: "Temporary outputs reset here; persistent physical changes remain.",
+        "Check damage, Gate pressure, enemy positions, terrain, cards, and Command before continuing.",
+      detail:
+        "Temporary outputs reset after this review. Persistent physical damage and opened routes remain.",
     };
   }
   if (game.phase === "result") {
     return {
-      phaseIndex: 4,
+      phaseIndex: 5,
       kicker: "Battle complete",
       title: "Review the result and tradeoff",
       instruction:
@@ -414,7 +483,7 @@ function getPhaseGuide({
   }
   if (game.hand.length > CORE_RULES.retainLimit) {
     return {
-      phaseIndex: 0,
+      phaseIndex: 1,
       kicker: "Retain limit",
       title: `Discard ${game.hand.length - CORE_RULES.retainLimit} card${
         game.hand.length - CORE_RULES.retainLimit === 1 ? "" : "s"
@@ -426,7 +495,7 @@ function getPhaseGuide({
   }
   if (pivotMode) {
     return {
-      phaseIndex: 1,
+      phaseIndex: 2,
       kicker: "One bounded change",
       title: "Pivot the newest Open action",
       instruction:
@@ -438,7 +507,7 @@ function getPhaseGuide({
   }
   if (targetingChoice && !targetId) {
     return {
-      phaseIndex: game.plan.length ? 1 : 0,
+      phaseIndex: 1,
       kicker: "Targeting",
       title: `Choose a highlighted target for ${targetingChoice.label}`,
       instruction:
@@ -453,7 +522,7 @@ function getPhaseGuide({
   }
   if (targetingChoice && targetId) {
     return {
-      phaseIndex: game.plan.length ? 1 : 0,
+      phaseIndex: 1,
       kicker: "Preview",
       title: "Confirm the projected consequence",
       instruction:
@@ -464,7 +533,7 @@ function getPhaseGuide({
   }
   if (game.priority !== "player") {
     return {
-      phaseIndex: 1,
+      phaseIndex: 2,
       kicker: "Enemy priority",
       title: "The enemy squad is committing",
       instruction:
@@ -472,34 +541,50 @@ function getPhaseGuide({
       detail: "The squad uses its own real hands and cannot inspect yours.",
     };
   }
+  if (actionIntent) {
+    return {
+      phaseIndex: 1,
+      kicker: `${actionIntent} selection`,
+      title:
+        actionIntent === "Attack"
+          ? "Choose an enemy on the battlefield"
+          : actionIntent === "Defend"
+            ? "Choose yourself or the threatened objective"
+            : "Choose a marked objective or object",
+      instruction:
+        "Bright markers are available now. Dim markers still explain the position, range, or setup they require.",
+      detail:
+        "Selecting a marker opens its exact action and legality before anything is committed.",
+    };
+  }
   if (selectedParent === "Move") {
     return {
-      phaseIndex: game.plan.length ? 1 : 0,
+      phaseIndex: 1,
       kicker: game.plan.length ? "Continue or lock" : "Opening selection",
       title: "Choose how far you want to move",
       instruction:
         "Green diamonds are the one free Reposition. Cyan diamonds are reachable with the paid Advance.",
-      detail:
-        game.plan.length
-          ? "You can add another action, inspect another focus, Pivot the newest action, or Pass / Lock."
-          : "Select Reposition or Advance in the command rail, then choose a glowing destination.",
+      detail: game.plan.length
+        ? "You can add another action, inspect another focus, Pivot the newest action, or End Planning."
+        : "Select Reposition or Advance in the command rail, then choose a glowing destination.",
     };
   }
   if (selectedParent) {
     return {
-      phaseIndex: game.plan.length ? 1 : 0,
+      phaseIndex: 1,
       kicker: "Action selection",
       title: `Choose a ${selectedParent} action`,
       instruction:
         "Only actions relevant to the selected battlefield focus are shown in the command rail.",
-      detail: "Disabled actions name the physical position or setup they still require.",
+      detail:
+        "Disabled actions name the physical position or setup they still require.",
     };
   }
   return {
-    phaseIndex: game.plan.length ? 1 : 0,
-    kicker: game.plan.length ? "Contest the plan" : "Read the battlefield",
+    phaseIndex: game.plan.length ? 2 : 0,
+    kicker: game.plan.length ? "Commitment decision" : "Read the battlefield",
     title: game.plan.length
-      ? "Add, Pivot, or Pass / Lock"
+      ? "Add, Pivot, or End Planning"
       : "Select your piece, an enemy, or a visible object",
     instruction:
       "Use the board itself. Enemy pressure, physical terrain, powered relationships, and your build opportunity are already marked.",
@@ -510,28 +595,15 @@ function getPhaseGuide({
 
 function PhaseDirector({
   game,
-  targetingChoice,
-  targetId,
-  selectedParent,
-  pivotMode,
+  guide,
   opportunity,
   onOpportunity,
 }: {
   game: FracturedGateState;
-  targetingChoice: FracturedGateChoice | null;
-  targetId: string | null;
-  selectedParent: string | null;
-  pivotMode: boolean;
+  guide: PhaseGuide;
   opportunity: BuildOpportunity;
   onOpportunity: (focusId: string) => void;
 }) {
-  const guide = getPhaseGuide({
-    game,
-    targetingChoice,
-    targetId,
-    selectedParent,
-    pivotMode,
-  });
   return (
     <section className={styles.phaseDirector} aria-label="Current battle phase">
       <ol className={styles.phaseTrack}>
@@ -554,7 +626,7 @@ function PhaseDirector({
       </ol>
       <div className={styles.phaseInstruction} aria-live="polite">
         <div className={styles.phaseNumber}>
-          <span>ROUND {game.round}</span>
+          <span>EXCHANGE {game.round}</span>
           <strong>{guide.kicker}</strong>
         </div>
         <div>
@@ -588,9 +660,167 @@ function PhaseDirector({
           {game.phase !== "planning"
             ? "Select to inspect this source on the battlefield."
             : opportunity.ready
-            ? `Select · ${opportunity.actionLabel}`
-            : opportunity.reason ?? "Select to inspect the required setup."}
+              ? `Select · ${opportunity.actionLabel}`
+              : (opportunity.reason ?? "Select to inspect the required setup.")}
         </b>
+      </button>
+    </section>
+  );
+}
+
+function ActionDock({
+  game,
+  projection,
+  actionIntent,
+  opportunity,
+  onShortcut,
+  onOpportunity,
+  onPass,
+}: {
+  game: FracturedGateState;
+  projection: FracturedGateRecord | null;
+  actionIntent: ActionIntent;
+  opportunity: BuildOpportunity;
+  onShortcut: (parent: "Move" | "Attack" | "Defend" | "Use") => void;
+  onOpportunity: (focusId: string) => void;
+  onPass: () => void;
+}) {
+  if (game.phase !== "planning") return null;
+
+  const snapshot = displaySnapshot(game);
+  const projectedSnapshot = projection?.finalSnapshot ?? snapshot;
+  const attackOptions = actionFocuses(game, "Attack");
+  const defendOptions = actionFocuses(game, "Defend");
+  const useOptions = actionFocuses(game, "Use");
+  const attackReady = attackOptions.filter((option) => option.ready).length;
+  const defendReady = defendOptions.filter((option) => option.ready).length;
+  const useReady = useOptions.filter((option) => option.ready).length;
+  const actionsDisabled =
+    game.priority !== "player" || game.hand.length > CORE_RULES.retainLimit;
+  const hasPlan = game.plan.length > 0 || Boolean(game.refocusRecord);
+  const moved = projectedSnapshot.position !== snapshot.position;
+
+  return (
+    <section
+      className={styles.actionDock}
+      aria-label="Choose your next battle action"
+    >
+      <div className={styles.actionDockStatus} aria-live="polite">
+        <span>
+          {game.hand.length > CORE_RULES.retainLimit
+            ? "RETAIN LIMIT"
+            : game.priority === "player"
+              ? game.plan.length
+                ? `PLAN HAS ${game.plan.length} ACTION${
+                    game.plan.length === 1 ? "" : "S"
+                  }`
+                : "YOUR PRIORITY"
+              : "ENEMY COMMITTING"}
+        </span>
+        <strong>
+          {game.hand.length > CORE_RULES.retainLimit
+            ? "Discard down to seven cards before planning."
+            : game.plan.length
+              ? "Choose another action, use your build line, or End Planning."
+              : "Choose an action. The board will show every relevant destination or target."}
+        </strong>
+        <small>
+          Current · {positionLabel(snapshot.position)}
+          {moved
+            ? `  →  planned · ${positionLabel(projectedSnapshot.position)}`
+            : " · no movement planned"}
+          {moved
+            ? " · the cyan ghost moves only when the Action Phase begins"
+            : ""}
+        </small>
+      </div>
+
+      <div className={styles.actionShortcuts}>
+        <button
+          type="button"
+          data-action-shortcut="Move"
+          className={actionIntent === null ? "" : styles.quietShortcut}
+          disabled={actionsDisabled}
+          onClick={() => onShortcut("Move")}
+        >
+          <span>01 · POSITION</span>
+          <strong>MOVE</strong>
+          <small>Show free and paid destinations</small>
+        </button>
+        <button
+          type="button"
+          data-action-shortcut="Attack"
+          className={actionIntent === "Attack" ? styles.activeShortcut : ""}
+          disabled={actionsDisabled}
+          onClick={() => onShortcut("Attack")}
+        >
+          <span>02 · PRESSURE</span>
+          <strong>ATTACK</strong>
+          <small>
+            {attackReady
+              ? `${attackReady} enem${attackReady === 1 ? "y" : "ies"} in range`
+              : "Choose an enemy to read required range"}
+          </small>
+        </button>
+        <button
+          type="button"
+          data-action-shortcut="Defend"
+          className={actionIntent === "Defend" ? styles.activeShortcut : ""}
+          disabled={actionsDisabled}
+          onClick={() => onShortcut("Defend")}
+        >
+          <span>03 · PROTECT</span>
+          <strong>DEFEND</strong>
+          <small>
+            {defendReady > 1
+              ? "Guard yourself or the objective"
+              : "Guard now; objective defense unlocks in position"}
+          </small>
+        </button>
+        <button
+          type="button"
+          data-action-shortcut="Use"
+          className={actionIntent === "Use" ? styles.activeShortcut : ""}
+          disabled={actionsDisabled}
+          onClick={() => onShortcut("Use")}
+        >
+          <span>04 · INTERACT</span>
+          <strong>USE OBJECT</strong>
+          <small>
+            {useReady
+              ? `${useReady} usable now`
+              : "Choose an objective or object to inspect"}
+          </small>
+        </button>
+      </div>
+
+      <button
+        type="button"
+        className={styles.buildShortcut}
+        disabled={actionsDisabled}
+        onClick={() => onOpportunity(opportunity.focusId)}
+      >
+        <span>
+          BUILD TACTIC · {opportunity.ready ? "READY" : "SETUP VISIBLE"}
+        </span>
+        <strong>{opportunity.title}</strong>
+        <small>
+          {opportunity.ready
+            ? opportunity.actionLabel
+            : (opportunity.reason ?? opportunity.instruction)}
+        </small>
+      </button>
+
+      <button
+        type="button"
+        className={styles.commitShortcut}
+        data-testid="action-dock-lock"
+        disabled={!hasPlan}
+        onClick={onPass}
+      >
+        <span>{game.consecutivePasses}/2 PASSES</span>
+        <strong>END PLANNING</strong>
+        <small>Pass priority; two passes lock both plans</small>
       </button>
     </section>
   );
@@ -625,6 +855,7 @@ function BattleBoard({
   game,
   selectedFocus,
   selectedParent,
+  actionIntent,
   confirmedTarget,
   targetingChoice,
   projection,
@@ -636,6 +867,7 @@ function BattleBoard({
   game: FracturedGateState;
   selectedFocus: string;
   selectedParent: string | null;
+  actionIntent: ActionIntent;
   confirmedTarget: string | null;
   targetingChoice: FracturedGateChoice | null;
   projection: FracturedGateRecord | null;
@@ -646,9 +878,18 @@ function BattleBoard({
 }) {
   const [showThreats, setShowThreats] = useState(true);
   const [showBuildLine, setShowBuildLine] = useState(true);
+  const boardScrollRef = useRef<HTMLElement>(null);
   const snapshot = displaySnapshot(game);
   const legalTargets = new Set<string>(
     (targetingChoice?.legalTargets ?? []) as string[],
+  );
+  const intentFocuses = new Map<string, boolean>(
+    actionIntent
+      ? actionFocuses(game, actionIntent).map((item) => [
+          item.focusId,
+          item.ready,
+        ])
+      : [],
   );
   const visible = new Set(CORE_FOCUS_ORDER);
   const projectedSnapshot = projection?.finalSnapshot ?? snapshot;
@@ -674,16 +915,46 @@ function BattleBoard({
   const opportunityTileId =
     BOARD_FOCUSES[opportunity.focusId]?.tileId ?? opportunity.focusId;
 
+  useEffect(() => {
+    const container = boardScrollRef.current;
+    if (!container || container.scrollWidth <= container.clientWidth) return;
+    const anchorId =
+      actionIntent === "Attack"
+        ? "breacher"
+        : actionIntent === "Use"
+          ? "gate"
+          : actionIntent === "Defend"
+            ? "player"
+            : selectedFocus;
+    const frame = window.requestAnimationFrame(() => {
+      const target =
+        container.querySelector<HTMLElement>(`[data-focus-id="${anchorId}"]`) ??
+        container.querySelector<HTMLElement>(`[data-tile-id="${anchorId}"]`);
+      if (!target) return;
+      const containerRect = container.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const desiredLeft =
+        container.scrollLeft +
+        targetRect.left -
+        containerRect.left -
+        (container.clientWidth - targetRect.width) / 2;
+      container.scrollTo({
+        left: Math.max(0, desiredLeft),
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [actionIntent, selectedFocus, selectedParent]);
+
   if (
     projectedSnapshot.divider.status === "breached" ||
     snapshot.divider.status === "breached"
   ) {
     visible.add("breach");
   }
-  if (
-    projectedSnapshot.upperRoute.prepared ||
-    snapshot.upperRoute.prepared
-  ) {
+  if (projectedSnapshot.upperRoute.prepared || snapshot.upperRoute.prepared) {
     visible.add("upper-route");
   }
   if (
@@ -742,8 +1013,12 @@ function BattleBoard({
     .map(svgPoint)
     .join(" ");
   const activeEnemyTiles = new Set<string>();
-  for (const enemy of Object.values(projectedSnapshot.enemies) as FracturedGateRecord[]) {
-    if (!["active", "staggered", "off-balance", "pinned"].includes(enemy.status)) {
+  for (const enemy of Object.values(
+    projectedSnapshot.enemies,
+  ) as FracturedGateRecord[]) {
+    if (
+      !["active", "staggered", "off-balance", "pinned"].includes(enemy.status)
+    ) {
       continue;
     }
     const origin = BOARD_TILES[enemy.position];
@@ -763,13 +1038,14 @@ function BattleBoard({
 
   return (
     <section
+      ref={boardScrollRef}
       className={styles.board}
       aria-label="The Fractured Gate tactical board"
       data-testid="fractured-gate-board"
     >
       <div className={styles.boardViewport}>
         <div className={styles.boardTools}>
-          <span>PHYSICAL BATTLEFIELD · DIRECT SELECTION</span>
+          <span>FRACTURED GATE · 62 PLAYABLE DIAMONDS · 4 ENEMIES</span>
           <div>
             <button
               type="button"
@@ -801,7 +1077,7 @@ function BattleBoard({
           </div>
         </div>
         <div className={styles.boardPanHint} aria-hidden="true">
-          DRAG / SCROLL MAP → ENEMIES + GATE
+          SCROLL BATTLEFIELD → 62 SPACES + GATE
         </div>
 
         <svg
@@ -845,22 +1121,47 @@ function BattleBoard({
 
           <rect width="1000" height="620" fill="#060a0f" />
           <path
-            d="M50 205 L670 205 L760 535 L45 535 Z"
+            className={styles.locationShell}
+            d="M190 205 L325 205 L325 235 L512 258 L548 311 L518 365 L612 414 L612 486 L579 552 L193 552 L169 512 L194 455 L207 425 L52 425 L40 340 L178 330 L190 282 Z"
             fill="url(#yard-fill)"
             stroke="#334752"
             strokeWidth="3"
           />
           <path
-            d="M245 65 L900 65 L935 225 L230 225 Z"
+            className={styles.locationShell}
+            d="M260 62 L515 62 L546 112 L521 196 L286 208 L251 151 Z"
             fill="url(#walk-fill)"
             stroke="#50636a"
             strokeWidth="3"
           />
           <path
-            d="M645 190 L965 190 L980 535 L700 535 Z"
+            className={styles.locationShell}
+            d="M604 62 L875 62 L916 121 L897 206 L642 216 L598 160 Z"
+            fill="url(#walk-fill)"
+            stroke="#50636a"
+            strokeWidth="3"
+          />
+          <path
+            className={styles.locationShell}
+            d="M604 209 L902 209 L956 260 L947 432 L910 477 L612 477 L577 421 L594 352 L571 305 Z"
             fill="url(#gate-fill)"
             stroke="#3a7774"
             strokeWidth="4"
+          />
+          <path
+            className={styles.entryGangway}
+            d="M48 355 L205 355 L242 387 L205 420 L48 410 Z"
+            fill="none"
+            stroke="#6c7b80"
+            strokeWidth="9"
+          />
+          <path
+            className={styles.brokenSpan}
+            d="M506 193 L532 177 L548 193 M603 190 L623 174 L647 190"
+            fill="none"
+            stroke="#91a5aa"
+            strokeWidth="8"
+            strokeLinecap="square"
           />
           <polyline
             points={feedPoints}
@@ -878,6 +1179,132 @@ function BattleBoard({
             strokeDasharray="7 8"
             opacity="0.7"
           />
+          <g
+            className={styles.physicalGate}
+            transform={`translate(${gatePoint.x * 10} ${gatePoint.y * 6.2})`}
+          >
+            <path
+              d="M-48 58 L-48 -54 Q0 -84 48 -54 L48 58"
+              fill="none"
+              stroke="#5b8f84"
+              strokeWidth="18"
+            />
+            <path
+              d="M-29 58 L-29 -39 Q0 -58 29 -39 L29 58"
+              fill="rgba(4, 10, 12, 0.9)"
+              stroke="#63ff9f"
+              strokeWidth="4"
+              strokeDasharray="9 7"
+            />
+          </g>
+          <g
+            className={styles.physicalDivider}
+            transform={`translate(${dividerPoint.x * 10} ${dividerPoint.y * 6.2})`}
+          >
+            <path
+              d="M-42 -39 L-20 -34 L-8 -44 L7 -30 L24 -37 L43 -26 L36 38 L11 31 L-2 43 L-20 29 L-42 36 Z"
+              fill="#273138"
+              stroke="#94a5aa"
+              strokeWidth="5"
+            />
+            <path
+              d="M-8 -38 L3 -15 L-7 0 L9 18 L0 39"
+              fill="none"
+              stroke="#ff9b6a"
+              strokeWidth="5"
+            />
+          </g>
+          <g
+            className={styles.physicalActuator}
+            transform={`translate(${actuatorPoint.x * 10} ${actuatorPoint.y * 6.2})`}
+          >
+            <path
+              d="M-29 -22 L18 -30 L32 -13 L27 27 L-22 31 L-34 12 Z"
+              fill="#0c2631"
+              stroke="#61dcff"
+              strokeWidth="5"
+            />
+            <circle cx="-7" cy="-3" r="6" fill="#63ff9f" />
+            <path
+              d="M5 -9 L22 -12 M5 2 L21 0 M4 13 L17 12"
+              stroke="#61dcff"
+              strokeWidth="4"
+            />
+          </g>
+          <g
+            className={styles.physicalBollard}
+            transform={`translate(${bollardPoint.x * 10} ${bollardPoint.y * 6.2})`}
+          >
+            <ellipse
+              cy="-23"
+              rx="18"
+              ry="8"
+              fill="#34515c"
+              stroke="#61dcff"
+              strokeWidth="4"
+            />
+            <path
+              d="M-18 -23 L-14 26 Q0 37 14 26 L18 -23"
+              fill="#1c333b"
+              stroke="#61dcff"
+              strokeWidth="4"
+            />
+          </g>
+          <g
+            className={styles.physicalCache}
+            transform={`translate(${BOARD_FOCUSES["field-cache"].x * 10} ${
+              BOARD_FOCUSES["field-cache"].y * 6.2
+            })`}
+          >
+            <path
+              d="M-26 -18 L2 -29 L29 -10 L23 25 L-10 31 L-31 9 Z"
+              fill="#3d3214"
+              stroke="#ffd166"
+              strokeWidth="5"
+            />
+            <path
+              d="M-8 -25 L-6 26 M-28 5 L26 -4"
+              stroke="#a88631"
+              strokeWidth="4"
+            />
+          </g>
+          <g
+            className={styles.physicalRelay}
+            transform={`translate(${BOARD_FOCUSES["lift-relay"].x * 10} ${
+              BOARD_FOCUSES["lift-relay"].y * 6.2
+            })`}
+          >
+            <path
+              d="M0 -31 L28 -14 L28 16 L0 32 L-28 16 L-28 -14 Z"
+              fill="#102a34"
+              stroke="#61dcff"
+              strokeWidth="5"
+            />
+            <path
+              d="M-12 10 L0 -15 L12 10 M-16 17 L16 17"
+              fill="none"
+              stroke="#c9a6ff"
+              strokeWidth="5"
+            />
+          </g>
+          <g
+            className={styles.physicalServiceGap}
+            transform={`translate(${BOARD_FOCUSES["service-gap"].x * 10} ${
+              BOARD_FOCUSES["service-gap"].y * 6.2
+            })`}
+          >
+            <path
+              d="M-36 -19 L36 -19 L28 23 L-28 23 Z"
+              fill="#03070a"
+              stroke="#73878d"
+              strokeWidth="5"
+            />
+            <path
+              d="M-20 -15 L-12 19 M-2 -17 L5 19 M17 -17 L23 17"
+              stroke="#3d4b50"
+              strokeWidth="4"
+            />
+          </g>
           <polyline
             points={intentPoints}
             fill="none"
@@ -901,9 +1328,7 @@ function BattleBoard({
               gatePoint.x * 10 + 55
             } ${gatePoint.y * 6.2 + 75}`}
             fill="none"
-            stroke={
-              snapshot.gate.status === "failed" ? "#ff6474" : "#52ff9b"
-            }
+            stroke={snapshot.gate.status === "failed" ? "#ff6474" : "#52ff9b"}
             strokeWidth="12"
             opacity="0.8"
             filter="url(#soft-glow)"
@@ -944,31 +1369,35 @@ function BattleBoard({
               <circle r="42" fill="none" stroke="#ffc857" strokeWidth="3" />
             </g>
           ) : null}
-          <text x="255" y="185" className={styles.areaLabel}>
-            UPPER WALK
+          <text x="290" y="86" className={styles.areaLabel}>
+            UPPER WEST
           </text>
-          <text x="145" y="505" className={styles.areaLabel}>
+          <text x="650" y="86" className={styles.areaLabel}>
+            UPPER EAST
+          </text>
+          <text x="215" y="526" className={styles.areaLabel}>
             LOWER YARD
           </text>
-          <text x="750" y="505" className={styles.areaLabel}>
+          <text x="700" y="452" className={styles.areaLabel}>
             GATE PLATFORM
           </text>
         </svg>
 
-        <div className={styles.tileLayer} aria-label="Direct tactical tile selection">
+        <div
+          className={styles.tileLayer}
+          aria-label="Direct tactical tile selection"
+        >
           {Object.values(BOARD_TILES).map((tile: FracturedGateRecord) => {
             const target = legalTargets.has(tile.id);
             const confirmed = confirmedTarget === tile.id;
             const selected = selectedFocus === tile.id;
-            const freeMove =
-              showMoveGuide && repositionTargets.has(tile.id);
+            const freeMove = showMoveGuide && repositionTargets.has(tile.id);
             const paidMove =
               showMoveGuide &&
               advanceTargets.has(tile.id) &&
               !repositionTargets.has(tile.id);
             const threatened = showThreats && activeEnemyTiles.has(tile.id);
-            const buildTile =
-              showBuildLine && opportunityTileId === tile.id;
+            const buildTile = showBuildLine && opportunityTileId === tile.id;
             const cue = confirmed
               ? "SET"
               : target
@@ -1033,9 +1462,7 @@ function BattleBoard({
                           : ""}
                   </i>
                 </span>
-                {cue ? (
-                  <span className={styles.tileCue}>{cue}</span>
-                ) : null}
+                {cue ? <span className={styles.tileCue}>{cue}</span> : null}
               </button>
             );
           })}
@@ -1045,7 +1472,11 @@ function BattleBoard({
           type="button"
           className={`${styles.playerPiece} ${
             selectedFocus === "player" ? styles.selectedPiece : ""
-          } ${legalTargets.has("player") ? styles.legalTarget : ""}`}
+          } ${legalTargets.has("player") ? styles.legalTarget : ""} ${
+            intentFocuses.has("player") ? styles.intentSelectableFocus : ""
+          } ${
+            intentFocuses.get("player") === true ? styles.intentReadyFocus : ""
+          }`}
           style={
             {
               "--x": `${playerPosition.x}%`,
@@ -1056,6 +1487,11 @@ function BattleBoard({
           aria-label={`Player at ${focusStatus("player", snapshot)}`}
           data-focus-id="player"
         >
+          {intentFocuses.has("player") && !legalTargets.has("player") ? (
+            <span className={styles.intentCue}>
+              {intentFocuses.get("player") ? "READY" : "CHECK"}
+            </span>
+          ) : null}
           <span className={styles.pieceCore} aria-hidden="true">
             6
           </span>
@@ -1090,15 +1526,20 @@ function BattleBoard({
           const selected = selectedFocus === focusId;
           const target = legalTargets.has(focusId);
           const confirmed = confirmedTarget === focusId;
+          const intentSelectable = intentFocuses.has(focusId);
+          const intentReady = intentFocuses.get(focusId) === true;
           const actor = focus.actorId
             ? projectedSnapshot.enemies?.[focus.actorId]
             : null;
+          const enemyVisual = actor ? ENEMY_VISUALS[focus.actorId] : null;
           const actorPoint = actor
             ? getPositionCoordinates(actor.position)
             : null;
           const enemyInactive =
             Boolean(actor) &&
-            !["active", "staggered", "off-balance", "pinned"].includes(actor.status);
+            !["active", "staggered", "off-balance", "pinned"].includes(
+              actor.status,
+            );
           const movementPassThrough =
             targetingChoice?.parent === "Move" &&
             legalTargets.has(focus.tileId) &&
@@ -1108,14 +1549,21 @@ function BattleBoard({
           const classNames = [
             styles.boardFocus,
             styles[`focus_${focus.kind}`],
+            actor ? styles[`enemy_${focus.actorId}`] : "",
             selected ? styles.selectedFocus : "",
             target ? styles.legalTarget : "",
+            intentSelectable ? styles.intentSelectableFocus : "",
+            intentSelectable && intentReady ? styles.intentReadyFocus : "",
             enemyInactive ? styles.inactiveFocus : "",
             movementPassThrough ? styles.movementPassThrough : "",
             opportunityFocus ? styles.buildOpportunityFocus : "",
-            ["breach", "upper-route", "service-route", "service-lift", "regulator"].includes(
-              focusId,
-            )
+            [
+              "breach",
+              "upper-route",
+              "service-route",
+              "service-lift",
+              "regulator",
+            ].includes(focusId)
               ? styles.projectedFocus
               : "",
           ]
@@ -1147,7 +1595,14 @@ function BattleBoard({
               }
               onClick={() => onFocus(focusId)}
               aria-pressed={selected}
-              aria-label={`${focus.name}. ${focusStatus(focusId, projectedSnapshot)}`}
+              aria-label={`${focus.name}. ${focusStatus(
+                focusId,
+                projectedSnapshot,
+              )}${
+                enemyVisual
+                  ? `. ${enemyVisual.role} role. ${enemyVisual.intent}.`
+                  : ""
+              }`}
               data-focus-id={focusId}
             >
               {target ? (
@@ -1155,28 +1610,26 @@ function BattleBoard({
                   {confirmed ? "CONFIRMED" : "TARGET"}
                 </span>
               ) : null}
+              {intentSelectable && !target ? (
+                <span className={styles.intentCue}>
+                  {intentReady ? "READY" : "CHECK"}
+                </span>
+              ) : null}
               {opportunityFocus ? (
                 <span className={styles.buildCue}>YOUR BUILD</span>
               ) : null}
               <span className={styles.markerGlyph} aria-hidden="true">
-                {marker.glyph}
+                {enemyVisual?.icon ?? marker.glyph}
               </span>
               <span className={styles.markerLabel}>
-                <strong>{marker.short}</strong>
+                <strong>
+                  {enemyVisual ? `ENEMY · ${marker.short}` : marker.short}
+                </strong>
                 <small>{conciseStatus}</small>
               </span>
             </button>
           );
         })}
-
-        <div className={styles.intentLegend}>
-          <span>PRIMARY PRESSURE · VISIBLE INTENT</span>
-          <strong>Breacher → Fractured Gate</strong>
-          <small>
-            Guard protects the lane · Controller contests machinery · Pressure
-            contests routes
-          </small>
-        </div>
 
         {game.phase === "resolution" ? (
           <div className={styles.resolutionVeil} aria-live="polite">
@@ -1190,6 +1643,14 @@ function BattleBoard({
         ) : null}
       </div>
 
+      <div className={styles.enemyReadout} aria-label="Visible enemy intent">
+        <span>ENEMY FORMATION · VISIBLE INTENT</span>
+        <strong>Breacher → Fractured Gate</strong>
+        <small>Guard · protects lane</small>
+        <small>Controller · contests machinery</small>
+        <small>Pressure · denies routes</small>
+      </div>
+
       <div className={styles.terrainLegend} aria-label="Battlefield legend">
         <span className={styles.legendClear}>› CLEAR · ordinary cost</span>
         <span className={styles.legendRubble}>▲ RUBBLE · costs 2 movement</span>
@@ -1197,7 +1658,9 @@ function BattleBoard({
           ⚡ SERVICE TRACK · powered by Gate Actuator · feed{" "}
           {titleCase(projectedSnapshot.poweredTrack.feed)}
         </span>
-        <span className={styles.legendThreat}>RED · enemy control / intent</span>
+        <span className={styles.legendThreat}>
+          RED · enemy control / intent
+        </span>
         <span className={styles.legendBuild}>
           VIOLET · {buildFor(game.buildId).name} opportunity
         </span>
@@ -1210,18 +1673,22 @@ function ContextPanel({
   game,
   focusId,
   selectedParent,
+  actionIntent,
   targetingChoice,
   onParent,
   onChoice,
   onCancelTarget,
+  onCancelIntent,
 }: {
   game: FracturedGateState;
   focusId: string;
   selectedParent: string | null;
+  actionIntent: ActionIntent;
   targetingChoice: FracturedGateChoice | null;
   onParent: (parent: string) => void;
   onChoice: (choice: FracturedGateChoice) => void;
   onCancelTarget: () => void;
+  onCancelIntent: () => void;
 }) {
   const groups = getContextActionGroups(game, focusId);
   const focus =
@@ -1235,8 +1702,9 @@ function ContextPanel({
         }
       : BOARD_FOCUSES.player);
   const activeGroup =
-    groups.find((group: FracturedGateRecord) => group.parent === selectedParent) ??
-    null;
+    groups.find(
+      (group: FracturedGateRecord) => group.parent === selectedParent,
+    ) ?? null;
 
   return (
     <aside className={styles.contextPanel} aria-label="Context actions">
@@ -1264,7 +1732,7 @@ function ContextPanel({
             {game.phase === "resolution"
               ? "Use the timing controls below to advance. Nothing may be added or retargeted."
               : game.phase === "settle"
-                ? "Select any visible actor or object to inspect it, then use Settle below."
+                ? "Select any visible actor or object to inspect it, then continue from the Aftermath panel below."
                 : "Read the result and tradeoff below, or reset the same deterministic opening."}
           </p>
         </div>
@@ -1277,6 +1745,24 @@ function ContextPanel({
             battlefield.
           </p>
           <button type="button" onClick={onCancelTarget}>
+            Cancel
+          </button>
+        </div>
+      ) : actionIntent ? (
+        <div className={styles.intentNotice} role="status">
+          <span>{actionIntent} selection · board is marked</span>
+          <strong>
+            {actionIntent === "Attack"
+              ? "Choose one of the four enemy pieces."
+              : actionIntent === "Defend"
+                ? "Choose your operative or a marked objective."
+                : "Choose a marked objective or battlefield object."}
+          </strong>
+          <p>
+            Bright markers are usable now. Dim markers remain selectable and
+            explain the position or setup you still need.
+          </p>
+          <button type="button" onClick={onCancelIntent}>
             Cancel
           </button>
         </div>
@@ -1446,7 +1932,8 @@ function PreviewPanel({
       {targetingChoice && targetId && preview?.legal ? (
         <div className={styles.addBar}>
           <span>
-            {targetingChoice.cost + (attachedCard ? CARDS[attachedCard].cost : 0)}{" "}
+            {targetingChoice.cost +
+              (attachedCard ? CARDS[attachedCard].cost : 0)}{" "}
             Command
             {attachedCard ? ` · ${cardName(attachedCard)}` : ""}
           </span>
@@ -1488,7 +1975,8 @@ function PlanChain({
       <div className={styles.planTopline}>
         <div>
           <p className={styles.eyebrow}>
-            Opposed planning · {game.priority === "player" ? "your priority" : "enemy priority"}
+            Opposed planning ·{" "}
+            {game.priority === "player" ? "your priority" : "enemy priority"}
           </p>
           <h2>
             PLAN · {count}/{CORE_RULES.paidActionCap} PAID
@@ -1597,7 +2085,7 @@ function PlanChain({
           onClick={onPass}
           disabled={!game.plan.length && !game.refocusRecord}
         >
-          PASS / LOCK
+          END PLANNING
         </button>
       </div>
     </section>
@@ -1630,7 +2118,9 @@ function Hand({
   onDiscard: (cardId: string) => void;
 }) {
   const plannedCards = new Set(
-    game.plan.map((action: FracturedGateRecord) => action.cardId).filter(Boolean),
+    game.plan
+      .map((action: FracturedGateRecord) => action.cardId)
+      .filter(Boolean),
   );
   const overRetain = game.hand.length > CORE_RULES.retainLimit;
   const displayedCards = [...game.hand, ...contextCards];
@@ -1640,8 +2130,8 @@ function Hand({
         <div>
           <p className={styles.eyebrow}>Prepared hand</p>
           <h2>
-            {game.hand.length} CARDS · DECK {game.deck.length - game.drawIndex} ·
-            DISCARD {game.discard.length}
+            {game.hand.length} CARDS · DECK {game.deck.length - game.drawIndex}{" "}
+            · DISCARD {game.discard.length}
           </h2>
         </div>
         <div className={styles.handTools}>
@@ -1745,6 +2235,12 @@ function ResolutionPanel({
 }) {
   const index = game.resolution?.visibleLaneIndex ?? -1;
   const packet = index >= 0 ? game.resolution.packets[index] : null;
+  const nextControl =
+    index < 0
+      ? "BEGIN FAST ACTIONS"
+      : index < 2
+        ? `RESOLVE ${LANE_NAMES[index + 1].toUpperCase()} ACTIONS`
+        : "REVIEW AFTERMATH";
   return (
     <section className={styles.resolutionPanel} aria-live="polite">
       <div className={styles.lanes}>
@@ -1769,29 +2265,37 @@ function ResolutionPanel({
           <p className={styles.eyebrow}>
             {packet ? `${packet.lane} packet` : "Plan locked"}
           </p>
-          <h2>{packet ? "Watch the board change." : "Resolution is ready."}</h2>
+          <h2>
+            {packet
+              ? `${packet.lane} actions have resolved. Review the board.`
+              : "The Action Phase is ready."}
+          </h2>
         </div>
         <button
           type="button"
           data-testid="advance-resolution"
           onClick={onAdvance}
         >
-          {index < 2 ? "ADVANCE NOW" : "FINISH RESOLUTION"}
+          {nextControl}
         </button>
       </div>
       {packet ? (
         <ul className={styles.packetEvents}>
           {packet.events.length ? (
-            packet.events.map((event: FracturedGateRecord, eventIndex: number) => (
-              <li key={`${event.instanceId}-${eventIndex}`}>
-                <strong>{event.title}</strong>
-                <span>{event.detail}</span>
-              </li>
-            ))
+            packet.events.map(
+              (event: FracturedGateRecord, eventIndex: number) => (
+                <li key={`${event.instanceId}-${eventIndex}`}>
+                  <strong>{event.title}</strong>
+                  <span>{event.detail}</span>
+                </li>
+              ),
+            )
           ) : (
             <li>
               <strong>No action in this lane</strong>
-              <span>The lane remains visible; nothing is silently skipped.</span>
+              <span>
+                The lane remains visible; nothing is silently skipped.
+              </span>
             </li>
           )}
         </ul>
@@ -1823,20 +2327,24 @@ function ReviewLog({ game }: { game: FracturedGateState }) {
   );
 }
 
-function SettlePanel({
+function AftermathPanel({
   game,
-  onSettle,
+  onContinue,
 }: {
   game: FracturedGateState;
-  onSettle: () => void;
+  onContinue: () => void;
 }) {
   const summary = game.settleSummary;
+  const snapshot = displaySnapshot(game);
+  const nextPhase = settleRound(game).phase;
   return (
-    <section className={styles.settlePanel}>
+    <section className={styles.settlePanel} aria-label="Exchange aftermath">
       <div className={styles.settleHeading}>
         <div>
-          <p className={styles.eyebrow}>Round settled</p>
-          <h2>Read the consequence, then continue.</h2>
+          <p className={styles.eyebrow}>
+            Exchange {game.round} complete · Aftermath
+          </p>
+          <h2>Review the consequence before the battle continues.</h2>
         </div>
         <GatePips
           stability={summary.gateStability}
@@ -1854,7 +2362,26 @@ function SettlePanel({
         </div>
         <div>
           <dt>Divider</dt>
-          <dd>{titleCase(summary.dividerStatus)}</dd>
+          <dd>
+            {titleCase(summary.dividerStatus)} · conduit{" "}
+            {titleCase(snapshot.divider.conduit)}
+          </dd>
+        </div>
+        <div>
+          <dt>Gate Actuator</dt>
+          <dd>
+            {snapshot.actuator.controlled
+              ? `${titleCase(snapshot.actuator.mode)} control`
+              : "Neutral"}
+          </dd>
+        </div>
+        <div>
+          <dt>Defensive Bollard</dt>
+          <dd>{titleCase(snapshot.bollard.status)}</dd>
+        </div>
+        <div>
+          <dt>Powered service feed</dt>
+          <dd>{titleCase(snapshot.poweredTrack.feed)}</dd>
         </div>
         <div>
           <dt>Cache</dt>
@@ -1873,7 +2400,7 @@ function SettlePanel({
           <dd>{titleCase(summary.exitStatus)}</dd>
         </div>
         <div>
-          <dt>Refund at Settle</dt>
+          <dt>Command refunded after exchange</dt>
           <dd>{summary.refunds}</dd>
         </div>
       </dl>
@@ -1882,9 +2409,11 @@ function SettlePanel({
         type="button"
         data-testid="settle-round"
         className={styles.primaryButton}
-        onClick={onSettle}
+        onClick={onContinue}
       >
-        SETTLE
+        {nextPhase === "result"
+          ? "VIEW BATTLE RESULTS"
+          : `BEGIN EXCHANGE ${game.round + 1}`}
       </button>
     </section>
   );
@@ -1952,7 +2481,8 @@ function ResultsPanel({
 export function FracturedGatePrototype() {
   const [game, setGame] = useState(() => createFracturedGateState());
   const [selectedFocus, setSelectedFocus] = useState("player");
-  const [selectedParent, setSelectedParent] = useState<string | null>("Move");
+  const [selectedParent, setSelectedParent] = useState<string | null>(null);
+  const [actionIntent, setActionIntent] = useState<ActionIntent>(null);
   const [targetingChoice, setTargetingChoice] =
     useState<FracturedGateChoice | null>(null);
   const [targetId, setTargetId] = useState<string | null>(null);
@@ -1969,19 +2499,6 @@ export function FracturedGatePrototype() {
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
-
-  useEffect(() => {
-    if (game.phase !== "resolution" || reducedMotion) return;
-    const timer = window.setTimeout(
-      () => setGame((current) => advanceResolution(current)),
-      1100,
-    );
-    return () => window.clearTimeout(timer);
-  }, [
-    game.phase,
-    game.resolution?.visibleLaneIndex,
-    reducedMotion,
-  ]);
 
   const planProjection = useMemo(
     () => (game.plan.length ? projectPlan(game) : null),
@@ -2000,22 +2517,17 @@ export function FracturedGatePrototype() {
         : null,
     [game, targetingChoice, targetId, attachedCard, pivotMode],
   );
-  const activeProjection =
-    preview?.legal ? preview.projection : planProjection;
+  const activeProjection = preview?.legal ? preview.projection : planProjection;
   const compatibleCards = useMemo(
     () =>
       new Set(
-        targetingChoice
-          ? getCompatibleCards(game, targetingChoice.id)
-          : [],
+        targetingChoice ? getCompatibleCards(game, targetingChoice.id) : [],
       ),
     [game, targetingChoice],
   );
   const contextCards = useMemo(
     () =>
-      targetingChoice
-        ? getAvailableContextCards(game, targetingChoice.id)
-        : [],
+      targetingChoice ? getAvailableContextCards(game, targetingChoice.id) : [],
     [game, targetingChoice],
   );
   const build = buildFor(game.buildId);
@@ -2023,6 +2535,14 @@ export function FracturedGatePrototype() {
     game,
     activeProjection?.finalSnapshot ?? displaySnapshot(game),
   );
+  const phaseGuide = getPhaseGuide({
+    game,
+    targetingChoice,
+    targetId,
+    selectedParent,
+    actionIntent,
+    pivotMode,
+  });
 
   function clearDraft() {
     setTargetingChoice(null);
@@ -2032,7 +2552,8 @@ export function FracturedGatePrototype() {
 
   function resetInteraction() {
     setSelectedFocus("player");
-    setSelectedParent("Move");
+    setSelectedParent(null);
+    setActionIntent(null);
     clearDraft();
     setRefocusMode(false);
     setRefocusSelection([]);
@@ -2047,6 +2568,19 @@ export function FracturedGatePrototype() {
       setTargetId(focusId);
       return;
     }
+    if (game.phase === "planning" && actionIntent) {
+      const group = getContextActionGroups(game, focusId).find(
+        (candidate: FracturedGateRecord) => candidate.parent === actionIntent,
+      );
+      if (group) {
+        clearDraft();
+        setSelectedFocus(focusId);
+        setSelectedParent(actionIntent);
+        setActionIntent(null);
+        return;
+      }
+    }
+    setActionIntent(null);
     setSelectedFocus(focusId);
     setSelectedParent(
       game.phase === "planning"
@@ -2060,6 +2594,7 @@ export function FracturedGatePrototype() {
 
   function handleOpportunity(focusId: string) {
     clearDraft();
+    setActionIntent(null);
     setSelectedFocus(focusId);
     const hasDiscipline = getContextActionGroups(game, focusId).some(
       (group: FracturedGateRecord) => group.parent === "Discipline",
@@ -2069,8 +2604,35 @@ export function FracturedGatePrototype() {
 
   function handleShowMove() {
     clearDraft();
+    setActionIntent(null);
     setSelectedFocus("player");
     setSelectedParent("Move");
+  }
+
+  function handleShortcut(parent: "Move" | "Attack" | "Defend" | "Use") {
+    clearDraft();
+    if (parent === "Move") {
+      setActionIntent(null);
+      setSelectedFocus("player");
+      setSelectedParent(parent);
+      return;
+    }
+    setSelectedFocus("player");
+    setSelectedParent(null);
+    setActionIntent(parent);
+  }
+
+  function handleParent(parent: string) {
+    clearDraft();
+    setActionIntent(null);
+    setSelectedParent(parent);
+  }
+
+  function handlePass() {
+    clearDraft();
+    setActionIntent(null);
+    setPivotMode(false);
+    setGame((current) => passPriority(current));
   }
 
   function handleChoice(choice: FracturedGateChoice) {
@@ -2089,21 +2651,12 @@ export function FracturedGatePrototype() {
     if (!targetingChoice || !targetId || !preview?.legal) return;
     const wasMovement = targetingChoice.parent === "Move";
     const next = pivotMode
-      ? pivotOpenAction(
-          game,
-          targetingChoice.id,
-          targetId,
-          attachedCard,
-        )
-      : queueAction(
-          game,
-          targetingChoice.id,
-          targetId,
-          attachedCard,
-        );
+      ? pivotOpenAction(game, targetingChoice.id, targetId, attachedCard)
+      : queueAction(game, targetingChoice.id, targetId, attachedCard);
     setGame(next);
     if (next !== game && !next.warning) {
       clearDraft();
+      setActionIntent(null);
       setSelectedFocus(wasMovement ? "player" : targetId);
       setSelectedParent(null);
       setPivotMode(false);
@@ -2112,7 +2665,11 @@ export function FracturedGatePrototype() {
 
   function handleCard(cardId: string) {
     if (refocusMode) {
-      if (game.plan.some((action: FracturedGateRecord) => action.cardId === cardId)) {
+      if (
+        game.plan.some(
+          (action: FracturedGateRecord) => action.cardId === cardId,
+        )
+      ) {
         return;
       }
       setRefocusSelection((current) =>
@@ -2148,9 +2705,7 @@ export function FracturedGatePrototype() {
     <main
       id="main-content"
       tabIndex={-1}
-      className={`${styles.shell} ${
-        reducedMotion ? styles.reducedMotion : ""
-      }`}
+      className={`${styles.shell} ${reducedMotion ? styles.reducedMotion : ""}`}
     >
       <header className={styles.prototypeHeader}>
         <div>
@@ -2159,8 +2714,8 @@ export function FracturedGatePrototype() {
           </p>
           <h1>THE FRACTURED GATE</h1>
           <p>
-            Select → choose → target → preview → plan → contest → lock → reveal
-            → watch → settle
+            Observe → choose actions → preview → commit plans → watch the Action
+            Phase → review the Aftermath
           </p>
         </div>
         <div className={styles.boundaryBadges} aria-label="Prototype boundary">
@@ -2212,10 +2767,7 @@ export function FracturedGatePrototype() {
 
       <PhaseDirector
         game={game}
-        targetingChoice={targetingChoice}
-        targetId={targetId}
-        selectedParent={selectedParent}
-        pivotMode={pivotMode}
+        guide={phaseGuide}
         opportunity={opportunity}
         onOpportunity={handleOpportunity}
       />
@@ -2226,9 +2778,9 @@ export function FracturedGatePrototype() {
           <strong>Stabilize the Gate</strong>
         </div>
         <div>
-          <span>Round · phase</span>
+          <span>Exchange · phase</span>
           <strong>
-            {game.round} · {phaseLabel(game)}
+            {game.round} · {BATTLE_PHASES[phaseGuide.phaseIndex]}
           </strong>
         </div>
         <div>
@@ -2276,11 +2828,22 @@ export function FracturedGatePrototype() {
         </p>
       ) : null}
 
+      <ActionDock
+        game={game}
+        projection={activeProjection}
+        actionIntent={actionIntent}
+        opportunity={opportunity}
+        onShortcut={handleShortcut}
+        onOpportunity={handleOpportunity}
+        onPass={handlePass}
+      />
+
       <div className={styles.battleLayout}>
         <BattleBoard
           game={game}
           selectedFocus={selectedFocus}
           selectedParent={selectedParent}
+          actionIntent={actionIntent}
           confirmedTarget={targetId}
           targetingChoice={targetingChoice}
           projection={activeProjection}
@@ -2294,10 +2857,12 @@ export function FracturedGatePrototype() {
             game={game}
             focusId={selectedFocus}
             selectedParent={selectedParent}
+            actionIntent={actionIntent}
             targetingChoice={targetingChoice}
-            onParent={setSelectedParent}
+            onParent={handleParent}
             onChoice={handleChoice}
             onCancelTarget={clearDraft}
+            onCancelIntent={() => setActionIntent(null)}
           />
           {game.phase === "planning" ? (
             <PreviewPanel
@@ -2322,6 +2887,7 @@ export function FracturedGatePrototype() {
             pivotMode={pivotMode}
             onBeginPivot={() => {
               clearDraft();
+              setActionIntent(null);
               setSelectedParent(null);
               setPivotMode(true);
             }}
@@ -2329,11 +2895,7 @@ export function FracturedGatePrototype() {
               clearDraft();
               setPivotMode(false);
             }}
-            onPass={() => {
-              clearDraft();
-              setPivotMode(false);
-              setGame((current) => passPriority(current));
-            }}
+            onPass={handlePass}
           />
           <Hand
             game={game}
@@ -2345,6 +2907,7 @@ export function FracturedGatePrototype() {
             onCard={handleCard}
             onBeginRefocus={() => {
               clearDraft();
+              setActionIntent(null);
               setRefocusMode(true);
             }}
             onCancelRefocus={() => {
@@ -2362,16 +2925,14 @@ export function FracturedGatePrototype() {
       {game.phase === "resolution" ? (
         <ResolutionPanel
           game={game}
-          onAdvance={() =>
-            setGame((current) => advanceResolution(current))
-          }
+          onAdvance={() => setGame((current) => advanceResolution(current))}
         />
       ) : null}
 
       {game.phase === "settle" ? (
-        <SettlePanel
+        <AftermathPanel
           game={game}
-          onSettle={() => {
+          onContinue={() => {
             setGame((current) => settleRound(current));
             resetInteraction();
           }}

@@ -16,11 +16,19 @@
   min-height: 100vh;
   padding: clamp(1rem, 2vw, 2rem);
   background:
-    radial-gradient(circle at 72% 5%, rgba(58, 145, 146, 0.13), transparent 34rem),
+    radial-gradient(
+      circle at 72% 5%,
+      rgba(58, 145, 146, 0.13),
+      transparent 34rem
+    ),
     linear-gradient(rgba(97, 220, 255, 0.025) 1px, transparent 1px),
     linear-gradient(90deg, rgba(97, 220, 255, 0.025) 1px, transparent 1px),
     var(--fg-bg);
-  background-size: auto, 28px 28px, 28px 28px, auto;
+  background-size:
+    auto,
+    28px 28px,
+    28px 28px,
+    auto;
   color: var(--fg-text);
 }
 
@@ -48,6 +56,7 @@
 .phaseDirector,
 .hud,
 .warning,
+.actionDock,
 .battleLayout,
 .previewPanel,
 .planPanel,
@@ -179,7 +188,8 @@
 .addBar button,
 .packetReadout button,
 .primaryButton,
-.targetingNotice button {
+.targetingNotice button,
+.intentNotice button {
   min-height: max(2.75rem, 44px);
   padding: 0.55rem 0.85rem;
   border: 1px solid var(--fg-line-bright);
@@ -194,7 +204,8 @@
 
 .resetButton:hover,
 .handTools button:hover:not(:disabled),
-.targetingNotice button:hover {
+.targetingNotice button:hover,
+.intentNotice button:hover {
   border-color: var(--fg-cyan);
   color: var(--fg-cyan);
 }
@@ -210,7 +221,7 @@
 .phaseTrack {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   margin: 0;
   padding: 0;
   border-bottom: 1px solid var(--fg-line);
@@ -285,7 +296,11 @@
   padding: 0.9rem 1.15rem;
   border-right: 1px solid var(--fg-line);
   background:
-    radial-gradient(circle at 12% 50%, rgba(97, 220, 255, 0.09), transparent 15rem),
+    radial-gradient(
+      circle at 12% 50%,
+      rgba(97, 220, 255, 0.09),
+      transparent 15rem
+    ),
     var(--fg-panel);
 }
 
@@ -350,8 +365,7 @@
 
 .opportunityCard:hover {
   background:
-    linear-gradient(135deg, rgba(201, 166, 255, 0.2), transparent 76%),
-    #17212a;
+    linear-gradient(135deg, rgba(201, 166, 255, 0.2), transparent 76%), #17212a;
 }
 
 .opportunityCard > span {
@@ -445,6 +459,144 @@
   font-size: 0.8rem;
 }
 
+.actionDock {
+  display: grid;
+  grid-template-columns: minmax(17rem, 1.15fr) minmax(30rem, 2.5fr) minmax(
+      14rem,
+      0.85fr
+    ) minmax(10rem, 0.55fr);
+  gap: 0;
+  margin-top: 0.8rem;
+  border: 1px solid var(--fg-line);
+  background: rgba(7, 12, 17, 0.98);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.26);
+}
+
+.actionDockStatus {
+  display: grid;
+  align-content: center;
+  gap: 0.26rem;
+  min-height: 6.3rem;
+  padding: 0.85rem 1rem;
+  border-right: 1px solid var(--fg-line);
+  background:
+    linear-gradient(105deg, rgba(99, 255, 159, 0.095), transparent 78%),
+    var(--fg-panel);
+}
+
+.actionDockStatus > span,
+.actionShortcuts button > span,
+.buildShortcut > span,
+.commitShortcut > span {
+  color: var(--fg-cyan);
+  font-size: 0.51rem;
+  font-weight: 1000;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.actionDockStatus > strong {
+  font-size: 0.76rem;
+  line-height: 1.25;
+}
+
+.actionDockStatus > small {
+  color: var(--fg-muted);
+  font-size: 0.57rem;
+  line-height: 1.35;
+}
+
+.actionShortcuts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(7rem, 1fr));
+}
+
+.actionShortcuts button,
+.buildShortcut,
+.commitShortcut {
+  display: grid;
+  align-content: center;
+  gap: 0.22rem;
+  min-height: 6.3rem;
+  padding: 0.72rem;
+  border: 0;
+  border-right: 1px solid var(--fg-line);
+  color: var(--fg-text);
+  background: var(--fg-panel-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.actionShortcuts button:hover:not(:disabled),
+.buildShortcut:hover:not(:disabled),
+.commitShortcut:hover:not(:disabled) {
+  z-index: 1;
+  background: rgba(97, 220, 255, 0.09);
+  box-shadow: inset 0 -3px var(--fg-cyan);
+}
+
+.actionShortcuts button:disabled,
+.buildShortcut:disabled,
+.commitShortcut:disabled {
+  color: #879397;
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.actionShortcuts button > strong,
+.buildShortcut > strong,
+.commitShortcut > strong {
+  font-size: 0.76rem;
+  letter-spacing: 0.035em;
+}
+
+.actionShortcuts button > small,
+.buildShortcut > small,
+.commitShortcut > small {
+  color: var(--fg-muted);
+  font-size: 0.53rem;
+  line-height: 1.25;
+}
+
+.actionShortcuts .activeShortcut {
+  color: var(--fg-amber);
+  background: rgba(255, 209, 102, 0.11);
+  box-shadow: inset 0 -3px var(--fg-amber);
+}
+
+.actionShortcuts .activeShortcut > span,
+.actionShortcuts .activeShortcut > small {
+  color: var(--fg-amber);
+}
+
+.actionShortcuts .quietShortcut {
+  opacity: 0.74;
+}
+
+.buildShortcut {
+  border-right-color: rgba(201, 166, 255, 0.38);
+  background:
+    linear-gradient(135deg, rgba(201, 166, 255, 0.13), transparent),
+    var(--fg-panel-2);
+}
+
+.buildShortcut > span,
+.buildShortcut > strong {
+  color: var(--fg-violet);
+}
+
+.commitShortcut {
+  border-right: 0;
+  background:
+    linear-gradient(135deg, rgba(99, 255, 159, 0.12), transparent),
+    var(--fg-panel-2);
+}
+
+.commitShortcut > span,
+.commitShortcut > strong {
+  color: var(--fg-green);
+}
+
 .battleLayout {
   display: grid;
   grid-template-columns: minmax(0, 3.6fr) minmax(20rem, 1fr);
@@ -456,7 +608,7 @@
 
 .board {
   display: grid;
-  grid-template-rows: minmax(36rem, 1fr) auto;
+  grid-template-rows: minmax(36rem, 1fr) auto auto;
   min-width: 0;
   min-height: 39rem;
   overflow-x: auto;
@@ -485,7 +637,13 @@
   pointer-events: none;
   content: "";
   background:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.15), transparent 18%, transparent 80%, rgba(0, 0, 0, 0.32)),
+    linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.15),
+      transparent 18%,
+      transparent 80%,
+      rgba(0, 0, 0, 0.32)
+    ),
     repeating-linear-gradient(
       0deg,
       rgba(255, 255, 255, 0.012) 0,
@@ -577,6 +735,26 @@
   letter-spacing: 4px;
 }
 
+.locationShell {
+  filter: drop-shadow(0 18px 17px rgba(0, 0, 0, 0.52));
+}
+
+.entryGangway,
+.brokenSpan {
+  opacity: 0.68;
+}
+
+.physicalGate,
+.physicalDivider,
+.physicalActuator,
+.physicalBollard,
+.physicalCache,
+.physicalRelay,
+.physicalServiceGap {
+  opacity: 0.75;
+  filter: drop-shadow(0 8px 8px rgba(0, 0, 0, 0.62));
+}
+
 .projectionPath {
   animation: dashFlow 1.1s linear infinite;
 }
@@ -634,7 +812,12 @@
 
 .terrain_clear .tileDiamond {
   background:
-    linear-gradient(90deg, transparent 15%, rgba(99, 255, 159, 0.1) 50%, transparent 85%),
+    linear-gradient(
+      90deg,
+      transparent 15%,
+      rgba(99, 255, 159, 0.1) 50%,
+      transparent 85%
+    ),
     #13211f;
   box-shadow: inset 0 0 0 1px rgba(99, 255, 159, 0.3);
 }
@@ -648,8 +831,7 @@
   background:
     radial-gradient(circle at 35% 42%, #765a49 0 7%, transparent 8%),
     radial-gradient(circle at 58% 58%, #59463d 0 9%, transparent 10%),
-    radial-gradient(circle at 70% 38%, #8b6b54 0 6%, transparent 7%),
-    #251e1b;
+    radial-gradient(circle at 70% 38%, #8b6b54 0 6%, transparent 7%), #251e1b;
   box-shadow: inset 0 0 0 1px rgba(255, 155, 106, 0.38);
 }
 
@@ -800,6 +982,44 @@
   cursor: pointer;
 }
 
+.boardFocus[data-focus-id="cracked-divider"] {
+  width: 3.55rem;
+  height: 2.7rem;
+  border-radius: 18% 42% 22% 36%;
+}
+
+.boardFocus[data-focus-id="gate-actuator"],
+.boardFocus[data-focus-id="lift-relay"],
+.boardFocus[data-focus-id="regulator"] {
+  border-radius: 28%;
+}
+
+.boardFocus[data-focus-id="defensive-bollard"] {
+  width: 2.65rem;
+  height: 3.25rem;
+  border-radius: 48% 48% 34% 34%;
+}
+
+.boardFocus[data-focus-id="service-gap"],
+.boardFocus[data-focus-id="upper-crossing"] {
+  width: 3.8rem;
+  height: 2.5rem;
+  border-radius: 50% 18% 50% 18%;
+}
+
+.boardFocus[data-focus-id="field-cache"] {
+  border-radius: 42% 14% 38% 18%;
+}
+
+.boardFocus[data-focus-id="gate"] {
+  border-radius: 52% 52% 14% 14%;
+}
+
+.boardFocus[data-focus-id="west-exit"] {
+  width: 3.7rem;
+  border-radius: 999px 24% 24% 999px;
+}
+
 .markerGlyph {
   display: grid;
   place-items: center;
@@ -828,6 +1048,9 @@
   background: rgba(4, 8, 12, 0.9);
   line-height: 1.05;
   pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease;
 }
 
 .markerLabel strong {
@@ -855,10 +1078,14 @@
 .boardFocus:hover .markerLabel,
 .selectedFocus .markerLabel,
 .legalTarget .markerLabel,
-.buildOpportunityFocus .markerLabel {
+.buildOpportunityFocus .markerLabel,
+.focus_enemy .markerLabel,
+.focus_objective .markerLabel {
   z-index: 19;
   border-color: currentColor;
   background: rgba(4, 8, 12, 0.98);
+  opacity: 1;
+  visibility: visible;
 }
 
 .focus_terrain,
@@ -869,10 +1096,58 @@
 }
 
 .focus_enemy {
-  border-radius: 50%;
   border: 2px solid var(--fg-orange);
   color: #fff1eb;
   background: rgba(74, 31, 22, 0.92);
+}
+
+.enemy_breacher,
+.enemy_guard,
+.enemy_controller,
+.enemy_pressure {
+  width: 3.35rem;
+  height: 3.35rem;
+}
+
+.enemy_breacher {
+  border-radius: 20% 42% 24% 38%;
+  background: linear-gradient(145deg, #7d281f, #29100d 72%);
+}
+
+.enemy_guard {
+  border-radius: 50% 50% 42% 42% / 28% 28% 72% 72%;
+  border-color: #ffbd72;
+  background: linear-gradient(180deg, #664026, #21140c);
+}
+
+.enemy_controller {
+  border-radius: 36% 12% 36% 12%;
+  border-color: #ff7db4;
+  background: linear-gradient(145deg, #5c2440, #1f0d16);
+}
+
+.enemy_pressure {
+  border-radius: 50% 8% 50% 8%;
+  border-color: #ff7884;
+  background: linear-gradient(145deg, #6f202c, #230c11);
+}
+
+.enemy_breacher .markerGlyph,
+.enemy_guard .markerGlyph,
+.enemy_controller .markerGlyph,
+.enemy_pressure .markerGlyph {
+  border: 0;
+  font-size: 1.25rem;
+}
+
+.enemy_breacher .markerLabel {
+  left: 0;
+  transform: translateX(-82%);
+}
+
+.enemy_guard .markerLabel {
+  left: 100%;
+  transform: translateX(-18%);
 }
 
 .focus_intent {
@@ -979,6 +1254,21 @@
   animation: targetPulse 1.15s ease-in-out infinite;
 }
 
+.intentSelectableFocus {
+  z-index: 13;
+  border: 2px dashed rgba(255, 209, 102, 0.72);
+  box-shadow:
+    0 0 0 4px rgba(255, 209, 102, 0.08),
+    0 0 20px rgba(255, 209, 102, 0.18);
+}
+
+.intentReadyFocus {
+  border-color: var(--fg-green);
+  box-shadow:
+    0 0 0 4px rgba(99, 255, 159, 0.11),
+    0 0 24px rgba(99, 255, 159, 0.26);
+}
+
 .targetCue {
   position: absolute;
   right: -0.35rem;
@@ -991,6 +1281,27 @@
   font-size: 0.48rem;
   font-weight: 1000;
   letter-spacing: 0.08em;
+}
+
+.intentCue {
+  position: absolute;
+  right: -0.35rem;
+  top: -0.72rem;
+  z-index: 2;
+  padding: 0.14rem 0.28rem;
+  border: 1px solid #6f5100;
+  border-radius: 999px;
+  color: #171000;
+  background: var(--fg-amber);
+  font-size: 0.43rem;
+  font-weight: 1000;
+  letter-spacing: 0.08em;
+}
+
+.intentReadyFocus .intentCue {
+  border-color: #0a5c31;
+  color: #03140b;
+  background: var(--fg-green);
 }
 
 @keyframes targetPulse {
@@ -1072,37 +1383,35 @@
   letter-spacing: 0.1em;
 }
 
-.intentLegend {
-  position: absolute;
-  right: 1rem;
-  top: 4.15rem;
-  z-index: 7;
-  display: grid;
-  gap: 0.12rem;
-  max-width: 19rem;
-  padding: 0.45rem 0.65rem;
-  border: 1px solid rgba(255, 155, 106, 0.54);
+.enemyReadout {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 800px;
+  padding: 0.48rem 0.75rem;
+  border-top: 1px solid rgba(255, 155, 106, 0.36);
   color: #ffd8c5;
-  background: rgba(34, 15, 10, 0.84);
-  font-size: 0.65rem;
-  font-weight: 700;
+  background: rgba(34, 15, 10, 0.72);
+  overflow-x: auto;
+  white-space: nowrap;
 }
 
-.intentLegend span {
+.enemyReadout span {
   color: var(--fg-orange);
-  font-size: 0.5rem;
+  font-size: 0.49rem;
   font-weight: 1000;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.11em;
 }
 
-.intentLegend strong {
-  font-size: 0.67rem;
+.enemyReadout strong {
+  padding-right: 0.75rem;
+  border-right: 1px solid rgba(255, 155, 106, 0.35);
+  font-size: 0.62rem;
 }
 
-.intentLegend small {
+.enemyReadout small {
   color: #caa99a;
-  font-size: 0.52rem;
-  line-height: 1.25;
+  font-size: 0.5rem;
 }
 
 .terrainLegend {
@@ -1324,7 +1633,8 @@
   font-size: 0.7rem;
 }
 
-.targetingNotice {
+.targetingNotice,
+.intentNotice {
   display: grid;
   gap: 0.35rem;
   margin-top: 1rem;
@@ -1332,6 +1642,11 @@
   border: 2px dashed var(--fg-amber);
   color: var(--fg-text);
   background: rgba(65, 48, 7, 0.27);
+}
+
+.intentNotice {
+  border-color: var(--fg-cyan);
+  background: rgba(19, 63, 78, 0.24);
 }
 
 .phaseContextNotice {
@@ -1363,7 +1678,8 @@
   line-height: 1.4;
 }
 
-.targetingNotice span {
+.targetingNotice span,
+.intentNotice span {
   color: var(--fg-amber);
   font-size: 0.56rem;
   font-weight: 1000;
@@ -1371,13 +1687,19 @@
   text-transform: uppercase;
 }
 
-.targetingNotice p {
+.intentNotice span {
+  color: var(--fg-cyan);
+}
+
+.targetingNotice p,
+.intentNotice p {
   margin: 0;
   color: var(--fg-muted);
   font-size: 0.7rem;
 }
 
-.targetingNotice button {
+.targetingNotice button,
+.intentNotice button {
   justify-self: start;
   min-height: max(2.75rem, 44px);
   margin-top: 0.2rem;
@@ -2044,7 +2366,11 @@
 .settlePanel,
 .resultsPanel {
   background:
-    radial-gradient(circle at 84% 12%, rgba(99, 255, 159, 0.08), transparent 26rem),
+    radial-gradient(
+      circle at 84% 12%,
+      rgba(99, 255, 159, 0.08),
+      transparent 26rem
+    ),
     rgba(7, 12, 17, 0.98);
 }
 
@@ -2231,6 +2557,23 @@
     grid-template-columns: repeat(7, minmax(8.5rem, 1fr));
   }
 
+  .actionDock {
+    grid-template-columns: minmax(17rem, 1fr) minmax(32rem, 2.2fr);
+  }
+
+  .actionDockStatus {
+    border-bottom: 1px solid var(--fg-line);
+  }
+
+  .actionShortcuts {
+    border-bottom: 1px solid var(--fg-line);
+  }
+
+  .buildShortcut,
+  .commitShortcut {
+    min-height: 4.9rem;
+  }
+
   .enemyPlan {
     grid-template-columns: 1fr;
   }
@@ -2267,6 +2610,17 @@
     grid-template-columns: 1fr;
   }
 
+  .actionDock {
+    grid-template-columns: 1fr;
+  }
+
+  .actionDockStatus,
+  .actionShortcuts,
+  .buildShortcut {
+    border-right: 0;
+    border-bottom: 1px solid var(--fg-line);
+  }
+
   .phaseInstruction {
     border-right: 0;
     border-bottom: 1px solid var(--fg-line);
@@ -2301,6 +2655,7 @@
   .parentActions,
   .actionVariants,
   .targetingNotice,
+  .intentNotice,
   .phaseContextNotice,
   .contextHint {
     grid-column: 2;
@@ -2361,7 +2716,7 @@
   }
 
   .phaseTrack {
-    grid-template-columns: repeat(5, minmax(7.5rem, 1fr));
+    grid-template-columns: repeat(6, minmax(7.5rem, 1fr));
     overflow-x: auto;
   }
 
@@ -2443,6 +2798,7 @@
   .parentActions,
   .actionVariants,
   .targetingNotice,
+  .intentNotice,
   .phaseContextNotice,
   .contextHint,
   .inspectDetails {
@@ -2456,6 +2812,22 @@
 
   .parentActions {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .actionShortcuts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .actionShortcuts button {
+    min-height: 5.4rem;
+  }
+
+  .actionShortcuts button:nth-child(even) {
+    border-right: 0;
+  }
+
+  .actionShortcuts button:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--fg-line);
   }
 
   .previewHeading,

@@ -42,36 +42,51 @@ Gate Platform, West Exit, Cracked Divider, powered service track, Gate
 Actuator, defensive bollard, service gap and shutter, service lift, optional
 Field Cache, and the three-pip Gate objective.
 
-The owner-readability revision preserves that tactical scale while replacing
-the original sparse circular hit areas and oversized map labels:
+The owner-playability revision preserves that tactical scale while replacing
+the original sparse circular hit areas, rectangular arena impression, and
+oversized map labels:
 
-- all 62 spaces are visible, compact, staggered diamonds with safe board
-  margins;
+- all 62 spaces are visible, compact, staggered diamonds inside an irregular
+  multi-platform location silhouette with safe board margins;
+- a persistent action dock exposes **Move**, **Attack**, **Defend**, and
+  **Use Object**, the selected build tactic, and **End Planning** without
+  requiring a hidden click order;
+- selecting a verb marks every relevant actor or object; a dim marker remains
+  selectable and explains missing range or setup, while a bright marker is
+  legal now;
 - selecting the player exposes **Move** first and marks every legal free
   Reposition and paid Advance destination before a destination is probed;
 - special terrain is physical and causal: clear lanes carry route chevrons,
-  rubble visibly obstructs movement, and the powered service track is drawn
-  from the Gate Actuator to its connected output;
-- enemies are always-visible pieces with Condition and Guard, and their
-  current control/intent overlay is textual as well as colored;
+  rubble visibly obstructs movement, the Gate, Divider, Actuator, Bollard,
+  Cache, Lift Relay, and Service Gap have visible battlefield structures, and
+  the powered service track is drawn from the Gate Actuator to its connected
+  output;
+- enemies are always-visible, role-shaped pieces with Condition, Guard, and
+  intent labels; each enemy has a different silhouette rather than a generic
+  square or dot;
 - the selected ordered build names and marks its exact battlefield source,
   required setup, skill attribution, and currently legal action;
 - compact object pieces move aside and yield pointer input when an underlying
   tile becomes a legal movement destination;
 - Preview and **Add to Plan** share the board's command rail instead of being
-  separated from the target by a full-screen scroll; and
-- a persistent five-stage rail names **Read & Plan**, **Contest & Lock**,
-  **Resolve**, **Settle**, and **Results**, while a live instruction states the
-  exact task the player should perform now.
+  separated from the target by a full-screen scroll;
+- a persistent six-stage rail names **Observe**, **Plan Actions**,
+  **Commit Plans**, **Action Phase**, **Aftermath**, and **Results**, while a
+  live instruction states the exact task the player should perform now;
+- Aftermath explicitly reports the Divider conduit, Gate Actuator, defensive
+  Bollard, powered service feed, retreat route, refunds, and formation changes
+  before offering **Begin Exchange N** or **View Battle Results**; and
+- after a move is planned, the dock distinguishes current position from the
+  cyan projected ghost and names the legal next decisions.
 
 The formation has four independently positioned opponents:
 
-| Enemy | Battlefield responsibility |
-| --- | --- |
-| Breacher | Physical Gate pressure and major contact |
-| Guard | Protection, interception, and lane control |
+| Enemy      | Battlefield responsibility                     |
+| ---------- | ---------------------------------------------- |
+| Breacher   | Physical Gate pressure and major contact       |
+| Guard      | Protection, interception, and lane control     |
 | Controller | Machinery, closure, reset, and objective delay |
-| Pressure | Flanks, Cache denial, and West Exit pressure |
+| Pressure   | Flanks, Cache denial, and West Exit pressure   |
 
 Each enemy owns a fixed 12-card deck, five-card opening hand, position, state,
 and legal actions. The solo formation distributes one visible 16-Command squad
@@ -79,9 +94,15 @@ allotment among those four actors. It never receives four hidden full pools.
 
 ## Revised battle loop
 
-The interaction is:
+The player-facing interaction is:
 
-`Select → choose → target → preview → plan → contest → pass/lock → reveal → watch → settle`
+`Observe → choose → target → preview → plan → contest → End Planning → reveal → act → review Aftermath`
+
+The deterministic engine retains the checkpoint term `settle` internally for
+the boundary that applies refunds, draw, temporary resets, and the next
+Command allotment. The interface does not ask the player to “Settle”; it offers
+**Begin Exchange N** or **View Battle Results** after the consequences are
+reviewed.
 
 The player and enemy squad alternate legal commitments. The newest action is
 Open. Adding a new action makes the previous one Solid. Each allotment permits
@@ -91,11 +112,11 @@ post-reveal reaction.
 
 The foundation preserves:
 
-- 16 starting Command, +16 after Settle, and the 32 cap;
+- 16 starting Command, +16 after each exchange Aftermath, and the 32 cap;
 - four paid actions at most and one free ordinary Reposition;
 - fixed 12-card Prepared decks and validated five-card opening hands;
 - draw two, retain seven, and once-per-cycle Refocus for 4 Command;
-- half-primary-cost Settle refunds for invalidation before begin;
+- half-primary-cost Aftermath refunds for invalidation before begin;
 - no silent retargeting;
 - the same deterministic simulator for Preview and resolution;
 - Fast → Standard → Slow global presentation;
@@ -113,11 +134,11 @@ deterministic comparison.
 
 The controlled route proof is:
 
-| Route | Player contact | Enemy contact | Forecast |
-| --- | ---: | ---: | --- |
-| Clear + Follow Through | 6 | 6 | Likely even |
-| Rubble | 4 | 6 | Enemy likely first |
-| Powered toward Divider | 7 | 6 | Player likely first |
+| Route                  | Player contact | Enemy contact | Forecast            |
+| ---------------------- | -------------: | ------------: | ------------------- |
+| Clear + Follow Through |              6 |             6 | Likely even         |
+| Rubble                 |              4 |             6 | Enemy likely first  |
+| Powered toward Divider |              7 |             6 | Player likely first |
 
 The preview exposes contact risk, likely timing, location, and the count of
 concealed factors. It does not reveal exact enemy cards. The `CLASH`
@@ -134,14 +155,14 @@ Specialized information and actions name their sources:
 
 The six ordered builds produce different causal state changes:
 
-| Build | Major condition → Minor payoff |
-| --- | --- |
-| Battle / Exploration | Physical contact breaks the Divider → its safe opening becomes a route |
-| Exploration / Battle | A natural upper relationship is prepared → its landing can be physically protected |
-| Battle / Hacking | Force exposes a regulator → its automatic reset can be suppressed |
-| Hacking / Battle | Local bollard Control is established → physical access can preserve and weaponize it |
-| Exploration / Hacking | A service relationship is prepared → its connected shutter can be suppressed |
-| Hacking / Exploration | Lift Control is established → temporary traversable geometry can be created |
+| Build                 | Major condition → Minor payoff                                                       |
+| --------------------- | ------------------------------------------------------------------------------------ |
+| Battle / Exploration  | Physical contact breaks the Divider → its safe opening becomes a route               |
+| Exploration / Battle  | A natural upper relationship is prepared → its landing can be physically protected   |
+| Battle / Hacking      | Force exposes a regulator → its automatic reset can be suppressed                    |
+| Hacking / Battle      | Local bollard Control is established → physical access can preserve and weaponize it |
+| Exploration / Hacking | A service relationship is prepared → its connected shutter can be suppressed         |
+| Hacking / Exploration | Lift Control is established → temporary traversable geometry can be created          |
 
 These are permissions, positions, Dependencies, and authored state changes—not
 six renamed percentage bonuses. Enemy cards can contest the actual source.
@@ -192,10 +213,11 @@ Open `http://127.0.0.1:3000/world/playtest`.
 1. Confirm the header says private, solo, noncanonical, and in-memory. Confirm
    Player Command `16`, Enemy Squad Command `4` after its opening commitment,
    Gate Stability `3/3`, four enemy pieces, and five Prepared cards.
-2. Confirm **Read & Plan** and **Move** are active. Verify the board already
-   distinguishes green `FREE` destinations from cyan `ADV` destinations.
-   Choose **Reposition**, select clear tile `(3,6)`, inspect Preview beside the
-   board, and add it.
+2. Confirm **Observe** is active and the action dock names Move, Attack,
+   Defend, Use Object, the build tactic, and End Planning. Choose **Move** and
+   verify the board distinguishes green `FREE` destinations from cyan `ADV`
+   destinations. Choose **Reposition**, select clear tile `(3,6)`, inspect
+   Preview beside the board, and add it.
 3. The player remains selected. Choose **Move → Advance**, select clear tile
    `(5,6)`, inspect the projected route, and add it. Confirm the earlier
    Reposition is now a Solid commitment.
@@ -204,9 +226,10 @@ Open `http://127.0.0.1:3000/world/playtest`.
    card. Confirm the forecast says high contact risk, likely even, Cracked
    Divider, one concealed factor, and `Player 6 · Enemy 6`; it must not name
    the enemy's exact cards.
-5. Add the action and confirm 4 Player Command remains. Select **Pass / Lock**.
+5. Add the action and confirm 4 Player Command remains. Select **End Planning**.
    After reveal, verify Fast Shield Link precedes movement and the actual
-   `CLASH · Divider contact`. Settle and verify Gate Stability is still `3/3`.
+   `CLASH · Divider contact`. Review Aftermath, begin the next exchange, and
+   verify Gate Stability is still `3/3`.
 6. Select the projected breach, choose **Move → Cross Opening**, and target
    tile `(10,5)`. Then select the Gate, choose **Use → Stabilize Gate**, target
    the Gate, and add it.
@@ -216,8 +239,9 @@ Open `http://127.0.0.1:3000/world/playtest`.
    enemy's broad posture changes without revealing its card.
 8. Pass once to let Pressure commit, then pass again to Lock. Verify Charge
    Debris and West Exit pressure resolve Fast; Cross Opening then
-   `CLASH · Gate access` resolve Standard. Settle and confirm charged conduit,
-   jammed bollard, threatened West Exit, player at `(10,5)`, and Gate `3/3`.
+   `CLASH · Gate access` resolve Standard. Review Aftermath, begin the next
+   exchange, and confirm charged conduit, jammed bollard, threatened West Exit,
+   player at `(10,5)`, and Gate `3/3`.
 9. Discard to retain seven. Select the Gate, plan **Defend → Guard Gate**, then
    **Use → Stabilize Gate** with **Objective Brace**. Pass to Lock. Verify Fast
    Guard and Static Tax, the Standard defended Gate Clash, and Slow Gate
@@ -242,8 +266,8 @@ Open `http://127.0.0.1:3000/world/playtest`.
 4. Use **Leave** beside the West Exit and verify **Controlled Retreat** does not
    pretend the Gate or formation was solved.
 5. Exercise Hacking / Exploration's lift. Confirm Output creates a capacity-one
-   bridge, crossing moves to the legal landing, and the lift returns at Settle
-   even if that exchange ends the battle.
+   bridge, crossing moves to the legal landing, and the lift returns after the
+   exchange even if that exchange ends the battle.
 6. Repeat the same submitted plan and initial seed. Confirm Preview signature,
    resolution packets, and material final state match.
 
@@ -251,14 +275,17 @@ Open `http://127.0.0.1:3000/world/playtest`.
 
 1. Complete the primary path with pointer controls only.
 2. Reload and complete representative selection, targeting, card, Pivot,
-   Pass/Lock, manual resolution, Settle, Review, and Reset interactions using
-   Tab, Enter, and Space. Confirm every focused control has a visible outline.
+   End Planning, manual Action Phase, Aftermath, Review, and Reset interactions
+   using Tab, Enter, and Space. Confirm every focused control has a visible
+   outline.
 3. At `390 × 844` CSS pixels, confirm tile, focus, card, and action controls
    remain at least `44 × 44` CSS pixels. The compact board may pan
    horizontally, but no tile may be scaled below its usable hit area or placed
    outside the battlefield.
-4. Enable **Reduce motion**. Confirm target, path, Clash, and card animations
-   stop and resolution becomes manually advanceable without hiding state.
+4. Confirm the Action Phase advances only when its clearly named control is
+   selected, so Fast, Standard, and Slow changes can each be inspected. Enable
+   **Reduce motion** and confirm target, path, Clash, and card animations stop
+   without hiding state.
 5. Confirm state never depends on color alone: `FREE`, `ADV`, `TARGET`, `SET`,
    `COMPATIBLE`, `NEWEST`, `SOLID COMMITMENT`, Pivot state, lane names, pips,
    icons, borders, shapes, and text all carry meaning.
@@ -304,7 +331,7 @@ prototype must remain inaccessible:
    above and record:
    - the cycle-one Preview and locked signatures;
    - the three resolution logs;
-   - Gate Stability after each Settle;
+   - Gate Stability after each Aftermath;
    - the final Results explanation;
    - Reset producing the same initial state.
 6. Label these captures **implementation evidence**. Keep any future moderated

@@ -42,6 +42,28 @@ Gate Platform, West Exit, Cracked Divider, powered service track, Gate
 Actuator, defensive bollard, service gap and shutter, service lift, optional
 Field Cache, and the three-pip Gate objective.
 
+The owner-readability revision preserves that tactical scale while replacing
+the original sparse circular hit areas and oversized map labels:
+
+- all 62 spaces are visible, compact, staggered diamonds with safe board
+  margins;
+- selecting the player exposes **Move** first and marks every legal free
+  Reposition and paid Advance destination before a destination is probed;
+- special terrain is physical and causal: clear lanes carry route chevrons,
+  rubble visibly obstructs movement, and the powered service track is drawn
+  from the Gate Actuator to its connected output;
+- enemies are always-visible pieces with Condition and Guard, and their
+  current control/intent overlay is textual as well as colored;
+- the selected ordered build names and marks its exact battlefield source,
+  required setup, skill attribution, and currently legal action;
+- compact object pieces move aside and yield pointer input when an underlying
+  tile becomes a legal movement destination;
+- Preview and **Add to Plan** share the board's command rail instead of being
+  separated from the target by a full-screen scroll; and
+- a persistent five-stage rail names **Read & Plan**, **Contest & Lock**,
+  **Resolve**, **Settle**, and **Results**, while a live instruction states the
+  exact task the player should perform now.
+
 The formation has four independently positioned opponents:
 
 | Enemy | Battlefield responsibility |
@@ -170,11 +192,13 @@ Open `http://127.0.0.1:3000/world/playtest`.
 1. Confirm the header says private, solo, noncanonical, and in-memory. Confirm
    Player Command `16`, Enemy Squad Command `4` after its opening commitment,
    Gate Stability `3/3`, four enemy pieces, and five Prepared cards.
-2. On the clear Lower Yard lane, select tile `(3,6)`, choose **Move →
-   Reposition**, select the highlighted tile again, confirm the textual
-   `CONFIRMED` cue, inspect Preview, and add it.
-3. Select clear tile `(5,6)`, choose **Move → Advance**, select the tile again,
-   and add it. Confirm the earlier Reposition is now a Solid commitment.
+2. Confirm **Read & Plan** and **Move** are active. Verify the board already
+   distinguishes green `FREE` destinations from cyan `ADV` destinations.
+   Choose **Reposition**, select clear tile `(3,6)`, inspect Preview beside the
+   board, and add it.
+3. The player remains selected. Choose **Move → Advance**, select clear tile
+   `(5,6)`, inspect the projected route, and add it. Confirm the earlier
+   Reposition is now a Solid commitment.
 4. Select **Cracked Divider**, choose **Discipline → Answer Commitment**, and
    select the Divider as the target. Attach the source-bound **Follow Through**
    card. Confirm the forecast says high contact risk, likely even, Cracked
@@ -207,11 +231,13 @@ Open `http://127.0.0.1:3000/world/playtest`.
 ### Connected owner checks
 
 1. Compare the clear lane with rubble `(3–5,5)` and the powered lane
-   `(3–7,7)`. Confirm the forecast changes timing without changing available
-   Command.
+   `(3–7,7)`. Confirm each terrain is identifiable before selection, the
+   powered lane visibly connects to the Gate Actuator, and the forecast
+   changes timing without changing available Command.
 2. Change each ordered build and confirm specialized text names `Revealed by`
-   and `Enabled by`; builds without that opportunity do not receive a gray
-   class-locked substitute.
+   and `Enabled by`, while **Build Line** moves to the exact relevant actor or
+   object; builds without that opportunity do not receive a gray class-locked
+   substitute.
 3. Let three unopposed Gate impacts complete and verify **Gate Lost** at `0/3`.
 4. Use **Leave** beside the West Exit and verify **Controlled Retreat** does not
    pretend the Gate or formation was solved.
@@ -228,12 +254,14 @@ Open `http://127.0.0.1:3000/world/playtest`.
    Pass/Lock, manual resolution, Settle, Review, and Reset interactions using
    Tab, Enter, and Space. Confirm every focused control has a visible outline.
 3. At `390 × 844` CSS pixels, confirm tile, focus, card, and action controls
-   remain at least `44 × 44` CSS pixels and the board remains usable.
+   remain at least `44 × 44` CSS pixels. The compact board may pan
+   horizontally, but no tile may be scaled below its usable hit area or placed
+   outside the battlefield.
 4. Enable **Reduce motion**. Confirm target, path, Clash, and card animations
    stop and resolution becomes manually advanceable without hiding state.
-5. Confirm state never depends on color alone: `TARGET`, `CONFIRMED`,
+5. Confirm state never depends on color alone: `FREE`, `ADV`, `TARGET`, `SET`,
    `COMPATIBLE`, `NEWEST`, `SOLID COMMITMENT`, Pivot state, lane names, pips,
-   borders, shapes, and text all carry meaning.
+   icons, borders, shapes, and text all carry meaning.
 
 ## Automated validation
 
@@ -252,7 +280,9 @@ opposed planning and both Pivots, the complete three-cycle battle, Command
 banking and caps, Refocus, invalidation/refunds/no-retargeting, all six ordered
 build state changes, all five Results, lift reset, reset/replay, production
 gating, isolation from persistent systems, input semantics, non-color cues,
-touch targets, reduced motion, and core text contrast.
+touch targets, reduced motion, core text contrast, staggered board bounds,
+action-first movement, phase guidance, visible terrain causality, and
+non-obstructing movement targets.
 
 These are implementation checks—not player evidence. They do not establish
 comprehension, balance, fun, accessibility, or replay value.

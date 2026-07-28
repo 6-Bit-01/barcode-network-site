@@ -229,6 +229,22 @@ test("revised checkpoint, 62-tile board, six builds, and shared squad economy ar
 
 test("board-first context stays bounded and spatial legality blocks remote attacks and contact", () => {
   const state = createFracturedGateState("battle-exploration");
+  for (const tile of Object.values(BOARD_TILES)) {
+    assert.ok(
+      tile.boardX >= 9 && tile.boardX <= 92,
+      `${tile.id} horizontal bounds`,
+    );
+    assert.ok(
+      tile.boardY >= 17 && tile.boardY <= 82,
+      `${tile.id} vertical bounds`,
+    );
+  }
+  assert.notEqual(
+    BOARD_TILES["tile-4-2"].boardX,
+    BOARD_TILES["tile-4-3"].boardX,
+    "adjacent rows should be visibly staggered",
+  );
+
   for (const focusId of [
     "player",
     "breacher",
@@ -243,6 +259,26 @@ test("board-first context stays bounded and spatial legality blocks remote attac
     assert.ok(groups.length <= 4, focusId);
     assert.equal(new Set(groups.map((group) => group.parent)).size, groups.length);
   }
+
+  const playerMove = getContextActionGroups(state, "player").find(
+    (group) => group.parent === "Move",
+  );
+  assert.ok(
+    playerMove,
+    "selecting the player should expose action-first movement",
+  );
+  assert.deepEqual(
+    playerMove.choices.map((choice) => choice.id),
+    ["reposition", "advance"],
+  );
+  assert.deepEqual(playerMove.choices[0].legalTargets.sort(), [
+    "tile-1-6",
+    "tile-3-6",
+  ]);
+  assert.ok(
+    playerMove.choices[1].legalTargets.includes("tile-5-6"),
+    "paid Advance should expose every reachable destination before tile probing",
+  );
 
   const remoteAttack = getContextActionGroups(state, "breacher")
     .find((group) => group.parent === "Attack")

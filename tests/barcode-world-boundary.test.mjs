@@ -73,6 +73,12 @@ test("Fractured Gate preserves semantic input, focus, non-color cues, touch targ
     "utf8",
   );
   assert.match(component, /aria-label="The Fractured Gate tactical board"/);
+  assert.match(component, /aria-label="Current battle phase"/);
+  assert.match(component, /MOVE RANGE/);
+  assert.match(component, /ENEMY PRESSURE/);
+  assert.match(component, /CURRENT BUILD LINE/);
+  assert.match(component, /powered by Gate Actuator/);
+  assert.match(component, /data-terrain=/);
   assert.match(component, /type="button"/);
   assert.match(component, /TARGET/);
   assert.match(component, /CONFIRMED/);
@@ -81,6 +87,11 @@ test("Fractured Gate preserves semantic input, focus, non-color cues, touch targ
   assert.match(css, /touch-action:\s*manipulation/);
   assert.match(css, /min-height:\s*max\(2\.75rem,\s*44px\)/);
   assert.match(css, /min-width:\s*44px/);
+  assert.match(
+    css,
+    /clip-path:\s*polygon\(50% 0,\s*100% 50%,\s*50% 100%,\s*0 50%\)/,
+  );
+  assert.match(css, /\.movementPassThrough/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /animation-duration:\s*0\.001ms/);
 });

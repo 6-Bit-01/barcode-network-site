@@ -314,9 +314,10 @@ for (const [x, y] of [[3, 7], [4, 7], [5, 7], [6, 7], [7, 7]]) {
 }
 
 function pointToPercent(x, y) {
+  const row = y - 2;
   return {
-    x: 4 + ((x - 1) / 12) * 92,
-    y: 7 + ((y - 1) / 8) * 86,
+    x: 9 + ((x - 1) / 12) * 80 + (Math.abs(row) % 2) * 2.2,
+    y: 17 + (row / 6) * 65,
   };
 }
 
@@ -2013,7 +2014,10 @@ function disciplineChoices(state, focusId) {
 
 export function getContextActionGroups(state, focusId) {
   const groups = [];
-  const movement = movementChoices(state, focusId);
+  const movement =
+    focusId === "player"
+      ? ["reposition", "advance"].map((actionId) => makeChoice(state, actionId))
+      : movementChoices(state, focusId);
   if (movement.length) groups.push({ parent: "Move", choices: movement });
 
   if (Object.keys(state.enemies).includes(focusId)) {

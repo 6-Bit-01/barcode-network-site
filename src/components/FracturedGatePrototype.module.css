@@ -45,6 +45,7 @@
 
 .prototypeHeader,
 .controlStrip,
+.phaseDirector,
 .hud,
 .warning,
 .battleLayout,
@@ -61,10 +62,10 @@
 
 .prototypeHeader {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 2rem;
-  padding: clamp(1.2rem, 3vw, 2.4rem);
+  padding: clamp(1rem, 2vw, 1.45rem);
   border: 1px solid var(--fg-line);
   border-bottom: 2px solid rgba(99, 255, 159, 0.7);
   background: rgba(5, 8, 12, 0.95);
@@ -73,9 +74,10 @@
 
 .prototypeHeader h1 {
   margin: 0.2rem 0 0.45rem;
-  font-size: clamp(2.2rem, 6vw, 5.8rem);
-  line-height: 0.82;
-  letter-spacing: -0.075em;
+  font-size: clamp(2.2rem, 4vw, 4.1rem);
+  line-height: 0.88;
+  letter-spacing: -0.06em;
+  white-space: nowrap;
 }
 
 .prototypeHeader > div:first-child > p:last-child {
@@ -99,7 +101,7 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.45rem;
-  max-width: 34rem;
+  max-width: 29rem;
 }
 
 .boundaryBadges span {
@@ -197,6 +199,191 @@
   color: var(--fg-cyan);
 }
 
+.phaseDirector {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(18rem, 0.8fr);
+  border-inline: 1px solid var(--fg-line);
+  border-bottom: 1px solid var(--fg-line);
+  background: rgba(7, 12, 17, 0.98);
+}
+
+.phaseTrack {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  margin: 0;
+  padding: 0;
+  border-bottom: 1px solid var(--fg-line);
+  list-style: none;
+}
+
+.phaseTrack li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.8rem;
+  padding: 0.55rem 0.75rem;
+  border-right: 1px solid var(--fg-line);
+  color: #73858b;
+  font-size: 0.61rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.phaseTrack li:last-child {
+  border-right: 0;
+}
+
+.phaseTrack li::after {
+  position: absolute;
+  right: -0.31rem;
+  z-index: 2;
+  color: var(--fg-line-bright);
+  content: "›";
+  font-size: 1.2rem;
+}
+
+.phaseTrack li:last-child::after {
+  display: none;
+}
+
+.phaseTrack li span {
+  display: grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 0.56rem;
+}
+
+.phaseTrack .completedPhase {
+  color: var(--fg-muted);
+}
+
+.phaseTrack .currentPhase {
+  color: var(--fg-green);
+  background:
+    linear-gradient(90deg, rgba(99, 255, 159, 0.12), transparent),
+    var(--fg-panel-2);
+}
+
+.phaseTrack .currentPhase span {
+  color: #04120a;
+  background: var(--fg-green);
+  box-shadow: 0 0 18px rgba(99, 255, 159, 0.32);
+}
+
+.phaseInstruction {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1fr);
+  gap: 1rem;
+  align-items: center;
+  min-height: 8.2rem;
+  padding: 0.9rem 1.15rem;
+  border-right: 1px solid var(--fg-line);
+  background:
+    radial-gradient(circle at 12% 50%, rgba(97, 220, 255, 0.09), transparent 15rem),
+    var(--fg-panel);
+}
+
+.phaseNumber {
+  display: grid;
+  gap: 0.25rem;
+  padding-right: 1rem;
+  border-right: 1px solid var(--fg-line-bright);
+}
+
+.phaseNumber span {
+  color: var(--fg-muted);
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+.phaseNumber strong {
+  color: var(--fg-cyan);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.phaseInstruction h2 {
+  margin: 0;
+  font-size: clamp(1.15rem, 2.2vw, 2rem);
+  line-height: 1;
+  letter-spacing: -0.035em;
+}
+
+.phaseInstruction p {
+  margin: 0.48rem 0 0;
+  color: var(--fg-text);
+  font-size: 0.8rem;
+  line-height: 1.42;
+}
+
+.phaseInstruction small {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--fg-muted);
+  font-size: 0.67rem;
+  line-height: 1.35;
+}
+
+.opportunityCard {
+  display: grid;
+  align-content: center;
+  gap: 0.32rem;
+  min-height: 8.2rem;
+  padding: 0.85rem 1.05rem;
+  border: 0;
+  border-left: 3px solid var(--fg-violet);
+  color: var(--fg-text);
+  background:
+    linear-gradient(135deg, rgba(201, 166, 255, 0.13), transparent 72%),
+    var(--fg-panel-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.opportunityCard:hover {
+  background:
+    linear-gradient(135deg, rgba(201, 166, 255, 0.2), transparent 76%),
+    #17212a;
+}
+
+.opportunityCard > span {
+  color: var(--fg-violet);
+  font-size: 0.55rem;
+  font-weight: 1000;
+  letter-spacing: 0.12em;
+}
+
+.opportunityCard strong {
+  font-size: 0.82rem;
+}
+
+.opportunityCard p {
+  margin: 0;
+  color: #ddd1ef;
+  font-size: 0.66rem;
+  line-height: 1.34;
+}
+
+.opportunityCard small {
+  color: var(--fg-muted);
+  font-size: 0.57rem;
+}
+
+.opportunityCard b {
+  color: var(--fg-amber);
+  font-size: 0.6rem;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
 .hud {
   display: grid;
   grid-template-columns: 1.2fr repeat(7, minmax(8rem, 1fr));
@@ -260,20 +447,30 @@
 
 .battleLayout {
   display: grid;
-  grid-template-columns: minmax(0, 4fr) minmax(19rem, 1fr);
-  min-height: 42rem;
+  grid-template-columns: minmax(0, 3.6fr) minmax(20rem, 1fr);
+  min-height: 39rem;
   margin-top: 0.8rem;
   border: 1px solid var(--fg-line);
   background: var(--fg-bg);
 }
 
 .board {
-  position: relative;
+  display: grid;
+  grid-template-rows: minmax(36rem, 1fr) auto;
   min-width: 0;
-  min-height: 42rem;
-  overflow: hidden;
+  min-height: 39rem;
+  overflow-x: auto;
   isolation: isolate;
   border-right: 1px solid var(--fg-line);
+  background: #060a0f;
+}
+
+.boardViewport {
+  position: relative;
+  min-width: 800px;
+  min-height: 36rem;
+  overflow: hidden;
+  isolation: isolate;
   background:
     linear-gradient(rgba(97, 220, 255, 0.024) 1px, transparent 1px),
     linear-gradient(90deg, rgba(97, 220, 255, 0.024) 1px, transparent 1px),
@@ -281,10 +478,10 @@
   background-size: 24px 24px;
 }
 
-.board::after {
+.boardViewport::after {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 3;
   pointer-events: none;
   content: "";
   background:
@@ -306,12 +503,78 @@
   height: 100%;
 }
 
-.areaLabel {
-  fill: rgba(220, 235, 238, 0.24);
-  font-family: monospace;
-  font-size: 22px;
+.boardTools {
+  position: absolute;
+  left: 1rem;
+  right: 1rem;
+  top: 0.65rem;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  pointer-events: none;
+}
+
+.boardTools > span {
+  color: var(--fg-muted);
+  font-size: 0.55rem;
   font-weight: 900;
-  letter-spacing: 5px;
+  letter-spacing: 0.13em;
+}
+
+.boardTools > div {
+  display: flex;
+  gap: 0.38rem;
+  pointer-events: auto;
+}
+
+.boardTools button {
+  min-height: max(2.75rem, 44px);
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--fg-line-bright);
+  border-radius: 0.28rem;
+  color: var(--fg-muted);
+  background: rgba(8, 14, 19, 0.92);
+  font-size: 0.55rem;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  cursor: pointer;
+}
+
+.boardTools button:hover {
+  color: var(--fg-text);
+  border-color: var(--fg-text);
+}
+
+.boardTools .activeBoardTool {
+  border-color: var(--fg-cyan);
+  color: var(--fg-cyan);
+  background: rgba(97, 220, 255, 0.11);
+}
+
+.boardTools .activeThreatTool {
+  border-color: var(--fg-orange);
+  color: var(--fg-orange);
+  background: rgba(255, 155, 106, 0.1);
+}
+
+.boardTools .activeBuildTool {
+  border-color: var(--fg-violet);
+  color: var(--fg-violet);
+  background: rgba(201, 166, 255, 0.1);
+}
+
+.boardPanHint {
+  display: none;
+}
+
+.areaLabel {
+  fill: rgba(220, 235, 238, 0.15);
+  font-family: monospace;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 4px;
 }
 
 .projectionPath {
@@ -325,7 +588,7 @@
 .tileLayer {
   position: absolute;
   inset: 0;
-  z-index: 4;
+  z-index: 5;
 }
 
 .boardTile {
@@ -334,38 +597,166 @@
   top: var(--y);
   display: grid;
   place-items: center;
-  width: max(2.75rem, 44px);
+  width: 3.9rem;
   height: max(2.75rem, 44px);
   padding: 0;
   transform: translate(-50%, -50%);
-  border: 1px solid transparent;
-  border-radius: 50%;
-  color: transparent;
+  border: 0;
+  color: var(--fg-muted);
   background: transparent;
   cursor: pointer;
+}
+
+.tileDiamond {
+  position: absolute;
+  inset: 0.18rem 0;
+  z-index: 0;
+  display: grid;
+  place-items: center;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  border: 1px solid transparent;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.045), transparent 54%),
+    #111b23;
+  box-shadow: inset 0 0 0 1px rgba(121, 149, 159, 0.27);
+  transition:
+    transform 120ms ease,
+    filter 120ms ease;
+}
+
+.tileDiamond i {
+  color: #6f838b;
+  font-size: 0.64rem;
+  font-style: normal;
+  font-weight: 1000;
+  text-shadow: 0 1px 2px #000;
+}
+
+.terrain_clear .tileDiamond {
+  background:
+    linear-gradient(90deg, transparent 15%, rgba(99, 255, 159, 0.1) 50%, transparent 85%),
+    #13211f;
+  box-shadow: inset 0 0 0 1px rgba(99, 255, 159, 0.3);
+}
+
+.terrain_clear .tileDiamond i {
+  color: var(--fg-green);
+  font-size: 1.05rem;
+}
+
+.terrain_rubble .tileDiamond {
+  background:
+    radial-gradient(circle at 35% 42%, #765a49 0 7%, transparent 8%),
+    radial-gradient(circle at 58% 58%, #59463d 0 9%, transparent 10%),
+    radial-gradient(circle at 70% 38%, #8b6b54 0 6%, transparent 7%),
+    #251e1b;
+  box-shadow: inset 0 0 0 1px rgba(255, 155, 106, 0.38);
+}
+
+.terrain_rubble .tileDiamond i {
+  color: var(--fg-orange);
+}
+
+.terrain_powered .tileDiamond {
+  background:
+    linear-gradient(
+      0deg,
+      transparent 37%,
+      rgba(97, 220, 255, 0.55) 39% 44%,
+      transparent 46% 54%,
+      rgba(97, 220, 255, 0.55) 56% 61%,
+      transparent 63%
+    ),
+    #10212a;
+  box-shadow:
+    inset 0 0 0 1px rgba(97, 220, 255, 0.5),
+    0 0 12px rgba(97, 220, 255, 0.12);
+}
+
+.terrain_powered .tileDiamond i {
+  color: var(--fg-cyan);
 }
 
 .boardTile:hover,
 .boardTile:focus-visible,
 .selectedTile {
-  border-color: rgba(97, 220, 255, 0.55);
   color: var(--fg-cyan);
-  background: rgba(7, 18, 26, 0.56);
+}
+
+.boardTile:hover .tileDiamond,
+.boardTile:focus-visible .tileDiamond,
+.selectedTile .tileDiamond {
+  filter: brightness(1.35);
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 0 0 2px var(--fg-cyan),
+    0 0 18px rgba(97, 220, 255, 0.28);
 }
 
 .legalTile {
-  z-index: 5;
-  border: 2px dashed var(--fg-amber);
+  z-index: 8;
   color: #171000;
-  background: rgba(255, 209, 102, 0.18);
-  box-shadow: 0 0 18px rgba(255, 209, 102, 0.22);
   animation: targetPulse 1.15s ease-in-out infinite;
 }
 
-.boardTile span {
+.legalTile .tileDiamond {
+  background: rgba(255, 209, 102, 0.34);
+  box-shadow:
+    inset 0 0 0 3px var(--fg-amber),
+    0 0 20px rgba(255, 209, 102, 0.34);
+}
+
+.freeMoveTile .tileDiamond {
+  background: rgba(99, 255, 159, 0.22);
+  box-shadow:
+    inset 0 0 0 2px var(--fg-green),
+    0 0 15px rgba(99, 255, 159, 0.22);
+}
+
+.advanceMoveTile .tileDiamond {
+  background: rgba(97, 220, 255, 0.19);
+  box-shadow:
+    inset 0 0 0 2px var(--fg-cyan),
+    0 0 15px rgba(97, 220, 255, 0.2);
+}
+
+.threatenedTile .tileDiamond {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 120, 132, 0.78),
+    inset 0 0 18px rgba(255, 120, 132, 0.13);
+}
+
+.buildOpportunityTile .tileDiamond {
+  box-shadow:
+    inset 0 0 0 2px var(--fg-violet),
+    0 0 21px rgba(201, 166, 255, 0.25);
+}
+
+.tileCue {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  min-width: 1.7rem;
+  min-height: 1.15rem;
+  padding: 0.05rem 0.18rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  color: #07110c;
+  background: var(--fg-green);
   font-size: 0.44rem;
   font-weight: 1000;
   letter-spacing: 0.05em;
+}
+
+.legalTile .tileCue {
+  color: #171000;
+  background: var(--fg-amber);
+}
+
+.advanceMoveTile .tileCue {
+  color: #03151b;
+  background: var(--fg-cyan);
 }
 
 @keyframes dashFlow {
@@ -393,36 +784,81 @@
 
 .boardFocus {
   display: grid;
-  gap: 0.1rem;
-  width: max-content;
-  max-width: 9.5rem;
-  min-width: 5rem;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
   min-height: max(2.75rem, 44px);
-  padding: 0.38rem 0.55rem;
+  padding: 0;
   border: 1px solid rgba(168, 184, 189, 0.4);
-  border-radius: 0.34rem;
+  border-radius: 0.55rem;
   color: var(--fg-text);
-  background: rgba(7, 12, 17, 0.84);
-  text-align: left;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.38);
+  background: rgba(7, 12, 17, 0.95);
+  text-align: center;
+  box-shadow:
+    0 7px 18px rgba(0, 0, 0, 0.46),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
   cursor: pointer;
 }
 
-.boardFocus strong {
-  font-size: clamp(0.58rem, 0.78vw, 0.72rem);
-  line-height: 1.08;
+.markerGlyph {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid currentColor;
+  border-radius: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 1000;
+  line-height: 1;
 }
 
-.boardFocus small {
+.markerLabel {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 0.18rem);
+  display: grid;
+  gap: 0.05rem;
+  width: max-content;
+  max-width: 8.8rem;
+  padding: 0.18rem 0.3rem;
+  transform: translateX(-50%);
+  border: 1px solid rgba(50, 67, 77, 0.8);
+  border-radius: 0.2rem;
+  color: var(--fg-text);
+  background: rgba(4, 8, 12, 0.9);
+  line-height: 1.05;
+  pointer-events: none;
+}
+
+.markerLabel strong {
+  font-size: 0.5rem;
+  font-weight: 1000;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.markerLabel small {
+  overflow: hidden;
+  max-width: 8.2rem;
   color: var(--fg-muted);
-  font-size: clamp(0.47rem, 0.65vw, 0.58rem);
-  line-height: 1.12;
+  font-size: 0.43rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .boardFocus:hover {
-  z-index: 10;
+  z-index: 18;
   border-color: var(--fg-cyan);
   background: rgba(16, 31, 40, 0.96);
+}
+
+.boardFocus:hover .markerLabel,
+.selectedFocus .markerLabel,
+.legalTarget .markerLabel,
+.buildOpportunityFocus .markerLabel {
+  z-index: 19;
+  border-color: currentColor;
+  background: rgba(4, 8, 12, 0.98);
 }
 
 .focus_terrain,
@@ -433,18 +869,25 @@
 }
 
 .focus_enemy {
+  border-radius: 50%;
   border: 2px solid var(--fg-orange);
   color: #fff1eb;
   background: rgba(74, 31, 22, 0.92);
 }
 
 .focus_intent {
+  width: 2.35rem;
+  height: 2.35rem;
+  min-height: 2.35rem;
+  border-radius: 50%;
   border: 2px solid var(--fg-orange);
   color: var(--fg-orange);
   background: rgba(47, 23, 18, 0.95);
 }
 
 .focus_objective {
+  width: 3.35rem;
+  height: 3.35rem;
   border: 2px solid var(--fg-green);
   color: var(--fg-green);
   background: rgba(10, 43, 31, 0.93);
@@ -476,6 +919,42 @@
 .projectedFocus {
   border-style: dashed;
   box-shadow: 0 0 0 2px rgba(97, 220, 255, 0.13);
+}
+
+.movementPassThrough {
+  z-index: 7;
+  transform: translate(-50%, -112%) scale(0.72);
+  pointer-events: none;
+  opacity: 0.58;
+}
+
+.movementPassThrough .markerLabel,
+.movementPassThrough .buildCue {
+  display: none;
+}
+
+.buildOpportunityFocus {
+  z-index: 13;
+  box-shadow:
+    0 0 0 4px rgba(201, 166, 255, 0.2),
+    0 0 26px rgba(201, 166, 255, 0.36);
+}
+
+.buildCue {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.28rem);
+  width: max-content;
+  padding: 0.14rem 0.28rem;
+  transform: translateX(-50%);
+  border: 1px solid rgba(201, 166, 255, 0.7);
+  border-radius: 0.2rem;
+  color: #13091e;
+  background: var(--fg-violet);
+  font-size: 0.43rem;
+  font-weight: 1000;
+  letter-spacing: 0.07em;
+  pointer-events: none;
 }
 
 .inactiveFocus {
@@ -525,8 +1004,8 @@
 .playerPiece {
   display: grid;
   place-items: center;
-  width: 4.2rem;
-  height: 4.2rem;
+  width: 3.6rem;
+  height: 3.6rem;
   border: 2px solid var(--fg-green);
   border-radius: 50%;
   color: #04130b;
@@ -540,8 +1019,8 @@
 .pieceCore {
   display: grid;
   place-items: center;
-  width: 2.45rem;
-  height: 2.45rem;
+  width: 2.2rem;
+  height: 2.2rem;
   border-radius: 50%;
   color: #06130b;
   background: var(--fg-green);
@@ -569,8 +1048,8 @@
 .ghostPiece {
   display: grid;
   place-items: center;
-  width: 4rem;
-  height: 4rem;
+  width: 3.55rem;
+  height: 3.55rem;
   border: 3px dashed var(--fg-cyan);
   border-radius: 50%;
   color: var(--fg-cyan);
@@ -595,11 +1074,12 @@
 
 .intentLegend {
   position: absolute;
-  right: 3%;
-  top: 4%;
-  z-index: 5;
+  right: 1rem;
+  top: 4.15rem;
+  z-index: 7;
   display: grid;
-  gap: 0.08rem;
+  gap: 0.12rem;
+  max-width: 19rem;
   padding: 0.45rem 0.65rem;
   border: 1px solid rgba(255, 155, 106, 0.54);
   color: #ffd8c5;
@@ -613,6 +1093,60 @@
   font-size: 0.5rem;
   font-weight: 1000;
   letter-spacing: 0.12em;
+}
+
+.intentLegend strong {
+  font-size: 0.67rem;
+}
+
+.intentLegend small {
+  color: #caa99a;
+  font-size: 0.52rem;
+  line-height: 1.25;
+}
+
+.terrainLegend {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 800px;
+  padding: 0.55rem 0.7rem;
+  border-top: 1px solid var(--fg-line);
+  background: var(--fg-panel);
+  overflow-x: auto;
+}
+
+.terrainLegend span {
+  width: max-content;
+  padding: 0.24rem 0.42rem;
+  border: 1px solid var(--fg-line);
+  border-radius: 999px;
+  color: var(--fg-muted);
+  font-size: 0.49rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.terrainLegend .legendClear {
+  border-color: rgba(99, 255, 159, 0.38);
+  color: var(--fg-green);
+}
+
+.terrainLegend .legendRubble,
+.terrainLegend .legendThreat {
+  border-color: rgba(255, 155, 106, 0.4);
+  color: var(--fg-orange);
+}
+
+.terrainLegend .legendPowered {
+  border-color: rgba(97, 220, 255, 0.4);
+  color: var(--fg-cyan);
+}
+
+.terrainLegend .legendBuild {
+  border-color: rgba(201, 166, 255, 0.42);
+  color: var(--fg-violet);
 }
 
 .resolutionVeil {
@@ -642,6 +1176,15 @@
   font-size: 1.25rem;
 }
 
+.commandRail {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  max-height: 39rem;
+  overflow-y: auto;
+  background: var(--fg-panel);
+}
+
 .contextPanel {
   min-width: 0;
   padding: 1.15rem;
@@ -658,11 +1201,40 @@
 }
 
 .contextDescription {
-  min-height: 5.3rem;
+  min-height: 3.4rem;
   margin: 0;
   color: var(--fg-muted);
   font-size: 0.76rem;
   line-height: 1.45;
+}
+
+.commandRail .previewPanel {
+  display: flex;
+  flex-direction: column;
+  width: auto;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--fg-line);
+}
+
+.commandRail .previewHeading {
+  order: -2;
+}
+
+.commandRail .addBar {
+  order: -1;
+  margin-top: 0.7rem;
+  padding: 0.65rem;
+  border: 1px solid rgba(99, 255, 159, 0.42);
+  background: rgba(99, 255, 159, 0.06);
+}
+
+.commandRail .previewContent {
+  grid-template-columns: 1fr;
+}
+
+.commandRail .previewContent ul {
+  grid-template-columns: 1fr;
 }
 
 .parentActions {
@@ -760,6 +1332,35 @@
   border: 2px dashed var(--fg-amber);
   color: var(--fg-text);
   background: rgba(65, 48, 7, 0.27);
+}
+
+.phaseContextNotice {
+  display: grid;
+  gap: 0.36rem;
+  margin-top: 1rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(97, 220, 255, 0.45);
+  border-left: 3px solid var(--fg-cyan);
+  background: rgba(97, 220, 255, 0.055);
+}
+
+.phaseContextNotice span {
+  color: var(--fg-cyan);
+  font-size: 0.55rem;
+  font-weight: 1000;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.phaseContextNotice strong {
+  font-size: 0.75rem;
+}
+
+.phaseContextNotice p {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 0.67rem;
+  line-height: 1.4;
 }
 
 .targetingNotice span {
@@ -1602,6 +2203,10 @@
 }
 
 @media (max-width: 1180px) {
+  .phaseDirector {
+    grid-template-columns: minmax(0, 1.35fr) minmax(17rem, 0.8fr);
+  }
+
   .hud {
     grid-template-columns: repeat(4, 1fr);
   }
@@ -1658,14 +2263,27 @@
     grid-column: auto;
   }
 
+  .phaseDirector {
+    grid-template-columns: 1fr;
+  }
+
+  .phaseInstruction {
+    border-right: 0;
+    border-bottom: 1px solid var(--fg-line);
+  }
+
   .battleLayout {
     grid-template-columns: 1fr;
   }
 
   .board {
-    min-height: 38rem;
+    min-height: 39rem;
     border-right: 0;
     border-bottom: 1px solid var(--fg-line);
+  }
+
+  .commandRail {
+    max-height: none;
   }
 
   .contextPanel {
@@ -1683,6 +2301,7 @@
   .parentActions,
   .actionVariants,
   .targetingNotice,
+  .phaseContextNotice,
   .contextHint {
     grid-column: 2;
     grid-row: 1 / span 4;
@@ -1713,9 +2332,11 @@
 @media (max-width: 620px) {
   .prototypeHeader h1 {
     font-size: clamp(2.4rem, 16vw, 4.2rem);
+    white-space: normal;
   }
 
   .controlStrip,
+  .phaseDirector,
   .hud,
   .contextPanel,
   .settleGrid,
@@ -1739,29 +2360,71 @@
     border-bottom: 0;
   }
 
+  .phaseTrack {
+    grid-template-columns: repeat(5, minmax(7.5rem, 1fr));
+    overflow-x: auto;
+  }
+
+  .phaseTrack li {
+    min-height: 2.6rem;
+  }
+
+  .phaseInstruction {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .phaseNumber {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-right: 0;
+    padding-bottom: 0.55rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--fg-line-bright);
+  }
+
+  .opportunityCard {
+    min-height: auto;
+  }
+
   .board {
-    min-height: 640px;
+    min-height: 39rem;
   }
 
   .boardFocus {
-    max-width: 6.6rem;
-    min-width: 3.8rem;
+    width: 3rem;
+    height: 3rem;
     min-height: max(2.75rem, 44px);
-    padding: 0.3rem 0.4rem;
+    padding: 0;
   }
 
-  .boardFocus strong {
-    font-size: 0.56rem;
+  .boardTools {
+    align-items: flex-start;
   }
 
-  .boardFocus small {
+  .boardTools > span {
     display: none;
   }
 
-  .selectedFocus small,
-  .legalTarget small {
+  .boardTools > div {
+    margin-left: auto;
+  }
+
+  .boardPanHint {
+    position: absolute;
+    left: 1rem;
+    top: 0.85rem;
+    z-index: 18;
     display: block;
-    font-size: 0.46rem;
+    padding: 0.28rem 0.42rem;
+    border: 1px solid rgba(97, 220, 255, 0.5);
+    color: var(--fg-cyan);
+    background: rgba(4, 10, 14, 0.9);
+    font-size: 0.48rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    pointer-events: none;
   }
 
   .playerPiece {
@@ -1774,29 +2437,13 @@
     height: 2.1rem;
   }
 
-  .boardFocus[data-focus-id="impact-rush"] {
-    top: 46%;
-    left: 70%;
-  }
-
-  .boardFocus[data-focus-id="cracked-divider"] {
-    top: 67%;
-  }
-
-  .boardFocus[data-focus-id="service-gap"] {
-    left: 55%;
-  }
-
-  .intentLegend {
-    display: none;
-  }
-
   .contextPanel > .eyebrow,
   .contextPanel > h2,
   .contextDescription,
   .parentActions,
   .actionVariants,
   .targetingNotice,
+  .phaseContextNotice,
   .contextHint,
   .inspectDetails {
     grid-column: 1;

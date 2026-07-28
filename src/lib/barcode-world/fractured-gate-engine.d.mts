@@ -2,7 +2,6 @@
 
 export type FracturedGateRecord = Record<string, any>;
 export type FracturedGateState = FracturedGateRecord;
-export type FracturedGateChoice = FracturedGateRecord;
 
 export const FRACTURED_GATE_SOURCE: string;
 export const RESULT_TYPES: string[];
@@ -12,10 +11,13 @@ export const FRACTURED_GATE_ACTIONS: Record<string, any>;
 export const BUILDS: any[];
 export const CARDS: Record<string, any>;
 export const ENEMY_CARDS: Record<string, any>;
+export const ENEMY_DECKS: Record<string, string[]>;
+export const ENEMY_DEFINITIONS: Record<string, any>;
 export const CORE_RULES: Record<string, any>;
 
 export function createFracturedGateState(
   buildId?: string,
+  seed?: string,
 ): FracturedGateState;
 export function resetFracturedGate(
   state: FracturedGateState,
@@ -26,7 +28,13 @@ export function changeFracturedGateBuild(
 ): FracturedGateState;
 export function availableCommand(state: FracturedGateState): number;
 export function availableEnemyCommand(state: FracturedGateState): number;
-export function paidActionCount(state: FracturedGateState): number;
+export function getReachableTiles(
+  state: FracturedGateState,
+): Record<string, any>;
+export function getContextActions(
+  state: FracturedGateState,
+  focusId: string,
+): FracturedGateRecord[];
 export function getContextActionGroups(
   state: FracturedGateState,
   focusId: string,
@@ -44,28 +52,25 @@ export function previewAction(
   actionId: string,
   targetId: string,
   cardId?: string | null,
-  replacing?: boolean,
 ): FracturedGateRecord;
-export function queueAction(
+export function performAction(
   state: FracturedGateState,
   actionId: string,
   targetId: string,
   cardId?: string | null,
 ): FracturedGateState;
-export function pivotOpenAction(
+export function beginEnemyTurn(
   state: FracturedGateState,
-  actionId: string,
-  targetId: string,
-  cardId?: string | null,
 ): FracturedGateState;
-export function removePlanAction(
+export function advanceEnemyTurn(
   state: FracturedGateState,
-  instanceId: string,
 ): FracturedGateState;
-export function reorderPlanAction(
+export function getResponseOptions(
   state: FracturedGateState,
-  instanceId: string,
-  direction: number,
+): FracturedGateRecord[];
+export function resolveEnemyAction(
+  state: FracturedGateState,
+  responseId?: string | null,
 ): FracturedGateState;
 export function refocusCards(
   state: FracturedGateState,
@@ -74,21 +79,6 @@ export function refocusCards(
 export function discardToRetain(
   state: FracturedGateState,
   cardId: string,
-): FracturedGateState;
-export function projectPlan(
-  state: FracturedGateState,
-): FracturedGateRecord;
-export function passPriority(
-  state: FracturedGateState,
-): FracturedGateState;
-export function lockPlan(
-  state: FracturedGateState,
-): FracturedGateState;
-export function advanceResolution(
-  state: FracturedGateState,
-): FracturedGateState;
-export function settleRound(
-  state: FracturedGateState,
 ): FracturedGateState;
 export function displaySnapshot(
   state: FracturedGateState,
@@ -99,7 +89,13 @@ export function getPositionCoordinates(
 export function getActionDefinition(
   actionId: string,
 ): FracturedGateRecord | null;
+export function getFocusDetails(
+  state: FracturedGateState,
+  focusId: string,
+): FracturedGateRecord | null;
 export function tempoComparisonForRoute(
   route: string,
   poweredFeed?: string,
+  baseTempo?: number,
+  opponentTempo?: number,
 ): FracturedGateRecord;

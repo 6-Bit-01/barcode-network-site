@@ -74,15 +74,17 @@ test("Fractured Gate preserves semantic input, focus, non-color cues, touch targ
   );
   assert.match(component, /aria-label="The Fractured Gate tactical board"/);
   assert.match(component, /aria-label="Current battle phase"/);
-  assert.match(component, /MOVE RANGE/);
-  assert.match(component, /ENEMY PRESSURE/);
-  assert.match(component, /CURRENT BUILD LINE/);
-  assert.match(component, /powered by Gate Actuator/);
+  assert.match(component, /ENEMY INTENT/);
+  assert.match(component, /HIDDEN UNTIL REVEALED/);
+  assert.match(component, /CURRENT BUILD SOURCE/);
+  assert.match(component, /No paid-action count/);
+  assert.match(component, /END TURN · BANK/);
+  assert.match(component, /RESPONSE WINDOW/);
+  assert.match(component, /LOCAL TEMPO RESULT/);
   assert.match(component, /data-terrain=/);
   assert.match(component, /type="button"/);
-  assert.match(component, /TARGET/);
-  assert.match(component, /CONFIRMED/);
   assert.match(component, /Reduce motion/);
+  assert.doesNotMatch(component, /PLAN TRAY|PIVOT|LOCK PLAN|SETTLE/i);
   assert.match(css, /:focus-visible/);
   assert.match(css, /touch-action:\s*manipulation/);
   assert.match(css, /min-height:\s*max\(2\.75rem,\s*44px\)/);
@@ -91,7 +93,7 @@ test("Fractured Gate preserves semantic input, focus, non-color cues, touch targ
     css,
     /clip-path:\s*polygon\(50% 0,\s*100% 50%,\s*50% 100%,\s*0 50%\)/,
   );
-  assert.match(css, /\.movementPassThrough/);
+  assert.match(css, /\.openRouteMarker/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /animation-duration:\s*0\.001ms/);
 });

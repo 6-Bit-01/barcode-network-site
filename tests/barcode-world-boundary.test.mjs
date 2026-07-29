@@ -77,8 +77,17 @@ test("Fractured Gate preserves semantic input, focus, non-color cues, touch targ
   assert.match(component, /ENEMY INTENT/);
   assert.match(component, /HIDDEN UNTIL REVEALED/);
   assert.match(component, /CURRENT BUILD SOURCE/);
+  assert.match(component, /aria-label="Mission briefing"/);
+  assert.match(component, /PRIMARY MISSION/);
+  assert.match(component, /WHAT IT IS/);
+  assert.match(component, /WHY IT MATTERS/);
+  assert.match(component, /HOW TO USE OR ANSWER IT/);
+  assert.match(component, /RISK \/ TRADEOFF/);
+  assert.match(component, /action\.description/);
+  assert.match(component, /MISSION TARGET/);
+  assert.match(component, /ENEMY · SYSTEMS UNIT/);
   assert.match(component, /No paid-action count/);
-  assert.match(component, /END TURN · BANK/);
+  assert.match(component, /END TURN · ENEMIES ACT NEXT · BANK/);
   assert.match(component, /RESPONSE WINDOW/);
   assert.match(component, /LOCAL TEMPO RESULT/);
   assert.match(component, /data-terrain=/);

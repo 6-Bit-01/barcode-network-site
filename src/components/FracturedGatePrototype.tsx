@@ -23,6 +23,8 @@ import {
   getCompatibleCards,
   getContextActions,
   getFocusDetails,
+  getFocusGuidance,
+  getMissionGuidance,
   getPositionCoordinates,
   getReachableTiles,
   getResponseOptions,
@@ -55,27 +57,88 @@ const OBJECT_ORDER = [
 
 const OBJECT_VISUALS: Record<
   string,
-  { glyph: string; short: string; kind: string }
+  { glyph: string; short: string; kind: string; badge: string }
 > = {
-  "west-exit": { glyph: "↤", short: "EXIT", kind: "exit" },
-  "field-cache": { glyph: "◇", short: "CACHE", kind: "cache" },
-  "upper-crossing": { glyph: "⌁", short: "BROKEN SPAN", kind: "opening" },
-  "cracked-divider": { glyph: "╫", short: "DIVIDER", kind: "terrain" },
-  "gate-actuator": { glyph: "A", short: "ACTUATOR", kind: "system" },
-  "lift-relay": { glyph: "L", short: "LIFT RELAY", kind: "system" },
-  "service-gap": { glyph: "⇥", short: "SERVICE GAP", kind: "opening" },
-  "defensive-bollard": { glyph: "B", short: "BOLLARD", kind: "system" },
-  gate: { glyph: "G", short: "FRACTURED GATE", kind: "objective" },
+  "west-exit": {
+    glyph: "↤",
+    short: "EXIT",
+    kind: "exit",
+    badge: "RETREAT",
+  },
+  "field-cache": {
+    glyph: "◇",
+    short: "CACHE",
+    kind: "cache",
+    badge: "OPTIONAL",
+  },
+  "upper-crossing": {
+    glyph: "⌁",
+    short: "BROKEN SPAN",
+    kind: "opening",
+    badge: "ROUTE",
+  },
+  "cracked-divider": {
+    glyph: "╫",
+    short: "DIVIDER",
+    kind: "terrain",
+    badge: "TERRAIN",
+  },
+  "gate-actuator": {
+    glyph: "A",
+    short: "ACTUATOR",
+    kind: "system",
+    badge: "DEVICE",
+  },
+  "lift-relay": {
+    glyph: "L",
+    short: "LIFT RELAY",
+    kind: "system",
+    badge: "DEVICE",
+  },
+  "service-gap": {
+    glyph: "⇥",
+    short: "SERVICE GAP",
+    kind: "opening",
+    badge: "CLOSED ROUTE",
+  },
+  "defensive-bollard": {
+    glyph: "B",
+    short: "BOLLARD",
+    kind: "system",
+    badge: "DEVICE",
+  },
+  gate: {
+    glyph: "G",
+    short: "FRACTURED GATE",
+    kind: "objective",
+    badge: "MISSION TARGET",
+  },
 };
 
 const ENEMY_VISUALS: Record<
   string,
-  { glyph: string; short: string }
+  { glyph: string; short: string; role: string }
 > = {
-  breacher: { glyph: "BR", short: "BREACHER" },
-  guard: { glyph: "GD", short: "GUARD" },
-  controller: { glyph: "CT", short: "CONTROLLER" },
-  pressure: { glyph: "PR", short: "PRESSURE" },
+  breacher: {
+    glyph: "BR",
+    short: "BREACHER",
+    role: "ENEMY · GATE THREAT",
+  },
+  guard: {
+    glyph: "GD",
+    short: "GUARD",
+    role: "ENEMY · PROTECTOR",
+  },
+  controller: {
+    glyph: "EC",
+    short: "CONTROLLER",
+    role: "ENEMY · SYSTEMS UNIT",
+  },
+  pressure: {
+    glyph: "PR",
+    short: "PRESSURE",
+    role: "ENEMY · RANGED FLANKER",
+  },
 };
 
 const BUILD_SOURCES: Record<
@@ -160,11 +223,11 @@ function positionStyle(positionId: string): PositionedStyle {
 
 function phaseCopy(game: FracturedGateState) {
   if (game.phase === "player") {
+    const mission = getMissionGuidance(game);
     return {
       kicker: "YOUR TURN",
-      title: "Move, spend Command, or bank it.",
-      text:
-        "Movement may be split around as many legal paid actions as Command, cards, position, and specific readiness rules allow.",
+      title: mission.nextTitle,
+      text: mission.nextText,
     };
   }
   if (game.phase === "discard") {
@@ -223,6 +286,42 @@ function GatePips({
   );
 }
 
+function MissionBrief({ game }: { game: FracturedGateState }) {
+  const mission = getMissionGuidance(game);
+  return (
+    <section className={styles.missionBrief} aria-label="Mission briefing">
+      <div className={styles.missionMain}>
+        <span>PRIMARY MISSION</span>
+        <strong>{mission.objective}</strong>
+        <p>
+          Reach the <b>GATE</b> marker on the east side, begin{" "}
+          <b>Stabilize Gate</b>, then keep that Slow Work alive through the
+          Enemy Turn.
+        </p>
+      </div>
+      <div className={styles.missionOutcomes}>
+        <div>
+          <span>WIN</span>
+          <p>{mission.win}</p>
+        </div>
+        <div>
+          <span>LOSE</span>
+          <p>{mission.lose}</p>
+        </div>
+        <div>
+          <span>OPTIONAL</span>
+          <p>{mission.optional}</p>
+        </div>
+      </div>
+      <div className={styles.missionNow}>
+        <span>RIGHT NOW</span>
+        <strong>{mission.nextTitle}</strong>
+        <p>{mission.nextText}</p>
+      </div>
+    </section>
+  );
+}
+
 function TurnDirector({ game }: { game: FracturedGateState }) {
   const copy = phaseCopy(game);
   return (
@@ -278,11 +377,14 @@ function BattleBoard({
     <section className={styles.boardPanel}>
       <div className={styles.boardHeader}>
         <div>
-          <span>CONTINUOUS ISOMETRIC BATTLEFIELD</span>
-          <strong>Every visible floor diamond is walkable unless occupied.</strong>
+          <span>TACTICAL FIELD</span>
+          <strong>
+            Reach the east-side GATE before its Stability falls to zero.
+          </strong>
         </div>
         <p>
-          No named-zone movement · no node buttons · no forecast enemy paths
+          Select anything to identify it. Purple marks your optional build
+          source; red pieces are enemies.
         </p>
       </div>
       <div className={styles.boardViewport}>
@@ -382,7 +484,9 @@ function BattleBoard({
               >
                 <span>{visual.glyph}</span>
                 <strong>{visual.short}</strong>
-                {activeSource === focusId ? <small>BUILD SOURCE</small> : null}
+                <small>
+                  {activeSource === focusId ? "YOUR BUILD SOURCE" : visual.badge}
+                </small>
               </button>
             );
           })}
@@ -416,7 +520,8 @@ function BattleBoard({
                   <span>{visual.glyph}</span>
                   <strong>{visual.short}</strong>
                   <small>
-                    C {enemy.condition} · G {enemy.guard}
+                    {visual.role}
+                    <br />C {enemy.condition} · G {enemy.guard}
                   </small>
                   {isActing ? <em>ACTING</em> : null}
                 </button>
@@ -509,6 +614,7 @@ function SelectionPanel({
   onExecute: () => void;
 }) {
   const focus = getFocusDetails(game, focusId);
+  const guidance = getFocusGuidance(game, focusId);
   const actions = getContextActions(game, focusId);
   const compatible = selectedActionId
     ? getCompatibleCards(game, selectedActionId)
@@ -516,16 +622,33 @@ function SelectionPanel({
   const contextCards = selectedActionId
     ? getAvailableContextCards(game, selectedActionId)
     : [];
-  if (!focus) return null;
+  if (!focus || !guidance) return null;
 
   return (
     <section className={styles.selectionPanel}>
       <div className={styles.panelHeading}>
-        <span>SELECTED</span>
+        <span>SELECTED · {guidance.typeLabel}</span>
         <strong>{focus.name}</strong>
       </div>
-      <p>{focus.description}</p>
       <b className={styles.focusStatus}>{focus.status}</b>
+      <div className={styles.focusGuidance}>
+        <div>
+          <span>WHAT IT IS</span>
+          <p>{guidance.what}</p>
+        </div>
+        <div>
+          <span>WHY IT MATTERS</span>
+          <p>{guidance.why}</p>
+        </div>
+        <div>
+          <span>HOW TO USE OR ANSWER IT</span>
+          <p>{guidance.how}</p>
+        </div>
+        <div className={styles.guidanceRisk}>
+          <span>RISK / TRADEOFF</span>
+          <p>{guidance.risk}</p>
+        </div>
+      </div>
       {focus.intel ? (
         <div className={styles.intelRead}>
           <span>REVEALED BY HACKING</span>
@@ -536,6 +659,13 @@ function SelectionPanel({
 
       {game.phase === "player" ? (
         <>
+          <div className={styles.actionHeading}>
+            <span>
+              {actions.length
+                ? "ACTIONS FROM YOUR CURRENT POSITION"
+                : "NO DIRECT ACTION HERE NOW"}
+            </span>
+          </div>
           <div className={styles.contextActions}>
             {actions.length ? (
               actions.map((action: FracturedGateRecord) => (
@@ -552,10 +682,11 @@ function SelectionPanel({
                     {action.kind} · {action.cost} Command
                   </span>
                   <strong>{action.name}</strong>
+                  <p>{action.description}</p>
                   <small>
                     {action.legal
-                      ? `${action.band} ${action.tempo}`
-                      : action.reason}
+                      ? `AVAILABLE · ${action.band} ${action.tempo}`
+                      : `NOT READY · ${action.reason}`}
                   </small>
                 </button>
               ))
@@ -599,7 +730,10 @@ function SelectionPanel({
               data-testid="action-preview"
             >
               <div className={styles.previewTop}>
-                <span>LOCAL PREVIEW</span>
+                <div>
+                  <span>BEFORE YOU COMMIT</span>
+                  <strong>{preview.action.name}</strong>
+                </div>
                 <strong>
                   {preview.legal
                     ? `${preview.totalCost} Command`
@@ -622,13 +756,14 @@ function SelectionPanel({
                     </small>
                   </div>
                   <ul>
+                    <li>{preview.action.description}</li>
                     {preview.expected.map((line: string) => (
                       <li key={line}>{line}</li>
                     ))}
                   </ul>
                   {preview.risks.length ? (
                     <div className={styles.riskBox}>
-                      <span>RISK</span>
+                      <span>WHAT CAN GO WRONG</span>
                       {preview.risks.map((risk: string) => (
                         <p key={risk}>{risk}</p>
                       ))}
@@ -1117,7 +1252,7 @@ export function FracturedGatePrototype() {
           </p>
           <h1>THE FRACTURED GATE</h1>
           <p>
-            Move → act → resolve locally → End Turn → adaptive enemy turn
+            Save the Gate before the enemy squad collapses it.
           </p>
         </div>
         <div className={styles.boundaryBadges} aria-label="Prototype boundary">
@@ -1127,6 +1262,8 @@ export function FracturedGatePrototype() {
           <span>RESETTABLE</span>
         </div>
       </header>
+
+      <MissionBrief game={game} />
 
       <section className={styles.controlStrip} aria-label="Encounter controls">
         <label>
@@ -1174,7 +1311,7 @@ export function FracturedGatePrototype() {
       <section className={styles.hud} aria-label="Battle status">
         <div>
           <span>Objective</span>
-          <strong>Stabilize the Gate</strong>
+          <strong>Reach GATE → Stabilize → Survive Enemy Turn</strong>
         </div>
         <div>
           <span>Turn</span>
@@ -1266,17 +1403,24 @@ export function FracturedGatePrototype() {
               <LocalResolution game={game} />
               <div className={styles.turnControls}>
                 {game.phase === "player" ? (
-                  <button
-                    type="button"
-                    data-testid="end-turn"
-                    className={styles.endTurnButton}
-                    onClick={() => {
-                      setGame((current) => beginEnemyTurn(current));
-                      resetInteraction();
-                    }}
-                  >
-                    END TURN · BANK {game.command}
-                  </button>
+                  <>
+                    <p>
+                      Ending your turn lets the enemy squad act. Unspent
+                      Command stays available for legal Responses and banks
+                      forward.
+                    </p>
+                    <button
+                      type="button"
+                      data-testid="end-turn"
+                      className={styles.endTurnButton}
+                      onClick={() => {
+                        setGame((current) => beginEnemyTurn(current));
+                        resetInteraction();
+                      }}
+                    >
+                      END TURN · ENEMIES ACT NEXT · BANK {game.command}
+                    </button>
+                  </>
                 ) : null}
                 {game.phase === "enemy" &&
                 !game.pendingEnemyAction &&

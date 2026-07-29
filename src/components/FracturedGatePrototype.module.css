@@ -47,6 +47,7 @@
 }
 
 .prototypeHeader,
+.missionBrief,
 .controlStrip,
 .turnDirector,
 .hud,
@@ -116,6 +117,99 @@
   font-size: 0.68rem;
   font-weight: 850;
   letter-spacing: 0.08em;
+}
+
+.missionBrief {
+  display: grid;
+  grid-template-columns: minmax(18rem, 1.25fr) minmax(22rem, 1fr) minmax(18rem, 0.9fr);
+  border-inline: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: #0b1217;
+}
+
+.missionMain,
+.missionOutcomes,
+.missionNow {
+  padding: 0.9rem 1rem;
+}
+
+.missionMain,
+.missionNow {
+  display: grid;
+  align-content: start;
+  gap: 0.35rem;
+}
+
+.missionMain {
+  border-right: 1px solid var(--line);
+}
+
+.missionMain > span,
+.missionNow > span,
+.missionOutcomes span,
+.actionHeading span,
+.focusGuidance span {
+  color: var(--cyan);
+  font-size: 0.61rem;
+  font-weight: 950;
+  letter-spacing: 0.1em;
+}
+
+.missionMain > strong,
+.missionNow > strong {
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.missionMain p,
+.missionNow p,
+.missionOutcomes p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.48;
+}
+
+.missionMain b {
+  color: var(--green);
+}
+
+.missionOutcomes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+  border-right: 1px solid var(--line);
+}
+
+.missionOutcomes > div {
+  display: grid;
+  align-content: start;
+  gap: 0.25rem;
+  padding: 0.55rem;
+  border: 1px solid #2e464f;
+  background: #0f181d;
+}
+
+.missionOutcomes > div:nth-child(1) span {
+  color: var(--green);
+}
+
+.missionOutcomes > div:nth-child(2) span {
+  color: var(--red);
+}
+
+.missionOutcomes > div:nth-child(3) span {
+  color: var(--violet);
+}
+
+.missionNow {
+  background:
+    linear-gradient(120deg, rgba(255, 209, 102, 0.09), transparent 65%),
+    #12140f;
+}
+
+.missionNow > span {
+  color: var(--amber);
 }
 
 .controlStrip {
@@ -719,7 +813,10 @@
 }
 
 .enemy_guard {
-  border-color: var(--amber);
+  border-color: var(--red);
+  box-shadow:
+    0 0 0 3px rgba(255, 209, 102, 0.16),
+    0 8px 18px rgba(0, 0, 0, 0.42);
 }
 
 .enemy_guard > span {
@@ -727,7 +824,10 @@
 }
 
 .enemy_controller {
-  border-color: var(--cyan);
+  border-color: var(--red);
+  box-shadow:
+    0 0 0 3px rgba(97, 220, 255, 0.16),
+    0 8px 18px rgba(0, 0, 0, 0.42);
 }
 
 .enemy_controller > span {
@@ -735,7 +835,10 @@
 }
 
 .enemy_pressure {
-  border-color: var(--violet);
+  border-color: var(--red);
+  box-shadow:
+    0 0 0 3px rgba(184, 149, 255, 0.16),
+    0 8px 18px rgba(0, 0, 0, 0.42);
 }
 
 .enemy_pressure > span {
@@ -952,6 +1055,42 @@
   font-size: 0.72rem;
 }
 
+.focusGuidance {
+  display: grid;
+  gap: 0.42rem;
+  margin-bottom: 0.75rem;
+}
+
+.focusGuidance > div {
+  display: grid;
+  gap: 0.22rem;
+  padding: 0.58rem;
+  border: 1px solid #304750;
+  background: #0f181d;
+}
+
+.focusGuidance p {
+  margin: 0;
+  color: #d4e0e2;
+  font-size: 0.68rem;
+  line-height: 1.46;
+}
+
+.focusGuidance .guidanceRisk {
+  border-color: #704632;
+  background: #1d150f;
+}
+
+.focusGuidance .guidanceRisk span {
+  color: var(--amber);
+}
+
+.actionHeading {
+  margin: 0.75rem 0 0.4rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid #273b43;
+}
+
 .intelRead {
   display: grid;
   gap: 0.28rem;
@@ -1020,6 +1159,13 @@
 .contextActions button strong,
 .responseOptions button strong {
   font-size: 0.78rem;
+}
+
+.contextActions button > p {
+  margin: 0.08rem 0;
+  color: #d4e0e2;
+  font-size: 0.65rem;
+  line-height: 1.4;
 }
 
 .contextActions button small,
@@ -1110,9 +1256,19 @@
   letter-spacing: 0.11em;
 }
 
+.previewTop > div {
+  display: grid;
+  gap: 0.18rem;
+}
+
 .previewTop strong {
   color: var(--green);
   font-size: 0.75rem;
+}
+
+.previewTop > div strong {
+  color: var(--ink);
+  font-size: 0.82rem;
 }
 
 .tempoRead,
@@ -1478,6 +1634,19 @@
 }
 
 @media (max-width: 1220px) {
+  .missionBrief {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .missionNow {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--line);
+  }
+
+  .missionOutcomes {
+    border-right: 0;
+  }
+
   .controlStrip {
     grid-template-columns: 1fr 1.35fr;
   }
@@ -1505,6 +1674,7 @@
   }
 
   .prototypeHeader,
+  .missionBrief,
   .controlStrip,
   .turnDirector,
   .prototypeFooter {
@@ -1522,6 +1692,25 @@
 
   .controlStrip {
     display: grid;
+  }
+
+  .missionBrief {
+    display: grid;
+  }
+
+  .missionMain,
+  .missionOutcomes {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .missionOutcomes {
+    grid-template-columns: 1fr;
+  }
+
+  .missionNow {
+    grid-column: auto;
+    border-top: 0;
   }
 
   .turnDirector > aside {

@@ -20,6 +20,8 @@ import {
   displaySnapshot,
   getAvailableContextCards,
   getCompatibleCards,
+  getFocusGuidance,
+  getMissionGuidance,
   getReachableTiles,
   getResponseOptions,
   performAction,
@@ -174,6 +176,45 @@ test("the battlefield is a filled continuous diamond floor with only a physical 
     false,
     "the Gate is not reachable from spawn",
   );
+});
+
+test("the encounter explains its mission, threats, objects, and immediate next step", () => {
+  const opening = createFracturedGateState("battle-exploration");
+  const mission = getMissionGuidance(opening);
+  assert.match(mission.objective, /Stabilize the Gate/);
+  assert.match(mission.win, /Enemy Turn/);
+  assert.match(mission.lose, /0|defeated/);
+  assert.match(mission.nextTitle, /GATE marker/);
+  assert.equal(mission.source.focusId, "cracked-divider");
+  assert.match(mission.nextText, /optional build opportunity/);
+
+  const controller = getFocusGuidance(opening, "controller");
+  assert.match(controller.typeLabel, /ENEMY UNIT/);
+  assert.match(controller.what, /not an object or control panel/);
+  assert.match(controller.why, /interrupt Slow Gate Work/);
+  assert.match(controller.how, /Attack or Scan/);
+
+  const gate = getFocusGuidance(opening, "gate");
+  assert.equal(gate.typeLabel, "PRIMARY OBJECTIVE");
+  assert.match(gate.how, /select the Gate.+Stabilize Gate.+Enemy Turn/);
+  assert.match(gate.risk, /Controller can interrupt/);
+
+  const bollard = getFocusGuidance(opening, "defensive-bollard");
+  assert.match(bollard.how, /Do not click the Bollard to fire it/);
+
+  const divider = getFocusGuidance(opening, "cracked-divider");
+  assert.match(divider.typeLabel, /YOUR BUILD SOURCE/);
+  assert.match(divider.how, /Breacher/);
+
+  const ready = structuredClone(opening);
+  ready.player.position = "tile-14-5";
+  assert.match(
+    getMissionGuidance(ready).nextTitle,
+    /position to start the objective/,
+  );
+
+  const working = performAction(ready, "stabilize-gate", "gate");
+  assert.match(getMissionGuidance(working).nextTitle, /prepare for interruption/);
 });
 
 test("movement is skill-based, free, connected, and splittable around paid actions", () => {

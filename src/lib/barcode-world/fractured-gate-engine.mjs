@@ -3375,6 +3375,293 @@ export function getFocusDetails(state, focusId) {
   return { ...focus, status: statuses[focusId] };
 }
 
+const BUILD_SOURCE_GUIDANCE = Object.freeze({
+  "battle-exploration": {
+    focusId: "cracked-divider",
+    name: "Cracked Divider",
+    use: "Drive the Breacher into it to open a faster two-way route.",
+  },
+  "exploration-battle": {
+    focusId: "upper-crossing",
+    name: "Broken Upper Span",
+    use: "Prepare its natural handholds to open an elevated approach.",
+  },
+  "battle-hacking": {
+    focusId: "breacher",
+    name: "Breacher",
+    use: "Make contact to expose its regulator, then suppress the reset.",
+  },
+  "hacking-battle": {
+    focusId: "gate-actuator",
+    name: "Gate Actuator",
+    use: "Take Control, then target an enemy near the bollard to fire the Output.",
+  },
+  "exploration-hacking": {
+    focusId: "service-gap",
+    name: "Service Gap",
+    use: "Prepare the hidden opening, then suppress its shutter.",
+  },
+  "hacking-exploration": {
+    focusId: "lift-relay",
+    name: "Lift Relay",
+    use: "Align the lift, then deploy it as a temporary upper bridge.",
+  },
+});
+
+const ENEMY_GUIDANCE = Object.freeze({
+  breacher: {
+    typeLabel: "ENEMY UNIT",
+    what: "The squad's close-range demolition unit.",
+    why:
+      "It is the most direct threat to the Gate and can force physical Clashes.",
+    how:
+      "Attack it, block its route, or use your build source against it. Hacking builds may Scan its current priority.",
+    risk:
+      "If ignored, it advances toward the Gate and can remove Stability.",
+  },
+  guard: {
+    typeLabel: "ENEMY UNIT",
+    what: "The squad's protector and interceptor.",
+    why:
+      "It shields the Breacher, controls the Gate approach, and can answer physical attacks.",
+    how:
+      "Strip its Guard, draw it away from the Breacher, or route around its interception lane.",
+    risk:
+      "Attacking through it can consume Command while the Breacher keeps advancing.",
+  },
+  controller: {
+    typeLabel: "ENEMY UNIT — NOT A CONSOLE",
+    what:
+      "A hostile systems operator. This is an enemy character, not an object or control panel you operate.",
+    why:
+      "It resets Control, closes routes, weaponizes machinery, and can interrupt Slow Gate Work.",
+    how:
+      "Attack or Scan this enemy. Operable devices are separately labeled Actuator, Relay, Bollard, or Gate.",
+    risk:
+      "Leaving it active makes build routes less reliable and unprotected Gate Work easier to stop.",
+  },
+  pressure: {
+    typeLabel: "ENEMY UNIT",
+    what: "The squad's mobile ranged and flanking unit.",
+    why:
+      "It pressures exposed positions, the optional Cache, and the retreat line.",
+    how:
+      "Use cover, close distance, or force it to spend movement away from its firing lane.",
+    risk:
+      "Ignoring it can leave you exposed while you work on another threat.",
+  },
+});
+
+const OBJECT_GUIDANCE = Object.freeze({
+  "west-exit": {
+    typeLabel: "RETREAT ROUTE",
+    what: "The physical way out of the encounter.",
+    why:
+      "It lets you preserve the character when the Gate can no longer be saved.",
+    how: "Stand beside it and choose Leave battle.",
+    risk:
+      "Retreat ends the battle immediately and records the Gate as unresolved.",
+  },
+  "field-cache": {
+    typeLabel: "OPTIONAL RECOVERY",
+    what: "A one-slot battle-local Cache. It is not the mission objective.",
+    why:
+      "Recovering it improves the battle result without granting persistent prototype rewards.",
+    how: "Stand beside it and choose Recover Field Cache.",
+    risk:
+      "Detouring for it gives the enemy more time to pressure the Gate.",
+  },
+  "upper-crossing": {
+    typeLabel: "BROKEN ROUTE",
+    what: "A broken elevated span that can become a shortcut.",
+    why:
+      "Opening it creates a second approach and access to the upper landing.",
+    how:
+      "Exploration / Battle prepares the natural handholds. Hacking / Exploration can bridge the nearby gap through the Lift Relay.",
+    risk:
+      "The landing remains contestable and an opened route can be used by either side.",
+  },
+  "cracked-divider": {
+    typeLabel: "TERRAIN / COVER",
+    what: "Brittle cover blocking part of the central approach.",
+    why:
+      "Breaching it opens a faster two-way route and changes the battlefield geometry.",
+    how:
+      "Battle / Exploration can drive the Breacher into it from an adjacent position.",
+    risk:
+      "The breach helps enemies too, and the Controller can charge its exposed conduit.",
+  },
+  "gate-actuator": {
+    typeLabel: "BATTLEFIELD DEVICE",
+    what:
+      "A physical console connected to the powered track and defensive bollard.",
+    why:
+      "Control of it enables a separate force Output from the bollard.",
+    how:
+      "Hacking / Battle must stand beside it and Establish Actuator Control. Then select an enemy near the Bollard and Execute bollard Output.",
+    risk:
+      "Control costs Command, can be purged by the enemy Controller, and the Output is spent after use.",
+  },
+  "lift-relay": {
+    typeLabel: "BATTLEFIELD DEVICE",
+    what: "A physical relay controlling the service lift.",
+    why:
+      "It can create temporary geometry across the upper gap.",
+    how:
+      "Hacking / Exploration must stand beside it, Align service lift, then Deploy lift bridge.",
+    risk:
+      "The bridge is temporary, capacity-limited, and can leave you isolated.",
+  },
+  "service-gap": {
+    typeLabel: "CLOSED ROUTE",
+    what: "A concealed lower opening blocked by a connected shutter.",
+    why:
+      "Opening it creates a protected service approach toward the Gate.",
+    how:
+      "Exploration / Hacking must first Prepare service relationship, then Suppress service shutter.",
+    risk:
+      "The Controller may seal it again, and once open either side can traverse it.",
+  },
+  "defensive-bollard": {
+    typeLabel: "BATTLEFIELD DEVICE",
+    what: "A retractable force redirector beside the Gate approach.",
+    why:
+      "It can pin or redirect an enemy occupying its local reach.",
+    how:
+      "Do not click the Bollard to fire it. Hacking / Battle first controls the Gate Actuator, then selects a nearby enemy and chooses Execute bollard Output.",
+    risk:
+      "Using it spends Actuator Control and changes the device's physical state.",
+  },
+  gate: {
+    typeLabel: "PRIMARY OBJECTIVE",
+    what: "The unstable structure you came here to save.",
+    why:
+      "Stabilizing it wins the encounter. If its three Stability reaches zero, the battle is lost.",
+    how:
+      "Reach an adjacent diamond, select the Gate, choose Stabilize Gate, then survive the following Enemy Turn while Work remains legal.",
+    risk:
+      "The Work is Slow. The enemy Controller can interrupt it unless Objective Brace or another legal defense protects it.",
+  },
+});
+
+export function getMissionGuidance(state) {
+  const source = BUILD_SOURCE_GUIDANCE[state.buildId];
+  const gateReady =
+    state.phase === "player" &&
+    !specificActionError(state, "stabilize-gate", "gate");
+
+  if (state.phase === "result") {
+    return {
+      objective: "Battle complete.",
+      win: "The Gate was stabilized before it collapsed.",
+      lose: "The Gate reached 0 Stability or the player was defeated.",
+      optional: "The Cache and infrastructure affect only the battle result.",
+      nextTitle: state.result?.title ?? "Inspect the result.",
+      nextText: state.result?.cause ?? "Reset to replay the same initial state.",
+      source,
+    };
+  }
+
+  if (state.gate.status === "working") {
+    return {
+      objective: "Keep Gate Work alive through the Enemy Turn.",
+      win:
+        "Work completes after the enemy finishes if you still have legal Gate access.",
+      lose: "Gate Stability reaches 0 or the player is defeated.",
+      optional: "Held Command may pay for a legal defensive Response.",
+      nextTitle: "Gate Work is active—prepare for interruption.",
+      nextText:
+        "End Turn when ready. Stay beside the Gate and preserve Command for a Response.",
+      source,
+    };
+  }
+
+  if (gateReady) {
+    return {
+      objective: "Stabilize the Gate before its three Stability reaches 0.",
+      win: "Begin Gate Work and keep it legal through the Enemy Turn.",
+      lose: "Gate Stability reaches 0 or the player is defeated.",
+      optional: "The Cache and build route can improve the result but are not required.",
+      nextTitle: "You are in position to start the objective.",
+      nextText:
+        "Select the Fractured Gate and choose Stabilize Gate. Objective Brace can protect its first direct interruption.",
+      source,
+    };
+  }
+
+  return {
+    objective: "Stabilize the Gate before its three Stability reaches 0.",
+    win:
+      "Reach the Gate, begin Slow Gate Work, and keep it legal through the following Enemy Turn.",
+    lose: "Gate Stability reaches 0 or the player is defeated.",
+    optional: "The Field Cache and build route improve options but are not required.",
+    nextTitle:
+      state.gate.stability <= 1
+        ? "The Gate is close to collapse—advance now."
+        : "Advance east toward the GATE marker.",
+    nextText: `${source.name} is your purple optional build opportunity: ${source.use} You may also fight or move around it.`,
+    source,
+  };
+}
+
+export function getFocusGuidance(state, focusId) {
+  if (focusId === "player") {
+    return {
+      typeLabel: "YOUR CHARACTER",
+      what: "The solo character you directly control.",
+      why:
+        "Position determines movement, range, object access, cover, and whether Gate Work remains legal.",
+      how:
+        "Select a highlighted diamond to move, or select a nearby enemy or object to see actions.",
+      risk:
+        "Spending all Command may leave no legal Response during the Enemy Turn.",
+    };
+  }
+
+  if (state.enemies[focusId]) return ENEMY_GUIDANCE[focusId];
+
+  if (BOARD_TILES[focusId]) {
+    const tile = BOARD_TILES[focusId];
+    return {
+      typeLabel: tile.cover ? "MOVEMENT SPACE / COVER" : "MOVEMENT SPACE",
+      what: `${tile.terrain === "rubble" ? "Rubble" : "Walkable"} floor diamond${
+        tile.cover ? " with cover" : ""
+      }.`,
+      why:
+        "Moving here changes range, routes, object access, and exposure.",
+      how:
+        "Choose Move here, inspect the highlighted path and remaining movement, then execute.",
+      risk:
+        tile.terrain === "rubble"
+          ? "Rubble costs extra movement and slows the next linked physical action."
+          : "Open positions may expose the character to ranged or physical pressure.",
+    };
+  }
+
+  const guidance = OBJECT_GUIDANCE[focusId];
+  if (!guidance) return null;
+
+  const source = BUILD_SOURCE_GUIDANCE[state.buildId];
+  if (source.focusId === focusId) {
+    return {
+      ...guidance,
+      typeLabel: `${guidance.typeLabel} · YOUR BUILD SOURCE`,
+      how: source.use,
+    };
+  }
+
+  if (focusId === "defensive-bollard" && exactBuild(state, "hacking-battle")) {
+    return {
+      ...guidance,
+      how: state.actuator.controlled
+        ? "Actuator Control is ready. Select an enemy within the Bollard's local reach and choose Execute bollard Output."
+        : guidance.how,
+    };
+  }
+
+  return guidance;
+}
+
 export {
   ENEMY_DECKS,
   ENEMY_DEFINITIONS,

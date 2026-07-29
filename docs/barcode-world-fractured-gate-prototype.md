@@ -36,6 +36,43 @@ historical mechanics references only. Their action queue, opposed planning,
 Pivot, Lock, global Tempo phases, paid-action cap, and player-facing Settle do
 not control this prototype.
 
+## Owner comprehension correction
+
+The first natural owner playtest established that the prototype was somewhat
+playable but did not adequately explain:
+
+- what the mission was;
+- what the player was doing to selected objects;
+- why those objects existed;
+- what benefits and disadvantages an interaction created;
+- why the enemies were moving; or
+- that **Controller** was a hostile systems unit rather than an operable
+  controller object.
+
+That is player evidence of a comprehension failure, not a balance finding.
+The battle rules remain unchanged. The interface now provides:
+
+- one persistent mission brief with the win condition, loss conditions,
+  optional goals, and the immediate next useful step;
+- an east-side **MISSION TARGET** badge on the Gate;
+- a consistent red enemy outline plus an explicit enemy-role label on every
+  hostile piece;
+- a purple **YOUR BUILD SOURCE** marker for the selected build's optional
+  tactical opportunity;
+- selected-focus explanations for **What it is**, **Why it matters**,
+  **How to use or answer it**, and **Risk / tradeoff**;
+- an explicit warning that Controller is an enemy unit, not a console;
+- the complete Actuator → target nearby enemy → Bollard Output interaction
+  chain;
+- visible action descriptions and separate **AVAILABLE** or **NOT READY**
+  reasons before commitment;
+- a plain-language consequence on End Turn that enemies act next while held
+  Command remains available for legal Responses; and
+- a pre-commit statement of the expected effect and what can go wrong.
+
+These additions are implementation responses to the owner finding. They still
+require a second natural playtest before comprehension can be claimed.
+
 ## What is implemented
 
 The player sees one continuous, angled isometric battlefield. Every visible
@@ -224,6 +261,32 @@ npm run dev -- --hostname 127.0.0.1
 
 Open `http://127.0.0.1:3000/world/playtest`.
 
+### Natural comprehension retest
+
+Do not use the mechanical proof scripts below at first. Load or Reset the
+encounter and play naturally for several turns.
+
+1. Without reading this document, identify the mission, how the battle is won,
+   and the two ways it can be lost.
+2. Identify the Gate as the required target, the purple marker as an optional
+   build opportunity, and every red-outlined piece as an enemy.
+3. Select **Controller** and confirm the panel immediately says it is an enemy
+   systems operator, not a console, and explains why leaving it active is
+   dangerous.
+4. Select the Gate, Actuator, Bollard, Divider, Relay, Service Gap, Cache, and
+   Exit. Confirm each answers what it is, why it matters, how to use it, and
+   the tradeoff even when no action is currently legal.
+5. Select at least one legal and one blocked action. Confirm both explain the
+   intended effect, while the blocked action separately states what is
+   missing.
+6. Before pressing **Execute now**, confirm the preview plainly states the
+   expected result, cost, remaining resources, and known risk.
+7. Before pressing **End Turn**, confirm it is clear that enemies act next and
+   that retained Command remains available for legal Responses.
+
+Record anything that still requires guesswork. Do not infer comprehension from
+the automated checks.
+
 ### Continuous-board and 16-to-32 Command proof
 
 1. Confirm the header says private, solo, noncanonical, and resettable.
@@ -324,8 +387,9 @@ floor topology, skill-based split movement, 16-to-32 banking, a six-expenditure
 turn, hidden adaptive enemy choices, multi-enemy shared Command, off-turn
 Responses, causal Tempo order, concealed-response boundaries, explicit card
 roles, all six source-to-effect chains, Slow Gate Work, immediate retreat,
-deterministic reset, production gating, persistent-system isolation, semantic
-input, non-color cues, touch targets, reduced motion, and core text contrast.
+deterministic reset, mission/focus/action guidance, Controller identity,
+production gating, persistent-system isolation, semantic input, non-color
+cues, touch targets, reduced motion, and core text contrast.
 
 These are implementation checks, not player evidence. They do not establish
 comprehension, balance, fun, accessibility, or replay value.

@@ -93,6 +93,13 @@ export function getFocusDetails(
   state: FracturedGateState,
   focusId: string,
 ): FracturedGateRecord | null;
+export function getMissionGuidance(
+  state: FracturedGateState,
+): FracturedGateRecord;
+export function getFocusGuidance(
+  state: FracturedGateState,
+  focusId: string,
+): FracturedGateRecord | null;
 export function tempoComparisonForRoute(
   route: string,
   poweredFeed?: string,

@@ -9,6 +9,8 @@ const gameFiles = [
   "src/components/FracturedGatePrototype.module.css",
   "src/lib/barcode-world/constants.mjs",
   "src/lib/barcode-world/fractured-gate-engine.mjs",
+  "src/lib/barcode-world/fractured-gate-director-engine.mjs",
+  "src/lib/barcode-world/fractured-gate-director-engine.d.mts",
 ];
 
 test("Fractured Gate is production-gated, unlinked, local-only, and has no live-system dependency", async () => {
@@ -63,7 +65,7 @@ test("Fractured Gate is production-gated, unlinked, local-only, and has no live-
   assert.doesNotMatch(publicShell, /\/world\/playtest/);
 });
 
-test("Fractured Gate preserves semantic input, focus, non-color cues, touch targets, and reduced motion", async () => {
+test("the director cut is a one-screen semantic board with touch-safe controls", async () => {
   const component = await readFile(
     "src/components/FracturedGatePrototype.tsx",
     "utf8",
@@ -73,27 +75,30 @@ test("Fractured Gate preserves semantic input, focus, non-color cues, touch targ
     "utf8",
   );
   assert.match(component, /aria-label="The Fractured Gate tactical board"/);
-  assert.match(component, /aria-label="Current battle phase"/);
-  assert.match(component, /ENEMY INTENT/);
-  assert.match(component, /HIDDEN UNTIL REVEALED/);
-  assert.match(component, /CURRENT BUILD SOURCE/);
-  assert.match(component, /aria-label="Mission briefing"/);
-  assert.match(component, /PRIMARY MISSION/);
-  assert.match(component, /WHAT IT IS/);
-  assert.match(component, /WHY IT MATTERS/);
-  assert.match(component, /HOW TO USE OR ANSWER IT/);
-  assert.match(component, /RISK \/ TRADEOFF/);
-  assert.match(component, /action\.description/);
-  assert.match(component, /MISSION TARGET/);
-  assert.match(component, /ENEMY · SYSTEMS UNIT/);
-  assert.match(component, /No paid-action count/);
-  assert.match(component, /END TURN · ENEMIES ACT NEXT · BANK/);
-  assert.match(component, /RESPONSE WINDOW/);
-  assert.match(component, /LOCAL TEMPO RESULT/);
+  assert.match(component, /SAVE THE GATE/);
+  assert.match(component, /POWER 2 ANCHORS/);
+  assert.match(component, /REACH THE GATE/);
+  assert.match(component, /SURVIVE 1 ENEMY TURN/);
+  assert.match(component, /RAM breaks the Gate after three Slow smashes/);
+  assert.match(component, /SELECT AGAIN TO EXECUTE/);
+  assert.match(component, /NO TARGET IN RANGE/);
+  assert.match(component, /ENEMIES ACT/);
+  assert.match(component, /END TURN/);
+  assert.match(component, /role="dialog"/);
+  assert.match(component, /aria-modal="true"/);
+  assert.match(component, /DIRECTOR_CARDS/);
+  assert.match(component, /IntentLines/);
   assert.match(component, /data-terrain=/);
   assert.match(component, /type="button"/);
-  assert.match(component, /Reduce motion/);
+  assert.match(component, /reduce motion/i);
   assert.doesNotMatch(component, /PLAN TRAY|PIVOT|LOCK PLAN|SETTLE/i);
+  assert.doesNotMatch(component, /build dropdown|mission briefing/i);
+  assert.match(css, /\.battleShell\s*\{/);
+  assert.match(css, /height:\s*100dvh/);
+  assert.match(css, /overflow:\s*hidden/);
+  assert.match(css, /grid-template-rows:/);
+  assert.match(css, /\.commandDock\s*\{/);
+  assert.match(css, /grid-template-columns:\s*repeat\(5,/);
   assert.match(css, /:focus-visible/);
   assert.match(css, /touch-action:\s*manipulation/);
   assert.match(css, /min-height:\s*max\(2\.75rem,\s*44px\)/);
@@ -102,9 +107,22 @@ test("Fractured Gate preserves semantic input, focus, non-color cues, touch targ
     css,
     /clip-path:\s*polygon\(50% 0,\s*100% 50%,\s*50% 100%,\s*0 50%\)/,
   );
-  assert.match(css, /\.openRouteMarker/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /animation-duration:\s*0\.001ms/);
+
+  const referencedClasses = [
+    ...component.matchAll(/styles\.([A-Za-z0-9_]+)/g),
+  ].map((match) => match[1]);
+  const definedClasses = new Set(
+    [...css.matchAll(/^\.([A-Za-z0-9_-]+)/gm)].map((match) => match[1]),
+  );
+  assert.deepEqual(
+    [...new Set(referencedClasses)].filter(
+      (className) => !definedClasses.has(className),
+    ),
+    [],
+    "every CSS-module reference must have a real class definition",
+  );
 });
 
 test("shared live providers remain inert and expose only fallback state on the private prototype route", async () => {
@@ -159,13 +177,13 @@ function contrast(foreground, background) {
 
 test("Fractured Gate core text color pairs clear WCAG AA normal-text contrast", () => {
   const pairs = [
-    ["#f1f7f3", "#0b1117", "primary text"],
-    ["#a8b8bd", "#0b1117", "muted text"],
-    ["#61dcff", "#0b1117", "cyan labels"],
-    ["#ffd166", "#0b1117", "amber labels"],
-    ["#07130c", "#63ff9f", "primary action"],
-    ["#171000", "#ffd166", "target cue"],
-    ["#9da5a8", "#11171b", "disabled explanation"],
+    ["#f3f8f5", "#090f16", "primary text"],
+    ["#9aadb3", "#090f16", "muted text"],
+    ["#62dcff", "#090f16", "cyan labels"],
+    ["#ffd166", "#090f16", "amber labels"],
+    ["#06130c", "#5eff9d", "primary action"],
+    ["#171004", "#ffd166", "target cue"],
+    ["#c5d0d3", "#0d1820", "card explanation"],
   ];
   for (const [foreground, background, label] of pairs) {
     assert.ok(

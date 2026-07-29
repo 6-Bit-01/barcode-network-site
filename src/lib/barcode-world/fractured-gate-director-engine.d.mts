@@ -23,6 +23,10 @@ export function getDirectorCardTargets(
   state: DirectorState,
   cardId: string,
 ): string[];
+export function getDirectorCardCost(
+  state: DirectorState,
+  cardId: string,
+): number;
 export function previewDirectorCard(
   state: DirectorState,
   cardId: string,
@@ -55,6 +59,12 @@ export function getDirectorIntentTargetPosition(
 export function getDirectorScreenPosition(
   positionId: string,
 ): { x: number; y: number };
+export function getDirectorTilePolygon(positionId: string): string;
+export function hasDirectorLineOfSight(
+  state: DirectorState,
+  fromId: string,
+  toId: string,
+): boolean;
 export function getDirectorBattleSnapshot(
   state: DirectorState,
 ): DirectorRecord;

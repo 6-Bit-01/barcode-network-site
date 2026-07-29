@@ -1,13 +1,18 @@
 export const DIRECTOR_SOURCE =
-  "BARCODE_WORLD_FRACTURED_GATE_DIRECTORS_CUT_2026-07-28";
+  "BARCODE_WORLD_FRACTURED_GATE_LIVE_CIRCUIT_2026-07-29";
+
+const TILE_HALF_WIDTH = 4;
+const TILE_HALF_HEIGHT = 3.2;
 
 export const DIRECTOR_RULES = Object.freeze({
   commandStart: 16,
   commandIncome: 16,
   commandCap: 32,
-  moveRange: 4,
-  playerHp: 10,
-  gateIntegrity: 3,
+  moveRange: 5,
+  playerHp: 12,
+  gateIntegrity: 5,
+  tileHalfWidth: TILE_HALF_WIDTH,
+  tileHalfHeight: TILE_HALF_HEIGHT,
 });
 
 const TEMPO_VALUE = Object.freeze({
@@ -17,37 +22,84 @@ const TEMPO_VALUE = Object.freeze({
 });
 
 const ENEMY_TIE_ORDER = Object.freeze({
-  ram: 0,
-  warden: 1,
-  jammer: 2,
+  sniper: 0,
+  jammer: 1,
+  warden: 2,
+  ram: 3,
 });
 
-const OMITTED_TILES = new Set([
-  "t-0-0",
-  "t-0-1",
-  "t-0-5",
-  "t-0-6",
-  "t-1-0",
-  "t-1-6",
-  "t-7-0",
-  "t-7-6",
-  "t-8-0",
-  "t-8-1",
-  "t-8-5",
-  "t-8-6",
-]);
+const ROW_SEGMENTS = Object.freeze({
+  0: [
+    [5, 5],
+    [7, 11],
+  ],
+  1: [
+    [4, 5],
+    [7, 13],
+  ],
+  2: [
+    [3, 5],
+    [7, 14],
+  ],
+  3: [
+    [2, 9],
+    [12, 14],
+  ],
+  4: [[1, 15]],
+  5: [[0, 16]],
+  6: [[0, 16]],
+  7: [[1, 15]],
+  8: [[1, 15]],
+  9: [
+    [2, 9],
+    [12, 14],
+  ],
+  10: [[3, 13]],
+  11: [[4, 12]],
+  12: [[5, 11]],
+});
 
-const COVER_TILES = new Set([
-  "t-2-2",
-  "t-2-4",
-  "t-4-1",
+const SERVER_RACK_TILES = new Set([
   "t-4-5",
-  "t-6-2",
-  "t-6-4",
+  "t-4-7",
+  "t-7-5",
+  "t-7-7",
+  "t-12-5",
+  "t-12-7",
 ]);
 
-const RUBBLE_TILES = new Set(["t-4-3", "t-5-3"]);
-const RAIL_TILES = new Set(["t-5-5", "t-6-5", "t-7-5"]);
+const RUBBLE_TILES = new Set([
+  "t-3-5",
+  "t-4-4",
+  "t-6-6",
+  "t-9-6",
+  "t-10-5",
+  "t-11-8",
+]);
+
+const COVER_TILES = new Map([
+  ["t-2-5", 1],
+  ["t-3-7", 1],
+  ["t-5-5", 2],
+  ["t-6-8", 1],
+  ["t-8-5", 1],
+  ["t-9-5", 2],
+  ["t-11-7", 2],
+  ["t-13-5", 1],
+  ["t-13-8", 1],
+]);
+
+const TRACK_TILES = new Set([
+  "t-6-10",
+  "t-7-10",
+  "t-8-10",
+  "t-9-10",
+  "t-10-10",
+  "t-11-10",
+  "t-12-10",
+]);
+
+const BRIDGE_TILES = new Set(["t-6-3"]);
 
 function tileId(x, y) {
   return `t-${x}-${y}`;
@@ -58,23 +110,48 @@ function parseTile(id) {
   return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
 }
 
+function inSegments(x, segments) {
+  return segments.some(([start, end]) => x >= start && x <= end);
+}
+
+function terrainFor(id, x, y) {
+  if (SERVER_RACK_TILES.has(id)) return "rack";
+  if (BRIDGE_TILES.has(id)) return "bridge";
+  if (TRACK_TILES.has(id)) return "track";
+  if (RUBBLE_TILES.has(id)) return "rubble";
+  if (y <= 2) return "catwalk";
+  if (y === 3 || y === 9) return "ramp";
+  if (y >= 10) return "trench";
+  if ((x + y) % 7 === 0) return "panel";
+  return "floor";
+}
+
+function elevationFor(y) {
+  if (y <= 2) return 1;
+  if (y >= 10) return -1;
+  return 0;
+}
+
 const tileEntries = [];
-for (let x = 0; x <= 8; x += 1) {
-  for (let y = 0; y <= 6; y += 1) {
+for (const [row, segments] of Object.entries(ROW_SEGMENTS)) {
+  const y = Number(row);
+  for (let x = 0; x <= 16; x += 1) {
+    if (!inSegments(x, segments)) continue;
     const id = tileId(x, y);
-    if (OMITTED_TILES.has(id)) continue;
+    const terrain = terrainFor(id, x, y);
     tileEntries.push([
       id,
       Object.freeze({
         id,
         x,
         y,
-        terrain: RUBBLE_TILES.has(id)
-          ? "rubble"
-          : RAIL_TILES.has(id)
-            ? "rail"
-            : "floor",
-        cover: COVER_TILES.has(id),
+        terrain,
+        elevation: elevationFor(y),
+        cover: COVER_TILES.get(id) ?? 0,
+        walkable: terrain !== "rack",
+        blocksSight: terrain === "rack",
+        lane:
+          y <= 3 ? "upper" : y >= 9 ? "lower" : "yard",
       }),
     ]);
   }
@@ -85,44 +162,62 @@ export const DIRECTOR_TILES = Object.freeze(Object.fromEntries(tileEntries));
 export const DIRECTOR_OBJECTS = Object.freeze({
   "anchor-a": {
     id: "anchor-a",
-    name: "UPPER ANCHOR",
-    position: "t-3-1",
+    name: "BRIDGE ANCHOR",
+    position: "t-5-2",
     glyph: "I",
   },
   "anchor-b": {
     id: "anchor-b",
-    name: "LOWER ANCHOR",
-    position: "t-3-5",
+    name: "TRACK ANCHOR",
+    position: "t-5-10",
     glyph: "II",
   },
   cell: {
     id: "cell",
     name: "POWER CELL",
-    position: "t-5-3",
-    glyph: "⚡",
+    position: "t-8-6",
+    glyph: "ϟ",
+  },
+  divider: {
+    id: "divider",
+    name: "CRACKED DIVIDER",
+    position: "t-10-6",
+    glyph: "▥",
+  },
+  cache: {
+    id: "cache",
+    name: "FIELD CACHE",
+    position: "t-8-1",
+    glyph: "◆",
+  },
+  exit: {
+    id: "exit",
+    name: "WEST EXIT",
+    position: "t-0-6",
+    glyph: "←",
   },
   gate: {
     id: "gate",
     name: "FRACTURED GATE",
-    position: "t-9-3",
+    position: "t-17-6",
     glyph: "G",
   },
 });
 
 export const DIRECTOR_CARDS = Object.freeze({
-  "quick-shot": {
-    id: "quick-shot",
-    name: "QUICK SHOT",
+  bitcrush: {
+    id: "bitcrush",
+    name: "BITCRUSH",
     glyph: "◉",
     cost: 4,
     tempo: "Fast",
     range: 5,
-    short: "2 DMG · INTERRUPT",
+    short: "2 DMG · FAST",
     target: "enemy",
   },
-  "force-push": {
-    id: "force-push",
-    name: "FORCE PUSH",
+  shunt: {
+    id: "shunt",
+    name: "SHUNT",
     glyph: "≫",
     cost: 5,
     tempo: "Standard",
@@ -130,24 +225,24 @@ export const DIRECTOR_CARDS = Object.freeze({
     short: "1 DMG · PUSH 2",
     target: "enemy",
   },
-  "dash-strike": {
-    id: "dash-strike",
-    name: "DASH STRIKE",
+  "skip-step": {
+    id: "skip-step",
+    name: "SKIP//STEP",
     glyph: "↯",
-    cost: 6,
+    cost: 3,
     tempo: "Fast",
     range: 3,
-    short: "MOVE IN · 2 DMG",
-    target: "enemy",
+    short: "SHIFT 3 · KEEP MOVE",
+    target: "tile",
   },
-  "guard-pulse": {
-    id: "guard-pulse",
-    name: "GUARD PULSE",
+  firewall: {
+    id: "firewall",
+    name: "FIREWALL",
     glyph: "⬡",
     cost: 4,
     tempo: "Fast",
     range: 0,
-    short: "+3 SHIELD",
+    short: "+4 SHIELD · HOLD",
     target: "self",
   },
   overload: {
@@ -157,8 +252,8 @@ export const DIRECTOR_CARDS = Object.freeze({
     cost: 8,
     tempo: "Slow",
     range: 4,
-    short: "BLAST 4 · CANCEL INTENTS",
-    target: "enemy-or-cell",
+    short: "4 DMG · BREACH / BLAST",
+    target: "enemy-or-system",
   },
 });
 
@@ -168,27 +263,36 @@ const ENEMY_BLUEPRINTS = Object.freeze({
     name: "RAM",
     role: "BREAKS THE GATE",
     glyph: "▶",
-    position: "t-6-3",
-    hp: 9,
+    position: "t-13-6",
+    hp: 8,
     color: "orange",
   },
   warden: {
     id: "warden",
     name: "WARDEN",
-    role: "BLOCKS & SHIELDS",
+    role: "BLOCKS & EJECTS",
     glyph: "⬢",
-    position: "t-5-4",
-    hp: 7,
+    position: "t-11-5",
+    hp: 8,
     color: "red",
   },
   jammer: {
     id: "jammer",
     name: "JAMMER",
-    role: "DRAINS ANCHORS",
+    role: "HUNTS CIRCUITS",
     glyph: "⌁",
-    position: "t-5-2",
-    hp: 6,
+    position: "t-8-10",
+    hp: 7,
     color: "violet",
+  },
+  sniper: {
+    id: "sniper",
+    name: "TRACE",
+    role: "PUNISHES OPEN LINES",
+    glyph: "⌖",
+    position: "t-11-2",
+    hp: 6,
+    color: "cyan",
   },
 });
 
@@ -215,29 +319,52 @@ function isTile(id) {
   return Boolean(DIRECTOR_TILES[id]);
 }
 
+function bridgeOpen(state, position) {
+  return (
+    !BRIDGE_TILES.has(position) ||
+    Boolean(state.anchors?.["anchor-a"]?.powered)
+  );
+}
+
+function objectBlocks(state, object) {
+  if (object.id === "gate" || object.id === "exit" || object.id === "cache") {
+    return false;
+  }
+  if (object.id === "cell") return state.cell.active;
+  if (object.id === "divider") return state.divider.intact;
+  return true;
+}
+
 function enemyAt(state, position) {
   return activeEnemies(state).find((enemy) => enemy.position === position);
 }
 
 function isBlocked(state, position, options = {}) {
-  if (!isTile(position)) return true;
+  const tile = DIRECTOR_TILES[position];
+  if (!tile || tile.walkable === false || !bridgeOpen(state, position)) {
+    return true;
+  }
   if (
     Object.values(DIRECTOR_OBJECTS).some(
       (object) =>
         object.position === position &&
-        object.id !== "gate" &&
-        object.id !== options.ignoreObject,
+        object.id !== options.ignoreObject &&
+        objectBlocks(state, object),
     )
   ) {
     return true;
   }
+  const occupyingEnemy = enemyAt(state, position);
   if (
-    enemyAt(state, position) &&
-    enemyAt(state, position).id !== options.ignoreEnemy
+    occupyingEnemy &&
+    occupyingEnemy.id !== options.ignoreEnemy
   ) {
     return true;
   }
-  return state.player.position === position && !options.allowPlayer;
+  return (
+    state.player.position === position &&
+    !options.allowPlayer
+  );
 }
 
 function neighbors(state, position, options = {}) {
@@ -254,8 +381,17 @@ function neighbors(state, position, options = {}) {
   );
 }
 
-function tileCost(id) {
-  return DIRECTOR_TILES[id]?.terrain === "rubble" ? 2 : 1;
+function tileCost(state, id) {
+  const tile = DIRECTOR_TILES[id];
+  if (!tile) return Number.POSITIVE_INFINITY;
+  if (tile.terrain === "rubble") return 2;
+  if (
+    tile.terrain === "track" &&
+    state.anchors["anchor-b"].powered
+  ) {
+    return 0.5;
+  }
+  return 1;
 }
 
 function pathsFrom(state, start, budget, options = {}) {
@@ -266,7 +402,9 @@ function pathsFrom(state, start, budget, options = {}) {
     const current = queue.shift();
     const currentPath = found.get(current);
     for (const candidate of neighbors(state, current, options)) {
-      const cost = currentPath.cost + tileCost(candidate);
+      const cost =
+        currentPath.cost +
+        (options.ignoreTerrain ? 1 : tileCost(state, candidate));
       if (cost > budget) continue;
       if (!found.has(candidate) || cost < found.get(candidate).cost) {
         found.set(candidate, {
@@ -281,87 +419,127 @@ function pathsFrom(state, start, budget, options = {}) {
 }
 
 function routeToward(state, from, destination, steps, options = {}) {
-  const visited = new Map([[from, [from]]]);
-  const queue = [from];
-  while (queue.length) {
-    const current = queue.shift();
-    if (current === destination) break;
-    for (const candidate of neighbors(state, current, {
-      ...options,
-      allowPlayer: destination === state.player.position,
-    })) {
-      if (visited.has(candidate)) continue;
-      visited.set(candidate, [...visited.get(current), candidate]);
-      queue.push(candidate);
+  const found = pathsFrom(state, from, 80, {
+    ...options,
+  });
+  let route = found.get(destination)?.path;
+  if (!route) {
+    route = [...found.entries()]
+      .sort((left, right) => {
+        const delta =
+          distance(left[0], destination) - distance(right[0], destination);
+        return delta || left[0].localeCompare(right[0]);
+      })[0]?.[1]?.path;
+  }
+  const limited = [from];
+  let spent = 0;
+  for (const position of (route ?? [from]).slice(1)) {
+    const cost = tileCost(state, position);
+    if (spent + cost > steps) break;
+    spent += cost;
+    limited.push(position);
+  }
+  return limited;
+}
+
+function directionalLineTiles(fromId, toId) {
+  const from = parseTile(fromId);
+  const to = parseTile(toId);
+  if (!from || !to) return [];
+  let x = from.x;
+  let y = from.y;
+  const dx = Math.abs(to.x - from.x);
+  const dy = Math.abs(to.y - from.y);
+  const sx = from.x < to.x ? 1 : -1;
+  const sy = from.y < to.y ? 1 : -1;
+  let error = dx - dy;
+  const points = [];
+  while (true) {
+    points.push(tileId(x, y));
+    if (x === to.x && y === to.y) break;
+    const doubled = 2 * error;
+    if (doubled > -dy) {
+      error -= dy;
+      x += sx;
+    }
+    if (doubled < dx) {
+      error += dx;
+      y += sy;
     }
   }
-  let path = visited.get(destination);
-  if (!path) {
-    const destinationPoint = parseTile(destination);
-    const candidates = [...visited.entries()].sort((left, right) => {
-      const leftPoint = parseTile(left[0]);
-      const rightPoint = parseTile(right[0]);
-      const leftDistance =
-        Math.abs(leftPoint.x - destinationPoint.x) +
-        Math.abs(leftPoint.y - destinationPoint.y);
-      const rightDistance =
-        Math.abs(rightPoint.x - destinationPoint.x) +
-        Math.abs(rightPoint.y - destinationPoint.y);
-      return leftDistance - rightDistance;
-    });
-    path = candidates[0]?.[1] ?? [from];
-  }
-  return path.slice(0, Math.min(path.length, steps + 1));
+  return points;
+}
+
+function lineTiles(fromId, toId) {
+  return [
+    ...new Set([
+      ...directionalLineTiles(fromId, toId).slice(1, -1),
+      ...directionalLineTiles(toId, fromId).slice(1, -1),
+    ]),
+  ];
+}
+
+export function hasDirectorLineOfSight(state, fromId, toId) {
+  const line = lineTiles(fromId, toId);
+  return line.every((id) => {
+    if (DIRECTOR_TILES[id]?.blocksSight) return false;
+    if (
+      state.divider.intact &&
+      id === DIRECTOR_OBJECTS.divider.position
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function actorPosition(state, targetId) {
+  if (state.enemies[targetId]) return state.enemies[targetId].position;
+  if (DIRECTOR_OBJECTS[targetId]) return DIRECTOR_OBJECTS[targetId].position;
+  if (targetId === "player") return state.player.position;
+  if (DIRECTOR_TILES[targetId]) return targetId;
+  return null;
+}
+
+function tileElevation(position) {
+  return DIRECTOR_TILES[position]?.elevation ?? 0;
+}
+
+function targetRange(state, card, targetId) {
+  const targetPosition = actorPosition(state, targetId);
+  if (!targetPosition) return card.range;
+  return (
+    card.range +
+    (tileElevation(state.player.position) > tileElevation(targetPosition)
+      ? 1
+      : 0)
+  );
 }
 
 function intentTargetPosition(state, intent) {
-  if (intent.targetId === "player") return state.player.position;
-  if (intent.targetId === "gate") return DIRECTOR_OBJECTS.gate.position;
-  if (intent.targetId === "anchor-a") {
-    return DIRECTOR_OBJECTS["anchor-a"].position;
-  }
-  if (intent.targetId === "anchor-b") {
-    return DIRECTOR_OBJECTS["anchor-b"].position;
-  }
-  if (state.enemies[intent.targetId]) {
-    return state.enemies[intent.targetId].position;
-  }
-  return intent.destination ?? null;
+  return actorPosition(state, intent.targetId) ?? intent.destination ?? null;
 }
 
-function lowestPoweredAnchor(state) {
-  return ["anchor-a", "anchor-b"].find(
-    (id) => state.anchors[id].powered,
-  );
+function nearestOpenNeighbor(state, targetPosition, fromPosition, options = {}) {
+  const point = parseTile(targetPosition);
+  if (!point) return null;
+  return [
+    tileId(point.x + 1, point.y),
+    tileId(point.x - 1, point.y),
+    tileId(point.x, point.y + 1),
+    tileId(point.x, point.y - 1),
+  ]
+    .filter((id) => isTile(id) && !isBlocked(state, id, options))
+    .sort(
+      (left, right) =>
+        distance(fromPosition, left) - distance(fromPosition, right) ||
+        left.localeCompare(right),
+    )[0] ?? null;
 }
 
 function planRam(state) {
   const enemy = state.enemies.ram;
   if (enemy.hp <= 0) return null;
-  if (distance(enemy.position, state.player.position) <= 2) {
-    let path = routeToward(
-      state,
-      enemy.position,
-      state.player.position,
-      2,
-      { ignoreEnemy: "ram" },
-    );
-    if (path.at(-1) === state.player.position) {
-      path = path.slice(0, -1);
-    }
-    return {
-      id: `intent-${state.turn}-ram-body-check`,
-      actorId: "ram",
-      name: "BODY CHECK",
-      glyph: "▶",
-      targetId: "player",
-      destination: path.at(-1) ?? enemy.position,
-      path,
-      tempo: "Standard",
-      status: "ready",
-      detail: "3 DMG · PUSH",
-    };
-  }
   if (adjacent(enemy.position, DIRECTOR_OBJECTS.gate.position)) {
     return {
       id: `intent-${state.turn}-ram-smash`,
@@ -374,24 +552,46 @@ function planRam(state) {
       detail: "-1 GATE",
     };
   }
+  if (distance(enemy.position, state.player.position) <= 2) {
+    let path = routeToward(
+      state,
+      enemy.position,
+      state.player.position,
+      2,
+      { ignoreEnemy: "ram", allowPlayer: true },
+    );
+    if (path.at(-1) === state.player.position) path = path.slice(0, -1);
+    return {
+      id: `intent-${state.turn}-ram-check`,
+      actorId: "ram",
+      name: "BODY CHECK",
+      glyph: "▶",
+      targetId: "player",
+      destination: path.at(-1) ?? enemy.position,
+      path,
+      tempo: "Standard",
+      status: "ready",
+      detail: "3 DMG · PUSH",
+    };
+  }
   const path = routeToward(
     state,
     enemy.position,
-    "t-8-3",
+    "t-16-6",
     2,
     { ignoreEnemy: "ram" },
   );
   return {
-    id: `intent-${state.turn}-ram-advance`,
+    id: `intent-${state.turn}-ram-charge`,
     actorId: "ram",
-    name: "CHARGE GATE",
+    name: "CHARGE LINE",
     glyph: "≫",
     targetId: "gate",
-    destination: path.at(-1),
+    destination: path.at(-1) ?? enemy.position,
     path,
     tempo: "Standard",
     status: "ready",
-    detail: "ADVANCE",
+    detail: "ADVANCE 2",
   };
 }
 
@@ -404,22 +604,20 @@ function planWarden(state) {
       enemy.position,
       state.player.position,
       2,
-      { ignoreEnemy: "warden" },
+      { ignoreEnemy: "warden", allowPlayer: true },
     );
-    if (path.at(-1) === state.player.position) {
-      path = path.slice(0, -1);
-    }
+    if (path.at(-1) === state.player.position) path = path.slice(0, -1);
     return {
       id: `intent-${state.turn}-warden-eject`,
       actorId: "warden",
       name: "EJECT",
       glyph: "↤",
       targetId: "player",
-      destination: path.at(-1),
+      destination: path.at(-1) ?? enemy.position,
       path,
       tempo: "Standard",
       status: "ready",
-      detail: "PUSH OFF GATE",
+      detail: "BREAK GATE HOLD",
     };
   }
   if (adjacent(enemy.position, state.player.position)) {
@@ -431,94 +629,215 @@ function planWarden(state) {
       targetId: "player",
       tempo: "Standard",
       status: "ready",
-      detail: "2 DMG",
+      detail: "2 DMG · PUSH",
     };
   }
-  if (state.enemies.ram.hp <= 0) {
-    let path = routeToward(
+  if (state.enemies.ram.hp > 0) {
+    if (adjacent(enemy.position, state.enemies.ram.position)) {
+      return {
+        id: `intent-${state.turn}-warden-link`,
+        actorId: "warden",
+        name: "SHIELD LINK",
+        glyph: "⬡",
+        targetId: "ram",
+        tempo: "Fast",
+        status: "ready",
+        detail: "+2 SHIELD",
+      };
+    }
+    const destination = nearestOpenNeighbor(
       state,
+      state.enemies.ram.position,
       enemy.position,
-      state.player.position,
-      2,
       { ignoreEnemy: "warden" },
     );
-    if (path.at(-1) === state.player.position) {
-      path = path.slice(0, -1);
-    }
+    const path = destination
+      ? routeToward(state, enemy.position, destination, 2, {
+          ignoreEnemy: "warden",
+        })
+      : [enemy.position];
     return {
-      id: `intent-${state.turn}-warden-hunt`,
+      id: `intent-${state.turn}-warden-interpose`,
       actorId: "warden",
-      name: "HUNT",
+      name: "INTERPOSE",
       glyph: "↣",
-      targetId: "player",
+      targetId: "ram",
       destination: path.at(-1) ?? enemy.position,
       path,
       tempo: "Standard",
       status: "ready",
-      detail: "CLOSE DISTANCE",
+      detail: "TAKE THE LANE",
     };
   }
+  let path = routeToward(
+    state,
+    enemy.position,
+    state.player.position,
+    2,
+    { ignoreEnemy: "warden", allowPlayer: true },
+  );
+  if (path.at(-1) === state.player.position) path = path.slice(0, -1);
   return {
-    id: `intent-${state.turn}-warden-link`,
+    id: `intent-${state.turn}-warden-hunt`,
     actorId: "warden",
-    name: "SHIELD RAM",
-    glyph: "⬡",
-    targetId: "ram",
+    name: "HUNT",
+    glyph: "↣",
+    targetId: "player",
+    destination: path.at(-1) ?? enemy.position,
+    path,
     tempo: "Standard",
     status: "ready",
-    detail: "+3 SHIELD",
+    detail: "CLOSE DISTANCE",
   };
+}
+
+function poweredAnchorIds(state) {
+  return ["anchor-a", "anchor-b"].filter(
+    (id) => state.anchors[id].powered,
+  );
 }
 
 function planJammer(state) {
   const enemy = state.enemies.jammer;
   if (enemy.hp <= 0) return null;
-  const anchorId = lowestPoweredAnchor(state);
-  if (anchorId) {
+  const powered = poweredAnchorIds(state);
+  const drainTarget = powered
+    .filter(
+      (id) =>
+        distance(enemy.position, DIRECTOR_OBJECTS[id].position) <= 3 &&
+        hasDirectorLineOfSight(
+          state,
+          enemy.position,
+          DIRECTOR_OBJECTS[id].position,
+        ),
+    )
+    .sort()[0];
+  if (drainTarget) {
     return {
-      id: `intent-${state.turn}-jammer-drain-${anchorId}`,
+      id: `intent-${state.turn}-jammer-drain-${drainTarget}`,
       actorId: "jammer",
-      name: "DRAIN ANCHOR",
+      name: "DRAIN LINK",
       glyph: "⌁",
-      targetId: anchorId,
+      targetId: drainTarget,
       tempo: "Slow",
       status: "ready",
       detail: "ANCHOR OFFLINE",
     };
   }
-  if (distance(enemy.position, state.player.position) <= 4) {
+  if (distance(enemy.position, state.player.position) <= 3) {
     return {
       id: `intent-${state.turn}-jammer-static`,
       actorId: "jammer",
-      name: "STATIC BOLT",
+      name: "STATIC FIELD",
       glyph: "ϟ",
       targetId: "player",
-      tempo: "Slow",
+      tempo: "Fast",
       status: "ready",
-      detail: "2 DMG",
+      detail: "+1 COST · -1 TEMPO",
     };
   }
-  const target = DIRECTOR_OBJECTS["anchor-a"].position;
-  const path = routeToward(state, enemy.position, target, 1, {
-    ignoreEnemy: "jammer",
-    ignoreObject: "anchor-a",
-  });
+  const targetId =
+    powered
+      .sort(
+        (left, right) =>
+          distance(enemy.position, DIRECTOR_OBJECTS[left].position) -
+          distance(enemy.position, DIRECTOR_OBJECTS[right].position),
+      )[0] ?? "anchor-b";
+  const destination = nearestOpenNeighbor(
+    state,
+    DIRECTOR_OBJECTS[targetId].position,
+    enemy.position,
+    { ignoreEnemy: "jammer", ignoreObject: targetId },
+  );
+  const path = destination
+    ? routeToward(state, enemy.position, destination, 2, {
+        ignoreEnemy: "jammer",
+      })
+    : [enemy.position];
   return {
-    id: `intent-${state.turn}-jammer-move`,
+    id: `intent-${state.turn}-jammer-hunt-${targetId}`,
     actorId: "jammer",
-    name: "SEEK ANCHOR",
+    name: "HUNT CIRCUIT",
     glyph: "⌁",
-    targetId: "anchor-a",
-    destination: path.at(-1),
+    targetId,
+    destination: path.at(-1) ?? enemy.position,
     path,
     tempo: "Standard",
     status: "ready",
-    detail: "ADVANCE",
+    detail: "MOVE INTO RANGE",
+  };
+}
+
+function sniperVantage(state, enemy) {
+  return Object.values(DIRECTOR_TILES)
+    .filter(
+      (tile) =>
+        tile.elevation > 0 &&
+        tile.walkable &&
+        !isBlocked(state, tile.id, { ignoreEnemy: "sniper" }),
+    )
+    .sort((left, right) => {
+      const leftCanSee = hasDirectorLineOfSight(
+        state,
+        left.id,
+        state.player.position,
+      );
+      const rightCanSee = hasDirectorLineOfSight(
+        state,
+        right.id,
+        state.player.position,
+      );
+      if (leftCanSee !== rightCanSee) return leftCanSee ? -1 : 1;
+      return (
+        distance(left.id, state.player.position) -
+          distance(right.id, state.player.position) ||
+        distance(enemy.position, left.id) -
+          distance(enemy.position, right.id) ||
+        left.id.localeCompare(right.id)
+      );
+    })[0]?.id;
+}
+
+function planSniper(state) {
+  const enemy = state.enemies.sniper;
+  if (enemy.hp <= 0) return null;
+  if (
+    distance(enemy.position, state.player.position) <= 12 &&
+    hasDirectorLineOfSight(state, enemy.position, state.player.position)
+  ) {
+    return {
+      id: `intent-${state.turn}-sniper-trace`,
+      actorId: "sniper",
+      name: "TRACE SHOT",
+      glyph: "⌖",
+      targetId: "player",
+      tempo: "Slow",
+      status: "ready",
+      detail: "2 DMG · COVER COUNTS",
+    };
+  }
+  const destination = sniperVantage(state, enemy);
+  const path = destination
+    ? routeToward(state, enemy.position, destination, 2, {
+        ignoreEnemy: "sniper",
+      })
+    : [enemy.position];
+  return {
+    id: `intent-${state.turn}-sniper-perch`,
+    actorId: "sniper",
+    name: "FIND TRACE",
+    glyph: "⌖",
+    targetId: "player",
+    destination: path.at(-1) ?? enemy.position,
+    path,
+    tempo: "Fast",
+    status: "ready",
+    detail: "REPOSITION",
   };
 }
 
 export function planDirectorIntents(state) {
-  const intents = [planRam(state), planWarden(state), planJammer(state)]
+  return [planRam(state), planWarden(state), planJammer(state), planSniper(state)]
     .filter(Boolean)
     .sort((left, right) => {
       const tempo = TEMPO_VALUE[right.tempo] - TEMPO_VALUE[left.tempo];
@@ -527,22 +846,27 @@ export function planDirectorIntents(state) {
         ENEMY_TIE_ORDER[left.actorId] - ENEMY_TIE_ORDER[right.actorId]
       );
     });
-  return intents;
 }
 
 function replanIntents(state) {
-  const canceledByActor = new Map(
+  const preservedByActor = new Map(
     state.intents
-      .filter((intent) => intent.status === "canceled")
+      .filter(
+        (intent) =>
+          intent.status === "canceled" || intent.status === "spent",
+      )
       .map((intent) => [
         intent.actorId,
-        intent.cancelReason ?? "INTERRUPTED",
+        {
+          status: intent.status,
+          cancelReason: intent.cancelReason,
+        },
       ]),
   );
   state.intents = planDirectorIntents(state).map((intent) => {
-    const cancelReason = canceledByActor.get(intent.actorId);
-    return cancelReason
-      ? { ...intent, status: "canceled", cancelReason }
+    const preserved = preservedByActor.get(intent.actorId);
+    return preserved
+      ? { ...intent, ...preserved }
       : intent;
   });
 }
@@ -566,11 +890,14 @@ function initialState(seed) {
     command: DIRECTOR_RULES.commandStart,
     moveAvailable: true,
     player: {
-      position: "t-1-3",
+      position: "t-1-6",
       hp: DIRECTOR_RULES.playerHp,
       maxHp: DIRECTOR_RULES.playerHp,
       shield: 0,
       cover: 0,
+      braced: false,
+      jammed: false,
+      tempoBoost: false,
     },
     gate: {
       integrity: DIRECTOR_RULES.gateIntegrity,
@@ -581,6 +908,14 @@ function initialState(seed) {
     anchors: {
       "anchor-a": { powered: false },
       "anchor-b": { powered: false },
+    },
+    divider: {
+      intact: true,
+      breached: false,
+    },
+    cache: {
+      present: true,
+      carried: false,
     },
     cell: {
       active: true,
@@ -593,17 +928,18 @@ function initialState(seed) {
     lastEvent: {
       id: "event-opening",
       tone: "objective",
-      text: "POWER BOTH ANCHORS → SEAL THE GATE",
-      detail: "RAM reaches the Gate soon.",
+      text: "LIVE CIRCUIT",
+      detail: "Choose high ground, the Divider, or the service track.",
     },
     eventCounter: 0,
     result: null,
   };
+  updateCover(state);
   state.intents = planDirectorIntents(state);
   return state;
 }
 
-export function createDirectorState(seed = "FG-DIRECTOR-01") {
+export function createDirectorState(seed = "FG-LIVE-CIRCUIT-01") {
   return initialState(seed);
 }
 
@@ -622,7 +958,7 @@ function addEvent(state, tone, text, detail = "") {
 }
 
 function updateCover(state) {
-  state.player.cover = DIRECTOR_TILES[state.player.position]?.cover ? 1 : 0;
+  state.player.cover = DIRECTOR_TILES[state.player.position]?.cover ?? 0;
 }
 
 export function getDirectorReachableTiles(state) {
@@ -646,36 +982,63 @@ export function moveDirectorPlayer(state, destination) {
   const next = clone(state);
   next.player.position = destination;
   next.moveAvailable = false;
+  next.player.tempoBoost =
+    next.anchors["anchor-b"].powered &&
+    route.path.some((id) => DIRECTOR_TILES[id]?.terrain === "track");
   updateCover(next);
   replanIntents(next);
+  const tile = DIRECTOR_TILES[destination];
   addEvent(
     next,
     "move",
-    next.player.cover ? "COVER TAKEN" : "POSITION CHANGED",
-    next.player.cover ? "Incoming damage reduced by 1." : "",
+    tile.elevation > 0
+      ? "HIGH GROUND"
+      : next.player.tempoBoost
+        ? "TRACK SURGE"
+        : tile.terrain === "rubble"
+          ? "RUBBLE"
+        : next.player.cover
+          ? "COVER TAKEN"
+          : "POSITION CHANGED",
+    tile.elevation > 0
+      ? "Ranged attacks gain reach downhill."
+      : next.player.tempoBoost
+        ? "Your next contested action is faster."
+        : tile.terrain === "rubble"
+          ? "Costs 2 movement · contested actions lose 1 Tempo."
+        : next.player.cover
+          ? `Incoming ranged damage reduced by ${next.player.cover}.`
+          : "",
   );
   return next;
 }
 
-function actorPosition(state, targetId) {
-  if (state.enemies[targetId]) return state.enemies[targetId].position;
-  if (DIRECTOR_OBJECTS[targetId]) return DIRECTOR_OBJECTS[targetId].position;
-  if (targetId === "player") return state.player.position;
-  return null;
+export function getDirectorCardCost(state, cardId) {
+  const card = DIRECTOR_CARDS[cardId];
+  if (!card) return Number.POSITIVE_INFINITY;
+  return card.cost + (state.player.jammed && cardId !== "firewall" ? 1 : 0);
 }
 
 function cardAvailable(state, cardId) {
   const card = DIRECTOR_CARDS[cardId];
   if (!card || state.phase !== "player") return false;
   if (state.cardUses[cardId]) return false;
-  return state.command >= card.cost;
+  return state.command >= getDirectorCardCost(state, cardId);
 }
 
-function validEnemyTargets(state, range) {
+function validEnemyTargets(state, card) {
   return activeEnemies(state)
-    .filter(
-      (enemy) => distance(state.player.position, enemy.position) <= range,
-    )
+    .filter((enemy) => {
+      const range = targetRange(state, card, enemy.id);
+      return (
+        distance(state.player.position, enemy.position) <= range &&
+        hasDirectorLineOfSight(
+          state,
+          state.player.position,
+          enemy.position,
+        )
+      );
+    })
     .map((enemy) => enemy.id);
 }
 
@@ -683,16 +1046,31 @@ export function getDirectorCardTargets(state, cardId) {
   if (!cardAvailable(state, cardId)) return [];
   const card = DIRECTOR_CARDS[cardId];
   if (card.target === "self") return ["player"];
-  const targets = validEnemyTargets(state, card.range);
-  if (
-    card.target === "enemy-or-cell" &&
-    state.cell.active &&
-    distance(
-      state.player.position,
-      DIRECTOR_OBJECTS.cell.position,
-    ) <= card.range
-  ) {
-    targets.push("cell");
+  if (card.target === "tile") {
+    return [...pathsFrom(state, state.player.position, card.range, {
+      allowPlayer: true,
+      ignoreTerrain: true,
+    }).keys()].filter((id) => id !== state.player.position);
+  }
+  const targets = validEnemyTargets(state, card);
+  if (card.target === "enemy-or-system") {
+    for (const objectId of ["cell", "divider"]) {
+      if (
+        (objectId !== "cell" || state.cell.active) &&
+        (objectId !== "divider" || state.divider.intact) &&
+        distance(
+          state.player.position,
+          DIRECTOR_OBJECTS[objectId].position,
+        ) <= card.range &&
+        hasDirectorLineOfSight(
+          state,
+          state.player.position,
+          DIRECTOR_OBJECTS[objectId].position,
+        )
+      ) {
+        targets.push(objectId);
+      }
+    }
   }
   return targets;
 }
@@ -703,11 +1081,51 @@ function intentFor(state, enemyId) {
   );
 }
 
-function tempoInterrupts(card, intent) {
-  return (
-    Boolean(intent) &&
-    TEMPO_VALUE[card.tempo] > TEMPO_VALUE[intent.tempo]
-  );
+function effectiveTempo(state, card, targetId) {
+  let value = TEMPO_VALUE[card.tempo];
+  const tile = DIRECTOR_TILES[state.player.position];
+  const targetPosition = actorPosition(state, targetId);
+  if (tile?.terrain === "rubble") value -= 1;
+  if (state.player.jammed) value -= 1;
+  if (state.player.tempoBoost) value += 1;
+  if (
+    targetPosition &&
+    tileElevation(state.player.position) > tileElevation(targetPosition)
+  ) {
+    value += 1;
+  }
+  return Math.max(1, Math.min(3, value));
+}
+
+function tempoRelation(state, card, targetId, intent) {
+  if (!intent) return { relation: "", interrupts: false };
+  const playerTempo = effectiveTempo(state, card, targetId);
+  const enemyTempo = TEMPO_VALUE[intent.tempo];
+  return {
+    intentId: intent.id,
+    relation:
+      playerTempo > enemyTempo
+        ? "YOU FIRST"
+        : playerTempo === enemyTempo
+          ? "TOGETHER"
+          : "ENEMY FIRST",
+    interrupts: playerTempo > enemyTempo,
+  };
+}
+
+function targetDefense(state, targetId, rawDamage, ignoresCover = false) {
+  const enemy = state.enemies[targetId];
+  const cover = ignoresCover
+    ? 0
+    : DIRECTOR_TILES[enemy.position]?.cover ?? 0;
+  const afterCover = Math.max(0, rawDamage - cover);
+  const shieldAbsorbed = Math.min(enemy.shield, afterCover);
+  return {
+    rawDamage,
+    coverAbsorbed: rawDamage - afterCover,
+    shieldAbsorbed,
+    damage: afterCover - shieldAbsorbed,
+  };
 }
 
 function pushDestination(state, enemyId, spaces) {
@@ -719,16 +1137,36 @@ function pushDestination(state, enemyId, spaces) {
   }
   const dx = Math.sign(enemyPoint.x - playerPoint.x);
   const dy = Math.sign(enemyPoint.y - playerPoint.y);
-  const horizontal = Math.abs(enemyPoint.x - playerPoint.x) >=
+  const horizontal =
+    Math.abs(enemyPoint.x - playerPoint.x) >=
     Math.abs(enemyPoint.y - playerPoint.y);
   const stepX = horizontal ? dx || 1 : 0;
   const stepY = horizontal ? 0 : dy || 1;
+  const startElevation = tileElevation(enemy.position);
   let current = enemy.position;
   const path = [];
   let collision = false;
+  let divider = false;
+  let cell = false;
   for (let step = 0; step < spaces; step += 1) {
     const point = parseTile(current);
     const candidate = tileId(point.x + stepX, point.y + stepY);
+    if (
+      state.divider.intact &&
+      candidate === DIRECTOR_OBJECTS.divider.position
+    ) {
+      collision = true;
+      divider = true;
+      break;
+    }
+    if (
+      state.cell.active &&
+      candidate === DIRECTOR_OBJECTS.cell.position
+    ) {
+      collision = true;
+      cell = true;
+      break;
+    }
     if (
       !isTile(candidate) ||
       isBlocked(state, candidate, { ignoreEnemy: enemyId })
@@ -742,8 +1180,13 @@ function pushDestination(state, enemyId, spaces) {
   return {
     destination: current,
     collision,
+    divider,
+    cell,
     path,
-    rail: DIRECTOR_TILES[current]?.terrain === "rail",
+    track:
+      state.anchors["anchor-b"].powered &&
+      DIRECTOR_TILES[current]?.terrain === "track",
+    ledge: tileElevation(current) < startElevation,
   };
 }
 
@@ -756,8 +1199,7 @@ function nearbyEnemies(state, position, radius) {
 export function previewDirectorCard(state, cardId, targetId) {
   const card = DIRECTOR_CARDS[cardId];
   if (!card) return null;
-  const targets = getDirectorCardTargets(state, cardId);
-  const legal = targets.includes(targetId);
+  const legal = getDirectorCardTargets(state, cardId).includes(targetId);
   if (!legal) {
     return {
       legal: false,
@@ -765,21 +1207,45 @@ export function previewDirectorCard(state, cardId, targetId) {
       targetId,
       summary: state.cardUses[cardId]
         ? "USED THIS TURN"
-        : state.command < card.cost
-          ? `NEED ${card.cost - state.command} COMMAND`
-          : "OUT OF RANGE",
+        : state.command < getDirectorCardCost(state, cardId)
+          ? `NEED ${getDirectorCardCost(state, cardId) - state.command} COMMAND`
+          : "OUT OF RANGE / SIGHT",
     };
   }
 
-  if (cardId === "guard-pulse") {
+  if (cardId === "firewall") {
     return {
       legal: true,
       cardId,
       targetId,
       damage: 0,
-      summary: "+3 SHIELD",
+      summary: "+4 SHIELD · PREVENT FIRST PUSH",
       interrupts: false,
       relation: "",
+    };
+  }
+
+  if (cardId === "skip-step") {
+    return {
+      legal: true,
+      cardId,
+      targetId,
+      damage: 0,
+      summary: "SHIFT · ORDINARY MOVE REMAINS",
+      interrupts: false,
+      relation: "",
+    };
+  }
+
+  if (targetId === "divider") {
+    return {
+      legal: true,
+      cardId,
+      targetId,
+      damage: 0,
+      summary: "BREACH DIVIDER · OPEN CENTER ROUTE",
+      interrupts: false,
+      relation: "SLOW · EXPOSED",
     };
   }
 
@@ -789,79 +1255,106 @@ export function previewDirectorCard(state, cardId, targetId) {
       DIRECTOR_OBJECTS.cell.position,
       2,
     );
+    const selfDamage =
+      distance(
+        state.player.position,
+        DIRECTOR_OBJECTS.cell.position,
+      ) <= 2
+        ? 2
+        : 0;
     return {
       legal: true,
       cardId,
       targetId,
-      damage: 4,
+      damage: 3,
+      selfDamage,
       victims,
-      summary: `DETONATE · ${victims.length} ENEM${
-        victims.length === 1 ? "Y" : "IES"
-      } IN BLAST · CANCELS INTENTS`,
+      breachesDivider:
+        state.divider.intact &&
+        distance(
+          DIRECTOR_OBJECTS.cell.position,
+          DIRECTOR_OBJECTS.divider.position,
+        ) <= 2,
+      summary: `LOCAL BLAST · ${victims.length} TARGET${
+        victims.length === 1 ? "" : "S"
+      }${selfDamage ? " · SELF 2" : ""} · BREACH`,
       interrupts: false,
-      relation: "BLAST OVERRIDES INTENT",
+      relation: "COLLATERAL RADIUS 2",
     };
   }
 
   const intent = intentFor(state, targetId);
-  const interrupts = tempoInterrupts(card, intent);
-  if (cardId === "force-push") {
+  const tempo = tempoRelation(state, card, targetId, intent);
+  if (cardId === "shunt") {
     const push = pushDestination(state, targetId, 2);
-    const impact = 1 + (push.collision ? 2 : 0) + (push.rail ? 2 : 0);
-    const shieldAbsorbed = Math.min(
-      state.enemies[targetId].shield,
-      impact,
-    );
-    const damage = impact - shieldAbsorbed;
+    const impact =
+      1 +
+      (push.collision ? 2 : 0) +
+      (push.track ? 2 : 0) +
+      (push.ledge ? 2 : 0);
+    const defense = targetDefense(state, targetId, impact, true);
+    const blastDefense = push.cell
+      ? targetDefense(state, targetId, 3, true)
+      : null;
+    const shieldAfterBlast = push.cell
+      ? Math.max(0, state.enemies[targetId].shield - 3)
+      : state.enemies[targetId].shield;
+    const totalDamage = push.cell
+      ? blastDefense.damage + Math.max(0, impact - shieldAfterBlast)
+      : defense.damage;
+    const selfDamage =
+      push.cell &&
+      distance(
+        state.player.position,
+        DIRECTOR_OBJECTS.cell.position,
+      ) <= 2
+        ? 2
+        : 0;
     return {
       legal: true,
       cardId,
       targetId,
-      damage,
       impact,
-      shieldAbsorbed,
+      ...defense,
+      damage: totalDamage,
+      selfDamage,
       push,
-      interrupts,
-      relation: intent
-        ? `${card.tempo.toUpperCase()} ${
-            interrupts ? ">" : "≤"
-          } ${intent.tempo.toUpperCase()}`
-        : "",
-      summary: `${damage} DMG${
-        shieldAbsorbed ? ` · ${shieldAbsorbed} SHIELD` : ""
-      } · PUSH ${
-        push.path.length
-      }${push.rail ? " · RAIL STUN" : push.collision ? " · COLLISION" : ""}`,
+      ...tempo,
+      summary: `${totalDamage} DMG · PUSH ${push.path.length}${
+        push.divider
+          ? " · BREACH"
+          : push.cell
+            ? " · DETONATE"
+            : push.track
+              ? " · ARC STUN"
+              : push.ledge
+                ? " · LEDGE"
+                : push.collision
+                  ? " · COLLISION"
+          : ""
+      }${selfDamage ? " · SELF 2" : ""}`,
     };
   }
 
-  const damage =
-    cardId === "quick-shot"
-      ? 2
-      : cardId === "dash-strike"
-        ? 2
-        : 4;
-  const shieldAbsorbed = Math.min(
-    state.enemies[targetId].shield,
-    damage,
-  );
-  const dealt = damage - shieldAbsorbed;
+  const highGround =
+    tileElevation(state.player.position) >
+    tileElevation(state.enemies[targetId].position);
+  const rawDamage =
+    cardId === "bitcrush" ? 2 + (highGround ? 1 : 0) : 4;
+  const defense = targetDefense(state, targetId, rawDamage);
   return {
     legal: true,
     cardId,
     targetId,
-    damage: dealt,
-    impact: damage,
-    shieldAbsorbed,
-    interrupts,
-    relation: intent
-      ? `${card.tempo.toUpperCase()} ${
-          interrupts ? ">" : "≤"
-        } ${intent.tempo.toUpperCase()}`
-      : "",
-    summary: `${dealt} DMG${
-      shieldAbsorbed ? ` · ${shieldAbsorbed} SHIELD` : ""
-    }${interrupts ? " · INTENT INTERRUPTED" : ""}`,
+    impact: rawDamage,
+    highGround,
+    ...defense,
+    ...tempo,
+    summary: `${defense.damage} DMG${
+      defense.coverAbsorbed ? ` · ${defense.coverAbsorbed} COVER` : ""
+    }${defense.shieldAbsorbed ? ` · ${defense.shieldAbsorbed} SHIELD` : ""}${
+      highGround ? " · HIGH GROUND" : ""
+    }${tempo.interrupts ? " · INTERRUPT" : ""}`,
   };
 }
 
@@ -876,18 +1369,41 @@ function cancelIntent(state, enemyId, reason = "INTERRUPTED") {
   }
 }
 
-function damageEnemy(state, enemyId, amount) {
+function damageEnemy(state, enemyId, rawAmount, options = {}) {
   const enemy = state.enemies[enemyId];
   if (!enemy || enemy.hp <= 0) return 0;
-  const absorbed = Math.min(enemy.shield, amount);
+  const cover = options.ignoreCover
+    ? 0
+    : DIRECTOR_TILES[enemy.position]?.cover ?? 0;
+  const afterCover = Math.max(0, rawAmount - cover);
+  const absorbed = Math.min(enemy.shield, afterCover);
   enemy.shield -= absorbed;
-  const dealt = amount - absorbed;
+  const dealt = afterCover - absorbed;
   enemy.hp = Math.max(0, enemy.hp - dealt);
   if (enemy.hp === 0) {
     enemy.shield = 0;
     cancelIntent(state, enemyId, "DISABLED");
   }
   return dealt;
+}
+
+function damageEnemyExact(state, enemyId, amount) {
+  const enemy = state.enemies[enemyId];
+  if (!enemy || enemy.hp <= 0) return 0;
+  const dealt = Math.min(enemy.hp, Math.max(0, amount));
+  enemy.hp -= dealt;
+  if (enemy.hp === 0) {
+    enemy.shield = 0;
+    cancelIntent(state, enemyId, "DISABLED");
+  }
+  return dealt;
+}
+
+function breachDivider(state) {
+  if (!state.divider.intact) return false;
+  state.divider.intact = false;
+  state.divider.breached = true;
+  return true;
 }
 
 function detonateCell(state) {
@@ -899,7 +1415,7 @@ function detonateCell(state) {
     2,
   );
   for (const enemyId of victims) {
-    damageEnemy(state, enemyId, 4);
+    damageEnemy(state, enemyId, 3, { ignoreCover: true });
     cancelIntent(state, enemyId, "BLASTED");
   }
   if (
@@ -908,38 +1424,101 @@ function detonateCell(state) {
       DIRECTOR_OBJECTS.cell.position,
     ) <= 2
   ) {
-    damagePlayer(state, 2);
+    damagePlayer(state, 2, { ignoreCover: true });
+  }
+  if (
+    distance(
+      DIRECTOR_OBJECTS.cell.position,
+      DIRECTOR_OBJECTS.divider.position,
+    ) <= 2
+  ) {
+    breachDivider(state);
   }
   return victims;
 }
 
-function nearestOpenAdjacent(state, targetPosition) {
-  const candidates = neighbors(state, targetPosition, { allowPlayer: true })
-    .filter(
-      (candidate) =>
-        candidate !== state.player.position &&
-        !enemyAt(state, candidate),
-    )
-    .sort(
-      (left, right) =>
-        distance(state.player.position, left) -
-        distance(state.player.position, right),
-    );
-  return candidates[0] ?? state.player.position;
-}
-
 export function playDirectorCard(state, cardId, targetId) {
-  const preview = previewDirectorCard(state, cardId, targetId);
-  if (!preview?.legal) return state;
+  const declaredPreview = previewDirectorCard(state, cardId, targetId);
+  if (!declaredPreview?.legal) return state;
   const next = clone(state);
-  const card = DIRECTOR_CARDS[cardId];
-  next.command -= card.cost;
+  const declaredCost = getDirectorCardCost(state, cardId);
+  let preview = declaredPreview;
+  let collisionText = "";
+
+  if (
+    declaredPreview.intentId &&
+    (declaredPreview.relation === "ENEMY FIRST" ||
+      declaredPreview.relation === "TOGETHER")
+  ) {
+    const contestedIntent = next.intents.find(
+      (intent) => intent.id === declaredPreview.intentId,
+    );
+    if (contestedIntent?.status === "ready") {
+      resolveIntent(next, contestedIntent);
+      contestedIntent.status = "spent";
+      collisionText =
+        declaredPreview.relation === "TOGETHER"
+          ? `${next.lastEvent.text} resolved together.`
+          : `${next.lastEvent.text} resolved first.`;
+    }
+
+    if (
+      declaredPreview.relation === "ENEMY FIRST" &&
+      !finishBattleIfNeeded(next)
+    ) {
+      const refreshState = clone(next);
+      refreshState.command = DIRECTOR_RULES.commandCap;
+      refreshState.cardUses[cardId] = false;
+      refreshState.player.jammed = state.player.jammed;
+      const refreshed = previewDirectorCard(
+        refreshState,
+        cardId,
+        targetId,
+      );
+      if (!refreshed?.legal) {
+        next.command -= declaredCost;
+        next.cardUses[cardId] = true;
+        next.player.tempoBoost = false;
+        addEvent(
+          next,
+          "danger",
+          "ACTION OUTRUN",
+          `${collisionText} Target left legal range or sight.`,
+        );
+        return finalizeAfterPlayerAction(next);
+      }
+      preview = {
+        ...refreshed,
+        relation: declaredPreview.relation,
+        interrupts: false,
+      };
+    }
+  }
+
+  next.command -= declaredCost;
   next.cardUses[cardId] = true;
 
-  if (cardId === "guard-pulse") {
-    next.player.shield += 3;
-    addEvent(next, "guard", "SHIELDED +3", "Ready for the Enemy Turn.");
+  if (next.result) return next;
+
+  if (cardId === "firewall") {
+    next.player.shield += 4;
+    next.player.braced = true;
+    addEvent(next, "guard", "FIREWALL UP", "+4 Shield · first push blocked.");
     return next;
+  }
+
+  if (cardId === "skip-step") {
+    next.player.position = targetId;
+    updateCover(next);
+    replanIntents(next);
+    addEvent(next, "move", "SKIP//STEP", "Ordinary movement remains available.");
+    return next;
+  }
+
+  if (targetId === "divider") {
+    breachDivider(next);
+    addEvent(next, "impact", "DIVIDER BREACHED", "The center route is open to both sides.");
+    return finalizeAfterPlayerAction(next);
   }
 
   if (targetId === "cell") {
@@ -947,64 +1526,64 @@ export function playDirectorCard(state, cardId, targetId) {
     addEvent(
       next,
       "impact",
-      "POWER CELL DETONATED",
-      `${victims.length} enemy${victims.length === 1 ? "" : "ies"} caught.`,
+      "LOCAL CASCADE",
+      `${victims.length} enemy${victims.length === 1 ? "" : "ies"} caught; Divider breached.`,
     );
     return finalizeAfterPlayerAction(next);
   }
 
-  if (cardId === "force-push") {
-    const push = pushDestination(next, targetId, 2);
-    const impact =
-      1 + (push.collision ? 2 : 0) + (push.rail ? 2 : 0);
-    const dealt = damageEnemy(next, targetId, impact);
-    const absorbed = impact - dealt;
+  if (cardId === "shunt") {
+    const push = preview.push;
+    const hpBefore = next.enemies[targetId].hp;
+    if (push.divider) breachDivider(next);
+    if (push.cell) detonateCell(next);
+    damageEnemy(next, targetId, preview.impact, {
+      ignoreCover: true,
+    });
+    const dealt = hpBefore - next.enemies[targetId].hp;
     if (next.enemies[targetId].hp > 0) {
       next.enemies[targetId].position = push.destination;
     }
-    if (push.rail) {
+    if (push.track || push.ledge) {
       next.enemies[targetId].stunned = true;
-      cancelIntent(next, targetId, "RAIL STUN");
+      cancelIntent(next, targetId, push.track ? "ARC STUN" : "LEDGE FALL");
     } else if (preview.interrupts) {
       cancelIntent(next, targetId);
     }
+    next.player.tempoBoost = false;
     addEvent(
       next,
       "impact",
-      push.rail
-        ? "ARC RAIL STUN"
-        : push.collision
-          ? "COLLISION"
-          : "FORCED BACK",
-      `${next.enemies[targetId].name} took ${dealt}${
-        absorbed ? `; ${absorbed} absorbed by shield` : ""
-      }.`,
+      push.divider
+        ? "DIVIDER BREACHED"
+        : push.cell
+          ? "CELL CASCADE"
+          : push.track
+            ? "ARC STUN"
+            : push.ledge
+              ? "LEDGE DROP"
+              : push.collision
+                ? "COLLISION"
+                : "SHUNTED",
+      `${collisionText ? `${collisionText} ` : ""}${
+        next.enemies[targetId].name
+      } took ${dealt}.`,
     );
     return finalizeAfterPlayerAction(next);
   }
 
-  if (cardId === "dash-strike") {
-    next.player.position = nearestOpenAdjacent(
-      next,
-      next.enemies[targetId].position,
-    );
-    next.moveAvailable = false;
-    updateCover(next);
-  }
-
-  const dealt = damageEnemy(
-    next,
-    targetId,
-    preview.impact ?? preview.damage,
-  );
+  const dealt = damageEnemyExact(next, targetId, preview.damage);
   if (preview.interrupts) cancelIntent(next, targetId);
+  next.player.tempoBoost = false;
   addEvent(
     next,
     preview.interrupts ? "interrupt" : "impact",
-    preview.interrupts ? "INTERRUPTED" : `${dealt} DAMAGE`,
+    preview.interrupts ? "INTENT CRUSHED" : `${dealt} DAMAGE`,
     `${next.enemies[targetId].name}${
-      next.enemies[targetId].hp <= 0 ? " disabled." : ` has ${next.enemies[targetId].hp} HP.`
-    }`,
+      next.enemies[targetId].hp <= 0
+        ? " disabled."
+        : ` has ${next.enemies[targetId].hp} Signal.`
+    }${collisionText ? ` ${collisionText}` : ""}`,
   );
   return finalizeAfterPlayerAction(next);
 }
@@ -1012,14 +1591,6 @@ export function playDirectorCard(state, cardId, targetId) {
 function finalizeAfterPlayerAction(state) {
   if (finishBattleIfNeeded(state)) return state;
   replanIntents(state);
-  if (activeEnemies(state).length === 0 && !state.gate.sealing) {
-    addEvent(
-      state,
-      "objective",
-      "FIELD CLEAR",
-      "Power the Anchors and seal the Gate.",
-    );
-  }
   return state;
 }
 
@@ -1028,7 +1599,8 @@ function canUseObject(state, objectId) {
   return (
     state.phase === "player" &&
     Boolean(position) &&
-    adjacent(state.player.position, position)
+    (state.player.position === position ||
+      adjacent(state.player.position, position))
   );
 }
 
@@ -1038,23 +1610,27 @@ export function getDirectorObjectAction(state, objectId) {
       return {
         id: "powered",
         legal: false,
-        label: "POWERED",
-        reason: "ONLINE",
+        label: "ONLINE",
+        reason:
+          objectId === "anchor-a"
+            ? "BRIDGE ACTIVE"
+            : "STRIKE TRACK ACTIVE",
       };
     }
-    const legal = canUseObject(state, objectId) && state.command >= 4;
+    const legal = canUseObject(state, objectId) && state.command >= 5;
     return {
       id: "power-anchor",
       legal,
-      label: "POWER",
-      cost: 4,
+      label: "SYNC",
+      cost: 5,
       reason: !canUseObject(state, objectId)
         ? "MOVE ADJACENT"
-        : state.command < 4
-          ? "NEED 4 COMMAND"
+        : state.command < 5
+          ? "NEED 5 COMMAND"
           : "",
     };
   }
+
   if (objectId === "gate") {
     const bothPowered = Object.values(state.anchors).every(
       (anchor) => anchor.powered,
@@ -1067,19 +1643,73 @@ export function getDirectorObjectAction(state, objectId) {
     return {
       id: "seal-gate",
       legal,
-      label: state.gate.sealing ? "SEALING" : "SEAL GATE",
+      label: state.gate.sealing ? "HOLDING" : "SEAL GATE",
       cost: 8,
       reason: !bothPowered
-        ? "POWER BOTH ANCHORS"
+        ? "SYNC BOTH ANCHORS"
         : !canUseObject(state, "gate")
-          ? "MOVE ADJACENT"
+          ? "MOVE INTO GATE RING"
           : state.command < 8
             ? "NEED 8 COMMAND"
             : state.gate.sealing
-              ? "HOLD THROUGH ENEMY TURN"
+              ? "SURVIVE ENEMY TURN"
               : "",
     };
   }
+
+  if (objectId === "cache") {
+    if (!state.cache.present || state.cache.carried) {
+      return {
+        id: "cache-taken",
+        legal: false,
+        label: "RECOVERED",
+        reason: "CACHE SECURED",
+      };
+    }
+    const legal = canUseObject(state, "cache") && state.command >= 3;
+    return {
+      id: "recover-cache",
+      legal,
+      label: "RECOVER",
+      cost: 3,
+      reason: !canUseObject(state, "cache")
+        ? "MOVE ADJACENT"
+        : state.command < 3
+          ? "NEED 3 COMMAND"
+          : "",
+    };
+  }
+
+  if (objectId === "exit") {
+    return {
+      id: "retreat",
+      legal: canUseObject(state, "exit"),
+      label: "RETREAT",
+      cost: 0,
+      reason: canUseObject(state, "exit") ? "" : "RETURN WEST",
+    };
+  }
+
+  if (objectId === "divider") {
+    return {
+      id: "divider-state",
+      legal: false,
+      label: state.divider.intact ? "BLOCKING" : "BREACHED",
+      reason: state.divider.intact
+        ? "SHUNT A UNIT OR USE OVERLOAD"
+        : "CENTER ROUTE OPEN",
+    };
+  }
+
+  if (objectId === "cell") {
+    return {
+      id: "cell-state",
+      legal: false,
+      label: state.cell.active ? "VOLATILE" : "RUPTURED",
+      reason: state.cell.active ? "TARGET WITH OVERLOAD" : "SPENT",
+    };
+  }
+
   return null;
 }
 
@@ -1088,60 +1718,82 @@ export function useDirectorObject(state, objectId) {
   if (!action?.legal) return state;
   const next = clone(state);
   next.command -= action.cost;
+
   if (objectId === "anchor-a" || objectId === "anchor-b") {
     next.anchors[objectId].powered = true;
     addEvent(
       next,
       "objective",
       `${DIRECTOR_OBJECTS[objectId].name} ONLINE`,
-      Object.values(next.anchors).every((anchor) => anchor.powered)
-        ? "Both Gate circuits are live."
-        : "One circuit remains.",
+      objectId === "anchor-a"
+        ? "Hardlight bridge opened."
+        : "Lower track is now a live push hazard.",
     );
     replanIntents(next);
     return next;
   }
+
+  if (objectId === "cache") {
+    next.cache.present = false;
+    next.cache.carried = true;
+    next.player.hp = Math.min(next.player.maxHp, next.player.hp + 2);
+    addEvent(next, "objective", "CACHE RECOVERED", "+2 Signal · position spent.");
+    return next;
+  }
+
+  if (objectId === "exit") {
+    next.phase = "result";
+    next.result = {
+      type: "retreat",
+      title: "CONTROLLED RETREAT",
+      cause: "You abandoned the Gate through the West Exit.",
+    };
+    return next;
+  }
+
   next.gate.sealing = true;
   addEvent(
     next,
     "objective",
-    "SEAL STARTED",
-    "Stay beside the Gate. Keep both Anchors online.",
+    "GATE HOLD STARTED",
+    "Keep both Anchors online and survive one Enemy Turn.",
   );
   replanIntents(next);
   return next;
 }
 
 export function getDirectorObjective(state) {
-  const powered = Object.values(state.anchors).filter(
-    (anchor) => anchor.powered,
-  ).length;
+  const powered = poweredAnchorIds(state).length;
   if (state.gate.sealing) {
     return {
-      step: 4,
-      title: "HOLD THE SEAL",
-      short: "STAY AT GATE · KEEP BOTH ANCHORS LIT",
+      step: 3,
+      title: "HOLD THE GATE",
+      short: "SURVIVE 1 ENEMY TURN",
       powered,
     };
   }
   if (powered < 2) {
     return {
-      step: powered + 1,
-      title: powered === 0 ? "POWER AN ANCHOR" : "POWER THE LAST ANCHOR",
-      short: `${powered}/2 CIRCUITS ONLINE`,
+      step: 1,
+      title:
+        powered === 0
+          ? "CHOOSE YOUR FIRST CIRCUIT"
+          : "SYNC THE OTHER ANCHOR",
+      short: `${powered}/2 ONLINE`,
       powered,
     };
   }
   return {
-    step: 3,
-    title: "REACH THE GATE",
+    step: 2,
+    title: "ENTER THE GATE RING",
     short: "SEAL · 8 COMMAND",
     powered,
   };
 }
 
-function damagePlayer(state, rawAmount) {
-  const coverReduction = state.player.cover ? 1 : 0;
+function damagePlayer(state, rawAmount, options = {}) {
+  const coverReduction =
+    options.ranged && !options.ignoreCover ? state.player.cover : 0;
   const amount = Math.max(0, rawAmount - coverReduction);
   const absorbed = Math.min(state.player.shield, amount);
   state.player.shield -= absorbed;
@@ -1149,13 +1801,62 @@ function damagePlayer(state, rawAmount) {
   return amount - absorbed;
 }
 
+function collapseHardlightBridge(state) {
+  const affected = [];
+  const destinations = ["t-6-4", "t-5-3", "t-7-3"];
+
+  if (BRIDGE_TILES.has(state.player.position)) {
+    const destination = destinations.find(
+      (candidate) => !isBlocked(state, candidate),
+    );
+    if (destination) {
+      state.player.position = destination;
+    } else {
+      state.player.hp = 0;
+    }
+    const dealt = destination
+      ? damagePlayer(state, 2, { ignoreCover: true })
+      : state.player.maxHp;
+    updateCover(state);
+    affected.push(`YOU FELL ${dealt}`);
+  }
+
+  for (const enemy of activeEnemies(state)) {
+    if (!BRIDGE_TILES.has(enemy.position)) continue;
+    const destination = destinations.find(
+      (candidate) =>
+        !isBlocked(state, candidate, { ignoreEnemy: enemy.id }),
+    );
+    if (destination) {
+      enemy.position = destination;
+    } else {
+      enemy.hp = 0;
+      enemy.shield = 0;
+      cancelIntent(state, enemy.id, "BRIDGE COLLAPSE");
+    }
+    const dealt = destination
+      ? damageEnemy(state, enemy.id, 2, {
+          ignoreCover: true,
+        })
+      : enemy.maxHp;
+    affected.push(`${enemy.name} FELL ${dealt}`);
+  }
+
+  return affected.join(" · ");
+}
+
 function pushPlayerAwayFrom(state, enemyId, spaces = 1) {
+  if (state.player.braced) {
+    state.player.braced = false;
+    return false;
+  }
   const enemy = state.enemies[enemyId];
   const playerPoint = parseTile(state.player.position);
   const enemyPoint = parseTile(enemy.position);
   const dx = Math.sign(playerPoint.x - enemyPoint.x);
   const dy = Math.sign(playerPoint.y - enemyPoint.y);
-  const horizontal = Math.abs(playerPoint.x - enemyPoint.x) >=
+  const horizontal =
+    Math.abs(playerPoint.x - enemyPoint.x) >=
     Math.abs(playerPoint.y - enemyPoint.y);
   const stepX = horizontal ? dx || -1 : 0;
   const stepY = horizontal ? 0 : dy || 1;
@@ -1163,16 +1864,25 @@ function pushPlayerAwayFrom(state, enemyId, spaces = 1) {
   for (let step = 0; step < spaces; step += 1) {
     const point = parseTile(current);
     const candidate = tileId(point.x + stepX, point.y + stepY);
-    if (!isTile(candidate) || isBlocked(state, candidate, { allowPlayer: true })) {
+    if (
+      !isTile(candidate) ||
+      isBlocked(state, candidate, { allowPlayer: true })
+    ) {
       break;
     }
     current = candidate;
   }
+  const moved = current !== state.player.position;
   state.player.position = current;
   updateCover(state);
+  return moved;
 }
 
 function ejectPlayerFromGate(state) {
+  if (state.player.braced) {
+    state.player.braced = false;
+    return false;
+  }
   const candidates = neighbors(state, state.player.position, {
     allowPlayer: true,
   })
@@ -1193,7 +1903,7 @@ function moveEnemyToward(
   enemyId,
   destination,
   steps,
-  ignoreObject,
+  options = {},
 ) {
   const enemy = state.enemies[enemyId];
   let path = routeToward(
@@ -1201,20 +1911,15 @@ function moveEnemyToward(
     enemy.position,
     destination,
     steps,
-    { ignoreEnemy: enemyId, ignoreObject },
+    { ...options, ignoreEnemy: enemyId, allowPlayer: true },
   );
-  if (path.at(-1) === state.player.position) {
-    path = path.slice(0, -1);
-  }
-  if (ignoreObject && path.at(-1) === destination) {
-    path = path.slice(0, -1);
-  }
+  if (path.at(-1) === state.player.position) path = path.slice(0, -1);
   const nextPosition = path.at(-1);
   if (
     nextPosition &&
     !isBlocked(state, nextPosition, {
       ignoreEnemy: enemyId,
-      ignoreObject,
+      ...options,
     })
   ) {
     enemy.position = nextPosition;
@@ -1241,120 +1946,161 @@ function resolveIntent(state, intent) {
       state,
       "danger",
       "RAM HIT THE GATE",
-      `${state.gate.integrity}/${state.gate.maxIntegrity} integrity remains.`,
+      `${state.gate.integrity}/${state.gate.maxIntegrity} locks remain.`,
     );
     return;
   }
   if (intent.actorId === "ram" && intent.name === "BODY CHECK") {
-    moveEnemyToward(
-      state,
-      "ram",
-      state.player.position,
-      2,
-    );
+    moveEnemyToward(state, "ram", state.player.position, 2);
     const dealt =
       distance(enemy.position, state.player.position) <= 1
         ? damagePlayer(state, 3)
         : 0;
-    if (dealt > 0) {
-      if (adjacent(state.player.position, DIRECTOR_OBJECTS.gate.position)) {
-        ejectPlayerFromGate(state);
-      } else {
-        pushPlayerAwayFrom(state, "ram", 1);
-      }
-    }
+    const pushed =
+      dealt > 0 ? pushPlayerAwayFrom(state, "ram", 1) : false;
     addEvent(
       state,
       "danger",
       dealt > 0 ? "RAM BODY CHECK" : "RAM CLOSED IN",
-      dealt > 0 ? `${dealt} damage reached you.` : "It is still coming.",
+      dealt > 0
+        ? `${dealt} damage${pushed ? " · displaced" : " · held"}.`
+        : "Its charge lane narrowed.",
     );
     return;
   }
-  if (intent.actorId === "ram" && intent.name === "CHARGE GATE") {
+  if (intent.actorId === "ram" && intent.name === "CHARGE LINE") {
+    moveEnemyToward(state, "ram", "t-16-6", 2);
+    addEvent(state, "danger", "RAM CHARGED", "The Gate lane is under pressure.");
+    return;
+  }
+
+  if (intent.actorId === "warden" && intent.name === "SHIELD LINK") {
+    if (state.enemies.ram.hp > 0) state.enemies.ram.shield += 2;
+    addEvent(state, "enemy", "RAM SHIELDED +2", "WARDEN is holding the lane.");
+    return;
+  }
+  if (intent.actorId === "warden" && intent.name === "INTERPOSE") {
     moveEnemyToward(
       state,
-      "ram",
-      "t-8-3",
+      "warden",
+      intent.destination,
       2,
     );
-    addEvent(
-      state,
-      "danger",
-      "RAM ADVANCED",
-      "Gate impact is getting closer.",
-    );
-    return;
-  }
-  if (intent.actorId === "warden" && intent.name === "SHIELD RAM") {
-    if (state.enemies.ram.hp > 0) state.enemies.ram.shield += 3;
-    addEvent(state, "enemy", "RAM SHIELDED +3", "Break or interrupt the link.");
+    addEvent(state, "enemy", "WARDEN INTERPOSED", "A route is now occupied.");
     return;
   }
   if (intent.actorId === "warden" && intent.name === "SHIELD BASH") {
-    if (distance(enemy.position, state.player.position) <= 2) {
+    if (adjacent(enemy.position, state.player.position)) {
       const dealt = damagePlayer(state, 2);
-      addEvent(state, "enemy", "SHIELD BASH", `${dealt} damage reached you.`);
+      const pushed = pushPlayerAwayFrom(state, "warden", 1);
+      addEvent(
+        state,
+        "enemy",
+        "SHIELD BASH",
+        `${dealt} damage${pushed ? " · displaced" : " · held"}.`,
+      );
     } else {
-      addEvent(state, "interrupt", "BASH MISSED", "You moved out of range.");
+      addEvent(state, "interrupt", "BASH MISSED", "You left the contact tile.");
     }
     return;
   }
   if (intent.actorId === "warden" && intent.name === "EJECT") {
-    moveEnemyToward(
+    moveEnemyToward(state, "warden", state.player.position, 2);
+    const inRange = adjacent(enemy.position, state.player.position);
+    const displaced = inRange ? ejectPlayerFromGate(state) : false;
+    if (inRange) damagePlayer(state, 1);
+    addEvent(
       state,
-      "warden",
-      state.player.position,
-      2,
+      displaced ? "danger" : "enemy",
+      displaced ? "FORCED OFF THE GATE" : "WARDEN CLOSED IN",
+      displaced ? "Gate Work lost legal access." : "The hold survived this impact.",
     );
-    if (distance(enemy.position, state.player.position) <= 1) {
-      const displaced = ejectPlayerFromGate(state);
-      damagePlayer(state, 1);
-      addEvent(
-        state,
-        "danger",
-        displaced ? "FORCED OFF THE GATE" : "WARDEN IMPACT",
-        "The seal needs adjacency when the turn ends.",
-      );
-    } else {
-      addEvent(state, "enemy", "WARDEN CLOSED IN", "Ejection range shortened.");
-    }
     return;
   }
   if (intent.actorId === "warden" && intent.name === "HUNT") {
-    moveEnemyToward(
-      state,
-      "warden",
-      state.player.position,
-      2,
-    );
-    addEvent(state, "enemy", "WARDEN ADVANCED", "It is closing on your position.");
+    moveEnemyToward(state, "warden", state.player.position, 2);
+    addEvent(state, "enemy", "WARDEN ADVANCED", "It is hunting your position.");
     return;
   }
-  if (intent.actorId === "jammer" && intent.name === "DRAIN ANCHOR") {
-    state.anchors[intent.targetId].powered = false;
-    addEvent(
-      state,
-      "danger",
-      `${DIRECTOR_OBJECTS[intent.targetId].name} OFFLINE`,
-      "The Gate circuit went dark.",
-    );
+
+  if (intent.actorId === "jammer" && intent.name === "DRAIN LINK") {
+    const inRange =
+      distance(enemy.position, DIRECTOR_OBJECTS[intent.targetId].position) <=
+        3 &&
+      hasDirectorLineOfSight(
+        state,
+        enemy.position,
+        DIRECTOR_OBJECTS[intent.targetId].position,
+      );
+    if (inRange) {
+      state.anchors[intent.targetId].powered = false;
+      const collapse =
+        intent.targetId === "anchor-a"
+          ? collapseHardlightBridge(state)
+          : "";
+      addEvent(
+        state,
+        "danger",
+        `${DIRECTOR_OBJECTS[intent.targetId].name} DRAINED`,
+        intent.targetId === "anchor-a"
+          ? `The hardlight bridge collapsed.${
+              collapse ? ` ${collapse}.` : ""
+            }`
+          : "The lower strike track went cold.",
+      );
+    } else {
+      addEvent(state, "interrupt", "DRAIN BROKEN", "Range or sight was denied.");
+    }
     return;
   }
-  if (intent.actorId === "jammer" && intent.name === "STATIC BOLT") {
-    const dealt = damagePlayer(state, 2);
-    addEvent(state, "enemy", "STATIC BOLT", `${dealt} damage reached you.`);
+  if (intent.actorId === "jammer" && intent.name === "STATIC FIELD") {
+    if (distance(enemy.position, state.player.position) <= 3) {
+      state.player.jammed = true;
+      addEvent(
+        state,
+        "enemy",
+        "STATIC FIELD",
+        "Non-Firewall cards cost +1 and contested actions lose 1 Tempo while jammed.",
+      );
+    } else {
+      addEvent(state, "interrupt", "FIELD MISSED", "You left the Jammer radius.");
+    }
     return;
   }
-  if (intent.actorId === "jammer" && intent.name === "SEEK ANCHOR") {
+  if (intent.actorId === "jammer" && intent.name === "HUNT CIRCUIT") {
     moveEnemyToward(
       state,
       "jammer",
-      DIRECTOR_OBJECTS["anchor-a"].position,
-      1,
-      "anchor-a",
+      intent.destination,
+      2,
+      { ignoreObject: intent.targetId },
     );
-    addEvent(state, "enemy", "JAMMER ADVANCED", "It is closing on a circuit.");
+    addEvent(state, "enemy", "JAMMER RELOCATED", "Its drain tether is getting closer.");
+    return;
+  }
+
+  if (intent.actorId === "sniper" && intent.name === "TRACE SHOT") {
+    const legal =
+      distance(enemy.position, state.player.position) <= 12 &&
+      hasDirectorLineOfSight(state, enemy.position, state.player.position);
+    if (legal) {
+      const dealt = damagePlayer(state, 2, { ranged: true });
+      addEvent(
+        state,
+        dealt > 0 ? "danger" : "guard",
+        dealt > 0 ? "TRACE SHOT" : "SHOT ABSORBED",
+        dealt > 0
+          ? `${dealt} damage through the open line.`
+          : "Cover and Shield stopped the trace.",
+      );
+    } else {
+      addEvent(state, "interrupt", "TRACE BROKEN", "Sightline denied.");
+    }
+    return;
+  }
+  if (intent.actorId === "sniper" && intent.name === "FIND TRACE") {
+    moveEnemyToward(state, "sniper", intent.destination, 2);
+    addEvent(state, "enemy", "TRACE REPOSITIONED", "A new sightline is forming.");
   }
 }
 
@@ -1364,7 +2110,7 @@ function finishBattleIfNeeded(state) {
     state.result = {
       type: "defeat",
       title: "GATE DESTROYED",
-      cause: "RAM collapsed the final integrity lock.",
+      cause: "RAM collapsed the final Gate lock.",
     };
     return true;
   }
@@ -1397,18 +2143,18 @@ function beginNextPlayerTurn(state) {
       state.phase = "result";
       state.result = {
         type: "victory",
-        title: "GATE SEALED",
-        cause: "Both circuits and your position survived the Enemy Turn.",
+        title: state.cache.carried ? "RECOVERY SECURE" : "GATE SEALED",
+        cause: "Both circuits and your Gate position survived the Enemy Turn.",
       };
-      addEvent(state, "victory", "GATE SEALED", "Signal lock restored.");
+      addEvent(state, "victory", state.result.title, "Signal lock restored.");
       return;
     }
     state.gate.sealing = false;
     addEvent(
       state,
       "danger",
-      "SEAL BROKEN",
-      "Restore both circuits and return to the Gate.",
+      "GATE HOLD BROKEN",
+      "Restore both circuits and return to the Gate ring.",
     );
   }
   state.turn += 1;
@@ -1420,6 +2166,8 @@ function beginNextPlayerTurn(state) {
   state.moveAvailable = true;
   state.cardUses = {};
   state.player.shield = 0;
+  state.player.braced = false;
+  state.player.tempoBoost = false;
   for (const enemy of Object.values(state.enemies)) {
     enemy.stunned = false;
   }
@@ -1434,10 +2182,13 @@ export function beginDirectorEnemyTurn(state) {
   for (const enemy of Object.values(next.enemies)) {
     enemy.shield = 0;
   }
+  next.player.jammed = false;
   next.phase = "enemy";
-  next.enemyQueue = next.intents.map((intent) => intent.id);
+  next.enemyQueue = next.intents
+    .filter((intent) => intent.status !== "spent")
+    .map((intent) => intent.id);
   next.enemyCursor = 0;
-  addEvent(next, "enemy", "ENEMY TURN", "Intents resolve Fast → Standard → Slow.");
+  addEvent(next, "enemy", "ENEMY TURN", "Telegraphed threats resolve by local Tempo.");
   return next;
 }
 
@@ -1454,9 +2205,7 @@ export function advanceDirectorEnemyTurn(state) {
   if (intent) resolveIntent(next, intent);
   next.enemyCursor += 1;
   if (finishBattleIfNeeded(next)) return next;
-  if (next.enemyCursor >= next.enemyQueue.length) {
-    beginNextPlayerTurn(next);
-  }
+  if (next.enemyCursor >= next.enemyQueue.length) beginNextPlayerTurn(next);
   return next;
 }
 
@@ -1472,9 +2221,19 @@ export function getDirectorScreenPosition(positionId) {
   const point = parseTile(positionId);
   if (!point) return { x: 50, y: 50 };
   return {
-    x: 50 + (point.x - point.y - 1.5) * 6,
-    y: 7 + (point.x + point.y) * 5.8,
+    x: 50 + (point.x - point.y - 2) * TILE_HALF_WIDTH,
+    y: 16 + (point.x + point.y - 5) * TILE_HALF_HEIGHT,
   };
+}
+
+export function getDirectorTilePolygon(positionId) {
+  const point = getDirectorScreenPosition(positionId);
+  return [
+    `${point.x},${point.y - TILE_HALF_HEIGHT}`,
+    `${point.x + TILE_HALF_WIDTH},${point.y}`,
+    `${point.x},${point.y + TILE_HALF_HEIGHT}`,
+    `${point.x - TILE_HALF_WIDTH},${point.y}`,
+  ].join(" ");
 }
 
 export function getDirectorBattleSnapshot(state) {
@@ -1487,6 +2246,8 @@ export function getDirectorBattleSnapshot(state) {
     player: clone(state.player),
     gate: clone(state.gate),
     anchors: clone(state.anchors),
+    divider: clone(state.divider),
+    cache: clone(state.cache),
     cell: clone(state.cell),
     enemies: clone(state.enemies),
     cardUses: clone(state.cardUses),

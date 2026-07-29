@@ -79,7 +79,7 @@ test("the director cut is a one-screen semantic board with touch-safe controls",
   assert.match(component, /POWER 2 ANCHORS/);
   assert.match(component, /REACH THE GATE/);
   assert.match(component, /SURVIVE 1 ENEMY TURN/);
-  assert.match(component, /RAM breaks the Gate after three Slow smashes/);
+  assert.match(component, /RAM destroys one Gate lock/);
   assert.match(component, /SELECT AGAIN TO EXECUTE/);
   assert.match(component, /NO TARGET IN RANGE/);
   assert.match(component, /ENEMIES ACT/);
@@ -89,6 +89,9 @@ test("the director cut is a one-screen semantic board with touch-safe controls",
   assert.match(component, /DIRECTOR_CARDS/);
   assert.match(component, /IntentLines/);
   assert.match(component, /data-terrain=/);
+  assert.match(component, /HARD COVER/);
+  assert.match(component, /MOVE 2 · -1 TEMPO/);
+  assert.match(component, /TACTICAL WITHDRAWAL/);
   assert.match(component, /type="button"/);
   assert.match(component, /reduce motion/i);
   assert.doesNotMatch(component, /PLAN TRAY|PIVOT|LOCK PLAN|SETTLE/i);
@@ -109,6 +112,10 @@ test("the director cut is a one-screen semantic board with touch-safe controls",
   );
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /animation-duration:\s*0\.001ms/);
+  assert.match(css, /\.terrainCue\s*\{/);
+  assert.match(css, /grid-auto-flow:\s*column/);
+  assert.match(css, /scroll-snap-type:\s*x proximity/);
+  assert.doesNotMatch(css, /min-width:\s*(?:38|47)rem/);
 
   const referencedClasses = [
     ...component.matchAll(/styles\.([A-Za-z0-9_]+)/g),

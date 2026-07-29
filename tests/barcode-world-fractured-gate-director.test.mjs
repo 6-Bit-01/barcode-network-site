@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  DIRECTOR_BUILD,
   DIRECTOR_CARDS,
   DIRECTOR_OBJECTS,
   DIRECTOR_RULES,
@@ -12,8 +13,10 @@ import {
   getDirectorBattleSnapshot,
   getDirectorCardCost,
   getDirectorCardTargets,
+  getDirectorContextAction,
   getDirectorObjectAction,
   getDirectorReachableTiles,
+  getDirectorReaction,
   getDirectorScreenPosition,
   getDirectorTilePolygon,
   hasDirectorLineOfSight,
@@ -22,16 +25,29 @@ import {
   playDirectorCard,
   previewDirectorCard,
   resetDirectorState,
+  resolveDirectorReaction,
+  useDirectorContextAction,
   useDirectorObject,
 } from "../src/lib/barcode-world/fractured-gate-director-engine.mjs";
 
-function finishEnemyTurn(state) {
+function finishEnemyTurn(state, reactionChoice = "decline") {
   let next =
     state.phase === "player" ? beginDirectorEnemyTurn(state) : state;
-  for (let step = 0; step < 16 && next.phase === "enemy"; step += 1) {
-    next = advanceDirectorEnemyTurn(next);
+  for (
+    let step = 0;
+    step < 16 && ["enemy", "reaction"].includes(next.phase);
+    step += 1
+  ) {
+    next =
+      next.phase === "reaction"
+        ? resolveDirectorReaction(next, reactionChoice)
+        : advanceDirectorEnemyTurn(next);
   }
-  assert.notEqual(next.phase, "enemy", "enemy turn must terminate");
+  assert.equal(
+    ["enemy", "reaction"].includes(next.phase),
+    false,
+    "enemy commitment must terminate",
+  );
   return next;
 }
 
@@ -58,17 +74,27 @@ function polygonPoints(id) {
     .map((pair) => pair.split(",").map(Number));
 }
 
-test("Live Circuit opens as a larger tactical battlefield", () => {
-  const state = createDirectorState("LIVE-CIRCUIT-CONTRACT");
+test("Breachflow keeps the dense board while replacing bookkeeping with a simple turn surface", () => {
+  const state = createDirectorState("BREACHFLOW-CONTRACT");
   assert.equal(
     DIRECTOR_SOURCE,
-    "BARCODE_WORLD_FRACTURED_GATE_LIVE_CIRCUIT_2026-07-29",
+    "BARCODE_WORLD_FRACTURED_GATE_LIVE_CIRCUIT_BREACHFLOW_2026-07-29",
   );
-  assert.equal(DIRECTOR_RULES.commandStart, 16);
-  assert.equal(DIRECTOR_RULES.commandIncome, 16);
-  assert.equal(DIRECTOR_RULES.commandCap, 32);
-  assert.equal(DIRECTOR_RULES.moveRange, 5);
-  assert.equal("paidActionCap" in DIRECTOR_RULES, false);
+  assert.deepEqual(DIRECTOR_BUILD, {
+    id: "battle-exploration",
+    name: "BATTLE → EXPLORATION",
+    major: "BATTLE",
+    minor: "EXPLORATION",
+    grammar: "IMPACT CREATES OPENINGS · OPENINGS BECOME ROUTES",
+  });
+  assert.equal(DIRECTOR_RULES.movementPerTurn, 6);
+  assert.equal(DIRECTOR_RULES.actionsPerTurn, 2);
+  assert.equal(DIRECTOR_RULES.reactionRange, 4);
+  assert.equal("commandStart" in DIRECTOR_RULES, false);
+  assert.equal("command" in state, false);
+  assert.equal("moveAvailable" in state, false);
+  assert.equal(state.movementRemaining, 6);
+  assert.equal(state.actionsRemaining, 2);
   assert.ok(Object.keys(DIRECTOR_TILES).length >= 145);
   assert.deepEqual(Object.keys(DIRECTOR_CARDS), [
     "bitcrush",
@@ -77,22 +103,16 @@ test("Live Circuit opens as a larger tactical battlefield", () => {
     "firewall",
     "overload",
   ]);
-  assert.deepEqual(Object.keys(state.enemies), [
-    "ram",
-    "warden",
-    "jammer",
-    "sniper",
-  ]);
-  assert.deepEqual(Object.keys(DIRECTOR_OBJECTS), [
-    "anchor-a",
-    "anchor-b",
-    "cell",
-    "divider",
-    "cache",
-    "exit",
-    "gate",
-  ]);
-  assert.equal(state.intents.length, 4);
+  assert.equal(DIRECTOR_CARDS.shunt.source, "BATTLE");
+  assert.equal(DIRECTOR_CARDS.shunt.shape, "CONTACT");
+  assert.equal(DIRECTOR_CARDS.shunt.range, 1);
+  assert.equal(DIRECTOR_CARDS["skip-step"].source, "EXPLORATION");
+  assert.equal(DIRECTOR_CARDS["skip-step"].shape, "SHIFT");
+  assert.equal(state.intents.length, 2);
+  assert.deepEqual(
+    new Set(state.intents.map((intent) => intent.priority)),
+    new Set(["primary", "support"]),
+  );
   assert.equal(new Set(livingPositions(state)).size, 5);
 });
 
@@ -102,14 +122,11 @@ test("edge-sharing projection creates a continuous SVG grid", () => {
   assert.ok(
     Math.abs(left[1][0] - right[0][0]) < Number.EPSILON &&
       Math.abs(left[1][1] - right[0][1]) < 1e-12,
-    "east edge starts at the same vertex",
   );
   assert.ok(
     Math.abs(left[2][0] - right[3][0]) < Number.EPSILON &&
       Math.abs(left[2][1] - right[3][1]) < 1e-12,
-    "east edge ends at the same vertex",
   );
-
   const leftCenter = getDirectorScreenPosition("t-1-6");
   const rightCenter = getDirectorScreenPosition("t-2-6");
   assert.ok(
@@ -124,7 +141,7 @@ test("edge-sharing projection creates a continuous SVG grid", () => {
   );
 });
 
-test("the walkable floor remains connected without the powered bridge", () => {
+test("the ordinary walkable floor remains connected without either optional Anchor", () => {
   const walkable = Object.values(DIRECTOR_TILES).filter(
     (tile) => tile.walkable && tile.terrain !== "bridge",
   );
@@ -149,51 +166,44 @@ test("the walkable floor remains connected without the powered bridge", () => {
   assert.equal(visited.size, ids.size);
 });
 
-test("opening reach offers route choice without covering the whole formation", () => {
-  const state = createDirectorState();
-  const reachable = getDirectorReachableTiles(state);
-  assert.ok(Object.keys(reachable).length >= 15);
-  assert.ok(Object.keys(reachable).length < Object.keys(DIRECTOR_TILES).length / 4);
-  assert.equal(getDirectorCardTargets(state, "bitcrush").length, 0);
-  assert.equal(getDirectorCardTargets(state, "shunt").length, 0);
-  assert.equal(getDirectorCardTargets(state, "overload").length, 0);
-  assert.ok(getDirectorCardTargets(state, "skip-step").length > 0);
-  for (const objectId of ["anchor-a", "anchor-b", "cell", "divider", "gate"]) {
-    const position = DIRECTOR_OBJECTS[objectId].position;
-    assert.equal(reachable[position], undefined);
-  }
+test("movement splits before, between, and after the two main actions", () => {
+  let state = createDirectorState();
+  state = moveDirectorPlayer(state, "t-3-3");
+  assert.equal(state.movementRemaining, 1);
+  assert.ok(getDirectorReachableTiles(state)["t-4-3"]);
+
+  state = playDirectorCard(state, "firewall", "player");
+  assert.equal(state.actionsRemaining, 1);
+  assert.equal(state.movementRemaining, 1);
+  assert.ok(getDirectorReachableTiles(state)["t-4-3"]);
+
+  state = moveDirectorPlayer(state, "t-4-3");
+  assert.equal(state.movementRemaining, 0);
+  assert.equal(state.actionsRemaining, 1);
+
+  state = playDirectorCard(state, "skip-step", "t-5-3");
+  assert.equal(state.actionsRemaining, 0);
+  assert.equal(state.player.position, "t-5-3");
+  assert.equal(getDirectorReachableTiles(state)["t-5-4"], undefined);
 });
 
-test("racks block movement and sight while rubble has a real movement cost", () => {
+test("racks, rubble, cover, and high ground remain real rules under the simple surface", () => {
   const state = createDirectorState();
-  assert.equal(DIRECTOR_TILES["t-4-5"].terrain, "rack");
   assert.equal(DIRECTOR_TILES["t-4-5"].walkable, false);
   assert.equal(
     hasDirectorLineOfSight(state, "t-3-5", "t-5-5"),
     false,
   );
-  const rubble = getDirectorReachableTiles(state)["t-3-5"];
-  assert.equal(rubble.cost, 4);
-  assert.equal(rubble.path.at(-1), "t-3-5");
-  assert.equal(rubble.path.includes("t-4-5"), false);
-});
+  assert.equal(getDirectorReachableTiles(state)["t-3-5"].cost, 4);
 
-test("cover and high ground materially change combat", () => {
   let covered = disableEnemiesExcept(createDirectorState(), "sniper");
+  covered.turn = 3;
   covered.player.position = "t-5-5";
   covered.player.cover = DIRECTOR_TILES[covered.player.position].cover;
   covered.enemies.sniper.position = "t-5-2";
   covered.intents = planDirectorIntents(covered);
   covered = finishEnemyTurn(covered);
-  assert.equal(covered.player.hp, covered.player.maxHp, "heavy cover stops 2");
-
-  let exposed = disableEnemiesExcept(createDirectorState(), "sniper");
-  exposed.player.position = "t-5-6";
-  exposed.player.cover = DIRECTOR_TILES[exposed.player.position].cover;
-  exposed.enemies.sniper.position = "t-5-2";
-  exposed.intents = planDirectorIntents(exposed);
-  exposed = finishEnemyTurn(exposed);
-  assert.equal(exposed.player.hp, exposed.player.maxHp - 2);
+  assert.equal(covered.player.hp, covered.player.maxHp);
 
   const high = createDirectorState();
   high.player.position = "t-9-2";
@@ -219,106 +229,138 @@ test("line of sight is reciprocal across every battlefield cell", () => {
   }
 });
 
-test("cover protects against TRACE but not adjacent melee", () => {
-  let state = disableEnemiesExcept(createDirectorState(), "warden");
-  state.player.position = "t-5-5";
-  state.player.cover = DIRECTOR_TILES[state.player.position].cover;
-  state.enemies.warden.position = "t-5-4";
-  state.intents = planDirectorIntents(state);
-  assert.equal(
-    state.intents.find((intent) => intent.actorId === "warden").name,
-    "SHIELD BASH",
-  );
-  state = finishEnemyTurn(state);
-  assert.equal(state.player.hp, state.player.maxHp - 2);
-});
-
-test("the two Anchors create different board advantages", () => {
-  const closed = createDirectorState();
-  closed.player.position = "t-5-3";
-  closed.moveAvailable = true;
-  assert.equal(getDirectorReachableTiles(closed)["t-6-3"], undefined);
-  assert.equal(
-    getDirectorReachableTiles(closed)["t-9-3"],
-    undefined,
-    "the broken catwalk requires a real detour",
-  );
-
+test("the optional Anchors create distinct shortcuts without gating the mission", () => {
   const bridge = createDirectorState();
   bridge.player.position = "t-5-3";
-  bridge.command = 32;
+  bridge.movementRemaining = 6;
+  assert.equal(getDirectorReachableTiles(bridge)["t-6-3"], undefined);
   const bridgeOnline = useDirectorObject(bridge, "anchor-a");
-  bridgeOnline.moveAvailable = true;
+  assert.equal(bridgeOnline.actionsRemaining, 1);
   assert.ok(getDirectorReachableTiles(bridgeOnline)["t-6-3"]);
-  assert.equal(
-    getDirectorReachableTiles(bridgeOnline)["t-9-3"].cost,
-    4,
-    "Anchor I opens a meaningful upper-route shortcut",
-  );
+  assert.ok(getDirectorReachableTiles(bridgeOnline)["t-9-3"].cost < 6);
 
   const coldTrack = createDirectorState();
   coldTrack.player.position = "t-7-9";
-  coldTrack.moveAvailable = true;
+  coldTrack.movementRemaining = 6;
   const coldCost = getDirectorReachableTiles(coldTrack)["t-11-10"].cost;
-
   const liveTrack = createDirectorState();
   liveTrack.anchors["anchor-b"].powered = true;
   liveTrack.player.position = "t-7-9";
-  liveTrack.moveAvailable = true;
+  liveTrack.movementRemaining = 6;
   const liveCost = getDirectorReachableTiles(liveTrack)["t-11-10"].cost;
   assert.ok(liveCost < coldCost);
+
+  const directGate = createDirectorState();
+  directGate.player.position = "t-16-6";
+  assert.equal(getDirectorObjectAction(directGate, "gate").legal, true);
+  assert.equal(
+    Object.values(directGate.anchors).some((anchor) => anchor.powered),
+    false,
+  );
 });
 
-test("Shunt turns the powered track and ledges into weapons", () => {
+test("two action lights replace costs, caps, banking, and end-turn arithmetic", () => {
+  let state = createDirectorState();
+  assert.equal(getDirectorCardCost(state, "firewall"), 1);
+  state = playDirectorCard(state, "firewall", "player");
+  state = playDirectorCard(state, "skip-step", "t-2-6");
+  assert.equal(state.actionsRemaining, 0);
+  assert.equal(
+    previewDirectorCard(state, "bitcrush", "ram").summary,
+    "TWO ACTIONS SPENT",
+  );
+  const retreat = createDirectorState();
+  retreat.player.position = "t-1-6";
+  assert.equal(getDirectorObjectAction(retreat, "exit").legal, true);
+  assert.equal(getDirectorObjectAction(retreat, "exit").actionCost, 0);
+
+  state = finishEnemyTurn(state);
+  assert.equal(state.actionsRemaining, 2);
+  assert.equal(state.movementRemaining, 6);
+  assert.equal("command" in state, false);
+});
+
+test("Battle impact can create a source-bound Exploration payoff", () => {
+  let state = createDirectorState("BREACHFLOW-CHAIN");
+  state.player.position = "t-12-6";
+  state.enemies.ram.position = "t-13-6";
+  state.divider.intact = true;
+  state.intents = planDirectorIntents(state);
+
+  const preview = previewDirectorCard(state, "shunt", "ram");
+  assert.equal(preview.legal, true);
+  assert.equal(preview.push.divider, true);
+  assert.deepEqual(preview.footprint, [
+    "t-13-6",
+    "t-14-6",
+    "t-15-6",
+  ]);
+
+  state = playDirectorCard(state, "shunt", "ram");
+  assert.equal(state.divider.intact, false);
+  assert.equal(state.enemies.ram.position, "t-15-6");
+  assert.equal(state.actionsRemaining, 1);
+  const context = getDirectorContextAction(state);
+  assert.equal(context.label, "RIDE THE BREACH");
+  assert.equal(context.destination, "t-14-6");
+
+  const movementBefore = state.movementRemaining;
+  state = useDirectorContextAction(state);
+  assert.equal(state.player.position, "t-14-6");
+  assert.equal(state.actionsRemaining, 1);
+  assert.equal(state.movementRemaining, movementBefore);
+  assert.equal(getDirectorContextAction(state), null);
+});
+
+test("a generic system blast opens geometry but does not counterfeit the build chain", () => {
+  let state = createDirectorState();
+  state.player.position = "t-12-6";
+  state.intents = planDirectorIntents(state);
+  state = playDirectorCard(state, "overload", "divider");
+  assert.equal(state.divider.intact, false);
+  assert.equal(getDirectorContextAction(state), null);
+});
+
+test("Shunt keeps powered-track and ledge consequences visually causal", () => {
   const track = createDirectorState();
   track.anchors["anchor-b"].powered = true;
-  track.player.position = "t-6-10";
-  track.player.tempoBoost = true;
+  track.player.position = "t-7-10";
   track.enemies.ram.position = "t-8-10";
+  track.enemies.jammer.hp = 0;
   track.intents = planDirectorIntents(track);
   const preview = previewDirectorCard(track, "shunt", "ram");
   assert.equal(preview.push.track, true);
   assert.match(preview.summary, /ARC STUN/);
   const stunned = playDirectorCard(track, "shunt", "ram");
-  assert.equal(stunned.enemies.ram.position, "t-10-10");
   assert.equal(stunned.enemies.ram.stunned, true);
-  assert.equal(
-    stunned.intents.find((intent) => intent.actorId === "ram").status,
-    "canceled",
-  );
+  const followThrough = getDirectorContextAction(stunned);
+  assert.equal(followThrough.label, "FOLLOW THROUGH");
+  assert.equal(followThrough.destination, "t-8-10");
+  const followed = useDirectorContextAction(stunned);
+  assert.equal(followed.player.position, "t-8-10");
+  assert.equal(followed.actionsRemaining, stunned.actionsRemaining);
+  assert.equal(followed.movementRemaining, stunned.movementRemaining);
+
+  const expired = beginDirectorEnemyTurn(stunned);
+  assert.equal(expired.contextAction.available, false);
+  assert.equal(expired.contextAction.expired, true);
 
   const ledge = createDirectorState();
   ledge.player.position = "t-9-1";
   ledge.enemies.ram.position = "t-9-2";
   ledge.intents = planDirectorIntents(ledge);
-  const ledgePreview = previewDirectorCard(ledge, "shunt", "ram");
-  assert.equal(ledgePreview.push.ledge, true);
-  assert.match(ledgePreview.summary, /LEDGE/);
+  assert.equal(
+    previewDirectorCard(ledge, "shunt", "ram").push.ledge,
+    true,
+  );
 });
 
-test("Command banks, supports combinations, and Jammer taxation is explicit", () => {
-  let state = createDirectorState();
-  state.player.position = "t-5-3";
-  state.command = 16;
-  state = useDirectorObject(state, "anchor-a");
-  state = playDirectorCard(state, "firewall", "player");
-  state = playDirectorCard(state, "skip-step", "t-5-4");
-  assert.equal(state.command, 4);
-  assert.equal("paidActions" in state, false);
-
-  state = finishEnemyTurn(state);
-  assert.equal(state.command, 20);
-  state = finishEnemyTurn(state);
-  assert.equal(state.command, 32);
-
-  state.player.jammed = true;
-  assert.equal(getDirectorCardCost(state, "bitcrush"), 5);
-  assert.equal(getDirectorCardCost(state, "firewall"), 4);
-});
-
-test("the Power Cell is local, destructive, and cannot erase the opening turn", () => {
+test("the Power Cell remains local and its complete footprint is previewed", () => {
   const opening = createDirectorState();
-  assert.equal(getDirectorCardTargets(opening, "overload").includes("cell"), false);
+  assert.equal(
+    getDirectorCardTargets(opening, "overload").includes("cell"),
+    false,
+  );
 
   const setup = createDirectorState();
   setup.player.position = "t-8-4";
@@ -328,112 +370,41 @@ test("the Power Cell is local, destructive, and cannot erase the opening turn", 
   const preview = previewDirectorCard(setup, "overload", "cell");
   assert.equal(preview.legal, true);
   assert.equal(preview.selfDamage, 2);
-  assert.match(preview.summary, /SELF 2/);
+  assert.ok(preview.footprint.length > 1);
   assert.deepEqual(new Set(preview.victims), new Set(["jammer", "sniper"]));
-  assert.ok(preview.victims.length < Object.keys(setup.enemies).length);
 
   const blasted = playDirectorCard(setup, "overload", "cell");
   assert.equal(blasted.cell.active, false);
-  assert.equal(blasted.divider.intact, false);
-  assert.equal(blasted.enemies.jammer.hp, setup.enemies.jammer.hp - 3);
-  assert.equal(blasted.enemies.sniper.hp, setup.enemies.sniper.hp - 3);
+  assert.equal(
+    blasted.divider.intact,
+    true,
+    "the relocated Gate Divider is outside the local blast",
+  );
   assert.equal(blasted.enemies.ram.hp, setup.enemies.ram.hp);
   assert.equal(blasted.enemies.warden.hp, setup.enemies.warden.hp);
-  assert.equal(blasted.player.hp, setup.player.hp - 2);
-
-  const collision = createDirectorState();
-  collision.player.position = "t-6-6";
-  collision.enemies.ram.position = "t-7-6";
-  collision.intents = planDirectorIntents(collision);
-  collision.intents.find(
-    (intent) => intent.actorId === "ram",
-  ).status = "canceled";
-  const collisionPreview = previewDirectorCard(
-    collision,
-    "shunt",
-    "ram",
-  );
-  assert.equal(collisionPreview.push.cell, true);
-  assert.equal(collisionPreview.damage, 6);
-  assert.equal(collisionPreview.selfDamage, 2);
-  assert.match(collisionPreview.summary, /6 DMG.*DETONATE.*SELF 2/);
-  const collided = playDirectorCard(collision, "shunt", "ram");
-  assert.equal(
-    collided.enemies.ram.hp,
-    collision.enemies.ram.hp - collisionPreview.damage,
-  );
-  assert.equal(
-    collided.player.hp,
-    collision.player.hp - collisionPreview.selfDamage,
-  );
 });
 
-test("local Tempo responds to terrain instead of creating global phases", () => {
-  const boosted = createDirectorState();
-  boosted.player.position = "t-11-6";
-  boosted.player.tempoBoost = true;
-  boosted.enemies.ram.position = "t-13-6";
-  boosted.intents = planDirectorIntents(boosted);
-  const first = previewDirectorCard(boosted, "shunt", "ram");
-  assert.equal(first.relation, "YOU FIRST");
-  assert.equal(first.interrupts, true);
+test("only one primary commitment and one rotating support action resolve", () => {
+  const supports = [];
+  for (const turn of [1, 2, 3]) {
+    const state = createDirectorState();
+    state.turn = turn;
+    state.intents = planDirectorIntents(state);
+    assert.equal(state.intents.length, 2);
+    assert.equal(
+      state.intents.filter((intent) => intent.priority === "primary").length,
+      1,
+    );
+    assert.equal(
+      state.intents.filter((intent) => intent.priority === "support").length,
+      1,
+    );
+    supports.push(
+      state.intents.find((intent) => intent.priority === "support").actorId,
+    );
+  }
+  assert.deepEqual(supports, ["warden", "jammer", "sniper"]);
 
-  const rubble = createDirectorState();
-  rubble.player.position = "t-9-6";
-  rubble.enemies.ram.position = "t-9-4";
-  rubble.enemies.warden.position = "t-13-6";
-  rubble.intents = planDirectorIntents(rubble);
-  const together = previewDirectorCard(rubble, "bitcrush", "ram");
-  assert.equal(together.relation, "TOGETHER");
-  assert.equal(together.interrupts, false);
-});
-
-test("local Tempo changes causal resolution, not only preview text", () => {
-  const fast = disableEnemiesExcept(createDirectorState(), "ram");
-  fast.player.position = "t-8-6";
-  fast.enemies.ram.position = "t-8-4";
-  fast.enemies.ram.hp = 2;
-  fast.intents = planDirectorIntents(fast);
-  assert.equal(
-    previewDirectorCard(fast, "bitcrush", "ram").relation,
-    "YOU FIRST",
-  );
-  const interrupted = playDirectorCard(fast, "bitcrush", "ram");
-  assert.equal(interrupted.player.hp, interrupted.player.maxHp);
-  assert.equal(interrupted.enemies.ram.hp, 0);
-
-  const equal = disableEnemiesExcept(createDirectorState(), "ram");
-  equal.player.position = "t-9-6";
-  equal.enemies.ram.position = "t-9-4";
-  equal.enemies.ram.hp = 2;
-  equal.intents = planDirectorIntents(equal);
-  assert.equal(
-    previewDirectorCard(equal, "bitcrush", "ram").relation,
-    "TOGETHER",
-  );
-  const traded = playDirectorCard(equal, "bitcrush", "ram");
-  assert.equal(traded.player.hp, traded.player.maxHp - 3);
-  assert.equal(traded.enemies.ram.hp, 0);
-
-  const slow = disableEnemiesExcept(createDirectorState(), "ram");
-  slow.player.position = "t-9-6";
-  slow.enemies.ram.position = "t-9-4";
-  slow.enemies.ram.hp = 4;
-  slow.intents = planDirectorIntents(slow);
-  assert.equal(
-    previewDirectorCard(slow, "overload", "ram").relation,
-    "ENEMY FIRST",
-  );
-  const followed = playDirectorCard(slow, "overload", "ram");
-  assert.equal(followed.player.hp, followed.player.maxHp - 3);
-  assert.equal(
-    followed.enemies.ram.hp,
-    2,
-    "RAM acts first, reaches heavy cover, and survives the slower hit",
-  );
-});
-
-test("the opening Enemy Turn changes the physical board", () => {
   const opening = createDirectorState();
   const before = Object.fromEntries(
     Object.entries(opening.enemies).map(([id, enemy]) => [id, enemy.position]),
@@ -442,92 +413,136 @@ test("the opening Enemy Turn changes the physical board", () => {
   const moved = Object.entries(after.enemies).filter(
     ([id, enemy]) => enemy.position !== before[id],
   );
-  assert.ok(moved.length >= 3);
-  assert.equal(new Set(livingPositions(after)).size, livingPositions(after).length);
-  assert.equal(after.turn, 2);
+  assert.ok(moved.length >= 1);
+  assert.ok(moved.length <= 2);
 });
 
-test("enemy movement uses the same powered-track terrain economy", () => {
-  const cold = disableEnemiesExcept(createDirectorState(), "ram");
-  cold.enemies.ram.position = "t-8-10";
-  cold.intents = planDirectorIntents(cold);
-  const coldResult = finishEnemyTurn(cold);
-  assert.equal(coldResult.enemies.ram.position, "t-10-10");
-
-  const live = disableEnemiesExcept(createDirectorState(), "ram");
-  live.anchors["anchor-b"].powered = true;
-  live.enemies.ram.position = "t-8-10";
-  live.intents = planDirectorIntents(live);
-  const liveResult = finishEnemyTurn(live);
-  assert.equal(liveResult.enemies.ram.position, "t-12-10");
-});
-
-test("Jammer must establish a real tether before draining an Anchor", () => {
-  const distant = createDirectorState();
-  distant.anchors["anchor-a"].powered = true;
-  distant.enemies.jammer.position = "t-8-10";
-  distant.intents = planDirectorIntents(distant);
-  assert.equal(
-    distant.intents.find((intent) => intent.actorId === "jammer").name,
-    "HUNT CIRCUIT",
+test("Broadcast Sweep marks one lane and rewards leaving it before End Turn", () => {
+  const caught = createDirectorState();
+  caught.turn = 2;
+  caught.player.position = "t-5-6";
+  caught.player.cover = 0;
+  caught.intents = planDirectorIntents(caught);
+  const caughtSweep = caught.intents.find(
+    (intent) => intent.name === "BROADCAST SWEEP",
   );
+  assert.equal(caughtSweep.affectedLane, "yard");
+  assert.ok(caughtSweep.affectedTiles.length > 20);
+  const caughtResult = finishEnemyTurn(caught);
+  assert.equal(caughtResult.player.hp, caught.player.hp - 2);
 
-  const tethered = createDirectorState();
-  tethered.anchors["anchor-a"].powered = true;
-  tethered.enemies.jammer.position = "t-5-5";
-  tethered.intents = planDirectorIntents(tethered);
-  assert.equal(
-    tethered.intents.find((intent) => intent.actorId === "jammer").name,
-    "DRAIN LINK",
-  );
-  const drained = finishEnemyTurn(tethered);
-  assert.equal(drained.anchors["anchor-a"].powered, false);
+  const escaped = createDirectorState();
+  escaped.turn = 2;
+  escaped.player.position = "t-5-2";
+  escaped.player.cover = 0;
+  escaped.intents = planDirectorIntents(escaped);
+  const escapedResult = finishEnemyTurn(escaped);
+  assert.equal(escapedResult.player.hp, escaped.player.hp);
 });
 
-test("a drained hardlight bridge drops its occupant into the yard", () => {
-  const state = disableEnemiesExcept(createDirectorState(), "jammer");
-  state.anchors["anchor-a"].powered = true;
-  state.player.position = "t-6-3";
-  state.enemies.jammer.position = "t-5-5";
+test("the automatic Intercept window pauses a primary threat without a resource calculation", () => {
+  let state = createDirectorState();
+  state.divider.intact = false;
+  state.player.position = "t-16-6";
+  state.gate.sealing = true;
+  state.enemies.warden.position = "t-14-6";
+  state.intents = planDirectorIntents(state);
+  state = beginDirectorEnemyTurn(state);
+  while (state.phase === "enemy" && !state.result) {
+    state = advanceDirectorEnemyTurn(state);
+  }
+  assert.equal(state.phase, "reaction");
+  const reaction = getDirectorReaction(state);
+  assert.equal(reaction.label, "INTERCEPT");
+  assert.equal(reaction.actorId, "warden");
+  assert.equal(reaction.interceptEffect, "STOP IT · TAKE 1 HIT");
+  assert.equal(reaction.declineEffect, "YOU TAKE THE PUSH");
+
+  const actionsBefore = state.actionsRemaining;
+  state = resolveDirectorReaction(state, "intercept");
+  assert.equal(state.actionsRemaining, actionsBefore);
+  assert.equal(
+    state.intents.find((intent) => intent.actorId === "warden").status,
+    "canceled",
+  );
+  state = advanceDirectorEnemyTurn(state);
+  assert.equal(state.result.type, "victory");
+});
+
+test("passing the response lets Warden eject an unguarded Gate holder", () => {
+  let state = createDirectorState();
+  state.divider.intact = false;
+  state.player.position = "t-16-6";
+  state.gate.sealing = true;
+  state.enemies.warden.position = "t-14-6";
+  state.intents = planDirectorIntents(state);
+  state = beginDirectorEnemyTurn(state);
+  while (state.phase === "enemy") {
+    state = advanceDirectorEnemyTurn(state);
+  }
+  assert.equal(state.phase, "reaction");
+  state = resolveDirectorReaction(state, "decline");
+  state = advanceDirectorEnemyTurn(state);
+  assert.equal(state.result, null);
+  assert.equal(state.gate.sealing, false);
+  assert.notEqual(state.player.position, "t-16-6");
+});
+
+test("Jammer can visibly block Shift and the automatic response", () => {
+  let state = createDirectorState();
+  state.turn = 2;
+  state.divider.intact = false;
+  state.player.position = "t-14-6";
+  state.enemies.jammer.position = "t-12-6";
+  state.enemies.ram.position = "t-16-6";
   state.intents = planDirectorIntents(state);
   assert.equal(
     state.intents.find((intent) => intent.actorId === "jammer").name,
-    "DRAIN LINK",
+    "STATIC FIELD",
   );
-  const collapsed = finishEnemyTurn(state);
-  assert.equal(collapsed.anchors["anchor-a"].powered, false);
-  assert.equal(collapsed.player.position, "t-6-4");
-  assert.equal(collapsed.player.hp, collapsed.player.maxHp - 2);
+  state = beginDirectorEnemyTurn(state);
+  state = advanceDirectorEnemyTurn(state);
+  assert.equal(state.player.jammed, true);
+  assert.equal(state.phase, "enemy");
+  assert.equal(getDirectorReaction(state), null);
+
+  state.phase = "player";
+  state.actionsRemaining = 2;
+  assert.equal(getDirectorCardTargets(state, "skip-step").length, 0);
+  assert.equal(
+    previewDirectorCard(state, "skip-step", "t-13-6").summary,
+    "STATIC FIELD BLOCKS SHIFT",
+  );
 });
 
-test("Firewall can preserve a Gate hold against Warden displacement", () => {
-  const setup = createDirectorState();
-  setup.anchors["anchor-a"].powered = true;
-  setup.anchors["anchor-b"].powered = true;
-  setup.player.position = "t-16-6";
-  setup.player.braced = true;
-  setup.player.shield = 4;
-  setup.gate.sealing = true;
-  setup.enemies.ram.hp = 0;
-  setup.enemies.jammer.hp = 0;
-  setup.enemies.sniper.hp = 0;
-  setup.enemies.warden.position = "t-14-6";
-  setup.intents = planDirectorIntents(setup);
-  const held = finishEnemyTurn(setup);
-  assert.equal(held.result.type, "victory");
-  assert.equal(held.player.position, "t-16-6");
+test("Gate lock no longer requires Anchors, but it still must survive the assault", () => {
+  let safe = createDirectorState();
+  for (const enemy of Object.values(safe.enemies)) enemy.hp = 0;
+  safe.player.position = "t-16-6";
+  safe.intents = planDirectorIntents(safe);
+  safe = useDirectorObject(safe, "gate");
+  assert.equal(safe.gate.sealing, true);
+  assert.equal(safe.actionsRemaining, 1);
+  safe = finishEnemyTurn(safe);
+  assert.equal(safe.result.type, "victory");
+  assert.equal(
+    Object.values(safe.anchors).some((anchor) => anchor.powered),
+    false,
+  );
 
-  const exposed = cloneForTest(setup);
-  exposed.player.braced = false;
-  exposed.gate.sealing = true;
-  exposed.result = null;
-  exposed.phase = "player";
-  exposed.enemies.warden.position = "t-14-6";
-  exposed.intents = planDirectorIntents(exposed);
-  const ejected = finishEnemyTurn(exposed);
-  assert.equal(ejected.result, null);
-  assert.equal(ejected.gate.sealing, false);
-  assert.notEqual(ejected.player.position, "t-16-6");
+  const guarded = createDirectorState();
+  guarded.divider.intact = false;
+  guarded.player.position = "t-16-6";
+  guarded.player.braced = true;
+  guarded.player.shield = 4;
+  guarded.gate.sealing = true;
+  guarded.enemies.ram.hp = 0;
+  guarded.enemies.jammer.hp = 0;
+  guarded.enemies.sniper.hp = 0;
+  guarded.enemies.warden.position = "t-14-6";
+  guarded.intents = planDirectorIntents(guarded);
+  const guardedResult = finishEnemyTurn(guarded, "decline");
+  assert.equal(guardedResult.result.type, "victory");
 });
 
 test("RAM can still destroy an ignored Gate", () => {
@@ -535,100 +550,32 @@ test("RAM can still destroy an ignored Gate", () => {
   state.gate.integrity = 1;
   state.enemies.ram.position = "t-16-6";
   state.intents = planDirectorIntents(state);
-  assert.equal(
-    state.intents.find((intent) => intent.actorId === "ram").name,
-    "GATE SMASH",
-  );
-  const lost = finishEnemyTurn(state);
+  const lost = finishEnemyTurn(state, "decline");
   assert.equal(lost.result.type, "defeat");
   assert.equal(lost.result.title, "GATE DESTROYED");
 });
 
-function cloneForTest(value) {
-  return structuredClone(value);
-}
-
-test("Cache and West Exit create meaningful result branches", () => {
+test("Cache and West Exit remain meaningful optional result branches", () => {
   const retreat = createDirectorState();
   assert.equal(getDirectorObjectAction(retreat, "exit").legal, true);
   const left = useDirectorObject(retreat, "exit");
   assert.equal(left.result.title, "CONTROLLED RETREAT");
 
-  const standingOnExit = createDirectorState();
-  standingOnExit.player.position = DIRECTOR_OBJECTS.exit.position;
-  assert.equal(
-    getDirectorObjectAction(standingOnExit, "exit").legal,
-    true,
-  );
-
   const cache = createDirectorState();
   cache.player.position = DIRECTOR_OBJECTS.cache.position;
   cache.player.hp = 8;
-  assert.equal(getDirectorObjectAction(cache, "cache").legal, true);
   const recovered = useDirectorObject(cache, "cache");
   assert.equal(recovered.cache.carried, true);
-  assert.equal(recovered.cache.present, false);
   assert.equal(recovered.player.hp, 10);
-});
-
-test("a real six-turn route uses terrain, interrupts, and a defended Gate hold", () => {
-  let state = createDirectorState("LIVE-CIRCUIT-GOLDEN");
-
-  state = moveDirectorPlayer(state, "t-3-3");
-  state = playDirectorCard(state, "firewall", "player");
-  state = finishEnemyTurn(state);
-
-  state = moveDirectorPlayer(state, "t-5-3");
-  state = useDirectorObject(state, "anchor-a");
-  state = playDirectorCard(state, "skip-step", "t-5-6");
-  state = finishEnemyTurn(state);
-
-  state = moveDirectorPlayer(state, "t-5-9");
-  state = useDirectorObject(state, "anchor-b");
-  state = playDirectorCard(state, "shunt", "jammer");
-  state = playDirectorCard(state, "bitcrush", "jammer");
-  state = playDirectorCard(state, "overload", "jammer");
-  assert.equal(state.enemies.jammer.hp, 0);
-  state = finishEnemyTurn(state);
-
-  assert.ok(getDirectorReachableTiles(state)["t-12-10"]);
-  state = moveDirectorPlayer(state, "t-12-10");
-  assert.equal(state.player.tempoBoost, true);
-  state = playDirectorCard(state, "skip-step", "t-14-9");
-  state = playDirectorCard(state, "bitcrush", "ram");
-  state = playDirectorCard(state, "firewall", "player");
-  state = finishEnemyTurn(state);
-
-  state = moveDirectorPlayer(state, "t-14-6");
-  state = playDirectorCard(state, "bitcrush", "warden");
-  state = playDirectorCard(state, "overload", "warden");
-  state = playDirectorCard(state, "shunt", "warden");
-  assert.equal(state.enemies.warden.hp, 0);
-  state = finishEnemyTurn(state);
-
-  state = playDirectorCard(state, "bitcrush", "ram");
-  state = playDirectorCard(state, "overload", "ram");
-  state = playDirectorCard(state, "shunt", "ram");
-  assert.equal(state.enemies.ram.hp, 0);
-  state = playDirectorCard(state, "skip-step", "t-16-6");
-  state = playDirectorCard(state, "firewall", "player");
-  assert.equal(getDirectorObjectAction(state, "gate").legal, true);
-  state = useDirectorObject(state, "gate");
-  assert.equal(state.result, null, "Gate Work must survive the Enemy Turn");
-  state = finishEnemyTurn(state);
-
-  assert.equal(state.result.type, "victory");
-  assert.equal(state.result.title, "GATE SEALED");
-  assert.equal(state.turn, 6);
-  assert.ok(state.gate.integrity > 0);
+  assert.equal(recovered.actionsRemaining, 1);
 });
 
 test("same seed and choices remain deterministic", () => {
-  let left = createDirectorState("DETERMINISTIC-LIVE-CIRCUIT");
-  let right = createDirectorState("DETERMINISTIC-LIVE-CIRCUIT");
+  let left = createDirectorState("DETERMINISTIC-BREACHFLOW");
+  let right = createDirectorState("DETERMINISTIC-BREACHFLOW");
   for (let turn = 0; turn < 4 && !left.result; turn += 1) {
-    left = finishEnemyTurn(left);
-    right = finishEnemyTurn(right);
+    left = finishEnemyTurn(left, "decline");
+    right = finishEnemyTurn(right, "decline");
   }
   assert.deepEqual(left, right);
 
@@ -641,7 +588,76 @@ test("same seed and choices remain deterministic", () => {
   assert.deepEqual(
     getDirectorBattleSnapshot(reset),
     getDirectorBattleSnapshot(
-      createDirectorState("DETERMINISTIC-LIVE-CIRCUIT"),
+      createDirectorState("DETERMINISTIC-BREACHFLOW"),
     ),
   );
+});
+
+test("randomized battles preserve action, movement, occupancy, and termination invariants", () => {
+  let random = 0x6b17f4a1;
+  const nextRandom = () => {
+    random = (random * 1664525 + 1013904223) >>> 0;
+    return random / 2 ** 32;
+  };
+
+  for (let battle = 0; battle < 250; battle += 1) {
+    let state = createDirectorState(`FUZZ-${battle}`);
+    for (let turn = 0; turn < 10 && !state.result; turn += 1) {
+      for (
+        let choice = 0;
+        choice < 8 && state.phase === "player" && !state.result;
+        choice += 1
+      ) {
+        const candidates = [];
+        const reachable = Object.keys(getDirectorReachableTiles(state));
+        if (reachable.length) {
+          candidates.push(() => {
+            const target =
+              reachable[Math.floor(nextRandom() * reachable.length)];
+            state = moveDirectorPlayer(state, target);
+          });
+        }
+        for (const cardId of Object.keys(DIRECTOR_CARDS)) {
+          const targets = getDirectorCardTargets(state, cardId);
+          if (!targets.length) continue;
+          candidates.push(() => {
+            const target =
+              targets[Math.floor(nextRandom() * targets.length)];
+            state = playDirectorCard(state, cardId, target);
+          });
+        }
+        const context = getDirectorContextAction(state);
+        if (context?.legal) {
+          candidates.push(() => {
+            state = useDirectorContextAction(state);
+          });
+        }
+        for (const objectId of Object.keys(DIRECTOR_OBJECTS)) {
+          if (objectId === "exit") continue;
+          if (getDirectorObjectAction(state, objectId)?.legal) {
+            candidates.push(() => {
+              state = useDirectorObject(state, objectId);
+            });
+          }
+        }
+        if (!candidates.length || nextRandom() < 0.22) break;
+        candidates[Math.floor(nextRandom() * candidates.length)]();
+        assert.ok(state.actionsRemaining >= 0);
+        assert.ok(state.actionsRemaining <= DIRECTOR_RULES.actionsPerTurn);
+        assert.ok(state.movementRemaining >= 0);
+        assert.ok(
+          state.movementRemaining <= DIRECTOR_RULES.movementPerTurn,
+        );
+        assert.equal(new Set(livingPositions(state)).size, livingPositions(state).length);
+      }
+      if (!state.result) {
+        state = finishEnemyTurn(
+          state,
+          nextRandom() < 0.5 ? "intercept" : "decline",
+        );
+      }
+      assert.equal(new Set(livingPositions(state)).size, livingPositions(state).length);
+      assert.equal("command" in state, false);
+    }
+  }
 });

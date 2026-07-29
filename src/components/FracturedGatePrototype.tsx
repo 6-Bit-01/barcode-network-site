@@ -8,6 +8,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import {
+  DIRECTOR_BUILD,
   DIRECTOR_CARDS,
   DIRECTOR_OBJECTS,
   DIRECTOR_RULES,
@@ -16,18 +17,21 @@ import {
   beginDirectorEnemyTurn,
   createDirectorState,
   getDirectorCardTargets,
-  getDirectorCardCost,
+  getDirectorContextAction,
   getDirectorFocusPosition,
   getDirectorIntentTargetPosition,
   getDirectorObjectAction,
   getDirectorObjective,
   getDirectorReachableTiles,
+  getDirectorReaction,
   getDirectorScreenPosition,
   getDirectorTilePolygon,
   moveDirectorPlayer,
   playDirectorCard,
   previewDirectorCard,
   resetDirectorState,
+  resolveDirectorReaction,
+  useDirectorContextAction as activateDirectorContextAction,
   useDirectorObject as activateDirectorObject,
   type DirectorRecord,
   type DirectorState,
@@ -68,13 +72,13 @@ const ENEMY_COPY: Record<
 };
 
 const OBJECT_PURPOSE: Record<string, string> = {
-  "anchor-a": "Powers the high bridge into the Gate.",
-  "anchor-b": "Powers the lower strike track.",
+  "anchor-a": "Optional: powers the high bridge shortcut.",
+  "anchor-b": "Optional: turns the lower track into a weapon.",
   cell: "Rupture it to blast nearby units.",
-  divider: "Hard cover. Breach it for a center route.",
+  divider: "Crash an enemy through it to earn a new route.",
   cache: "Recover Signal before the Gate collapses.",
   exit: "Retreat ends this battle.",
-  gate: "Power both Anchors, then hold here.",
+  gate: "Reach it, start the lock, and survive the assault.",
 };
 
 function terrainCue(
@@ -82,20 +86,20 @@ function terrainCue(
   game: DirectorState,
 ): { label: string; effect: string } {
   if (Number(tile.elevation ?? 0) > 0) {
-    return { label: "HIGH GROUND", effect: "+1 RANGE · +1 BITCRUSH" };
+    return { label: "HIGH GROUND", effect: "LONGER, HARDER RANGED FIRE" };
   }
   if (Number(tile.cover ?? 0) >= 2) {
-    return { label: "HARD COVER", effect: "-2 TRACE DAMAGE" };
+    return { label: "HARD COVER", effect: "BREAKS MOST TRACE FIRE" };
   }
   if (Number(tile.cover ?? 0) === 1) {
-    return { label: "HALF COVER", effect: "-1 TRACE DAMAGE" };
+    return { label: "HALF COVER", effect: "SOFTENS TRACE FIRE" };
   }
   if (tile.terrain === "rubble") {
-    return { label: "RUBBLE", effect: "MOVE 2 · -1 TEMPO" };
+    return { label: "RUBBLE", effect: "SLOWS THE PATH" };
   }
   if (tile.terrain === "track") {
     return anchorIsPowered(game, "anchor-b")
-      ? { label: "LIVE TRACK", effect: "MOVE ½ · +1 TEMPO" }
+      ? { label: "LIVE TRACK", effect: "FREE FLOW · PUSH STUNS" }
       : { label: "COLD TRACK", effect: "POWER ANCHOR II" };
   }
   if (tile.terrain === "bridge") {
@@ -106,7 +110,7 @@ function terrainCue(
   if (Number(tile.elevation ?? 0) < 0) {
     return { label: "SERVICE TRENCH", effect: "LOW TRACE PROFILE" };
   }
-  return { label: "CLEAR FLOOR", effect: "MOVE 1" };
+  return { label: "CLEAR FLOOR", effect: "FULL STRIDE" };
 }
 
 function positionStyle(positionId: string, offsetY = 0): BoardStyle {
@@ -192,35 +196,32 @@ function TacticalHud({
 }) {
   const objective = getDirectorObjective(game);
   const progress = objectiveProgress(objective);
-  const anchorsPowered = ["anchor-a", "anchor-b"].filter((id) =>
-    anchorIsPowered(game, id),
-  ).length;
 
   return (
     <header className={styles.tacticalHud}>
       <div className={styles.identity}>
-        <span>BARCODE WORLD</span>
-        <strong>FRACTURED GATE</strong>
+        <span>ACTIVE BUILD</span>
+        <strong>{DIRECTOR_BUILD.name}</strong>
       </div>
 
       <div
         className={styles.objectiveHud}
-        aria-label="Power two Anchors, reach the Gate, and hold for one enemy turn"
+        aria-label="Reach the Gate, start the lock, and survive the primary assault"
       >
         <div className={styles.objectiveTrack} aria-hidden="true">
           <span data-state={progress[0]}>
-            <i>{anchorsPowered}</i>
-            <b>POWER 2</b>
+            <i>→</i>
+            <b>REACH GATE</b>
           </span>
           <em>→</em>
           <span data-state={progress[1]}>
             <i>G</i>
-            <b>REACH GATE</b>
+            <b>START LOCK</b>
           </span>
           <em>→</em>
           <span data-state={progress[2]}>
-            <i>1</i>
-            <b>HOLD 1 TURN</b>
+            <i>!</i>
+            <b>SURVIVE ASSAULT</b>
           </span>
         </div>
         <strong className={styles.objectiveNow}>{objective.title}</strong>
@@ -232,7 +233,7 @@ function TacticalHud({
           <strong>{game.turn}</strong>
         </div>
         <div>
-          <span>SIGNAL</span>
+          <span>YOU</span>
           <strong>{game.player.hp}</strong>
           <small>/{game.player.maxHp}</small>
         </div>
@@ -272,6 +273,7 @@ function BoardMesh({
   selectedCard,
   reachable,
   targets,
+  preview,
   hoveredTile,
   onTile,
   onTileHover,
@@ -280,6 +282,7 @@ function BoardMesh({
   selectedCard: string | null;
   reachable: DirectorRecord;
   targets: Set<string>;
+  preview: DirectorRecord | null;
   hoveredTile: string | null;
   onTile: (tileId: string) => void;
   onTileHover: (tileId: string | null) => void;
@@ -288,6 +291,12 @@ function BoardMesh({
     hoveredTile && reachable[hoveredTile]?.path
       ? reachable[hoveredTile].path
       : [],
+  );
+  const previewFootprint = new Set<string>(
+    Array.isArray(preview?.footprint) ? preview.footprint : [],
+  );
+  const previewPath = new Set<string>(
+    Array.isArray(preview?.path) ? preview.path : [],
   );
   const tileHalfWidth = Number(DIRECTOR_RULES.tileHalfWidth ?? 4);
   const tileHalfHeight = Number(DIRECTOR_RULES.tileHalfHeight ?? 3.2);
@@ -423,6 +432,12 @@ function BoardMesh({
               data-reachable={isReachable ? "true" : "false"}
               data-targeted={isTarget ? "true" : "false"}
               data-path={path.has(tile.id) ? "true" : "false"}
+              data-preview={
+                previewFootprint.has(tile.id) ? "true" : "false"
+              }
+              data-preview-path={
+                previewPath.has(tile.id) ? "true" : "false"
+              }
               onClick={() => actionable && onTile(tile.id)}
               onKeyDown={(event) =>
                 actionable && handleSvgKey(event, () => onTile(tile.id))
@@ -593,7 +608,17 @@ function IntentLines({ game }: { game: DirectorState }) {
             key={intent.id}
             data-actor={intent.actorId}
             data-status={intent.status}
+            data-priority={intent.priority}
           >
+            {Array.isArray(intent.affectedTiles)
+              ? intent.affectedTiles.map((tileId: string) => (
+                  <polygon
+                    key={`${intent.id}-${tileId}`}
+                    className={styles.intentZone}
+                    points={tilePolygon(tileId)}
+                  />
+                ))
+              : null}
             {targetPolygon ? (
               <polygon className={styles.intentZone} points={targetPolygon} />
             ) : null}
@@ -842,12 +867,35 @@ function FocusPopover({
           disabled={!action.legal}
           onClick={() => onUseObject(focusId)}
         >
-          {action.legal
-            ? `${action.label}${action.cost ? ` · ${action.cost}` : ""}`
-            : action.reason}
+          {action.legal ? action.label : action.reason}
         </button>
       ) : null}
     </div>
+  );
+}
+
+function ContextActionPiece({
+  game,
+  onUse,
+}: {
+  game: DirectorState;
+  onUse: () => void;
+}) {
+  const action = getDirectorContextAction(game);
+  if (!action) return null;
+  return (
+    <button
+      type="button"
+      className={styles.contextActionPiece}
+      style={positionStyle(action.sourcePosition, 10)}
+      disabled={!action.legal}
+      onClick={onUse}
+      aria-label={`${action.label}. ${action.detail}`}
+    >
+      <span>BATTLE ↘ EXPLORATION</span>
+      <strong>{action.label}</strong>
+      <small>{action.legal ? "EARNED MOVE · NO ACTION" : action.reason}</small>
+    </button>
   );
 }
 
@@ -862,6 +910,7 @@ function BattleStage({
   onTarget,
   onHoverTarget,
   onUseObject,
+  onUseContext,
 }: {
   game: DirectorState;
   selectedCard: string | null;
@@ -873,6 +922,7 @@ function BattleStage({
   onTarget: (focusId: string) => void;
   onHoverTarget: (focusId: string | null) => void;
   onUseObject: (objectId: string) => void;
+  onUseContext: () => void;
 }) {
   const reachable = getDirectorReachableTiles(game);
   const targets = new Set(
@@ -885,8 +935,11 @@ function BattleStage({
     hoveredTile && reachable[hoveredTile]
       ? {
           ...terrainCue(DIRECTOR_TILES[hoveredTile], game),
-          cost: reachable[hoveredTile].cost,
         }
+      : null;
+  const cardPreview =
+    selectedCard && hoveredTarget
+      ? previewDirectorCard(game, selectedCard, hoveredTarget)
       : null;
 
   function chooseTile(tileId: string) {
@@ -920,6 +973,7 @@ function BattleStage({
             selectedCard={selectedCard}
             reachable={reachable}
             targets={targets}
+            preview={cardPreview}
             hoveredTile={hoveredTile}
             onTile={chooseTile}
             onTileHover={(tileId) => {
@@ -983,6 +1037,7 @@ function BattleStage({
             focusId={selectedFocus}
             onUseObject={onUseObject}
           />
+          <ContextActionPiece game={game} onUse={onUseContext} />
 
           {activeIntent ? (
             <div
@@ -1013,28 +1068,37 @@ function BattleStage({
           <span>{DIRECTOR_CARDS[selectedCard].glyph}</span>
           <strong>
             {hoveredTarget
-              ? "SELECT AGAIN TO EXECUTE"
-              : `${DIRECTOR_CARDS[selectedCard].name} · SELECT TARGET`}
+              ? "TARGET PREVIEW · CLICK TO EXECUTE"
+              : `${DIRECTOR_CARDS[selectedCard].shape} · SELECT GLOWING TARGET`}
           </strong>
           <button type="button" onClick={() => onFocus("player")}>
             ×
             <span className={styles.srOnly}>Cancel card</span>
           </button>
         </div>
-      ) : game.phase === "player" && game.moveAvailable ? (
+      ) : game.phase === "player" && game.movementRemaining > 0 ? (
         hoveredMove ? (
           <div className={styles.terrainCue}>
             <strong>{hoveredMove.label}</strong>
             <span>
-              COST {hoveredMove.cost} · {hoveredMove.effect}
+              {hoveredMove.effect}
             </span>
           </div>
         ) : (
-          <div className={styles.firstMoveCue}>MOVE · BLUE CELLS</div>
+          <div className={styles.firstMoveCue}>
+            MOVE ANYTIME · BLUE CELLS
+          </div>
         )
       ) : null}
     </section>
   );
+}
+
+function readableRelation(relation?: string) {
+  if (relation === "YOU FIRST") return "BEATS THREAT";
+  if (relation === "TOGETHER") return "CLASH";
+  if (relation === "ENEMY FIRST") return "THREAT LANDS FIRST";
+  return relation ?? "";
 }
 
 function CardDock({
@@ -1044,6 +1108,7 @@ function CardDock({
   onCard,
   onEndTurn,
   onAdvanceEnemy,
+  onReaction,
   reducedMotion,
 }: {
   game: DirectorState;
@@ -1052,85 +1117,148 @@ function CardDock({
   onCard: (cardId: string) => void;
   onEndTurn: () => void;
   onAdvanceEnemy: () => void;
+  onReaction: (choice: "intercept" | "decline") => void;
   reducedMotion: boolean;
 }) {
   const preview =
     selectedCard && hoveredTarget
       ? previewDirectorCard(game, selectedCard, hoveredTarget)
       : null;
+  const reaction = getDirectorReaction(game);
 
   return (
-    <footer className={styles.commandDock}>
+    <footer className={styles.actionDock}>
       {preview?.legal && selectedCard ? (
         <div className={styles.previewRibbon} role="status">
           <span>{DIRECTOR_CARDS[selectedCard].glyph}</span>
           <strong>{preview.summary}</strong>
           {preview.relation ? (
             <b data-interrupts={preview.interrupts ? "true" : "false"}>
-              {preview.relation}
+              {readableRelation(preview.relation)}
             </b>
           ) : null}
         </div>
       ) : null}
 
-      <div className={styles.commandCore} aria-label={`${game.command} Command`}>
-        <span>COMMAND</span>
-        <strong>{game.command}</strong>
+      <div
+        className={styles.motionCore}
+        aria-label={`${game.movementRemaining} movement remains`}
+      >
+        <span>FLUID MOVE</span>
         <div aria-hidden="true">
-          {Array.from({ length: 8 }, (_, index) => (
-            <i
-              key={index}
-              data-filled={index * 4 < game.command ? "true" : "false"}
-            />
-          ))}
+          {Array.from(
+            { length: Number(DIRECTOR_RULES.movementPerTurn) },
+            (_, index) => (
+              <i
+                key={index}
+                data-filled={
+                  index < Math.ceil(Number(game.movementRemaining))
+                    ? "true"
+                    : "false"
+                }
+              />
+            ),
+          )}
         </div>
+        <small>BEFORE · BETWEEN · AFTER</small>
       </div>
 
-      <div className={styles.cards} aria-label="Tactical cards">
-        {CARD_ORDER.map((cardId) => {
-          const card = DIRECTOR_CARDS[cardId];
-          if (!card) return null;
-          const cost = getDirectorCardCost(game, cardId);
-          const used = Boolean(game.cardUses?.[cardId]);
-          const unaffordable = game.command < cost;
-          const noTarget =
-            card.target !== "self" &&
-            !used &&
-            !unaffordable &&
-            getDirectorCardTargets(game, cardId).length === 0;
-          const disabled =
-            game.phase !== "player" || used || unaffordable || noTarget;
+      {reaction ? (
+        <div className={styles.reactionBar} role="alert">
+          <div>
+            <span>RESPONSE OPEN</span>
+            <strong>{reaction.title}</strong>
+            <small>{reaction.detail}</small>
+          </div>
+          <button
+            type="button"
+            data-choice="intercept"
+            onClick={() => onReaction("intercept")}
+          >
+            <b>↯</b>
+            <strong>INTERCEPT</strong>
+            <small>{reaction.interceptEffect}</small>
+          </button>
+          <button
+            type="button"
+            data-choice="decline"
+            onClick={() => onReaction("decline")}
+          >
+            <strong>LET IT LAND</strong>
+            <small>{reaction.declineEffect}</small>
+          </button>
+        </div>
+      ) : (
+        <div className={styles.cards} aria-label="Tactical actions">
+          {CARD_ORDER.map((cardId) => {
+            const card = DIRECTOR_CARDS[cardId];
+            if (!card) return null;
+            const used = Boolean(game.cardUses?.[cardId]);
+            const actionsSpent = game.actionsRemaining <= 0;
+            const jammed =
+              game.player.jammed && cardId === "skip-step";
+            const noTarget =
+              card.target !== "self" &&
+              !used &&
+              !actionsSpent &&
+              !jammed &&
+              getDirectorCardTargets(game, cardId).length === 0;
+            const disabled =
+              game.phase !== "player" ||
+              used ||
+              actionsSpent ||
+              jammed ||
+              noTarget;
 
-          return (
-            <button
-              key={cardId}
-              type="button"
-              className={styles.card}
-              data-card={cardId}
-              data-selected={selectedCard === cardId ? "true" : "false"}
-              data-used={used ? "true" : "false"}
-              data-tempo={card.tempo.toLowerCase()}
-              disabled={disabled}
-              onClick={() => onCard(cardId)}
-              aria-label={`${card.name}, ${cost} Command, ${card.tempo}, ${card.short}`}
-            >
-              <b data-taxed={cost > card.cost ? "true" : "false"}>{cost}</b>
-              <span>{card.glyph}</span>
-              <strong>{card.name}</strong>
-              <small>
-                {unaffordable
-                  ? `NEED ${cost - game.command}`
-                  : noTarget
-                    ? "NO TARGET IN RANGE"
-                    : card.short}
-              </small>
-              <em>{used ? "USED" : tempoGlyph(card.tempo)}</em>
-            </button>
-          );
-        })}
-      </div>
+            return (
+              <button
+                key={cardId}
+                type="button"
+                className={styles.card}
+                data-card={cardId}
+                data-selected={selectedCard === cardId ? "true" : "false"}
+                data-used={used ? "true" : "false"}
+                data-tempo={card.tempo.toLowerCase()}
+                disabled={disabled}
+                onClick={() => onCard(cardId)}
+                aria-label={`${card.name}, ${card.shape}, ${card.short}, source ${card.source}`}
+              >
+                <b>{String(card.shape).slice(0, 3)}</b>
+                <span>{card.glyph}</span>
+                <strong>{card.name}</strong>
+                <small>
+                  {actionsSpent
+                    ? "ACTIONS SPENT"
+                    : jammed
+                      ? "BLOCKED BY STATIC"
+                      : noTarget
+                        ? "NO LEGAL TARGET"
+                        : card.short}
+                </small>
+                <em>{used ? "USED" : card.source}</em>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className={styles.turnButtonSlot}>
+        <div
+          className={styles.actionMeter}
+          aria-label={`${game.actionsRemaining} of two actions remain`}
+        >
+          <span>ACTIONS</span>
+          <b aria-hidden="true">
+            {[0, 1].map((index) => (
+              <i
+                key={index}
+                data-filled={
+                  index < Number(game.actionsRemaining) ? "true" : "false"
+                }
+              />
+            ))}
+          </b>
+        </div>
         {game.phase === "player" ? (
           <button
             type="button"
@@ -1138,10 +1266,15 @@ function CardDock({
             onClick={onEndTurn}
             data-testid="end-turn"
           >
-            <span>ENEMIES ACT</span>
+            <span>PRIMARY + SUPPORT</span>
             <strong>END TURN</strong>
-            <small>BANK {game.command}</small>
+            <small>ENEMIES COMMIT</small>
           </button>
+        ) : game.phase === "reaction" ? (
+          <div className={styles.enemyTurnLock} data-response="true">
+            <span>YOUR RESPONSE</span>
+            <strong>CHOOSE</strong>
+          </div>
         ) : reducedMotion && game.phase === "enemy" ? (
           <button
             type="button"
@@ -1149,12 +1282,12 @@ function CardDock({
             onClick={onAdvanceEnemy}
             data-testid="advance-enemy"
           >
-            <span>ENEMY TURN</span>
+            <span>ENEMY COMMITMENT</span>
             <strong>NEXT</strong>
           </button>
         ) : (
           <div className={styles.enemyTurnLock}>
-            <span>ENEMY TURN</span>
+            <span>ENEMY COMMITMENT</span>
             <strong>RESOLVING</strong>
           </div>
         )}
@@ -1175,20 +1308,22 @@ function IntroOverlay({ onStart }: { onStart: () => void }) {
         <p>BARCODE WORLD</p>
         <h1>FRACTURED GATE</h1>
         <div className={styles.introSequence} aria-hidden="true">
-          <span>Ⅰ</span>
-          <b>+</b>
-          <span>Ⅱ</span>
+          <span>⚔</span>
+          <b>→</b>
+          <span>⌁</span>
           <b>→</b>
           <strong>G</strong>
-          <b>→</b>
-          <i>1</i>
         </div>
         <small>
-          POWER 2 ANCHORS → REACH THE GATE → SURVIVE 1 ENEMY TURN
+          REACH THE GATE → START THE LOCK → SURVIVE THE ASSAULT
         </small>
+        <b className={styles.buildGrammar}>
+          BATTLE → EXPLORATION
+          <i>IMPACT CREATES OPENINGS · OPENINGS BECOME ROUTES</i>
+        </b>
         <span className={styles.srOnly}>
-          SAVE THE GATE. RAM destroys one Gate lock whenever its Slow smash
-          lands.
+          SAVE THE GATE. Anchors are optional route tools. RAM destroys one
+          Gate lock whenever its smash lands.
         </span>
         <button type="button" onClick={onStart}>
           DROP IN
@@ -1293,7 +1428,7 @@ function ResultOverlay({
           <b>
             GATE {game.gate.integrity}/{game.gate.maxIntegrity}
           </b>
-          <b>ANCHORS {powered}/2</b>
+          <b>ROUTE TOOLS {powered}/2</b>
         </div>
         <button type="button" onClick={onReset} data-testid="reset-result">
           REPLAY
@@ -1442,6 +1577,21 @@ export function FracturedGatePrototype() {
     clearSelection(objectId);
   }
 
+  function handleUseContext() {
+    setImpactTarget("divider");
+    setGame((current) => activateDirectorContextAction(current));
+    clearSelection("player");
+  }
+
+  function handleReaction(choice: "intercept" | "decline") {
+    const reaction = getDirectorReaction(game);
+    setImpactTarget(
+      choice === "intercept" ? reaction?.actorId ?? null : null,
+    );
+    setGame((current) => resolveDirectorReaction(current, choice));
+    clearSelection(null);
+  }
+
   function handleEndTurn() {
     clearSelection(null);
     setImpactTarget(null);
@@ -1480,6 +1630,7 @@ export function FracturedGatePrototype() {
           onTarget={handleTarget}
           onHoverTarget={setHoveredTarget}
           onUseObject={handleUseObject}
+          onUseContext={handleUseContext}
         />
         <CardDock
           game={game}
@@ -1493,6 +1644,7 @@ export function FracturedGatePrototype() {
             );
             setGame((current) => advanceDirectorEnemyTurn(current));
           }}
+          onReaction={handleReaction}
           reducedMotion={reducedMotion}
         />
       </div>

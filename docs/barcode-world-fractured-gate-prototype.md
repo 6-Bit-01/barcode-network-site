@@ -1,98 +1,121 @@
-# BARCODE World Battle Mode: Fractured Gate — Live Circuit
+# BARCODE World Battle Mode: Fractured Gate — Breachflow
 
 Status: **PRIVATE, DISPOSABLE OWNER-REVIEW PROTOTYPE**
 
 Route: `/world/playtest` in local development only.
 
-Live Circuit is the unconstrained Battle Mode experiment. It keeps BARCODE
-World's Command, Tempo, builds-as-tactical-expression, and cyber-industrial
-identity, but it is not a canonical encounter or a commitment to final rules.
+Breachflow keeps the one-screen Live Circuit battlefield and replaces its
+bookkeeping with a simple player-facing loop. It is a noncanonical experiment,
+not a commitment to final combat rules.
 
-## The encounter
+## Mission
 
-The mission remains:
+`REACH THE GATE → START THE LOCK → SURVIVE THE ASSAULT`
 
-`POWER 2 ANCHORS → REACH THE GATE → SURVIVE 1 ENEMY TURN`
+The Fractured Gate has three visible locks. RAM removes a lock only when a Gate
+Smash actually lands. There is no passive round tax and neither Anchor is
+required to win.
 
-The board is now a 154-cell irregular battlefield instead of a small collection
-of widely separated diamonds. Every edge-sharing cell is drawn in one
-continuous SVG mesh, with terrain and live circuit lines integrated into the
-floor.
+The battlefield remains a 154-cell irregular circuit floor with three
+cross-connected approaches:
 
-Three routes cross-connect:
+- **Upper catwalk:** high ground, a Field Cache, hard cover, and TRACE
+  sightline pressure. The optional Bridge Anchor opens a real shortcut.
+- **Relay yard:** racks, rubble, a volatile Power Cell, and a Divider that
+  becomes a route for both sides when breached.
+- **Service trench:** a longer covered approach. The optional Track Anchor
+  turns its circuit rail into a fast route and a SHUNT stun hazard.
 
-- **Upper catwalk:** high ground, a Field Cache, hardlight bridge access, and
-  TRACE sightline pressure.
-- **Relay yard:** cover racks, rubble, a volatile Power Cell, and a Cracked
-  Divider that can become a breach for both sides.
-- **Service trench:** a longer low route with a strike track that becomes a
-  movement lane and push hazard after its Anchor is powered.
+## Player-facing turn
 
-The two Anchors are not interchangeable switches:
+The complete visible loop is:
 
-- Anchor I opens the missing hardlight bridge on the upper approach.
-- Anchor II powers the lower track, reducing movement cost and turning SHUNT
-  collisions on the track into arc stuns.
+1. Move before, between, or after actions.
+2. Use two main actions.
+3. Take any earned Context move before it disappears.
+4. End the turn.
+5. Respond if an enemy Commitment creates an Intercept window.
 
-## Tactical language
+There is no Command, banking, carryover, income, shopping arithmetic, or
+range-counting exercise. Movement is shown as six simple pips, actions as two
+lights, and every attack paints its legal targets and exact footprint directly
+onto the floor.
 
-Terrain communicates advantages directly on the board:
+Terrain cost, line of sight, enemy planning, collision damage, elevation,
+cover, and action timing still resolve deterministically underneath the
+surface.
 
-| Terrain | Consequence |
+## First build: Battle → Exploration
+
+The hardcoded test build uses this grammar:
+
+`IMPACT CREATES OPENINGS · OPENINGS BECOME ROUTES`
+
+SHUNT is the Battle action. When it displaces an enemy, the vacated cell gains a
+short-lived **FOLLOW THROUGH** action. Taking it moves the player into that
+space without using movement or a main action.
+
+If SHUNT drives an enemy through the Cracked Divider, the stronger
+**RIDE THE BREACH** action appears at the new opening. A generic OVERLOAD can
+also destroy the Divider, but it does not create the build-specific payoff.
+
+The opening expires when the player ends the turn. This makes the Major→Minor
+chain visible and useful without adding a class panel or another resource.
+
+Only Battle → Exploration is playable in this checkpoint. The other ordered
+builds remain future design space and must eventually differ through visible
+battlefield verbs and liabilities—not stat bonuses or long descriptions.
+
+## Permanent actions
+
+| Action | Board marking | Purpose |
+| --- | --- | --- |
+| BITCRUSH | `RNG` | Fast ranged pressure; stronger from high ground |
+| SHUNT | `CON` | Contact force; push, collide, breach, stun, or drop |
+| SKIP//STEP | `SHI` | Short terrain-ignoring reposition |
+| FIREWALL | `SEL` | Brace, absorb damage, and prevent the first push |
+| OVERLOAD | `BLA` | Heavy attack or visible system blast |
+
+Action selection paints the relevant line, path, landing cell, push route, or
+blast radius. Illegal actions use short causal labels such as `NO LEGAL TARGET`,
+`STATIC FIELD BLOCKS SHIFT`, or `TWO ACTIONS SPENT`.
+
+## Enemy turn
+
+Four enemy bodies occupy the field, but the squad resolves only:
+
+- one loud **primary Commitment**; and
+- one rotating **support action**.
+
+| Enemy | Battlefield job |
 | --- | --- |
-| High catwalk | +1 ranged reach and +1 BITCRUSH damage downhill |
-| Light/heavy cover | Reduces incoming ranged damage by 1/2 |
-| Server racks | Block movement and line of sight |
-| Rubble | Costs 2 movement and slows local Tempo |
-| Powered track | Costs 0.5 movement, boosts local Tempo, and enables arc stuns |
-| Cracked Divider | Blocks the center until breached; the breach helps both sides |
-| Power Cell | Local radius-two blast; damages only units actually nearby |
+| RAM | Advances on the Gate, body-checks blockers, and smashes Gate locks |
+| WARDEN | Shields, interposes, pushes, and ejects a Gate holder |
+| JAMMER | Hunts powered machinery, blocks Shift/Intercept nearby, and sweeps lanes |
+| TRACE | Claims sightlines and punishes exposed routes from high ground |
 
-Enemy intent arrows remain visible, but every enemy now has a spatial job:
+When no Anchor is powered, JAMMER can project a **Broadcast Sweep** across one
+clearly painted lane. Moving out, finding cover, or changing lanes answers it;
+the player does not solve a timing equation.
 
-| Enemy | Job |
-| --- | --- |
-| RAM | Charges the Gate, body-checks nearby players, and destroys Gate locks |
-| WARDEN | Interposes, shields RAM, bashes, and ejects an exposed Gate holder |
-| JAMMER | Moves into a real line-of-sight tether, drains Anchors, and taxes cards nearby |
-| TRACE | Repositions to high sightlines and punishes exposed lanes |
+An eligible RAM or WARDEN Commitment opens a full-width Response:
 
-Enemies physically move, occupy routes, and update their plans after the
-player changes the battlefield. They cannot overlap actors or attack through
-blocked sightlines.
+- **INTERCEPT:** stop it and take one hit in the clash.
+- **LET IT LAND:** preserve yourself and accept the shown Gate hit or push.
 
-## Direct controls
+The choice states both consequences before the click. It spends no resource and
+does not open a separate minigame.
 
-1. Click a glowing blue cell to move.
-2. Click a card.
-3. Click a glowing target. On touch, tap the target again after preview.
-4. Click an adjacent Anchor, Cache, Exit, or Gate to operate it.
-5. Read intent arrows on the battlefield, then click **End Turn**.
+## Screen contract
 
-There is no sidebar, page-length action menu, build dropdown, or battle log.
-The objective, board, five cards, Command, and End Turn control occupy one
-fixed-height cockpit.
-
-| Card | Cost | Tempo | Effect |
-| --- | ---: | --- | --- |
-| BITCRUSH | 4 | Fast | 2 damage, +1 downhill; interrupts slower intent |
-| SHUNT | 5 | Standard | 1 damage and push 2; collisions, ledges, and live track add impact |
-| SKIP//STEP | 3 | Fast | Shift up to 3 cells without spending ordinary movement |
-| FIREWALL | 4 | Fast | +4 Shield and prevent the first displacement |
-| OVERLOAD | 8 | Slow | 4 damage, breach the Divider, or rupture the local Power Cell |
-
-## Current economy
-
-- 16 Command at the start.
-- Bank unused Command and gain 16 next turn, capped at 32.
-- No universal action-count cap.
-- Each card may be used once per Player Turn.
-- One skill-derived range-five movement per Player Turn.
-- Command, cards, position, terrain, sight, and current object state determine
-  what a turn can contain.
-- Tempo is compared only when an action meets a current enemy intent.
-
-These remain test values.
+- One fixed-height cockpit; no body scroll on the target desktop viewport.
+- Board remains the dominant surface.
+- Objective, build identity, player health, Gate locks, movement pips, action
+  lights, actions, intent lines, and End Turn stay visible.
+- Desktop and mobile may pan the battlefield/cards without turning the page
+  into a vertical instruction sheet.
+- Shape and ownership are not communicated by color alone.
+- Reduced-motion and keyboard focus states remain supported.
 
 ## Private boundary
 
@@ -125,17 +148,17 @@ Leave Command Prompt open while playing. Press `Ctrl+C` afterward.
 
 ## Natural owner test
 
-Play without a technical checklist. The experiment succeeds only if:
+Play without a checklist. The checkpoint succeeds only if:
 
-- the complete desktop cockpit fits without page scrolling;
-- the dense grid reads as one battlefield rather than scattered diamonds;
-- the opening presents at least three credible routes;
-- high ground, cover, rubble, sight blockers, hazards, and powered routes cause
-  different decisions;
-- the enemies visibly create problems instead of taking decorative walks;
-- both Anchors change the map in distinct ways;
-- movement, cards, pushes, interrupts, and object consequences are obvious;
-- taking a safe route has a cost, and taking a fast route has a risk; and
+- movement clearly works before, between, and after actions;
+- every action's ownership and targeting shape reads without a paragraph;
+- at least two approaches feel strategically different;
+- the two Anchors feel useful but optional;
+- the primary Commitment and support action both cause visible problems;
+- Broadcast Sweep, Intercept, and Let It Land explain their consequences;
+- SHUNT naturally produces Follow Through during aggressive play;
+- the Divider version feels like a stronger earned route, not a required trick;
+- the Gate can be won, lost, abandoned, and reset; and
 - a completed battle creates an immediate desire to retry differently.
 
 ## Verification contract
@@ -150,13 +173,18 @@ npm run build
 Focused evidence must include:
 
 - 1366×768 one-screen render with 154 edge-sharing cells and no body scroll;
-- touch/mobile horizontal board access without body overflow;
+- touch/mobile battlefield and action access without body overflow;
+- split movement and the two-action limit;
+- painted ranged, contact, shift, self, and blast footprints;
 - upper, center, and lower route connectivity;
 - high-ground, cover, rack, rubble, bridge, and powered-track rules;
-- four distinct enemy behaviors and physical movement;
-- Command banking, Jammer taxation, and local Tempo;
-- local Cell blast and two-way Divider breach;
-- Anchor drain, Warden Gate ejection, victory, defeat, retreat, and Reset;
+- optional and asymmetric Anchor effects;
+- one primary plus one support enemy action;
+- Broadcast Sweep lane pressure;
+- Intercept and Let It Land consequences;
+- normal Follow Through and Divider-specific Ride the Breach;
+- local Cell blast, Anchor drain, Warden Gate ejection, victory, defeat,
+  retreat, and Reset;
 - production `/world/playtest` empty no-store/noindex 404; and
 - route absence from navigation and sitemap.
 

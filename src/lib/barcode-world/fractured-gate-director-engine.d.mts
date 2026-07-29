@@ -5,6 +5,7 @@ export type DirectorState = DirectorRecord;
 
 export const DIRECTOR_SOURCE: string;
 export const DIRECTOR_RULES: DirectorRecord;
+export const DIRECTOR_BUILD: DirectorRecord;
 export const DIRECTOR_TILES: Record<string, DirectorRecord>;
 export const DIRECTOR_OBJECTS: Record<string, DirectorRecord>;
 export const DIRECTOR_CARDS: Record<string, DirectorRecord>;
@@ -45,9 +46,22 @@ export function useDirectorObject(
   state: DirectorState,
   objectId: string,
 ): DirectorState;
+export function getDirectorContextAction(
+  state: DirectorState,
+): DirectorRecord | null;
+export function useDirectorContextAction(
+  state: DirectorState,
+): DirectorState;
 export function getDirectorObjective(state: DirectorState): DirectorRecord;
 export function beginDirectorEnemyTurn(state: DirectorState): DirectorState;
 export function advanceDirectorEnemyTurn(state: DirectorState): DirectorState;
+export function getDirectorReaction(
+  state: DirectorState,
+): DirectorRecord | null;
+export function resolveDirectorReaction(
+  state: DirectorState,
+  choice: "intercept" | "decline",
+): DirectorState;
 export function getDirectorFocusPosition(
   state: DirectorState,
   focusId: string,

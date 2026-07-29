@@ -1,18 +1,25 @@
 export const DIRECTOR_SOURCE =
-  "BARCODE_WORLD_FRACTURED_GATE_LIVE_CIRCUIT_2026-07-29";
+  "BARCODE_WORLD_FRACTURED_GATE_LIVE_CIRCUIT_BREACHFLOW_2026-07-29";
 
 const TILE_HALF_WIDTH = 4;
 const TILE_HALF_HEIGHT = 3.2;
 
 export const DIRECTOR_RULES = Object.freeze({
-  commandStart: 16,
-  commandIncome: 16,
-  commandCap: 32,
-  moveRange: 5,
+  movementPerTurn: 6,
+  actionsPerTurn: 2,
+  reactionRange: 4,
   playerHp: 12,
-  gateIntegrity: 5,
+  gateIntegrity: 3,
   tileHalfWidth: TILE_HALF_WIDTH,
   tileHalfHeight: TILE_HALF_HEIGHT,
+});
+
+export const DIRECTOR_BUILD = Object.freeze({
+  id: "battle-exploration",
+  name: "BATTLE → EXPLORATION",
+  major: "BATTLE",
+  minor: "EXPLORATION",
+  grammar: "IMPACT CREATES OPENINGS · OPENINGS BECOME ROUTES",
 });
 
 const TEMPO_VALUE = Object.freeze({
@@ -181,7 +188,7 @@ export const DIRECTOR_OBJECTS = Object.freeze({
   divider: {
     id: "divider",
     name: "CRACKED DIVIDER",
-    position: "t-10-6",
+    position: "t-14-6",
     glyph: "▥",
   },
   cache: {
@@ -209,50 +216,60 @@ export const DIRECTOR_CARDS = Object.freeze({
     id: "bitcrush",
     name: "BITCRUSH",
     glyph: "◉",
-    cost: 4,
+    actionCost: 1,
     tempo: "Fast",
     range: 5,
-    short: "2 DMG · FAST",
+    source: "FIELD RIG",
+    shape: "RANGED",
+    short: "RANGED · PRESSURE",
     target: "enemy",
   },
   shunt: {
     id: "shunt",
     name: "SHUNT",
     glyph: "≫",
-    cost: 5,
+    actionCost: 1,
     tempo: "Standard",
-    range: 3,
-    short: "1 DMG · PUSH 2",
+    range: 1,
+    source: "BATTLE",
+    shape: "CONTACT",
+    short: "CONTACT · FORCE",
     target: "enemy",
   },
   "skip-step": {
     id: "skip-step",
     name: "SKIP//STEP",
     glyph: "↯",
-    cost: 3,
+    actionCost: 1,
     tempo: "Fast",
     range: 3,
-    short: "SHIFT 3 · KEEP MOVE",
+    source: "EXPLORATION",
+    shape: "SHIFT",
+    short: "SHIFT · IGNORE TERRAIN",
     target: "tile",
   },
   firewall: {
     id: "firewall",
     name: "FIREWALL",
     glyph: "⬡",
-    cost: 4,
+    actionCost: 1,
     tempo: "Fast",
     range: 0,
-    short: "+4 SHIELD · HOLD",
+    source: "FIELD RIG",
+    shape: "SELF",
+    short: "SELF · HOLD POSITION",
     target: "self",
   },
   overload: {
     id: "overload",
     name: "OVERLOAD",
     glyph: "✦",
-    cost: 8,
+    actionCost: 1,
     tempo: "Slow",
     range: 4,
-    short: "4 DMG · BREACH / BLAST",
+    source: "FIELD RIG",
+    shape: "BLAST",
+    short: "BLAST · SYSTEMS",
     target: "enemy-or-system",
   },
 });
@@ -389,7 +406,7 @@ function tileCost(state, id) {
     tile.terrain === "track" &&
     state.anchors["anchor-b"].powered
   ) {
-    return 0.5;
+    return 0;
   }
   return 1;
 }
@@ -733,7 +750,31 @@ function planJammer(state) {
       targetId: "player",
       tempo: "Fast",
       status: "ready",
-      detail: "+1 COST · -1 TEMPO",
+      detail: "BLOCKS SHIFT + INTERCEPT",
+    };
+  }
+  if (powered.length === 0) {
+    const lanes = ["upper", "yard", "lower"];
+    const affectedLane = lanes[(state.turn - 1) % lanes.length];
+    const affectedTiles = Object.values(DIRECTOR_TILES)
+      .filter(
+        (tile) =>
+          tile.lane === affectedLane &&
+          tile.walkable &&
+          bridgeOpen(state, tile.id),
+      )
+      .map((tile) => tile.id);
+    return {
+      id: `intent-${state.turn}-jammer-sweep-${affectedLane}`,
+      actorId: "jammer",
+      name: "BROADCAST SWEEP",
+      glyph: "⌁",
+      targetId: affectedTiles[Math.floor(affectedTiles.length / 2)],
+      affectedLane,
+      affectedTiles,
+      tempo: "Fast",
+      status: "ready",
+      detail: `${affectedLane.toUpperCase()} LANE · BREAK COVER`,
     };
   }
   const targetId =
@@ -837,12 +878,50 @@ function planSniper(state) {
 }
 
 export function planDirectorIntents(state) {
-  return [planRam(state), planWarden(state), planJammer(state), planSniper(state)]
+  const plans = {
+    ram: planRam(state),
+    warden: planWarden(state),
+    jammer: planJammer(state),
+    sniper: planSniper(state),
+  };
+  const primaryActor =
+    state.gate.sealing && plans.warden
+      ? "warden"
+      : plans.ram
+        ? "ram"
+        : plans.warden
+          ? "warden"
+          : plans.sniper
+            ? "sniper"
+            : "jammer";
+  const primary = plans[primaryActor];
+
+  const supportRotation = [
+    ["warden", "jammer", "sniper"],
+    ["jammer", "sniper", "warden"],
+    ["sniper", "warden", "jammer"],
+  ][(state.turn - 1) % 3];
+  const drain = plans.jammer?.name === "DRAIN LINK" ? plans.jammer : null;
+  const support =
+    (drain?.actorId !== primaryActor ? drain : null) ??
+    supportRotation
+      .filter((actorId) => actorId !== primaryActor)
+      .map((actorId) => plans[actorId])
+      .find(Boolean) ??
+    Object.values(plans).find(
+      (intent) => intent && intent.actorId !== primaryActor,
+    );
+
+  return [
+    primary ? { ...primary, priority: "primary" } : null,
+    support ? { ...support, priority: "support" } : null,
+  ]
     .filter(Boolean)
     .sort((left, right) => {
       const tempo = TEMPO_VALUE[right.tempo] - TEMPO_VALUE[left.tempo];
       return (
         tempo ||
+        (left.priority === "support" ? -1 : 1) ||
         ENEMY_TIE_ORDER[left.actorId] - ENEMY_TIE_ORDER[right.actorId]
       );
     });
@@ -887,8 +966,11 @@ function initialState(seed) {
     seed,
     turn: 1,
     phase: "player",
-    command: DIRECTOR_RULES.commandStart,
-    moveAvailable: true,
+    build: clone(DIRECTOR_BUILD),
+    movementRemaining: DIRECTOR_RULES.movementPerTurn,
+    actionsRemaining: DIRECTOR_RULES.actionsPerTurn,
+    reactionReady: true,
+    reaction: null,
     player: {
       position: "t-1-6",
       hp: DIRECTOR_RULES.playerHp,
@@ -922,6 +1004,7 @@ function initialState(seed) {
     },
     enemies,
     cardUses: {},
+    contextAction: null,
     intents: [],
     enemyQueue: [],
     enemyCursor: 0,
@@ -929,7 +1012,7 @@ function initialState(seed) {
       id: "event-opening",
       tone: "objective",
       text: "LIVE CIRCUIT",
-      detail: "Choose high ground, the Divider, or the service track.",
+      detail: "Reach the Gate. The two Anchors are optional tactical tools.",
     },
     eventCounter: 0,
     result: null,
@@ -962,11 +1045,11 @@ function updateCover(state) {
 }
 
 export function getDirectorReachableTiles(state) {
-  if (state.phase !== "player" || !state.moveAvailable) return {};
+  if (state.phase !== "player" || state.movementRemaining <= 0) return {};
   const found = pathsFrom(
     state,
     state.player.position,
-    DIRECTOR_RULES.moveRange,
+    state.movementRemaining,
     { allowPlayer: true },
   );
   return Object.fromEntries(
@@ -981,7 +1064,10 @@ export function moveDirectorPlayer(state, destination) {
   if (!route) return state;
   const next = clone(state);
   next.player.position = destination;
-  next.moveAvailable = false;
+  next.movementRemaining = Math.max(
+    0,
+    next.movementRemaining - route.cost,
+  );
   next.player.tempoBoost =
     next.anchors["anchor-b"].powered &&
     route.path.some((id) => DIRECTOR_TILES[id]?.terrain === "track");
@@ -1005,10 +1091,12 @@ export function moveDirectorPlayer(state, destination) {
       : next.player.tempoBoost
         ? "Your next contested action is faster."
         : tile.terrain === "rubble"
-          ? "Costs 2 movement · contested actions lose 1 Tempo."
+          ? "The heavy route used more of this turn's movement."
         : next.player.cover
           ? `Incoming ranged damage reduced by ${next.player.cover}.`
-          : "",
+          : next.movementRemaining > 0
+            ? "You can keep moving before or after an action."
+            : "Movement spent for this turn.",
   );
   return next;
 }
@@ -1016,14 +1104,17 @@ export function moveDirectorPlayer(state, destination) {
 export function getDirectorCardCost(state, cardId) {
   const card = DIRECTOR_CARDS[cardId];
   if (!card) return Number.POSITIVE_INFINITY;
-  return card.cost + (state.player.jammed && cardId !== "firewall" ? 1 : 0);
+  return card.actionCost ?? 1;
 }
 
 function cardAvailable(state, cardId) {
   const card = DIRECTOR_CARDS[cardId];
   if (!card || state.phase !== "player") return false;
   if (state.cardUses[cardId]) return false;
-  return state.command >= getDirectorCardCost(state, cardId);
+  if (state.actionsRemaining < getDirectorCardCost(state, cardId)) {
+    return false;
+  }
+  return !(state.player.jammed && cardId === "skip-step");
 }
 
 function validEnemyTargets(state, card) {
@@ -1157,6 +1248,15 @@ function pushDestination(state, enemyId, spaces) {
     ) {
       collision = true;
       divider = true;
+      const beyond = tileId(point.x + stepX * 2, point.y + stepY * 2);
+      if (
+        isTile(beyond) &&
+        !isBlocked(state, beyond, { ignoreEnemy: enemyId }) &&
+        beyond !== state.player.position
+      ) {
+        current = beyond;
+        path.push(candidate, beyond);
+      }
       break;
     }
     if (
@@ -1196,6 +1296,12 @@ function nearbyEnemies(state, position, radius) {
     .map((enemy) => enemy.id);
 }
 
+function nearbyTiles(position, radius) {
+  return Object.keys(DIRECTOR_TILES).filter(
+    (tile) => distance(tile, position) <= radius,
+  );
+}
+
 export function previewDirectorCard(state, cardId, targetId) {
   const card = DIRECTOR_CARDS[cardId];
   if (!card) return null;
@@ -1207,8 +1313,10 @@ export function previewDirectorCard(state, cardId, targetId) {
       targetId,
       summary: state.cardUses[cardId]
         ? "USED THIS TURN"
-        : state.command < getDirectorCardCost(state, cardId)
-          ? `NEED ${getDirectorCardCost(state, cardId) - state.command} COMMAND`
+        : state.actionsRemaining < getDirectorCardCost(state, cardId)
+          ? "TWO ACTIONS SPENT"
+          : state.player.jammed && cardId === "skip-step"
+            ? "STATIC FIELD BLOCKS SHIFT"
           : "OUT OF RANGE / SIGHT",
     };
   }
@@ -1220,6 +1328,7 @@ export function previewDirectorCard(state, cardId, targetId) {
       targetId,
       damage: 0,
       summary: "+4 SHIELD · PREVENT FIRST PUSH",
+      footprint: [state.player.position],
       interrupts: false,
       relation: "",
     };
@@ -1231,7 +1340,13 @@ export function previewDirectorCard(state, cardId, targetId) {
       cardId,
       targetId,
       damage: 0,
-      summary: "SHIFT · ORDINARY MOVE REMAINS",
+      path:
+        pathsFrom(state, state.player.position, card.range, {
+          allowPlayer: true,
+          ignoreTerrain: true,
+        }).get(targetId)?.path ?? [state.player.position, targetId],
+      footprint: [targetId],
+      summary: "SHIFT · MOVEMENT STILL AVAILABLE",
       interrupts: false,
       relation: "",
     };
@@ -1244,6 +1359,7 @@ export function previewDirectorCard(state, cardId, targetId) {
       targetId,
       damage: 0,
       summary: "BREACH DIVIDER · OPEN CENTER ROUTE",
+      footprint: [DIRECTOR_OBJECTS.divider.position],
       interrupts: false,
       relation: "SLOW · EXPOSED",
     };
@@ -1275,6 +1391,7 @@ export function previewDirectorCard(state, cardId, targetId) {
           DIRECTOR_OBJECTS.cell.position,
           DIRECTOR_OBJECTS.divider.position,
         ) <= 2,
+      footprint: nearbyTiles(DIRECTOR_OBJECTS.cell.position, 2),
       summary: `LOCAL BLAST · ${victims.length} TARGET${
         victims.length === 1 ? "" : "S"
       }${selfDamage ? " · SELF 2" : ""} · BREACH`,
@@ -1319,6 +1436,10 @@ export function previewDirectorCard(state, cardId, targetId) {
       damage: totalDamage,
       selfDamage,
       push,
+      footprint: [
+        state.enemies[targetId].position,
+        ...(push.path ?? []),
+      ],
       ...tempo,
       summary: `${totalDamage} DMG · PUSH ${push.path.length}${
         push.divider
@@ -1348,6 +1469,13 @@ export function previewDirectorCard(state, cardId, targetId) {
     targetId,
     impact: rawDamage,
     highGround,
+    footprint: [
+      ...lineTiles(
+        state.player.position,
+        state.enemies[targetId].position,
+      ),
+      state.enemies[targetId].position,
+    ],
     ...defense,
     ...tempo,
     summary: `${defense.damage} DMG${
@@ -1399,11 +1527,36 @@ function damageEnemyExact(state, enemyId, amount) {
   return dealt;
 }
 
-function breachDivider(state) {
+function breachDivider(state, createsBuildOpening = false) {
   if (!state.divider.intact) return false;
   state.divider.intact = false;
   state.divider.breached = true;
+  if (createsBuildOpening) {
+    state.contextAction = {
+      id: "ride-the-breach",
+      source: "divider",
+      label: "RIDE THE BREACH",
+      available: true,
+      createdTurn: state.turn,
+      destination: DIRECTOR_OBJECTS.divider.position,
+      sourcePosition: DIRECTOR_OBJECTS.divider.position,
+      detail: "EXPLORATION PAYOFF · CROSS THE BROKEN DIVIDER",
+    };
+  }
   return true;
+}
+
+function createFollowThrough(state, enemyId, origin) {
+  state.contextAction = {
+    id: "follow-through",
+    source: enemyId,
+    label: "FOLLOW THROUGH",
+    available: true,
+    createdTurn: state.turn,
+    destination: origin,
+    sourcePosition: origin,
+    detail: "EXPLORATION PAYOFF · TAKE THE SPACE YOU CREATED",
+  };
 }
 
 function detonateCell(state) {
@@ -1467,7 +1620,7 @@ export function playDirectorCard(state, cardId, targetId) {
       !finishBattleIfNeeded(next)
     ) {
       const refreshState = clone(next);
-      refreshState.command = DIRECTOR_RULES.commandCap;
+      refreshState.actionsRemaining = DIRECTOR_RULES.actionsPerTurn;
       refreshState.cardUses[cardId] = false;
       refreshState.player.jammed = state.player.jammed;
       const refreshed = previewDirectorCard(
@@ -1476,7 +1629,10 @@ export function playDirectorCard(state, cardId, targetId) {
         targetId,
       );
       if (!refreshed?.legal) {
-        next.command -= declaredCost;
+        next.actionsRemaining = Math.max(
+          0,
+          next.actionsRemaining - declaredCost,
+        );
         next.cardUses[cardId] = true;
         next.player.tempoBoost = false;
         addEvent(
@@ -1495,7 +1651,10 @@ export function playDirectorCard(state, cardId, targetId) {
     }
   }
 
-  next.command -= declaredCost;
+  next.actionsRemaining = Math.max(
+    0,
+    next.actionsRemaining - declaredCost,
+  );
   next.cardUses[cardId] = true;
 
   if (next.result) return next;
@@ -1511,7 +1670,7 @@ export function playDirectorCard(state, cardId, targetId) {
     next.player.position = targetId;
     updateCover(next);
     replanIntents(next);
-    addEvent(next, "move", "SKIP//STEP", "Ordinary movement remains available.");
+    addEvent(next, "move", "SKIP//STEP", "Fluid movement remains available.");
     return next;
   }
 
@@ -1534,8 +1693,9 @@ export function playDirectorCard(state, cardId, targetId) {
 
   if (cardId === "shunt") {
     const push = preview.push;
+    const enemyOrigin = next.enemies[targetId].position;
     const hpBefore = next.enemies[targetId].hp;
-    if (push.divider) breachDivider(next);
+    if (push.divider) breachDivider(next, true);
     if (push.cell) detonateCell(next);
     damageEnemy(next, targetId, preview.impact, {
       ignoreCover: true,
@@ -1543,6 +1703,12 @@ export function playDirectorCard(state, cardId, targetId) {
     const dealt = hpBefore - next.enemies[targetId].hp;
     if (next.enemies[targetId].hp > 0) {
       next.enemies[targetId].position = push.destination;
+    }
+    if (
+      !push.divider &&
+      (push.destination !== enemyOrigin || next.enemies[targetId].hp <= 0)
+    ) {
+      createFollowThrough(next, targetId, enemyOrigin);
     }
     if (push.track || push.ledge) {
       next.enemies[targetId].stunned = true;
@@ -1594,6 +1760,57 @@ function finalizeAfterPlayerAction(state) {
   return state;
 }
 
+export function getDirectorContextAction(state) {
+  if (
+    state.phase !== "player" ||
+    !state.contextAction?.available ||
+    !["ride-the-breach", "follow-through"].includes(
+      state.contextAction.id,
+    )
+  ) {
+    return null;
+  }
+  const destination = state.contextAction.destination;
+  const sourcePosition =
+    state.contextAction.sourcePosition ?? destination;
+  const occupied = isBlocked(state, destination, {
+    allowPlayer: true,
+  });
+  return {
+    ...clone(state.contextAction),
+    legal: !occupied && state.player.position !== destination,
+    destination,
+    sourcePosition,
+    reason:
+      state.player.position === destination
+        ? "ALREADY THERE"
+        : occupied
+          ? "OPENING OCCUPIED"
+          : "",
+    detail:
+      state.contextAction.detail ??
+      "EXPLORATION PAYOFF · FREE FOLLOW-THROUGH",
+  };
+}
+
+export function useDirectorContextAction(state) {
+  const action = getDirectorContextAction(state);
+  if (!action?.legal) return state;
+  const next = clone(state);
+  next.player.position = action.destination;
+  next.contextAction.available = false;
+  next.contextAction.used = true;
+  updateCover(next);
+  replanIntents(next);
+  addEvent(
+    next,
+    "success",
+    "RIDE THE BREACH",
+    "Battle created the opening. Exploration converted it into a route.",
+  );
+  return next;
+}
+
 function canUseObject(state, objectId) {
   const position = DIRECTOR_OBJECTS[objectId]?.position;
   return (
@@ -1617,40 +1834,35 @@ export function getDirectorObjectAction(state, objectId) {
             : "STRIKE TRACK ACTIVE",
       };
     }
-    const legal = canUseObject(state, objectId) && state.command >= 5;
+    const legal =
+      canUseObject(state, objectId) && state.actionsRemaining > 0;
     return {
       id: "power-anchor",
       legal,
       label: "SYNC",
-      cost: 5,
+      actionCost: 1,
       reason: !canUseObject(state, objectId)
         ? "MOVE ADJACENT"
-        : state.command < 5
-          ? "NEED 5 COMMAND"
+        : state.actionsRemaining <= 0
+          ? "TWO ACTIONS SPENT"
           : "",
     };
   }
 
   if (objectId === "gate") {
-    const bothPowered = Object.values(state.anchors).every(
-      (anchor) => anchor.powered,
-    );
     const legal =
       canUseObject(state, "gate") &&
-      bothPowered &&
-      state.command >= 8 &&
+      state.actionsRemaining > 0 &&
       !state.gate.sealing;
     return {
       id: "seal-gate",
       legal,
       label: state.gate.sealing ? "HOLDING" : "SEAL GATE",
-      cost: 8,
-      reason: !bothPowered
-        ? "SYNC BOTH ANCHORS"
-        : !canUseObject(state, "gate")
+      actionCost: 1,
+      reason: !canUseObject(state, "gate")
           ? "MOVE INTO GATE RING"
-          : state.command < 8
-            ? "NEED 8 COMMAND"
+          : state.actionsRemaining <= 0
+            ? "TWO ACTIONS SPENT"
             : state.gate.sealing
               ? "SURVIVE ENEMY TURN"
               : "",
@@ -1666,16 +1878,17 @@ export function getDirectorObjectAction(state, objectId) {
         reason: "CACHE SECURED",
       };
     }
-    const legal = canUseObject(state, "cache") && state.command >= 3;
+    const legal =
+      canUseObject(state, "cache") && state.actionsRemaining > 0;
     return {
       id: "recover-cache",
       legal,
       label: "RECOVER",
-      cost: 3,
+      actionCost: 1,
       reason: !canUseObject(state, "cache")
         ? "MOVE ADJACENT"
-        : state.command < 3
-          ? "NEED 3 COMMAND"
+        : state.actionsRemaining <= 0
+          ? "TWO ACTIONS SPENT"
           : "",
     };
   }
@@ -1685,7 +1898,7 @@ export function getDirectorObjectAction(state, objectId) {
       id: "retreat",
       legal: canUseObject(state, "exit"),
       label: "RETREAT",
-      cost: 0,
+      actionCost: 0,
       reason: canUseObject(state, "exit") ? "" : "RETURN WEST",
     };
   }
@@ -1717,7 +1930,12 @@ export function useDirectorObject(state, objectId) {
   const action = getDirectorObjectAction(state, objectId);
   if (!action?.legal) return state;
   const next = clone(state);
-  next.command -= action.cost;
+  if (action.actionCost) {
+    next.actionsRemaining = Math.max(
+      0,
+      next.actionsRemaining - action.actionCost,
+    );
+  }
 
   if (objectId === "anchor-a" || objectId === "anchor-b") {
     next.anchors[objectId].powered = true;
@@ -1756,7 +1974,7 @@ export function useDirectorObject(state, objectId) {
     next,
     "objective",
     "GATE HOLD STARTED",
-    "Keep both Anchors online and survive one Enemy Turn.",
+    "Stay in the Gate ring and survive the primary assault.",
   );
   replanIntents(next);
   return next;
@@ -1772,21 +1990,21 @@ export function getDirectorObjective(state) {
       powered,
     };
   }
-  if (powered < 2) {
+  if (!canUseObject(state, "gate")) {
     return {
       step: 1,
-      title:
+      title: "REACH THE GATE",
+      short:
         powered === 0
-          ? "CHOOSE YOUR FIRST CIRCUIT"
-          : "SYNC THE OTHER ANCHOR",
-      short: `${powered}/2 ONLINE`,
+          ? "ANCHORS ARE OPTIONAL"
+          : `${powered} ROUTE TOOL${powered === 1 ? "" : "S"} ONLINE`,
       powered,
     };
   }
   return {
     step: 2,
-    title: "ENTER THE GATE RING",
-    short: "SEAL · 8 COMMAND",
+    title: "START THE LOCK",
+    short: "USES ONE ACTION",
     powered,
   };
 }
@@ -2060,11 +2278,33 @@ function resolveIntent(state, intent) {
         state,
         "enemy",
         "STATIC FIELD",
-        "Non-Firewall cards cost +1 and contested actions lose 1 Tempo while jammed.",
+        "SKIP//STEP and the automatic Intercept response are blocked.",
       );
     } else {
       addEvent(state, "interrupt", "FIELD MISSED", "You left the Jammer radius.");
     }
+    return;
+  }
+  if (intent.actorId === "jammer" && intent.name === "BROADCAST SWEEP") {
+    const caught =
+      DIRECTOR_TILES[state.player.position]?.lane === intent.affectedLane;
+    const dealt = caught
+      ? damagePlayer(state, 2, { ranged: true })
+      : 0;
+    addEvent(
+      state,
+      caught ? (dealt > 0 ? "danger" : "guard") : "interrupt",
+      caught
+        ? dealt > 0
+          ? "BROADCAST SWEEP"
+          : "SWEEP ABSORBED"
+        : "SWEEP MISSED",
+      caught
+        ? dealt > 0
+          ? `${intent.affectedLane.toUpperCase()} lane caught you for ${dealt}.`
+          : "Terrain and Shield broke the scan."
+        : `You left the ${intent.affectedLane.toUpperCase()} lane before the scan.`,
+    );
     return;
   }
   if (intent.actorId === "jammer" && intent.name === "HUNT CIRCUIT") {
@@ -2104,6 +2344,134 @@ function resolveIntent(state, intent) {
   }
 }
 
+function reactionForIntent(state, intent) {
+  if (
+    !intent ||
+    intent.status !== "ready" ||
+    intent.priority !== "primary" ||
+    !state.reactionReady ||
+    state.player.jammed ||
+    !["ram", "warden"].includes(intent.actorId)
+  ) {
+    return null;
+  }
+  const enemy = state.enemies[intent.actorId];
+  if (!enemy || enemy.hp <= 0) return null;
+  const reachable = pathsFrom(
+    state,
+    state.player.position,
+    DIRECTOR_RULES.reactionRange,
+    { allowPlayer: true },
+  );
+  const candidates = [
+    ...(adjacent(state.player.position, enemy.position)
+      ? [state.player.position]
+      : []),
+    ...neighbors(state, enemy.position, {
+      ignoreEnemy: intent.actorId,
+      allowPlayer: true,
+    }),
+  ]
+    .filter((position) => reachable.has(position))
+    .sort(
+      (left, right) =>
+        reachable.get(left).cost - reachable.get(right).cost ||
+        distance(left, intentTargetPosition(state, intent)) -
+          distance(right, intentTargetPosition(state, intent)) ||
+        left.localeCompare(right),
+    );
+  const destination = candidates[0];
+  if (!destination) return null;
+  return {
+    id: `reaction-${state.turn}-${intent.id}`,
+    intentId: intent.id,
+    actorId: intent.actorId,
+    label: "INTERCEPT",
+    title: `${state.enemies[intent.actorId].name} COMMITTED`,
+    detail:
+      intent.targetId === "gate"
+        ? "Crash the Gate attack before it lands."
+        : "Meet the contact and stop the displacement.",
+    interceptEffect: "STOP IT · TAKE 1 HIT",
+    declineEffect:
+      intent.targetId === "gate"
+        ? "GATE TAKES THE HIT"
+        : "YOU TAKE THE PUSH",
+    origin: state.player.position,
+    destination,
+    path: reachable.get(destination)?.path ?? [
+      state.player.position,
+      destination,
+    ],
+  };
+}
+
+function openReactionIfAvailable(state) {
+  const intentId = state.enemyQueue[state.enemyCursor];
+  const intent = state.intents.find((candidate) => candidate.id === intentId);
+  const reaction = reactionForIntent(state, intent);
+  if (!reaction) return false;
+  state.phase = "reaction";
+  state.reaction = reaction;
+  addEvent(
+    state,
+    "reaction",
+    "RESPONSE WINDOW",
+    `${reaction.title} · ${reaction.detail}`,
+  );
+  return true;
+}
+
+export function getDirectorReaction(state) {
+  return state.phase === "reaction" && state.reaction
+    ? clone(state.reaction)
+    : null;
+}
+
+export function resolveDirectorReaction(state, choice) {
+  if (state.phase !== "reaction" || !state.reaction) return state;
+  const next = clone(state);
+  const reaction = next.reaction;
+  const intent = next.intents.find(
+    (candidate) => candidate.id === reaction.intentId,
+  );
+  next.phase = "enemy";
+  next.reaction = null;
+  next.reactionReady = false;
+
+  if (choice !== "intercept" || !intent) {
+    addEvent(
+      next,
+      "danger",
+      "RESPONSE PASSED",
+      `${next.enemies[reaction.actorId].name}'s commitment will resolve.`,
+    );
+    return next;
+  }
+
+  next.player.position = reaction.destination;
+  updateCover(next);
+  const dealt = damageEnemy(next, reaction.actorId, 1, {
+    ignoreCover: true,
+  });
+  const received = damagePlayer(next, 1, { ignoreCover: true });
+  cancelIntent(next, reaction.actorId, "INTERCEPTED");
+  if (
+    next.gate.sealing &&
+    adjacent(reaction.origin, DIRECTOR_OBJECTS.gate.position)
+  ) {
+    next.player.position = reaction.origin;
+    updateCover(next);
+  }
+  addEvent(
+    next,
+    "interrupt",
+    "CLASH // INTERCEPT",
+    `${next.enemies[reaction.actorId].name} stopped · dealt ${dealt} · took ${received}.`,
+  );
+  return next;
+}
+
 function finishBattleIfNeeded(state) {
   if (state.gate.integrity <= 0) {
     state.phase = "result";
@@ -2129,7 +2497,6 @@ function finishBattleIfNeeded(state) {
 function sealStillValid(state) {
   return (
     state.gate.sealing &&
-    Object.values(state.anchors).every((anchor) => anchor.powered) &&
     adjacent(state.player.position, DIRECTOR_OBJECTS.gate.position) &&
     state.gate.integrity > 0 &&
     state.player.hp > 0
@@ -2144,7 +2511,7 @@ function beginNextPlayerTurn(state) {
       state.result = {
         type: "victory",
         title: state.cache.carried ? "RECOVERY SECURE" : "GATE SEALED",
-        cause: "Both circuits and your Gate position survived the Enemy Turn.",
+        cause: "Your Gate position survived the primary enemy commitment.",
       };
       addEvent(state, "victory", state.result.title, "Signal lock restored.");
       return;
@@ -2154,16 +2521,15 @@ function beginNextPlayerTurn(state) {
       state,
       "danger",
       "GATE HOLD BROKEN",
-      "Restore both circuits and return to the Gate ring.",
+      "Return to the Gate ring and start another lock.",
     );
   }
   state.turn += 1;
   state.phase = "player";
-  state.command = Math.min(
-    DIRECTOR_RULES.commandCap,
-    state.command + DIRECTOR_RULES.commandIncome,
-  );
-  state.moveAvailable = true;
+  state.movementRemaining = DIRECTOR_RULES.movementPerTurn;
+  state.actionsRemaining = DIRECTOR_RULES.actionsPerTurn;
+  state.reactionReady = true;
+  state.reaction = null;
   state.cardUses = {};
   state.player.shield = 0;
   state.player.braced = false;
@@ -2179,16 +2545,28 @@ function beginNextPlayerTurn(state) {
 export function beginDirectorEnemyTurn(state) {
   if (state.phase !== "player" || state.result) return state;
   const next = clone(state);
+  if (next.contextAction?.available) {
+    next.contextAction.available = false;
+    next.contextAction.expired = true;
+  }
   for (const enemy of Object.values(next.enemies)) {
     enemy.shield = 0;
   }
   next.player.jammed = false;
   next.phase = "enemy";
+  next.reactionReady = true;
+  next.reaction = null;
   next.enemyQueue = next.intents
     .filter((intent) => intent.status !== "spent")
     .map((intent) => intent.id);
   next.enemyCursor = 0;
-  addEvent(next, "enemy", "ENEMY TURN", "Telegraphed threats resolve by local Tempo.");
+  addEvent(
+    next,
+    "enemy",
+    "ENEMY COMMITMENT",
+    "One primary threat and one support action will resolve.",
+  );
+  openReactionIfAvailable(next);
   return next;
 }
 
@@ -2205,7 +2583,11 @@ export function advanceDirectorEnemyTurn(state) {
   if (intent) resolveIntent(next, intent);
   next.enemyCursor += 1;
   if (finishBattleIfNeeded(next)) return next;
-  if (next.enemyCursor >= next.enemyQueue.length) beginNextPlayerTurn(next);
+  if (next.enemyCursor >= next.enemyQueue.length) {
+    beginNextPlayerTurn(next);
+  } else {
+    openReactionIfAvailable(next);
+  }
   return next;
 }
 
@@ -2241,8 +2623,11 @@ export function getDirectorBattleSnapshot(state) {
     seed: state.seed,
     turn: state.turn,
     phase: state.phase,
-    command: state.command,
-    moveAvailable: state.moveAvailable,
+    build: clone(state.build),
+    movementRemaining: state.movementRemaining,
+    actionsRemaining: state.actionsRemaining,
+    reactionReady: state.reactionReady,
+    reaction: clone(state.reaction),
     player: clone(state.player),
     gate: clone(state.gate),
     anchors: clone(state.anchors),
@@ -2251,6 +2636,7 @@ export function getDirectorBattleSnapshot(state) {
     cell: clone(state.cell),
     enemies: clone(state.enemies),
     cardUses: clone(state.cardUses),
+    contextAction: clone(state.contextAction),
     intents: clone(state.intents),
     enemyQueue: clone(state.enemyQueue),
     enemyCursor: state.enemyCursor,

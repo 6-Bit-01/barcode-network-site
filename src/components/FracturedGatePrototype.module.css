@@ -479,6 +479,19 @@
   filter: url("#tile-glow");
 }
 
+.tileHit[data-preview="true"] polygon {
+  fill: rgb(255 209 102 / 34%);
+  stroke: var(--amber);
+  stroke-width: 1.25;
+  filter: url("#tile-glow");
+}
+
+.tileHit[data-preview-path="true"] polygon {
+  fill: rgb(98 220 255 / 42%);
+  stroke: #d4f8ff;
+  stroke-width: 1.1;
+}
+
 .tileHit[data-reachable="true"]:hover polygon,
 .tileHit[data-reachable="true"]:focus-visible polygon,
 .tileHit[data-targeted="true"]:hover polygon,
@@ -661,6 +674,14 @@
 .intentLayer g[data-status="canceled"] {
   opacity: 0.2;
   filter: grayscale(1);
+}
+
+.intentLayer g[data-priority="support"] {
+  opacity: 0.58;
+}
+
+.intentLayer g[data-priority="primary"] .intentPath {
+  stroke-width: 4.8;
 }
 
 /* Pieces */
@@ -1228,6 +1249,64 @@
   cursor: not-allowed;
 }
 
+.contextActionPiece {
+  position: absolute;
+  left: var(--board-x);
+  top: var(--board-y);
+  z-index: 64;
+  display: grid;
+  min-width: 10.5rem;
+  min-height: 3.3rem;
+  place-items: center;
+  gap: 0.08rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--green);
+  color: #031108;
+  background:
+    linear-gradient(135deg, #8affb7, var(--green));
+  transform: translate(-50%, -50%);
+  box-shadow:
+    0 0 0 0.22rem rgb(85 255 154 / 12%),
+    0 0 1.3rem rgb(85 255 154 / 48%);
+  cursor: pointer;
+  animation: contextPulse 780ms ease-in-out infinite alternate;
+}
+
+.contextActionPiece::before {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  width: 1px;
+  height: 2.2rem;
+  border-left: 2px dashed var(--green);
+  content: "";
+}
+
+.contextActionPiece span {
+  font-size: 0.44rem;
+  font-weight: 1000;
+  letter-spacing: 0.08em;
+}
+
+.contextActionPiece strong {
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+}
+
+.contextActionPiece small {
+  font-size: 0.42rem;
+  font-weight: 900;
+}
+
+.contextActionPiece:disabled {
+  border-color: #536368;
+  color: #9ba8ab;
+  background: #111a1e;
+  box-shadow: none;
+  cursor: not-allowed;
+  animation: none;
+}
+
 /* Battle feedback */
 
 .eventToast {
@@ -1373,7 +1452,7 @@
 
 /* Card cockpit */
 
-.commandDock {
+.actionDock {
   position: relative;
   z-index: 92;
   display: grid;
@@ -1386,38 +1465,30 @@
   box-shadow: 0 -0.85rem 2rem rgb(0 0 0 / 48%);
 }
 
-.commandCore {
+.motionCore {
   display: grid;
   min-width: 0;
-  grid-template-columns: auto 1fr;
   align-content: center;
-  gap: 0.15rem 0.38rem;
+  gap: 0.34rem;
   padding: 0.6rem 0.7rem;
   border-right: 1px solid rgb(98 220 255 / 15%);
 }
 
-.commandCore > span {
-  grid-column: 1 / -1;
+.motionCore > span {
   color: var(--cyan);
   font-size: 0.52rem;
   font-weight: 900;
   letter-spacing: 0.1em;
 }
 
-.commandCore > strong {
-  color: var(--green);
-  font-size: clamp(1.45rem, 2.3vw, 2.25rem);
-  line-height: 1;
-}
-
-.commandCore > div {
+.motionCore > div {
   display: grid;
-  grid-template-columns: repeat(4, 0.52rem);
+  grid-template-columns: repeat(6, 0.52rem);
   align-self: center;
   gap: 0.25rem;
 }
 
-.commandCore i {
+.motionCore i {
   width: 0.52rem;
   height: 0.52rem;
   border: 1px solid #45555b;
@@ -1425,10 +1496,17 @@
   transform: rotate(45deg);
 }
 
-.commandCore i[data-filled="true"] {
+.motionCore i[data-filled="true"] {
   border-color: var(--green);
   background: var(--green);
   box-shadow: 0 0 0.35rem rgb(85 255 154 / 48%);
+}
+
+.motionCore small {
+  color: var(--muted);
+  font-size: 0.4rem;
+  font-weight: 900;
+  line-height: 1.2;
 }
 
 .cards {
@@ -1437,6 +1515,82 @@
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: clamp(0.28rem, 0.6vw, 0.55rem);
   padding: clamp(0.42rem, 0.75vh, 0.65rem);
+}
+
+.reactionBar {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(12rem, 1fr) minmax(9rem, 0.55fr) minmax(7rem, 0.38fr);
+  align-items: stretch;
+  gap: 0.5rem;
+  padding: 0.52rem;
+  border-block: 1px solid rgb(255 209 102 / 28%);
+  background:
+    repeating-linear-gradient(135deg, transparent 0 0.8rem, rgb(255 209 102 / 5%) 0.82rem 1rem),
+    rgb(18 12 4 / 88%);
+}
+
+.reactionBar > div {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  gap: 0.18rem;
+  padding-inline: 0.55rem;
+}
+
+.reactionBar > div span {
+  color: var(--amber);
+  font-size: 0.5rem;
+  font-weight: 1000;
+  letter-spacing: 0.12em;
+}
+
+.reactionBar > div strong {
+  overflow: hidden;
+  font-size: clamp(0.68rem, 1vw, 0.92rem);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reactionBar > div small {
+  overflow: hidden;
+  color: #bec9cb;
+  font-size: 0.48rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reactionBar > button {
+  display: grid;
+  place-content: center;
+  place-items: center;
+  gap: 0.08rem;
+  padding: 0.4rem;
+  border: 1px solid #516168;
+  color: #c5d0d3;
+  background: #0b151a;
+  font-size: 0.52rem;
+  font-weight: 1000;
+  cursor: pointer;
+}
+
+.reactionBar > button[data-choice="intercept"] {
+  border-color: var(--green);
+  color: #031108;
+  background: var(--green);
+  box-shadow: 0 0 1rem rgb(85 255 154 / 24%);
+}
+
+.reactionBar > button b {
+  font-size: 1rem;
+}
+
+.reactionBar > button strong {
+  font-size: 0.7rem;
+}
+
+.reactionBar > button small {
+  font-size: 0.4rem;
 }
 
 .card {
@@ -1548,8 +1702,45 @@
 
 .turnButtonSlot {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.32rem;
   padding: 0.55rem;
   border-left: 1px solid rgb(98 220 255 / 15%);
+}
+
+.actionMeter {
+  display: flex;
+  min-height: 1.1rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  color: var(--muted);
+}
+
+.actionMeter > span {
+  font-size: 0.46rem;
+  font-weight: 1000;
+  letter-spacing: 0.09em;
+}
+
+.actionMeter > b {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.actionMeter i {
+  display: block;
+  width: 0.68rem;
+  height: 0.68rem;
+  border: 1px solid #54646a;
+  border-radius: 50%;
+  background: #10191d;
+}
+
+.actionMeter i[data-filled="true"] {
+  border-color: var(--amber);
+  background: var(--amber);
+  box-shadow: 0 0 0.4rem rgb(255 209 102 / 45%);
 }
 
 .endTurnButton,
@@ -1600,6 +1791,12 @@
   background:
     repeating-linear-gradient(135deg, transparent 0 0.55rem, rgb(255 83 97 / 8%) 0.56rem 0.72rem),
     #160a0d;
+}
+
+.enemyTurnLock[data-response="true"] {
+  border-color: var(--amber);
+  color: var(--amber);
+  background: #181104;
 }
 
 .previewRibbon {
@@ -1748,6 +1945,21 @@
   color: #b5c6c9;
   font-size: clamp(0.52rem, 1vw, 0.7rem);
   font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.buildGrammar {
+  display: grid;
+  gap: 0.2rem;
+  color: var(--green);
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+}
+
+.buildGrammar i {
+  color: #b8c7ca;
+  font-size: 0.48rem;
+  font-style: normal;
   letter-spacing: 0.04em;
 }
 
@@ -1932,6 +2144,17 @@
   to { opacity: 1; }
 }
 
+@keyframes contextPulse {
+  from {
+    filter: brightness(0.92);
+    transform: translate(-50%, -50%) scale(0.98);
+  }
+  to {
+    filter: brightness(1.12);
+    transform: translate(-50%, -50%) scale(1.02);
+  }
+}
+
 @keyframes actionFlash {
   0% { opacity: 0; transform: translate(-50%, -50%) scaleX(0.5); }
   20%, 70% { opacity: 1; transform: translate(-50%, -50%) scaleX(1); }
@@ -2064,28 +2287,32 @@
     min-width: 62rem;
   }
 
-  .commandDock {
+  .actionDock {
     grid-template-columns: 4.8rem minmax(0, 1fr) 6.5rem;
     min-width: 0;
     overflow: hidden;
   }
 
-  .commandCore {
+  .motionCore {
     padding-inline: 0.45rem;
   }
 
-  .commandCore > span {
+  .motionCore > span {
     font-size: 0.44rem;
   }
 
-  .commandCore > div {
-    grid-template-columns: repeat(4, 0.42rem);
+  .motionCore > div {
+    grid-template-columns: repeat(3, 0.42rem);
     gap: 0.18rem;
   }
 
-  .commandCore i {
+  .motionCore i {
     width: 0.42rem;
     height: 0.42rem;
+  }
+
+  .motionCore small {
+    display: none;
   }
 
   .cards {
@@ -2116,6 +2343,35 @@
 
   .turnButtonSlot {
     padding: 0.34rem;
+  }
+
+  .actionMeter > span {
+    display: none;
+  }
+
+  .actionMeter {
+    justify-content: center;
+  }
+
+  .reactionBar {
+    grid-template-columns: minmax(8rem, 1fr) 7rem 5.2rem;
+    gap: 0.28rem;
+    padding: 0.34rem;
+    overflow: hidden;
+  }
+
+  .reactionBar > div small,
+  .reactionBar > button small {
+    display: none;
+  }
+
+  .reactionBar > div strong {
+    font-size: 0.56rem;
+  }
+
+  .contextActionPiece {
+    min-width: 9rem;
+    transform: translate(-50%, -50%) scale(0.9);
   }
 
   .endTurnButton span,

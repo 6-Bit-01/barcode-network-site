@@ -77,7 +77,10 @@ test("Fractured Gate preserves semantic input, focus, non-color cues, touch targ
   assert.match(component, /MOVE RANGE/);
   assert.match(component, /ENEMY PRESSURE/);
   assert.match(component, /CURRENT BUILD LINE/);
-  assert.match(component, /powered by Gate Actuator/);
+  assert.match(component, /PRIMARY COMMITMENT/);
+  assert.match(component, /SUPPORT ACTION/);
+  assert.doesNotMatch(component, /COMMAND/);
+  assert.doesNotMatch(component, /PIVOT/);
   assert.match(component, /data-terrain=/);
   assert.match(component, /type="button"/);
   assert.match(component, /TARGET/);

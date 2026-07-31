@@ -1,23 +1,26 @@
 # BARCODE World Battle Mode: The Fractured Gate
 
-Status: **IMPLEMENTED — PRIVATE OWNER-REVIEW PROTOTYPE**
+Status: **IMPLEMENTED ON A PRIVATE OWNER-REVIEW BRANCH**
 
-Controlling checkpoint:
-`BARCODE_WORLD_BATTLE_MODE_FRACTURED_GATE_REVISED_ENCOUNTER_CHECKPOINT_2026-07-27`
+Controlling direction:
+`BARCODE_WORLD_BATTLE_MODE_BREACHFLOW_OWNER_LOCK_2026-07-31`
 
 Private development route: `/world/playtest`
 
-This is the bounded Battle Mode proof inside the larger BARCODE World
-persistent shared-world MMORPG / sandbox RPG. It is not a standalone game, a
-canonical encounter, a public preview, or a connection to persistent world
-systems.
+This is a bounded, interactive Battle Mode proof inside the larger BARCODE
+World persistent shared-world MMORPG / sandbox RPG. It exists so the owner can
+judge the encounter in motion. It is not a standalone game, a canonical
+encounter, a public preview, or a connection to persistent world systems.
+
+The 2026-07-27 revised encounter checkpoint remains authoritative for the
+Fractured Gate's physical location and result truth. Later owner decisions
+replace its Command/Pivot/four-enemy combat layer with Breachflow.
 
 ## Hard boundary
 
-- Solo, deterministic, resettable, noncanonical, and in memory.
+- Solo, deterministic, resettable, noncanonical, and held only in memory.
 - Production middleware returns an empty, no-store 404 before page metadata or
-  client-chunk references are emitted; the page also retains a `notFound()`
-  fallback.
+  client-chunk references are emitted; the page retains a `notFound()` fallback.
 - The route is absent from public navigation and the sitemap.
 - `noindex`, `nofollow`, `noarchive`, and `nocache` metadata remain set.
 - Normal public navigation, relay UI, data streams, and footer are suppressed
@@ -27,154 +30,76 @@ systems.
   queue, BNL, Relay, Journal, Memory, moderation, multiplayer, or shared-world
   dependency.
 - No prototype state survives Reset, reload, or navigation.
-- Merge is authorized for this bounded proof. Manual deployment and public
-  exposure are not.
+- This branch does not authorize merge, deployment, persistence, or public
+  exposure.
 
-The prior Loose Signal and original one-enemy Fractured Gate implementations
-remain historical deterministic-mechanics references only. They are not player
-evidence and no longer control this encounter.
+The prior Loose Signal and Command/Pivot Fractured Gate implementations remain
+historical mechanics references only. They do not control this encounter.
 
-## Implemented encounter
+## Implemented Breachflow encounter
 
-The board uses the checkpointed hidden `13 × 9` tactical scale and exposes 62
-real walkable tiles. The visible location contains the Lower Yard, Upper Walk,
-Gate Platform, West Exit, Cracked Divider, powered service track, Gate
-Actuator, defensive bollard, service gap and shutter, service lift, optional
-Field Cache, and the three-pip Gate objective.
+The animated isometric board uses the checkpointed hidden `13 × 9` tactical
+scale and exposes 62 real walkable spaces:
 
-The owner-readability revision preserves that tactical scale while replacing
-the original sparse circular hit areas and oversized map labels:
-
-- all 62 spaces are visible, compact, staggered diamonds with safe board
-  margins;
-- selecting the player exposes **Move** first and marks every legal free
-  Reposition and paid Advance destination before a destination is probed;
-- special terrain is physical and causal: clear lanes carry route chevrons,
-  rubble visibly obstructs movement, and the powered service track is drawn
-  from the Gate Actuator to its connected output;
-- enemies are always-visible pieces with Condition and Guard, and their
-  current control/intent overlay is textual as well as colored;
-- the selected ordered build names and marks its exact battlefield source,
-  required setup, skill attribution, and currently legal action;
-- compact object pieces move aside and yield pointer input when an underlying
-  tile becomes a legal movement destination;
-- Preview and **Add to Plan** share the board's command rail instead of being
-  separated from the target by a full-screen scroll; and
-- a persistent five-stage rail names **Read & Plan**, **Contest & Lock**,
-  **Resolve**, **Settle**, and **Results**, while a live instruction states the
-  exact task the player should perform now.
-
-The formation has four independently positioned opponents:
-
-| Enemy | Battlefield responsibility |
+| Lane | Threat or opportunity |
 | --- | --- |
-| Breacher | Physical Gate pressure and major contact |
-| Guard | Protection, interception, and lane control |
-| Controller | Machinery, closure, reset, and objective delay |
-| Pressure | Flanks, Cache denial, and West Exit pressure |
+| Center | RAM, the Cracked Divider, and the fastest direct route |
+| Upper | TRACE, the relay beam, unstable crossing, and optional Field Cache |
+| Lower | JAMMER, powered service track, and eastern launch route |
+| West | Entry and legitimate Controlled Retreat |
+| East | Fractured Gate objective |
 
-Each enemy owns a fixed 12-card deck, five-card opening hand, position, state,
-and legal actions. The solo formation distributes one visible 16-Command squad
-allotment among those four actors. It never receives four hidden full pools.
+The repeated player turn is:
 
-## Revised battle loop
+1. Read one visible primary **Commitment** and one visible support action.
+2. Spend up to six movement pips before, between, or after actions.
+3. Choose at most two actions.
+4. Inspect the deterministic Preview and its plan signature.
+5. Lock the plan.
+6. If the setup earned a Response, choose its explicit sacrifice.
+7. Watch `YOU ACT FIRST`, `CONTACT`, and `ENEMY ACTS FIRST` events resolve.
+8. Settle the board and continue or receive a result.
 
-The interaction is:
+The third enemy visibly reports that it has no hidden action. An invalidated
+enemy Commitment or support action is not reassigned to another enemy.
 
-`Select → choose → target → preview → plan → contest → pass/lock → reveal → watch → settle`
+Five visible cards have no cost and only vary decisions. Needle Carbine,
+Barrier Mesh, Field Rig, and the selected build action remain guaranteed
+outside the hand. There is no Command meter, banking, cost arithmetic, Pivot,
+or concealed third attack.
 
-The player and enemy squad alternate legal commitments. The newest action is
-Open. Adding a new action makes the previous one Solid. Each allotment permits
-one Pivot of the newest Open action; its replacement locks immediately. Two
-consecutive passes Lock both plans. Saved Command cannot become an undeclared
-post-reveal reaction.
+## Six ordered builds
 
-The foundation preserves:
+Each build turns a different physical enemy behavior into a temporary route.
+The route is source-bound, destination-specific, exclusive, one use, and
+consumes movement. It never grants a third action.
 
-- 16 starting Command, +16 after Settle, and the 32 cap;
-- four paid actions at most and one free ordinary Reposition;
-- fixed 12-card Prepared decks and validated five-card opening hands;
-- draw two, retain seven, and once-per-cycle Refocus for 4 Command;
-- half-primary-cost Settle refunds for invalidation before begin;
-- no silent retargeting;
-- the same deterministic simulator for Preview and resolution;
-- Fast → Standard → Slow global presentation;
-- prerequisite order inside an actor's linked plan.
+| Build | Turn-one conversion | Route |
+| --- | --- | --- |
+| Battle → Exploration | `Anchor` + `Shunt RAM`, then choose `Intercept` | `Ride the Breach` through the destroyed Divider |
+| Exploration → Battle | `Prepare Crossing` + `Take Cache` | `Meet at Landing` on the declared upper crossing |
+| Battle → Hacking | `Brace Contact` + `Hook Regulator`, then choose `Suppress Stabilize` | maintenance opening through RAM's exposed response |
+| Hacking → Battle | `Reverse Track Feed` + `Drive RAM onto Track` | powered track route created by the physical trigger |
+| Exploration → Hacking | `Map Relay Angle` + `Redirect Broadcast` | `Follow the Signal` through the hostile relay |
+| Hacking → Exploration | `Rewrite Rig Stabilize` + `Intercept RAM` | one-use route through JAMMER's physically vacated geometry |
 
-### Command and Tempo
+Hacking → Exploration creates no route unless JAMMER reaches its declared
+legal space. No route silently retargets, fabricates geometry, adds damage,
+breaks Guard, pins a target, or adds an action.
 
-Command controls action capacity and banking. Tempo controls when materially
-opposed plans develop and intersect. Tempo never becomes Command and never
-creates another action.
-
-Normal presentation uses Fast, Standard, and Slow. A linked transition is
-shown as Preserved, Broken, or Accelerated. Details expose the bounded
-deterministic comparison.
-
-The controlled route proof is:
-
-| Route | Player contact | Enemy contact | Forecast |
-| --- | ---: | ---: | --- |
-| Clear + Follow Through | 6 | 6 | Likely even |
-| Rubble | 4 | 6 | Enemy likely first |
-| Powered toward Divider | 7 | 6 | Player likely first |
-
-The preview exposes contact risk, likely timing, location, and the count of
-concealed factors. It does not reveal exact enemy cards. The `CLASH`
-presentation appears only after reveal produces meaningful opposed contact.
-
-### Skill attribution
-
-Specialized information and actions name their sources:
-
-- `Revealed by` identifies the discipline that noticed the opportunity.
-- `Enabled by` identifies the discipline that makes the action legal.
-- `Modified by` identifies a card or equipment change.
-- `Opposed by` identifies the visible enemy posture or revealed response.
-
-The six ordered builds produce different causal state changes:
-
-| Build | Major condition → Minor payoff |
-| --- | --- |
-| Battle / Exploration | Physical contact breaks the Divider → its safe opening becomes a route |
-| Exploration / Battle | A natural upper relationship is prepared → its landing can be physically protected |
-| Battle / Hacking | Force exposes a regulator → its automatic reset can be suppressed |
-| Hacking / Battle | Local bollard Control is established → physical access can preserve and weaponize it |
-| Exploration / Hacking | A service relationship is prepared → its connected shutter can be suppressed |
-| Hacking / Exploration | Lift Control is established → temporary traversable geometry can be created |
-
-These are permissions, positions, Dependencies, and authored state changes—not
-six renamed percentage bonuses. Enemy cards can contest the actual source.
-
-## Complete representative encounter
-
-The Battle / Exploration proof has three exchanges:
-
-1. A clear Reposition and Advance enable source-bound **Follow Through**.
-   **Answer Commitment** meets the Breacher's Rush at the Divider. Shield Link
-   protects against full displacement, the emergent Clash breaches the
-   Divider, the Breacher staggers, and Gate Stability remains `3/3`.
-2. **Cross Opening** draws **Charge Debris** and a Gate body block. The player
-   uses their single Pivot to replace Slow Stabilize with **Angle the
-   Contact**; the Guard Pivots to **Brace Line**. Pressure threatens the West
-   Exit. Their revealed Gate-access Clash jams the bollard and places the
-   player at `(10,5)` without stabilizing the objective.
-3. **Guard Gate** establishes before the final Rush. **Objective Brace**
-   protects Slow **Stabilize Gate** from Static Tax. The defended Clash stops
-   the Breacher, the defensive seal completes, and Results assign **Fast
-   Secure** with the damaged Divider, jammed bollard, pressured exit, and
-   unrecovered Cache reported as tradeoffs.
+## Results
 
 All five owner-facing result families are reachable:
 
-- Fast Secure;
-- Clean Secure;
-- Recovery Secure;
-- Gate Lost;
-- Controlled Retreat.
+- **Fast Secure** — lock through an immediate, costly opening.
+- **Clean Secure** — contain the principal system without destroying the Divider.
+- **Recovery Secure** — carry the Field Cache and still lock the Gate.
+- **Gate Lost** — allow visible pressure to remove all three Gate Stability.
+- **Controlled Retreat** — use the West Exit before the player is compromised.
 
-The diagnostic `Gate Secure` fallback remains internal for a slow damaged
-secure that matches none of the five named cases.
+Results report the objective, player, Cache, location, all three enemies,
+turning point, and tradeoff. They write no progression, loot, reward, canon, or
+shared history.
 
 ## Exact private owner review
 
@@ -187,81 +112,81 @@ npm run dev -- --hostname 127.0.0.1
 
 Open `http://127.0.0.1:3000/world/playtest`.
 
-### Primary Battle / Exploration path
+### Baseline readability check
 
-1. Confirm the header says private, solo, noncanonical, and in-memory. Confirm
-   Player Command `16`, Enemy Squad Command `4` after its opening commitment,
-   Gate Stability `3/3`, four enemy pieces, and five Prepared cards.
-2. Confirm **Read & Plan** and **Move** are active. Verify the board already
-   distinguishes green `FREE` destinations from cyan `ADV` destinations.
-   Choose **Reposition**, select clear tile `(3,6)`, inspect Preview beside the
-   board, and add it.
-3. The player remains selected. Choose **Move → Advance**, select clear tile
-   `(5,6)`, inspect the projected route, and add it. Confirm the earlier
-   Reposition is now a Solid commitment.
-4. Select **Cracked Divider**, choose **Discipline → Answer Commitment**, and
-   select the Divider as the target. Attach the source-bound **Follow Through**
-   card. Confirm the forecast says high contact risk, likely even, Cracked
-   Divider, one concealed factor, and `Player 6 · Enemy 6`; it must not name
-   the enemy's exact cards.
-5. Add the action and confirm 4 Player Command remains. Select **Pass / Lock**.
-   After reveal, verify Fast Shield Link precedes movement and the actual
-   `CLASH · Divider contact`. Settle and verify Gate Stability is still `3/3`.
-6. Select the projected breach, choose **Move → Cross Opening**, and target
-   tile `(10,5)`. Then select the Gate, choose **Use → Stabilize Gate**, target
-   the Gate, and add it.
-7. In Plan, choose **Change Newest**. Select **Defensive Bollard**, choose
-   **Discipline → Angle the Contact**, retarget the bollard, and confirm. Verify
-   the earlier Cross is still Solid, both Pivot labels read spent, and the
-   enemy's broad posture changes without revealing its card.
-8. Pass once to let Pressure commit, then pass again to Lock. Verify Charge
-   Debris and West Exit pressure resolve Fast; Cross Opening then
-   `CLASH · Gate access` resolve Standard. Settle and confirm charged conduit,
-   jammed bollard, threatened West Exit, player at `(10,5)`, and Gate `3/3`.
-9. Discard to retain seven. Select the Gate, plan **Defend → Guard Gate**, then
-   **Use → Stabilize Gate** with **Objective Brace**. Pass to Lock. Verify Fast
-   Guard and Static Tax, the Standard defended Gate Clash, and Slow Gate
-   stabilization.
-10. Confirm **Fast Secure** explains the objective, all four enemies, player
-    state, Cache, location consequences, principal turning point, tradeoff, and
-    title reason.
-11. Select **Reset Same Initial State**. Rebuild the opening plan and confirm
-    the starting state and deterministic plan signature return exactly.
+1. Confirm the header says `PRIVATE`, `SOLO`, `RESETTABLE`, `NONCANONICAL`, and
+   `IN MEMORY`.
+2. Confirm Turn 01, six movement pips, two open action slots, Player Condition
+   12 / Protection 6, and Gate Stability 3/3.
+3. Confirm RAM's Commitment, JAMMER's support action, and TRACE's explicit “no
+   hidden third action” state are all visible before planning.
+4. Confirm RAM, TRACE, JAMMER, the Divider, crossing, powered track, relay,
+   Cache, Gate, and West Exit are recognizable without selecting them.
+5. Select the player, choose **Move**, and verify every legal destination is
+   marked `FREE` with its movement-pip cost. Queue one move, then confirm
+   movement can be split around the two action slots.
+6. Select an action, inspect `CONFIRMED PREVIEW` and its signature, optionally
+   attach a compatible no-cost card, and add it. The hand must never gate the
+   selected build action.
+7. Lock a plan and confirm the locked signature matches Preview. With Reduce
+   motion off, events auto-advance; with it on, **Resolve Next Event** advances
+   them manually.
 
-### Connected owner checks
+### Primary Battle → Exploration path
 
-1. Compare the clear lane with rubble `(3–5,5)` and the powered lane
-   `(3–7,7)`. Confirm each terrain is identifiable before selection, the
-   powered lane visibly connects to the Gate Actuator, and the forecast
-   changes timing without changing available Command.
-2. Change each ordered build and confirm specialized text names `Revealed by`
-   and `Enabled by`, while **Build Line** moves to the exact relevant actor or
-   object; builds without that opportunity do not receive a gray class-locked
-   substitute.
-3. Let three unopposed Gate impacts complete and verify **Gate Lost** at `0/3`.
-4. Use **Leave** beside the West Exit and verify **Controlled Retreat** does not
-   pretend the Gate or formation was solved.
-5. Exercise Hacking / Exploration's lift. Confirm Output creates a capacity-one
-   bridge, crossing moves to the legal landing, and the lift returns at Settle
-   even if that exchange ends the battle.
-6. Repeat the same submitted plan and initial seed. Confirm Preview signature,
-   resolution packets, and material final state match.
+1. Leave the default build selected. Move to the center contact line at `(5,6)`.
+2. Select the Cracked Divider and add **Anchor**.
+3. Select RAM and add **Shunt RAM**. Lock the plan.
+4. At the earned Response choose **Intercept**. Confirm the player takes the
+   declared hit, RAM is staggered, the Divider becomes breached, the Gate
+   remains 3/3, and **Ride the Breach** appears as a real one-use route.
+5. Settle Turn 01. Select **Ride the Breach** and add the route movement.
+6. Select the player and add **Guard Position**. Select the Gate and add **Lock
+   Now**. Lock, resolve, and settle.
+7. Confirm **Fast Secure** names RAM's redirected charge as the turning point
+   and the destroyed Divider / unrecovered Cache as the tradeoff.
+8. Select **Reset Same Initial State** and confirm the same seed, opening hand,
+   enemy plan, board state, and Preview signature return.
 
-### Input and presentation checks
+### Five connected build paths
 
-1. Complete the primary path with pointer controls only.
-2. Reload and complete representative selection, targeting, card, Pivot,
-   Pass/Lock, manual resolution, Settle, Review, and Reset interactions using
-   Tab, Enter, and Space. Confirm every focused control has a visible outline.
-3. At `390 × 844` CSS pixels, confirm tile, focus, card, and action controls
-   remain at least `44 × 44` CSS pixels. The compact board may pan
-   horizontally, but no tile may be scaled below its usable hit area or placed
-   outside the battlefield.
-4. Enable **Reduce motion**. Confirm target, path, Clash, and card animations
-   stop and resolution becomes manually advanceable without hiding state.
-5. Confirm state never depends on color alone: `FREE`, `ADV`, `TARGET`, `SET`,
-   `COMPATIBLE`, `NEWEST`, `SOLID COMMITMENT`, Pivot state, lane names, pips,
-   icons, borders, shapes, and text all carry meaning.
+Reset before changing the ordered build.
+
+1. **Exploration → Battle:** move to `(5,3)`, add **Prepare Crossing** and
+   **Take Cache**, resolve and settle; use **Meet at Landing**, then **Guard
+   Position** + **Lock Now**. Confirm **Recovery Secure** and a carried Cache.
+2. **Battle → Hacking:** move to `(5,6)`, add **Brace Contact** and **Hook
+   Regulator**, choose **Suppress Stabilize**, resolve and settle; use the
+   maintenance route, then **Guard Position** + **Lock Now**. Confirm **Clean
+   Secure** and that only RAM's displayed Stabilize response was suppressed.
+3. **Hacking → Battle:** move to `(6,7)`, add **Reverse Track Feed** and **Drive
+   RAM onto Track**, resolve and settle; use the track route, then **Guard
+   Position** + **Lock Now**. Confirm **Clean Secure** and RAM displaced west by
+   JAMMER's own powered support.
+4. **Exploration → Hacking:** move to `(5,3)`, add **Map Relay Angle** and
+   **Redirect Broadcast**, resolve and settle; use **Follow the Signal**, then
+   **Guard Position** + **Lock Now**. Confirm **Fast Secure**, one accepted RAM
+   Gate hit, and all three enemies still operational.
+5. **Hacking → Exploration:** move to `(7,7)`, add **Rewrite Rig Stabilize** and
+   **Intercept RAM**, resolve and settle; use the rig route, then **Guard
+   Position** + **Lock Now**. Confirm **Fast Secure**, JAMMER physically moved,
+   and the temporary geometry disappeared after use.
+
+### Failure, input, and presentation checks
+
+1. Reset and lock three empty plans, settling each turn. Confirm RAM's visible
+   Gate pressure reaches 0/3 and produces **Gate Lost**.
+2. Reset, select the West Exit, add **Leave**, and lock. Confirm **Controlled
+   Retreat** reports an unsolved Gate.
+3. Complete the primary path once with pointer controls and once with Tab,
+   Enter, and Space. Every focused control must have a visible outline.
+4. At `390 × 844` CSS pixels, confirm controls remain at least `44 × 44` CSS
+   pixels. The board may pan horizontally, but tiles must retain their hit area.
+5. Enable **Reduce motion**. Board cues remain visible, animation ceases, and
+   resolution becomes manually advanceable without hiding state.
+6. Confirm state never depends on color alone: `FREE`, `TARGET`, `BUILD SOURCE`,
+   `CONFIRMED`, timing labels, pips, icons, borders, shapes, and text all carry
+   meaning.
 
 ## Automated validation
 
@@ -272,42 +197,37 @@ npm run check
 npm run build
 ```
 
-The focused suite covers the revised source identity, 62 tactical tiles, six
-player decks, four enemy decks, shared squad action economy, spatial legality,
-controlled Tempo routes, source-bound context cards, concealed-information
-boundaries, Preview/lock signature parity, deterministic resolution,
-opposed planning and both Pivots, the complete three-cycle battle, Command
-banking and caps, Refocus, invalidation/refunds/no-retargeting, all six ordered
-build state changes, all five Results, lift reset, reset/replay, production
-gating, isolation from persistent systems, input semantics, non-color cues,
-touch targets, reduced motion, core text contrast, staggered board bounds,
-action-first movement, phase guidance, visible terrain causality, and
-non-obstructing movement targets.
+The focused suite covers the owner-locked source identity, 62 tactical spaces,
+six build openings, three-enemy action honesty, split six-pip movement, two
+actions, bounded context choices, Preview/locked signature parity, earned
+Responses, six different physical routes, rig-move legality,
+Fast/Clean/Recovery secure results, Gate Lost, Controlled Retreat, optional
+no-cost cards, deterministic deck cycling, invalidation/no-retargeting, exact
+reset, production gating, isolation from persistent systems, semantic input,
+non-color cues, touch targets, reduced motion, and core text contrast.
 
-These are implementation checks—not player evidence. They do not establish
+These are implementation checks, not player evidence. They do not establish
 comprehension, balance, fun, accessibility, or replay value.
 
 ## Post-merge deployment and focused evidence
 
-No manual deployment is authorized or initiated for this proof. If normal
-`main` automation produces a deployment after the authorized merge, the
-prototype must remain inaccessible:
+No merge or manual deployment is authorized or initiated by this branch. If a
+future owner decision merges it and normal `main` automation deploys the site:
 
-1. Request `<production-origin>/world/playtest` and verify an HTTP 404.
-2. Inspect the production global navigation and `/sitemap.xml`; verify neither
-   contains `/world/playtest`.
+1. Request `<production-origin>/world/playtest` and verify an HTTP 404 with
+   `Cache-Control: no-store` and `X-Robots-Tag: noindex, nofollow, noarchive`.
+2. Inspect production global navigation and `/sitemap.xml`; neither may contain
+   `/world/playtest`.
 3. Inspect returned production HTML and discoverable route metadata; verify no
-   Fractured Gate title, description, board content, or public link is exposed.
-4. Confirm normal public routes still render their existing site chrome and
-   providers.
-5. In an authorized local development environment, run the exact primary path
-   above and record:
-   - the cycle-one Preview and locked signatures;
-   - the three resolution logs;
-   - Gate Stability after each Settle;
-   - the final Results explanation;
-   - Reset producing the same initial state.
-6. Label these captures **implementation evidence**. Keep any future moderated
-   comprehension, balance, fun, accessibility, or replay observations separate
-   and do not promote this private prototype publicly without a new owner
-   decision.
+   Fractured Gate title, description, board content, or client-chunk reference
+   is exposed.
+4. Confirm normal public routes still render their existing chrome, live
+   providers, and behavior.
+5. In an authorized local development environment, run the exact Battle →
+   Exploration path and all five connected build paths. Record the Turn 01
+   Preview and locked signatures, each generated route and turning point, Gate
+   Stability after every Settle, final result/tradeoff, and exact Reset state.
+6. Run Gate Lost and Controlled Retreat and capture their result explanations.
+7. Label all captures **implementation evidence**. Keep future moderated
+   comprehension, balance, fun, accessibility, and replay observations
+   separate; do not expose the prototype publicly without a new owner decision.

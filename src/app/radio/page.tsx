@@ -22,11 +22,15 @@ export const metadata: Metadata = {
 
 export default function RadioPage() {
   const submission = getRadioSubmissionRouting();
-  const steps = radioPage.steps.map((step) =>
-    step.number === "01"
-      ? { ...step, description: submission.submitStepDescription }
-      : step,
-  );
+  const steps = radioPage.steps.map((step) => {
+    if (step.number === "01") {
+      return { ...step, description: submission.submitStepDescription };
+    }
+    if (step.number === "02") {
+      return { ...step, description: submission.queueStepDescription };
+    }
+    return step;
+  });
   const rules = radioPage.rules.map((rule, index) =>
     index === 2 ? submission.acceptedSourcesRule : rule,
   );
@@ -63,7 +67,7 @@ export default function RadioPage() {
                   className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold bg-accent text-background hover:bg-accent-dim transition-all text-center"
                 >
                   <span className="text-lg">{radioPage.hero.submitButton.emoji}</span>
-                  {radioPage.hero.submitButton.text}
+                  {submission.heroSubmitLabel}
                 </a>
               ) : (
                 <Link
@@ -71,7 +75,7 @@ export default function RadioPage() {
                   className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold bg-accent text-background hover:bg-accent-dim transition-all text-center"
                 >
                   <span className="text-lg">{radioPage.hero.submitButton.emoji}</span>
-                  {radioPage.hero.submitButton.text}
+                  {submission.heroSubmitLabel}
                 </Link>
               )}
               <a
@@ -96,6 +100,34 @@ export default function RadioPage() {
               </a>
             </div>
           </div>
+
+          {submission.mode === "native_queue" && submission.radioPageGuide ? (
+            <section
+              aria-label="BARCODE Radio queue guide"
+              className="mt-6 max-w-3xl border border-accent/35 bg-surface/80 p-5 sm:p-6"
+            >
+              <p className="text-xs font-bold uppercase tracking-[0.35em] text-accent">
+                {submission.radioPageGuide.label}
+              </p>
+              <h2 className="mt-3 text-xl font-bold text-foreground sm:text-2xl">
+                {submission.radioPageGuide.heading}
+              </h2>
+              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
+                {submission.radioPageGuide.description}
+              </p>
+              <ul className="mt-5 grid gap-3 text-sm text-muted sm:grid-cols-2">
+                {submission.radioPageGuide.items.map((item) => (
+                  <li
+                    key={item}
+                    className="flex items-start gap-3 border border-border bg-background/45 px-4 py-3 leading-relaxed"
+                  >
+                    <span className="mt-0.5 text-accent">▸</span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
         </div>
       </section>
 

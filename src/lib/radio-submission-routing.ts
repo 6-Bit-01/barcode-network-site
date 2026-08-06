@@ -1,15 +1,25 @@
 import { externalLinks, radioPage } from "@/content";
 import { isQueueProductionEnabled } from "@/lib/queue-production";
 
+type RadioPageQueueGuide = {
+  label: string;
+  heading: string;
+  description: string;
+  items: string[];
+};
+
 export type RadioSubmissionRouting = {
   mode: "auxchord" | "native_queue";
   href: string;
   external: boolean;
   resourceLabel: string;
   submitLabel: string;
+  heroSubmitLabel: string;
   heroDescription: string;
   submitStepDescription: string;
+  queueStepDescription: string;
   acceptedSourcesRule: string;
+  radioPageGuide: RadioPageQueueGuide | null;
   bnlBoundary: string;
   footerSummary: string;
   terminalDescription: string;
@@ -22,9 +32,12 @@ const AUXCHORD_ROUTING: RadioSubmissionRouting = {
   external: true,
   resourceLabel: "Auxchord",
   submitLabel: "Submit via Auxchord",
+  heroSubmitLabel: radioPage.hero.submitButton.text,
   heroDescription: radioPage.hero.description,
   submitStepDescription: radioPage.steps[0].description,
+  queueStepDescription: radioPage.steps[1].description,
   acceptedSourcesRule: radioPage.rules[2],
+  radioPageGuide: null,
   bnlBoundary:
     "BNL-01 relays approved Network status and public Discord-side activity to website surfaces. It does not control Auxchord submissions, replace the live host, or provide autonomous broadcast decisions.",
   footerSummary:
@@ -39,12 +52,27 @@ const NATIVE_QUEUE_ROUTING: RadioSubmissionRouting = {
   external: false,
   resourceLabel: "Radio Queue",
   submitLabel: "Submit via Radio Queue",
+  heroSubmitLabel: "Open Radio Queue",
   heroDescription:
     "BARCODE Radio is a weekly live broadcast hosted by 6 Bit where original music enters through the native BARCODE Radio queue, is heard on TikTok Live, and is discussed with the community.",
   submitStepDescription:
-    "Send your original track through the native BARCODE Radio queue.",
+    "Open the native BARCODE Radio queue and send your original track into the current session.",
+  queueStepDescription:
+    "Use the queue page to confirm your track, follow Now Playing and Next In Line, and see whether submissions are still open.",
   acceptedSourcesRule:
     "SoundCloud, Spotify, YouTube, TikTok, Apple Music song links, or direct MP3/WAV uploads are accepted through the BARCODE Radio queue.",
+  radioPageGuide: {
+    label: "// BARCODE RADIO QUEUE",
+    heading: "Submit and follow the broadcast from one place.",
+    description:
+      "Open the BARCODE Radio Queue when submissions begin. The same page confirms that your track entered the current session and shows the live queue during the broadcast.",
+    items: [
+      "Free submissions enter through BARCODE.",
+      "Accepted tracks and live queue status stay visible on the queue page.",
+      "Priority Signal is optional and activates only after payment clears.",
+      "Watch on TikTok Live. Join the conversation in Discord.",
+    ],
+  },
   bnlBoundary:
     "BNL-01 relays approved Network status and public Discord-side activity to website surfaces. It does not control queue submissions, replace the live host, or provide autonomous broadcast decisions.",
   footerSummary:

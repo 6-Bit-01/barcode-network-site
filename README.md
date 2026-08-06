@@ -47,8 +47,10 @@ Do not commit secrets. Configure only the integrations needed for the surface be
 | Uploads | `BLOB_READ_WRITE_TOKEN` |
 | Payments | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_SITE_URL` |
 | Queue operations | `QUEUE_API_KEY`, `CRON_SECRET`, `BARCODE_QUEUE_PRODUCTION_ENABLED` |
-| Provider metadata | `YOUTUBE_DATA_API_KEY` or `YOUTUBE_API_KEY`, Spotify credentials, `SOUNDCLOUD_CLIENT_ID`, `APPLE_MUSIC_DEVELOPER_TOKEN` |
+| Provider metadata | `YOUTUBE_DATA_API_KEY` or `YOUTUBE_API_KEY`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, optional `SOUNDCLOUD_CLIENT_ID` |
 | BNL connection | `BNL_API_KEY`, `BNL_TOKEN`, force-pull and Source File credentials |
+
+YouTube Music watch links use the same YouTube video-ID and Data API path as ordinary YouTube links. Provider metadata is optional and fail-soft: unavailable, slow, malformed, or oversized responses fall back to submitted track details and the queue's internal duration estimate instead of blocking intake. Apple Music is currently accepted through the generic external-open link path; no active `APPLE_MUSIC_DEVELOPER_TOKEN` integration exists on the trusted queue baseline.
 
 The queue production capability is fail-closed. The only enabled value is the lowercase string `true`; `1`, `yes`, missing, and malformed values remain disabled. See `docs/queue-production-capability.md`.
 

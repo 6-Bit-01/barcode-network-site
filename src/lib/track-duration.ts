@@ -1,3 +1,4 @@
+import { createProviderFetchBudget, fetchProviderJson } from "./provider-fetch";
 import { INTERNAL_BUFFER_DURATION_SECONDS, parseTikTokVideoUrl } from "./queue-types";
 
 export type TrackDurationProvider = "youtube" | "spotify" | "soundcloud" | "tiktok" | "direct" | "other";
@@ -35,7 +36,6 @@ export interface TrackDurationStorageFields {
 
 const YOUTUBE_VIDEO_ID_PATTERN = /^[a-zA-Z0-9_-]{6,}$/;
 const SPOTIFY_TRACK_ID_PATTERN = /^[a-zA-Z0-9]{10,}$/;
-const FETCH_TIMEOUT_MS = 2500;
 
 function positiveSeconds(value: unknown): number | null {
   const numeric = typeof value === "number" ? value : Number(value);
@@ -140,23 +140,12 @@ export function parseIso8601DurationToSeconds(duration: string): number | null {
   return seconds > 0 ? seconds : null;
 }
 
-async function fetchJsonWithTimeout(url: string, init: RequestInit = {}): Promise<unknown> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const res = await fetch(url, { ...init, signal: controller.signal, cache: "no-store" });
-    if (!res.ok) return null;
-    return res.json();
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 async function detectYouTubeDuration(videoId: string): Promise<TrackDurationDetectionResult> {
   const key = process.env.YOUTUBE_API_KEY || process.env.YOUTUBE_DATA_API_KEY;
   if (!key) return unavailable("youtube", ["YouTube Data API key is not configured; duration unavailable."], videoId);
   const url = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${encodeURIComponent(videoId)}&key=${encodeURIComponent(key)}`;
-  const payload = await fetchJsonWithTimeout(url);
+  const payload = await fetchProviderJson(url);
   const item = Array.isArray((payload as { items?: unknown[] } | null)?.items) ? (payload as { items: Array<{ contentDetails?: { duration?: string } }> }).items[0] : null;
   const duration = typeof item?.contentDetails?.duration === "string" ? parseIso8601DurationToSeconds(item.contentDetails.duration) : null;
   if (!duration) return unavailable("youtube", ["YouTube API did not return a usable duration."], videoId);
@@ -164,17 +153,18 @@ async function detectYouTubeDuration(videoId: string): Promise<TrackDurationDete
 }
 
 async function detectSpotifyDuration(trackId: string): Promise<TrackDurationDetectionResult> {
+  const budget = createProviderFetchBudget();
   const clientId = process.env.SPOTIFY_CLIENT_ID;
   const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
   if (!clientId || !clientSecret) return unavailable("spotify", ["Spotify client credentials are not configured; duration unavailable."], trackId);
-  const tokenPayload = await fetchJsonWithTimeout("https://accounts.spotify.com/api/token", {
+  const tokenPayload = await fetchProviderJson("https://accounts.spotify.com/api/token", {
     method: "POST",
     headers: { Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`, "Content-Type": "application/x-www-form-urlencoded" },
     body: "grant_type=client_credentials",
-  });
+  }, budget);
   const token = typeof (tokenPayload as { access_token?: unknown } | null)?.access_token === "string" ? (tokenPayload as { access_token: string }).access_token : null;
   if (!token) return unavailable("spotify", ["Spotify token request did not return an access token."], trackId);
-  const track = await fetchJsonWithTimeout(`https://api.spotify.com/v1/tracks/${encodeURIComponent(trackId)}`, { headers: { Authorization: `Bearer ${token}` } });
+  const track = await fetchProviderJson(`https://api.spotify.com/v1/tracks/${encodeURIComponent(trackId)}`, { headers: { Authorization: `Bearer ${token}` } }, budget);
   const duration = positiveSeconds(typeof (track as { duration_ms?: unknown } | null)?.duration_ms === "number" ? (track as { duration_ms: number }).duration_ms / 1000 : null);
   if (!duration) return unavailable("spotify", ["Spotify API did not return a usable duration."], trackId);
   return { durationSeconds: duration, durationIsEstimate: false, durationSource: "spotify_api", provider: "spotify", providerTrackId: trackId, notes: ["Duration came from Spotify Web API duration_ms."] };
@@ -183,7 +173,7 @@ async function detectSpotifyDuration(trackId: string): Promise<TrackDurationDete
 async function detectSoundCloudDuration(normalizedUrl: string): Promise<TrackDurationDetectionResult> {
   const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
   if (!clientId) return unavailable("soundcloud", ["SoundCloud client id is not configured; duration unavailable."]);
-  const payload = await fetchJsonWithTimeout(`https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(normalizedUrl)}&client_id=${encodeURIComponent(clientId)}`);
+  const payload = await fetchProviderJson(`https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(normalizedUrl)}&client_id=${encodeURIComponent(clientId)}`);
   const duration = positiveSeconds(typeof (payload as { duration?: unknown } | null)?.duration === "number" ? (payload as { duration: number }).duration / 1000 : null);
   if (!duration) return unavailable("soundcloud", ["SoundCloud API did not return a usable duration."]);
   return { durationSeconds: duration, durationIsEstimate: false, durationSource: "soundcloud_api", provider: "soundcloud", notes: ["Duration came from existing SoundCloud API resolve access."] };

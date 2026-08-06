@@ -3,7 +3,8 @@
 // ============================================================
 
 import { Redis } from "@upstash/redis";
-import { detectTrackDurationFromLink, parseIso8601DurationToSeconds, parseSpotifyTrackId, parseYouTubeVideoId as parseTrackDurationYouTubeVideoId } from "./track-duration";
+import { createProviderFetchBudget, fetchProviderJson } from "./provider-fetch";
+import { parseIso8601DurationToSeconds, parseSpotifyTrackId, parseYouTubeVideoId as parseTrackDurationYouTubeVideoId } from "./track-duration";
 import {
   INTERNAL_BUFFER_DURATION_SECONDS,
   PRIORITY_DISCLOSURE_TEXT,
@@ -46,8 +47,6 @@ const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 1000;
 const DEFAULT_PRIORITY_UPGRADE_CURRENCY = "usd";
 const PRE_SHOW_ROUTING_DELAY_MS = (20 * 60 + 15) * 1000;
 const UPLOADED_FILE_RETENTION_MS = 24 * 60 * 60 * 1000;
-const TIKTOK_OEMBED_TIMEOUT_MS = 2500;
-const TIKTOK_OEMBED_MAX_BYTES = 256 * 1024;
 const BARCODE_QUEUE_UPLOAD_HOST_SUFFIX = ".private.blob.vercel-storage.com";
 const BARCODE_QUEUE_UPLOAD_PATH_PREFIX = "/barcode-radio-queue/";
 
@@ -904,18 +903,21 @@ export function parseYouTubeDuration(duration: string): number | null {
   return parseIso8601DurationToSeconds(duration);
 }
 
-async function lookupYouTubeMetadata(link: string): Promise<ProviderMetadata> {
+async function lookupYouTubeMetadata(link: string, budget = createProviderFetchBudget()): Promise<ProviderMetadata> {
   const key = process.env.YOUTUBE_API_KEY || process.env.YOUTUBE_DATA_API_KEY;
   const id = parseYouTubeVideoId(link);
   if (!key || !id) return blankProvider("internal_estimate");
   const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${encodeURIComponent(id)}&key=${encodeURIComponent(key)}`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) return blankProvider("internal_estimate");
-  const payload = await res.json();
-  const item = Array.isArray(payload.items) ? payload.items[0] : null;
-  const duration = item?.contentDetails?.duration ? parseYouTubeDuration(item.contentDetails.duration) : null;
-  const providerTitle = typeof item?.snippet?.title === "string" ? item.snippet.title : null;
-  const channelTitle = typeof item?.snippet?.channelTitle === "string" ? item.snippet.channelTitle : null;
+  const payload = await fetchProviderJson(url, {}, budget) as {
+    items?: Array<{
+      contentDetails?: { duration?: unknown };
+      snippet?: { title?: unknown; channelTitle?: unknown };
+    }>;
+  } | null;
+  const item = Array.isArray(payload?.items) ? payload.items[0] : null;
+  const duration = typeof item?.contentDetails?.duration === "string" ? parseYouTubeDuration(item.contentDetails.duration) : null;
+  const providerTitle = sanitizeProviderText(item?.snippet?.title, 240);
+  const channelTitle = sanitizeProviderText(item?.snippet?.channelTitle, 160);
   return { detectedArtistName: channelTitle, detectedSongTitle: providerTitle, providerTitle, detectedDurationSeconds: duration, durationSource: duration ? "youtube_api" : "internal_estimate", artworkUrl: id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null };
 }
 
@@ -924,50 +926,49 @@ function spotifyOEmbedUrl(link: string): string {
   return trackId ? `https://open.spotify.com/track/${trackId}` : link;
 }
 
-async function lookupSpotifyOEmbed(link: string, base: ProviderMetadata = blankProvider("internal_estimate")): Promise<ProviderMetadata> {
-  const res = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(spotifyOEmbedUrl(link))}`, { cache: "no-store" });
-  if (!res.ok) return base;
-  const payload = await res.json();
-  const artworkUrl = typeof payload.thumbnail_url === "string" ? payload.thumbnail_url : base.artworkUrl ?? null;
-  const providerTitle = base.providerTitle ?? (typeof payload.title === "string" ? payload.title : null);
+async function lookupSpotifyOEmbed(link: string, base: ProviderMetadata = blankProvider("internal_estimate"), budget = createProviderFetchBudget()): Promise<ProviderMetadata> {
+  const payload = await fetchProviderJson(`https://open.spotify.com/oembed?url=${encodeURIComponent(spotifyOEmbedUrl(link))}`, {}, budget) as { thumbnail_url?: unknown; title?: unknown } | null;
+  if (!payload) return base;
+  const artworkUrl = safeHttpsPublicUrl(payload.thumbnail_url) ?? base.artworkUrl ?? null;
+  const providerTitle = base.providerTitle ?? sanitizeProviderText(payload.title, 240);
   return { ...base, providerTitle, artworkUrl };
 }
 
-async function lookupSpotifyMetadata(link: string): Promise<ProviderMetadata> {
-  const fallback = () => lookupSpotifyOEmbed(link).catch(() => blankProvider("internal_estimate"));
+async function lookupSpotifyMetadata(link: string, budget = createProviderFetchBudget()): Promise<ProviderMetadata> {
+  const fallback = (base: ProviderMetadata = blankProvider("internal_estimate")) => lookupSpotifyOEmbed(link, base, budget);
   const clientId = process.env.SPOTIFY_CLIENT_ID;
   const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
   const trackId = parseSpotifyTrackId(link);
   if (!trackId || !clientId || !clientSecret) return fallback();
-  const tokenRes = await fetch("https://accounts.spotify.com/api/token", {
+  const tokenPayload = await fetchProviderJson("https://accounts.spotify.com/api/token", {
     method: "POST",
     headers: { Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`, "Content-Type": "application/x-www-form-urlencoded" },
     body: "grant_type=client_credentials",
-    cache: "no-store",
-  });
-  if (!tokenRes.ok) return fallback();
-  const token = await tokenRes.json();
-  if (!token.access_token) return fallback();
-  const trackRes = await fetch(`https://api.spotify.com/v1/tracks/${encodeURIComponent(trackId)}`, { headers: { Authorization: `Bearer ${token.access_token}` }, cache: "no-store" });
-  if (!trackRes.ok) return fallback();
-  const track = await trackRes.json();
+  }, budget) as { access_token?: unknown } | null;
+  const token = sanitizeProviderText(tokenPayload?.access_token, 4096);
+  if (!token) return fallback();
+  const track = await fetchProviderJson(`https://api.spotify.com/v1/tracks/${encodeURIComponent(trackId)}`, { headers: { Authorization: `Bearer ${token}` } }, budget) as {
+    duration_ms?: unknown;
+    artists?: Array<{ name?: unknown }>;
+    name?: unknown;
+    album?: { images?: Array<{ url?: unknown }> };
+  } | null;
+  if (!track) return fallback();
   const seconds = typeof track.duration_ms === "number" ? Math.round(track.duration_ms / 1000) : null;
-  const artist = Array.isArray(track.artists) ? track.artists.map((item: { name?: string }) => item.name).filter(Boolean).join(", ") : null;
-  const title = typeof track.name === "string" ? track.name : null;
-  const artworkUrl = Array.isArray(track.album?.images) ? track.album.images.find((image: { url?: string }) => typeof image.url === "string")?.url ?? null : null;
+  const artist = Array.isArray(track.artists) ? track.artists.map((item) => sanitizeProviderText(item.name, 120)).filter((value): value is string => Boolean(value)).join(", ") : null;
+  const title = sanitizeProviderText(track.name, 240);
+  const artworkUrl = Array.isArray(track.album?.images) ? track.album.images.map((image) => safeHttpsPublicUrl(image.url)).find((value): value is string => Boolean(value)) ?? null : null;
   const metadata = { detectedArtistName: artist || null, detectedSongTitle: title, providerTitle: title, detectedDurationSeconds: seconds, durationSource: seconds ? "spotify_api" as const : "internal_estimate" as const, artworkUrl };
-  return artworkUrl ? metadata : lookupSpotifyOEmbed(link, metadata).catch(() => metadata);
+  return artworkUrl ? metadata : fallback(metadata);
 }
 
-async function lookupSoundCloudOEmbed(link: string, base: ProviderMetadata = blankProvider("internal_estimate")): Promise<ProviderMetadata> {
-  const res = await fetch(`https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(link)}`, { cache: "no-store" });
-  if (!res.ok) return base;
-  const payload = await res.json();
-  const artworkUrl = typeof payload.thumbnail_url === "string" ? payload.thumbnail_url : base.artworkUrl ?? null;
-  const providerTitle = base.providerTitle ?? (typeof payload.title === "string" ? payload.title : null);
+async function lookupSoundCloudOEmbed(link: string, base: ProviderMetadata = blankProvider("internal_estimate"), budget = createProviderFetchBudget()): Promise<ProviderMetadata> {
+  const payload = await fetchProviderJson(`https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(link)}`, {}, budget) as { thumbnail_url?: unknown; title?: unknown } | null;
+  if (!payload) return base;
+  const artworkUrl = safeHttpsPublicUrl(payload.thumbnail_url) ?? base.artworkUrl ?? null;
+  const providerTitle = base.providerTitle ?? sanitizeProviderText(payload.title, 240);
   return { ...base, providerTitle, artworkUrl };
 }
-
 
 function sanitizeProviderText(value: unknown, maxLength = 180): string | null {
   if (typeof value !== "string") return null;
@@ -984,91 +985,51 @@ function safeHttpsPublicUrl(value: unknown): string | null {
   } catch { return null; }
 }
 
-async function readLimitedJson(res: Response): Promise<unknown | null> {
-  const contentType = res.headers.get("content-type") || "";
-  if (!/application\/(json|.*\+json)|text\/json/i.test(contentType)) return null;
-  const length = Number(res.headers.get("content-length") || 0);
-  if (Number.isFinite(length) && length > TIKTOK_OEMBED_MAX_BYTES) return null;
-  const reader = res.body?.getReader();
-  if (!reader) return null;
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value) {
-      total += value.byteLength;
-      if (total > TIKTOK_OEMBED_MAX_BYTES) return null;
-      chunks.push(value);
-    }
-  }
-  const body = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  try { return JSON.parse(new TextDecoder().decode(body)); } catch { return null; }
-}
-
-async function lookupTikTokMetadata(link: string): Promise<ProviderMetadata> {
+async function lookupTikTokMetadata(link: string, budget = createProviderFetchBudget()): Promise<ProviderMetadata> {
   const parsed = parseTikTokVideoUrl(link);
   if (!parsed?.oEmbedSourceUrl) return blankProvider("internal_estimate");
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIKTOK_OEMBED_TIMEOUT_MS);
-  try {
-    const endpoint = `https://www.tiktok.com/oembed?url=${encodeURIComponent(parsed.oEmbedSourceUrl)}`;
-    const res = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
-    if (!res.ok) return blankProvider("internal_estimate");
-    const payload = await readLimitedJson(res);
-    if (!payload || typeof payload !== "object") return blankProvider("internal_estimate");
-    return {
-      detectedArtistName: sanitizeProviderText((payload as { author_name?: unknown }).author_name, 120),
-      detectedSongTitle: null,
-      providerTitle: sanitizeProviderText((payload as { title?: unknown }).title, 240),
-      detectedDurationSeconds: null,
-      durationSource: "internal_estimate",
-      artworkUrl: safeHttpsPublicUrl((payload as { thumbnail_url?: unknown }).thumbnail_url),
-    };
-  } catch {
-    return blankProvider("internal_estimate");
-  } finally {
-    clearTimeout(timer);
-  }
+  const endpoint = `https://www.tiktok.com/oembed?url=${encodeURIComponent(parsed.oEmbedSourceUrl)}`;
+  const payload = await fetchProviderJson(endpoint, {}, budget) as { author_name?: unknown; title?: unknown; thumbnail_url?: unknown } | null;
+  if (!payload) return blankProvider("internal_estimate");
+  return {
+    detectedArtistName: sanitizeProviderText(payload.author_name, 120),
+    detectedSongTitle: null,
+    providerTitle: sanitizeProviderText(payload.title, 240),
+    detectedDurationSeconds: null,
+    durationSource: "internal_estimate",
+    artworkUrl: safeHttpsPublicUrl(payload.thumbnail_url),
+  };
 }
 
-async function lookupSoundCloudMetadata(link: string): Promise<ProviderMetadata> {
+async function lookupSoundCloudMetadata(link: string, budget = createProviderFetchBudget()): Promise<ProviderMetadata> {
+  const fallback = (base: ProviderMetadata = blankProvider("internal_estimate")) => lookupSoundCloudOEmbed(link, base, budget);
   const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
-  if (!clientId) return lookupSoundCloudOEmbed(link).catch(() => blankProvider("internal_estimate"));
+  if (!clientId) return fallback();
   const resolveUrl = `https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(link)}&client_id=${encodeURIComponent(clientId)}`;
-  const res = await fetch(resolveUrl, { cache: "no-store" });
-  if (!res.ok) return lookupSoundCloudOEmbed(link).catch(() => blankProvider("internal_estimate"));
-  const track = await res.json();
+  const track = await fetchProviderJson(resolveUrl, {}, budget) as {
+    duration?: unknown;
+    title?: unknown;
+    user?: { username?: unknown };
+    artwork_url?: unknown;
+  } | null;
+  if (!track) return fallback();
   const seconds = typeof track.duration === "number" ? Math.round(track.duration / 1000) : null;
-  const title = typeof track.title === "string" ? track.title : null;
-  const artist = typeof track.user?.username === "string" ? track.user.username : null;
-  const artworkUrl = typeof track.artwork_url === "string" ? track.artwork_url.replace("-large.", "-t500x500.") : null;
+  const title = sanitizeProviderText(track.title, 240);
+  const artist = sanitizeProviderText(track.user?.username, 160);
+  const rawArtwork = safeHttpsPublicUrl(track.artwork_url);
+  const artworkUrl = rawArtwork ? rawArtwork.replace("-large.", "-t500x500.") : null;
   const metadata = { detectedArtistName: artist, detectedSongTitle: title, providerTitle: title, detectedDurationSeconds: seconds, durationSource: seconds ? "soundcloud_api" as const : "internal_estimate" as const, artworkUrl };
-  return artworkUrl ? metadata : lookupSoundCloudOEmbed(link, metadata).catch(() => metadata);
+  return artworkUrl ? metadata : fallback(metadata);
 }
 
 export async function detectProviderMetadata(sourceType: QueueSourceType, link: string): Promise<ProviderMetadata> {
+  const budget = createProviderFetchBudget();
   try {
-    let metadata = blankProvider("internal_estimate");
-    if (sourceType === "youtube") metadata = await lookupYouTubeMetadata(link);
-    else if (sourceType === "spotify") metadata = await lookupSpotifyMetadata(link);
-    else if (sourceType === "soundcloud") metadata = await lookupSoundCloudMetadata(link);
-    else if (sourceType === "tiktok") metadata = await lookupTikTokMetadata(link);
-    else return metadata;
-
-    if (metadata.detectedDurationSeconds) return metadata;
-
-    const duration = await detectTrackDurationFromLink(link);
-    if (duration.durationSeconds && duration.durationIsEstimate === false) {
-      return { ...metadata, detectedDurationSeconds: duration.durationSeconds, durationSource: duration.durationSource };
-    }
-
-    return metadata;
+    if (sourceType === "youtube") return await lookupYouTubeMetadata(link, budget);
+    if (sourceType === "spotify") return await lookupSpotifyMetadata(link, budget);
+    if (sourceType === "soundcloud") return await lookupSoundCloudMetadata(link, budget);
+    if (sourceType === "tiktok") return await lookupTikTokMetadata(link, budget);
+    return blankProvider("internal_estimate");
   } catch (error) {
     console.warn("[queue] provider metadata lookup failed", error);
     return blankProvider("internal_estimate");

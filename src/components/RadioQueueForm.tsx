@@ -5,7 +5,7 @@ import { upload } from "@vercel/blob/client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { buildQueueTimingDisplay, priorityDisplayFromImpact, queueTimingInputFromPublicSnapshot } from "@/lib/queue-timing-display";
-import { PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, formatRuntime, PRIORITY_DISCLOSURE_TEXT, PRIORITY_TERMS_VERSION } from "@/lib/queue-types";
+import { APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, formatRuntime, isAppleMusicUrl, PRIORITY_DISCLOSURE_TEXT, PRIORITY_TERMS_VERSION } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
 
 type Mode = "link" | "upload";
@@ -542,6 +542,10 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
       setError("Add a track link before final routing.");
       return;
     }
+    if (mode === "link" && isAppleMusicUrl(link)) {
+      setError(APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE);
+      return;
+    }
     if (mode === "upload" && !file) {
       setError("Select an MP3/WAV file before final routing.");
       return;
@@ -609,7 +613,6 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
                   <div className="border border-border/60 bg-surface/50 p-2">
                     <p className="text-[10px] uppercase tracking-widest text-muted">Also accepted</p>
                     <ul className="mt-1 grid gap-x-3 gap-y-0.5 text-foreground sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
-                      <li>Apple Music</li>
                       <li>Amazon Music</li>
                       <li>Suno</li>
                       <li>Bandcamp</li>

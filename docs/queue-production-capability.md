@@ -24,7 +24,7 @@ Manual and scheduled TikTok live status remains independent. A legitimate manual
 
 When the capability is enabled, one server-side presentation contract moves the operational Radio submission surfaces to `/queue`, changes the link from external to internal, and uses native-queue wording. The contract does not expose the environment variable to client code and does not change queue/session storage, ordering, Wheel or Priority behavior, playback, payment handling, uploads, provider resolution, or BNL write authority.
 
-The native form accepts supported SoundCloud, Spotify, YouTube, TikTok, and Apple Music song links plus direct MP3/WAV uploads. Apple Music remains external-open only, as stated on the form. This cutover does not add Amazon Music, Suno, Bandcamp, or any other provider.
+The native form accepts supported SoundCloud, Spotify, YouTube, and TikTok links plus direct MP3/WAV uploads. New Apple Music queue submissions are rejected because BARCODE Radio cannot reliably access the full track; release, catalog, dossier, historical, and archived Apple Music links elsewhere remain unaffected. Amazon Music, Suno, and Bandcamp continue through the form's existing external-link path.
 
 ## Vercel rollout procedure
 

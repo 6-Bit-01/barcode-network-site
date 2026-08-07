@@ -60,7 +60,7 @@ const NATIVE_QUEUE_ROUTING: RadioSubmissionRouting = {
   queueStepDescription:
     "Use the queue page to confirm your track, follow Now Playing and Next In Line, and see whether submissions are still open.",
   acceptedSourcesRule:
-    "SoundCloud, Spotify, YouTube, TikTok, Apple Music song links, or direct MP3/WAV uploads are accepted through the BARCODE Radio queue.",
+    "SoundCloud, Spotify, YouTube, TikTok, or direct MP3/WAV uploads are accepted through the BARCODE Radio queue.",
   radioPageGuide: {
     label: "// BARCODE RADIO QUEUE",
     heading: "Submit and follow the broadcast from one place.",

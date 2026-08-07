@@ -97,7 +97,8 @@ test("Radio submission routing falls back to Auxchord and only exact true cuts o
   assert.equal(routing.external, false);
   assert.equal(routing.resourceLabel, "Radio Queue");
   assert.match(routing.heroDescription, /native BARCODE Radio queue/);
-  assert.match(routing.acceptedSourcesRule, /SoundCloud.*Spotify.*YouTube.*TikTok.*Apple Music.*MP3\/WAV/);
+  assert.match(routing.acceptedSourcesRule, /SoundCloud.*Spotify.*YouTube.*TikTok.*MP3\/WAV/);
+  assert.doesNotMatch(routing.acceptedSourcesRule, /Apple Music/);
   assert.doesNotMatch(JSON.stringify(routing), /Auxchord/);
 });
 

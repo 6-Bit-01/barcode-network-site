@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, detectQueueSourceType } from "@/lib/queue-types";
+import { APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, detectQueueSourceType, isAppleMusicUrl } from "@/lib/queue-types";
 import { getPublicQueueSnapshot, getRadioQueueState, isTrackPersistedInSessionQueue, normalizeQueueSourceKey, requestPriorityUpgradePlaceholder, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
 import type { QueueEntry } from "@/lib/queue-types";
 
@@ -220,6 +220,12 @@ export async function submitTrackFromBody(body: Record<string, unknown>): Promis
   const link = cleanBodyText(body.link);
   if (!link) return NextResponse.json({ error: "Paste a track link." }, { status: 400 });
   try { new URL(link); } catch { return NextResponse.json({ error: "Enter a valid track URL." }, { status: 400 }); }
+  if (isAppleMusicUrl(link)) {
+    return NextResponse.json(
+      { error: APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, code: "apple_music_unsupported" },
+      { status: 400 },
+    );
+  }
   if (await hasDuplicateLinkSubmission(link)) return duplicateResponse();
 
   const sourceType = detectQueueSourceType(link);

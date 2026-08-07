@@ -23,6 +23,19 @@ export const PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT = "I agree to the BARCODE Network 
 export const PRIORITY_TERMS_VERSION = "1.0";
 export const PRIORITY_DISCLOSURE_TEXT = "Priority Signal moves an eligible submission closer to the front after payment clears. It does not guarantee approval, airplay, promotion, review, a specific stream time, permanent placement, or interruption of the track currently playing. By continuing to checkout, I confirm that I am at least 18 years old or have permission from a parent or legal guardian to make this payment.";
 
+export const APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE =
+  "Apple Music links are not currently accepted because BARCODE Radio cannot reliably access the full track. Use another accepted source or upload an MP3/WAV instead.";
+
+export function isAppleMusicUrl(value?: string | null): boolean {
+  if (!value) return false;
+  try {
+    const hostname = new URL(value.trim()).hostname.toLowerCase();
+    return hostname === "music.apple.com" || hostname.endsWith(".music.apple.com");
+  } catch {
+    return false;
+  }
+}
+
 export interface QueueLegalAcceptance {
   acceptedAt: string;
   termsVersion: string;

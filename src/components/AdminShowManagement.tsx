@@ -283,7 +283,7 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
 
       <div className="grid gap-3 text-sm sm:grid-cols-4">
         <div className="border border-border p-3"><p className="text-xs text-muted">Submissions</p><p className={session.queueOpen ? "text-accent" : "text-danger"}>{session.queueOpen ? "Open" : "Closed"}</p></div>
-        <div className="border border-border p-3"><p className="text-xs text-muted">Active / Capacity</p><p>{session.activeCount}/{session.queueCapacity}</p></div>
+        <div className="border border-border p-3"><p className="text-xs text-muted">Accepted / Capacity</p><p>{session.acceptedCount ?? session.activeCount}/{session.queueCapacity}</p></div>
         <div className="border border-border p-3"><p className="text-xs text-muted">Completed</p><p>{session.completedCount}</p></div>
         <div className="border border-border p-3"><p className="text-xs text-muted">Removed</p><p>{session.removedCount}</p></div>
         <div className="border border-border p-3"><p className="text-xs text-muted">Spotlight</p><p>{session.spotlightCount}</p></div>

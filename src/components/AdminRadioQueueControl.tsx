@@ -424,9 +424,10 @@ export function AdminRadioQueueControl() {
     if (entry.status === "queued") activeTrackIds.add(entry.id);
   }
   const activeTrackCount = activeTrackIds.size;
+  const acceptedTrackCount = state?.publicStatus?.acceptedCount ?? state?.session?.acceptedCount ?? activeTrackCount;
   const projectedRuntimeLabel = timingSummary.showRuntimeSummary.publicProjectedLabel ?? timingSummary.showRuntimeSummary.projectedLabel ?? "—";
   const capacityCount = state?.publicStatus?.capacity ?? state?.session?.queueCapacity ?? null;
-  const activeCapacityLabel = capacityCount ? `${activeTrackCount} / ${capacityCount}` : `${activeTrackCount}`;
+  const acceptedCapacityLabel = capacityCount ? `${acceptedTrackCount} / ${capacityCount}` : `${acceptedTrackCount}`;
   const openWheelPanel = () => {
     setActiveUtilityPanel("overlay");
     setOverlayWheelFocusTick((value) => value + 1);
@@ -469,7 +470,7 @@ export function AdminRadioQueueControl() {
         {topBarMinimized ? <div className="flex flex-wrap items-center gap-2">
           <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Phase: {phaseLabel}</span>
           <span className={`border px-2 py-1 uppercase tracking-widest ${state?.publicStatus?.isOpen ? "border-accent/50 text-accent" : "border-danger/50 text-danger"}`}>Submissions: {state?.publicStatus?.isOpen ? "Open" : "Closed"}</span>
-          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Active / Capacity: {activeCapacityLabel}</span>
+          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Accepted / Capacity: {acceptedCapacityLabel}</span>
           <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Projected: {projectedRuntimeLabel}</span>
           <TopBarCommercialChip summary={timingSummary.sponsorBreakSummary} />
           <TopBarPressureChip pressure={topPressure} minimized />
@@ -482,7 +483,7 @@ export function AdminRadioQueueControl() {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Show Phase</p><p className="mt-1 font-bold text-foreground">{phaseLabel}</p></div>
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Submissions</p><p className={`mt-1 font-bold ${state?.publicStatus?.isOpen ? "text-accent" : "text-danger"}`}>{state?.publicStatus?.isOpen ? "Open" : "Closed"}</p></div>
-          <div><p className="text-[10px] uppercase tracking-widest text-muted">Active / Capacity</p><p className="mt-1 font-bold text-foreground">{activeCapacityLabel}</p></div>
+          <div><p className="text-[10px] uppercase tracking-widest text-muted">Accepted / Capacity</p><p className="mt-1 font-bold text-foreground">{acceptedCapacityLabel}</p></div>
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Projected Runtime</p><p className="mt-1 font-bold text-foreground">{projectedRuntimeLabel}</p></div>
           <TopBarCommercialChip summary={timingSummary.sponsorBreakSummary} />
           <TopBarPressureChip pressure={topPressure} />

@@ -132,23 +132,25 @@ export async function POST(req: Request) {
         return NextResponse.json({ track, message: "Priority Signal Upgrade is being prepared. No payment has been processed." });
       }
       if (typeof body.action === "string") return NextResponse.json({ error: "Unknown queue action" }, { status: 400 });
-      return submitTrackFromBody(body);
+      return await submitTrackFromBody(body);
     }
 
     const form = await req.formData();
     const body = Object.fromEntries(form.entries());
-    return submitTrackFromBody(body);
+    return await submitTrackFromBody(body);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Submission failed";
     const reasons = Array.isArray((error as { reasons?: unknown }).reasons) ? (error as { reasons: string[] }).reasons : [];
     const code = typeof (error as { code?: unknown }).code === "string" ? (error as { code: string }).code : undefined;
     const isLimitBlock = code === "submission_limit" || message === "Submission limit reached for this session.";
     const isDuplicateBlock = code === "duplicate_transmission";
+    const isQueueFull = message === "Queue is full for new transmissions.";
     const cooldownRemainingSeconds = typeof (error as { remainingSeconds?: unknown }).remainingSeconds === "number" ? (error as { remainingSeconds: number }).remainingSeconds : 0;
+    if (code === "stale_session") return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "stale_session" }, { status: 409 });
     if (isDuplicateBlock) return NextResponse.json({ error: DUPLICATE_TRANSMISSION_MESSAGE, code: "duplicate_transmission" }, { status: 409 });
     if (cooldownRemainingSeconds > 0) return NextResponse.json({ error: "Submission cooldown active.", cooldownRemainingSeconds }, { status: 429 });
-    const publicMessage = isLimitBlock ? "Submission limit reached for this session." : message === "Queue is closed" ? "This broadcast queue is closed." : message === "Queue is full for new transmissions." ? "This broadcast queue is full for new transmissions." : message === "Uploaded audio file is missing." || message === "Uploaded audio file is invalid." ? UPLOAD_FALLBACK_MESSAGE : message === "Only MP3 and WAV uploads are accepted." || message === "Uploads must be 100MB or less." || message === "Uploaded audio file name is missing." || message === "Uploaded audio file size is missing." ? message : "Submission failed. Please try again.";
-    const status = isLimitBlock ? 409 : message === "Queue is closed" ? 409 : message.startsWith("Uploaded audio") || message === "Only MP3 and WAV uploads are accepted." || message === "Uploads must be 100MB or less." ? 400 : 500;
+    const publicMessage = isLimitBlock ? "Submission limit reached for this session." : message === "Queue is closed" ? "This broadcast queue is closed." : isQueueFull ? "This broadcast queue is full for new transmissions." : message === "Uploaded audio file is missing." || message === "Uploaded audio file is invalid." ? UPLOAD_FALLBACK_MESSAGE : message === "Only MP3 and WAV uploads are accepted." || message === "Uploads must be 100MB or less." || message === "Uploaded audio file name is missing." || message === "Uploaded audio file size is missing." ? message : "Submission failed. Please try again.";
+    const status = isLimitBlock || isQueueFull || message === "Queue is closed" ? 409 : message.startsWith("Uploaded audio") || message === "Only MP3 and WAV uploads are accepted." || message === "Uploads must be 100MB or less." ? 400 : 500;
     return NextResponse.json({ error: publicMessage, reasons }, { status });
   }
 }
@@ -170,25 +172,42 @@ export async function submitTrackFromBody(body: Record<string, unknown>): Promis
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Legal acceptance is required before submitting to the queue." }, { status: 400 });
   }
-  const active = await getPublicQueueSnapshot();
-
   if (!sessionId) return NextResponse.json({ error: "Session sync required. Refresh the queue and try again.", code: "session_sync_required" }, { status: 409 });
-  if (active.session.sessionId !== sessionId) return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "stale_session" }, { status: 409 });
-  if (!active.status.isOpen) {
-    return NextResponse.json({ error: "This broadcast queue is closed." }, { status: 409 });
-  }
-  if (active.status.isFull || active.status.activeCount >= active.status.capacity) {
-    return NextResponse.json({ error: "This broadcast queue is full for new transmissions." }, { status: 409 });
-  }
-
   if (!artist || !title) return NextResponse.json({ error: "Artist and title are required." }, { status: 400 });
   if (!tiktokHandle) return NextResponse.json({ error: "TikTok handle is required." }, { status: 400 });
 
+  let upload: { fileUrl: string; fileName: string; fileSize: number; mimeType: string } | null = null;
+  let link = "";
   if (mode === "upload") {
-    const fileUrl = validateUploadedBlobUrl(body.uploadedBlobUrl || body.fileUrl);
-    const fileName = validateUploadFileName(body.uploadOriginalName || body.fileName);
-    const fileSize = validateUploadFileSize(body.fileSize);
-    const mimeType = validateUploadMimeType(body.mimeType);
+    upload = {
+      fileUrl: validateUploadedBlobUrl(body.uploadedBlobUrl || body.fileUrl),
+      fileName: validateUploadFileName(body.uploadOriginalName || body.fileName),
+      fileSize: validateUploadFileSize(body.fileSize),
+      mimeType: validateUploadMimeType(body.mimeType),
+    };
+  } else {
+    link = cleanBodyText(body.link);
+    if (!link) return NextResponse.json({ error: "Paste a track link." }, { status: 400 });
+    try { new URL(link); } catch { return NextResponse.json({ error: "Enter a valid track URL." }, { status: 400 }); }
+    if (isAppleMusicUrl(link)) {
+      return NextResponse.json(
+        { error: APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, code: "apple_music_unsupported" },
+        { status: 400 },
+      );
+    }
+  }
+
+  const active = await getPublicQueueSnapshot();
+  if (active.session.sessionId !== sessionId) return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "stale_session" }, { status: 409 });
+  if (!active.status.isOpen) {
+    return NextResponse.json({ error: active.status.isFull ? "This broadcast queue is full for new transmissions." : "This broadcast queue is closed." }, { status: 409 });
+  }
+  if (active.status.isFull || (active.status.acceptedCount ?? active.status.activeCount) >= active.status.capacity) {
+    return NextResponse.json({ error: "This broadcast queue is full for new transmissions." }, { status: 409 });
+  }
+
+  if (upload) {
+    const { fileUrl, fileName, fileSize, mimeType } = upload;
 
     if (await hasDuplicateUploadSubmission(fileName, fileSize, detectedDurationSeconds)) return duplicateResponse();
 
@@ -210,6 +229,7 @@ export async function submitTrackFromBody(body: Record<string, unknown>): Promis
       contactEmail,
       submitterToken,
       legalAcceptance,
+      sessionId,
     });
     if (!(await isTrackPersistedInSessionQueue(track.id, active.session.sessionId))) {
       return NextResponse.json({ error: QUEUE_ACCEPTANCE_UNCONFIRMED_MESSAGE, code: "queue_acceptance_unconfirmed" }, { status: 500 });
@@ -217,19 +237,10 @@ export async function submitTrackFromBody(body: Record<string, unknown>): Promis
     return acceptedResponse(toPublicQueueTrack(track), active.session.submissionCooldownSeconds);
   }
 
-  const link = cleanBodyText(body.link);
-  if (!link) return NextResponse.json({ error: "Paste a track link." }, { status: 400 });
-  try { new URL(link); } catch { return NextResponse.json({ error: "Enter a valid track URL." }, { status: 400 }); }
-  if (isAppleMusicUrl(link)) {
-    return NextResponse.json(
-      { error: APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, code: "apple_music_unsupported" },
-      { status: 400 },
-    );
-  }
   if (await hasDuplicateLinkSubmission(link)) return duplicateResponse();
 
   const sourceType = detectQueueSourceType(link);
-  const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, contactEmail, submitterToken, legalAcceptance });
+  const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, contactEmail, submitterToken, legalAcceptance, sessionId });
   if (!(await isTrackPersistedInSessionQueue(track.id, active.session.sessionId))) {
     return NextResponse.json({ error: QUEUE_ACCEPTANCE_UNCONFIRMED_MESSAGE, code: "queue_acceptance_unconfirmed" }, { status: 500 });
   }

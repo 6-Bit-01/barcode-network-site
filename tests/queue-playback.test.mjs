@@ -52,6 +52,9 @@ async function freshOpenSession(label, options = {}) {
     title: `${label} ${Date.now()} ${trackSequence}`,
     purpose: options.purpose,
     bnlPublicationStatus: options.bnlPublicationStatus,
+    queueCapacity: options.queueCapacity,
+    trackLimitPerArtist: options.trackLimitPerArtist,
+    submissionCooldownSeconds: options.submissionCooldownSeconds,
   });
   await queue.setQueueOpen(true);
   if (options.showStarted !== false) await queue.updateRadioTrack("", "startShow");
@@ -1043,10 +1046,206 @@ test("new sessions default queue capacity to 44", async () => {
   await queue.setQueueOpen(false);
   const state = await queue.startNewQueueSession({ title: `default capacity ${Date.now()} ${trackSequence}` });
   assert.equal(state.session.queueCapacity, 44);
+  assert.equal(state.session.acceptedCount, 0);
+  assert.equal(state.session.submissionClosureReason, "manual");
   assert.equal(state.session.purpose, "rehearsal");
   assert.equal(state.session.bnlPublicationStatus, "private");
   assert.equal(state.session.provenanceRevision, 1);
   assert.ok(state.session.provenanceUpdatedAt);
+  assert.doesNotMatch(
+    fs.readFileSync(path.join(projectRoot, "src/lib/queue-types.ts"), "utf8"),
+    /RADIO_QUEUE_CAPACITY/,
+    "the stale 40-track vocabulary must not survive beside the canonical 44-track default",
+  );
+});
+
+test("concurrent slots 43 through 45 accept exactly two tracks without losing either write", async () => {
+  await freshOpenSession("atomic default capacity", {
+    showStarted: false,
+    submissionCooldownSeconds: 0,
+  });
+  for (let index = 1; index <= 42; index += 1) {
+    await submitTrack(`Atomic Prefill ${index}`, { artist: `Atomic Artist ${index}` });
+  }
+
+  const attempts = await Promise.allSettled([
+    submitTrack("Atomic Slot 43", { artist: "Atomic Artist 43" }),
+    submitTrack("Atomic Slot 44", { artist: "Atomic Artist 44" }),
+    submitTrack("Atomic Slot 45", { artist: "Atomic Artist 45" }),
+  ]);
+  const accepted = attempts.filter((result) => result.status === "fulfilled");
+  const rejected = attempts.filter((result) => result.status === "rejected");
+  assert.equal(accepted.length, 2);
+  assert.equal(rejected.length, 1);
+  assert.match(String(rejected[0].reason), /full/i);
+
+  const state = await queue.getRadioQueueState();
+  const ids = [
+    ...state.queue.map((entry) => entry.id),
+    ...(state.nextInLine ? [state.nextInLine.id] : []),
+    ...(state.loadedTrack ? [state.loadedTrack.id] : []),
+    ...state.history.map((entry) => entry.id),
+  ];
+  assert.equal(new Set(ids).size, 44);
+  assert.equal(state.session.acceptedCount, 44);
+  assert.equal(state.publicStatus.acceptedCount, 44);
+  assert.equal(state.publicStatus.activeCount, 44);
+  assert.equal(state.publicStatus.isFull, true);
+  assert.equal(state.publicStatus.isOpen, false);
+  assert.equal(state.session.queueOpen, false);
+  assert.equal(state.session.status, "open", "capacity closes intake without ending the active session");
+  assert.equal(state.session.submissionClosureReason, "capacity");
+  assert.equal(state.publicStatus.closureReason, "capacity");
+});
+
+test("concurrent duplicate and per-artist collisions are revalidated inside the atomic mutation", async () => {
+  await freshOpenSession("atomic duplicate collision", {
+    showStarted: false,
+    submissionCooldownSeconds: 0,
+  });
+  const duplicateInput = {
+    artist: "Collision Artist",
+    title: "Collision Track",
+    tiktokHandle: "@collisionartist",
+    link: "https://example.com/atomic-duplicate",
+    sourceType: "other",
+  };
+  let attempts = await Promise.allSettled([
+    queue.submitRadioTrack(duplicateInput),
+    queue.submitRadioTrack(duplicateInput),
+  ]);
+  assert.equal(attempts.filter((result) => result.status === "fulfilled").length, 1);
+  assert.equal(attempts.filter((result) => result.status === "rejected").length, 1);
+  assert.match(String(attempts.find((result) => result.status === "rejected").reason), /duplicate/i);
+  let state = await queue.getRadioQueueState();
+  assert.equal(state.session.acceptedCount, 1);
+
+  await queue.setQueueOpen(false);
+  await queue.startNewQueueSession({
+    title: `atomic artist collision ${Date.now()} ${trackSequence}`,
+    queueCapacity: 44,
+    trackLimitPerArtist: 1,
+    submissionCooldownSeconds: 0,
+  });
+  await queue.setQueueOpen(true);
+  attempts = await Promise.allSettled([
+    queue.submitRadioTrack({ ...duplicateInput, title: "Artist Limit One", link: "https://example.com/artist-limit-one" }),
+    queue.submitRadioTrack({ ...duplicateInput, title: "Artist Limit Two", link: "https://example.com/artist-limit-two" }),
+  ]);
+  assert.equal(attempts.filter((result) => result.status === "fulfilled").length, 1);
+  assert.equal(attempts.filter((result) => result.status === "rejected").length, 1);
+  assert.match(String(attempts.find((result) => result.status === "rejected").reason), /limit/i);
+  state = await queue.getRadioQueueState();
+  assert.equal(state.session.acceptedCount, 1);
+});
+
+test("completed tracks keep their show slot while removal reopens only capacity-closed intake", async () => {
+  await freshOpenSession("truthful capacity lifecycle", {
+    showStarted: false,
+    queueCapacity: 3,
+    submissionCooldownSeconds: 0,
+  });
+  const first = await submitTrack("Capacity Lifecycle One");
+  const second = await submitTrack("Capacity Lifecycle Two");
+  const third = await submitTrack("Capacity Lifecycle Three");
+  let state = await queue.getRadioQueueState();
+  assert.equal(state.session.acceptedCount, 3);
+  assert.equal(state.session.queueOpen, false);
+  assert.equal(state.session.submissionClosureReason, "capacity");
+
+  state = await queue.updateRadioTrack(third.id, "remove");
+  assert.equal(state.session.acceptedCount, 2);
+  assert.equal(state.session.queueOpen, true);
+  assert.equal(state.session.submissionClosureReason, null);
+
+  const replacement = await submitTrack("Capacity Lifecycle Replacement");
+  state = await queue.getRadioQueueState();
+  assert.equal(state.session.acceptedCount, 3);
+  assert.equal(state.session.queueOpen, false);
+  assert.equal(state.session.submissionClosureReason, "capacity");
+
+  await queue.updateRadioTrack("", "startShow");
+  state = await queue.updateRadioTrack(first.id, "finish");
+  assert.ok(completedTrack(state, first.id));
+  assert.equal(state.session.completedCount, 1);
+  assert.equal(state.session.acceptedCount, 3, "completed/played tracks still consume their accepted show slot");
+  assert.equal(state.session.queueOpen, false);
+  assert.equal(state.session.submissionClosureReason, "capacity");
+  assert.ok([second.id, replacement.id].some((id) => state.queue.some((entry) => entry.id === id) || state.nextInLine?.id === id));
+});
+
+test("manual close survives removal while capacity removal and restoration reopen then reclose", async () => {
+  await freshOpenSession("manual versus capacity close", {
+    showStarted: false,
+    queueCapacity: 2,
+    submissionCooldownSeconds: 0,
+  });
+  const first = await submitTrack("Close Reason One");
+  const second = await submitTrack("Close Reason Two");
+  let state = await queue.updateRadioTrack(second.id, "remove");
+  assert.equal(state.session.queueOpen, true);
+  assert.equal(state.session.submissionClosureReason, null);
+
+  state = await queue.updateRadioTrack(second.id, "restoreRegular");
+  assert.equal(state.session.acceptedCount, 2);
+  assert.equal(state.session.queueOpen, false);
+  assert.equal(state.session.submissionClosureReason, "capacity");
+
+  state = await queue.updateRadioTrack(second.id, "remove");
+  await queue.setQueueOpen(false);
+  state = await queue.updateRadioTrack(first.id, "remove");
+  assert.equal(state.session.acceptedCount, 0);
+  assert.equal(state.session.queueOpen, false);
+  assert.equal(state.session.submissionClosureReason, "manual");
+});
+
+test("simulation tracks never consume one of the 44 accepted show slots", async () => {
+  await freshOpenSession("simulation capacity exclusion", {
+    showStarted: false,
+    queueCapacity: 1,
+    submissionCooldownSeconds: 0,
+  });
+  let state = await queue.updateRadioTrack("", "addSimulationFreeTrack");
+  assert.equal(state.session.acceptedCount, 0);
+  assert.equal(state.session.queueOpen, true);
+  await submitTrack("Real Capacity Track");
+  state = await queue.getRadioQueueState();
+  assert.equal(state.session.acceptedCount, 1);
+  assert.equal(state.session.queueOpen, false);
+  assert.equal(state.session.submissionClosureReason, "capacity");
+});
+
+test("public and admin snapshot reads never advance the queue mutation revision", async () => {
+  await freshOpenSession("read only snapshot revision", {
+    showStarted: false,
+    submissionCooldownSeconds: 0,
+  });
+  await submitTrack("Read Only Revision Track");
+  const before = await queue.getRadioQueueState();
+  const firstPublic = await queue.getPublicQueueSnapshot();
+  const secondPublic = await queue.getPublicQueueSnapshot();
+  const after = await queue.getRadioQueueState();
+  assert.ok(Number.isInteger(before.revision));
+  assert.equal(firstPublic.revision, before.revision);
+  assert.equal(secondPublic.revision, before.revision);
+  assert.equal(after.revision, before.revision);
+});
+
+test("submission capacity surfaces use accepted show slots while timing keeps active depth", () => {
+  const publicSessionSource = fs.readFileSync(path.join(projectRoot, "src/components/PublicQueueSession.tsx"), "utf8");
+  const formSource = fs.readFileSync(path.join(projectRoot, "src/components/RadioQueueForm.tsx"), "utf8");
+  const adminQueueSource = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
+  const showManagementSource = fs.readFileSync(path.join(projectRoot, "src/components/AdminShowManagement.tsx"), "utf8");
+  const uploadRouteSource = fs.readFileSync(path.join(projectRoot, "src/app/api/queue/upload/route.ts"), "utf8");
+
+  assert.match(publicSessionSource, /status\.acceptedCount \?\? snapshot\.status\.activeCount/);
+  assert.match(publicSessionSource, /capacity - acceptedCount/);
+  assert.match(formSource, /Accepted \/ Capacity/);
+  assert.match(formSource, /status\.acceptedCount \?\? status\.activeCount/);
+  assert.match(adminQueueSource, /Accepted \/ Capacity/);
+  assert.match(showManagementSource, /session\.acceptedCount \?\? session\.activeCount/);
+  assert.match(uploadRouteSource, /snapshot\.status\.acceptedCount \?\? snapshot\.status\.activeCount/);
+  assert.match(formSource, /priorityDepthAvailable = \(status\?\.activeCount \?\? 0\)/, "Priority depth remains a currently-active queue metric");
 });
 
 test("clear archive removes archived sessions and preserves active session", async () => {
@@ -1731,6 +1930,33 @@ test("public POST accepts current active sessionId", async () => {
   const payload = await jsonOf(response);
   assert.equal(response.status, 201);
   assert.ok(payload.track?.id);
+});
+
+test("concurrent public POSTs return one accepted response and one truthful full response for the final slot", async () => {
+  const sessionId = await freshOpenSession("public final slot", {
+    queueCapacity: 1,
+    submissionCooldownSeconds: 0,
+  });
+  const requestFor = (index) => new Request("https://example.test/api/queue", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      sessionId,
+      mode: "link",
+      artist: `Public Race Artist ${index}`,
+      title: `Public Race Track ${index}`,
+      tiktokHandle: `@publicrace${index}`,
+      link: `https://example.com/public-race-${index}`,
+      ...legalAcceptanceBody(),
+    }),
+  });
+
+  const responses = await Promise.all([queueApi.POST(requestFor(1)), queueApi.POST(requestFor(2))]);
+  assert.deepEqual(responses.map((response) => response.status).sort(), [201, 409]);
+  const rejected = responses.find((response) => response.status === 409);
+  assert.equal((await rejected.json()).error, "This broadcast queue is full for new transmissions.");
+  const state = await queue.getRadioQueueState();
+  assert.equal(state.session.acceptedCount, 1);
 });
 
 test("public POST remains rejected while submissions are closed", async () => {

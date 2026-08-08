@@ -249,7 +249,8 @@ test("admin top bar renders pressure chip from timingSummary", () => {
   assert.ok(source.includes("Projected Runtime"));
   assert.ok(source.includes("Projected: {projectedRuntimeLabel}"));
   assert.ok(source.includes("TopBarCommercialChip summary={timingSummary.sponsorBreakSummary}"));
-  assert.ok(source.includes("Active / Capacity"));
+  assert.ok(source.includes("Accepted / Capacity"));
+  assert.ok(source.includes("state?.publicStatus?.acceptedCount"));
   assert.ok(!source.includes("Active / Total"));
   assert.ok(!source.includes(">Runtime<"));
   assert.ok(source.includes("Hide Diagnostics"));

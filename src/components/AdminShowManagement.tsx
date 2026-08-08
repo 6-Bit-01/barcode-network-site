@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { AdminQueueSessionProvenance } from "@/components/AdminQueueSessionProvenance";
 import { formatRuntime } from "@/lib/queue-types";
+import { pacificDateString } from "@/lib/pacific-time";
 import type { QueueSessionBnlPublicationStatus, QueueSessionPurpose, QueueSessionSummary, QueueState } from "@/lib/queue-types";
 
 const SESSION_DESCRIPTION_OPTIONS = [
@@ -31,7 +32,7 @@ type SubmitterRow = {
   spotlight: boolean;
 };
 
-function todayDate(): string { return new Date().toISOString().slice(0, 10); }
+function todayDate(): string { return pacificDateString(); }
 function defaultDescription(date: string): string { return SESSION_DESCRIPTION_OPTIONS[[...date].reduce((sum, char) => sum + char.charCodeAt(0), 0) % SESSION_DESCRIPTION_OPTIONS.length]; }
 function exportHref(sessionId?: string): string { return `/api/admin/queue/export${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""}`; }
 function formatPrice(cents: number, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }

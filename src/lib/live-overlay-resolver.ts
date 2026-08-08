@@ -272,6 +272,7 @@ export interface LiveOverlayYouTubeSync {
   trackId?: string;
   playbackState: LiveOverlayPlaybackState;
   currentTimeSeconds: number;
+  durationSeconds?: number;
   updatedAt: string;
   muted: boolean;
   clientUpdatedAt?: string;
@@ -291,7 +292,19 @@ export interface LiveOverlayTikTokSync {
   correctionReason?: LiveOverlaySyncCorrectionReason;
 }
 
-export type LiveOverlayPlayerSync = LiveOverlayYouTubeSync | LiveOverlayTikTokSync;
+export interface LiveOverlayAudioSync {
+  provider: "audio";
+  trackId: string;
+  playbackState: LiveOverlayPlaybackState;
+  currentTimeSeconds: number;
+  durationSeconds?: number;
+  updatedAt: string;
+  muted: boolean;
+  clientUpdatedAt?: string;
+  correctionReason?: LiveOverlaySyncCorrectionReason;
+}
+
+export type LiveOverlayPlayerSync = LiveOverlayYouTubeSync | LiveOverlayTikTokSync | LiveOverlayAudioSync;
 
 function cleanSyncTrackId(value: unknown): string | undefined {
   return typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim() || undefined : undefined;
@@ -303,14 +316,36 @@ export function serverStampYouTubeSync(input: unknown, receivedAt: Date = new Da
   const videoId = typeof raw.videoId === "string" ? raw.videoId : "";
   if (!/^[a-zA-Z0-9_-]{6,}$/.test(videoId)) return null;
   const currentTimeSeconds = typeof raw.currentTimeSeconds === "number" && Number.isFinite(raw.currentTimeSeconds) ? Math.max(0, raw.currentTimeSeconds) : 0;
+  const durationSeconds = typeof raw.durationSeconds === "number" && Number.isFinite(raw.durationSeconds) && raw.durationSeconds > 0 ? raw.durationSeconds : undefined;
   return {
     provider: "youtube",
     videoId,
     trackId: cleanSyncTrackId(raw.trackId),
     playbackState: raw.playbackState === "playing" || raw.playbackState === "paused" || raw.playbackState === "stopped" ? raw.playbackState : "stopped",
     currentTimeSeconds,
+    durationSeconds,
     updatedAt: receivedAt.toISOString(),
     muted: true,
+    correctionReason: normalizeLiveOverlaySyncCorrectionReason(raw.correctionReason),
+  };
+}
+
+export function serverStampAudioSync(input: unknown, receivedAt: Date = new Date()): LiveOverlayAudioSync | null {
+  const raw = input as Partial<LiveOverlayAudioSync> | null;
+  if (!raw || typeof raw !== "object" || raw.provider !== "audio") return null;
+  const trackId = cleanSyncTrackId(raw.trackId);
+  if (!trackId) return null;
+  if (raw.playbackState !== "playing" && raw.playbackState !== "paused" && raw.playbackState !== "stopped") return null;
+  if (typeof raw.currentTimeSeconds !== "number" || !Number.isFinite(raw.currentTimeSeconds) || raw.currentTimeSeconds < 0) return null;
+  const durationSeconds = typeof raw.durationSeconds === "number" && Number.isFinite(raw.durationSeconds) && raw.durationSeconds > 0 ? raw.durationSeconds : undefined;
+  return {
+    provider: "audio",
+    trackId,
+    playbackState: raw.playbackState,
+    currentTimeSeconds: raw.currentTimeSeconds,
+    durationSeconds,
+    updatedAt: receivedAt.toISOString(),
+    muted: raw.muted === true,
     correctionReason: normalizeLiveOverlaySyncCorrectionReason(raw.correctionReason),
   };
 }
@@ -340,6 +375,7 @@ export function serverStampLiveOverlayPlayerSync(input: unknown, receivedAt: Dat
   const provider = (input as { provider?: unknown } | null)?.provider;
   if (provider === "youtube") return serverStampYouTubeSync(input, receivedAt);
   if (provider === "tiktok") return serverStampTikTokSync(input, receivedAt);
+  if (provider === "audio") return serverStampAudioSync(input, receivedAt);
   return null;
 }
 

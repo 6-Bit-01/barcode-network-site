@@ -5,6 +5,7 @@ import { upload } from "@vercel/blob/client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { buildQueueTimingDisplay, priorityDisplayFromImpact, queueTimingInputFromPublicSnapshot } from "@/lib/queue-timing-display";
+import { cooldownDeadlineFromRemaining, cooldownRemainingFromDeadline } from "@/lib/queue-cooldown";
 import { APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, formatRuntime, isAppleMusicUrl, PRIORITY_DISCLOSURE_TEXT, PRIORITY_TERMS_VERSION } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
 
@@ -115,6 +116,8 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   const [upNext, setUpNext] = useState<QueuePublicTrack | null>(null);
   const [session, setSession] = useState<QueuePublicSnapshot["session"] | null>(null);
   const [submitterStatus, setSubmitterStatus] = useState<QueuePublicSnapshot["submitterStatus"] | null>(null);
+  const [playbackTiming, setPlaybackTiming] = useState<QueuePublicSnapshot["playbackTiming"]>(null);
+  const [wheelTiming, setWheelTiming] = useState<QueuePublicSnapshot["wheelTiming"]>(null);
   const [mode, setMode] = useState<Mode>("link");
   const [step, setStep] = useState<IntakeStep>("track");
   const [routingLockRemaining, setRoutingLockRemaining] = useState(0);
@@ -140,6 +143,26 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   const [transmissionState, setTransmissionState] = useState<TransmissionState>("idle");
   const [warpData, setWarpData] = useState<WarpData | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  const cooldownDeadlineRef = useRef(0);
+
+  function cooldownStorageKey(): string | null {
+    return submitterToken ? `barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}` : null;
+  }
+
+  function setAuthoritativeCooldown(remainingSeconds: number): void {
+    const deadline = cooldownDeadlineFromRemaining(remainingSeconds);
+    cooldownDeadlineRef.current = deadline;
+    setCooldownRemaining(cooldownRemainingFromDeadline(deadline));
+    const key = cooldownStorageKey();
+    if (!key) return;
+    if (remainingSeconds > 0) window.localStorage.setItem(key, String(deadline));
+    else window.localStorage.removeItem(key);
+  }
+
+  function refreshCooldownFromDeadline(): void {
+    setCooldownRemaining(cooldownRemainingFromDeadline(cooldownDeadlineRef.current));
+  }
 
   async function loadStatus() {
     const params = new URLSearchParams();
@@ -157,6 +180,9 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
       setPublicQueue(Array.isArray(payload.queue) ? payload.queue : []);
       setNowPlaying(payload.nowPlaying ?? null);
       setUpNext(payload.upNext ?? null);
+      setPlaybackTiming(payload.playbackTiming ?? null);
+      setWheelTiming(payload.wheelTiming ?? null);
+      setAuthoritativeCooldown(payload.submitterStatus?.cooldownRemainingSeconds ?? 0);
       return payload as QueuePublicSnapshot;
     }
     return null;
@@ -191,17 +217,34 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
 
 
   useEffect(() => {
-    if (cooldownRemaining <= 0) return;
-    const timer = window.setInterval(() => setCooldownRemaining((value) => Math.max(0, value - 1)), 1000);
-    return () => window.clearInterval(timer);
-  }, [cooldownRemaining]);
+    const timer = window.setInterval(() => {
+      setClockNow(Date.now());
+      refreshCooldownFromDeadline();
+    }, 1000);
+    const recover = () => {
+      refreshCooldownFromDeadline();
+      void loadStatus();
+    };
+    const visibility = () => { if (document.visibilityState === "visible") recover(); };
+    document.addEventListener("visibilitychange", visibility);
+    window.addEventListener("focus", recover);
+    window.addEventListener("pageshow", recover);
+    window.addEventListener("online", recover);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", visibility);
+      window.removeEventListener("focus", recover);
+      window.removeEventListener("pageshow", recover);
+      window.removeEventListener("online", recover);
+    };
+  }, [sessionId, submitterToken]);
 
   useEffect(() => {
     if (!submitterToken) return;
     const key = `barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}`;
     const until = Number(window.localStorage.getItem(key) ?? 0);
-    const remaining = Math.ceil((until - Date.now()) / 1000);
-    if (remaining > 0) setCooldownRemaining(remaining);
+    cooldownDeadlineRef.current = Number.isFinite(until) ? until : 0;
+    refreshCooldownFromDeadline();
   }, [sessionId, submitterToken]);
 
 
@@ -310,8 +353,8 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   const priorityPaymentsAvailable = session?.priorityUpgradesEnabled === true && session?.priorityUpgradePaymentsEnabled === true && priorityPriceCents > 0;
   const priorityDepthAvailable = (status?.activeCount ?? 0) >= MIN_PRIORITY_ACTIVE_DEPTH;
   const priorityCheckoutAvailable = priorityPaymentsAvailable && status?.isOpen === true && priorityDepthAvailable;
-  const timingSnapshot = useMemo<QueuePublicSnapshot | null>(() => session && status ? { revision: 0, session, status, queue: publicQueue, completed: [], nowPlaying, upNext, submitterStatus } : null, [session, status, publicQueue, nowPlaying, upNext, submitterStatus]);
-  const timingSummary = useMemo(() => buildQueueTimingDisplay(queueTimingInputFromPublicSnapshot(timingSnapshot), { priorityEligible: priorityCheckoutAvailable }), [timingSnapshot, priorityCheckoutAvailable]);
+  const timingSnapshot = useMemo<QueuePublicSnapshot | null>(() => session && status ? { revision: 0, session, status, queue: publicQueue, completed: [], nowPlaying, upNext, submitterStatus, playbackTiming, wheelTiming } : null, [session, status, publicQueue, nowPlaying, upNext, submitterStatus, playbackTiming, wheelTiming]);
+  const timingSummary = useMemo(() => buildQueueTimingDisplay(queueTimingInputFromPublicSnapshot(timingSnapshot), { priorityEligible: priorityCheckoutAvailable, now: new Date(clockNow) }), [timingSnapshot, priorityCheckoutAvailable, clockNow]);
   const submitPriorityImpact = priorityCheckoutAvailable ? priorityDisplayFromImpact(timingSummary.priorityImpactEstimate) : null;
   const selectedRoute: RouteChoice = priorityCheckoutAvailable ? routeChoice : "free";
 
@@ -414,8 +457,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
           throw new Error(payload.error || "Duplicate song detected. This track is already in the queue for this session.");
         }
         if (typeof payload.cooldownRemainingSeconds === "number") {
-          setCooldownRemaining(payload.cooldownRemainingSeconds);
-          if (submitterToken) window.localStorage.setItem(`barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}`, String(Date.now() + payload.cooldownRemainingSeconds * 1000));
+          setAuthoritativeCooldown(payload.cooldownRemainingSeconds);
         }
         throw new Error(payload.cooldownRemainingSeconds ? `Next submission available in ${formatCooldown(payload.cooldownRemainingSeconds)}` : payload.error || "Submission failed");
       }
@@ -438,12 +480,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
         window.localStorage.setItem("barcode-radio-submit-tiktok", tiktokHandle.trim());
         window.localStorage.setItem("barcode-radio-submit-email", contactEmail.trim());
         const nextCooldown = typeof payload.cooldownRemainingSeconds === "number" ? payload.cooldownRemainingSeconds : 0;
-        setCooldownRemaining(nextCooldown);
-        if (submitterToken) {
-          const cooldownKey = `barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}`;
-          if (nextCooldown > 0) window.localStorage.setItem(cooldownKey, String(Date.now() + nextCooldown * 1000));
-          else window.localStorage.removeItem(cooldownKey);
-        }
+        setAuthoritativeCooldown(nextCooldown);
         if (selectedRoute === "priority") {
           setWarpData({
             artist: artist.trim(),
@@ -556,7 +593,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
 
   if (transmissionState !== "idle") return createPortal(<WarpSequence state={transmissionState} data={warpData} />, document.body);
 
-  const effectiveCooldown = session?.submissionCooldownSeconds === 0 ? 0 : Math.max(cooldownRemaining, submitterStatus?.cooldownRemainingSeconds ?? 0);
+  const effectiveCooldown = session?.submissionCooldownSeconds === 0 ? 0 : cooldownRemaining;
   const estimatedPosition = Math.min((status?.activeCount ?? publicQueue.length) + 1, status?.capacity ?? ((status?.activeCount ?? publicQueue.length) + 1));
 
   return (
@@ -667,7 +704,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
               {legalError && <p id="queue-legal-error" className="mt-2 text-[11px] font-bold text-accent" role="alert">{legalError}</p>}
             </div>
             <div className="grid gap-2 text-xs sm:grid-cols-2">
-              {submitterStatus && <div className="border border-accent/40 bg-accent/5 p-2 text-muted"><p className="font-bold text-accent">Your submissions: {submitterStatus.used} / {submitterStatus.limit}</p><p>Remaining: {submitterStatus.remaining}</p>{submitterStatus.cooldownRemainingSeconds > 0 && <p className="text-accent">Cooldown: {formatCooldown(submitterStatus.cooldownRemainingSeconds)}</p>}</div>}
+              {submitterStatus && <div className="border border-accent/40 bg-accent/5 p-2 text-muted"><p className="font-bold text-accent">Your submissions: {submitterStatus.used} / {submitterStatus.limit}</p><p>Remaining: {submitterStatus.remaining}</p>{effectiveCooldown > 0 && <p className="text-accent">Cooldown: {formatCooldown(effectiveCooldown)}</p>}</div>}
               {effectiveCooldown > 0 && <div className="border border-accent/40 bg-accent/5 p-2 text-accent">Next submission available in {formatCooldown(effectiveCooldown)}</div>}
               <div className="border border-border bg-background/40 p-2 text-muted">{checkCopy}</div>
               {!priorityPaymentsAvailable && <div className="border border-border bg-background/40 p-2 text-muted">Priority Signal is unavailable for this session. Free queue submission remains active.</div>}

@@ -271,44 +271,33 @@ test("range formatting widens low-confidence ranges", () => {
 });
 
 
-test("sponsor break is not included before 2h even when midpoint is reached", () => {
+test("sponsor break becomes due at midpoint regardless of elapsed broadcast time", () => {
   const completed = Array.from({ length: 20 }, (_, index) => track(`pre2h-done-${index}`, { status: "played", completedAt: START_1H30_AGO }));
   const queue = Array.from({ length: 20 }, (_, index) => track(`pre2h-queued-${index}`, { detectedDurationSeconds: 60 }));
   const estimate = timing.estimateSponsorBreakPlacement({ completed, queue, session: { broadcastStartedAt: START_1H30_AGO } }, { targetSongsAhead: 1, targetProjectedSecondsAhead: 20 * 60, now: NOW });
   assert.equal(estimate.midpointReached, true);
-  assert.equal(estimate.minElapsedGateReached, false);
-  assert.equal(estimate.sponsorBreakIncluded, false);
-});
-
-test("sponsor break is included after 2h when midpoint was already reached", () => {
-  const completed = Array.from({ length: 20 }, (_, index) => track(`post2h-done-${index}`, { status: "played", completedAt: START_1H45_AGO }));
-  const queue = Array.from({ length: 20 }, (_, index) => track(`post2h-queued-${index}`, { detectedDurationSeconds: 60 }));
-  const estimate = timing.estimateSponsorBreakPlacement({ completed, queue, session: { broadcastStartedAt: START_1H45_AGO } }, { targetSongsAhead: 1, targetProjectedSecondsAhead: 23 * 60, now: NOW });
-  assert.equal(estimate.midpointReached, true);
-  assert.equal(estimate.minElapsedGateReached, true);
   assert.equal(estimate.sponsorBreakIncluded, true);
+  assert.equal(estimate.sponsorBreakStatus, "due");
 });
 
-test("sponsor break waits for midpoint after 2h gate", () => {
+test("sponsor break waits for the counted midpoint", () => {
   const completed = Array.from({ length: 10 }, (_, index) => track(`wait-mid-done-${index}`, { status: "played", completedAt: START_2H20_AGO }));
   const queue = Array.from({ length: 30 }, (_, index) => track(`wait-mid-queued-${index}`, { detectedDurationSeconds: 60 }));
   const beforeMidpoint = timing.estimateSponsorBreakPlacement({ completed, queue, session: { broadcastStartedAt: START_2H20_AGO } }, { targetSongsAhead: 9, targetProjectedSecondsAhead: 10 * 60, now: NOW });
   const atMidpoint = timing.estimateSponsorBreakPlacement({ completed, queue, session: { broadcastStartedAt: START_2H20_AGO } }, { targetSongsAhead: 10, targetProjectedSecondsAhead: 12 * 60, now: NOW });
-  assert.equal(beforeMidpoint.minElapsedGateReached, true);
   assert.equal(beforeMidpoint.midpointReached, false);
   assert.equal(beforeMidpoint.sponsorBreakIncluded, false);
   assert.equal(atMidpoint.sponsorBreakIncluded, true);
 });
 
-test("sponsor break point is the later of midpoint and the 2h gate", () => {
-  const completed = Array.from({ length: 20 }, (_, index) => track(`later-gate-done-${index}`, { status: "played" }));
-  const queue = Array.from({ length: 20 }, (_, index) => track(`later-gate-queued-${index}`, { detectedDurationSeconds: 60 }));
-  const waitsForGate = timing.estimateSponsorBreakPlacement({ completed, queue, session: { broadcastStartedAt: START_1H45_AGO } }, { targetSongsAhead: 0, targetProjectedSecondsAhead: 5 * 60, now: NOW });
-  const crossesGate = timing.estimateSponsorBreakPlacement({ completed, queue, session: { broadcastStartedAt: START_1H45_AGO } }, { targetSongsAhead: 0, targetProjectedSecondsAhead: 20 * 60, now: NOW });
-  const waitsForMidpoint = timing.estimateSponsorBreakPlacement({ completed: completed.slice(0, 10), queue: Array.from({ length: 30 }, (_, index) => track(`later-mid-${index}`)), session: { broadcastStartedAt: START_2H20_AGO } }, { targetSongsAhead: 9, targetProjectedSecondsAhead: 20 * 60, now: NOW });
-  assert.equal(waitsForGate.sponsorBreakIncluded, false);
-  assert.equal(crossesGate.sponsorBreakIncluded, true);
-  assert.equal(waitsForMidpoint.sponsorBreakIncluded, false);
+test("projected targets reserve the sponsor break only when they cross midpoint", () => {
+  const completed = Array.from({ length: 10 }, (_, index) => track(`target-done-${index}`, { status: "played" }));
+  const queue = Array.from({ length: 30 }, (_, index) => track(`target-queued-${index}`, { detectedDurationSeconds: 60 }));
+  const before = timing.estimateSponsorBreakPlacement({ completed, queue }, { targetSongsAhead: 9, targetProjectedSecondsAhead: 10 * 60, now: NOW });
+  const crossing = timing.estimateSponsorBreakPlacement({ completed, queue }, { targetSongsAhead: 10, targetProjectedSecondsAhead: 12 * 60, now: NOW });
+  assert.equal(before.sponsorBreakIncluded, false);
+  assert.equal(crossing.sponsorBreakIncluded, true);
+  assert.equal(crossing.sponsorBreakStatus, "not_due");
 });
 
 test("skipped sponsor break is not included", () => {
@@ -319,22 +308,21 @@ test("skipped sponsor break is not included", () => {
   assert.equal(estimate.sponsorBreakIncluded, false);
 });
 
-test("unknown broadcast start keeps sponsor gate conservative without exact 2h claim", () => {
+test("unknown broadcast start does not block midpoint sponsor placement", () => {
   const completed = Array.from({ length: 20 }, (_, index) => track(`unknown-start-done-${index}`, { status: "played" }));
   const queue = Array.from({ length: 20 }, (_, index) => track(`unknown-start-queued-${index}`));
   const estimate = timing.estimateSponsorBreakPlacement({ completed, queue }, { targetSongsAhead: 20, targetProjectedSecondsAhead: 3 * 3600, now: NOW });
   assert.equal(estimate.broadcastStartedAt, null);
-  assert.equal(estimate.minElapsedGateReached, null);
-  assert.equal(estimate.sponsorBreakIncluded, false);
-  assert.ok(estimate.sponsorBreakNotes.some((note) => note.includes("playback start is unavailable")));
+  assert.equal(estimate.sponsorBreakIncluded, true);
+  assert.equal(estimate.sponsorBreakStatus, "due");
 });
 
-test("projected show runtime includes sponsor break only when show crosses final break point", () => {
+test("projected show runtime reserves sponsor break for the counted show midpoint", () => {
   const shortQueue = Array.from({ length: 5 }, (_, index) => track(`short-${index}`, { detectedDurationSeconds: 60 }));
   const longCompleted = Array.from({ length: 20 }, (_, index) => track(`long-done-${index}`, { status: "played", completedAt: START_1H45_AGO }));
   const longQueue = Array.from({ length: 20 }, (_, index) => track(`long-${index}`, { detectedDurationSeconds: 60 }));
   const shortSnapshot = timing.buildQueueTimingSnapshot({ queue: shortQueue, session: { broadcastStartedAt: START_1H30_AGO } }, { now: NOW });
   const longSnapshot = timing.buildQueueTimingSnapshot({ completed: longCompleted, queue: longQueue, session: { broadcastStartedAt: START_1H45_AGO } }, { now: NOW });
-  assert.equal(shortSnapshot.sponsorBreakSecondsIncluded, 0);
+  assert.equal(shortSnapshot.sponsorBreakSecondsIncluded, timing.DEFAULT_SPONSOR_BREAK_SECONDS);
   assert.equal(longSnapshot.sponsorBreakSecondsIncluded, timing.DEFAULT_SPONSOR_BREAK_SECONDS);
 });

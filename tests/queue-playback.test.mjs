@@ -76,6 +76,14 @@ async function addTrack(label, options = {}) {
   });
 }
 
+async function reachSponsorMidpoint(label) {
+  const track = await addTrack(label);
+  await queue.updateRadioTrack(track.id, "load");
+  const state = await queue.updateRadioTrack(track.id, "finish");
+  assert.equal(state.session.sponsorBreakStatus, "due");
+  return state;
+}
+
 async function submitTrack(label, options = {}) {
   trackSequence += 1;
   const artistName = options.artist ?? `${label} Artist`;
@@ -925,10 +933,19 @@ test("start broadcast manually overrides a future pre-show timer", async () => {
   assert.equal(state.nextInLine?.id, free.id);
 });
 
+test("host cannot start the sponsor break before the counted midpoint", async () => {
+  await freshOpenSession("commercial blocked before midpoint");
+  const state = await queue.updateSponsorBreakState("start");
+  assert.equal(state.session.sponsorBreakStatus, "not_due");
+  assert.equal(state.session.sponsorBreakStartedAt, null);
+});
+
 test("running commercial break auto-completes after 10m30s", async () => {
   await freshOpenSession("commercial timer auto-complete");
+  await reachSponsorMidpoint("commercial timer midpoint");
   let state = await queue.updateSponsorBreakState("start");
   assert.equal(state.session.sponsorBreakStatus, "running");
+  assert.equal(state.session.sponsorBreakDueAfterPlayableCount, 1);
   assert.ok(state.session.sponsorBreakStartedAt);
   const beforeDone = await withFakeNow(new Date(new Date(state.session.sponsorBreakStartedAt).getTime() + 10 * 60 * 1000), () => queue.getRadioQueueState());
   assert.equal(beforeDone.session.sponsorBreakStatus, "running");
@@ -939,6 +956,7 @@ test("running commercial break auto-completes after 10m30s", async () => {
 
 test("commercial start is idempotent when already running/completed/skipped", async () => {
   await freshOpenSession("commercial idempotent start");
+  await reachSponsorMidpoint("commercial idempotent midpoint");
   let state = await queue.updateSponsorBreakState("start");
   const firstStartedAt = state.session.sponsorBreakStartedAt;
   state = await queue.updateSponsorBreakState("start");
@@ -1283,6 +1301,21 @@ test("simulation tracks include visible sequence numbers without lane status tit
   assert.match(sim.submittedArtistName ?? sim.artist, /\d{3}$/);
   assert.doesNotMatch(sim.submittedSongTitle ?? sim.title, /Free|Wheel|Priority|Checkout Pending|Failed Payment/i);
   assert.match(sim.note ?? "", /\[QUEUE SIMULATION TRACK\]/);
+});
+
+test("completed truth excludes finished simulation tracks", async () => {
+  await freshOpenSession("simulation completed truth", { showStarted: false });
+
+  let state = await queue.updateRadioTrack("", "addSimulationPaidPriority");
+  const sim = state.nextInLine;
+  assert.ok(sim?.isTestTrack, "simulation priority track should stage for the rehearsal");
+
+  state = await queue.updateRadioTrack(sim.id, "load");
+  state = await queue.updateRadioTrack(sim.id, "finish");
+
+  assert.ok(state.history.some((entry) => entry.id === sim.id && entry.isTestTrack), "admin rehearsal history should retain the simulation record");
+  assert.equal(state.totalPlayed, 0, "public played truth must exclude simulation records");
+  assert.equal(state.session.completedCount, 0, "session completed truth must exclude simulation records");
 });
 
 test("BNL read model excludes simulation tracks from queue and artists", async () => {

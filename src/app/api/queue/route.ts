@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, detectQueueSourceType, isAppleMusicUrl } from "@/lib/queue-types";
 import { getPublicQueueSnapshot, getRadioQueueState, isTrackPersistedInSessionQueue, normalizeQueueSourceKey, requestPriorityUpgradePlaceholder, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
+import { getLiveOverlayPlayerSync, getStoredLiveOverlayState } from "@/lib/live-overlay";
+import { attachQueueLiveTiming } from "@/lib/queue-live-timing";
 import type { QueueEntry } from "@/lib/queue-types";
 
 export const dynamic = "force-dynamic";
@@ -113,12 +115,18 @@ async function hasDuplicateUploadSubmission(fileName: string, fileSize: number, 
 export async function GET(req: Request) {
   const params = new URL(req.url).searchParams;
   const sessionId = params.get("sessionId") ?? undefined;
-  return NextResponse.json(await getPublicQueueSnapshot(sessionId, {
-    submitterToken: params.get("submitterToken"),
-    tiktokHandle: params.get("tiktokHandle"),
-    contactEmail: params.get("contactEmail"),
-    artist: params.get("artist"),
-  }));
+  const now = new Date();
+  const [snapshot, playerSync, overlayState] = await Promise.all([
+    getPublicQueueSnapshot(sessionId, {
+      submitterToken: params.get("submitterToken"),
+      tiktokHandle: params.get("tiktokHandle"),
+      contactEmail: params.get("contactEmail"),
+      artist: params.get("artist"),
+    }),
+    getLiveOverlayPlayerSync(),
+    getStoredLiveOverlayState(),
+  ]);
+  return NextResponse.json(attachQueueLiveTiming(snapshot, playerSync, overlayState, now));
 }
 
 export async function POST(req: Request) {

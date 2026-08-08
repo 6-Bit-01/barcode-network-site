@@ -204,7 +204,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const [intakeScrollLocked, setIntakeScrollLocked] = useState(false);
   const [lastSubmittedTrackId, setLastSubmittedTrackId] = useState<string | null>(null);
   const [submitterToken, setSubmitterToken] = useState("");
-  const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const [view, setView] = useState<QueueView>("active");
   const [mounted, setMounted] = useState(false);
   const [priorityModalTrack, setPriorityModalTrack] = useState<QueuePublicTrack | null>(null);
@@ -334,7 +334,6 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
       processSnapshotChanges(previousSnapshotRef.current, next);
       previousSnapshotRef.current = next;
       setSnapshot(next);
-      setCooldownRemaining(next.submitterStatus?.cooldownRemainingSeconds ?? 0);
     }
   }
 
@@ -346,7 +345,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     if (priorityResult === "processing") setCheckoutNotice("Checkout started. Skip is not active yet.");
   }, []);
   useEffect(() => { load(); const interval = setInterval(load, 5_000); return () => clearInterval(interval); }, [sessionId, submitterToken]);
-  useEffect(() => { if (cooldownRemaining <= 0) return; const timer = window.setInterval(() => setCooldownRemaining((value) => Math.max(0, value - 1)), 1000); return () => window.clearInterval(timer); }, [cooldownRemaining]);
+  useEffect(() => { const interval = window.setInterval(() => setClockNow(Date.now()), 1_000); return () => window.clearInterval(interval); }, []);
   useEffect(() => {
     if (!submitOpen || !intakeScrollLocked) return;
     const previousOverflow = document.body.style.overflow;
@@ -390,7 +389,8 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const priorityPriceCents = snapshot?.session.priorityUpgradePriceCents ?? 0;
   const priorityCurrency = snapshot?.session.priorityUpgradeCurrency ?? "usd";
   const timingInput = useMemo(() => queueTimingInputFromPublicSnapshot(snapshot), [snapshot]);
-  const timingSummary = useMemo(() => buildQueueTimingDisplay(timingInput, { priorityEligible: priorityUpgradeAvailable }), [timingInput, priorityUpgradeAvailable]);
+  const timingSummary = useMemo(() => buildQueueTimingDisplay(timingInput, { priorityEligible: priorityUpgradeAvailable, now: new Date(clockNow) }), [timingInput, priorityUpgradeAvailable, clockNow]);
+  const sponsorBreakRunning = snapshot?.session.sponsorBreakStatus === "running";
 
   const frontEdgeFreeTrackId = lanes.priority.length === 0 && lanes.wheel.length === 0 ? lanes.regular[0]?.id ?? null : null;
 
@@ -467,7 +467,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className={`space-y-6 ${sponsorBreakRunning ? "sponsor-mode" : ""}`}>
       <ReceiverHudPortal snapshot={snapshot} submissionsOpen={isOpen} isBroadcastActive={isBroadcastActive} pulse={broadcastStartPulse} mounted={mounted} minimized={publicHudMinimized} onToggleMinimized={() => setPublicHudMinimized((current) => !current)} canSubmit={canSubmitFromHud} submitLabel={hudSubmitLabel} onSubmit={openIntakeCorridor} />
 
       <PersonalSignalStatusBar snapshot={snapshot} mounted={mounted} timingSummary={timingSummary} minimized={publicHudMinimized} onToggleMinimized={() => setPublicHudMinimized((current) => !current)} canSubmit={canSubmitFromHud} submitLabel={hudSubmitLabel} onSubmit={openIntakeCorridor} />
@@ -477,13 +477,14 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
           <h1 className="mt-3 text-3xl font-bold tracking-tight text-foreground sm:text-4xl"><span className="text-accent text-glow">Broadcast</span> Queue</h1>
           <p className="mt-2 text-sm text-muted">Current BARCODE Radio session monitor.</p>
         </section>
+        {sponsorBreakRunning && <section className="sponsor-mode-banner border border-[#ffaa00]/45 bg-[#ffaa00]/8 p-3" role="status" aria-live="polite"><p className="text-xs font-bold uppercase tracking-[0.34em] text-[#ffaa00]">A WORD FROM OUR SPONSOR</p><p className="mt-1 text-sm text-muted">The 10:30 sponsor break is in progress. The queue, submissions, status, and navigation stay live.</p></section>}
         {showWatchLiveLink && (
         <div className="-mt-2 mb-1 flex justify-start">
           <a
             href={liveShowHref}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex cursor-pointer items-center gap-2 border border-[#ffaa00]/60 bg-[#ffaa00] px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-background transition-colors hover:bg-[#ffb733] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffaa00]/70"
+            className={`inline-flex cursor-pointer items-center gap-2 border border-[#ffaa00]/60 bg-[#ffaa00] font-bold uppercase tracking-[0.18em] text-background transition-colors hover:bg-[#ffb733] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffaa00]/70 ${sponsorBreakRunning ? "sponsor-live-cta px-6 py-3 text-sm shadow-[0_0_34px_rgba(255,170,0,0.30)]" : "px-3 py-1.5 text-xs"}`}
           >
             <span aria-hidden="true">📺</span>
             <span>WATCH ON TIKTOK</span>
@@ -521,6 +522,10 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
       {view === "active" ? <div id="active-queue-panel" className="space-y-3"><PublicLane title="Priority Signal" tracks={lanes.priority} lastSubmittedTrackId={lastSubmittedTrackId} viewerSubmittedTrackIds={viewerSubmittedTrackIds} collapsible domId="priority-lane" canPriorityUpgrade={() => false} canResumePriorityPayment={canResumePriorityPayment} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} getPriorityImpact={() => null} /><PublicLane title="Wheel Chosen" subtitle="Tracks selected by the 10K tap wheel." tracks={lanes.wheel} lastSubmittedTrackId={lastSubmittedTrackId} viewerSubmittedTrackIds={viewerSubmittedTrackIds} collapsible domId="wheel-lane" canPriorityUpgrade={() => false} canResumePriorityPayment={canResumePriorityPayment} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} getPriorityImpact={() => null} /><PublicLane title="Free Transmissions" tracks={lanes.regular} lastSubmittedTrackId={lastSubmittedTrackId} viewerSubmittedTrackIds={viewerSubmittedTrackIds} domId="free-transmissions-lane" canPriorityUpgrade={canShowPriorityUpgrade} canResumePriorityPayment={canResumePriorityPayment} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} getPriorityImpact={(track) => priorityDisplayFromImpact(estimatePriorityImpactForTrack(timingSummary, track))} /></div> : <PublicLane title="Recently Played" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} viewerSubmittedTrackIds={viewerSubmittedTrackIds} canPriorityUpgrade={() => false} canResumePriorityPayment={() => false} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} getPriorityImpact={() => null} />}
         <style jsx>{`
           .queue-live-system{border:1px solid transparent;padding:0;transition:border-color .5s ease,box-shadow .5s ease,filter .5s ease}
+          .sponsor-mode{background:linear-gradient(180deg,rgba(255,170,0,.035),transparent 24rem)}
+          .sponsor-mode-banner{box-shadow:0 0 30px rgba(255,170,0,.09)}
+          .sponsor-live-cta{animation:sponsor-live-pulse 1.8s ease-in-out infinite}
+          @keyframes sponsor-live-pulse{0%,100%{transform:scale(1);box-shadow:0 0 22px rgba(255,170,0,.20)}50%{transform:scale(1.025);box-shadow:0 0 42px rgba(255,170,0,.42)}}
           .queue-live-system[data-live="true"]{border-color:rgba(255,170,0,.16);box-shadow:0 0 44px rgba(255,170,0,.06);padding:.35rem}
           .queue-live-system[data-pulse="true"]{animation:queue-broadcast-lock 1.55s ease-out}
           .queue-live-system[data-pulse="true"]::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(255,170,0,.32),rgba(255,255,255,.22),transparent);animation:broadcast-sweep 1.1s ease-out forwards}
@@ -577,7 +582,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
           @keyframes route-next-clamp{0%{opacity:0;clip-path:inset(48% 48% 48% 48%)}38%{opacity:.82;clip-path:inset(0 0 0 0)}100%{opacity:0;clip-path:inset(8% 8% 8% 8%)}}
           @keyframes route-now-monitor{0%{opacity:0;transform:scale(.985);filter:brightness(1.7)}35%{opacity:.96}100%{opacity:0;transform:scale(1.02);filter:brightness(1)}}
           @media (prefers-reduced-motion: reduce){
-            .queue-live-system[data-pulse="true"],.queue-live-system[data-pulse="true"]::before,.broadcast-start-banner,:global([data-track-card="true"].flip-routing),:global([data-track-card="true"].flip-landing),:global([data-track-card="true"].flip-routing)::after,:global([data-track-card="true"].flip-landing)::after,:global([data-track-card="true"].flip-routing .packet-trail),:global([data-track-card="true"].flip-landing .packet-trail){animation:none!important;transition:none!important}
+            .queue-live-system[data-pulse="true"],.queue-live-system[data-pulse="true"]::before,.broadcast-start-banner,.sponsor-live-cta,:global([data-track-card="true"].flip-routing),:global([data-track-card="true"].flip-landing),:global([data-track-card="true"].flip-routing)::after,:global([data-track-card="true"].flip-landing)::after,:global([data-track-card="true"].flip-routing .packet-trail),:global([data-track-card="true"].flip-landing .packet-trail){animation:none!important;transition:none!important}
             .queue-live-system[data-pulse="true"]::before,:global([data-track-card="true"].flip-routing)::after,:global([data-track-card="true"].flip-landing)::after{display:none}
           }
         `}</style>

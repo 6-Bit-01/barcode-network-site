@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { AdminQueueSessionProvenance } from "@/components/AdminQueueSessionProvenance";
 import { formatRuntime } from "@/lib/queue-types";
 import type { QueueState } from "@/lib/queue-types";
 
@@ -45,6 +46,18 @@ export function AdminFinishedSessionReview({ sessionId }: { sessionId: string })
     load();
   }, [sessionId]);
 
+  async function post(body: Record<string, unknown>): Promise<QueueState | null> {
+    const response = await fetch("/api/admin/queue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) return null;
+    const next = await response.json();
+    setState(next);
+    return next;
+  }
+
   const summary = useMemo(() => {
     const priorityCount = rows.filter((row) => row.lane === "priority").length;
     const wheelCount = rows.filter((row) => row.lane === "wheel").length;
@@ -65,7 +78,7 @@ export function AdminFinishedSessionReview({ sessionId }: { sessionId: string })
           <div>
             <p className="text-xs uppercase tracking-[0.4em] text-accent">Finished Session Review</p>
             <h2 className="mt-2 text-3xl font-bold text-foreground">{session.title}</h2>
-            <p className="mt-1 text-sm text-muted">{session.showDate} · {session.status === "archived" ? "finished / archived" : session.status} · read-only archive record</p>
+            <p className="mt-1 text-sm text-muted">{session.showDate} · {session.status === "archived" ? "finished / archived" : session.status} · queue record read-only</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <a href="/admin/queue" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Return to Queue Dashboard</a>
@@ -73,6 +86,7 @@ export function AdminFinishedSessionReview({ sessionId }: { sessionId: string })
             <a href={`/admin/queue?sessionId=${encodeURIComponent(session.sessionId)}`} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Review Queue</a>
           </div>
         </div>
+        <AdminQueueSessionProvenance session={session} onSave={post} />
         <div className="grid gap-3 sm:grid-cols-4 text-sm">
           <div className="border border-border p-3"><p className="text-xs text-muted">Total submitted</p><p>{summary.total}</p></div>
           <div className="border border-border p-3"><p className="text-xs text-muted">Completed</p><p>{summary.completedCount || session.completedCount}</p></div>

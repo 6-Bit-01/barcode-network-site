@@ -39,8 +39,10 @@ import type {
   QueueEntry,
   QueueLane,
   QueuePublicTrack,
+  QueueSessionBnlPublicationAccess,
   QueueSourceType,
 } from "@/lib/queue-types";
+import { queueSessionBnlPublicationAccess } from "@/lib/queue-types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -186,17 +188,36 @@ function disabledQueueProjection() {
   };
 }
 
+function unpublishedQueueProjection(access: QueueSessionBnlPublicationAccess) {
+  return {
+    available: false,
+    reason: access.reason,
+    message:
+      "The current BARCODE Radio session has not authorized queue-derived BNL context. Native queue participation remains independent.",
+    publication: access,
+  };
+}
+
 async function readPublicLiveQueueForBnl() {
   const state = await getRadioQueueState();
+  const publication = queueSessionBnlPublicationAccess(state.session);
+  if (!publication.runtimeContext) {
+    return {
+      queue: unpublishedQueueProjection(publication),
+      artists: [] as BnlReadModelArtist[],
+      operatorQueue: null,
+      publication,
+    };
+  }
   const sessionEnded =
     state.session?.status === "archived" ||
     state.session?.broadcastPhase === "ended";
   const realQueueEntries = sessionEnded
     ? []
     : state.queue.filter(isRealQueueEntry);
-  const realCompletedEntries = state.history
-    .filter(isRealQueueEntry)
-    .slice(0, 10);
+  const realCompletedEntries = publication.recapCandidates
+    ? state.history.filter(isRealQueueEntry).slice(0, 10)
+    : [];
   const realRemovedCount = (state.removed ?? []).filter(
     isRealQueueEntry,
   ).length;
@@ -222,50 +243,58 @@ async function readPublicLiveQueueForBnl() {
   const nowPlaying = realNowPlaying ? toPublicQueueTrack(realNowPlaying) : null;
   const upNext = realUpNext ? toPublicQueueTrack(realUpNext) : null;
 
-  return {
-    queue: {
-      available: true,
-      session: {
-        sessionId: state.session?.sessionId ?? "",
-        title: state.session?.title ?? "",
-        showDate: state.session?.showDate ?? "",
-        status: state.session?.status ?? "prepared",
-        queueOpen: !sessionEnded && state.session?.queueOpen === true,
-        broadcastPhase: state.session?.broadcastPhase ?? null,
-        activeCount,
-        completedCount: publicCompletedTracks.length,
-        removedCount: realRemovedCount,
-        wheelSpinsOwed: sessionEnded
-          ? 0
-          : state.session?.wheelSpinsOwed ?? 0,
-        priorityUpgradesEnabled:
-          !sessionEnded && state.session?.priorityUpgradesEnabled === true,
-        priorityUpgradeLabel:
-          state.session?.priorityUpgradeLabel ?? "Priority Signal",
-      },
-      status: {
-        isOpen:
-          !sessionEnded &&
-          (state.publicStatus?.isOpen ?? state.session?.queueOpen === true),
-        activeCount,
-        capacity,
-        pressure: pressureFor(activeCount, capacity),
-      },
-      nowPlaying: publicTrack(nowPlaying, "nowPlaying"),
-      upNext: publicTrack(upNext, "upNext"),
-      queue: publicQueueTracks
-        .map((track) => publicTrack(track, "queued"))
-        .filter((track): track is BnlQueueTrack => Boolean(track)),
-      completed: publicCompletedTracks
-        .map((track) => publicTrack(track, "completed"))
-        .filter((track): track is BnlQueueTrack => Boolean(track)),
+  const queue = {
+    available: true,
+    publication,
+    session: {
+      sessionId: state.session?.sessionId ?? "",
+      title: state.session?.title ?? "",
+      showDate: state.session?.showDate ?? "",
+      status: state.session?.status ?? "prepared",
+      purpose: publication.purpose,
+      bnlPublicationStatus: publication.status,
+      queueOpen: !sessionEnded && state.session?.queueOpen === true,
+      broadcastPhase: state.session?.broadcastPhase ?? null,
+      activeCount,
+      completedCount:
+        state.session?.completedCount ?? publicCompletedTracks.length,
+      removedCount: realRemovedCount,
+      wheelSpinsOwed: sessionEnded
+        ? 0
+        : state.session?.wheelSpinsOwed ?? 0,
+      priorityUpgradesEnabled:
+        !sessionEnded && state.session?.priorityUpgradesEnabled === true,
+      priorityUpgradeLabel:
+        state.session?.priorityUpgradeLabel ?? "Priority Signal",
     },
+    status: {
+      isOpen:
+        !sessionEnded &&
+        (state.publicStatus?.isOpen ?? state.session?.queueOpen === true),
+      activeCount,
+      capacity,
+      pressure: pressureFor(activeCount, capacity),
+    },
+    nowPlaying: publicTrack(nowPlaying, "nowPlaying"),
+    upNext: publicTrack(upNext, "upNext"),
+    queue: publicQueueTracks
+      .map((track) => publicTrack(track, "queued"))
+      .filter((track): track is BnlQueueTrack => Boolean(track)),
+    completed: publicCompletedTracks
+      .map((track) => publicTrack(track, "completed"))
+      .filter((track): track is BnlQueueTrack => Boolean(track)),
+  };
+
+  return {
+    queue,
     artists: artistsFromTracks(
       nowPlaying,
       upNext,
       publicQueueTracks,
       publicCompletedTracks,
     ),
+    operatorQueue: queue,
+    publication,
   };
 }
 
@@ -845,113 +874,134 @@ function trackLaneItem(
     reason:
       lane === "recapCandidates"
         ? "Completed public queue track; possible recap item only."
-        : "Public queue track; temporary runtime/site context only.",
+        : lane === "publicSafeCopyCandidates"
+          ? "Explicitly approved public queue copy candidate."
+          : "Public queue track; temporary runtime/site context only.",
   };
 }
 
-function buildOperatorLanes(
-  queue: Awaited<ReturnType<typeof readPublicLiveQueueForBnl>>["queue"],
-  dossiers: ReturnType<typeof publicDossiers>,
-) {
-  const temporaryRuntimeContext: OperatorLaneItem[] = [
-    {
-      id: "queue:open",
-      label: "Queue open/closed",
-      source: "queue_public_snapshot",
-      kind: "queue_status",
-      value: queue.session.queueOpen,
-      reason: "Public queue runtime status.",
-    },
-    {
-      id: "session:status",
-      label: "Session status",
-      source: "queue_public_snapshot",
-      kind: "session_status",
-      value: queue.session.status,
-      reason: "Public session runtime status.",
-    },
-    {
-      id: "session:broadcastPhase",
-      label: "Broadcast phase",
-      source: "queue_public_snapshot",
-      kind: "broadcast_phase",
-      value: queue.session.broadcastPhase,
-      reason: "Public broadcast phase runtime status.",
-    },
-    {
-      id: "queue:activeCount",
-      label: "Active queue count",
-      source: "queue_public_snapshot",
-      kind: "queue_count",
-      value: queue.session.activeCount,
-      reason: "Public count of active queue tracks.",
-    },
-    {
-      id: "priority:enabled",
-      label: "Priority Signal enabled",
-      source: "queue_public_snapshot",
-      kind: "priority_signal_status",
-      value: queue.session.priorityUpgradesEnabled,
-      reason: "Public feature availability label only, not a payment fact.",
-    },
-    {
-      id: "priority:label",
-      label: "Priority Signal label",
-      source: "queue_public_snapshot",
-      kind: "priority_signal_label",
-      value: queue.session.priorityUpgradeLabel,
-      reason: "Public queue label only.",
-    },
-    {
-      id: "wheel:spinsOwed",
-      label: "Wheel spins owed",
-      source: "queue_public_snapshot",
-      kind: "wheel_status",
-      value: queue.session.wheelSpinsOwed,
-      reason: "Public queue runtime status.",
-    },
-  ];
+type OperatorQueueView = {
+  session: {
+    queueOpen: boolean;
+    status: string;
+    broadcastPhase: string | null;
+    activeCount: number;
+    priorityUpgradesEnabled: boolean;
+    priorityUpgradeLabel: string;
+    wheelSpinsOwed: number;
+  };
+  nowPlaying: BnlQueueTrack | null;
+  upNext: BnlQueueTrack | null;
+  queue: BnlQueueTrack[];
+  completed: BnlQueueTrack[];
+};
 
-  if (queue.nowPlaying)
+function buildOperatorLanes(
+  queue: OperatorQueueView | null,
+  dossiers: ReturnType<typeof publicDossiers>,
+  publication: QueueSessionBnlPublicationAccess | null,
+) {
+  const temporaryRuntimeContext: OperatorLaneItem[] = [];
+  if (queue && publication?.runtimeContext) {
+    temporaryRuntimeContext.push(
+      {
+        id: "queue:open",
+        label: "Queue open/closed",
+        source: "queue_public_snapshot",
+        kind: "queue_status",
+        value: queue.session.queueOpen,
+        reason: "Approved public queue runtime status.",
+      },
+      {
+        id: "session:status",
+        label: "Session status",
+        source: "queue_public_snapshot",
+        kind: "session_status",
+        value: queue.session.status,
+        reason: "Approved public session runtime status.",
+      },
+      {
+        id: "session:broadcastPhase",
+        label: "Broadcast phase",
+        source: "queue_public_snapshot",
+        kind: "broadcast_phase",
+        value: queue.session.broadcastPhase,
+        reason: "Approved public broadcast phase runtime status.",
+      },
+      {
+        id: "queue:activeCount",
+        label: "Active queue count",
+        source: "queue_public_snapshot",
+        kind: "queue_count",
+        value: queue.session.activeCount,
+        reason: "Approved public count of active queue tracks.",
+      },
+      {
+        id: "priority:enabled",
+        label: "Priority Signal enabled",
+        source: "queue_public_snapshot",
+        kind: "priority_signal_status",
+        value: queue.session.priorityUpgradesEnabled,
+        reason: "Public feature availability label only, not a payment fact.",
+      },
+      {
+        id: "priority:label",
+        label: "Priority Signal label",
+        source: "queue_public_snapshot",
+        kind: "priority_signal_label",
+        value: queue.session.priorityUpgradeLabel,
+        reason: "Public queue label only.",
+      },
+      {
+        id: "wheel:spinsOwed",
+        label: "Wheel spins owed",
+        source: "queue_public_snapshot",
+        kind: "wheel_status",
+        value: queue.session.wheelSpinsOwed,
+        reason: "Approved public queue runtime status.",
+      },
+    );
+  }
+
+  if (queue && publication?.runtimeContext && queue.nowPlaying)
     temporaryRuntimeContext.push(
       trackLaneItem(queue.nowPlaying, "nowPlaying", "temporaryRuntimeContext"),
     );
-  if (queue.upNext)
+  if (queue && publication?.runtimeContext && queue.upNext)
     temporaryRuntimeContext.push(
       trackLaneItem(queue.upNext, "upNext", "temporaryRuntimeContext"),
     );
-  temporaryRuntimeContext.push(
-    ...queue.queue.map((track) =>
+  if (queue && publication?.runtimeContext)
+    temporaryRuntimeContext.push(...queue.queue.map((track) =>
       trackLaneItem(track, "queued", "temporaryRuntimeContext"),
-    ),
-  );
+    ));
 
-  const recapCandidates = queue.completed.map((track) =>
-    trackLaneItem(track, "completed", "recapCandidates"),
-  );
-  const publicSafeCopyCandidates: OperatorLaneItem[] = [
-    {
+  const recapCandidates = queue && publication?.recapCandidates
+    ? queue.completed.map((track) => trackLaneItem(track, "completed", "recapCandidates"))
+    : [];
+  const publicSafeCopyCandidates: OperatorLaneItem[] = [];
+  if (queue && publication?.publicCopyCandidates) {
+    publicSafeCopyCandidates.push({
       id: "copy:queue:open",
       label: "Queue open/closed",
       source: "queue_public_snapshot",
       kind: "queue_status",
       value: queue.session.queueOpen,
-      reason: "High-level public queue copy is safe to reference.",
-    },
-  ];
-  if (queue.nowPlaying)
+      reason: "Explicitly approved high-level queue copy.",
+    });
+  }
+  if (queue && publication?.publicCopyCandidates && queue.nowPlaying)
     publicSafeCopyCandidates.push(
       trackLaneItem(queue.nowPlaying, "nowPlaying", "publicSafeCopyCandidates"),
     );
-  if (queue.upNext)
+  if (queue && publication?.publicCopyCandidates && queue.upNext)
     publicSafeCopyCandidates.push(
       trackLaneItem(queue.upNext, "upNext", "publicSafeCopyCandidates"),
     );
-  publicSafeCopyCandidates.push(
-    ...queue.completed.map((track) =>
+  if (queue && publication?.publicCopyCandidates)
+    publicSafeCopyCandidates.push(...queue.completed.map((track) =>
       trackLaneItem(track, "completed", "publicSafeCopyCandidates"),
-    ),
-  );
+    ));
   publicSafeCopyCandidates.push(
     ...dossiers.public.map((dossier) => ({
       id: `copy:dossier:${dossier.id}`,
@@ -980,6 +1030,9 @@ function buildOperatorLanes(
       "website read model is public temporary context",
       "simulation/test tracks are excluded",
       "no private payment/contact/upload/admin data",
+      ...(publication?.runtimeContext
+        ? []
+        : ["queue session provenance does not authorize BNL projection"]),
     ],
   };
 }
@@ -995,6 +1048,7 @@ const rules = {
     "operatorLanes are hints, not actions",
     "broadcastMemoryCandidates are drafts only",
     "recapCandidates are possible recap items only",
+    "queue publication access and each track bnlContext constrain every use",
     "dossierSeedCandidates are possible seeds only",
     "temporaryRuntimeContext should not be stored",
     "BNL must not treat this endpoint as private access",
@@ -1015,6 +1069,9 @@ const rules = {
     "account profiles",
     "Discord identity merging",
     "automatic canon creation",
+    "using runtime-only queue context as recap, durable memory, or general public copy",
+    "using recap candidates as general public copy without public_copy_approved",
+    "inferring BNL publication consent from native queue visibility, playback, or archive state",
     "claiming private access to restricted/internal dossier details",
     "inferring hidden details from restricted/internal clearance labels",
     "exposing admin notes, Discord IDs, payment/customer data, contact fields, upload fields, or private fields",
@@ -1038,14 +1095,21 @@ export async function GET() {
   const queueProductionEnabled = isQueueProductionEnabled();
   const liveQueue = queueProductionEnabled
     ? await readPublicLiveQueueForBnl()
-    : { queue: disabledQueueProjection(), artists: [] };
+    : {
+        queue: disabledQueueProjection(),
+        artists: [] as BnlReadModelArtist[],
+        operatorQueue: null,
+        publication: null,
+      };
   const dossiers = publicDossiers();
+  const queueProjectionEnabled =
+    queueProductionEnabled && liveQueue.publication?.runtimeContext === true;
 
   return NextResponse.json(
     {
       ok: true,
       version: 1,
-      schemaRevision: "1.4",
+      schemaRevision: "1.5",
       generatedAt: new Date().toISOString(),
       scope: "bnl_public_read_model",
       source: "barcode-network-site",
@@ -1058,10 +1122,9 @@ export async function GET() {
         dossiers,
         operatorLanes: queueProductionEnabled
           ? buildOperatorLanes(
-              liveQueue.queue as Awaited<
-                ReturnType<typeof readPublicLiveQueueForBnl>
-              >["queue"],
+              liveQueue.operatorQueue,
               dossiers,
+              liveQueue.publication,
             )
           : {
               temporaryRuntimeContext: [],
@@ -1071,7 +1134,7 @@ export async function GET() {
               publicSafeCopyCandidates: [],
               doNotStore: ["queue production signals are disabled"],
             },
-        rules: queueProductionEnabled
+        rules: queueProjectionEnabled
           ? rules
           : {
               ...rules,
@@ -1081,11 +1144,17 @@ export async function GET() {
               sourceAuthority: {
                 ...rules.sourceAuthority,
                 queue:
-                  "production queue signals unavailable; testing queue sessions and tracks are not public runtime context",
+                  queueProductionEnabled
+                    ? "current session provenance does not authorize queue-derived BNL context; native queue participation remains independent"
+                    : "production queue signals unavailable; testing queue sessions and tracks are not public runtime context",
                 artists:
-                  "queue-derived artist surfaces unavailable while production queue signals are disabled",
+                  queueProductionEnabled
+                    ? "queue-derived artist surfaces unavailable without explicit session publication"
+                    : "queue-derived artist surfaces unavailable while production queue signals are disabled",
                 operatorLanes:
-                  "queue-derived lane hints unavailable while production queue signals are disabled",
+                  queueProductionEnabled
+                    ? "queue-derived lane hints unavailable without explicit session publication; public dossier summaries remain independent"
+                    : "queue-derived lane hints unavailable while production queue signals are disabled",
               },
             },
       },

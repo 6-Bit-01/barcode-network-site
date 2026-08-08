@@ -19,7 +19,7 @@ Production: <https://www.barcode-network.com>
 | Internal dossier workflow | Admin dossier routes and `dossier-workflow*` modules |
 | Public dossier rendering | Static entries adapted through `dossier-page-view-model.ts` into `DossierPageView.tsx` |
 
-The native queue exists and is tested, but queue-derived public and BNL truth remains quarantined unless `BARCODE_QUEUE_PRODUCTION_ENABLED` is exactly `true`. Until the owner approves the native cutover, operational Radio submission links and copy continue to point to Auxchord. When enabled, the same server-side gate moves the Radio page, Footer, Terminal, and BNL public source context to the native `/queue` route; historical Auxchord records remain intact.
+The native queue exists and is tested, but native presentation remains quarantined unless `BARCODE_QUEUE_PRODUCTION_ENABLED` is exactly `true`. Until the owner approves the native cutover, operational Radio submission links and copy continue to point to Auxchord. When enabled, the server-side capability moves the Radio page, Footer, Terminal, and BNL public source context to the native `/queue` route; historical Auxchord records remain intact. Queue-derived BNL context has an additional session-level boundary: only a session explicitly marked `live_broadcast` can opt into `runtime_only`, `recap_approved`, or `public_copy_approved`. New rehearsals and legacy/unknown sessions remain private by default even when the native queue is publicly usable.
 
 `stream-engine/`, `discord-bot/`, and `_archive/` are historical references. They are not production services and do not define current queue contracts.
 
@@ -81,11 +81,11 @@ Before enabling native queue-derived public truth:
 2. Confirm Redis, Blob, Stripe, and provider configuration.
 3. Set `BARCODE_QUEUE_PRODUCTION_ENABLED=true` in the intended Vercel environment.
 4. Redeploy.
-5. Verify `/api/admin/live` and `/api/bnl/read-model` report `capabilities.queueProduction=true` without exposing payment or test-only state.
+5. Verify `/api/admin/live` and `/api/bnl/read-model` report `capabilities.queueProduction=true`. A private/rehearsal session must still report its queue projection unavailable; an explicitly approved live broadcast must expose only its selected sanitized lanes without payment or test-only state.
 6. Verify `/radio`, the Footer, and Terminal `RADIO` point to `/queue`, and verify the queue's honest open/closed state.
 7. Leave the bot's independent queue-production gate disabled until this site cutover is verified and separately approved.
 
-Rollback by removing the variable or setting it to anything other than exact `true`, then redeploying. Operational submission surfaces return to Auxchord and queue-derived public/BNL truth is quarantined again.
+Rollback by removing the variable or setting it to anything other than exact `true`, then redeploying. Operational submission surfaces return to Auxchord and every queue-derived BNL lane is quarantined regardless of session publication state.
 
 ## Change discipline
 

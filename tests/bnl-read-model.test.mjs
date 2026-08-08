@@ -40,6 +40,7 @@ Module._extensions[".ts"] = function loadTypeScript(module, filename) {
 
 const require = createRequire(import.meta.url);
 const queue = require("../src/lib/queue.ts");
+const queueTypes = require("../src/lib/queue-types.ts");
 const { databasePage } = require("../src/content.ts");
 const { getDatabaseAggregateStats } = require("../src/lib/database-stats.ts");
 const { getDossierPrimaryLink, getDossierPublicLinks, legacyDossierLink } = require("../src/lib/dossier-links.ts");
@@ -115,7 +116,11 @@ async function sourceFilesGet(query, token = "test-source-file-read-token") {
 async function freshReadModelSession() {
   sequence += 1;
   await queue.setQueueOpen(false);
-  const state = await queue.startNewQueueSession({ title: `BNL Read Model ${Date.now()} ${sequence}` });
+  const state = await queue.startNewQueueSession({
+    title: `BNL Read Model ${Date.now()} ${sequence}`,
+    purpose: "live_broadcast",
+    bnlPublicationStatus: "public_copy_approved",
+  });
   await queue.setQueueOpen(true);
   await queue.updateRadioTrack("", "startShow");
   return state.session.sessionId;
@@ -212,6 +217,133 @@ function allTrackIds(model) {
   ].filter(Boolean);
 }
 
+function queueSourceItems(lanes, lane) {
+  return lanes[lane].filter((item) => item.source === "queue_public_snapshot");
+}
+
+test("legacy and unknown queue sessions fail closed at the BNL publication boundary", () => {
+  const access = queueTypes.queueSessionBnlPublicationAccess({});
+  assert.deepEqual(access, {
+    purpose: "unknown",
+    status: "private",
+    runtimeContext: false,
+    recapCandidates: false,
+    publicCopyCandidates: false,
+    reason: "legacy_or_unknown_session_quarantined",
+  });
+});
+
+test("new rehearsal sessions remain publicly usable while every queue-derived BNL lane stays quarantined", async () => {
+  sequence += 1;
+  await queue.setQueueOpen(false);
+  const state = await queue.startNewQueueSession({
+    title: `Quarantined rehearsal ${Date.now()} ${sequence}`,
+  });
+  assert.equal(state.session.purpose, "rehearsal");
+  assert.equal(state.session.bnlPublicationStatus, "private");
+  assert.equal(state.session.provenanceRevision, 1);
+  assert.ok(state.session.provenanceUpdatedAt);
+
+  await queue.setQueueOpen(true);
+  const track = await addTrack("Public Rehearsal", { artist: "Rehearsal Artist" });
+  const publicSnapshot = await queue.getPublicQueueSnapshot(state.session.sessionId);
+  assert.ok([
+    publicSnapshot.nowPlaying?.id,
+    publicSnapshot.upNext?.id,
+    ...publicSnapshot.queue.map((item) => item.id),
+  ].includes(track.id), "native public queue must remain usable during a quarantined rehearsal");
+  await queue.updateRadioTrack(track.id, "finish");
+
+  for (const archived of [false, true]) {
+    if (archived) await queue.archiveCurrentQueueSession();
+    const model = await modelJson();
+    assert.equal(model.sections.queue.available, false);
+    assert.equal(model.sections.queue.reason, "session_purpose_quarantined");
+    assert.equal(model.sections.queue.publication.purpose, "rehearsal");
+    assert.deepEqual(model.sections.artists, []);
+    for (const lane of [
+      "temporaryRuntimeContext",
+      "recapCandidates",
+      "broadcastMemoryCandidates",
+      "dossierSeedCandidates",
+      "publicSafeCopyCandidates",
+    ]) {
+      assert.deepEqual(queueSourceItems(model.sections.operatorLanes, lane), []);
+    }
+    assert.ok(model.sections.operatorLanes.doNotStore.includes("queue session provenance does not authorize BNL projection"));
+    assert.ok(model.sections.operatorLanes.publicSafeCopyCandidates.some((item) => item.source === "public_database_dossier"));
+  }
+
+  const explicitlyApproved = await queue.updateQueueSessionProvenance({
+    sessionId: state.session.sessionId,
+    purpose: "live_broadcast",
+    bnlPublicationStatus: "recap_approved",
+  });
+  assert.equal(explicitlyApproved.session.status, "archived");
+  assert.equal(explicitlyApproved.readOnly, true);
+  assert.equal(explicitlyApproved.session.provenanceRevision, 2);
+  const approvedModel = await modelJson();
+  assert.equal(approvedModel.sections.queue.available, true);
+  assert.ok(approvedModel.sections.queue.completed.some((item) => item.id === track.id));
+  assert.ok(queueSourceItems(approvedModel.sections.operatorLanes, "recapCandidates").some((item) => item.trackId === track.id));
+  assert.deepEqual(queueSourceItems(approvedModel.sections.operatorLanes, "publicSafeCopyCandidates"), []);
+});
+
+test("live-broadcast publication levels unlock only their approved queue-derived BNL lanes", async () => {
+  sequence += 1;
+  await queue.setQueueOpen(false);
+  const state = await queue.startNewQueueSession({
+    title: `Publication levels ${Date.now()} ${sequence}`,
+    purpose: "live_broadcast",
+    bnlPublicationStatus: "runtime_only",
+  });
+  await queue.setQueueOpen(true);
+  const queued = await addTrack("Runtime Only", { artist: "Runtime Artist" });
+  const completed = await addTrack("Publication Completed", { artist: "Publication Artist" });
+  await queue.updateRadioTrack(completed.id, "finish");
+
+  let model = await modelJson();
+  assert.equal(model.sections.queue.available, true);
+  assert.equal(model.sections.queue.publication.status, "runtime_only");
+  assert.equal(model.sections.queue.completed.length, 0);
+  assert.ok(queueSourceItems(model.sections.operatorLanes, "temporaryRuntimeContext").some((item) => item.trackId === queued.id));
+  assert.deepEqual(queueSourceItems(model.sections.operatorLanes, "recapCandidates"), []);
+  assert.deepEqual(queueSourceItems(model.sections.operatorLanes, "publicSafeCopyCandidates"), []);
+
+  let updated = await queue.updateQueueSessionProvenance({
+    sessionId: state.session.sessionId,
+    purpose: "live_broadcast",
+    bnlPublicationStatus: "recap_approved",
+  });
+  assert.equal(updated.session.bnlPublicationStatus, "recap_approved");
+  assert.equal(updated.session.provenanceRevision, 2);
+  assert.ok(updated.session.provenanceUpdatedAt);
+  model = await modelJson();
+  assert.ok(model.sections.queue.completed.some((item) => item.id === completed.id));
+  assert.ok(queueSourceItems(model.sections.operatorLanes, "recapCandidates").some((item) => item.trackId === completed.id));
+  assert.deepEqual(queueSourceItems(model.sections.operatorLanes, "publicSafeCopyCandidates"), []);
+
+  updated = await queue.updateQueueSessionProvenance({
+    sessionId: state.session.sessionId,
+    purpose: "live_broadcast",
+    bnlPublicationStatus: "public_copy_approved",
+  });
+  assert.equal(updated.session.bnlPublicationStatus, "public_copy_approved");
+  assert.equal(updated.session.provenanceRevision, 3);
+  model = await modelJson();
+  assert.ok(queueSourceItems(model.sections.operatorLanes, "recapCandidates").some((item) => item.trackId === completed.id));
+  assert.ok(queueSourceItems(model.sections.operatorLanes, "publicSafeCopyCandidates").some((item) => item.trackId === completed.id));
+
+  updated = await queue.updateQueueSessionProvenance({
+    sessionId: state.session.sessionId,
+    purpose: "rehearsal",
+    bnlPublicationStatus: "public_copy_approved",
+  });
+  assert.equal(updated.session.purpose, "rehearsal");
+  assert.equal(updated.session.bnlPublicationStatus, "private");
+  assert.equal(updated.session.provenanceRevision, 4);
+});
+
 test("BNL read model preserves v1 compatibility and adds semantic sections", async () => {
   await freshReadModelSession();
   const queued = await addTrack("Queued", { artist: "Queued Artist" });
@@ -222,7 +354,7 @@ test("BNL read model preserves v1 compatibility and adds semantic sections", asy
 
   assert.equal(model.ok, true);
   assert.equal(model.version, 1);
-  assert.equal(model.schemaRevision, "1.4");
+  assert.equal(model.schemaRevision, "1.5");
   assert.equal(model.publicOnly, true);
   assert.ok(model.sections.sourceContext);
   assert.ok(model.sections.queue);

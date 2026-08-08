@@ -2,7 +2,8 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
 import { resetWheelCeremonyStateForNewSession } from "@/lib/live-overlay";
-import { archiveCurrentQueueSession, clearArchivedQueueSessions, getRadioQueueState, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateRadioTrack, updateSponsorBreakState, updateSubmissionCooldownSettings } from "@/lib/queue";
+import { archiveCurrentQueueSession, clearArchivedQueueSessions, getRadioQueueState, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateQueueSessionProvenance, updateRadioTrack, updateSponsorBreakState, updateSubmissionCooldownSettings } from "@/lib/queue";
+import { isQueueSessionBnlPublicationStatus, isQueueSessionPurpose } from "@/lib/queue-types";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,15 @@ export async function POST(req: Request) {
     return NextResponse.json(await getRadioQueueState());
   }
   if (body.action === "startSession") {
+    if (body.purpose !== undefined && !isQueueSessionPurpose(body.purpose)) {
+      return NextResponse.json({ error: "Invalid queue session purpose." }, { status: 400 });
+    }
+    if (body.bnlPublicationStatus !== undefined && !isQueueSessionBnlPublicationStatus(body.bnlPublicationStatus)) {
+      return NextResponse.json({ error: "Invalid BNL publication status." }, { status: 400 });
+    }
+    if (body.purpose !== "live_broadcast" && body.bnlPublicationStatus !== undefined && body.bnlPublicationStatus !== "private") {
+      return NextResponse.json({ error: "Only live broadcast sessions can approve BNL publication." }, { status: 400 });
+    }
     const trackLimitPerArtist = Number(body.trackLimitPerArtist);
     const skipGameTapTarget = Number(body.skipGameTapTarget);
     const queueCapacity = Number(body.queueCapacity);
@@ -37,6 +47,8 @@ export async function POST(req: Request) {
       title: typeof body.title === "string" ? body.title : undefined,
       showDate: typeof body.showDate === "string" ? body.showDate : undefined,
       description: typeof body.description === "string" ? body.description : undefined,
+      purpose: isQueueSessionPurpose(body.purpose) ? body.purpose : undefined,
+      bnlPublicationStatus: isQueueSessionBnlPublicationStatus(body.bnlPublicationStatus) ? body.bnlPublicationStatus : undefined,
       trackLimitPerArtist: Number.isFinite(trackLimitPerArtist) && trackLimitPerArtist > 0 ? trackLimitPerArtist : undefined,
       queueCapacity: Number.isFinite(queueCapacity) && queueCapacity > 0 ? queueCapacity : undefined,
       skipGameTapTarget: Number.isFinite(skipGameTapTarget) && skipGameTapTarget > 0 ? skipGameTapTarget : undefined,
@@ -54,6 +66,32 @@ export async function POST(req: Request) {
   if (body.action === "updateSubmissionCooldownSettings") {
     const submissionCooldownSeconds = Number(body.submissionCooldownSeconds);
     return NextResponse.json(await updateSubmissionCooldownSettings({ submissionCooldownSeconds: Number.isFinite(submissionCooldownSeconds) ? submissionCooldownSeconds : undefined }));
+  }
+  if (body.action === "updateSessionProvenance") {
+    if (typeof body.sessionId !== "string" || !body.sessionId.trim()) {
+      return NextResponse.json({ error: "Queue session ID is required." }, { status: 400 });
+    }
+    if (!isQueueSessionPurpose(body.purpose)) {
+      return NextResponse.json({ error: "Invalid queue session purpose." }, { status: 400 });
+    }
+    if (!isQueueSessionBnlPublicationStatus(body.bnlPublicationStatus)) {
+      return NextResponse.json({ error: "Invalid BNL publication status." }, { status: 400 });
+    }
+    if (body.purpose !== "live_broadcast" && body.bnlPublicationStatus !== "private") {
+      return NextResponse.json({ error: "Only live broadcast sessions can approve BNL publication." }, { status: 400 });
+    }
+    try {
+      return NextResponse.json(await updateQueueSessionProvenance({
+        sessionId: body.sessionId,
+        purpose: body.purpose,
+        bnlPublicationStatus: body.bnlPublicationStatus,
+      }));
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Queue session provenance could not be updated." },
+        { status: 404 },
+      );
+    }
   }
   if (body.action === "updatePriorityUpgradeSettings") {
     const priorityPriceCents = Number(body.priceCents);

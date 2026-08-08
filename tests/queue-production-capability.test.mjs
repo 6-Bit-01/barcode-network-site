@@ -219,7 +219,12 @@ test("not_connected queue submission boundary remains compatible while disabled"
 
 test("enabled capability restores public-facing BNL queue behavior", async () => {
   await withQueueProduction("true", async () => {
-    await queue.startNewQueueSession({ title: "Production Enabled Queue" });
+    await queue.setQueueOpen(false);
+    await queue.startNewQueueSession({
+      title: "Production Enabled Queue",
+      purpose: "live_broadcast",
+      bnlPublicationStatus: "runtime_only",
+    });
     await queue.setQueueOpen(true);
     const added = await queue.addToQueue({ artist: "Enabled Artist", title: "Enabled Track", tier: "free", lane: "regular", amount: 0, createdAt: new Date().toISOString() });
     const model = await (await readModel.GET(new Request("https://example.test/api/bnl/read-model"))).json();
@@ -230,5 +235,26 @@ test("enabled capability restores public-facing BNL queue behavior", async () =>
     const radioContext = model.sections.sourceContext.find((item) => item.id === "barcode_radio");
     assert.match(radioContext.summary, /native BARCODE Radio queue/);
     assert.doesNotMatch(radioContext.summary, /Auxchord/);
+  });
+});
+
+test("enabled native queue capability does not override session-level BNL quarantine", async () => {
+  await withQueueProduction("true", async () => {
+    await queue.setQueueOpen(false);
+    await queue.startNewQueueSession({ title: "Production Rehearsal Queue" });
+    await queue.setQueueOpen(true);
+    const added = await queue.addToQueue({ artist: "Rehearsal Artist", title: "Rehearsal Track", tier: "free", lane: "regular", amount: 0, createdAt: new Date().toISOString() });
+    const publicSnapshot = await queue.getPublicQueueSnapshot();
+    assert.ok(JSON.stringify(publicSnapshot).includes(added.id));
+
+    const model = await (await readModel.GET(new Request("https://example.test/api/bnl/read-model"))).json();
+    assert.equal(model.capabilities.queueProduction, true);
+    assert.equal(model.sections.queue.available, false);
+    assert.equal(model.sections.queue.reason, "session_purpose_quarantined");
+    assert.equal(JSON.stringify(model.sections.queue).includes(added.id), false);
+    assert.equal(model.sections.artists.some((artist) => artist.name === "Rehearsal Artist"), false);
+    assert.equal(model.sections.operatorLanes.temporaryRuntimeContext.some((item) => item.source === "queue_public_snapshot"), false);
+    assert.equal(model.sections.operatorLanes.recapCandidates.some((item) => item.source === "queue_public_snapshot"), false);
+    assert.equal(model.sections.operatorLanes.publicSafeCopyCandidates.some((item) => item.source === "queue_public_snapshot"), false);
   });
 });

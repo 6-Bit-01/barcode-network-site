@@ -10,6 +10,8 @@ export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | 
 export type QueueDurationSource = "upload_metadata" | "file_metadata" | "youtube" | "soundcloud" | "spotify" | "youtube_api" | "spotify_api" | "soundcloud_api" | "direct_metadata" | "provider_metadata" | "internal_estimate" | "estimated" | "unknown";
 export type QueueSessionStatus = "prepared" | "open" | "closed" | "archived";
 export type QueueBroadcastPhase = "warmup" | "submission_window" | "broadcast_active" | "ended";
+export type QueueSessionPurpose = "unknown" | "rehearsal" | "live_broadcast" | "simulation" | "internal_test";
+export type QueueSessionBnlPublicationStatus = "private" | "runtime_only" | "recap_approved" | "public_copy_approved";
 export type PriorityUpgradeStatus = "none" | "requested" | "manual" | "checkout_pending" | "paid" | "paid_needs_attention" | "failed" | "refunded";
 export type PriorityUpgradeSource = "admin" | "public_placeholder" | "future_payment" | "stripe";
 export type SponsorBreakMode = "mid_show";
@@ -22,6 +24,101 @@ export const PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION = "1.0";
 export const PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT = "I agree to the BARCODE Network Terms, Queue Submission Terms, and Privacy Policy. I confirm I am 13+ and, if under 18, have parent/guardian permission. I confirm I have the rights to submit this track, and I understand uploads are temporary and may be used for BARCODE Radio/live show-related playback, clips, recaps, platform replays, and related BARCODE Network features as described in the terms.";
 export const PRIORITY_TERMS_VERSION = "1.0";
 export const PRIORITY_DISCLOSURE_TEXT = "Priority Signal moves an eligible submission closer to the front after payment clears. It does not guarantee approval, airplay, promotion, review, a specific stream time, permanent placement, or interruption of the track currently playing. By continuing to checkout, I confirm that I am at least 18 years old or have permission from a parent or legal guardian to make this payment.";
+
+export const QUEUE_SESSION_PURPOSES = [
+  "unknown",
+  "rehearsal",
+  "live_broadcast",
+  "simulation",
+  "internal_test",
+] as const satisfies readonly QueueSessionPurpose[];
+
+export const QUEUE_SESSION_BNL_PUBLICATION_STATUSES = [
+  "private",
+  "runtime_only",
+  "recap_approved",
+  "public_copy_approved",
+] as const satisfies readonly QueueSessionBnlPublicationStatus[];
+
+export function isQueueSessionPurpose(value: unknown): value is QueueSessionPurpose {
+  return typeof value === "string" && (QUEUE_SESSION_PURPOSES as readonly string[]).includes(value);
+}
+
+export function isQueueSessionBnlPublicationStatus(value: unknown): value is QueueSessionBnlPublicationStatus {
+  return typeof value === "string" && (QUEUE_SESSION_BNL_PUBLICATION_STATUSES as readonly string[]).includes(value);
+}
+
+export function normalizeQueueSessionPurpose(value: unknown): QueueSessionPurpose {
+  return isQueueSessionPurpose(value) ? value : "unknown";
+}
+
+export function normalizeQueueSessionBnlPublicationStatus(
+  value: unknown,
+  purpose: QueueSessionPurpose,
+): QueueSessionBnlPublicationStatus {
+  if (purpose !== "live_broadcast") return "private";
+  return isQueueSessionBnlPublicationStatus(value) ? value : "private";
+}
+
+export type QueueSessionBnlPublicationAccess = {
+  purpose: QueueSessionPurpose;
+  status: QueueSessionBnlPublicationStatus;
+  runtimeContext: boolean;
+  recapCandidates: boolean;
+  publicCopyCandidates: boolean;
+  reason:
+    | "legacy_or_unknown_session_quarantined"
+    | "session_purpose_quarantined"
+    | "session_publication_private"
+    | "runtime_only_approved"
+    | "recap_approved"
+    | "public_copy_approved";
+};
+
+export function queueSessionBnlPublicationAccess(
+  session: Pick<QueueSessionSummary, "purpose" | "bnlPublicationStatus"> | null | undefined,
+): QueueSessionBnlPublicationAccess {
+  const purpose = normalizeQueueSessionPurpose(session?.purpose);
+  const status = normalizeQueueSessionBnlPublicationStatus(session?.bnlPublicationStatus, purpose);
+  if (purpose === "unknown") {
+    return {
+      purpose,
+      status: "private",
+      runtimeContext: false,
+      recapCandidates: false,
+      publicCopyCandidates: false,
+      reason: "legacy_or_unknown_session_quarantined",
+    };
+  }
+  if (purpose !== "live_broadcast") {
+    return {
+      purpose,
+      status: "private",
+      runtimeContext: false,
+      recapCandidates: false,
+      publicCopyCandidates: false,
+      reason: "session_purpose_quarantined",
+    };
+  }
+  if (status === "private") {
+    return {
+      purpose,
+      status,
+      runtimeContext: false,
+      recapCandidates: false,
+      publicCopyCandidates: false,
+      reason: "session_publication_private",
+    };
+  }
+  return {
+    purpose,
+    status,
+    runtimeContext: true,
+    recapCandidates: status === "recap_approved" || status === "public_copy_approved",
+    publicCopyCandidates: status === "public_copy_approved",
+    reason: status === "runtime_only" ? "runtime_only_approved" : status,
+  };
+}
 
 export const APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE =
   "Apple Music links are not currently accepted because BARCODE Radio cannot reliably access the full track. Use another accepted source or upload an MP3/WAV instead.";
@@ -142,6 +239,10 @@ export interface QueueSessionSummary {
   sessionId: string;
   title: string;
   status: QueueSessionStatus;
+  purpose: QueueSessionPurpose;
+  bnlPublicationStatus: QueueSessionBnlPublicationStatus;
+  provenanceRevision: number;
+  provenanceUpdatedAt?: string | null;
   showDate: string;
   createdAt: string;
   updatedAt: string;

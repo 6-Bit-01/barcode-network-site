@@ -14,6 +14,8 @@ import {
   getTrackRuntimeSeconds,
   getTrackDurationLabel,
   getTrackArtworkUrl,
+  normalizeQueueSessionBnlPublicationStatus,
+  normalizeQueueSessionPurpose,
   normalizeTier,
   parseTikTokVideoUrl,
 } from "./queue-types";
@@ -28,6 +30,8 @@ import type {
   QueuePublicTrack,
   PriorityLegalAcceptanceInput,
   QueueSession,
+  QueueSessionBnlPublicationStatus,
+  QueueSessionPurpose,
   QueueSessionStatus,
   QueueSessionSummary,
   QueueSourceType,
@@ -59,6 +63,30 @@ export interface PriorityUpgradeSettingsInput {
   priceCents?: number;
   currency?: string;
   paymentsEnabled?: boolean;
+}
+
+export interface QueueSessionOptions {
+  title?: string;
+  showDate?: string;
+  description?: string;
+  purpose?: QueueSessionPurpose;
+  bnlPublicationStatus?: QueueSessionBnlPublicationStatus;
+  trackLimitPerArtist?: number;
+  queueCapacity?: number;
+  skipGameTapTarget?: number;
+  submissionCooldownSeconds?: number;
+  priorityUpgradesEnabled?: boolean;
+  priorityUpgradeLabel?: string;
+  priorityUpgradeInstructions?: string;
+  priorityUpgradePriceCents?: number;
+  priorityUpgradeCurrency?: string;
+  priorityUpgradePaymentsEnabled?: boolean;
+}
+
+export interface QueueSessionProvenanceInput {
+  sessionId?: string;
+  purpose: QueueSessionPurpose;
+  bnlPublicationStatus: QueueSessionBnlPublicationStatus;
 }
 
 interface QueueStore {
@@ -128,13 +156,21 @@ function normalizePaidPriorityEnabled(input: { priorityUpgradesEnabled?: boolean
   return (input.priorityUpgradesEnabled === true || input.priorityUpgradePaymentsEnabled === true) && normalizePriceCents(input.priorityUpgradePriceCents) > 0;
 }
 
-function defaultSession(options: { title?: string; showDate?: string; description?: string; trackLimitPerArtist?: number; queueCapacity?: number; skipGameTapTarget?: number; submissionCooldownSeconds?: number; priorityUpgradesEnabled?: boolean; priorityUpgradeLabel?: string; priorityUpgradeInstructions?: string; priorityUpgradePriceCents?: number; priorityUpgradeCurrency?: string; priorityUpgradePaymentsEnabled?: boolean } = {}): QueueSession {
+function defaultSession(options: QueueSessionOptions = {}): QueueSession {
   const date = options.showDate ?? todayDate();
   const now = new Date().toISOString();
+  const purpose = options.purpose ?? "rehearsal";
   return normalizeSession({
     sessionId: makeSessionId(),
     title: options.title?.trim() || `BARCODE Radio — ${date}`,
     status: "prepared",
+    purpose,
+    bnlPublicationStatus: normalizeQueueSessionBnlPublicationStatus(
+      options.bnlPublicationStatus,
+      purpose,
+    ),
+    provenanceRevision: 1,
+    provenanceUpdatedAt: now,
     showDate: date,
     createdAt: now,
     updatedAt: now,
@@ -575,10 +611,15 @@ function publicStatusForSession(session: Pick<QueueSession, "queue" | "queueOpen
 
 function summarizeSession(session: QueueSession): QueueSessionSummary {
   const publicStatus = publicStatusForSession(session);
+  const purpose = normalizeQueueSessionPurpose(session.purpose);
   return {
     sessionId: session.sessionId,
     title: session.title,
     status: session.status,
+    purpose,
+    bnlPublicationStatus: normalizeQueueSessionBnlPublicationStatus(session.bnlPublicationStatus, purpose),
+    provenanceRevision: session.provenanceRevision ?? 0,
+    provenanceUpdatedAt: session.provenanceUpdatedAt ?? null,
     showDate: session.showDate,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
@@ -779,9 +820,14 @@ function normalizeSessionStatus(status: unknown, queueOpen: boolean): QueueSessi
 function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; title: string; status: QueueSessionStatus; showDate: string; createdAt: string; updatedAt: string; queueOpen: boolean }): QueueSession {
   const queueOpen = raw.status === "open" ? true : raw.queueOpen === true;
   const status = normalizeSessionStatus(raw.status, queueOpen);
+  const purpose = normalizeQueueSessionPurpose(raw.purpose);
   const session = {
     ...raw,
     status,
+    purpose,
+    bnlPublicationStatus: normalizeQueueSessionBnlPublicationStatus(raw.bnlPublicationStatus, purpose),
+    provenanceRevision: typeof raw.provenanceRevision === "number" && Number.isFinite(raw.provenanceRevision) ? Math.max(0, Math.floor(raw.provenanceRevision)) : 0,
+    provenanceUpdatedAt: typeof raw.provenanceUpdatedAt === "string" && raw.provenanceUpdatedAt ? raw.provenanceUpdatedAt : null,
     description: raw.description ?? sessionDescriptionFor(raw.showDate),
     trackLimitPerArtist: raw.trackLimitPerArtist ?? 3,
     queueCapacity: raw.queueCapacity ?? raw.publicStatus?.capacity ?? DEFAULT_QUEUE_CAPACITY,
@@ -840,6 +886,10 @@ function normalizeStore(input: unknown): QueueStore {
   if (legacy && (Array.isArray(legacy.queue) || Array.isArray(legacy.completed))) {
     const session = normalizeSession({
       ...defaultSession(),
+      purpose: "unknown",
+      bnlPublicationStatus: "private",
+      provenanceRevision: 0,
+      provenanceUpdatedAt: null,
       queue: legacy.queue ?? [],
       completed: legacy.completed ?? [],
       removed: legacy.removed ?? [],
@@ -1957,7 +2007,7 @@ export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> 
   return publicStatusForSession(getSession(nextStore));
 }
 
-export async function startNewQueueSession(options: { title?: string; showDate?: string; description?: string; trackLimitPerArtist?: number; queueCapacity?: number; skipGameTapTarget?: number; submissionCooldownSeconds?: number; priorityUpgradesEnabled?: boolean; priorityUpgradeLabel?: string; priorityUpgradeInstructions?: string; priorityUpgradePriceCents?: number; priorityUpgradeCurrency?: string; priorityUpgradePaymentsEnabled?: boolean } = {}): Promise<QueueState> {
+export async function startNewQueueSession(options: QueueSessionOptions = {}): Promise<QueueState> {
   const store = await readStore();
   const current = getSession(store);
   if (current.status === "open" || current.queueOpen) return queueStateFromSession(current, store);
@@ -1966,6 +2016,32 @@ export async function startNewQueueSession(options: { title?: string; showDate?:
   const nextStore = { activeSessionId: next.sessionId, sessions: [next, ...preserved] };
   await writeStore(nextStore);
   return queueStateFromSession(next, nextStore);
+}
+
+export async function updateQueueSessionProvenance(
+  input: QueueSessionProvenanceInput,
+): Promise<QueueState> {
+  const store = await readStore();
+  const session = input.sessionId
+    ? store.sessions.find((item) => item.sessionId === input.sessionId)
+    : getSession(store);
+  if (!session) throw new Error("Queue session not found.");
+  const purpose = normalizeQueueSessionPurpose(input.purpose);
+  const now = new Date().toISOString();
+  const updated = normalizeSession({
+    ...session,
+    purpose,
+    bnlPublicationStatus: normalizeQueueSessionBnlPublicationStatus(
+      input.bnlPublicationStatus,
+      purpose,
+    ),
+    provenanceRevision: (session.provenanceRevision ?? 0) + 1,
+    provenanceUpdatedAt: now,
+    updatedAt: now,
+  });
+  const nextStore = replaceSession(store, updated);
+  await writeStore(nextStore);
+  return queueStateFromSession(updated, nextStore, updated.sessionId);
 }
 
 export async function archiveCurrentQueueSession(): Promise<QueueState> {

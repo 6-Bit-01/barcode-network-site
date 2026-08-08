@@ -48,7 +48,11 @@ const publicOverlayRoute = require("../src/app/api/overlay/live/route.ts");
 let trackSequence = 0;
 async function freshOpenSession(label, options = {}) {
   await queue.setQueueOpen(false);
-  const state = await queue.startNewQueueSession({ title: `${label} ${Date.now()} ${trackSequence}` });
+  const state = await queue.startNewQueueSession({
+    title: `${label} ${Date.now()} ${trackSequence}`,
+    purpose: options.purpose,
+    bnlPublicationStatus: options.bnlPublicationStatus,
+  });
   await queue.setQueueOpen(true);
   if (options.showStarted !== false) await queue.updateRadioTrack("", "startShow");
   return state.session.sessionId;
@@ -963,7 +967,10 @@ test("ending broadcast is separate from closing submissions", async () => {
 });
 
 test("archived public snapshots neutralize active lanes while preserving the real completed log", async () => {
-  const sessionId = await freshOpenSession("archived public projection");
+  const sessionId = await freshOpenSession("archived public projection", {
+    purpose: "live_broadcast",
+    bnlPublicationStatus: "recap_approved",
+  });
   const completedRealTrack = await addTrack("Archived Completed Real");
 
   let state = await queue.updateRadioTrack("", "pullNext");
@@ -1036,6 +1043,10 @@ test("new sessions default queue capacity to 44", async () => {
   await queue.setQueueOpen(false);
   const state = await queue.startNewQueueSession({ title: `default capacity ${Date.now()} ${trackSequence}` });
   assert.equal(state.session.queueCapacity, 44);
+  assert.equal(state.session.purpose, "rehearsal");
+  assert.equal(state.session.bnlPublicationStatus, "private");
+  assert.equal(state.session.provenanceRevision, 1);
+  assert.ok(state.session.provenanceUpdatedAt);
 });
 
 test("clear archive removes archived sessions and preserves active session", async () => {
@@ -1076,7 +1087,11 @@ test("simulation tracks include visible sequence numbers without lane status tit
 });
 
 test("BNL read model excludes simulation tracks from queue and artists", async () => {
-  await freshOpenSession("bnl read model sim exclusion", { showStarted: false });
+  await freshOpenSession("bnl read model sim exclusion", {
+    showStarted: false,
+    purpose: "live_broadcast",
+    bnlPublicationStatus: "runtime_only",
+  });
   const real = await submitTrack("BNL Real", { artist: "BNL Real Artist" });
   const nonLatin = await submitTrack("BNL Non Latin", { artist: "東京ビート" });
   let simState = await queue.updateRadioTrack("", "addSimulationPaidPriority");

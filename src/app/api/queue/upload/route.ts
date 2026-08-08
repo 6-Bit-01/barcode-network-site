@@ -32,9 +32,9 @@ export function assertCurrentUploadSession(payloadSessionId: string | undefined,
   if (payloadSessionId !== activeSessionId) throw new Error(SESSION_SYNC_MESSAGE);
 }
 
-export function assertUploadSessionOpen(isOpen: boolean, isFull: boolean | undefined, activeCount: number, capacity: number): void {
+export function assertUploadSessionOpen(isOpen: boolean, isFull: boolean | undefined, acceptedCount: number, capacity: number): void {
   if (!isOpen) throw new Error("This broadcast queue is closed.");
-  if (isFull || activeCount >= capacity) throw new Error("This broadcast queue is full for new transmissions.");
+  if (isFull || acceptedCount >= capacity) throw new Error("This broadcast queue is full for new transmissions.");
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -49,7 +49,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         const snapshot = await getPublicQueueSnapshot();
 
         assertCurrentUploadSession(payload.sessionId, snapshot.session.sessionId);
-        assertUploadSessionOpen(snapshot.status.isOpen, snapshot.status.isFull, snapshot.status.activeCount, snapshot.status.capacity);
+        assertUploadSessionOpen(snapshot.status.isOpen, snapshot.status.isFull, snapshot.status.acceptedCount ?? snapshot.status.activeCount, snapshot.status.capacity);
         if (!pathname.startsWith(UPLOAD_PREFIX)) throw new Error("Invalid upload path.");
         if (!payload.uploadOriginalName?.trim()) throw new Error("Uploaded audio file name is missing.");
         if (!payload.mimeType || !AUDIO_MIME_TYPES.includes(payload.mimeType)) throw new Error("Only MP3 and WAV uploads are accepted.");

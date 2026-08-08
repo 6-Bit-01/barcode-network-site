@@ -370,7 +370,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const isOpen = snapshot?.status.isOpen ?? false;
   const isEnded = snapshot?.session.status === "archived" || snapshot?.session.broadcastPhase === "ended";
   const isBroadcastActive = snapshotBroadcastActive(snapshot);
-  const isFull = Boolean(snapshot?.status.isFull || (snapshot && snapshot.status.activeCount >= snapshot.status.capacity));
+  const isFull = Boolean(snapshot?.status.isFull || (snapshot && (snapshot.status.acceptedCount ?? snapshot.status.activeCount) >= snapshot.status.capacity));
   const canSubmit = !isEnded && isOpen && !isFull;
   const submitterRemaining = snapshot?.submitterStatus?.remaining;
   const isSubmitLimitReached = typeof submitterRemaining === "number" && submitterRemaining <= 0;
@@ -923,8 +923,8 @@ function SubmitterOutlookPanel({ snapshot, canSubmit, isFull, timingSummary, onS
   const songsAhead = timingSummary?.submitNowFreeEstimate?.songsAhead ?? counts.remaining;
   const estimate = canSubmit ? timingSummary?.submitNowFreeEstimate ?? null : null;
   const capacity = snapshot?.status.capacity;
-  const activeCount = snapshot?.status.activeCount;
-  const queueSpace = typeof capacity === "number" && typeof activeCount === "number" && capacity > 0 ? Math.max(0, capacity - activeCount) : null;
+  const acceptedCount = snapshot?.status.acceptedCount ?? snapshot?.status.activeCount;
+  const queueSpace = typeof capacity === "number" && typeof acceptedCount === "number" && capacity > 0 ? Math.max(0, capacity - acceptedCount) : null;
   const statusLabel = canSubmit ? "SUBMISSIONS OPEN" : isFull ? "QUEUE FULL" : "SUBMISSIONS CLOSED";
   const statusTone = canSubmit ? "text-accent" : "text-danger";
   const lineFit = timingSummary?.lineFitCopy ?? "Timing updates as the line changes.";

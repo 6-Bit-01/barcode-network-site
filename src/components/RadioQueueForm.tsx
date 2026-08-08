@@ -42,7 +42,7 @@ interface WarpData {
 
 function pressureLabel(status: QueuePublicStatus | null): string {
   if (!status) return "Syncing";
-  return `${status.pressure.toUpperCase()} / ${status.activeCount}/${status.capacity}`;
+  return `${status.pressure.toUpperCase()} / ${status.activeCount} ACTIVE`;
 }
 
 function safeFileName(name: string): string {
@@ -310,7 +310,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   const priorityPaymentsAvailable = session?.priorityUpgradesEnabled === true && session?.priorityUpgradePaymentsEnabled === true && priorityPriceCents > 0;
   const priorityDepthAvailable = (status?.activeCount ?? 0) >= MIN_PRIORITY_ACTIVE_DEPTH;
   const priorityCheckoutAvailable = priorityPaymentsAvailable && status?.isOpen === true && priorityDepthAvailable;
-  const timingSnapshot = useMemo<QueuePublicSnapshot | null>(() => session && status ? { session, status, queue: publicQueue, completed: [], nowPlaying, upNext, submitterStatus } : null, [session, status, publicQueue, nowPlaying, upNext, submitterStatus]);
+  const timingSnapshot = useMemo<QueuePublicSnapshot | null>(() => session && status ? { revision: 0, session, status, queue: publicQueue, completed: [], nowPlaying, upNext, submitterStatus } : null, [session, status, publicQueue, nowPlaying, upNext, submitterStatus]);
   const timingSummary = useMemo(() => buildQueueTimingDisplay(queueTimingInputFromPublicSnapshot(timingSnapshot), { priorityEligible: priorityCheckoutAvailable }), [timingSnapshot, priorityCheckoutAvailable]);
   const submitPriorityImpact = priorityCheckoutAvailable ? priorityDisplayFromImpact(timingSummary.priorityImpactEstimate) : null;
   const selectedRoute: RouteChoice = priorityCheckoutAvailable ? routeChoice : "free";
@@ -453,7 +453,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
             durationLabel: detectedDuration ? formatRuntime(detectedDuration) : submitted.durationLabel,
             sessionTitle: session?.title ?? "BARCODE Radio",
             sessionDate: session?.showDate ?? "ACTIVE SESSION",
-            queueStatus: status ? `${status.activeCount + 1}/${status.capacity}` : "SYNCING",
+            queueStatus: status ? `${(status.acceptedCount ?? status.activeCount) + 1}/${status.capacity}` : "SYNCING",
             submissionSlot: "CHECKOUT_PENDING",
             lane: "FREE QUEUE / PAYMENT REQUIRED",
             artworkUrl: submitted.sourceArtworkUrl ?? null,
@@ -480,8 +480,8 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
           durationLabel: detectedDuration ? formatRuntime(detectedDuration) : submitted.durationLabel,
           sessionTitle: session?.title ?? "BARCODE Radio",
           sessionDate: session?.showDate ?? "ACTIVE SESSION",
-          queueStatus: status ? `${status.activeCount + 1}/${status.capacity}` : "SYNCING",
-          submissionSlot: status ? `#${Math.min(status.activeCount + 1, status.capacity)}` : "FREE_QUEUE",
+          queueStatus: status ? `${(status.acceptedCount ?? status.activeCount) + 1}/${status.capacity}` : "SYNCING",
+          submissionSlot: status ? `#${Math.min((status.acceptedCount ?? status.activeCount) + 1, status.capacity)}` : "FREE_QUEUE",
           lane: submitted.lane === "priority" ? "PRIORITY_SIGNAL" : submitted.lane === "wheel" ? "WHEEL_CHOSEN" : "FREE_QUEUE",
           artworkUrl: submitted.sourceArtworkUrl ?? null,
         };
@@ -499,7 +499,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
           durationLabel: resolvedTrack.durationLabel,
           lane: resolved.laneLabel,
           artworkUrl: resolvedTrack.sourceArtworkUrl ?? baseWarpData.artworkUrl,
-          queueStatus: confirmedSnapshot ? `${confirmedSnapshot.status.activeCount}/${confirmedSnapshot.status.capacity}` : baseWarpData.queueStatus,
+          queueStatus: confirmedSnapshot ? `${confirmedSnapshot.status.acceptedCount ?? confirmedSnapshot.status.activeCount}/${confirmedSnapshot.status.capacity}` : baseWarpData.queueStatus,
           submissionSlot: resolvedTrack.id === confirmedSnapshot?.upNext?.id ? "UP_NEXT" : baseWarpData.submissionSlot,
         });
         onSubmitted?.(submitted.id, "resolved", resolved.targetId);
@@ -564,7 +564,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
       <div className="grid gap-2 border border-border bg-surface p-3 text-xs sm:grid-cols-4">
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Session</p><p className="truncate text-foreground">{session?.title ?? "BARCODE Radio"}</p></div>
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Queue</p><p className={status?.isOpen ? "text-accent" : "text-danger"}>{status?.isOpen ? "Open" : "Closed"}</p></div>
-        <div><p className="text-[10px] uppercase tracking-widest text-muted">Remaining</p><p>{status ? `${status.activeCount}/${status.capacity}` : "—"}</p></div>
+        <div><p className="text-[10px] uppercase tracking-widest text-muted">Accepted / Capacity</p><p>{status ? `${status.acceptedCount ?? status.activeCount}/${status.capacity}` : "—"}</p></div>
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Pressure</p><p>{pressureLabel(status)}</p></div>
       </div>
 

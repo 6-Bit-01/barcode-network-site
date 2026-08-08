@@ -21,6 +21,8 @@ Production: <https://www.barcode-network.com>
 
 The native queue exists and is tested, but native presentation remains quarantined unless `BARCODE_QUEUE_PRODUCTION_ENABLED` is exactly `true`. Until the owner approves the native cutover, operational Radio submission links and copy continue to point to Auxchord. When enabled, the server-side capability moves the Radio page, Footer, Terminal, and BNL public source context to the native `/queue` route; historical Auxchord records remain intact. Queue-derived BNL context has an additional session-level boundary: only a session explicitly marked `live_broadcast` can opt into `runtime_only`, `recap_approved`, or `public_copy_approved`. New rehearsals and legacy/unknown sessions remain private by default even when the native queue is publicly usable.
 
+Queue acceptance uses 44 show slots by default. A slot remains occupied when a real track moves from queued to Next In Line, loaded/Now Playing, or completed/played; removal frees it, while simulations and failed or rejected attempts never consume one. Queue writes share one serialized, revisioned Redis mutation boundary, and public/admin polling is read-only.
+
 `stream-engine/`, `discord-bot/`, and `_archive/` are historical references. They are not production services and do not define current queue contracts.
 
 ## Requirements

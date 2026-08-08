@@ -69,6 +69,7 @@ function stateIds(state) {
 
 test("Apple Music intake boundary matches only the real Apple Music host", () => {
   assert.equal(queueTypes.isAppleMusicUrl("https://music.apple.com/us/album/example/123?i=456"), true);
+  assert.equal(queueTypes.isAppleMusicUrl("https://music.apple.com./us/album/example/123?i=456"), true);
   assert.equal(queueTypes.isAppleMusicUrl("https://embed.music.apple.com/us/album/example/123?i=456"), true);
   assert.equal(queueTypes.isAppleMusicUrl("https://music.apple.com.evil.example/us/album/example/123?i=456"), false);
   assert.equal(queueTypes.isAppleMusicUrl("https://apple.com/music"), false);
@@ -121,6 +122,7 @@ test("server rejects new Apple Music intake without mutating existing queue reco
 
   const after = await queue.getRadioQueueState();
   assert.deepEqual(stateIds(after), stateIds(before));
+  assert.equal(after.revision, before.revision, "Apple rejection must happen before any stateful queue read or write");
   assert.equal(stateIds(after).filter((id) => id === existing.id).length, 1);
 
   const accepted = await queueRoute.submitTrackFromBody(legalBody({
@@ -131,6 +133,17 @@ test("server rejects new Apple Music intake without mutating existing queue reco
     link: `https://example.com/track-${Date.now()}`,
   }));
   assert.equal(accepted.status, 201);
+});
+
+test("Apple rejection is ordered before the active queue snapshot read", () => {
+  const routeSource = fs.readFileSync(path.join(projectRoot, "src/app/api/queue/route.ts"), "utf8");
+  const functionStart = routeSource.indexOf("export async function submitTrackFromBody");
+  const functionSource = routeSource.slice(functionStart);
+  const appleBoundary = functionSource.indexOf("isAppleMusicUrl(link)");
+  const activeSnapshot = functionSource.indexOf("getPublicQueueSnapshot()");
+  assert.ok(appleBoundary >= 0, "Apple boundary must remain server-side");
+  assert.ok(activeSnapshot >= 0, "queue synchronization snapshot must remain present");
+  assert.ok(appleBoundary < activeSnapshot, "unsupported Apple links must be rejected before reading queue state");
 });
 
 test("operational Radio copy and client routing no longer advertise or accept Apple Music", () => {

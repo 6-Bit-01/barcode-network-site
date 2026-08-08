@@ -10,6 +10,7 @@ export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | 
 export type QueueDurationSource = "upload_metadata" | "file_metadata" | "youtube" | "soundcloud" | "spotify" | "youtube_api" | "spotify_api" | "soundcloud_api" | "direct_metadata" | "provider_metadata" | "internal_estimate" | "estimated" | "unknown";
 export type QueueSessionStatus = "prepared" | "open" | "closed" | "archived";
 export type QueueBroadcastPhase = "warmup" | "submission_window" | "broadcast_active" | "ended";
+export type QueueSubmissionClosureReason = "manual" | "capacity" | "ended" | "archived" | null;
 export type QueueSessionPurpose = "unknown" | "rehearsal" | "live_broadcast" | "simulation" | "internal_test";
 export type QueueSessionBnlPublicationStatus = "private" | "runtime_only" | "recap_approved" | "public_copy_approved";
 export type PriorityUpgradeStatus = "none" | "requested" | "manual" | "checkout_pending" | "paid" | "paid_needs_attention" | "failed" | "refunded";
@@ -126,7 +127,7 @@ export const APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE =
 export function isAppleMusicUrl(value?: string | null): boolean {
   if (!value) return false;
   try {
-    const hostname = new URL(value.trim()).hostname.toLowerCase();
+    const hostname = new URL(value.trim()).hostname.toLowerCase().replace(/\.+$/, "");
     return hostname === "music.apple.com" || hostname.endsWith(".music.apple.com");
   } catch {
     return false;
@@ -229,9 +230,11 @@ export interface QueueEntry {
 export interface QueuePublicStatus {
   isOpen: boolean;
   activeCount: number;
+  acceptedCount?: number;
   estimatedRuntimeSeconds: number;
   capacity: number;
   isFull?: boolean;
+  closureReason?: QueueSubmissionClosureReason;
   pressure: "low" | "medium" | "high" | "max";
 }
 
@@ -253,6 +256,8 @@ export interface QueueSessionSummary {
   skipGameTapTarget: number;
   submissionCooldownSeconds: number;
   activeCount: number;
+  acceptedCount?: number;
+  submissionClosureReason?: QueueSubmissionClosureReason;
   completedCount: number;
   removedCount: number;
   spotlightCount: number;
@@ -333,7 +338,8 @@ export interface QueuePublicSubmitterStatus {
 }
 
 export interface QueuePublicSnapshot {
-  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "removedCount" | "submissionCooldownSeconds" | "queueOpen" | "showStarted" | "preShowEndsAt" | "broadcastPhase" | "broadcastStartedAt" | "nextInLineTrackId" | "loadedTrackId" | "wheelSpinsOwed" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled" | "sponsorBreakSeconds" | "sponsorBreakMode" | "sponsorBreakStatus" | "sponsorBreakStartedAt" | "sponsorBreakCompletedAt" | "sponsorBreakCompletedAfterPlayableCount" | "sponsorBreakManualNote">;
+  revision: number;
+  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "acceptedCount" | "submissionClosureReason" | "removedCount" | "submissionCooldownSeconds" | "queueOpen" | "showStarted" | "preShowEndsAt" | "broadcastPhase" | "broadcastStartedAt" | "nextInLineTrackId" | "loadedTrackId" | "wheelSpinsOwed" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled" | "sponsorBreakSeconds" | "sponsorBreakMode" | "sponsorBreakStatus" | "sponsorBreakStartedAt" | "sponsorBreakCompletedAt" | "sponsorBreakCompletedAfterPlayableCount" | "sponsorBreakManualNote">;
   status: QueuePublicStatus;
   queue: QueuePublicTrack[];
   completed: QueuePublicTrack[];
@@ -350,6 +356,7 @@ export interface QueueWheelArtistOption {
 }
 
 export interface QueueState {
+  revision?: number;
   nowPlaying: QueueEntry | null;
   queue: QueueEntry[];
   history: QueueEntry[];
@@ -442,7 +449,6 @@ export function getTrackArtworkUrl(track: Pick<QueueEntry, "sourceType" | "sourc
 }
 
 export const INTERNAL_BUFFER_DURATION_SECONDS = 300;
-export const RADIO_QUEUE_CAPACITY = 40;
 
 export const TIERS = {
   free: { name: "Free Transmissions", price: 0, label: "FREE", priority: 0, description: "Enter the live BARCODE Radio request flow.", icon: "○" },

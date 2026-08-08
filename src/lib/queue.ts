@@ -3,6 +3,7 @@
 // ============================================================
 
 import { Redis } from "@upstash/redis";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createProviderFetchBudget, fetchProviderJson } from "./provider-fetch";
 import { parseIso8601DurationToSeconds, parseSpotifyTrackId, parseYouTubeVideoId as parseTrackDurationYouTubeVideoId } from "./track-duration";
 import {
@@ -34,6 +35,7 @@ import type {
   QueueSessionPurpose,
   QueueSessionStatus,
   QueueSessionSummary,
+  QueueSubmissionClosureReason,
   QueueSourceType,
   QueueWheelArtistOption,
   QueueState,
@@ -42,6 +44,10 @@ import type {
 
 const STATE_KEY = "radioQueue:v2:sessions";
 const LEGACY_STATE_KEY = "radioQueue:v1:state";
+const MUTATION_LOCK_KEY = "radioQueue:v2:sessions:mutation-lock";
+const MUTATION_REVISION_KEY = "radioQueue:v2:sessions:mutation-revision";
+const MUTATION_LOCK_TTL_MS = 15_000;
+const MUTATION_LOCK_WAIT_MS = 5_000;
 const DEFAULT_QUEUE_CAPACITY = 44;
 const DEFAULT_SUBMISSION_COOLDOWN_SECONDS = 5 * 60;
 const MAX_SUBMISSION_COOLDOWN_SECONDS = 60 * 60;
@@ -90,8 +96,16 @@ export interface QueueSessionProvenanceInput {
 }
 
 interface QueueStore {
+  revision: number;
   activeSessionId: string;
   sessions: QueueSession[];
+}
+
+interface QueueMutationLease {
+  redis: Redis | null;
+  token: string | null;
+  revision: number;
+  store: QueueStore;
 }
 
 interface ProviderMetadata {
@@ -219,8 +233,31 @@ function defaultSession(options: QueueSessionOptions = {}): QueueSession {
 
 const mem: QueueStore = (() => {
   const session = defaultSession();
-  return { activeSessionId: session.sessionId, sessions: [session] };
+  return { revision: 0, activeSessionId: session.sessionId, sessions: [session] };
 })();
+
+let mutationTail: Promise<void> = Promise.resolve();
+const mutationLeaseStorage = new AsyncLocalStorage<QueueMutationLease>();
+
+const COMMIT_MUTATION_SCRIPT = `
+if redis.call("GET", KEYS[1]) ~= ARGV[1] then
+  return -1
+end
+local current_revision = redis.call("GET", KEYS[3])
+if current_revision and tonumber(current_revision) ~= tonumber(ARGV[2]) then
+  return -2
+end
+redis.call("SET", KEYS[2], ARGV[3])
+redis.call("SET", KEYS[3], ARGV[4])
+return tonumber(ARGV[4])
+`;
+
+const RELEASE_MUTATION_LOCK_SCRIPT = `
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  return redis.call("DEL", KEYS[1])
+end
+return 0
+`;
 
 function laneRank(lane: QueueLane | undefined): number {
   if (lane === "priority") return 0;
@@ -592,20 +629,89 @@ function advanceNonPriorityLaneAfter(session: QueueSession, lane: QueueLane | un
   session.nextNonPriorityLane = nextLaneAfterFinish(lane);
 }
 
-function publicStatusForSession(session: Pick<QueueSession, "queue" | "queueOpen" | "nextInLineTrack" | "loadedTrack" | "queueCapacity">): QueuePublicStatus {
+function acceptedTrackCountForSession(
+  session: Pick<QueueSession, "queue" | "nextInLineTrack" | "loadedTrack" | "completed" | "removed">,
+): number {
+  const ids = new Set<string>();
+  const removedIds = new Set(session.removed.map((entry) => entry.id));
+  const count = (entry: QueueEntry | null | undefined, allowedStatuses: QueueEntry["status"][]) => {
+    if (!entry || removedIds.has(entry.id) || isSimulationTrack(entry) || !allowedStatuses.includes(entry.status)) return;
+    ids.add(entry.id);
+  };
+  for (const entry of session.queue) count(entry, ["queued", "playing"]);
+  count(session.nextInLineTrack, ["queued", "next", "playing"]);
+  count(session.loadedTrack, ["queued", "next", "playing"]);
+  for (const entry of session.completed) count(entry, ["completed", "played"]);
+  return ids.size;
+}
+
+function normalizeSubmissionClosureReason(value: unknown): QueueSubmissionClosureReason {
+  if (value === "manual" || value === "capacity" || value === "ended" || value === "archived") return value;
+  return null;
+}
+
+function applySubmissionAcceptanceState(session: QueueSession, rawReason: unknown): void {
+  const capacity = session.queueCapacity ?? DEFAULT_QUEUE_CAPACITY;
+  const acceptedCount = acceptedTrackCountForSession(session);
+  const full = acceptedCount >= capacity;
+  const reason = normalizeSubmissionClosureReason(rawReason);
+
+  if (session.status === "archived") {
+    session.queueOpen = false;
+    session.submissionClosureReason = "archived";
+    return;
+  }
+  if (reason === "ended") {
+    session.queueOpen = false;
+    session.status = "closed";
+    session.submissionClosureReason = "ended";
+    return;
+  }
+  if (reason === "manual") {
+    session.queueOpen = false;
+    session.status = session.status === "prepared" ? "prepared" : "closed";
+    session.submissionClosureReason = "manual";
+    return;
+  }
+  if (reason === "capacity") {
+    if (full) {
+      session.queueOpen = false;
+      session.status = "open";
+      session.submissionClosureReason = "capacity";
+    } else {
+      session.queueOpen = true;
+      session.status = "open";
+      session.submissionClosureReason = null;
+    }
+    return;
+  }
+  if (session.queueOpen && full) {
+    session.queueOpen = false;
+    session.status = "open";
+    session.submissionClosureReason = "capacity";
+    return;
+  }
+  session.submissionClosureReason = session.queueOpen ? null : "manual";
+}
+
+function publicStatusForSession(session: Pick<QueueSession, "queue" | "queueOpen" | "nextInLineTrack" | "loadedTrack" | "completed" | "removed" | "queueCapacity" | "submissionClosureReason">): QueuePublicStatus {
   const active = session.queue.filter((entry) => entry.status === "queued" || entry.status === "playing");
   const next = session.nextInLineTrack ? [session.nextInLineTrack] : [];
   const loaded = session.loadedTrack ? [session.loadedTrack] : [];
   const estimatedRuntimeSeconds = [...loaded, ...next, ...active].reduce((sum, entry) => sum + getTrackRuntimeSeconds(entry), 0);
   const capacity = session.queueCapacity ?? DEFAULT_QUEUE_CAPACITY;
+  const acceptedCount = acceptedTrackCountForSession(session);
+  const isFull = acceptedCount >= capacity;
   const load = (active.length + next.length + loaded.length) / capacity;
   return {
-    isOpen: session.queueOpen,
+    isOpen: session.queueOpen && !isFull,
     activeCount: active.length + next.length + loaded.length,
+    acceptedCount,
     estimatedRuntimeSeconds,
     capacity,
     pressure: load >= 1 ? "max" : load >= 0.75 ? "high" : load >= 0.4 ? "medium" : "low",
-    isFull: active.length + next.length + loaded.length >= capacity,
+    isFull,
+    closureReason: session.submissionClosureReason ?? null,
   };
 }
 
@@ -630,6 +736,8 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     skipGameTapTarget: session.skipGameTapTarget ?? 10000,
     submissionCooldownSeconds: normalizeSubmissionCooldownSeconds(session.submissionCooldownSeconds),
     activeCount: publicStatus.activeCount,
+    acceptedCount: publicStatus.acceptedCount ?? 0,
+    submissionClosureReason: session.submissionClosureReason ?? null,
     nextInLineTrackId: session.nextInLineTrackId ?? session.nextInLineTrack?.id ?? null,
     nextInLineHoldTrackId: session.nextInLineHoldTrackId ?? null,
     loadedTrackId: session.loadedTrackId ?? session.loadedTrack?.id ?? null,
@@ -818,7 +926,7 @@ function normalizeSessionStatus(status: unknown, queueOpen: boolean): QueueSessi
 }
 
 function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; title: string; status: QueueSessionStatus; showDate: string; createdAt: string; updatedAt: string; queueOpen: boolean }): QueueSession {
-  const queueOpen = raw.status === "open" ? true : raw.queueOpen === true;
+  const queueOpen = raw.queueOpen === true;
   const status = normalizeSessionStatus(raw.status, queueOpen);
   const purpose = normalizeQueueSessionPurpose(raw.purpose);
   const session = {
@@ -833,7 +941,8 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     queueCapacity: raw.queueCapacity ?? raw.publicStatus?.capacity ?? DEFAULT_QUEUE_CAPACITY,
     skipGameTapTarget: raw.skipGameTapTarget ?? 10000,
     submissionCooldownSeconds: normalizeSubmissionCooldownSeconds(raw.submissionCooldownSeconds),
-    queueOpen: status === "open" ? true : false,
+    queueOpen,
+    submissionClosureReason: normalizeSubmissionClosureReason(raw.submissionClosureReason),
     nextNonPriorityLane: raw.nextNonPriorityLane === "regular" ? "regular" : "wheel",
     showStarted: raw.showStarted === true,
     preShowEndsAt: typeof raw.preShowEndsAt === "string" && raw.preShowEndsAt ? raw.preShowEndsAt : null,
@@ -869,6 +978,7 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     removed: (raw.removed ?? []).map(normalizeEntry),
     spotlight: (raw.spotlight ?? []).map(normalizeEntry),
   } as QueueSession;
+  applySubmissionAcceptanceState(session, raw.submissionClosureReason);
   const summary = summarizeSession(session);
   return { ...session, ...summary, publicStatus: publicStatusForSession(session) };
 }
@@ -877,10 +987,13 @@ function normalizeStore(input: unknown): QueueStore {
   const maybe = input as Partial<QueueStore> | null;
   if (maybe && Array.isArray(maybe.sessions)) {
     const sessions = maybe.sessions.map((session) => normalizeSession(session));
+    const revision = typeof maybe.revision === "number" && Number.isFinite(maybe.revision)
+      ? Math.max(0, Math.floor(maybe.revision))
+      : 0;
     const activeSessionId = maybe.activeSessionId && sessions.some((session) => session.sessionId === maybe.activeSessionId)
       ? maybe.activeSessionId
       : sessions.find((session) => session.status !== "archived")?.sessionId ?? sessions[0]?.sessionId;
-    if (activeSessionId) return { activeSessionId, sessions };
+    if (activeSessionId) return { revision, activeSessionId, sessions };
   }
   const legacy = input as { queue?: QueueEntry[]; completed?: QueueEntry[]; removed?: QueueEntry[]; spotlight?: QueueEntry[]; isOpen?: boolean } | null;
   if (legacy && (Array.isArray(legacy.queue) || Array.isArray(legacy.completed))) {
@@ -898,30 +1011,122 @@ function normalizeStore(input: unknown): QueueStore {
       queueOpen: legacy.isOpen !== false,
       updatedAt: new Date().toISOString(),
     });
-    return { activeSessionId: session.sessionId, sessions: [session] };
+    return { revision: 0, activeSessionId: session.sessionId, sessions: [session] };
   }
   const session = defaultSession();
-  return { activeSessionId: session.sessionId, sessions: [session] };
+  return { revision: 0, activeSessionId: session.sessionId, sessions: [session] };
 }
 
-async function readStore(): Promise<QueueStore> {
-  const redis = getRedis();
-  if (!redis) return normalizeStore(mem);
+async function readStoreFromRedis(redis: Redis): Promise<QueueStore> {
   const raw = await redis.get<QueueStore | string>(STATE_KEY);
   if (raw) return normalizeStore(typeof raw === "string" ? JSON.parse(raw) : raw);
   const legacy = await redis.get<unknown>(LEGACY_STATE_KEY);
   return normalizeStore(typeof legacy === "string" ? JSON.parse(legacy) : legacy);
 }
 
-async function writeStore(store: QueueStore): Promise<void> {
-  const normalized = normalizeStore(store);
+async function readStore(): Promise<QueueStore> {
+  const lease = mutationLeaseStorage.getStore();
+  if (lease) return normalizeStore(lease.store);
   const redis = getRedis();
-  if (!redis) {
+  return redis ? readStoreFromRedis(redis) : normalizeStore(mem);
+}
+
+function mutationRevision(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
+}
+
+async function waitForLocalMutationTurn<T>(operation: () => Promise<T>): Promise<T> {
+  const previous = mutationTail;
+  let release: () => void = () => {};
+  mutationTail = new Promise<void>((resolve) => { release = resolve; });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+}
+
+async function acquireRedisMutationLock(redis: Redis): Promise<string> {
+  const token = `mutation_${generateQueueId()}`;
+  const deadline = Date.now() + MUTATION_LOCK_WAIT_MS;
+  while (Date.now() < deadline) {
+    const acquired = await redis.set(MUTATION_LOCK_KEY, token, {
+      nx: true,
+      px: MUTATION_LOCK_TTL_MS,
+    });
+    if (acquired === "OK") return token;
+    await new Promise<void>((resolve) => setTimeout(resolve, 25 + Math.floor(Math.random() * 25)));
+  }
+  throw new Error("Queue state is busy. Please retry this action.");
+}
+
+async function releaseRedisMutationLock(redis: Redis, token: string): Promise<void> {
+  await redis.eval(RELEASE_MUTATION_LOCK_SCRIPT, [MUTATION_LOCK_KEY], [token]);
+}
+
+async function withQueueMutation<T>(operation: () => Promise<T>): Promise<T> {
+  return waitForLocalMutationTurn(async () => {
+    const redis = getRedis();
+    const token = redis ? await acquireRedisMutationLock(redis) : null;
+    try {
+      const [stored, revisionValue] = redis
+        ? await Promise.all([
+          readStoreFromRedis(redis),
+          redis.get<number | string>(MUTATION_REVISION_KEY),
+        ])
+        : [normalizeStore(mem), mem.revision] as const;
+      const persistedRevision = mutationRevision(revisionValue);
+      if (redis && revisionValue !== null && revisionValue !== undefined && stored.revision !== persistedRevision) {
+        throw new Error("Queue state revision is inconsistent. Mutation refused.");
+      }
+      const revision = Math.max(stored.revision, persistedRevision);
+      const lease: QueueMutationLease = {
+        redis,
+        token,
+        revision,
+        store: { ...stored, revision },
+      };
+      return await mutationLeaseStorage.run(lease, operation);
+    } finally {
+      if (redis && token) {
+        try {
+          await releaseRedisMutationLock(redis, token);
+        } catch {
+          // The lease TTL and fenced commit protect later writers if release fails.
+        }
+      }
+    }
+  });
+}
+
+async function writeStore(store: QueueStore): Promise<void> {
+  const lease = mutationLeaseStorage.getStore();
+  if (!lease) throw new Error("Queue state writes require the serialized mutation boundary.");
+  const nextRevision = lease.revision + 1;
+  const normalized = { ...normalizeStore(store), revision: nextRevision };
+  if (!lease.redis) {
+    mem.revision = nextRevision;
     mem.activeSessionId = normalized.activeSessionId;
     mem.sessions = normalized.sessions;
+    lease.revision = nextRevision;
+    lease.store = normalized;
+    store.revision = nextRevision;
     return;
   }
-  await redis.set(STATE_KEY, JSON.stringify(normalized));
+  if (!lease.token) throw new Error("Queue mutation lease is missing its fencing token.");
+  const committed = await lease.redis.eval<unknown[], number>(
+    COMMIT_MUTATION_SCRIPT,
+    [MUTATION_LOCK_KEY, STATE_KEY, MUTATION_REVISION_KEY],
+    [lease.token, String(lease.revision), JSON.stringify(normalized), String(nextRevision)],
+  );
+  if (committed !== nextRevision) {
+    throw new Error("Queue state changed before this mutation could commit. Please retry.");
+  }
+  lease.revision = nextRevision;
+  lease.store = normalized;
+  store.revision = nextRevision;
 }
 
 function getSession(store: QueueStore, sessionId?: string): QueueSession {
@@ -1332,24 +1537,35 @@ export async function createQueueTrack(input: {
   });
 }
 
-export async function submitRadioTrack(input: Parameters<typeof createQueueTrack>[0]): Promise<QueueEntry> {
-  const store = await readStore();
-  const session = getSession(store);
-  applyPreShowTimer(session);
-  if (session.status !== "open" || !session.queueOpen) throw new Error("Queue is closed");
-  if (publicStatusForSession(session).isFull) throw new Error("Queue is full for new transmissions.");
+export async function submitRadioTrack(
+  input: Parameters<typeof createQueueTrack>[0] & { sessionId?: string },
+): Promise<QueueEntry> {
+  // Provider resolution can be slow and must never hold the queue mutation lock.
   const track = await createQueueTrack(input);
-  const duplicateReasons = findDuplicateSubmissionReasons(session, track);
-  if (duplicateReasons.length > 0) throw new QueueSubmissionBlockedError("duplicate_transmission", duplicateReasons);
-  const blockReasons = findSubmissionLimitBlocks(session, track);
-  if (blockReasons.length > 0) throw new QueueSubmissionBlockedError("submission_limit", blockReasons);
-  const cooldownRemainingSeconds = findSubmissionCooldown(session, track);
-  if (cooldownRemainingSeconds > 0) throw new QueueSubmissionCooldownError(cooldownRemainingSeconds);
-  track.suspiciousFlags = suspiciousFlagsFor(session, track);
-  session.queue.push(track);
-  pullNextInLine(session);
-  await writeStore(replaceSession(store, session));
-  return track;
+  return withQueueMutation(async () => {
+    const store = await readStore();
+    if (input.sessionId && store.activeSessionId !== input.sessionId) {
+      const error = new Error("This session has changed. Refresh the queue and try again.") as Error & { code?: string };
+      error.code = "stale_session";
+      throw error;
+    }
+    const session = getSession(store);
+    applyPreShowTimer(session);
+    const status = publicStatusForSession(session);
+    if (status.isFull) throw new Error("Queue is full for new transmissions.");
+    if (session.status !== "open" || !session.queueOpen) throw new Error("Queue is closed");
+    const duplicateReasons = findDuplicateSubmissionReasons(session, track);
+    if (duplicateReasons.length > 0) throw new QueueSubmissionBlockedError("duplicate_transmission", duplicateReasons);
+    const blockReasons = findSubmissionLimitBlocks(session, track);
+    if (blockReasons.length > 0) throw new QueueSubmissionBlockedError("submission_limit", blockReasons);
+    const cooldownRemainingSeconds = findSubmissionCooldown(session, track);
+    if (cooldownRemainingSeconds > 0) throw new QueueSubmissionCooldownError(cooldownRemainingSeconds);
+    track.suspiciousFlags = suspiciousFlagsFor(session, track);
+    session.queue.push(track);
+    pullNextInLine(session);
+    await writeStore(replaceSession(store, session));
+    return track;
+  });
 }
 
 
@@ -1387,7 +1603,12 @@ export async function cleanupExpiredQueueUploads(options: { now?: Date; deleteBl
   });
   const store = await readStore();
   const result: QueueUploadCleanupResult = { scanned: 0, deleted: 0, skippedActive: 0, failed: 0 };
-  let changed = false;
+  const updates: Array<{
+    candidate: { id: string; fileUrl: string };
+    status: "deleted" | "error";
+    deletedAt?: string;
+    error?: string;
+  }> = [];
 
   const candidates = new Map<string, { id: string; fileUrl: string; active: boolean }>();
   const candidatesByTrackId = new Map<string, { id: string; fileUrl: string; active: boolean }>();
@@ -1422,21 +1643,40 @@ export async function cleanupExpiredQueueUploads(options: { now?: Date; deleteBl
     try {
       await deleteBlob(candidate.fileUrl);
       const deletedAt = now.toISOString();
-      updateMatchingEntriesInStore(store, candidate, (item) => normalizeEntry({ ...item, uploadedFileDeletedAt: deletedAt, uploadedFileDeletionStatus: "deleted", uploadedFileDeletionError: null }));
+      updates.push({ candidate, status: "deleted", deletedAt });
       result.deleted += 1;
-      changed = true;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Upload deletion failed.";
-      updateMatchingEntriesInStore(store, candidate, (item) => {
-        const current = normalizeEntry(item);
-        return current.uploadedFileDeletionStatus === "deleted" ? current : normalizeEntry({ ...current, uploadedFileDeletionStatus: "error", uploadedFileDeletionError: message.slice(0, 500) });
-      });
+      updates.push({ candidate, status: "error", error: message.slice(0, 500) });
       result.failed += 1;
-      changed = true;
     }
   }
 
-  if (changed) await writeStore(store);
+  if (updates.length > 0) {
+    await withQueueMutation(async () => {
+      const latest = await readStore();
+      for (const update of updates) {
+        updateMatchingEntriesInStore(latest, update.candidate, (item) => {
+          const current = normalizeEntry(item);
+          if (current.uploadedFileDeletionStatus === "deleted") return current;
+          if (update.status === "deleted") {
+            return normalizeEntry({
+              ...current,
+              uploadedFileDeletedAt: update.deletedAt ?? now.toISOString(),
+              uploadedFileDeletionStatus: "deleted",
+              uploadedFileDeletionError: null,
+            });
+          }
+          return normalizeEntry({
+            ...current,
+            uploadedFileDeletionStatus: "error",
+            uploadedFileDeletionError: update.error ?? "Upload deletion failed.",
+          });
+        });
+      }
+      await writeStore(latest);
+    });
+  }
   return result;
 }
 
@@ -1473,6 +1713,7 @@ function queueStateFromSession(session: QueueSession, store: QueueStore, viewedS
   const normalized = normalizeSession(session);
   const isCurrentSession = normalized.sessionId === store.activeSessionId && normalized.status !== "archived";
   return {
+    revision: store.revision,
     nowPlaying: getLoadedTrack(normalized),
     queue: normalized.queue,
     history: normalized.completed,
@@ -1496,58 +1737,14 @@ function queueStateFromSession(session: QueueSession, store: QueueStore, viewedS
 
 export async function getRadioQueueState(sessionId?: string): Promise<QueueState> {
   const store = await readStore();
-  const session = getSession(store, sessionId);
+  const session = normalizeSession(getSession(store, sessionId));
   if (session.status !== "archived") {
     applyPreShowTimer(session);
     applyCommercialBreakTimer(session);
     pullNextInLine(session);
-    await writeStore(replaceSession(store, session));
-    return queueStateFromSession(session, replaceSession(store, session), sessionId ?? store.activeSessionId);
   }
   return queueStateFromSession(session, store, sessionId ?? store.activeSessionId);
 }
-
-async function resolvePublicArtworkForSession(session: QueueSession): Promise<boolean> {
-  let changed = false;
-  const entries = [
-    ...session.queue,
-    ...(session.nextInLineTrack ? [session.nextInLineTrack] : []),
-    ...(session.loadedTrack ? [session.loadedTrack] : []),
-    ...session.completed,
-  ];
-  for (const entry of entries) {
-    const normalized = normalizeEntry(entry);
-    if (!entry.providerId) {
-      const providerId = parseProviderId(normalized.sourceType ?? "other", entry.link || entry.fileUrl || "");
-      if (providerId) {
-        entry.providerId = providerId;
-        changed = true;
-      }
-    }
-    if (entry.sourceArtworkUrl) continue;
-    if (normalized.sourceType === "youtube") {
-      const videoId = parseYouTubeVideoId(entry.link);
-      if (videoId) {
-        entry.sourceArtworkUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-        changed = true;
-      }
-      continue;
-    }
-    if (normalized.sourceType === "spotify" || normalized.sourceType === "soundcloud") {
-      const metadata = await detectProviderMetadata(normalized.sourceType, entry.link);
-      if (metadata.artworkUrl) {
-        entry.sourceArtworkUrl = metadata.artworkUrl;
-        changed = true;
-      }
-      if (!entry.providerTitle && metadata.providerTitle) {
-        entry.providerTitle = metadata.providerTitle;
-        changed = true;
-      }
-    }
-  }
-  return changed;
-}
-
 
 function publicSourceUrlForTrack(entry: QueueEntry): string | null {
   if ((entry.sourceType ?? "other") === "upload") return null;
@@ -1629,15 +1826,12 @@ function publicSubmitterStatus(session: QueueSession, identity?: { submitterToke
 
 export async function getPublicQueueSnapshot(sessionId?: string, identity?: { submitterToken?: string | null; tiktokHandle?: string | null; contactEmail?: string | null; artist?: string | null }): Promise<QueuePublicSnapshot> {
   const store = await readStore();
-  const session = getSession(store, sessionId);
-  let changed = false;
+  const session = normalizeSession(getSession(store, sessionId));
   if (session.status !== "archived") {
-    changed = applyPreShowTimer(session) || changed;
+    applyPreShowTimer(session);
+    applyCommercialBreakTimer(session);
     pullNextInLine(session);
-    changed = true;
   }
-  changed = (await resolvePublicArtworkForSession(session)) || changed;
-  if (changed) await writeStore(replaceSession(store, session));
   const normalized = normalizeSession(session);
   if (normalized.status === "archived") {
     const publicCompletedEntries = normalized.completed.filter((entry) => !isSimulationTrack(entry));
@@ -1664,14 +1858,17 @@ export async function getPublicQueueSnapshot(sessionId?: string, identity?: { su
     };
 
     return {
+      revision: store.revision,
       session: archivedPublicSession,
       status: {
         isOpen: false,
         activeCount: 0,
+        acceptedCount: archivedPublicSession.acceptedCount ?? 0,
         estimatedRuntimeSeconds: 0,
         capacity: normalized.publicStatus.capacity,
         isFull: false,
         pressure: "low",
+        closureReason: "archived",
       },
       queue: [],
       completed: publicCompletedEntries.slice(0, 10).map(toPublicQueueTrack),
@@ -1680,10 +1877,10 @@ export async function getPublicQueueSnapshot(sessionId?: string, identity?: { su
       submitterStatus: null,
     };
   }
-  return { session: summarizeSession(normalized), status: normalized.publicStatus, queue: normalized.queue.map(toPublicQueueTrack), completed: normalized.completed.slice(0, 10).map(toPublicQueueTrack), nowPlaying: normalized.loadedTrack ? toPublicQueueTrack(normalized.loadedTrack) : null, upNext: normalized.nextInLineTrack ? toPublicQueueTrack(normalized.nextInLineTrack) : null, submitterStatus: publicSubmitterStatus(normalized, identity) };
+  return { revision: store.revision, session: summarizeSession(normalized), status: normalized.publicStatus, queue: normalized.queue.map(toPublicQueueTrack), completed: normalized.completed.slice(0, 10).map(toPublicQueueTrack), nowPlaying: normalized.loadedTrack ? toPublicQueueTrack(normalized.loadedTrack) : null, upNext: normalized.nextInLineTrack ? toPublicQueueTrack(normalized.nextInLineTrack) : null, submitterStatus: publicSubmitterStatus(normalized, identity) };
 }
 
-export async function requestPriorityUpgradePlaceholder(id: string): Promise<QueuePublicTrack | null> {
+async function requestPriorityUpgradePlaceholderMutation(id: string): Promise<QueuePublicTrack | null> {
   const store = await readStore();
   const session = getSession(store);
   if (session.status === "archived" || !session.priorityUpgradesEnabled) return null;
@@ -1713,6 +1910,10 @@ export async function requestPriorityUpgradePlaceholder(id: string): Promise<Que
   if (!updated) return null;
   await writeStore(replaceSession(store, session));
   return toPublicQueueTrack(updated);
+}
+
+export async function requestPriorityUpgradePlaceholder(id: string): Promise<QueuePublicTrack | null> {
+  return withQueueMutation(() => requestPriorityUpgradePlaceholderMutation(id));
 }
 
 
@@ -1753,7 +1954,7 @@ export async function requestPriorityCheckout(trackId: string, queueSessionId: s
   return { session: summarizeSession(session), track, amountCents, currency: normalizeCurrency(session.priorityUpgradeCurrency), label: session.priorityUpgradeLabel || DEFAULT_PRIORITY_UPGRADE_LABEL };
 }
 
-export async function markPriorityUpgradeCheckoutPending(trackId: string, queueSessionId: string, metadata: { provider?: string; checkoutSessionId?: string; checkoutUrl?: string; checkoutCreatedAt?: string | null; checkoutExpiresAt?: string | null; priorityAcceptance?: PriorityLegalAcceptanceInput } = {}): Promise<QueuePublicTrack | null> {
+async function markPriorityUpgradeCheckoutPendingMutation(trackId: string, queueSessionId: string, metadata: { provider?: string; checkoutSessionId?: string; checkoutUrl?: string; checkoutCreatedAt?: string | null; checkoutExpiresAt?: string | null; priorityAcceptance?: PriorityLegalAcceptanceInput } = {}): Promise<QueuePublicTrack | null> {
   const store = await readStore();
   const session = getSession(store, queueSessionId);
   if (session.sessionId !== store.activeSessionId || session.status === "archived") return null;
@@ -1782,7 +1983,11 @@ export async function markPriorityUpgradeCheckoutPending(trackId: string, queueS
   return toPublicQueueTrack(session.queue[index]);
 }
 
-export async function markPriorityUpgradePaidFromStripe(trackId: string, queueSessionId: string, payment: StripePriorityPaymentMetadata): Promise<{ updated: boolean; reason?: string; track?: QueueEntry }> {
+export async function markPriorityUpgradeCheckoutPending(trackId: string, queueSessionId: string, metadata: { provider?: string; checkoutSessionId?: string; checkoutUrl?: string; checkoutCreatedAt?: string | null; checkoutExpiresAt?: string | null; priorityAcceptance?: PriorityLegalAcceptanceInput } = {}): Promise<QueuePublicTrack | null> {
+  return withQueueMutation(() => markPriorityUpgradeCheckoutPendingMutation(trackId, queueSessionId, metadata));
+}
+
+async function markPriorityUpgradePaidFromStripeMutation(trackId: string, queueSessionId: string, payment: StripePriorityPaymentMetadata): Promise<{ updated: boolean; reason?: string; track?: QueueEntry }> {
   const store = await readStore();
   const session = store.sessions.find((item) => item.sessionId === queueSessionId);
   if (!session) return { updated: false, reason: "missing_session" };
@@ -1861,6 +2066,10 @@ export async function markPriorityUpgradePaidFromStripe(trackId: string, queueSe
   return { updated: false, reason: "missing_track" };
 }
 
+export async function markPriorityUpgradePaidFromStripe(trackId: string, queueSessionId: string, payment: StripePriorityPaymentMetadata): Promise<{ updated: boolean; reason?: string; track?: QueueEntry }> {
+  return withQueueMutation(() => markPriorityUpgradePaidFromStripeMutation(trackId, queueSessionId, payment));
+}
+
 export interface QueueSessionSubmitterRow {
   sessionId: string;
   sessionTitle: string;
@@ -1927,7 +2136,7 @@ export async function getQueueSessionSubmissionsCsv(sessionId?: string): Promise
   return { filename: `barcode-radio-session-${safeDate}-submissions.csv`, csv: [headers.map(csvEscape).join(","), ...body].join("\n") };
 }
 
-export async function updatePriorityUpgradeSettings(input: PriorityUpgradeSettingsInput): Promise<QueueState> {
+async function updatePriorityUpgradeSettingsMutation(input: PriorityUpgradeSettingsInput): Promise<QueueState> {
   const store = await readStore();
   const session = getSession(store);
   if (session.status === "archived") return queueStateFromSession(session, store);
@@ -1948,8 +2157,12 @@ export async function updatePriorityUpgradeSettings(input: PriorityUpgradeSettin
   return queueStateFromSession(next, nextStore);
 }
 
+export async function updatePriorityUpgradeSettings(input: PriorityUpgradeSettingsInput): Promise<QueueState> {
+  return withQueueMutation(() => updatePriorityUpgradeSettingsMutation(input));
+}
 
-export async function updateSponsorBreakState(action: "start" | "complete" | "skip" | "reset"): Promise<QueueState> {
+
+async function updateSponsorBreakStateMutation(action: "start" | "complete" | "skip" | "reset"): Promise<QueueState> {
   const store = await readStore();
   const session = getSession(store);
   if (session.status === "archived") return queueStateFromSession(session, store);
@@ -1972,7 +2185,11 @@ export async function updateSponsorBreakState(action: "start" | "complete" | "sk
   return queueStateFromSession(next, nextStore);
 }
 
-export async function updateSubmissionCooldownSettings(input: { submissionCooldownSeconds?: number }): Promise<QueueState> {
+export async function updateSponsorBreakState(action: "start" | "complete" | "skip" | "reset"): Promise<QueueState> {
+  return withQueueMutation(() => updateSponsorBreakStateMutation(action));
+}
+
+async function updateSubmissionCooldownSettingsMutation(input: { submissionCooldownSeconds?: number }): Promise<QueueState> {
   const store = await readStore();
   const session = getSession(store);
   if (session.status === "archived") return queueStateFromSession(session, store);
@@ -1986,7 +2203,11 @@ export async function updateSubmissionCooldownSettings(input: { submissionCooldo
   return queueStateFromSession(next, nextStore);
 }
 
-export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> {
+export async function updateSubmissionCooldownSettings(input: { submissionCooldownSeconds?: number }): Promise<QueueState> {
+  return withQueueMutation(() => updateSubmissionCooldownSettingsMutation(input));
+}
+
+async function setQueueOpenMutation(isOpen: boolean): Promise<QueuePublicStatus> {
   const store = await readStore();
   const session = getSession(store);
   if (session.status === "archived") return session.publicStatus;
@@ -1995,10 +2216,10 @@ export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> 
   const sessions = store.sessions.map((item) => {
     if (item.sessionId === session.sessionId) {
       const openingPreShow = isOpen && item.showStarted !== true;
-      return normalizeSession({ ...item, queueOpen: isOpen, status: isOpen ? "open" : "closed", preShowEndsAt: openingPreShow ? (item.queueOpen && item.preShowEndsAt ? item.preShowEndsAt : preShowEndsAtFrom(now)) : item.preShowEndsAt ?? null, updatedAt: now.toISOString() });
+      return normalizeSession({ ...item, queueOpen: isOpen, status: isOpen ? "open" : "closed", submissionClosureReason: isOpen ? null : "manual", preShowEndsAt: openingPreShow ? (item.queueOpen && item.preShowEndsAt ? item.preShowEndsAt : preShowEndsAtFrom(now)) : item.preShowEndsAt ?? null, updatedAt: now.toISOString() });
     }
     if (isOpen && item.status === "open") {
-      return normalizeSession({ ...item, queueOpen: false, status: "closed", updatedAt: now.toISOString() });
+      return normalizeSession({ ...item, queueOpen: false, status: "closed", submissionClosureReason: "manual", updatedAt: now.toISOString() });
     }
     return item;
   });
@@ -2007,18 +2228,26 @@ export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> 
   return publicStatusForSession(getSession(nextStore));
 }
 
-export async function startNewQueueSession(options: QueueSessionOptions = {}): Promise<QueueState> {
+export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> {
+  return withQueueMutation(() => setQueueOpenMutation(isOpen));
+}
+
+async function startNewQueueSessionMutation(options: QueueSessionOptions = {}): Promise<QueueState> {
   const store = await readStore();
   const current = getSession(store);
   if (current.status === "open" || current.queueOpen) return queueStateFromSession(current, store);
-  const preserved = store.sessions.map((session) => session.sessionId === store.activeSessionId && session.status !== "archived" ? normalizeSession({ ...session, status: "closed", queueOpen: false, updatedAt: new Date().toISOString() }) : session);
+  const preserved = store.sessions.map((session) => session.sessionId === store.activeSessionId && session.status !== "archived" ? normalizeSession({ ...session, status: "closed", queueOpen: false, submissionClosureReason: "manual", updatedAt: new Date().toISOString() }) : session);
   const next = defaultSession(options);
-  const nextStore = { activeSessionId: next.sessionId, sessions: [next, ...preserved] };
+  const nextStore = { revision: store.revision, activeSessionId: next.sessionId, sessions: [next, ...preserved] };
   await writeStore(nextStore);
   return queueStateFromSession(next, nextStore);
 }
 
-export async function updateQueueSessionProvenance(
+export async function startNewQueueSession(options: QueueSessionOptions = {}): Promise<QueueState> {
+  return withQueueMutation(() => startNewQueueSessionMutation(options));
+}
+
+async function updateQueueSessionProvenanceMutation(
   input: QueueSessionProvenanceInput,
 ): Promise<QueueState> {
   const store = await readStore();
@@ -2044,9 +2273,15 @@ export async function updateQueueSessionProvenance(
   return queueStateFromSession(updated, nextStore, updated.sessionId);
 }
 
-export async function archiveCurrentQueueSession(): Promise<QueueState> {
+export async function updateQueueSessionProvenance(
+  input: QueueSessionProvenanceInput,
+): Promise<QueueState> {
+  return withQueueMutation(() => updateQueueSessionProvenanceMutation(input));
+}
+
+async function archiveCurrentQueueSessionMutation(): Promise<QueueState> {
   const store = await readStore();
-  const session = normalizeSession({ ...getSession(store), status: "archived", queueOpen: false, showStarted: false, updatedAt: new Date().toISOString() });
+  const session = normalizeSession({ ...getSession(store), status: "archived", queueOpen: false, submissionClosureReason: "archived", showStarted: false, updatedAt: new Date().toISOString() });
   const archivedStore = replaceSession(store, session);
   const active = archivedStore.sessions.find((item) => item.status === "open" || item.status === "prepared") ?? session;
   archivedStore.activeSessionId = active.sessionId;
@@ -2054,28 +2289,42 @@ export async function archiveCurrentQueueSession(): Promise<QueueState> {
   return queueStateFromSession(session, archivedStore, session.sessionId);
 }
 
+export async function archiveCurrentQueueSession(): Promise<QueueState> {
+  return withQueueMutation(() => archiveCurrentQueueSessionMutation());
+}
 
-export async function clearArchivedQueueSessions(): Promise<QueueState> {
+
+async function clearArchivedQueueSessionsMutation(): Promise<QueueState> {
   const store = await readStore();
   const sessions = store.sessions.filter((session) => session.status !== "archived");
   const fallback = sessions[0] ?? defaultSession();
   const activeExists = sessions.some((session) => session.sessionId === store.activeSessionId);
   const nextStore: QueueStore = {
+    revision: store.revision,
     activeSessionId: activeExists ? store.activeSessionId : fallback.sessionId,
     sessions: sessions.length > 0 ? sessions : [fallback],
   };
   await writeStore(nextStore);
   return queueStateFromSession(getSession(nextStore), nextStore);
 }
-export async function activateQueueSession(sessionId: string): Promise<QueueState> {
+
+export async function clearArchivedQueueSessions(): Promise<QueueState> {
+  return withQueueMutation(() => clearArchivedQueueSessionsMutation());
+}
+
+async function activateQueueSessionMutation(sessionId: string): Promise<QueueState> {
   const store = await readStore();
   const target = store.sessions.find((session) => session.sessionId === sessionId);
   if (!target || target.status === "archived") return queueStateFromSession(target ?? getSession(store), store, sessionId);
-  const sessions = store.sessions.map((session) => normalizeSession({ ...session, status: session.sessionId === sessionId ? "prepared" : session.status === "archived" ? "archived" : "closed", queueOpen: false, updatedAt: new Date().toISOString() }));
+  const sessions = store.sessions.map((session) => normalizeSession({ ...session, status: session.sessionId === sessionId ? "prepared" : session.status === "archived" ? "archived" : "closed", queueOpen: false, submissionClosureReason: session.status === "archived" ? "archived" : "manual", updatedAt: new Date().toISOString() }));
   const active = sessions.find((session) => session.sessionId === sessionId) ?? sessions[0];
-  const nextStore = { activeSessionId: active.sessionId, sessions };
+  const nextStore = { revision: store.revision, activeSessionId: active.sessionId, sessions };
   await writeStore(nextStore);
   return queueStateFromSession(active, nextStore);
+}
+
+export async function activateQueueSession(sessionId: string): Promise<QueueState> {
+  return withQueueMutation(() => activateQueueSessionMutation(sessionId));
 }
 
 function priorityUpgradeMetadata(entry: QueueEntry, lane: QueueLane): Partial<QueueEntry> {
@@ -2395,7 +2644,7 @@ function addSimulationTrack(session: QueueSession, action: QueueAdminAction): bo
   return false;
 }
 
-export async function updateRadioTrack(id: string, action: QueueAdminAction): Promise<QueueState> {
+async function updateRadioTrackMutation(id: string, action: QueueAdminAction): Promise<QueueState> {
   const store = await readStore();
   const session = getSession(store);
   if (session.status === "archived") return queueStateFromSession(session, store);
@@ -2483,6 +2732,9 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
     const removedIndex = session.removed.findIndex((entry) => entry.id === id);
     const source = completedIndex >= 0 ? session.completed[completedIndex] : removedIndex >= 0 ? session.removed[removedIndex] : null;
     if (source) {
+      if (removedIndex >= 0 && !isSimulationTrack(source) && publicStatusForSession(session).isFull) {
+        throw new Error("Queue is full for restored transmissions.");
+      }
       if (action === "restorePriority" && !wasPrioritySignal(source)) {
         await writeStore(replaceSession(store, session));
         return getRadioQueueState();
@@ -2618,39 +2870,52 @@ export async function updateRadioTrack(id: string, action: QueueAdminAction): Pr
   return getRadioQueueState();
 }
 
+export async function updateRadioTrack(id: string, action: QueueAdminAction): Promise<QueueState> {
+  return withQueueMutation(() => updateRadioTrackMutation(id, action));
+}
+
 // Legacy-compatible helpers used by archived/OBS components.
 export async function addToQueue(entry: Omit<QueueEntry, "id" | "status" | "playedAt">): Promise<QueueEntry> {
   const track = normalizeEntry({ ...entry, id: generateQueueId(), status: "queued", playedAt: null, lane: entry.lane ?? (normalizeTier(entry.tier) === "fastlane" ? "priority" : "regular"), sourceType: entry.sourceType ?? detectQueueSourceType(entry.link) });
-  const store = await readStore();
-  const session = getSession(store);
-  applyPreShowTimer(session);
-  session.queue.push(track);
-  await writeStore(replaceSession(store, session));
-  return track;
+  return withQueueMutation(async () => {
+    const store = await readStore();
+    const session = getSession(store);
+    applyPreShowTimer(session);
+    if (!isSimulationTrack(track) && publicStatusForSession(session).isFull) {
+      throw new Error("Queue is full for new transmissions.");
+    }
+    session.queue.push(track);
+    await writeStore(replaceSession(store, session));
+    return track;
+  });
 }
 
 export async function getQueueState(): Promise<QueueState> { return getRadioQueueState(); }
 
 export async function advanceQueue(): Promise<QueueEntry | null> {
-  const store = await readStore();
-  const session = getSession(store);
-  pullNextInLine(session);
-  const next = clearNextInLine(session);
-  if (!next) return null;
-  session.completed.unshift({ ...next, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
-  advanceNonPriorityLaneAfter(session, next.lane);
-  pullNextInLine(session);
-  await writeStore(replaceSession(store, session));
-  return getNextInLine(session);
+  return withQueueMutation(async () => {
+    const store = await readStore();
+    const session = getSession(store);
+    pullNextInLine(session);
+    const next = clearNextInLine(session);
+    if (!next) return null;
+    session.completed.unshift({ ...next, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
+    advanceNonPriorityLaneAfter(session, next.lane);
+    pullNextInLine(session);
+    await writeStore(replaceSession(store, session));
+    return getNextInLine(session);
+  });
 }
 
 export async function resetQueue(): Promise<{ cleared: number; preserved: number }> {
-  const store = await readStore();
-  const session = getSession(store);
-  const cleared = session.queue.length;
-  session.queue = [];
-  await writeStore(replaceSession(store, session));
-  return { cleared, preserved: 0 };
+  return withQueueMutation(async () => {
+    const store = await readStore();
+    const session = getSession(store);
+    const cleared = session.queue.length;
+    session.queue = [];
+    await writeStore(replaceSession(store, session));
+    return { cleared, preserved: 0 };
+  });
 }
 
 export async function getEntry(id: string): Promise<QueueEntry | null> {
@@ -2659,14 +2924,16 @@ export async function getEntry(id: string): Promise<QueueEntry | null> {
 }
 
 export async function upgradeEntryTier(id: string, newTier: QueueTier, additionalAmount: number): Promise<QueueEntry | null> {
-  const store = await readStore();
-  const session = getSession(store);
-  const index = session.queue.findIndex((entry) => entry.id === id);
-  if (index === -1) return null;
-  const updated = normalizeEntry({ ...session.queue[index], tier: newTier === "fastlane" ? session.queue[index].tier : newTier, amount: session.queue[index].amount + additionalAmount, lane: session.queue[index].lane, ...(newTier === "fastlane" ? { priorityUpgradeRequested: true, priorityUpgradeStatus: "checkout_pending" as const, priorityUpgradeSource: "future_payment" as const, priorityUpgradeAt: new Date().toISOString(), priorityUpgradeRequestedAt: new Date().toISOString() } : {}) });
-  session.queue[index] = updated;
-  await writeStore(replaceSession(store, session));
-  return updated;
+  return withQueueMutation(async () => {
+    const store = await readStore();
+    const session = getSession(store);
+    const index = session.queue.findIndex((entry) => entry.id === id);
+    if (index === -1) return null;
+    const updated = normalizeEntry({ ...session.queue[index], tier: newTier === "fastlane" ? session.queue[index].tier : newTier, amount: session.queue[index].amount + additionalAmount, lane: session.queue[index].lane, ...(newTier === "fastlane" ? { priorityUpgradeRequested: true, priorityUpgradeStatus: "checkout_pending" as const, priorityUpgradeSource: "future_payment" as const, priorityUpgradeAt: new Date().toISOString(), priorityUpgradeRequestedAt: new Date().toISOString() } : {}) });
+    session.queue[index] = updated;
+    await writeStore(replaceSession(store, session));
+    return updated;
+  });
 }
 
 const stripeSessions = new Map<string, string>();

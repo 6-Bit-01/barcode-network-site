@@ -26,6 +26,16 @@ When the capability is enabled, one server-side presentation contract moves the 
 
 The native form accepts supported SoundCloud, Spotify, YouTube, and TikTok links plus direct MP3/WAV uploads. New Apple Music queue submissions are rejected because BARCODE Radio cannot reliably access the full track; release, catalog, dossier, historical, and archived Apple Music links elsewhere remain unaffected. Amazon Music, Suno, and Bandcamp continue through the form's existing external-link path.
 
+## Atomic acceptance and 44-slot contract
+
+The default session capacity is 44 accepted show slots. The accepted count is the unique set of non-simulation tracks in queued/playing, Next In Line, loaded/Now Playing, and completed/played state. Removed tracks, simulation tracks, rejected duplicates, rejected limit/cooldown attempts, and submissions that did not persist are excluded. Playing or finishing a track does not free its show slot; removing one does.
+
+Capacity closure is distinct from a manual close, ended broadcast, or archive. Reaching capacity closes intake with `submissionClosureReason=capacity` while the active session remains open for show operations. Removing a counted track reopens only a capacity-closed session. A manually closed, ended, or archived session stays closed after removal. Public status and admin/session summaries expose both `activeCount` for current queue depth and `acceptedCount` for capacity, plus the closure reason.
+
+Every persisted queue change—submission, admin action, session/settings update, upload cleanup metadata, Priority checkout/payment transition, and legacy queue helper—uses the same serialized mutation boundary. Redis-backed mutations acquire a bounded lease and commit the complete state with a fencing token and monotonic revision; in-process mutations use the same contract. Provider metadata lookup happens before admission enters the critical section, then the current session, capacity, duplicate identity, artist limit, and cooldown are re-read and revalidated inside it. Concurrent workers therefore cannot both claim the final slot or overwrite one another.
+
+Public and admin snapshot reads are non-persistent: polling may derive the current display state, but it does not write the queue or advance its revision. Apple Music host rejection, including terminal-dot host variants such as `music.apple.com.`, occurs before any queue snapshot read.
+
 ## Session provenance and BNL publication
 
 Native queue visibility, payment, playback, and operator controls remain independent from BNL publication. Every session has:

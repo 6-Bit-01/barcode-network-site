@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AdminLiveOverlayControl } from "@/components/AdminLiveOverlayControl";
 import { buildQueueTimingDisplay, formatHoursMinutes, queueTimingInputFromAdminState } from "@/lib/queue-timing-display";
+import { combineQueueTimeBankEvents, deriveQueuePaceBankEvent, deriveQueueTimeBankEvent, type QueueTimeBankEvent, type QueueTimeBankObservation } from "@/lib/queue-time-bank-events";
 import { parseYouTubeVideoId } from "@/lib/track-duration";
 import { formatRuntime, getTrackRuntimeSeconds, parseTikTokVideoUrl } from "@/lib/queue-types";
 import { detectMaterialPlaybackSeek, estimateOneWayNetworkTransitMs, projectObservedPlaybackTime, updateTransitEstimateMs, YOUTUBE_SYNC_STALE_AFTER_MS } from "@/lib/live-overlay-resolver";
@@ -540,6 +541,8 @@ export function AdminRadioQueueControl() {
         </>}
       </section>, document.body)}
 
+      {mounted && canControlSession && <AdminTimeBankToast timing={timingSummary.timeBankSummary} sessionId={state?.session?.sessionId ?? null} />}
+
       {mounted && endConfirmOpen && createPortal(<div className="fixed inset-0 z-[100000] grid place-items-center bg-black/80 p-4 backdrop-blur-sm"><div role="dialog" aria-modal="true" aria-labelledby="end-session-confirm-title" className="w-full max-w-md border border-danger/50 bg-background p-5 shadow-[0_0_70px_rgba(255,0,0,0.24)]"><p className="text-xs uppercase tracking-[0.35em] text-danger">End Broadcast</p><h2 id="end-session-confirm-title" className="mt-3 text-2xl font-bold text-foreground">End this broadcast?</h2><p className="mt-2 text-sm text-muted">This will stop routing, close submissions, and move the broadcast session to the archive.</p><div className="mt-5 flex flex-wrap justify-end gap-2"><a href="/admin/queue" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Return to Queue Dashboard</a><button type="button" onClick={() => setEndConfirmOpen(false)} disabled={endingSession} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">No, Cancel</button><button type="button" onClick={endCurrentSession} disabled={endingSession} className="border border-danger px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background disabled:opacity-50">{endingSession ? "Ending…" : "Yes, End Broadcast"}</button></div></div></div>, document.body)}
 
 
@@ -624,9 +627,81 @@ export function AdminRadioQueueControl() {
   );
 }
 
+function AdminTimeBankToast({ timing, sessionId }: { timing: ReturnType<typeof buildQueueTimingDisplay>["timeBankSummary"]; sessionId: string | null }) {
+  const lastObservationRef = useRef<QueueTimeBankObservation | null>(null);
+  const driftBankRef = useRef<number | null>(null);
+  const activeToastRef = useRef<QueueTimeBankEvent | null>(null);
+  const dismissTimerRef = useRef<number | null>(null);
+  const [toast, setToast] = useState<QueueTimeBankEvent | null>(null);
+  const observation = useMemo<QueueTimeBankObservation>(() => ({
+    sessionId,
+    bankSeconds: timing.bankSeconds,
+    activePlayableCount: timing.activePlayableCount,
+    completedPlayableCount: timing.completedPlayableCount,
+    removedCount: timing.removedCount,
+    knownDurationCount: timing.knownDurationCount,
+    wheelSpinsOwed: timing.wheelSpinsOwed,
+    wheelSecondsBudgeted: timing.wheelSecondsBudgeted,
+    sponsorStatus: timing.sponsorStatus,
+    isLive: timing.isLive,
+  }), [sessionId, timing]);
+
+  useEffect(() => {
+    const previous = lastObservationRef.current;
+    if (!previous || !sessionId || previous.sessionId !== sessionId) {
+      lastObservationRef.current = observation;
+      driftBankRef.current = observation.bankSeconds;
+      activeToastRef.current = null;
+      setToast(null);
+      if (dismissTimerRef.current) window.clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = null;
+      return;
+    }
+
+    const event = deriveQueueTimeBankEvent(previous, observation)
+      ?? deriveQueuePaceBankEvent(driftBankRef.current ?? previous.bankSeconds, observation);
+    lastObservationRef.current = observation;
+    if (!event) return;
+    driftBankRef.current = observation.bankSeconds;
+
+    const combined = activeToastRef.current ? combineQueueTimeBankEvents(activeToastRef.current, event) : event;
+    if (Math.abs(combined.bankDeltaSeconds) < 30) {
+      activeToastRef.current = null;
+      setToast(null);
+      return;
+    }
+    activeToastRef.current = combined;
+    setToast(combined);
+    if (dismissTimerRef.current) window.clearTimeout(dismissTimerRef.current);
+    dismissTimerRef.current = window.setTimeout(() => {
+      activeToastRef.current = null;
+      setToast(null);
+      dismissTimerRef.current = null;
+    }, 4_800);
+  }, [observation, sessionId]);
+
+  useEffect(() => () => {
+    if (dismissTimerRef.current) window.clearTimeout(dismissTimerRef.current);
+  }, []);
+
+  if (!toast) return null;
+  const positive = toast.bankDeltaSeconds > 0;
+  return <div className="pointer-events-none fixed right-4 top-[calc(7rem+env(safe-area-inset-top))] z-[9000] max-w-[min(24rem,calc(100vw-2rem))]">
+    <div role="status" aria-live="polite" className={`border bg-background/95 px-4 py-3 text-xs font-bold uppercase tracking-[0.16em] shadow-2xl backdrop-blur ${positive ? "border-[#3ddc97]/70 text-[#3ddc97]" : "border-[#ff9f43]/80 text-[#ff9f43]"}`}>{timeBankToastCopy(toast)}</div>
+  </div>;
+}
+
+function timeBankToastCopy(event: QueueTimeBankEvent): string {
+  const seconds = Math.abs(event.bankDeltaSeconds);
+  const delta = `${Math.floor(seconds / 60)}:${Math.round(seconds % 60).toString().padStart(2, "0")}`;
+  if (event.bankDeltaSeconds > 0) return `${event.label} · +${delta} BANKED`;
+  if (event.kind === "submission" || event.kind === "duration" || event.kind === "wheel" || event.kind === "commercial" || event.kind === "combined") return `${event.label} · +${delta} COMMITTED`;
+  return `${event.label} · −${delta}`;
+}
+
 function TopBarPressureChip({ pressure, minimized = false }: { pressure: ReturnType<typeof buildQueueTimingDisplay>["pressureSummary"]; minimized?: boolean }) {
-  const label = pressure.mode === "pre_show" ? "PRE-SHOW" : pressure.mode === "starting" ? "STARTING" : pressure.mode === "ended" ? "ENDED" : pressure.label;
-  const tone = pressure.mode === "ended" || pressure.mode === "pre_show" || pressure.mode === "starting"
+  const label = pressure.mode === "pre_show" ? "PRE-SHOW" : pressure.mode === "ended" ? "ENDED" : pressure.label;
+  const tone = pressure.mode === "ended" || pressure.mode === "pre_show"
     ? "border-border text-muted"
     : pressure.level === "critical"
       ? "border-danger/60 text-danger"
@@ -1325,7 +1400,7 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction, s
   const wheel = timingSummary.wheelTimingSummary;
   const pressure = timingSummary.pressureSummary;
   const needleDeg = -90 + (pressure.score / 100) * 180;
-  const pressureHeading = pressure.mode === "live" ? "Live Pressure" : pressure.mode === "starting" ? "Opening Calibration" : pressure.mode === "ended" ? "Ended" : "Pre-show Projection";
+  const pressureHeading = pressure.mode === "live" ? "Live Pressure" : pressure.mode === "ended" ? "Ended" : "Pre-show Projection";
   const sponsorStartDisabled = !sponsor.dueNow || sponsor.status === "running" || sponsor.status === "completed" || sponsor.status === "skipped";
   const sponsorStartLabel = sponsor.status === "running"
     ? `Commercial Break Running${sponsor.diagnosticLabel.includes("remaining") ? ` · ${sponsor.diagnosticLabel.split("·")[1]?.trim().replace("remaining", "").trim()}` : ""}`
@@ -1343,7 +1418,7 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction, s
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="uppercase tracking-[0.28em] text-accent">Runtime Diagnostics</p>
-          <p className="mt-1 text-sm text-muted">{pressure.mode === "live" ? "Live pressure from broadcast timing + queue state." : pressure.mode === "starting" ? "The show clock is live; pressure waits for an opening pace baseline." : pressure.mode === "ended" ? "Broadcast has ended." : "Pre-show projection from queue state. Pressure activates when broadcast starts."}</p>
+          <p className="mt-1 text-sm text-muted">{pressure.mode === "live" ? "Live pressure from broadcast timing + queue state." : pressure.mode === "ended" ? "Broadcast has ended." : "Pre-show projection from queue state. Pressure activates when broadcast starts."}</p>
         </div>
         {canControl && <div className="flex flex-wrap gap-2"><a href={playbackExportUrl} className="border border-accent/50 px-3 py-1.5 uppercase tracking-widest text-accent">Download Playback Diagnostics</a><button type="button" disabled={sponsorStartDisabled} onClick={() => !sponsorStartDisabled && onSponsorAction("start")} className={`px-3 py-1.5 uppercase tracking-widest ${sponsorStartDisabled ? "cursor-not-allowed border border-border text-muted opacity-70" : "border border-[#ffaa00]/50 text-[#ffaa00]"}`}>{sponsorStartLabel}</button><button type="button" onClick={() => onSponsorAction("reset")} className="border border-border px-3 py-1.5 uppercase tracking-widest text-muted">Reset Commercial Break State</button></div>}
       </div>
@@ -1383,7 +1458,7 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction, s
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Known Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.knownDurationCount}</p><p className="mt-1 text-muted">Detected/provider/upload durations</p></div>
       </div>
       <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Playback Lifecycle</p><p className="mt-1 font-bold capitalize text-foreground">{playbackStateLabel}</p><p className="mt-1 text-muted">{playbackDiagnostics?.events.length ?? 0} bounded lifecycle events · last issue {playbackDiagnostics?.lastErrorCode ?? "none"}. Natural end, Skip, Finish, and Remove remain distinct.</p></div>
-      <div className="grid gap-3 md:grid-cols-3"><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Talk Room to 4h</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.talkRoomLabel}</p><p className="mt-1 text-muted">{timingSummary.showRuntimeSummary.talkPerTrackLabel}</p></div><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Room to 5h</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.warningRoomLabel}</p><p className="mt-1 text-muted">Pressure ceiling only; the show continues past it.</p></div><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Runtime Confidence</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.confidenceLabel}</p><p className="mt-1 text-muted">Unknown durations widen timing uncertainty without adding a pressure penalty.</p></div></div>
+      <div className="grid gap-3 md:grid-cols-3"><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Talk Room to 5h</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.talkRoomLabel}</p><p className="mt-1 text-muted">{timingSummary.showRuntimeSummary.talkPerTrackLabel}</p></div><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Room to 6h</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.warningRoomLabel}</p><p className="mt-1 text-muted">Operational redline only; the show continues past it.</p></div><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Runtime Confidence</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.confidenceLabel}</p><p className="mt-1 text-muted">Unknown durations widen timing uncertainty without adding a pressure penalty.</p></div></div>
       <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Current Runtime Notes</p><p className="mt-1 text-muted">Sponsor: {sponsor.diagnosticLabel} · Wheel overhead: {formatHoursMinutes(wheel.overheadSeconds)} · {timingSummary.showRuntimeSummary.notes[0] ?? "No projection warnings."}</p></div>
     </section>
   );

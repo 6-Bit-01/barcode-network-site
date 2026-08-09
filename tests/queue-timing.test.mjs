@@ -110,16 +110,21 @@ test("sponsor break and wheel ceremony seconds can be explicitly set to zero", (
   assert.equal(wheel.wheelCeremonySeconds, 0);
 });
 
-test("four-hour target reports pressure and five hours is only the warning ceiling", () => {
+test("five-hour target reports pressure and six hours is the operational redline", () => {
   const tightTracks = Array.from({ length: 46 }, (_, index) => track(`tight-${index}`, { detectedDurationSeconds: 200 }));
   const tightSnapshot = timing.buildQueueTimingSnapshot({ queue: tightTracks }, { sponsorBreakAlreadyRun: true });
   assert.equal(tightSnapshot.targetStatus, "comfortable");
   assert.equal(tightSnapshot.warningStatus, "below_warning_ceiling");
 
-  const warningTracks = Array.from({ length: 52 }, (_, index) => track(`warning-${index}`, { detectedDurationSeconds: 240 }));
+  const warningTracks = Array.from({ length: 52 }, (_, index) => track(`warning-${index}`, { detectedDurationSeconds: 300 }));
   const warningSnapshot = timing.buildQueueTimingSnapshot({ queue: warningTracks }, { sponsorBreakAlreadyRun: true });
   assert.equal(warningSnapshot.targetStatus, "over_target");
   assert.equal(warningSnapshot.warningStatus, "below_warning_ceiling");
+
+  const redlineTracks = Array.from({ length: 60 }, (_, index) => track(`redline-${index}`, { detectedDurationSeconds: 300 }));
+  const redlineSnapshot = timing.buildQueueTimingSnapshot({ queue: redlineTracks }, { sponsorBreakAlreadyRun: true });
+  assert.equal(redlineSnapshot.targetStatus, "warning_ceiling");
+  assert.equal(redlineSnapshot.warningStatus, "warning_ceiling");
 });
 
 test("existing track timing classifies now playing, up next, queued, played, removed, and missing", () => {
@@ -189,12 +194,13 @@ test("completed sponsor break is not included again", () => {
   assert.equal(estimate.sponsorBreakSecondsIncluded, 0);
 });
 
-test("running commercial includes remaining time, not full duration", () => {
+test("running commercial burns down the 12-minute planning reserve while exposing the 10:30 countdown", () => {
   const now = new Date("2026-01-01T03:00:00.000Z");
   const startedAt = new Date(now.getTime() - 4 * 60 * 1000).toISOString();
   const estimate = timing.estimateSponsorBreakPlacement({ session: { sponsorBreakStatus: "running", sponsorBreakStartedAt: startedAt, sponsorBreakSeconds: 630 } }, { now });
   assert.equal(estimate.sponsorBreakStatus, "running");
-  assert.ok(estimate.sponsorBreakSecondsIncluded <= 390 && estimate.sponsorBreakSecondsIncluded >= 389);
+  assert.equal(estimate.sponsorBreakSecondsIncluded, 480);
+  assert.equal(estimate.sponsorBreakSecondsRemaining, 390);
 });
 
 test("wheel overhead does not add extra song durations", () => {
@@ -257,10 +263,10 @@ test("active Priority ahead is not skipped by new Priority simulation", () => {
   assert.equal(estimate.priorityEstimate.estimatedSecondsUntilPlay, 300);
 });
 
-test("target status becomes tight before exceeding four-hour target", () => {
-  const tracks = Array.from({ length: 41 }, (_, index) => track(`tight-window-${index}`, { detectedDurationSeconds: 200 }));
+test("target status becomes tight before exceeding the five-hour target", () => {
+  const tracks = Array.from({ length: 63 }, (_, index) => track(`tight-window-${index}`, { detectedDurationSeconds: 200 }));
   const snapshot = timing.buildQueueTimingSnapshot({ queue: tracks }, { sponsorBreakAlreadyRun: true });
-  assert.equal(snapshot.targetStatus, "comfortable");
+  assert.equal(snapshot.targetStatus, "tight");
 });
 
 test("range formatting widens low-confidence ranges", () => {

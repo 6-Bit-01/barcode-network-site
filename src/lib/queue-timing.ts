@@ -4,10 +4,11 @@ export const DEFAULT_UNKNOWN_TRACK_SECONDS = 300;
 export const DEFAULT_PRE_TRACK_TALK_SECONDS = 30;
 export const DEFAULT_POST_TRACK_TALK_SECONDS = 30;
 export const DEFAULT_HOST_TALK_BUFFER_SECONDS = DEFAULT_PRE_TRACK_TALK_SECONDS + DEFAULT_POST_TRACK_TALK_SECONDS;
-export const DEFAULT_SPONSOR_BREAK_SECONDS = 630;
+export const DEFAULT_SPONSOR_BREAK_SECONDS = 12 * 60;
 export const DEFAULT_WHEEL_CEREMONY_SECONDS = 120;
-export const TARGET_SHOW_SECONDS = 14400;
-export const WARNING_SHOW_SECONDS = 18000;
+export const DEFAULT_MAX_HOST_TALK_SECONDS = 120;
+export const TARGET_SHOW_SECONDS = 5 * 60 * 60;
+export const WARNING_SHOW_SECONDS = 6 * 60 * 60;
 export const TYPICAL_SHOW_TRACK_COUNT = 42;
 export const PRACTICAL_HIGH_SUBMISSION_COUNT = 50;
 export const EXPECTED_DROPOUT_BUFFER = 8;
@@ -20,7 +21,7 @@ export type SponsorBreakMode = "mid_show";
 export type ProjectionScenario = "new_free_submission" | "existing_track" | "priority_submission";
 export type ProjectedShowSegmentType = "pre_track_talk" | "track_runtime" | "post_track_talk" | "sponsor_break" | "wheel_ceremony" | "now_playing_remaining" | "uncertainty_buffer";
 
-type QueueTimingTrack = Partial<Pick<QueueEntry, "id" | "status" | "lane" | "detectedDurationSeconds" | "estimatedDurationSeconds" | "durationIsEstimate" | "durationSource" | "removedAt" | "completedAt" | "playedAt" | "priorityUpgradeStatus" | "priorityPausedAt" | "priorityQueueOrderAt" | "createdAt" | "isTestTrack">> &
+type QueueTimingTrack = Partial<Pick<QueueEntry, "id" | "status" | "lane" | "detectedDurationSeconds" | "estimatedDurationSeconds" | "durationIsEstimate" | "durationSource" | "removedAt" | "completedAt" | "playedAt" | "playbackOutcome" | "playbackEndPositionSeconds" | "playbackObservedDurationSeconds" | "priorityUpgradeStatus" | "priorityPausedAt" | "priorityQueueOrderAt" | "createdAt" | "isTestTrack">> &
   Partial<Pick<QueuePublicTrack, "id" | "lane" | "durationIsEstimate" | "priorityUpgradeStatus" | "isSimulation">>;
 
 export interface QueueTimingOptions {
@@ -30,6 +31,7 @@ export interface QueueTimingOptions {
   hostTalkBufferSeconds?: number;
   sponsorBreakSeconds?: number;
   wheelCeremonySeconds?: number;
+  maxHostTalkSeconds?: number;
   targetShowSeconds?: number;
   warningShowSeconds?: number;
   sponsorBreakAlreadyRun?: boolean | null;
@@ -77,6 +79,7 @@ interface NormalizedQueueTimingOptions {
   hostTalkBufferSeconds: number;
   sponsorBreakSeconds: number;
   wheelCeremonySeconds: number;
+  maxHostTalkSeconds: number;
   targetShowSeconds: number;
   warningShowSeconds: number;
   sponsorBreakAlreadyRun: boolean | null;
@@ -154,6 +157,14 @@ export interface QueueTimingSnapshot {
   projectedRemainingShowSeconds: number;
   broadcastElapsedSeconds: number | null;
   projectedEndAt: string | null;
+  targetPaceProjectedTotalShowSeconds: number;
+  currentPaceProjectedTotalShowSeconds: number;
+  maximumTalkProjectedTotalShowSeconds: number;
+  currentPaceTalkSecondsPerTrack: number;
+  targetPaceTalkSecondsPerTrack: number;
+  maximumTalkSecondsPerTrack: number;
+  timeBankSeconds: number;
+  hardLimitMarginSeconds: number;
   fixedWorkloadRemainingSeconds: number;
   plannedTalkRemainingSeconds: number;
   talkBudgetToTargetSeconds: number | null;
@@ -275,11 +286,19 @@ function normalizeOptions(options?: QueueTimingOptions): NormalizedQueueTimingOp
     hostTalkBufferSeconds: preTrackTalkSeconds + postTrackTalkSeconds,
     sponsorBreakSeconds: safeNonNegativeSeconds(options?.sponsorBreakSeconds) ?? DEFAULT_SPONSOR_BREAK_SECONDS,
     wheelCeremonySeconds: safeNonNegativeSeconds(options?.wheelCeremonySeconds) ?? DEFAULT_WHEEL_CEREMONY_SECONDS,
+    maxHostTalkSeconds: safeNonNegativeSeconds(options?.maxHostTalkSeconds) ?? DEFAULT_MAX_HOST_TALK_SECONDS,
     targetShowSeconds: safePositiveSeconds(options?.targetShowSeconds) ?? TARGET_SHOW_SECONDS,
     warningShowSeconds: safePositiveSeconds(options?.warningShowSeconds) ?? WARNING_SHOW_SECONDS,
     sponsorBreakAlreadyRun: typeof options?.sponsorBreakAlreadyRun === "boolean" ? options.sponsorBreakAlreadyRun : null,
     includeHostBufferForNowPlaying: options?.includeHostBufferForNowPlaying === true,
   };
+}
+
+function optionsAtTalkPace(options: NormalizedQueueTimingOptions, talkSecondsPerTrack: number): NormalizedQueueTimingOptions {
+  const safeTalk = Math.max(0, Math.round(talkSecondsPerTrack));
+  const preTrackTalkSeconds = Math.floor(safeTalk / 2);
+  const postTrackTalkSeconds = safeTalk - preTrackTalkSeconds;
+  return { ...options, preTrackTalkSeconds, postTrackTalkSeconds, hostTalkBufferSeconds: safeTalk };
 }
 
 function isRemovedTrack(track: QueueTimingTrack | null | undefined): boolean {
@@ -418,6 +437,12 @@ function countTotalNonRemoved(input: QueueTimingInput): number | null {
   return total > 0 ? total : null;
 }
 
+function countResolvedWheelSpins(input: QueueTimingInput): number {
+  const completed = uniqueTracks(input.completed ?? []).filter((track) => !isRemovedTrack(track) && !isSimulationTimingTrack(track));
+  const active = activeTracksInResolvedOrder(input);
+  return uniqueTracks([...completed, ...active]).filter((track) => track.lane === "wheel").length;
+}
+
 
 function validIsoString(value: unknown): string | null {
   if (typeof value !== "string" || !value) return null;
@@ -452,6 +477,55 @@ function secondsSince(iso: string | null, now = new Date()): number | null {
   return Math.max(0, Math.floor((current - started) / 1000));
 }
 
+function completedObservedMusicSeconds(input: QueueTimingInput, options: NormalizedQueueTimingOptions): number {
+  return uniqueTracks(input.completed ?? [])
+    .filter((track) => isCompletedTrack(track) && !isRemovedTrack(track) && !isSimulationTimingTrack(track))
+    .reduce((total, track) => {
+      const observedEnd = safeNonNegativeSeconds(track.playbackEndPositionSeconds);
+      const observedDuration = safePositiveSeconds(track.playbackObservedDurationSeconds);
+      const estimated = getEstimatedTrackRuntimeSeconds(track, options);
+      if (observedEnd !== null && (track.playbackOutcome === "skipped" || observedEnd < (observedDuration ?? estimated))) {
+        return total + Math.min(observedEnd, observedDuration ?? estimated);
+      }
+      return total + estimated;
+    }, 0);
+}
+
+function currentObservedMusicSeconds(input: QueueTimingInput, options: NormalizedQueueTimingOptions, now: Date): number {
+  const nowPlaying = input.nowPlaying;
+  if (!nowPlaying) return 0;
+  const playbackTiming = input.playbackTiming;
+  const runtime = safePositiveSeconds(playbackTiming?.durationSeconds) ?? getEstimatedTrackRuntimeSeconds(nowPlaying, options);
+  if (playbackTiming && playbackTiming.trackId === nowPlaying.id) {
+    const observed = safeNonNegativeSeconds(playbackTiming.currentTimeSeconds) ?? 0;
+    const projected = playbackTiming.playbackState === "playing" ? secondsSince(playbackTiming.observedAt, now) ?? 0 : 0;
+    return Math.min(runtime, observed + projected);
+  }
+  return Math.min(runtime, secondsSince(validIsoString(nowPlaying.playedAt), now) ?? 0);
+}
+
+function sponsorElapsedSeconds(input: QueueTimingInput, now: Date): number {
+  const status = input.session?.sponsorBreakStatus;
+  if (status !== "running" && status !== "completed" && status !== "skipped") return 0;
+  const startedAt = validIsoString(input.session?.sponsorBreakStartedAt);
+  const completedAt = validIsoString(input.session?.sponsorBreakCompletedAt);
+  if (startedAt && completedAt) return Math.max(0, Math.round((Date.parse(completedAt) - Date.parse(startedAt)) / 1000));
+  if (startedAt && status === "running") return secondsSince(startedAt, now) ?? 0;
+  return 0;
+}
+
+function observedHostPaceSeconds(input: QueueTimingInput, options: NormalizedQueueTimingOptions, now: Date): number {
+  const liveElapsed = secondsSince(deriveBroadcastStartedAt(input), now);
+  if (liveElapsed === null) return options.hostTalkBufferSeconds;
+  const completedCount = countCompletedPlayable(input);
+  const paceUnits = completedCount + (input.nowPlaying ? 1 : 0);
+  if (paceUnits <= 0) return options.hostTalkBufferSeconds;
+  const observedMusic = completedObservedMusicSeconds(input, options) + currentObservedMusicSeconds(input, options, now);
+  const knownWheelTime = countResolvedWheelSpins(input) * options.wheelCeremonySeconds;
+  const observedOverhead = Math.max(0, liveElapsed - observedMusic - sponsorElapsedSeconds(input, now) - knownWheelTime);
+  return Math.min(10 * 60, Math.round(observedOverhead / paceUnits));
+}
+
 function explicitSponsorStatus(input: QueueTimingInput, normalized: NormalizedQueueTimingOptions): SponsorBreakStatus | null {
   const status = input.session?.sponsorBreakStatus;
   if (status === "completed" || status === "skipped" || status === "running" || status === "due" || status === "not_due") return status;
@@ -460,7 +534,8 @@ function explicitSponsorStatus(input: QueueTimingInput, normalized: NormalizedQu
 }
 
 export function estimateSponsorBreakPlacement(input: QueueTimingInput, options?: QueueTimingOptions & { targetSongsAhead?: number | null; targetProjectedSecondsAhead?: number | null; now?: Date }): SponsorBreakEstimate {
-  const normalized = normalizeOptions({ ...options, sponsorBreakSeconds: options?.sponsorBreakSeconds ?? input.session?.sponsorBreakSeconds ?? undefined });
+  const normalized = normalizeOptions(options);
+  const actualSponsorBreakSeconds = safeNonNegativeSeconds(input.session?.sponsorBreakSeconds) ?? normalized.sponsorBreakSeconds;
   const completedPlayableCount = countCompletedPlayable(input);
   const totalNonRemovedSubmissions = countTotalNonRemoved(input);
   const latchedThreshold = safeNonNegativeInteger(input.session?.sponsorBreakDueAfterPlayableCount);
@@ -483,7 +558,8 @@ export function estimateSponsorBreakPlacement(input: QueueTimingInput, options?:
 
   let sponsorBreakStatus: SponsorBreakStatus = explicitStatus ?? "unknown";
   let sponsorBreakIncluded = false;
-  const runningRemainingSeconds = explicitStatus === "running" ? secondsRemainingFrom(input.session?.sponsorBreakStartedAt, normalized.sponsorBreakSeconds, options?.now) : null;
+  const runningRemainingSeconds = explicitStatus === "running" ? secondsRemainingFrom(input.session?.sponsorBreakStartedAt, actualSponsorBreakSeconds, options?.now) : null;
+  const runningPlanningReserveSeconds = explicitStatus === "running" ? secondsRemainingFrom(input.session?.sponsorBreakStartedAt, normalized.sponsorBreakSeconds, options?.now) : null;
   if (explicitStatus === "completed" || explicitStatus === "skipped") {
     sponsorBreakIncluded = false;
   } else if (explicitStatus === "running") {
@@ -503,7 +579,7 @@ export function estimateSponsorBreakPlacement(input: QueueTimingInput, options?:
 
   const sponsorBreakAlreadyCompleted = sponsorBreakStatus === "completed" || sponsorBreakStatus === "skipped";
   const sponsorBreakSecondsIncluded = sponsorBreakIncluded && !sponsorBreakAlreadyCompleted
-    ? (explicitStatus === "running" ? (runningRemainingSeconds ?? normalized.sponsorBreakSeconds) : normalized.sponsorBreakSeconds)
+    ? (explicitStatus === "running" ? (runningPlanningReserveSeconds ?? normalized.sponsorBreakSeconds) : normalized.sponsorBreakSeconds)
     : 0;
   if (sponsorBreakStatus === "due") sponsorBreakNotes.push("The counted-submission midpoint has been reached; include the sponsor break until it completes.");
   if (sponsorBreakStatus === "not_due" && targetCrossesMidpoint) sponsorBreakNotes.push("The projected target crosses the counted-submission midpoint, so the full sponsor break is reserved before it.");
@@ -515,7 +591,7 @@ export function estimateSponsorBreakPlacement(input: QueueTimingInput, options?:
     completedPlayableCount,
     completedPlayableNonRemovedCount: completedPlayableCount,
     sponsorBreakThreshold,
-    sponsorBreakSeconds: normalized.sponsorBreakSeconds,
+    sponsorBreakSeconds: actualSponsorBreakSeconds,
     broadcastStartedAt,
     broadcastElapsedSeconds,
     midpointReached,
@@ -620,53 +696,68 @@ export function buildProjectedShowTimeline(input: QueueTimingInput, options?: Qu
 export function buildQueueTimingSnapshot(input: QueueTimingInput, options?: QueueTimingOptions): QueueTimingSnapshot {
   const normalized = normalizeOptions(options);
   const now = options?.now ?? new Date();
-  const timeline = buildProjectedShowTimeline(input, { ...normalized, now });
+  const targetPaceTalkSecondsPerTrack = normalized.hostTalkBufferSeconds;
+  const currentPaceTalkSecondsPerTrack = observedHostPaceSeconds(input, normalized, now);
+  const targetPaceTimeline = buildProjectedShowTimeline(input, { ...normalized, now });
+  const currentPaceTimeline = buildProjectedShowTimeline(input, { ...optionsAtTalkPace(normalized, currentPaceTalkSecondsPerTrack), now });
+  const maximumTalkTimeline = buildProjectedShowTimeline(input, { ...optionsAtTalkPace(normalized, normalized.maxHostTalkSeconds), now });
   const activeRuntime = estimateRuntimeForTracks(activeTracksInResolvedOrder(input), normalized);
   const completedRuntimeSeconds = safePositiveSeconds(input.completedRuntimeSeconds) ?? safePositiveSeconds(input.session?.completedRuntimeSeconds) ?? null;
   const completedTracks = (input.completed ?? []).filter((track) => !isSimulationTimingTrack(track));
   const completedEstimatedRuntime = completedRuntimeSeconds ?? estimateRuntimeForTracks(completedTracks, normalized).slotSeconds;
-  const projectedRemainingShowSeconds = sumSegments(timeline.segments);
-  const liveElapsedSeconds = timeline.sponsorBreak.broadcastElapsedSeconds;
-  const projectedTotalShowSeconds = typeof liveElapsedSeconds === "number"
-    ? liveElapsedSeconds + projectedRemainingShowSeconds
-    : completedEstimatedRuntime + projectedRemainingShowSeconds;
-  const fixedWorkloadRemainingSeconds = timeline.segments
+  const targetPaceProjectedRemainingShowSeconds = sumSegments(targetPaceTimeline.segments);
+  const projectedRemainingShowSeconds = sumSegments(currentPaceTimeline.segments);
+  const maximumTalkProjectedRemainingShowSeconds = sumSegments(maximumTalkTimeline.segments);
+  const liveElapsedSeconds = targetPaceTimeline.sponsorBreak.broadcastElapsedSeconds;
+  const elapsedForProjection = liveElapsedSeconds ?? completedEstimatedRuntime;
+  const targetPaceProjectedTotalShowSeconds = elapsedForProjection + targetPaceProjectedRemainingShowSeconds;
+  const currentPaceProjectedTotalShowSeconds = elapsedForProjection + projectedRemainingShowSeconds;
+  const maximumTalkProjectedTotalShowSeconds = elapsedForProjection + maximumTalkProjectedRemainingShowSeconds;
+  const fixedWorkloadRemainingSeconds = targetPaceTimeline.segments
     .filter((segment) => segment.type === "track_runtime" || segment.type === "now_playing_remaining" || segment.type === "sponsor_break" || segment.type === "wheel_ceremony")
     .reduce((total, segment) => total + segment.seconds, 0);
-  const plannedTalkRemainingSeconds = timeline.segments
+  const plannedTalkRemainingSeconds = targetPaceTimeline.segments
     .filter((segment) => segment.type === "pre_track_talk" || segment.type === "post_track_talk")
     .reduce((total, segment) => total + segment.seconds, 0);
-  const elapsedForBudget = liveElapsedSeconds ?? completedEstimatedRuntime;
+  const elapsedForBudget = elapsedForProjection;
   const talkBudgetToTargetSeconds = normalized.targetShowSeconds - elapsedForBudget - fixedWorkloadRemainingSeconds;
   const talkBudgetToWarningSeconds = normalized.warningShowSeconds - elapsedForBudget - fixedWorkloadRemainingSeconds;
-  const remainingTrackDivisor = Math.max(1, timeline.remainingPlayableCount);
+  const remainingTrackDivisor = Math.max(1, targetPaceTimeline.remainingPlayableCount);
   const projectedEndAt = typeof liveElapsedSeconds === "number" ? new Date(now.getTime() + projectedRemainingShowSeconds * 1000).toISOString() : null;
   const completedPlayableCount = countCompletedPlayable(input);
   const observedAverageSlotSeconds = completedRuntimeSeconds && completedPlayableCount > 0 ? Math.round(completedRuntimeSeconds / completedPlayableCount) : null;
   const completedTrackRuntime = estimateRuntimeForTracks(completedTracks, { ...normalized, preTrackTalkSeconds: 0, postTrackTalkSeconds: 0 }).trackSeconds;
   const observedAverageTrackRuntimeSeconds = completedTrackRuntime > 0 && completedPlayableCount > 0 ? Math.round(completedTrackRuntime / completedPlayableCount) : null;
-  const notes = [...timeline.notes];
+  const notes = [...targetPaceTimeline.notes];
   if (completedRuntimeSeconds === null) notes.push("Completed runtime seconds were not provided, so completed tracks use estimate rules unless live elapsed playback time is available.");
   if (countRemoved(input) === null) notes.push("Removed track detail/count was not provided; removed/dropout diagnostics may be incomplete.");
 
   return {
-    estimatedTotalShowSeconds: projectedTotalShowSeconds,
+    estimatedTotalShowSeconds: currentPaceProjectedTotalShowSeconds,
     estimatedRemainingPlayableSeconds: projectedRemainingShowSeconds,
-    projectedTotalShowSeconds,
+    projectedTotalShowSeconds: currentPaceProjectedTotalShowSeconds,
     projectedRemainingShowSeconds,
     broadcastElapsedSeconds: liveElapsedSeconds,
     projectedEndAt,
+    targetPaceProjectedTotalShowSeconds,
+    currentPaceProjectedTotalShowSeconds,
+    maximumTalkProjectedTotalShowSeconds,
+    currentPaceTalkSecondsPerTrack,
+    targetPaceTalkSecondsPerTrack,
+    maximumTalkSecondsPerTrack: normalized.maxHostTalkSeconds,
+    timeBankSeconds: normalized.targetShowSeconds - currentPaceProjectedTotalShowSeconds,
+    hardLimitMarginSeconds: normalized.warningShowSeconds - maximumTalkProjectedTotalShowSeconds,
     fixedWorkloadRemainingSeconds,
     plannedTalkRemainingSeconds,
     talkBudgetToTargetSeconds,
     talkBudgetToWarningSeconds,
-    talkSecondsPerRemainingTrackToTarget: timeline.remainingPlayableCount > 0 ? talkBudgetToTargetSeconds / remainingTrackDivisor : null,
-    talkSecondsPerRemainingTrackToWarning: timeline.remainingPlayableCount > 0 ? talkBudgetToWarningSeconds / remainingTrackDivisor : null,
+    talkSecondsPerRemainingTrackToTarget: targetPaceTimeline.remainingPlayableCount > 0 ? talkBudgetToTargetSeconds / remainingTrackDivisor : null,
+    talkSecondsPerRemainingTrackToWarning: targetPaceTimeline.remainingPlayableCount > 0 ? talkBudgetToWarningSeconds / remainingTrackDivisor : null,
     completedRuntimeSeconds,
-    remainingTargetSeconds: normalized.targetShowSeconds - projectedTotalShowSeconds,
-    targetStatus: targetStatusFor(projectedTotalShowSeconds, normalized),
-    warningStatus: projectedTotalShowSeconds >= normalized.warningShowSeconds ? "warning_ceiling" : "below_warning_ceiling",
-    confidence: timeline.confidence,
+    remainingTargetSeconds: normalized.targetShowSeconds - currentPaceProjectedTotalShowSeconds,
+    targetStatus: targetStatusFor(currentPaceProjectedTotalShowSeconds, normalized),
+    warningStatus: currentPaceProjectedTotalShowSeconds >= normalized.warningShowSeconds ? "warning_ceiling" : "below_warning_ceiling",
+    confidence: targetPaceTimeline.confidence,
     completedPlayableCount,
     removedCount: countRemoved(input),
     activePlayableCount: activeTracksInResolvedOrder(input).length,
@@ -675,14 +766,14 @@ export function buildQueueTimingSnapshot(input: QueueTimingInput, options?: Queu
     unknownDurationCount: activeRuntime.unknownDurationCount,
     observedAverageTrackRuntimeSeconds,
     observedAverageSlotSeconds,
-    sponsorBreak: timeline.sponsorBreak,
-    sponsorBreakStatus: timeline.sponsorBreak.sponsorBreakStatus,
-    sponsorBreakSecondsIncluded: timeline.sponsorBreak.sponsorBreakSecondsIncluded,
-    wheelCeremony: timeline.wheelCeremony,
-    wheelCeremonySecondsIncluded: timeline.wheelCeremony.wheelCeremonySeconds,
+    sponsorBreak: targetPaceTimeline.sponsorBreak,
+    sponsorBreakStatus: targetPaceTimeline.sponsorBreak.sponsorBreakStatus,
+    sponsorBreakSecondsIncluded: targetPaceTimeline.sponsorBreak.sponsorBreakSecondsIncluded,
+    wheelCeremony: targetPaceTimeline.wheelCeremony,
+    wheelCeremonySecondsIncluded: targetPaceTimeline.wheelCeremony.wheelCeremonySeconds,
     targetShowSeconds: normalized.targetShowSeconds,
     warningShowSeconds: normalized.warningShowSeconds,
-    timelineSegments: timeline.segments,
+    timelineSegments: currentPaceTimeline.segments,
     notes,
   };
 }
@@ -719,10 +810,11 @@ function formatHours(minutes: number): string {
 
 export function estimateNewSubmissionTiming(input: QueueTimingInput, options?: QueueTimingOptions): NewSubmissionTimingEstimate {
   const normalized = normalizeOptions(options);
-  const tracksAhead = activeTracksInResolvedOrder(input);
-  const timeline = buildProjectedShowTimeline(input, { ...normalized, targetSongsAhead: tracksAhead.length, now: options?.now });
-  const stats = segmentStats(timeline.segments);
   const snapshot = buildQueueTimingSnapshot(input, { ...normalized, now: options?.now });
+  const currentPaceOptions = optionsAtTalkPace(normalized, snapshot.currentPaceTalkSecondsPerTrack);
+  const tracksAhead = activeTracksInResolvedOrder(input);
+  const timeline = buildProjectedShowTimeline(input, { ...currentPaceOptions, targetSongsAhead: tracksAhead.length, now: options?.now });
+  const stats = segmentStats(timeline.segments);
   const seconds = sumSegments(timeline.segments);
   const hasUncertainty = stats.sponsorBreakSecondsIncluded > 0 || stats.wheelCeremonySecondsIncluded > 0 || timeline.unknownDurationCount > 0;
   const notes = [...timeline.notes, "New submission timing uses the current resolved visible order only and does not replace queue resolver decisions."];
@@ -767,17 +859,19 @@ function emptyExistingEstimate(input: QueueTimingInput, trackId: string, state: 
 
 export function estimateExistingTrackTiming(input: QueueTimingInput, trackId: string, options?: QueueTimingOptions): ExistingTrackTimingEstimate {
   const normalized = normalizeOptions(options);
+  const snapshot = buildQueueTimingSnapshot(input, { ...normalized, now: options?.now });
+  const currentPaceOptions = optionsAtTalkPace(normalized, snapshot.currentPaceTalkSecondsPerTrack);
   const nowPlaying = input.nowPlaying ?? null;
-  if (nowPlaying?.id === trackId) return emptyExistingEstimate(input, trackId, "now_playing", true, "Track is currently loaded as Now Playing.", normalized);
+  if (nowPlaying?.id === trackId) return emptyExistingEstimate(input, trackId, "now_playing", true, "Track is currently loaded as Now Playing.", currentPaceOptions);
 
   const upNext = resolvedUpNext(input);
   const tracksBeforeTarget = activeTracksInResolvedOrder({ ...input, queue: [] });
   if (upNext?.id === trackId) {
     const ahead = nowPlaying && !isRemovedTrack(nowPlaying) && nowPlaying.id !== trackId ? [nowPlaying] : [];
-    const timeline = buildProjectedShowTimeline({ ...input, upNext: null, nextInLine: null, queue: ahead }, { ...normalized, targetSongsAhead: ahead.length, includeWheelCeremony: false, now: options?.now });
+    const timeline = buildProjectedShowTimeline({ ...input, upNext: null, nextInLine: null, queue: ahead }, { ...currentPaceOptions, targetSongsAhead: ahead.length, includeWheelCeremony: false, now: options?.now });
     const seconds = sumSegments(timeline.segments);
     const stats = segmentStats(timeline.segments);
-    return { scenario: "existing_track", trackId, found: true, state: "up_next", songsAhead: ahead.length, estimatedSeconds: seconds, estimatedSecondsUntilPlay: seconds, estimatedRangeSeconds: buildProjectionRangeSeconds(seconds, timeline.confidence, stats.sponsorBreakSecondsIncluded > 0), timelineSegmentsIncluded: timeline.segments, sponsorBreakIncluded: stats.sponsorBreakSecondsIncluded > 0, sponsorBreakSecondsIncluded: stats.sponsorBreakSecondsIncluded, wheelCeremonySeconds: 0, wheelCeremonySecondsIncluded: 0, targetStatus: buildQueueTimingSnapshot(input, { ...normalized, now: options?.now }).targetStatus, confidence: timeline.confidence, notes: [...timeline.notes, "Track is currently staged as Up Next / Next In Line."] };
+    return { scenario: "existing_track", trackId, found: true, state: "up_next", songsAhead: ahead.length, estimatedSeconds: seconds, estimatedSecondsUntilPlay: seconds, estimatedRangeSeconds: buildProjectionRangeSeconds(seconds, timeline.confidence, stats.sponsorBreakSecondsIncluded > 0), timelineSegmentsIncluded: timeline.segments, sponsorBreakIncluded: stats.sponsorBreakSecondsIncluded > 0, sponsorBreakSecondsIncluded: stats.sponsorBreakSecondsIncluded, wheelCeremonySeconds: 0, wheelCeremonySecondsIncluded: 0, targetStatus: snapshot.targetStatus, confidence: timeline.confidence, notes: [...timeline.notes, "Track is currently staged as Up Next / Next In Line."] };
   }
 
   const queue = input.queue ?? [];
@@ -786,20 +880,20 @@ export function estimateExistingTrackTiming(input: QueueTimingInput, trackId: st
     const priorQueue = queue.slice(0, queueIndex);
     const aheadInput = { ...input, queue: priorQueue };
     const tracksAhead = uniqueTracks([...tracksBeforeTarget, ...priorQueue.filter((track): track is QueueTimingTrack => Boolean(track && !isRemovedTrack(track) && !isCompletedTrack(track)))]);
-    const timeline = buildProjectedShowTimeline(aheadInput, { ...normalized, targetSongsAhead: tracksAhead.length, now: options?.now });
+    const timeline = buildProjectedShowTimeline(aheadInput, { ...currentPaceOptions, targetSongsAhead: tracksAhead.length, now: options?.now });
     const seconds = sumSegments(timeline.segments);
     const stats = segmentStats(timeline.segments);
     const notes = [...timeline.notes, "Queued track timing uses tracks ahead in the current resolved visible order and does not simulate resolver lane decisions."];
-    return { scenario: "existing_track", trackId, found: true, state: statusState(queue[queueIndex], "queued"), songsAhead: tracksAhead.length, estimatedSeconds: seconds, estimatedSecondsUntilPlay: seconds, estimatedRangeSeconds: buildProjectionRangeSeconds(seconds, timeline.confidence, stats.sponsorBreakSecondsIncluded > 0 || stats.wheelCeremonySecondsIncluded > 0), timelineSegmentsIncluded: timeline.segments, sponsorBreakIncluded: stats.sponsorBreakSecondsIncluded > 0, sponsorBreakSecondsIncluded: stats.sponsorBreakSecondsIncluded, wheelCeremonySeconds: stats.wheelCeremonySecondsIncluded, wheelCeremonySecondsIncluded: stats.wheelCeremonySecondsIncluded, targetStatus: buildQueueTimingSnapshot(input, { ...normalized, now: options?.now }).targetStatus, confidence: timeline.confidence, notes };
+    return { scenario: "existing_track", trackId, found: true, state: statusState(queue[queueIndex], "queued"), songsAhead: tracksAhead.length, estimatedSeconds: seconds, estimatedSecondsUntilPlay: seconds, estimatedRangeSeconds: buildProjectionRangeSeconds(seconds, timeline.confidence, stats.sponsorBreakSecondsIncluded > 0 || stats.wheelCeremonySecondsIncluded > 0), timelineSegmentsIncluded: timeline.segments, sponsorBreakIncluded: stats.sponsorBreakSecondsIncluded > 0, sponsorBreakSecondsIncluded: stats.sponsorBreakSecondsIncluded, wheelCeremonySeconds: stats.wheelCeremonySecondsIncluded, wheelCeremonySecondsIncluded: stats.wheelCeremonySecondsIncluded, targetStatus: snapshot.targetStatus, confidence: timeline.confidence, notes };
   }
 
   const completed = input.completed?.find((track) => track?.id === trackId);
-  if (completed) return emptyExistingEstimate(input, trackId, statusState(completed, "played"), true, "Track is in completed/played history.", normalized);
+  if (completed) return emptyExistingEstimate(input, trackId, statusState(completed, "played"), true, "Track is in completed/played history.", currentPaceOptions);
 
   const removed = input.removed?.find((track) => track?.id === trackId);
-  if (removed) return emptyExistingEstimate(input, trackId, "removed", true, "Track is marked removed and is excluded from playable timing.", normalized);
+  if (removed) return emptyExistingEstimate(input, trackId, "removed", true, "Track is marked removed and is excluded from playable timing.", currentPaceOptions);
 
-  return emptyExistingEstimate(input, trackId, "missing", false, "Track was not found in now playing, up next, queue, completed, or removed input.", normalized);
+  return emptyExistingEstimate(input, trackId, "missing", false, "Track was not found in now playing, up next, queue, completed, or removed input.", currentPaceOptions);
 }
 
 function isActivePriorityTrack(track: QueueTimingTrack | null | undefined): boolean {

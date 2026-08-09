@@ -41,9 +41,10 @@ interface WarpData {
   artworkUrl?: string | null;
 }
 
-function pressureLabel(status: QueuePublicStatus | null): string {
+function pressureLabel(status: QueuePublicStatus | null, timingSummary: ReturnType<typeof buildQueueTimingDisplay> | null): string {
   if (!status) return "Syncing";
-  return `${status.pressure.toUpperCase()} / ${status.activeCount} ACTIVE`;
+  const label = timingSummary?.pressureSummary.isLive ? timingSummary.pressureSummary.label : "PRE-SHOW";
+  return `${label} / ${status.activeCount} ACTIVE`;
 }
 
 function safeFileName(name: string): string {
@@ -602,7 +603,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Session</p><p className="truncate text-foreground">{session?.title ?? "BARCODE Radio"}</p></div>
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Queue</p><p className={status?.isOpen ? "text-accent" : "text-danger"}>{status?.isOpen ? "Open" : "Closed"}</p></div>
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Accepted / Capacity</p><p>{status ? `${status.acceptedCount ?? status.activeCount}/${status.capacity}` : "—"}</p></div>
-        <div><p className="text-[10px] uppercase tracking-widest text-muted">Pressure</p><p>{pressureLabel(status)}</p></div>
+        <div><p className="text-[10px] uppercase tracking-widest text-muted">Pressure</p><p>{pressureLabel(status, timingSummary)}</p></div>
       </div>
 
       <div className="border border-border bg-surface p-3">

@@ -38,6 +38,16 @@ Every persisted queue change—submission, admin action, session/settings update
 
 Public and admin snapshot reads are non-persistent: polling may derive the current display state, but it does not write the queue or advance its revision. Apple Music host rejection, including terminal-dot host variants such as `music.apple.com.`, occurs before any queue snapshot read.
 
+## Rolling show timing contract
+
+The submission window is outside the show clock. `Start Broadcast` records `broadcastStartedAt`; from that moment the shared timing owner combines elapsed show time with the actual remaining queue workload. The target is five hours and the six-hour boundary is an operational redline only: it raises pressure but never stops playback or ends the session.
+
+Unknown tracks reserve 5:00 until an exact detected/provider/upload duration replaces that estimate. Target host setup plus reaction/transition time is 1:00 per remaining track (`0:30` before and `0:30` after); the pressure model also tests the remaining workload at a 2:00-per-track planning allowance. It reserves 12:00 for the commercial until completion while leaving the existing 10:30 commercial countdown unchanged, and adds 2:00 only for each Wheel spin currently owed. No hypothetical or fixed-count Wheel reserve exists.
+
+The current projection uses observed broadcast pace after subtracting known music playback, the commercial, and resolved Wheel ceremonies. Queue submissions, exact duration locks, Finish/Skip/Remove outcomes, Wheel obligations, commercial state, player progress, and live talk/transition drift all recalculate the same snapshot. Admin pressure, public projected timing/waits, and existing timing-driven public motion use that owner; capacity pressure is not substituted for show-time pressure.
+
+The permanent admin/public layout is unchanged. The only new presentation is one transient admin-only time-bank popup for material changes. It lasts 4.8 seconds, never replays on initial load or across session changes, combines rapid changes into one popup, and has no persistent history or dashboard control.
+
 ## Playback lifecycle and diagnostics
 
 Loading a track, media readiness, playback start/resume, pause, stall, seek, natural end, media error, and the operator's final outcome are distinct events. A browser/player `ended`, `stalled`, or `error` event never advances the queue by itself. The loaded track stays in place until the operator explicitly chooses one of these outcomes:

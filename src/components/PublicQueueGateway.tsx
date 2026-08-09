@@ -4,8 +4,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { externalLinks } from "@/content";
-import { formatRuntime } from "@/lib/queue-types";
-import type { QueuePublicSnapshot, QueuePublicTrack } from "@/lib/queue-types";
+import { buildQueueTimingDisplay, queueTimingInputFromPublicSnapshot, type QueueTimingDisplaySummary } from "@/lib/queue-timing-display";
+import { formatRuntime, type QueuePublicSnapshot, type QueuePublicTrack } from "@/lib/queue-types";
 
 type GatewayPhase = "syncing" | "archived" | "closed" | "open" | "liveOpen" | "liveClosed";
 
@@ -19,17 +19,14 @@ function stableVariant<T>(seed: string, variants: T[]): T {
   return variants[stableHash(seed) % variants.length] ?? variants[0];
 }
 
-function pressureLevel(snapshot: QueuePublicSnapshot | null): "low" | "medium" | "high" {
-  if (!snapshot) return "low";
-  if (snapshot.status.pressure === "high" || snapshot.status.pressure === "max") return "high";
-  if (snapshot.status.pressure === "medium") return "medium";
-  const ratio = snapshot.status.capacity > 0 ? snapshot.status.activeCount / snapshot.status.capacity : 0;
-  if (ratio >= 0.75) return "high";
-  if (ratio >= 0.4) return "medium";
+function pressureLevel(summary: QueueTimingDisplaySummary | null): "low" | "medium" | "high" {
+  if (!summary || !summary.pressureSummary.isLive) return "low";
+  if (summary.pressureSummary.level === "critical" || summary.pressureSummary.level === "high") return "high";
+  if (summary.pressureSummary.level === "medium") return "medium";
   return "low";
 }
 
-function terminalReadouts(snapshot: QueuePublicSnapshot | null, counts: ReturnType<typeof publicCounts>): string[] {
+function terminalReadouts(snapshot: QueuePublicSnapshot | null, counts: ReturnType<typeof publicCounts>, pressure: ReturnType<typeof pressureLevel>): string[] {
   const lines = [
     counts.active > 0 ? `${counts.active} songs still waiting or coming up.` : "No songs still waiting or coming up.",
     counts.waiting > 0 ? `${counts.waiting} waiting below Now Playing and Next In Line.` : "Waiting queue clear.",
@@ -38,8 +35,8 @@ function terminalReadouts(snapshot: QueuePublicSnapshot | null, counts: ReturnTy
   if (counts.priority > 0) lines.push("Priority Signal active.");
   if (counts.wheel > 0) lines.push("Wheel Chosen: picked from the 10K tap wheel.");
   if (counts.completed > 0) lines.push(`${counts.completed} songs already played.`);
-  if (snapshot?.status.pressure === "high" || snapshot?.status.pressure === "max") lines.push("Archive pressure rising.");
-  const flavorSeed = `${snapshot?.session.sessionId ?? "sync"}:${counts.total}:${snapshot?.status.pressure ?? "low"}`;
+  if (pressure === "high") lines.push("Archive pressure rising.");
+  const flavorSeed = `${snapshot?.session.sessionId ?? "sync"}:${counts.total}:${pressure}`;
   const flavor = ["BNL-01 receiver trace stabilized.", "Host band interference cleared.", "Corridor alignment corrected.", "Signal anomaly contained."];
   if (stableHash(flavorSeed) % 13 === 0) lines.push(stableVariant(flavorSeed, flavor));
   return lines.slice(0, 5);
@@ -165,8 +162,9 @@ export function PublicQueueGateway() {
   const copy = phaseCopy(phase);
   const counts = publicCounts(snapshot);
   const session = snapshot?.session;
-  const pressure = pressureLevel(snapshot);
-  const readouts = terminalReadouts(snapshot, counts);
+  const timingSummary = snapshot ? buildQueueTimingDisplay(queueTimingInputFromPublicSnapshot(snapshot), nowMs > 0 ? { now: new Date(nowMs) } : {}) : null;
+  const pressure = pressureLevel(timingSummary);
+  const readouts = terminalReadouts(snapshot, counts, pressure);
   const routePulses = pressure === "high" ? 5 : pressure === "medium" ? 4 : 3;
   const intakeWindowMs = session?.preShowEndsAt ? new Date(session.preShowEndsAt).getTime() - nowMs : 0;
   const intakeWindow = Number.isFinite(intakeWindowMs) && intakeWindowMs > 0 ? `${Math.floor(intakeWindowMs / 60000)}:${Math.floor((intakeWindowMs % 60000) / 1000).toString().padStart(2, "0")}` : null;
@@ -218,7 +216,7 @@ export function PublicQueueGateway() {
             {counts.pending > 0 && <StatCard label="Payment Processing" value={counts.pending} helper="Checkout started. Skip is not active yet." accent="text-[#ffaa00]" />}
             <StatCard label="Priority Confirmed" value={counts.priority} helper="Payment cleared. Priority Signal active." accent="text-[#ffaa00]" />
             <StatCard label="Wheel Chosen" value={counts.wheel} helper="Picked from the 10K tap wheel." />
-            <StatCard label="Runtime" value={snapshot ? formatRuntime(snapshot.status.estimatedRuntimeSeconds) : "—"} helper="Estimated time for songs still waiting." />
+            <StatCard label="Runtime" value={timingSummary ? formatRuntime(timingSummary.timeBankSummary.remainingProjectionSeconds) : "—"} helper="Estimated time for songs still waiting." />
           </div>
         </div>
       </section>

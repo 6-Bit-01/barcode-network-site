@@ -69,7 +69,7 @@ test("track duration labels distinguish detected and estimated fallback", () => 
 test("public projected show time is rough and uses About wording without clock or seconds formatting", () => {
   const label = display.publicProjectedShowTimeLabel(3 * 3600 + 45 * 60, "comfortable");
   assert.equal(label, "About 3h 45m");
-  assert.equal(display.publicProjectedShowTimeLabel(5 * 3600 + 10, "warning_ceiling"), "About 5h+");
+  assert.equal(display.publicProjectedShowTimeLabel(6 * 3600 + 10, "warning_ceiling"), "About 6h+");
   assert.ok(!label.includes(":"));
   assert.ok(!/\b(am|pm|seconds?|secs?)\b/i.test(label));
 });
@@ -87,13 +87,13 @@ test("public projected show time hides unknown values without fake updating copy
   assert.notEqual(display.publicProjectedShowTimeLabel(3 * 3600), "Updating live");
 });
 
-test("admin summary keeps projected time and 4h/5h target copy", () => {
+test("admin summary keeps projected time and the corrected 5h/6h target copy", () => {
   const queue = Array.from({ length: 45 }, (_, index) => track(`known-${index}`, { detectedDurationSeconds: 180, durationIsEstimate: false }));
   const summary = display.buildQueueTimingDisplay({ queue, session: { sponsorBreakStatus: "completed" } });
   assert.equal(summary.showRuntimeSummary.projectedLabel, "3h projected");
   assert.equal(summary.showRuntimeSummary.publicProjectedLabel, "About 3h");
-  assert.equal(summary.showRuntimeSummary.targetLabel, "4h goal · 5h pressure ceiling");
-  assert.equal(summary.showRuntimeSummary.publicTargetLabel, "4h goal");
+  assert.equal(summary.showRuntimeSummary.targetLabel, "5h target · 6h redline");
+  assert.equal(summary.showRuntimeSummary.publicTargetLabel, "5h target");
 });
 
 test("estimated wait remains separate from projected show time", () => {
@@ -196,7 +196,7 @@ test("44 unknown tracks can warn live but remain pre-show before broadcast", () 
   assert.ok(live.pressureSummary.factors.some((factor) => factor.toLowerCase().includes("fixed song")));
 });
 
-test("a newly started broadcast calibrates before showing urgent pressure", () => {
+test("a newly started broadcast activates committed-work pressure immediately", () => {
   const broadcastStartedAt = "2026-08-09T03:00:00.000Z";
   const longQueue = Array.from({ length: 44 }, (_, index) => track(`opening-${index}`, {
     detectedDurationSeconds: 420,
@@ -209,10 +209,10 @@ test("a newly started broadcast calibrates before showing urgent pressure", () =
   }, { now: new Date("2026-08-09T03:01:00.000Z") });
 
   assert.equal(opening.showRuntimeSummary.targetStatus, "warning_ceiling", "the long projection remains visible");
-  assert.equal(opening.pressureSummary.mode, "starting");
-  assert.equal(opening.pressureSummary.level, "low");
-  assert.equal(opening.pressureSummary.label, "STARTING");
-  assert.doesNotMatch(opening.pressureSummary.recommendation, /MOVE NOW|KEEP COMMENTS SHORT/i);
+  assert.equal(opening.pressureSummary.mode, "live");
+  assert.equal(opening.pressureSummary.level, "critical");
+  assert.equal(opening.pressureSummary.label, "CRITICAL");
+  assert.match(opening.pressureSummary.recommendation, /MOVE NOW/i);
 
   const elapsed = display.buildQueueTimingDisplay({
     queue: longQueue,
@@ -226,7 +226,7 @@ test("a newly started broadcast calibrates before showing urgent pressure", () =
     queue: longQueue.slice(3),
     session: { completedCount: 3, showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt, sponsorBreakStatus: "not_due" },
   }, { now: new Date("2026-08-09T03:10:00.000Z") });
-  assert.equal(threeCompleted.pressureSummary.mode, "live", "three completed tracks establish enough pace before twenty minutes");
+  assert.equal(threeCompleted.pressureSummary.mode, "live", "there is no opening suppression window");
 });
 
 test("44 unknown pre-show projection is calibrated near 4h30-4h45 range", () => {
@@ -261,7 +261,7 @@ test("live pressure eases when tracks are removed and rises with slow pace", () 
   assert.ok(liveReduced.pressureSummary.score <= liveBase.pressureSummary.score);
   const completed = Array.from({ length: 8 }, (_, index) => track(`done-${index}`, { status: "completed", detectedDurationSeconds: 180, durationIsEstimate: false }));
   const slow = display.buildQueueTimingDisplay({ completed, queue: Array.from({ length: 20 }, (_, index) => track(`slow-${index}`)), session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", completedRuntimeSeconds: 8 * 180, sponsorBreakStatus: "not_due" } });
-  assert.ok(slow.pressureSummary.factors.some((factor) => factor.toLowerCase().includes("4h goal")));
+  assert.ok(slow.pressureSummary.factors.some((factor) => factor.toLowerCase().includes("5h target")));
 });
 
 test("wheel owed overhead raises pressure and clearing owed overhead lowers it", () => {
@@ -291,4 +291,15 @@ test("admin top bar renders pressure chip from timingSummary", () => {
   assert.ok(source.includes("Commercial Break Running"));
   assert.ok(source.includes("Commercial Break Done"));
   assert.ok(source.includes("disabled={sponsorStartDisabled}"));
+});
+
+test("public pressure and runtime consumers use the shared timing display owner", () => {
+  const gateway = fs.readFileSync(path.join(projectRoot, "src/components/PublicQueueGateway.tsx"), "utf8");
+  const session = fs.readFileSync(path.join(projectRoot, "src/components/PublicQueueSession.tsx"), "utf8");
+  const form = fs.readFileSync(path.join(projectRoot, "src/components/RadioQueueForm.tsx"), "utf8");
+  assert.match(gateway, /buildQueueTimingDisplay\(queueTimingInputFromPublicSnapshot/);
+  assert.doesNotMatch(gateway, /snapshot\.status\.pressure|estimatedRuntimeSeconds/);
+  assert.match(session, /pressureLevel\(timingSummary\)/);
+  assert.doesNotMatch(session, /snapshot\.status\.pressure/);
+  assert.match(form, /pressureLabel\(status, timingSummary\)/);
 });

@@ -39,7 +39,7 @@ function track(id, overrides = {}) {
   return { id, status: "queued", ...overrides };
 }
 
-test("unknown track uses five-minute fallback plus two-minute host buffer", () => {
+test("unknown track uses five-minute fallback plus one-minute target talk buffer", () => {
   assert.equal(timing.getEstimatedTrackRuntimeSeconds(track("unknown")), 300);
   assert.equal(timing.getEstimatedTrackSlotSeconds(track("unknown")), 360);
 });
@@ -110,16 +110,15 @@ test("sponsor break and wheel ceremony seconds can be explicitly set to zero", (
   assert.equal(wheel.wheelCeremonySeconds, 0);
 });
 
-test("four-hour target reports pressure and five hours is only the warning ceiling", () => {
-  const tightTracks = Array.from({ length: 46 }, (_, index) => track(`tight-${index}`, { detectedDurationSeconds: 200 }));
-  const tightSnapshot = timing.buildQueueTimingSnapshot({ queue: tightTracks }, { sponsorBreakAlreadyRun: true });
-  assert.equal(tightSnapshot.targetStatus, "comfortable");
-  assert.equal(tightSnapshot.warningStatus, "below_warning_ceiling");
-
-  const warningTracks = Array.from({ length: 52 }, (_, index) => track(`warning-${index}`, { detectedDurationSeconds: 240 }));
-  const warningSnapshot = timing.buildQueueTimingSnapshot({ queue: warningTracks }, { sponsorBreakAlreadyRun: true });
-  assert.equal(warningSnapshot.targetStatus, "over_target");
-  assert.equal(warningSnapshot.warningStatus, "below_warning_ceiling");
+test("five-hour target and six-hour redline remain advisory timing boundaries", () => {
+  const fiveMinuteFullQueue = Array.from({ length: 44 }, (_, index) => track(`five-${index}`, { detectedDurationSeconds: 300, durationIsEstimate: false }));
+  const snapshot = timing.buildQueueTimingSnapshot({ queue: fiveMinuteFullQueue, session: { sponsorBreakStatus: "not_due" } });
+  assert.equal(snapshot.targetPaceProjectedTotalShowSeconds, 306 * 60);
+  assert.equal(snapshot.maximumTalkProjectedTotalShowSeconds, 350 * 60);
+  assert.equal(snapshot.targetStatus, "over_target");
+  assert.equal(snapshot.warningStatus, "below_warning_ceiling");
+  assert.equal(snapshot.targetShowSeconds, 5 * 60 * 60);
+  assert.equal(snapshot.warningShowSeconds, 6 * 60 * 60);
 });
 
 test("existing track timing classifies now playing, up next, queued, played, removed, and missing", () => {
@@ -200,25 +199,38 @@ test("running commercial includes remaining time, not full duration", () => {
 test("wheel overhead does not add extra song durations", () => {
   const queue = [track("wheel-runtime", { detectedDurationSeconds: 180 })];
   const snapshot = timing.buildQueueTimingSnapshot({ queue, wheelSpinsOwed: 3 }, { sponsorBreakAlreadyRun: true });
-  assert.equal(snapshot.wheelCeremonySecondsIncluded, 360);
-  assert.equal(snapshot.projectedRemainingShowSeconds, 180 + 60 + 360);
+  assert.equal(snapshot.wheelCeremonySecondsIncluded, 600);
+  assert.equal(snapshot.projectedRemainingShowSeconds, 20 * 60 + 180 + 60 + 600);
 });
 
-test("restored owed wheel spin re-adds ceremony overhead without extra track duplication", () => {
+test("owed Wheel spins reconcile against the five-spin reserve before adding extra time", () => {
   const queue = [track("wheel-track", { lane: "wheel", detectedDurationSeconds: 180 })];
   const resolved = timing.buildQueueTimingSnapshot({ queue, wheelSpinsOwed: 0, session: { wheelSpinsOwed: 0, sponsorBreakStatus: "completed" } });
-  const restored = timing.buildQueueTimingSnapshot({ queue, wheelSpinsOwed: 1, session: { wheelSpinsOwed: 1, sponsorBreakStatus: "completed" } });
-  assert.equal(resolved.wheelCeremonySecondsIncluded, 0);
-  assert.equal(restored.wheelCeremonySecondsIncluded, timing.DEFAULT_WHEEL_CEREMONY_SECONDS);
-  assert.equal(restored.projectedRemainingShowSeconds - resolved.projectedRemainingShowSeconds, timing.DEFAULT_WHEEL_CEREMONY_SECONDS);
+  const covered = timing.buildQueueTimingSnapshot({ queue, wheelSpinsOwed: 1, session: { wheelSpinsOwed: 1, sponsorBreakStatus: "completed" } });
+  const aboveReserve = timing.buildQueueTimingSnapshot({ queue, wheelSpinsOwed: 5, session: { wheelSpinsOwed: 5, sponsorBreakStatus: "completed" } });
+  assert.equal(resolved.wheelCeremonySecondsIncluded, 4 * timing.DEFAULT_WHEEL_CEREMONY_SECONDS);
+  assert.equal(covered.wheelCeremonySecondsIncluded, resolved.wheelCeremonySecondsIncluded);
+  assert.equal(aboveReserve.projectedRemainingShowSeconds - resolved.projectedRemainingShowSeconds, timing.DEFAULT_WHEEL_CEREMONY_SECONDS);
 });
 
 test("existing queued track receives songsAhead and timing from prior timeline segments", () => {
-  const estimate = timing.estimateExistingTrackTiming({ queue: [track("ahead", { detectedDurationSeconds: 200 }), track("target", { detectedDurationSeconds: 180 })], session: { sponsorBreakStatus: "completed" } }, "target");
+  const estimate = timing.estimateExistingTrackTiming({ queue: [track("ahead", { detectedDurationSeconds: 200 }), track("target", { detectedDurationSeconds: 180 })], session: { sponsorBreakStatus: "completed" } }, "target", { submissionWindowSeconds: 0, expectedWheelSpins: 0 });
   assert.equal(estimate.state, "queued");
   assert.equal(estimate.songsAhead, 1);
   assert.equal(estimate.estimatedSecondsUntilPlay, 260);
   assert.ok(estimate.timelineSegmentsIncluded.some((segment) => segment.trackId === "ahead"));
+});
+
+test("existing-track waits distribute the five-spin reserve by position instead of charging every spin up front", () => {
+  const queue = Array.from({ length: 44 }, (_, index) => track(`position-${index}`));
+  const input = { queue, session: { activeCount: 44, sponsorBreakStatus: "completed" } };
+  const first = timing.estimateExistingTrackTiming(input, queue[0].id);
+  const midpoint = timing.estimateExistingTrackTiming(input, queue[22].id);
+  const last = timing.estimateExistingTrackTiming(input, queue[43].id);
+
+  assert.equal(first.wheelCeremonySecondsIncluded, 0);
+  assert.equal(midpoint.wheelCeremonySecondsIncluded, 3 * timing.DEFAULT_WHEEL_CEREMONY_SECONDS);
+  assert.equal(last.wheelCeremonySecondsIncluded, 5 * timing.DEFAULT_WHEEL_CEREMONY_SECONDS);
 });
 
 test("now playing estimate is zero and playing now", () => {
@@ -251,16 +263,17 @@ test("checkout pending Payment Processing is not treated as active Priority", ()
 
 test("active Priority ahead is not skipped by new Priority simulation", () => {
   const activePriority = track("paid-ahead", { lane: "priority", priorityUpgradeStatus: "paid", detectedDurationSeconds: 240 });
-  const estimate = timing.estimatePriorityImpact({ nextInLine: activePriority, queue: [track("regular-ahead", { detectedDurationSeconds: 300 })], session: { sponsorBreakStatus: "completed" } });
+  const estimate = timing.estimatePriorityImpact({ nextInLine: activePriority, queue: [track("regular-ahead", { detectedDurationSeconds: 300 })], session: { sponsorBreakStatus: "completed" } }, undefined, { submissionWindowSeconds: 0, expectedWheelSpins: 0 });
   assert.equal(estimate.priorityEligible, true);
   assert.equal(estimate.priorityEstimate.songsAhead, 1);
   assert.equal(estimate.priorityEstimate.estimatedSecondsUntilPlay, 300);
 });
 
-test("target status becomes tight before exceeding four-hour target", () => {
-  const tracks = Array.from({ length: 41 }, (_, index) => track(`tight-window-${index}`, { detectedDurationSeconds: 200 }));
-  const snapshot = timing.buildQueueTimingSnapshot({ queue: tracks }, { sponsorBreakAlreadyRun: true });
-  assert.equal(snapshot.targetStatus, "comfortable");
+test("target status becomes tight in the final half hour before the five-hour target", () => {
+  const tracks = Array.from({ length: 40 }, (_, index) => track(`tight-window-${index}`, { detectedDurationSeconds: 300, durationIsEstimate: false }));
+  const snapshot = timing.buildQueueTimingSnapshot({ queue: tracks, session: { sponsorBreakStatus: "not_due" } });
+  assert.equal(snapshot.projectedTotalShowSeconds, 282 * 60);
+  assert.equal(snapshot.targetStatus, "tight");
 });
 
 test("range formatting widens low-confidence ranges", () => {

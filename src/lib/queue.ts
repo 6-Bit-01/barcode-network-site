@@ -14,6 +14,7 @@ import {
   queuePlaybackProviderForSourceType,
 } from "./queue-playback-lifecycle";
 import { parseIso8601DurationToSeconds, parseSpotifyTrackId, parseYouTubeVideoId as parseTrackDurationYouTubeVideoId } from "./track-duration";
+import { buildQueueTimingSnapshot } from "./queue-timing";
 import {
   INTERNAL_BUFFER_DURATION_SECONDS,
   PRIORITY_DISCLOSURE_TEXT,
@@ -777,7 +778,7 @@ function applySubmissionAcceptanceState(session: QueueSession, rawReason: unknow
   session.submissionClosureReason = session.queueOpen ? null : "manual";
 }
 
-function publicStatusForSession(session: Pick<QueueSession, "queue" | "queueOpen" | "nextInLineTrack" | "loadedTrack" | "completed" | "removed" | "queueCapacity" | "submissionClosureReason">): QueuePublicStatus {
+function publicStatusForSession(session: QueueSession): QueuePublicStatus {
   const active = session.queue.filter((entry) => entry.status === "queued" || entry.status === "playing");
   const next = session.nextInLineTrack ? [session.nextInLineTrack] : [];
   const loaded = session.loadedTrack ? [session.loadedTrack] : [];
@@ -785,14 +786,45 @@ function publicStatusForSession(session: Pick<QueueSession, "queue" | "queueOpen
   const capacity = session.queueCapacity ?? DEFAULT_QUEUE_CAPACITY;
   const acceptedCount = acceptedTrackCountForSession(session);
   const isFull = acceptedCount >= capacity;
-  const load = (active.length + next.length + loaded.length) / capacity;
+  const timing = buildQueueTimingSnapshot({
+    nowPlaying: session.loadedTrack,
+    upNext: session.nextInLineTrack,
+    queue: session.queue,
+    completed: session.completed,
+    removed: session.removed,
+    wheelSpinsOwed: session.wheelSpinsOwed,
+    session: {
+      completedCount: completedCountedTrackCountForSession(session),
+      removedCount: session.removed.length,
+      activeCount: active.length + next.length + loaded.length,
+      acceptedCount,
+      wheelSpinsOwed: session.wheelSpinsOwed,
+      sponsorBreakSeconds: SPONSOR_BREAK_SECONDS,
+      sponsorBreakStatus: session.sponsorBreakStatus,
+      sponsorBreakStartedAt: session.sponsorBreakStartedAt,
+      sponsorBreakCompletedAt: session.sponsorBreakCompletedAt,
+      sponsorBreakDueAfterPlayableCount: session.sponsorBreakDueAfterPlayableCount,
+      showStarted: session.showStarted,
+      queueOpen: session.queueOpen,
+      preShowEndsAt: session.preShowEndsAt,
+      broadcastStartedAt: session.broadcastStartedAt,
+      broadcastPhase: broadcastPhaseForSession(session),
+    },
+  });
+  const pressure: QueuePublicStatus["pressure"] = timing.targetStatus === "warning_ceiling"
+    ? "max"
+    : timing.targetStatus === "over_target"
+      ? "high"
+      : timing.targetStatus === "tight"
+        ? "medium"
+        : "low";
   return {
     isOpen: session.queueOpen && !isFull,
     activeCount: active.length + next.length + loaded.length,
     acceptedCount,
     estimatedRuntimeSeconds,
     capacity,
-    pressure: load >= 1 ? "max" : load >= 0.75 ? "high" : load >= 0.4 ? "medium" : "low",
+    pressure,
     isFull,
     closureReason: session.submissionClosureReason ?? null,
   };

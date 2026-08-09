@@ -72,6 +72,9 @@ export interface QueueTimingDisplaySummary {
   };
   wheelTimingSummary: {
     owed: number;
+    resolved: number;
+    budgeted: number;
+    expectedRemaining: number;
     overheadSeconds: number;
     overheadLabel: string;
     included: boolean;
@@ -83,7 +86,27 @@ export interface QueueTimingDisplaySummary {
     description: string;
     recommendation: string;
     factors: string[];
-    mode: "pre_show" | "starting" | "live" | "ended" | "unknown";
+    mode: "pre_show" | "live" | "ended" | "unknown";
+    isLive: boolean;
+  };
+  timeBankSummary: {
+    bankSeconds: number;
+    bankLabel: string;
+    currentPaceSecondsPerTrack: number;
+    currentPaceLabel: string;
+    targetProjectionSeconds: number;
+    currentProjectionSeconds: number;
+    maximumTalkProjectionSeconds: number;
+    hardLimitMarginSeconds: number;
+    recommendedPaceSecondsPerTrack: number | null;
+    recommendedPaceLabel: string;
+    activePlayableCount: number;
+    completedPlayableCount: number;
+    removedCount: number;
+    knownDurationCount: number;
+    wheelSpinsOwed: number;
+    wheelSecondsBudgeted: number;
+    sponsorStatus: string;
     isLive: boolean;
   };
   lineFitStatus: QueueTimingTargetStatus;
@@ -156,6 +179,8 @@ function sessionTimingFields(session: QueuePublicSnapshot["session"] | QueueSess
     sponsorBreakDueAfterPlayableCount: session.sponsorBreakDueAfterPlayableCount,
     sponsorBreakManualNote: session.sponsorBreakManualNote,
     showStarted: session.showStarted,
+    queueOpen: session.queueOpen,
+    preShowEndsAt: session.preShowEndsAt,
     broadcastPhase: session.broadcastPhase,
   };
 }
@@ -168,6 +193,10 @@ export function buildQueueTimingDisplay(input: QueueTimingInput, options: { prio
   const priorityEstimate = priorityImpact?.priorityEligible ? displayEstimate(priorityImpact.priorityEstimate as NewSubmissionTimingEstimate | ExistingTrackTimingEstimate) : null;
   const publicNotes = publicNotesFor(free.sponsorBreakIncluded, free.wheelCeremonySecondsIncluded > 0);
   const pressureSummary = buildPressureSummary(snapshot, input.session ?? null);
+  const rawRecommendedPaceSeconds = snapshot.talkSecondsPerRemainingTrackToTarget;
+  const recommendedPaceSeconds = rawRecommendedPaceSeconds === null
+    ? null
+    : Math.max(0, Math.min(snapshot.maximumTalkSecondsPerTrack, rawRecommendedPaceSeconds));
 
   return {
     submitNowFreeEstimate: displayEstimate(free),
@@ -177,8 +206,8 @@ export function buildQueueTimingDisplay(input: QueueTimingInput, options: { prio
     showRuntimeSummary: {
       projectedLabel: `${formatHoursMinutes(snapshot.projectedTotalShowSeconds)} projected`,
       publicProjectedLabel: publicProjectedShowTimeLabel(snapshot.projectedTotalShowSeconds, snapshot.targetStatus),
-      targetLabel: "4h goal · 5h pressure ceiling",
-      publicTargetLabel: "4h goal",
+      targetLabel: "5h target · 6h operational redline",
+      publicTargetLabel: "5h target",
       targetStatus: snapshot.targetStatus,
       targetStatusLabel: targetStatusLabel(snapshot.targetStatus),
       notes: snapshot.notes,
@@ -189,8 +218,8 @@ export function buildQueueTimingDisplay(input: QueueTimingInput, options: { prio
       remainingLabel: `${formatHoursMinutes(snapshot.projectedRemainingShowSeconds)} projected remaining`,
       estimatedEndLabel: pacificClockLabel(snapshot.projectedEndAt, options.now) ?? "Available after broadcast starts",
       completedRemainingLabel: `${snapshot.completedPlayableCount} completed · ${snapshot.remainingPlayableCount} remaining`,
-      talkRoomLabel: talkBudgetLabel(snapshot.talkBudgetToTargetSeconds, "4h goal"),
-      warningRoomLabel: talkBudgetLabel(snapshot.talkBudgetToWarningSeconds, "5h ceiling"),
+      talkRoomLabel: talkBudgetLabel(snapshot.talkBudgetToTargetSeconds, "5h target"),
+      warningRoomLabel: talkBudgetLabel(snapshot.talkBudgetToWarningSeconds, "6h redline"),
       talkPerTrackLabel: talkPerTrackLabel(snapshot.talkSecondsPerRemainingTrackToTarget),
     },
     sponsorBreakSummary: {
@@ -209,11 +238,34 @@ export function buildQueueTimingDisplay(input: QueueTimingInput, options: { prio
     },
     wheelTimingSummary: {
       owed: snapshot.wheelCeremony.wheelSpinsOwedIncluded,
+      resolved: snapshot.wheelCeremony.wheelSpinsResolved,
+      budgeted: snapshot.wheelCeremony.wheelSpinsBudgeted,
+      expectedRemaining: snapshot.wheelCeremony.expectedWheelSpinsRemaining,
       overheadSeconds: snapshot.wheelCeremonySecondsIncluded,
       overheadLabel: formatHoursMinutes(snapshot.wheelCeremonySecondsIncluded),
       included: snapshot.wheelCeremonySecondsIncluded > 0,
     },
     pressureSummary,
+    timeBankSummary: {
+      bankSeconds: snapshot.timeBankSeconds,
+      bankLabel: signedBankLabel(snapshot.timeBankSeconds),
+      currentPaceSecondsPerTrack: snapshot.currentPaceTalkSecondsPerTrack,
+      currentPaceLabel: `${formatMinutesSeconds(snapshot.currentPaceTalkSecondsPerTrack)} current talk/transition pace`,
+      targetProjectionSeconds: snapshot.targetPaceProjectedTotalShowSeconds,
+      currentProjectionSeconds: snapshot.currentPaceProjectedTotalShowSeconds,
+      maximumTalkProjectionSeconds: snapshot.maximumTalkProjectedTotalShowSeconds,
+      hardLimitMarginSeconds: snapshot.hardLimitMarginSeconds,
+      recommendedPaceSecondsPerTrack: recommendedPaceSeconds,
+      recommendedPaceLabel: recommendedPaceLabel(recommendedPaceSeconds, rawRecommendedPaceSeconds, snapshot.maximumTalkSecondsPerTrack),
+      activePlayableCount: snapshot.activePlayableCount,
+      completedPlayableCount: snapshot.completedPlayableCount,
+      removedCount: snapshot.removedCount ?? 0,
+      knownDurationCount: snapshot.knownDurationCount,
+      wheelSpinsOwed: snapshot.wheelCeremony.wheelSpinsOwedIncluded,
+      wheelSecondsBudgeted: snapshot.wheelCeremonySecondsIncluded,
+      sponsorStatus: snapshot.sponsorBreakStatus,
+      isLive: pressureSummary.isLive,
+    },
     lineFitStatus: snapshot.targetStatus,
     lineFitCopy: lineFitCopy(snapshot.targetStatus),
     publicNotes,
@@ -265,15 +317,15 @@ function noteKeysFor(sponsorIncluded: boolean, wheelIncluded: boolean): PublicTi
 
 export function publicProjectedShowTimeLabel(seconds: number | null | undefined, status: QueueTimingTargetStatus = "unknown"): string | null {
   if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) return null;
-  if (status === "warning_ceiling" || seconds >= 5 * 60 * 60) return "About 5h+";
+  if (status === "warning_ceiling" || seconds >= 6 * 60 * 60) return "About 6h+";
   return `About ${formatHoursMinutes(seconds)}`;
 }
 
 export function lineFitCopy(status: QueueTimingTargetStatus): string {
   if (status === "comfortable") return "Looks playable tonight.";
   if (status === "tight") return "Line is getting tight tonight.";
-  if (status === "over_target") return "This may run late.";
-  if (status === "warning_ceiling") return "Show is under strong time pressure; playback continues.";
+  if (status === "over_target") return "Projected past the 5h target.";
+  if (status === "warning_ceiling") return "At or beyond the 6h redline; playback remains host-controlled.";
   return "Timing updates as the line changes.";
 }
 
@@ -281,7 +333,7 @@ export function targetStatusLabel(status: QueueTimingTargetStatus): string {
   if (status === "comfortable") return "Comfortable";
   if (status === "tight") return "Tight";
   if (status === "over_target") return "Over target";
-  if (status === "warning_ceiling") return "Warning ceiling";
+  if (status === "warning_ceiling") return "Operational redline";
   return "Unknown";
 }
 
@@ -325,86 +377,75 @@ function buildPressureSummary(snapshot: ReturnType<typeof buildQueueTimingSnapsh
   const isEnded = session?.broadcastPhase === "ended";
   const showStarted = session?.showStarted === true;
   const broadcastRunning = hasBroadcastStart || showStarted;
-  const openingCalibration = broadcastRunning
-    && (snapshot.broadcastElapsedSeconds ?? 0) < 20 * 60
-    && snapshot.completedPlayableCount < 3;
-  const mode: "pre_show" | "starting" | "live" | "ended" | "unknown" = isEnded
+  const mode: "pre_show" | "live" | "ended" | "unknown" = isEnded
     ? "ended"
-    : openingCalibration
-      ? "starting"
-      : broadcastRunning
-        ? "live"
-        : "pre_show";
+    : broadcastRunning ? "live" : "pre_show";
 
-  if (mode === "starting") {
-    const factors = [
-      "Opening pace is calibrating from the first three completed tracks or twenty broadcast minutes.",
-      `${formatHoursMinutes(snapshot.fixedWorkloadRemainingSeconds)} of fixed song, wheel, and sponsor work is already tracked.`,
-    ];
-    if (snapshot.projectedTotalShowSeconds > snapshot.warningShowSeconds) factors.push("The 5h+ projection remains visible, but it does not trigger opening-rush instructions by itself.");
-    return {
-      score: 15,
-      level: "low" as const,
-      label: "STARTING",
-      description: "The show clock is live while opening pace establishes a usable baseline.",
-      recommendation: "SETTLE IN · timing is tracking; live pressure will engage after 3 tracks or 20 minutes.",
-      factors,
-      mode,
-      isLive: true,
-    };
-  }
+  const targetMargin = snapshot.targetShowSeconds - snapshot.targetPaceProjectedTotalShowSeconds;
+  const currentHardMargin = snapshot.warningShowSeconds - snapshot.currentPaceProjectedTotalShowSeconds;
+  const score = Math.max(
+    pressureScoreFromTargetMargin(targetMargin),
+    pressureScoreFromTargetMargin(snapshot.targetShowSeconds - snapshot.currentPaceProjectedTotalShowSeconds),
+    pressureScoreFromHardMargin(snapshot.hardLimitMarginSeconds),
+    pressureScoreFromHardMargin(currentHardMargin),
+  );
+  const level: "low" | "medium" | "high" | "critical" = score >= 88 ? "critical" : score >= 65 ? "high" : score >= 35 ? "medium" : "low";
+  const label = level === "critical" ? "CRITICAL" : level === "high" ? "HIGH" : level === "medium" ? "MEDIUM" : "LOW";
+  const factors: string[] = [];
+  factors.push(`${formatHoursMinutes(snapshot.fixedWorkloadRemainingSeconds)} of submission, song, Wheel, and commercial work remains.`);
+  factors.push(talkBudgetLabel(snapshot.talkBudgetToTargetSeconds, "5h target"));
+  factors.push(talkBudgetLabel(snapshot.talkBudgetToWarningSeconds, "6h redline"));
+  factors.push(`${formatMinutesSeconds(snapshot.currentPaceTalkSecondsPerTrack)} current talk/transition pace per track.`);
+  if (snapshot.unknownDurationCount > 0) factors.push(`${snapshot.unknownDurationCount} track durations are estimated; timing confidence is ${snapshot.confidence}.`);
 
   if (mode !== "live") {
-    const preFactors: string[] = [];
-    if (snapshot.projectedTotalShowSeconds > snapshot.targetShowSeconds) preFactors.push("Projected runtime is over the 4h target.");
-    if (snapshot.unknownDurationCount > 0) preFactors.push(`${snapshot.unknownDurationCount} track durations are estimated; this changes confidence, not pressure by itself.`);
     return {
-      score: 10,
-      level: "low" as const,
+      score,
+      level,
       label: mode === "ended" ? "ENDED" : "PRE-SHOW",
-      description: mode === "ended" ? "Broadcast is ended/archived." : "Pre-show projection only. Live pressure is inactive.",
-      recommendation: mode === "ended" ? "Broadcast is ended." : "Pressure activates when broadcast starts.",
-      factors: preFactors,
+      description: mode === "ended" ? "Broadcast is ended/archived." : `${label} projected opening load from committed minutes.`,
+      recommendation: mode === "ended" ? "Broadcast is ended." : level === "critical" || level === "high" ? "OPENING LOAD TIGHT · be ready to begin cleanly." : "PRE-SHOW · workload is tracked without live-rush instructions.",
+      factors,
       mode,
       isLive: false,
     };
   }
 
-  const factors: string[] = [];
-  const targetPerTrack = snapshot.talkSecondsPerRemainingTrackToTarget ?? 0;
-  const warningPerTrack = snapshot.talkSecondsPerRemainingTrackToWarning ?? 0;
-  const warningBudget = snapshot.talkBudgetToWarningSeconds ?? 0;
-  const critical = warningBudget < 0 || warningPerTrack < 10;
-  let score: number;
-  if (critical) score = Math.min(100, 92 + Math.ceil(Math.min(8, Math.abs(Math.min(0, warningBudget)) / 300)));
-  else if (targetPerTrack >= 60) score = Math.max(10, Math.round(30 - Math.min(20, (targetPerTrack - 60) / 3)));
-  else if (targetPerTrack >= 30) score = Math.round(50 - ((targetPerTrack - 30) / 30) * 10);
-  else if (targetPerTrack >= 0) score = Math.round(65 - (targetPerTrack / 30) * 15);
-  else score = Math.round(80 - Math.min(10, Math.max(0, warningPerTrack - 10) / 5));
-  score = Math.max(0, Math.min(100, score));
-  const level: "low" | "medium" | "high" | "critical" = critical ? "critical" : score >= 65 ? "high" : score >= 40 ? "medium" : "low";
-  const label = level === "critical" ? "CRITICAL" : level === "high" ? "HIGH" : level === "medium" ? "MEDIUM" : "LOW";
-  factors.push(`${formatHoursMinutes(snapshot.fixedWorkloadRemainingSeconds)} of fixed song, wheel, and sponsor work remains.`);
-  factors.push(talkBudgetLabel(snapshot.talkBudgetToTargetSeconds, "4h goal"));
-  factors.push(talkBudgetLabel(snapshot.talkBudgetToWarningSeconds, "5h ceiling"));
-  if (snapshot.unknownDurationCount > 0) factors.push(`${snapshot.unknownDurationCount} track durations are estimated; timing confidence is ${snapshot.confidence}.`);
   const recommendation = snapshot.sponsorBreak.sponsorBreakStatus === "due"
     ? "SPONSOR BREAK DUE · start the 10:30 break."
     : level === "critical"
-      ? "MOVE NOW · use only necessary transitions."
+      ? "REDLINE RISK · move cleanly and keep transitions essential."
       : level === "high"
-        ? "KEEP COMMENTS SHORT · protect the 5h ceiling."
+        ? "TARGET PACE TIGHT · keep comments focused."
         : level === "medium"
-          ? "KEEP COMMENTS FOCUSED · pacing is usable but not loose."
+          ? "PACE WATCH · stay close to the recommended transition time."
           : "ROOM TO TALK · the current workload supports normal conversation.";
   const description = level === "critical"
-    ? "Fixed remaining work has consumed the usable 5h pacing room. The show continues, but there is no cutoff or talk cushion."
+    ? "The rolling projection is at serious risk of crossing the 6h operational redline. Playback remains host-controlled."
     : level === "high"
-      ? "The 4h goal is tight or already spent, with some room still available before 5h."
+      ? "The 5h target is tight and the two-minute transition allowance is using most of the 6h margin."
       : level === "medium"
-        ? "There is limited room for host talk while staying near the 4h goal."
-        : "There is room for host talk at the current completed-versus-remaining pace.";
+        ? "The workload is manageable, but current pacing can still move the finish materially."
+        : "The committed minutes leave healthy room under the 5h target.";
   return { score, level, label, description, recommendation, factors, mode: "live" as const, isLive: true };
+}
+
+function pressureScoreFromTargetMargin(seconds: number): number {
+  if (seconds <= -60 * 60) return 90;
+  if (seconds <= -30 * 60) return 80 + Math.round((-seconds - 30 * 60) / (30 * 60) * 10);
+  if (seconds <= 0) return 65 + Math.round((-seconds) / (30 * 60) * 15);
+  if (seconds <= 30 * 60) return 40 + Math.round((30 * 60 - seconds) / (30 * 60) * 25);
+  if (seconds <= 60 * 60) return 25 + Math.round((60 * 60 - seconds) / (30 * 60) * 15);
+  return 10;
+}
+
+function pressureScoreFromHardMargin(seconds: number): number {
+  if (seconds <= 0) return Math.min(100, 95 + Math.ceil(Math.abs(seconds) / (15 * 60)));
+  if (seconds <= 15 * 60) return 82 + Math.round((15 * 60 - seconds) / (15 * 60) * 13);
+  if (seconds <= 30 * 60) return 68 + Math.round((30 * 60 - seconds) / (15 * 60) * 14);
+  if (seconds <= 60 * 60) return 42 + Math.round((60 * 60 - seconds) / (30 * 60) * 26);
+  if (seconds <= 90 * 60) return 25 + Math.round((90 * 60 - seconds) / (30 * 60) * 17);
+  return 10;
 }
 
 function talkBudgetLabel(seconds: number | null, boundary: string): string {
@@ -415,8 +456,20 @@ function talkBudgetLabel(seconds: number | null, boundary: string): string {
 
 function talkPerTrackLabel(seconds: number | null): string {
   if (seconds === null || !Number.isFinite(seconds)) return "No remaining-track talk rate";
-  if (seconds < 0) return `4h goal already spent by ${formatMinutesSeconds(Math.abs(seconds))} per remaining track`;
-  return `${formatMinutesSeconds(seconds)} talk room per remaining track to 4h`;
+  if (seconds < 0) return `5h target already spent by ${formatMinutesSeconds(Math.abs(seconds))} per remaining track`;
+  return `${formatMinutesSeconds(seconds)} talk room per remaining track to 5h`;
+}
+
+function recommendedPaceLabel(seconds: number | null, rawSeconds: number | null, maximumSeconds: number): string {
+  if (seconds === null || rawSeconds === null || !Number.isFinite(seconds) || !Number.isFinite(rawSeconds)) return "No remaining-track pace available";
+  if (rawSeconds <= 0) return "No talk room to 5h · keep transitions essential";
+  if (rawSeconds >= maximumSeconds) return `${formatMinutesSeconds(maximumSeconds)} maximum talk/transition planning pace`;
+  return `Aim for ≤${formatMinutesSeconds(seconds)} talk/transition per track`;
+}
+
+function signedBankLabel(seconds: number): string {
+  const rounded = Math.round(seconds);
+  return rounded >= 0 ? `+${formatMinutesSeconds(rounded)} banked to 5h` : `−${formatMinutesSeconds(Math.abs(rounded))} behind 5h target`;
 }
 
 export function formatMinutesSeconds(seconds: number): string {

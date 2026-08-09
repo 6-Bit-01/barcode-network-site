@@ -54,8 +54,12 @@ test("priority display appears only when eligible and payment processing stays i
   assert.equal(display.priorityDisplayFromImpact(pendingImpact), null);
 });
 
-test("one song away unknown track includes talk buffer in about 5-15 minute range", () => {
-  const estimate = timing.estimateExistingTrackTiming({ queue: [track("ahead"), track("target")], session: { sponsorBreakStatus: "completed" } }, "target");
+test("isolated one-song wait includes the unknown fallback and one-minute talk buffer", () => {
+  const estimate = timing.estimateExistingTrackTiming(
+    { queue: [track("ahead"), track("target")], session: { sponsorBreakStatus: "completed" } },
+    "target",
+    { submissionWindowSeconds: 0, expectedWheelSpins: 0 },
+  );
   const shown = display.displayEstimate(estimate);
   assert.equal(estimate.estimatedSecondsUntilPlay, 360);
   assert.match(shown.label, /About 5–15 min/);
@@ -69,7 +73,7 @@ test("track duration labels distinguish detected and estimated fallback", () => 
 test("public projected show time is rough and uses About wording without clock or seconds formatting", () => {
   const label = display.publicProjectedShowTimeLabel(3 * 3600 + 45 * 60, "comfortable");
   assert.equal(label, "About 3h 45m");
-  assert.equal(display.publicProjectedShowTimeLabel(5 * 3600 + 10, "warning_ceiling"), "About 5h+");
+  assert.equal(display.publicProjectedShowTimeLabel(6 * 3600 + 10, "warning_ceiling"), "About 6h+");
   assert.ok(!label.includes(":"));
   assert.ok(!/\b(am|pm|seconds?|secs?)\b/i.test(label));
 });
@@ -77,8 +81,8 @@ test("public projected show time is rough and uses About wording without clock o
 test("public line fit copy stays decision-focused", () => {
   assert.equal(display.lineFitCopy("comfortable"), "Looks playable tonight.");
   assert.equal(display.lineFitCopy("tight"), "Line is getting tight tonight.");
-  assert.equal(display.lineFitCopy("over_target"), "This may run late.");
-  assert.equal(display.lineFitCopy("warning_ceiling"), "Show is under strong time pressure; playback continues.");
+  assert.equal(display.lineFitCopy("over_target"), "Projected past the 5h target.");
+  assert.equal(display.lineFitCopy("warning_ceiling"), "At or beyond the 6h redline; playback remains host-controlled.");
 });
 
 test("public projected show time hides unknown values without fake updating copy", () => {
@@ -87,20 +91,21 @@ test("public projected show time hides unknown values without fake updating copy
   assert.notEqual(display.publicProjectedShowTimeLabel(3 * 3600), "Updating live");
 });
 
-test("admin summary keeps projected time and 4h/5h target copy", () => {
+test("admin summary includes the intake and Wheel reserves with 5h/6h boundary copy", () => {
   const queue = Array.from({ length: 45 }, (_, index) => track(`known-${index}`, { detectedDurationSeconds: 180, durationIsEstimate: false }));
   const summary = display.buildQueueTimingDisplay({ queue, session: { sponsorBreakStatus: "completed" } });
-  assert.equal(summary.showRuntimeSummary.projectedLabel, "3h projected");
-  assert.equal(summary.showRuntimeSummary.publicProjectedLabel, "About 3h");
-  assert.equal(summary.showRuntimeSummary.targetLabel, "4h goal · 5h pressure ceiling");
-  assert.equal(summary.showRuntimeSummary.publicTargetLabel, "4h goal");
+  assert.equal(summary.showRuntimeSummary.projectedLabel, "3h 30m projected");
+  assert.equal(summary.showRuntimeSummary.publicProjectedLabel, "About 3h 30m");
+  assert.equal(summary.showRuntimeSummary.targetLabel, "5h target · 6h operational redline");
+  assert.equal(summary.showRuntimeSummary.publicTargetLabel, "5h target");
+  assert.equal(summary.timeBankSummary.recommendedPaceSecondsPerTrack, 120, "recommendations never exceed the two-minute planning allowance");
 });
 
 test("estimated wait remains separate from projected show time", () => {
   const queue = [track("ahead", { detectedDurationSeconds: 180, durationIsEstimate: false }), track("later", { detectedDurationSeconds: 180, durationIsEstimate: false })];
   const summary = display.buildQueueTimingDisplay({ queue, session: { sponsorBreakStatus: "completed" } });
-  assert.equal(summary.submitNowFreeEstimate.label, "About 5–15 min");
-  assert.equal(summary.showRuntimeSummary.publicProjectedLabel, "About 8m");
+  assert.equal(summary.submitNowFreeEstimate.label, "About 25 min–1h 10m");
+  assert.equal(summary.showRuntimeSummary.publicProjectedLabel, "About 38m");
 });
 
 test("Personal Signal Status does not include global projected show time copy", () => {
@@ -178,7 +183,7 @@ test("30 unknown tracks stay pre-show until broadcast starts", () => {
   const pre = display.buildQueueTimingDisplay({ queue, session: { showStarted: false, broadcastPhase: "submission_window", sponsorBreakStatus: "not_due" } });
   assert.equal(pre.pressureSummary.mode, "pre_show");
   assert.equal(pre.pressureSummary.isLive, false);
-  assert.equal(pre.pressureSummary.recommendation, "Pressure activates when broadcast starts.");
+  assert.equal(pre.pressureSummary.recommendation, "PRE-SHOW · workload is tracked without live-rush instructions.");
   assert.notEqual(pre.pressureSummary.label, "HIGH");
   const live = display.buildQueueTimingDisplay({ queue, session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", sponsorBreakStatus: "not_due" } });
   assert.equal(live.pressureSummary.mode, "live");
@@ -193,10 +198,10 @@ test("44 unknown tracks can warn live but remain pre-show before broadcast", () 
   const live = display.buildQueueTimingDisplay({ queue, session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", sponsorBreakStatus: "not_due" } });
   assert.equal(live.pressureSummary.mode, "live");
   assert.ok(["high", "critical"].includes(live.pressureSummary.level));
-  assert.ok(live.pressureSummary.factors.some((factor) => factor.toLowerCase().includes("fixed song")));
+  assert.ok(live.pressureSummary.factors.some((factor) => factor.toLowerCase().includes("submission, song, wheel, and commercial")));
 });
 
-test("a newly started broadcast calibrates before showing urgent pressure", () => {
+test("a newly started broadcast shows committed pressure without a blanket calm period", () => {
   const broadcastStartedAt = "2026-08-09T03:00:00.000Z";
   const longQueue = Array.from({ length: 44 }, (_, index) => track(`opening-${index}`, {
     detectedDurationSeconds: 420,
@@ -209,10 +214,10 @@ test("a newly started broadcast calibrates before showing urgent pressure", () =
   }, { now: new Date("2026-08-09T03:01:00.000Z") });
 
   assert.equal(opening.showRuntimeSummary.targetStatus, "warning_ceiling", "the long projection remains visible");
-  assert.equal(opening.pressureSummary.mode, "starting");
-  assert.equal(opening.pressureSummary.level, "low");
-  assert.equal(opening.pressureSummary.label, "STARTING");
-  assert.doesNotMatch(opening.pressureSummary.recommendation, /MOVE NOW|KEEP COMMENTS SHORT/i);
+  assert.equal(opening.pressureSummary.mode, "live");
+  assert.equal(opening.pressureSummary.level, "critical");
+  assert.equal(opening.pressureSummary.label, "CRITICAL");
+  assert.match(opening.pressureSummary.recommendation, /REDLINE RISK/i);
 
   const elapsed = display.buildQueueTimingDisplay({
     queue: longQueue,
@@ -229,10 +234,10 @@ test("a newly started broadcast calibrates before showing urgent pressure", () =
   assert.equal(threeCompleted.pressureSummary.mode, "live", "three completed tracks establish enough pace before twenty minutes");
 });
 
-test("44 unknown pre-show projection is calibrated near 4h30-4h45 range", () => {
+test("44 unknown tracks use the exact 5:00 fallback plus all planning reserves", () => {
   const queue = Array.from({ length: 44 }, (_, index) => track(`cal-${index}`));
   const summary = display.buildQueueTimingDisplay({ queue, session: { sponsorBreakStatus: "not_due", showStarted: false, broadcastPhase: "submission_window" } });
-  assert.match(summary.showRuntimeSummary.publicProjectedLabel ?? "", /^About 4h (2[0-9]|3[0-9]|4[0-5])m$/);
+  assert.equal(summary.showRuntimeSummary.publicProjectedLabel, "About 5h 6m");
 });
 
 test("live projection reacts to elapsed time and fast progress", () => {
@@ -261,15 +266,17 @@ test("live pressure eases when tracks are removed and rises with slow pace", () 
   assert.ok(liveReduced.pressureSummary.score <= liveBase.pressureSummary.score);
   const completed = Array.from({ length: 8 }, (_, index) => track(`done-${index}`, { status: "completed", detectedDurationSeconds: 180, durationIsEstimate: false }));
   const slow = display.buildQueueTimingDisplay({ completed, queue: Array.from({ length: 20 }, (_, index) => track(`slow-${index}`)), session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", completedRuntimeSeconds: 8 * 180, sponsorBreakStatus: "not_due" } });
-  assert.ok(slow.pressureSummary.factors.some((factor) => factor.toLowerCase().includes("4h goal")));
+  assert.ok(slow.pressureSummary.factors.some((factor) => factor.toLowerCase().includes("5h target")));
 });
 
-test("wheel owed overhead raises pressure and clearing owed overhead lowers it", () => {
+test("Wheel debt above the five-spin reserve adds overhead while covered debt does not", () => {
   const queue = Array.from({ length: 20 }, (_, index) => track(`wheel-${index}`));
-  const withOwed = display.buildQueueTimingDisplay({ queue, wheelSpinsOwed: 2, session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", sponsorBreakStatus: "not_due", wheelSpinsOwed: 2 } });
-  const cleared = display.buildQueueTimingDisplay({ queue, wheelSpinsOwed: 0, session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", sponsorBreakStatus: "not_due", wheelSpinsOwed: 0 } });
-  assert.ok(withOwed.wheelTimingSummary.overheadSeconds > 0);
-  assert.equal(cleared.wheelTimingSummary.overheadSeconds, 0);
+  const now = new Date("2026-01-01T00:01:00.000Z");
+  const withOwed = display.buildQueueTimingDisplay({ queue, wheelSpinsOwed: 6, session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", sponsorBreakStatus: "not_due", wheelSpinsOwed: 6 } }, { now });
+  const cleared = display.buildQueueTimingDisplay({ queue, wheelSpinsOwed: 0, session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: "2026-01-01T00:00:00.000Z", sponsorBreakStatus: "not_due", wheelSpinsOwed: 0 } }, { now });
+  assert.equal(withOwed.wheelTimingSummary.overheadSeconds, 12 * 60);
+  assert.equal(cleared.wheelTimingSummary.overheadSeconds, 10 * 60);
+  assert.equal(withOwed.timeBankSummary.targetProjectionSeconds - cleared.timeBankSummary.targetProjectionSeconds, 2 * 60);
   assert.ok(withOwed.pressureSummary.score >= cleared.pressureSummary.score);
 });
 
@@ -277,6 +284,9 @@ test("admin top bar renders pressure chip from timingSummary", () => {
   const source = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
   assert.ok(source.includes("TopBarPressureChip pressure={topPressure} minimized"));
   assert.ok(source.includes("TopBarPressureChip pressure={topPressure}"));
+  assert.ok(source.includes("AdminTimeBankToast timing={timingSummary.timeBankSummary}"));
+  assert.ok(source.includes("COMMITTED"));
+  assert.ok(source.includes("LOST"));
   assert.ok(source.includes("Projected Runtime"));
   assert.ok(source.includes("Projected: {projectedRuntimeLabel}"));
   assert.ok(source.includes("TopBarCommercialChip summary={timingSummary.sponsorBreakSummary}"));
@@ -291,4 +301,11 @@ test("admin top bar renders pressure chip from timingSummary", () => {
   assert.ok(source.includes("Commercial Break Running"));
   assert.ok(source.includes("Commercial Break Done"));
   assert.ok(source.includes("disabled={sponsorStartDisabled}"));
+});
+
+test("public gateway reads projected show time from the same timing display owner", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "src/components/PublicQueueGateway.tsx"), "utf8");
+  assert.ok(source.includes("buildQueueTimingDisplay(queueTimingInputFromPublicSnapshot(snapshot)"));
+  assert.ok(source.includes('label="Projected Show"'));
+  assert.ok(!source.includes('label="Runtime"'));
 });

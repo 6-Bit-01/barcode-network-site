@@ -51,6 +51,14 @@ Uploaded MP3/WAV playback is admin-authenticated and private. The delivery route
 
 Playback lifecycle history is bounded per queue session and uses the existing serialized queue mutation owner. The admin diagnostic export is built from an explicit safe projection: it can include queue/session identifiers, submitted artist/title, media category, durations, lifecycle events, and explicit outcomes, but excludes raw source/upload URLs, contact fields, legal acceptance text, admin notes, payment state/identifiers, and private storage locations. Playback diagnostics are not part of the public queue snapshot or BNL queue projection.
 
+## Shared show timing and pressure
+
+Admin pressure, public wait ranges, projected show timing, and queue-facing timing readouts use the same pure timing owner. The planning contract is a 20-minute submission screen, detected track durations where available with a 5:00 fallback, a 1:00 target talk/transition budget per track, a 2:00 maximum planning allowance per track, a 12:00 commercial reserve, and five expected Wheel ceremonies at 2:00 each. The target finish is five hours and the six-hour boundary is an operational redline only; it never stops or advances playback.
+
+The projection continuously replaces assumptions with observed state. Current-song progress lowers remaining work, resolved track metadata replaces the 5:00 fallback, elapsed talk/transition time changes the current-pace projection, removals free minutes, and Wheel/commercial state reconciles against its planning reserve. A full queue can therefore open under high pressure when its committed minutes warrant it, while the same number of shorter tracks can remain comfortable. Pre-show shows the projected opening load without live-rush instructions; once the broadcast starts there is no blanket calm or calibration override.
+
+Admin-only time-bank notices are transient and derived from changes in this shared projection. They are not a durable queue store, public commentary lane, BNL input, or playback authority.
+
 ## Session provenance and BNL publication
 
 Native queue visibility, payment, playback, and operator controls remain independent from BNL publication. Every session has:

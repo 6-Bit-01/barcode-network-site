@@ -4,7 +4,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AdminLiveOverlayControl } from "@/components/AdminLiveOverlayControl";
-import { buildQueueTimingDisplay, formatHoursMinutes, queueTimingInputFromAdminState } from "@/lib/queue-timing-display";
+import { buildQueueTimingDisplay, formatHoursMinutes, formatMinutesSeconds, queueTimingInputFromAdminState } from "@/lib/queue-timing-display";
+import { deriveQueuePaceBankEvent, deriveQueueTimeBankEvent, type QueueTimeBankEvent, type QueueTimeBankObservation } from "@/lib/queue-time-bank-events";
 import { parseYouTubeVideoId } from "@/lib/track-duration";
 import { formatRuntime, getTrackRuntimeSeconds, parseTikTokVideoUrl } from "@/lib/queue-types";
 import { detectMaterialPlaybackSeek, estimateOneWayNetworkTransitMs, projectObservedPlaybackTime, updateTransitEstimateMs, YOUTUBE_SYNC_STALE_AFTER_MS } from "@/lib/live-overlay-resolver";
@@ -449,6 +450,8 @@ export function AdminRadioQueueControl() {
   const activeTrackCount = activeTrackIds.size;
   const acceptedTrackCount = state?.publicStatus?.acceptedCount ?? state?.session?.acceptedCount ?? activeTrackCount;
   const projectedRuntimeLabel = timingSummary.showRuntimeSummary.publicProjectedLabel ?? timingSummary.showRuntimeSummary.projectedLabel ?? "—";
+  const recommendedPaceSeconds = timingSummary.timeBankSummary.recommendedPaceSecondsPerTrack;
+  const recommendedPaceCompact = recommendedPaceSeconds === null ? "—" : recommendedPaceSeconds <= 0 ? "0:00 / target spent" : `${formatMinutesSeconds(recommendedPaceSeconds)} / track`;
   const capacityCount = state?.publicStatus?.capacity ?? state?.session?.queueCapacity ?? null;
   const acceptedCapacityLabel = capacityCount ? `${acceptedTrackCount} / ${capacityCount}` : `${acceptedTrackCount}`;
   const completedActiveAcceptedLabel = `${state?.session?.completedCount ?? 0} / ${activeTrackCount} / ${acceptedTrackCount}`;
@@ -500,6 +503,7 @@ export function AdminRadioQueueControl() {
           <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Remaining: {timingSummary.showRuntimeSummary.remainingLabel}</span>
           <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">End: {timingSummary.showRuntimeSummary.estimatedEndLabel}</span>
           <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Projected: {projectedRuntimeLabel}</span>
+          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Pace: {recommendedPaceCompact}</span>
           <TopBarCommercialChip summary={timingSummary.sponsorBreakSummary} />
           <TopBarPressureChip pressure={topPressure} minimized />
           {wheelSpinsUnlocked > 0 && <>
@@ -517,6 +521,7 @@ export function AdminRadioQueueControl() {
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Projected Remaining</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.remainingLabel}</p></div>
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Estimated End</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.estimatedEndLabel}</p></div>
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Projected Runtime</p><p className="mt-1 font-bold text-foreground">{projectedRuntimeLabel}</p></div>
+          <div><p className="text-[10px] uppercase tracking-widest text-muted">Recommended Pace</p><p className="mt-1 font-bold text-foreground">{recommendedPaceCompact}</p></div>
           <TopBarCommercialChip summary={timingSummary.sponsorBreakSummary} />
           <TopBarPressureChip pressure={topPressure} />
           {wheelSpinsUnlocked > 0 && <div className="space-y-1"><p className="text-[10px] uppercase tracking-widest text-muted">Wheel</p><p className="font-bold text-cyan-200">{wheelSpinsUnlocked} owed</p><button type="button" onClick={openWheelPanel} className="min-h-9 border border-cyan-300/70 bg-cyan-300/15 px-3 py-1 text-[10px] uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">Open Wheel Panel</button></div>}
@@ -538,6 +543,7 @@ export function AdminRadioQueueControl() {
           {resolverOverrideBlocked && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 uppercase tracking-widest text-[#ffaa00]">Resolver Override Blocked</span>}
         </div>
         </>}
+        <AdminTimeBankToast timing={timingSummary.timeBankSummary} sessionId={state?.session?.sessionId ?? null} />
       </section>, document.body)}
 
       {mounted && endConfirmOpen && createPortal(<div className="fixed inset-0 z-[100000] grid place-items-center bg-black/80 p-4 backdrop-blur-sm"><div role="dialog" aria-modal="true" aria-labelledby="end-session-confirm-title" className="w-full max-w-md border border-danger/50 bg-background p-5 shadow-[0_0_70px_rgba(255,0,0,0.24)]"><p className="text-xs uppercase tracking-[0.35em] text-danger">End Broadcast</p><h2 id="end-session-confirm-title" className="mt-3 text-2xl font-bold text-foreground">End this broadcast?</h2><p className="mt-2 text-sm text-muted">This will stop routing, close submissions, and move the broadcast session to the archive.</p><div className="mt-5 flex flex-wrap justify-end gap-2"><a href="/admin/queue" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Return to Queue Dashboard</a><button type="button" onClick={() => setEndConfirmOpen(false)} disabled={endingSession} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">No, Cancel</button><button type="button" onClick={endCurrentSession} disabled={endingSession} className="border border-danger px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background disabled:opacity-50">{endingSession ? "Ending…" : "Yes, End Broadcast"}</button></div></div></div>, document.body)}
@@ -624,9 +630,80 @@ export function AdminRadioQueueControl() {
   );
 }
 
+function AdminTimeBankToast({ timing, sessionId }: { timing: ReturnType<typeof buildQueueTimingDisplay>["timeBankSummary"]; sessionId: string | null }) {
+  const lastObservationRef = useRef<QueueTimeBankObservation | null>(null);
+  const driftBankRef = useRef<number | null>(null);
+  const activeToastRef = useRef<(QueueTimeBankEvent & { createdAt: number; id: number }) | null>(null);
+  const dismissTimerRef = useRef<number | null>(null);
+  const [toast, setToast] = useState<(QueueTimeBankEvent & { createdAt: number; id: number }) | null>(null);
+  const [history, setHistory] = useState<(QueueTimeBankEvent & { createdAt: number; id: number })[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const observation = useMemo<QueueTimeBankObservation>(() => ({
+    sessionId,
+    bankSeconds: timing.bankSeconds,
+    activePlayableCount: timing.activePlayableCount,
+    completedPlayableCount: timing.completedPlayableCount,
+    removedCount: timing.removedCount,
+    knownDurationCount: timing.knownDurationCount,
+    wheelSpinsOwed: timing.wheelSpinsOwed,
+    wheelSecondsBudgeted: timing.wheelSecondsBudgeted,
+    sponsorStatus: timing.sponsorStatus,
+    isLive: timing.isLive,
+  }), [sessionId, timing.activePlayableCount, timing.bankSeconds, timing.completedPlayableCount, timing.isLive, timing.knownDurationCount, timing.removedCount, timing.sponsorStatus, timing.wheelSecondsBudgeted, timing.wheelSpinsOwed]);
+
+  useEffect(() => {
+    const previous = lastObservationRef.current;
+    if (!previous || previous.sessionId !== observation.sessionId) {
+      lastObservationRef.current = observation;
+      driftBankRef.current = observation.bankSeconds;
+      activeToastRef.current = null;
+      setToast(null);
+      setHistory([]);
+      return;
+    }
+
+    const event = deriveQueueTimeBankEvent(previous, observation)
+      ?? deriveQueuePaceBankEvent(driftBankRef.current ?? previous.bankSeconds, observation);
+    lastObservationRef.current = observation;
+    if (!event) return;
+    driftBankRef.current = observation.bankSeconds;
+    const now = Date.now();
+    const active = activeToastRef.current;
+    const next = active && now - active.createdAt < 1_500
+      ? { kind: "pace" as const, label: "TIME BANK UPDATE", bankDeltaSeconds: active.bankDeltaSeconds + event.bankDeltaSeconds, createdAt: now, id: now }
+      : { ...event, createdAt: now, id: now };
+    activeToastRef.current = next;
+    setToast(next);
+    setHistory((items) => [next, ...items.filter((item) => item.id !== active?.id)].slice(0, 6));
+    if (dismissTimerRef.current) window.clearTimeout(dismissTimerRef.current);
+    dismissTimerRef.current = window.setTimeout(() => {
+      activeToastRef.current = null;
+      setToast(null);
+    }, 5_000);
+  }, [observation]);
+
+  useEffect(() => () => {
+    if (dismissTimerRef.current) window.clearTimeout(dismissTimerRef.current);
+  }, []);
+
+  if (!toast && history.length === 0) return null;
+  return <div className="absolute right-0 top-full mt-2 flex max-w-[min(24rem,calc(100vw-2rem))] flex-col items-end gap-1.5">
+    {toast && <div role="status" aria-live="polite" className={`border bg-background/95 px-3 py-2 text-xs font-bold uppercase tracking-[0.16em] shadow-2xl backdrop-blur ${toast.bankDeltaSeconds >= 0 ? "border-[#3ddc97]/60 text-[#3ddc97]" : "border-[#ff9f43]/70 text-[#ff9f43]"}`}>{timeBankToastCopy(toast)}</div>}
+    <button type="button" onClick={() => setHistoryOpen((value) => !value)} className="border border-border bg-background/95 px-2 py-1 text-[10px] uppercase tracking-widest text-muted shadow-lg">Time Δ {history.length}</button>
+    {historyOpen && <div className="w-full space-y-1 border border-border bg-background/95 p-2 text-[10px] uppercase tracking-[0.12em] text-muted shadow-2xl">{history.map((item) => <p key={item.id}>{timeBankToastCopy(item)}</p>)}</div>}
+  </div>;
+}
+
+function timeBankToastCopy(event: QueueTimeBankEvent): string {
+  const seconds = Math.abs(event.bankDeltaSeconds);
+  if (event.bankDeltaSeconds >= 0) return `${event.label} · +${formatMinutesSeconds(seconds)} BANKED`;
+  if (event.kind === "submission" || event.kind === "duration" || event.kind === "wheel" || event.kind === "commercial") return `${event.label} · +${formatMinutesSeconds(seconds)} COMMITTED`;
+  return `${event.label} · −${formatMinutesSeconds(seconds)} LOST`;
+}
+
 function TopBarPressureChip({ pressure, minimized = false }: { pressure: ReturnType<typeof buildQueueTimingDisplay>["pressureSummary"]; minimized?: boolean }) {
-  const label = pressure.mode === "pre_show" ? "PRE-SHOW" : pressure.mode === "starting" ? "STARTING" : pressure.mode === "ended" ? "ENDED" : pressure.label;
-  const tone = pressure.mode === "ended" || pressure.mode === "pre_show" || pressure.mode === "starting"
+  const label = pressure.mode === "pre_show" ? "PRE-SHOW" : pressure.mode === "ended" ? "ENDED" : pressure.label;
+  const tone = pressure.mode === "ended"
     ? "border-border text-muted"
     : pressure.level === "critical"
       ? "border-danger/60 text-danger"
@@ -635,8 +712,8 @@ function TopBarPressureChip({ pressure, minimized = false }: { pressure: ReturnT
         : pressure.level === "medium"
           ? "border-[#f6c744]/60 text-[#f6c744]"
           : "border-[#3ddc97]/60 text-[#3ddc97]";
-  if (minimized) return <span className={`border px-2 py-1 uppercase tracking-widest ${tone}`}>Pressure: {label}{pressure.mode === "live" ? ` ${pressure.score}/100` : ""}</span>;
-  return <div><p className="text-[10px] uppercase tracking-widest text-muted">Pressure</p><p className={`mt-1 inline-flex border px-2 py-1 font-bold uppercase tracking-widest ${tone}`}>{label}{pressure.mode === "live" ? ` ${pressure.score}/100` : ""}</p></div>;
+  if (minimized) return <span className={`border px-2 py-1 uppercase tracking-widest ${tone}`}>Pressure: {label} {pressure.score}/100</span>;
+  return <div><p className="text-[10px] uppercase tracking-widest text-muted">Pressure</p><p className={`mt-1 inline-flex border px-2 py-1 font-bold uppercase tracking-widest ${tone}`}>{label} {pressure.score}/100</p></div>;
 }
 
 function TopBarCommercialChip({ summary, minimized = false }: { summary: ReturnType<typeof buildQueueTimingDisplay>["sponsorBreakSummary"]; minimized?: boolean }) {
@@ -1325,7 +1402,7 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction, s
   const wheel = timingSummary.wheelTimingSummary;
   const pressure = timingSummary.pressureSummary;
   const needleDeg = -90 + (pressure.score / 100) * 180;
-  const pressureHeading = pressure.mode === "live" ? "Live Pressure" : pressure.mode === "starting" ? "Opening Calibration" : pressure.mode === "ended" ? "Ended" : "Pre-show Projection";
+  const pressureHeading = pressure.mode === "live" ? "Live Pressure" : pressure.mode === "ended" ? "Ended" : "Pre-show Projection";
   const sponsorStartDisabled = !sponsor.dueNow || sponsor.status === "running" || sponsor.status === "completed" || sponsor.status === "skipped";
   const sponsorStartLabel = sponsor.status === "running"
     ? `Commercial Break Running${sponsor.diagnosticLabel.includes("remaining") ? ` · ${sponsor.diagnosticLabel.split("·")[1]?.trim().replace("remaining", "").trim()}` : ""}`
@@ -1343,7 +1420,7 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction, s
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="uppercase tracking-[0.28em] text-accent">Runtime Diagnostics</p>
-          <p className="mt-1 text-sm text-muted">{pressure.mode === "live" ? "Live pressure from broadcast timing + queue state." : pressure.mode === "starting" ? "The show clock is live; pressure waits for an opening pace baseline." : pressure.mode === "ended" ? "Broadcast has ended." : "Pre-show projection from queue state. Pressure activates when broadcast starts."}</p>
+          <p className="mt-1 text-sm text-muted">{pressure.mode === "live" ? "Live pressure from committed minutes, actual pace, and remaining work." : pressure.mode === "ended" ? "Broadcast has ended." : "Pre-show projection previews the opening workload without live-rush instructions."}</p>
         </div>
         {canControl && <div className="flex flex-wrap gap-2"><a href={playbackExportUrl} className="border border-accent/50 px-3 py-1.5 uppercase tracking-widest text-accent">Download Playback Diagnostics</a><button type="button" disabled={sponsorStartDisabled} onClick={() => !sponsorStartDisabled && onSponsorAction("start")} className={`px-3 py-1.5 uppercase tracking-widest ${sponsorStartDisabled ? "cursor-not-allowed border border-border text-muted opacity-70" : "border border-[#ffaa00]/50 text-[#ffaa00]"}`}>{sponsorStartLabel}</button><button type="button" onClick={() => onSponsorAction("reset")} className="border border-border px-3 py-1.5 uppercase tracking-widest text-muted">Reset Commercial Break State</button></div>}
       </div>
@@ -1355,6 +1432,7 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction, s
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Target</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.targetLabel}</p></div>
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Target Status</p><p className="mt-1 font-bold text-accent">{timingSummary.showRuntimeSummary.targetStatusLabel}</p></div>
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Line Fit</p><p className="mt-1 font-bold text-foreground">{timingSummary.lineFitCopy}</p></div>
+        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Recommended Pace</p><p className="mt-1 font-bold text-foreground">{timingSummary.timeBankSummary.recommendedPaceLabel}</p></div>
       </div>
       <div className="grid gap-3 md:grid-cols-[1.1fr_2fr]">
         <div className="border border-border bg-surface p-3">
@@ -1377,14 +1455,14 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction, s
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Pressure Factors</p><p className="mt-1 font-bold text-foreground">{pressure.description}</p><ul className="mt-2 list-disc space-y-1 pl-5 text-muted">{pressure.factors.map((factor) => <li key={factor}>{factor}</li>)}</ul></div>
       </div>
       <div className="grid gap-3 md:grid-cols-4">
-        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Sponsor Break</p><p className="mt-1 font-bold text-foreground">{sponsor.diagnosticLabel}</p><p className="mt-1 text-muted">Exactly {sponsor.durationLabel} · due at counted midpoint {sponsor.dueAfterTracks ?? "—"} · completed {sponsor.completedPlayableCount}</p></div>
-        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Wheel Timing</p><p className="mt-1 font-bold text-foreground">{wheel.owed} wheel spins owed</p><p className="mt-1 text-muted">{wheel.overheadLabel} ceremony overhead included</p></div>
+        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Commercial Timing</p><p className="mt-1 font-bold text-foreground">{sponsor.diagnosticLabel}</p><p className="mt-1 text-muted">{sponsor.durationLabel} planning reserve · due at counted midpoint {sponsor.dueAfterTracks ?? "—"} · completed {sponsor.completedPlayableCount}</p></div>
+        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Wheel Timing</p><p className="mt-1 font-bold text-foreground">{wheel.owed} owed · {wheel.resolved} resolved</p><p className="mt-1 text-muted">{wheel.overheadLabel} remaining from the five-spin reserve, reconciled to actual spins.</p></div>
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Unknown Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.unknownDurationCount}</p><p className="mt-1 text-muted">Tracks using est. 5:00</p></div>
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Known Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.knownDurationCount}</p><p className="mt-1 text-muted">Detected/provider/upload durations</p></div>
       </div>
       <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Playback Lifecycle</p><p className="mt-1 font-bold capitalize text-foreground">{playbackStateLabel}</p><p className="mt-1 text-muted">{playbackDiagnostics?.events.length ?? 0} bounded lifecycle events · last issue {playbackDiagnostics?.lastErrorCode ?? "none"}. Natural end, Skip, Finish, and Remove remain distinct.</p></div>
-      <div className="grid gap-3 md:grid-cols-3"><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Talk Room to 4h</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.talkRoomLabel}</p><p className="mt-1 text-muted">{timingSummary.showRuntimeSummary.talkPerTrackLabel}</p></div><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Room to 5h</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.warningRoomLabel}</p><p className="mt-1 text-muted">Pressure ceiling only; the show continues past it.</p></div><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Runtime Confidence</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.confidenceLabel}</p><p className="mt-1 text-muted">Unknown durations widen timing uncertainty without adding a pressure penalty.</p></div></div>
-      <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Current Runtime Notes</p><p className="mt-1 text-muted">Sponsor: {sponsor.diagnosticLabel} · Wheel overhead: {formatHoursMinutes(wheel.overheadSeconds)} · {timingSummary.showRuntimeSummary.notes[0] ?? "No projection warnings."}</p></div>
+      <div className="grid gap-3 md:grid-cols-3"><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Talk Room to 5h</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.talkRoomLabel}</p><p className="mt-1 text-muted">{timingSummary.showRuntimeSummary.talkPerTrackLabel}</p></div><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Room to 6h</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.warningRoomLabel}</p><p className="mt-1 text-muted">Operational redline only; playback never stops automatically.</p></div><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Runtime Confidence</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.confidenceLabel}</p><p className="mt-1 text-muted">Unknown durations use 5:00 and widen uncertainty without a separate pressure penalty.</p></div></div>
+      <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Rolling Time Budget</p><p className="mt-1 text-muted">Target pace {formatHoursMinutes(timingSummary.timeBankSummary.targetProjectionSeconds)} · current pace {formatHoursMinutes(timingSummary.timeBankSummary.currentProjectionSeconds)} · two-minute transitions {formatHoursMinutes(timingSummary.timeBankSummary.maximumTalkProjectionSeconds)} · {timingSummary.timeBankSummary.bankLabel}.</p></div>
     </section>
   );
 }

@@ -1,10 +1,10 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { externalLinks } from "@/content";
-import { formatRuntime } from "@/lib/queue-types";
+import { buildQueueTimingDisplay, queueTimingInputFromPublicSnapshot } from "@/lib/queue-timing-display";
 import type { QueuePublicSnapshot, QueuePublicTrack } from "@/lib/queue-types";
 
 type GatewayPhase = "syncing" | "archived" | "closed" | "open" | "liveOpen" | "liveClosed";
@@ -166,6 +166,7 @@ export function PublicQueueGateway() {
   const counts = publicCounts(snapshot);
   const session = snapshot?.session;
   const pressure = pressureLevel(snapshot);
+  const timingSummary = useMemo(() => buildQueueTimingDisplay(queueTimingInputFromPublicSnapshot(snapshot), { now: new Date(nowMs || 0) }), [nowMs, snapshot]);
   const readouts = terminalReadouts(snapshot, counts);
   const routePulses = pressure === "high" ? 5 : pressure === "medium" ? 4 : 3;
   const intakeWindowMs = session?.preShowEndsAt ? new Date(session.preShowEndsAt).getTime() - nowMs : 0;
@@ -218,7 +219,7 @@ export function PublicQueueGateway() {
             {counts.pending > 0 && <StatCard label="Payment Processing" value={counts.pending} helper="Checkout started. Skip is not active yet." accent="text-[#ffaa00]" />}
             <StatCard label="Priority Confirmed" value={counts.priority} helper="Payment cleared. Priority Signal active." accent="text-[#ffaa00]" />
             <StatCard label="Wheel Chosen" value={counts.wheel} helper="Picked from the 10K tap wheel." />
-            <StatCard label="Runtime" value={snapshot ? formatRuntime(snapshot.status.estimatedRuntimeSeconds) : "—"} helper="Estimated time for songs still waiting." />
+            <StatCard label="Projected Show" value={timingSummary.showRuntimeSummary.publicProjectedLabel ?? "—"} helper="Same rolling estimate used by the live queue; exact durations replace 5:00 fallbacks when available." />
           </div>
         </div>
       </section>

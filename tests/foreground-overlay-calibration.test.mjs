@@ -52,6 +52,7 @@ test("lower line is an OPEN or CLOSED action rail without permanent TikTok copy"
 
 test("calibration keeps the 100px strip, Wheel emblem, and enlarged count", () => {
   assert.match(preview, /"--fg-height": "100px"/);
+  assert.match(preview, /"--fg-primary-size": "36px"/);
   assert.match(preview, /"--fg-wheel-size": "92px"/);
   assert.match(preview, /"--fg-wheel-count-size": "50px"/);
   assert.match(strip, /foreground-strip-wheel-count/);
@@ -63,7 +64,8 @@ test("calibration keeps the 100px strip, Wheel emblem, and enlarged count", () =
 test("foreground treatment is alive without becoming constant visual noise", () => {
   assert.match(strip, /data-glitch-active=\{glitchActive \? "true" : "false"\}/);
   assert.match(strip, /data-wheel-pulsing=\{wheelPulsing \? "true" : "false"\}/);
-  assert.match(strip, /wheelSpinsOwed > previousWheelCount\.current/);
+  assert.match(strip, /useRef<number \| null>\(null\)/);
+  assert.match(strip, /previousCount === null \|\| nextCount <= previousCount/);
   assert.match(css, /@keyframes fg-glitch-slice/);
   assert.match(css, /@keyframes fg-wheel-unlock-pulse/);
   assert.match(css, /@keyframes fg-signal-drift/);

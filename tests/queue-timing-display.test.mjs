@@ -196,6 +196,39 @@ test("44 unknown tracks can warn live but remain pre-show before broadcast", () 
   assert.ok(live.pressureSummary.factors.some((factor) => factor.toLowerCase().includes("fixed song")));
 });
 
+test("a newly started broadcast calibrates before showing urgent pressure", () => {
+  const broadcastStartedAt = "2026-08-09T03:00:00.000Z";
+  const longQueue = Array.from({ length: 44 }, (_, index) => track(`opening-${index}`, {
+    detectedDurationSeconds: 420,
+    estimatedDurationSeconds: 420,
+    durationIsEstimate: false,
+  }));
+  const opening = display.buildQueueTimingDisplay({
+    queue: longQueue,
+    session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt, sponsorBreakStatus: "not_due" },
+  }, { now: new Date("2026-08-09T03:01:00.000Z") });
+
+  assert.equal(opening.showRuntimeSummary.targetStatus, "warning_ceiling", "the long projection remains visible");
+  assert.equal(opening.pressureSummary.mode, "starting");
+  assert.equal(opening.pressureSummary.level, "low");
+  assert.equal(opening.pressureSummary.label, "STARTING");
+  assert.doesNotMatch(opening.pressureSummary.recommendation, /MOVE NOW|KEEP COMMENTS SHORT/i);
+
+  const elapsed = display.buildQueueTimingDisplay({
+    queue: longQueue,
+    session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt, sponsorBreakStatus: "not_due" },
+  }, { now: new Date("2026-08-09T03:21:00.000Z") });
+  assert.equal(elapsed.pressureSummary.mode, "live");
+  assert.equal(elapsed.pressureSummary.level, "critical");
+
+  const threeCompleted = display.buildQueueTimingDisplay({
+    completed: longQueue.slice(0, 3).map((entry) => ({ ...entry, status: "played", playedAt: broadcastStartedAt, completedAt: broadcastStartedAt })),
+    queue: longQueue.slice(3),
+    session: { completedCount: 3, showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt, sponsorBreakStatus: "not_due" },
+  }, { now: new Date("2026-08-09T03:10:00.000Z") });
+  assert.equal(threeCompleted.pressureSummary.mode, "live", "three completed tracks establish enough pace before twenty minutes");
+});
+
 test("44 unknown pre-show projection is calibrated near 4h30-4h45 range", () => {
   const queue = Array.from({ length: 44 }, (_, index) => track(`cal-${index}`));
   const summary = display.buildQueueTimingDisplay({ queue, session: { sponsorBreakStatus: "not_due", showStarted: false, broadcastPhase: "submission_window" } });

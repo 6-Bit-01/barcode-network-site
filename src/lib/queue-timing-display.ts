@@ -83,7 +83,7 @@ export interface QueueTimingDisplaySummary {
     description: string;
     recommendation: string;
     factors: string[];
-    mode: "pre_show" | "live" | "ended" | "unknown";
+    mode: "pre_show" | "starting" | "live" | "ended" | "unknown";
     isLive: boolean;
   };
   lineFitStatus: QueueTimingTargetStatus;
@@ -324,7 +324,35 @@ function buildPressureSummary(snapshot: ReturnType<typeof buildQueueTimingSnapsh
   const hasBroadcastStart = Boolean(snapshot.sponsorBreak.broadcastStartedAt);
   const isEnded = session?.broadcastPhase === "ended";
   const showStarted = session?.showStarted === true;
-  const mode: "pre_show" | "live" | "ended" | "unknown" = isEnded ? "ended" : (hasBroadcastStart || showStarted) ? "live" : "pre_show";
+  const broadcastRunning = hasBroadcastStart || showStarted;
+  const openingCalibration = broadcastRunning
+    && (snapshot.broadcastElapsedSeconds ?? 0) < 20 * 60
+    && snapshot.completedPlayableCount < 3;
+  const mode: "pre_show" | "starting" | "live" | "ended" | "unknown" = isEnded
+    ? "ended"
+    : openingCalibration
+      ? "starting"
+      : broadcastRunning
+        ? "live"
+        : "pre_show";
+
+  if (mode === "starting") {
+    const factors = [
+      "Opening pace is calibrating from the first three completed tracks or twenty broadcast minutes.",
+      `${formatHoursMinutes(snapshot.fixedWorkloadRemainingSeconds)} of fixed song, wheel, and sponsor work is already tracked.`,
+    ];
+    if (snapshot.projectedTotalShowSeconds > snapshot.warningShowSeconds) factors.push("The 5h+ projection remains visible, but it does not trigger opening-rush instructions by itself.");
+    return {
+      score: 15,
+      level: "low" as const,
+      label: "STARTING",
+      description: "The show clock is live while opening pace establishes a usable baseline.",
+      recommendation: "SETTLE IN · timing is tracking; live pressure will engage after 3 tracks or 20 minutes.",
+      factors,
+      mode,
+      isLive: true,
+    };
+  }
 
   if (mode !== "live") {
     const preFactors: string[] = [];

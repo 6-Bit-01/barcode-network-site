@@ -11,7 +11,7 @@ const STALE_AFTER_MS = 10_000;
 
 const SOURCE_STYLE = {
   "--fg-height": "100px",
-  "--fg-primary-size": "31px",
+  "--fg-primary-size": "36px",
   "--fg-secondary-size": "18px",
   "--fg-wheel-size": "92px",
   "--fg-wheel-count-size": "50px",
@@ -19,6 +19,11 @@ const SOURCE_STYLE = {
   "--fg-side-margin": "24px",
   "--fg-key-color": "#0000ff",
 } as CSSProperties;
+
+function foregroundAccessToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.hash.replace(/^#/, "")).get("access");
+}
 
 const SYNCING_ACTION: ForegroundOverlayAction = {
   id: "foreground-syncing",
@@ -99,7 +104,11 @@ export function ForegroundOverlayReceiver() {
       if (inFlight || stopped) return;
       inFlight = true;
       try {
-        const response = await fetch("/api/overlay/foreground", { cache: "no-store" });
+        const accessToken = foregroundAccessToken();
+        const response = await fetch("/api/overlay/foreground", {
+          cache: "no-store",
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+        });
         if (!response.ok) throw new Error("Foreground overlay state unavailable.");
         const next = await response.json() as unknown;
         if (!isForegroundSnapshot(next)) throw new Error("Foreground overlay state invalid.");

@@ -78,7 +78,7 @@ export function ForegroundOverlayStrip({
   const [phase, setPhase] = useState<ForegroundIdentityPhase>(forcedPhase ?? "artist");
   const [glitchActive, setGlitchActive] = useState(false);
   const [wheelPulsing, setWheelPulsing] = useState(false);
-  const previousWheelCount = useRef(0);
+  const previousWheelCount = useRef<number | null>(null);
 
   useEffect(() => {
     if (forcedPhase) {
@@ -140,9 +140,9 @@ export function ForegroundOverlayStrip({
 
   useEffect(() => {
     const nextCount = Math.max(0, Math.min(99, Math.trunc(wheelSpinsOwed)));
-    const unlocked = wheelSpinsOwed > previousWheelCount.current;
+    const previousCount = previousWheelCount.current;
     previousWheelCount.current = nextCount;
-    if (!unlocked) return;
+    if (previousCount === null || nextCount <= previousCount) return;
     setWheelPulsing(true);
     const timeoutId = window.setTimeout(() => setWheelPulsing(false), 1_450);
     return () => window.clearTimeout(timeoutId);

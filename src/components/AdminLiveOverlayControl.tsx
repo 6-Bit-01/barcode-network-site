@@ -47,6 +47,22 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
     setStatus(successMessage);
   }
 
+  async function openForegroundOverlay() {
+    const target = window.open("", "_blank");
+    if (target) target.opener = null;
+    setStatus("Preparing foreground overlay…");
+    const response = await fetch("/api/admin/overlay/foreground-access", { method: "POST", cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || typeof payload.path !== "string") {
+      target?.close();
+      setStatus(response.status === 401 ? "Overlay controls require admin auth." : "Foreground overlay could not be opened.");
+      return;
+    }
+    if (target) target.location.href = payload.path;
+    else window.location.assign(payload.path);
+    setStatus("Foreground overlay opened with private show access.");
+  }
+
   const scene = snapshot?.scene;
   const wheelOwed = scene?.wheelSpinsOwed ?? 0;
   const wheelActive = scene?.wheelOverlayActive === true;
@@ -106,7 +122,7 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
         </div>
         <div className="flex flex-wrap gap-2">
           <a href="/overlay/live" target="_blank" rel="noreferrer" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Live Overlay</a>
-          <a href="/overlay/foreground" target="_blank" rel="noreferrer" className="border border-cyan-300/70 px-3 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Open Foreground Overlay</a>
+          <button type="button" onClick={openForegroundOverlay} className="border border-cyan-300/70 px-3 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Open Foreground Overlay</button>
         </div>
       </div>
 

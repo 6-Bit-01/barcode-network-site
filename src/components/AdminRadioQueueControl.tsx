@@ -625,8 +625,8 @@ export function AdminRadioQueueControl() {
 }
 
 function TopBarPressureChip({ pressure, minimized = false }: { pressure: ReturnType<typeof buildQueueTimingDisplay>["pressureSummary"]; minimized?: boolean }) {
-  const label = pressure.mode === "pre_show" ? "PRE-SHOW" : pressure.mode === "ended" ? "ENDED" : pressure.label;
-  const tone = pressure.mode === "ended" || pressure.mode === "pre_show"
+  const label = pressure.mode === "pre_show" ? "PRE-SHOW" : pressure.mode === "starting" ? "STARTING" : pressure.mode === "ended" ? "ENDED" : pressure.label;
+  const tone = pressure.mode === "ended" || pressure.mode === "pre_show" || pressure.mode === "starting"
     ? "border-border text-muted"
     : pressure.level === "critical"
       ? "border-danger/60 text-danger"
@@ -1325,7 +1325,7 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction, s
   const wheel = timingSummary.wheelTimingSummary;
   const pressure = timingSummary.pressureSummary;
   const needleDeg = -90 + (pressure.score / 100) * 180;
-  const pressureHeading = pressure.mode === "live" ? "Live Pressure" : pressure.mode === "ended" ? "Ended" : "Pre-show Projection";
+  const pressureHeading = pressure.mode === "live" ? "Live Pressure" : pressure.mode === "starting" ? "Opening Calibration" : pressure.mode === "ended" ? "Ended" : "Pre-show Projection";
   const sponsorStartDisabled = !sponsor.dueNow || sponsor.status === "running" || sponsor.status === "completed" || sponsor.status === "skipped";
   const sponsorStartLabel = sponsor.status === "running"
     ? `Commercial Break Running${sponsor.diagnosticLabel.includes("remaining") ? ` · ${sponsor.diagnosticLabel.split("·")[1]?.trim().replace("remaining", "").trim()}` : ""}`
@@ -1343,7 +1343,7 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction, s
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="uppercase tracking-[0.28em] text-accent">Runtime Diagnostics</p>
-          <p className="mt-1 text-sm text-muted">{pressure.mode === "live" ? "Live pressure from broadcast timing + queue state." : pressure.mode === "ended" ? "Broadcast has ended." : "Pre-show projection from queue state. Pressure activates when broadcast starts."}</p>
+          <p className="mt-1 text-sm text-muted">{pressure.mode === "live" ? "Live pressure from broadcast timing + queue state." : pressure.mode === "starting" ? "The show clock is live; pressure waits for an opening pace baseline." : pressure.mode === "ended" ? "Broadcast has ended." : "Pre-show projection from queue state. Pressure activates when broadcast starts."}</p>
         </div>
         {canControl && <div className="flex flex-wrap gap-2"><a href={playbackExportUrl} className="border border-accent/50 px-3 py-1.5 uppercase tracking-widest text-accent">Download Playback Diagnostics</a><button type="button" disabled={sponsorStartDisabled} onClick={() => !sponsorStartDisabled && onSponsorAction("start")} className={`px-3 py-1.5 uppercase tracking-widest ${sponsorStartDisabled ? "cursor-not-allowed border border-border text-muted opacity-70" : "border border-[#ffaa00]/50 text-[#ffaa00]"}`}>{sponsorStartLabel}</button><button type="button" onClick={() => onSponsorAction("reset")} className="border border-border px-3 py-1.5 uppercase tracking-widest text-muted">Reset Commercial Break State</button></div>}
       </div>

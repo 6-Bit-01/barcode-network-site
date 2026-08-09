@@ -49,7 +49,7 @@ export function ForegroundCalibrationPreview(props: ForegroundCalibrationPreview
 
   const sourceStyle = useMemo(() => ({
     "--fg-height": "100px",
-    "--fg-primary-size": "31px",
+    "--fg-primary-size": "36px",
     "--fg-secondary-size": "18px",
     "--fg-wheel-size": "92px",
     "--fg-wheel-count-size": "50px",

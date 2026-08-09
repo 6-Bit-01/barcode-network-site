@@ -104,7 +104,10 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
           <h2 className="mt-2 text-xl font-bold text-foreground">Automatic</h2>
           <p className="mt-1 text-sm text-muted">Automatic scene selection is active. Normal show flow does not require manual overlay scene selection.</p>
         </div>
-        <a href="/overlay/live" target="_blank" rel="noreferrer" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Overlay</a>
+        <div className="flex flex-wrap gap-2">
+          <a href="/overlay/live" target="_blank" rel="noreferrer" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Live Overlay</a>
+          <a href="/overlay/foreground" target="_blank" rel="noreferrer" className="border border-cyan-300/70 px-3 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Open Foreground Overlay</a>
+        </div>
       </div>
 
       <div className="grid gap-3 text-sm md:grid-cols-3">

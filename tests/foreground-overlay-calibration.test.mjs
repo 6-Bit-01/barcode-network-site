@@ -5,8 +5,9 @@ import test from "node:test";
 const page = readFileSync("src/app/overlay/foreground/calibration/page.tsx", "utf8");
 const preview = readFileSync("src/app/overlay/foreground/calibration/ForegroundCalibrationPreview.tsx", "utf8");
 const strip = readFileSync("src/components/ForegroundOverlayStrip.tsx", "utf8");
+const resolver = readFileSync("src/lib/foreground-overlay-resolver.ts", "utf8");
 const css = readFileSync("src/app/overlay/foreground/calibration/foreground-calibration.css", "utf8");
-const combined = `${page}\n${preview}\n${strip}`;
+const combined = `${page}\n${preview}\n${strip}\n${resolver}`;
 
 test("foreground calibration remains isolated from live queue and overlay state", () => {
   assert.match(preview, /data-calibration-only="true"/);
@@ -16,10 +17,10 @@ test("foreground calibration remains isolated from live queue and overlay state"
 });
 
 test("identity line alternates artist for 12 seconds and track for 6 seconds", () => {
-  assert.match(strip, /FOREGROUND_ARTIST_HOLD_MS = 12_000/);
-  assert.match(strip, /FOREGROUND_TRACK_HOLD_MS = 6_000/);
-  assert.match(strip, /setPhase\("artist"\)/);
-  assert.match(strip, /setPhase\("track"\)/);
+  assert.match(resolver, /FOREGROUND_ARTIST_HOLD_MS = 12_000/);
+  assert.match(resolver, /FOREGROUND_TRACK_HOLD_MS = 6_000/);
+  assert.match(strip, /foregroundIdentityPhaseAt\(cycleAnchorMs, Date\.now\(\)\)/);
+  assert.match(strip, /visibilitychange/);
   assert.match(strip, /data-identity-phase=\{phase\}/);
   assert.match(preview, /ARTIST 12s/);
   assert.match(preview, /TRACK 6s/);

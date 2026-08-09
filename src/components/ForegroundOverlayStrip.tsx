@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
+import { FOREGROUND_ARTIST_HOLD_MS, FOREGROUND_TRACK_HOLD_MS, foregroundIdentityPhaseAt } from "@/lib/foreground-overlay-resolver";
+import type { ForegroundIdentityPhase, ForegroundOverlayActionTone } from "@/lib/foreground-overlay-resolver";
 
-export const FOREGROUND_ARTIST_HOLD_MS = 12_000;
-export const FOREGROUND_TRACK_HOLD_MS = 6_000;
-
-export type ForegroundIdentityPhase = "artist" | "track";
-export type ForegroundActionTone = "neutral" | "skip" | "bnl" | "sponsor";
+export { FOREGROUND_ARTIST_HOLD_MS, FOREGROUND_TRACK_HOLD_MS } from "@/lib/foreground-overlay-resolver";
+export type { ForegroundIdentityPhase } from "@/lib/foreground-overlay-resolver";
+export type ForegroundActionTone = ForegroundOverlayActionTone;
 
 type ForegroundOverlayStripProps = {
   artistName: string;
@@ -18,6 +18,7 @@ type ForegroundOverlayStripProps = {
   actionMessage: string;
   actionTone?: ForegroundActionTone;
   forcedPhase?: ForegroundIdentityPhase;
+  identityCycleStartedAt?: string | null;
 };
 
 function SlowOverflowText({ text, phaseDurationMs }: { text: string; phaseDurationMs: number }) {
@@ -70,6 +71,7 @@ export function ForegroundOverlayStrip({
   actionMessage,
   actionTone = "neutral",
   forcedPhase,
+  identityCycleStartedAt,
 }: ForegroundOverlayStripProps) {
   const [phase, setPhase] = useState<ForegroundIdentityPhase>(forcedPhase ?? "artist");
 
@@ -79,19 +81,28 @@ export function ForegroundOverlayStrip({
       return;
     }
 
-    setPhase("artist");
-    let timeoutId: number;
-    const showArtist = () => {
-      setPhase("artist");
-      timeoutId = window.setTimeout(showTrack, FOREGROUND_ARTIST_HOLD_MS);
+    const parsedAnchor = identityCycleStartedAt ? Date.parse(identityCycleStartedAt) : Number.NaN;
+    const cycleAnchorMs = Number.isFinite(parsedAnchor) ? parsedAnchor : Date.now();
+    let timeoutId = 0;
+    const synchronizePhase = () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      const next = foregroundIdentityPhaseAt(cycleAnchorMs, Date.now());
+      setPhase(next.phase);
+      timeoutId = window.setTimeout(synchronizePhase, next.remainingMs + 20);
     };
-    const showTrack = () => {
-      setPhase("track");
-      timeoutId = window.setTimeout(showArtist, FOREGROUND_TRACK_HOLD_MS);
+    const synchronizeWhenVisible = () => {
+      if (document.visibilityState === "visible") synchronizePhase();
     };
-    timeoutId = window.setTimeout(showTrack, FOREGROUND_ARTIST_HOLD_MS);
-    return () => window.clearTimeout(timeoutId);
-  }, [artistName, forcedPhase, trackTitle]);
+
+    synchronizePhase();
+    document.addEventListener("visibilitychange", synchronizeWhenVisible);
+    window.addEventListener("focus", synchronizePhase);
+    return () => {
+      window.clearTimeout(timeoutId);
+      document.removeEventListener("visibilitychange", synchronizeWhenVisible);
+      window.removeEventListener("focus", synchronizePhase);
+    };
+  }, [artistName, forcedPhase, identityCycleStartedAt, trackTitle]);
 
   const identity = phase === "artist" ? artistName : trackTitle;
   const phaseDurationMs = phase === "artist" ? FOREGROUND_ARTIST_HOLD_MS : FOREGROUND_TRACK_HOLD_MS;
@@ -114,7 +125,7 @@ export function ForegroundOverlayStrip({
             {submissionsOpen ? "OPEN" : "CLOSED"}
           </span>
           <span className="foreground-strip-action-label">{actionLabel}</span>
-          <span className="foreground-strip-action-message">{actionMessage}</span>
+          <span className="foreground-strip-action-message" title={actionMessage}>{actionMessage}</span>
         </div>
       </div>
 

@@ -33,7 +33,8 @@ body > :not(main):not(script):not(style) {
   display: none !important;
 }
 
-body:has(.fg-calibration-source-shell) {
+body:has(.fg-calibration-source-shell),
+body:has(.foreground-overlay-source-shell) {
   overflow: hidden;
   background: var(--fg-key-color) !important;
 }
@@ -199,6 +200,10 @@ body:has(.fg-calibration-source-shell) {
   color: #34d5ff;
 }
 
+.foreground-strip-action-row--wheel .foreground-strip-action-label {
+  color: #67e8f9;
+}
+
 .foreground-strip-action-row--sponsor .foreground-strip-action-label {
   color: #b884ff;
 }
@@ -298,23 +303,28 @@ body:has(.fg-calibration-source-shell) {
 }
 
 .fg-calibration-source-shell,
-.fg-calibration-canvas {
+.fg-calibration-canvas,
+.foreground-overlay-source-shell,
+.foreground-overlay-canvas {
   width: 1080px;
   height: 1920px;
   overflow: hidden;
   background: var(--fg-key-color);
 }
 
-.fg-calibration-source-shell {
+.fg-calibration-source-shell,
+.foreground-overlay-source-shell {
   position: relative;
 }
 
-.fg-calibration-canvas {
+.fg-calibration-canvas,
+.foreground-overlay-canvas {
   position: relative;
   transform-origin: top left;
 }
 
-.fg-calibration-canvas > .foreground-strip {
+.fg-calibration-canvas > .foreground-strip,
+.foreground-overlay-canvas > .foreground-strip {
   position: absolute;
   top: calc(var(--fg-anchor-y) - var(--fg-height));
   left: var(--fg-side-margin);

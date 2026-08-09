@@ -116,6 +116,18 @@ test("artist/title phase remains anchored across background or reconnect catch-u
   assert.deepEqual(foreground.foregroundIdentityPhaseAt(0, 18_000), { phase: "artist", remainingMs: 12_000 });
 });
 
+test("operational action rotation is anchored and advances without polling drift", () => {
+  const actions = [
+    { id: "one", label: "ONE", message: "ONE", tone: "neutral", source: "queue", occurredAt: null },
+    { id: "two", label: "TWO", message: "TWO", tone: "neutral", source: "queue", occurredAt: null },
+    { id: "three", label: "THREE", message: "THREE", tone: "neutral", source: "queue", occurredAt: null },
+  ];
+  assert.equal(foreground.foregroundActionAt(actions, 0, 0).id, "one");
+  assert.equal(foreground.foregroundActionAt(actions, 0, foreground.FOREGROUND_ACTION_HOLD_MS).id, "two");
+  assert.equal(foreground.foregroundActionAt(actions, 0, foreground.FOREGROUND_ACTION_HOLD_MS * 2).id, "three");
+  assert.equal(foreground.foregroundActionAt(actions, 0, foreground.FOREGROUND_ACTION_HOLD_MS * 3).id, "one");
+});
+
 test("foreground snapshot exposes only safe track identity and live queue state", () => {
   const current = entry("current", {
     detectedArtistName: "Detected Artist",
@@ -162,9 +174,61 @@ test("pending and newly confirmed Priority skips become safe action-rail events"
   assert.equal(confirmedSnapshot.action.label, "SKIP CONFIRMED");
   assert.match(confirmedSnapshot.action.message, /Artist Two — Signal Two/);
 
-  const oldConfirmation = foreground.resolveForegroundOverlaySnapshot({ queueState: queueState({ queue: [confirmed] }), scene: scene(), bnl: { message: "BNL relay standing by.", publishedAt: "2026-08-09T03:04:00.000Z" } }, new Date("2026-08-09T03:05:00.000Z"));
-  assert.equal(oldConfirmation.action.label, "BNL");
-  assert.equal(oldConfirmation.action.message, "BNL relay standing by.");
+  const oldConfirmation = foreground.resolveForegroundOverlaySnapshot({ queueState: queueState({ queue: [confirmed] }), scene: scene() }, new Date("2026-08-09T03:05:00.000Z"));
+  assert.notEqual(oldConfirmation.action.label, "BNL");
+  assert.ok(oldConfirmation.actions.length >= 3);
+});
+
+test("passive rail traffic comes from live show owners instead of BNL Relays", () => {
+  const playing = entry("playing", { status: "playing", playedAt: "2026-08-09T03:00:00.000Z" });
+  const next = entry("next", { status: "next", submittedArtistName: "Next Artist", submittedSongTitle: "Next Signal" });
+  const openState = queueState({
+    nowPlaying: playing,
+    nextInLine: next,
+    publicStatus: { isOpen: true, activeCount: 7, acceptedCount: 19, estimatedRuntimeSeconds: 2100, capacity: 44, pressure: "low" },
+    session: {
+      ...queueState().session,
+      showStarted: true,
+      broadcastPhase: "broadcast_active",
+      broadcastStartedAt: "2026-08-09T03:00:00.000Z",
+      activeCount: 7,
+      acceptedCount: 19,
+      completedCount: 12,
+      updatedAt: "2026-08-09T03:00:30.000Z",
+    },
+  });
+  const snapshot = foreground.resolveForegroundOverlaySnapshot({ queueState: openState, scene: scene("now_playing") }, new Date("2026-08-09T03:02:00.000Z"));
+  const labels = snapshot.actions.map((action) => action.label);
+  assert.ok(labels.includes("SIGNAL LOCKED"));
+  assert.ok(labels.includes("INTAKE OPEN"));
+  assert.ok(labels.includes("NEXT SIGNAL"));
+  assert.ok(labels.includes("SIGNAL STACK"));
+  assert.ok(labels.includes("ARCHIVE SYNC"));
+  assert.ok(snapshot.actions.every((action) => action.source !== "bnl"));
+  assert.equal(snapshot.actionCycleStartedAt, "2026-08-09T03:00:30.000Z");
+});
+
+test("closed intake, sponsor due, and owed Wheel spins produce BARCODE status traffic", () => {
+  const state = queueState({
+    publicStatus: { isOpen: false, activeCount: 22, acceptedCount: 44, estimatedRuntimeSeconds: 6600, capacity: 44, pressure: "max", closureReason: "capacity" },
+    session: {
+      ...queueState().session,
+      queueOpen: false,
+      acceptedCount: 44,
+      activeCount: 22,
+      completedCount: 22,
+      submissionClosureReason: "capacity",
+      showStarted: true,
+      broadcastPhase: "broadcast_active",
+      broadcastStartedAt: "2026-08-09T01:00:00.000Z",
+      wheelSpinsOwed: 2,
+      sponsorBreakStatus: "due",
+    },
+  });
+  const snapshot = foreground.resolveForegroundOverlaySnapshot({ queueState: state, scene: scene() }, new Date("2026-08-09T03:05:00.000Z"));
+  assert.deepEqual(snapshot.actions.slice(0, 3).map((action) => action.label), ["WHEEL UNLOCKED", "SPONSOR WINDOW", "INTAKE MAXED"]);
+  assert.ok(snapshot.actions.some((action) => action.label === "INTAKE MAXED"));
+  assert.match(snapshot.actions.find((action) => action.label === "WHEEL UNLOCKED").message, /2 SPINS ARMED/);
 });
 
 test("Wheel, sponsor, and system scenes stay partnered with live-overlay priority", () => {
@@ -225,6 +289,7 @@ test("one chained show simulation updates track, skip, Wheel, sponsor, and intak
 test("functional receiver is exact-source, reconnect-aware, and opened beside the live overlay", () => {
   const receiver = fs.readFileSync(path.join(projectRoot, "src/components/ForegroundOverlayReceiver.tsx"), "utf8");
   const strip = fs.readFileSync(path.join(projectRoot, "src/components/ForegroundOverlayStrip.tsx"), "utf8");
+  const foregroundSource = fs.readFileSync(path.join(projectRoot, "src/lib/foreground-overlay.ts"), "utf8");
   const css = fs.readFileSync(path.join(projectRoot, "src/app/overlay/foreground/calibration/foreground-calibration.css"), "utf8");
   const admin = fs.readFileSync(path.join(projectRoot, "src/components/AdminLiveOverlayControl.tsx"), "utf8");
   const api = fs.readFileSync(path.join(projectRoot, "src/app/api/overlay/foreground/route.ts"), "utf8");
@@ -242,5 +307,7 @@ test("functional receiver is exact-source, reconnect-aware, and opened beside th
   assert.match(admin, /Open Live Overlay/);
   assert.match(admin, /Open Foreground Overlay/);
   assert.match(api, /"Cache-Control": "no-store"/);
+  assert.match(receiver, /foregroundActionAt/);
+  assert.doesNotMatch(foregroundSource, /resolveBNLCurrentView/);
   assert.doesNotMatch(combined, /current[- ](?:song|track).*remaining|time left in (?:this|current) (?:song|track)/i);
 });

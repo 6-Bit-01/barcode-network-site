@@ -18,6 +18,7 @@
     "test:shell": "node --test tests/global-identity-shell.test.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/oxanium": "5.3.0",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.36.3",
     "@vercel/blob": "^2.3.3",

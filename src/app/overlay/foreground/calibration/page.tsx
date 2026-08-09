@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-type CalibrationActionName = "skip-sent" | "skip-confirmed" | "bnl" | "sponsor";
+type CalibrationActionName = "show-online" | "intake-open" | "intake-closed" | "wheel-unlocked" | "skip-sent" | "skip-confirmed" | "sponsor";
 
 type CalibrationAction = {
   label: string;
@@ -17,6 +17,26 @@ type CalibrationAction = {
 };
 
 const CALIBRATION_ACTIONS: Record<CalibrationActionName, CalibrationAction> = {
+  "show-online": {
+    label: "SHOW ONLINE",
+    message: "BARCODE RADIO TRANSMISSION ACTIVE",
+    tone: "signal",
+  },
+  "intake-open": {
+    label: "INTAKE OPEN",
+    message: "SUBMISSIONS LIVE // 25 SLOTS REMAIN",
+    tone: "signal",
+  },
+  "intake-closed": {
+    label: "INTAKE CLOSED",
+    message: "CURRENT LINE LOCKED // TRANSMISSION CONTINUES",
+    tone: "closed",
+  },
+  "wheel-unlocked": {
+    label: "WHEEL UNLOCKED",
+    message: "2 SPINS ARMED // TAP TARGET CLEARED",
+    tone: "wheel",
+  },
   "skip-sent": {
     label: "SKIP SENT",
     message: "TEST ARTIST — TEST TRACK // FROM TEST MEMBER",
@@ -26,11 +46,6 @@ const CALIBRATION_ACTIONS: Record<CalibrationActionName, CalibrationAction> = {
     label: "SKIP CONFIRMED",
     message: "TEST ARTIST — TEST TRACK // FOR TEST MEMBER",
     tone: "skip",
-  },
-  bnl: {
-    label: "BNL",
-    message: "SIGNAL RECEIVED // NEXT TRANSMISSION STANDING BY",
-    tone: "bnl",
   },
   sponsor: {
     label: "SPONSOR BREAK",
@@ -48,7 +63,15 @@ function firstQueryValue(value: string | string[] | undefined) {
 
 function resolveAction(value: string | string[] | undefined): CalibrationActionName {
   const candidate = firstQueryValue(value);
-  return candidate === "skip-sent" || candidate === "bnl" || candidate === "sponsor" ? candidate : "skip-confirmed";
+  return candidate === "show-online"
+    || candidate === "intake-open"
+    || candidate === "intake-closed"
+    || candidate === "wheel-unlocked"
+    || candidate === "skip-sent"
+    || candidate === "skip-confirmed"
+    || candidate === "sponsor"
+    ? candidate
+    : "show-online";
 }
 
 function resolveWheelCount(value: string | string[] | undefined) {

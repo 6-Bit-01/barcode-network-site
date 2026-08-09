@@ -3,7 +3,7 @@ import { getRadioQueueState, isWheelEligibleTrack, updateRadioTrack } from "./qu
 import { getTrackArtworkUrl, getTrackDurationLabel, parseTikTokVideoUrl } from "./queue-types";
 import { buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateIds, resolveLiveOverlayScene, safeLiveOverlayUrl, normalizeLiveOverlaySyncCorrectionReason, serverStampLiveOverlayPlayerSync, wheelFinalRotationForSegment } from "./live-overlay-resolver";
 import { parseYouTubeVideoId } from "./track-duration";
-import type { QueueEntry, QueueSourceType } from "./queue-types";
+import type { QueueEntry, QueueSourceType, QueueState } from "./queue-types";
 import type { LiveOverlayPlaybackState, LiveOverlayStateInput, LiveOverlayPlayerSync, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
 
 export type { LiveOverlayAudioSync, LiveOverlayPlaybackState, LiveOverlayPlayerSync, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
@@ -426,8 +426,13 @@ export async function getStoredLiveOverlayState(): Promise<LiveOverlayState> {
   }
 }
 
-export async function getResolvedLiveOverlayScene(): Promise<ResolvedLiveOverlayScene> {
-  const [overlayState, queueState, playerSync] = await Promise.all([getStoredLiveOverlayState(), getRadioQueueState(), getLiveOverlayPlayerSync()]);
+export function resolveLiveOverlaySceneFromQueueState(input: {
+  overlayState: LiveOverlayState;
+  queueState: QueueState;
+  playerSync?: LiveOverlayPlayerSync | null;
+  now?: Date;
+}): ResolvedLiveOverlayScene {
+  const { overlayState, queueState, playerSync = null, now = new Date() } = input;
   const wheelCandidates = getWheelCandidatesFromQueue(queueState.queue);
   const session = queueState.session ?? null;
   return resolveLiveOverlayScene({
@@ -449,7 +454,13 @@ export async function getResolvedLiveOverlayScene(): Promise<ResolvedLiveOverlay
     sponsorBreakStatus: session?.sponsorBreakStatus,
     broadcastPhase: session?.broadcastPhase,
     queueOpen: session?.queueOpen,
+    now,
   });
+}
+
+export async function getResolvedLiveOverlayScene(): Promise<ResolvedLiveOverlayScene> {
+  const [overlayState, queueState, playerSync] = await Promise.all([getStoredLiveOverlayState(), getRadioQueueState(), getLiveOverlayPlayerSync()]);
+  return resolveLiveOverlaySceneFromQueueState({ overlayState, queueState, playerSync });
 }
 
 export async function getLiveOverlayAdminSnapshot(): Promise<LiveOverlayAdminSnapshot> {

@@ -8,11 +8,11 @@ import { buildQueueTimingDisplay, formatHoursMinutes, queueTimingInputFromAdminS
 import { parseYouTubeVideoId } from "@/lib/track-duration";
 import { formatRuntime, getTrackRuntimeSeconds, parseTikTokVideoUrl } from "@/lib/queue-types";
 import { detectMaterialPlaybackSeek, estimateOneWayNetworkTransitMs, projectObservedPlaybackTime, updateTransitEstimateMs, YOUTUBE_SYNC_STALE_AFTER_MS } from "@/lib/live-overlay-resolver";
-import type { QueueEntry, QueueLane, QueueState } from "@/lib/queue-types";
+import type { QueueEntry, QueueLane, QueuePlaybackDiagnostics, QueuePlaybackErrorCode, QueuePlaybackLifecycleEventInput, QueueState } from "@/lib/queue-types";
 import type { LiveOverlayPlaybackState, LiveOverlaySyncCorrectionReason } from "@/lib/live-overlay-resolver";
 
 type Tab = "active" | "completed" | "removed" | "spotlight";
-type AdminQueueAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "resolvePaidPriority" | "pausePriority" | "resumePriority";
+type AdminQueueAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "skip" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "resolvePaidPriority" | "pausePriority" | "resumePriority";
 type SimulationSpeed = "slow" | "normal" | "fast";
 type SimulationAction = "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
 
@@ -45,6 +45,22 @@ async function postOverlayPlayerSync<T>(sync: T | null): Promise<OverlayPublishR
   const outboundTransitMs = estimateOneWayNetworkTransitMs(responseReceivedAtPerformanceMs - requestStartedAtPerformanceMs, serverProcessingMs);
   if (!response.ok) throw new Error("Overlay player sync update failed.");
   return { sync, outboundTransitMs };
+}
+
+async function postQueuePlaybackLifecycleEvent(input: QueuePlaybackLifecycleEventInput): Promise<void> {
+  await fetch("/api/admin/queue/playback", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  }).catch(() => undefined);
+}
+
+function htmlMediaErrorCode(error: MediaError | null): QueuePlaybackErrorCode {
+  if (error?.code === 1) return "media_aborted";
+  if (error?.code === 2) return "network_error";
+  if (error?.code === 3) return "decode_error";
+  if (error?.code === 4) return "source_unsupported";
+  return "unknown";
 }
 
 function shouldReplaceQueuedPublish(current: QueuedOverlayPublish | null, next: QueuedOverlayPublish): boolean {
@@ -300,7 +316,7 @@ export function AdminRadioQueueControl() {
   }
   async function playerAction(id: string, next: AdminQueueAction) {
     if (playerActionPending) return;
-    const isClearingAction = next === "finish" || next === "remove" || next === "moveBack" || next === "pausePriority";
+    const isClearingAction = next === "finish" || next === "skip" || next === "remove" || next === "moveBack" || next === "pausePriority";
     if (isClearingAction) {
       setLoadingPlayerId(null);
       setClearingPlayerId(id);
@@ -462,7 +478,7 @@ export function AdminRadioQueueControl() {
 
       {activeUtilityPanel === "session" && hasCurrentSession && <section className="border border-accent/40 bg-surface p-3 space-y-3"><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Session Setup</p><h2 className="text-lg font-bold text-foreground mt-1">{state?.session?.title}</h2><p className="text-xs text-muted">{state?.session?.showDate} · {state?.session?.status}</p>{state?.session?.description && <p className="text-xs text-muted mt-2 max-w-2xl">{state.session.description}</p>}</div><div className="flex flex-wrap gap-2"><a href="/admin/show-management" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Show Management</a><button type="button" onClick={openSessionOptions} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">{sessionOptionsOpen ? "Hide Session Options" : "Edit Session Options"}</button></div>{canControlSession && sessionOptionsOpen && <section className="space-y-3 border border-border bg-background/40 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-xs uppercase tracking-[0.3em] text-accent">Session Options</p><h3 className="mt-1 text-lg font-bold text-foreground">Session Options</h3><p className="mt-1 text-xs text-muted">Only the verified Stripe webhook marks a track paid or moves it into Priority Signal.</p></div><div className="border border-border bg-surface p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Submission Delay</p><p className="mt-1 font-bold text-foreground">{sessionCooldownSeconds === 0 ? "Disabled" : `${sessionCooldownSeconds}s`}</p></div><div className="border border-border bg-surface p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Display price</p><p className="mt-1 font-bold text-foreground">{formatPrice(priorityPriceCents, priorityCurrency)}</p></div></div><div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(10rem,0.35fr)]"><label className="space-y-2 block md:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Submission Delay</span><input type="number" min={0} max={3600} value={sessionCooldownSeconds} onChange={(event) => setSessionCooldownSeconds(Math.max(0, Math.min(3600, Number(event.target.value))))} className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-xs text-muted">Delay between accepted submissions from the same source. Set to 0 to disable during testing.</span></label><label className="flex items-center justify-between gap-3 border border-border bg-surface p-3 text-sm"><span><span className="block font-bold text-foreground">Paid upgrades {priorityEnabled ? "enabled" : "disabled"}</span><span className="text-xs text-muted">Controls Stripe checkout availability for this session.</span></span><input type="checkbox" checked={priorityEnabled} onChange={(event) => setPriorityEnabled(event.target.checked)} /></label><label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Price</span><input type="number" min={0} value={priorityPriceCents} onChange={(event) => setPriorityPriceCents(Math.max(0, Number(event.target.value)))} className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-xs text-muted">Enter cents. Example: 1000 = $10.00.</span></label></div>{prioritySaveError && <p className="border border-danger/40 bg-danger/10 p-2 text-sm text-danger">{prioritySaveError}</p>}{priorityMessage && <p className="border border-accent/50 bg-accent/10 p-2 text-sm font-bold text-accent">{priorityMessage}</p>}<div className="flex flex-wrap gap-2"><button type="button" onClick={savePrioritySettings} disabled={prioritySaving} className="border border-accent bg-accent/10 px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{prioritySaving ? "Saving…" : "Save Settings"}</button><button type="button" onClick={() => setSessionOptionsOpen(false)} disabled={prioritySaving} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">Close</button></div></section>}</section>}
 
-      {activeUtilityPanel === "visuals" && canControlSession && <section className="border border-border/80 bg-surface/70 p-3"><AdminRuntimeDiagnostics timingSummary={timingSummary} canControl={canControlSession} onSponsorAction={updateSponsorBreakState} /></section>}
+      {activeUtilityPanel === "visuals" && canControlSession && <section className="border border-border/80 bg-surface/70 p-3"><AdminRuntimeDiagnostics timingSummary={timingSummary} canControl={canControlSession} onSponsorAction={updateSponsorBreakState} sessionId={state?.session?.sessionId ?? null} playbackDiagnostics={state?.playbackDiagnostics ?? null} /></section>}
 
       {activeUtilityPanel === "overlay" && canControlSession && <section className="border border-border/80 bg-surface/70 p-3"><AdminLiveOverlayControl focusWheelTick={overlayWheelFocusTick} /></section>}
 
@@ -576,7 +592,7 @@ export function AdminRadioQueueControl() {
         {tab === "spotlight" && <Lane title="Spotlight List" tracks={lanes.spotlight} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="spotlight" readOnly={readOnly} />}
       </>}
 
-      {mounted && loadedPlayer && createPortal(<PlayerDock key={loadedPlayer.id} player={loadedPlayer} minimized={minimized} setMinimized={setMinimized} readOnly={readOnly} actionPending={playerActionPending} onAction={playerAction} onCopy={() => copy(loadedPlayer)} />, document.body)}
+      {mounted && loadedPlayer && createPortal(<PlayerDock key={loadedPlayer.id} player={loadedPlayer} sessionId={state?.session?.sessionId ?? null} playbackDiagnostics={state?.playbackDiagnostics ?? null} minimized={minimized} setMinimized={setMinimized} readOnly={readOnly} actionPending={playerActionPending} onAction={playerAction} onCopy={() => copy(loadedPlayer)} />, document.body)}
       {mounted && !loadedPlayer && pendingPlayerLoad && createPortal(<section className="fixed bottom-5 left-4 right-4 z-[8600] border border-border bg-background/95 px-4 py-3 text-xs uppercase tracking-widest text-muted shadow-2xl backdrop-blur md:left-8 md:right-8 lg:left-auto lg:right-6 lg:w-[24rem]">Loading Player…</section>, document.body)}
       {mounted && !loadedPlayer && hasClearingTransition && !pendingPlayerLoad && createPortal(<section className="fixed bottom-5 left-4 right-4 z-[8600] border border-border bg-background/95 px-4 py-3 text-xs uppercase tracking-widest text-muted shadow-2xl backdrop-blur md:left-8 md:right-8 lg:left-auto lg:right-6 lg:w-[24rem]">Updating Player…</section>, document.body)}
 
@@ -679,7 +695,7 @@ function ensureAdminYouTubeApi(): Promise<void> {
   });
 }
 
-function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
+function AdminYouTubePlayer({ entry, sessionId }: { entry: QueueEntry; sessionId: string | null }) {
   const playerRef = useRef<AdminYTPlayer | null>(null);
   const playerHostRef = useRef<HTMLDivElement | null>(null);
   const generationRef = useRef(0);
@@ -689,6 +705,7 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
   const outboundTransitEstimateMsRef = useRef<number | null>(null);
   const previousObservedTimeRef = useRef<number | null>(null);
   const previousObservedAtRef = useRef<number | null>(null);
+  const bufferingRef = useRef(false);
   const youtubeGenerationActiveRef = useRef(true);
   const [diagnostics, setDiagnostics] = useState<{ provider: string; videoId: string; trackId: string; playbackState: "playing" | "paused" | "stopped"; currentTimeSeconds: number; durationSeconds?: number; updatedAt: string; status: "Fresh" | "Stale" | "Missing" | "Mismatch" | "Error"; ready: boolean; errorCode?: number; publishStatus?: "success" | "failed" } | null>(null);
   const [outboundTransitDiagnosticMs, setOutboundTransitDiagnosticMs] = useState<number | null>(null);
@@ -697,6 +714,16 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
   const trackLink = entry.link;
   const sourceType = entry.sourceType;
   const videoId = parseYouTubeVideoId(trackLink);
+  const reportLifecycle = useCallback((eventType: QueuePlaybackLifecycleEventInput["eventType"], currentTimeSeconds = 0, errorCode: QueuePlaybackErrorCode | null = null) => {
+    let durationSeconds: number | undefined;
+    try {
+      const duration = playerRef.current?.getDuration?.();
+      durationSeconds = typeof duration === "number" && Number.isFinite(duration) && duration > 0 ? duration : undefined;
+    } catch {
+      durationSeconds = undefined;
+    }
+    void postQueuePlaybackLifecycleEvent({ sessionId, trackId, provider: "youtube", eventType, currentTimeSeconds, durationSeconds, errorCode });
+  }, [sessionId, trackId]);
   const trackSyncInput = useMemo<OverlayYouTubeTrackInput>(() => ({ id: trackId, link: trackLink, sourceType, videoId }), [trackId, trackLink, sourceType, videoId]);
   const containerId = `admin-youtube-player-${trackId}-${videoId ?? "unknown"}`;
   const clearImperativeHost = useCallback(() => {
@@ -768,6 +795,7 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
       playbackStateRef.current = "stopped";
       setDiagnostics({ provider: "youtube", videoId, trackId, playbackState: "stopped", currentTimeSeconds: 0, updatedAt: new Date().toISOString(), status: "Error", ready: false, publishStatus: "failed" });
       publish("stopped", 0, "state_change");
+      reportLifecycle("error", 0, "ready_timeout");
     }, YOUTUBE_PLAYER_READY_TIMEOUT_MS);
     ensureAdminYouTubeApi().then(() => {
       const yt = (window as Window & { YT?: { Player: new (elementId: string | HTMLElement, options: Record<string, unknown>) => AdminYTPlayer } }).YT;
@@ -781,28 +809,46 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
             if (readyTimer) window.clearTimeout(readyTimer);
             readyTimer = null;
             setDiagnostics((current) => current ? { ...current, ready: true } : { provider: "youtube", videoId, trackId, playbackState: "stopped", currentTimeSeconds: 0, updatedAt: new Date().toISOString(), status: "Missing", ready: true });
+            reportLifecycle("ready", 0);
           },
           onError: (event: { data: number }) => {
             if (cancelled || generationRef.current !== generation) return;
             if (readyTimer) window.clearTimeout(readyTimer);
             readyTimer = null;
+            bufferingRef.current = false;
             playbackStateRef.current = "stopped";
             setDiagnostics({ provider: "youtube", videoId, trackId, playbackState: "stopped", currentTimeSeconds: 0, updatedAt: new Date().toISOString(), status: "Error", ready: false, errorCode: event.data, publishStatus: "failed" });
             publish("stopped", 0, "state_change");
+            reportLifecycle("error", 0, "provider_error");
           },
           onStateChange: (event: { data: number }) => {
             if (cancelled || generationRef.current !== generation) return;
+            const previous = playbackStateRef.current;
             const next = event.data === 1 ? "playing" : event.data === 2 ? "paused" : event.data === 0 ? "stopped" : null;
-            if (!next) return;
-            playbackStateRef.current = next;
             let eventTime = 0;
             try {
               eventTime = playerRef.current?.getCurrentTime() ?? 0;
             } catch {
               playbackStateRef.current = "stopped";
               setDiagnostics((current) => current ? { ...current, status: "Error", publishStatus: "failed" } : null);
+              reportLifecycle("error", 0, "sync_error");
               return;
             }
+            if (event.data === 3) {
+              bufferingRef.current = true;
+              reportLifecycle("stall", eventTime);
+              return;
+            }
+            if (event.data === 5) {
+              reportLifecycle("ready", eventTime);
+              return;
+            }
+            if (!next) return;
+            playbackStateRef.current = next;
+            if (event.data === 1) reportLifecycle(bufferingRef.current || previous === "paused" ? "resume" : "play", eventTime);
+            else if (event.data === 2) reportLifecycle("pause", eventTime);
+            else if (event.data === 0) reportLifecycle("ended", eventTime);
+            bufferingRef.current = false;
             publish(next, eventTime, "state_change");
           },
         },
@@ -819,6 +865,7 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
       const observedAt = Date.now();
       const wasSeek = previousObservedTimeRef.current !== null && previousObservedAtRef.current !== null && detectMaterialPlaybackSeek({ playbackState: playbackStateRef.current, previousTimeSeconds: previousObservedTimeRef.current, previousObservedAtMs: previousObservedAtRef.current, currentTimeSeconds: currentTime, currentObservedAtMs: observedAt });
       if (playbackStateRef.current === "playing" || playbackStateRef.current === "paused") publish(playbackStateRef.current, currentTime, wasSeek ? "seek" : "heartbeat");
+      if (wasSeek) reportLifecycle("seek", currentTime);
       previousObservedTimeRef.current = currentTime;
       previousObservedAtRef.current = observedAt;
       setDiagnosticsNow(observedAt);
@@ -829,6 +876,7 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
     return () => {
       cancelled = true;
       youtubeGenerationActiveRef.current = false;
+      bufferingRef.current = false;
       queuedPublishRef.current = null;
       generationRef.current += 1;
       window.clearInterval(interval);
@@ -841,7 +889,7 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
       playerRef.current = null;
       clearImperativeHost();
     };
-  }, [clearImperativeHost, containerId, publish, trackId, videoId]);
+  }, [clearImperativeHost, containerId, publish, reportLifecycle, trackId, videoId]);
 
   if (!videoId) return <div className="border border-border p-3 text-sm text-muted">No playable YouTube video ID found. Use Open Link.</div>;
   const syncAge = diagnostics ? Math.max(0, Math.round((diagnosticsNow - new Date(diagnostics.updatedAt).getTime()) / 1000)) : null;
@@ -862,7 +910,7 @@ function tiktokErrorLabel(code?: number | null, name?: string | null): string {
   return "TikTok player unavailable";
 }
 
-function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
+function AdminTikTokPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId: string | null }) {
   const parsed = useMemo(() => parseTikTokVideoUrl(entry.link), [entry.link]);
   const parsedPostId = parsed?.postId ?? null;
   const parsedPlayerUrl = parsed?.playerUrl ?? null;
@@ -895,6 +943,17 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
     const params = new URLSearchParams({ controls: "1", progress_bar: "1", play_button: "1", volume_control: "1", fullscreen_button: "1", timestamp: "1", autoplay: "0", music_info: "1", description: "1", rel: "0", native_context_menu: "1", closed_caption: "1", muted: "0" });
     return `${parsedPlayerUrl}?${params.toString()}`;
   }, [parsedPlayerUrl]);
+  const reportLifecycle = useCallback((eventType: QueuePlaybackLifecycleEventInput["eventType"], errorCode: QueuePlaybackErrorCode | null = null) => {
+    void postQueuePlaybackLifecycleEvent({
+      sessionId,
+      trackId: entry.id,
+      provider: "tiktok",
+      eventType,
+      currentTimeSeconds: latestTimeRef.current,
+      durationSeconds: durationRef.current,
+      errorCode,
+    });
+  }, [entry.id, sessionId]);
   const publishNow = useCallback(async (playbackState: LiveOverlayPlaybackState, observedTimeSeconds: number, observedAtMs: number | undefined, correctionReason: LiveOverlaySyncCorrectionReason = "heartbeat") => {
     if (!readyRef.current || !hasObservedCurrentTimeRef.current || observedAtMs === undefined || trackSyncInput.sourceType !== "tiktok" || !trackSyncInput.postId) return null;
     const nowMs = Date.now();
@@ -966,6 +1025,7 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
       setStatus("error");
       setDiagnostics({ provider: "tiktok", postId: parsedPostId, trackId: entry.id, ready: false, playbackState: "stopped", currentTimeSeconds: latestTimeRef.current, durationSeconds: durationRef.current, status: "Error", publishStatus: "failed" });
       setErrorLabel((existing) => existing ?? "TikTok player did not become ready. Open Link remains available.");
+      reportLifecycle("error", "ready_timeout");
     }, TIKTOK_PLAYER_READY_TIMEOUT_MS);
 
     const clearReadyTimer = () => { if (readyTimer !== null) { window.clearTimeout(readyTimer); readyTimer = null; } };
@@ -990,6 +1050,7 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
         setStatus("ready");
         setNotice(null);
         setErrorLabel(null);
+        reportLifecycle("ready");
         return;
       }
       if (type === "onCurrentTime") {
@@ -998,6 +1059,7 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
         const currentTime = typeof value.currentTime === "number" ? value.currentTime : Number(value.currentTime);
         const duration = typeof value.duration === "number" ? value.duration : Number(value.duration);
         if (!Number.isFinite(currentTime) || currentTime < 0) return;
+        const firstObservedTime = !hasObservedCurrentTimeRef.current;
         const nowMs = Date.now();
         const previous = latestTimeRef.current;
         const previousAt = lastTimeEventAtRef.current;
@@ -1011,17 +1073,32 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
           pendingPlaybackStateRef.current = null;
           pendingCorrectionReasonRef.current = "state_change";
           publish(pendingState, currentTime, pendingReason, nowMs);
+          reportLifecycle(pendingState === "playing" ? "play" : pendingState === "paused" ? "pause" : "ready");
           return;
         }
+        if (firstObservedTime) reportLifecycle("ready");
         lastTimeEventAtRef.current = nowMs;
-        if (previousAt !== null && detectMaterialPlaybackSeek({ playbackState: lastStablePlaybackStateRef.current, previousTimeSeconds: previous, previousObservedAtMs: previousAt, currentTimeSeconds: currentTime, currentObservedAtMs: nowMs })) publish(lastStablePlaybackStateRef.current, currentTime, "seek", nowMs);
+        if (previousAt !== null && detectMaterialPlaybackSeek({ playbackState: lastStablePlaybackStateRef.current, previousTimeSeconds: previous, previousObservedAtMs: previousAt, currentTimeSeconds: currentTime, currentObservedAtMs: nowMs })) {
+          publish(lastStablePlaybackStateRef.current, currentTime, "seek", nowMs);
+          reportLifecycle("seek");
+        }
         return;
       }
       if (type === "onStateChange") {
         const stateValue = typeof payload.value === "number" ? payload.value : Number(payload.value);
-        if (stateValue === 1) publishObservedState("playing", "state_change");
-        else if (stateValue === 2) publishObservedState("paused", "state_change");
-        else if (stateValue === 0) publishObservedState("stopped", "state_change");
+        const previousState = lastStablePlaybackStateRef.current;
+        if (stateValue === 1) {
+          publishObservedState("playing", "state_change");
+          reportLifecycle(previousState === "paused" ? "resume" : "play");
+        }
+        else if (stateValue === 2) {
+          publishObservedState("paused", "state_change");
+          reportLifecycle("pause");
+        }
+        else if (stateValue === 0) {
+          publishObservedState("stopped", "state_change");
+          reportLifecycle("ended");
+        }
         else if (stateValue === -1) lastStablePlaybackStateRef.current = "stopped";
         return;
       }
@@ -1042,6 +1119,7 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
         setStatus("error");
         setDiagnostics({ provider: "tiktok", postId: parsedPostId, trackId: entry.id, ready: readyRef.current, playbackState: lastStablePlaybackStateRef.current, currentTimeSeconds: latestTimeRef.current, durationSeconds: durationRef.current, updatedAt: lastPublishedAtRef.current, syncAgeSeconds: null, status: "Error", publishStatus: "failed" });
         setErrorLabel(tiktokErrorLabel(safeCode, errorType));
+        reportLifecycle("error", "provider_error");
         if (safeCode === 1001 || safeCode === 2001 || safeCode === 3001 || errorType === "INVALID_VIDEO" || errorType === "SERVER_ERROR" || errorType === "PLAYBACK_ERROR") void clearOverlayPlayerSync();
       }
     }
@@ -1057,39 +1135,112 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
   return <div className="space-y-2"><div className="mx-auto max-h-[62vh] min-h-[360px] w-full max-w-[420px] overflow-hidden border border-border bg-black"><iframe ref={iframeRef} title={`TikTok player for ${submittedArtist(entry)} — ${submittedTitle(entry)}`} src={src} className="h-[62vh] min-h-[360px] max-h-[620px] w-full" allow="fullscreen; autoplay; encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" /></div>{status === "loading" && <p className="text-xs text-muted">Loading TikTok player… Open Link and Copy Link remain available.</p>}{status === "ready" && <p className="text-xs text-muted">TikTok player ready. Use the native controls.</p>}{notice && <p className="border border-accent/40 bg-accent/10 p-2 text-xs text-accent">{notice}</p>}{status === "error" && <p className="border border-danger/40 bg-danger/10 p-2 text-xs text-danger">{errorLabel ?? "TikTok player unavailable."} Use Open Link or Copy Link.</p>}<div className="grid gap-1 border border-border/60 bg-surface/80 p-2 text-[10px] uppercase tracking-widest text-muted sm:grid-cols-3"><span>Provider: {diagnostics?.provider ?? "tiktok"}</span><span>Post ID: {diagnostics?.postId ?? parsedPostId ?? "—"}</span><span>Track ID: {diagnostics?.trackId ?? entry.id}</span><span>Ready: {diagnostics?.ready ? "yes" : "no"}</span><span>State: {diagnostics?.playbackState ?? "Missing"}</span><span>Host time: {Math.round(diagnostics?.currentTimeSeconds ?? 0)}s</span><span>Duration: {diagnostics?.durationSeconds ? `${Math.round(diagnostics.durationSeconds)}s` : "—"}</span><span>Sync: {diagnostics?.status ?? "Missing"}{diagnostics?.syncAgeSeconds !== null && diagnostics?.syncAgeSeconds !== undefined ? ` · ${diagnostics.syncAgeSeconds}s` : ""}</span><span>Publish: {diagnostics?.publishStatus ?? "—"}</span><span>Outbound transit: {outboundTransitDiagnosticMs !== null ? `${outboundTransitDiagnosticMs}ms` : "—"}</span></div></div>;
 }
 
-function AdminAudioPlayer({ entry }: { entry: QueueEntry }) {
+function AdminAudioPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId: string | null }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
+    let lifecycleState: "loaded" | "ready" | "playing" | "paused" | "stalled" | "ended" | "error" = "loaded";
     const playbackState = (): LiveOverlayPlaybackState => audio.ended ? "stopped" : audio.paused ? (audio.currentTime > 0 ? "paused" : "stopped") : "playing";
     const publish = (correctionReason: LiveOverlaySyncCorrectionReason) => {
       const durationSeconds = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : undefined;
       void postOverlayPlayerSync({ provider: "audio" as const, trackId: entry.id, playbackState: playbackState(), currentTimeSeconds: Math.max(0, audio.currentTime || 0), durationSeconds, updatedAt: new Date().toISOString(), muted: audio.muted, correctionReason }).catch(() => undefined);
     };
-    const stateChange = () => publish("state_change");
-    const seek = () => publish("seek");
-    audio.addEventListener("play", stateChange);
-    audio.addEventListener("pause", stateChange);
-    audio.addEventListener("ended", stateChange);
-    audio.addEventListener("loadedmetadata", stateChange);
+    const report = (eventType: QueuePlaybackLifecycleEventInput["eventType"], errorCode: QueuePlaybackErrorCode | null = null) => {
+      const durationSeconds = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : undefined;
+      void postQueuePlaybackLifecycleEvent({
+        sessionId,
+        trackId: entry.id,
+        provider: "audio",
+        eventType,
+        currentTimeSeconds: Math.max(0, audio.currentTime || 0),
+        durationSeconds,
+        readyState: audio.readyState,
+        networkState: audio.networkState,
+        errorCode,
+      });
+    };
+    const ready = () => {
+      lifecycleState = "ready";
+      publish("state_change");
+      report("ready");
+    };
+    const play = () => publish("state_change");
+    const playing = () => {
+      const eventType = lifecycleState === "paused" || lifecycleState === "stalled" ? "resume" : "play";
+      lifecycleState = "playing";
+      publish("state_change");
+      report(eventType);
+    };
+    const pause = () => {
+      if (audio.ended) return;
+      lifecycleState = "paused";
+      publish("state_change");
+      report("pause");
+    };
+    const stall = () => {
+      if (lifecycleState === "stalled" || lifecycleState === "ended" || lifecycleState === "error") return;
+      lifecycleState = "stalled";
+      publish("state_change");
+      report("stall");
+    };
+    const ended = () => {
+      lifecycleState = "ended";
+      publish("state_change");
+      report("ended");
+    };
+    const error = () => {
+      lifecycleState = "error";
+      publish("state_change");
+      report("error", htmlMediaErrorCode(audio.error));
+    };
+    const seek = () => {
+      publish("seek");
+      report("seek");
+    };
+    audio.addEventListener("loadedmetadata", ready);
+    audio.addEventListener("canplay", ready);
+    audio.addEventListener("play", play);
+    audio.addEventListener("playing", playing);
+    audio.addEventListener("pause", pause);
+    audio.addEventListener("waiting", stall);
+    audio.addEventListener("stalled", stall);
+    audio.addEventListener("ended", ended);
+    audio.addEventListener("error", error);
     audio.addEventListener("seeked", seek);
     const interval = window.setInterval(() => {
       if (!audio.paused || audio.currentTime > 0) publish("heartbeat");
     }, YOUTUBE_SYNC_HEARTBEAT_MS);
     return () => {
       window.clearInterval(interval);
-      audio.removeEventListener("play", stateChange);
-      audio.removeEventListener("pause", stateChange);
-      audio.removeEventListener("ended", stateChange);
-      audio.removeEventListener("loadedmetadata", stateChange);
+      audio.removeEventListener("loadedmetadata", ready);
+      audio.removeEventListener("canplay", ready);
+      audio.removeEventListener("play", play);
+      audio.removeEventListener("playing", playing);
+      audio.removeEventListener("pause", pause);
+      audio.removeEventListener("waiting", stall);
+      audio.removeEventListener("stalled", stall);
+      audio.removeEventListener("ended", ended);
+      audio.removeEventListener("error", error);
       audio.removeEventListener("seeked", seek);
     };
-  }, [entry.id]);
-  return <audio ref={audioRef} key={`${entry.id}-${adminAudioUrl(entry)}`} src={adminAudioUrl(entry)} controls className="w-full" />;
+  }, [entry.id, sessionId]);
+  return <audio ref={audioRef} key={`${entry.id}-${adminAudioUrl(entry)}`} src={adminAudioUrl(entry)} controls preload="metadata" className="w-full" />;
 }
 
-function PlayerDock({ player, minimized, setMinimized, readOnly, actionPending, onAction, onCopy }: { player: QueueEntry; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; actionPending: boolean; onAction: (id: string, action: AdminQueueAction) => void; onCopy: () => void }) {
+function PlaybackLifecycleBanner({ diagnostics, trackId }: { diagnostics: QueuePlaybackDiagnostics | null; trackId: string }) {
+  if (!diagnostics || diagnostics.currentTrackId !== trackId) return <p className="border border-border/60 bg-surface/70 p-2 text-xs text-muted">Player loaded. Playback has not reported a state yet.</p>;
+  const state = diagnostics.lifecycleState;
+  if (state === "ended") return <p className="border border-accent/60 bg-accent/10 p-2 text-xs font-bold text-accent">Playback ended — choose Finish Track to count it and advance. The queue has not advanced automatically.</p>;
+  if (state === "error") return <p className="border border-danger/60 bg-danger/10 p-2 text-xs font-bold text-danger">Playback error — the track is still loaded. Retry playback, use Open Link, Skip Track, or Remove Track.</p>;
+  if (state === "stalled") return <p className="border border-[#ffaa00]/60 bg-[#ffaa00]/10 p-2 text-xs font-bold text-[#ffaa00]">Playback stalled — waiting for media. The queue has not advanced.</p>;
+  if (state === "paused") return <p className="border border-border/70 bg-surface/70 p-2 text-xs text-muted">Playback paused. The queue has not advanced.</p>;
+  if (state === "playing") return <p className="border border-[#3ddc97]/50 bg-[#3ddc97]/10 p-2 text-xs font-bold text-[#3ddc97]">Playback active.</p>;
+  if (state === "ready") return <p className="border border-accent/40 bg-accent/5 p-2 text-xs text-accent">Player ready.</p>;
+  return <p className="border border-border/60 bg-surface/70 p-2 text-xs text-muted">Player loaded. Start playback when ready.</p>;
+}
+
+function PlayerDock({ player, sessionId, playbackDiagnostics, minimized, setMinimized, readOnly, actionPending, onAction, onCopy }: { player: QueueEntry; sessionId: string | null; playbackDiagnostics: QueuePlaybackDiagnostics | null; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; actionPending: boolean; onAction: (id: string, action: AdminQueueAction) => void; onCopy: () => void }) {
   const embedded = embedUrl(player);
   return (
     <div className={`fixed inset-x-0 bottom-0 z-[9999] w-screen border-t bg-background/95 p-3 shadow-[0_-20px_60px_rgba(0,0,0,0.45)] backdrop-blur ${queueTrackVisual(player).sectionClass}`}>
@@ -1109,16 +1260,23 @@ function PlayerDock({ player, minimized, setMinimized, readOnly, actionPending, 
         </div>
         <div className={`${minimized ? "h-0 overflow-hidden opacity-0" : "mt-3 opacity-100"} grid w-full items-end gap-3 xl:grid-cols-[minmax(0,1fr)_auto]`} aria-hidden={minimized}>
           <div className="w-full min-w-0">
-            {player.sourceType === "upload" && player.fileUrl && <AdminAudioPlayer entry={player} />}
-            {player.sourceType === "youtube" && <AdminYouTubePlayer key={player.id} entry={player} />}
-            {player.sourceType === "tiktok" && <AdminTikTokPlayer key={player.id} entry={player} />}
+            <PlaybackLifecycleBanner diagnostics={playbackDiagnostics} trackId={player.id} />
+            <div className="mt-2">
+            {player.sourceType === "upload" && player.fileUrl && <AdminAudioPlayer entry={player} sessionId={sessionId} />}
+            {player.sourceType === "youtube" && <AdminYouTubePlayer key={player.id} entry={player} sessionId={sessionId} />}
+            {player.sourceType === "tiktok" && <AdminTikTokPlayer key={player.id} entry={player} sessionId={sessionId} />}
             {player.sourceType !== "upload" && player.sourceType !== "youtube" && player.sourceType !== "tiktok" && embedded && <iframe key={`${player.id}-${embedded}`} title="Queue preview" src={embedded} className="h-56 w-full border border-border" allow="clipboard-write; encrypted-media; picture-in-picture" />}
             {player.sourceType !== "upload" && player.sourceType !== "youtube" && player.sourceType !== "tiktok" && !embedded && <div className="border border-border p-2 text-sm text-muted">No embeddable preview for this source. Use Open Link or Copy Link.</div>}
+            {player.sourceType !== "upload" && player.sourceType !== "youtube" && player.sourceType !== "tiktok" && <p className="mt-2 text-xs text-muted">This provider does not expose reliable playback events. Use the explicit Finish, Skip, or Remove outcome.</p>}
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="space-y-2 xl:max-w-[34rem]">
+            {!readOnly && <p className="text-[10px] uppercase tracking-widest text-muted">Finish = completed · Skip = played early · Remove = removed + frees slot · Undo = return to queue</p>}
+            <div className="flex flex-wrap gap-2">
             <a href={openUrl(player)} target="_blank" rel="noreferrer" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent">Open Link</a>
             <button type="button" onClick={onCopy} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Copy Link</button>
-            {!readOnly && <><button type="button" disabled={actionPending} onClick={() => onAction(player.id, "finish")} className="border border-accent bg-accent px-4 py-2 text-xs uppercase tracking-widest text-background disabled:opacity-50">Finish Track</button><button type="button" disabled={actionPending} onClick={() => onAction(player.id, "remove")} className="border border-danger/40 px-4 py-2 text-xs uppercase tracking-widest text-danger disabled:opacity-50">Remove Track</button><button type="button" disabled={actionPending} onClick={() => onAction(player.id, "moveBack")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">Undo Load</button>{canPausePriority(player) && <button type="button" disabled={actionPending} onClick={() => onAction(player.id, "pausePriority")} className="border border-[#ffaa00]/50 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00] disabled:opacity-50">Pause Priority</button>}<button type="button" disabled={actionPending} onClick={() => onAction(player.id, "spotlight")} className="border border-foreground/40 px-4 py-2 text-xs uppercase tracking-widest text-foreground disabled:opacity-50">Spotlight</button></>}
+            {!readOnly && <><button type="button" disabled={actionPending} onClick={() => onAction(player.id, "finish")} className="border border-accent bg-accent px-4 py-2 text-xs uppercase tracking-widest text-background disabled:opacity-50">Finish Track</button><button type="button" disabled={actionPending} onClick={() => onAction(player.id, "skip")} className="border border-[#ffaa00]/60 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00] disabled:opacity-50">Skip Track</button><button type="button" disabled={actionPending} onClick={() => onAction(player.id, "remove")} className="border border-danger/40 px-4 py-2 text-xs uppercase tracking-widest text-danger disabled:opacity-50">Remove Track</button><button type="button" disabled={actionPending} onClick={() => onAction(player.id, "moveBack")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">Undo Load</button>{canPausePriority(player) && <button type="button" disabled={actionPending} onClick={() => onAction(player.id, "pausePriority")} className="border border-[#ffaa00]/50 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00] disabled:opacity-50">Pause Priority</button>}<button type="button" disabled={actionPending} onClick={() => onAction(player.id, "spotlight")} className="border border-foreground/40 px-4 py-2 text-xs uppercase tracking-widest text-foreground disabled:opacity-50">Spotlight</button></>}
+            </div>
           </div>
         </div>
       </div>
@@ -1147,6 +1305,7 @@ function AdminTrackMetadata({ entry }: { entry: QueueEntry }) {
         <p className="mt-1 text-foreground">{detected ?? "Pending provider metadata"}</p>
         <p className="mt-1 text-muted">{sourceLabel(entry)} · {durationLabel(entry)}</p>
         {entry.fileName && <p className="mt-1 text-muted">File: {entry.fileName}</p>}
+        {entry.playbackOutcome && <p className="mt-2 border border-border/60 bg-background/40 p-2 uppercase tracking-widest text-muted">Playback outcome: {entry.playbackOutcome}{entry.playbackEndedNaturally ? " · natural end" : entry.playbackEarlyCutoff ? " · early cutoff" : ""}{entry.playbackIssueCode ? ` · ${entry.playbackIssueCode.replace(/_/g, " ")}` : ""}</p>}
         {(entry.priorityUpgradeStatus === "paid_needs_attention" || entry.priorityUpgradeStatus === "checkout_pending" || entry.priorityUpgradeStatus === "requested" || entry.priorityUpgradeStatus === "paid") && (
           <div className={`mt-2 space-y-1 border p-2 ${entry.priorityUpgradeStatus === "paid_needs_attention" ? "border-danger/60 bg-danger/10 text-danger" : "border-[#ffaa00]/40 bg-[#ffaa00]/10 text-[#ffaa00]"}`}>
             <p>Priority Payment Status: {entry.priorityUpgradeStatus}</p>
@@ -1161,7 +1320,7 @@ function AdminTrackMetadata({ entry }: { entry: QueueEntry }) {
   );
 }
 
-function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction }: { timingSummary: ReturnType<typeof buildQueueTimingDisplay>; canControl: boolean; onSponsorAction: (action: "start" | "complete" | "skip" | "reset") => void }) {
+function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction, sessionId, playbackDiagnostics }: { timingSummary: ReturnType<typeof buildQueueTimingDisplay>; canControl: boolean; onSponsorAction: (action: "start" | "complete" | "skip" | "reset") => void; sessionId: string | null; playbackDiagnostics: QueuePlaybackDiagnostics | null }) {
   const sponsor = timingSummary.sponsorBreakSummary;
   const wheel = timingSummary.wheelTimingSummary;
   const pressure = timingSummary.pressureSummary;
@@ -1177,6 +1336,8 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction }:
         : sponsor.dueNow
           ? "Start Sponsor Break"
           : "Sponsor Break Available at Midpoint";
+  const playbackExportUrl = `/api/admin/queue/playback${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""}`;
+  const playbackStateLabel = (playbackDiagnostics?.lifecycleState ?? "idle").replace(/_/g, " ");
   return (
     <section className="space-y-3 border border-accent/30 bg-background/40 p-4 text-xs">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1184,7 +1345,7 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction }:
           <p className="uppercase tracking-[0.28em] text-accent">Runtime Diagnostics</p>
           <p className="mt-1 text-sm text-muted">{pressure.mode === "live" ? "Live pressure from broadcast timing + queue state." : pressure.mode === "ended" ? "Broadcast has ended." : "Pre-show projection from queue state. Pressure activates when broadcast starts."}</p>
         </div>
-        {canControl && <div className="flex flex-wrap gap-2"><button type="button" disabled={sponsorStartDisabled} onClick={() => !sponsorStartDisabled && onSponsorAction("start")} className={`px-3 py-1.5 uppercase tracking-widest ${sponsorStartDisabled ? "cursor-not-allowed border border-border text-muted opacity-70" : "border border-[#ffaa00]/50 text-[#ffaa00]"}`}>{sponsorStartLabel}</button><button type="button" onClick={() => onSponsorAction("reset")} className="border border-border px-3 py-1.5 uppercase tracking-widest text-muted">Reset Commercial Break State</button></div>}
+        {canControl && <div className="flex flex-wrap gap-2"><a href={playbackExportUrl} className="border border-accent/50 px-3 py-1.5 uppercase tracking-widest text-accent">Download Playback Diagnostics</a><button type="button" disabled={sponsorStartDisabled} onClick={() => !sponsorStartDisabled && onSponsorAction("start")} className={`px-3 py-1.5 uppercase tracking-widest ${sponsorStartDisabled ? "cursor-not-allowed border border-border text-muted opacity-70" : "border border-[#ffaa00]/50 text-[#ffaa00]"}`}>{sponsorStartLabel}</button><button type="button" onClick={() => onSponsorAction("reset")} className="border border-border px-3 py-1.5 uppercase tracking-widest text-muted">Reset Commercial Break State</button></div>}
       </div>
       <div className="grid gap-3 md:grid-cols-4 lg:grid-cols-7">
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Projected Show Time</p><p className="mt-1 text-lg font-bold text-foreground">{timingSummary.showRuntimeSummary.projectedLabel}</p></div>
@@ -1221,6 +1382,7 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction }:
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Unknown Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.unknownDurationCount}</p><p className="mt-1 text-muted">Tracks using est. 5:00</p></div>
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Known Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.knownDurationCount}</p><p className="mt-1 text-muted">Detected/provider/upload durations</p></div>
       </div>
+      <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Playback Lifecycle</p><p className="mt-1 font-bold capitalize text-foreground">{playbackStateLabel}</p><p className="mt-1 text-muted">{playbackDiagnostics?.events.length ?? 0} bounded lifecycle events · last issue {playbackDiagnostics?.lastErrorCode ?? "none"}. Natural end, Skip, Finish, and Remove remain distinct.</p></div>
       <div className="grid gap-3 md:grid-cols-3"><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Talk Room to 4h</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.talkRoomLabel}</p><p className="mt-1 text-muted">{timingSummary.showRuntimeSummary.talkPerTrackLabel}</p></div><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Room to 5h</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.warningRoomLabel}</p><p className="mt-1 text-muted">Pressure ceiling only; the show continues past it.</p></div><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Runtime Confidence</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.confidenceLabel}</p><p className="mt-1 text-muted">Unknown durations widen timing uncertainty without adding a pressure penalty.</p></div></div>
       <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Current Runtime Notes</p><p className="mt-1 text-muted">Sponsor: {sponsor.diagnosticLabel} · Wheel overhead: {formatHoursMinutes(wheel.overheadSeconds)} · {timingSummary.showRuntimeSummary.notes[0] ?? "No projection warnings."}</p></div>
     </section>

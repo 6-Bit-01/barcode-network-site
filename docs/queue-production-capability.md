@@ -36,6 +36,19 @@ Every persisted queue change—submission, admin action, session/settings update
 
 Public and admin snapshot reads are non-persistent: polling may derive the current display state, but it does not write the queue or advance its revision. Apple Music host rejection, including terminal-dot host variants such as `music.apple.com.`, occurs before any queue snapshot read.
 
+## Playback lifecycle and diagnostics
+
+Loading a track, media readiness, playback start/resume, pause, stall, seek, natural end, media error, and the operator's final outcome are distinct events. A browser/player `ended`, `stalled`, or `error` event never advances the queue by itself. The loaded track stays in place until the operator explicitly chooses one of these outcomes:
+
+- **Finish** records a completed/played track. A natural media end or near-EOF finish is retained as such; a materially early finish is identified as an early cutoff when reliable position and duration evidence exist.
+- **Skip** records a completed/played early cutoff and advances lane routing like Finish.
+- **Remove** records a removal, does not count as completed, does not consume the owed non-priority turn, and frees an accepted show slot.
+- **Undo Load** returns the track without recording a completed or removed outcome.
+
+Uploaded MP3/WAV playback is admin-authenticated and private. The delivery route accepts only one syntactically valid byte range, preserves correct `206`/`Content-Range` behavior for seeking and near-EOF reads, sends private no-store/nosniff headers, and fails closed on malformed ranges or invalid partial responses. Interrupted, malformed, unavailable, or provider-error playback remains an operator-visible error rather than an automatic Finish or Skip.
+
+Playback lifecycle history is bounded per queue session and uses the existing serialized queue mutation owner. The admin diagnostic export is built from an explicit safe projection: it can include queue/session identifiers, submitted artist/title, media category, durations, lifecycle events, and explicit outcomes, but excludes raw source/upload URLs, contact fields, legal acceptance text, admin notes, payment state/identifiers, and private storage locations. Playback diagnostics are not part of the public queue snapshot or BNL queue projection.
+
 ## Session provenance and BNL publication
 
 Native queue visibility, payment, playback, and operator controls remain independent from BNL publication. Every session has:

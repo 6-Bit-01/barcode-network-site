@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { ForegroundOverlayStrip } from "@/components/ForegroundOverlayStrip";
+import { foregroundActionAt } from "@/lib/foreground-overlay-resolver";
 import type { ForegroundOverlayAction, ForegroundOverlaySnapshot } from "@/lib/foreground-overlay-resolver";
 
 const POLL_INTERVAL_MS = 1_500;
@@ -21,8 +22,8 @@ const SOURCE_STYLE = {
 
 const SYNCING_ACTION: ForegroundOverlayAction = {
   id: "foreground-syncing",
-  label: "SYNCING",
-  message: "READING BARCODE RADIO STATE",
+  label: "SIGNAL LINK",
+  message: "READING BARCODE RADIO STATE // HOLDING CHANNEL",
   tone: "neutral",
   source: "queue",
   occurredAt: null,
@@ -69,15 +70,17 @@ function actionAtClock(snapshot: ForegroundOverlaySnapshot | null, clockNowMs: n
     };
   }
 
-  if (snapshot.action.source !== "sponsor" || !snapshot.sponsorEndsAt) return snapshot.action;
   const serverNowMs = Date.parse(snapshot.serverNow);
   const anchoredNowMs = Number.isFinite(serverNowMs) && lastSuccessAtMs !== null
     ? serverNowMs + Math.max(0, clockNowMs - lastSuccessAtMs)
     : clockNowMs;
+  const actions = Array.isArray(snapshot.actions) && snapshot.actions.length > 0 ? snapshot.actions : [snapshot.action];
+  const action = foregroundActionAt(actions, snapshot.actionCycleStartedAt ?? snapshot.serverNow, anchoredNowMs);
+  if (action.source !== "sponsor" || !snapshot.sponsorEndsAt) return action;
   const sponsorEndsAtMs = Date.parse(snapshot.sponsorEndsAt);
   const remainingSeconds = Number.isFinite(sponsorEndsAtMs) ? (sponsorEndsAtMs - anchoredNowMs) / 1000 : 0;
   return {
-    ...snapshot.action,
+    ...action,
     message: `A WORD FROM OUR SPONSOR // ${countdownLabel(remainingSeconds)} REMAINING`,
   };
 }
@@ -155,6 +158,7 @@ export function ForegroundOverlayReceiver() {
           identityCycleStartedAt={identityCycleStartedAt}
           wheelSpinsOwed={snapshot?.wheelSpinsOwed ?? 0}
           submissionsOpen={snapshot?.submissionsOpen ?? false}
+          actionId={action.id}
           actionLabel={action.label}
           actionMessage={action.message}
           actionTone={action.tone}

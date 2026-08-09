@@ -4,11 +4,13 @@ import type { ResolvedLiveOverlayScene } from "./live-overlay-resolver";
 export const FOREGROUND_ARTIST_HOLD_MS = 12_000;
 export const FOREGROUND_TRACK_HOLD_MS = 6_000;
 export const FOREGROUND_IDENTITY_CYCLE_MS = FOREGROUND_ARTIST_HOLD_MS + FOREGROUND_TRACK_HOLD_MS;
+export const FOREGROUND_ACTION_HOLD_MS = 7_000;
 export const FOREGROUND_CONFIRMED_SKIP_VISIBLE_MS = 3 * 60_000;
+export const FOREGROUND_SHOW_START_VISIBLE_MS = 4 * 60_000;
 
 export type ForegroundIdentityPhase = "artist" | "track";
-export type ForegroundOverlayActionTone = "neutral" | "skip" | "bnl" | "sponsor" | "wheel";
-export type ForegroundOverlayActionSource = "wheel" | "sponsor" | "system" | "priority" | "bnl" | "queue";
+export type ForegroundOverlayActionTone = "neutral" | "signal" | "closed" | "skip" | "bnl" | "sponsor" | "wheel";
+export type ForegroundOverlayActionSource = "wheel" | "sponsor" | "system" | "priority" | "show" | "intake" | "queue";
 
 export interface ForegroundOverlayAction {
   id: string;
@@ -25,6 +27,7 @@ export interface ForegroundOverlaySnapshot {
   serverNow: string;
   submissionsOpen: boolean;
   wheelSpinsOwed: number;
+  actionCycleStartedAt: string;
   track: {
     id: string;
     artistName: string;
@@ -32,16 +35,13 @@ export interface ForegroundOverlaySnapshot {
     cycleStartedAt: string;
   } | null;
   action: ForegroundOverlayAction;
+  actions: ForegroundOverlayAction[];
   sponsorEndsAt: string | null;
 }
 
 export interface ResolveForegroundOverlaySnapshotInput {
   queueState: QueueState;
   scene: ResolvedLiveOverlayScene;
-  bnl?: {
-    message?: string | null;
-    publishedAt?: string | null;
-  } | null;
 }
 
 type PhaseAtTime = {
@@ -212,6 +212,201 @@ function sceneAction(scene: ResolvedLiveOverlayScene): ForegroundOverlayAction |
   return null;
 }
 
+function countedStatus(state: QueueState) {
+  const session = state.session ?? null;
+  const accepted = Math.max(0, Math.floor(state.publicStatus?.acceptedCount ?? session?.acceptedCount ?? 0));
+  const active = Math.max(0, Math.floor(state.publicStatus?.activeCount ?? session?.activeCount ?? 0));
+  const completed = Math.max(0, Math.floor(session?.completedCount ?? state.totalPlayed ?? 0));
+  const capacity = Math.max(1, Math.floor(state.publicStatus?.capacity ?? session?.queueCapacity ?? 44));
+  return { accepted, active, completed, capacity };
+}
+
+function wheelStatusAction(state: QueueState, scene: ResolvedLiveOverlayScene): ForegroundOverlayAction | null {
+  const session = state.session ?? null;
+  const owed = Math.max(0, Math.floor(session?.wheelSpinsOwed ?? scene.wheelSpinsOwed ?? 0));
+  if (owed <= 0) return null;
+  return {
+    id: `wheel-unlocked:${owed}`,
+    label: "WHEEL UNLOCKED",
+    message: `${owed} ${owed === 1 ? "SPIN" : "SPINS"} ARMED // TAP TARGET CLEARED`,
+    tone: "wheel",
+    source: "wheel",
+    occurredAt: session?.updatedAt ?? scene.updatedAt,
+  };
+}
+
+function sponsorStatusAction(state: QueueState): ForegroundOverlayAction | null {
+  const session = state.session ?? null;
+  if (session?.sponsorBreakStatus !== "due") return null;
+  return {
+    id: "sponsor:due",
+    label: "SPONSOR WINDOW",
+    message: "WORD FROM OUR SPONSOR READY // RUN AFTER CURRENT TRACK",
+    tone: "sponsor",
+    source: "sponsor",
+    occurredAt: session.updatedAt ?? null,
+  };
+}
+
+function showStatusAction(state: QueueState, nowMs: number): ForegroundOverlayAction {
+  const session = state.session ?? null;
+  if (!session) {
+    return {
+      id: "show:standby",
+      label: "NETWORK IDLE",
+      message: "BARCODE RADIO RECEIVER STANDING BY",
+      tone: "neutral",
+      source: "show",
+      occurredAt: null,
+    };
+  }
+
+  if (session.broadcastPhase === "ended" || session.status === "archived" || session.submissionClosureReason === "ended") {
+    return {
+      id: "show:complete",
+      label: "SHOW COMPLETE",
+      message: "BROADCAST CLOSED // ARCHIVE ROUTING ACTIVE",
+      tone: "closed",
+      source: "show",
+      occurredAt: session.updatedAt ?? null,
+    };
+  }
+
+  if (session.showStarted === true || session.broadcastPhase === "broadcast_active") {
+    const startedAtMs = timeMs(session.broadcastStartedAt);
+    const recentlyStarted = startedAtMs !== null && nowMs >= startedAtMs && nowMs - startedAtMs <= FOREGROUND_SHOW_START_VISIBLE_MS;
+    return {
+      id: recentlyStarted ? "show:signal-locked" : "show:online",
+      label: recentlyStarted ? "SIGNAL LOCKED" : "SHOW ONLINE",
+      message: recentlyStarted ? "BARCODE RADIO IS LIVE // BROADCAST LINK ESTABLISHED" : "BARCODE RADIO TRANSMISSION ACTIVE",
+      tone: "signal",
+      source: "show",
+      occurredAt: session.broadcastStartedAt ?? session.updatedAt ?? null,
+    };
+  }
+
+  if (state.publicStatus?.isOpen ?? session.queueOpen) {
+    return {
+      id: "show:pre-show",
+      label: "PRE-SHOW LINK",
+      message: "BUILDING TONIGHT'S SIGNAL STACK",
+      tone: "signal",
+      source: "show",
+      occurredAt: session.createdAt ?? null,
+    };
+  }
+
+  return {
+    id: "show:session-standby",
+    label: "SESSION STANDBY",
+    message: "NEXT BROADCAST SIGNAL PENDING",
+    tone: "neutral",
+    source: "show",
+    occurredAt: session.updatedAt ?? null,
+  };
+}
+
+function intakeStatusAction(state: QueueState): ForegroundOverlayAction | null {
+  const session = state.session ?? null;
+  if (!session) return null;
+  const counts = countedStatus(state);
+  const isOpen = state.publicStatus?.isOpen ?? session.queueOpen ?? false;
+  if (isOpen) {
+    const remaining = Math.max(0, counts.capacity - counts.accepted);
+    return {
+      id: "intake:open",
+      label: "INTAKE OPEN",
+      message: `SUBMISSIONS LIVE // ${remaining} ${remaining === 1 ? "SLOT" : "SLOTS"} REMAIN`,
+      tone: "signal",
+      source: "intake",
+      occurredAt: session.updatedAt ?? null,
+    };
+  }
+
+  const reason = state.publicStatus?.closureReason ?? session.submissionClosureReason ?? null;
+  if (reason === "capacity") {
+    return {
+      id: "intake:capacity",
+      label: "INTAKE MAXED",
+      message: `${counts.accepted}/${counts.capacity} SIGNALS LOCKED // LINE SEALED`,
+      tone: "closed",
+      source: "intake",
+      occurredAt: session.updatedAt ?? null,
+    };
+  }
+
+  if (reason === "ended" || reason === "archived") {
+    return {
+      id: `intake:${reason}`,
+      label: "INTAKE CLOSED",
+      message: "BROADCAST COMPLETE // NO NEW SIGNALS",
+      tone: "closed",
+      source: "intake",
+      occurredAt: session.updatedAt ?? null,
+    };
+  }
+
+  return {
+    id: "intake:closed",
+    label: "INTAKE CLOSED",
+    message: session.showStarted ? "CURRENT LINE LOCKED // TRANSMISSION CONTINUES" : "SIGNAL WINDOW OFFLINE // STAND BY",
+    tone: "closed",
+    source: "intake",
+    occurredAt: session.updatedAt ?? null,
+  };
+}
+
+function nextSignalAction(state: QueueState): ForegroundOverlayAction | null {
+  const next = state.nextInLine;
+  if (!next || next.isTestTrack) return null;
+  return {
+    id: `queue:next:${next.id}`,
+    label: "NEXT SIGNAL",
+    message: `${displayArtist(next)} // ${displayTitle(next)}`,
+    tone: "signal",
+    source: "queue",
+    occurredAt: next.createdAt ?? null,
+  };
+}
+
+function queueStatusActions(state: QueueState): ForegroundOverlayAction[] {
+  const session = state.session ?? null;
+  if (!session) return [];
+  const counts = countedStatus(state);
+  const actions: ForegroundOverlayAction[] = [{
+    id: "queue:stack",
+    label: "SIGNAL STACK",
+    message: `${counts.accepted}/${counts.capacity} LOCKED // ${counts.active} STILL IN LINE`,
+    tone: "neutral",
+    source: "queue",
+    occurredAt: session.updatedAt ?? null,
+  }];
+  if (counts.completed > 0) {
+    actions.push({
+      id: "queue:archive-sync",
+      label: "ARCHIVE SYNC",
+      message: `${counts.completed} ${counts.completed === 1 ? "TRANSMISSION" : "TRANSMISSIONS"} CLEARED // HISTORY UPDATED`,
+      tone: "neutral",
+      source: "queue",
+      occurredAt: session.updatedAt ?? null,
+    });
+  }
+  return actions;
+}
+
+function operationalActions(state: QueueState, scene: ResolvedLiveOverlayScene, nowMs: number): ForegroundOverlayAction[] {
+  const show = showStatusAction(state, nowMs);
+  const intake = intakeStatusAction(state);
+  const showJustStarted = show.id === "show:signal-locked";
+  return [
+    wheelStatusAction(state, scene),
+    sponsorStatusAction(state),
+    ...(showJustStarted ? [show, intake] : [intake, show]),
+    nextSignalAction(state),
+    ...queueStatusActions(state),
+  ].filter((action): action is ForegroundOverlayAction => Boolean(action));
+}
+
 function sponsorEndsAt(state: QueueState): string | null {
   const session = state.session;
   if (!session || session.sponsorBreakStatus !== "running") return null;
@@ -239,6 +434,20 @@ export function foregroundIdentityPhaseAt(cycleStartedAt: string | number | Date
   return { phase: "track", remainingMs: Math.max(1, FOREGROUND_IDENTITY_CYCLE_MS - cycleOffsetMs) };
 }
 
+export function foregroundActionAt(actions: ForegroundOverlayAction[], cycleStartedAt: string | number | Date | null | undefined, nowMs = Date.now()): ForegroundOverlayAction {
+  const available = actions.length > 0 ? actions : [showStatusAction({ nowPlaying: null, queue: [], history: [], totalPlayed: 0, streamStatus: "offline" }, nowMs)];
+  const startMs = cycleStartedAt instanceof Date
+    ? cycleStartedAt.getTime()
+    : typeof cycleStartedAt === "number"
+      ? cycleStartedAt
+      : timeMs(cycleStartedAt) ?? nowMs;
+  const safeNowMs = Number.isFinite(nowMs) ? nowMs : Date.now();
+  const safeStartMs = Number.isFinite(startMs) ? startMs : safeNowMs;
+  const elapsedMs = Math.max(0, safeNowMs - safeStartMs);
+  const index = Math.floor(elapsedMs / FOREGROUND_ACTION_HOLD_MS) % available.length;
+  return available[index] ?? available[0];
+}
+
 export function resolveForegroundOverlaySnapshot(input: ResolveForegroundOverlaySnapshotInput, now = new Date()): ForegroundOverlaySnapshot {
   const { queueState, scene } = input;
   const nowMs = now.getTime();
@@ -246,33 +455,8 @@ export function resolveForegroundOverlaySnapshot(input: ResolveForegroundOverlay
   const currentTrack = queueState.nowPlaying ?? queueState.loadedTrack ?? null;
   const sceneOverride = sceneAction(scene);
   const skipAction = priorityAction(queueState, nowMs);
-  const bnlMessage = cleanText(input.bnl?.message, "", 180);
-  const fallbackAction: ForegroundOverlayAction = bnlMessage
-    ? {
-        id: `bnl:${input.bnl?.publishedAt ?? bnlMessage}`,
-        label: "BNL",
-        message: bnlMessage,
-        tone: "bnl",
-        source: "bnl",
-        occurredAt: input.bnl?.publishedAt ?? null,
-      }
-    : session
-      ? {
-          id: `queue:${queueState.revision ?? 0}`,
-          label: "QUEUE",
-          message: `${queueState.publicStatus?.activeCount ?? session.activeCount ?? 0} ACTIVE // ${session.completedCount ?? queueState.totalPlayed ?? 0} PLAYED`,
-          tone: "neutral",
-          source: "queue",
-          occurredAt: session.updatedAt ?? null,
-        }
-      : {
-          id: "queue:standby",
-          label: "SYSTEM",
-          message: "AWAITING BROADCAST SIGNAL",
-          tone: "neutral",
-          source: "queue",
-          occurredAt: null,
-        };
+  const actions = sceneOverride ? [sceneOverride] : skipAction ? [skipAction] : operationalActions(queueState, scene, nowMs);
+  const actionCycleStartedAt = sceneOverride?.occurredAt ?? skipAction?.occurredAt ?? session?.updatedAt ?? scene.updatedAt ?? now.toISOString();
 
   return {
     schemaVersion: "foreground_overlay_v1",
@@ -280,13 +464,15 @@ export function resolveForegroundOverlaySnapshot(input: ResolveForegroundOverlay
     serverNow: now.toISOString(),
     submissionsOpen: queueState.publicStatus?.isOpen ?? session?.queueOpen ?? false,
     wheelSpinsOwed: Math.max(0, Math.floor(session?.wheelSpinsOwed ?? scene.wheelSpinsOwed ?? 0)),
+    actionCycleStartedAt,
     track: currentTrack ? {
       id: currentTrack.id,
       artistName: displayArtist(currentTrack),
       trackTitle: displayTitle(currentTrack),
       cycleStartedAt: currentTrack.playedAt ?? scene.updatedAt ?? now.toISOString(),
     } : null,
-    action: sceneOverride ?? skipAction ?? fallbackAction,
+    action: actions[0],
+    actions,
     sponsorEndsAt: sponsorEndsAt(queueState),
   };
 }

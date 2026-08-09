@@ -39,10 +39,13 @@ test("identity text moves slowly only when its measured width overflows", () => 
 test("lower line is an OPEN or CLOSED action rail without permanent TikTok copy", () => {
   assert.match(strip, /foreground-strip-intake--\$\{submissionsOpen \? "open" : "closed"\}/);
   assert.match(strip, /submissionsOpen \? "OPEN" : "CLOSED"/);
-  assert.match(page, /SKIP SENT/);
+  assert.match(page, /SHOW ONLINE/);
+  assert.match(page, /INTAKE OPEN/);
+  assert.match(page, /INTAKE CLOSED/);
+  assert.match(page, /WHEEL UNLOCKED/);
   assert.match(page, /SKIP CONFIRMED/);
-  assert.match(page, /label: "BNL"/);
   assert.match(page, /SPONSOR BREAK/);
+  assert.doesNotMatch(page, /label: "BNL"/);
   assert.doesNotMatch(combined, /live on tiktok/i);
   assert.doesNotMatch(combined, /watch.*tiktok/i);
 });
@@ -55,6 +58,17 @@ test("calibration keeps the 100px strip, Wheel emblem, and enlarged count", () =
   assert.match(strip, /Wheel spins owed/);
   assert.match(css, /conic-gradient\(/);
   assert.match(css, /font-size: var\(--fg-wheel-count-size\)/);
+});
+
+test("foreground treatment is alive without becoming constant visual noise", () => {
+  assert.match(strip, /data-glitch-active=\{glitchActive \? "true" : "false"\}/);
+  assert.match(strip, /data-wheel-pulsing=\{wheelPulsing \? "true" : "false"\}/);
+  assert.match(strip, /wheelSpinsOwed > previousWheelCount\.current/);
+  assert.match(css, /@keyframes fg-glitch-slice/);
+  assert.match(css, /@keyframes fg-wheel-unlock-pulse/);
+  assert.match(css, /@keyframes fg-signal-drift/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(css, /translate\(-53%, -55%\)/);
 });
 
 test("ordinary calibration link renders a review while source mode keeps exact chroma geometry", () => {

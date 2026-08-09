@@ -5,7 +5,7 @@ import type { CSSProperties } from "react";
 import { ForegroundOverlayStrip } from "@/components/ForegroundOverlayStrip";
 import type { ForegroundActionTone, ForegroundIdentityPhase } from "@/components/ForegroundOverlayStrip";
 
-type CalibrationActionName = "skip-sent" | "skip-confirmed" | "bnl" | "sponsor";
+type CalibrationActionName = "show-online" | "intake-open" | "intake-closed" | "wheel-unlocked" | "skip-sent" | "skip-confirmed" | "sponsor";
 type CalibrationView = "review" | "source";
 
 type ForegroundCalibrationPreviewProps = {
@@ -64,6 +64,7 @@ export function ForegroundCalibrationPreview(props: ForegroundCalibrationPreview
       trackTitle={props.trackTitle}
       wheelSpinsOwed={props.wheelCount}
       submissionsOpen={props.submissionsOpen}
+      actionId={`calibration:${props.actionName}`}
       actionLabel={props.actionLabel}
       actionMessage={props.actionMessage}
       actionTone={props.actionTone}
@@ -103,14 +104,14 @@ export function ForegroundCalibrationPreview(props: ForegroundCalibrationPreview
       </section>
 
       <nav className="fg-calibration-controls" aria-label="Calibration samples">
-        {(["skip-sent", "skip-confirmed", "bnl", "sponsor"] as const).map((actionName) => (
+        {(["show-online", "intake-open", "intake-closed", "wheel-unlocked", "skip-sent", "skip-confirmed", "sponsor"] as const).map((actionName) => (
           <a key={actionName} data-active={props.actionName === actionName ? "true" : "false"} href={previewHref({ ...props, actionName })}>{actionName.replace("-", " ")}</a>
         ))}
         <a data-active={!props.submissionsOpen ? "true" : "false"} href={previewHref({ ...props, submissionsOpen: !props.submissionsOpen })}>{props.submissionsOpen ? "show closed" : "show open"}</a>
       </nav>
 
       <p className="fg-calibration-behavior-note">
-        The top line alternates automatically. Overflow moves only when the active artist or track name does not fit. The lower rail is reserved for queue state and event messages—there is no permanent TikTok promotion.
+        The top line alternates automatically. Overflow moves only when the active artist or track name does not fit. The lower rail rotates through show, intake, Wheel, Priority, sponsor, and queue signals—there is no permanent TikTok promotion or passive Relay filler.
       </p>
 
       <section className="fg-calibration-scene-review" aria-label="Scaled 1080 by 1920 placement preview">

@@ -14,6 +14,7 @@ type ForegroundOverlayStripProps = {
   trackTitle: string;
   wheelSpinsOwed: number;
   submissionsOpen: boolean;
+  actionId?: string;
   actionLabel: string;
   actionMessage: string;
   actionTone?: ForegroundActionTone;
@@ -57,7 +58,7 @@ function SlowOverflowText({ text, phaseDurationMs }: { text: string; phaseDurati
 
   return (
     <span ref={viewportRef} className="foreground-strip-overflow" data-overflowing={scroll.distance > 0 ? "true" : "false"}>
-      <span ref={textRef} className="foreground-strip-overflow-text" style={style}>{text}</span>
+      <span ref={textRef} className="foreground-strip-overflow-text" data-text={text} style={style}>{text}</span>
     </span>
   );
 }
@@ -67,6 +68,7 @@ export function ForegroundOverlayStrip({
   trackTitle,
   wheelSpinsOwed,
   submissionsOpen,
+  actionId,
   actionLabel,
   actionMessage,
   actionTone = "neutral",
@@ -74,6 +76,9 @@ export function ForegroundOverlayStrip({
   identityCycleStartedAt,
 }: ForegroundOverlayStripProps) {
   const [phase, setPhase] = useState<ForegroundIdentityPhase>(forcedPhase ?? "artist");
+  const [glitchActive, setGlitchActive] = useState(false);
+  const [wheelPulsing, setWheelPulsing] = useState(false);
+  const previousWheelCount = useRef(0);
 
   useEffect(() => {
     if (forcedPhase) {
@@ -104,12 +109,57 @@ export function ForegroundOverlayStrip({
     };
   }, [artistName, forcedPhase, identityCycleStartedAt, trackTitle]);
 
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let stopped = false;
+    let firstBurst = true;
+    let delayId = 0;
+    let clearId = 0;
+
+    const scheduleBurst = () => {
+      const delayMs = firstBurst ? 2_800 : 18_000 + Math.floor(Math.random() * 18_000);
+      firstBurst = false;
+      delayId = window.setTimeout(() => {
+        if (stopped) return;
+        setGlitchActive(true);
+        clearId = window.setTimeout(() => {
+          if (stopped) return;
+          setGlitchActive(false);
+          scheduleBurst();
+        }, 420);
+      }, delayMs);
+    };
+
+    scheduleBurst();
+    return () => {
+      stopped = true;
+      window.clearTimeout(delayId);
+      window.clearTimeout(clearId);
+    };
+  }, []);
+
+  useEffect(() => {
+    const nextCount = Math.max(0, Math.min(99, Math.trunc(wheelSpinsOwed)));
+    const unlocked = wheelSpinsOwed > previousWheelCount.current;
+    previousWheelCount.current = nextCount;
+    if (!unlocked) return;
+    setWheelPulsing(true);
+    const timeoutId = window.setTimeout(() => setWheelPulsing(false), 1_450);
+    return () => window.clearTimeout(timeoutId);
+  }, [wheelSpinsOwed]);
+
   const identity = phase === "artist" ? artistName : trackTitle;
   const phaseDurationMs = phase === "artist" ? FOREGROUND_ARTIST_HOLD_MS : FOREGROUND_TRACK_HOLD_MS;
   const safeWheelCount = Math.max(0, Math.min(99, Math.trunc(wheelSpinsOwed)));
 
   return (
-    <section className="foreground-strip" data-identity-phase={phase} aria-label="BARCODE Radio foreground overlay">
+    <section
+      className="foreground-strip"
+      data-glitch-active={glitchActive ? "true" : "false"}
+      data-identity-phase={phase}
+      data-wheel-pulsing={wheelPulsing ? "true" : "false"}
+      aria-label="BARCODE Radio foreground overlay"
+    >
       <div className="foreground-strip-rail" aria-hidden="true">
         <span /><span /><span /><span /><span />
       </div>
@@ -120,12 +170,12 @@ export function ForegroundOverlayStrip({
           <SlowOverflowText key={`${phase}:${identity}`} text={identity} phaseDurationMs={phaseDurationMs} />
         </div>
 
-        <div className={`foreground-strip-action-row foreground-strip-action-row--${actionTone}`}>
+        <div key={actionId ?? `${actionLabel}:${actionMessage}`} className={`foreground-strip-action-row foreground-strip-action-row--${actionTone}`}>
           <span className={`foreground-strip-intake foreground-strip-intake--${submissionsOpen ? "open" : "closed"}`}>
             {submissionsOpen ? "OPEN" : "CLOSED"}
           </span>
-          <span className="foreground-strip-action-label">{actionLabel}</span>
-          <span className="foreground-strip-action-message" title={actionMessage}>{actionMessage}</span>
+          <span className="foreground-strip-action-label" data-text={actionLabel}>{actionLabel}</span>
+          <span className="foreground-strip-action-message" data-text={actionMessage} title={actionMessage}>{actionMessage}</span>
         </div>
       </div>
 

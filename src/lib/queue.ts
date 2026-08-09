@@ -6,6 +6,13 @@ import { Redis } from "@upstash/redis";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createProviderFetchBudget, fetchProviderJson } from "./provider-fetch";
 import { pacificDateString } from "./pacific-time";
+import {
+  appendQueuePlaybackEvent,
+  emptyQueuePlaybackDiagnostics,
+  normalizeQueuePlaybackDiagnostics,
+  queuePlaybackOutcomeFields,
+  queuePlaybackProviderForSourceType,
+} from "./queue-playback-lifecycle";
 import { parseIso8601DurationToSeconds, parseSpotifyTrackId, parseYouTubeVideoId as parseTrackDurationYouTubeVideoId } from "./track-duration";
 import {
   INTERNAL_BUFFER_DURATION_SECONDS,
@@ -27,6 +34,7 @@ import type {
   QueueLegalAcceptance,
   QueueLane,
   QueueNonPriorityLane,
+  QueuePlaybackLifecycleEventInput,
   QueuePublicSnapshot,
   QueuePublicStatus,
   QueuePublicTrack,
@@ -62,7 +70,7 @@ const UPLOADED_FILE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const BARCODE_QUEUE_UPLOAD_HOST_SUFFIX = ".private.blob.vercel-storage.com";
 const BARCODE_QUEUE_UPLOAD_PATH_PREFIX = "/barcode-radio-queue/";
 
-type QueueAdminAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "resolvePaidPriority" | "pausePriority" | "resumePriority" | "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
+type QueueAdminAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "skip" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "resolvePaidPriority" | "pausePriority" | "resumePriority" | "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
 
 export interface PriorityUpgradeSettingsInput {
   enabled?: boolean;
@@ -224,6 +232,7 @@ function defaultSession(options: QueueSessionOptions = {}): QueueSession {
     loadedTrackWasNextInLine: false,
     loadedTrackFallbackForLane: null,
     autoRoutingPaused: false,
+    playbackDiagnostics: emptyQueuePlaybackDiagnostics(),
     priorityUpgradesEnabled: normalizePaidPriorityEnabled(options),
     priorityUpgradeLabel: options.priorityUpgradeLabel?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
     priorityUpgradeInstructions: options.priorityUpgradeInstructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
@@ -480,6 +489,52 @@ function clearLoadedTrack(session: QueueSession): QueueEntry | null {
   return current;
 }
 
+function appendSessionPlaybackEvent(session: QueueSession, input: QueuePlaybackLifecycleEventInput, now = new Date()) {
+  const receipt = appendQueuePlaybackEvent(session.playbackDiagnostics, input, session.loadedTrack?.id ?? null, now);
+  if (!receipt.accepted) return receipt;
+  session.playbackDiagnostics = receipt.diagnostics;
+  const observedDuration = receipt.event?.durationSeconds ?? null;
+  if (session.loadedTrack?.id === input.trackId && observedDuration !== null && observedDuration > 0) {
+    session.loadedTrack = normalizeEntry({
+      ...session.loadedTrack,
+      detectedDurationSeconds: Math.max(1, Math.round(observedDuration)),
+      estimatedDurationSeconds: Math.max(1, Math.round(observedDuration)),
+      durationIsEstimate: false,
+      durationSource: "direct_metadata",
+    });
+    session.loadedTrackId = session.loadedTrack.id;
+  }
+  return receipt;
+}
+
+function entryWithPlaybackOutcome(session: QueueSession, entry: QueueEntry, outcome: "finished" | "skipped" | "removed", now = new Date()): QueueEntry {
+  const fields = queuePlaybackOutcomeFields(session.playbackDiagnostics, entry.id, outcome);
+  if (session.loadedTrack?.id === entry.id) {
+    appendSessionPlaybackEvent(session, {
+      trackId: entry.id,
+      provider: queuePlaybackProviderForSourceType(entry.sourceType),
+      eventType: outcome === "finished" ? "finish" : outcome === "skipped" ? "skip" : "remove",
+      currentTimeSeconds: fields.playbackEndPositionSeconds,
+      durationSeconds: fields.playbackObservedDurationSeconds,
+      errorCode: fields.playbackIssueCode,
+    }, now);
+  }
+  return normalizeEntry({ ...entry, ...fields });
+}
+
+function recordLoadedTrackReturned(session: QueueSession, entry: QueueEntry, now = new Date()): void {
+  if (session.loadedTrack?.id !== entry.id) return;
+  const fields = queuePlaybackOutcomeFields(session.playbackDiagnostics, entry.id, "removed");
+  appendSessionPlaybackEvent(session, {
+    trackId: entry.id,
+    provider: queuePlaybackProviderForSourceType(entry.sourceType),
+    eventType: "return",
+    currentTimeSeconds: fields.playbackEndPositionSeconds,
+    durationSeconds: fields.playbackObservedDurationSeconds,
+    errorCode: fields.playbackIssueCode,
+  }, now);
+}
+
 function removeTrackFromActiveLocations(session: QueueSession, trackId: string): void {
   session.queue = session.queue.filter((entry) => entry.id !== trackId);
   if (session.nextInLineTrack?.id === trackId) clearNextInLine(session);
@@ -509,6 +564,13 @@ function setLoadedTrack(session: QueueSession, entry: QueueEntry, previousLane?:
   if (!session.broadcastStartedAt) session.broadcastStartedAt = loaded.playedAt ?? new Date().toISOString();
   session.queue = session.queue.filter((track) => track.id !== loaded.id);
   if (session.nextInLineTrack?.id === loaded.id) clearNextInLine(session);
+  appendSessionPlaybackEvent(session, {
+    trackId: loaded.id,
+    provider: queuePlaybackProviderForSourceType(loaded.sourceType),
+    eventType: "loaded",
+    currentTimeSeconds: 0,
+    durationSeconds: loaded.detectedDurationSeconds ?? null,
+  });
   return loaded;
 }
 
@@ -901,6 +963,12 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     uploadedFileDeletedAt: entry.uploadedFileDeletedAt ?? null,
     uploadedFileDeletionStatus: entry.uploadedFileDeletionStatus === "deleted" || entry.uploadedFileDeletionStatus === "error" || entry.uploadedFileDeletionStatus === "pending" ? entry.uploadedFileDeletionStatus : (uploadedFileDeleteAfterFor(entry, sourceType) ? "pending" : null),
     uploadedFileDeletionError: entry.uploadedFileDeletionError ?? null,
+    playbackOutcome: entry.playbackOutcome === "finished" || entry.playbackOutcome === "skipped" || entry.playbackOutcome === "removed" ? entry.playbackOutcome : null,
+    playbackEndedNaturally: typeof entry.playbackEndedNaturally === "boolean" ? entry.playbackEndedNaturally : null,
+    playbackEarlyCutoff: typeof entry.playbackEarlyCutoff === "boolean" ? entry.playbackEarlyCutoff : null,
+    playbackEndPositionSeconds: typeof entry.playbackEndPositionSeconds === "number" && Number.isFinite(entry.playbackEndPositionSeconds) ? Math.max(0, entry.playbackEndPositionSeconds) : null,
+    playbackObservedDurationSeconds: typeof entry.playbackObservedDurationSeconds === "number" && Number.isFinite(entry.playbackObservedDurationSeconds) ? Math.max(0, entry.playbackObservedDurationSeconds) : null,
+    playbackIssueCode: entry.playbackIssueCode === "media_aborted" || entry.playbackIssueCode === "network_error" || entry.playbackIssueCode === "decode_error" || entry.playbackIssueCode === "source_unsupported" || entry.playbackIssueCode === "provider_error" || entry.playbackIssueCode === "ready_timeout" || entry.playbackIssueCode === "sync_error" || entry.playbackIssueCode === "unknown" ? entry.playbackIssueCode : null,
     note: entry.note ?? null,
     priorityUpgradeRequested: entry.priorityUpgradeRequested === true,
     priorityUpgradeStatus,
@@ -980,6 +1048,7 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     loadedTrackWasNextInLine: raw.loadedTrackWasNextInLine === true,
     loadedTrackFallbackForLane: raw.loadedTrackFallbackForLane === "regular" || raw.loadedTrackFallbackForLane === "wheel" ? raw.loadedTrackFallbackForLane : null,
     autoRoutingPaused: raw.autoRoutingPaused === true,
+    playbackDiagnostics: normalizeQueuePlaybackDiagnostics(raw.playbackDiagnostics),
     priorityUpgradesEnabled: normalizePaidPriorityEnabled(raw),
     priorityUpgradeLabel: raw.priorityUpgradeLabel?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
     priorityUpgradeInstructions: raw.priorityUpgradeInstructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
@@ -1754,6 +1823,7 @@ function queueStateFromSession(session: QueueSession, store: QueueStore, viewedS
     autoRoutingPaused: normalized.autoRoutingPaused === true,
     nextNonPriorityLane: normalized.nextNonPriorityLane,
     wheelEligibleArtists: wheelEligibleArtistsForSession(normalized),
+    playbackDiagnostics: normalizeQueuePlaybackDiagnostics(normalized.playbackDiagnostics),
     sessions: store.sessions.map(summarizeSession).sort((a, b) => b.showDate.localeCompare(a.showDate) || b.createdAt.localeCompare(a.createdAt)),
     viewedSessionId,
     readOnly: !isCurrentSession,
@@ -2402,6 +2472,7 @@ function pausePriorityTrack(session: QueueSession, id: string): boolean {
   if (session.loadedTrack?.id === id) {
     const paused = pause(session.loadedTrack);
     if (!paused) return false;
+    recordLoadedTrackReturned(session, session.loadedTrack);
     clearLoadedTrack(session);
     session.queue.push(paused);
     session.queue = sortActive(session.queue);
@@ -2474,7 +2545,7 @@ function resolvePaidPriorityTrack(session: QueueSession, id: string): boolean {
 }
 
 function restoreEntry(entry: QueueEntry, lane: QueueLane): QueueEntry {
-  return normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : "free", status: "queued", createdAt: new Date().toISOString(), playedAt: null, completedAt: null, removedAt: null, restoredAt: new Date().toISOString(), displacedFromNextInLineAt: null, ...priorityUpgradeMetadata(entry, lane) });
+  return normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : "free", status: "queued", createdAt: new Date().toISOString(), playedAt: null, completedAt: null, removedAt: null, restoredAt: new Date().toISOString(), playbackOutcome: null, playbackEndedNaturally: null, playbackEarlyCutoff: null, playbackEndPositionSeconds: null, playbackObservedDurationSeconds: null, playbackIssueCode: null, displacedFromNextInLineAt: null, ...priorityUpgradeMetadata(entry, lane) });
 }
 
 const SIMULATION_TRACK_NOTE = "[QUEUE SIMULATION TRACK]";
@@ -2578,7 +2649,10 @@ function addSimulationTrack(session: QueueSession, action: QueueAdminAction): bo
     session.removed = session.removed.filter((entry) => !isSimulationTrack(entry));
     session.spotlight = session.spotlight.filter((entry) => !isSimulationTrack(entry));
     if (isSimulationTrack(session.nextInLineTrack)) clearNextInLine(session);
-    if (isSimulationTrack(session.loadedTrack)) clearLoadedTrack(session);
+    if (isSimulationTrack(session.loadedTrack)) {
+      recordLoadedTrackReturned(session, session.loadedTrack!);
+      clearLoadedTrack(session);
+    }
     pullNextInLine(session, undefined, true);
     return true;
   }
@@ -2795,25 +2869,30 @@ async function updateRadioTrackMutation(id: string, action: QueueAdminAction): P
 
   if (loaded) {
     if (action === "moveBack") {
+      recordLoadedTrackReturned(session, loaded);
       undoLoadedTrack(session);
     }
-    if (action === "finish") {
+    if (action === "finish" || action === "skip") {
       session.nextInLineHoldTrackId = null;
-      const current = clearLoadedTrack(session);
+      const current = session.loadedTrack;
       if (current) {
+        const completed = entryWithPlaybackOutcome(session, current, action === "skip" ? "skipped" : "finished");
+        clearLoadedTrack(session);
         removeTrackFromActiveLocations(session, current.id);
         const now = new Date().toISOString();
         if (!session.broadcastStartedAt) session.broadcastStartedAt = current.playedAt ?? now;
-        session.completed.unshift({ ...current, status: "played", playedAt: current.playedAt ?? now, completedAt: now });
+        session.completed.unshift({ ...completed, status: "played", playedAt: completed.playedAt ?? now, completedAt: now });
         advanceNonPriorityLaneAfter(session, current.lane);
       }
     }
     if (action === "remove") {
       session.nextInLineHoldTrackId = null;
-      const current = clearLoadedTrack(session);
+      const current = session.loadedTrack;
       if (current) {
+        const removed = entryWithPlaybackOutcome(session, current, "removed");
+        clearLoadedTrack(session);
         removeTrackFromActiveLocations(session, current.id);
-        session.removed.unshift({ ...current, status: "removed", removedAt: new Date().toISOString() });
+        session.removed.unshift({ ...removed, status: "removed", removedAt: new Date().toISOString() });
       }
     }
     if (action !== "moveBack") pullNextInLine(session, session.nextInLineHoldTrackId ?? undefined, true);
@@ -2836,13 +2915,14 @@ async function updateRadioTrackMutation(id: string, action: QueueAdminAction): P
       session.nextInLineHoldTrackId = restored?.id ?? null;
       session.autoRoutingPaused = true;
     }
-    if (action === "finish") {
+    if (action === "finish" || action === "skip") {
       const current = clearNextInLine(session);
       if (current) {
         removeTrackFromActiveLocations(session, current.id);
         const now = new Date().toISOString();
         if (!session.broadcastStartedAt) session.broadcastStartedAt = current.playedAt ?? now;
-        session.completed.unshift({ ...current, status: "played", playedAt: current.playedAt ?? now, completedAt: now });
+        const completed = entryWithPlaybackOutcome(session, current, action === "skip" ? "skipped" : "finished");
+        session.completed.unshift({ ...completed, status: "played", playedAt: completed.playedAt ?? now, completedAt: now });
         advanceNonPriorityLaneAfter(session, current.lane);
       }
       pullNextInLine(session);
@@ -2851,7 +2931,8 @@ async function updateRadioTrackMutation(id: string, action: QueueAdminAction): P
       const current = clearNextInLine(session);
       if (current) {
         removeTrackFromActiveLocations(session, current.id);
-        session.removed.unshift({ ...current, status: "removed", removedAt: new Date().toISOString() });
+        const removed = entryWithPlaybackOutcome(session, current, "removed");
+        session.removed.unshift({ ...removed, status: "removed", removedAt: new Date().toISOString() });
         if ((current.lane ?? "regular") === "wheel") {
           session.wheelSpinsOwed = normalizeWheelSpinsOwed(session.wheelSpinsOwed) + 1;
           session.autoRoutingPaused = true;
@@ -2884,20 +2965,53 @@ async function updateRadioTrackMutation(id: string, action: QueueAdminAction): P
     session.wheelSpinsOwed = Math.max(0, normalizeWheelSpinsOwed(session.wheelSpinsOwed) - 1);
     handleWheelWinnerSelected(session);
   }
-  if (action === "finish") {
+  if (action === "finish" || action === "skip") {
     session.queue.splice(index, 1);
     removeTrackFromActiveLocations(session, active.id);
-    session.completed.unshift({ ...active, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
+    const completed = entryWithPlaybackOutcome(session, active, action === "skip" ? "skipped" : "finished");
+    session.completed.unshift({ ...completed, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
     advanceNonPriorityLaneAfter(session, active.lane);
   }
   if (action === "remove") {
     session.queue.splice(index, 1);
     removeTrackFromActiveLocations(session, active.id);
-    session.removed.unshift({ ...active, status: "removed", removedAt: new Date().toISOString() });
+    const removed = entryWithPlaybackOutcome(session, active, "removed");
+    session.removed.unshift({ ...removed, status: "removed", removedAt: new Date().toISOString() });
   }
   pullNextInLine(session);
   await writeStore(replaceSession(store, session));
   return getRadioQueueState();
+}
+
+const CLIENT_PLAYBACK_EVENT_TYPES = new Set<QueuePlaybackLifecycleEventInput["eventType"]>(["ready", "play", "pause", "stall", "resume", "seek", "ended", "error"]);
+
+export async function recordQueuePlaybackEvent(input: QueuePlaybackLifecycleEventInput): Promise<{
+  accepted: boolean;
+  reason: "accepted" | "track_not_loaded" | "invalid_event";
+  playbackDiagnostics: ReturnType<typeof normalizeQueuePlaybackDiagnostics>;
+}> {
+  return withQueueMutation(async () => {
+    const store = await readStore();
+    const session = getSession(store);
+    const diagnostics = normalizeQueuePlaybackDiagnostics(session.playbackDiagnostics);
+    const loaded = session.loadedTrack;
+    if (session.status === "archived" || (input.sessionId && input.sessionId !== session.sessionId) || !loaded || loaded.id !== input.trackId) {
+      return { accepted: false, reason: "track_not_loaded", playbackDiagnostics: diagnostics };
+    }
+    if (!CLIENT_PLAYBACK_EVENT_TYPES.has(input.eventType) || input.provider !== queuePlaybackProviderForSourceType(loaded.sourceType)) {
+      return { accepted: false, reason: "invalid_event", playbackDiagnostics: diagnostics };
+    }
+    const receipt = appendSessionPlaybackEvent(session, input);
+    if (!receipt.accepted) return { accepted: false, reason: receipt.reason, playbackDiagnostics: receipt.diagnostics };
+    const nextStore = replaceSession(store, session);
+    await writeStore(nextStore);
+    const nextSession = getSession(nextStore, session.sessionId);
+    return {
+      accepted: true,
+      reason: "accepted",
+      playbackDiagnostics: normalizeQueuePlaybackDiagnostics(nextSession.playbackDiagnostics),
+    };
+  });
 }
 
 export async function updateRadioTrack(id: string, action: QueueAdminAction): Promise<QueueState> {
@@ -2929,7 +3043,8 @@ export async function advanceQueue(): Promise<QueueEntry | null> {
     pullNextInLine(session);
     const next = clearNextInLine(session);
     if (!next) return null;
-    session.completed.unshift({ ...next, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
+    const completed = entryWithPlaybackOutcome(session, next, "finished");
+    session.completed.unshift({ ...completed, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
     advanceNonPriorityLaneAfter(session, next.lane);
     pullNextInLine(session);
     await writeStore(replaceSession(store, session));

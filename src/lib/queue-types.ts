@@ -18,8 +18,49 @@ export type PriorityUpgradeSource = "admin" | "public_placeholder" | "future_pay
 export type SponsorBreakMode = "mid_show";
 export type SponsorBreakStatus = "not_due" | "due" | "running" | "completed" | "skipped";
 export type QueuePlaybackState = "playing" | "paused" | "stopped";
+export type QueuePlaybackProvider = "audio" | "youtube" | "tiktok" | "external";
+export type QueuePlaybackLifecycleState = "idle" | "loaded" | "ready" | "playing" | "paused" | "stalled" | "ended" | "error" | "cleared";
+export type QueuePlaybackLifecycleEventType = "loaded" | "ready" | "play" | "pause" | "stall" | "resume" | "seek" | "ended" | "error" | "finish" | "skip" | "remove" | "return";
+export type QueuePlaybackErrorCode = "media_aborted" | "network_error" | "decode_error" | "source_unsupported" | "provider_error" | "ready_timeout" | "sync_error" | "unknown";
+export type QueuePlaybackOutcome = "finished" | "skipped" | "removed";
 export type QueueWheelTimingStatus = "idle" | "ready" | "reencrypting" | "spinning" | "result_pending" | "confirmed" | "cancelled" | "signal_lost";
 export type UploadedFileDeletionStatus = "pending" | "deleted" | "error";
+
+export interface QueuePlaybackLifecycleEventInput {
+  sessionId?: string | null;
+  trackId: string;
+  provider: QueuePlaybackProvider;
+  eventType: QueuePlaybackLifecycleEventType;
+  currentTimeSeconds?: number | null;
+  durationSeconds?: number | null;
+  readyState?: number | null;
+  networkState?: number | null;
+  errorCode?: QueuePlaybackErrorCode | null;
+}
+
+export interface QueuePlaybackLifecycleEvent {
+  sequence: number;
+  trackId: string;
+  provider: QueuePlaybackProvider;
+  eventType: QueuePlaybackLifecycleEventType;
+  lifecycleState: QueuePlaybackLifecycleState;
+  observedAt: string;
+  currentTimeSeconds: number | null;
+  durationSeconds: number | null;
+  readyState: number | null;
+  networkState: number | null;
+  errorCode: QueuePlaybackErrorCode | null;
+}
+
+export interface QueuePlaybackDiagnostics {
+  schemaVersion: "queue_playback_lifecycle_v1";
+  currentTrackId: string | null;
+  lifecycleState: QueuePlaybackLifecycleState;
+  lastEventAt: string | null;
+  lastErrorCode: QueuePlaybackErrorCode | null;
+  nextSequence: number;
+  events: QueuePlaybackLifecycleEvent[];
+}
 
 export interface QueuePlaybackTiming {
   trackId: string;
@@ -191,6 +232,12 @@ export interface QueueEntry {
   removedAt?: string | null;
   restoredAt?: string | null;
   spotlightedAt?: string | null;
+  playbackOutcome?: QueuePlaybackOutcome | null;
+  playbackEndedNaturally?: boolean | null;
+  playbackEarlyCutoff?: boolean | null;
+  playbackEndPositionSeconds?: number | null;
+  playbackObservedDurationSeconds?: number | null;
+  playbackIssueCode?: QueuePlaybackErrorCode | null;
   note?: string | null;
   submitterArtistName?: string;
   submittedArtistName?: string;
@@ -326,6 +373,7 @@ export interface QueueSession extends QueueSessionSummary {
   loadedTrackFallbackForLane?: QueueNonPriorityLane | null;
   nextInLineHoldTrackId?: string | null;
   autoRoutingPaused?: boolean;
+  playbackDiagnostics?: QueuePlaybackDiagnostics;
 }
 
 export interface QueuePublicTrack {
@@ -400,6 +448,7 @@ export interface QueueState {
   wheelEligibleArtists?: QueueWheelArtistOption[];
   playbackTiming?: QueuePlaybackTiming | null;
   wheelTiming?: QueueWheelTiming | null;
+  playbackDiagnostics?: QueuePlaybackDiagnostics;
 }
 
 

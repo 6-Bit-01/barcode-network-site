@@ -121,7 +121,7 @@ export async function POST(req: Request) {
   if (body.action === "activateSession" && typeof body.sessionId === "string") return NextResponse.json(await activateQueueSession(body.sessionId));
   if (body.action === "viewSession" && typeof body.sessionId === "string") return NextResponse.json(await getRadioQueueState(body.sessionId));
   if (["pullNext", "pullWheelChosen", "pullFreeTransmission", "startShow", "addWheelSpinOwed", "addSimulationFreeTrack", "addSimulationPaidPriority", "addSimulationCheckoutPending", "addSimulationPaymentFailed", "addSimulationHeldPriority", "clearSimulationTracks"].includes(body.action)) return NextResponse.json(await updateRadioTrack("", body.action));
-  if (["load", "finish", "remove", "priority", "regular", "wheel", "moveBack", "spotlight", "removeSpotlight", "restoreRegular", "restorePriority", "markPriorityManual", "markPriorityRequested", "markPriorityCheckoutPending", "pausePriority", "resumePriority"].includes(body.action) && typeof body.id === "string") {
+  if (["load", "finish", "skip", "remove", "priority", "regular", "wheel", "moveBack", "spotlight", "removeSpotlight", "restoreRegular", "restorePriority", "markPriorityManual", "markPriorityRequested", "markPriorityCheckoutPending", "pausePriority", "resumePriority"].includes(body.action) && typeof body.id === "string") {
     return NextResponse.json(await updateRadioTrack(body.id, body.action));
   }
   return NextResponse.json({ error: "Unknown queue action" }, { status: 400 });

@@ -293,6 +293,7 @@ test("functional receiver is exact-source, reconnect-aware, and opened beside th
   const css = fs.readFileSync(path.join(projectRoot, "src/app/overlay/foreground/calibration/foreground-calibration.css"), "utf8");
   const admin = fs.readFileSync(path.join(projectRoot, "src/components/AdminLiveOverlayControl.tsx"), "utf8");
   const api = fs.readFileSync(path.join(projectRoot, "src/app/api/overlay/foreground/route.ts"), "utf8");
+  const accessApi = fs.readFileSync(path.join(projectRoot, "src/app/api/admin/overlay/foreground-access/route.ts"), "utf8");
   const combined = `${receiver}\n${strip}`;
 
   assert.match(receiver, /fetch\("\/api\/overlay\/foreground"/);
@@ -303,11 +304,22 @@ test("functional receiver is exact-source, reconnect-aware, and opened beside th
   assert.match(receiver, /"--fg-key-color": "#0000ff"/);
   assert.match(css, /\.foreground-overlay-canvas > \.foreground-strip/);
   assert.match(css, /top: calc\(var\(--fg-anchor-y\) - var\(--fg-height\)\)/);
-  assert.match(admin, /href="\/overlay\/live"[\s\S]*href="\/overlay\/foreground"/);
+  assert.match(admin, /href="\/overlay\/live"/);
   assert.match(admin, /Open Live Overlay/);
   assert.match(admin, /Open Foreground Overlay/);
   assert.match(api, /"Cache-Control": "no-store"/);
+  assert.match(api, /verifyForegroundOverlayToken/);
+  assert.match(api, /verifyAdminToken/);
+  assert.match(api, /allowPrivateQueueState/);
+  assert.match(accessApi, /createForegroundOverlayToken/);
+  assert.match(admin, /\/api\/admin\/overlay\/foreground-access/);
+  assert.match(receiver, /new URLSearchParams\(window\.location\.hash\.replace/);
+  assert.match(receiver, /Authorization: `Bearer \$\{accessToken\}`/);
   assert.match(receiver, /foregroundActionAt/);
   assert.doesNotMatch(foregroundSource, /resolveBNLCurrentView/);
+  assert.match(strip, /useRef<number \| null>\(null\)/);
+  assert.match(strip, /previousCount === null/);
+  assert.match(css, /--fg-primary-size: 36px/);
+  assert.match(css, /padding: 6px 18px 0/);
   assert.doesNotMatch(combined, /current[- ](?:song|track).*remaining|time left in (?:this|current) (?:song|track)/i);
 });

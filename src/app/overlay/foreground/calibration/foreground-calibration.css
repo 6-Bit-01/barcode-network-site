@@ -1,6 +1,6 @@
 :root {
   --fg-height: 100px;
-  --fg-primary-size: 31px;
+  --fg-primary-size: 36px;
   --fg-secondary-size: 18px;
   --fg-wheel-size: 92px;
   --fg-wheel-count-size: 50px;
@@ -141,11 +141,12 @@ body:has(.foreground-overlay-source-shell) {
 }
 
 .foreground-strip-identity-row {
+  box-sizing: border-box;
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 14px;
-  padding: 0 18px;
+  padding: 6px 18px 0;
   overflow: hidden;
 }
 

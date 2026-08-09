@@ -14,6 +14,8 @@ Operational Radio submission surfaces also remain on the established Auxchord ro
 
 Queue testing and admin workflows may continue in their existing authorized surfaces. The gate only blocks promotion of queue data into public/BNL truth surfaces. It does not change queue mechanics, playback, submissions, provider integrations, admin controls, uploads, priority lanes, scheduling, simulations, payments, or routes.
 
+The foreground broadcast source may read private rehearsal state only through a short-lived, foreground-only access link issued from the authenticated overlay controls. That token cannot authenticate admin APIs. Without that scoped access, the unauthenticated foreground endpoint suppresses queue/session/track traffic unless the production capability is enabled and the active live-broadcast session is explicitly `public_copy_approved`.
+
 ## Blocked from public and BNL consumption
 
 When disabled, the global live-status provider does not poll `/api/queue`, cached queue snapshots are cleared, and `/api/bnl/read-model` returns an explicit unavailable queue contract with `capabilities.queueProduction=false` instead of live sessions, queue tracks, now-playing, up-next, queue counts, queue-derived artists, recap candidates, queue-derived copy candidates, or queue-derived dossier suggestions. Queue-lane recommendation ingest such as `queue_context` is rejected before it can create approved BNL/Source File evidence.

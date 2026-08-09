@@ -7,6 +7,8 @@
 
 const COOKIE_NAME = "barcode_admin";
 const TOKEN_TTL = 60 * 60 * 24; // 24 hours in seconds
+const FOREGROUND_OVERLAY_TOKEN_TTL = 60 * 60 * 12;
+type AuthTokenSubject = "admin" | "foreground_overlay";
 
 // --------------- HMAC helpers (Web Crypto) ---------------
 
@@ -41,15 +43,15 @@ function base64urlDecode(str: string): Uint8Array {
 
 // --------------- Token creation/verification ---------------
 
-export async function createAdminToken(): Promise<string> {
+async function createToken(subject: AuthTokenSubject, ttlSeconds: number): Promise<string> {
   const key = await getKey();
   const header = base64url(new TextEncoder().encode(JSON.stringify({ alg: "HS256", typ: "JWT" })).buffer as ArrayBuffer);
   const payload = base64url(
     new TextEncoder().encode(
       JSON.stringify({
-        sub: "admin",
+        sub: subject,
         iat: Math.floor(Date.now() / 1000),
-        exp: Math.floor(Date.now() / 1000) + TOKEN_TTL,
+        exp: Math.floor(Date.now() / 1000) + ttlSeconds,
       })
     ).buffer as ArrayBuffer
   );
@@ -58,7 +60,7 @@ export async function createAdminToken(): Promise<string> {
   return `${data}.${base64url(sig)}`;
 }
 
-export async function verifyAdminToken(token: string): Promise<boolean> {
+async function verifyToken(token: string, expectedSubject: AuthTokenSubject): Promise<boolean> {
   try {
     const parts = token.split(".");
     if (parts.length !== 3) return false;
@@ -74,10 +76,26 @@ export async function verifyAdminToken(token: string): Promise<boolean> {
     const payload = JSON.parse(new TextDecoder().decode(base64urlDecode(parts[1])));
     if (payload.exp < Math.floor(Date.now() / 1000)) return false;
 
-    return payload.sub === "admin";
+    return payload.sub === expectedSubject;
   } catch {
     return false;
   }
+}
+
+export async function createAdminToken(): Promise<string> {
+  return createToken("admin", TOKEN_TTL);
+}
+
+export async function verifyAdminToken(token: string): Promise<boolean> {
+  return verifyToken(token, "admin");
+}
+
+export async function createForegroundOverlayToken(): Promise<string> {
+  return createToken("foreground_overlay", FOREGROUND_OVERLAY_TOKEN_TTL);
+}
+
+export async function verifyForegroundOverlayToken(token: string): Promise<boolean> {
+  return verifyToken(token, "foreground_overlay");
 }
 
 export function getAdminPassword(): string {
@@ -88,4 +106,4 @@ export function getAdminPassword(): string {
   return process.env.ADMIN_PASSWORD || "barcode2026";
 }
 
-export { COOKIE_NAME, TOKEN_TTL };
+export { COOKIE_NAME, TOKEN_TTL, FOREGROUND_OVERLAY_TOKEN_TTL };
